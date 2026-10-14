@@ -192,6 +192,23 @@ const SCENARIOS: { name: string; events: LedgerEvent[]; expect: Outcome }[] = [
     expect: { rows: [], mode: "direct", heard: { queued: ["direct"] } },
   },
   {
+    // B1: s1's record was retired when the server answered it, so the journal gave the switch
+    // back the same `seq`. The cancel-out still hides s1, and neither a socket frame listing it
+    // nor a snapshot that began before the answer brings it back.
+    name: "hides the switch a cancel-out cancelled even when the journal reused its seq",
+    events: [
+      journal(1, record("s1", "draft", { posted: true })),
+      inbox(2, ["s1", "draft"]),
+      journal(3),
+      journal(4, record("s2", "direct", { seq: 1, posted: true })),
+      answer("s2", "direct", "cancelled", 4),
+      journal(5),
+      inbox(5, ["s1", "draft"]),
+      snapshot(3, [["s1", "draft"]]),
+    ],
+    expect: { rows: [], mode: "direct", waiting: true },
+  },
+  {
     name: "predicts the switch back before any answer",
     events: [inbox(1, ["s1", "draft"]), journal(2, record("s2", "direct"))],
     expect: { rows: [], mode: "direct" },
