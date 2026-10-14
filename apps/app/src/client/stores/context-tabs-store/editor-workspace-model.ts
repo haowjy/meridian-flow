@@ -43,8 +43,10 @@ export type ContextTab =
       scheme: ProjectContextTreeScheme;
       path: string;
       name: string;
-      draftOnly?: boolean;
-      /** Per-Work draft-only entries of a hidden draft-created document; never persisted. */
+      /**
+       * Per-Work draft-only entries of a hidden draft-created document; never persisted.
+       * A tab with entries IS draft-only (`isDraftOnly`); dropping the last entry closes it.
+       */
       reviews?: ReviewEntries;
       editable: true;
       filetype: Filetype;
@@ -62,8 +64,6 @@ export type ContextTab =
       scheme: ProjectContextTreeScheme;
       path: string;
       name: string;
-      draftOnly?: boolean;
-      reviews?: ReviewEntries;
       editable: false;
       fileType: DocumentFileType;
       mimeType?: string;
@@ -76,7 +76,6 @@ export type ContextTab =
       documentId: string;
       name: string;
       resourceHandle: string;
-      draftOnly?: boolean;
     };
 
 export type ServerContextTab = Extract<ContextTab, { kind: "tracked" | "viewer" }>;
@@ -102,7 +101,6 @@ export type EditorTabCandidate =
       scheme: ProjectContextTreeScheme;
       workId?: string | null;
       rootThreadId?: string | null;
-      draftOnly?: boolean;
       reviews?: ReviewEntries;
     };
 
@@ -113,7 +111,7 @@ export type EditorTabCandidate =
  */
 export function isEditorTab(tab: EditorTabCandidate, workId: string | null): boolean {
   if (tab.kind === "new") return true;
-  if (tab.draftOnly && !(workId && tab.reviews?.[workId])) return false;
+  if (isDraftOnly(tab) && !(workId && reviewEntryOf(tab, workId))) return false;
   if (!isEditorScheme(tab.scheme)) return false;
   if (tab.rootThreadId) return true;
   return !isWorkScopedProjectContextScheme(tab.scheme) || tab.workId === workId;
@@ -127,20 +125,31 @@ export function isEditorContextTab(tab: ContextTab): boolean {
   return tab.kind === "new" || isEditorScheme(tab.scheme);
 }
 
+/** Only tracked tabs and strip candidates carry entries; every other tab has none. */
+export function reviewEntriesOf(tab: ContextTab | EditorTabCandidate): ReviewEntries {
+  return (tab as { reviews?: ReviewEntries }).reviews ?? {};
+}
+
+/** A hidden draft-created document: the tab carries at least one Work's entry. */
+export function isDraftOnly(tab: ContextTab | EditorTabCandidate): boolean {
+  return Object.keys(reviewEntriesOf(tab)).length > 0;
+}
+
 /** The entry Work `workId` has on this tab, if its draft creates the document. */
 export function reviewEntryOf(
   tab: ContextTab | EditorTabCandidate,
   workId: string,
 ): ReviewEntry | undefined {
-  return "reviews" in tab && tab.draftOnly ? tab.reviews?.[workId] : undefined;
+  return reviewEntriesOf(tab)[workId];
 }
 
-/** The single Work address of a tab only one Work reviews (a dock occupant); undefined when ambiguous. */
-export function soleReview(tab: ContextTab): { workId: string; itemKey: string } | undefined {
-  if (tab.kind === "new" || !tab.draftOnly) return undefined;
-  const entries = Object.entries(tab.reviews ?? {});
-  const [only] = entries;
-  return entries.length === 1 && only ? { workId: only[0], itemKey: only[1].itemKey } : undefined;
+/**
+ * The tab after Work `workId` loses its entry: the one place that decides what a
+ * Discard or a writer's close leaves behind. null means no Work presents it any more.
+ */
+export function withoutReviewEntry(tab: ContextTab, workId: string): ContextTab | null {
+  const { [workId]: _dropped, ...reviews } = reviewEntriesOf(tab);
+  return tab.kind === "tracked" && Object.keys(reviews).length > 0 ? { ...tab, reviews } : null;
 }
 
 /** A review item's semantic address (the item key names its document), separate from its mounted instance fence. */
@@ -163,12 +172,12 @@ export function matchesTabInstance(tab: ContextTab, addressed: ContextTab): bool
     tab.tabInstanceId === addressed.tabInstanceId &&
     tab.documentId === addressed.documentId &&
     (addressed.kind === "new" ||
-      !addressed.draftOnly ||
+      !isDraftOnly(addressed) ||
       (tab.kind !== "new" &&
-        Object.entries(addressed.reviews ?? {}).some(
+        Object.entries(reviewEntriesOf(addressed)).some(
           ([workId, entry]) =>
-            tab.reviews?.[workId]?.itemKey === entry.itemKey &&
-            tab.reviews[workId]?.tabInstanceToken === entry.tabInstanceToken,
+            reviewEntryOf(tab, workId)?.itemKey === entry.itemKey &&
+            reviewEntryOf(tab, workId)?.tabInstanceToken === entry.tabInstanceToken,
         )))
   );
 }

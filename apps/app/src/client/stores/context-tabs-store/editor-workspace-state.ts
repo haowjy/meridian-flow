@@ -9,9 +9,13 @@ import { isRecord } from "@/client/storage/browser-record";
 import { sameServerContextTabLocator } from "./context-tab-locator";
 import {
   type ContextTab,
+  isDraftOnly,
   isEditorContextTab,
   matchesTabInstance,
   type ProjectTabsSlice,
+  reviewEntriesOf,
+  reviewEntryOf,
+  withoutReviewEntry,
 } from "./editor-workspace-model";
 
 export const EDITOR_WORKSPACE_STORAGE_KEY = "meridian:editor-workspace:v1";
@@ -85,8 +89,7 @@ export function parseContextTab(value: unknown): ContextTab | null {
   if (
     typeof tab.tabInstanceId !== "string" ||
     typeof tab.documentId !== "string" ||
-    typeof tab.name !== "string" ||
-    (tab.draftOnly !== undefined && typeof tab.draftOnly !== "boolean")
+    typeof tab.name !== "string"
   )
     return null;
   if (tab.kind === "new") {
@@ -156,7 +159,7 @@ function parseProjectWorkspace(value: unknown): ProjectTabsSlice | null {
     tabs.filter((tab) => tab && !isEditorContextTab(tab)).map((tab) => tab?.documentId),
   );
   const parsedTabs = (tabs as ContextTab[]).filter((tab) => !resourceIds.has(tab.documentId));
-  if (parsedTabs.some((tab) => tab.draftOnly)) return null;
+  if (parsedTabs.some(isDraftOnly)) return null;
   const instanceIds = parsedTabs.map((tab) => tab.tabInstanceId as string);
   if (new Set(instanceIds).size !== instanceIds.length) return null;
   const selections: Record<string, string> = {};
@@ -192,9 +195,9 @@ export function parseEditorWorkspace(
 
 export function durableContextTab(tab: ContextTab): ContextTab {
   const tabInstanceId = tab.tabInstanceId ?? crypto.randomUUID();
-  if (tab.kind === "new") return { ...tab, tabInstanceId };
-  const { draftOnly: _, reviews: _reviews, ...persisted } = tab;
-  return { ...persisted, tabInstanceId } as ContextTab;
+  if (tab.kind !== "tracked") return { ...tab, tabInstanceId };
+  const { reviews: _reviews, ...persisted } = tab;
+  return { ...persisted, tabInstanceId };
 }
 
 function sameTabIdentity(left: ContextTab, right: ContextTab): boolean {
@@ -311,7 +314,7 @@ export function reduceEditorWorkspace(
       const live = index >= 0 ? tabs[index] : undefined;
       if (!live || consumedMembers.has(live.tabInstanceId as string)) continue;
       consumedMembers.add(live.tabInstanceId as string);
-      if (!change.next || change.next.draftOnly) {
+      if (!change.next || isDraftOnly(change.next)) {
         tabs.splice(index, 1);
         selections = Object.fromEntries(
           Object.entries(selections).filter(([, documentId]) => documentId !== live.documentId),
@@ -379,7 +382,7 @@ export function reduceEditorWorkspace(
     const index = workspace.tabs.findIndex((tab) => matchesTabInstance(tab, command.tab));
     const prior = workspace.tabs[index];
     if (!prior) return outcome("stale", current);
-    if (prior.kind === "new" || !prior.draftOnly) return outcome("already-committed", current);
+    if (prior.kind === "new" || !isDraftOnly(prior)) return outcome("already-committed", current);
     return replaceProject(current, command.projectId, {
       ...workspace,
       tabs: workspace.tabs.map((tab, candidateIndex) =>
@@ -392,20 +395,18 @@ export function reduceEditorWorkspace(
     const tab = workspace?.tabs.find(
       (candidate) => candidate.tabInstanceId === command.tabInstanceId,
     );
-    if (!workspace || !tab || tab.kind === "new" || !tab.reviews?.[command.workId])
-      return outcome("stale", current);
-    const { [command.workId]: _dropped, ...reviews } = tab.reviews;
-    const closes = Object.keys(reviews).length === 0;
+    if (!workspace || !tab || !reviewEntryOf(tab, command.workId)) return outcome("stale", current);
+    const after = withoutReviewEntry(tab, command.workId);
     const selections = Object.fromEntries(
       Object.entries(workspace.selectedTabIdByWork).filter(
         ([workId, documentId]) =>
-          documentId !== tab.documentId || (!closes && workId !== command.workId),
+          documentId !== tab.documentId || (after !== null && workId !== command.workId),
       ),
     );
     return replaceProject(current, command.projectId, {
-      tabs: closes
-        ? workspace.tabs.filter((candidate) => candidate !== tab)
-        : workspace.tabs.map((candidate) => (candidate === tab ? { ...tab, reviews } : candidate)),
+      tabs: workspace.tabs.flatMap((candidate) =>
+        candidate !== tab ? [candidate] : after ? [after] : [],
+      ),
       selectedTabIdByWork: selections,
     });
   }
@@ -459,7 +460,7 @@ export function reduceEditorWorkspace(
   if (command.kind === "open") {
     const workspace = current.projects[command.projectId] ?? { tabs: [], selectedTabIdByWork: {} };
     // A draft-only tab keeps its review metadata while it is the document's one tab.
-    const incoming = command.tab.draftOnly
+    const incoming = isDraftOnly(command.tab)
       ? ({
           ...command.tab,
           tabInstanceId: command.tab.tabInstanceId ?? crypto.randomUUID(),
@@ -473,7 +474,7 @@ export function reduceEditorWorkspace(
     const sameDocument = sameDocumentIndex >= 0 ? workspace.tabs[sameDocumentIndex] : undefined;
     // A review launch never turns an ordinary tab back into a draft-only one.
     const tab =
-      incoming.draftOnly && sameDocument && (sameDocument.kind === "new" || !sameDocument.draftOnly)
+      isDraftOnly(incoming) && sameDocument && !isDraftOnly(sameDocument)
         ? durableContextTab(incoming)
         : incoming;
     const occupiedLocatorIndex =
@@ -482,7 +483,7 @@ export function reduceEditorWorkspace(
         : workspace.tabs.findIndex(
             (candidate) =>
               candidate.kind !== "new" &&
-              !candidate.draftOnly &&
+              !isDraftOnly(candidate) &&
               candidate.documentId !== tab.documentId &&
               sameServerContextTabLocator(candidate, tab),
           );
@@ -499,12 +500,11 @@ export function reduceEditorWorkspace(
           ...tab,
           tabInstanceId: existing.tabInstanceId,
           // Each Work keeps the entry it first opened; another Work's draft adds its own.
-          ...(existing.kind !== "new" && existing.draftOnly
+          ...(existing.kind !== "new" && isDraftOnly(existing)
             ? {
-                draftOnly: true,
                 reviews: {
-                  ...(tab.kind !== "new" && tab.draftOnly ? tab.reviews : undefined),
-                  ...existing.reviews,
+                  ...reviewEntriesOf(tab),
+                  ...reviewEntriesOf(existing),
                 },
               }
             : {}),

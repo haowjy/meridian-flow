@@ -18,7 +18,6 @@ import {
   useObservedResourceProjection,
   useOptionalAccountResourceReplica,
 } from "@/features/project/context/account-feature-context";
-import { useDockDocumentStore } from "@/features/project/dock/dock-document-store";
 import { useOptionalOpenEditorReview } from "@/features/project/dock/editor-review-handoff";
 import { usePresentedDocument } from "@/features/project/presented-document";
 import {
@@ -27,7 +26,14 @@ import {
   useDraftOnlyLifecycle,
 } from "./draft-only-lifecycle";
 
-export function DraftOnlySettlement({ projectId }: { projectId: string }) {
+export function DraftOnlySettlement({
+  projectId,
+  editorWorkId,
+}: {
+  projectId: string;
+  /** The Work the Editor presents documents in: the entry its tab restores when no review is addressed. */
+  editorWorkId: string | null;
+}) {
   const lifecycle = useDraftOnlyLifecycle(projectId);
   // Primitive snapshot: a fresh presentation array is not an external-store change.
   useSyncExternalStore(
@@ -42,6 +48,7 @@ export function DraftOnlySettlement({ projectId }: { projectId: string }) {
       key={workId}
       projectId={projectId}
       workId={workId}
+      editorWorkId={editorWorkId}
       lifecycle={lifecycle}
       membership={JSON.stringify(presentations.filter((draft) => draft.workId === workId))}
     />
@@ -51,11 +58,13 @@ export function DraftOnlySettlement({ projectId }: { projectId: string }) {
 function WorkSettlement({
   projectId,
   workId,
+  editorWorkId,
   lifecycle,
   membership,
 }: {
   projectId: string;
   workId: string;
+  editorWorkId: string | null;
   lifecycle: DraftOnlyContainer;
   membership: string;
 }) {
@@ -131,29 +140,45 @@ function WorkSettlement({
   const openReview = useOptionalOpenEditorReview();
   // Draft-only means "hidden live". The replica showing the document (by its
   // current id or an alias: a join, New file, a link's Create) makes it live at
-  // once, so its tab becomes the ordinary tab, and a tab the writer was looking
-  // at opens the draft's review over it, the view the chip's Draft choice gives.
+  // once for every Work. A tab the writer was looking at keeps the review it
+  // showed, opened over the live document: the view the chip's Draft choice gives.
   useEffect(() => {
     if (drafts.status !== "ready") return;
     const identities = resourceIdentityIndex(projection.records);
+    const promoting = new Set<string>();
     for (const draft of lifecycle.presentations(projectId)) {
       const row = drafts.drafts?.find((candidate) => candidate.itemKey === draft.itemKey);
       if (draft.workId !== workId || !row || !identities.byDocumentId(draft.documentId)) continue;
-      const current = presentedRef.current;
-      const shown =
-        current?.container === draft.container &&
-        current.documentId === draft.documentId &&
-        current.draftOnly;
+      if (promoting.has(draft.documentId)) continue;
+      promoting.add(draft.documentId);
+      // The review the Editor shows, captured before promotion clears the entries: its
+      // address, else (a route that has dropped `item`) its own Work's entry on the tab.
+      const shown = presentedRef.current;
+      const own = lifecycle
+        .presentations(projectId)
+        .find(
+          (entry) =>
+            entry.container === "editor" &&
+            entry.documentId === draft.documentId &&
+            entry.workId === editorWorkId,
+        );
+      const review =
+        shown?.container === "editor" && shown.documentId === draft.documentId && shown.draftOnly
+          ? (shown.review ?? (own ? { workId: own.workId, itemKey: own.itemKey } : null))
+          : null;
       void lifecycle.promote(draft).then((promoted) => {
-        if (!promoted || !shown) return;
-        if (draft.container === "dock") {
-          useDockDocumentStore.getState().setDocumentReview({ workId, itemKey: draft.itemKey });
-          return;
-        }
+        const now = presentedRef.current;
+        if (!promoted || !review) return;
+        // Promotion itself clears the address (the route drops `item`); only a different one means the writer moved.
+        const moved =
+          now?.review !== null &&
+          now?.review !== undefined &&
+          (now.review.workId !== review.workId || now.review.itemKey !== review.itemKey);
+        if (now?.container !== "editor" || now.documentId !== draft.documentId || moved) return;
         void openReview?.({
-          workId,
+          workId: review.workId,
           documentId: draft.documentId,
-          itemKey: draft.itemKey,
+          itemKey: review.itemKey,
           contextLocation: draft.contextLocation,
           isNew: false,
         }).catch(() => undefined);
@@ -167,6 +192,7 @@ function WorkSettlement({
     projection.records,
     projectId,
     workId,
+    editorWorkId,
     openReview,
   ]);
 
