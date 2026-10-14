@@ -1,6 +1,6 @@
 /** Browser-tab-local, account-stamped document slot for the project dock. */
 import { create } from "zustand";
-import type { ContextTab } from "@/client/stores";
+import { type ContextTab, soleReview } from "@/client/stores";
 import type { ReviewAddress, ReviewAddressAdmission } from "../presented-document";
 import type { ScreenKey } from "../shell/screens";
 import {
@@ -214,9 +214,6 @@ export function dockDocument(
   tab: ContextTab,
   review: ReviewAddress | null,
 ): DockDocument {
-  const intrinsic =
-    tab.kind === "tracked" && tab.draftOnly && tab.reviewWorkId && tab.reviewItemKey
-      ? { workId: tab.reviewWorkId, itemKey: tab.reviewItemKey }
-      : review;
+  const intrinsic = (tab.kind === "tracked" ? soleReview(tab) : undefined) ?? review;
   return { projectId, screen, screenWorkId: null, tab, review: intrinsic };
 }
