@@ -66,6 +66,11 @@
     min-width: 44px;
     min-height: 44px;
   }
+  /* The filename yields its 44px width so the first row fits the minimum dock;
+     it stays a full-height target and keeps its accessible name. */
+  [data-document-identity-row] [data-identity-path] button {
+    min-width: 0;
+  }
   /* Last resort, after every label has collapsed: the change list and stepper
      give their place to Discard draft and Apply draft, which must stay reachable. */
   [data-document-identity-row][data-collapse="4"] [data-review-secondary] {
