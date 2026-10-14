@@ -522,10 +522,6 @@ msgstr ""
 msgid "AI assistant"
 msgstr ""
 
-#: src/features/project/dock/DockChangesView.tsx
-#~ msgid "AI edits wait here for your review."
-#~ msgstr ""
-
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
 msgid "AI write mode"
 msgstr ""
@@ -4586,6 +4582,14 @@ msgstr ""
 msgid "Turns {0}"
 msgstr "轮次 {0}"
 
+#: src/features/chat/tool-renderers.tsx
+msgid "Two files in the draft share the path {name}. Review the draft to keep one."
+msgstr "草稿中有两个文件使用同一路径 {name}。请审阅草稿，保留其中一个。"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Two files in the draft share this path. Review the draft to keep one."
+msgstr "草稿中有两个文件使用同一路径。请审阅草稿，保留其中一个。"
+
 #: src/features/chat/TextBlock.tsx
 msgid "Type your answer…"
 msgstr ""
@@ -4802,10 +4806,6 @@ msgstr "你在想什么？"
 #: src/components/app/composer/placeholders.ts
 msgid "Where were we?"
 msgstr "我们说到哪儿了？"
-
-#: src/features/project/dock/ReviewOperationCard.tsx
-#~ msgid "Why this is marked merged"
-#~ msgstr ""
 
 #: src/features/chat/thread-controls/QueuedControlRows.tsx
 msgid "Withdraw"

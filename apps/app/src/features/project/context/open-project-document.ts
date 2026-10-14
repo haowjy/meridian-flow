@@ -50,7 +50,6 @@ import {
   projectCatalogView,
 } from "@/client/query/useContextCatalog";
 import { isEditorScheme, type ServerContextTab, useContextTabsActions } from "@/client/stores";
-import { armEditorFocus, retireEditorFocus } from "@/features/editor/focus-on-open";
 import { type OpenContextRoute, useOpenContextRoute } from "../routing/ProjectNavigationContext";
 import { useOptionalAccountResourceReplica } from "./account-feature-context";
 import { contextOwnerOf, contextTabFromFile, serverTabFromFile } from "./context-tab-from-file";
@@ -205,7 +204,7 @@ export type OpenProjectDocumentRequest = {
    * documents beside the writer's place (the Chat screen's dock) takes it, so
    * the open finishes without leaving. `cancelled` means a newer intent won.
    */
-  beside?: (tab: ServerContextTab) => "opened" | "cancelled";
+  beside?: (tab: ServerContextTab, focus?: true) => "opened" | "cancelled";
   /** A document the writer just made: its editor takes the caret once live. */
   focus?: true;
   /** Abandons the open when the caller that asked for it is gone. */
@@ -437,7 +436,7 @@ export class ProjectDocumentNavigationAdapter {
     /** A chat's Scratch is held by its lineage; the route keeps the Editor's own Work. */
     rootThreadId?: string;
     disposition: "current" | "background";
-    beside?: (tab: ServerContextTab) => "opened" | "cancelled";
+    beside?: (tab: ServerContextTab, focus?: true) => "opened" | "cancelled";
     focus?: true;
     isCurrent: () => boolean;
     canCommit: () => boolean;
@@ -467,9 +466,7 @@ export class ProjectDocumentNavigationAdapter {
         besideTab = null;
       }
       if (besideTab) {
-        if (input.focus) armEditorFocus(input.file.documentId);
-        const placed = input.beside(besideTab);
-        if (placed !== "opened") retireEditorFocus();
+        const placed = input.beside(besideTab, input.focus);
         this.current = null;
         return placed === "opened" ? "applied" : "cancelled";
       }

@@ -114,6 +114,9 @@ export type RecoveryScope = {
   memberBranchIds: readonly string[];
 };
 
+/** Where a batch's failure was recorded; finite, so the event can carry it. */
+export type SettlementFailureStage = "claim" | "execute" | "handoff";
+
 export type PendingSettlementStore = {
   joinAdmission(input: SettlementAdmission): Promise<void>;
   /**
@@ -134,10 +137,16 @@ export type PendingSettlementStore = {
     token: string;
   }): Promise<PendingSettlementBatch | null>;
   renewClaim(input: { batchId: string; claim: SettlementClaim }): Promise<SettlementClaim | null>;
+  /**
+   * Releases the claim with backoff and emits the one visible failure event
+   * (warn, then error once the batch is stuck). `error` is the cause, or a
+   * reason string when there is none.
+   */
   recordFailure(input: {
     batchId: string;
     claim: SettlementClaim;
-    error: string;
+    stage: SettlementFailureStage;
+    error: unknown;
   }): Promise<boolean>;
   block(input: {
     batchId: string;
