@@ -8,6 +8,7 @@ import { HttpResponseError } from "@/client/api/http-client";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { getContextTabs, useContextTabsStore } from "@/client/stores";
+import * as account from "@/features/project/context/account-feature-context";
 import { ContextRemovalCoordinator } from "@/features/project/context/context-removal-coordinator";
 import { contextTabFromDraftGroup } from "@/features/project/context/context-tab-from-draft";
 import { contextTabFromFile } from "@/features/project/context/context-tab-from-file";
@@ -201,17 +202,38 @@ it("draft-only Discard keeps both containers until its own terminal success; ref
   });
 });
 
-it("a draft-only tab becomes the live document's tab once its draft stops being new (a join)", async () => {
+it("a draft-only tab becomes the live document's tab the moment the replica shows it (a join)", async () => {
+  type Snapshot = { records: unknown[]; folders: unknown[]; catalogs: unknown[] };
+  let emit: (snapshot: Snapshot) => void = () => {};
+  const replica = {
+    observeProjection: (_project: string, next: (snapshot: Snapshot) => void) => {
+      emit = next;
+      next({ records: [], folders: [], catalogs: [] });
+      return () => {};
+    },
+  };
+  vi.spyOn(account, "useOptionalAccountResourceReplica").mockReturnValue(replica as never);
   await fixture.render(async (p) => {
     await open(p);
     expect(tabs().some((tab) => tab.kind !== "new" && tab.draftOnly)).toBe(true);
-    // The document went live under the draft: the same item, no longer new.
-    fixture.network.listWorkDrafts.mockResolvedValue({ items: [listed, listedB] });
-    await act(async () => {
-      await p().queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.workDrafts("project-a", "work-a"),
-      });
-    });
+    // New file joined the hidden document: visible live, the draft's row still new (no refetch yet).
+    await act(async () =>
+      emit({
+        records: [
+          {
+            resource: {
+              handle: "resource-a",
+              identity: { documentId: "document-live" },
+              aliases: { "document-a": {} },
+              lifecycle: { kind: "live" },
+            },
+            intents: [{ projectId: "project-a", state: "pending" }],
+          },
+        ],
+        folders: [],
+        catalogs: [],
+      }),
+    );
     await settleReact(() =>
       expect(tabs().some((tab) => tab.kind !== "new" && tab.draftOnly)).toBe(false),
     );

@@ -23,7 +23,7 @@ It is the single local contract reference; this file maps ownership.
 | Review composition, construction receipt and paint readiness | `features/editor/EditorView.tsx` |
 | Common editor construction | `features/editor/SessionEditor.tsx` |
 | Active editor projection and live presence lease | `useActiveReviewBinding.ts` |
-| Remote draft-only settlement, and a draft-only tab whose document went live (join) | `DraftOnlySettlement.tsx` |
+| Remote draft-only settlement, and a draft-only tab promoted the moment the replica shows its document live (a join; never a drafts refetch) | `DraftOnlySettlement.tsx` |
 | Cross-container promotion/removal | `draft-only-lifecycle.ts` (Editor route repair delegates to the context removal coordinator) |
 | Catalog-labelled files and stable order | `client/query/work-draft-files.ts`, exposed by `useWorkDrafts.ts` |
 | Domain change/action index and attribution | `review-changes.ts`, `change-attribution.ts` |
