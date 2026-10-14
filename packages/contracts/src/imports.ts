@@ -84,9 +84,6 @@ export interface ImportFilesResult {
 export interface ImportSkipsInput {
   entries: { entryId: number; reason: "unreadable" | "not_found" }[];
 }
-export interface ImportStopInput {
-  keep: "uploaded" | "nothing";
-}
 /** Stable refusal codes, with bounded numeric parameters carried separately. */
 export type ImportRefusalCode =
   | "import_not_found"
@@ -97,7 +94,6 @@ export type ImportRefusalCode =
   | "import_busy"
   | "import_exists"
   | "import_organizing"
-  | "nothing_uploaded"
   | "too_many_open_imports"
   | "selection_mismatch"
   | "manifest_invalid"
