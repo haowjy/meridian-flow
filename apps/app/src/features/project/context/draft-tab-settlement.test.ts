@@ -50,7 +50,7 @@ describe("draft tab settlement", () => {
     useContextTabsStore.getState().openTab("project-a", draftTab());
   });
 
-  it("promotes only the exact tab it was given and leaves a replacement overlay alone", async () => {
+  it("promotes only the exact tab instance it was given and leaves a reopened draft-only tab alone", async () => {
     const { coordinator } = rig();
     const applied = getContextTabs("project-a").tabs[0];
     if (applied?.kind !== "tracked") throw new Error("Expected tracked draft tab");
