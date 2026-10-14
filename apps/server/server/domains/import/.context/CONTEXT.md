@@ -18,7 +18,9 @@ own uncreated allocations. `POST .../resume` (no body) runs a stored plan's
 remaining chunks, then the automatic finish, and answers the status in any
 state; Continue uses it. A re-POST of the manifest under the same import id is
 the same resume when its fingerprint matches (Try again after a lost answer)
-and `selection_mismatch` when it does not. The first POST plans, finishes an
+and `selection_mismatch` when it does not. The fingerprint hashes the whole
+validated command (destination, root and entry ids, every field), not the
+selection's content. The first POST plans, finishes an
 import with nothing to send, and answers the status the same way.
 
 Landing claims use an attempt id and two-minute lease. Conversion and link

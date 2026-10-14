@@ -1,4 +1,4 @@
-/** Strict selection validation and content-based resume identity. */
+/** Strict selection validation and the exact-command identity POST replay checks. */
 import { createHash } from "node:crypto";
 import {
   IMPORT_ADMISSION,
@@ -214,34 +214,23 @@ function plannedNodeCount(manifest: ImportManifest) {
   }
   return folders.size + manifest.entries.length + (manifest.unreadable?.length ?? 0);
 }
+/**
+ * Identity of the exact create command: the validated manifest with object keys sorted, so
+ * the same POST replays and any other command under that import id (a different destination,
+ * root or entry id, file or order) is a mismatch.
+ */
 export function manifestFingerprint(manifest: ImportManifest): string {
-  const roots = manifest.roots
-    .map((root) =>
-      JSON.stringify([
-        root.kind,
-        root.name,
-        root.appJson ?? null,
-        root.meridianExport ?? null,
-        manifest.entries
-          .filter((entry) => entry.rootId === root.rootId)
-          .map((entry) =>
-            JSON.stringify([entry.path, entry.size, entry.sha256, entry.frontmatter ?? null]),
+  const canonical = (value: unknown): unknown =>
+    Array.isArray(value)
+      ? value.map(canonical)
+      : value && typeof value === "object"
+        ? Object.fromEntries(
+            Object.entries(value)
+              .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+              .map(([key, item]) => [key, canonical(item)]),
           )
-          .sort(),
-        manifest.folders
-          .filter((folder) => folder.rootId === root.rootId)
-          .map((folder) => folder.path)
-          .sort(),
-        ...((manifest.unreadable?.length ?? 0)
-          ? [
-              (manifest.unreadable ?? [])
-                .filter((entry) => entry.rootId === root.rootId)
-                .map((entry) => JSON.stringify([entry.path, entry.reason ?? "unreadable"]))
-                .sort(),
-            ]
-          : []),
-      ]),
-    )
-    .sort();
-  return createHash("sha256").update(JSON.stringify(roots)).digest("hex");
+        : value;
+  return createHash("sha256")
+    .update(JSON.stringify(canonical(manifest)))
+    .digest("hex");
 }
