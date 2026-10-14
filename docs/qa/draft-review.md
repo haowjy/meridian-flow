@@ -254,6 +254,12 @@ for ~200ms).
    route does not match, or a phone host rejecting the route before the
    address admitted it).
 
+## Probe E2 — one draft-only tab shared by two Works
+
+1. Have drafts for the same new document in Works Alpha and Beta. Open the review in both Works, then close
+   the tab (or Discard) in Alpha. PASS: Beta still has its review tab; closing or discarding in Beta then
+   removes the tab.
+
 ## Probe F — copied No Work review address, remote disposition, history writes
 
 1. Leave a pending new-document draft in No Work. Copy its review address
@@ -550,7 +556,7 @@ the review’s Work/draft address. Only the presenting host renders review.
 
 On Chat close the retained Editor tab, reload, and verify a dock-only review
 returns without a live-body or error frame. Apply and Discard remotely from a
-second tab, each twice in fresh Works; the dock promotes live or returns to Recent,
+second tab, each twice in fresh Works; the dock settles to the live document or returns to Recent,
 and reload preserves that result. Check no project boundary or maximum-depth
 console error occurs when an empty active preview/reset arrives before the
 settlement catalog. Hold that catalog read to widen the ordering, then release
@@ -561,7 +567,7 @@ the same review in an Editor tab, carry it to Chat, close the dock document (X)
 or use Close review on a new-document draft / Live version on a manuscript,
 then return immediately to Editor. Its tab, `draft` URL and marks survive;
 reload on Editor restores that review. Reload on Chat after closing the dock
-instead restores the native occupant (draft-only Editor overlays never persist).
+instead restores the native occupant (draft-only review entries never persist; the URL's `item=` rebuilds them).
 Capture screenshots with
 `page.screenshot()`, fresh API readback and console errors.
 
@@ -992,8 +998,8 @@ then the phone 390x844 with touch emulation.
    line, the composer strip, or the Work page's Changes to review), then New file `Chapter 2` from the
    sidebar. Repeat with that tab open but another tab selected, and reload afterwards. PASS: no "Couldn't
    open this draft." card; the open tab becomes the document's ordinary tab with the draft's review over it
-   (the view the chip's Draft choice gives; an unselected tab simply becomes ordinary). The card still shows
-   for a hand-typed address whose draft is gone. Wrap `fetch` in an init script and log the bodies of
+   (the view the chip's Draft choice gives; an unselected tab simply becomes ordinary). A hand-typed address whose draft is gone shows
+   "This destination is unavailable.". Wrap `fetch` in an init script and log the bodies of
    `working-set`, `context/availability` and `recent-documents`: none answers 400 or 404, and neither
    `meridian:working-set` nor `meridian:account-recents` keeps the device's minted id.
 
