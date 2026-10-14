@@ -1,5 +1,5 @@
 /** Postgres import locks, durable receipts, and retained summary counts. */
-import type { ImportCounts } from "@meridian/contracts";
+import { IMPORT_NEEDS_LOOK_REASONS, type ImportCounts } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { importEntries, imports, projects } from "@meridian/database/schema";
 import { and, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
@@ -199,7 +199,7 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
           organized: sql<number>`count(*) FILTER (WHERE ${importEntries.state} = 'organized')::int`,
           skipped: sql<number>`count(*) FILTER (WHERE ${importEntries.state} = 'skipped')::int`,
           failed: sql<number>`count(*) FILTER (WHERE ${importEntries.state} = 'failed')::int`,
-          needsLook: sql<number>`count(*) FILTER (WHERE ${importEntries.reason} IS NOT NULL AND ${importEntries.reason} NOT IN ('obsidian_canvas','trash','hidden','export_works'))::int`,
+          needsLook: sql<number>`count(*) FILTER (WHERE ${inArray(importEntries.reason, IMPORT_NEEDS_LOOK_REASONS)})::int`,
         })
         .from(importEntries)
         .where(and(eq(importEntries.importId, id), ne(importEntries.kind, "folder")));
@@ -248,16 +248,16 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
         .limit(1);
       return Boolean(row);
     },
-    async maintenanceCandidates(limit) {
+    async maintenanceCandidates(limit, cutoffs) {
       return (await tx()
         .select()
         .from(imports)
         .where(sql`
         (${imports.projectId} IS NULL AND (${imports.state} <> 'cancelled' OR EXISTS (SELECT 1 FROM import_entries e WHERE e.import_id = ${imports.id})))
-        OR (${imports.state} IN ('uploading','failed') AND ${imports.lastActivityAt} < now() - interval '7 days')
-        OR (${imports.state} IN ('uploading','organizing','failed') AND ${imports.lastActivityAt} > now() - interval '1 day' AND (${imports.objectsSweptAt} IS NULL OR ${imports.objectsSweptAt} < now() - interval '2 hours'))
-        OR (${imports.state} IN ('finished','cancelled') AND (${imports.objectsSweptAt} IS NULL OR (${imports.finalSweepAt} IS NULL AND ${imports.finishedAt} < now() - interval '1 day') OR (${imports.objectsSweptAt} < ${imports.finishedAt} + interval '2 hours' AND ${imports.finishedAt} < now() - interval '2 hours')))
-        OR (${imports.acknowledgedAt} < now() - interval '30 days' AND EXISTS (SELECT 1 FROM import_entries e WHERE e.import_id = ${imports.id}))
+        OR (${imports.state} IN ('uploading','failed') AND ${imports.lastActivityAt} < ${cutoffs.expiryBefore.toISOString()}::timestamptz)
+        OR (${imports.state} IN ('uploading','organizing','failed') AND ${imports.lastActivityAt} > ${cutoffs.activeSince.toISOString()}::timestamptz AND (${imports.objectsSweptAt} IS NULL OR ${imports.objectsSweptAt} < ${cutoffs.resweepBefore.toISOString()}::timestamptz))
+        OR (${imports.state} IN ('finished','cancelled') AND (${imports.objectsSweptAt} IS NULL OR (${imports.finalSweepAt} IS NULL AND ${imports.finishedAt} <= ${cutoffs.finalSweepBefore.toISOString()}::timestamptz) OR (${imports.objectsSweptAt} < ${imports.finishedAt} + ${cutoffs.resweepDelayMs} * interval '1 millisecond' AND ${imports.finishedAt} < ${cutoffs.resweepBefore.toISOString()}::timestamptz)))
+        OR (${imports.acknowledgedAt} < ${cutoffs.retentionBefore.toISOString()}::timestamptz AND EXISTS (SELECT 1 FROM import_entries e WHERE e.import_id = ${imports.id}))
       `)
         .orderBy(imports.lastActivityAt)
         .limit(limit)) as ImportRecord[];

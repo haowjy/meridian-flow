@@ -8,6 +8,7 @@ import type {
   ImportSummary,
   ImportUnreadableReason,
 } from "@meridian/contracts";
+import type { ImportMaintenanceCutoffs } from "../domain/maintenance-policy.js";
 import type { ImportPlacement } from "../domain/placement.js";
 import type { FileReceipt } from "../domain/receipt.js";
 export type ImportRoot = ImportSelection["roots"][number] & { id: string | null; created: boolean };
@@ -90,6 +91,6 @@ export interface ImportRepository {
   listOpen(userId: string): Promise<ImportRecord[]>;
   countOpen(userId: string): Promise<number>;
   waiting(record: ImportRecord): Promise<boolean>;
-  maintenanceCandidates(limit: number): Promise<ImportRecord[]>;
+  maintenanceCandidates(limit: number, cutoffs: ImportMaintenanceCutoffs): Promise<ImportRecord[]>;
   deleteEntries(id: string): Promise<void>;
 }

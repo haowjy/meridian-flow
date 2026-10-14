@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Use one database-time policy for import maintenance and shared attention counts.
+
 - Keep verified file receipts separate from the picked selection and type organize placement.
 
 - Persist import receipts in bounded SQL batches and skip files set-wise.

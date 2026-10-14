@@ -1,7 +1,7 @@
 /** Prefix reclamation, abandoned-upload expiry, and entry retention. Header identities survive forever. */
 import type { ObjectStorePort } from "../../storage/index.js";
 import type { ImportRepository } from "../ports/import-repository.js";
-import { IMPORT_LIMITS } from "./manifest.js";
+import { IMPORT_MAINTENANCE, maintenanceCutoffs } from "./maintenance-policy.js";
 import { stagingKeyTime } from "./staging-key.js";
 export interface ImportSweepResult {
   swept: number;
@@ -12,15 +12,16 @@ export async function sweepImportObjects(
   objects: ObjectStorePort,
   input: { importId?: string } = {},
 ): Promise<ImportSweepResult> {
+  const now = await repository.now();
+  const cutoffs = maintenanceCutoffs(now);
   const candidates = input.importId
     ? [await repository.read(input.importId)].filter((row) => row !== null)
-    : await repository.maintenanceCandidates(IMPORT_LIMITS.sweepBatch);
+    : await repository.maintenanceCandidates(IMPORT_MAINTENANCE.batch, cutoffs);
   const result: ImportSweepResult = { swept: 0, failed: [] };
   for (const candidate of candidates) {
     const snapshot = await repository.transaction(async () => {
       const record = await repository.lock(candidate.id);
       if (!record) return null;
-      const now = await repository.now();
       if (record.projectId === null && (record.state !== "cancelled" || !record.acknowledgedAt)) {
         await repository.update(record.id, {
           state: "cancelled",
@@ -36,7 +37,7 @@ export async function sweepImportObjects(
 
       if (
         record.projectId !== null &&
-        now.getTime() - record.lastActivityAt.getTime() > IMPORT_LIMITS.expiryMs &&
+        record.lastActivityAt < cutoffs.expiryBefore &&
         (record.state === "uploading" || record.state === "failed")
       ) {
         await repository.update(record.id, {
@@ -53,11 +54,10 @@ export async function sweepImportObjects(
       return {
         record: (await repository.read(record.id))!,
         entries: await repository.entries(record.id),
-        now,
       };
     });
     if (!snapshot) continue;
-    const { record, entries, now } = snapshot;
+    const { record, entries } = snapshot;
     const terminal = record.state === "finished" || record.state === "cancelled";
     const protectedKeys = new Set(
       entries.flatMap((entry) => {
@@ -89,7 +89,7 @@ export async function sweepImportObjects(
       if (
         record.projectId !== null &&
         (protectedKeys.has(key) ||
-          (!terminal && now.getTime() - stagingKeyTime(key) <= IMPORT_LIMITS.orphanAgeMs))
+          (!terminal && stagingKeyTime(key) >= cutoffs.orphanBefore.getTime()))
       )
         continue;
       const deleted = await objects.delete(key);
@@ -103,19 +103,14 @@ export async function sweepImportObjects(
     await repository.transaction(async () => {
       const current = await repository.lock(record.id);
       if (!current || current.state !== record.state) return;
-      const final =
-        terminal &&
-        record.finishedAt &&
-        now.getTime() - record.finishedAt.getTime() >= 24 * 60 * 60 * 1000;
+      const final = terminal && record.finishedAt && record.finishedAt <= cutoffs.finalSweepBefore;
       await repository.update(record.id, {
         objectsSweptAt: now,
         ...(final ? { finalSweepAt: now } : {}),
       });
       if (
         record.projectId === null ||
-        (terminal &&
-          record.acknowledgedAt &&
-          now.getTime() - record.acknowledgedAt.getTime() > IMPORT_LIMITS.retentionMs)
+        (terminal && record.acknowledgedAt && record.acknowledgedAt < cutoffs.retentionBefore)
       )
         await repository.deleteEntries(record.id);
     });

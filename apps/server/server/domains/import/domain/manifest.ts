@@ -20,10 +20,6 @@ export const IMPORT_LIMITS = {
   receivesPerImport: 4,
   openPerUser: 3,
   receiptAgeMs: 60 * 60 * 1000,
-  orphanAgeMs: 2 * 60 * 60 * 1000,
-  expiryMs: 7 * 24 * 60 * 60 * 1000,
-  retentionMs: 30 * 24 * 60 * 60 * 1000,
-  sweepBatch: 500,
 } as const;
 /** A coded refusal; diagnostics stay server-side, the writer-facing app maps the code. */
 export class ImportError extends Error {
