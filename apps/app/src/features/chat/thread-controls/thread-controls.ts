@@ -47,6 +47,8 @@ export type QueuedControl = {
   status: QueuedControlStatus;
   /** A switch the server may hold and hasn't answered: Retry only, no local Withdraw. */
   awaitingServer?: boolean;
+  /** A switch the record says applies at the next run's start: its notice sits before that run's reply. */
+  awaitsRun?: boolean;
 };
 
 export type ControlAction =

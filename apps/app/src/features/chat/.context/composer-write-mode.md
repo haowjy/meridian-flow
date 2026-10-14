@@ -74,10 +74,11 @@ news), `run-state/run-state-view.ts` (records, intents, answers) and `run-state/
   in order with the messages around it.
 
 **The notice.** `thread-controls/WriteModeNotice.tsx` is a quiet, one-line writer-action notice with
-an icon for the mode (no compaction mark, rule or icon). It is the pending switch at the
-transcript tail and the applied switch turn. A pending switch reads "Switched to …" while no reply
+an icon for the mode (no compaction mark, rule or icon). It is the pending switch and the applied switch turn. A pending switch reads "Switched to …" while no reply
 holds the chat (it applies when the next run is admitted) and "Switch to … queued" while one does.
-Both carry **Stop**, not Withdraw, as do queued compactions; Stop cancels like a switch back, and
+A pending switch sits at the transcript tail, except when the record says it applies at the next
+run's start (`awaiting_run`) and a Retry's reply stand-in is showing: `viewTranscript`'s
+`controlSlot` puts it before that stand-in, where its turn lands. Both carry **Stop**, not Withdraw, as do queued compactions; Stop cancels like a switch back, and
 the Work default follows the writer's latest choice, Stop included. An applied switch has no row of its own:
 the `write_mode.switched` frame carries the switch turn's anchor (`prevTurnId`, `position`) and the
 shared reducer inserts the turn right after that turn. When the anchor is not in the transcript the
