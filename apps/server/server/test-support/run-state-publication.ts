@@ -40,8 +40,8 @@ async function within(ms: number, step: string, work: Promise<unknown> | undefin
       }),
     ]);
     if (outcome !== "done")
-      console.warn(
-        `[audited-db] ${step} ${outcome === "timeout" ? `did not finish in ${ms} ms` : `failed: ${String(outcome)}`}`,
+      process.stderr.write(
+        `[audited-db] ${step} ${outcome === "timeout" ? `did not finish in ${ms} ms` : `failed: ${String(outcome)}`}\n`,
       );
   } finally {
     clearTimeout(timer);
