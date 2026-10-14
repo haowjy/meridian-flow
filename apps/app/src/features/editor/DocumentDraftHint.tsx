@@ -8,6 +8,7 @@ import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ChevronDown } from "lucide-react";
 import { useDocumentDraftHints } from "@/client/query/useDocumentDraftHints";
+import type { ContextTab } from "@/client/stores";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,32 +16,27 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
+import { tabLocation } from "@/features/project/context/identity-location";
 import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
-import type { ContextUri } from "@/lib/context-uri";
 import { draftsOtherThanViews, hintReviewTarget } from "./draft-hint-review";
 
 export type DocumentDraftHintProps = {
   projectId: string;
-  documentId: string;
-  contextLocation: Pick<ContextUri, "scheme" | "path"> | null;
-  documentName?: string;
-  /** False for a document that is not on the server yet (a local reservation). */
-  enabled: boolean;
+  /** The open document's tab; a local reservation (`new`) has no drafts to find. */
+  tab: ContextTab;
 };
 
 const REVIEW_CLASS =
   "focus-ring inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 font-medium text-jade-text hover:bg-primary/10 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:px-2.5";
 
-export function DocumentDraftHint({
-  projectId,
-  documentId,
-  contextLocation,
-  documentName,
-  enabled,
-}: DocumentDraftHintProps) {
+export function DocumentDraftHint({ projectId, tab }: DocumentDraftHintProps) {
+  const { documentId } = tab;
+  const location = tabLocation(tab);
+  const contextLocation = location.path ? { scheme: location.scheme, path: location.path } : null;
+  const documentName = location.leaf;
   const { controller } = useDraftReview();
   const { openAiDraft } = useAiDraftLauncher();
-  const hints = useDocumentDraftHints(projectId, documentId, { enabled });
+  const hints = useDocumentDraftHints(projectId, documentId, { enabled: tab.kind !== "new" });
   const others = draftsOtherThanViews(hints, controller.workId);
   if (!contextLocation || others.length === 0) return null;
 

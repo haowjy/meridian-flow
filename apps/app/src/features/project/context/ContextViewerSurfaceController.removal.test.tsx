@@ -25,7 +25,7 @@ function ContextViewerSurfaceController(
 ) {
   const presentation = useDesktopEditorPresentation({
     projectId: props.projectId,
-    current: props,
+    current: props.editorWorkId ? { ...props, editorWorkId: props.editorWorkId } : null,
     requestedWorkId: props.editorWorkId,
     screen: "context",
     contextLive: props.active,
@@ -122,6 +122,7 @@ const shellProps = {
   onSelectContextPath: vi.fn(),
   onOpenContextTarget: vi.fn(),
   onShowEditorRecents: vi.fn(),
+  mask: {},
 };
 
 it("persists and admits the real New action without an empty working-set route", async () => {
