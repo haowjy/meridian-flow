@@ -16,6 +16,7 @@ is not a claim that it passed on the current commit.
 - [Journal checkpoint coverage](checkpoint-coverage.md): durable admission, compaction, generation replacement and opaque cuts.
 - [Draft review](draft-review.md): visual editor and review workflows.
 - [Catalog sidebar](catalog-sidebar.md): rename, move, delete, and loaded/fresh-profile convergence.
+- [Row selection and drag](row-drag.md): multi-select, dragging rows into folders and areas, refusals, Undo, Scratch and Work Files.
 - [Debugging](../debugging.md): CLI reference, logs, and model-request inspection.
 - [CI quality groups](../../tools/ci/README.md): partition coverage and required-status failure propagation.
 

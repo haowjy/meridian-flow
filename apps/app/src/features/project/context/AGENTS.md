@@ -59,6 +59,26 @@ Shared across both shells:
   at the current parent with the refusal message. Uploads omits generic Delete.
 - **Validation** (`context-entry-name.ts`): collision check, empty rejection,
   whitespace warning.
+- **Moving** (`move-entry.ts`): the one placement path. Move… and dragging
+  resolve a destination (a folder by ID, or an area root with its authority),
+  share the refusals (inside itself, already there, name taken) and place
+  through the replica. Don't place entries anywhere else.
+- **Selection and dragging** (`entry-drag/`): VS Code's selection model. The
+  list that renders the rows owns one selection (`useEntrySelection`, handed to
+  rows through `EntrySelectionProvider`) and gives it to its drop routes (the
+  Files tree has one per area), so a drop can reselect what moved. Until the writer Ctrl/Cmd- or Shift-clicks, the
+  selection is just the open row; Escape returns to it. Dragging carries the
+  selection; a drop on a folder, an area header or any row inside an open folder
+  moves within one system (the project areas are one; each owner's Scratch is
+  its own), reselects, and offers Undo (`MoveNotice`, on the surface that took
+  the drop). A row drags only when its surface grants Move; a selection that
+  spans systems or holds an unmovable row moves nowhere. Desktop shell only.
+- **Drop dispatch** (`tree-drop/`): shared with import (#798). A target is a
+  catalog root plus an optional folder; a file row hands its drop to its folder.
+  Routes decide (`files`, `entries`); the scope counts hovered elements per
+  target, so a folder row and the rows inside it are one target, and the
+  innermost target claims each event. `DropRegion` lights a target's whole
+  extent; `DragHint` says what the drop will do or why it can't.
 
 ## Rules
 
@@ -75,7 +95,9 @@ Shared across both shells:
   Active document reveal expands once, not on every catalog refresh.
 - Desktop tree: one scroll surface. The tree is a continuous flex-column; only
   the tree root scrolls.
-- Two triggers for entry actions (context menu + kebab), not three.
+- Two triggers for entry actions (context menu + kebab), not three. Dragging
+  is a pointer shortcut: every drop also has its menu path (Move…).
+- A refused drop is not an error: no red, no fill; the hint names the reason.
 - The empty Editor pane is a chooser (`RecentDocumentsLanding`): the project's
   recently-opened documents, including viewers. A row navigates. It never
   seeds a tab. The strip's leading control reaches it with tabs still open:
@@ -97,7 +119,9 @@ Shared across both shells:
   (phone Files destination)
 - **Actions**: `use-entry-interaction.tsx` (row interaction boundary),
   `ContextEntryActions.tsx` (menus, delete dialog, `EntryActionTarget`),
-  `EntryMovePicker.tsx` (row-anchored placement)
+  `EntryMovePicker.tsx` (row-anchored placement), `move-entry.ts` (shared placement)
+- **Drag**: `entry-drag/` (selection, drag session, move route, Undo notice),
+  `tree-drop/` (drop dispatch, regions, pointer hint)
 - **Inline forms**: `use-create-entry-form.ts`, `use-rename-entry-form.ts`,
   `EntryNameField.tsx`, `context-entry-name.ts` (validation); the core is
   `components/ui/use-inline-edit.ts`

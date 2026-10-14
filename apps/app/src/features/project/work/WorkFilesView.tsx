@@ -10,13 +10,23 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { isWorkArchived } from "@meridian/contracts/works";
 import { FilePlus } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { CatalogDirectory } from "@/client/query/context-catalog-projection";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import type { AddressableWork } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { DeleteConfirmationDialog, useDeleteConfirmation } from "../context/ContextEntryActions";
+import { MoveNotice } from "../context/entry-drag/move-notice";
+import { EntrySelectionProvider, useEntrySelection } from "../context/entry-drag/selection";
+import { useEntryMoveRoute } from "../context/entry-drag/use-entry-move-route";
+import { DropRegion } from "../context/tree-drop/DropRegion";
+import {
+  type TreeDropRoutes,
+  TreeDropScope,
+  type TreeDropTarget,
+  useTreeDropTarget,
+} from "../context/tree-drop/tree-drop";
 import { useTreeExpansion } from "../context/use-tree-expansion";
 import { RuledList, type RuledRow } from "../RuledList";
 import { useWorkNoteIntake } from "./use-work-note-intake";
@@ -118,38 +128,65 @@ export function WorkFilesView({
           file.parentId === scratchRoot ||
           expandedPaths.some((path) => file.path.startsWith(`${path}/`)),
       ) ?? [];
+  const catalog = scratch.catalog;
+  const owner = useMemo(() => ({ workId: work.id }), [work.id]);
+  const areas = useMemo(
+    () =>
+      catalog ? [{ scheme: "scratch" as const, owner, catalog, movable: files.editable }] : [],
+    [catalog, owner, files.editable],
+  );
+  const selection = useEntrySelection();
+  const onLanded = useCallback(
+    (target: TreeDropTarget) => {
+      const folderId = target.folder?.entryId;
+      if (folderId && !isExpanded(folderId)) toggleEntry(folderId);
+    },
+    [isExpanded, toggleEntry],
+  );
+  const moveRoute = useEntryMoveRoute({
+    projectId,
+    areas,
+    selection,
+    surface: "work-files",
+    onLanded,
+  });
+  const routes = useMemo<TreeDropRoutes>(() => ({ entries: moveRoute }), [moveRoute]);
   const matchesSearch = workFileSearch(search);
   const visible = [...scratchFolders, ...scratchFiles].filter((node) => matchesSearch(node.name));
 
   const scratchRows = inTreeOrder([
-    ...visible.map((node) => ({
-      key: node.entryId,
-      place: { path: node.path, folder: node.kind === "dir" },
-      node:
-        node.kind === "dir" ? (
-          <FolderRow
-            projectId={projectId}
-            workId={work.id}
-            siblings={catalogSiblings(scratch.catalog, node)}
-            capabilities={files.editable ? ["rename", "move", "delete"] : []}
-            onRequestDelete={scratchDelete.requestDelete}
-            folder={node}
-            open={isExpanded(node.entryId)}
-            onToggle={() => toggleEntry(node.entryId)}
-          />
-        ) : (
-          <ScratchFileRow
-            projectId={projectId}
-            workId={work.id}
-            file={node}
-            siblings={catalogSiblings(scratch.catalog, node)}
-            capabilities={files.editable ? ["rename", "move", "delete"] : []}
-            onRequestDelete={scratchDelete.requestDelete}
-            requestRename={files.renaming === node.path}
-            onRenameDone={() => files.setRenaming(null)}
-          />
-        ),
-    })),
+    ...(catalog
+      ? visible.map((node) => ({
+          key: node.entryId,
+          place: { path: node.path, folder: node.kind === "dir" },
+          node:
+            node.kind === "dir" ? (
+              <FolderRow
+                projectId={projectId}
+                workId={work.id}
+                siblings={catalogSiblings(scratch.catalog, node)}
+                capabilities={files.editable ? ["rename", "move", "delete"] : []}
+                onRequestDelete={scratchDelete.requestDelete}
+                folder={node}
+                catalog={catalog}
+                open={isExpanded(node.entryId)}
+                onToggle={() => toggleEntry(node.entryId)}
+              />
+            ) : (
+              <ScratchFileRow
+                projectId={projectId}
+                workId={work.id}
+                file={node}
+                catalog={catalog}
+                siblings={catalogSiblings(scratch.catalog, node)}
+                capabilities={files.editable ? ["rename", "move", "delete"] : []}
+                onRequestDelete={scratchDelete.requestDelete}
+                requestRename={files.renaming === node.path}
+                onRenameDone={() => files.setRenaming(null)}
+              />
+            ),
+        }))
+      : []),
     ...(intake.note
       ? [
           {
@@ -170,23 +207,30 @@ export function WorkFilesView({
   return (
     <div className="min-w-0 [--row-rule-inset:--spacing(2)]">
       <WorkChanges projectId={projectId} work={work} matchesSearch={matchesSearch} />
-      <WorkFileGroup label={t`Scratch`}>
-        {scratch.isError ? (
-          <InlineErrorRow message={t`Scratch couldn’t load`} onRetry={scratch.refetch} />
-        ) : !scratch.catalog ? (
-          <WorkFileGroupLoading />
-        ) : scratchRows.length ? (
-          <RuledList className="-mx-2" rows={scratchRows} />
-        ) : (
-          <WorkFileGroupNote>
-            {search ? (
-              <Trans>No scratch notes match “{search}”.</Trans>
-            ) : (
-              <Trans>No scratch notes yet.</Trans>
-            )}
-          </WorkFileGroupNote>
-        )}
-      </WorkFileGroup>
+      <TreeDropScope routes={routes}>
+        <EntrySelectionProvider selection={selection}>
+          <ScratchDropGroup catalogRootId={catalog?.root.entryId ?? null}>
+            <WorkFileGroup label={t`Scratch`}>
+              {scratch.isError ? (
+                <InlineErrorRow message={t`Scratch couldn’t load`} onRetry={scratch.refetch} />
+              ) : !scratch.catalog ? (
+                <WorkFileGroupLoading />
+              ) : scratchRows.length ? (
+                <RuledList className="-mx-2" rows={scratchRows} />
+              ) : (
+                <WorkFileGroupNote>
+                  {search ? (
+                    <Trans>No scratch notes match “{search}”.</Trans>
+                  ) : (
+                    <Trans>No scratch notes yet.</Trans>
+                  )}
+                </WorkFileGroupNote>
+              )}
+            </WorkFileGroup>
+          </ScratchDropGroup>
+        </EntrySelectionProvider>
+      </TreeDropScope>
+      <MoveNotice surface="work-files" className="sticky bottom-2 mt-2" />
       <DeleteConfirmationDialog
         target={scratchDelete.target}
         isPending={scratchDelete.isPending}
@@ -194,6 +238,26 @@ export function WorkFilesView({
         onCancel={scratchDelete.cancel}
         onConfirm={() => void scratchDelete.confirm()}
       />
+    </div>
+  );
+}
+
+/** The whole Scratch group is its top level: a drop on the heading or between rows files there. */
+function ScratchDropGroup({
+  catalogRootId,
+  children,
+}: {
+  catalogRootId: string | null;
+  children: React.ReactNode;
+}) {
+  const drop = useTreeDropTarget({
+    scheme: "scratch",
+    catalogRootId: catalogRootId ?? "scratch:loading",
+    folder: null,
+  });
+  return (
+    <div {...drop.dropProps}>
+      <DropRegion state={drop.dropState}>{children}</DropRegion>
     </div>
   );
 }

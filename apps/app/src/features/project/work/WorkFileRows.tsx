@@ -7,14 +7,23 @@ import type { ContextEntrySibling } from "../context/context-entry-name";
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Folder, FolderOpen } from "lucide-react";
-import type { CatalogDirectory, CatalogFile } from "@/client/query/context-catalog-projection";
+import { useMemo } from "react";
+import type {
+  CatalogContextView,
+  CatalogDirectory,
+  CatalogFile,
+} from "@/client/query/context-catalog-projection";
 import { cn } from "@/lib/utils";
 import { type DeleteTarget, EntryKebabButton } from "../context/ContextEntryActions";
 import { fileKindIcon } from "../context/context-file-icon";
+import { contextTreeDropTargetClassName } from "../context/context-row-geometry";
 import { serverTabFromFile } from "../context/context-tab-from-file";
 import { EntryNameField } from "../context/EntryNameField";
+import { selectableEntry } from "../context/entry-drag/entry";
+import { useEntryRow } from "../context/entry-drag/use-entry-row";
 import { LinkUpdateNote } from "../context/LinkUpdateNote";
 import { NamespaceFailureMark } from "../context/NamespaceFailureMark";
+import { type TreeDropTarget, useTreeDropTarget } from "../context/tree-drop/tree-drop";
 import {
   type EntryCapabilities,
   EntryInteractionShell,
@@ -36,7 +45,26 @@ type ScratchRowManagement = {
   siblings: readonly ContextEntrySibling[];
   capabilities: EntryCapabilities;
   onRequestDelete: (target: DeleteTarget) => void;
+  /** The Work's Scratch catalog: rows are dragged out of it and dropped into its folders. */
+  catalog: CatalogContextView;
 };
+
+type DropFolder = NonNullable<TreeDropTarget["folder"]>;
+
+/** The drop target a row hands to: its folder, or the Scratch top level. */
+function scratchDropTarget(catalog: CatalogContextView, folder: DropFolder | null): TreeDropTarget {
+  return { scheme: "scratch", catalogRootId: catalog.root.entryId, folder };
+}
+
+/** The folder a file sits in, as a drop target; null at the top level. */
+function parentFolder(catalog: CatalogContextView, file: CatalogFile): DropFolder | null {
+  if (file.parentId === catalog.root.entryId) return null;
+  const parentPath = file.path.slice(0, file.path.lastIndexOf("/"));
+  const dir = catalog.findPath(parentPath);
+  return dir?.kind === "dir"
+    ? { entryId: dir.entryId, path: dir.path, uri: dir.uri, name: dir.name }
+    : null;
+}
 
 export function FolderRow({
   folder,
@@ -54,6 +82,23 @@ export function FolderRow({
     owner: { workId: management.workId },
     scheme: "scratch",
   });
+  const { catalog, workId } = management;
+  const owner = useMemo(() => ({ workId }), [workId]);
+  const movable = interaction.actions.includes("move");
+  const entry = useMemo(
+    () => selectableEntry(folder, "scratch", owner, catalog.root, movable),
+    [folder, owner, catalog.root, movable],
+  );
+  const row = useEntryRow(entry, false);
+  const drop = useTreeDropTarget(
+    scratchDropTarget(catalog, {
+      entryId: folder.entryId,
+      path: folder.path,
+      uri: folder.uri,
+      name: folder.name,
+    }),
+    { onSpring: () => !open && onToggle() },
+  );
   if (interaction.renaming)
     return (
       <div className="flex min-h-10 items-center gap-3 px-2 py-1.5 text-sm font-medium text-foreground">
@@ -63,12 +108,20 @@ export function FolderRow({
     );
   return (
     <EntryInteractionShell interaction={interaction}>
-      <div className="group relative flex min-w-0 items-center">
+      <div
+        {...row.rowProps}
+        {...drop.dropProps}
+        className={cn(
+          "group relative flex min-w-0 items-center rounded-md",
+          row.selected && "bg-muted",
+          drop.dropState === "over" && contextTreeDropTargetClassName,
+        )}
+      >
         <button
           type="button"
           className={cn(workFileRowClass, interaction.actions.length > 0 && "pr-10")}
           aria-expanded={open}
-          onClick={onToggle}
+          onClick={row.activate(onToggle)}
         >
           <RowIcon icon={open ? FolderOpen : Folder} />
           <span className="min-w-0 flex-1">
@@ -110,6 +163,7 @@ export function ScratchFileRow({
   onRequestDelete,
   requestRename,
   onRenameDone,
+  catalog,
 }: ScratchRowManagement & {
   file: CatalogFile;
   requestRename?: boolean;
@@ -130,6 +184,14 @@ export function ScratchFileRow({
     requestRename,
     onRenameDone,
   });
+  const owner = useMemo(() => ({ workId }), [workId]);
+  const movable = interaction.actions.includes("move");
+  const entry = useMemo(
+    () => selectableEntry(file, "scratch", owner, catalog.root, movable),
+    [file, owner, catalog.root, movable],
+  );
+  const row = useEntryRow(entry, docked);
+  const drop = useTreeDropTarget(scratchDropTarget(catalog, parentFolder(catalog, file)));
   if (interaction.renaming)
     return (
       <div className="flex min-h-10 items-center gap-3 px-2 py-1.5 text-sm font-medium text-foreground">
@@ -141,15 +203,21 @@ export function ScratchFileRow({
     const tab = serverTabFromFile("scratch", file, { workId });
     if (tab) openFile(tab);
   };
-  const row = (
+  const content = (
     <div
-      className={cn("group relative flex min-w-0 items-center", docked && "rounded-md bg-muted")}
+      {...row.rowProps}
+      {...drop.dropProps}
+      className={cn(
+        "group relative flex min-w-0 items-center rounded-md",
+        (docked || row.selected) && "bg-muted",
+        drop.dropState === "over" && contextTreeDropTargetClassName,
+      )}
     >
       <button
         type="button"
         className={cn(workFileRowClass, interaction.actions.length > 0 && "pr-10")}
         aria-current={docked || undefined}
-        onClick={open}
+        onClick={row.activate(open)}
       >
         <RowIcon icon={fileKindIcon(file)} />
         <span className="min-w-0 flex-1">
@@ -183,7 +251,7 @@ export function ScratchFileRow({
       ) : null}
     </div>
   );
-  return <EntryInteractionShell interaction={interaction}>{row}</EntryInteractionShell>;
+  return <EntryInteractionShell interaction={interaction}>{content}</EntryInteractionShell>;
 }
 
 /**

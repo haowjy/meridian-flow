@@ -17,7 +17,7 @@
 import { t } from "@lingui/core/macro";
 import type { ContextOwner } from "@meridian/contracts/protocol";
 import { isWorkArchived } from "@meridian/contracts/works";
-import { type CSSProperties, useMemo, useRef } from "react";
+import { type CSSProperties, useCallback, useMemo, useRef } from "react";
 import { useWorks } from "@/client/query/useWorks";
 import { useContextTabs } from "@/client/stores";
 import type { DrillNode, DrillTree } from "@/components/app/DrillInMenu";
@@ -29,7 +29,15 @@ import {
 import { ContextTreeEntry, TreeEnvProvider } from "../context/ContextTreeRows";
 import { fileKindIcon as nodeIcon } from "../context/context-file-icon";
 import { schemeIcon, schemeLabel } from "../context/context-schemes";
+import { EntrySelectionProvider, useEntrySelection } from "../context/entry-drag/selection";
+import { useEntryMoveRoute } from "../context/entry-drag/use-entry-move-route";
 import { RailPaneHeader } from "../context/RailPaneHeader";
+import { AreaDropRegion } from "../context/tree-drop/AreaDropRegion";
+import {
+  type TreeDropRoutes,
+  TreeDropScope,
+  type TreeDropTarget,
+} from "../context/tree-drop/tree-drop";
 import { treeFolderIds } from "../context/tree-expansion-state";
 import { type CatalogMenuSource, useCatalogMenuSource } from "../context/use-catalog-menu-source";
 import type { EntryCapabilities } from "../context/use-entry-interaction";
@@ -103,18 +111,22 @@ export function RailScratchSection({
   const sectionRef = useRef<HTMLElement | null>(null);
   const deletion = useDeleteConfirmation({ projectId });
   const { works, noWork } = useWorks(projectId);
-  const capabilitiesByOwner = new Map<string, EntryCapabilities>();
-  const capabilitiesFor = (owner: ContextOwner): EntryCapabilities => {
-    const key = owner.rootThreadId ? `lineage:${owner.rootThreadId}` : `work:${owner.workId ?? ""}`;
-    const cached = capabilitiesByOwner.get(key);
-    if (cached) return cached;
-    const work =
-      owner.workId === noWork?.id ? noWork : works?.find((work) => work.id === owner.workId);
-    const actions: EntryCapabilities =
-      !owner.workId || (work && !isWorkArchived(work)) ? ["rename", "move", "delete"] : [];
-    capabilitiesByOwner.set(key, actions);
-    return actions;
-  };
+  const capabilitiesFor = useMemo(() => {
+    const capabilitiesByOwner = new Map<string, EntryCapabilities>();
+    return (owner: ContextOwner): EntryCapabilities => {
+      const key = owner.rootThreadId
+        ? `lineage:${owner.rootThreadId}`
+        : `work:${owner.workId ?? ""}`;
+      const cached = capabilitiesByOwner.get(key);
+      if (cached) return cached;
+      const work =
+        owner.workId === noWork?.id ? noWork : works?.find((work) => work.id === owner.workId);
+      const actions: EntryCapabilities =
+        !owner.workId || (work && !isWorkArchived(work)) ? ["rename", "move", "delete"] : [];
+      capabilitiesByOwner.set(key, actions);
+      return actions;
+    };
+  }, [works, noWork]);
   const folderIds = useMemo(
     () =>
       scratch?.source.ready
@@ -132,6 +144,34 @@ export function RailScratchSection({
     `chat-scratch:${scratch?.scope ?? "none"}`,
     folderIds,
   );
+  const listed = scratch?.source.catalogs;
+  const areas = useMemo(
+    () =>
+      (listed ?? []).map(({ catalog, owner }) => ({
+        scheme: "scratch" as const,
+        owner,
+        catalog,
+        movable: capabilitiesFor(owner).includes("move"),
+      })),
+    [listed, capabilitiesFor],
+  );
+  const selection = useEntrySelection();
+  const onLanded = useCallback(
+    (target: TreeDropTarget) => {
+      setExpanded("scratch", true);
+      const folderId = target.folder?.entryId;
+      if (folderId && !isExpanded(folderId)) toggleEntry(folderId);
+    },
+    [setExpanded, isExpanded, toggleEntry],
+  );
+  const moveRoute = useEntryMoveRoute({
+    projectId,
+    areas,
+    selection,
+    surface: "sidebar",
+    onLanded,
+  });
+  const routes = useMemo<TreeDropRoutes>(() => ({ entries: moveRoute }), [moveRoute]);
   if (!scratch) return null;
   const { tree } = scratch.source;
   const changeExpanded = (next: boolean) => {
@@ -179,33 +219,47 @@ export function RailScratchSection({
           }}
         />
       ) : null}
-      <RailPaneHeader
-        label={schemeLabel("scratch")}
-        icon={schemeIcon("scratch")}
-        title={tree.heading}
-        ariaLabel={tree.heading}
-        expanded={expanded}
-        onExpandedChange={changeExpanded}
-      />
-      {expanded ? (
-        <div className="min-h-0 overflow-y-auto overflow-x-hidden pb-1">
-          <ScratchRows
-            projectId={projectId}
-            onRequestDelete={deletion.requestDelete}
-            capabilitiesFor={capabilitiesFor}
-            source={scratch.source}
-            tree={tree}
-            folderId={null}
-            depth={1}
-            openId={openId}
-            isExpanded={isExpanded}
-            onToggle={toggleEntry}
-            onPick={(node) => {
-              if (scratch.pick(node)) onPicked?.();
-            }}
-          />
-        </div>
-      ) : null}
+      <TreeDropScope routes={routes}>
+        <EntrySelectionProvider selection={selection}>
+          <AreaDropRegion
+            scheme="scratch"
+            catalogRootId={areas[0]?.catalog.root.entryId ?? null}
+            onSpring={() => !expanded && changeExpanded(true)}
+            className="flex min-h-0 flex-col"
+            header={(dropProps) => (
+              <RailPaneHeader
+                label={schemeLabel("scratch")}
+                icon={schemeIcon("scratch")}
+                title={tree.heading}
+                ariaLabel={tree.heading}
+                expanded={expanded}
+                onExpandedChange={changeExpanded}
+                dropProps={dropProps}
+              />
+            )}
+          >
+            {expanded ? (
+              <div className="min-h-0 overflow-y-auto overflow-x-hidden pb-1">
+                <ScratchRows
+                  projectId={projectId}
+                  onRequestDelete={deletion.requestDelete}
+                  capabilitiesFor={capabilitiesFor}
+                  source={scratch.source}
+                  tree={tree}
+                  folderId={null}
+                  depth={1}
+                  openId={openId}
+                  isExpanded={isExpanded}
+                  onToggle={toggleEntry}
+                  onPick={(node) => {
+                    if (scratch.pick(node)) onPicked?.();
+                  }}
+                />
+              </div>
+            ) : null}
+          </AreaDropRegion>
+        </EntrySelectionProvider>
+      </TreeDropScope>
       <DeleteConfirmationDialog
         target={deletion.target}
         isPending={deletion.isPending}
