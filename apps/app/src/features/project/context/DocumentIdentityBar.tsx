@@ -13,6 +13,7 @@ import { refusedMoveDestination } from "@/client/query/context-catalog-projectio
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import type { ContextTab } from "@/client/stores";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
+import { DocumentDraftHint } from "@/features/editor/DocumentDraftHint";
 import { DraftReviewBand, DraftReviewFailureNotices } from "@/features/editor/DraftReviewBand";
 import { DraftReviewChip } from "@/features/editor/DraftReviewChip";
 import { escapeCssIdent } from "@/lib/css-selector";
@@ -226,6 +227,15 @@ export function DocumentIdentityBar({
           }}
         />
       </div>
+      {!reviewItemKey && !reviewPending ? (
+        <DocumentDraftHint
+          projectId={projectId}
+          documentId={tab.documentId}
+          contextLocation={location.path ? { scheme: location.scheme, path: location.path } : null}
+          documentName={location.leaf}
+          enabled={tab.kind !== "new"}
+        />
+      ) : null}
       {reviewItemKey ? (
         <DraftReviewFailureNotices
           documentId={tab.documentId}

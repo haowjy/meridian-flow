@@ -7,12 +7,15 @@ import {
 } from "@meridian/resource-replica";
 import { projectResourceCatalogView } from "@/client/query/useContextCatalog";
 
+/** A resource's current name and path, plus the id it answers to now (an alias resolves to its joined id). */
+export type RecentIdentity = { documentId: string; name: string; path: string };
+
 /** Missing means not loaded; null means terminal or optimistically suppressed from Recent. */
 export function recentDocumentIdentityIndex(
   projectId: string,
   snapshot: ResourceProjectionSnapshot | null,
-): ReadonlyMap<string, { name: string; path: string } | null> {
-  const identities = new Map<string, { name: string; path: string } | null>();
+): ReadonlyMap<string, RecentIdentity | null> {
+  const identities = new Map<string, RecentIdentity | null>();
   if (!snapshot) return identities;
   const cached = indexes.get(snapshot)?.get(projectId);
   if (cached) return cached;
@@ -34,8 +37,19 @@ export function recentDocumentIdentityIndex(
     }
     for (const entry of entries) {
       if (entry.kind === "file")
-        identities.set(entry.entryId, { name: entry.name, path: entry.uri });
+        identities.set(entry.entryId, {
+          documentId: entry.entryId,
+          name: entry.name,
+          path: entry.uri,
+        });
     }
+  }
+  // A joined document's old id is an alias: it answers with the current identity,
+  // so one resource is one Recent row whichever id the history remembers.
+  for (const { resource } of snapshot.records) {
+    const current = identities.get(resource.identity.documentId);
+    if (!current) continue;
+    for (const alias of Object.keys(resource.aliases)) identities.set(alias, current);
   }
   for (const id of suppressed) if (!identities.has(id)) identities.set(id, null);
   for (const { resource, intents } of snapshot?.records ?? []) {
@@ -61,7 +75,7 @@ export function recentDocumentIdentityIndex(
 
 const indexes = new WeakMap<
   ResourceProjectionSnapshot,
-  Map<string, ReadonlyMap<string, { name: string; path: string } | null>>
+  Map<string, ReadonlyMap<string, RecentIdentity | null>>
 >();
 
 /** Only accepted deletion changes refetch the server list; pending intent stays local. */

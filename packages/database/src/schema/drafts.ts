@@ -3,16 +3,7 @@
  * about the document tree (`draft_tree_changes`). Visibility is read only through the
  * context tree view; nothing here is a live path.
  */
-import type {
-  ContextSourceId,
-  DraftId,
-  FolderId,
-  ProjectId,
-  ThreadId,
-  TurnId,
-  UserId,
-  WorkId,
-} from "@meridian/contracts";
+import type { DraftId, ProjectId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts";
 import { sql } from "drizzle-orm";
 import {
   boolean,
@@ -26,7 +17,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { createdAt, idColumn, updatedAt } from "./_shared";
 import { threads, turns } from "./agent-threads";
-import { contextSources, folders, projects, works } from "./content";
+import { projects, works } from "./content";
 import { users } from "./users";
 
 export type DraftStatus = "active" | "closed";
@@ -71,7 +62,10 @@ export const drafts = pgTable(
 
 export type DraftTreeNodeKind = "document" | "folder";
 
-/** What one draft says about one node. PR 3 adds deleted and base_version. */
+/**
+ * What one draft says about one node: that it created it. A created document's place is its
+ * `documents` row; this row holds identity and attribution only. PR 3 adds deleted and base_version.
+ */
 export const draftTreeChanges = pgTable(
   "draft_tree_changes",
   {
@@ -86,15 +80,6 @@ export const draftTreeChanges = pgTable(
      */
     nodeId: uuid("node_id").notNull(),
     created: boolean("created").notNull().default(false),
-    /** The draft's location for the node; all null when the draft sets none. */
-    contextSourceId: uuid("context_source_id")
-      .$type<ContextSourceId>()
-      .references(() => contextSources.id, { onDelete: "cascade" }),
-    parentFolderId: uuid("parent_folder_id")
-      .$type<FolderId>()
-      .references(() => folders.id, { onDelete: "cascade" }),
-    name: text("name"),
-    extension: text("extension"),
     /** Who created the node: null for a writer's create and for rows before attribution. */
     createdThreadId: uuid("created_thread_id")
       .$type<ThreadId>()
@@ -107,28 +92,10 @@ export const draftTreeChanges = pgTable(
   },
   (table) => [
     primaryKey({ columns: [table.draftId, table.nodeKind, table.nodeId] }),
-    // How a create finds a hidden document another draft placed at a path.
-    index("draft_tree_changes_location")
-      .on(table.contextSourceId, table.parentFolderId, table.name, table.extension)
-      .where(sql`${table.contextSourceId} IS NOT NULL`),
     // Which drafts use a node: identity status, end of use, Discard.
     index("draft_tree_changes_node").on(table.nodeKind, table.nodeId),
-    // Absorb and split repoint rows by parent.
-    index("draft_tree_changes_parent")
-      .on(table.parentFolderId)
-      .where(sql`${table.parentFolderId} IS NOT NULL`),
     check("draft_tree_changes_node_kind_valid", sql`${table.nodeKind} IN ('document', 'folder')`),
-    check(
-      "draft_tree_changes_location_shape",
-      sql`(${table.contextSourceId} IS NULL AND ${table.parentFolderId} IS NULL AND ${table.name} IS NULL
-        AND ${table.extension} IS NULL)
-      OR (${table.contextSourceId} IS NOT NULL AND ${table.name} IS NOT NULL
-        AND (${table.nodeKind} = 'document') = (${table.extension} IS NOT NULL))`,
-    ),
     // Foundation rows always say "created"; PR 3 widens this with deleted.
-    check(
-      "draft_tree_changes_says_something",
-      sql`${table.created} OR ${table.contextSourceId} IS NOT NULL`,
-    ),
+    check("draft_tree_changes_says_something", sql`${table.created}`),
   ],
 );

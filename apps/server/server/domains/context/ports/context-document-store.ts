@@ -11,7 +11,7 @@
 import type { ProjectId } from "@meridian/contracts";
 import type { DocumentFileType, Filetype } from "@meridian/contracts/protocol";
 import type { DocumentCreationMetadata } from "../document-metadata.js";
-import type { LiveClaim, LiveCreateCandidate, RevealIdentity } from "../tree/hidden-node-types.js";
+import type { LiveClaim, LiveCreateCandidate } from "../tree/hidden-node-types.js";
 import type { TreeView } from "../tree/tree-view.js";
 
 /** Opposite-kind occupancy is a normal namespace conflict, not a storage failure. */
@@ -57,6 +57,11 @@ export interface CreateDocumentInput {
   markdown: string;
   filetype: Filetype;
   provisionalName?: boolean;
+  /**
+   * A device's create id this reveal forwards to the revealed document: written with the
+   * reveal, before the catalog refresh that reads it, so a join and its forward commit together.
+   */
+  joinFrom?: { fromId: string; projectId: ProjectId };
   metadata?: DocumentCreationMetadata;
 }
 
@@ -107,8 +112,16 @@ export interface ContextDocumentStore {
   ): Promise<ContextDocument | null>;
   /** A document visible in the view, by id, with its path there. */
   findDocumentById(view: TreeView, documentId: string): Promise<LocatedContextDocument | null>;
-  /** A caller-named identity as a live create in `projectId` may use it (§6.4). */
-  findRevealIdentity(documentId: string, projectId: ProjectId): Promise<RevealIdentity>;
+  /** The document a device's create `fromId` joined, within `projectId`; null when none. */
+  findForward(fromId: string, projectId: ProjectId): Promise<string | null>;
+  /** Writes a join's forward, in the caller's transaction (the reveal's own). */
+  recordForward(input: { fromId: string; toId: string; projectId: ProjectId }): Promise<void>;
+  /** Filenames hidden documents and folders hold in `folderId`: names no live create may take. */
+  listHiddenNames(folderId: string | null): Promise<string[]>;
+  /** A document of this source by id, deleted ones too, with its path there. */
+  findDocumentLastLocation(
+    documentId: string,
+  ): Promise<{ path: string; name: string; deleted: boolean } | null>;
   readProjections(ids: string[]): Promise<Map<string, string>>;
   listFolders(view: TreeView, parentId: string | null): Promise<ContextFolder[]>;
   listDocuments(view: TreeView, folderId: string | null): Promise<ContextDocument[]>;

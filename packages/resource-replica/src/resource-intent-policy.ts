@@ -1,6 +1,6 @@
 /** Latest writer commands supersede repair blockers and safe queued namespace work. */
 import { newerCanonicalObservation } from "./canonical-observation";
-import type { NamespaceIntent, ResourceRecord } from "./resource-records";
+import type { NamespaceIntent, ResourceDestination, ResourceRecord } from "./resource-records";
 
 /** Work that can make progress without a new metadata revision. */
 export function resourceNeedsBackgroundReconciliation(record: ResourceRecord): boolean {
@@ -88,6 +88,32 @@ export function intentOwnsLocation(intent: NamespaceIntent): boolean {
       intent.state === "received" ||
       intent.state === "settled")
   );
+}
+
+/**
+ * Where the writer put the document and the record still shows it: an owning move's
+ * destination, else the destination its create carries until the create settles.
+ */
+export function placementDestination(
+  projectId: string | null,
+  record: ResourceRecord,
+): ResourceDestination | undefined {
+  const owner = owningLocationIntent(
+    projectId,
+    record.intents,
+    Boolean(record.resource.obligations.canonicalRefresh),
+  )?.desired;
+  if (owner?.kind === "set-location") return owner.destination;
+  if (record.resource.canonical) return undefined;
+  for (const intent of record.intents) {
+    if (
+      (projectId === null || intent.projectId === projectId) &&
+      intent.desired.kind === "create" &&
+      (intent.state === "pending" || intent.state === "submitted" || intent.state === "received")
+    )
+      return intent.desired.destination;
+  }
+  return undefined;
 }
 
 /**

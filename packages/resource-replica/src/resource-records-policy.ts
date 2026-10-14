@@ -109,17 +109,31 @@ export function validateResourceRecordUpdate(
   )
     throw new Error("Session adoption witness does not match the resource");
   if (adoption && previous && !previous.resource.obligations.sessionAdoption) {
+    // A join re-identified the reservation in this write: its create, submitted under the old id,
+    // is the witness whether the answer or the catalog entry came first.
     const source = next.intents.find(
       (intent) =>
         intent.projectId === adoption.projectId &&
-        intent.identityRevision === adoption.identityRevision &&
-        intent.attempts.some(
-          (attempt) =>
-            attempt.attemptId === adoption.transitionId &&
-            attempt.request.kind === "create" &&
+        intent.attempts.some((attempt) => {
+          if (attempt.attemptId !== adoption.transitionId || attempt.request.kind !== "create")
+            return false;
+          const joined =
+            resource.aliases[attempt.request.body.documentId]?.introducedAtIdentityRevision ===
+            adoption.identityRevision;
+          if (joined)
+            return (
+              attempt.outcome === undefined ||
+              (attempt.outcome.kind === "create" &&
+                attempt.outcome.result.status === "joined" &&
+                attempt.outcome.result.documentId === adoption.documentId)
+            );
+          return (
+            intent.identityRevision === adoption.identityRevision &&
             attempt.outcome?.kind === "create" &&
-            attempt.outcome.result.status !== "conflict",
-        ),
+            attempt.outcome.result.status !== "conflict" &&
+            attempt.outcome.result.status !== "joined"
+          );
+        }),
     );
     const previousContent = previous?.resource.content;
     const sameAcknowledgedCache =

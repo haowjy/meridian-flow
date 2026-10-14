@@ -89,6 +89,7 @@ it("hides descendants of pending deletes and restores them after refusal", () =>
   const restored = structuredClone(snapshot);
   restored.folders[0].intents[0].state = "needs-repair";
   expect(recentDocumentIdentityIndex("project", restored).get("doc")).toEqual({
+    documentId: "doc",
     name: "doc.md",
     path: "kb://A/doc.md",
   });

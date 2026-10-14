@@ -542,14 +542,19 @@ describe.skipIf(!enabled)("Pending draft creates across the foundation upgrade (
         await target`SELECT deleted_at IS NOT NULL AS gone FROM documents WHERE id = ${documentId}`
       )[0]?.gone;
 
-    // The name migration ran first: each draft's create is at its row's canonical name.
+    // Each draft's create is identity only; the name migration ran first, so the hidden row
+    // holds the canonical place.
+    expect(await target`SELECT node_id FROM draft_tree_changes ORDER BY node_id, draft_id`).toEqual(
+      [{ node_id: created }, { node_id: shared }, { node_id: shared }],
+    );
     expect(
-      await target`SELECT node_id, name, extension FROM draft_tree_changes ORDER BY node_id, draft_id`,
-    ).toEqual([
-      { node_id: created, name: "new", extension: "" },
-      { node_id: shared, name: "shared", extension: "" },
-      { node_id: shared, name: "shared", extension: "" },
-    ]);
+      await target`SELECT id, name, extension FROM documents WHERE id IN (${created}, ${shared}) ORDER BY id`,
+    ).toEqual(
+      [
+        { id: created, name: "new", extension: "" },
+        { id: shared, name: "shared", extension: "" },
+      ].sort((l, r) => l.id.localeCompare(r.id)),
+    );
     // A pending create is not live; the writer's own empty document still is.
     const live = s.view("live");
     expect(await live.idAt("new.md")).toBeNull();
