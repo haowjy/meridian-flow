@@ -49,6 +49,12 @@ export type QueuedControl = {
   awaitingServer?: boolean;
   /** A switch the record says applies at the next run's start: its notice sits before that run's reply. */
   awaitsRun?: boolean;
+  /**
+   * The server will not apply the switch at the next run's start: a reply that already held
+   * the chat when it was made has to finish first (its `deliveryState` is `waiting`). Only the
+   * words depend on it.
+   */
+  waiting?: boolean;
 };
 
 export type ControlAction =

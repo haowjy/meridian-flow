@@ -35,6 +35,14 @@ import type { JournalSwitch } from "@/client/chat-submissions/owner";
 export const isWriteModeControl = (item: PendingInboxItem) =>
   item.intent === "control" && item.control?.kind === "write_mode";
 
+/** The ids of the record's write-mode switches, as one comparable key; "" when none is pending. */
+export function queuedSwitchKey(record: Pick<RunState, "items">): string {
+  return record.items
+    .filter(isWriteModeControl)
+    .map((item) => item.id)
+    .join(",");
+}
+
 /**
  * What the toolbar and rows show. Before the first record the chat's own mode (`base`, the
  * thread row's) stands in as the applied one, so a choice made before the snapshot still
@@ -62,6 +70,8 @@ export type QueuedNews = {
   n: number;
   id: string;
   control: Extract<ControlBody, { kind: "write_mode" }>;
+  /** The server's `deliveryState`: a reply that already held the chat has to finish first. */
+  waiting: boolean;
 };
 
 /** A switch applied since the first record, which the writer should hear about; `n` counts them, from 1. */
@@ -134,7 +144,13 @@ export function reduceRunState(state: RunStateSlice, action: RunStateAction): Ru
     if (!isWriteModeControl(item) || item.control?.kind !== "write_mode") continue;
     if (heard.has(item.id)) continue;
     heard.add(item.id);
-    if (live) news.push({ n: news.length + 1, id: item.id, control: item.control });
+    if (live)
+      news.push({
+        n: news.length + 1,
+        id: item.id,
+        control: item.control,
+        waiting: item.deliveryState === "waiting",
+      });
   }
   return { ...withApplied, view, heard, news };
 }

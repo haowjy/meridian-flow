@@ -11,27 +11,27 @@ import type { AiWriteMode } from "@meridian/contracts/works";
 import type { QueuedControlStatus } from "./thread-controls";
 
 /**
- * What a pending command's row says in each status. A switch waiting for no reply
- * reads as the notice it becomes ("Switched to ..."); one waiting for a running
- * reply says it is queued.
+ * What a pending command's row says in each status. A switch that waits for no reply
+ * reads as the notice it becomes ("Switched to ..."); one that waits for a reply that
+ * held the chat first (`waiting`) says it is queued.
  */
 export function controlStatusCopy(
   control: ControlBody,
   status: QueuedControlStatus,
-  replyRunning = false,
+  waiting = false,
 ): string {
   if (control.kind === "write_mode") {
     const draft = control.mode === "draft";
     switch (status) {
       case "sending":
-        return replyRunning
+        return waiting
           ? draft
             ? t`Switching to draft mode`
             : t`Switching to auto-apply`
           : writeModeSwitchedCopy(control.mode);
       case "queued":
       case "withdraw_failed":
-        return replyRunning
+        return waiting
           ? draft
             ? t`Switch to draft mode queued`
             : t`Switch to auto-apply queued`

@@ -24,9 +24,12 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react"
 import { httpErrorStatus } from "@/client/api/http-client";
 import { withdrawThreadControl } from "@/client/api/threads-api";
 import type { JournalSwitch } from "@/client/chat-submissions/owner";
-import { invalidateProjectThreadData } from "@/client/query/project-invalidation";
+import {
+  invalidateProjectThreadData,
+  invalidateWriteModeReads,
+} from "@/client/query/project-invalidation";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
-import { switchDisplay } from "@/client/run-state/run-state-slice";
+import { queuedSwitchKey, switchDisplay } from "@/client/run-state/run-state-slice";
 import { announce, announceError, useRunStateSlice, useThreadActions } from "@/client/stores";
 import { controlAlreadyStartedCopy, controlStatusCopy, controlStoppedCopy } from "./control-copy";
 import type { QueuedControl } from "./thread-controls";
@@ -88,8 +91,8 @@ export function useSwitchView(input: {
   const { dispatchRunState: dispatch } = actions;
   const { view, news, applied, spoken } = useRunStateSlice(threadId);
   useSingleHostWarning(threadId);
-  const latest = useRef({ journal, projectId, replyRunning });
-  latest.current = { journal, projectId, replyRunning };
+  const latest = useRef({ journal, projectId });
+  latest.current = { journal, projectId };
 
   useLayoutEffect(
     () => dispatch(threadId, { type: "journal", switches: journal.pending }),
@@ -102,8 +105,7 @@ export function useSwitchView(input: {
     const queued = news.filter((entry) => entry.n > spoken.queued);
     const appliedNow = applied.filter((entry) => entry.n > spoken.applied);
     if (queued.length === 0 && appliedNow.length === 0) return;
-    for (const entry of queued)
-      announce(controlStatusCopy(entry.control, "queued", latest.current.replyRunning));
+    for (const entry of queued) announce(controlStatusCopy(entry.control, "queued", entry.waiting));
     // An applied switch is silent: it was spoken when it became pending.
     if (appliedNow.length > 0)
       void invalidateProjectThreadData(queryClient, latest.current.projectId);
@@ -113,6 +115,19 @@ export function useSwitchView(input: {
       applied: applied.at(-1)?.n ?? 0,
     });
   }, [news, applied, spoken, dispatch, queryClient, threadId]);
+
+  // Another tab's queue, cancel or withdrawal changes the Work default and the list's mode: the
+  // record's switch ids are the key. The first record is the baseline, not a change.
+  const queuedKey = useRef<string | null>(null);
+  const record = view.record;
+  useEffect(() => {
+    if (!record) return;
+    const key = queuedSwitchKey(record);
+    const before = queuedKey.current;
+    queuedKey.current = key;
+    if (before !== null && before !== key)
+      void invalidateWriteModeReads(queryClient, latest.current.projectId);
+  }, [record, queryClient]);
 
   const revalidate = useCallback(
     () => void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) }),
@@ -139,6 +154,8 @@ export function useSwitchView(input: {
           if (outcome === "withdrawn") announce(controlStoppedCopy(row.control));
           // The divider shows a started one.
           if (outcome === "already_started") announce(controlAlreadyStartedCopy(row.control));
+          // Stop restores the Work default.
+          void invalidateWriteModeReads(queryClient, latest.current.projectId);
           revalidate();
         } catch (error) {
           // The server never had it: nothing to withdraw.
@@ -168,9 +185,12 @@ export function useSwitchView(input: {
         control: { kind: "write_mode" as const, mode: row.mode },
         status: row.status,
         ...(row.awaitingServer ? { awaitingServer: true } : {}),
+        // The server's `deliveryState` decides "queued": a switch waits only for a reply that
+        // already held the chat. Before it lists the switch, a running reply is the only fact.
+        waiting: row.status === "sending" ? replyRunning : !row.awaitsRun,
         ...(row.awaitsRun ? { awaitsRun: true } : {}),
       })),
-    [folded.rows],
+    [folded.rows, replyRunning],
   );
 
   return { rows, writeMode: folded.mode, switchWriteMode, retry, withdraw };

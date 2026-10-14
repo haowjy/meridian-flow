@@ -62,10 +62,23 @@ const agentName = sql<string | null>`(
   WHERE ${schema.threadAgentBindings.threadId} = ${schema.threads}.${sql.identifier("id")}
 )`;
 
+// The chat's queued mode switch, read with the row (the oldest undelivered `write_mode` control).
+const pendingWriteMode = sql<AiWriteMode | null>`(
+  SELECT ${schema.threadInboxMessages.body}->>'mode'
+  FROM ${schema.threadInboxMessages}
+  WHERE ${schema.threadInboxMessages.threadId} = ${schema.threads}.${sql.identifier("id")}
+    AND ${schema.threadInboxMessages.deliveredAt} IS NULL
+    AND ${schema.threadInboxMessages.intent} = 'control'
+    AND ${schema.threadInboxMessages.body}->>'kind' = 'write_mode'
+  ORDER BY ${schema.threadInboxMessages.seq}
+  LIMIT 1
+)`;
+
 const threadColumns = {
   ...getTableColumns(schema.threads),
   agentDefinitionRevisionId,
   agentName,
+  pendingWriteMode,
 };
 
 type ThreadListRow = typeof schema.threads.$inferSelect & {

@@ -31,6 +31,7 @@ export function buildSubagentThreadRow(input: CreateSubagentThreadInput): Thread
     projectId: input.projectId,
     workId: input.workId ?? null,
     aiWriteMode: input.aiWriteMode,
+    effectiveAiWriteMode: input.aiWriteMode,
     userId: input.userId,
     kind: "subagent",
     status: "idle",

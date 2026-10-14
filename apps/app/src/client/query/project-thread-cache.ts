@@ -49,8 +49,8 @@ export function upsertThreadInProject(
     (prev) => {
       const list = prev ?? [];
       if (list.some((t) => t.id === thread.id)) {
-        // `aiWriteMode` belongs to the list's own refetch: a snapshot may be older than it.
-        const { aiWriteMode: _owned, ...rest } = thread;
+        // Both modes belong to the list's own refetch: a snapshot may be older than it.
+        const { aiWriteMode: _owned, effectiveAiWriteMode: _effective, ...rest } = thread;
         return list.map((t) => (t.id === thread.id ? { ...t, ...rest, ...(lifecycle ?? {}) } : t));
       }
       return [toListItem(thread, lifecycle), ...list];

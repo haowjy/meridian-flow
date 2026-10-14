@@ -78,6 +78,7 @@ function thread(ref: string | null = "c12"): Thread {
     projectId: "project-1",
     workId: null,
     aiWriteMode: "direct",
+    effectiveAiWriteMode: "direct",
     userId: "user-1",
     kind: "primary",
     status: "idle",

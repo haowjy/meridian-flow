@@ -2,12 +2,13 @@
  * Writer commands that have not run yet.
  *
  * A pending write-mode switch is the write-mode notice at the transcript tail:
- * "Switched to auto-apply" while no reply holds the chat (the switch applies
- * right before the next reply starts), "Switch to auto-apply queued" while one
- * does. A queued `/compact` sits there as a dashed rule, the divider it will
- * become, with the writer's instructions under it verbatim. Stop is right after
- * the words on every pending row, a failed enqueue's too (beside its Retry), and
- * removes the row at once; it cancels the command the way a switch back does.
+ * "Switched to auto-apply" while the next reply will apply it, "Switch to
+ * auto-apply queued" while a reply that held the chat first has to finish. A
+ * queued `/compact` sits there as a dashed rule, the divider it will become,
+ * with the writer's instructions under it verbatim. Stop is right after the
+ * words on every pending row from its first frame (disabled while the switch's
+ * post is unanswered), and removes the row at once; it cancels the command the
+ * way a switch back does. A failed enqueue the server may hold has Retry alone.
  * The rows carry no live region: `useThreadControls` and `useSwitchView` announce
  * each change through the global polite announcer, which also reaches a row
  * scrolled out of the virtualized list.
@@ -26,18 +27,11 @@ import { WriteModeNotice } from "./WriteModeNotice";
 
 export type QueuedControlRowsProps = {
   controls: readonly QueuedControl[];
-  /** A reply or compaction holds the chat, so a pending switch waits for it. */
-  replyRunning?: boolean;
   onStop?: (control: QueuedControl) => void;
   onRetry?: (controlId: string) => void;
 };
 
-export function QueuedControlRows({
-  controls,
-  replyRunning = false,
-  onStop,
-  onRetry,
-}: QueuedControlRowsProps) {
+export function QueuedControlRows({ controls, onStop, onRetry }: QueuedControlRowsProps) {
   const listRef = useRef<HTMLUListElement>(null);
   const focusWithin = useFocusWithinRow(listRef);
   if (controls.length === 0) return null;
@@ -51,13 +45,7 @@ export function QueuedControlRows({
       className="flex flex-col gap-[var(--chat-space-inline)] py-[var(--chat-space-block)] outline-none"
     >
       {controls.map((control) => (
-        <QueuedControlRow
-          key={control.id}
-          control={control}
-          replyRunning={replyRunning}
-          onStop={onStop}
-          onRetry={onRetry}
-        />
+        <QueuedControlRow key={control.id} control={control} onStop={onStop} onRetry={onRetry} />
       ))}
     </ul>
   );
@@ -65,18 +53,16 @@ export function QueuedControlRows({
 
 function QueuedControlRow({
   control,
-  replyRunning,
   onStop,
   onRetry,
 }: {
   control: QueuedControl;
-  replyRunning: boolean;
   onStop?: (control: QueuedControl) => void;
   onRetry?: (controlId: string) => void;
 }) {
   const { status } = control;
   const failed = status === "failed";
-  const label = controlStatusCopy(control.control, status, replyRunning);
+  const label = controlStatusCopy(control.control, status, control.waiting);
   const actions = (
     <>
       {failed && onRetry ? (
@@ -90,11 +76,14 @@ function QueuedControlRow({
           <Trans>Retry</Trans>
         </Button>
       ) : null}
-      {onStop && !control.awaitingServer ? (
+      {onStop && !(failed && control.awaitingServer) ? (
         <Button
           type="button"
           variant="quiet"
           size="meta"
+          // The row has Stop from its first frame so it never changes height. While the
+          // post is in flight the server may hold the switch and hasn't said, so Stop waits.
+          disabled={control.awaitingServer}
           aria-label={controlStopLabel(control.control)}
           onClick={() => onStop(control)}
         >
