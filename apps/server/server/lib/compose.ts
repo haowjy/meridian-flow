@@ -229,7 +229,6 @@ import {
   type ActiveDocumentResolver,
   createActiveDocumentResolver,
   createInMemoryEventJournalWriter,
-  requireThreadOwner,
 } from "../domains/threads/index.js";
 import type {
   EventJournalReader,

@@ -31,7 +31,7 @@ import {
   responseContext,
   stageDraft,
 } from "./test-support/document-edit-receipt-fixture.js";
-import { commitBranchEdit, reviewDriver } from "./test-support/draft-review-requests.js";
+import { commitBranchEdit } from "./test-support/draft-review-requests.js";
 
 const NEW_ID = "00000000-0000-4000-8000-000000000830";
 const INVERSE = "an inverse removed the text it edited";

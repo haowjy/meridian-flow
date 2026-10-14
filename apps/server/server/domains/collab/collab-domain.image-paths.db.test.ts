@@ -489,7 +489,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
   });
 }
-async function expectMarkdown(
+async function _expectMarkdown(
   collab: {
     readAsMarkdown(documentId: string): Promise<{ ok: true; value: string } | { ok: false }>;
   },

@@ -5,7 +5,6 @@ import type { ResponseWriteCommitFinalizeResult, ResponseWriteFinalizer } from "
 import type { ResponseSaveResult, ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
 import type { DocumentProjectionRefreshService } from "./document-projection-refresher.js";
 import type { DraftWriteVisibility } from "./draft-write-visibility.js";
-import type { ApplicationBranchStore } from "./ports/application-branch-store.js";
 import { enlistResponseParticipant } from "./response-transaction.js";
 import type { PostDurabilityNoticeService } from "./reversal-notices.js";
 

@@ -2,13 +2,11 @@ import { createTestDocumentLinkScopes } from "./test-support/document-link-scope
 /** Public collab-domain response write coverage over Drizzle branch infrastructure. */
 
 import { renderAgentEditResult } from "@meridian/agent-edit";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
-import * as Y from "yjs";
 import { asGrantedWriter, testFileGrant } from "../../test-support/file-grants.js";
 import { writeMarkdown } from "./test-support/bound-writes.js";
 import {
-  CREATED_DOC_ID,
   createWorkDraftFixture,
   DOC_ID,
   DRAFT_DESTINATION,
@@ -282,7 +280,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
   });
 }
 
-async function expectMarkdown(
+async function _expectMarkdown(
   collab: {
     readAsMarkdown(documentId: string): Promise<{ ok: true; value: string } | { ok: false }>;
   },

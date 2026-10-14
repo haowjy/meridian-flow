@@ -16,8 +16,6 @@ import {
 } from "../test-support/change-trail-postgres-harness.js";
 import {
   createResponse,
-  responseContext,
-  reviewChange,
   setupResponseDraft,
   stageDraft,
 } from "../test-support/document-edit-receipt-fixture.js";
