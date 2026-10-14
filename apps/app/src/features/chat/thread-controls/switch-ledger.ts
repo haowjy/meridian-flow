@@ -40,10 +40,10 @@ export type LedgerState = "sending" | "posted" | "queued" | "applied" | "gone";
 export type LedgerEntry = {
   id: string;
   mode: AiWriteMode;
-  /** The journal's place in the chat's order; `null` for a switch only the server has shown. */
+  /** The journal's place in this tab's order; `null` for a switch only the server has shown. */
   seq: number | null;
-  /** The pending inbox's order, for a switch with no `seq`. */
-  serverSeq: number;
+  /** The server's pending-inbox order, once an inbox or snapshot has listed it. */
+  serverSeq: number | null;
   state: LedgerState;
   failed: boolean;
   /** Posted and not refused: the server may hold it, so Retry only, no local Withdraw. */
@@ -54,6 +54,12 @@ export type LedgerEntry = {
   observedAt: number;
   /** The highest request of a snapshot that listed it, 0 for none. */
   provedAt: number;
+  /**
+   * An answer cancelled out the switch before it, and this is that one: hidden from rows and
+   * the overlay, but not terminal. A fresh snapshot that lists it clears the mark; one that
+   * doesn't settles it gone.
+   */
+  predicted: boolean;
   /** A divider naming it is in the transcript this tab renders. */
   rendered: boolean;
   /** A snapshot's turns held its divider, so the snapshot's thread mode includes it. */
@@ -69,6 +75,8 @@ export type Ledger = {
   named: ReadonlySet<string>;
   /** Rendered divider turn ids, with the mode each switched to. */
   dividers: ReadonlyMap<string, AiWriteMode>;
+  /** Where the transcript places the divider that names a control id. */
+  positions: ReadonlyMap<string, number>;
   /** History and the first projection are in; what arrives after is news. */
   settled: boolean;
 };
@@ -77,6 +85,7 @@ export const EMPTY_LEDGER: Ledger = {
   entries: [],
   named: new Set(),
   dividers: new Map(),
+  positions: new Map(),
   settled: false,
 };
 
@@ -130,17 +139,41 @@ const raise = (entry: LedgerEntry, at: number): number => Math.max(entry.observe
 
 const RANK: Record<LedgerState, number> = { sending: 0, posted: 1, queued: 2, applied: 3, gone: 4 };
 
-function compareEntries(a: LedgerEntry, b: LedgerEntry): number {
-  if (a.seq === null || b.seq === null) {
-    if (a.seq === b.seq) return a.serverSeq - b.serverSeq;
-    return a.seq === null ? -1 : 1;
-  }
-  return a.seq - b.seq;
+/**
+ * The chat's causal order: what the server has applied (in transcript order, those
+ * without a place yet after), then what it holds queued (in its inbox order), then what only
+ * this tab's journal knows (in journal order). Ties break on the id.
+ */
+function orderKey(entry: LedgerEntry, positions: ReadonlyMap<string, number>): number[] {
+  const seq = entry.seq ?? Number.MAX_SAFE_INTEGER;
+  if (entry.state === "applied")
+    return [0, positions.get(entry.id) ?? Number.MAX_SAFE_INTEGER, seq];
+  if (entry.serverSeq !== null) return [1, entry.serverSeq, seq];
+  return [2, seq, 0];
+}
+
+function sorted(ledger: Ledger): Ledger {
+  const keyed = ledger.entries.map((entry) => ({ entry, key: orderKey(entry, ledger.positions) }));
+  keyed.sort((a, b) => {
+    for (let i = 0; i < 3; i += 1) {
+      const difference = (a.key[i] ?? 0) - (b.key[i] ?? 0);
+      if (difference) return difference;
+    }
+    return a.entry.id < b.entry.id ? -1 : a.entry.id > b.entry.id ? 1 : 0;
+  });
+  return keyed.some(({ entry }, index) => entry !== ledger.entries[index])
+    ? { ...ledger, entries: keyed.map(({ entry }) => entry) }
+    : ledger;
 }
 
 function advance(entry: LedgerEntry, state: LedgerState): LedgerEntry {
   if (entry.state === "gone" || RANK[state] <= RANK[entry.state]) return entry;
-  return { ...entry, state, failed: RANK[state] > RANK.posted ? false : entry.failed };
+  return {
+    ...entry,
+    state,
+    failed: RANK[state] > RANK.posted ? false : entry.failed,
+    predicted: RANK[state] >= RANK.applied ? false : entry.predicted,
+  };
 }
 
 function blank(id: string, mode: AiWriteMode, at: number, state: LedgerState): LedgerEntry {
@@ -148,7 +181,7 @@ function blank(id: string, mode: AiWriteMode, at: number, state: LedgerState): L
     id,
     mode,
     seq: null,
-    serverSeq: 0,
+    serverSeq: null,
     state,
     failed: false,
     awaitingServer: false,
@@ -156,6 +189,7 @@ function blank(id: string, mode: AiWriteMode, at: number, state: LedgerState): L
     inInbox: false,
     observedAt: at,
     provedAt: 0,
+    predicted: false,
     rendered: false,
     snapshotSeen: false,
     silent: false,
@@ -176,7 +210,7 @@ function upsert(
   const entries = known
     ? ledger.entries.map((entry) => (entry.id === id ? change(entry) : entry))
     : [...ledger.entries, change(blank(id, mode, at, initial))];
-  return { ...ledger, entries: [...entries].sort(compareEntries) };
+  return { ...ledger, entries };
 }
 
 function patch(ledger: Ledger, id: string, change: (entry: LedgerEntry) => LedgerEntry): Ledger {
@@ -200,7 +234,7 @@ function mapEntries(ledger: Ledger, change: (entry: LedgerEntry) => LedgerEntry)
 const gone = (entry: LedgerEntry): LedgerEntry =>
   entry.state === "gone"
     ? entry
-    : { ...entry, state: "gone", failed: false, withdrawal: undefined };
+    : { ...entry, state: "gone", failed: false, predicted: false, withdrawal: undefined };
 
 function step(ledger: Ledger, event: LedgerEvent): Ledger {
   switch (event.type) {
@@ -267,21 +301,30 @@ function step(ledger: Ledger, event: LedgerEvent): Ledger {
         },
       );
       if (event.result !== "cancelled") return next;
-      // The server withdrew the queued switches to the other mode that came before it.
-      const at = next.entries.findIndex((entry) => entry.id === event.id);
-      const before = new Set(
-        next.entries
-          .slice(0, at < 0 ? next.entries.length : at)
-          .filter(
-            (entry) =>
-              entry.mode !== event.mode &&
-              !entry.failed &&
-              (entry.state === "sending" || entry.state === "posted" || entry.state === "queued"),
-          )
-          .map((entry) => entry.id),
-      );
-      next = mapEntries(next, (entry) => (before.has(entry.id) ? gone(entry) : entry));
-      return next;
+      // The answer is evidence about its own id. The switch the server cancelled is the one
+      // this tab's journal ordered just before it, when that one is still held; the answer
+      // never lists ids, so anything else stays until a snapshot says otherwise.
+      const own = next.entries.find((entry) => entry.id === event.id);
+      if (own?.seq == null) return next;
+      const ownSeq = own.seq;
+      let before: LedgerEntry | null = null;
+      for (const entry of next.entries) {
+        if (entry.seq === null || entry.seq >= ownSeq || entry.state === "gone") continue;
+        if (!before || entry.seq > (before.seq ?? 0)) before = entry;
+      }
+      const target = before;
+      if (
+        !target ||
+        target.mode === event.mode ||
+        target.failed ||
+        (target.state !== "posted" && target.state !== "queued")
+      )
+        return next;
+      return patch(next, target.id, (entry) => ({
+        ...entry,
+        predicted: true,
+        observedAt: raise(entry, event.at),
+      }));
     }
     case "snapshot": {
       const named = new Set(event.dividers.flatMap((d) => (d.controlId ? [d.controlId] : [])));
@@ -292,6 +335,12 @@ function step(ledger: Ledger, event: LedgerEvent): Ledger {
           named.has(item.id) ? entry : { ...advance(entry, "queued"), serverSeq: item.serverSeq },
         );
       }
+      const positions = new Map(next.positions);
+      event.dividers.forEach((divider, index) => {
+        if (divider.controlId && !positions.has(divider.controlId))
+          positions.set(divider.controlId, index);
+      });
+      next = { ...next, positions };
       return mapEntries(next, (entry) => {
         if (entry.state === "gone") return entry;
         // A snapshot that shows the entry is a reading of it at its request.
@@ -301,6 +350,10 @@ function step(ledger: Ledger, event: LedgerEvent): Ledger {
         };
         if (named.has(entry.id))
           return { ...advance(entry, "applied"), ...shows, snapshotSeen: true };
+        if (entry.predicted) {
+          if (event.request <= entry.observedAt) return entry;
+          return listed.has(entry.id) ? { ...entry, ...shows, predicted: false } : gone(entry);
+        }
         if (listed.has(entry.id)) return { ...entry, ...shows };
         const sourced = entry.inJournal || entry.inInbox;
         return !sourced && event.request > entry.observedAt ? gone(entry) : entry;
@@ -310,11 +363,15 @@ function step(ledger: Ledger, event: LedgerEvent): Ledger {
       if (event.dividers.every((divider) => ledger.dividers.has(divider.turnId))) return ledger;
       const dividers = new Map(ledger.dividers);
       const named = new Set(ledger.named);
-      for (const divider of event.dividers) {
+      const positions = new Map(ledger.positions);
+      event.dividers.forEach((divider, index) => {
         dividers.set(divider.turnId, divider.mode);
-        if (divider.controlId) named.add(divider.controlId);
-      }
-      return { ...ledger, dividers, named };
+        if (divider.controlId) {
+          named.add(divider.controlId);
+          positions.set(divider.controlId, index);
+        }
+      });
+      return { ...ledger, dividers, named, positions };
     }
     case "settled":
       return ledger.settled
@@ -349,10 +406,12 @@ function step(ledger: Ledger, event: LedgerEvent): Ledger {
 /** A divider naming an entry is the entry's applied state, whichever source arrived first. */
 export function ledgerReducer(ledger: Ledger, event: LedgerEvent): Ledger {
   const next = step(ledger, event);
-  return mapEntries(next, (entry) =>
-    entry.state !== "gone" && !entry.rendered && next.named.has(entry.id)
-      ? { ...advance(entry, "applied"), rendered: true }
-      : entry,
+  return sorted(
+    mapEntries(next, (entry) =>
+      entry.state !== "gone" && !entry.rendered && next.named.has(entry.id)
+        ? { ...advance(entry, "applied"), rendered: true }
+        : entry,
+    ),
   );
 }
 
@@ -362,7 +421,7 @@ const settledEntry = (entry: LedgerEntry) =>
 /** Entries the writer can still be shown or have their mode overlaid, in order. */
 function live(ledger: Ledger): LedgerEntry[] {
   return ledger.entries.filter(
-    (entry) => entry.state !== "gone" && entry.withdrawal !== "withdrawing",
+    (entry) => entry.state !== "gone" && !entry.predicted && entry.withdrawal !== "withdrawing",
   );
 }
 
@@ -449,9 +508,8 @@ export function proofKey(ledger: Ledger): string | null {
       entry.state !== "gone" &&
       !settledEntry(entry) &&
       entry.withdrawal !== "withdrawing" &&
-      !entry.inJournal &&
-      !entry.inInbox &&
-      entry.observedAt > entry.provedAt,
+      (entry.predicted ||
+        (!entry.inJournal && !entry.inInbox && entry.observedAt > entry.provedAt)),
   );
   return waiting.length ? waiting.map((entry) => `${entry.id}@${entry.observedAt}`).join() : null;
 }

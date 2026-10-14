@@ -53,10 +53,11 @@ const snapshot = (
   pending: pending.map(([id, mode], serverSeq) => ({ id, mode, serverSeq })),
   dividers: named.map((controlId) => ({ controlId })),
 });
-const divider = (controlId: string, mode: Mode): LedgerEvent => ({
+const dividers = (...items: [string, Mode][]): LedgerEvent => ({
   type: "transcript",
-  dividers: [{ turnId: `turn-${controlId}`, controlId, mode }],
+  dividers: items.map(([controlId, mode]) => ({ turnId: `turn-${controlId}`, controlId, mode })),
 });
+const divider = (controlId: string, mode: Mode): LedgerEvent => dividers([controlId, mode]);
 const SETTLED: LedgerEvent = { type: "settled" };
 const done = (
   id: string,
@@ -172,20 +173,21 @@ const SCENARIOS: { name: string; events: LedgerEvent[]; expect: Outcome }[] = [
     events: [
       journal(1, record("s1", "draft", { posted: true }), record("s2", "direct", { posted: true })),
       answer("s2", "direct", "applied"),
-      divider("s2", "direct"),
       answer("s1", "draft", "applied"),
+      dividers(["s1", "draft"], ["s2", "direct"]),
     ],
-    expect: { rows: ["s1:queued"], mode: "direct" },
+    expect: { rows: [], mode: "direct" },
   },
   {
     name: "hides a switch back at once, and the server's null answer confirms it against a stale inbox",
     events: [
       SETTLED,
-      inbox(1, ["s1", "direct"]),
-      journal(2, record("s2", "draft")),
-      answer("s2", "draft", "cancelled", 3),
-      journal(4),
-      inbox(5, ["s1", "direct"]),
+      journal(1, record("s1", "direct", { posted: true })),
+      inbox(2, ["s1", "direct"]),
+      journal(3, record("s1", "direct", { posted: true }), record("s2", "draft")),
+      answer("s2", "draft", "cancelled", 4),
+      journal(5),
+      inbox(6, ["s1", "direct"]),
     ],
     expect: { rows: [], mode: "direct", heard: { queued: ["direct"] } },
   },
@@ -213,6 +215,41 @@ const SCENARIOS: { name: string; events: LedgerEvent[]; expect: Outcome }[] = [
     ],
     // s1 is seeded; s2 cancels nothing (s1 is queued, s2 unanswered folds it) then queues.
     expect: { rows: ["s1:queued", "s2:queued"], mode: "direct", heard: { queued: ["direct"] } },
+  },
+  {
+    // R1: the answer to s2 is delayed, and another device queues s3 meanwhile. s2's cancel-out
+    // is evidence about s1 only; it says nothing about s3.
+    name: "a delayed cancel-out hides the switch it cancelled and not a newer one from another device",
+    events: [
+      journal(1, record("s1", "draft", { posted: true })),
+      inbox(2, ["s1", "draft"]),
+      journal(3, record("s1", "draft", { posted: true }), record("s2", "direct", { posted: true })),
+      inbox(4, ["s3", "draft"]),
+      answer("s2", "direct", "cancelled", 5),
+      snapshot(6, [["s3", "draft"]]),
+    ],
+    expect: { rows: ["s3:queued"], mode: "draft", waiting: false },
+  },
+  {
+    name: "a cancel-out is a prediction until a fresh snapshot: one that lists the switch clears it",
+    events: [
+      journal(1, record("s1", "draft", { posted: true })),
+      inbox(2, ["s1", "draft"]),
+      journal(3, record("s1", "draft", { posted: true }), record("s2", "direct", { posted: true })),
+      answer("s2", "direct", "cancelled", 4),
+      snapshot(5, [["s1", "draft"]]),
+    ],
+    expect: { rows: ["s1:queued"], mode: "draft" },
+  },
+  {
+    // R1: order is the server's where it has spoken, this tab's journal after.
+    name: "an older applied switch from this tab does not outrank a newer queued one from another device",
+    events: [
+      journal(1, record("s1", "draft", { posted: true })),
+      answer("s1", "draft", "applied", 2),
+      inbox(3, ["s3", "direct"]),
+    ],
+    expect: { rows: ["s1:queued", "s3:queued"], mode: "direct" },
   },
   {
     // R4: the server can't cancel a switch it already applied, so the later switch is its own row.
