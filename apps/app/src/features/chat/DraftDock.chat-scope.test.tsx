@@ -39,6 +39,7 @@ beforeEach(() => {
   vi.spyOn(handoff, "useOpenEditorReview").mockReturnValue(navigate);
 });
 afterEach(() => {
+  replyStreaming = false;
   fixture.dispose();
   vi.restoreAllMocks();
   vi.useRealTimers();
@@ -69,8 +70,9 @@ function DesktopEnvironment({ children }: { children: ReactNode }) {
     }) as unknown as MediaQueryList;
   return children;
 }
+let replyStreaming = false;
 function Strip() {
-  return <DraftDock dock={useDraftDock({ threadId: "thread-a", generating: false })} />;
+  return <DraftDock dock={useDraftDock({ threadId: "thread-a", generating: replyStreaming })} />;
 }
 const strip = () => document.querySelector<HTMLElement>("[data-draft-dock]");
 const text = () => strip()?.textContent ?? "";
@@ -86,12 +88,14 @@ const click = (name: string) =>
 /** Drain bounded query/UI scheduling under act; never advance a repeating refresh loop wholesale. */
 
 it.each([
-  { label: "Apply", expanded: false },
-  { label: "Discard", expanded: true },
-])("the strip's new document dispatches whole $label (expanded: $expanded)", async ({
+  { label: "Apply", expanded: false, streaming: true },
+  { label: "Discard", expanded: true, streaming: false },
+])("the strip's new document dispatches whole $label (expanded: $expanded, reply streaming: $streaming)", async ({
   label,
   expanded,
+  streaming,
 }) => {
+  replyStreaming = streaming;
   const file = { ...draft("new-scene", [pacing]), isNew: true, wholeItem: true };
   fixture.network.listWorkDrafts.mockResolvedValue({ items: [file] });
   fixture.network.getDraftPreview.mockResolvedValue({
