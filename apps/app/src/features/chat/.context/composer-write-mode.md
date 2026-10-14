@@ -100,9 +100,8 @@ was and the hook asks for a snapshot. Terminal evidence:
 
 Display derives from the ledger alone. Rows are every entry that is not `gone`, not
 cancel-predicted, not withdrawing, not retired, and not folded by a predicted switch back (a
-switch back before its answer hides both rows, only against a predecessor the server has said
-it holds `queued`: one still `sending` or `posted` may have been applied on arrival, as an idle
-chat does, and an `applied` one stays a row, so the later switch shows). `sending` and
+switch back before its answer hides both rows, only against a predecessor still `sending`,
+`posted` or `queued`: an `applied` one stays a row and the later switch shows). `sending` and
 `posted` show as sending, `queued` and not-yet-rendered `applied` as queued (so no frame lacks
 both the row and the divider). A failed row shows Retry; Withdraw shows unless the server may
 hold it (posted and not refused). Entries are ordered causally, as a merge of two chains: the
