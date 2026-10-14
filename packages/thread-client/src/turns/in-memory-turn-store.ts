@@ -9,7 +9,9 @@ import type { Block, Turn } from "@meridian/contracts/protocol";
 import { compareSeq, parseSeq } from "@meridian/contracts/protocol";
 import type { TurnStore } from "./reduce-turn-event";
 import {
+  type AwaitingDivider,
   applySnapshotTo,
+  dividersAwaitingAnchorIn,
   type EnsureAssistantTurnOptions,
   ensureAssistantTurnIn,
   ensureSwitchTurnIn,
@@ -62,6 +64,14 @@ export class InMemoryTurnStore implements TurnStore {
     this.dividersByThread.set(threadId, applied.dividers);
     this.floors.set(threadId, nextSeq);
     return true;
+  }
+
+  /** The held dividers whose anchor turn is not here; only a newer snapshot resolves them. */
+  dividersAwaitingAnchor(threadId: string): AwaitingDivider[] {
+    return dividersAwaitingAnchorIn({
+      turns: this.turnsByThread.get(threadId) ?? [],
+      dividers: this.dividersByThread.get(threadId) ?? new Map(),
+    });
   }
 
   acceptsSnapshot(threadId: string, nextSeq: string): boolean {

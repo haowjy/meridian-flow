@@ -46,8 +46,10 @@ export {
 } from "./turns/reduce-turn-event";
 export { baseTurnFields } from "./turns/state-helpers";
 export {
+  type AwaitingDivider,
   applySnapshotTo,
   createAssistantTurn,
+  dividersAwaitingAnchorIn,
   type EnsureAssistantTurnOptions,
   ensureAssistantTurnIn,
   ensureSwitchTurnIn,

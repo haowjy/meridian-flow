@@ -10,6 +10,7 @@ import type {
 } from "@meridian/contracts/protocol";
 import type { JsonValue } from "@meridian/contracts/threads";
 import type {
+  AwaitingDivider,
   EnsureAssistantTurnOptions,
   RunStateView,
   SwitchTurnFacts,
@@ -51,6 +52,8 @@ export type ThreadStoreState = {
 /** Mutations — use `useThreadActions()` only. */
 export type ThreadStoreActions = {
   turns(id: string): Turn[] | undefined;
+  /** Held switch dividers whose anchor turn the transcript lacks: only a newer snapshot resolves them. */
+  dividersAwaitingAnchor(id: string): AwaitingDivider[];
   /** The chat's run-state view (the initial one before any fact). */
   runState(id: string): RunStateView;
   setStreamingThreadId(id: string | null, projectId?: string | null): void;

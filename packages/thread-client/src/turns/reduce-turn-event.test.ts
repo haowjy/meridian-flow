@@ -145,13 +145,25 @@ describe("turn reducer", () => {
     // brings the anchor.
     reducer.applyEvent(THREAD, frame("d3", "m9", 9), "7200");
     expect(ids(store)).toEqual(["r1", "d1", "r2a", "r2b", "d2", "r3"]);
+    // The store says which held dividers still wait, with the frame's seq: the one rule hosts ask.
+    expect(store.dividersAwaitingAnchor(THREAD)).toEqual([{ turnId: "d3", seq: "7200" }]);
     store.hydrate(THREAD, [...replies, t("m9", "r3")], "6500");
     expect(ids(store)).toEqual(["r1", "d1", "r2a", "r2b", "d2", "r3", "m9", "d3"]);
+    expect(store.dividersAwaitingAnchor(THREAD)).toEqual([]);
     // The covering snapshot's stored turn replaces the divider by id; a later one without it drops it.
     const stored = { ...turns[1], position: 3 } as Turn;
     store.hydrate(THREAD, [turns[0] as Turn, stored, ...replies.slice(1)], "7001");
     expect(store.turns(THREAD)?.[1]).toBe(stored);
+    // Risk (review N2): a covering snapshot that excludes a waiting divider and never brings its
+    // anchor must release it, or a host asks for a refresh forever.
+    reducer.applyEvent(THREAD, frame("d4", "m10", 10), "7300");
+    // (d3 waits again: the 7001 snapshot did not cover its frame and lacks m9.)
+    expect(store.dividersAwaitingAnchor(THREAD)).toEqual([
+      { turnId: "d3", seq: "7200" },
+      { turnId: "d4", seq: "7300" },
+    ]);
     store.hydrate(THREAD, replies, "8000");
     expect(ids(store)).toEqual(["r1", "r2a", "r2b", "r3"]);
+    expect(store.dividersAwaitingAnchor(THREAD)).toEqual([]);
   });
 });
