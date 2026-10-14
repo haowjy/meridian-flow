@@ -112,8 +112,11 @@ export function reconcileStagedBranchWrites(
   );
   const currentDeletes = deleteRanges(decodeUpdateForDependencies(Y.encodeStateAsUpdate(current)));
   const explained = [...dropped].map((row) => row.updateData).map(decodeUpdateForDependencies);
-  const inserted = explained.flatMap(suppliedRanges),
-    deleted = explained.flatMap(deleteRanges);
+  // The helper's cut is its baseline, never a write: after an item Discard closes the draft a
+  // reply's old writes keep their old draft's content in the cut while the peer is a fresh one.
+  const baseline = decodeUpdateForDependencies(planningState);
+  const inserted = [...explained.flatMap(suppliedRanges), ...suppliedRanges(baseline)],
+    deleted = [...explained.flatMap(deleteRanges), ...deleteRanges(baseline)];
   // The server client's items (seed, rebase, reset) are never the helper's own content, and a reset
   // restarts that client's clocks: they are not residual a response could publish.
   const helperOwn = (range: { client: number }) => range.client !== DRAFT_SERVER_CLIENT_ID;

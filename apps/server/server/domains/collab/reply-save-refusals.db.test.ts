@@ -472,6 +472,98 @@ describe("reply save refusals (postgres)", () => {
     "before the leases",
   ] as const;
 
+  // The last-use Discard lands at each phase boundary of the peer pull, not only before its leases.
+  const pullPhases = [
+    "after the first ensure",
+    "before the second ensure",
+    "before the leases",
+  ] as const;
+  it.each(
+    pullPhases.flatMap((phase) => [
+      { phase, other: false, name: "last use deletes the branch rows" },
+      { phase, other: true, name: "another Work's draft still uses the create, so its rows close" },
+    ]),
+  )("23b: Discard of a hidden create $phase of a write's pull names the document ($name)", async ({
+    phase,
+    other,
+  }) => {
+    const { second, review, fixture, core } = await createdThenStaged();
+    if (other) {
+      await seedSecondWork(fixture);
+      await shareHiddenCreate(fixture);
+    }
+    const withLeases = fixture.branchCoordinator.withLeases;
+    const ensure = fixture.branchStore.ensureThreadPeerBranch;
+    let once = true;
+    let ensures = 0;
+    const discardOnce = async () => {
+      if (!once) return;
+      once = false;
+      await review.discardItem(NEW_ID);
+    };
+    fixture.branchStore.ensureThreadPeerBranch = (async (...args: Parameters<typeof ensure>) => {
+      ensures += 1;
+      if (phase === "before the second ensure" && ensures === 2) await discardOnce();
+      const peer = await ensure.apply(fixture.branchStore, args);
+      if (phase === "after the first ensure" && ensures === 1) await discardOnce();
+      return peer;
+    }) as typeof ensure;
+    fixture.branchCoordinator.withLeases = (async (...args: Parameters<typeof withLeases>) => {
+      if (phase === "before the leases" && args[0].length === 2) await discardOnce();
+      return withLeases.apply(fixture.branchCoordinator, args);
+    }) as typeof withLeases;
+    let late: Awaited<ReturnType<typeof core.write>>;
+    try {
+      late = await core.write(
+        {
+          command: "replace",
+          file: "created",
+          documentId: NEW_ID as never,
+          find: "Newer.",
+          content: "Newest.",
+          tool_use_id: "w-late",
+        },
+        { ...responseContext(second), grant: grantFor(NEW_ID) },
+      );
+    } finally {
+      fixture.branchCoordinator.withLeases = withLeases;
+      fixture.branchStore.ensureThreadPeerBranch = ensure;
+    }
+    // An early Discard may let the write run against a fresh peer and fail as a missing
+    // find, but the reply still names the discarded document; none crash.
+    expect(late.isError).toBe(true);
+    if (phase === "before the leases") expect(late.status).toBe("invalid_write");
+    expect(JSON.stringify(late.result)).toContain("the user discarded this new document");
+    expect(refused(await harness.commit(second))).toEqual([[NEW_ID, DOC]]);
+  });
+
+  it("22b: a first write losing to Discard all leaves no pin, so the instructed read and retry land in a fresh draft", async () => {
+    const { responseId, review, write, core, context, fixture } = await setup();
+    const withLeases = fixture.branchCoordinator.withLeases;
+    let once = true;
+    fixture.branchCoordinator.withLeases = (async (...args: Parameters<typeof withLeases>) => {
+      if (once && args[0].length === 2) {
+        once = false;
+        await review.discardAll();
+      }
+      return withLeases.apply(fixture.branchCoordinator, args);
+    }) as typeof withLeases;
+    let first: Awaited<ReturnType<typeof write>>;
+    try {
+      first = await write("green", "lime", "w-first");
+    } finally {
+      fixture.branchCoordinator.withLeases = withLeases;
+    }
+    expect(first).toMatchObject({ isError: true, status: "invalid_write" });
+    expect(JSON.stringify(first.result)).toContain(DRAFT);
+    expect(
+      await core.read({ file: "alpha.md", documentId: ALPHA_ID, tool_use_id: "r" }, context),
+    ).toMatchObject({ status: "success" });
+    expect(await write("green", "lime", "w-retry")).toMatchObject({ phase: "staged" });
+    expect(refused(await harness.commit(responseId))).toEqual([]);
+    expect(await review.list()).not.toEqual([]);
+  });
+
   it("22c: a first write paused after its lease and before staging is refused at the write once Discard retires its peer", async () => {
     const { fixture, branchId, responseId, review, write } = await setup();
     const prepare = fixture.links.prepare;
