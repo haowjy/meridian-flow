@@ -17,10 +17,8 @@
 import type { DraftId, ThreadId, WorkId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { branchWriteJournal, documentBranches } from "@meridian/database/schema";
-import { createCollabYDoc } from "@meridian/prosemirror-schema";
+import { documentBranches } from "@meridian/database/schema";
 import { and, eq, inArray } from "drizzle-orm";
-import * as Y from "yjs";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { requireLockedActiveWorks } from "../../../shared/work-lifecycle-lock.js";
 import type { ContextCatalogMutationPort } from "../../context/ports/context-catalog.js";
@@ -33,11 +31,9 @@ import {
   readEndUseScope,
 } from "../../context/tree/end-use.js";
 import type { WorkDraftDisposal, WorkProjectionMutation } from "../../projects/index.js";
-import { BranchCasConflictError, type BranchCoordinator } from "../domain/branch-coordinator.js";
 import type { BranchCriticalSections } from "../domain/branch-critical-sections.js";
 import { DraftCommandExistsError } from "../domain/draft-commands.js";
 import {
-  type DiscardItem,
   type DiscardKernelInput,
   type DiscardKernelResult,
   type DraftBranchRef,
@@ -46,8 +42,7 @@ import {
 } from "../domain/draft-discard.js";
 import type { Drafts } from "../domain/drafts.js";
 import type { PeerRetirementCause, RetiredBranch } from "../domain/peer-retirement.js";
-import type { ApplicationBranchStore } from "../domain/ports/application-branch-store.js";
-import { settleDraftGeneration } from "./drizzle-document-edits.js";
+import { discardDraftEditParts } from "./drizzle-document-edits.js";
 import { claimCommandWithinTx } from "./drizzle-draft-commands.js";
 
 type KernelDeps = {
@@ -92,7 +87,7 @@ function retired(
 async function closeDraftBranches(
   db: Database,
   draftId: DraftId,
-  cause: PeerRetirementCause,
+  cause: PeerRetirementCause | ((documentId: DocumentId) => PeerRetirementCause),
   documentIds?: readonly DocumentId[],
 ): Promise<RetiredBranch[]> {
   if (documentIds?.length === 0) return [];
@@ -112,23 +107,21 @@ async function closeDraftBranches(
       documentId: documentBranches.documentId,
       threadId: documentBranches.threadId,
       kind: documentBranches.kind,
-      generation: documentBranches.generation,
     });
-  for (const branch of closed) {
-    if (branch.kind === "work_draft") {
-      await settleDraftGeneration(tx, branch.branchId, branch.generation, "discarded");
-    }
+  const textBranches = closed.filter((branch) => branch.kind === "work_draft");
+  if (textBranches.length > 0) {
+    await discardDraftEditParts(
+      tx,
+      textBranches.map((branch) => branch.branchId),
+    );
   }
-  return closed.map((branch) =>
-    retired(
-      {
-        ...branch,
-        documentId: branch.documentId as DocumentId,
-        threadId: branch.threadId as ThreadId | null,
-      },
-      cause,
-    ),
-  );
+  return closed.map((branch) => {
+    const documentId = branch.documentId as DocumentId;
+    return retired(
+      { ...branch, documentId, threadId: branch.threadId as ThreadId | null },
+      typeof cause === "function" ? cause(documentId) : cause,
+    );
+  });
 }
 
 /**
@@ -177,8 +170,6 @@ export function createDrizzleDraftDiscard(
   db: Database,
   deps: KernelDeps & {
     drafts: Pick<Drafts, "lockActive" | "close">;
-    branches: Pick<ApplicationBranchStore, "getBranch" | "closeThreadPeersOf">;
-    coordinator: Pick<BranchCoordinator, "resetFromDocIfUnchangedWithLease">;
     workProjection: Pick<WorkProjectionMutation, "mutatePendingDraft">;
   },
 ): DrizzleDraftDiscard {
@@ -202,68 +193,20 @@ export function createDrizzleDraftDiscard(
       .sort((a, b) => a.branchId.localeCompare(b.branchId));
   }
 
-  /**
-   * Reset the draft's branch on an item from live when it holds reviewable rows (CAS), and
-   * close that branch's thread peers (rows or not): exactly this draft's, which the caller leased.
-   */
-  async function resetItemText(
-    input: Extract<DiscardKernelInput, { selection: { kind: "items" } }>,
-    item: { documentId: DocumentId; draftBranchId: string },
-  ): Promise<readonly RetiredBranch[]> {
-    const content = await deps.branches.getBranch(item.draftBranchId);
-    // Gone with its tombstone, or no longer the draft's: nothing of the draft left to reset.
-    if (
-      content?.kind !== "work_draft" ||
-      content.status !== "active" ||
-      content.draftId !== input.draftId ||
-      content.documentId !== item.documentId
-    ) {
-      return [];
-    }
-    const [pending] = await currentDrizzleDb(db)
-      .select({ id: branchWriteJournal.id })
-      .from(branchWriteJournal)
-      .where(
-        and(
-          eq(branchWriteJournal.branchId, content.branchId),
-          eq(branchWriteJournal.generation, content.generation),
-          inArray(branchWriteJournal.status, ["active", "rollback_pending"]),
-        ),
-      )
-      .limit(1);
-    // A healthy rowless branch has no text to reset (unless its state cannot be read: Discard
-    // is the recovery for a corrupt item, rows or not), but an open reply may still hold staged
-    // writes on it, so its peers close either way.
-    if (!pending && isReadable(content.state)) {
-      return deps.branches.closeThreadPeersOf([content.branchId], "edit_discarded");
-    }
-    const liveDoc = input.liveDocs.get(item.documentId);
-    if (!liveDoc) throw new Error(`Discard of ${item.documentId} holds no live document`);
-    const reset = await deps.coordinator.resetFromDocIfUnchangedWithLease(input.lease, {
-      branchId: content.branchId,
-      upstream: liveDoc,
-      expectedGeneration: content.generation,
-      expectedState: content.state,
-      expectedStateVector: content.stateVector,
-      schemaVersion: content.schemaVersion,
-    });
-    if (!reset) throw new BranchCasConflictError(content.branchId);
-    return deps.branches.closeThreadPeersOf([content.branchId], "edit_discarded");
-  }
-
   async function kernel(input: DiscardKernelInput): Promise<DiscardKernelResult> {
     const { draftId } = input;
-    // Only the items arm carries leases and live documents.
-    if (!("lease" in input)) return discardWholeLocked(db, deps, draftId);
+    if (input.selection.kind === "whole") return discardWholeLocked(db, deps, draftId);
     const { items } = input.selection;
     // Created or edited is the document's visibility now, read under the locks the caller
-    // holds: another Work's Apply may have revealed a create since the item was resolved, and
-    // a revealed create is an edited item (§2.2), reset from live with its branch kept. The
-    // draft's create row goes either way; only a hidden document can be tombstoned by it.
+    // holds: another Work's Apply may have revealed a create since the item was resolved.
+    // The draft's create row goes either way; only a hidden document can be tombstoned by it.
     const withRows = items.filter((item) => item.origin === "created").map((i) => i.documentId);
-    const hiddenNow = await hiddenDocumentIds(db, withRows);
-    const isCreated = (item: DiscardItem) => hiddenNow.has(item.documentId);
-    const created = items.filter(isCreated).map((item) => item.documentId);
+    // Read before the end of use tombstones what no draft uses any more (§5.2): a hidden create is
+    // a discarded document, a live document (a revealed create, an edit) a discarded edit.
+    const hiddenNow = await hiddenDocumentIds(
+      db,
+      items.map((item) => item.documentId),
+    );
     const ended = await endUseReconciled(
       db,
       deps,
@@ -271,26 +214,19 @@ export function createDrizzleDraftDiscard(
       { drafts: [{ draftId, documentIds: withRows }] },
       "document_discarded",
     );
-    // A hidden create another draft still uses stays, but this draft's branches on it end.
-    const retiredBranches: RetiredBranch[] = [
-      ...ended.retired,
-      ...(await closeDraftBranches(db, draftId, "document_discarded", created)),
-    ];
-    for (const item of items) {
-      if (item.draftBranchId && !isCreated(item)) {
-        retiredBranches.push(
-          ...(await resetItemText(input, {
-            documentId: item.documentId,
-            draftBranchId: item.draftBranchId,
-          })),
-        );
-      }
-    }
+    // Close-only: the items' branches end with their pending edit parts marked discarded. The
+    // review is a pure function of the text, so a discarded item simply leaves the list.
+    const closed = await closeDraftBranches(
+      db,
+      draftId,
+      (documentId) => (hiddenNow.has(documentId) ? "document_discarded" : "edit_discarded"),
+      items.map((item) => item.documentId),
+    );
     return {
       draftClosed: false,
       tombstoned: ended.tombstoned,
       releasedObjects: ended.releasedObjects,
-      retired: retiredBranches,
+      retired: [...ended.retired, ...closed],
     };
   }
 
@@ -402,16 +338,4 @@ export function createDrizzleWorkDraftDisposal(
       }
     },
   };
-}
-
-function isReadable(state: Uint8Array): boolean {
-  const scratch = createCollabYDoc({ gc: false });
-  try {
-    Y.applyUpdate(scratch, state);
-    return true;
-  } catch {
-    return false;
-  } finally {
-    scratch.destroy();
-  }
 }

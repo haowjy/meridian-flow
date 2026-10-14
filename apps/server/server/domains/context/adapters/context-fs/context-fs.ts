@@ -11,7 +11,6 @@ import {
   type Filetype,
   filetypeForKnownPath,
   filetypeForPath,
-  folderDocumentName,
   type ParsedDocumentFilename,
   parseDocumentFilename,
   type YjsTrackedSchemaType,

@@ -15,6 +15,7 @@ import * as Y from "yjs";
 import type { BranchConcurrentJournalWatermarks } from "./branch-agent-edit.js";
 import {
   BranchCasConflictError,
+  BranchClosedError,
   type BranchCoordinator,
   BranchMissingError,
   type BranchSnapshot,
@@ -177,7 +178,13 @@ export function createBranchPullService(input: {
     for (const branchId of branchIds) {
       const outcome = await atBranch(branchId, () =>
         input.branchCoordinator.withLeases([branchId], (lease) =>
-          input.rootTransaction(() => input.draftRebase.catchUp(lease, branchId)),
+          input.rootTransaction(() =>
+            input.draftRebase.catchUp(lease, branchId).catch((cause: unknown) => {
+              // A Discard closed the branch after the listing: nothing is left to catch up.
+              if (cause instanceof BranchStaleUpdateError) return { kind: "noop" as const };
+              throw cause;
+            }),
+          ),
         ),
       );
       switch (outcome.kind) {
@@ -347,7 +354,12 @@ export function createBranchPullService(input: {
             input.rootTransaction(async () => {
               const state = await input.branchCoordinator
                 .ownedSession(lease)
-                .read(upstreamBranchId, (doc) => Promise.resolve(Y.encodeStateAsUpdate(doc)));
+                .read(upstreamBranchId, (doc, snapshot) => {
+                  // An item Discard closes its branch without touching the text: a peer never
+                  // pulls from an upstream that ended while it waited for the leases.
+                  if (snapshot.status === "closed") throw new BranchClosedError(upstreamBranchId);
+                  return Promise.resolve(Y.encodeStateAsUpdate(doc));
+                });
               await pullPeerFromCapturedUpstream(lease, peer.branchId, state);
             }),
           );
@@ -363,6 +375,7 @@ export function createBranchPullService(input: {
             identity.upstreamBranchId &&
             (cause instanceof BranchStaleUpdateError ||
               cause instanceof BranchCasConflictError ||
+              cause instanceof BranchClosedError ||
               cause instanceof BranchMissingError)
           )
             throw new ThreadPeerPullLost(identity.peerBranchId, identity.upstreamBranchId, cause);

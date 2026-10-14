@@ -90,15 +90,20 @@ export function revisionAdvances(
 }
 
 /**
- * Fresh state for a new text branch: a copy of live's Yjs state in `prosemirror` (so the Yjs-lineage Apply
- * the train still has until R2 keeps its common ancestry), plus live's text written into the server-owned
- * `review_base` as one server transaction.
+ * Fresh state for a new text branch: live's text written twice as fresh items by the reserved server
+ * client, once into `prosemirror` (the draft) and once into the server-owned `review_base`. The draft
+ * shares no Yjs lineage with live: Apply merges by content (contract §2), so only server-authored text
+ * and no live client's items are in a new draft.
  */
 export function seedDraftState(live: Y.Doc): { state: Uint8Array; stateVector: Uint8Array } {
   const doc = createCollabYDoc({ gc: false });
   try {
-    Y.applyUpdate(doc, Y.encodeStateAsUpdate(live));
-    writeBaseFrom(doc, live);
+    const blocks = readBlocks(live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), draftSchema);
+    doc.clientID = DRAFT_SERVER_CLIENT_ID;
+    doc.transact(() => {
+      writeBlocks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), draftSchema, blocks);
+      writeBlocks(doc.getXmlFragment(REVIEW_BASE_FRAGMENT), draftSchema, blocks);
+    }, "seed");
     return { state: Y.encodeStateAsUpdate(doc), stateVector: Y.encodeStateVector(doc) };
   } finally {
     doc.destroy();

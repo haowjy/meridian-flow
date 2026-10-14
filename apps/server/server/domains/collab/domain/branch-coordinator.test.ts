@@ -1,18 +1,10 @@
 /** Shadow branch coordinator conformance for peer pulls and CAS persistence. */
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
-import {
-  allocateDocumentClient,
-  COLLAB_SCHEMA_VERSION,
-  type CollabSchemaVersion,
-} from "@meridian/prosemirror-schema";
+import { allocateDocumentClient, COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
-import {
-  commitJournaledUpdate,
-  commitSegmentRows,
-  resetBranchFromDoc,
-} from "../test-support/branch-update-writes.js";
+import { commitJournaledUpdate, commitSegmentRows } from "../test-support/branch-update-writes.js";
 import { captureHistoricalBranchRow } from "../test-support/historical-branch-row.js";
 import {
   type BranchSnapshot,
@@ -102,26 +94,6 @@ class MemoryBranchStore implements BranchStore {
       ...current,
       state: input.state,
       stateVector: input.stateVector,
-    }));
-  }
-
-  async resetBranchSnapshot(input: {
-    branchId: string;
-    expectedGeneration: number;
-    expectedStateVector: Uint8Array;
-    expectedState: Uint8Array;
-    state: Uint8Array;
-    stateVector: Uint8Array;
-    discardedStateVector: Uint8Array;
-    schemaVersion: CollabSchemaVersion;
-  }): Promise<boolean> {
-    return this.persist(input, (current) => ({
-      ...current,
-      generation: current.generation + 1,
-      state: input.state,
-      stateVector: input.stateVector,
-      discardedStateVector: input.discardedStateVector,
-      schemaVersion: input.schemaVersion,
     }));
   }
 
@@ -352,39 +324,6 @@ describe("BranchCoordinator", () => {
     );
   });
 
-  it("rejects reset after a delete-only concurrent write changes bytes without changing the state vector", async () => {
-    const store = new MemoryBranchStore();
-    const originalDoc = docWithText("abcdef");
-    const original = branchSnapshot({ branchId: "work", doc: originalDoc });
-    store.branches.set("work", original);
-
-    const deleteOnlyDoc = materialize(original);
-    deleteOnlyDoc.getText("content").delete(1, 2);
-    expect(Y.encodeStateVector(deleteOnlyDoc)).toEqual(original.stateVector);
-    store.branches.set("work", {
-      ...original,
-      state: Y.encodeStateAsUpdate(deleteOnlyDoc),
-      stateVector: Y.encodeStateVector(deleteOnlyDoc),
-    });
-
-    const coordinator = createBranchCoordinator({ store });
-    await expect(
-      coordinator.withLeases(["work"], (lease) =>
-        coordinator.resetFromDocIfUnchangedWithLease(lease, {
-          branchId: "work",
-          upstream: docWithText("fresh live"),
-          expectedGeneration: original.generation,
-          expectedStateVector: original.stateVector,
-          expectedState: original.state,
-          schemaVersion: original.schemaVersion,
-        }),
-      ),
-    ).resolves.toBe(false);
-
-    expect(materialize(storedBranch(store, "work")).getText("content").toString()).toBe("adef");
-    expect(store.journal).toHaveLength(0);
-  });
-
   it("does not mutate the cached branch doc when journal append fails", async () => {
     const store = new MemoryBranchStore();
     store.branches.set("work", branchSnapshot({ branchId: "work", doc: new Y.Doc({ gc: false }) }));
@@ -404,23 +343,6 @@ describe("BranchCoordinator", () => {
     await pull(coordinator, "work", new Y.Doc({ gc: false }));
     expect(store.journal).toHaveLength(0);
     expect(materialize(storedBranch(store, "work")).getText("content").toString()).toBe("");
-  });
-
-  it("keeps the discarded replay fence monotonic across resets", async () => {
-    const store = new MemoryBranchStore();
-    const first = docWithText("first discarded");
-    store.branches.set("work", branchSnapshot({ branchId: "work", doc: first }));
-    const coordinator = createBranchCoordinator({ store });
-
-    await resetBranchFromDoc(coordinator, store, "work", docWithText("second discarded"));
-    await resetBranchFromDoc(coordinator, store, "work", docWithText("current"));
-
-    const discarded = Y.decodeStateVector(
-      storedBranch(store, "work").discardedStateVector ?? new Uint8Array(),
-    );
-    for (const [client, clock] of Y.decodeStateVector(Y.encodeStateVector(first))) {
-      expect(discarded.get(client)).toBeGreaterThanOrEqual(clock);
-    }
   });
 });
 

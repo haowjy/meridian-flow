@@ -34,7 +34,6 @@ describe("response helper replay (Postgres)", () => {
       documents: [{ updateCount: 1 }],
     });
     expect(await fixture.draftMarkdown(branchId)).toBe("gold\n\nblue\n\nlime\n");
-    expect(await harness.branchGeneration(branchId)).toBe(2);
   });
   it("whole Discard rolls back the only staged document in a reply", async () => {
     const { fixture, branchId, responseId, write } = await setupResponseDraft(db, harness, true);

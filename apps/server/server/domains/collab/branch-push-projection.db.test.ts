@@ -54,9 +54,31 @@ import { createDrafts } from "./domain/drafts.js";
 import { createMarkdownDocumentEngine } from "./domain/markdown-document.js";
 import { commitJournaledUpdate } from "./test-support/branch-update-writes.js";
 import { resetDatabase } from "./test-support/change-trail-postgres-harness.js";
+import { draftRebaseDeps } from "./test-support/draft-rebase-deps.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) throw new Error("DB suites require DATABASE_URL");
+
+/** The writer's Apply of a whole item: one content member with its command. */
+function applyWhole(
+  branchPush: ReturnType<typeof createBranchPushService>,
+  input: { branchId: string; workId: string; draftId: string; userId: string },
+) {
+  return branchPush.pushBranchesToLive({
+    members: [{ branchId: input.branchId, itemKey: "item", request: { scope: "item" } }],
+    payloads: {},
+    finalizePayloads: () => ({}),
+    command: {
+      commandId: randomUUID() as never,
+      workId: input.workId as never,
+      accountId: input.userId as never,
+      kind: "apply_items",
+      draftId: input.draftId as never,
+      digest: randomUUID(),
+    },
+    pushedByUserId: input.userId as never,
+  });
+}
 
 describe("branch-push durable projection", () => {
   const db = createDb(DATABASE_URL, { max: 4 });
@@ -194,6 +216,10 @@ describe("branch-push durable projection", () => {
       createDrizzleDocumentProjectionEffects(db),
       changeTrails,
       createDrizzleDocumentDerivationStore(db, createDocumentLastAddress(db)),
+      undefined,
+      undefined,
+      { steps: [] },
+      branchStore,
     );
     const branchCoordinator = createBranchCoordinator({ store: branchStore });
     const liveDoc = createCollabYDoc({ gc: false });
@@ -226,15 +252,19 @@ describe("branch-push durable projection", () => {
       commitStore,
       settlementStore,
       branchCoordinator,
-      journal: persistence.journal,
+      ...draftRebaseDeps({
+        journal: persistence.journal,
+        branchCoordinator,
+        branches: branchStore,
+      }),
       liveCoordinator,
       model,
       codec: createAgentEditCodecFactory(codec),
     });
 
-    await expect(branchPush.pushToLive({ branchId: branch.branchId })).rejects.toThrow(
-      "injected generic projection failure",
-    );
+    await expect(
+      applyWhole(branchPush, { branchId: branch.branchId, workId, draftId: draft.id, userId }),
+    ).rejects.toThrow("injected generic projection failure");
     const journalAfterFailure = await db
       .select({ id: documentYjsUpdates.id })
       .from(documentYjsUpdates)
@@ -283,7 +313,6 @@ describe("branch-push durable projection", () => {
       .where(eq(documentYjsUpdates.documentId, documentId))
       .orderBy(documentYjsUpdates.id);
     expect(journalAfterRecovery).toEqual([
-      expect.objectContaining({ originType: "agent", actorTurnId: turnId }),
       expect.objectContaining({ originType: "reconcile", actorTurnId: null }),
     ]);
     const [documentAfterRecovery] = await db
@@ -432,9 +461,17 @@ describe("branch-push durable projection", () => {
         createDrizzleDocumentProjectionEffects(db),
         changeTrails,
         createDrizzleDocumentDerivationStore(db, createDocumentLastAddress(db)),
+        undefined,
+        undefined,
+        { steps: [] },
+        branchStore,
       ),
       branchCoordinator,
-      journal: persistence.journal,
+      ...draftRebaseDeps({
+        journal: persistence.journal,
+        branchCoordinator,
+        branches: branchStore,
+      }),
       liveCoordinator,
       model,
       codec: createAgentEditCodecFactory(codec),
@@ -444,9 +481,9 @@ describe("branch-push durable projection", () => {
       },
     });
 
-    await expect(branchPush.pushToLive({ branchId: branch.branchId })).rejects.toThrow(
-      /remains pending after bounded retries/,
-    );
+    await expect(
+      applyWhole(branchPush, { branchId: branch.branchId, workId, draftId: draft.id, userId }),
+    ).rejects.toThrow(/remains pending after bounded retries/);
 
     const [document] = await db
       .select({

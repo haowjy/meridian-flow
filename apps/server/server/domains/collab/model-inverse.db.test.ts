@@ -264,7 +264,7 @@ describe("model revert", () => {
       expect(page.result.message).toContain("more: before w6");
       const second = await core.read({ ...address, format: "edits", before: "w6" }, context);
       expect(lines(second.result.message)).toHaveLength(5);
-      expect(second.result.message).toContain('w1  this turn  live  "Beta" → "Text1"');
+      expect(second.result.message).toMatch(/w1 {2}this turn {2}\w+ {2}"Beta" → "Text1"/);
       expect(
         await core.write({ ...address, command: "revert", edit: "w25" }, context),
       ).toMatchObject({ status: "success", writeId: "w26" });

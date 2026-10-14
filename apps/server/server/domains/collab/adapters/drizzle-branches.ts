@@ -58,7 +58,6 @@ import {
   BranchStaleUpdateError,
   type CommitBranchMutationInput,
   type PersistBranchInput,
-  type ResetBranchSnapshotInput,
 } from "../domain/branch-coordinator.js";
 import { branchJournalRevision } from "../domain/branch-push-contracts.js";
 import {
@@ -71,12 +70,8 @@ import { seedDraftState } from "../domain/draft-rebase.js";
 import type { Drafts } from "../domain/drafts.js";
 import type { PeerRetirementCause, RetiredBranch } from "../domain/peer-retirement.js";
 import type { ApplicationBranchStore } from "../domain/ports/application-branch-store.js";
-import { casBranchState, monotonicSchemaStamp } from "./drizzle-branch-state.js";
-import {
-  captureReceiptRows,
-  recordDocumentEdit,
-  settleDraftGeneration,
-} from "./drizzle-document-edits.js";
+import { casBranchState } from "./drizzle-branch-state.js";
+import { captureReceiptRows, recordDocumentEdit } from "./drizzle-document-edits.js";
 
 export type DrizzleBranchStore = ApplicationBranchStore;
 
@@ -591,56 +586,6 @@ export function createDrizzleBranchStore(
         await lockDocumentMutation(currentDrizzleDb(db), editBranch.documentId);
         return writeBranchState(currentDrizzleDb(db), input);
       });
-    },
-
-    async resetBranchSnapshot(input: ResetBranchSnapshotInput) {
-      return runInDrizzleTransaction(db, () =>
-        mutatePending([input.branchId], async () => {
-          const txDb = currentDrizzleDb(db);
-          const [row] = await txDb
-            .update(documentBranches)
-            .set({
-              generation: sql`${documentBranches.generation} + 1`,
-              hasEffect: false,
-              blocking: false,
-              liveCut: Buffer.from(input.state),
-              state: Buffer.from(input.state),
-              stateVector: Buffer.from(input.stateVector),
-              discardedStateVector: Buffer.from(input.discardedStateVector),
-              schemaVersion: monotonicSchemaStamp(input.schemaVersion),
-              updatedAt: new Date(),
-            })
-            .where(
-              and(
-                eq(documentBranches.id, input.branchId),
-                eq(documentBranches.status, "active"),
-                eq(documentBranches.generation, input.expectedGeneration),
-                eq(documentBranches.stateVector, Buffer.from(input.expectedStateVector)),
-                eq(documentBranches.state, Buffer.from(input.expectedState)),
-              ),
-            )
-            .returning({ id: documentBranches.id });
-          if (!row) return false;
-          await txDb
-            .update(branchWriteJournal)
-            .set({ status: "discarded" })
-            .where(
-              and(
-                eq(branchWriteJournal.branchId, input.branchId),
-                eq(branchWriteJournal.generation, input.expectedGeneration),
-                inArray(branchWriteJournal.status, ["active", "rollback_pending"]),
-              ),
-            )
-            .then(() => undefined);
-          await settleDraftGeneration(
-            txDb,
-            input.branchId,
-            input.expectedGeneration,
-            input.editDisposition ?? "discarded",
-          );
-          return true;
-        }),
-      );
     },
 
     async appendJournal(input: AppendBranchJournalInput) {

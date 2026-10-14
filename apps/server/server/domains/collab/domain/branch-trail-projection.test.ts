@@ -1,16 +1,19 @@
 /** Trail projection coverage for durable locations across split structural writes. */
+
 import {
   createAgentEditCodecFactory,
   getBlockItemId,
   toDocHandle,
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
+import { blockTexts, humanText } from "@meridian/agent-edit/test-support";
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { expect, it } from "vitest";
 import * as Y from "yjs";
 import type { BranchJournalRow } from "./branch-push-contracts.js";
 import {
+  draftPriorDoc,
   journalAttributionByChangedBlock,
   preparedTrailChanges,
 } from "./branch-trail-projection.js";
@@ -453,7 +456,7 @@ it("keeps an unrelated deletion and insertion in one push as separate events", (
     status: "active",
   });
   const attribution = journalAttributionByChangedBlock({
-    liveDoc: beforeDoc,
+    priorDoc: beforeDoc,
     rows: [row(1, deleteUpdate), row(2, insertUpdate)],
     model,
   });
@@ -508,4 +511,28 @@ it("keeps an unrelated deletion and insertion in one push as separate events", (
   expect(changes.map((change) => change.kind)).toEqual(["delete", "insert"]);
   expect(changes[0]?.navigation.kind).toBe("deletion_boundary");
   expect(changes[1]?.navigation.kind).toBe("live_block_range");
+});
+
+it("rebuilds the draft before its rows from the draft's own state, restoring deleted text", () => {
+  const schema = buildDocumentSchema();
+  const model = yProsemirrorModel(schema);
+  const codec = createAgentEditCodecFactory(mdxCodec({ schema })).forScope(UNSCOPED_DOCUMENT_LINKS);
+  const draft = createCollabYDoc({ gc: false });
+  model.insertBlocks(toDocHandle(draft), null, codec.parse("Alpha Beta.\n\nBlue."));
+  const prior = Y.encodeStateAsUpdate(draft);
+  const before = Y.encodeStateVector(draft);
+  humanText(draft, 0, { from: 6, to: 10 }, "Gamma");
+  model.deleteBlock(toDocHandle(draft), model.getBlocks(toDocHandle(draft))[1] as never);
+  const row = Y.encodeStateAsUpdate(draft, before);
+  const rebuilt = draftPriorDoc(Y.encodeStateAsUpdate(draft), [{ updateData: row } as never]);
+  expect(blockTexts(rebuilt)).toEqual(["Alpha Beta.", "Blue."]);
+  expect(Y.encodeStateVector(rebuilt)).toEqual(
+    Y.encodeStateVector(
+      (() => {
+        const expected = createCollabYDoc({ gc: false });
+        Y.applyUpdate(expected, prior);
+        return expected;
+      })(),
+    ),
+  );
 });

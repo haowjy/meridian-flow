@@ -4,27 +4,26 @@ import type {
   AgentEditCodecFactory,
   CanonicalBlockIdentity,
   DocumentCoordinator,
-  UpdateJournal,
   YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
-import type { DraftCommandResult } from "@meridian/contracts/drafts";
+import type { DraftDecidedOutcome, DraftOverride } from "@meridian/contracts/drafts";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
-import type * as Y from "yjs";
 import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
 import type { BranchCriticalSections } from "./branch-critical-sections.js";
+import type { ContentApplyRequest, ContentMemberInput } from "./draft-apply.js";
 import type { DraftCommandEnvelope } from "./draft-commands.js";
+import type { DraftRebase } from "./draft-rebase.js";
 import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
 import type { DurableTrailRecord } from "./ports/change-trail-persistence.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 import type { PendingSettlementStore } from "./ports/pending-settlement-store.js";
 import type {
+  BaseWrite,
   PublicationItemHold,
-  PublicationItemOutcome,
   PublicationRefusal,
 } from "./ports/settlement-publication.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
-import type { SweepEvidence } from "./sweep-policy.js";
 import type { NormalizedTrail, RawTrailChange, TrailChangeV1 } from "./trail-read-kernel.js";
 
 export class BranchPushCommitConflictError extends Error {
@@ -93,40 +92,20 @@ export type PushLineageRow = {
   receiptId?: string | null;
   threadId?: ThreadId | null;
   turnId?: TurnId | null;
+  /** The content member's frozen input (`apply_payload`); null on a row older than content Apply. */
+  input?: ContentMemberInput | null;
 };
-
-export type PushToLiveResult =
-  | {
-      status: "pushed";
-      push: PushLineageRow;
-      update: Uint8Array;
-    }
-  | { status: "already_pushed"; push: PushLineageRow }
-  | {
-      status: "noop";
-      branchId: string;
-      documentId: DocumentId;
-      branchGeneration: number;
-      reason: "no_active_rows";
-    }
-  /** A publication step kept this draft out of live; its rows stay reviewable. */
-  | { status: "held"; branchId: string; documentId: DocumentId; reason: PublicationRefusal }
-  /** A publication step refused the whole batch; nothing of it reached live. */
-  | { status: "refused"; branchId: string; documentId: DocumentId; reason: PublicationRefusal };
 
 /** Durable publication-step inputs staged with a batch, by step kind. */
 export type PublicationPayloads = Readonly<Record<string, JsonValue>>;
 
-export class DraftChangeRefusal extends Error {
-  constructor(readonly status: "stale" | "gone" | "whole_item" | "incomplete_class") {
-    super(status);
-  }
-}
-
+/**
+ * One content member staged: the text branch's merge into live. `input` is frozen at staging, so
+ * recovery after a crash never applies draft words written after it (contract §1.1).
+ */
 export type PreparedPushCommit = {
-  expectedLiveRevision?: string;
   branch: BranchSnapshot;
-  journalRows: BranchJournalRow[];
+  input: ContentMemberInput;
   pushUpdate: Uint8Array;
   idempotencyKey: string;
   receiptId?: string;
@@ -140,10 +119,12 @@ export type PreparedPushCommit = {
 
 export type PreparedPush = {
   trailChanges: RawTrailChange[];
+  /** The draft rows whose chats own the trail: a content Apply pushes none, so the pending rows name them. */
+  attributionRows: BranchJournalRow[];
   lockCutUpdate: Uint8Array;
   prepared: Omit<
     PreparedPushCommit,
-    "pushedByUserId" | "trail" | "receiptId" | "documentTitle" | "lockCutUpdate"
+    "pushedByUserId" | "trail" | "receiptId" | "documentTitle" | "lockCutUpdate" | "input"
   > & { receiptId: string };
 };
 
@@ -161,9 +142,25 @@ export type PendingLiveSettlement = {
   pushUpdate: Uint8Array;
   postCutUpdates: readonly Uint8Array[];
   trail: DurableTrailRecord;
-  /** Optional evidence for live-session sweep elevation; never settlement authority. */
-  sweepEvidence: SweepEvidence | null;
   joinVersion: number;
+};
+
+/**
+ * What settlement's replan decided for one member, carried into completion and the after-commit room
+ * apply (contract §2.1). `base` is the text branch's base patch, computed under the branch lease.
+ */
+export type ReplannedMember = {
+  pushId: number;
+  outcome:
+    | {
+        status: "applied";
+        pushUpdate: Uint8Array;
+        trail: DurableTrailRecord;
+        overrode: DraftOverride[];
+      }
+    /** Live already reads the merge: withdrawn like a held member, nothing written to live. */
+    | { status: "already_live" };
+  base: BaseWrite;
 };
 
 /**
@@ -178,10 +175,6 @@ export type PendingSettlementBatch = {
   payloads: ReadonlyMap<string, JsonValue>;
   /** Sorted by document id, the global document lock order. */
   members: readonly PendingLiveSettlement[];
-};
-
-export type SweepProjectionDiagnostics = {
-  unavailable(input: { pushId: number; documentId: DocumentId; cause: unknown }): void;
 };
 
 export type SettlementClaim = {
@@ -201,53 +194,6 @@ export type TrailContributionReplacement = {
   documentTitles: ReadonlyMap<string, string>;
 };
 
-/** What a per-change Discard left of the item. */
-export type DiscardedChanges = { itemClosed: boolean; itemDisposition?: "applied" | "discarded" };
-
-export type ReviewRowSelection = { journalIds: readonly number[]; expectedLiveRevision: string };
-
-/** A per-change Apply's selection: made under the branch lease, naming the payloads it stages. */
-export type SelectedPublication = {
-  branchId: string;
-  select(
-    branch: BranchSnapshot,
-    rows: BranchJournalRow[],
-  ): Promise<ReviewRowSelection & { payloads: PublicationPayloads }>;
-};
-
-export type PreparedDiscardCommit = {
-  /** Present only for per-change Discard: identical survivor deltas in the next generation. */
-  survivors?: BranchJournalRow[];
-  retireSurvivors?: boolean;
-  expectedLiveRevision?: string;
-  /** Claimed `done` as the transaction's first write; a taken id throws `DraftCommandExistsError`. */
-  command?: { envelope: DraftCommandEnvelope; result: DraftCommandResult };
-  branch: BranchSnapshot;
-  journalRows: BranchJournalRow[];
-  state: Uint8Array;
-  stateVector: Uint8Array;
-  reviewedByUserId?: UserId;
-};
-
-export type PushCandidate = {
-  branchId: string;
-  documentId: DocumentId;
-  /** The reviewable rows the whole-branch state publishes. */
-  rows: BranchJournalRow[];
-  /** A selected-rows candidate replays only its rows onto live instead of the whole branch. */
-  materialization: "whole" | "selected_rows";
-};
-
-export type CandidateBatch = {
-  /** May be empty when `payloads` carries the whole publication (a branchless Apply). */
-  candidates: PushCandidate[];
-  payloads?: PublicationPayloads;
-  receiptId: string;
-  expectedLiveRevision?: string;
-  command?: DraftCommandEnvelope;
-  pushedByUserId?: UserId;
-};
-
 export type BranchJournalReadStore = {
   listActiveJournalRows(branchId: string, generation: number): Promise<BranchJournalRow[]>;
   listReviewableJournalRows(branchId: string, generation: number): Promise<BranchJournalRow[]>;
@@ -256,7 +202,6 @@ export type BranchJournalReadStore = {
     generation: number,
     options: { afterJournalId?: number; documentId: DocumentId },
   ): Promise<BranchJournalRow[]>;
-  latestPushForBranch(branchId: string, generation: number): Promise<PushLineageRow | null>;
   listJournalRowsForTurn(input: {
     branchId?: string;
     generation?: number;
@@ -274,7 +219,7 @@ export type BranchJournalReadStore = {
 
 export type PushCommitStore = {
   /**
-   * Commits every push and stages them under one settlement batch, atomically.
+   * Commits every content member and stages them under one settlement batch, atomically.
    * A push whose idempotency key already committed reports `conflict` and commits nothing.
    */
   commitPushBatch(input: {
@@ -283,77 +228,56 @@ export type PushCommitStore = {
     payloads?: PublicationPayloads;
     /** Items the pre-staging check held: staged with the batch as durable exclusions. */
     holds?: readonly PublicationItemHold[];
-    /** The writer's command, claimed as the transaction's first write (§4.6). */
-    command?: DraftCommandEnvelope;
+    /** The writer's command, claimed as the transaction's first write (§1.4). */
+    command: DraftCommandEnvelope;
   }): Promise<
     | { status: "inserted"; pushes: PushLineageRow[] }
     | { status: "conflict"; push: PushLineageRow }
     /** Another request holds the `commandId`: nothing was staged. */
     | { status: "command_exists" }
   >;
-  commitDiscard(input: PreparedDiscardCommit): Promise<void>;
-  /**
-   * Seam B for a review that changes several drafts in one transaction: locks
-   * their Works (file-access §5) and names the branches whose Work is no longer
-   * active, so their drafts stay frozen (D30).
-   */
-  lockDraftWorks(branchIds: readonly string[]): Promise<ReadonlySet<string>>;
 };
 
-export type PushUpdateComputer = (input: {
-  branch: BranchSnapshot;
-  branchDoc: Y.Doc;
-  liveDoc: Y.Doc;
-}) => Uint8Array;
+/** One text branch an Apply publishes, with what the writer asked of it. */
+export type ContentPublicationRequest = {
+  branchId: string;
+  itemKey: string;
+  request: ContentApplyRequest;
+};
 
 export type BranchPushService = {
   recoverPendingLiveSettlements(input?: { signal?: AbortSignal }): Promise<number>;
-  pushToLive(input: {
-    branchId: string;
-    pushedByUserId?: UserId;
-    signal?: AbortSignal;
-  }): Promise<PushToLiveResult>;
-  /** Publishes several drafts as one batch; one item per requested branch, in request order. */
+  /**
+   * Settles every pending batch with a member on these documents, then answers whether any
+   * pending or blocked batch is left on them (contract §2.2 step 1).
+   */
+  settleUnfinished(
+    documentIds: readonly DocumentId[],
+    signal?: AbortSignal,
+  ): Promise<{ unfinished: boolean }>;
+  /**
+   * Publishes an Apply as one batch: each requested text branch as a content member (a merge into
+   * live, planned under its lease and the live lock), with the publication steps' payloads. Items
+   * whose content planning decided `already_live`, `not_found` or `failed` stage no member and
+   * go to `finalizePayloads`, which returns the payloads actually staged (the tree part of a
+   * failed item is excluded). The command's terminal result is stored by the tree step in the
+   * batch's completion; a batch with no member still stages the tree payload that carries it.
+   */
   pushBranchesToLive(input: {
-    /** May be empty when `payloads` carries the whole publication (a branchless Apply). */
-    branchIds: readonly string[];
-    payloads?: PublicationPayloads;
-    /**
-     * Per-change Apply: publish only the rows this selects from the one branch, chosen under
-     * its lease on every CAS attempt (B3), with the payloads rebuilt from the same selection.
-     */
-    selected?: SelectedPublication;
-    /** The writer's command, claimed in the staging transaction (§4.6). */
-    command?: DraftCommandEnvelope;
+    members: readonly ContentPublicationRequest[];
+    /** The payloads as planned before content decisions: they name the branches to lease. */
+    payloads: PublicationPayloads;
+    finalizePayloads(decided: readonly DraftDecidedOutcome[]): PublicationPayloads;
+    /** The writer's command, claimed in the staging transaction (§1.4). */
+    command: DraftCommandEnvelope;
     pushedByUserId?: UserId;
     signal?: AbortSignal;
   }): Promise<{
-    items: PushToLiveResult[];
-    /** Set when a publication step refused the batch; every drafted item is `refused`. */
+    /** Set when a publication step refused the batch. */
     refused?: PublicationRefusal;
-    /** Every item a publication step held, branchless ones included. */
-    heldItems: readonly PublicationItemHold[];
-    /** What the publication steps did per published item, decided in completion. */
-    outcomes: readonly PublicationItemOutcome[];
     /** Another request holds the command's id: nothing was staged here. */
     commandExists?: true;
   }>;
-};
-
-export type BranchReviewService = {
-  discardSelected(input: {
-    branchId: string;
-    selectRows: (branch: BranchSnapshot, rows: BranchJournalRow[]) => Promise<ReviewRowSelection>;
-    reviewedByUserId?: UserId;
-    /** The command to claim `done` in the refork's transaction, built from its outcome. */
-    command?: {
-      envelope: DraftCommandEnvelope;
-      result(outcome: DiscardedChanges): DraftCommandResult;
-    };
-  }): Promise<
-    | ({ status: "discarded"; branchId: string; journalIds: number[] } & DiscardedChanges)
-    | { status: "nothing_to_undo"; branchId: string; journalIds: number[] }
-  >;
 };
 
 export type BranchPushServiceInput = {
@@ -361,19 +285,19 @@ export type BranchPushServiceInput = {
   journalReadStore: BranchJournalReadStore;
   commitStore: PushCommitStore;
   settlementStore: PendingSettlementStore;
-  branchCoordinator?: Pick<BranchCoordinator, "resetFromDocIfUnchangedWithLease"> &
-    Partial<Pick<BranchCoordinator, "broadcastUpdate">>;
-  journal: UpdateJournal;
+  /** The catch-up rebase Apply runs first, under the leases it owns (contract §2.2 step 2.3). */
+  draftRebase: DraftRebase;
+  branchCoordinator?: Partial<Pick<BranchCoordinator, "broadcastUpdate">>;
   liveCoordinator: DocumentCoordinator;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodecFactory;
   /** Push and settlement scope themselves; the trail text spells through it. */
   links: DocumentLinkScopes;
   changeEventDelivery: ChangeEventDelivery;
-  pushUpdateComputer?: PushUpdateComputer;
   criticalSections?: BranchCriticalSections;
   resolveDocumentTitle?: (documentId: DocumentId) => Promise<string | null>;
   writerIngressBarrier?: WriterIngressBarrier;
-  sweepProjectionDiagnostics?: SweepProjectionDiagnostics;
+  /** Reports a content plan that threw, once (the rebase emitter, contract §5.5). */
+  mergeFailed?(input: { branchId: string; documentId: DocumentId }): void;
   hooks?: { afterDurableCommit?: (documentIds: readonly DocumentId[]) => Promise<void> };
 };

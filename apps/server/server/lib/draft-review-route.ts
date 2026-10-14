@@ -12,22 +12,31 @@ import {
   type DocumentDraftHintsResponse,
   DRAFT_COMMAND_CONFLICT_CODE,
   DRAFT_COMMAND_UNKNOWN_CODE,
-  type DraftApplyAllRequest,
+  type DraftApplyAllBody,
+  DraftApplyAllBodySchema,
+  type DraftApplyChangesBody,
+  DraftApplyChangesBodySchema,
+  type DraftApplyItemBody,
+  DraftApplyItemBodySchema,
   type DraftApplyPendingResponse,
+  type DraftAttribution,
   DraftCommandIdSchema,
   type DraftCommandKind,
-  type DraftCommandObservation,
-  type DraftCommandResult,
-  type DraftDiscardAllRequest,
-  type DraftPreviewResponse,
+  type DraftCommandOutcome,
+  type DraftDiscardAllBody,
+  DraftDiscardAllBodySchema,
+  type DraftItemDiscardBody,
+  DraftItemDiscardBodySchema,
+  type DraftItemMeta,
+  type ThreadDraftFilesResponse,
   type ThreadDraftListItem,
   type ThreadDraftListResponse,
 } from "@meridian/contracts/drafts";
 import { meridianErrorFromSystem } from "@meridian/contracts/protocol";
-import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type { DocumentId, ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { Work } from "@meridian/contracts/works";
 import { createError } from "nitro/h3";
-import { z } from "zod";
+import type { z } from "zod";
 import type { CommandOutcome } from "../domains/collab/contracts.js";
 import {
   commandDigest,
@@ -59,6 +68,12 @@ type DraftRouteServices = {
   documentSync: Pick<AppServices["documentSync"], "draftReview">;
 };
 
+/** What observing a command answers: `done.result` is the outcome its 2xx/4xx body carried. */
+export type DraftCommandObservationBody =
+  | { state: "pending" }
+  | { state: "done"; result: DraftCommandOutcome }
+  | { state: "blocked" };
+
 export function selectDraftRouteServices(app: AppServices): DraftRouteServices {
   return {
     projects: app.projectRepo,
@@ -84,32 +99,8 @@ export async function requireDraftWorkAccess(
 }
 
 // --- Request bodies ----------------------------------------------------------------------------
-
-const Base = {
-  draftId: z.string().uuid(),
-  itemKey: z.string().max(80),
-  commandId: DraftCommandIdSchema,
-};
-const ApplyItemBody = z.object({
-  ...Base,
-  locationToken: z.string().max(40).optional(),
-  liveTextToken: z.string().max(100).nullable().optional(),
-  branchGenerationToken: z.string().max(40).nullable().optional(),
-});
-const ApplyChangesBody = z.object({
-  ...Base,
-  operationIds: z.array(z.string().max(200)).min(1).max(500),
-  liveRevisionToken: z.string().max(200),
-  draftRevisionToken: z.string().max(200),
-});
-const DiscardBody = z.object({
-  ...Base,
-  liveRevisionToken: z.string().max(200).optional(),
-  draftRevisionToken: z.string().max(200).optional(),
-  closureClassIds: z.array(z.string().max(200)).max(500).optional(),
-  admissionTokens: z.array(z.string().max(200)).max(500).optional(),
-  memberPartKeys: z.array(z.string().max(200)).max(500).optional(),
-});
+// Every body is strict (contracts `drafts/review.ts`): an unknown field answers 400, so an old tab's
+// per-change Discard can never be read as an item Discard that closes the whole item.
 
 function parseBody<S extends z.ZodTypeAny>(schema: S, body: unknown, what: string): z.infer<S> {
   const parsed = schema.safeParse(body ?? {});
@@ -117,20 +108,16 @@ function parseBody<S extends z.ZodTypeAny>(schema: S, body: unknown, what: strin
   return parsed.data;
 }
 
-export const parseDraftApplyItem = (body: unknown) => parseBody(ApplyItemBody, body, "Apply");
-export const parseDraftApplySelection = (body: unknown) =>
-  parseBody(ApplyChangesBody, body, "Apply changes");
-export const parseDraftDiscardSelection = (body: unknown) => {
-  const parsed = parseBody(DiscardBody, body, "Discard");
-  const perChange = parsed.closureClassIds !== undefined;
-  if (
-    perChange &&
-    (!parsed.liveRevisionToken || !parsed.admissionTokens || !parsed.memberPartKeys)
-  ) {
-    throw createError({ statusCode: 400, message: "Invalid Discard request" });
-  }
-  return parsed;
-};
+export const parseDraftApplyItem = (body: unknown) =>
+  parseBody(DraftApplyItemBodySchema, body, "Apply");
+export const parseDraftApplyChanges = (body: unknown) =>
+  parseBody(DraftApplyChangesBodySchema, body, "Apply changes");
+export const parseDraftApplyAll = (body: unknown) =>
+  parseBody(DraftApplyAllBodySchema, body, "Apply all");
+export const parseDraftItemDiscard = (body: unknown) =>
+  parseBody(DraftItemDiscardBodySchema, body, "Discard");
+export const parseDraftDiscardAll = (body: unknown) =>
+  parseBody(DraftDiscardAllBodySchema, body, "Discard all");
 
 // --- Commands: envelope, lookup, outcome -------------------------------------------------------
 
@@ -164,12 +151,21 @@ function envelopeOf(
 }
 
 export type CommandRouteResult =
-  | { httpStatus: 200 | 409; body: DraftCommandResult }
+  | { httpStatus: 200 | 409; body: DraftCommandOutcome }
   | { httpStatus: 202; body: DraftApplyPendingResponse };
 
+/** The item Apply results that answer 409: nothing reached live and the item is unchanged. */
+const ITEM_APPLY_REFUSALS: ReadonlySet<string> = new Set([
+  "held",
+  "not_found",
+  "failed",
+  "stale",
+  "whole_item",
+]);
+
 /**
- * The HTTP meaning of an outcome. Item Apply answers 409 for a held or stale item; a gone
- * item is a 404. A pending or blocked command is the 202 handoff (observe the id); an id
+ * The HTTP meaning of an outcome. Item Apply answers 409 for a held, stale, unfound or failed item
+ * (and a change of a whole item); a gone item is a 404. A pending or blocked command is the 202 handoff (observe the id); an id
  * that belongs to a different command is a 409 `command_conflict`.
  */
 function respond(
@@ -199,7 +195,7 @@ function respond(
       };
     case "result": {
       const { status } = outcome.result;
-      if (options.itemApply && (status === "held" || status === "stale")) {
+      if (options.itemApply && ITEM_APPLY_REFUSALS.has(status)) {
         return { httpStatus: 409, body: outcome.result };
       }
       if (options.itemApply && status === "gone") {
@@ -237,7 +233,7 @@ async function recorded(
 export async function handleDraftCommandObservation(
   deps: DraftRouteServices,
   input: CommandScope & { commandId: string },
-): Promise<DraftCommandObservation> {
+): Promise<DraftCommandObservationBody> {
   await requireDraftWorkAccess(deps, input);
   const id = DraftCommandIdSchema.safeParse(input.commandId);
   if (!id.success) throw createError({ statusCode: 404, message: DRAFT_COMMAND_UNKNOWN_CODE });
@@ -395,33 +391,71 @@ export async function handleDocumentDraftHintsRequest(
   };
 }
 
-export async function handleWorkDraftPreviewRequest(
+/**
+ * An item's existence and where to open it (§3.2): any addressable item, listed or not. A 200
+ * means the item exists; a 404 `gone` means it is closed. Read failures are HTTP errors.
+ */
+export async function handleWorkDraftItemMetaRequest(
   deps: DraftRouteServices,
   input: CommandScope & { documentId: DocumentId; itemKey: string },
-): Promise<DraftPreviewResponse> {
+): Promise<DraftItemMeta> {
   await requireDraftWorkAccess(deps, input);
+  const gone = () =>
+    throwHttpInterrupt(meridianErrorFromSystem("gone", "That draft item is closed", false), 404);
   const resolved = await deps.documentSync.draftReview.resolveItem(input);
-  if (!resolved || resolved.documentId !== input.documentId) {
-    return { status: "gone", itemKey: input.itemKey };
-  }
+  if (!resolved || resolved.documentId !== input.documentId) return gone();
   // Review evidence survives live deletion. This read grant cannot authorize rooms,
   // downloads or ordinary file reads, which still check the deleted document.
   if (resolved.item.deletedLive) await restoreGrant(deps, input, resolved.item, "read");
   else await draftGrants(deps, input, "read");
-  const preview = await callDraftReview(deps.documentSync.draftReview.preview(input));
-  if (preview.status !== "active") return preview;
-  const { threadTitles, operations, hunks, item, ...rest } = preview;
+  const meta = await callDraftReview(deps.documentSync.draftReview.itemMeta(input));
+  return "status" in meta ? gone() : meta;
+}
+
+/**
+ * The chat-name hint for one item (Q3): the AI edits pending in its room, as item ranges the
+ * browser matches. Authorized like the item's metadata; the hint never gates a change.
+ */
+export async function handleDraftAttributionRequest(
+  deps: DraftRouteServices,
+  input: CommandScope & { documentId: DocumentId; itemKey: string },
+): Promise<DraftAttribution> {
+  await requireDraftWorkAccess(deps, input);
+  const resolved = await deps.documentSync.draftReview.resolveItem(input);
+  if (!resolved || resolved.documentId !== input.documentId) {
+    throwHttpInterrupt(meridianErrorFromSystem("gone", "That draft item is closed", false), 404);
+  }
+  await draftGrants(deps, input, "read");
+  const attribution = await deps.documentSync.draftReview.attribution(input);
+  if (!attribution) {
+    throwHttpInterrupt(meridianErrorFromSystem("gone", "That draft item is closed", false), 404);
+  }
+  return attribution;
+}
+
+/** The chat strip's collapsed list: the listed items of the chat's Work with this chat's AI edits. */
+export async function handleThreadDraftFilesRequest(
+  deps: DraftRouteServices & {
+    threads: Pick<AppServices["repos"]["threads"], "findById">;
+    threadWorks: Pick<AppServices["repos"]["threadWorks"], "findPrimary">;
+  },
+  input: { threadId: ThreadId; userId: UserId },
+): Promise<ThreadDraftFilesResponse> {
+  const thread = await deps.threads.findById(input.threadId);
+  if (!thread || thread.userId !== input.userId)
+    throw createError({ statusCode: 404, message: "Thread not found" });
+  const primary = await deps.threadWorks.findPrimary(input.threadId);
+  const work = primary ? await deps.works.findById(primary.workId) : null;
+  if (!work) return { drafts: [] };
+  const { items } = await handleWorkDraftListRequest(deps, {
+    projectId: work.projectId,
+    workId: work.id,
+    userId: input.userId,
+  });
   return {
-    status: "active",
-    draftId: rest.draftId,
-    itemKey: rest.itemKey,
-    branchGeneration: rest.branchGeneration,
-    reviewRoomName: rest.reviewRoomName,
-    liveRevisionToken: rest.liveRevisionToken,
-    draftRevisionToken: rest.draftRevisionToken,
-    item: toWireItem(item, threadTitles),
-    operations: operations.map(toWireReviewOperation),
-    hunks,
+    drafts: items.filter((item) =>
+      item.actorThreads.some((actor) => actor.threadId === input.threadId),
+    ),
   };
 }
 
@@ -497,14 +531,15 @@ async function commandIngress(
 }
 
 /**
- * Item Apply (§4.5): one rendered item through the one publication. A held or stale item
- * answers 409, never `applied`; a command id already used answers its stored result.
+ * Item Apply: the whole item (or what the snapshot of its open review names) through the one
+ * publication. A held, stale, unfound or failed item answers 409, never `applied`; a command id
+ * already used answers its stored result.
  */
 export async function handleApplyWorkDraftRequest(
   deps: DraftRouteServices,
   input: CommandScope & {
     documentId: DocumentId;
-    request: z.infer<typeof ApplyItemBody>;
+    request: DraftApplyItemBody;
     signal?: AbortSignal;
   },
 ): Promise<CommandRouteResult> {
@@ -534,15 +569,8 @@ export async function handleApplyWorkDraftRequest(
           item,
           userId: input.userId,
           envelope,
-          tokens: {
-            ...(request.locationToken ? { locationToken: request.locationToken } : {}),
-            ...(request.liveTextToken !== undefined
-              ? { liveTextToken: request.liveTextToken }
-              : {}),
-            ...(request.branchGenerationToken !== undefined
-              ? { branchGenerationToken: request.branchGenerationToken }
-              : {}),
-          } as never,
+          ...(request.locationToken ? { locationToken: request.locationToken } : {}),
+          ...(request.snapshot ? { snapshot: request.snapshot } : {}),
           ...(input.signal ? { signal: input.signal } : {}),
         }),
     };
@@ -561,12 +589,12 @@ const goneDraft = (draftId: DraftId) => (): CommandRouteResult => ({
   body: { status: "gone", draftId },
 });
 
-/** Per-change Apply: complete server-vended classes; refusals are 200 body statuses. */
+/** Apply the named changes of one item, as projected in the snapshot's frame. */
 export async function handleApplyWorkDraftChangesRequest(
   deps: DraftRouteServices,
   input: CommandScope & {
     documentId: DocumentId;
-    request: z.infer<typeof ApplyChangesBody>;
+    request: DraftApplyChangesBody;
     signal?: AbortSignal;
   },
 ): Promise<CommandRouteResult> {
@@ -579,23 +607,26 @@ export async function handleApplyWorkDraftChangesRequest(
     selectors: { itemKey: request.itemKey, documentId: input.documentId },
     body,
   });
-  return commandIngress(deps, input, envelope, {}, async () => {
+  return commandIngress(deps, input, envelope, { itemApply: true }, async () => {
     const item = await commandItem(deps, input);
-    if (!item) return { refusal: goneItem(request) };
+    if (!item) {
+      return {
+        refusal: () => {
+          throw createError({ statusCode: 404, message: "Draft not found" });
+        },
+      };
+    }
     return {
       grants: await applyGrants(deps, { ...input, items: [item] }),
       effect: () =>
         deps.documentSync.draftReview.applyChanges({
           workId: input.workId,
-          itemKey: request.itemKey,
+          item,
           userId: input.userId,
           envelope,
-          selection: {
-            kind: "apply",
-            operationIds: request.operationIds,
-            liveRevisionToken: request.liveRevisionToken,
-            draftRevisionToken: request.draftRevisionToken,
-          },
+          changeIds: request.changeIds,
+          snapshot: request.snapshot,
+          ...(request.locationToken ? { locationToken: request.locationToken } : {}),
           ...(input.signal ? { signal: input.signal } : {}),
         }),
     };
@@ -608,7 +639,7 @@ export async function handleApplyWorkDraftChangesRequest(
  */
 export async function handleApplyAllWorkDraftRequest(
   deps: DraftRouteServices,
-  input: CommandScope & { request: DraftApplyAllRequest; signal?: AbortSignal },
+  input: CommandScope & { request: DraftApplyAllBody; signal?: AbortSignal },
 ): Promise<CommandRouteResult> {
   const { request } = input;
   const { commandId: _, ...body } = request;
@@ -621,14 +652,19 @@ export async function handleApplyAllWorkDraftRequest(
   });
   const draftId = request.draftId as DraftId;
   return commandIngress(deps, input, envelope, {}, async () => {
-    const listed = await deps.documentSync.draftReview.items({ workId: input.workId });
-    if (listed.draftId !== draftId) return { refusal: goneDraft(draftId) };
-    // The grants of what is still an item; one that isn't answers stale from the service.
-    const keys = new Set(request.items.map((ref) => ref.itemKey));
+    const active = await deps.documentSync.draftReview.items({ workId: input.workId });
+    if (active.draftId !== draftId) return { refusal: goneDraft(draftId) };
+    // The grants of every ref that is still addressable, listed or not (a writer may have
+    // emptied one since the page rendered); one that isn't answers stale from the service.
+    const resolved = await Promise.all(
+      request.items.map((ref) =>
+        deps.documentSync.draftReview.resolveItem({ workId: input.workId, itemKey: ref.itemKey }),
+      ),
+    );
     return {
       grants: await applyGrants(deps, {
         ...input,
-        items: listed.items.filter((item) => keys.has(item.itemKey)),
+        items: resolved.flatMap((found) => (found ? [found.item] : [])),
       }),
       effect: () =>
         deps.documentSync.draftReview.applyAll({
@@ -644,22 +680,22 @@ export async function handleApplyAllWorkDraftRequest(
 }
 
 /**
- * Item Discard (the whole item through the one kernel, §12.3) or per-change Discard (the
- * clicked classes, §4.1). A document deleted live authorizes through the draft (§13.3).
+ * Item Discard (the whole item through the one kernel, close-only): a created, binary or
+ * live-deleted item. A document deleted live authorizes through the draft (§13.3). A text edit's
+ * Discard is local to the editor and never reaches the server.
  */
 export async function handleDiscardWorkDraftRequest(
   deps: DraftRouteServices,
   input: CommandScope & {
     documentId: DocumentId;
-    request: ReturnType<typeof parseDraftDiscardSelection>;
+    request: DraftItemDiscardBody;
   },
 ): Promise<CommandRouteResult> {
   const { request } = input;
-  const perChange = request.closureClassIds !== undefined;
   const { commandId: _, ...body } = request;
   const envelope = envelopeOf(input, {
     commandId: request.commandId,
-    kind: perChange ? "discard_changes" : "discard_items",
+    kind: "discard_items",
     draftId: request.draftId,
     selectors: { itemKey: request.itemKey, documentId: input.documentId },
     body,
@@ -670,29 +706,12 @@ export async function handleDiscardWorkDraftRequest(
     return {
       grants: await applyGrants(deps, { ...input, items: [item] }, { live: false }),
       effect: () =>
-        perChange
-          ? deps.documentSync.draftReview.discardChanges({
-              workId: input.workId,
-              itemKey: request.itemKey,
-              userId: input.userId,
-              envelope,
-              selection: {
-                kind: "discard",
-                closureClassIds: request.closureClassIds ?? [],
-                admissionTokens: request.admissionTokens ?? [],
-                memberPartKeys: request.memberPartKeys ?? [],
-                liveRevisionToken: request.liveRevisionToken ?? "",
-                ...(request.draftRevisionToken
-                  ? { draftRevisionToken: request.draftRevisionToken }
-                  : {}),
-              },
-            })
-          : deps.documentSync.draftReview.discardItem({
-              workId: input.workId,
-              item,
-              userId: input.userId,
-              envelope,
-            }),
+        deps.documentSync.draftReview.discardItem({
+          workId: input.workId,
+          item,
+          userId: input.userId,
+          envelope,
+        }),
     };
   });
 }
@@ -703,7 +722,7 @@ export async function handleDiscardWorkDraftRequest(
  */
 export async function handleDiscardAllWorkDraftRequest(
   deps: DraftRouteServices,
-  input: CommandScope & { request: DraftDiscardAllRequest },
+  input: CommandScope & { request: DraftDiscardAllBody },
 ): Promise<CommandRouteResult> {
   const { request } = input;
   const { commandId: _, ...body } = request;
@@ -716,8 +735,9 @@ export async function handleDiscardAllWorkDraftRequest(
   });
   const draftId = request.draftId as DraftId;
   return commandIngress(deps, input, envelope, {}, async () => {
-    const listed = await deps.documentSync.draftReview.listItems({ workId: input.workId });
+    const listed = await deps.documentSync.draftReview.addressableItems({ workId: input.workId });
     if (listed.draftId !== draftId) return { refusal: goneDraft(draftId) };
+    // Every addressable item, so an emptied, unlisted one still gets its grant.
     return {
       grants: await applyGrants(deps, { ...input, items: listed.items }, { live: false }),
       effect: () =>
@@ -732,17 +752,6 @@ export async function handleDiscardAllWorkDraftRequest(
 }
 
 // --- Wire --------------------------------------------------------------------------------------
-
-function toWireReviewOperation<T extends { discardUpdateIds?: unknown; sourceUpdateIds?: unknown }>(
-  operation: T,
-) {
-  const {
-    discardUpdateIds: _discardUpdateIds,
-    sourceUpdateIds: _sourceUpdateIds,
-    ...wire
-  } = operation;
-  return wire;
-}
 
 export function toWireItem(
   item: DraftReviewItem,

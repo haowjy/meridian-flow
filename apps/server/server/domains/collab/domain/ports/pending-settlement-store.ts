@@ -5,6 +5,7 @@ import type { BranchLockLease } from "../branch-critical-sections.js";
 import type {
   PendingSettlementBatch,
   PushLineageRow,
+  ReplannedMember,
   SettlementClaim,
   TrailContributionReplacement,
 } from "../branch-push-contracts.js";
@@ -48,8 +49,6 @@ export type SettlementCut = {
 export type PublicationInputs = {
   /** Durable step inputs staged with the batch, by step kind. */
   payloads: ReadonlyMap<string, JsonValue>;
-  /** Each member's full-state fingerprint at its coordinator lease (its lock cut). */
-  liveTextFingerprints: ReadonlyMap<DocumentId, string>;
 };
 
 export type BatchCompletion = PublicationInputs & {
@@ -62,8 +61,13 @@ export type BatchCompletion = PublicationInputs & {
    * `rediscover`.
    */
   leasedBranchIds: readonly string[];
-  /** The lease over `leasedBranchIds`, for a step that resets a leased branch in completion. */
+  /** The lease over `leasedBranchIds`. */
   lease?: BranchLockLease;
+  /**
+   * What settlement replanned for each member under the branch leases (contract §2.3): written to
+   * the outbox first, so every later read in the transaction sees the replanned bytes.
+   */
+  replanned: ReadonlyMap<number, ReplannedMember>;
   /**
    * Synchronous and non-mutating: compares warm state with every admitted
    * member's in-transaction cut after all writes, just before commit. `retry`
@@ -77,6 +81,9 @@ export type BatchCompletion = PublicationInputs & {
   afterCommit(admitted: readonly DocumentId[]): void;
 };
 
+/** A text branch's base patch that committed with its batch: published to the branch room after commit. */
+export type CommittedBaseUpdate = { branchId: string; update: Uint8Array };
+
 export type BatchCompletionResult =
   | {
       status: "completed";
@@ -85,8 +92,9 @@ export type BatchCompletionResult =
       held: readonly PublicationItemHold[];
       /** What the steps did per item, decided under the completion's locks. */
       outcomes: readonly PublicationItemOutcome[];
+      baseUpdates: readonly CommittedBaseUpdate[];
     }
-  /** A step refused: the staged batch is abandoned and its journal rows are reviewable again. */
+  /** A step refused: the staged batch is abandoned and its members are withdrawn. */
   | { status: "refused"; reason: PublicationRefusal }
   /** A step needs a branch lease the caller doesn't hold: release and discover again. */
   | { status: "rediscover"; branchIds: readonly string[] }
@@ -175,5 +183,12 @@ export type PendingSettlementStore = {
   prepareBranchLeases(payloads: ReadonlyMap<string, JsonValue>): Promise<readonly string[]>;
   /** The staged payloads and member branches of a batch, read before recovery leases or claims it. */
   loadRecoveryScope(batchId: string): Promise<RecoveryScope>;
-  listRecoverableBatchIds(): Promise<string[]>;
+  listRecoverableBatchIds(input?: { batchIds?: readonly string[] }): Promise<string[]>;
+  /**
+   * The batches with a member on one of these documents that have not completed: `pending` ones
+   * recovery can settle and `blocked` ones only a human can (contract §2.2 step 1).
+   */
+  listUnfinishedBatches(
+    documentIds: readonly DocumentId[],
+  ): Promise<readonly { batchId: string; state: "pending" | "blocked" }[]>;
 };

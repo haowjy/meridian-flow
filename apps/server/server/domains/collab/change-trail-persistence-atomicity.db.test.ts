@@ -105,7 +105,7 @@ describe("change trail (postgres)", () => {
       documentCount: 1,
     });
 
-    await expect(harness.push(branchId)).resolves.toMatchObject({ status: "already_pushed" });
+    await expect(harness.push(branchId)).resolves.toMatchObject({ status: "pushed" });
     expect(await harness.trailRowMembership()).toEqual(committed);
   });
 

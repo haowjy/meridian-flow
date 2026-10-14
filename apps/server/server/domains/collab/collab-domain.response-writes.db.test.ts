@@ -186,11 +186,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: DOC_ID as never,
       });
       if (!item) throw new Error("Missing review item");
-      const pending = await collab.draftReview.preview({
-        workId: WORK_ID as never,
-        itemKey: item.itemKey,
-      });
-      expect(pending.status).toBe("active");
+      expect(
+        await collab.draftReview.itemMeta({ workId: WORK_ID as never, itemKey: item.itemKey }),
+      ).toMatchObject({ kind: "text", hasChanges: true });
       expect(await readMarkdown(collab, DOC_ID)).toContain("Base.");
     });
 

@@ -10,12 +10,14 @@ import {
   handleApplyWorkDraftRequest,
   handleDiscardWorkDraftRequest,
   handleDocumentDraftHintsRequest,
-  handleWorkDraftPreviewRequest,
+  handleDraftAttributionRequest,
+  handleWorkDraftItemMetaRequest,
   selectDraftRouteServices,
 } from "../../lib/draft-review-route.js";
 import { describeDraftTreeDb } from "../../test-support/draft-tree-suite.js";
+import { createDrizzleWorkDraftPendingStore } from "./adapters/drizzle-branch-push.js";
 
-describeDraftTreeDb("review items (postgres)", (start) => {
+describeDraftTreeDb("review items (postgres)", (start, db) => {
   it("a created document is a whole-item row: a per-change request refuses, item Discard of one leaves the other", async () => {
     const { runtime, s } = await start();
     const work = await s.work("Ascension", "draft");
@@ -46,9 +48,8 @@ describeDraftTreeDb("review items (postgres)", (start) => {
         draftId: keptItem.draftId,
         itemKey: keptItem.itemKey,
         commandId: randomUUID(),
-        operationIds: ["1"],
-        liveRevisionToken: "x",
-        draftRevisionToken: "x",
+        changeIds: ["1"],
+        snapshot: "x",
       },
     });
     expect(perChange.body).toMatchObject({ status: "whole_item" });
@@ -77,15 +78,12 @@ describeDraftTreeDb("review items (postgres)", (start) => {
     const review = runtime.ports.documentSync.draftReview;
     for (const wrong of [mine.draftId, branch, theirs.itemKey]) {
       expect(await review.resolveItem({ workId: work.id, itemKey: wrong })).toBeNull();
-      expect(await review.preview({ workId: work.id, itemKey: wrong })).toMatchObject({
+      expect(await review.itemMeta({ workId: work.id, itemKey: wrong })).toMatchObject({
         status: "gone",
       });
-      const preview = await handleWorkDraftPreviewRequest(deps, {
-        ...scope,
-        documentId: chapter,
-        itemKey: wrong,
-      });
-      expect(preview.status).toBe("gone");
+      await expect(
+        handleWorkDraftItemMetaRequest(deps, { ...scope, documentId: chapter, itemKey: wrong }),
+      ).rejects.toMatchObject({ statusCode: 404 });
       const discard = await handleDiscardWorkDraftRequest(deps, {
         ...scope,
         documentId: chapter,
@@ -139,5 +137,54 @@ describeDraftTreeDb("review items (postgres)", (start) => {
     expect((await hints(chapter)).map((hint) => hint.originWorkId)).toEqual([northern.id]);
     await s.apply(northern, [chapter], { tokens: "none" });
     expect(await hints(chapter)).toEqual([]);
+  });
+
+  it("the review list, the catalog count and the document hints read one item relation", async () => {
+    const { runtime, s } = await start();
+    const work = await s.work("Ascension", "draft");
+    const chapter = await s.writer.createDocument("chapter.md", "Opening.");
+    await s.writer.createDocument("quiet.md", "Quiet.");
+    await s.model(work).edit("chapter.md", "Opening.", "Opening, drafted.");
+    const blank = await s
+      .model(work)
+      .now("write", { command: "create", path: "manuscript://notes/blank.md" });
+    expect(blank.isError).not.toBe(true);
+    const listed = await s.items(work);
+    expect(listed).toHaveLength(2);
+    const counts = await createDrizzleWorkDraftPendingStore(db).countPendingByWorkIds([work.id]);
+    expect(counts.get(work.id)).toBe(listed.length);
+    const deps = selectDraftRouteServices(runtime.app);
+    for (const item of listed) {
+      const { items: hints } = await handleDocumentDraftHintsRequest(deps, {
+        projectId: s.project.id,
+        documentId: item.documentId as DocumentId,
+        userId: s.project.userId,
+      });
+      expect(hints.map((hint) => hint.itemKey)).toEqual(
+        item.documentId === chapter ? [item.itemKey] : expect.any(Array),
+      );
+    }
+  });
+
+  it("the chat-name hint lists the item's pending AI edits, and an unknown item is gone", async () => {
+    const { runtime, s } = await start();
+    const work = await s.work("Ascension", "draft");
+    const chapter = await s.writer.createDocument("chapter.md", "Opening.");
+    await s.model(work).edit("chapter.md", "Opening.", "Opening, drafted.");
+    const deps = selectDraftRouteServices(runtime.app);
+    const scope = { projectId: s.project.id, workId: work.id, userId: s.project.userId };
+    const [item] = await s.items(work);
+    if (!item) throw new Error("no item");
+    const hint = await handleDraftAttributionRequest(deps, {
+      ...scope,
+      documentId: chapter,
+      itemKey: item.itemKey,
+    });
+    expect(hint.itemKey).toBe(item.itemKey);
+    expect(hint.edits).toHaveLength(1);
+    expect(hint.edits[0]?.inserted.length).toBeGreaterThan(0);
+    await expect(
+      handleDraftAttributionRequest(deps, { ...scope, documentId: chapter, itemKey: "nope" }),
+    ).rejects.toMatchObject({ statusCode: 404 });
   });
 });

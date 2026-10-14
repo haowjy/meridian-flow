@@ -15,7 +15,6 @@ import {
 import { itemIsVisible } from "@meridian/agent-edit/yjs-mutation";
 import * as Y from "yjs";
 import { assertNoPendingIntegration, BranchPeerIntegrationError } from "./branch-push-plan.js";
-import { subtractRanges } from "./branch-review-closure.js";
 
 /** Mutates only this disposable candidate; caller persists it under its existing branch lock. */
 export function reconcileStagedBranchWrites(
@@ -113,8 +112,11 @@ export function reconcileStagedBranchWrites(
   );
   const currentDeletes = deleteRanges(decodeUpdateForDependencies(Y.encodeStateAsUpdate(current)));
   const explained = [...dropped].map((row) => row.updateData).map(decodeUpdateForDependencies);
-  const inserted = explained.flatMap(suppliedRanges),
-    deleted = explained.flatMap(deleteRanges);
+  // The helper's cut is its baseline, never a write: after an item Discard closes the draft a
+  // reply's old writes keep their old draft's content in the cut while the peer is a fresh one.
+  const baseline = decodeUpdateForDependencies(planningState);
+  const inserted = [...explained.flatMap(suppliedRanges), ...suppliedRanges(baseline)],
+    deleted = [...explained.flatMap(deleteRanges), ...deleteRanges(baseline)];
   // The server client's items (seed, rebase, reset) are never the helper's own content, and a reset
   // restarts that client's clocks: they are not residual a response could publish.
   const helperOwn = (range: { client: number }) => range.client !== DRAFT_SERVER_CLIENT_ID;
@@ -132,4 +134,26 @@ export function reconcileStagedBranchWrites(
     keptEntries: kept.map((row) => row.entry),
     rejectedWrites: [...reasons].map(([writeId, reason]) => ({ writeId, reason })),
   };
+}
+
+/** The parts of `ranges` that `excluded` does not cover. */
+function subtractRanges(
+  ranges: readonly { client: number; clock: number; length: number }[],
+  excluded: readonly { client: number; clock: number; length: number }[],
+) {
+  return ranges.flatMap((range) => {
+    let remaining = [range];
+    for (const cut of excluded) {
+      remaining = remaining.flatMap((part) => {
+        if (!rangesOverlap(part, cut)) return [part];
+        const end = part.clock + part.length;
+        const cutEnd = cut.clock + cut.length;
+        return [
+          ...(part.clock < cut.clock ? [{ ...part, length: cut.clock - part.clock }] : []),
+          ...(cutEnd < end ? [{ ...part, clock: cutEnd, length: end - cutEnd }] : []),
+        ];
+      });
+    }
+    return remaining;
+  });
 }

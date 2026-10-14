@@ -1,10 +1,14 @@
 /** Postgres command record (contract §4.6): lookup, claim in the effect transaction, settlement. */
 
-import type { DraftCommandResult } from "@meridian/contracts/drafts";
+import type { DraftCommandOutcome } from "@meridian/contracts/drafts";
 import type { Database } from "@meridian/database";
-import { branchPushSettlementBatches, draftCommands } from "@meridian/database/schema";
+import { branchPushSettlementBatches, draftCommands, drafts } from "@meridian/database/schema";
 import { and, eq, sql } from "drizzle-orm";
-import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
+import {
+  currentDrizzleDb,
+  type DrizzleDb,
+  runInDrizzleTransaction,
+} from "../../../shared/drizzle-transaction.js";
 import type {
   CommandLookup,
   CommandLookupKey,
@@ -16,6 +20,21 @@ export function createDrizzleDraftCommands(db: Database): DraftCommands {
   return {
     async lookup(envelope) {
       return lookupCommand(db as unknown as DrizzleDb, envelope);
+    },
+    async record(envelope, result) {
+      await runInDrizzleTransaction(db, async () => {
+        const tx = currentDrizzleDb(db);
+        // The row names the request's draft when that draft exists; the column is nullable for
+        // the request that named one that doesn't.
+        const [draft] = envelope.draftId
+          ? await tx.select({ id: drafts.id }).from(drafts).where(eq(drafts.id, envelope.draftId))
+          : [];
+        await claimCommandWithinTx(
+          tx,
+          { ...envelope, draftId: draft ? envelope.draftId : null },
+          result,
+        );
+      });
     },
   };
 }
@@ -65,7 +84,7 @@ export async function lookupCommand(
 export async function claimCommandWithinTx(
   db: DrizzleDb,
   envelope: DraftCommandEnvelope,
-  settled?: DraftCommandResult,
+  settled?: DraftCommandOutcome,
 ): Promise<boolean> {
   const [claimed] = await db
     .insert(draftCommands)
@@ -101,7 +120,7 @@ export async function attachBatchWithinTx(
 export async function settleCommandForBatchWithinTx(
   db: DrizzleDb,
   batchId: string,
-  result: DraftCommandResult,
+  result: DraftCommandOutcome,
 ): Promise<void> {
   await db
     .update(draftCommands)

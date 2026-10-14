@@ -15,7 +15,7 @@ import {
   USER_ID,
   WORK_ID,
 } from "./change-trail-postgres-harness.js";
-import { fencedSelection, testEnvelope } from "./draft-review-requests.js";
+import { applyChangesWhere, discardChangeLocally } from "./draft-review-requests.js";
 
 type ReceiptFixture = ReturnType<ReturnType<typeof createHarness>["crossWorkProbeFixture"]>;
 
@@ -149,37 +149,13 @@ export async function setupResponseDraft(
     );
   return { fixture, branchId, rows, target, review, responseId, context, read, write };
 }
+/** Apply the change inserting `after` as a `changes` Apply, or discard it as the room does (locally). */
 export async function reviewChange(
   fixture: ReceiptFixture,
-  target: Parameters<ReceiptFixture["collab"]["draftReview"]["preview"]>[0],
+  _target: unknown,
   after: string,
   apply = false,
 ) {
-  const preview = await fixture.collab.draftReview.preview(target);
-  if (preview.status !== "active") throw new Error("Missing active preview");
-  const op = preview.operations.find((op) => op.afterExcerpt === after);
-  if (!op) throw new Error(`Missing ${after}: ${JSON.stringify(preview.operations)}`);
-  const operationIds = [op.operationId];
-  const selection = fencedSelection(preview, operationIds);
-  const envelope = testEnvelope({
-    workId: target.workId,
-    kind: apply ? "apply_changes" : "discard_changes",
-    draftId: preview.draftId,
-  });
-  const outcome = await (apply
-    ? fixture.collab.draftReview.applyChanges({
-        ...target,
-        userId: USER_ID as never,
-        envelope,
-        selection: { kind: "apply", ...selection },
-      })
-    : fixture.collab.draftReview.discardChanges({
-        ...target,
-        userId: USER_ID as never,
-        envelope,
-        selection: { kind: "discard", ...selection },
-      }));
-  expect(outcome.kind === "result" ? outcome.result : outcome).toMatchObject({
-    status: apply ? "applied" : "discarded",
-  });
+  if (!apply) return discardChangeLocally(fixture, ALPHA_ID, after);
+  expect(await applyChangesWhere(fixture, ALPHA_ID, after)).toMatchObject({ status: "applied" });
 }

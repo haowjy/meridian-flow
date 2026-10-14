@@ -1,4 +1,4 @@
-/** Replays draft history into an attribution index, preserving explicit coverage failure. */
+/** Replays draft history into an attribution index, preserving explicit coverage failure. Only writer-restoration.test.ts reads it now that review is computed from text (R2). */
 
 import type { ReviewDeletedSpan } from "@meridian/contracts/drafts";
 import { restorationAliasesFromMetadata } from "@meridian/prosemirror-schema";

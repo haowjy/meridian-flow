@@ -386,8 +386,10 @@ describe("change trail (postgres)", () => {
       });
     });
 
-    const preview = await reviewDriver(fixture.collab.draftReview).preview(ALPHA_ID);
-    if (preview.status !== "active") throw new Error("missing draft preview");
+    expect(await reviewDriver(fixture.collab.draftReview).meta(ALPHA_ID)).toMatchObject({
+      kind: "text",
+      hasChanges: true,
+    });
 
     const result = await applyDraftDocument(fixture.collab.draftReview, {
       workId: WORK_ID,
@@ -412,8 +414,9 @@ describe("change trail (postgres)", () => {
       content: "AI DRAFT PROPOSAL",
     });
     const fixture = harness.crossWorkProbeFixture();
-    const reviewed = await reviewDriver(fixture.collab.draftReview).preview(ALPHA_ID);
-    if (reviewed.status !== "active") throw new Error("missing reviewed draft preview");
+    expect(await reviewDriver(fixture.collab.draftReview).meta(ALPHA_ID)).toMatchObject({
+      kind: "text",
+    });
     const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
     const block = fixture.model.getBlocks(toDocHandle(branch.doc))[0];
     if (!block) throw new Error("draft writer block missing");
@@ -447,12 +450,9 @@ describe("change trail (postgres)", () => {
     branch.doc.destroy();
     expect(committed).toBe(true);
 
-    const current = await reviewDriver(fixture.collab.draftReview).preview(ALPHA_ID);
-    expect(current).toMatchObject({
-      status: "active",
-      operations: expect.arrayContaining([
-        expect.objectContaining({ kind: "writer", actorUserId: USER_ID }),
-      ]),
+    expect(await reviewDriver(fixture.collab.draftReview).meta(ALPHA_ID)).toMatchObject({
+      kind: "text",
+      hasChanges: true,
     });
 
     await expect(
@@ -465,17 +465,6 @@ describe("change trail (postgres)", () => {
     await expect(harness.liveMarkdown(ALPHA_ID)).resolves.toContain("AI DRAFT PROPOSAL");
     await expect(harness.liveMarkdown(ALPHA_ID)).resolves.toContain("WRITER DRAFT MARKER");
     await expect(reviewDriver(fixture.collab.draftReview).list()).resolves.toEqual([]);
-    await expect(
-      db
-        .select({ id: schema.branchWriteJournal.id })
-        .from(schema.branchWriteJournal)
-        .where(
-          and(
-            eq(schema.branchWriteJournal.branchId, branch.branchId),
-            inArray(schema.branchWriteJournal.status, ["active", "rollback_pending"]),
-          ),
-        ),
-    ).resolves.toEqual([]);
   });
 
   it("preserves a live writer insertion between two branch edits", async () => {
@@ -538,8 +527,10 @@ describe("change trail (postgres)", () => {
       });
     });
 
-    const preview = await reviewDriver(fixture.collab.draftReview).preview(ALPHA_ID);
-    if (preview.status !== "active") throw new Error("missing draft preview");
+    expect(await reviewDriver(fixture.collab.draftReview).meta(ALPHA_ID)).toMatchObject({
+      kind: "text",
+      hasChanges: true,
+    });
     await expect(
       applyDraftDocument(fixture.collab.draftReview, {
         workId: WORK_ID,
@@ -613,8 +604,10 @@ describe("change trail (postgres)", () => {
       });
     });
 
-    const preview = await reviewDriver(fixture.collab.draftReview).preview(ALPHA_ID);
-    if (preview.status !== "active") throw new Error("missing draft preview");
+    expect(await reviewDriver(fixture.collab.draftReview).meta(ALPHA_ID)).toMatchObject({
+      kind: "text",
+      hasChanges: true,
+    });
     await expect(
       applyDraftDocument(fixture.collab.draftReview, {
         workId: WORK_ID,

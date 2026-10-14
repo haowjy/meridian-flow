@@ -89,6 +89,8 @@ export function claimProbeStore(db: Database, eventSink?: EventSink) {
     {} as never,
     undefined,
     eventSink,
+    { steps: [] },
+    {} as never,
   );
 }
 
@@ -215,16 +217,10 @@ export function appliedMarkdown(output: SettlementOracleOutput): string {
   return result.markdown;
 }
 
-export async function expectLiveSweepOnly(
+/** A settled trail row names no writer impact or protection: those left with the sweep (contract §2.3). */
+export async function expectNoWriterImpactInTrail(
   harness: ReturnType<typeof createHarness>,
 ): Promise<void> {
-  expect(harness.changeEvents()).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        changes: expect.arrayContaining([expect.objectContaining({ swept: true })]),
-      }),
-    ]),
-  );
   const trail = await harness.trailRowMembership();
   for (const detail of trail.details) {
     for (const change of detail.changes as unknown as Array<Record<string, unknown>>) {
@@ -233,19 +229,6 @@ export async function expectLiveSweepOnly(
       expect(change).not.toHaveProperty("writerProtection");
     }
   }
-}
-
-export function expectSweepClassification(
-  harness: ReturnType<typeof createHarness>,
-  swept: boolean,
-): void {
-  expect(harness.changeEvents()).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        changes: expect.arrayContaining([expect.objectContaining({ swept })]),
-      }),
-    ]),
-  );
 }
 
 export async function observeSettlement(

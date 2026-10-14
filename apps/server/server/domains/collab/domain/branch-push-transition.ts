@@ -1,12 +1,7 @@
 /** Sole ordering owner for durable branch-push batch settlement and recovery. */
 import { createHash, randomUUID } from "node:crypto";
-import type {
-  AgentEditCodecFactory,
-  DocumentCoordinator,
-  YProsemirrorDocumentModel,
-} from "@meridian/agent-edit/integration";
+import type { AgentEditCodecFactory, DocumentCoordinator } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import { UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import {
@@ -22,8 +17,8 @@ import {
   type PublicationPayloads,
   type PushCommitStore,
   type PushLineageRow,
+  type ReplannedMember,
   type SettlementClaim,
-  type SweepProjectionDiagnostics,
 } from "./branch-push-contracts.js";
 import { trailContributionReplacement } from "./branch-trail-projection.js";
 import { projectCommittedChangeEvent } from "./change-event-projection.js";
@@ -39,7 +34,6 @@ import type {
   PublicationRefusal,
 } from "./ports/settlement-publication.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
-import { detectSweptChanges, type SweptChangesByRecipient } from "./sweep-policy.js";
 
 const MAX_SETTLEMENT_ATTEMPTS = 3;
 
@@ -106,15 +100,25 @@ export function createBranchPushTransition(input: {
   commitStore: PushCommitStore;
   settlementStore: PendingSettlementStore;
   liveCoordinator: DocumentCoordinator;
-  model: YProsemirrorDocumentModel;
   codec: AgentEditCodecFactory;
   /** Settlement runs in its documents' scope, so nested document doors join it. */
   links: DocumentLinkScopes;
   changeEventDelivery: ChangeEventDelivery;
   writerIngressBarrier?: WriterIngressBarrier;
-  sweepProjectionDiagnostics?: SweepProjectionDiagnostics;
   /** Recovery takes publication steps' branch leases here, before coordinator leases. */
   criticalSections?: BranchCriticalSections;
+  content: {
+    /**
+     * Replans one content member against its final pre-push live, under the branch leases the
+     * settlement holds (contract §2.3): the merge, its trail, and the text branch's base patch.
+     */
+    replan(input: {
+      pending: PendingLiveSettlement;
+      finalPrePush: Y.Doc;
+    }): Promise<ReplannedMember>;
+    /** The base patch that committed, published to the text branch's room. */
+    publishBranchUpdate(branchId: string, update: Uint8Array): void;
+  };
 }) {
   const criticalSections = input.criticalSections ?? createBranchCriticalSections();
   type PreparedTransition<T> =
@@ -126,10 +130,10 @@ export function createBranchPushTransition(input: {
         payloads?: PublicationPayloads;
         /** The branch leases the caller holds, publication steps' included. */
         leasedBranchIds: readonly string[];
-        /** The lease the caller holds, for steps that reset a leased branch in completion. */
+        /** The lease the caller holds over `leasedBranchIds`. */
         lease?: BranchLockLease;
         /** The writer's command, claimed with the staging (§4.6). */
-        command?: DraftCommandEnvelope;
+        command: DraftCommandEnvelope;
         onCommandExists?: () => T;
         afterDurableCommit?: (documentIds: readonly string[]) => Promise<void>;
         onConflict: (push: PushLineageRow) => T;
@@ -163,15 +167,9 @@ export function createBranchPushTransition(input: {
             documentId: push.branch.documentId,
             branchId: push.branch.branchId,
             workId: push.branch.workId,
-            journalIds: push.journalRows.map((row) => row.id),
+            input: push.input,
           })),
           payloads: new Map(Object.entries(payloads)),
-          liveTextFingerprints: new Map(
-            prepared.pushes.map((push) => [
-              push.branch.documentId,
-              fullStateUpdateFingerprint(push.lockCutUpdate),
-            ]),
-          ),
         });
         if (check.kind === "refuse") {
           return prepared.finish({ outcome: { kind: "refused", reason: check.reason }, docs });
@@ -193,7 +191,7 @@ export function createBranchPushTransition(input: {
           pushes,
           ...(check.payloads.size > 0 ? { payloads: stagedPayloads } : {}),
           ...(check.hold.length > 0 ? { holds: check.hold } : {}),
-          ...(prepared.command ? { command: prepared.command } : {}),
+          command: prepared.command,
         });
         if (committed.status === "conflict") return prepared.onConflict(committed.push);
         if (committed.status === "command_exists") {
@@ -257,28 +255,6 @@ export function createBranchPushTransition(input: {
     return acquire(0, new Map(), new Map());
   }
 
-  function detectSweptChangesBestEffort(
-    pending: PendingLiveSettlement,
-    prePushDoc: Y.Doc,
-  ): SweptChangesByRecipient {
-    try {
-      return detectSweptChanges({
-        pending,
-        prePushDoc,
-        model: input.model,
-        // Sweep detection compares the document with itself: stored bytes are its identity.
-        codec: input.codec.forScope(UNSCOPED_DOCUMENT_LINKS),
-      });
-    } catch (cause) {
-      input.sweepProjectionDiagnostics?.unavailable({
-        pushId: pending.push.id,
-        documentId: pending.push.documentId,
-        cause,
-      });
-      return new Map();
-    }
-  }
-
   type Settlement = {
     batch: PendingSettlementBatch;
     docs: LiveDocs;
@@ -311,16 +287,27 @@ export function createBranchPushTransition(input: {
       }
       const owned = await input.settlementStore.loadSettlementBatch({ batchId, owner: claim });
       if (!owned) throw new PendingLiveSettlementError(batchId);
-      const { members, payloads } = owned;
-      const sweeps = new Map<DocumentId, SweptChangesByRecipient>();
-      for (const member of members) {
+      const { payloads } = owned;
+      // Replan every member against the live it will publish over, under the leases this
+      // settlement holds; what it decides is what completion writes (contract §2.3).
+      const replanned = new Map<number, ReplannedMember>();
+      for (const member of owned.members) {
         const prePush = materializeFinalPrePush(member);
         try {
-          sweeps.set(member.push.documentId, detectSweptChangesBestEffort(member, prePush));
+          replanned.set(
+            member.push.id,
+            await input.content.replan({ pending: member, finalPrePush: prePush }),
+          );
         } finally {
           prePush.destroy();
         }
       }
+      const members = owned.members.map((member) => {
+        const outcome = replanned.get(member.push.id)?.outcome;
+        return outcome?.status === "applied"
+          ? { ...member, pushUpdate: outcome.pushUpdate, trail: outcome.trail }
+          : member;
+      });
       let completion: Awaited<ReturnType<PendingSettlementStore["completeBatch"]>>;
       try {
         completion = await input.settlementStore.completeBatch({
@@ -335,12 +322,7 @@ export function createBranchPushTransition(input: {
           payloads,
           leasedBranchIds: settlement.leasedBranchIds,
           ...(settlement.lease ? { lease: settlement.lease } : {}),
-          // The live text the batch publishes over: its lock cut plus every admission that
-          // joined it since staging, so a writer's change after the cut (a deletion too)
-          // moves the rendered-text token.
-          liveTextFingerprints: new Map(
-            members.map((member) => [member.push.documentId, liveTextFingerprint(member)]),
-          ),
+          replanned,
           recheck: (cuts) => recheckWarmState(cuts, settlement.docs, ingress),
           afterCommit: (admitted) =>
             applyToWarmRooms(
@@ -366,17 +348,18 @@ export function createBranchPushTransition(input: {
       }
       if (completion.status === "completed") {
         for (const projection of completion.projections) {
-          const sweep = sweeps.get(projection.documentId as DocumentId);
-          if (!sweep) continue;
           try {
             input.changeEventDelivery.deliver(
               projectCommittedChangeEvent(projection, input.codec),
-              sweep,
+              new Map(),
             );
           } catch {
             // Delivery is an ephemeral session hint; durable push completion
             // and the trail must never be reported as failed because it missed.
           }
+        }
+        for (const { branchId, update } of completion.baseUpdates) {
+          input.content.publishBranchUpdate(branchId, update);
         }
         return { kind: "completed", held: completion.held, outcomes: completion.outcomes };
       }
@@ -442,8 +425,13 @@ export function createBranchPushTransition(input: {
    * step's declared branches and the members' own. Completion asks again under
    * its locks; a grown set hands the batch back for the next pass.
    */
-  async function recover(recoveryInput?: { signal?: AbortSignal }): Promise<number> {
-    const recoverableIds = await input.settlementStore.listRecoverableBatchIds();
+  async function recover(recoveryInput?: {
+    signal?: AbortSignal;
+    batchIds?: readonly string[];
+  }): Promise<number> {
+    const recoverableIds = await input.settlementStore.listRecoverableBatchIds(
+      recoveryInput?.batchIds ? { batchIds: recoveryInput.batchIds } : undefined,
+    );
     let recovered = 0;
     for (const batchId of recoverableIds) {
       recoveryInput?.signal?.throwIfAborted();
@@ -534,7 +522,24 @@ export function createBranchPushTransition(input: {
     );
   }
 
-  return { execute, continueStaged, recover };
+  /**
+   * Settles what an earlier Apply left staged on these documents, outside any lease the caller
+   * holds (the lease lock is not re-entrant), and says whether a batch is still unfinished: one
+   * pending beyond recovery's reach (claimed, backing off) or blocked (contract §2.2 step 1).
+   */
+  async function settleUnfinished(
+    documentIds: readonly DocumentId[],
+    signal?: AbortSignal,
+  ): Promise<{ unfinished: boolean }> {
+    const pending = (await input.settlementStore.listUnfinishedBatches(documentIds))
+      .filter((batch) => batch.state === "pending")
+      .map((batch) => batch.batchId);
+    if (pending.length > 0) await recover({ ...(signal ? { signal } : {}), batchIds: pending });
+    const left = await input.settlementStore.listUnfinishedBatches(documentIds);
+    return { unfinished: left.length > 0 };
+  }
+
+  return { execute, continueStaged, recover, settleUnfinished };
 }
 
 /** A settlement's outcome for its execution; a grown lease set hands the batch up. */
@@ -566,19 +571,6 @@ export function materializeFinalPrePush(
   Y.applyUpdate(doc, row.lockCutUpdate);
   for (const update of row.postCutUpdates) Y.applyUpdate(doc, update);
   return doc;
-}
-
-/** The fingerprint of a staged member's live document now: lock cut plus joined admissions. */
-function liveTextFingerprint(
-  member: Pick<PendingLiveSettlement, "lockCutUpdate" | "postCutUpdates">,
-): string {
-  if (member.postCutUpdates.length === 0) return fullStateUpdateFingerprint(member.lockCutUpdate);
-  const doc = materializeFinalPrePush(member);
-  try {
-    return fullStateFingerprint(doc);
-  } finally {
-    doc.destroy();
-  }
 }
 
 export function fullStateFingerprint(doc: Y.Doc): string {

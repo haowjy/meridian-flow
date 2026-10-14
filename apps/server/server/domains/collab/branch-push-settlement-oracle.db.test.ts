@@ -13,10 +13,9 @@ import {
   closeDatabase,
   createHarness,
   createTestDatabase,
-  expectLiveSweepOnly,
+  expectNoWriterImpactInTrail,
   expireAllPendingClaims,
   expirePendingClaims,
-  GAMMA_ID,
   liveDurableState,
   markdownFromUpdate,
   observeSettlement,
@@ -96,11 +95,10 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     const [alpha, beta, gamma] = (await seedBatch(harness)) as [string, string, string];
     // Request order is not document order; items answer in request order.
     const request = [gamma, alpha, beta];
-    const generations = await Promise.all(request.map((id) => harness.branchGeneration(id)));
     broadcastsBefore = harness.liveRoomBroadcasts().length;
 
     await expect(
-      runInRootDrizzleTransaction(db, () => harness.pushBranches(request, "auto")),
+      runInRootDrizzleTransaction(db, () => harness.pushBranches(request)),
     ).rejects.toThrow(/root-owned/);
     expect(await db.select().from(schema.pushLineage)).toEqual([]);
 
@@ -109,16 +107,12 @@ describe("durable branch-push settlement oracle (postgres)", () => {
       competingWrite = undefined;
       await competitor.stageAnotherDestructiveEdit(beta);
     };
-    const result = await harness.pushBranches(request, "auto");
+    const result = await harness.pushBranches(request);
 
-    expect(result.items).toEqual(
-      [GAMMA_ID, ALPHA_ID, BETA_ID].map((documentId, index) =>
-        expect.objectContaining({
-          status: "pushed",
-          push: expect.objectContaining({ branchId: request[index], documentId }),
-        }),
-      ),
-    );
+    expect(result).toEqual({ status: "pushed" });
+    expect(
+      (await db.select().from(schema.pushLineage)).map((push) => push.branchId).sort(),
+    ).toEqual([...request].sort());
     expect(attempts).toBe(3);
     // Three admissions in attempt 2, which the expiry rolled back, and three in attempt 3:
     // no warm room changed before commit, and nothing admitted twice.
@@ -140,15 +134,6 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     for (const documentId of BATCH) {
       await expect(harness.liveMarkdown(documentId)).resolves.toBe("Survivor.\n");
     }
-    // Resetting drained branches belongs to the review step (§2.4), not the raw push.
-    expect(await Promise.all(request.map((id) => harness.branchGeneration(id)))).toEqual(
-      generations,
-    );
-    const betaRows = await db
-      .select({ status: schema.branchWriteJournal.status })
-      .from(schema.branchWriteJournal)
-      .where(eq(schema.branchWriteJournal.branchId, beta));
-    expect(betaRows.filter(({ status }) => status === "active")).toHaveLength(1);
     competitor.destroyWarmState();
     harness.destroyWarmState();
   });
@@ -336,7 +321,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
         });
         const branchId = await warm.seedDestructivePush("oracle-f1a-warm");
         await expect(warm.push(branchId)).resolves.toMatchObject({ status: "pushed" });
-        await expectLiveSweepOnly(warm);
+        await expectNoWriterImpactInTrail(warm);
         const observed = await observeSettlement(db, warm);
         warm.destroyWarmState();
         return observed;
@@ -363,7 +348,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
           afterClassification: deleteAfterFirstClassification(),
         });
         await expect(cold.recoverPendingLiveSettlements()).resolves.toBe(1);
-        await expectLiveSweepOnly(cold);
+        await expectNoWriterImpactInTrail(cold);
         const observed = await observeSettlement(db, cold, COLD_SCENARIO_IDS.ALPHA_ID);
         cold.destroyWarmState();
         return observed;

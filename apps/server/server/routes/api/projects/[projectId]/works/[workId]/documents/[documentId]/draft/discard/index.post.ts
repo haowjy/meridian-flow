@@ -1,10 +1,10 @@
-/** Discard one item, or the clicked classes of one item. */
+/** Discard one item (close-only): a created, binary or live-deleted item. */
 import type { DocumentId, ProjectId, WorkId } from "@meridian/contracts/runtime";
 import { defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import { requireAppUser } from "../../../../../../../../../../lib/auth-gate.js";
 import {
   handleDiscardWorkDraftRequest,
-  parseDraftDiscardSelection,
+  parseDraftItemDiscard,
   selectDraftRouteServices,
 } from "../../../../../../../../../../lib/draft-review-route.js";
 
@@ -15,7 +15,7 @@ export default defineEventHandler(async (event) => {
     workId: (getRouterParam(event, "workId") ?? "") as WorkId,
     documentId: (getRouterParam(event, "documentId") ?? "") as DocumentId,
     userId: user.userId,
-    request: parseDraftDiscardSelection(await readBody(event)),
+    request: parseDraftItemDiscard(await readBody(event)),
   });
   event.res.status = result.httpStatus;
   return result.body;

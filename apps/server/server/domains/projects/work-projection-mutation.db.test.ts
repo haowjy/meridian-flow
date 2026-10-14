@@ -24,16 +24,10 @@ import {
   runInDrizzleTransaction,
 } from "../../shared/drizzle-transaction.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../test-support/drizzle-reset.js";
-import {
-  createDrizzleBranchJournalReadStore,
-  createDrizzlePushCommitStore,
-  createDrizzleWorkDraftPendingStore,
-} from "../collab/adapters/drizzle-branch-push.js";
+import { createDrizzleWorkDraftPendingStore } from "../collab/adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "../collab/adapters/drizzle-branches.js";
-import { createDrizzleChangeTrailAggregateWriter } from "../collab/adapters/drizzle-change-trail-aggregate.js";
 import { createDrizzleDocumentProjectionEffects } from "../collab/adapters/drizzle-document-activity.js";
 import { createDrizzleDraftStore } from "../collab/adapters/drizzle-drafts.js";
-import { stageSettlementBatchWithinTx } from "../collab/adapters/drizzle-pending-settlement.js";
 import { createDrizzleContextCatalog } from "../context/adapters/context-catalog.js";
 import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
 import { createDrizzleProjectContextAvailability } from "../context/adapters/project-context-availability.js";
@@ -480,14 +474,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const sequenceBefore = await db.execute<{ lastValue: string }>(
         sql`select last_value::text as "lastValue" from context_availability_generation_seq`,
       );
-      const journal = createDrizzleBranchJournalReadStore(db);
-      const pushStore = createDrizzlePushCommitStore(
-        db,
-        stageSettlementBatchWithinTx,
-        createDrizzleChangeTrailAggregateWriter(db),
-        undefined,
-        projection,
-      );
       const branchInputs = [
         { branchId: BRANCH_ID, documentId: DOCUMENT_ID, workId: WORK_ID, draftId: DRAFT_ID },
         {
@@ -505,23 +491,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ];
       await runInDrizzleTransaction(db, async () => {
         for (const value of branchInputs) {
-          await pushStore.commitDiscard({
-            branch: {
-              ...value,
-              documentId: value.documentId as never,
-              workId: value.workId as never,
-              kind: "work_draft",
-              upstreamBranchId: null,
-              threadId: null,
-              generation: 1,
-              status: "active",
-              state: new Uint8Array([0, 0]),
-              stateVector: new Uint8Array([0]),
-              schemaVersion: 1 as never,
-            },
-            journalRows: await journal.listReviewableJournalRows(value.branchId, 1),
-            state: new Uint8Array([0, 0]),
-            stateVector: new Uint8Array([0]),
+          await projection.mutatePendingBranches([value.branchId], async () => {
+            await db
+              .update(documentBranches)
+              .set({ hasEffect: false })
+              .where(eq(documentBranches.id, value.branchId));
           });
         }
         expect(wakes).toHaveLength(0);
@@ -543,9 +517,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(BigInt(sequenceAfter[0]?.lastValue ?? "0")).toBe(
         BigInt(sequenceBefore[0]?.lastValue ?? "0") + 1n,
       );
-      for (const { branchId } of branchInputs) {
-        await expect(journal.listReviewableJournalRows(branchId, 1)).resolves.toEqual([]);
-      }
     });
   });
 }

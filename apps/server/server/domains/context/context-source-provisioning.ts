@@ -7,7 +7,7 @@
  * they own the DB-level context-source lifecycle, separate from adapter assembly.
  */
 
-import type { DocumentId, ProjectId } from "@meridian/contracts";
+import type { ProjectId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { contextSources, projects, works } from "@meridian/database/schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
@@ -31,7 +31,7 @@ import type {
 } from "./ports/context-document-store.js";
 import type { ProjectContextFsScheme, WorkScopedContextFsScheme } from "./ports/context-port.js";
 import type { DocumentArrivals } from "./ports/document-arrivals.js";
-import { findForward, recordForward } from "./tree/forwards.js";
+import { findForward } from "./tree/forwards.js";
 import type { HiddenNodeRepair } from "./tree/hidden-node-repair.js";
 import type { LiveClaim } from "./tree/hidden-node-types.js";
 import type { TreeView } from "./tree/tree-view.js";

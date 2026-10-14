@@ -326,31 +326,22 @@ function createInMemoryDraftStub(): CollabDrafts {
       async resolveItemByDocument() {
         return null;
       },
-      async preview(input) {
+      async addressableItems() {
+        return { draftId: null, items: [] };
+      },
+      async itemMeta(input) {
         return { status: "gone", itemKey: input.itemKey };
+      },
+      async attribution() {
+        return null;
       },
       async lookupCommand() {
         return { kind: "none" };
       },
       applyItem: (input) => gone(input.item),
       applyAll: gone,
-      applyChanges: async (input) => ({
-        kind: "result",
-        result: {
-          status: "gone",
-          draftId: input.envelope.draftId as DraftId,
-          itemKey: input.itemKey,
-        },
-      }),
+      applyChanges: (input) => gone(input.item),
       discardItem: (input) => gone(input.item),
-      discardChanges: async (input) => ({
-        kind: "result",
-        result: {
-          status: "gone",
-          draftId: input.envelope.draftId as DraftId,
-          itemKey: input.itemKey,
-        },
-      }),
       discardAll: gone,
     },
   };

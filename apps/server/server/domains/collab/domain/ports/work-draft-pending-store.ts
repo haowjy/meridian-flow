@@ -17,13 +17,11 @@ export type WorkDraftPendingEvidence = {
     draftId: DraftId;
     generation: number;
     updatedAt: Date;
-    /** The pulled-live-cut effect predicate (§3.1): the branch differs from live. */
+    /** The membership effect (§4.1): the draft's text differs from its `review_base`. */
     hasEffect: boolean;
     /** A held restoration keeps an item listed with no effect. */
     blocking: boolean;
   };
-  /** The branch has at least one reviewable journal row. */
-  hasRows: boolean;
   /** Chats whose agent writes are pending on the branch, most recent write first, distinct. */
   agentThreadIds: string[];
 };
@@ -45,9 +43,9 @@ export type WorkDraftPendingStore = {
   /** The item keys a staged, unfinished batch of this draft holds: progress, never settlement. */
   listSettling(draftId: DraftId): Promise<ReadonlySet<string>>;
   /**
-   * Distinct pending documents per Work, by the canonical branch → draft → Work mapping:
-   * its active draft's branches with reviewable rows and (`hasEffect` or `blocking`), plus
-   * that draft's change rows. The one membership predicate of `draft-review-items.ts`.
+   * Distinct pending documents per Work, from the one SQL item relation of `drizzle-branch-push.ts`:
+   * the active draft's text branches with (`hasEffect` or `blocking`), plus that draft's created
+   * documents. The twin of `draft-review-items.ts`'s `isListed`.
    */
   listDraftsChangingDocument(input: {
     projectId: ProjectId;

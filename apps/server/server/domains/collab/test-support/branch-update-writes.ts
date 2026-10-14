@@ -4,14 +4,10 @@ import * as Y from "yjs";
 import type {
   AppendBranchJournalInput,
   BranchCoordinator,
-  BranchStore,
   SegmentRowsInput,
 } from "../domain/branch-coordinator.js";
 
-type SessionDoors = Pick<
-  BranchCoordinator,
-  "withLeases" | "ownedSession" | "resetFromDocIfUnchangedWithLease"
->;
+type SessionDoors = Pick<BranchCoordinator, "withLeases" | "ownedSession">;
 
 /** Commits segment rows to one branch through its owned session, taking the lease the way a save does. */
 export function commitSegmentRows(
@@ -45,25 +41,5 @@ export function commitJournaledUpdate(
     } finally {
       staged.sourceDoc.destroy();
     }
-  });
-}
-
-/** Resets an active Work draft to `upstream`, reading its expected state straight from the store. */
-export function resetBranchFromDoc(
-  coordinator: SessionDoors,
-  store: Pick<BranchStore, "getBranch">,
-  branchId: string,
-  upstream: Y.Doc,
-): Promise<boolean> {
-  return coordinator.withLeases([branchId], async (lease) => {
-    const expected = await store.getBranch(branchId);
-    if (!expected) throw new Error(`Branch ${branchId} does not exist`);
-    return coordinator.resetFromDocIfUnchangedWithLease(lease, {
-      branchId,
-      upstream,
-      expectedGeneration: expected.generation,
-      expectedStateVector: expected.stateVector,
-      expectedState: expected.state,
-    });
   });
 }
