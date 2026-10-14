@@ -44,7 +44,7 @@ describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
 
     expect.soft(await s.applyAll(ascension), "payload-only").toMatchObject({
       status: "completed",
-      items: [{ itemKey: first?.itemKey, status: "applied", notes: [] }],
+      items: [expect.objectContaining({ itemKey: first?.itemKey, status: "applied", notes: [] })],
     });
     expect
       .soft(await s.view("live").idAt("art/map.png"), "the first is live")
@@ -160,7 +160,11 @@ describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
         held(lore, "Lore"),
         held(inner, "b/Inner"),
         held(chapter, "b/Inner.md"),
-        { itemKey: itemFor(items, other).itemKey, status: "applied", notes: [] },
+        expect.objectContaining({
+          itemKey: itemFor(items, other).itemKey,
+          status: "applied",
+          notes: [],
+        }),
       ]),
     });
     expect.soft(await live.idAt("other"), "the unrelated item applied").toBe(other);
@@ -184,8 +188,8 @@ describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
       status: "completed",
       draftId: items[0]?.draftId,
       items: expect.arrayContaining([
-        { itemKey: keyOf(chapter), status: "applied", notes: [] },
-        { itemKey: keyOf(kael), status: "applied", notes: [] },
+        expect.objectContaining({ itemKey: keyOf(chapter), status: "applied", notes: [] }),
+        expect.objectContaining({ itemKey: keyOf(kael), status: "applied", notes: [] }),
         {
           itemKey: keyOf(notes),
           status: "held",
@@ -238,7 +242,9 @@ describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
     expect.soft(grown, "the staged batch finishes with real results").toEqual({
       status: "completed",
       draftId: rendered?.draftId,
-      items: [{ itemKey: rendered?.itemKey, status: "applied", notes: [] }],
+      items: [
+        expect.objectContaining({ itemKey: rendered?.itemKey, status: "applied", notes: [] }),
+      ],
     });
     expect.soft(await live.idAt("growth/original"), "published").toBe(original);
     expect.soft(await live.idAt("growth/late"), "the late item stays in D").toBeNull();

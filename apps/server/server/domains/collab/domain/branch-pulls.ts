@@ -179,7 +179,13 @@ export function createBranchPullService(input: {
     for (const branchId of branchIds) {
       const outcome = await atBranch(branchId, () =>
         input.branchCoordinator.withLeases([branchId], (lease) =>
-          input.rootTransaction(() => input.draftRebase.catchUp(lease, branchId)),
+          input.rootTransaction(() =>
+            input.draftRebase.catchUp(lease, branchId).catch((cause: unknown) => {
+              // A Discard closed the branch after the listing: nothing is left to catch up.
+              if (cause instanceof BranchStaleUpdateError) return { kind: "noop" as const };
+              throw cause;
+            }),
+          ),
         ),
       );
       switch (outcome.kind) {

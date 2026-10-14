@@ -86,7 +86,7 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
     expect.soft(await s.applyAll(ascension), "one command, one publication").toEqual({
       status: "completed",
       draftId: reviewed.draftId,
-      items: [{ itemKey: reviewed.itemKey, status: "applied", notes: [] }],
+      items: [expect.objectContaining({ itemKey: reviewed.itemKey, status: "applied", notes: [] })],
     });
     const live = s.view("live");
     expect.soft(await live.idAt("characters/kael-fix"), "the rename stands").toBe(kael);
@@ -107,7 +107,7 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
     renameLate();
     expect.soft(raced, "the raced rename stands").toMatchObject({
       httpStatus: 200,
-      body: { item: { status: "applied", notes: [] } },
+      body: { status: "applied", notes: [] },
     });
     expect.soft(await live.idAt("notes/renamed")).toBe(notes);
     expect.soft(await live.idAt("notes/original")).toBeNull();
@@ -161,7 +161,7 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
           status: "applied",
           draftId: item?.draftId,
           itemKey: item?.itemKey,
-          item: { itemKey: item?.itemKey, status: "applied", notes: [] },
+          notes: [],
         },
       },
     ]);
@@ -216,16 +216,16 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
     expect.soft(await s.applyAll(ascension)).toMatchObject({
       status: "completed",
       items: expect.arrayContaining([
-        {
+        expect.objectContaining({
           itemKey: itemFor(items, harbor).itemKey,
           status: "applied",
           notes: [{ code: "restored", path: "manuscript://lore/harbor" }],
-        },
-        {
+        }),
+        expect.objectContaining({
           itemKey: itemFor(items, map).itemKey,
           status: "held",
           reason: { code: "path_taken", path: "manuscript://atlas/map" },
-        },
+        }),
       ]),
     });
     const live = s.view("live");

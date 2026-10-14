@@ -10,6 +10,7 @@ import {
   unwrapDoc,
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
+import type { DraftDecidedOutcome } from "@meridian/contracts/drafts";
 import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
@@ -119,6 +120,7 @@ const { createBranchCoordinator } = await import("../domain/branch-coordinator.j
 const { createBranchCriticalSections } = await import("../domain/branch-critical-sections.js");
 const { createBranchPullService } = await import("../domain/branch-pulls.js");
 const { createBranchPushService } = await import("../domain/branch-push.js");
+const { DRAFT_TREE_STEP, encodeDraftTreePayload } = await import("../domain/draft-tree-payload.js");
 const { fullStateFingerprint } = await import("../domain/branch-push-transition.js");
 const { journalAttributionByChangedBlock, trailContributionReplacement } = await import(
   "../domain/branch-trail-projection.js"
@@ -1849,28 +1851,42 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     return stageCertifiedReplace({ responseId, find: restored, content: "" });
   }
 
-  /** Apply the whole of each branch's item as one writer command, as the draft routes do. */
+  /**
+   * Apply the whole of each branch's item as one writer command, as the draft routes do: the
+   * command rides in an empty tree payload, which settles it with the member outcomes. Callers
+   * may add the publication payloads of their own steps.
+   */
   async function applyBranches(
     branchIds: readonly string[],
     payloads: Readonly<Record<string, JsonValue>> = {},
   ) {
     const snapshots = await Promise.all(branchIds.map((id) => branchStore.getBranch(id)));
     const first = snapshots[0];
-    if (!first?.workId) throw new Error("the branches to apply belong to no Work");
+    if (!first?.workId || !first.draftId)
+      throw new Error("the branches to apply belong to no draft");
+    const draftId = first.draftId;
+    const tree = (decided: readonly DraftDecidedOutcome[]) => ({
+      ...payloads,
+      [DRAFT_TREE_STEP]: encodeDraftTreePayload({
+        draftId,
+        command: { shape: "item", itemKeys: [...branchIds], decided: [...decided] },
+        items: [],
+      }),
+    });
     const pushed = await realBranchPush.pushBranchesToLive({
       members: branchIds.map((branchId) => ({
         branchId,
         itemKey: branchId,
         request: { scope: "item" as const },
       })),
-      payloads,
-      finalizePayloads: () => payloads,
+      payloads: tree([]),
+      finalizePayloads: tree,
       command: {
         commandId: crypto.randomUUID() as never,
         workId: first.workId,
         accountId: USER_ID as UserId,
         kind: "apply_items",
-        draftId: first.draftId,
+        draftId,
         digest: crypto.randomUUID(),
       },
       pushedByUserId: USER_ID as UserId,

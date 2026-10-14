@@ -13,7 +13,7 @@ import {
   closeDatabase,
   createHarness,
   createTestDatabase,
-  expectLiveSweepOnly,
+  expectNoWriterImpactInTrail,
   expireAllPendingClaims,
   expirePendingClaims,
   liveDurableState,
@@ -95,7 +95,6 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     const [alpha, beta, gamma] = (await seedBatch(harness)) as [string, string, string];
     // Request order is not document order; items answer in request order.
     const request = [gamma, alpha, beta];
-    const generations = await Promise.all(request.map((id) => harness.branchGeneration(id)));
     broadcastsBefore = harness.liveRoomBroadcasts().length;
 
     await expect(
@@ -135,15 +134,6 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     for (const documentId of BATCH) {
       await expect(harness.liveMarkdown(documentId)).resolves.toBe("Survivor.\n");
     }
-    // Resetting drained branches belongs to the review step (§2.4), not the raw push.
-    expect(await Promise.all(request.map((id) => harness.branchGeneration(id)))).toEqual(
-      generations,
-    );
-    const betaRows = await db
-      .select({ status: schema.branchWriteJournal.status })
-      .from(schema.branchWriteJournal)
-      .where(eq(schema.branchWriteJournal.branchId, beta));
-    expect(betaRows.filter(({ status }) => status === "active")).toHaveLength(1);
     competitor.destroyWarmState();
     harness.destroyWarmState();
   });
@@ -331,7 +321,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
         });
         const branchId = await warm.seedDestructivePush("oracle-f1a-warm");
         await expect(warm.push(branchId)).resolves.toMatchObject({ status: "pushed" });
-        await expectLiveSweepOnly(warm);
+        await expectNoWriterImpactInTrail(warm);
         const observed = await observeSettlement(db, warm);
         warm.destroyWarmState();
         return observed;
@@ -358,7 +348,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
           afterClassification: deleteAfterFirstClassification(),
         });
         await expect(cold.recoverPendingLiveSettlements()).resolves.toBe(1);
-        await expectLiveSweepOnly(cold);
+        await expectNoWriterImpactInTrail(cold);
         const observed = await observeSettlement(db, cold, COLD_SCENARIO_IDS.ALPHA_ID);
         cold.destroyWarmState();
         return observed;

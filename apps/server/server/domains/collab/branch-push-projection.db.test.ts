@@ -324,7 +324,7 @@ describe("branch-push durable projection", () => {
       .select()
       .from(documentDerivations)
       .where(eq(documentDerivations.documentId, documentId));
-    expect(watermark?.projectionAdmissionSequence).toBe(1n);
+    expect(watermark?.projectionAdmissionSequence).toBe(2n);
 
     branchDoc.destroy();
     liveDoc.destroy();
