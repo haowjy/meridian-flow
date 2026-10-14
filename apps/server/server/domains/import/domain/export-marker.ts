@@ -1,8 +1,8 @@
 /** The visible versioned export marker routes only a whole selected project folder. */
-import { type ExportArea, type ImportManifest, parseExportMarker } from "@meridian/contracts";
+import { type ExportArea, type ImportSelection, parseExportMarker } from "@meridian/contracts";
 import { ImportError } from "./manifest.js";
 export type ImportArea = ExportArea;
-export function readExportMarker(manifest: ImportManifest) {
+export function readExportMarker(manifest: Pick<ImportSelection, "roots">) {
   const roots = manifest.roots.filter((root) => root.meridianExport !== undefined);
   if (!roots.length) return null;
   if (manifest.roots.length !== 1 || roots[0].kind !== "folder")

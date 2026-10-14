@@ -33,7 +33,7 @@ function view(documentId = "document", uri = "manuscript://chapter.md"): Catalog
         parentId: "source",
         name: "chapter.md",
         aliases: [],
-        importPending: false,
+
         hasProperties: false,
         path: ["chapter.md"],
         uri,
@@ -67,7 +67,7 @@ function scopedView(
         parentId: "source",
         name: "notes.md",
         aliases: [],
-        importPending: false,
+
         hasProperties: false,
         path: ["notes.md"],
         uri,

@@ -83,8 +83,6 @@ export interface AheadRefRegistrar {
       aheadId: string;
       holderProjectId: string;
       address: string;
-      /** The planned identity it awaits: no other document at the address settles it. */
-      awaitedDocumentId?: string;
     }[],
   ): Promise<void>;
 }

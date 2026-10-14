@@ -20,7 +20,6 @@ import type {
   CheckpointAuthority,
   CheckpointJournal,
 } from "../../domain/ports/checkpoint-authority.js";
-import type { DocumentLandingJournal } from "../../domain/ports/document-landing-journal.js";
 import { mintCheckpointCut, resolveCheckpointCut } from "../checkpoint-capability.js";
 import { materializeCheckpoint } from "../checkpoint-materialization.js";
 import { loadDocumentState } from "../document-loader.js";
@@ -33,17 +32,16 @@ export type InMemoryCheckpointRecord = {
   createdAt: string;
 };
 
-export type InMemoryJournal = CheckpointJournal &
-  DocumentLandingJournal & {
-    createCheckpoint(cut: CapturedCheckpointCut, reason: string): Promise<string>;
-    seedInitialDocument(docId: string, state: Uint8Array): Promise<boolean>;
-    getCheckpoint(id: string): Promise<InMemoryCheckpointRecord | null>;
-    listCheckpoints(docId: string): Promise<InMemoryCheckpointRecord[]>;
-    latestUpdate(docId: string): Promise<PersistedUpdate | null>;
-    latestUpdateSeq(docId: string): Promise<number>;
-    updateRecords(docId: string): PersistedUpdate[];
-    documentsForTurn(threadId: string, turnId: string): Promise<string[]>;
-  };
+export type InMemoryJournal = CheckpointJournal & {
+  createCheckpoint(cut: CapturedCheckpointCut, reason: string): Promise<string>;
+  seedInitialDocument(docId: string, state: Uint8Array): Promise<boolean>;
+  getCheckpoint(id: string): Promise<InMemoryCheckpointRecord | null>;
+  listCheckpoints(docId: string): Promise<InMemoryCheckpointRecord[]>;
+  latestUpdate(docId: string): Promise<PersistedUpdate | null>;
+  latestUpdateSeq(docId: string): Promise<number>;
+  updateRecords(docId: string): PersistedUpdate[];
+  documentsForTurn(threadId: string, turnId: string): Promise<string[]>;
+};
 
 class InMemoryCollabJournal extends InMemoryAgentEditJournal implements InMemoryJournal {
   private readonly admissionLock = new KeyedMutex();
@@ -61,17 +59,6 @@ class InMemoryCollabJournal extends InMemoryAgentEditJournal implements InMemory
       return super.appendBatch(entries);
     };
     return append(0);
-  }
-
-  async admitDocumentLanding(
-    ...[docId, onlySeed, prepare]: Parameters<DocumentLandingJournal["admitDocumentLanding"]>
-  ) {
-    return this.admissionLock.run(docId, async () => {
-      if (onlySeed && (await this.latestUpdateSeq(docId)) > 0) return null;
-      const { update, meta } = await prepare(await this.read(docId));
-      const seq = await super.append(docId, update, meta);
-      return { seq, update, meta: { ...meta, seq } };
-    });
   }
 
   override async read(docId: string, opts?: Parameters<UpdateJournal["read"]>[1]) {

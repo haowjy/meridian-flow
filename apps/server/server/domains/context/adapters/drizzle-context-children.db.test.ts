@@ -32,7 +32,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("context child creation (
     const coordinator = createInMemoryCoordinator(persistence.journal);
     const runtime = createAgentEditRuntime({
       journal: persistence.journal,
-      landingJournal: persistence.journal,
       coordinator,
       lifecycle: persistence.lifecycle,
       initialDocumentSeeds: persistence.lifecycle,
@@ -69,7 +68,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("context child creation (
     name,
     extension: "",
     filetype: "markdown" as const,
-    metadata: { importPending: true },
+    metadata: { aliases: ["imported"] },
   });
   beforeEach(async () => {
     await deleteDrizzleRows(db, [users]);
@@ -89,7 +88,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("context child creation (
   const root = () => ({ sourceId, folderId: null });
 
   // Operation count, not time: one catalog refresh per chunk, whatever its size.
-  // Scale timings live in apps/server/scripts/probe-import-performance.ts.
   it("creates each chunk's placeholders with exactly one real catalog refresh", async () => {
     const folderId = randomUUID();
     const chunks = 3,
@@ -119,7 +117,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("context child creation (
     });
     const files = snapshot.entries.filter((entry) => entry.kind === "file");
     expect(files.map(({ entryId }) => entryId).sort()).toEqual([...ids].sort());
-    expect(files.every((entry) => entry.importPending)).toBe(true);
   });
 
   it("rolls all identities, seeds and catalog rows back with its caller", async () => {

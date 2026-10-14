@@ -9,7 +9,6 @@ import type {
   CollabTransport,
   DocumentAttribution,
   DocumentCheckpoints,
-  DocumentLandingStore,
   DocumentProjectionRefresher,
   MarkdownDocumentStore,
   ResponseWriteFinalizer,
@@ -25,7 +24,7 @@ export type CollabFacadeServices = {
   authorityHeads: DocumentAuthorityHeads;
   agentEdit: AgentEditAccess;
   reversal: TurnReversalAccess;
-  documents: MarkdownDocumentStore & DocumentLandingStore;
+  documents: MarkdownDocumentStore;
   projections: DocumentProjectionRefresher;
   lineage: TurnLiveLineageAccess;
   responses: ResponseWriteFinalizer;

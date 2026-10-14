@@ -687,8 +687,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     reverseTurn: turnReversal.reverseTurn,
     getTurnReceiptChip: turnInverse.getTurnReceiptChip,
     writeDocument: runtime.markdownDocuments.writeDocument,
-    fillEmptyDocument: runtime.markdownDocuments.fillEmptyDocument,
-    prependBlocks: runtime.markdownDocuments.prependBlocks,
     bindMarkdown: runtime.linkBinder.bindMarkdown,
     ...responseFinalizer,
     ...drafts,

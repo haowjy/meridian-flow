@@ -1,15 +1,16 @@
 # Import
 
-A selected folder creates a new tree. Loose files land beside existing children.
-This domain owns durable selection identity, allocation, wiki-style note conversion and
-landing receipts, not context storage or Yjs admission. Only Markdown notes are
-converted; plain-text and code files land as written.
+Upload and organize are separate durable phases. Upload admission creates only
+selection rows. Receipts own verified bytes in staging; Context owns the final
+tree. The browser never hashes or classifies files before sending them.
 
-Keep planning and conversion pure. Links bind by target id per occurrence, never
-by an address. A link awaiting an unlanded binary or code file belongs to that
-file until Finish releases it; nothing arriving at its address may capture it. Storage adapters join the repository's ambient transaction.
-Resolve parents and placeholders by identity after moves; never recreate a
-writer-deleted node. Finish is terminal.
+Serialize commands under the import row lock. Store each put at a fresh UUIDv7
+key, and never receipt a key older than one hour by database time. Import ids
+are permanent tombstones, including after project deletion and entry retention.
 
-See [.context/CONTEXT.md](.context/CONTEXT.md) for the transaction protocol and
-[.context/FUTURE.md](.context/FUTURE.md) for deferred import work.
+Stop discards the whole import before reveal. It changes durable state and
+returns without waiting for storage cleanup. Oversize files fail individually;
+skips mean a deliberate omission, not a failed upload.
+
+See [.context/CONTEXT.md](.context/CONTEXT.md) for the upload protocol and phase
+boundary, and [.context/FUTURE.md](.context/FUTURE.md) for separate sorting work.

@@ -9,7 +9,7 @@ import {
 import type { CatalogFileEntry, CatalogScope, Filetype } from "@meridian/contracts/protocol";
 import { classifyFiletype } from "@meridian/contracts/protocol";
 import { decodeWorkSlug, type ResolvedWorkAuthority } from "@meridian/contracts/works";
-import { documentAliases, documentImportPending } from "../document-metadata.js";
+import { documentAliases } from "../document-metadata.js";
 
 const BINARY_FILE_TYPES = new Set(["docx", "image", "pdf", "binary"]);
 
@@ -94,7 +94,6 @@ export function mapAuthoritativeFile(input: {
     parentId: document.folderId ?? document.contextSourceId,
     name: filename,
     aliases: documentAliases(document.metadata),
-    importPending: documentImportPending(document.metadata),
     hasProperties: hasDisplayableProperties(document.metadata),
     path,
     uri: canonicalContextUri(
