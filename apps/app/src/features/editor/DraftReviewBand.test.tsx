@@ -7,6 +7,7 @@ import { act } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import * as projectsApi from "@/client/api/projects-api";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
+import type { ContextTab } from "@/client/stores";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import * as handoff from "@/features/project/dock/editor-review-handoff";
 import { MobileDocumentReview } from "@/features/project/mobile/MobileDocumentReview";
@@ -216,7 +217,7 @@ it.each([
         surface === "desktop" ? (
           <DraftReviewBand documentId="document-a" itemKey="draft-a" onOpenDraft={navigate} />
         ) : (
-          <MobileDocumentReview documentId="document-a">
+          <MobileDocumentReview projectId="project-a" tab={reviewedTab}>
             <div />
           </MobileDocumentReview>
         ),
@@ -232,3 +233,11 @@ it.each([
     },
   );
 });
+
+/** The tab of the document under review; a local reservation, which has no drafts to hint at. */
+const reviewedTab = {
+  kind: "new",
+  documentId: "document-a",
+  name: "Chapter",
+  resourceHandle: "handle-a",
+} as unknown as ContextTab;

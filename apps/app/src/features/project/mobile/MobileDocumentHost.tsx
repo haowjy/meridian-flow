@@ -90,7 +90,8 @@ function MobileDraftOnlyDocumentHost({
   const removal = useContextRemovalCoordinator();
   return (
     <MobileDocumentReview
-      documentId={tab.documentId}
+      projectId={projectId}
+      tab={tab}
       // A draft-only document has no live version to return to: its review closes the document.
       onCloseDraftOnly={() => {
         const closing = removal.writerClose(projectId, tab);
@@ -370,7 +371,7 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
   }
 
   return (
-    <MobileDocumentReview documentId={activeTab.documentId}>
+    <MobileDocumentReview projectId={projectId} tab={activeTab}>
       {capture}
       <WriterHandoffLossNotice projectId={projectId} documentId={activeTab.documentId} />
       <div className="relative min-h-0 flex-1">
