@@ -114,19 +114,17 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
       mounted && !accountSignal.aborted && generation === expected;
     /** A pending refresh that must run whatever the transcript holds. */
     let unconditional = false;
-    /** Switch turns a `switched` frame named whose anchor the transcript lacked. */
-    const unplaced = new Set<string>();
     /**
      * Whether the transcript lacks a turn the stream named. The stream carries the record but not
      * another client's user turn, and a `switched` frame names the turn its switch follows, which
      * may be that turn: with the anchor missing, the divider is held out of the transcript and
-     * only a snapshot brings both. Asked when the timer fires, so this device's own message,
-     * acknowledged meanwhile, is no gap.
+     * only a snapshot brings both. The store says which dividers still wait; a covering
+     * snapshot releases one whether or not the turn came. Asked when the timer fires, so this
+     * device's own message, acknowledged meanwhile, is no gap.
      */
     const hasGap = () => {
+      if (actions.dividersAwaitingAnchor(threadId).length > 0) return true;
       const held = new Set((actions.turns(threadId) ?? []).map((turn) => turn.id));
-      for (const id of unplaced) if (held.has(id)) unplaced.delete(id);
-      if (unplaced.size > 0) return true;
       const record = actions.runState(threadId).record;
       return !!record && unheldWriterMessages(record, (id) => held.has(id)).length > 0;
     };
@@ -192,10 +190,7 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
                 actions.applyTurnEvent(threadId, event, seq);
                 actions.dispatchRunState(threadId, { type: "switched", seq, ...switched });
                 // The turn it follows is not in the transcript: the gap check asks for a snapshot.
-                if (!actions.turns(threadId)?.some((turn) => turn.id === switched.turnId)) {
-                  unplaced.add(switched.turnId);
-                  refresh(expected, true);
-                }
+                if (actions.dividersAwaitingAnchor(threadId).length > 0) refresh(expected, true);
               }
               return;
             }

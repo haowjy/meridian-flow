@@ -1,7 +1,11 @@
 /**
  * CLI presentation and follow predicates over the shared socket subscription.
  */
-import type { ThreadLiveState } from "@meridian/contracts/protocol";
+import {
+  apiThreadSnapshotPath,
+  type ThreadLiveState,
+  type ThreadSnapshotResponse,
+} from "@meridian/contracts/protocol";
 import type { ThreadTransport } from "@meridian/thread-client";
 import type { Output } from "../../core/output";
 import type { Session } from "../../core/session";
@@ -43,6 +47,8 @@ export type FollowOptions = {
   reduced?: ReducedThread;
 };
 
+const ANCHOR_RETRY_MS = 250;
+
 export async function followThread(options: FollowOptions): Promise<FollowResult> {
   const transport = options.transport ?? createThreadClient(options.session);
   const subscription = subscribeThread(transport, options.threadId, options.lastSeq);
@@ -53,6 +59,27 @@ export async function followThread(options: FollowOptions): Promise<FollowResult
   let stopRequested = false;
   let truncated = false;
   let state: ThreadLiveState | null = null;
+  let anchorAskedAt = 0;
+
+  /**
+   * A switch divider waits for a user turn the event stream never carries (a message this
+   * follower did not hydrate, or another client's). Ask for a snapshot, bounded by the deadline,
+   * at most once per interval; there is no tail-insertion fallback.
+   */
+  const recoverAnchor = async () => {
+    const reduced = options.reduced;
+    if (!reduced?.awaitsAnchor()) return;
+    const remaining = options.deadlineAt - Date.now();
+    if (remaining <= 0 || Date.now() - anchorAskedAt < ANCHOR_RETRY_MS) return;
+    anchorAskedAt = Date.now();
+    const snapshot = await options.session.request<ThreadSnapshotResponse>(
+      "GET",
+      apiThreadSnapshotPath(options.threadId),
+      undefined,
+      { timeoutMs: remaining },
+    );
+    reduced.hydrate(snapshot, { observed: false });
+  };
 
   const emit = (event: CliEvent): boolean => {
     if ("turnId" in event) turnIds.add(event.turnId);
@@ -94,6 +121,7 @@ export async function followThread(options: FollowOptions): Promise<FollowResult
         }
         case "event": {
           options.reduced?.apply(message.event.event, message.event.seq);
+          await recoverAnchor();
           const stop = consume(message.event.seq, message.event);
           if (stop) {
             stopRequested = true;

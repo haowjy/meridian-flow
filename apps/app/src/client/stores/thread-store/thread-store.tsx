@@ -14,6 +14,7 @@ import { isTerminalTurnStatus } from "@meridian/contracts/threads";
 import {
   applySnapshotTo,
   createTurnReducer,
+  dividersAwaitingAnchorIn,
   ensureAssistantTurnIn,
   ensureSwitchTurnIn,
   type HeldDividers,
@@ -192,6 +193,7 @@ function reconcileInterruptResponsesForThread(
 function selectThreadActions(state: ThreadStoreSlice): ThreadStoreActions {
   return {
     turns: state.turns,
+    dividersAwaitingAnchor: state.dividersAwaitingAnchor,
     runState: state.runState,
     setStreamingThreadId: state.setStreamingThreadId,
     ensureThread: state.ensureThread,
@@ -262,6 +264,13 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
 
           turns(id: string) {
             return get().turnsByThread[id];
+          },
+
+          dividersAwaitingAnchor(id: string) {
+            return dividersAwaitingAnchorIn({
+              turns: get().turnsByThread[id] ?? [],
+              dividers: get().dividersByThread[id] ?? new Map(),
+            });
           },
 
           runState(id: string) {

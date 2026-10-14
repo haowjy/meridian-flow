@@ -171,8 +171,23 @@ export function viewTranscript(input: TranscriptViewInput): TranscriptView {
       queued: row.kind === "turn" && !row.inherited && (input.queued?.has(turn.id) ?? false),
     };
   });
+  // The chat's next run is the Retry whose failed reply is still the last reply: a stand-in
+  // that newer replies have overtaken (a lost Retry from earlier history) never qualifies, so
+  // a switch's notice cannot jump up into old history. With none, the slot is the tail.
+  const overtaken = (standIn: Turn) => {
+    const target = retryTargetOf(standIn);
+    const at = placed.findIndex((turn) => turn.id === target);
+    return (
+      at >= 0 &&
+      placed.some(
+        (turn, index) => index > at && turn.role === "assistant" && turn.id !== standIn.id,
+      )
+    );
+  };
   const standInReplies = new Set(
-    standIns.filter((turn) => turn.role === "assistant" && !stored.has(turn.id)).map((t) => t.id),
+    standIns
+      .filter((turn) => turn.role === "assistant" && !stored.has(turn.id) && !overtaken(turn))
+      .map((turn) => turn.id),
   );
   const standInAt = input.switchAwaitsRun
     ? rows.findIndex((row) => row.kind === "turn" && standInReplies.has(row.turn.id))

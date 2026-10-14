@@ -104,6 +104,30 @@ it("draws a pending Retry in the failed reply's place, even with a message sent 
       activity: { awaitingSubagents: false },
     }).controlSlot;
   expect([slot(true), slot(false)]).toEqual([1, 3]);
+  // Risk (review S1): a lost Retry R1 of an earlier failure survives while newer replies pile
+  // up; the switch's notice must follow the Retry R2 of the current leaf, not jump above R1.
+  const lost = turn("r0", "assistant", "f", {
+    status: "pending",
+    blocks: [],
+    metadata: { retryOf: "f" },
+  });
+  const later = [...base, turn("f2", "assistant", "u2", { status: "error" })];
+  const slotAmong = (standIns: Turn[]) =>
+    viewTranscript({
+      turns: later,
+      standIns,
+      switchAwaitsRun: true,
+      activity: { awaitingSubagents: false },
+    }).controlSlot;
+  const next = turn("r2", "assistant", "f2", {
+    status: "pending",
+    blocks: [],
+    metadata: { retryOf: "f2" },
+  });
+  // Only the old one survives: no stand-in qualifies, the notice is at the tail (after u1, r0, u2, f2).
+  expect(slotAmong([lost])).toBe(4);
+  // With the current leaf's Retry (rows u1, r0, u2, r2) the notice sits at it, below the old one.
+  expect(slotAmong([lost, next])).toBe(3);
   // Refused: the stand-in goes, and nothing supersedes the failed reply.
   expect(ids(viewTranscript({ turns: base, activity: { awaitingSubagents: false } }))).toEqual([
     "u1",

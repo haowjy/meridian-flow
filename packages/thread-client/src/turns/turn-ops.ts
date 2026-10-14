@@ -179,6 +179,29 @@ export function ensureSwitchTurnIn(
   };
 }
 
+/** A held divider that still waits for the turn it follows, with the seq of the frame that named it. */
+export type AwaitingDivider = { turnId: string; seq: string };
+
+/**
+ * The held dividers not placed because their anchor is missing from `turns`. A snapshot that
+ * covers a divider's frame releases the hold itself (`applySnapshotTo`), present turn or not,
+ * so what is listed here is exactly what only a newer snapshot can resolve: the one rule both
+ * the app and `./mf` ask before they refresh.
+ */
+export function dividersAwaitingAnchorIn(state: {
+  turns: readonly Turn[];
+  dividers: HeldDividers;
+}): AwaitingDivider[] {
+  const present = new Set(state.turns.map((turn) => turn.id));
+  const waiting: AwaitingDivider[] = [];
+  for (const [turnId, { turn, seq }] of state.dividers) {
+    if (present.has(turnId)) continue;
+    const anchor = turn.prevTurnId;
+    if (typeof anchor === "string" && !present.has(anchor)) waiting.push({ turnId, seq });
+  }
+  return waiting;
+}
+
 /**
  * Replaces the block at `block.sequence`, keeps blocks sorted, and returns null
  * when the turn is unknown or the block is identical (callers skip the write).

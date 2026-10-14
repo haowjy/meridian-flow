@@ -7,14 +7,17 @@ import {
   SIMPLE_TEXT_TURN_AGUI,
 } from "@meridian/contracts/threads";
 import { expect, it } from "vitest";
+import { createSession } from "../../core/session";
+import { COOKIE, startFakeStack, THREAD_ID } from "../../test-support/fake-stack";
 import { viewSnapshot } from "./chat-view";
 import { ReducedThread } from "./reduced-thread";
 import { replyText } from "./reply-text";
+import { followThread } from "./stream";
 
 const THREAD = GOLDEN_THREAD_ID;
 const event = (value: Record<string, unknown>) => value as unknown as AGUIEvent;
 
-it("applies journal-only deltas between the replay cursor and nextSeq, and rejects only stale snapshots", () => {
+it("applies journal-only deltas between the replay cursor and nextSeq, and rejects only stale snapshots", async () => {
   const reduced = new ReducedThread(THREAD);
   // The projection stopped at seq 97 while the journal head is 103: deltas 98..103 exist only as events.
   expect(reduced.hydrate({ turns: [], nextSeq: "104" })).toBe(true);
@@ -69,4 +72,51 @@ it("applies journal-only deltas between the replay cursor and nextSeq, and rejec
   expect(items).toEqual(["text"]);
 
   expect(reduced.hydrate({ turns: [], nextSeq: "103" })).toBe(false);
+
+  // Risk: a follow that starts with no hydration holds a `switched` divider forever when the
+  // frame names a user turn the stream never carries. The real follow path asks for a snapshot
+  // and the divider lands after that turn; a covering snapshot that excludes it releases the hold.
+  const stack = await startFakeStack();
+  try {
+    stack.turns.push({ id: "u1", role: "user", status: "complete", error: null, text: "hi" });
+    // The server stores the divider (the fake has no system role); the snapshot covers its frame.
+    stack.turns.push({
+      id: "sys-2",
+      role: "assistant",
+      status: "complete",
+      error: null,
+      text: "",
+      prevTurnId: "u1",
+    });
+    stack.publish(
+      event({
+        type: EventType.CUSTOM,
+        name: WRITE_MODE_SWITCHED_EVENT,
+        value: {
+          threadId: THREAD_ID,
+          mode: "draft",
+          controlId: "c2",
+          turnId: "sys-2",
+          prevTurnId: "u1",
+          position: 1,
+        },
+      }),
+    );
+    const followed = new ReducedThread(THREAD_ID);
+    await followThread({
+      session: createSession({ serverUrl: stack.baseUrl, cookie: COOKIE, ca: undefined }),
+      threadId: THREAD_ID,
+      lastSeq: "0",
+      deadlineAt: Date.now() + 5000,
+      out: { record() {} } as never,
+      full: false,
+      textStream: "err",
+      catchupOnly: true,
+      reduced: followed,
+    });
+    expect(followed.turns().map((turn) => turn.id)).toEqual(["u1", "sys-2"]);
+    expect(followed.awaitsAnchor()).toBe(false);
+  } finally {
+    await stack.close();
+  }
 });
