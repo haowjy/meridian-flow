@@ -97,6 +97,30 @@ describe("planned link binding", () => {
     expect(subject.registered).toEqual([refs[0], refs[1]]);
   });
 
+  it("a planned target binds doc:<id> without resolution while other unresolved addresses still mint ahead refs", async () => {
+    const subject = setup();
+    const NEW_HOLDER = "00000000-0000-4000-8000-000000000a05" as DocumentId;
+    const PLANNED = "00000000-0000-4000-8000-000000000a04" as DocumentId;
+    const result = await subject.planned.bindPlannedMarkdown({
+      holder: {
+        documentId: NEW_HOLDER,
+        uri: "kb://new/holder",
+        projectId: "binding",
+        filetype: "markdown",
+      },
+      markdown: "[a](kb://x) [b](kb://A) [c](kb://dangling)",
+      hrefs: new Map([[0, "kb://new/not-yet"]]),
+      targets: new Map([[0, PLANNED]]),
+      planned: new Set([PLANNED]),
+    });
+    expect(result.holder).toEqual({ kind: "document", documentId: NEW_HOLDER });
+    const refs = walkLinkOccurrences(result.blocks).map(({ attrs }) => attrs.ref);
+    expect(refs[0]).toBe(`doc:${PLANNED}`);
+    expect(refs[1]).toBe(`doc:${A}`);
+    expect(refs[2]).toMatch(/^ahead:/);
+    expect(subject.registered).toEqual([refs[2]]);
+  });
+
   it("adjacent occurrences sharing a written href keep their own identities", async () => {
     const subject = setup();
     const PLANNED = "00000000-0000-4000-8000-000000000a04" as DocumentId;

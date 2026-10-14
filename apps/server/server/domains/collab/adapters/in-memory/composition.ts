@@ -28,6 +28,7 @@ import { createDocumentWriteHookRunner } from "../../domain/document-projection-
 import { versioned } from "../../domain/document-revision.js";
 import type { DocumentAuthorityHead } from "../../domain/ports/document-authority-heads.js";
 import { type DocumentLinkScopes, LIVE_VIEW } from "../../domain/ports/document-link-scope.js";
+import type { InitialDocumentSeeds } from "../../domain/ports/initial-document-seeds.js";
 import { primeReservedNamespaceIndex } from "../../domain/provenance.js";
 import {
   enlistResponseParticipant,
@@ -55,6 +56,24 @@ import {
   UNSUPPORTED_AHEAD_REFS,
 } from "./static-document-link-scopes.js";
 
+export function createInMemoryInitialDocumentSeeds(journal: InMemoryJournal): InitialDocumentSeeds {
+  const seeds: InitialDocumentSeeds = {
+    async seedInitialDocument(documentId, state) {
+      const snapshot = await journal.read(documentId);
+      if (snapshot.checkpoint || snapshot.updates.length > 0) return false;
+      await journal.seedInitialDocument(documentId, state);
+      return true;
+    },
+    async insertInitialStates(initial) {
+      for (const { documentId, state } of initial) {
+        if (!(await seeds.seedInitialDocument(documentId, state)))
+          throw new Error(`Document ${documentId} already has journal state`);
+      }
+    },
+  };
+  return seeds;
+}
+
 export function createInMemoryCollabDomain(): CollabDomain {
   const journal = createInMemoryJournal();
   const coordinator = createInMemoryCoordinator(journal);
@@ -70,6 +89,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
     diagnostics: SILENT_DOCUMENT_PROJECTION_DIAGNOSTICS,
   });
   const links = createStaticDocumentLinkScopes();
+  const initialDocumentSeeds = createInMemoryInitialDocumentSeeds(journal);
   const runtime = createAgentEditRuntime({
     landingJournal: journal,
     links,
@@ -78,14 +98,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
     journal,
     coordinator,
     lifecycle: documentCreation,
-    initialDocumentSeeds: {
-      async seedInitialDocument(documentId, state) {
-        const snapshot = await journal.read(documentId);
-        if (snapshot.checkpoint || snapshot.updates.length > 0) return false;
-        await journal.seedInitialDocument(documentId, state);
-        return true;
-      },
-    },
+    initialDocumentSeeds,
     runDocumentWriteHook,
     resolveDocumentFiletype: async () => null,
     observability: createAgentEditObservabilityOptions({}),
@@ -174,6 +187,9 @@ export function createInMemoryCollabDomain(): CollabDomain {
       readAsMarkdown: runtime.markdownDocuments.readAsMarkdown,
       readVersionedMarkdown: runtime.markdownDocuments.readVersionedMarkdown,
       seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
+      prepareSeed: runtime.markdownDocuments.prepareSeed,
+      announceSeeds: runtime.markdownDocuments.announceSeeds,
+      insertInitialStates: initialDocumentSeeds.insertInitialStates,
       writeDocument: runtime.markdownDocuments.writeDocument,
       fillEmptyDocument: runtime.markdownDocuments.fillEmptyDocument,
       prependBlocks: runtime.markdownDocuments.prependBlocks,

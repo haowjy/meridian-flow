@@ -46,7 +46,7 @@ import {
   type HolderLinkScope,
   LIVE_VIEW,
 } from "./ports/document-link-scope.js";
-import type { InitialDocumentSeeds } from "./ports/initial-document-seeds.js";
+import type { InitialDocumentSeeds, PreparedSeed } from "./ports/initial-document-seeds.js";
 
 export type RuntimeOrigin = UpdateOrigin | DocumentWriteOrigin;
 
@@ -160,6 +160,21 @@ export type MarkdownDocumentEngine = {
     content: BoundWrite,
     origin: DocumentSeedOrigin,
   ): Promise<Result<PersistedUpdate | null, SyncError>>;
+  /**
+   * Encodes a fresh write as a document's first state, outside any
+   * transaction and without touching a journal or room: the document does not
+   * exist yet. `uri` is the address it will have, which its links spell from.
+   */
+  prepareSeed(input: {
+    documentId: DocumentId;
+    /** The project it will belong to: its link scope opens there. */
+    projectId: string;
+    uri: string;
+    content: BoundWrite;
+    origin: DocumentSeedOrigin;
+  }): Promise<PreparedSeed>;
+  /** Runs the write hook (derivations, projections) for seeds installed and committed. */
+  announceSeeds(seeds: readonly PreparedSeed[]): Promise<void>;
   writeDocument(input: {
     documentId: DocumentId;
     content: BoundWrite;
@@ -167,6 +182,8 @@ export type MarkdownDocumentEngine = {
     threadId?: ThreadId;
   }): Promise<DocumentWriteResult>;
 };
+
+export type { PreparedSeed };
 
 export function createMarkdownDocumentEngine(
   deps: MarkdownDocumentEngineDeps,
@@ -593,6 +610,34 @@ export function createMarkdownDocumentEngine(
         await deps.afterWrite?.({ documentId: typedDocumentId, markdown: canonicalMarkdown });
       }
       return Ok(null);
+    },
+
+    async prepareSeed({ documentId, uri, content, origin }) {
+      assertHolder(documentId, content, "seed");
+      if (!content.fresh) {
+        throw new Error("A seed takes a fresh write; this one was bound against a document");
+      }
+      const seededDoc = createCollabYDoc({ gc: false });
+      try {
+        seededDoc.transact(() => {
+          deps.model.insertBlocks(toDocHandle(seededDoc), null, { blocks: [...content.blocks] });
+        }, yjsTransactionOrigin(origin));
+        await deps.links.prepare({ holders: [], docs: [seededDoc], views: [LIVE_VIEW] });
+        const markdown = serializeForSchema(
+          documentId,
+          seededDoc,
+          content.schemaType,
+          deps.links.reader({ uri, view: LIVE_VIEW }),
+        );
+        return { documentId, state: Y.encodeStateAsUpdate(seededDoc), markdown };
+      } finally {
+        seededDoc.destroy();
+      }
+    },
+
+    async announceSeeds(seeds) {
+      for (const { documentId, markdown } of seeds)
+        await deps.afterWrite?.({ documentId, markdown });
     },
 
     async writeDocument(input) {

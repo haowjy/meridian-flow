@@ -25,7 +25,7 @@ import {
   packCollabSchemaVersion,
   unpackCollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
-import { and, asc, desc, eq, gt, gte, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, lte, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import {
@@ -42,6 +42,7 @@ import type {
   CheckpointJournal,
 } from "../domain/ports/checkpoint-authority.js";
 import type { DocumentLandingJournal } from "../domain/ports/document-landing-journal.js";
+import type { InitialDocumentSeeds } from "../domain/ports/initial-document-seeds.js";
 import {
   insertionAttributions,
   materializeCandidateProvenance,
@@ -91,9 +92,7 @@ export type CollabJournal = CheckpointJournal &
 
 export type DrizzleCollabPersistence = {
   journal: CollabJournal;
-  lifecycle: DocumentLifecycle & {
-    seedInitialDocument(documentId: string, state: Uint8Array): Promise<boolean>;
-  };
+  lifecycle: DocumentLifecycle & InitialDocumentSeeds;
   store: CollabFacadeStore;
 };
 
@@ -971,10 +970,85 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
 export function createServerDocumentLifecycle(
   db: JournalDb,
   journal: UpdateJournal,
-): DocumentLifecycle & {
-  seedInitialDocument(documentId: string, state: Uint8Array): Promise<boolean>;
-} {
+): DocumentLifecycle & InitialDocumentSeeds {
   return {
+    /**
+     * No document mutation lock: these documents were created in the caller's
+     * transaction, so no one else can name them until it commits. A document
+     * that already has journal state is a caller bug, not a no-op.
+     */
+    async insertInitialStates(seeds) {
+      if (seeds.length === 0) return;
+      await runInDrizzleTransaction(db as Database, async () => {
+        const txDb = currentDrizzleDb(db as Database) as JournalDb;
+        const ids = [...new Set(seeds.map((seed) => asDocumentId(seed.documentId)))].sort();
+        const packedSchemaVersion = packCollabSchemaVersion(COLLAB_SCHEMA_VERSION);
+        await txDb
+          .insert(documentYjsHeads)
+          .values(ids.map((documentId) => ({ documentId, schemaVersion: packedSchemaVersion })))
+          .onConflictDoNothing({ target: documentYjsHeads.documentId });
+        const [heads, checkpoints, updates] = await Promise.all([
+          txDb
+            .select({
+              documentId: documentYjsHeads.documentId,
+              authorityId: documentYjsHeads.authorityId,
+              generation: documentYjsHeads.authorityGeneration,
+              schemaVersion: documentYjsHeads.schemaVersion,
+            })
+            .from(documentYjsHeads)
+            .where(inArray(documentYjsHeads.documentId, ids)),
+          txDb
+            .select({ id: documentYjsCheckpoints.id })
+            .from(documentYjsCheckpoints)
+            .where(inArray(documentYjsCheckpoints.documentId, ids))
+            .limit(1),
+          txDb
+            .select({ id: documentYjsUpdates.id })
+            .from(documentYjsUpdates)
+            .where(inArray(documentYjsUpdates.documentId, ids))
+            .limit(1),
+        ]);
+        if (checkpoints[0] || updates[0])
+          throw new Error("insertInitialStates: a document already has journal state");
+        const authority = new Map(heads.map((head) => [head.documentId, head]));
+        for (const head of heads)
+          assertHeadSchemaCurrent(head.documentId, unpackCollabSchemaVersion(head.schemaVersion));
+        const manifest = {
+          version: 1,
+          floor: null,
+          attributions: insertionAttributions([], undefined),
+        };
+        await txDb.insert(documentYjsCheckpoints).values(
+          seeds.map(({ documentId, state }) => {
+            const head = authority.get(asDocumentId(documentId));
+            if (!head) throw new Error("Failed to read the durable document authority head");
+            return {
+              documentId: asDocumentId(documentId),
+              authorityId: head.authorityId,
+              authorityGeneration: head.generation,
+              attributionManifest: manifest,
+              state: toBuffer(state),
+              stateVector: toBuffer(Y.encodeStateVectorFromUpdate(state)),
+              upToSeq: 0,
+              reason: "seed",
+            };
+          }),
+        );
+        await txDb.execute(sql`
+          update ${documentYjsHeads} as head
+          set latest_checkpoint_id = checkpoint.id,
+              latest_state_vector = checkpoint.state_vector,
+              latest_update_seq = 0,
+              updated_at = now()
+          from ${documentYjsCheckpoints} as checkpoint
+          where checkpoint.document_id = head.document_id
+            and checkpoint.up_to_seq = 0
+            and head.document_id in (${sql.join(
+              ids.map((id) => sql`${id}`),
+              sql`, `,
+            )})`);
+      });
+    },
     async seedInitialDocument(docId, state) {
       return runInDrizzleTransaction(db as Database, async () => {
         const txDb = currentDrizzleDb(db as Database) as JournalDb;

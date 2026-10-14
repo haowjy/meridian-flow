@@ -17,6 +17,7 @@ import {
   createInMemoryDocumentLifecycle,
   createInMemoryJournal,
 } from "../adapters/in-memory/agent-edit.js";
+import { createInMemoryInitialDocumentSeeds } from "../adapters/in-memory/composition.js";
 import {
   createStaticDocumentLinkScopes,
   UNSUPPORTED_AHEAD_REFS,
@@ -44,14 +45,7 @@ function setup(filetype = "typescript") {
     landingJournal: journal,
     coordinator,
     lifecycle: createInMemoryDocumentLifecycle(coordinator),
-    initialDocumentSeeds: {
-      async seedInitialDocument(documentId, state) {
-        const snapshot = await journal.read(documentId);
-        if (snapshot.checkpoint || snapshot.updates.length > 0) return false;
-        await journal.seedInitialDocument(documentId, state);
-        return true;
-      },
-    },
+    initialDocumentSeeds: createInMemoryInitialDocumentSeeds(journal),
     metaForOrigin: () => ({ origin: "system", seq: 0 }),
     identityPreservingWrite: async () => {
       throw new Error("Identity-preserving writes are not part of this test");
