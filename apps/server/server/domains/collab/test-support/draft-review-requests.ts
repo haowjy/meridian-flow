@@ -53,7 +53,6 @@ export async function commitBranchEdit(
     await commitSegmentRows(fixture.branchCoordinator, {
       branchId: branchId,
       sourceDoc: staged.clone,
-      expectedGeneration: staged.generation,
       rows: [
         {
           branchId: branchId,

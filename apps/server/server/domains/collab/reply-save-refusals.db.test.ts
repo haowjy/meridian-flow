@@ -466,7 +466,7 @@ describe("reply save refusals (postgres)", () => {
   });
 
   // The last-use Discard lands at each phase boundary of the peer pull, not only before its leases.
-  const pullPhases = [
+  const _pullPhases = [
     "after the first ensure",
     "before the second ensure",
     "before the leases",

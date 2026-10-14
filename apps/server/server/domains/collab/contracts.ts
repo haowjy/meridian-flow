@@ -6,7 +6,6 @@ import type {
 } from "@meridian/agent-edit/integration";
 import type { DraftId, LinkView } from "@meridian/contracts";
 import type { DraftCommandOutcome, DraftItemMeta } from "@meridian/contracts/drafts";
-import type { ReversalOutcome } from "@meridian/contracts/protocol";
 import type {
   DocumentId,
   ProjectId,
@@ -44,7 +43,6 @@ import type { DocumentAuthorityHeads } from "./domain/ports/document-authority-h
 import type { DocumentDraftOrigin } from "./domain/ports/work-draft-pending-store.js";
 import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
 import type { LiveLineageDocument, TurnEditedDocument } from "./domain/turn-live-lineage.js";
-import type { TurnReceiptChip } from "./domain/turn-receipt.js";
 
 export type UpdateOrigin =
   | { type: "user"; userId: string }
@@ -162,33 +160,6 @@ export type CollabTransport = {
 export type AgentEditAccess = {
   /** The one model read/write entry point; each call names its destination. */
   agentEdit(): ThreadPeerAgentEditCore;
-};
-
-export type ReverseThreadContextInput = {
-  threadId: ThreadId;
-  userId: UserId;
-  direction: "undo" | "redo";
-  turnId: TurnId;
-};
-
-export class ReverseThreadContextError extends Error {
-  constructor(
-    readonly code: "invalid_write" | "document_not_found" | "invalid_scope",
-    message: string,
-  ) {
-    super(message);
-  }
-}
-
-export type TurnReversalAccess = {
-  reverseTurn(input: {
-    threadId: ThreadId;
-    turnId: TurnId;
-    direction: "undo" | "redo";
-    actor: { type: "user"; userId: string } | { type: "agent" };
-    documentIds?: DocumentId[];
-  }): Promise<ReversalOutcome>;
-  reverseThreadContext(input: ReverseThreadContextInput): Promise<ReversalOutcome>;
 };
 
 export type VersionedDocumentRead<T> = { content: T; revision: string | null };
@@ -415,7 +386,6 @@ export type CollabDraftResolver = {
 export type TurnLiveLineageAccess = {
   listLiveDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<LiveLineageDocument[]>;
   listEditedDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnEditedDocument[]>;
-  getTurnReceiptChip(threadId: ThreadId, turnId: TurnId): Promise<TurnReceiptChip | null>;
 };
 
 export type BranchPushAccess = {
@@ -496,7 +466,6 @@ export type CollabDomain = CollabTransport &
   CollabLifecycle &
   DocumentAuthorityHeads &
   AgentEditAccess &
-  TurnReversalAccess &
   MarkdownDocumentStore &
   DocumentProjectionRefresher &
   TurnLiveLineageAccess &

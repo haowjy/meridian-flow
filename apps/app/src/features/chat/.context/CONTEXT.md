@@ -13,7 +13,7 @@ draft-control changes can be understood independently.
   rows and cards.
 - [Tool expands](tool-expands.md) — the three rendering tiers, the three
   channels, what each expand shows, and how a clipped expand states its bound.
-- [Turn edit receipts](turn-edit-receipts.md) — committed change records, Undo/Redo,
+- [Turn edit receipts](turn-edit-receipts.md) — committed change records
   and conversation reveal.
 - [Composer write mode](composer-write-mode.md) — the Work-scoped Draft /
   Auto-apply control, neutral shared presentation, New-chat and chat-detail adapters, and

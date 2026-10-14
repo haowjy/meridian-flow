@@ -48,7 +48,6 @@ type Dependencies = {
   resolveDocumentUri(documentId: string): Promise<string | null>;
   refreshDocument(documentId: DocumentId): Promise<void>;
   flushLivePull(documentId: DocumentId): Promise<void>;
-  notices: import("../domain/reversal-notices.js").TurnInverseNoticePort;
   /** Revert, rollback and mark-blocking change pending membership, so they publish through it. */
   workProjection: Pick<WorkProjectionMutation, "mutatePendingBranches">;
 };
@@ -72,13 +71,11 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       ...part,
       update: new Uint8Array(part.update),
       kind: edit.kind,
-      actionId: edit.actionId,
       documentId: edit.documentId,
       threadId: edit.threadId,
       turnId: edit.turnId,
       responseId: edit.responseId,
       editScopeId: edit.editScopeId,
-      consumes: edit.consumes,
       actor: edit.actor,
       wId: edit.wId,
     }));
@@ -203,7 +200,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         own.destroy();
       }
     },
-    async commit({ plans, kind, userId, query }) {
+    async commit({ plans, kind, query }) {
       const handles: string[] = [];
       const mutate = async () => {
         for (const plan of plans) {
@@ -246,7 +243,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                     source: query.model ? "agent" : "writer",
                     threadId: query.model ? query.threadId : null,
                     turnId: query.model ? query.turnId : null,
-                    actorUserId: userId ?? null,
+                    actorUserId: null,
                     draftBaseUpdateSeq: sql`coalesce((select max(id) from document_yjs_updates where document_id = ${document.documentId}),0)`,
                     updateMeta: {
                       ...(query.model && query.responseIdentity
@@ -302,16 +299,13 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             }
             await recordDocumentEdit(db(), {
               documentId: document.documentId,
-              actor: query.model ? "agent" : kind === "rollback" ? "system" : "human",
+              actor: query.model ? "agent" : "system",
               wId,
               threadId: query.model ? query.threadId : undefined,
               turnId: query.model ? query.turnId : undefined,
               responseId: query.model ? query.responseIdentity?.providerResponseId : undefined,
               editScopeId: query.model ? query.responseIdentity?.editScopeId : undefined,
-              actorUserId: userId,
               kind,
-              actionId: edit.actionId ?? plan.computed.actionId,
-              consumes: plan.consumes,
               receipts,
             });
           }
@@ -338,10 +332,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             );
             const unresolved = document.history.filter(
               (part) =>
-                (part.kind === "write" ||
-                  part.kind === "revert" ||
-                  part.kind === "undo" ||
-                  part.kind === "redo") &&
+                (part.kind === "write" || part.kind === "revert") &&
                 part.editScopeId === query.responseIdentity?.editScopeId &&
                 part.placement.kind === "pending" &&
                 !accepted.has(`${part.editId}:${part.ordinal}`) &&
@@ -379,15 +370,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
               await input.refreshDocument(document.documentId);
               await input.flushLivePull(document.documentId);
             }
-            if (kind !== "rollback" && kind !== "revert" && !query.model && query.turnId)
-              await input.notices.record({
-                docId: document.documentId,
-                threadId: query.threadId,
-                direction: kind,
-                turnId: query.turnId,
-                sweptContent: false,
-                beforeContentRef: null,
-              });
           };
           if (!deferUntilDrizzleCommit(publish)) await publish();
         }

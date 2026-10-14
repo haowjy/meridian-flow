@@ -91,16 +91,13 @@ Desktop draft chrome reads the presented review value from `DraftReviewProvider`
   reviewed. As the row narrows it collapses in a fixed order (folders, Show
   changes label, stepper count, file name, button labels); the chip, the list
   icon, Discard and Apply stay. A line under the row appears only for a failed whole-draft
-  command, "No changes left" with Next draft, or "Formatting changes remain".
+  command or "No changes left" with Next draft.
   Its parts live in `features/draft-review`.
 - The focused change's bar is the `review-change-bar` chrome surface
   (`surfaces/review`). It never covers manuscript text. With room in the right
-  margin (`place-review-bar`: at least 132px between the text column and the
-  pane edge, 200px when the bar carries "Discard with your edits") it is portalled into the manuscript's scroll pane beside the
-  change's first line. Without, the surface asks the inline-review plugin for a
-  bar slot (`setInlineReviewBarSlot`): an empty non-editable block widget after
-  the paragraph the change ends in, which the bar is portalled into, so the
-  text below moves down for it. Both scroll with the text. `useInlineReviewFocus` keeps the marks and the controller saying the
+  margin (`place-review-bar`) it is portalled into the manuscript's scroll pane beside the
+  change's first line. Without, it takes a block of its own after the paragraph the
+  change ends in, so the text below moves down for it. Both scroll with the text. `useInlineReviewFocus` keeps the marks and the controller saying the
   same thing (Show changes, the focused change, a click on a mark, the pulse on
   arrivals).
 
@@ -108,10 +105,10 @@ The chip and header are mutually exclusive by the chip's own inline-review
 check, not by a shared slot. Both read the same `shown` flag, so the swap
 happens in one frame.
 
-**Paint hold.** Pane continuity belongs to the shared
-[`PaintHold`](../../../components/app/PaintHold.md). Capture points declare
-painted/pending/failed surfaces; only finished paint replaces its retained
-snapshot, never a loading status or a pending-token gap. `EditorView` chooses terminal
+**Paint hold.** Opening or leaving a review swaps the live and review editors; pane continuity
+for that swap belongs to the shared [`PaintHold`](../../../components/app/PaintHold.md). Capture
+points declare painted/pending/failed surfaces; only finished paint replaces its retained
+snapshot, never a loading status or a pending-token gap. It plays no part in Discard or Apply. `EditorView` chooses terminal
 notices before settled live, painted review, requested-but-pending review, or
 ordinary live. Warm live and constructing review surfaces stay mounted in
 inactive paint scopes. `EditorView` owns a construction receipt addressed by mount identity and session
@@ -121,68 +118,32 @@ settled)` still synchronizes the body, header and completion focus in layout.
 A draft-only tab without a review shows a terminal Close card. Surface wrappers
 carry `data-editor-surface="live|review"`; the inert copy is `data-paint-hold`.
 
-**Seamless generation change.** A Discard re-forks the draft and the review
-editor is replaced; the writer must not see it. (1) *Original from the click:* a
-discarded change stays in the inline model flagged `restoring`; its insertion is
-hidden (`meridian-review-restoring`, whole paragraphs it fills included) and its
-removed text is drawn as plain prose (`meridian-review-restored`). A Discard
-accepted while a cover already holds the old review shows on the cover too: the
-cover is its capture plus the current projection of the intents
-(`PaintHold.projectCover`, `projectRestoring`), rebuilt when they move. The marks and removals a Discard hides keep their markup under a class (`meridian-review-restoring` / `-restored`), so the cover toggles them both ways and a Discard refused under it comes back; the review keeps the Discards made since its cover's review was on screen. The cover reports its reader's first visible block (`readCoverView`) by Yjs item, never by what the block says. At capture `annotateCoverBlocks` (one pass over the binding, the document and the DOM, linear in blocks) stamps each real top-level block of the copy with its `blockItemKey` (`data-review-block-id`). A block the old review did not have, an original a Discard restores, is a paragraph of its removal widget carrying the live block it was (the server names it on the hunk: `deletedBlock.blockId`, `deletedBlockId`; a re-forked draft keeps the live items). The successor looks the item up in a table of its own items built once, so an item it no longer has names nothing. Only a paragraph the server did not name falls back to the nearest stamped block and the distance to it, and a cover with no stamps to a count; both are approximate (a block inserted between moves them) and the view says so (`near`, `block`). The widget says how many blocks it stands for (`data-review-removed-blocks`), never its children (an open fold also holds a button). A folded removal keeps its paragraphs hidden under the fold class, so restoring it reveals them and suppresses the button, and withdrawing returns the fold. Restored originals are manuscript prose in every state (`inline-review.css` last block: no removal colour, emphasis, pulse, fold, click) while their markup stays for a refusal. A refusal drops the
-flag and the change returns with its marks. (2) *Place:* `ReviewPlaceCapture`
-takes the first visible block (Yjs anchor, stable block index, pixel offset), the
-caret and focus ownership in the commit that removes the review editor
-(`core/editor/review-place.ts`, memory only, keyed by draft). Native review input
-is consumed synchronously by ProseMirror's own DOM observer before a projection
-can repaint its selection. The caret's exact relative identity includes typing
-after the command click. If that identity is absent in the successor, captured
-text-item edges are tried nearest-first within the same identified block; a block
-inserted above or text inserted inside it cannot redirect the fallback. No source
-caret offsets are carried. If no old text survives, restore inside the surviving
-block. The successor
-shows only once it has synced, carried the writer's unsent edits and projected
-the review; `PaintHold.afterRelease` then restores selection (never scrolled to),
-the viewport and focus in the task that lifts the cover. A writer's explicit
-navigation in between (`noteReviewNavigation`, addressed to the draft and naming
-the change by its keys) replaces the held viewport. The cover scrolls (its prose
-is inert, typing is blocked), and how far it was scrolled is added to the
-restored viewport. The same place is applied to
-the warm live editor when a last Apply or Discard hands the page over. (3)
-*Chrome is the draft's:* `shown` is not cleared by a generation change, so the
-header, change list and phone sheet stay; the open review's list is held while
-the review and its preview disagree about the generation. Discard and Apply both
-move the focus to the next change and scroll to it; the place held across the swap
-is the viewport as it is then.
+**Discard does not replace the editor.** Discard is a local edit to the draft text, so the
+review editor is never swapped and no cover, restoring state or remount exists. The writer's
+caret and viewport are untouched; after a Discard focus moves to the next change.
 
-For generation, completion and command ordering, use the
-[draft-review lifecycle reference](../../draft-review/.context/draft-review.md).
+For the review model, Discard and Apply, use the
+[draft-review reference](../../draft-review/.context/draft-review.md).
 `SessionEditor` constructs the common surface; `EditorView` composes review-only
 registration, model sync and focus.
 
-The review manuscript is the server draft projection plus decorations, in the
-manner of suggestion mode. Insertions are inline decorations over text that
-exists in the projection (green AI, gold writer, gold inside green for a writer
-edit inside an AI change, dashed grey when the server flags `mergeArtifact`: a
-true CRDT interleave, not merely two authors in one hunk).
-Removed live text is a read-only widget decoration (`removal-widget.ts`), struck
-through where it was: crimson for the AI, gold for the writer, each stretch in its
-remover's colour (a text hunk's `deletedSpans`; a block hunk's removal is read
-from its owning operations), never part of the
-Y.Doc or the TipTap document, so it cannot be typed into, selected into or
-saved. A removal the server could not attribute is struck in no author's
-colour. Long removals (over 200 removed characters) fold to "N paragraphs
-removed" (between blocks) or "N words removed" (inside a paragraph) and open on
-click. A pointer click on the struck text puts the caret at the removal's
-position (for a removed block, before or after it by the clicked half); the
-removal itself stays untouched. Focus emphasizes every operation sharing the
-change's `closureClassId`. The review editor stays editable on desktop: the
-draft is a Yjs room and the writer is one more peer in it, so keystrokes in
-review land in the draft branch rather than live. The phone mounts it
-read-only (`features/project/mobile`).
-`setInlineReviewMarksVisible(false)` hides every mark and removal without
-remounting; the full projection (including typing while hidden), model,
-selection and open folds survive. Review decoration styles live in
-`inline-review.css`, imported by `editor.css` before common node styles.
+The review manuscript is the draft text plus decorations, in the manner of suggestion mode,
+painted from the browser-computed frame (`review-runtime.ts`; the editor's
+`useInlineReviewSync` attaches to it). Red and green only: text the draft added is a green inline
+decoration over text that exists in the draft, with no padding or rounded boxes so adjacent
+ranges join without seams. Text the draft removed is a read-only red struck widget decoration
+(`removal-widget.ts`) where it was, never part of the Y.Doc or the TipTap document, so it cannot
+be typed into, selected into or saved. The writer's own typing is part of the draft and paints
+green like any other change. Long removals (over 200 removed characters) fold to "N paragraphs
+removed" (between blocks) or "N words removed" (inside a paragraph) and open on click. A pointer
+click on the struck text puts the caret at the removal's position (for a removed block, before
+or after it by the clicked half); the removal itself stays untouched. Focus emphasizes the one
+change's marks. Until the next projection arrives the painted set maps through the writer's
+edits, so typing never blanks the review. The review editor stays editable on desktop: the draft
+is a Yjs room and the writer is one more peer in it, so keystrokes in review land in the draft,
+not live. The phone mounts it read-only (`features/project/mobile`). "Show changes" hides every
+mark and removal without remounting; the projection, selection and open folds survive. Review
+decoration styles live in `inline-review.css`, imported by `editor.css` before common node styles.
 
 ## Component API
 
@@ -299,8 +260,8 @@ actions row is withheld rather than rendered half-empty, and only actor and
 time show. The resting surface contains actor, time, and conversation
 navigation. A single Before/After control reveals the same trail-backed excerpt
 renderer used by the turn receipt; swept status adds no popover narration.
-Trail evidence is read-only: receipt Undo/Redo is the sole reversal authority
-for AI changes. *Open conversation* routes through
+Trail evidence is read-only: the writer removes an AI change by discarding it in the
+draft or with Ctrl+Z, and the model reverses its own edit with `revert`. *Open conversation* routes through
 `requestConversationReveal` (see [features/chat](../../chat/AGENTS.md)): the
 popover closes and the chat side expands the owning turn receipt and brings the
 exact row into view.
@@ -315,11 +276,3 @@ the popover; Escape or close returns focus to the mark's current span. Neither
 hands anything back when another surface opened in its place — Mod+K reaches the
 popover as a close, and the caret then belongs to what opened.
 
-### Writer handoff loss
-
-`WriterHandoffLossNotice` reports unrecoverable typing on the addressed document,
-not on a vanished review or in a global toast. Review room refs write one local
-loss flag per project/document into the account-owned QueryClient. The desktop
-Editor/dock chrome and phone document host render that same dismissible sentence,
-including after review ends or the document is reopened. It does not expire off
-screen, survive account replacement, gate writing, or keep a review active.

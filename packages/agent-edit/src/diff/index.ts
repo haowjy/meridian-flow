@@ -9,7 +9,16 @@ export {
 export { blocksEqual } from "./equal.js";
 export { REVIEW_BASE_FRAGMENT, readBlocks } from "./fragments.js";
 export { type BlockDiff, diffBlocks, type Hunk } from "./hunks.js";
+export { findLostEdits, invisibleInsertions, type LostEdit } from "./late-peer.js";
+export { type LateRecovery, recoverLatePeerEdits } from "./late-peer-recovery.js";
 export { type Conflict, type RebaseResult, rebase } from "./merge.js";
+export {
+  appendRebaseCut,
+  captureRebaseCut,
+  decodeRebaseCuts,
+  MAX_REBASE_CUT_BYTES,
+  MAX_REBASE_CUTS,
+} from "./rebase-cuts.js";
 export {
   composeGroups,
   type ProseMirrorJSON,

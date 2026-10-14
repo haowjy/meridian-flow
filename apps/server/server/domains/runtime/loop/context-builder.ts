@@ -333,12 +333,7 @@ function blockToContentPart(block: Block): ContentPart | null {
 
 export function formatNotices(notices: readonly Notice[]): string {
   const sections: string[] = [];
-  const undoNotices = notices.filter((notice) => notice.kind === "undo");
-  if (undoNotices.length > 0) sections.push(formatUndoNotices(undoNotices));
-  for (const notice of notices) {
-    if (notice.kind === "undo") continue;
-    sections.push(formatNotice(notice));
-  }
+  for (const notice of notices) sections.push(formatNotice(notice));
   return sections.filter(Boolean).join("\n\n");
 }
 
@@ -361,70 +356,9 @@ function formatNotice(notice: Notice): string {
   return notice.message;
 }
 
-function formatUndoNotices(notices: readonly Notice[]): string {
-  const notifications = notices.flatMap((notice) => {
-    const data = notice.data;
-    return typeof data.turnId === "string"
-      ? [
-          {
-            uri: typeof data.uri === "string" ? data.uri : "",
-            turnId: data.turnId,
-            direction: data.direction === "redo" ? ("redo" as const) : ("undo" as const),
-          },
-        ]
-      : [];
-  });
-  const first = new Map<string, (typeof notifications)[number]>();
-  const latest = new Map<string, (typeof notifications)[number]>();
-  for (const notification of notifications) {
-    const key = `${notification.uri}::${notification.turnId}`;
-    if (!first.has(key)) first.set(key, notification);
-    latest.set(key, notification);
-  }
-  // Reversals in one undelivered batch cancel in pairs. A standalone redo
-  // restores an edit whose undo the model already saw in an earlier batch.
-  const changes = [...latest.entries()]
-    .filter(([key, notification]) => first.get(key)?.direction === notification.direction)
-    .map(([, notification]) => notification);
-  const sections: string[] = [];
-  for (const direction of ["undo", "redo"] as const) {
-    // URI, not basename, identifies a document; distinct documents can share a name.
-    const grouped = new Map<string, string>();
-    for (const notification of changes.filter((change) => change.direction === direction)) {
-      const key = notification.uri || notification.turnId;
-      const label = filenameFromUri(notification.uri) || notification.uri || notification.turnId;
-      grouped.set(key, label);
-    }
-    const lines = Array.from(grouped.values(), (label) => `- ${label}`);
-    if (lines.length === 0) continue;
-    sections.push(
-      [
-        `The user ${direction === "undo" ? "reversed" : "restored"} the following edits before this message:`,
-        ...lines,
-        ...(direction === "undo" ? ["They are signaling these changes were unwanted."] : []),
-      ].join("\n"),
-    );
-  }
-  return sections.join("\n\n");
-}
-
 function stringData(notice: Notice, key: string): string | null {
   const value = notice.data[key];
   return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function filenameFromUri(uri: string): string {
-  const withoutQuery = uri.split(/[?#]/, 1)[0] ?? uri;
-  const trimmed = withoutQuery.replace(/\/+$/, "");
-  const lastSlash = trimmed.lastIndexOf("/");
-  if (lastSlash >= 0 && lastSlash < trimmed.length - 1) {
-    return decodeURIComponent(trimmed.slice(lastSlash + 1));
-  }
-  const schemeSeparator = trimmed.indexOf("://");
-  if (schemeSeparator >= 0 && schemeSeparator < trimmed.length - 3) {
-    return decodeURIComponent(trimmed.slice(schemeSeparator + 3));
-  }
-  return uri;
 }
 
 /** A reference read reaches the model as the same text a `read` call returns (D43). */

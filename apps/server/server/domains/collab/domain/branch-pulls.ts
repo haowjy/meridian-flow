@@ -52,7 +52,6 @@ export type BranchPullService = {
   }): Promise<{
     peerBranchId: string;
     upstreamBranchId: string;
-    branchGeneration: number;
     afterJournalId?: number;
     liveJournalSeq?: number;
     attributionBaseline: Uint8Array;
@@ -349,31 +348,24 @@ export function createBranchPullService(input: {
           if (!upstreamBranchId)
             throw new Error(`Thread peer ${peer.branchId} has no upstream Work draft branch`);
           // The peer's and its upstream's leases are held from capture through persisting
-          // the peer, so a per-change Discard cannot refork the upstream in between and a
+          // the peer, so a Discard cannot close the upstream in between and a
           // stale capture is never merged back. Leases come before the transaction.
-          const upstream = await input.branchCoordinator.withLeases(
-            [peer.branchId, upstreamBranchId],
-            (lease) =>
-              input.rootTransaction(async () => {
-                const read = await input.branchCoordinator
-                  .ownedSession(lease)
-                  .read(upstreamBranchId, (doc, snapshot) => {
-                    // An item Discard closes its branch without touching the text: a peer never
-                    // pulls from an upstream that ended while it waited for the leases.
-                    if (snapshot.status === "closed") throw new BranchClosedError(upstreamBranchId);
-                    return Promise.resolve({
-                      generation: snapshot.generation,
-                      state: Y.encodeStateAsUpdate(doc),
-                    });
-                  });
-                await pullPeerFromCapturedUpstream(lease, peer.branchId, read.state);
-                return read;
-              }),
+          await input.branchCoordinator.withLeases([peer.branchId, upstreamBranchId], (lease) =>
+            input.rootTransaction(async () => {
+              const state = await input.branchCoordinator
+                .ownedSession(lease)
+                .read(upstreamBranchId, (doc, snapshot) => {
+                  // An item Discard closes its branch without touching the text: a peer never
+                  // pulls from an upstream that ended while it waited for the leases.
+                  if (snapshot.status === "closed") throw new BranchClosedError(upstreamBranchId);
+                  return Promise.resolve(Y.encodeStateAsUpdate(doc));
+                });
+              await pullPeerFromCapturedUpstream(lease, peer.branchId, state);
+            }),
           );
           return {
             peerBranchId: peer.branchId,
             upstreamBranchId,
-            branchGeneration: upstream.generation,
             afterJournalId,
             liveJournalSeq,
             attributionBaseline,

@@ -285,15 +285,12 @@ Never:
 This trap applies anywhere `border-subtle` (or any custom color token class) is
 combined with a standard Tailwind border-color class in a `cn()` call.
 
-### Selective Discard needs a real branch journal
+### Probe drafts need a real draft room
 
-Selective Discard reconstructs a peer from the individually addressable,
-reviewable Work-draft journal rows and reverses the server-vended class.
-Synthetic QA branches created from snapshots or direct database inserts do not
-provide that evidence. QA/probe branches must come from real chat flows where
-the agent wrote to a Work draft.
-
-This has repeatedly surfaced in draft-review probes. See
+Chat attribution reads the server's pending AI edit parts, which come from real chat
+flows where the agent wrote to a Work draft. A synthetic branch made from a snapshot or a
+direct insert still reviews (the diff needs only `review_base` and `prosemirror`) but shows
+no chat names. See
 [KB: Runtime Probes](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/conventions/verification/runtime-probes.md)
 on labeling synthetic fixtures.
 

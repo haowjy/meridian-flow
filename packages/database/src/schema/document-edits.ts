@@ -78,7 +78,9 @@ export const documentEditParts = pgTable(
       .references(() => documentEdits.id, { onDelete: "cascade" }),
     ordinal: integer("ordinal").notNull(),
     update: byteaColumn("update").notNull(),
-    effect: jsonb("effect").$type<{ inserted: Range[]; deleted: Range[] }>().notNull(),
+    effect: jsonb("effect")
+      .$type<{ inserted: Range[]; deleted: Range[]; invisible?: true }>()
+      .notNull(),
     targets: jsonb("targets")
       .$type<{ editId: string; ordinal: number; direction: "invert" | "reapply" }[]>()
       .notNull()

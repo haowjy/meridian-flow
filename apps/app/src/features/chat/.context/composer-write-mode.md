@@ -13,8 +13,7 @@ Project chat always has a Work: named or No Work, looked up from
 `snapshot.noWork`, never `works.find`. `ChatView` renders picker plus write mode
 for that Work. There is no first/default-Work fallback.
 
-`useComposerWorkBinding` owns Work interaction, mutation presentation, and
-Undo. `useThreadDurableProjections` owns transport projection, while
+`useComposerWorkBinding` owns Work interaction, and mutation presentation. `useThreadDurableProjections` owns transport projection, while
 `convergeThreadWorkBinding` owns all cache effects. `ComposerWorkControl`
 renders the measured inline/overflow entry only in the composer; headers remain
 chat identity surfaces. Work management and navigation never call this explicit
@@ -146,5 +145,5 @@ The base `Textarea` applies `field-sizing-content`, but Composer's JavaScript
 resize loop requires `field-sizing: fixed`. Keep that override inline:
 Tailwind merge does not reliably deduplicate `field-sizing-*` utilities.
 
-For the shared pending projection and draft-review lifecycle, see
-[draft review](draft-review.md).
+For the draft-review model and lifecycle, see
+[draft review](../../draft-review/.context/draft-review.md).

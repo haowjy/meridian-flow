@@ -56,7 +56,6 @@ export function MobileReviewHeader({
         <ReviewStateInline
           touch
           finished={finished}
-          unlisted={header.unlisted}
           completing={header.completing}
           next={header.next}
           draftOnly={header.draftOnly}
@@ -87,6 +86,8 @@ export function MobileReviewHeader({
         touch
         commandError={header.commandError}
         failedElsewhere={header.failedElsewhere}
+        appliedOver={header.appliedOver}
+        onDismissAppliedOver={header.dismissAppliedOver}
         onOpenNext={header.openDraft}
       />
     </section>

@@ -133,14 +133,12 @@ const { enlistResponseParticipant, runResponseTransaction } = await import(
   "../domain/response-transaction.js"
 );
 const { createResponseWriteFinalizer } = await import("../domain/response-write-finalizer.js");
-const { createPostDurabilityNoticeService, createReversalNoticePort } = await import(
-  "../domain/reversal-notices.js"
+const { createPostDurabilityNoticeService } = await import("../domain/reversal-notices.js");
+const { createDraftWriteVisibility } = await import("../domain/draft-write-visibility.js");
+const { createDrizzleDraftWriteVisibilityStore } = await import(
+  "../adapters/drizzle-draft-write-visibility.js"
 );
 const { createBranchThreadPeerAgentEditCore } = await import("../thread-peer-composition.js");
-const { createTurnReversalService } = await import("../domain/turn-reversal-service.js");
-const { UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS } = await import(
-  "../adapters/declared-stubs.js"
-);
 const { createWorkDraftReviewService } = await import("../domain/work-draft-review-service.js");
 const { replicateFrozenIdentity } = await import("../domain/document-mutation-policy.js");
 const { createMarkdownDocumentEngine } = await import("../domain/markdown-document.js");
@@ -712,11 +710,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     resolveDocumentUri,
     refreshDocument: (documentId) => projections.refresh({ documentId }),
     flushLivePull: branchPulls.flushLivePull,
-    notices: createReversalNoticePort({
-      notices,
-      documentUriResolver: resolveDocumentUri,
-      diagnostics: createReversalNoticeDiagnostics(eventSink),
-    }),
     workProjection: { mutatePendingBranches: (_branchIds, operation) => operation() },
   });
   const responseFinalizer = createResponseWriteFinalizer({
@@ -728,12 +721,12 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       documentUriResolver: resolveDocumentUri,
       diagnostics: createReversalNoticeDiagnostics(eventSink),
     }),
-  });
-  const turnReversal = createTurnReversalService({
-    ...UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS,
-    fileAccess: options.fileAccess ?? createAllowAllFileAccess(),
-    turnInverse,
-    resolveDocumentUri,
+    visibility: createDraftWriteVisibility({
+      store: createDrizzleDraftWriteVisibilityStore({ db, branches: branchStore }),
+      notices,
+      resolveDocumentName: async (documentId) => documentId,
+      diagnostics: createReversalNoticeDiagnostics(eventSink),
+    }),
   });
   const reviewItems = createDraftReviewItems({
     tree: createTreeReader(db),
@@ -814,8 +807,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   });
   const collab = {
     agentEdit: () => grantedAgentEdit,
-    reverseTurn: turnReversal.reverseTurn,
-    getTurnReceiptChip: turnInverse.getTurnReceiptChip,
     writeDocument: runtime.markdownDocuments.writeDocument,
     bindMarkdown: runtime.linkBinder.bindMarkdown,
     ...responseFinalizer,
@@ -884,7 +875,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       await commitSegmentRows(branchCoordinator, {
         branchId: draft.branchId,
         sourceDoc: draft.doc,
-        expectedGeneration: draft.generation,
         rows: [
           {
             branchId: draft.branchId,
@@ -1072,7 +1062,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     const committed = await commitSegmentRows(branchCoordinator, {
       branchId: branch.branchId,
       sourceDoc: branch.doc,
-      expectedGeneration: branch.generation,
       rows: [
         {
           branchId: branch.branchId,
@@ -1137,7 +1126,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     const committed = await commitSegmentRows(branchCoordinator, {
       branchId: branch.branchId,
       sourceDoc: branch.doc,
-      expectedGeneration: branch.generation,
       rows: [
         {
           branchId: branch.branchId,
@@ -1278,7 +1266,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         const committed = await commitSegmentRows(branchCoordinator, {
           branchId: branch.branchId,
           sourceDoc: branch.doc,
-          expectedGeneration: branch.generation,
           rows: [
             {
               branchId: branch.branchId,
@@ -1354,7 +1341,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       await commitSegmentRows(branchCoordinator, {
         branchId: branch.branchId,
         sourceDoc: staged.doc,
-        expectedGeneration: staged.generation,
         rows: [
           {
             branchId: branch.branchId,
@@ -2132,7 +2118,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         await commitSegmentRows(branchCoordinator, {
           branchId: branchId,
           sourceDoc: doc,
-          expectedGeneration: staged.generation,
           rows: [
             {
               branchId: branchId,
@@ -2322,13 +2307,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       hocuspocus.documents.clear();
       hocuspocus.broadcasts.length = 0;
     },
-    reverseTurn: (direction: "undo" | "redo") =>
-      collab.reverseTurn({
-        threadId: THREAD_ID,
-        turnId: TURN_ID,
-        direction,
-        actor: { type: "user", userId: USER_ID },
-      }),
     liveMarkdown: (documentId: DocumentId) =>
       liveCoordinator.withDocument(documentId, async (doc) => serializeMarkdown(doc)),
     pushRows: () => db.select().from(schema.pushLineage),

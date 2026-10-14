@@ -309,7 +309,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(
           await commitSegmentRows(coordinator, {
             branchId: branch.branchId,
-            expectedGeneration: snapshot.generation,
             sourceDoc: source,
             rows,
           }),

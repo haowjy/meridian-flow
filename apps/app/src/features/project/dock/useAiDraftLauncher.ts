@@ -46,7 +46,7 @@ export function useAiDraftLauncher() {
 
   /** Opens a listed draft in review. A draft with no address yet (still being written) has nothing to open. */
   const openReviewFile = useCallback(
-    (row: ReviewFileTarget, workId: string, focusOperationIds?: readonly string[]) =>
+    (row: ReviewFileTarget, workId: string, focusChangeIds?: readonly string[]) =>
       row.contextLocation &&
       openAiDraft({
         workId,
@@ -55,7 +55,7 @@ export function useAiDraftLauncher() {
         contextLocation: row.contextLocation,
         documentName: row.documentName ?? undefined,
         isNew: row.isNew,
-        ...(focusOperationIds?.length ? { focusOperationIds } : {}),
+        ...(focusChangeIds?.length ? { focusChangeIds } : {}),
       }),
     [openAiDraft],
   );

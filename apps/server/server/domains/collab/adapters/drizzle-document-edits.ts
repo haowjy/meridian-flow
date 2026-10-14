@@ -31,8 +31,6 @@ export interface ReceiptWrite {
   wId?: number;
   actorUserId?: UserId | null;
   kind?: typeof documentEdits.$inferInsert.kind;
-  actionId?: string;
-  consumes?: string[];
   receipts: (CapturedPart & { origin: EditOrigin; targets?: EditTarget[] })[];
 }
 /** Caller holds the authoritative document/branch mutation lock and its event transaction. */
@@ -52,8 +50,6 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
       actorUserId: input.actorUserId,
       kind: input.kind ?? "write",
       wId,
-      actionId: input.actionId,
-      consumes: input.consumes,
     })
     .returning({ id: documentEdits.id });
   if (!edit) throw new Error("Edit receipt was not inserted");

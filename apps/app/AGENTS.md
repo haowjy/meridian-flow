@@ -22,7 +22,7 @@ Authenticated writing workspace. Keep it a thin React/TanStack Start shell over 
   turn's action row opens its tooltips below, `TURN_ACTION_TOOLTIP_SIDE`).
   The one exception is `<Tooltip hoverable>`, for an explanation whose words
   appear nowhere else on a trigger with no dense neighbours (the identity
-  bar's home chip, a review card's merged marker): the pointer can move onto
+  bar's home chip, a review card's chat names): the pointer can move onto
   it so a magnified reader can read it. It still holds no controls.
 - Preserve TipTap/Yjs document-session boundaries; do not invent a second editor sync path.
 - **Local-first invariant**: state a writer authors or arranges renders from

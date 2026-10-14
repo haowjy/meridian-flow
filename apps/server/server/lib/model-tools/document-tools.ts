@@ -222,7 +222,7 @@ async function writeUnderGrant(
     if (!(cause instanceof FileEditRefusedError)) throw cause;
     return fileAccessDeniedError(parsed.command, firstRefusal(cause), address.filePath);
   }
-  // The echo, staged or immediate, and an undo or redo result were shown; so
+  // The echo, staged or immediate, and a revert result were shown; so
   // was a partial failure's echo. An error without echo text carries no facts.
   const shown = showingOf(address.documentId, written);
   if (written.isError) return { isError: true, output: written.result, shown };

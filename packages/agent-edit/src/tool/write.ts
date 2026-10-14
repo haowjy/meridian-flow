@@ -192,12 +192,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       result = writeError(cause);
     }
     const outcome = toOutcome(commandName, result, validCommand.file);
-    if (
-      commandName === "undo" ||
-      commandName === "redo" ||
-      commandName === "revert" ||
-      ("format" in validCommand && validCommand.format === "edits")
-    ) {
+    if (commandName === "revert" || ("format" in validCommand && validCommand.format === "edits")) {
       const receipt = settledReceipt(
         { commandName, writeId: result.writeId ?? "", durableWriteId: result.settlementId ?? "" },
         result.revision ?? null,

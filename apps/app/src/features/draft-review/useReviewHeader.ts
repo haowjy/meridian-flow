@@ -16,10 +16,11 @@ import {
   draftCommandFailure,
   useDraftCommandRecords,
 } from "@/client/query/draft-command-record";
-import { draftPreviewQueryOptions } from "@/client/query/useDraftPreview";
+import { draftMetaQueryOptions } from "@/client/query/useDraftMeta";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { useDraftReview } from "./DraftReviewProvider";
 import { nextReviewFile } from "./review-files";
+import type { ReviewSurface } from "./review-runtime";
 import { type ReviewChangesView, useReviewChanges } from "./useReviewChanges";
 
 export type ReviewHeaderOptions = {
@@ -30,6 +31,8 @@ export type ReviewHeaderOptions = {
   onCloseDraftOnly?: () => void;
   /** Opens another draft of the Work in review (the presenting container's launcher). */
   onOpenDraft: (row: ReviewFileTarget) => void;
+  /** The editor surface this header belongs to: its commands act in that surface's editor. */
+  surface?: ReviewSurface;
 };
 
 export type ReviewHeaderModel = {
@@ -44,12 +47,13 @@ export type ReviewHeaderModel = {
   locked: boolean;
   /** Nothing left to publish: the server closed the draft, so its commands go. */
   finished: boolean;
-  /** The draft is open but lists no change: formatting remains, handled by Apply draft or Discard draft. */
-  unlisted: boolean;
   /** The last change's command is in flight: the review says so and is not finished. */
   completing: "apply" | "discard" | null;
   /** What the last whole-draft command of the open draft left on it (a refusal, a lost answer), if anything. */
   commandError: DraftCommandFailure | null;
+  /** Live text the last Apply replaced because both sides changed the same words. */
+  appliedOver: ReturnType<typeof useReviewFailures>["appliedOver"];
+  dismissAppliedOver: () => void;
   /**
    * The Work's other listed drafts that hold a refusal or a lost answer: Apply
    * draft and Apply all move on (or finish) while the command runs, so the
@@ -95,7 +99,12 @@ export function useReviewFailures({
     if (!failure) continue;
     if (row.documentId !== documentId) failedElsewhere.push({ row, failure });
   }
-  return { commandError, failedElsewhere };
+  return {
+    commandError,
+    failedElsewhere,
+    appliedOver: controller.appliedOver,
+    dismissAppliedOver: controller.dismissAppliedOver,
+  };
 }
 
 export function useReviewHeader({
@@ -103,18 +112,14 @@ export function useReviewHeader({
   itemKey,
   onCloseDraftOnly,
   onOpenDraft,
+  surface = "editor",
 }: ReviewHeaderOptions): ReviewHeaderModel {
   const { controller, files } = useDraftReview();
-  const view = useReviewChanges(controller, { enabled: Boolean(itemKey) });
+  const view = useReviewChanges(controller, { enabled: Boolean(itemKey), editor: surface });
 
-  const next = nextReviewFile(
-    files,
-    documentId,
-    controller.inlineReview?.completion?.documentName ?? null,
-  );
-  // The draft Apply draft, Discard draft and Next draft move to is read while
-  // the writer is still here (once this review's own read is in), so opening it
-  // finds its preview already in the cache.
+  const next = nextReviewFile(files, documentId);
+  // The draft Next draft moves to is looked up while the writer is still here, so opening it finds
+  // where its room lives already in the cache.
   const queryClient = useQueryClient();
   const nextDocumentId = next?.documentId;
   const nextItemKey = next?.draft.itemKey;
@@ -122,7 +127,7 @@ export function useReviewHeader({
   useEffect(() => {
     if (!ready || !nextDocumentId || !nextItemKey) return;
     void queryClient.prefetchQuery(
-      draftPreviewQueryOptions({
+      draftMetaQueryOptions({
         projectId: controller.projectId,
         workId: controller.workId,
         documentId: nextDocumentId,
@@ -131,20 +136,25 @@ export function useReviewHeader({
     );
   }, [ready, nextDocumentId, nextItemKey, controller.projectId, controller.workId, queryClient]);
   const locked = controller.dispositionLocked;
-  const { finished, completing, unlisted } = view;
-  const { commandError, failedElsewhere } = useReviewFailures({ documentId, itemKey });
+  const { finished, completing } = view;
+  const { commandError, failedElsewhere, appliedOver, dismissAppliedOver } = useReviewFailures({
+    documentId,
+    itemKey,
+  });
   const showLive = () => (onCloseDraftOnly ?? controller.exitInlineReview)();
 
   /**
-   * Run a whole-draft command, then move to the next draft (or live) without
-   * waiting on it. Offline the command is refused before it is sent, so the
-   * writer stays on this draft, where the refusal shows.
+   * Run a whole-draft command. The review stays on this draft, empty ("No changes left"): Discard draft is
+   * an edit Ctrl+Z restores, and Apply leaves the draft open for the AI's next write. The writer moves on
+   * with Next draft or Back to live.
    */
   const dispose = (mode: "apply" | "discard") => {
     if (locked) return;
-    const start = controller.startDraft(mode, { documentId, itemKey });
-    void start.outcome;
-    if (next && start.sent) onOpenDraft(next);
+    void controller.startDraft(
+      mode,
+      { documentId, itemKey },
+      { frame: view.frame, editor: surface },
+    ).outcome;
   };
   return {
     controller,
@@ -152,9 +162,10 @@ export function useReviewHeader({
     next,
     locked,
     finished,
-    unlisted,
     completing,
     commandError,
+    appliedOver,
+    dismissAppliedOver,
     failedElsewhere,
     showLive,
     applyDraft: () => dispose("apply"),

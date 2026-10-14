@@ -52,8 +52,7 @@ not ignore sibling paths merely sharing a prefix such as `logs-other`.
 
 ## State + transport seams
 
-Writer-facing AI change reporting uses durable Trail evidence, receipt
-Undo/Redo, and session change marks. Trail evidence and peer marks are
+Writer-facing AI change reporting uses durable Trail evidence and session change marks. Trail evidence and peer marks are
 read-only; `DocumentSession` owns collaboration state only and does not retain
 a parallel safety-notice presentation model.
 

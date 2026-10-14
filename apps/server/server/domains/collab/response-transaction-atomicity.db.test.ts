@@ -430,7 +430,6 @@ describe("change trail (postgres)", () => {
     const committed = await commitSegmentRows(fixture.branchCoordinator, {
       branchId: branch.branchId,
       sourceDoc: branch.doc,
-      expectedGeneration: branch.generation,
       rows: [
         {
           branchId: branch.branchId,
@@ -465,14 +464,6 @@ describe("change trail (postgres)", () => {
     ).resolves.toMatchObject({ status: "applied" });
     await expect(harness.liveMarkdown(ALPHA_ID)).resolves.toContain("AI DRAFT PROPOSAL");
     await expect(harness.liveMarkdown(ALPHA_ID)).resolves.toContain("WRITER DRAFT MARKER");
-    await expect(
-      fixture.collab.reverseTurn({
-        threadId: THREAD_ID,
-        turnId: TURN_ID,
-        direction: "undo",
-        actor: { type: "user", userId: USER_ID },
-      }),
-    ).resolves.toMatchObject({ status: "expired" });
     await expect(reviewDriver(fixture.collab.draftReview).list()).resolves.toEqual([]);
   });
 

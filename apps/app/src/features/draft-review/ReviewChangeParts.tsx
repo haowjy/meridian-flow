@@ -7,11 +7,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ArrowUpRight } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
-import type {
-  ChangeCommandMode,
-  ChangeFailureCode,
-  ServerRefusal,
-} from "@/client/query/draft-command-record";
+import type { ChangeFailureCode, ServerRefusal } from "@/client/query/draft-command-record";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,33 +15,21 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useOpenChatThread } from "@/features/chat/ChatThreadNavigation";
-import { requestConversationReveal } from "@/features/chat/conversation-reveal";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { cn } from "@/lib/utils";
-import type { ChangeAttribution, ChangeChat } from "./change-attribution";
 import { RefusalReason } from "./ReviewMessageText";
-import type { ReviewChange, ReviewChangeTone } from "./review-changes";
+import { type ChatRef, changeTone, type ReviewChange } from "./review-model";
 
-const DOT_TONE: Record<ReviewChangeTone, string> = {
-  ai: "bg-primary",
-  writer: "bg-gold",
-  removal: "bg-destructive",
-  merged: "bg-muted-foreground",
-  unattributed: "bg-muted-foreground/60",
-};
-
-/** A dot in the change's colour. Half green, half gold when the writer's edits are inside an AI change. */
+/** A dot in the change's colour: green for text it wrote, red for text it only removed. */
 export function ChangeDot({ change, className }: { change: ReviewChange; className?: string }) {
-  const half = change.includesWriterEdits && change.tone === "ai";
+  const tone = changeTone(change);
   return (
     <span
       aria-hidden
-      data-tone={change.tone}
+      data-tone={tone}
       className={cn(
         "size-2 shrink-0 rounded-full",
-        half
-          ? "bg-[linear-gradient(90deg,var(--color-primary)_50%,var(--color-gold)_50%)]"
-          : DOT_TONE[change.tone],
+        tone === "add" ? "bg-primary" : "bg-destructive",
         className,
       )}
     />
@@ -53,53 +37,27 @@ export function ChangeDot({ change, className }: { change: ReviewChange; classNa
 }
 
 /**
- * "You", a link to each chat that wrote the change ("Pacing pass and Lore
- * pass"), or plain "AI" when the preview cannot say which chat. A link opens
- * its chat beside the change at the turn that wrote it and never also acts on
- * the change. Names stay whole; the focused bar menus names that do not fit.
+ * A link to each chat whose writes overlap the change ("Pacing pass and Lore pass"). Nothing when no chat's
+ * writes are known to overlap: the writer's own edits are never named. A link opens its chat beside the
+ * change and never also acts on the change. Names stay whole; the focused bar menus names that do not fit.
  */
 export function ChangeAuthor({
-  attribution,
+  chats,
   className,
   touch = false,
   overflow,
 }: {
   overflow: "menu" | "hide";
-  attribution: ChangeAttribution;
+  chats: readonly ChatRef[];
   className?: string;
   touch?: boolean;
 }) {
   const openThread = useOpenChatThread();
-  if (attribution.kind === "you") {
-    return (
-      <span
-        className={cn(
-          "shrink-0 text-caption font-medium text-[color:var(--color-review-writer-removed-foreground)]",
-          className,
-        )}
-      >
-        <Trans>You</Trans>
-      </span>
-    );
-  }
-  if (attribution.kind === "unattributed") {
-    return (
-      <span className={cn("shrink-0 text-caption text-muted-foreground", className)}>
-        <Trans>Unattributed</Trans>
-      </span>
-    );
-  }
-  if (attribution.kind === "ai" || !openThread) {
-    return (
-      <span className={cn("shrink-0 text-caption text-muted-foreground", className)}>
-        <Trans>AI</Trans>
-      </span>
-    );
-  }
+  if (chats.length === 0 || !openThread) return null;
   return (
     <OverflowChats
       mode={overflow}
-      chats={attribution.chats}
+      chats={chats}
       openThread={openThread}
       touch={touch}
       className={className}
@@ -116,7 +74,7 @@ function OverflowChats({
   className,
 }: {
   mode: "menu" | "hide";
-  chats: ChangeChat[];
+  chats: readonly ChatRef[];
   openThread: (threadId: string) => void;
   touch: boolean;
   className?: string;
@@ -169,7 +127,7 @@ function OverflowChats({
       >
         {chats.map((chat) => (
           <span
-            key={chat.threadId}
+            key={chat.chatId}
             className={cn(
               "inline-flex items-center gap-0.5 whitespace-nowrap",
               touch && "min-w-11",
@@ -182,7 +140,7 @@ function OverflowChats({
       </span>
       {chats.slice(0, visible).map((chat) => (
         <ChatLink
-          key={chat.threadId}
+          key={chat.chatId}
           chat={chat}
           name={displayThreadTitle(chat.title)}
           onOpenThread={openThread}
@@ -205,7 +163,7 @@ function OverflowChats({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
             {chats.slice(visible).map((chat) => (
-              <DropdownMenuItem key={chat.threadId} onSelect={() => openChat(chat, openThread)}>
+              <DropdownMenuItem key={chat.chatId} onSelect={() => openChat(chat, openThread)}>
                 {displayThreadTitle(chat.title)}
                 <ArrowUpRight aria-hidden className="size-3" />
               </DropdownMenuItem>
@@ -223,7 +181,7 @@ function ChatLink({
   onOpenThread,
   touch,
 }: {
-  chat: ChangeChat;
+  chat: ChatRef;
   name: string;
   onOpenThread: (threadId: string) => void;
   touch: boolean;
@@ -247,74 +205,42 @@ function ChatLink({
   );
 }
 
-/** Open the producing turn when recorded, otherwise the chat's usual position. */
-function openChat(chat: ChangeChat, openThread: (threadId: string) => void) {
-  if (chat.turnId) {
-    requestConversationReveal({
-      kind: "turn",
-      threadId: chat.threadId,
-      turnId: chat.turnId,
-      ...(chat.toolCallId ? { toolCallId: chat.toolCallId } : {}),
-    });
-  } else {
-    openThread(chat.threadId);
-  }
+function openChat(chat: ChatRef, openThread: (threadId: string) => void) {
+  openThread(chat.chatId);
 }
 
-/** Why a command on a change did not land, in the writer's words. */
+/** Why an Apply of a change did not land, in the writer's words. */
 export function ChangeFailureText({
-  failure: { code, mode, serverCode, serverReason },
+  failure: { code, serverCode, serverReason },
 }: {
-  failure: { code: ChangeFailureCode; mode: ChangeCommandMode } & Partial<ServerRefusal>;
+  failure: { code: ChangeFailureCode } & Partial<ServerRefusal>;
 }) {
   switch (code) {
-    case "stale":
-      return mode === "apply" ? (
-        <Trans>This change was updated. Check it and apply again.</Trans>
-      ) : (
-        <Trans>This change was updated. Check it and discard again.</Trans>
-      );
     case "gone":
       return <Trans>That change is no longer in the draft.</Trans>;
     case "blocked":
       return <Trans>Apply couldn't finish</Trans>;
     case "unknown":
-      return mode === "apply" ? (
+      return (
         <Trans>
           Couldn't confirm whether this applied. Check what is left before you try again.
         </Trans>
-      ) : (
-        <Trans>
-          Couldn't confirm whether this was discarded. Check what is left before you try again.
-        </Trans>
       );
     case "offline":
-      return mode === "apply" ? (
-        <Trans>Couldn't apply. Check your connection and try again.</Trans>
-      ) : (
-        <Trans>Couldn't discard. Check your connection and try again.</Trans>
-      );
+      return <Trans>Couldn't apply. Check your connection and try again.</Trans>;
     case "refused":
       return (
         <>
-          {mode === "apply" ? (
-            <Trans>Couldn't apply this change.</Trans>
-          ) : (
-            <Trans>Couldn't discard this change.</Trans>
-          )}
+          <Trans>Couldn't apply this change.</Trans>
           <RefusalReason serverCode={serverCode} serverReason={serverReason} />
         </>
       );
     case "server-error":
-      return mode === "apply" ? (
-        <Trans>Couldn't apply this change. Try again.</Trans>
-      ) : (
-        <Trans>Couldn't discard this change. Try again.</Trans>
-      );
+      return <Trans>Couldn't apply this change. Try again.</Trans>;
   }
 }
 
-/** The Discard button's name: it never hides that the writer's own edits go with it. */
-export function discardLabel(change: ReviewChange): string {
-  return change.includesWriterEdits ? t`Discard with your edits` : t`Discard`;
+/** The Discard button's name. */
+export function discardLabel(): string {
+  return t`Discard`;
 }

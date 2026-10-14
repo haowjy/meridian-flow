@@ -9,15 +9,62 @@ import { ReviewMessageText } from "./ReviewMessageText";
 
 /** More refused drafts than this are summarised, so the notice never outgrows the header. */
 const MAX_NAMED_FAILURES = 3;
+/** Overridden live words named in the notice before it trails off. */
+const MAX_NAMED_OVERRODE = 3;
+
+/** What an Apply replaced in live, on whatever surface applied it: the same words everywhere. */
+export function AppliedOverNotice({
+  items,
+  onDismiss,
+  touch = false,
+  className,
+}: {
+  items: readonly { live: string; applied: string }[];
+  onDismiss?: () => void;
+  touch?: boolean;
+  className?: string;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <div
+      className={cn("flex items-center gap-3 pb-1.5 text-muted-foreground", className)}
+      role="status"
+    >
+      <p className="min-w-0 flex-1">
+        <Trans>Applied over a newer edit in live: </Trans>
+        {items
+          .slice(0, MAX_NAMED_OVERRODE)
+          .map((item) => `\u201c${item.live}\u201d`)
+          .join(", ")}
+        {items.length > MAX_NAMED_OVERRODE ? "…" : "."}
+      </p>
+      {onDismiss ? (
+        <Button
+          size="xs"
+          variant="quiet"
+          className={touch ? "h-11 px-4 text-sm" : undefined}
+          onClick={onDismiss}
+        >
+          <Trans>Dismiss</Trans>
+        </Button>
+      ) : null}
+    </div>
+  );
+}
 
 export function ReviewFailureNotices({
   commandError,
   failedElsewhere = [],
+  appliedOver = [],
+  onDismissAppliedOver,
   onOpenNext,
   touch = false,
   className,
 }: {
   commandError: DraftCommandFailure | null;
+  /** Live text the last Apply replaced because both sides changed the same words. */
+  appliedOver?: readonly { live: string; applied: string }[];
+  onDismissAppliedOver?: () => void;
   /** Other drafts of the Work whose last Apply or Discard was refused or lost. */
   failedElsewhere?: { row: ReviewFileTarget; failure: DraftCommandFailure }[];
   onOpenNext: (row: ReviewFileTarget) => void;
@@ -28,6 +75,12 @@ export function ReviewFailureNotices({
   const button = touch ? "h-11 px-4 text-sm" : undefined;
   return (
     <>
+      <AppliedOverNotice
+        items={appliedOver}
+        onDismiss={onDismissAppliedOver}
+        touch={touch}
+        className={className}
+      />
       {commandError ? (
         <p className={cn("pb-1.5 text-destructive", className)} role="alert">
           <ReviewMessageText failure={commandError} />
@@ -70,21 +123,14 @@ export function ReviewStateInline({
   touch = false,
   ...state
 }: ReviewStateProps & { touch?: boolean }) {
-  if (!state.finished && !state.completing && !state.unlisted) return null;
+  if (!state.finished && !state.completing) return null;
   return (
     <span
       role="status"
       aria-busy={!!state.completing}
       className="flex min-w-0 items-center gap-2 font-sans text-xs"
     >
-      <span
-        className={cn(
-          "text-muted-foreground",
-          state.unlisted
-            ? "min-w-0 truncate"
-            : "flex shrink-0 items-center gap-1.5 whitespace-nowrap",
-        )}
-      >
+      <span className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-muted-foreground">
         <ReviewStatusContent {...state} />
       </span>
       {state.finished ? (

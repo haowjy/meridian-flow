@@ -478,10 +478,9 @@ export type DraftCommandOutcome =
   | DraftDiscardAllResponse;
 
 /**
- * `GET documents/:documentId/draft?itemKey=`: an item's existence and where to open it. Answers for
- * every addressable item, listed or not. A 200 means the item exists; `404 { code: "gone" }` means
- * it is closed. A branchless item (a created image or blank create with no text branch) has no
- * room: only item-level actions exist for it, so `wholeItem` is true.
+ * `GET documents/:documentId/draft?itemKey=` (contract §3.2): where to open one item and whether it has
+ * changes. It answers for every addressable item, listed or not; a 404 `{ code: "gone" }` means the item is
+ * closed. The review itself is computed in the browser from `roomName`, which the client never builds or parses.
  */
 export type DraftItemMeta =
   | {
@@ -489,13 +488,13 @@ export type DraftItemMeta =
       draftId: DraftId;
       itemKey: DraftItemKey;
       documentId: string;
-      /** The text branch's collaboration room, returned by the server; the client never builds it. */
       roomName: string;
       isNew: boolean;
       wholeItem: boolean;
       hasChanges: boolean;
     }
   | {
+      /** A created image or blank create with no text branch: no room; only item-level actions exist. */
       kind: "branchless";
       draftId: DraftId;
       itemKey: DraftItemKey;

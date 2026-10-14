@@ -12,7 +12,7 @@ import {
   structDependencies,
   suppliedRanges,
 } from "@meridian/agent-edit/integration";
-import { findItem, itemIsVisible } from "@meridian/agent-edit/yjs-mutation";
+import { itemIsVisible } from "@meridian/agent-edit/yjs-mutation";
 import * as Y from "yjs";
 import { assertNoPendingIntegration, BranchPeerIntegrationError } from "./branch-push-plan.js";
 
@@ -21,7 +21,6 @@ export function reconcileStagedBranchWrites(
   current: Y.Doc,
   helper: Y.Doc,
   entries: readonly JournalBatchAppendEntry[],
-  retiredUpdates: readonly Uint8Array[],
   planningState: Uint8Array,
   inverseUpdates: readonly Uint8Array[] = [],
 ): {
@@ -33,9 +32,6 @@ export function reconcileStagedBranchWrites(
   const rows = entries.map((entry, seq) => ({ entry, seq, updateData: entry.update }));
   let dropped = new Set<(typeof rows)[number]>();
   const reasons = new Map<string, StagedWriteRejectionReason>();
-  const retiredIdentities = retiredUpdates.flatMap((update) =>
-    suppliedRanges(decodeUpdateForDependencies(update)),
-  );
   const inverseDeletes = inverseUpdates.flatMap((update) =>
     deleteRanges(decodeUpdateForDependencies(update)),
   );
@@ -51,12 +47,11 @@ export function reconcileStagedBranchWrites(
       try {
         for (const row of rows) {
           if (dropped.has(row)) continue;
-          // Absence alone is normal peer concurrency. Only retirement or an
-          // inverse since this cut revokes planning-visible identities. Retired
-          // structs are absent; ordinary deletions of refork survivors retain them.
+          // Absence alone is normal peer concurrency. Only an inverse since this cut
+          // revokes planning-visible identities; the writer's own deletions never do.
           const decoded = decodeUpdateForDependencies(row.updateData);
           const touched = [...deleteRanges(decoded), ...structDependencies(decoded)];
-          const lostIn = (evidence: typeof touched, retirement = false) =>
+          const lostIn = (evidence: typeof touched) =>
             touched.some((range) =>
               evidence.some((removed) => {
                 if (!rangesOverlap(range, removed)) return false;
@@ -64,18 +59,13 @@ export function reconcileStagedBranchWrites(
                 const end = Math.min(range.clock + range.length, removed.clock + removed.length);
                 for (let clock = start; clock < end; clock++) {
                   const id = Y.createID(range.client, clock);
-                  if (
-                    itemIsVisible(planning, id) &&
-                    (retirement ? !findItem(current, id) : !itemIsVisible(current, id))
-                  )
-                    return true;
+                  if (itemIsVisible(planning, id) && !itemIsVisible(current, id)) return true;
                 }
                 return false;
               }),
             );
-          const retired = lostIn(retiredIdentities, true);
-          if (retired || lostIn(inverseDeletes)) {
-            reason = retired ? "discard" : "inverse";
+          if (lostIn(inverseDeletes)) {
+            reason = "inverse";
             failed = row;
             break;
           }
@@ -115,15 +105,13 @@ export function reconcileStagedBranchWrites(
   for (const row of kept) Y.applyUpdate(current, row.updateData);
   assertNoPendingIntegration(current, "response_replay", []);
 
-  // The helper may retain only generation-retired rows and rejected writes.
+  // The helper may retain only rejected writes.
   // Delete sets are cumulative: subtract the admitted cut before checking them.
   const residual = decodeUpdateForDependencies(
     Y.encodeStateAsUpdate(helper, Y.encodeStateVector(current)),
   );
   const currentDeletes = deleteRanges(decodeUpdateForDependencies(Y.encodeStateAsUpdate(current)));
-  const explained = [...retiredUpdates, ...[...dropped].map((row) => row.updateData)].map(
-    decodeUpdateForDependencies,
-  );
+  const explained = [...dropped].map((row) => row.updateData).map(decodeUpdateForDependencies);
   const inserted = explained.flatMap(suppliedRanges),
     deleted = explained.flatMap(deleteRanges);
   // The server client's items (seed, rebase, reset) are never the helper's own content, and a reset
@@ -136,7 +124,7 @@ export function reconcileStagedBranchWrites(
       deleted,
     ).length
   ) {
-    throw new Error("Response publication left an unexplained generation residual");
+    throw new Error("Response publication left an unexplained residual");
   }
   // Never merge helper state into the candidate, even when the residual is explained.
   return {

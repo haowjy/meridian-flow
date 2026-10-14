@@ -7,9 +7,8 @@ export interface HostSaveLease {
 }
 export type DiscardedWriteReason = Extract<StagedWriteRejectionReason, `discarded_${string}`>;
 
-/** The helper's authority base, independent of the generations its staged writes name. */
+/** The helper's authority base. */
 export interface StagedHelperCut {
-  generation: number;
   state: Uint8Array;
 }
 
@@ -18,7 +17,6 @@ export interface StagedHelperCut {
  * the whole draft, this created document, or this edited document's text.
  */
 export type StagedWriteRejectionReason =
-  | "discard"
   | "inverse"
   | "integration"
   | "discarded_draft"

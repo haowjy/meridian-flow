@@ -1,20 +1,38 @@
-/** Shared draft commands, selection outcomes, distinct list/preview read fences. */
-import { type DraftPreviewResponse, operationKey } from "@meridian/contracts/drafts";
-import { replaceEqualDeep } from "@tanstack/react-query";
+/**
+ * Draft command records: the one lifecycle of Apply and item Discard, shared by every surface.
+ *
+ * A review's Discard is a local editor edit and leaves no record. Apply does, keyed by item:
+ * - the changes it was sent for leave the screen at the click (`applied`). A change is named by its pin in
+ *   the frame the writer clicked plus its content hash (`isSameChange`), never by its id: ids carry an
+ *   occurrence rank, so after one of two identical changes applies the survivor takes the id the applied
+ *   one had. They come back with the error on them if the Apply fails (`failures`, named the same way).
+ *   Once the server confirms, an entry stays until the review's `review_base` has changed, which is how
+ *   the review learns the change became base;
+ * - a whole-item command holds one claim per item, from the click, covering preparation;
+ * - what an Apply overrode in live is published per item (`overrode`), for whichever surface applied;
+ * - a command whose outcome stayed unknown keeps its `commandId`, so the writer's retry of the same body
+ *   asks the server for the first attempt's outcome instead of applying twice.
+ * Records are account-scoped: a different account signing in revokes every claim, so a late answer has
+ * nothing to publish into.
+ */
+import type { DraftOverride } from "@meridian/contracts/drafts";
 import { useMemo } from "react";
+import type * as Y from "yjs";
 import { create } from "zustand";
-import type { DraftCommandOutcome } from "./draft-command-executor";
-import type { ActivePreview, DraftIntentKeys } from "./draft-projection";
+import { isSameChange } from "@/core/editor/extensions/inline-review/model";
+
+/** Live text an Apply replaced because both sides changed the same words. */
+export type Overrode = readonly DraftOverride[];
 
 type DraftScope = { projectId: string; workId: string };
 export type DraftRef = DraftScope & { documentId: string; itemKey: string };
-type ListedDraft = { documentId: string; itemKey: string; branchGeneration?: number | null };
 
 /**
- * What a held failure is, never its wording. `-offline`: the request never got
- * there (no network, or lost). `-refused`: the server answered with a typed
- * reason, carried beside the code. `-server-error`: it answered with an error
- * that gave no reason. Wording is the render layer's (`ReviewMessageText`).
+ * What a held whole-item failure is, never its wording. `-offline`: the request never got there.
+ * `-refused`: the server answered with a typed reason, carried beside the code. `-server-error`: it
+ * answered with an error that gave no reason. `apply-unknown`: it may or may not have landed.
+ * `apply-blocked`: the server could not finish the Apply (terminal, never retried automatically).
+ * Wording is the render layer's (`ReviewMessageText`).
  */
 export type DraftCommandFailureCode =
   | "apply-offline"
@@ -22,168 +40,106 @@ export type DraftCommandFailureCode =
   | "apply-server-error"
   | "apply-unknown"
   | "apply-blocked"
-  | "discard-unknown"
   | "discard-offline"
   | "discard-refused"
   | "discard-server-error"
+  | "discard-unknown"
   | "review-failed";
 
-/**
- * What a typed server refusal said, as the server sent it: its error code and
- * its own text. Kept so the words are chosen when the failure is shown.
- */
+/** What a typed server refusal said, as the server sent it; the words are chosen when it is shown. */
 export type ServerRefusal = { serverCode: string; serverReason?: string };
-
-/** A held failure: its code and, for a refusal, what the server said. */
 export type DraftCommandFailure = { code: DraftCommandFailureCode } & Partial<ServerRefusal>;
 
 export type ChangeCommandMode = "apply" | "discard";
 
-/**
- * Changes under review that one command acts on: whole server closure classes
- * and every operation they hold. One change is a selection of one class; the
- * chat strip's Apply is a selection of several.
- */
-export type ChangeSelection = {
-  classIds: readonly string[];
-  /** Server evidence accepted at the click; queued resolution and retry never replace its meaning. */
-  admissionTokens: readonly string[];
-  /** The rows to send: names in the generation the selection was made in, valid for admission only. */
-  operationIds: readonly string[];
-  /**
-   * What the changes are across draft generations (`operationKey`). A Discard
-   * re-forks the draft, so its survivors get new row and operation ids; a click
-   * not yet sent, a held failure and the focus find their change again by these.
-   */
-  keys?: readonly string[];
+/** Why an Apply of changes did not land; the copy lives in the render layer. */
+export type ChangeFailureCode =
+  | "offline"
+  | "gone"
+  | "unknown"
+  | "blocked"
+  | "refused"
+  | "server-error";
+export type ChangeFailure = { code: ChangeFailureCode } & Partial<ServerRefusal>;
+
+type Claim =
+  | { phase: "pending"; mode: ChangeCommandMode; token: symbol }
+  | { phase: "failed"; failure: DraftCommandFailure };
+
+/** A change as the frame the writer clicked in showed it: its group id there and its pinned first mark. */
+export type ChangeTarget = { id: string; pin: Y.RelativePosition };
+
+/** A change the writer applied, as the frame they clicked in showed it. */
+export type AppliedChange = ChangeTarget & {
+  /** The `review_base` the clicked frame was computed against. */
+  baseKey: string;
+  /** `sent` until the answer; `settled` until the review's base differs from `baseKey`. */
+  phase: "sent" | "settled";
+  request: symbol;
 };
 
-/** A selection's identity: its keys, or the rows themselves when it was made without any. */
-export function selectionKeys(selection: ChangeSelection): readonly string[] {
-  return selection.keys ?? selection.operationIds.map((id) => `row:${id}`);
-}
+type RecordedFailure = ChangeTarget & { failure: ChangeFailure };
 
-/**
- * What the server's closing answer left to say about the draft, read when it
- * landed: the draft leaves the Work's list once the answer's reads do.
- */
-export type ClosedDraft = { documentName: string | null };
-
-/** Selection identity and addressed settlement, shared with every observing review. */
-export type PendingChangeCommand = ChangeSelection & {
-  target: "selection";
-  mode: ChangeCommandMode;
-  branchGeneration: number;
-  completesDraft?: true;
-  itemClosed?: ClosedDraft;
-  outcome?: "applied" | "discarded" | "change-gone";
+type DraftRecord = {
+  claim?: Claim;
+  applied: readonly AppliedChange[];
+  failures: readonly RecordedFailure[];
+  overrode: Overrode;
 };
+export type DraftCommandRecords = Readonly<Record<string, DraftRecord>>;
 
-export type PendingDraftCommand =
-  | PendingChangeCommand
-  | {
-      target: "all";
-      mode: ChangeCommandMode;
-      branchGeneration: number | undefined;
-      completesDraft?: true;
-      itemClosed?: ClosedDraft;
-    };
-
-type DraftClaimRecord =
-  | { phase: "pending"; command: PendingDraftCommand; token: symbol }
-  | { phase: "failed"; failure: DraftCommandFailure; at: number };
-
-type DraftCommandRecord = {
-  claim?: DraftClaimRecord;
-  /** Account-scoped Apply intent: retained cached observations still name this generation. */
-  applied?: { branchGeneration: number | undefined; at: number };
-  outcomes: Readonly<Record<string, ChangeCommandRecord>>;
-};
-export type DraftCommandRecords = Readonly<Record<string, DraftCommandRecord>>;
+type HeldCommand = { commandId: string; digest: string };
 
 const useDraftCommandStore = create<{
   records: DraftCommandRecords;
-  queued: QueuedSelections;
-  /** The loop sending each draft's queued clicks; a reset retires it with the queue. */
-  drains: Readonly<Record<string, symbol>>;
   /** Commands whose outcome stayed unknown: the writer's retry of the same body reuses the id. */
-  unknown: Readonly<Record<string, { commandId: string; digest: string }>>;
-  clock: number;
-}>(() => ({
-  records: {},
-  queued: {},
-  drains: {},
-  unknown: {},
-  clock: 0,
-}));
+  unknown: Readonly<Record<string, HeldCommand>>;
+}>(() => ({ records: {}, unknown: {} }));
 
-/** Read-start clocks stay beside immutable observations, never inside server rows. */
-const observations = new WeakMap<object, { fence: number; epoch: number }>();
-
-/** Structural sharing preserves read identity across payload changes, never across commands. */
-export function shareDraftObservation(prior: unknown, next: unknown): unknown {
-  if (!prior) return next;
-  const before = observations.get(prior as object);
-  const after = observations.get(next as object);
-  if (before?.fence !== after?.fence || before?.epoch !== after?.epoch) return next;
-  const shared = replaceEqualDeep(prior, next);
-  if (after) observations.set(shared as object, after);
-  return shared;
-}
-
-let boundAccountId: string | null = null;
-/** Moves on every account change: work admitted in an earlier one can no longer publish. */
 let accountEpoch = 0;
+let boundAccountId: string | null = null;
 
-/**
- * An admitted command's capability over its own claim. Everything the command
- * publishes after an await (answers, confirmations, failures, release) goes
- * through it, and lands only while this claim is still the draft's pending one
- * in the account epoch it was admitted in.
- */
+/** A claim as the executor holds it across awaits. */
 export type DraftClaim = {
   readonly draft: DraftRef;
   readonly epoch: number;
   readonly token: symbol;
 };
 
-export function claimIsLive(claim: DraftClaim): boolean {
-  const record = recordFor(claim.draft);
-  return (
-    claim.epoch === accountEpoch && record?.phase === "pending" && record.token === claim.token
-  );
-}
-
-/** Work admitted before an account change is dead; a batch or queue checks this between sends. */
-export function accountEpochIs(epoch: number): boolean {
-  return epoch === accountEpoch;
-}
-
-export function currentAccountEpoch(): number {
-  return accountEpoch;
-}
-
-/** A claim, or a bare draft for publication that is not behind an await (and so cannot outlive anything). */
-type Publisher = DraftClaim | DraftRef;
-function mayPublish(by: Publisher): boolean {
-  return !("token" in by) || claimIsLive(by);
-}
-function draftOf(by: Publisher): DraftRef {
-  return "token" in by ? by.draft : by;
-}
-
-function scopePrefix({ projectId, workId }: DraftScope): string {
-  return `${projectId}\u0000${workId}\u0000`;
-}
-
 export function draftCommandKey(draft: DraftRef): string {
-  return `${scopePrefix(draft)}${draft.documentId}\u0000${draft.itemKey}`;
+  return `${draft.projectId}\u0000${draft.workId}\u0000${draft.documentId}\u0000${draft.itemKey}`;
 }
+
+const EMPTY_RECORD: DraftRecord = { applied: [], failures: [], overrode: [] };
+
+function update(draft: DraftRef, change: (record: DraftRecord) => DraftRecord): void {
+  const key = draftCommandKey(draft);
+  useDraftCommandStore.setState((held) => {
+    const { records } = held;
+    const prior = records[key] ?? EMPTY_RECORD;
+    const next = change(prior);
+    // Returning the held state is zustand's no-op: no reader is woken for an unchanged record.
+    if (next === prior) return held;
+    const { [key]: _gone, ...rest } = records;
+    const empty =
+      !next.claim &&
+      next.applied.length === 0 &&
+      next.failures.length === 0 &&
+      next.overrode.length === 0;
+    return { ...held, records: empty ? rest : { ...records, [key]: next } };
+  });
+}
+
+function recordFor(draft: DraftRef): DraftRecord | undefined {
+  return useDraftCommandStore.getState().records[draftCommandKey(draft)];
+}
+
+// ---- the id a command carries ----
 
 /**
- * The id a command carries. A retry of a command whose outcome stayed unknown, with the same
- * body, reuses its id so the server answers the first attempt's outcome; any other body is a new
- * command. `digest` is the body without its id.
+ * The id a command carries. A retry of a command whose outcome stayed unknown, with the same body,
+ * reuses its id so the server answers the first attempt's outcome; any other body is a new command.
+ * `digest` is the body without its id.
  */
 export function commandIdFor(draft: DraftRef, kind: string, digest: string): string {
   const held = useDraftCommandStore.getState().unknown[`${draftCommandKey(draft)}\u0000${kind}`];
@@ -194,276 +150,272 @@ export function commandIdFor(draft: DraftRef, kind: string, digest: string): str
 export function retainUnknownCommand(
   draft: DraftRef,
   kind: string,
-  held: { commandId: string; digest: string } | null,
+  held: HeldCommand | null,
 ): void {
   const key = `${draftCommandKey(draft)}\u0000${kind}`;
   useDraftCommandStore.setState((state) => {
     if (!held && !(key in state.unknown)) return state;
     const { [key]: _prior, ...rest } = state.unknown;
-    return { unknown: held ? { ...rest, [key]: held } : rest };
+    return { ...state, unknown: held ? { ...rest, [key]: held } : rest };
   });
 }
 
-/** Mutations and retention share one update path; empty draft records never survive. */
-function updateDraftRecord(
-  key: string,
-  update: (record: DraftCommandRecord, at: number) => DraftCommandRecord,
-  advance = false,
+// ---- whole-item claims ----
+
+/** Take the item's one claim, or null when a command is already in flight on it. */
+export function beginDraftCommand(draft: DraftRef, mode: ChangeCommandMode): DraftClaim | null {
+  if (recordFor(draft)?.claim?.phase === "pending") return null;
+  const token = Symbol("draft-claim");
+  update(draft, (record) => ({
+    ...record,
+    claim: { phase: "pending", mode, token },
+    overrode: [],
+  }));
+  return { draft, epoch: accountEpoch, token };
+}
+
+export function claimIsLive(claim: DraftClaim): boolean {
+  const held = recordFor(claim.draft)?.claim;
+  return claim.epoch === accountEpoch && held?.phase === "pending" && held.token === claim.token;
+}
+
+/** The command ended: the claim goes and nothing is left on the item. */
+export function releaseDraftCommand(claim: DraftClaim): void {
+  if (!claimIsLive(claim)) return;
+  update(claim.draft, ({ claim: _ended, ...record }) => record);
+}
+
+export function failDraftCommand(claim: DraftClaim, failure: DraftCommandFailure): void {
+  if (claim.epoch !== accountEpoch) return;
+  update(claim.draft, (record) => ({ ...record, claim: { phase: "failed", failure } }));
+}
+
+/** A review that could not open leaves its failure on the item, where its list rows show it. */
+export function failDraftReviewLaunch(draft: DraftRef): void {
+  update(draft, (record) =>
+    record.claim?.phase === "pending"
+      ? record
+      : { ...record, claim: { phase: "failed", failure: { code: "review-failed" } } },
+  );
+}
+
+export function clearDraftCommandFailure(draft: DraftRef): void {
+  update(draft, (record) =>
+    record.claim?.phase === "failed" ? { ...record, claim: undefined } : record,
+  );
+}
+
+export function clearDraftReviewLaunchFailure(draft: DraftRef): void {
+  const claim = recordFor(draft)?.claim;
+  if (claim?.phase === "failed" && claim.failure.code === "review-failed")
+    clearDraftCommandFailure(draft);
+}
+
+// ---- Apply of changes ----
+
+/** One Apply request for some changes, as the executor holds it across awaits. */
+export type ChangeClaim = {
+  readonly draft: DraftRef;
+  readonly epoch: number;
+  readonly request: symbol;
+  readonly targets: readonly ChangeTarget[];
+};
+
+const namesAny = (targets: readonly ChangeTarget[], held: ChangeTarget) =>
+  targets.some((target) => isSameChange(held, target.id, target.pin));
+
+/** The changes leave the screen at the click; the item is not finished until the answer. */
+export function beginChangeApply(
+  draft: DraftRef,
+  targets: readonly ChangeTarget[],
+  baseKey: string,
+): ChangeClaim {
+  const request = Symbol("change-apply");
+  update(draft, (record) => ({
+    ...record,
+    applied: [
+      ...record.applied,
+      ...targets.map((target): AppliedChange => ({ ...target, baseKey, phase: "sent", request })),
+    ],
+    failures: record.failures.filter((held) => !namesAny(targets, held)),
+    overrode: [],
+  }));
+  return { draft, epoch: accountEpoch, request, targets };
+}
+
+/** The request is live while its account is: an account change revokes every claim at once. */
+export function changeClaimIsLive(claim: ChangeClaim): boolean {
+  return claim.epoch === accountEpoch;
+}
+
+/** The server applied them: they stay off the screen until the review's base changes. */
+export function settleChangeApply(claim: ChangeClaim): void {
+  if (!changeClaimIsLive(claim)) return;
+  update(claim.draft, (record) => ({
+    ...record,
+    applied: record.applied.map((entry) =>
+      entry.request === claim.request ? { ...entry, phase: "settled" } : entry,
+    ),
+  }));
+}
+
+/** A change's failed Apply as the file says it: the same words as a whole-item Apply that failed. */
+function fileFailureOf(failure: ChangeFailure): DraftCommandFailure | null {
+  return failure.code === "gone" ? null : { ...failure, code: `apply-${failure.code}` };
+}
+
+/** The Apply did not land: the changes come back with the reason on them. */
+export function failChangeApply(claim: ChangeClaim, failure: ChangeFailure): void {
+  if (!changeClaimIsLive(claim)) return;
+  update(claim.draft, (record) => ({
+    ...record,
+    applied: record.applied.filter((entry) => entry.request !== claim.request),
+    failures: [
+      ...record.failures.filter((held) => !namesAny(claim.targets, held)),
+      ...claim.targets.map((target) => ({ ...target, failure })),
+    ],
+  }));
+}
+
+export function clearChangeFailure(draft: DraftRef, change: ChangeTarget): void {
+  update(draft, (record) => {
+    const failures = record.failures.filter((held) => !namesAny([change], held));
+    return failures.length === record.failures.length ? record : { ...record, failures };
+  });
+}
+
+/**
+ * Forget what the review has moved past: a confirmed Apply once the review's base is not the one it was
+ * clicked against (the base patch arrived: the change is base text now). `baseKey` is read only when
+ * something confirmed is held.
+ *
+ * A failure whose change is gone from the frame (a peer removed it while the Apply waited) is not forgotten:
+ * the Apply still did not land, so it moves to the file as its failure (`claim`), never onto a surviving
+ * twin and never as a row. A file that already has a claim keeps it. A change the item no longer has
+ * (`gone`) has nothing left to tell. Nothing here closes anything: absence from a list or a frame is
+ * never evidence that an item closed.
+ */
+export function reconcileChangeRecords(
+  draft: DraftRef,
+  listed: readonly ChangeTarget[],
+  baseKey: () => string,
 ): void {
-  useDraftCommandStore.setState((state) => {
-    const prior = state.records[key] ?? { outcomes: {} };
-    const clock = state.clock + Number(advance);
-    const next = update(prior, clock);
-    if (next === prior) return state;
-    const { [key]: _prior, ...rest } = state.records;
+  update(draft, (record) => {
+    const current = record.applied.some((entry) => entry.phase === "settled") ? baseKey() : null;
+    const applied = record.applied.filter(
+      (entry) => entry.phase === "sent" || entry.baseKey === current,
+    );
+    const failures = record.failures.filter((held) =>
+      listed.some((change) => isSameChange(held, change.id, change.pin)),
+    );
+    const same =
+      applied.length === record.applied.length && failures.length === record.failures.length;
+    if (same) return record;
+    const unplaced = record.failures.find((held) => !failures.includes(held));
+    const promoted = unplaced && !record.claim ? fileFailureOf(unplaced.failure) : null;
     return {
-      clock,
-      records:
-        next.claim || next.applied || Object.keys(next.outcomes).length
-          ? { ...rest, [key]: next }
-          : rest,
+      ...record,
+      applied,
+      failures,
+      ...(promoted ? { claim: { phase: "failed" as const, failure: promoted } } : {}),
     };
   });
 }
 
-function setRecord(
-  draft: DraftRef,
-  record: (clock: number) => DraftClaimRecord | null,
-  advance = false,
-): void {
-  updateDraftRecord(
-    draftCommandKey(draft),
-    (prior, clock) => {
-      const claim = record(clock);
-      const { claim: _claim, ...retained } = prior;
-      return { ...retained, ...(claim ? { claim } : {}) };
-    },
-    advance,
-  );
+// ---- what an Apply overrode ----
+
+/** Live text the last Apply of this item replaced; published whichever surface applied. */
+export function noteOverrode(claim: { draft: DraftRef; epoch: number }, items: Overrode): void {
+  if (claim.epoch !== accountEpoch || items.length === 0) return;
+  update(claim.draft, (record) => ({ ...record, overrode: items }));
 }
 
-function recordFor(draft: DraftRef): DraftClaimRecord | undefined {
-  return useDraftCommandStore.getState().records[draftCommandKey(draft)]?.claim;
+export function dismissOverrode(draft: DraftRef): void {
+  update(draft, (record) => (record.overrode.length > 0 ? { ...record, overrode: [] } : record));
 }
 
-/**
- * Claim the draft for one command: a whole-draft Apply or Discard, or, with
- * `command`, a selection's. One command at a time per draft, whichever
- * surface or session sends it; false when one is already in flight.
- */
-export function beginDraftCommand(
-  draft: DraftRef,
-  command: PendingDraftCommand,
-): DraftClaim | null {
-  if (recordFor(draft)?.phase === "pending") return null;
-  const token = Symbol(draftCommandKey(draft));
-  setRecord(draft, () => ({ phase: "pending", command, token }));
-  return { draft, epoch: accountEpoch, token };
-}
+// ---- reads ----
 
-/**
- * The server answered the selection command in flight on this draft and
- * closed the draft. Reviews showing it settle on this before the draft list is
- * re-read (`subscribeDraftCommandRecords`).
- */
-export function answerDraftCommandClosed(by: DraftClaim | DraftRef, closed: ClosedDraft): void {
-  const draft = draftOf(by);
-  const record = recordFor(draft);
-  if (
-    !mayPublish(by) ||
-    record?.phase !== "pending" ||
-    !record.command ||
-    (record.command.target === "all" && !record.command.completesDraft)
-  )
-    return;
-  const change = { ...record.command, itemClosed: closed };
-  setRecord(draft, () => ({
-    phase: "pending",
-    command: change,
-    token: record.token,
-  }));
-}
+const NO_RECORDS: DraftCommandRecords = {};
+const NO_APPLIED: readonly AppliedChange[] = [];
+const NO_OVERRODE: Overrode = [];
 
-/** Publish an addressed selection result before caches refresh or the claim is released. */
-export function answerDraftSelection(
-  by: DraftClaim | DraftRef,
-  outcome: PendingChangeCommand["outcome"],
-): void {
-  const draft = draftOf(by);
-  const record = recordFor(draft);
-  const command = pendingChangeCommand(currentDraftCommandRecords(), draft);
-  if (command && record?.phase === "pending" && mayPublish(by))
-    setRecord(draft, () => ({
-      phase: "pending",
-      command: { ...command, outcome },
-      token: record.token,
-    }));
-}
-
-/**
- * Release a claim that ended without a confirmation or a held failure. The
- * server's closing answer ends with the claim: the id it closed is reused for
- * the next proposal, so nothing outlives the claim to be mistaken for it.
- */
-export function releaseDraftCommand(by: DraftClaim | DraftRef): void {
-  const draft = draftOf(by);
-  if (recordFor(draft)?.phase === "pending" && mayPublish(by)) setRecord(draft, () => null);
-}
-
-export function failDraftCommand(by: DraftClaim | DraftRef, failure: DraftCommandFailure): void {
-  if (mayPublish(by)) setRecord(draftOf(by), (at) => ({ phase: "failed", failure, at }), true);
-}
-
-/** Opening Review failed; never displaces an Apply or Discard in flight on the draft. */
-export function failDraftReviewLaunch(draft: DraftRef): void {
-  if (recordFor(draft)?.phase !== "pending") failDraftCommand(draft, { code: "review-failed" });
-}
-
-/** Drop a held failure (dismissing it); never touches a claim. */
-export function clearDraftCommandFailure(draft: DraftRef): void {
-  if (recordFor(draft)?.phase === "failed") setRecord(draft, () => null);
-}
-
-/**
- * Opening Review is a new attempt: it retires the message of the last attempt
- * to open it. A refused Apply or Discard is not that message, and stays: the
- * writer may be taken to the draft that refused precisely to be told so.
- */
-export function clearDraftReviewLaunchFailure(draft: DraftRef): void {
-  const record = recordFor(draft);
-  if (record?.phase === "failed" && record.failure.code === "review-failed")
-    setRecord(draft, () => null);
-}
-
-export function confirmDraftCommand(by: DraftClaim | DraftRef): void {
-  if (!mayPublish(by)) return;
-  const draft = draftOf(by);
-  const prior = recordFor(draft);
-  if (
-    prior?.phase !== "pending" ||
-    prior.command.target !== "all" ||
-    prior.command.mode !== "apply"
-  )
-    return;
-  const branchGeneration = prior.command.branchGeneration;
-  updateDraftRecord(
-    draftCommandKey(draft),
-    ({ claim: _claim, ...retained }, at) => ({
-      ...retained,
-      applied: {
-        at,
-        branchGeneration:
-          retained.applied?.branchGeneration === undefined
-            ? branchGeneration
-            : Math.max(retained.applied.branchGeneration, branchGeneration ?? 0),
-      },
-    }),
-    true,
-  );
-}
-
-/**
- * Read immutable Work list evidence. Only failures predating this read may
- * retire on omission; settled Apply intents outlive cached/held observations.
- */
-export async function readDraftsAfterCommands<T extends ListedDraft>(
-  scope: DraftScope,
-  read: () => Promise<T[]>,
-): Promise<T[]> {
-  const fence = useDraftCommandStore.getState().clock;
-  const epoch = accountEpoch;
-  const listed = await read();
-  observations.set(listed, { fence, epoch });
-  if (!accountEpochIs(epoch)) return listed;
-  const { records } = useDraftCommandStore.getState();
-  const stillListed = new Set(listed.map((draft) => draftCommandKey({ ...scope, ...draft })));
-  const prefix = scopePrefix(scope);
-  const gone = Object.entries(records).filter(
-    ([key, record]) =>
-      record.claim?.phase === "failed" &&
-      !["apply-blocked", "apply-unknown", "discard-unknown"].includes(record.claim.failure.code) &&
-      record.claim.at <= fence &&
-      key.startsWith(prefix) &&
-      !stillListed.has(key),
-  );
-  for (const [key] of gone) {
-    const [documentId = "", itemKey = ""] = key.slice(prefix.length).split("\u0000");
-    setRecord({ ...scope, documentId, itemKey }, () => null);
-  }
-  return listed;
-}
-
-/** The whole intent addressed to this observation; newer proposals never inherit it. */
-export function wholeDraftDisposition(
-  records: ChangeCommandRecords,
-  draft: DraftRef,
-  generation: number | undefined,
-  observed?: object,
-): ChangeCommandMode | null {
-  const record = records.drafts[draftCommandKey(draft)];
-  const addressed = (basis: number | undefined) =>
-    basis === undefined
-      ? generation === undefined
-      : generation !== undefined && generation <= basis;
-  const read = observed ? observations.get(observed) : undefined;
-  if (
-    record?.applied &&
-    addressed(record.applied.branchGeneration) &&
-    (!read || (read.epoch === accountEpoch && read.fence < record.applied.at))
-  )
-    return "apply";
-  const claim = record?.claim;
-  if (claim?.phase === "pending" && claim.command.target === "all")
-    return addressed(claim.command.branchGeneration) ? claim.command.mode : null;
-  const queued = Object.values(records.queued).find(
-    (entry) => entry.prefix === draftCommandKey(draft) && entry.target === "all",
-  );
-  return queued?.mode ?? null;
-}
-
-/** Every held record; look rows up with `draftCommandKey`. */
 export function useDraftCommandRecords(): DraftCommandRecords {
-  return useDraftCommandStore().records;
+  return useDraftCommandStore((state) => state.records);
+}
+
+export function currentDraftCommandRecords(): DraftCommandRecords {
+  return useDraftCommandStore.getState().records;
+}
+
+/** Call `listener` after any record changes; for owners that are not React (the review runtime). */
+export function watchDraftCommandRecords(listener: () => void): () => void {
+  return useDraftCommandStore.subscribe((state, previous) => {
+    if (state.records !== previous.records) listener();
+  });
+}
+
+/** Only this item's records: a reader re-renders for its own item's commands, not every item's. */
+export function useDraftCommandSlice(draft: DraftRef | null): DraftCommandRecords {
+  const key = draft ? draftCommandKey(draft) : "";
+  const record = useDraftCommandStore((state) => state.records[key]);
+  return useMemo(() => (record ? { [key]: record } : NO_RECORDS), [key, record]);
+}
+
+/** The Applies of this item that have left the screen and are not yet part of the review's base. */
+export function appliedChanges(
+  records: DraftCommandRecords,
+  draft: DraftRef,
+): readonly AppliedChange[] {
+  return records[draftCommandKey(draft)]?.applied ?? NO_APPLIED;
+}
+
+/** Applies sent and not yet answered: the item is not finished while any is out. */
+export function sentChangeApplies(records: DraftCommandRecords, draft: DraftRef): number {
+  return appliedChanges(records, draft).filter((entry) => entry.phase === "sent").length;
+}
+
+export function draftOverrode(records: DraftCommandRecords, draft: DraftRef): Overrode {
+  return records[draftCommandKey(draft)]?.overrode ?? NO_OVERRODE;
+}
+
+/** Why the last Apply of this change did not land, found by the frame-bound identity it was clicked as. */
+export function changeFailure(
+  records: DraftCommandRecords,
+  draft: DraftRef,
+  change: ChangeTarget,
+): ChangeFailure | null {
+  const held = records[draftCommandKey(draft)]?.failures.find((entry) =>
+    isSameChange(entry, change.id, change.pin),
+  );
+  return held?.failure ?? null;
 }
 
 export function draftCommandFailure(
   records: DraftCommandRecords,
   draft: DraftRef,
 ): DraftCommandFailure | null {
-  const record = records[draftCommandKey(draft)]?.claim;
-  return record?.phase === "failed" ? record.failure : null;
+  const claim = records[draftCommandKey(draft)]?.claim;
+  return claim?.phase === "failed" ? claim.failure : null;
 }
 
-/** The selection command in flight on this draft, if the claim is one. */
+/** The whole-item command in flight on this item, if any. */
 export function pendingDraftCommand(
   records: DraftCommandRecords,
   draft: DraftRef,
-): PendingDraftCommand | null {
-  const record = records[draftCommandKey(draft)]?.claim;
-  return record?.phase === "pending" ? (record.command ?? null) : null;
+): { mode: ChangeCommandMode } | null {
+  const claim = records[draftCommandKey(draft)]?.claim;
+  return claim?.phase === "pending" ? { mode: claim.mode } : null;
 }
 
-export function pendingChangeCommand(
-  records: DraftCommandRecords,
-  draft: DraftRef,
-): PendingChangeCommand | null {
-  const command = pendingDraftCommand(records, draft);
-  return command?.target === "selection" ? command : null;
+// ---- account ----
+
+export function accountEpochIs(epoch: number): boolean {
+  return epoch === accountEpoch;
 }
 
-/** The drafts of this project's Work whose record differs between two snapshots. */
-export function changedDrafts(
-  records: DraftCommandRecords,
-  previous: DraftCommandRecords,
-  scope: DraftScope,
-): DraftRef[] {
-  const prefix = scopePrefix(scope);
-  return [...new Set([...Object.keys(records), ...Object.keys(previous)])]
-    .filter((key) => key.startsWith(prefix) && records[key] !== previous[key])
-    .map((key) => {
-      const [documentId = "", itemKey = ""] = key.slice(prefix.length).split("\u0000");
-      return { ...scope, documentId, itemKey };
-    });
+export function currentAccountEpoch(): number {
+  return accountEpoch;
 }
 
 /** Empty the store when a different account signs in; a no-op for the same one. */
@@ -473,456 +425,8 @@ export function bindDraftCommandAccount(accountId: string): void {
   resetDraftCommandRecords();
 }
 
-/** Clears what is shown and revokes every claim: an answer that arrives later has nothing to publish into. */
+/** Clears what is shown and revokes every claim. */
 export function resetDraftCommandRecords(): void {
   accountEpoch += 1;
-  const unsent = Object.values(useDraftCommandStore.getState().queued);
-  useDraftCommandStore.setState({ records: {}, queued: {}, drains: {}, unknown: {} });
-  // A click that never got its turn is answered, not left waiting on a queue that is gone.
-  for (const entry of unsent) entry.settle({ kind: "blocked" });
-}
-
-/**
- * Be told, synchronously, of every change to the records and what they were.
- * For state that must follow a command's claim and answer in the same tick
- * (a review's completion), which a render cannot promise.
- */
-export function subscribeDraftCommandRecords(
-  listener: (records: DraftCommandRecords, previous: DraftCommandRecords) => void,
-): () => void {
-  return useDraftCommandStore.subscribe((state, previous) => {
-    if (state.records !== previous.records) listener(state.records, previous.records);
-  });
-}
-
-/** The records right now, for code that is not a render (commands, tests). */
-export function currentDraftCommandRecords(): DraftCommandRecords {
-  return useDraftCommandStore.getState().records;
-}
-
-/** Why a change command did not land; the copy lives in the render layer. */
-export type ChangeFailureCode =
-  /** The request never got an answer: the browser is offline or the connection dropped. */
-  | "offline"
-  /** The server refused with a typed reason (`serverCode` and `serverReason` on the record, as the server sent them). */
-  | "refused"
-  /** The server answered with an error that gave no reason. */
-  | "server-error"
-  /** An Apply got no answer: it may or may not have landed. Never read as a refusal. */
-  | "unknown"
-  /** The server could not finish this Apply (its batch is blocked). Terminal: never retried automatically. */
-  | "blocked"
-  /** The change was updated under the writer; the preview is re-read. */
-  | "stale"
-  /** The change is no longer in the draft. */
-  | "gone";
-
-type ChangeCommandRecord = ChangeSelection &
-  (
-    | ({
-        phase: "failed";
-        mode: ChangeCommandMode;
-        code: ChangeFailureCode;
-        at: number;
-      } & Partial<ServerRefusal>)
-    | { phase: "confirmed"; mode: ChangeCommandMode; at: number }
-  );
-
-export type ChangeCommandState =
-  | { phase: "pending"; mode: ChangeCommandMode }
-  | ({
-      phase: "failed";
-      mode: ChangeCommandMode;
-      code: ChangeFailureCode;
-    } & Partial<ServerRefusal>);
-
-/** Everything that says what is happening to a draft's changes: held outcomes and the draft's own claim. */
-export type ChangeCommandRecords = {
-  queued: QueuedSelections;
-  drafts: DraftCommandRecords;
-};
-
-/** Every queued intent owns its addressed account capability and caller's promise. */
-type QueuedSelection = {
-  prefix: string;
-  mode: ChangeCommandMode;
-  epoch: number;
-  settle: (outcome: DraftCommandOutcome) => void;
-} & (
-  | ({
-      target: "selection";
-      send: (
-        click: ChangeSelection & { change: QueuedChange },
-        afterAnother: boolean,
-      ) => Promise<DraftCommandOutcome>;
-    } & ChangeSelection)
-  | { target: "all"; send: () => Promise<DraftCommandOutcome>; reject: (error: unknown) => void }
-);
-type QueuedSelections = Readonly<Record<number, QueuedSelection>>;
-
-let nextQueued = 0;
-
-function recordKey(selection: ChangeSelection): string {
-  return [...selection.classIds].sort().join("\u0001");
-}
-
-function setChangeRecord(
-  draft: DraftRef,
-  selection: ChangeSelection,
-  outcome: (clock: number) => ChangeCommandRecord,
-): void {
-  updateDraftRecord(
-    draftCommandKey(draft),
-    (prior, clock) => {
-      return {
-        ...prior,
-        outcomes: { ...prior.outcomes, [recordKey(selection)]: outcome(clock) },
-      };
-    },
-    true,
-  );
-}
-
-/** Claim the draft for one command on this selection; false when any command is in flight on the draft. */
-export function beginChangeCommand(
-  draft: DraftRef,
-  selection: ChangeSelection,
-  mode: ChangeCommandMode,
-  branchGeneration: number,
-  completesDraft = false,
-): DraftClaim | null {
-  const claim = beginDraftCommand(draft, {
-    target: "selection",
-    classIds: selection.classIds,
-    admissionTokens: selection.admissionTokens,
-    operationIds: selection.operationIds,
-    ...(selection.keys ? { keys: selection.keys } : {}),
-    mode,
-    branchGeneration,
-    ...(completesDraft ? { completesDraft: true as const } : {}),
-  });
-  // The claim is the next action on these changes: a failure they held is stale now.
-  if (claim) clearChangeFailure(draft, selection);
-  return claim;
-}
-
-/** A proved same-member retry keeps its claim but addresses the newly observed generation. */
-export function rebaseChangeCommand(
-  claim: DraftClaim,
-  selection: ChangeSelection,
-  generation: number,
-  completesDraft: boolean,
-): void {
-  if (!claimIsLive(claim)) return;
-  updateDraftRecord(draftCommandKey(claim.draft), (prior) => {
-    if (prior.claim?.phase !== "pending" || prior.claim.command.target !== "selection")
-      return prior;
-    return {
-      ...prior,
-      claim: {
-        phase: "pending",
-        token: claim.token,
-        command: {
-          target: "selection",
-          mode: prior.claim.command.mode,
-          ...selection,
-          branchGeneration: generation,
-          ...(completesDraft ? { completesDraft: true } : {}),
-        },
-      },
-    };
-  });
-}
-
-/** Queued selections hide immediately; each retains its caller's execution context and retires with its claim. */
-export function queueChangeSelection(
-  draft: DraftRef,
-  selection: ChangeSelection,
-  mode: ChangeCommandMode,
-  settle: (outcome: DraftCommandOutcome) => void,
-  send: Extract<QueuedSelection, { target: "selection" }>["send"],
-): QueuedChange {
-  const id = nextQueued++;
-  const entry: QueuedSelection = {
-    classIds: [...selection.classIds],
-    admissionTokens: [...selection.admissionTokens],
-    operationIds: [...selection.operationIds],
-    keys: [...selectionKeys(selection)],
-    send,
-    target: "selection",
-    prefix: draftCommandKey(draft),
-    mode,
-    epoch: accountEpoch,
-    settle,
-  };
-  useDraftCommandStore.setState((state) => ({ queued: { ...state.queued, [id]: entry } }));
-  return { id, epoch: accountEpoch, retire: () => retireQueuedSelection(id) };
-}
-
-/** A queued selection's capability: live only while it is still queued in the account epoch it was made in. */
-export type QueuedChange = { id: number; epoch: number; retire: () => void };
-
-export function retireQueuedSelection(id: number): void {
-  if (!(id in useDraftCommandStore.getState().queued)) return;
-  useDraftCommandStore.setState((state) => {
-    const { [id]: _retired, ...rest } = state.queued;
-    return { queued: rest };
-  });
-}
-
-export function queuedChangeIsLive(change: Pick<QueuedChange, "id" | "epoch">): boolean {
-  return change.epoch === accountEpoch && change.id in useDraftCommandStore.getState().queued;
-}
-
-/** Become the one loop sending this draft's queued clicks; null while another is. */
-export function beginIntentDrain(draft: DraftRef): symbol | null {
-  const key = draftCommandKey(draft);
-  if (useDraftCommandStore.getState().drains[key]) return null;
-  const token = Symbol(key);
-  useDraftCommandStore.setState((state) => ({ drains: { ...state.drains, [key]: token } }));
-  return token;
-}
-
-export function intentDrainCurrent(draft: DraftRef, token: symbol): boolean {
-  return useDraftCommandStore.getState().drains[draftCommandKey(draft)] === token;
-}
-
-export function endIntentDrain(draft: DraftRef, token: symbol): void {
-  if (!intentDrainCurrent(draft, token)) return;
-  useDraftCommandStore.setState((state) => {
-    const { [draftCommandKey(draft)]: _done, ...drains } = state.drains;
-    return { drains };
-  });
-}
-
-/** Submit a whole-draft intent to the same queue as selective clicks. */
-export function queueWholeDraft(
-  draft: DraftRef,
-  mode: ChangeCommandMode,
-  send: () => Promise<DraftCommandOutcome>,
-  settle: (outcome: DraftCommandOutcome) => void,
-  reject: (error: unknown) => void,
-): void {
-  const id = nextQueued++;
-  useDraftCommandStore.setState((state) => ({
-    queued: {
-      ...state.queued,
-      [id]: {
-        target: "all",
-        prefix: draftCommandKey(draft),
-        mode,
-        epoch: accountEpoch,
-        send,
-        settle,
-        reject,
-      },
-    },
-  }));
-}
-
-/** The writer's oldest intent on this draft that has not been sent yet. */
-export function nextQueuedClick(
-  draft: DraftRef,
-): (QueuedSelection & { change: QueuedChange }) | null {
-  const prefix = draftCommandKey(draft);
-  for (const [id, entry] of Object.entries(useDraftCommandStore.getState().queued)) {
-    if (entry.prefix === prefix)
-      return {
-        ...entry,
-        change: {
-          id: Number(id),
-          epoch: entry.epoch,
-          retire: () => retireQueuedSelection(Number(id)),
-        },
-      };
-  }
-  return null;
-}
-
-/** Only a whole intent on this draft holds its selective controls. */
-export function wholeDraftPending(records: ChangeCommandRecords, draft: DraftRef): boolean {
-  return (
-    pendingDraftCommand(records.drafts, draft)?.target === "all" ||
-    Object.values(records.queued).some(
-      (entry) => entry.prefix === draftCommandKey(draft) && entry.target === "all",
-    )
-  );
-}
-
-export function failChangeCommand(
-  by: DraftClaim | DraftRef,
-  selection: ChangeSelection,
-  mode: ChangeCommandMode,
-  code: ChangeFailureCode,
-  refusal?: ServerRefusal,
-): void {
-  if (!mayPublish(by)) return;
-  setChangeRecord(draftOf(by), selection, (at) => ({
-    phase: "failed",
-    mode,
-    code,
-    ...(refusal ? { serverCode: refusal.serverCode } : {}),
-    ...(refusal?.serverReason ? { serverReason: refusal.serverReason } : {}),
-    at,
-    classIds: selection.classIds,
-    admissionTokens: selection.admissionTokens,
-    operationIds: selection.operationIds,
-    ...(selection.keys ? { keys: selection.keys } : {}),
-  }));
-}
-
-export function confirmChangeCommand(
-  by: DraftClaim | DraftRef,
-  selection: ChangeSelection,
-  mode: ChangeCommandMode,
-): void {
-  if (!mayPublish(by)) return;
-  setChangeRecord(draftOf(by), selection, (at) => ({
-    phase: "confirmed",
-    mode,
-    at,
-    classIds: selection.classIds,
-    admissionTokens: selection.admissionTokens,
-    operationIds: selection.operationIds,
-    ...(selection.keys ? { keys: selection.keys } : {}),
-  }));
-}
-
-type FailedRecord = Extract<ChangeCommandRecord, { phase: "failed" }>;
-
-/** The two selections name a change in common. */
-function overlaps(left: ChangeSelection, right: ChangeSelection): boolean {
-  const keys = new Set(selectionKeys(right));
-  return selectionKeys(left).some((key) => keys.has(key));
-}
-
-/** Regrouped classes keep failures through operation overlap; unrelated changes do not inherit them. */
-function failuresOfSelection(
-  records: DraftCommandRecords,
-  draft: DraftRef,
-  selection: ChangeSelection,
-): { key: string; record: FailedRecord }[] {
-  return Object.entries(records[draftCommandKey(draft)]?.outcomes ?? {}).flatMap(([key, record]) =>
-    record.phase === "failed" && overlaps(record, selection) ? [{ key, record }] : [],
-  );
-}
-
-/** Retire only failures that overlap the writer's next action. */
-export function clearChangeFailure(draft: DraftRef, selection: ChangeSelection): void {
-  updateDraftRecord(draftCommandKey(draft), (prior) => {
-    const outcomes = Object.fromEntries(
-      Object.entries(prior.outcomes).filter(
-        ([, record]) => record.phase !== "failed" || !overlaps(record, selection),
-      ),
-    );
-    return Object.keys(outcomes).length === Object.keys(prior.outcomes).length
-      ? prior
-      : { ...prior, outcomes };
-  });
-}
-
-/**
- * Read immutable preview evidence and retire failures it no longer describes.
- * Confirmed keys stay as account-scoped intents: older cached or held observations
- * still project them, without mutating the evidence or resurrecting settled changes.
- */
-export async function readPreviewAfterChangeCommands(
-  draft: DraftRef,
-  read: () => Promise<DraftPreviewResponse>,
-): Promise<DraftPreviewResponse> {
-  const fence = useDraftCommandStore.getState().clock;
-  const epoch = accountEpoch;
-  const preview = await read();
-  observations.set(preview, { fence, epoch });
-  if (!accountEpochIs(epoch)) return preview;
-  if (preview.status === "active")
-    dropFailuresWithoutOperations(draftCommandKey(draft), preview, fence);
-  return preview;
-}
-
-function dropFailuresWithoutOperations(key: string, preview: ActivePreview, fence: number): void {
-  const listed = new Set(preview.operations.map(operationKey));
-  updateDraftRecord(key, (prior) => {
-    const outcomes = Object.fromEntries(
-      Object.entries(prior.outcomes).filter(
-        ([, record]) =>
-          record.phase !== "failed" ||
-          record.at > fence ||
-          selectionKeys(record).some((key) => listed.has(key)),
-      ),
-    );
-    return Object.keys(outcomes).length === Object.keys(prior.outcomes).length
-      ? prior
-      : { ...prior, outcomes };
-  });
-}
-
-/** Every held record and claim; look changes up with `changeCommandState`. */
-export function useChangeCommandRecords(): ChangeCommandRecords {
-  const drafts = useDraftCommandRecords();
-  const queued = useDraftCommandStore((state) => state.queued);
-  return useMemo(() => ({ drafts, queued }), [drafts, queued]);
-}
-
-export function currentChangeCommandRecords(): ChangeCommandRecords {
-  const { records: drafts, queued } = useDraftCommandStore.getState();
-  return { drafts, queued };
-}
-
-/**
- * What the writer has done to this draft's changes, by key: those queued,
- * pending or confirmed are `hidden`, and of them the Discards are `restoring`
- * (the editor draws their original text until the next generation paints).
- */
-export function intentKeys(
-  records: ChangeCommandRecords,
-  draft: DraftRef,
-  confirmedOnly = false,
-): DraftIntentKeys {
-  const key = draftCommandKey(draft);
-  const hidden = new Set<string>();
-  const restoring = new Set<string>();
-  const add = (selection: ChangeSelection, mode: ChangeCommandMode) => {
-    for (const k of selectionKeys(selection)) {
-      hidden.add(k);
-      if (mode === "discard") restoring.add(k);
-    }
-  };
-  for (const record of Object.values(records.drafts[key]?.outcomes ?? {}))
-    if (record.phase !== "failed") add(record, record.mode);
-  if (confirmedOnly) return { hidden, restoring };
-  for (const queued of Object.values(records.queued))
-    if (queued.prefix === key && queued.target === "selection") add(queued, queued.mode);
-  const pending = pendingChangeCommand(records.drafts, draft);
-  if (pending) add(pending, pending.mode);
-  return { hidden, restoring };
-}
-
-/**
- * What the command records say of a selection: its claim, else its latest
- * failure (`failuresOfSelection`). A change asks with its own class; a file
- * (strip, Work row) asks with the selection it sent.
- */
-export function changeCommandState(
-  records: ChangeCommandRecords,
-  draft: DraftRef,
-  selection: ChangeSelection,
-): ChangeCommandState | null {
-  const pending = pendingChangeCommand(records.drafts, draft);
-  if (pending && overlaps(pending, selection)) {
-    return { phase: "pending", mode: pending.mode };
-  }
-  // Several can apply after regrouping; the writer's latest action is the one that counts.
-  const latest = failuresOfSelection(records.drafts, draft, selection).reduce<FailedRecord | null>(
-    (newest, { record }) => (newest && newest.at > record.at ? newest : record),
-    null,
-  );
-  if (!latest) return null;
-  return {
-    phase: "failed",
-    mode: latest.mode,
-    code: latest.code,
-    ...(latest.serverCode ? { serverCode: latest.serverCode } : {}),
-    ...(latest.serverReason ? { serverReason: latest.serverReason } : {}),
-  };
+  useDraftCommandStore.setState({ records: {}, unknown: {} });
 }

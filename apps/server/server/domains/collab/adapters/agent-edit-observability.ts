@@ -14,6 +14,7 @@ import {
   unknownToEventPayload,
 } from "../../observability/index.js";
 import type { BranchAgentEditDiagnostics } from "../domain/branch-agent-edit.js";
+import type { LateWriterEdits } from "../domain/branch-coordinator.js";
 import type { BranchPullDiagnostics } from "../domain/branch-pulls.js";
 import type { DocumentProjectionDiagnostics } from "../domain/document-projection-refresher.js";
 import type { DraftBranchAheadDiagnostics } from "../domain/draft-branch-ahead-registration.js";
@@ -56,6 +57,41 @@ export function createDraftRebaseDiagnostics(eventSink?: EventSink): DraftRebase
   return {
     uninitializedBase: (input) => report("base.uninitialized", "base_uninitialized", input),
     mergeFailed: (input) => report("merge.failed", "merge_failed", input),
+  };
+}
+
+/**
+ * The writer-admission side of the rebase's emitter: what late-peer recovery found in one update. Counts
+ * only, never the writer's words. One event per update that lost something, as it does not repeat.
+ */
+export function createLateWriterEditsReporter(eventSink?: EventSink) {
+  return ({ branchId, documentId, lost, recovered, unplaced, fallback }: LateWriterEdits) => {
+    if (!eventSink) return;
+    const correlation = { documentId, branchId };
+    const source = "collab.draft_rebase";
+    emitEvent(eventSink, {
+      level: "warn",
+      source,
+      name: "late_peer.edit_lost",
+      correlation,
+      payload: { count: lost },
+    });
+    if (recovered)
+      emitEvent(eventSink, {
+        level: "info",
+        source,
+        name: "late_peer.recovered",
+        correlation,
+        payload: { count: recovered, placed: "exact" },
+      });
+    if (unplaced)
+      emitEvent(eventSink, {
+        level: "error",
+        source,
+        name: "late_peer.unrecovered",
+        correlation,
+        payload: { count: unplaced, placed: fallback ? "fallback" : "exact" },
+      });
   };
 }
 

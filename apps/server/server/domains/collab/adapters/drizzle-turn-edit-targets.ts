@@ -1,7 +1,7 @@
 /** Canonical immutable turn targets shared by authorization, lineage and inverse admission. */
 import type { Database } from "@meridian/database";
 import { documentEditParts, documentEdits } from "@meridian/database";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { TurnInverseQuery } from "../domain/turn-inverse-service.js";
 import type { TurnEditedDocumentId } from "../domain/turn-live-lineage.js";
 
@@ -14,6 +14,7 @@ export async function readTurnEditTargets(
       documentId: documentEdits.documentId,
       placement: documentEditParts.placement,
       origin: documentEditParts.origin,
+      invisible: sql<boolean>`coalesce((${documentEditParts.effect}->>'invisible')::boolean, false)`,
     })
     .from(documentEdits)
     .innerJoin(documentEditParts, eq(documentEditParts.editId, documentEdits.id))
@@ -21,9 +22,7 @@ export async function readTurnEditTargets(
       and(
         eq(documentEdits.threadId, query.threadId),
         query.turnId ? eq(documentEdits.turnId, query.turnId) : undefined,
-        query.responseIdentity
-          ? inArray(documentEdits.kind, ["write", "revert", "undo", "redo"])
-          : inArray(documentEdits.kind, ["write", "revert"]),
+        inArray(documentEdits.kind, ["write", "revert"]),
         query.responseIdentity
           ? eq(documentEdits.editScopeId, query.responseIdentity.editScopeId)
           : undefined,
@@ -39,7 +38,13 @@ export async function readTurnEditTargets(
         ? row.placement
         : row.origin;
     const scope = placement.kind === "pending" ? "draft" : "live";
-    targets.set(`${row.documentId}:${scope}`, { documentId: row.documentId, scope });
+    const key = `${row.documentId}:${scope}`;
+    const invisibleWrites = row.invisible || targets.get(key)?.invisibleWrites;
+    targets.set(key, {
+      documentId: row.documentId,
+      scope,
+      ...(invisibleWrites ? { invisibleWrites: true as const } : {}),
+    });
   }
   return [...targets.values()].sort(
     (a, b) => a.documentId.localeCompare(b.documentId) || a.scope.localeCompare(b.scope),

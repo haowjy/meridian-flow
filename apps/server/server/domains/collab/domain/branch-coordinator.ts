@@ -1,5 +1,12 @@
 /** Coordinates persisted branch-peer Y.Docs behind one mutation surface. */
 
+import {
+  appendRebaseCut,
+  DRAFT_SERVER_CLIENT_ID,
+  findLostEdits,
+  type LostEdit,
+  recoverLatePeerEdits,
+} from "@meridian/agent-edit/diff";
 import type { SemanticEditIRV1 } from "@meridian/agent-edit/integration";
 import { bytesEqual } from "@meridian/agent-edit/integration";
 import type { DraftBaseRevision, DraftId } from "@meridian/contracts";
@@ -8,6 +15,7 @@ import {
   COLLAB_SCHEMA_VERSION,
   type CollabSchemaVersion,
   createCollabYDoc,
+  PROSEMIRROR_FRAGMENT_NAME,
 } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import {
@@ -24,9 +32,10 @@ import {
   admitWriterUpdate,
   replicateFrozenIdentity,
 } from "./document-mutation-policy.js";
-import { draftDiffersFromBase } from "./draft-rebase.js";
+import { draftDiffersFromBase, draftSchema, writeBaseFrom } from "./draft-rebase.js";
 import { currentResponseTransactionId, enlistResponseParticipant } from "./response-transaction.js";
 import { DocumentSchemaMajorMismatchError, isStaleSchema } from "./stale-schema.js";
+import { certifyWriterRestorations } from "./writer-restoration.js";
 
 export type BranchKind = "work_draft" | "thread_peer";
 export type BranchStatus = "active" | "closed";
@@ -95,8 +104,20 @@ export type AppendBranchJournalInput = {
   semanticEditIr?: SemanticEditIRV1;
 };
 
+/** What late-peer recovery found in one writer update: counts only, never the writer's words. */
+export type LateWriterEdits = {
+  branchId: string;
+  documentId: DocumentId;
+  lost: number;
+  recovered: number;
+  unplaced: number;
+  fallback: number;
+};
+
 export type BranchStore = {
   getBranch(branchId: string): Promise<BranchSnapshot | null>;
+  /** The draft's retained rebase cuts, oldest first. Read only where recovery or a rebase needs them. */
+  readRebaseCuts(branchId: string): Promise<Uint8Array[]>;
   updateBranchSnapshot(input: PersistBranchInput): Promise<boolean>;
   commitBranchMutation(input: CommitBranchMutationInput): Promise<boolean>;
   /** Defers cache-visible effects when persistence joined a response transaction. */
@@ -167,7 +188,6 @@ type CachedBranchDoc = {
 
 export type SegmentRowsInput = {
   branchId: string;
-  expectedGeneration: number;
   sourceDoc: Y.Doc;
   rows: readonly Omit<AppendBranchJournalInput, "generation">[];
 };
@@ -216,7 +236,12 @@ export type BranchCoordinator = {
     run: (
       doc: Y.Doc,
       snapshot: BranchSnapshot,
-    ) => Promise<{ result: T; baseRevision?: DraftBaseRevision }>,
+    ) => Promise<{
+      result: T;
+      baseRevision?: DraftBaseRevision;
+      /** The draft just before this rewrite changed it; kept for late-peer recovery. */
+      rebaseCut?: Uint8Array;
+    }>,
   ): Promise<T>;
   /**
    * These branches' leases in one ordered acquisition, for an operation that touches
@@ -258,6 +283,8 @@ export function createBranchCoordinator(input: {
   /** A thread peer was found to lack part of its upstream: with no reset or refork this never happens. */
   onPeerNotContained?: (input: { branchId: string; upstreamBranchId: string | null }) => void;
   onBranchUpdate?: (input: { branchId: string; update: Uint8Array }) => void;
+  /** A writer update touched text a rebase had already removed; recovery says what it placed. */
+  onLateWriterEdits?: (input: LateWriterEdits) => void;
   onBranchReset?: (input: { branchId: string; generation: number }) => void;
 }): BranchCoordinator {
   const criticalSections = input.criticalSections ?? createBranchCriticalSections();
@@ -404,11 +431,13 @@ export function createBranchCoordinator(input: {
     journals?: readonly AppendBranchJournalInput[],
     publishUpdate?: Uint8Array,
     kind: "mutation" | "pull" = "mutation",
-    baseRevision?: DraftBaseRevision,
+    rewrite: { baseRevision?: DraftBaseRevision; rebaseCuts?: readonly Uint8Array[] } = {},
   ): Promise<boolean> {
     const state = Y.encodeStateAsUpdate(doc);
     const stateVector = Y.encodeStateVector(doc);
-    if (!journals?.length && bytesEqual(state, snapshot.state) && !baseRevision) return false;
+    const { baseRevision, rebaseCuts } = rewrite;
+    if (!journals?.length && bytesEqual(state, snapshot.state) && !baseRevision && !rebaseCuts)
+      return false;
     const mutation = {
       branchId: snapshot.branchId,
       expectedState: snapshot.state,
@@ -416,6 +445,7 @@ export function createBranchCoordinator(input: {
       stateVector,
       effect: effectOf(snapshot, doc),
       ...(baseRevision ? { baseRevision } : {}),
+      ...(rebaseCuts ? { rebaseCuts } : {}),
       ...(journals ? { journals } : {}),
     };
     // Replication creates no reviewable edit. Its CAS must not reacquire the
@@ -509,6 +539,67 @@ export function createBranchCoordinator(input: {
     } finally {
       frozenSource.destroy();
     }
+  }
+
+  /**
+   * Appends a writer update. Edits the update would lose to a rebase (typing under text the rebase
+   * removed) are replayed as a server-client update in this same admission, so the words reach the
+   * draft as one ordinary `writer` row. Recovery runs here, under the branch's critical section after
+   * the update applies to a clone and before the CAS; it is not part of any owned save session.
+   */
+  async function persistWriterUpdate(
+    snapshot: BranchSnapshot,
+    inputWriter: { branchId: string; updateData: Uint8Array; actorUserId?: string },
+    currentDocument: Y.Doc,
+    lost: LostPeerEdits,
+  ): Promise<boolean> {
+    const journal = {
+      branchId: inputWriter.branchId,
+      updateData: inputWriter.updateData,
+      source: "writer" as const,
+      actorUserId: inputWriter.actorUserId,
+      updateMeta: {
+        restorationAliases: certifyWriterRestorations(currentDocument, inputWriter.updateData),
+      },
+    };
+    if (!hasLostEdits(lost)) return persistJournaledUpdate(snapshot, journal, currentDocument);
+    const before = Y.snapshot(currentDocument);
+    const doc = cloneDoc(currentDocument);
+    Y.applyUpdate(doc, inputWriter.updateData);
+    const recovery = recoverLatePeerEdits({
+      doc,
+      update: inputWriter.updateData,
+      lost,
+      before,
+      cuts: await input.store.readRebaseCuts(snapshot.branchId),
+      schema: draftSchema,
+      fragmentName: PROSEMIRROR_FRAGMENT_NAME,
+      clientId: DRAFT_SERVER_CLIENT_ID,
+    });
+    // A deletion-only update that hit dead copies (a reconnect repeating tombstones) changes nothing.
+    if (bytesEqual(Y.encodeStateAsUpdate(currentDocument), Y.encodeStateAsUpdate(doc))) {
+      doc.destroy();
+      return false;
+    }
+    input.onLateWriterEdits?.({
+      branchId: snapshot.branchId,
+      documentId: snapshot.documentId,
+      lost: lost.typed.length + lost.deleted.length,
+      recovered: recovery.recovered.length,
+      unplaced: recovery.unplaced.length,
+      fallback: recovery.fallback.length,
+    });
+    // One journal row: the recovered text is the writer's, so it travels with the writer's update.
+    await persist(snapshot, doc, [
+      {
+        ...journal,
+        generation: snapshot.generation,
+        updateData: recovery.update
+          ? Y.mergeUpdates([inputWriter.updateData, recovery.update])
+          : inputWriter.updateData,
+      },
+    ]);
+    return true;
   }
 
   async function persistJournaledUpdate(
@@ -625,8 +716,6 @@ export function createBranchCoordinator(input: {
   async function segmentRowsUnder(batch: SegmentRowsInput): Promise<boolean> {
     const snapshot = await loadSnapshot(batch.branchId);
     assertWritableBranch(snapshot);
-    if (snapshot.generation !== batch.expectedGeneration)
-      throw new BranchStaleUpdateError(batch.branchId);
     const doc = cloneDoc((await materialize(snapshot)).doc);
     const journals = batch.rows.map((row) => ({ ...row, generation: snapshot.generation }));
     await applySegmentRows(doc, snapshot, journals);
@@ -699,9 +788,15 @@ export function createBranchCoordinator(input: {
         assertWritableBranch(snapshot);
         const doc = cloneDoc((await materialize(snapshot)).doc);
         try {
-          const { result, baseRevision } = await run(doc, snapshot);
+          const { result, baseRevision, rebaseCut } = await run(doc, snapshot);
           const delta = Y.encodeStateAsUpdate(doc, snapshot.stateVector);
-          const wrote = await persist(snapshot, doc, undefined, delta, "pull", baseRevision);
+          const rebaseCuts = rebaseCut
+            ? appendRebaseCut(await input.store.readRebaseCuts(branchId), rebaseCut)
+            : undefined;
+          const wrote = await persist(snapshot, doc, undefined, delta, "pull", {
+            baseRevision,
+            rebaseCuts,
+          });
           // Persisted, the document is the cached replica; otherwise nothing owns it.
           if (!wrote) doc.destroy();
           return result;
@@ -748,6 +843,7 @@ export function createBranchCoordinator(input: {
               ) {
                 Y.applyUpdate(inputWriter.roomDocument, snapshot.state, "branch-room-reconcile");
               }
+              const lost = findLostEdits(currentDocument, inputWriter.updateData);
               const admission = await admitWriterUpdate({
                 targetDocument: currentDocument,
                 update: inputWriter.updateData,
@@ -759,20 +855,11 @@ export function createBranchCoordinator(input: {
                     throw new BranchClosedError(inputWriter.branchId);
                 },
                 isContained: () =>
+                  !hasLostEdits(lost) &&
                   documentContainment.contains(currentDocument, inputWriter.updateData),
-                append: () =>
-                  persistJournaledUpdate(
-                    snapshot,
-                    {
-                      branchId: inputWriter.branchId,
-                      updateData: inputWriter.updateData,
-                      source: "writer",
-                      actorUserId: inputWriter.actorUserId,
-                    },
-                    currentDocument,
-                  ),
+                append: () => persistWriterUpdate(snapshot, inputWriter, currentDocument, lost),
               });
-              return { admitted: admission.admitted };
+              return { admitted: admission.admitted && admission.value };
             }),
           );
         } catch (cause) {
@@ -782,6 +869,9 @@ export function createBranchCoordinator(input: {
     },
   };
 }
+
+type LostPeerEdits = { typed: LostEdit[]; deleted: LostEdit[] };
+const hasLostEdits = (lost: LostPeerEdits) => lost.typed.length > 0 || lost.deleted.length > 0;
 
 function pendingTransientKey(transactionId: string, branchId: string): string {
   return `${transactionId}\0${branchId}`;

@@ -8,7 +8,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 
-import type { ReviewChange } from "./review-changes";
+import type { ReviewChange } from "./review-model";
 
 const PULSE_MS = 1400;
 
@@ -35,23 +35,22 @@ export function useArrivedChanges(
       return;
     }
     if (known.current?.key !== draftKey) {
-      known.current = { key: draftKey, ids: new Set(changes.flatMap(identities)) };
+      known.current = { key: draftKey, ids: new Set(changes.map((change) => change.id)) };
       setArrived(EMPTY);
       return;
     }
     const seen = known.current.ids;
-    // A re-forked draft gives its surviving changes new ids; they are not arrivals.
-    const fresh = changes.filter(
-      (change) => !identities(change).some((id) => seen.has(id)) && change.tone !== "writer",
-    );
-    for (const id of changes.flatMap(identities)) seen.add(id);
+    // The writer's own typing is a change too, but it is not an arrival: only changes that name a chat's
+    // writes pulse. Ids are content hashes, so a change the writer edited is a new id and stays quiet.
+    const fresh = changes.filter((change) => !seen.has(change.id) && change.chats.length > 0);
+    for (const change of changes) seen.add(change.id);
     if (fresh.length === 0) return;
-    setArrived((current) => new Set([...current, ...fresh.map((change) => change.classId)]));
+    setArrived((current) => new Set([...current, ...fresh.map((change) => change.id)]));
     const timer = window.setTimeout(() => {
       timers.current.delete(timer);
       setArrived((current) => {
         const next = new Set(current);
-        for (const change of fresh) next.delete(change.classId);
+        for (const change of fresh) next.delete(change.id);
         return next.size === current.size ? current : next;
       });
     }, PULSE_MS);
@@ -62,8 +61,3 @@ export function useArrivedChanges(
 }
 
 const EMPTY: ReadonlySet<string> = new Set();
-
-/** What a change has been: its class and its operations' keys, which outlive a re-fork. */
-function identities(change: ReviewChange): string[] {
-  return [change.classId, ...change.keys];
-}
