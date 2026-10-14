@@ -7,7 +7,6 @@ import {
   type LostEdit,
   NO_LATE_TYPING,
   recoverLatePeerEdits,
-  revisesLateTyping,
 } from "@meridian/agent-edit/diff";
 import type { SemanticEditIRV1 } from "@meridian/agent-edit/integration";
 import { bytesEqual } from "@meridian/agent-edit/integration";
@@ -829,14 +828,10 @@ export function createBranchCoordinator(input: {
                     throw new BranchClosedError(inputWriter.branchId);
                 },
                 // Containment first: a repeated delete set is no new instruction, so recovery judges
-                // only what the document has not seen. A deletion of recovered typing is the exception:
-                // the document holds it already (the typing was dead), but the paragraph does not.
+                // only what the document has not seen. That includes a delete set echoing the server's own
+                // tombstones back, recovered typing among them (D35).
                 isContained: () =>
-                  documentContainment.contains(currentDocument, inputWriter.updateData) &&
-                  !revisesLateTyping(
-                    lateTyping.get(inputWriter.branchId) ?? NO_LATE_TYPING,
-                    lost.deleted,
-                  ),
+                  documentContainment.contains(currentDocument, inputWriter.updateData),
                 append: () => persistWriterUpdate(snapshot, inputWriter, currentDocument, lost),
               });
               return { admitted: admission.admitted && admission.value };
