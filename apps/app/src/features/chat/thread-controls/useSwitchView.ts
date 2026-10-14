@@ -241,7 +241,10 @@ export function useSwitchView(input: {
           return dispatch({ type: "frame", frame: { kind: "inbox", seq, pending: inbox } });
         const switched = switchedFrom(event);
         if (!switched) return;
-        dispatch({ type: "frame", frame: { kind: "switched", seq, mode: switched.mode } });
+        dispatch({
+          type: "frame",
+          frame: { kind: "switched", seq, mode: switched.mode, controlId: switched.controlId },
+        });
         if (seed.current === null || compareSeq(seq, seed.current) <= 0) return;
         setApplied((known) =>
           known.some((entry) => entry.turnId === switched.turnId) ? known : [...known, switched],
