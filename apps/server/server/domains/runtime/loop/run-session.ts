@@ -1,6 +1,11 @@
 /** One process-local owner for prepared runs, cancellation, and terminal cleanup. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/threads";
+import {
+  isTerminalTurnStatus,
+  type StopRequest,
+  type StopResponse,
+  type Turn,
+} from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import {
   isWriteModeSwitchTurn,
@@ -28,6 +33,8 @@ import type { RuntimeDelivery } from "./runtime-delivery.js";
 type RunSession = {
   controller: AbortController;
   currentTurn: CurrentTurn | null;
+  /** The execution this session holds, once it has the lease. */
+  executionId: string | null;
   startedAt: Date;
   child?: RunTurnInput["child"];
   completion: Promise<void>;
@@ -52,6 +59,7 @@ export function createRunSessions(deps: {
     | "refreshPending"
     | "selectPending"
     | "answerRunState"
+    | "stop"
   >;
   handoffBriefs: import("../ports/handoff-briefs.js").HandoffBriefStopper;
   repos: { turns: TurnRepository; threads: Pick<ThreadRepository, "findById"> };
@@ -92,6 +100,7 @@ export function createRunSessions(deps: {
     const session: RunSession = {
       controller,
       currentTurn: null,
+      executionId: null,
       startedAt: new Date(),
       child: input.child,
       completion: new Promise<void>((resolve) => {
@@ -150,6 +159,7 @@ export function createRunSessions(deps: {
       if (!lease) throw new TurnStartConflictError(threadId, "already_running");
       if (shutdown.started) throw new RuntimeShuttingDownError(threadId);
       const heldLease = lease;
+      session.executionId = heldLease.executionId;
       heartbeat = setInterval(
         () => {
           backgroundTasks.track(
@@ -404,6 +414,20 @@ export function createRunSessions(deps: {
     beginShutdown() {
       shutdown.started = true;
       for (const session of running.values()) session.controller.abort("shutdown");
+    },
+    /**
+     * Chat Stop: the delivery decides and flags under the thread lock; this session then aborts its
+     * own run at once when it holds the flagged execution (any other holder sees the flag at its next
+     * check). A replayed press names an execution that may be long over, so it never aborts a newer one.
+     */
+    async stop(threadId: ThreadId, request: StopRequest): Promise<StopResponse> {
+      const response = await deps.delivery.stop(threadId, request);
+      const active = running.get(threadId);
+      if (active && response.cancelledExecutionId === active.executionId) {
+        abortChildrenOf(threadId, true);
+        active.controller.abort();
+      }
+      return response;
     },
     async cancel(
       threadId: ThreadId,

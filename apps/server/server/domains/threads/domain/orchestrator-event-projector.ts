@@ -16,7 +16,9 @@ import {
   EXECUTION_ENDED_EVENT,
   type ExecutionEndedValue,
   MESSAGES_DELIVERED_EVENT,
+  MESSAGES_HANDED_BACK_EVENT,
   type MessagesDeliveredValue,
+  type MessagesHandedBackValue,
   RUN_STATE_EVENT,
   type RunStartedMeta,
   WRITE_MODE_SWITCHED_EVENT,
@@ -539,6 +541,16 @@ export function createOrchestratorEventProjector() {
               executionId: event.executionId,
               userTurnIds: event.userTurnIds,
             } satisfies MessagesDeliveredValue,
+          }),
+        ];
+
+      // Waiting writer messages left the chat: clients remove those turns at this seq.
+      case "messages.handed_back":
+        return [
+          parseAguiEvent({
+            type: EventType.CUSTOM,
+            name: MESSAGES_HANDED_BACK_EVENT,
+            value: { userTurnIds: event.userTurnIds } satisfies MessagesHandedBackValue,
           }),
         ];
 

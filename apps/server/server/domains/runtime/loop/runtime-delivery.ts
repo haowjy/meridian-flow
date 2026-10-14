@@ -1,6 +1,15 @@
 /** Atomic inbox transitions; journal publication is part of every committed mutation. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import type { Block, OrchestratorEvent, RunState, Turn } from "@meridian/contracts/threads";
+import type {
+  Block,
+  HandBackRequest,
+  HandBackResponse,
+  OrchestratorEvent,
+  RunState,
+  StopRequest,
+  StopResponse,
+  Turn,
+} from "@meridian/contracts/threads";
 import type { Notice } from "../../notices/index.js";
 import type { WorkContextNotices } from "../../projects/index.js";
 import type { ShownLinkShowing } from "../ports/shown-links.js";
@@ -9,6 +18,15 @@ import type { FinalizedExecution, TerminalCause } from "./execution-finalizer.js
 import type { drainInbox, InboxDrain } from "./inbox-context.js";
 import type { InboxWorkSelection } from "./next-inbox-work.js";
 import type { InboxMessage, InboxReader, Lease, MessageDraft } from "./ports.js";
+
+/** The same request id arrived with a different body: refused, as an admission is. */
+export class HandBackConflictError extends Error {
+  readonly code = "hand_back_conflict" as const;
+  constructor(readonly requestId: string) {
+    super(`Hand-back request ${requestId} was already used with another body`);
+    this.name = "HandBackConflictError";
+  }
+}
 
 export type DeliveryTransaction = {
   enqueue(draft: MessageDraft): Promise<InboxMessage>;
@@ -161,6 +179,16 @@ export interface RuntimeDelivery
   enqueue(draft: MessageDraft): Promise<InboxMessage>;
   /** The run-state record a command answers with, read under the chat's thread lock. */
   answerRunState(threadId: ThreadId): Promise<RunState>;
+  /**
+   * Takes waiting writer messages out of the chat and returns their content (the queue's x and Cancel
+   * queue). Decided once under the thread lock and stored by request id; a replay answers the same.
+   */
+  handBack(threadId: ThreadId, request: HandBackRequest): Promise<HandBackResponse>;
+  /**
+   * Stop: hands back every writer message in the press set that no execution has taken on, and flags
+   * the open execution for cancellation when the rule says so. Only flags; the run session aborts.
+   */
+  stop(threadId: ThreadId, request: StopRequest): Promise<StopResponse>;
   /** Parent-first business transaction; the producer does not reacquire the lock. */
   withThreadLock<T>(
     threadId: ThreadId,

@@ -202,20 +202,26 @@ export function createDrizzleInbox(db: DrizzleDatabase): DeliveryStore {
       };
     },
 
-    async ack(threadId, ids, byTurnId = null) {
+    async ack(threadId, ids, byTurnId = null, options) {
       if (ids.length === 0) return [];
-      // Only a message row records its deliverer; controls and notices keep null.
+      const handedBackBy = options?.handedBackBy;
+      // Only a message row records its deliverer; controls and notices keep null. A hand-back has no
+      // deliverer at all, and only a message row can be handed back.
       const rows = await db_()
         .update(schema.threadInboxMessages)
         .set({
           deliveredAt: new Date(),
-          deliveredByTurnId: sql`CASE WHEN ${schema.threadInboxMessages.intent} = 'message' THEN ${byTurnId}::uuid ELSE NULL END`,
+          deliveredByTurnId: handedBackBy
+            ? null
+            : sql`CASE WHEN ${schema.threadInboxMessages.intent} = 'message' THEN ${byTurnId}::uuid ELSE NULL END`,
+          ...(handedBackBy ? { handedBackBy } : {}),
         })
         .where(
           and(
             eq(schema.threadInboxMessages.threadId, threadId),
             inArray(schema.threadInboxMessages.id, ids),
             isNull(schema.threadInboxMessages.deliveredAt),
+            handedBackBy ? eq(schema.threadInboxMessages.intent, "message") : undefined,
           ),
         )
         .returning({

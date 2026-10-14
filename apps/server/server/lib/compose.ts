@@ -1642,6 +1642,9 @@ export function createInMemoryAppServices(): AppServices {
       async startDrain() {
         throw new Error("in-memory turn runner is not implemented");
       },
+      async stop() {
+        throw new Error("in-memory chat Stop is not implemented");
+      },
       async cancel() {
         return "not_found" as const;
       },

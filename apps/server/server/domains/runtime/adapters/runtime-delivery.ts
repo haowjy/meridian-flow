@@ -1,7 +1,13 @@
 /** Shared delivery transitions. Concrete adapters supply one compatible transaction/store bundle. */
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
-import type { RunState } from "@meridian/contracts/threads";
+import type {
+  HandBackRequest,
+  HandBackResponse,
+  RunState,
+  StopRequest,
+  StopResponse,
+} from "@meridian/contracts/threads";
 import { isPendingPlaceholder, isTerminalTurnStatus, type Turn } from "@meridian/contracts/threads";
 import type { NoticePort } from "../../notices/index.js";
 import { SystemUpdateMetadataCodec } from "../../threads/index.js";
@@ -36,6 +42,15 @@ import type {
   DeliverySelectionFields,
   RuntimeDelivery,
 } from "../loop/runtime-delivery.js";
+import { HandBackConflictError } from "../loop/runtime-delivery.js";
+import {
+  decideHandBack,
+  decideStop,
+  type HandBackScopeFacts,
+  handBackFingerprint,
+  type StopDecision,
+  type StopFacts,
+} from "../loop/stop-rule.js";
 import { createThreadControls } from "../loop/thread-controls.js";
 import type { ThreadLock } from "../loop/thread-lock.js";
 import { type WriteModeSwitchPort, writeModeSwitchTurn } from "../loop/write-mode-switch.js";
@@ -62,7 +77,46 @@ export interface DeliveryStore extends InboxReader {
    * row records `byTurnId` as its deliverer. Returns the message rows this call
    * delivered, in `seq` order.
    */
-  ack(threadId: ThreadId, ids: string[], byTurnId?: TurnId | null): Promise<string[]>;
+  ack(
+    threadId: ThreadId,
+    ids: string[],
+    byTurnId?: TurnId | null,
+    /** Takes writer messages out of the chat instead of delivering them: no deliverer, `handed_back_by` set. */
+    options?: { handedBackBy?: string },
+  ): Promise<string[]>;
+}
+
+/** What a hand-back request decided, stored by request id so a replay answers the same. */
+export type StoredHandBack = {
+  fingerprint: string;
+  handedBack: string[];
+  answered: string[];
+  gone: string[];
+  cancelledExecutionId: string | null;
+};
+
+/** Adapter-private storage for hand-back and Stop; every method runs under the chat's thread lock. */
+export interface HandBackStore {
+  find(threadId: ThreadId, requestId: string): Promise<StoredHandBack | null>;
+  /** The lease, its receipt and the writer messages a request's scope could cover (see `StopFacts`). */
+  readFacts(threadId: ThreadId, scope: HandBackScopeFacts): Promise<StopFacts>;
+  record(
+    threadId: ThreadId,
+    requestId: string,
+    fingerprint: string,
+    decision: {
+      handBack: string[];
+      answered: string[];
+      gone: string[];
+      cancelledExecutionId?: string | null;
+    },
+  ): Promise<void>;
+  /** Sets `cancel_requested` on the lease row of this execution, expiry ignored. */
+  cancelExecution(threadId: ThreadId, executionId: string): Promise<boolean>;
+  /** The writer's message blocks of these user turns, in the order given. */
+  contentOf(
+    userTurnIds: readonly string[],
+  ): Promise<{ userTurnId: string; blocks: HandBackResponse["handedBack"][number]["blocks"] }[]>;
 }
 
 export interface DeliveryLeaseStore {
@@ -100,6 +154,8 @@ export function createDeliveryAdapter(
     repos: import("../../threads/index.js").ThreadRepositories;
     toolRegistry?: Pick<import("../tools/types.js").ToolRegistry, "getRegistration">;
     inbox: DeliveryStore;
+    /** Absent where hand-back is not supported (the in-memory harness). */
+    handBacks?: HandBackStore;
     leaseStore: DeliveryLeaseStore;
     runClaim: Pick<
       RunClaim,
@@ -154,6 +210,10 @@ export function createDeliveryAdapter(
         executionId: by?.executionId ?? null,
         userTurnIds: delivered,
       });
+    await clearBlockWhenIdle(threadId);
+  };
+  /** A usage block clears the moment no message or control waits behind it. */
+  const clearBlockWhenIdle = async (threadId: ThreadId) => {
     const projection = await inbox.readPendingProjection(threadId);
     if (
       !projection.messages.some(
@@ -982,6 +1042,83 @@ export function createDeliveryAdapter(
       await ack(lease.threadId, messageIds, deliveredBy(lease, turn));
   }
 
+  const requireHandBacks = () => {
+    if (!deps.handBacks) throw new Error("Hand-back is not configured for this delivery adapter");
+    return deps.handBacks;
+  };
+  /** A stored decision as the answer: the content comes from the immutable turns, the record is fresh. */
+  async function storedHandBack(threadId: ThreadId, stored: StoredHandBack) {
+    const handedBack = await requireHandBacks().contentOf(stored.handedBack);
+    return {
+      handedBack,
+      answered: stored.answered,
+      gone: stored.gone,
+      cancelledExecutionId: stored.cancelledExecutionId,
+      runState: await inbox.answerRunState(threadId),
+    };
+  }
+  /**
+   * One hand-back request, decided once under the thread lock from rows and stored by request id.
+   * A replay with the same body returns the stored decision and flags nothing; another body is a
+   * conflict. The decision is judged on the facts before any write, then applied: the stored row
+   * first (the inbox rows reference it), the acknowledgements, the compaction receipt strip, the
+   * journal event, and the execution's cancel flag.
+   */
+  function handBackRequest(
+    threadId: ThreadId,
+    input: {
+      requestId: string;
+      fingerprint: string;
+      scope: HandBackScopeFacts;
+      decide(facts: StopFacts): StopDecision;
+    },
+  ) {
+    return threadLock.withThreadLock(threadId, async () => {
+      const store = requireHandBacks();
+      const stored = await store.find(threadId, input.requestId);
+      if (stored) {
+        if (stored.fingerprint !== input.fingerprint)
+          throw new HandBackConflictError(input.requestId);
+        return storedHandBack(threadId, stored);
+      }
+      const facts = await store.readFacts(threadId, input.scope);
+      const decision = input.decide(facts);
+      await store.record(threadId, input.requestId, input.fingerprint, {
+        ...decision,
+        cancelledExecutionId: decision.cancelExecutionId,
+      });
+      if (decision.handBack.length > 0) {
+        await inbox.ack(threadId, decision.handBack, null, { handedBackBy: input.requestId });
+        // A cancelled compaction gives back what it had taken on; nothing would answer it.
+        const taken = decision.handBack.filter((id) => facts.receipt.includes(id));
+        if (taken.length > 0) {
+          const receipt = await leaseStore.lockThreadReceipt(threadId);
+          if (receipt)
+            await leaseStore.setAdoptedMessageIds(
+              receipt.lease,
+              receipt.ids.filter((id) => !taken.includes(id)),
+            );
+        }
+        await deps.eventWriter.appendEvent(threadId, {
+          type: "messages.handed_back",
+          userTurnIds: decision.handBack,
+          requestId: input.requestId,
+        });
+        await clearBlockWhenIdle(threadId);
+        await appendPending(threadId);
+      }
+      if (decision.cancelExecutionId)
+        await store.cancelExecution(threadId, decision.cancelExecutionId);
+      return storedHandBack(threadId, {
+        fingerprint: input.fingerprint,
+        handedBack: decision.handBack,
+        answered: decision.answered,
+        gone: decision.gone,
+        cancelledExecutionId: decision.cancelExecutionId,
+      });
+    });
+  }
+
   return {
     ...createThreadControls({
       withThreadLock: threadLock.withThreadLock,
@@ -1072,6 +1209,43 @@ export function createDeliveryAdapter(
     enqueue: (draft) => threadLock.withThreadLock(draft.threadId, () => enqueue(draft)),
     answerRunState: (threadId) =>
       threadLock.withThreadLock(threadId, () => inbox.answerRunState(threadId)),
+    async handBack(threadId, request: HandBackRequest): Promise<HandBackResponse> {
+      const scope: HandBackScopeFacts =
+        request.scope.kind === "ids"
+          ? { kind: "ids", ids: request.scope.ids }
+          : { kind: "seen", seenThrough: request.scope.seenThrough, mine: request.scope.mine };
+      const { handedBack, answered, gone, runState } = await handBackRequest(threadId, {
+        requestId: request.requestId,
+        fingerprint: handBackFingerprint({ kind: "hand_back", scope }),
+        scope,
+        // The x and Cancel queue never cancel the execution.
+        decide: (facts) => ({ ...decideHandBack(facts, scope, false), cancelExecutionId: null }),
+      });
+      return { handedBack, answered, gone, runState };
+    },
+    async stop(threadId, request: StopRequest): Promise<StopResponse> {
+      const scope: HandBackScopeFacts = {
+        kind: "seen",
+        seenThrough: request.seenThrough,
+        mine: request.mine,
+      };
+      const result = await handBackRequest(threadId, {
+        requestId: request.requestId,
+        fingerprint: handBackFingerprint({
+          kind: "stop",
+          scope,
+          seenExecutionId: request.seenExecutionId,
+        }),
+        scope,
+        decide: (facts) =>
+          decideStop(facts, {
+            seenThrough: request.seenThrough,
+            seenExecutionId: request.seenExecutionId,
+            mine: request.mine,
+          }),
+      });
+      return { threadId, ...result };
+    },
     withThreadLock: (threadId, operation) =>
       threadLock.withThreadLock(threadId, () =>
         operation({

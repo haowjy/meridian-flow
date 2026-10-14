@@ -10,6 +10,7 @@ import {
   EXECUTION_ENDED_EVENT,
   interruptIdForBlock,
   MESSAGES_DELIVERED_EVENT,
+  MESSAGES_HANDED_BACK_EVENT,
   RUN_STATE_EVENT,
   readRunStartedMeta,
   WRITE_MODE_SWITCHED_EVENT,
@@ -1095,7 +1096,8 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
           event.name === MESSAGES_DELIVERED_EVENT ||
           event.name === EXECUTION_ENDED_EVENT ||
           event.name === WRITE_MODE_SWITCHED_EVENT ||
-          event.name === RUN_STATE_EVENT
+          event.name === RUN_STATE_EVENT ||
+          event.name === MESSAGES_HANDED_BACK_EVENT
         ) {
           return;
         }
