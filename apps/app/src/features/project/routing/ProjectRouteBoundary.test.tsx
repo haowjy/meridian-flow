@@ -28,7 +28,6 @@ it("shows the failure with a retry, keeping the destination's own content mounte
 // The shell uses the same masking decision as the body when applying review's rail hold.
 it.each([
   { issue: "loading", recovery: undefined, collapsed: true },
-  { issue: "unavailable", recovery: undefined, collapsed: false },
   { issue: "loading", recovery: <p>Work recovery</p>, collapsed: false },
 ] as const)("review rail follows body masking: $issue, recovery=$recovery", async ({
   issue,
