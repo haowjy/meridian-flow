@@ -16,20 +16,23 @@ export interface ImportSelection {
 export const IMPORT_SCHEMES = ["manuscript", "kb", "unfiled"] as const;
 export type ImportScheme = (typeof IMPORT_SCHEMES)[number];
 export type ImportState = "uploading" | "organizing" | "finished" | "cancelled" | "failed";
-export type ImportEntryState = "awaiting" | "received" | "organized" | "skipped" | "failed";
+export type ImportEntryState =
+  | "awaiting"
+  | "received"
+  | "prepared"
+  | "organized"
+  | "skipped"
+  | "failed";
 export type ImportSkipReason =
   | "obsidian_canvas"
   | "trash"
   | "hidden"
   | "unreadable"
-  | "too_large"
   | "export_works"
-  | "not_uploaded"
-  | "not_found"
-  | "not_organized"
-  | "folder_deleted";
+  | "not_found";
 export type ImportEntryReason =
   | ImportSkipReason
+  | "too_large"
   | "kept_as_file"
   | "changed_after_pick"
   | "upload_lost"
@@ -45,6 +48,7 @@ export interface ImportCounts {
   bytes: number;
   received: number;
   receivedBytes: number;
+  prepared: number;
   organized: number;
   skipped: number;
   failed: number;
@@ -93,7 +97,7 @@ export type ImportRefusalCode =
   | "import_not_finished"
   | "import_busy"
   | "import_exists"
-  | "import_organizing"
+  | "import_finished"
   | "too_many_open_imports"
   | "selection_mismatch"
   | "manifest_invalid"

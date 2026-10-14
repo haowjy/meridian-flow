@@ -11,6 +11,7 @@ CREATE TABLE "import_entries" (
 	"reason" text,
 	"storage_url" text,
 	"object_key" text,
+	"converted_key" text,
 	"received_size" bigint,
 	"sha256" text
 );
@@ -22,6 +23,8 @@ CREATE TABLE "imports" (
 	"destination_uri" text NOT NULL,
 	"folder_id" uuid,
 	"roots" jsonb NOT NULL,
+	"placement" jsonb,
+	"placement_generation" integer DEFAULT 0 NOT NULL,
 	"fingerprint" text NOT NULL,
 	"state" text NOT NULL,
 	"counts" jsonb NOT NULL,
