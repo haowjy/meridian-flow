@@ -50,8 +50,10 @@ export type LedgerEntry = {
   awaitingServer: boolean;
   inJournal: boolean;
   inInbox: boolean;
-  /** The reading of the request counter when a live source last showed it. */
+  /** The highest reading of the request counter at which any source showed it. */
   observedAt: number;
+  /** The highest request of a snapshot that listed it, 0 for none. */
+  provedAt: number;
   /** A divider naming it is in the transcript this tab renders. */
   rendered: boolean;
   /** A snapshot's turns held its divider, so the snapshot's thread mode includes it. */
@@ -109,7 +111,6 @@ export type LedgerEvent =
       request: number;
       pending: readonly { id: string; mode: AiWriteMode; serverSeq: number }[];
       dividers: readonly { controlId: string | null }[];
-      at: number;
     }
   | {
       type: "transcript";
@@ -123,6 +124,9 @@ export type LedgerEvent =
       outcome: "removed" | "withdrawn" | "already_started" | "not_found" | "kept";
     }
   | { type: "withdraw_failed"; id: string };
+
+/** The watermark only rises: a later reading from any live source never lowers it. */
+const raise = (entry: LedgerEntry, at: number): number => Math.max(entry.observedAt, at);
 
 const RANK: Record<LedgerState, number> = { sending: 0, posted: 1, queued: 2, applied: 3, gone: 4 };
 
@@ -151,6 +155,7 @@ function blank(id: string, mode: AiWriteMode, at: number, state: LedgerState): L
     inJournal: false,
     inInbox: false,
     observedAt: at,
+    provedAt: 0,
     rendered: false,
     snapshotSeen: false,
     silent: false,
@@ -214,7 +219,7 @@ function step(ledger: Ledger, event: LedgerEvent): Ledger {
             ...advanced,
             seq: record.seq,
             inJournal: true,
-            observedAt: event.at,
+            observedAt: raise(advanced, event.at),
             failed: RANK[advanced.state] <= RANK.posted && record.failed,
             awaitingServer: record.posted && !record.refused,
           };
@@ -227,7 +232,7 @@ function step(ledger: Ledger, event: LedgerEvent): Ledger {
               inJournal: false,
               awaitingServer: false,
               failed: false,
-              observedAt: event.at,
+              observedAt: raise(entry, event.at),
             }
           : entry,
       );
@@ -240,12 +245,12 @@ function step(ledger: Ledger, event: LedgerEvent): Ledger {
           ...advance(entry, "queued"),
           serverSeq: item.serverSeq,
           inInbox: true,
-          observedAt: event.at,
+          observedAt: raise(entry, event.at),
         }));
       }
       return mapEntries(next, (entry) =>
         entry.inInbox && !listed.has(entry.id)
-          ? { ...entry, inInbox: false, observedAt: event.at }
+          ? { ...entry, inInbox: false, observedAt: raise(entry, event.at) }
           : entry,
       );
     }
@@ -258,7 +263,7 @@ function step(ledger: Ledger, event: LedgerEvent): Ledger {
         event.result === "cancelled" ? "queued" : event.result,
         (entry) => {
           if (event.result === "cancelled") return gone(entry);
-          return { ...advance(entry, event.result), observedAt: event.at };
+          return { ...advance(entry, event.result), observedAt: raise(entry, event.at) };
         },
       );
       if (event.result !== "cancelled") return next;
@@ -283,14 +288,21 @@ function step(ledger: Ledger, event: LedgerEvent): Ledger {
       const listed = new Set(event.pending.map((item) => item.id));
       let next = ledger;
       for (const item of event.pending) {
-        next = upsert(next, item.id, item.mode, event.at, "queued", (entry) =>
+        next = upsert(next, item.id, item.mode, event.request, "queued", (entry) =>
           named.has(item.id) ? entry : { ...advance(entry, "queued"), serverSeq: item.serverSeq },
         );
       }
       return mapEntries(next, (entry) => {
         if (entry.state === "gone") return entry;
-        if (named.has(entry.id)) return { ...advance(entry, "applied"), snapshotSeen: true };
-        const sourced = entry.inJournal || entry.inInbox || listed.has(entry.id);
+        // A snapshot that shows the entry is a reading of it at its request.
+        const shows = {
+          observedAt: raise(entry, event.request),
+          provedAt: Math.max(entry.provedAt, event.request),
+        };
+        if (named.has(entry.id))
+          return { ...advance(entry, "applied"), ...shows, snapshotSeen: true };
+        if (listed.has(entry.id)) return { ...entry, ...shows };
+        const sourced = entry.inJournal || entry.inInbox;
         return !sourced && event.request > entry.observedAt ? gone(entry) : entry;
       });
     }
@@ -438,7 +450,8 @@ export function proofKey(ledger: Ledger): string | null {
       !settledEntry(entry) &&
       entry.withdrawal !== "withdrawing" &&
       !entry.inJournal &&
-      !entry.inInbox,
+      !entry.inInbox &&
+      entry.observedAt > entry.provedAt,
   );
   return waiting.length ? waiting.map((entry) => `${entry.id}@${entry.observedAt}`).join() : null;
 }
