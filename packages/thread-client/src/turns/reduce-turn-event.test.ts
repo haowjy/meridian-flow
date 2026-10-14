@@ -122,5 +122,15 @@ describe("turn reducer", () => {
     const turns = store.turns(THREAD) ?? [];
     expect(turns.map((turn) => turn.id)).toEqual(["r1", "d1"]);
     expect(readWriteModeSwitch(turns[1] as Turn)).toEqual({ mode: "draft", controlId: "c1" });
+    // Risk: a snapshot read before the frame (its seq is not covered) drops the divider again, so
+    // the answered switch shows as queued. The divider outlives it, then the covering snapshot's
+    // stored turn replaces it by id.
+    store.hydrate(THREAD, [{ id: "r1", role: "assistant", blocks: [] } as unknown as Turn], "6000");
+    expect(store.turns(THREAD)?.map((turn) => turn.id)).toEqual(["r1", "d1"]);
+    const stored = { ...turns[1], position: 3 } as Turn;
+    store.hydrate(THREAD, [turns[0] as Turn, stored], "7001");
+    expect(store.turns(THREAD)?.[1]).toBe(stored);
+    store.hydrate(THREAD, [turns[0] as Turn], "8000");
+    expect(store.turns(THREAD)?.map((turn) => turn.id)).toEqual(["r1"]);
   });
 });

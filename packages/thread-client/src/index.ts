@@ -51,6 +51,7 @@ export {
   type EnsureAssistantTurnOptions,
   ensureAssistantTurnIn,
   ensureSwitchTurnIn,
+  type HeldDividers,
   patchTurnStatusIn,
   removeTurnsIn,
   type SwitchTurnFacts,

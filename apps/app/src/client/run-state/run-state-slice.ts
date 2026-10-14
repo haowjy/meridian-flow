@@ -77,6 +77,8 @@ export type RunStateSlice = {
   /** The applied switches already seen, by their divider's turn. */
   appliedHeard: ReadonlySet<string>;
   applied: readonly AppliedNews[];
+  /** The applied switches whose divider has shown, by its turn: their bridge never returns. */
+  retired: ReadonlySet<string>;
   /**
    * How much of `news` and `applied` the writer has been told, by `n`. It lives with the lists,
    * so a remounted view speaks only what no mounted view has.
@@ -90,6 +92,7 @@ export const INITIAL_RUN_STATE_SLICE: RunStateSlice = {
   seed: null,
   appliedHeard: new Set(),
   applied: [],
+  retired: new Set(),
   spoken: { queued: 0, applied: 0 },
 };
 
@@ -107,6 +110,8 @@ export type RunStateAction =
   | { type: "journal"; switches: readonly JournalSwitch[] }
   /** The view told the writer of the news through these counts. */
   | { type: "spoken"; queued: number; applied: number }
+  /** These dividers have been seen in the transcript. */
+  | { type: "retired"; turnIds: readonly string[] }
   | { type: "withdraw"; id: string; failed?: boolean }
   | { type: "withdrawn"; id: string; runState: RunState }
   | { type: "dropWithdraw"; id: string };
@@ -118,6 +123,10 @@ export function reduceRunState(state: RunStateSlice, action: RunStateAction): Ru
     return queued === state.spoken.queued && applied === state.spoken.applied
       ? state
       : { ...state, spoken: { queued, applied } };
+  }
+  if (action.type === "retired") {
+    const fresh = action.turnIds.filter((id) => !state.retired.has(id));
+    return fresh.length ? { ...state, retired: new Set([...state.retired, ...fresh]) } : state;
   }
   const view = reduceView(state.view, action);
   const record = view.record;
@@ -227,6 +236,7 @@ function reduceView(view: RunStateView, action: RunStateAction): RunStateView {
     case "dropWithdraw":
       return dropIntent(view, "withdraw", action.id);
     case "spoken":
+    case "retired":
       return view;
   }
 }

@@ -13,6 +13,7 @@ import {
   type EnsureAssistantTurnOptions,
   ensureAssistantTurnIn,
   ensureSwitchTurnIn,
+  type HeldDividers,
   patchTurnStatusIn,
   removeTurnsIn,
   type SwitchTurnFacts,
@@ -32,6 +33,7 @@ export class InMemoryTurnStore implements TurnStore {
   private readonly eventCounts = new Map<string, number>();
   private readonly floors = new Map<string, string>();
   private readonly tombstonesByThread = new Map<string, Tombstones>();
+  private readonly dividersByThread = new Map<string, HeldDividers>();
 
   constructor(options: InMemoryTurnStoreOptions) {
     this.now = options.now;
@@ -48,12 +50,16 @@ export class InMemoryTurnStore implements TurnStore {
   hydrate(threadId: string, turns: readonly Turn[], nextSeq: string): boolean {
     if (!this.acceptsSnapshot(threadId, nextSeq)) return false;
     const applied = applySnapshotTo(
-      this.tombstonesByThread.get(threadId) ?? new Map(),
+      {
+        tombstones: this.tombstonesByThread.get(threadId) ?? new Map(),
+        dividers: this.dividersByThread.get(threadId) ?? new Map(),
+      },
       turns,
       nextSeq,
     );
     this.turnsByThread.set(threadId, applied.turns);
     this.tombstonesByThread.set(threadId, applied.tombstones);
+    this.dividersByThread.set(threadId, applied.dividers);
     this.floors.set(threadId, nextSeq);
     return true;
   }
@@ -70,10 +76,15 @@ export class InMemoryTurnStore implements TurnStore {
     if (result.kind !== "rejected") this.turnsByThread.set(threadId, result.turns);
   }
 
-  ensureSwitchTurn(threadId: string, facts: SwitchTurnFacts): void {
-    const existing = this.turnsByThread.get(threadId) ?? [];
-    const next = ensureSwitchTurnIn(existing, threadId, facts, this.now());
-    if (next !== existing) this.turnsByThread.set(threadId, next);
+  ensureSwitchTurn(threadId: string, facts: SwitchTurnFacts, seq: string): void {
+    const state = {
+      turns: this.turnsByThread.get(threadId) ?? [],
+      dividers: this.dividersByThread.get(threadId) ?? new Map(),
+    };
+    const next = ensureSwitchTurnIn(state, threadId, facts, seq, this.now());
+    if (next === state) return;
+    this.turnsByThread.set(threadId, next.turns);
+    this.dividersByThread.set(threadId, next.dividers);
   }
 
   upsertAssistantBlock(threadId: string, turnId: string, block: Block): void {

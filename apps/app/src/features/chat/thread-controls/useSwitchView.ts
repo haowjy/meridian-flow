@@ -10,7 +10,8 @@
  * Works and project thread lists stale when a switch applies.
  *
  * The bridge row, an applied switch whose divider has not rendered yet, is derived here from the
- * slice's applied facts and the dividers the transcript shows: it leaves with its divider. What
+ * slice's applied facts and the dividers the transcript shows: it leaves with its divider, and
+ * once the divider has shown the slice retires the bridge for good. What
  * has been spoken is the slice's too, so a remount repeats no announcement.
  *
  * One host per chat per tab: the desktop shell keeps one `ChatSurface` and moves it between
@@ -92,7 +93,7 @@ export function useSwitchView(input: {
   const queryClient = useQueryClient();
   const actions = useThreadActions();
   const { dispatchRunState: dispatch } = actions;
-  const { view, news, applied, spoken } = useRunStateSlice(threadId);
+  const { view, news, applied, spoken, retired } = useRunStateSlice(threadId);
   useSingleHostWarning(threadId);
   const latest = useRef({ journal, projectId });
   latest.current = { journal, projectId };
@@ -170,6 +171,15 @@ export function useSwitchView(input: {
     () => new Set(turns.flatMap((turn) => (readWriteModeSwitch(turn) ? [turn.id] : []))),
     [turns],
   );
+  // Once a divider has shown, its bridge is gone for good: a snapshot that lacks it again
+  // does not bring the switch back as queued.
+  useLayoutEffect(() => {
+    const shown = applied.filter(
+      (entry) => dividerIds.has(entry.turnId) && !retired.has(entry.turnId),
+    );
+    if (shown.length)
+      dispatch(threadId, { type: "retired", turnIds: shown.map((entry) => entry.turnId) });
+  }, [applied, dividerIds, retired, dispatch, threadId]);
   const folded = useMemo(() => switchDisplay(view, input.writeMode), [view, input.writeMode]);
   const rows = useMemo<QueuedControl[]>(() => {
     const own = folded.rows.map((row) => ({
@@ -181,7 +191,10 @@ export function useSwitchView(input: {
     // The bridge: an applied switch whose divider has not rendered yet.
     const bridge = applied
       .filter(
-        (entry) => !dividerIds.has(entry.turnId) && !own.some((row) => row.id === entry.controlId),
+        (entry) =>
+          !dividerIds.has(entry.turnId) &&
+          !retired.has(entry.turnId) &&
+          !own.some((row) => row.id === entry.controlId),
       )
       .map((entry) => ({
         id: entry.controlId,
@@ -189,7 +202,7 @@ export function useSwitchView(input: {
         status: "queued" as const,
       }));
     return [...own, ...bridge];
-  }, [folded.rows, applied, dividerIds]);
+  }, [folded.rows, applied, dividerIds, retired]);
 
   return { rows, writeMode: folded.mode, switchWriteMode, retry, withdraw };
 }
