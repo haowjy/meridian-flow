@@ -5,6 +5,7 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { expect } from "vitest";
+import type { EventSink } from "../../observability/index.js";
 import { createDrizzlePendingSettlementStore } from "../adapters/drizzle-pending-settlement.js";
 import {
   BETA_ID,
@@ -79,13 +80,15 @@ export async function expirePendingClaims(
 }
 
 /** A store for claim and load probes only; completion needs the harness's dependencies. */
-export function claimProbeStore(db: Database) {
+export function claimProbeStore(db: Database, eventSink?: EventSink) {
   return createDrizzlePendingSettlementStore(
     db,
     {} as never,
     {} as never,
     {} as never,
     {} as never,
+    undefined,
+    eventSink,
   );
 }
 
