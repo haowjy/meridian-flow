@@ -463,6 +463,35 @@ describe("stale acquisition and missing targets", () => {
     });
     await settle();
     expect(harness.snapshotRequest).toHaveBeenCalledTimes(3);
+    // A record naming another client's waiting message revalidates once: the stream does not
+    // carry that user turn.
+    const waiting = (version: string, id: string) =>
+      ({
+        type: EventType.CUSTOM,
+        name: "meridian.run_state",
+        value: {
+          ...IDLE_RUN_STATE,
+          version,
+          execution: { executionId: "e2", currentTurnId: null },
+          items: [
+            {
+              id,
+              intent: "message",
+              seq: 1,
+              provenance: { kind: "writer", actorId: "u1" },
+              deliveryState: "waiting",
+              summary: "M2",
+              enqueuedAt: "2026-01-01T00:00:00.000Z",
+            },
+          ],
+        },
+      }) as AGUIEvent;
+    act(() => {
+      bus.emit(waiting("2500", "foreign-1"), "2500");
+      bus.emit(waiting("2501", "foreign-1"), "2501");
+    });
+    await settle();
+    expect(harness.snapshotRequest).toHaveBeenCalledTimes(4);
     // The run's end revalidates too (the store's own terminal refresh may add one more).
     act(() =>
       bus.emit(
@@ -472,7 +501,7 @@ describe("stale acquisition and missing targets", () => {
     );
     await settle();
     const afterRun = harness.snapshotRequest.mock.calls.length;
-    expect(afterRun).toBeGreaterThan(3);
+    expect(afterRun).toBeGreaterThan(4);
     // A handoff brief starts and ends with no run: only its status frame says so.
     act(() =>
       bus.emit(

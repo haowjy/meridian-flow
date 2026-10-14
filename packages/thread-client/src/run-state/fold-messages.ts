@@ -19,6 +19,17 @@ export function writerMessages(record: { items: readonly PendingInboxItem[] }): 
 }
 
 /**
+ * The record's writer messages whose turns the transcript does not hold. The stream carries a
+ * record but not another client's user turn, so these are a gap only a snapshot fills.
+ */
+export function unheldWriterMessages(
+  record: { items: readonly PendingInboxItem[] },
+  holds: (userTurnId: string) => boolean,
+): PendingInboxItem[] {
+  return writerMessages(record).filter((item) => !holds(item.id));
+}
+
+/**
  * The messages an unretired, unfailed hand-back hides: left out of every fold below and, through
  * `viewTranscript`'s `hidden` input, out of the transcript. A failed one shows its rows again,
  * since the server may not have acted.
