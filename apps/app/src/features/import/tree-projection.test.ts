@@ -8,6 +8,7 @@ import type {
   CatalogNode,
 } from "@/client/query/context-catalog-projection";
 import type { ClientRow } from "./client-rows";
+import type { LocalPhase } from "./display-state";
 import type { ImportState } from "./import-state";
 import { type ProjectedImport, withImportRows } from "./tree-projection";
 
@@ -138,6 +139,9 @@ function importOf(parts: {
   rows?: ClientRow[];
   accepted?: { folders?: ImportFolderStatus[]; entries?: ImportEntryStatus[] };
   held?: boolean;
+  phase?: LocalPhase;
+  folderId?: string | null;
+  roots?: NonNullable<ImportState["local"]>["roots"];
   seen?: string[];
   bridges?: string[];
 }): ProjectedImport {
@@ -155,9 +159,15 @@ function importOf(parts: {
     local:
       parts.rows || parts.held
         ? {
-            phase: { kind: "uploading" },
-            destination: { scheme: "kb", path: "/", uri: "kb://", name: "KB", folderId: null },
-            roots: [],
+            phase: parts.phase ?? { kind: "uploading" },
+            destination: {
+              scheme: "kb",
+              path: "/",
+              uri: "kb://",
+              name: "KB",
+              folderId: parts.folderId ?? null,
+            },
+            roots: parts.roots ?? [],
             rows: parts.rows ?? [],
             held: parts.held ? new Map() : null,
             manifest: null,
@@ -291,6 +301,46 @@ describe("withImportRows", () => {
     expect(project(catalogOf(), importOf({ rows, accepted, bridges: ["book"] }))).toEqual([
       "Book*~",
     ]);
+  });
+
+  it("16: a refused plan puts the warning on the root row, or the destination for loose files", () => {
+    const phase: LocalPhase = { kind: "not-started", code: "too_many_files" };
+    const marks = (view: CatalogContextView, parentId = "root"): string[] =>
+      view
+        .children(parentId)
+        .flatMap((node) => [
+          `${node.name}${node.import?.notStarted ? "!" : ""}${node.import?.arriving ? "~" : ""}`,
+          ...(node.kind === "dir" ? marks(view, node.entryId) : []),
+        ]);
+    const folderRows = [
+      { ...row("book", null, "dir", "Book"), relPath: "" },
+      { ...row("sub", "book", "dir", "Lore"), relPath: "Lore" },
+    ];
+    // Predicted rows stop saying they are arriving; only the root row warns.
+    expect(
+      marks(withImportRows(catalogOf(), "kb", [importOf({ rows: folderRows, phase })])),
+    ).toEqual(["Book!", "Lore"]);
+    // Loose files: the destination folder carries the warning.
+    const loose = importOf({
+      rows: [row("ch", "dest", "file", "Ch 1")],
+      phase,
+      folderId: "dest",
+      roots: [{ rootId: 0, kind: "file", name: "Ch 1.md" }],
+    });
+    expect(marks(withImportRows(catalogOf(dir("dest", "Lore")), "kb", [loose]))).toEqual([
+      "Lore!",
+      "Ch 1",
+    ]);
+  });
+
+  it("shows the destination as reading while the selection is read", () => {
+    const reading = importOf({ phase: { kind: "reading", count: 3 }, folderId: "dest", rows: [] });
+    const view = withImportRows(catalogOf(dir("dest", "Lore")), "kb", [reading]);
+    expect(view.children("root")[0].import?.reading).toBe(true);
+    const atRoot = withImportRows(catalogOf(), "kb", [
+      importOf({ phase: { kind: "reading", count: 3 }, rows: [] }),
+    ]);
+    expect(atRoot.root.import?.reading).toBe(true);
   });
 
   it("offers Retry only while this tab holds the files", () => {

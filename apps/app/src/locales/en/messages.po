@@ -1887,6 +1887,7 @@ msgstr "Diagram"
 #: src/features/draft-review/ReviewChangeBar.tsx
 #: src/features/draft-review/ReviewChangeParts.tsx
 #: src/features/editor/DraftReviewBand.tsx
+#: src/features/project/context/ImportRunMark.tsx
 #: src/features/project/ProjectCreationNotice.tsx
 #: src/features/project/work/WorkChanges.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
@@ -2441,6 +2442,11 @@ msgstr "Images need a project before they can be uploaded."
 #: src/features/import/milestones.ts
 msgid "Import didn't start."
 msgstr "Import didn't start."
+
+#. placeholder {0}: refusalSentence(info.notStarted.code)
+#: src/features/project/context/ImportRunMark.tsx
+msgid "Import didn't start. {0}"
+msgstr "Import didn't start. {0}"
 
 #: src/features/import/milestones.ts
 msgid "Import finished."
@@ -3452,6 +3458,10 @@ msgstr "Reading report from {line}"
 #: src/features/account/SettingsDialog.tsx
 msgid "Reading text size"
 msgstr "Reading text size"
+
+#: src/features/project/context/ImportRunMark.tsx
+msgid "Reading your files"
+msgstr "Reading your files"
 
 #: src/features/import/SelectionPicker.tsx
 msgid "Reading…"
@@ -4814,6 +4824,7 @@ msgstr "Top up any time. Extra usage carries over month to month."
 
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/links/FollowOutcomeContent.tsx
+#: src/features/project/context/ImportRunMark.tsx
 msgid "Try again"
 msgstr "Try again"
 

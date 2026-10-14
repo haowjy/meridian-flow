@@ -17,9 +17,18 @@ import panel, which will read `coordinator.view` and `display-state.ts` as they 
 planning, allocation, conversion and landing; this feature owns what the browser
 can do about it.
 
-- **Navigate first.** `ImportCoordinator.start` mints the id and returns at once.
-  Row ids, hashing, the plan and the uploads run in the background; a failure is
-  shown on the import, never by going back.
+- **Navigate first, begin before reading.** `ImportCoordinator.begin(destination,
+  read)` mints the id, the run and its abort signal before the selection is read;
+  the provider keeps only the synchronous picker click and `DataTransfer` capture.
+  The `reading` phase spins on the destination row, and `isWorking()` drives the
+  unload warning while a run is reading, hashing, planning or sending. Disposal
+  aborts the read; a disposed coordinator refuses `begin`. Row ids, hashing, the
+  plan and the uploads run in the background; a failure is shown on the import,
+  never by going back.
+- **A refused or lost plan is `not-started` with its code.** The root row (the
+  destination for loose files) carries the warning, and its menu (`ImportRunMark`)
+  offers Try again (same id, same manifest) and Discard (local after a definite
+  refusal; `finish` after a lost answer, since the server may hold the import).
 - **One coordinator owns import state; surfaces only read.** It owns acquisition
   (the open-list poll, one full read, `?since=` cuts, a by-id read when an import
   leaves the list), the per-import set of node ids the catalog has held (`seen`,

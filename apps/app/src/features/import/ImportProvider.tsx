@@ -34,7 +34,12 @@ import type { DroppedItems } from "@/lib/dropped-items";
 import { ContinueImportDialog } from "./ContinueImportDialog";
 import type { ImportDestination } from "./destination";
 import { importApi } from "./import-api-port";
-import { type CatalogReader, ImportCoordinator, type ImportsSnapshot } from "./import-coordinator";
+import {
+  type CatalogReader,
+  ImportCoordinator,
+  type ImportsSnapshot,
+  type SelectionRead,
+} from "./import-coordinator";
 import { readDropped } from "./read-dropped";
 import { readPicked } from "./read-picked";
 import { PickInputs } from "./SelectionPicker";
@@ -91,10 +96,10 @@ export function ImportProvider({
     return coordinator.watchOpen();
   }, [coordinator]);
 
-  // Closing the page stops uploads; the browser's own wording warns first.
+  // Closing the page stops reading and uploads; the browser's own wording warns first.
   useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => {
-      if (!coordinator.isPreparingOrUploading()) return;
+      if (!coordinator.isWorking()) return;
       event.preventDefault();
       event.returnValue = "";
     };
@@ -102,24 +107,31 @@ export function ImportProvider({
     return () => window.removeEventListener("beforeunload", warn);
   }, [coordinator]);
 
-  const begin = useCallback(
-    (selection: Selection, destination: ImportDestination, source: PickKind | "drop") => {
-      const refusal = refusalOf(selection, source);
-      if (refusal) {
-        setRequest({ kind: "refused", message: refusal, key: Date.now() });
-        return;
-      }
-      coordinator.start(selection, destination);
-      const files = selection.roots.reduce((sum, root) => sum + root.files.length, 0);
-      const into = destination.name;
-      announce(
-        plural(files, {
-          one: `Importing # file into ${into}.`,
-          other: `Importing # files into ${into}.`,
-        }),
-      );
-    },
-    [coordinator],
+  /** The run's read: refuse what cannot start (null, with the reason said here), else announce it. */
+  const guarded = useCallback(
+    (
+      destination: ImportDestination,
+      source: PickKind | "drop",
+      read: (options: Parameters<SelectionRead>[0]) => Promise<Selection>,
+    ): SelectionRead =>
+      async (options) => {
+        const selection = await read(options);
+        const refusal = refusalOf(selection, source);
+        if (refusal) {
+          setRequest({ kind: "refused", message: refusal, key: Date.now() });
+          return null;
+        }
+        const files = selection.roots.reduce((sum, root) => sum + root.files.length, 0);
+        const into = destination.name;
+        announce(
+          plural(files, {
+            one: `Importing # file into ${into}.`,
+            other: `Importing # files into ${into}.`,
+          }),
+        );
+        return selection;
+      },
+    [],
   );
 
   const api = useMemo<ImportsApi>(
@@ -130,31 +142,33 @@ export function ImportProvider({
         (kind === "folder" ? folderInput : filesInput).current?.click();
       },
       drop: (destination, items) => {
-        void readDropped(items).then((selection) => begin(selection, destination, "drop"));
+        coordinator.begin(
+          destination,
+          guarded(destination, "drop", (options) => readDropped(items, options)),
+        );
       },
       openContinue: (importId) => setRequest({ kind: "continue", importId, key: Date.now() }),
     }),
-    [coordinator, begin],
+    [coordinator, guarded],
   );
 
   const picked = useCallback(
-    async (files: File[]) => {
+    (files: File[]) => {
       const choice = picking.current;
       picking.current = null;
       if (!choice) return;
-      begin(await readPicked(files), choice.destination, choice.kind);
+      coordinator.begin(
+        choice.destination,
+        guarded(choice.destination, choice.kind, () => readPicked(files)),
+      );
     },
-    [begin],
+    [coordinator, guarded],
   );
 
   return (
     <ImportsContext.Provider value={api}>
       {children}
-      <PickInputs
-        folderRef={folderInput}
-        filesRef={filesInput}
-        onPick={(files) => void picked(files)}
-      />
+      <PickInputs folderRef={folderInput} filesRef={filesInput} onPick={picked} />
       {request?.kind === "continue" ? (
         <ContinueImportDialog
           key={request.key}

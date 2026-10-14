@@ -22,6 +22,7 @@ import type {
   CatalogDirectory,
   CatalogFile,
   CatalogNode,
+  ImportRowInfo,
 } from "@/client/query/context-catalog-projection";
 import { filenameForDisplay } from "./display-name";
 import { effectiveEntry, fullyRead, type ImportState } from "./import-state";
@@ -51,6 +52,8 @@ type Node = {
   materialized: boolean;
   /** Text or file has not landed. */
   arriving: boolean;
+  /** The plan was refused or lost, so a predicted row is only a leftover, not arriving. */
+  stalled?: true;
   failure?: Failure;
   seen: boolean;
   bridged: boolean;
@@ -68,7 +71,8 @@ function nodesOf(item: ProjectedImport): Node[] {
       name: row.name,
       accepted: false,
       materialized: false,
-      arriving: true,
+      arriving: state.local?.phase.kind !== "not-started",
+      ...(state.local?.phase.kind === "not-started" ? { stalled: true as const } : {}),
       seen: seen.has(row.id),
       bridged: false,
     }));
@@ -122,6 +126,35 @@ function nodesOf(item: ProjectedImport): Node[] {
   return nodes;
 }
 
+/**
+ * The rows that carry a run's own status instead of a file's: the destination while
+ * the selection is read, and after a refusal the root row of each picked folder (the
+ * destination for loose files), where Try again and Discard live.
+ */
+function runMarks(
+  imports: readonly ProjectedImport[],
+  scheme: ProjectContextTreeScheme,
+  rootId: string,
+): Map<string, ImportRowInfo> {
+  const marks = new Map<string, ImportRowInfo>();
+  const add = (id: string, info: ImportRowInfo) => marks.set(id, { ...marks.get(id), ...info });
+  for (const { importId, state } of imports) {
+    const local = state.local;
+    if (!local) continue;
+    const here = local.destination.scheme === scheme;
+    const destinationId = local.destination.folderId ?? rootId;
+    if (local.phase.kind === "reading" && here) add(destinationId, { reading: true });
+    if (local.phase.kind !== "not-started") continue;
+    const notStarted = { importId, code: local.phase.code };
+    for (const row of local.rows)
+      if (row.scheme === scheme && row.kind === "dir" && row.relPath === "")
+        add(row.id, { notStarted });
+    if (here && local.roots.some((root) => root.kind === "file"))
+      add(destinationId, { notStarted });
+  }
+  return marks;
+}
+
 /** Layers every given import's nodes over `catalog`; the view is unchanged when none touch it. */
 export function withImportRows(
   catalog: CatalogContextView,
@@ -173,11 +206,20 @@ export function withImportRows(
     else byParent.set(key, [node]);
   }
 
+  const run = runMarks(imports, scheme, catalog.root.entryId);
+  if (nodes.size === 0 && run.size === 0) return catalog;
+
   const marks = (node: CatalogNode): CatalogNode => {
     const id = node.kind === "dir" ? node.entryId : node.documentId;
     const known = nodes.get(id);
-    if (node.kind === "dir")
-      return arrivingFolders.has(id) ? { ...node, import: { arriving: true } } : node;
+    const status = run.get(id);
+    if (node.kind === "dir") {
+      if (!arrivingFolders.has(id) && !status) return node;
+      return {
+        ...node,
+        import: { ...(arrivingFolders.has(id) ? { arriving: true as const } : {}), ...status },
+      };
+    }
     const arriving = known?.arriving === true || node.importPending === true;
     if (!known?.failure && !arriving) return node;
     return {
@@ -189,8 +231,6 @@ export function withImportRows(
     };
   };
 
-  if (nodes.size === 0) return catalog;
-
   const overlay = (node: Node, parentId: string): CatalogNode => {
     if (node.kind === "dir") {
       const dir: CatalogDirectory = {
@@ -200,7 +240,11 @@ export function withImportRows(
         name: node.name,
         path: "",
         uri: "",
-        import: { client: true, arriving: true },
+        import: {
+          client: true,
+          ...(node.stalled ? {} : { arriving: true as const }),
+          ...run.get(node.id),
+        },
       };
       return dir;
     }
@@ -220,7 +264,7 @@ export function withImportRows(
       fileType: "binary",
       import: {
         client: true,
-        arriving: true,
+        ...(node.stalled ? {} : { arriving: true as const }),
         ...(node.failure ? { failure: node.failure } : {}),
       },
     };
@@ -243,5 +287,10 @@ export function withImportRows(
     return result;
   };
 
-  return { ...catalog, children };
+  const root = run.get(catalog.root.entryId);
+  return {
+    ...catalog,
+    ...(root ? { root: { ...catalog.root, import: root } } : {}),
+    children,
+  };
 }

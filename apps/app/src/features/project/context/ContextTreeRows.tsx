@@ -23,6 +23,7 @@ import {
   contextTreeRowGrowClassName,
 } from "./context-row-geometry";
 import { EntryNameField } from "./EntryNameField";
+import { ImportRunMark } from "./ImportRunMark";
 import { LinkUpdateNote } from "./LinkUpdateNote";
 import { NamespaceFailureMark } from "./NamespaceFailureMark";
 import { type TreeDropTarget, useTreeDropTarget } from "./tree-drop/tree-drop";
@@ -250,6 +251,7 @@ function DirRow({
               <Trans>Import here</Trans>
             </span>
           ) : null}
+          <ImportRunMark info={dir.import} />
           {dir.namespaceFailure ? (
             <NamespaceFailureMark
               failure={dir.namespaceFailure}
@@ -286,7 +288,7 @@ function FileRow({
   const env = useTreeEnv();
   // A file is not a drop target of its own: it hands the drop to its folder (or the area).
   const { dropProps } = useTreeDropTarget({ scheme: env.scheme, folder: parent });
-  const importRow = useImportRowActions(file.import?.failure);
+  const importRow = useImportRowActions(file.import);
   const interaction = useEntryInteraction({
     projectId: env.projectId,
     node: file,
@@ -349,7 +351,7 @@ function FileRow({
 function ClientRow({ node, depth }: { node: ContextNode; depth: number }) {
   const env = useTreeEnv();
   const failure = node.import?.failure;
-  const retry = useImportRowActions(failure);
+  const retry = useImportRowActions(node.import);
   if (node.kind === "dir") {
     const open = env.isExpanded(node.entryId);
     const toggle = () => env.toggleEntry(node.entryId);
@@ -372,6 +374,7 @@ function ClientRow({ node, depth }: { node: ContextNode; depth: number }) {
           <Twistie expanded={open} />
           <RowIcon icon={open ? FolderOpen : Folder} muted />
           <span className="ml-0.5 min-w-0 flex-1 truncate">{node.name}</span>
+          <ImportRunMark info={node.import} />
         </div>
         {open ? (
           <TreeChildren parentId={node.entryId} parentPath={node.path} depth={depth + 1} />
@@ -382,7 +385,7 @@ function ClientRow({ node, depth }: { node: ContextNode; depth: number }) {
   return (
     <div
       aria-disabled
-      title={t`Still arriving`}
+      title={node.import?.arriving ? t`Still arriving` : undefined}
       className={cn(
         "mx-2 flex items-center rounded-md pr-1 text-sm text-ink-muted",
         contextTreeRowGrowClassName,

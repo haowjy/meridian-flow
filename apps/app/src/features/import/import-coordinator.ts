@@ -4,7 +4,8 @@
  * cuts, a by-id read when an import leaves the list), the per-import set of node
  * ids the catalog has held, the short bridges that cover a row until the catalog
  * shows it, the `documentId` index, and the retirement of every store. Navigate
- * first: `start` returns the import id at once and does the rest in the background.
+ * first: `begin` returns the import id before the selection is read and does the
+ * rest in the background.
  */
 import type {
   ImportEntryStatus,
@@ -71,6 +72,18 @@ export type ImportsSnapshot = {
 };
 
 const EMPTY_SNAPSHOT: ImportsSnapshot = { imports: [], documents: new Map() };
+
+/**
+ * Reads what the writer chose, with the run's abort signal and a running count.
+ * Null means nothing to import (the caller has already said why).
+ */
+export type SelectionRead = (options: {
+  signal: AbortSignal;
+  onProgress: (count: number, name: string) => void;
+}) => Promise<Selection | null>;
+
+/** Reading progress repaints the tree no more often than this. */
+const READ_PAINT_MS = 250;
 
 /**
  * What this tab is doing for one import: reading its files, the plan and the
@@ -357,19 +370,24 @@ export class ImportCoordinator {
     store.setLocal((local) => ({ ...local, rows: [] }));
   }
 
-  // ---- Starting
+  // ---- Beginning
 
-  /** Answer with the id at once; the rows, the plan and the sends follow in the background. */
-  start(selection: Selection, destination: ImportDestination): string {
+  /**
+   * The import exists from the moment the writer picks: its run, abort signal and
+   * destination row come first, then `read` fills in the selection. Null when the
+   * coordinator is disposed.
+   */
+  begin(destination: ImportDestination, read: SelectionRead): string | null {
+    if (this.disposed) return null;
     const importId = crypto.randomUUID();
     this.startedAt.set(importId, Date.now());
     const store = this.store(importId);
     store.update((state) => ({
       ...state,
       local: {
-        phase: { kind: "preparing" },
+        phase: { kind: "reading", count: 0 },
         destination,
-        roots: selection.roots.map(({ rootId, kind, name }) => ({ rootId, kind, name })),
+        roots: [],
         rows: [],
         held: null,
         manifest: null,
@@ -377,8 +395,39 @@ export class ImportCoordinator {
         retrying: new Set(),
       },
     }));
-    void this.prepareAndPlan(store, selection, destination);
+    void this.readAndPlan(store, this.runFor(store), destination, read);
     return importId;
+  }
+
+  private async readAndPlan(
+    store: ImportStore,
+    run: Run,
+    destination: ImportDestination,
+    read: SelectionRead,
+  ) {
+    let lastPaint = this.clock.now();
+    let selection: Selection | null = null;
+    try {
+      selection = await read({
+        signal: run.controller.signal,
+        onProgress: (count) => {
+          const now = this.clock.now();
+          if (retired(run) || now - lastPaint < READ_PAINT_MS) return;
+          lastPaint = now;
+          store.setLocal((local) => ({ ...local, phase: { kind: "reading", count } }));
+        },
+      });
+    } catch {
+      // An unreadable selection ends the run the same way as an empty one.
+    }
+    if (retired(run)) return;
+    if (!selection) {
+      this.endLocally(store.importId);
+      return;
+    }
+    const roots = selection.roots.map(({ rootId, kind, name }) => ({ rootId, kind, name }));
+    store.setLocal((local) => ({ ...local, roots, phase: { kind: "preparing" } }));
+    await this.prepareAndPlan(store, run, selection, destination);
   }
 
   /** Draw the predicted rows for `source`. */
@@ -400,10 +449,10 @@ export class ImportCoordinator {
 
   private async prepareAndPlan(
     store: ImportStore,
+    run: Run,
     selection: Selection,
     destination: ImportDestination,
   ) {
-    const run = this.runFor(store);
     const ids = nodeIdsFor(this.projectId, store.importId);
     const building = buildManifest(selection, {
       importId: store.importId,
@@ -509,12 +558,37 @@ export class ImportCoordinator {
   tryAgain(importId: string) {
     const store = this.store(importId);
     const local = store.getSnapshot().local;
-    if (!local?.manifest || !local.held) return;
+    if (local?.phase.kind !== "not-started" || !local.manifest || !local.held) return;
     void this.plan(
       store,
       { manifest: local.manifest, held: new Map(local.held) },
       this.runFor(store),
     );
+  }
+
+  /**
+   * Give up on an import that did not start. After a definite refusal the server
+   * holds nothing and this ends locally. After a lost answer it may hold the
+   * import, so `finish` closes it first; even a 404 is no proof it never will
+   * (the create may not have committed yet), so the id stays open to the list poll.
+   */
+  async discard(importId: string) {
+    const phase = this.stores.get(importId)?.getSnapshot().local?.phase;
+    if (phase?.kind !== "not-started") return;
+    this.endRun(importId);
+    if (phase.code !== null) {
+      this.endLocally(importId);
+      return;
+    }
+    let closed = true;
+    try {
+      await this.api.finish(this.projectId, importId);
+    } catch {
+      closed = false;
+    }
+    if (this.disposed) return;
+    this.endLocally(importId);
+    if (!closed) this.retiredIds.delete(importId);
   }
 
   // ---- Uploading
@@ -659,12 +733,7 @@ export class ImportCoordinator {
     const { report } = store.getSnapshot();
     if (!report && !planning) {
       // Nothing was ever sent: the import ends here, its rows and its status row go.
-      store.update((state) => ({
-        ...state,
-        stop: "stopped",
-        local: state.local && { ...state.local, phase: { kind: "idle" }, rows: [], held: null },
-      }));
-      this.retire(importId);
+      this.endLocally(importId);
       return "nothing-sent" as const;
     }
     store.update((state) => ({ ...state, stop: "stopping" }));
@@ -681,6 +750,16 @@ export class ImportCoordinator {
       store.update((state) => ({ ...state, stop: "failed" }));
       return "failed" as const;
     }
+  }
+
+  /** The import ended before the server heard of it: its rows and its status row go. */
+  private endLocally(importId: string) {
+    this.stores.get(importId)?.update((state) => ({
+      ...state,
+      stop: "stopped",
+      local: state.local && { ...state.local, phase: { kind: "idle" }, rows: [], held: null },
+    }));
+    this.retire(importId);
   }
 
   // ---- Reading statuses
@@ -806,7 +885,7 @@ export class ImportCoordinator {
     const over = state.report?.summary.state === "finished" || this.missing.has(importId);
     if (!over || this.plans.has(importId) || state.stop === "stopping") return;
     const phase = state.local?.phase.kind;
-    if (phase === "preparing" || phase === "uploading") return;
+    if (phase === "reading" || phase === "preparing" || phase === "uploading") return;
     if (this.trackers.get(importId)?.timers.size) return;
     this.retire(importId);
   }
@@ -826,10 +905,11 @@ export class ImportCoordinator {
     this.changed(true);
   }
 
-  isPreparingOrUploading(): boolean {
+  /** Whether closing the page would lose work: a run is reading, hashing, planning or sending. */
+  isWorking(): boolean {
     for (const store of this.stores.values()) {
       const kind = store.getSnapshot().local?.phase.kind;
-      if (kind === "preparing" || kind === "uploading") return true;
+      if (kind === "reading" || kind === "preparing" || kind === "uploading") return true;
     }
     return false;
   }
@@ -844,6 +924,11 @@ export class ImportCoordinator {
       for (const timer of tracker.timers.values()) this.clock.clearTimeout(timer);
     for (const importId of [...this.runs.keys()]) this.endRun(importId);
     for (const store of this.stores.values()) store.dispose();
+    // A read still running answers into nothing: no store, no run, no request.
+    this.stores.clear();
+    this.trackers.clear();
+    this.tracked.clear();
+    this.snapshot = EMPTY_SNAPSHOT;
   }
 }
 
