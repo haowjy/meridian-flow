@@ -11,10 +11,8 @@ writer watches.
 
 `useThreadSnapshotSync` (`../../../client/query/useThreadSnapshotSync.ts`) owns
 the authoritative history fetch. Every producer of the snapshot key builds its options with
-`threadSnapshotQueryOptions` (`../../../client/query/thread-snapshot-query.ts`), which stamps each
-fetched snapshot with `requestSeq`, the tab's request counter when the fetch started; the host adds
-the account abort signal and its identity and staleness checks as a guard. `historyLoaded` is true
-only after the first successful history reached the transcript store (`settled` also counts an error).
+`threadSnapshotQueryOptions` (`../../../client/query/thread-snapshot-query.ts`); the host adds
+the account abort signal and its identity and staleness checks as a guard.
 
 - The query is always stale (`staleTime: 0`) with `refetchOnMount: "always"`, so
   every activation refetches. Cached turns render first and the fetch reconciles

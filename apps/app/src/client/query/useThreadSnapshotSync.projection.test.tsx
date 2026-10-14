@@ -577,12 +577,11 @@ describe("stale acquisition and missing targets", () => {
     await vi.waitFor(() => expect(status).toBe("cancelled"));
   });
 
-  it("reports history settled only once its turns are in the transcript store, and loaded only after a success", async () => {
+  it("reports history settled only once its turns are in the transcript store", async () => {
     // A reveal into a chat the page has not loaded asks "is this turn absent?"
     // the moment history settles. Settling before the turns reach the store
     // reads as an empty chat, and the reveal gives up on a turn about to arrive.
-    // An error settles the history for that reader, but nothing was loaded: the switch ledger seeds
-    // from `historyLoaded` so a divider that arrives on recovery is not news.
+    // An error settles the history for that reader even though nothing loaded.
     const held = deferred<unknown>();
     harness.snapshotRequest
       .mockReset()
@@ -590,14 +589,13 @@ describe("stale acquisition and missing targets", () => {
       .mockImplementation(() => held.promise);
     const scenario = mountThreadProjectionScenario();
     const { actions } = scenario;
-    const renders: Array<{ settled: boolean; loaded: boolean; turns: number }> = [];
+    const renders: Array<{ settled: boolean; turns: number }> = [];
     let refetch: () => void = () => undefined;
     function Probe() {
       const sync = useThreadSnapshotSync("thread-1");
       refetch = sync.refetch;
       renders.push({
         settled: sync.settled,
-        loaded: sync.historyLoaded,
         turns: actions.turns("thread-1")?.length ?? 0,
       });
       return null;
@@ -606,7 +604,8 @@ describe("stale acquisition and missing targets", () => {
     await act(async () => {
       await vi.waitFor(() => expect(renders.at(-1)?.settled).toBe(true));
     });
-    expect(renders.at(-1)).toEqual({ settled: true, loaded: false, turns: 0 });
+    expect(renders.at(-1)).toEqual({ settled: true, turns: 0 });
+    const erroredRenders = renders.length;
     await act(async () => refetch());
     held.resolve({
       thread: { id: "thread-1", projectId: "project-1", userId: "account-1" },
@@ -633,10 +632,10 @@ describe("stale acquisition and missing targets", () => {
       liveState: { runningTurnId: null },
     });
     await act(async () => {
-      await vi.waitFor(() => expect(renders.at(-1)?.loaded).toBe(true));
+      await vi.waitFor(() => expect(renders.at(-1)?.turns).toBe(2));
     });
-    expect(renders.at(-1)).toEqual({ settled: true, loaded: true, turns: 2 });
-    expect(renders.filter((render) => render.loaded && render.turns === 0)).toEqual([]);
+    expect(renders.at(-1)).toEqual({ settled: true, turns: 2 });
+    expect(renders.slice(erroredRenders).filter((r) => r.settled && r.turns === 0)).toEqual([]);
   });
 });
 

@@ -77,7 +77,7 @@ import { SubagentActivityProvider } from "./subagent/ActivityContext";
 import { SubagentDisclosureProvider } from "./subagent/DisclosureStore";
 import { TurnList } from "./TurnList";
 import { activeChildren } from "./thread-activity";
-import { useSwitchLedger } from "./thread-controls/useSwitchLedger";
+import { useSwitchView } from "./thread-controls/useSwitchView";
 import { useThreadControls } from "./thread-controls/useThreadControls";
 import { UsageBlockedNotice } from "./UsageBlockedNotice";
 import { useChatLinkFollowing } from "./useChatLinkFollowing";
@@ -122,8 +122,6 @@ export type ChatViewProps = {
    * is not in this conversation.
    */
   historySettled: boolean;
-  /** The first successful history load is in the transcript: the switch ledger seeds from it. */
-  historyLoaded: boolean;
   activateProjection: (after?: string) => boolean;
   /** A notice framed onto the composer's top edge; the composer stays usable under it. */
   composerStrip?: ReactNode;
@@ -141,7 +139,6 @@ export function ChatView({
   snapshotLiveState = null,
   snapshotThreadUsage = null,
   historySettled,
-  historyLoaded,
   activateProjection,
   composerStrip,
   active = true,
@@ -260,15 +257,13 @@ export function ChatView({
     },
   );
   const answeredCompactions = useMemo(() => answeredCompactionIds(turns), [turns]);
-  const switches = useSwitchLedger({
+  const switches = useSwitchView({
     threadId,
     projectId,
     writeMode:
       snapshotWriteMode ?? activeThread?.aiWriteMode ?? activeWork?.defaultAiWriteMode ?? "direct",
-    pending: pendingInbox,
     turns,
     snapshot,
-    historyLoaded,
     journal: submissions.switches,
   });
   const controls = useThreadControls({

@@ -4,10 +4,7 @@
  * `useThreadSnapshotSync` is the only observer of the snapshot cache key, so its guarded
  * options are the only options Query ever keeps for it: a response the host would reject
  * (wrong identity, older than live changes) throws inside the fetch and never becomes
- * cached data. Every fetched snapshot is stamped with the reading of this tab's request
- * counter taken when its fetch started. A snapshot proves something absent only when its
- * `requestSeq` is above the reading taken when that thing was last seen, so a failed,
- * skipped or joined-older fetch proves nothing.
+ * cached data.
  *
  * Everything else that wants the cached snapshot or its error reads it with
  * `useThreadSnapshotCache`, which subscribes to the cache without installing an observer
@@ -18,17 +15,7 @@ import { useCallback, useSyncExternalStore } from "react";
 import { deserializeThreadSnapshot, getThreadSnapshot } from "@/client/api/threads-api";
 import { threadQueryKeys } from "./thread-query-keys";
 
-/** The wire snapshot, with the reading of the request counter taken when its fetch started. */
-export type DeserializedThreadSnapshot = ReturnType<typeof deserializeThreadSnapshot> & {
-  requestSeq?: number;
-};
-
-let snapshotRequestsStarted = 0;
-
-/** How many snapshot fetches this tab has started. */
-export function snapshotRequestCount(): number {
-  return snapshotRequestsStarted;
-}
+export type DeserializedThreadSnapshot = ReturnType<typeof deserializeThreadSnapshot>;
 
 export class StaleThreadSnapshot extends Error {}
 
@@ -44,17 +31,15 @@ export function threadSnapshotQueryOptions(threadId: string, guard?: SnapshotGua
   return queryOptions({
     queryKey: threadQueryKeys.snapshot(threadId),
     queryFn: async ({ signal }): Promise<DeserializedThreadSnapshot> => {
-      snapshotRequestsStarted += 1;
-      const requestSeq = snapshotRequestsStarted;
       const requestSignal = guard ? AbortSignal.any([guard.accountSignal, signal]) : signal;
       // A response the guard rejects throws here, so Query never publishes it: an obsolete
-      // HTTP success cannot become history, handoff authority or a ledger proof.
+      // HTTP success cannot become history or handoff authority.
       const snapshot = deserializeThreadSnapshot(
         await getThreadSnapshot({ data: { threadId }, signal: requestSignal }),
       );
       requestSignal.throwIfAborted();
       guard?.accept(snapshot);
-      return { ...snapshot, requestSeq };
+      return snapshot;
     },
   });
 }

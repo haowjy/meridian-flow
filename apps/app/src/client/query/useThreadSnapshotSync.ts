@@ -42,8 +42,6 @@ export type ThreadSnapshotSyncStatus = {
    * would give up on a turn that is about to arrive.
    */
   settled: boolean;
-  /** The first successful history load reached the transcript store; an error never sets it. */
-  historyLoaded: boolean;
   isError: boolean;
   isFetching: boolean;
   refetch: () => void;
@@ -214,7 +212,6 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
     actionRequired: snapshot?.actionRequired ?? null,
     nextSeq: snapshot?.nextSeq ?? null,
     settled: appliedThreadId === threadId || isError,
-    historyLoaded: appliedThreadId === threadId,
     isError,
     isFetching,
     refetch: () => {

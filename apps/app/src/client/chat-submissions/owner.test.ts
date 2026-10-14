@@ -121,19 +121,6 @@ afterEach(async () => {
   window.sessionStorage.clear();
 });
 
-it("posts a switch's control alone: the frontier it records stays local", async () => {
-  const post = vi
-    .mocked(enqueueThreadControl)
-    .mockResolvedValue({ id: "sw", pending: null, turnId: "turn" } as never);
-  const mounted = await mount(new ThreadRunScenario());
-  mounted.read().submitSwitch("sw", "draft", { position: 1, seq: 2 });
-  await vi.waitFor(() => expect(post).toHaveBeenCalledOnce());
-  expect(post.mock.calls[0]?.[1]).toEqual({
-    id: "sw",
-    control: { kind: "write_mode", mode: "draft" },
-  });
-});
-
 it("Edit bridges an already-accepted submission rather than returning delivered words", async () => {
   recordChatSubmission(account, entry());
   const scenario = new ThreadRunScenario({

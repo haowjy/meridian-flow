@@ -10,7 +10,12 @@
  */
 
 import type { AgentSelection } from "@meridian/contracts/agents";
-import type { SubmittedReference, UserMessageBlock } from "@meridian/contracts/protocol";
+import {
+  parseSeq,
+  type SubmittedReference,
+  type UserMessageBlock,
+} from "@meridian/contracts/protocol";
+import type { PendingInboxItem } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { browserRecord } from "@/client/storage/browser-record";
 import {
@@ -32,11 +37,19 @@ export type ChatSubmissionStorage = {
 };
 
 /**
- * The server order the writer's tab had seen for a chat's switches when they chose one: the
- * highest transcript position of a switch divider and the highest pending-inbox `seq`. What
- * the server held at or below it happened before the choice.
+ * The server's answer to a switch, stamped on its record: the journal head `seq` the answer is
+ * labelled with, the chat's applied `mode`, and its queued switch, all read in one transaction.
+ * Every tab reads the stamp as a server fact. `at` (ms) lets the journal prune it.
  */
-export type SwitchFrontier = { position: number | null; seq: number | null };
+export type ControlAnswer = {
+  seq: string;
+  mode: AiWriteMode;
+  pending: PendingInboxItem | null;
+  at: number;
+};
+
+/** A stamped record stays this long, so a tab that was hidden when it was answered can read it. */
+export const ANSWER_GRACE_MS = 60_000;
 
 export type ChatSubmission = {
   recordId: string;
@@ -61,7 +74,13 @@ export type ChatSubmission = {
    * `seq` order with the messages around it; `recordId` and `submissionId` are
    * the control's own id, and the message fields are empty.
    */
-  control?: { kind: "write_mode"; mode: AiWriteMode; after?: SwitchFrontier };
+  control?: { kind: "write_mode"; mode: AiWriteMode };
+  /**
+   * The server's answer to the control. The driver stamps it instead of deleting the record, so
+   * every tab, driving or not, reads one server fact; a stamped record is never posted again,
+   * and the journal prunes it at the first write after `ANSWER_GRACE_MS`.
+   */
+  answer?: ControlAnswer;
   /**
    * Set before the control's first POST. A control without it never reached the server,
    * so the writer may withdraw it locally; with it, only the server's Withdraw is safe.
@@ -105,14 +124,18 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");
 }
 
-function isFrontierPart(value: unknown): value is number | null {
-  return value === null || (typeof value === "number" && Number.isSafeInteger(value));
-}
-
-function parseFrontier(value: unknown): SwitchFrontier | undefined {
-  return isObject(value) && isFrontierPart(value.position) && isFrontierPart(value.seq)
-    ? { position: value.position, seq: value.seq }
-    : undefined;
+function parseAnswer(value: unknown): ControlAnswer | undefined {
+  if (!isObject(value)) return undefined;
+  const { seq, mode, pending, at } = value;
+  if (
+    typeof seq !== "string" ||
+    parseSeq(seq) === null ||
+    !isAiWriteMode(mode) ||
+    (pending !== null && !isObject(pending)) ||
+    typeof at !== "number"
+  )
+    return undefined;
+  return { seq, mode, pending: pending as PendingInboxItem | null, at };
 }
 
 function isAiWriteMode(value: unknown): value is AiWriteMode {
@@ -147,7 +170,8 @@ function parseSubmission(value: unknown): ChatSubmission | null {
     !value.references.every(isObject) ||
     !isStringArray(value.activatedSkillSlugs) ||
     (value.state !== undefined && value.state !== "rejected") ||
-    (value.posted !== undefined && value.posted !== true)
+    (value.posted !== undefined && value.posted !== true) ||
+    (value.answer !== undefined && !parseAnswer(value.answer))
   )
     return null;
   const control = value.control;
@@ -183,15 +207,8 @@ function parseSubmission(value: unknown): ChatSubmission | null {
     references: value.references as SubmittedReference[],
     activatedSkillSlugs: value.activatedSkillSlugs,
     ...(value.state === "rejected" ? { state: "rejected" } : {}),
-    ...(control
-      ? {
-          control: {
-            kind: "write_mode",
-            mode: control.mode as AiWriteMode,
-            ...(parseFrontier(control.after) ? { after: parseFrontier(control.after) } : {}),
-          },
-        }
-      : {}),
+    ...(control ? { control: { kind: "write_mode", mode: control.mode as AiWriteMode } } : {}),
+    ...(value.answer ? { answer: parseAnswer(value.answer) } : {}),
     ...(value.posted ? { posted: true as const } : {}),
     ...(draft ? { draft } : {}),
     ...(creation ? { creation: creation as ChatSubmission["creation"] } : {}),
@@ -298,8 +315,19 @@ export class DeviceChatSubmissionJournal {
     const existing = stored.read();
     const seq = existing?.seq ?? this.nextSeq(accountId, entry.threadId);
     const written = stored.write({ ...entry, seq });
+    if (written) this.pruneAnswered(accountId);
     if (written) this.notify();
     return written;
+  }
+
+  /** Drop stamped records past their grace. A tab blind for that long learns from frames instead. */
+  private pruneAnswered(accountId: string): void {
+    const now = Date.now();
+    for (const other of this.entries())
+      if (other.answer && now - other.answer.at > ANSWER_GRACE_MS)
+        this.recordFor(accountId, chatSubmissionStorageKey(accountId, other.recordId)).write(
+          undefined,
+        );
   }
 
   private nextSeq(accountId: string, threadId: string): number {

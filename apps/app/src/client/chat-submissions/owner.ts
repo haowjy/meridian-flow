@@ -1,5 +1,4 @@
 /** Tab submission model: durable handoff, row projection, and writer commands. */
-import type { EnqueueThreadControlResponse } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import type { QueryClient } from "@tanstack/react-query";
 import { HttpResponseError } from "@/client/api/http-client";
@@ -34,9 +33,9 @@ import { abortable } from "./lock";
 import type { UserTurnRecovery } from "./presentation";
 import {
   type ChatSubmission,
+  type ControlAnswer,
   compareSubmissions,
   type NewChatSubmission,
-  type SwitchFrontier,
 } from "./store";
 import { threadAvailability } from "./thread-availability";
 
@@ -57,25 +56,20 @@ type RecoveryState = {
   busy?: boolean;
   moving?: boolean;
 };
-/** A write-mode switch the journal still holds: the server has not yet been heard from on it. */
+/** A write-mode switch the journal still holds: unanswered, or answered with the stamp. */
 export type JournalSwitch = {
   id: string;
   mode: AiWriteMode;
   /** The record's place in the chat's order. */
   seq: number;
-  /** The server order the choosing tab had seen, if it recorded one. */
-  after: SwitchFrontier | null;
   /** Marked posted before its first request left. */
   posted: boolean;
   /** The server refused it: nothing is held there, so Withdraw is local. */
   refused: boolean;
   /** The last attempt did not succeed (refused, or lost in this tab). */
   failed: boolean;
-};
-export type SwitchAnswer = {
-  id: string;
-  mode: AiWriteMode;
-  response: EnqueueThreadControlResponse;
+  /** The server's answer, stamped by whichever tab drove the record. */
+  answer: ControlAnswer | null;
 };
 type ThreadModel = {
   epoch: number;
@@ -85,7 +79,6 @@ type ThreadModel = {
   /** Records of switches whose last attempt in this tab did not reach the server. */
   failedSwitches: Set<string>;
   switches: readonly JournalSwitch[];
-  answerListeners: Set<(answer: SwitchAnswer) => void>;
 };
 const models = new Map<string, ThreadModel>();
 function threadModel(accountId: string, threadId: string): ThreadModel {
@@ -99,21 +92,10 @@ function threadModel(accountId: string, threadId: string): ThreadModel {
       bindings: new Set(),
       failedSwitches: new Set(),
       switches: [],
-      answerListeners: new Set(),
     };
     models.set(id, model);
   }
   return model;
-}
-/** Hear the server's answer to this chat's switches, whichever pane's driver got it. */
-export function onSwitchAnswered(
-  accountId: string,
-  threadId: string,
-  listener: (answer: SwitchAnswer) => void,
-): () => void {
-  const { answerListeners } = threadModel(accountId, threadId);
-  answerListeners.add(listener);
-  return () => answerListeners.delete(listener);
 }
 const key = (accountId: string, recordId: string) => `${accountId}:${recordId}`;
 
@@ -270,18 +252,12 @@ export class ChatSubmissionOwner {
         if (!entry.control) throw new Error("Control missing");
         return enqueueThreadControl(
           threadId,
-          // `after` is the ledger's local ordering evidence; the route's body is the control alone.
           {
             id: entry.submissionId,
             control: { kind: entry.control.kind, mode: entry.control.mode },
           },
           { signal: requestSignal },
         );
-      },
-      controlAnswered: (entry, response) => {
-        if (!entry.control) return;
-        const answer = { id: entry.submissionId, mode: entry.control.mode, response };
-        for (const listener of this.model.answerListeners) listener(answer);
       },
       created: (thread) => {
         this.destination = "created";
@@ -385,7 +361,7 @@ export class ChatSubmissionOwner {
    * It carries the chat's creation inputs like a message does, so a switch made
    * while navigate-first creation is in flight waits behind it in the same order.
    */
-  submitSwitch = (id: string, mode: AiWriteMode, after?: SwitchFrontier): boolean => {
+  submitSwitch = (id: string, mode: AiWriteMode): boolean => {
     const { accountId, threadId, projectId, current } = this.options;
     if (!current()) return false;
     const entry: NewChatSubmission = {
@@ -398,7 +374,7 @@ export class ChatSubmissionOwner {
       blocks: [],
       references: [],
       activatedSkillSlugs: [],
-      control: { kind: "write_mode", mode, ...(after ? { after } : {}) },
+      control: { kind: "write_mode", mode },
       creation: this.entries().find((record) => record.creation)?.creation,
     };
     if (!recordChatSubmission(accountId, entry)) return false;
@@ -488,10 +464,10 @@ export class ChatSubmissionOwner {
       id: entry.recordId,
       mode: entry.control?.mode ?? "direct",
       seq: entry.seq,
-      after: entry.control?.after ?? null,
       posted: !!entry.posted,
       refused: entry.state === "rejected",
-      failed: entry.state === "rejected" || failed.has(entry.recordId),
+      failed: !entry.answer && (entry.state === "rejected" || failed.has(entry.recordId)),
+      answer: entry.answer ?? null,
     }));
     const previous = this.model.switches;
     const same =
@@ -503,11 +479,10 @@ export class ChatSubmissionOwner {
           entry.id === other.id &&
           entry.mode === other.mode &&
           entry.seq === other.seq &&
-          entry.after?.position === other.after?.position &&
-          entry.after?.seq === other.after?.seq &&
           entry.posted === other.posted &&
           entry.refused === other.refused &&
-          entry.failed === other.failed
+          entry.failed === other.failed &&
+          entry.answer?.seq === other.answer?.seq
         );
       });
     if (!same) this.model.switches = next;
