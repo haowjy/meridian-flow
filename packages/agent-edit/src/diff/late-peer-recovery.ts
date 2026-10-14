@@ -1,5 +1,5 @@
 /**
- * Late-peer recovery (spec-content-rebase "Late peers", D21, D33). A peer update authored before the peer
+ * Late-peer recovery (spec-content-rebase "Late peers", D21, D33, D35). A peer update authored before the peer
  * got a rebase can type into top-level blocks the rebase deleted or retyped; Yjs merges that into dead
  * state (`late-peer.ts` detects it). A stale frame is not current intent, so on text a rebase changed it
  * contributes only its net surviving typing, and nothing else:
@@ -9,18 +9,23 @@
  *   whatever Yjs items or frames they came in. Inner whitespace stays; only the paragraph's outer edges
  *   are trimmed. Spans with surviving other text between them stay apart, so two typed words never fuse.
  *   Green in review, the writer decides. The words the rebase replaced are never revived around it.
- * - The frame's deletions of rebased text never apply (log-only): a reconnect resends the peer's whole
- *   delete set, and nothing tells that replay from a first arrival, so acting on it would erase writing.
+ * - The frame's deletions never apply (log-only, D35), including deletions of typing recovered from earlier
+ *   frames: a reconnect resends the peer's whole delete set, and once the peer has received the server's
+ *   state that set holds the recovered characters too (they sit in the block the rebase deleted). Nothing
+ *   tells that echo from a backspace, so acting on it would erase writing. A backspace the peer typed into
+ *   recovered text before it caught up survives; the writer deletes it again.
  *
  * A browser reconnect can resend its offline typing one keystroke per frame. `LateTyping` carries the
  * spans already written from earlier frames, so the next keystroke extends its span's paragraph instead
  * of starting another. A remembered paragraph the draft no longer shows exactly as written (the writer
- * edited or removed it) is settled: it is never touched again, and new typing beside it starts its own.
+ * edited, formatted or removed it: text, marks and attributes all count) is settled: it is never touched
+ * again, and new typing beside it starts its own.
  *
  * Pure: it needs the doc with the update applied, the update, and the memory from earlier frames.
  */
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import * as Y from "yjs";
+import { blocksEqual } from "./equal.js";
 import { readBlocks } from "./fragments.js";
 import type { LostEdit } from "./late-peer.js";
 import { writeBlocks } from "./writer.js";
@@ -31,8 +36,8 @@ interface WrittenSpan {
   readonly block: string;
   /** The typed characters, in order (`client:clock`). */
   readonly ids: readonly string[];
-  /** The paragraph text written for it ("" when the span was only whitespace and wrote nothing). */
-  readonly written: string;
+  /** The paragraph written for it, as written (null when the span was only whitespace and wrote nothing). */
+  readonly written: PMNode | null;
   /** The paragraph element written, or null when nothing was. */
   readonly paragraph: Y.ID | null;
 }
@@ -40,7 +45,7 @@ interface WrittenSpan {
 /** What earlier frames on the same draft recovered; opaque to callers, who keep the latest per draft. */
 export interface LateTyping {
   readonly spans: readonly WrittenSpan[];
-  /** Characters of dead blocks the peer deleted in earlier frames. */
+  /** Characters of dead blocks the peer deleted in earlier frames, other than typing written before. */
   readonly deleted: ReadonlySet<string>;
 }
 
@@ -54,23 +59,13 @@ export interface LateRecovery {
   update: Uint8Array | null;
   /** Each paragraph of the peer's typing written or rewritten into the draft. */
   written: string[];
-  /** Characters of rebased text the frame deleted, which stay as they are (log-only). */
+  /** Characters of dead text the frame deleted, which stay as they are (log-only, D35). */
   dropped: number;
   /** The memory to pass with the next frame on this draft, once this one is persisted. */
   memory: LateTyping;
 }
 
 const keyOf = (id: Y.ID) => `${id.client}:${id.clock}`;
-
-/**
- * Whether a frame deletes typing an earlier frame recovered (a backspace replayed keystroke by keystroke).
- * Such a frame is new intent even though the document already holds the deletion, so it is admitted.
- */
-export function revisesLateTyping(memory: LateTyping, deleted: readonly LostEdit[]): boolean {
-  if (!memory.spans.length || !deleted.length) return false;
-  const ids = new Set(memory.spans.flatMap((s) => s.ids));
-  return deleted.some((e) => ids.has(keyOf(e.id)));
-}
 const elementOf = (item: Y.Item) => (item.content as Y.ContentType).type as Y.XmlElement;
 
 /** The top-level block (a child of `fragment`) an item sits in, if the doc still knows it. */
@@ -144,8 +139,10 @@ export function recoverLatePeerEdits(input: {
 }): LateRecovery {
   const { doc, schema } = input;
   const memory = input.memory ?? NO_LATE_TYPING;
+  // Typing written before is never deleted again (D35): its deletions are left out of the peer's view.
+  const remembered = new Set(memory.spans.flatMap((s) => s.ids));
   const deleted = new Set(memory.deleted);
-  for (const { id } of input.lost.deleted) deleted.add(keyOf(id));
+  for (const { id } of input.lost.deleted) if (!remembered.has(keyOf(id))) deleted.add(keyOf(id));
   const out: LateRecovery = {
     update: null,
     written: [],
@@ -153,15 +150,10 @@ export function recoverLatePeerEdits(input: {
     memory,
   };
 
-  const remembered = new Set(memory.spans.flatMap((s) => s.ids));
   const frameTyped = new Set<string>();
   for (const { id, text } of input.lost.typed)
     for (let i = 0; i < text.length; i++) frameTyped.add(`${id.client}:${id.clock + i}`);
-  // The blocks this frame touches: its typing, and its deletions of typing written before.
-  const touched = [
-    ...input.lost.typed.map((e) => e.id),
-    ...input.lost.deleted.filter((e) => remembered.has(keyOf(e.id))).map((e) => e.id),
-  ];
+  const touched = input.lost.typed.map((e) => e.id);
   if (!touched.length) return finish(out, [...memory.spans], deleted);
 
   const fragment = doc.getXmlFragment(input.fragmentName);
@@ -171,7 +163,8 @@ export function recoverLatePeerEdits(input: {
   // and nothing is remembered, since no paragraph can be found again.
   const aligned = current.length === elements.length;
   const { ds } = Y.decodeUpdate(input.update);
-  const peerDeleted = (id: Y.ID) => Y.isDeleted(ds, id) || deleted.has(keyOf(id));
+  const peerDeleted = (id: Y.ID) =>
+    !remembered.has(keyOf(id)) && (Y.isDeleted(ds, id) || deleted.has(keyOf(id)));
 
   /** Beside its last known neighbour: after the block itself if it stands, else after the nearest survivor before it. */
   const anchorOf = (item: Y.Item) => {
@@ -182,13 +175,14 @@ export function recoverLatePeerEdits(input: {
   };
   /** The index of a remembered paragraph, when the draft still shows it exactly as written. */
   const shownAt = (span: WrittenSpan): number | null => {
-    if (!span.paragraph) return null;
+    if (!span.paragraph || !span.written) return null;
     const item = Y.getItem(doc.store, span.paragraph) as Y.Item | Y.GC;
     if (!(item instanceof Y.Item) || item.deleted || item.parent !== fragment) return null;
     const at = elements.indexOf(elementOf(item));
-    return at >= 0 && current[at]?.textContent === span.written ? at : null;
+    return at >= 0 && current[at] && blocksEqual([current[at]], [span.written]) ? at : null;
   };
 
+  const para = (text: string) => schema.nodes.paragraph.create(null, schema.text(text));
   interface Pending {
     text: string;
     span: Omit<WrittenSpan, "paragraph"> | null;
@@ -228,34 +222,29 @@ export function recoverLatePeerEdits(input: {
       const ids = new Set(span.ids);
       const matches = live.filter((s) => !claimed.has(s) && s.ids.some((id) => ids.has(id)));
       for (const s of matches) claimed.add(s);
-      const next = aligned ? { block, ids: span.ids, written: text } : null;
+      const next = aligned ? { block, ids: span.ids, written: text ? para(text) : null } : null;
+      // Remembered typing is never deleted, so a span holding a written paragraph's typing still has text.
       const home = matches.find((s) => s.paragraph);
       if (home) {
-        const at = shownAt(home) as number;
-        if (text !== home.written) {
-          if (text) out.written.push(text);
-          rewrite.set(at, { text, span: text ? next : null });
-          if (!text && next) kept.push({ ...next, paragraph: null });
-        } else if (next) kept.push({ ...next, paragraph: home.paragraph });
+        if (text !== home.written?.textContent) {
+          out.written.push(text);
+          rewrite.set(shownAt(home) as number, { text, span: next });
+        } else if (next) kept.push({ ...home, ids: next.ids });
       } else if (text) add(anchorOf(item), { text, span: next });
       else if (next) kept.push({ ...next, paragraph: null });
+      // Other written paragraphs this span now joins (the peer deleted what stood between) fold into it.
       for (const s of matches)
         if (s !== home && s.paragraph) rewrite.set(shownAt(s) as number, { text: "", span: null });
     }
-    // Spans whose typing the peer has since deleted entirely.
-    for (const s of live)
-      if (!claimed.has(s) && s.paragraph)
-        rewrite.set(shownAt(s) as number, { text: "", span: null });
   }
 
   if (!insertAfter.size && !rewrite.size) return finish(out, kept, deleted);
 
-  const para = (text: string) => schema.nodes.paragraph.create(null, schema.text(text));
   const target: PMNode[] = [];
   const placed: Array<[number, Omit<WrittenSpan, "paragraph">]> = [];
   const push = (pending: Pending) => {
     if (pending.span) placed.push([target.length, pending.span]);
-    target.push(para(pending.text));
+    target.push(pending.span?.written ?? para(pending.text));
   };
   for (const pending of insertAfter.get(-1) ?? []) push(pending);
   current.forEach((block, i) => {

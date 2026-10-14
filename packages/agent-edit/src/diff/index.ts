@@ -15,7 +15,6 @@ export {
   type LateTyping,
   NO_LATE_TYPING,
   recoverLatePeerEdits,
-  revisesLateTyping,
 } from "./late-peer-recovery.js";
 export { type Conflict, type RebaseResult, rebase } from "./merge.js";
 export {
