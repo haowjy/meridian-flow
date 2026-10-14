@@ -11,7 +11,7 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDatabase } from "../../../shared/drizzle-transaction.js";
 import type { StopFacts, WriterRow } from "../loop/stop-rule.js";
 import { userMessageBlocksFromTurn } from "../loop/user-turn-blocks.js";
-import type { HandBackStore, StoredHandBack } from "./runtime-delivery.js";
+import type { HandBackStore, StoredHandBack } from "./delivery-ports.js";
 
 export function createDrizzleHandBacks(db: DrizzleDatabase): HandBackStore {
   const db_ = () => currentDrizzleDb(db);

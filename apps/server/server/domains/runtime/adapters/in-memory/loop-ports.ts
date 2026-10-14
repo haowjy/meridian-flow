@@ -5,6 +5,7 @@
  */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { CurrentToolCall, ThreadLeaseState } from "@meridian/contracts/threads";
+import type { Lease } from "../../loop/ports.js";
 import {
   DEFAULT_LEASE_TTL_MS,
   type ExecutionId,
@@ -15,7 +16,8 @@ import {
 } from "../../loop/ports.js";
 import { projectRunState } from "../../loop/run-state.js";
 import type { ThreadLock } from "../../loop/thread-lock.js";
-import { createDeliveryAdapter, type DeliveryStore } from "../runtime-delivery.js";
+import type { DeliveryStore } from "../delivery-ports.js";
+import { createDeliveryAdapter } from "../runtime-delivery.js";
 
 export function createInMemoryInbox(): DeliveryStore {
   const blocked = new Map<ThreadId, "credits_exhausted">();
@@ -151,7 +153,7 @@ export interface InMemoryRunClaimOptions {
 }
 
 export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): RunClaim &
-  import("../runtime-delivery.js").DeliveryLeaseStore & {
+  import("../delivery-ports.js").DeliveryLeaseStore & {
     readDeliveryRun(threadId: ThreadId): import("../../loop/ports.js").InboxProjection["run"];
   } {
   const holderId = options.holderId ?? crypto.randomUUID();
@@ -159,8 +161,13 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
   const now = options.now ?? (() => Date.now());
   const leases = new Map<ThreadId, InMemoryLease>();
   const shortClaims = new Set<ThreadId>();
-  // The execution claim, apart from its row: abandon unlocks and keeps the row.
-  const locked = new Set<ThreadId>();
+  // The execution claim, apart from its row: abandon unlocks and keeps the row. It records the
+  // claimant's execution, because settling a stale row happens under the new claimant's claim:
+  // ending the old execution must not unlock the thread the new one holds.
+  const locked = new Map<ThreadId, ExecutionId>();
+  const unlockIfHeldBy = (lease: Lease) => {
+    if (locked.get(lease.threadId) === lease.executionId) locked.delete(lease.threadId);
+  };
 
   const liveLease = (threadId: ThreadId): InMemoryLease | null => {
     const lease = leases.get(threadId);
@@ -201,7 +208,7 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
     },
     async startExecution(threadId, executionId, settle) {
       if (shortClaims.has(threadId) || locked.has(threadId)) return null;
-      locked.add(threadId);
+      locked.set(threadId, executionId);
       try {
         await settle();
         if (leases.has(threadId)) throw new Error("Stale execution row survived settlement");
@@ -358,22 +365,11 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
         .slice(0, limit);
     },
 
-    async lockStaleExecution(threadId) {
-      const row = leases.get(threadId);
-      return row ? { executionId: row.executionId } : null;
-    },
-
-    async deleteStaleExecution(threadId, executionId) {
-      if (leases.get(threadId)?.executionId !== executionId) return false;
-      leases.delete(threadId);
-      return true;
-    },
-
     async abandon(lease) {
       const row = leases.get(lease.threadId);
       if (row?.executionId === lease.executionId && row.holderId === lease.holderId) {
         row.expiresAt = now();
-        locked.delete(lease.threadId);
+        unlockIfHeldBy(lease);
       }
     },
 
@@ -392,7 +388,7 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
       const row = leases.get(lease.threadId);
       if (!row || row.executionId !== lease.executionId) return false;
       leases.delete(lease.threadId);
-      locked.delete(lease.threadId);
+      unlockIfHeldBy(lease);
       return true;
     },
   };

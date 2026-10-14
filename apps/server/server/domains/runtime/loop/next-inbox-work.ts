@@ -57,3 +57,9 @@ function isControl(row: InboxMessage): row is ControlMessage {
 function isWriteModeSwitch(row: InboxMessage): row is WriteModeSwitchMessage {
   return row.intent === "control" && row.body.kind === "write_mode";
 }
+
+/** Materialization takes every waiting non-command row; a queued switch is not a boundary for it. */
+export function prefixRows(eligible: readonly InboxMessage[]): InboxWorkSelection {
+  const rows = eligible.filter((row) => row.intent !== "control");
+  return rows.length > 0 ? { kind: "batch", rows } : { kind: "none" };
+}

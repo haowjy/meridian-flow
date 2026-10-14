@@ -9,8 +9,8 @@ import * as schema from "@meridian/database/schema";
 import { and, asc, eq, gt, inArray, isNull, ne, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDatabase } from "../../../shared/drizzle-transaction.js";
 import type { InboxMessage, MessageBody } from "../loop/ports.js";
+import type { DeliveryStore } from "./delivery-ports.js";
 import { answerRunState, markRunStateChanged, publishRunState } from "./drizzle-run-state.js";
-import type { DeliveryStore } from "./runtime-delivery.js";
 
 function toIso(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : value;

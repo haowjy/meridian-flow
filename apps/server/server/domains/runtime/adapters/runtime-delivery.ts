@@ -1,38 +1,28 @@
 /** Shared delivery transitions. Concrete adapters supply one compatible transaction/store bundle. */
 
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
-import type { SavedExecutionReport } from "@meridian/contracts/spawn";
 import type {
   HandBackRequest,
   HandBackResponse,
-  RunState,
   StopRequest,
   StopResponse,
 } from "@meridian/contracts/threads";
-import { isPendingPlaceholder, isTerminalTurnStatus, type Turn } from "@meridian/contracts/threads";
+import { isPendingPlaceholder } from "@meridian/contracts/threads";
 import type { NoticePort } from "../../notices/index.js";
-import { SystemUpdateMetadataCodec } from "../../threads/index.js";
+import { hasCompletedReplyInLineage, SystemUpdateMetadataCodec } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
 import { turnGraph } from "../../threads/ports/turn-graph.js";
 import type { DetachedWorkTracker } from "../detached-work.js";
 import { finalizeExecution } from "../loop/execution-finalizer.js";
 import { drainInbox, planMessageTurns } from "../loop/inbox-context.js";
 import { currentTurnKind, reservationTurn } from "../loop/local-turn.js";
-import { type InboxWorkSelection, next } from "../loop/next-inbox-work.js";
-import { finalizeOrphanedTurns } from "../loop/orphaned-placeholder.js";
+import { type InboxWorkSelection, next, prefixRows } from "../loop/next-inbox-work.js";
 import {
   type PersistenceDeps,
   persistAndAppendEvents,
   persistAndAppendTurnStartEvents,
 } from "../loop/persistence.js";
-import type {
-  InboxMessage,
-  InboxReader,
-  Lease,
-  MessageDraft,
-  RunClaim,
-  RunStarter,
-} from "../loop/ports.js";
+import type { InboxMessage, MessageDraft, RunClaim, RunStarter } from "../loop/ports.js";
 import { preparationFailureError } from "../loop/preparation-failure.js";
 import { NoPendingWakeError } from "../loop/run-turn-port.js";
 import type {
@@ -55,299 +45,38 @@ import {
 import { createThreadControls } from "../loop/thread-controls.js";
 import type { ThreadLock } from "../loop/thread-lock.js";
 import { type WriteModeSwitchPort, writeModeSwitchTurn } from "../loop/write-mode-switch.js";
-
-/** Adapter-private storage primitives; never injected into the model loop or producers. */
-export interface DeliveryStore extends InboxReader {
-  setBlockedReason(threadId: ThreadId, reason: "credits_exhausted" | null): Promise<void>;
-  /**
-   * Records that a write outside this store (the chat's write mode) changed an input of the chat's
-   * run-state record, so the transaction publishes a fresh record. Call under the thread lock.
-   */
-  markRunStateChanged(threadId: ThreadId): void;
-  /** Appends the chat's run-state record now, under its lock; returns its stream version (null: none). */
-  publishRunState(threadId: ThreadId): Promise<string | null>;
-  /** The record a command answers with, under the chat's lock; see `answerRunState`. */
-  answerRunState(threadId: ThreadId): Promise<RunState>;
-  findMessage(id: string): Promise<InboxMessage | null>;
-  workNoticeTargets(workId: WorkId): Promise<ThreadId[]>;
-  canMaterializeWork(threadId: ThreadId): Promise<boolean>;
-  pendingWorkThreads(limit: number, afterThreadId?: ThreadId): Promise<ThreadId[]>;
-  enqueue(draft: MessageDraft): Promise<InboxMessage>;
-  /**
-   * Marks rows delivered once (rows already delivered are untouched). A message
-   * row records `byTurnId` as its deliverer. Returns the message rows this call
-   * delivered, in `seq` order.
-   */
-  ack(
-    threadId: ThreadId,
-    ids: string[],
-    byTurnId?: TurnId | null,
-    /** Takes writer messages out of the chat instead of delivering them: no deliverer, `handed_back_by` set. */
-    options?: { handedBackBy?: string },
-  ): Promise<string[]>;
-}
-
-/** What a hand-back request decided, stored by request id so a replay answers the same. */
-export type StoredHandBack = {
-  fingerprint: string;
-  handedBack: string[];
-  answered: string[];
-  gone: string[];
-  cancelledExecutionId: string | null;
-};
-
-/** Adapter-private storage for hand-back and Stop; every method runs under the chat's thread lock. */
-export interface HandBackStore {
-  find(threadId: ThreadId, requestId: string): Promise<StoredHandBack | null>;
-  /** The lease, its receipt and the writer messages a request's scope could cover (see `StopFacts`). */
-  readFacts(threadId: ThreadId, scope: HandBackScopeFacts): Promise<StopFacts>;
-  record(
-    threadId: ThreadId,
-    requestId: string,
-    fingerprint: string,
-    decision: {
-      handBack: string[];
-      answered: string[];
-      gone: string[];
-      cancelledExecutionId?: string | null;
-    },
-  ): Promise<void>;
-  /** Sets `cancel_requested` on the lease row of this execution, expiry ignored. */
-  cancelExecution(threadId: ThreadId, executionId: string): Promise<boolean>;
-  /** The writer's message blocks of these user turns, in the order given. */
-  contentOf(
-    userTurnIds: readonly string[],
-  ): Promise<{ userTurnId: string; blocks: HandBackResponse["handedBack"][number]["blocks"] }[]>;
-}
-
-export interface DeliveryLeaseStore {
-  cancelThreadReceipt(threadId: ThreadId, turnId: TurnId): Promise<boolean>;
-  lockThreadReceipt(
-    threadId: ThreadId,
-  ): Promise<{ ids: string[]; turnId: TurnId | null; lease: Lease } | null>;
-  bindTurn(
-    lease: Lease,
-    turnId: TurnId,
-    ids: readonly string[],
-    kind: "assistant" | "compaction",
-  ): Promise<void>;
-  setAdoptedMessageIds(lease: Lease, ids: readonly string[]): Promise<boolean>;
-  clearReceipt(lease: Lease, expectedIds: readonly string[]): Promise<boolean>;
-  clearOrphanedReceipt(
-    threadId: ThreadId,
-    turnId: TurnId,
-    expectedIds: readonly string[],
-  ): Promise<boolean>;
-  lockReceipt(lease: Lease): Promise<{ ids: string[]; cancelRequested: boolean } | null>;
-  /**
-   * The thread's lease row regardless of holder and expiry, locked. Called only
-   * under a newly acquired claim, which proves its holder is gone.
-   */
-  lockStaleExecution(threadId: ThreadId): Promise<{ executionId: string } | null>;
-  deleteStaleExecution(threadId: ThreadId, executionId: string): Promise<boolean>;
-}
+import type {
+  DeliveryLeaseStore,
+  DeliveryStore,
+  HandBackStore,
+  StoredHandBack,
+} from "./delivery-ports.js";
+import { createExecutionSettlement, type ExecutionSettlementDeps } from "./execution-settlement.js";
 
 const PREPARATION_ATTEMPTS = 3;
 
 export function createDeliveryAdapter(
-  deps: PersistenceDeps & {
+  deps: ExecutionSettlementDeps & {
     backgroundTasks: DetachedWorkTracker;
-    repos: import("../../threads/index.js").ThreadRepositories;
-    toolRegistry?: Pick<import("../tools/types.js").ToolRegistry, "getRegistration">;
-    inbox: DeliveryStore;
     /** Absent where hand-back is not supported (the in-memory harness). */
     handBacks?: HandBackStore;
-    leaseStore: DeliveryLeaseStore;
     runClaim: Pick<
       RunClaim,
       "release" | "abandon" | "withExclusiveThread" | "cancelExecution" | "holder"
     >;
-    publishFinalizedReports(reports: readonly SavedExecutionReport[]): Promise<void>;
     workContext: import("../loop/work-context.js").WorkContextReader;
-    threadLock: ThreadLock;
     notices: NoticePort;
     runStarter: RunStarter;
-    schedulePostCommit(task: () => Promise<void>): void;
-    publishStatus?(threadId: ThreadId): Promise<void>;
     writeModeSwitch: WriteModeSwitchPort;
   },
 ): RuntimeDelivery {
   const { inbox, leaseStore, threadLock } = deps;
-  const backgroundTasks = deps.backgroundTasks;
   const schedulePostCommit = (task: () => Promise<void>) =>
     deps.schedulePostCommit(() =>
-      backgroundTasks.track(Promise.resolve().then(task), "runtime delivery callback"),
+      deps.backgroundTasks.track(Promise.resolve().then(task), "runtime delivery callback"),
     );
-  /** The turn current when an execution acknowledges messages, and its execution. */
-  type Deliverer = { turn: { id: string; position: number | null }; executionId: string | null };
-  const deliveredBy = (lease: Lease, turn: Pick<Turn, "id" | "position">): Deliverer => ({
-    turn,
-    executionId: lease.executionId,
-  });
-  /**
-   * The one acknowledgement path. Message rows this call actually delivers record their
-   * deliverer; controls and notices record nothing. The inbox write marks the chat, so the
-   * transaction publishes the record. Every retirement path goes through here under the
-   * caller's thread lock, so a usage block is cleared the moment no message or control waits
-   * behind it.
-   */
-  const ack = async (threadId: ThreadId, ids: readonly string[], by: Deliverer | null = null) => {
-    if (ids.length > 0) await inbox.ack(threadId, [...ids], (by?.turn.id as TurnId) ?? null);
-    await clearBlockWhenIdle(threadId);
-  };
-  /** A usage block clears the moment no message or control waits behind it. */
-  const clearBlockWhenIdle = async (threadId: ThreadId) => {
-    const projection = await inbox.readPendingProjection(threadId);
-    if (
-      !projection.messages.some(
-        (message) => message.intent === "message" || message.intent === "control",
-      )
-    )
-      await inbox.setBlockedReason(threadId, null);
-  };
-  /**
-   * Ends an execution in the transaction that wrote its last terminal turn: deletes the lease
-   * row, whose release marks the chat so that transaction publishes the closed record.
-   */
-  async function endExecution(lease: Lease) {
-    await deps.runClaim.release(lease);
-  }
-  const clearOrphanedTurn = async (threadId: ThreadId, turnId: TurnId) => {
-    const receipt = await leaseStore.lockThreadReceipt(threadId);
-    if (!receipt || receipt.turnId !== turnId) return null;
-    if (!(await leaseStore.clearOrphanedReceipt(threadId, turnId, receipt.ids))) {
-      throw new Error("Cannot clear orphaned run receipt after it changed");
-    }
-    return receipt.ids;
-  };
-  const retireOrphanedReply = async (threadId: ThreadId, turnId: TurnId) => {
-    const ids = await clearOrphanedTurn(threadId, turnId);
-    if (!ids) return;
-    const orphan = await deps.repos.turns.findById(turnId);
-    await ack(threadId, ids, {
-      turn: { id: turnId, position: orphan?.position ?? null },
-      executionId: orphan?.executionId ?? null,
-    });
-  };
-  const clearOrphanedTurnForRepair = async (threadId: ThreadId, turnId: TurnId) => {
-    await clearOrphanedTurn(threadId, turnId);
-  };
-  /**
-   * The one orphan repair for every path that takes the claim. A dead reply's
-   * receipt retires with its messages answered; a dead compaction's or seed's
-   * receipt clears and leaves its unanswered messages pending for the next run.
-   * Call under the thread lock and the session claim.
-   */
-  const repairOrphans = (threadId: ThreadId) =>
-    finalizeOrphanedTurns(
-      { ...deps, retireOrphanedReply, clearOrphanedTurn: clearOrphanedTurnForRepair },
-      { threadId },
-    );
-  /**
-   * The child-report repair for what the primary scan leaves alone (a
-   * subagent's assistant), run while a stale row still holds its receipt: fail
-   * the turn as the report repair does, so its report finalizes and its
-   * messages retire. The claim proves every unsettled turn is an orphan,
-   * including one an older lease bound without recording its execution.
-   */
-  async function repairStaleExecutionTurns(threadId: ThreadId) {
-    const reports: SavedExecutionReport[] = [];
-    for (const turn of await deps.repos.turns.listUnsettledForThread(threadId)) {
-      if (isTerminalTurnStatus(turn.status)) continue;
-      if (turn.role !== "assistant" && turn.role !== "compaction") continue;
-      const completion = await finalizeExecution(deps, {
-        threadId,
-        turnId: turn.id as TurnId,
-        ...(turn.role === "compaction" ? { reportContent: "empty" as const } : {}),
-        cause: {
-          kind: "failed",
-          reason: "orphaned",
-          error: "Child execution stopped before terminal completion",
-        },
-      });
-      if (turn.role === "assistant") await retireOrphanedReply(threadId, turn.id as TurnId);
-      else await clearOrphanedTurnForRepair(threadId, turn.id as TurnId);
-      if (completion.report) reports.push(completion.report);
-    }
-    return reports;
-  }
-  /**
-   * Call holding the session claim. With no `repair`, this is the run starter's
-   * full settlement: repairs may commit separately (a crash between them loses
-   * nothing, because the end is decided from turns that carry the execution's
-   * id, never from the row's receipt arrays), then the stale row ends and is
-   * deleted in one transaction with the end append.
-   *
-   * A sweep lane passes its own `repair` and settles only what it names: a
-   * stale candidate may not repair a newer receipt's execution, so the row is
-   * released (its end journaled when a turn carries it) only when the repair
-   * retired its receipt or the receipt was already empty.
-   */
-  async function settleStaleExecution<T = void>(
-    threadId: ThreadId,
-    repair?: () => Promise<T>,
-  ): Promise<T | void> {
-    if (repair) return settleSweepLane(threadId, repair);
-    const reports = await threadLock.withThreadLock(threadId, async () => {
-      const repaired = await repairOrphans(threadId);
-      const stale = await leaseStore.lockStaleExecution(threadId);
-      if (stale) repaired.push(...(await repairStaleExecutionTurns(threadId)));
-      return repaired;
-    });
-    await deps.publishFinalizedReports(reports);
-    await threadLock.withThreadLock(threadId, async () => {
-      const stale = await leaseStore.lockStaleExecution(threadId);
-      if (!stale) return;
-      const turns = await deps.repos.turns.listByExecution(threadId, stale.executionId);
-      if (turns.some((turn) => !isTerminalTurnStatus(turn.status)))
-        throw new Error("A stale execution still has unsettled turns after repair");
-      await leaseStore.deleteStaleExecution(threadId, stale.executionId);
-      // The row's deletion is what turns the chat idle for readers.
-      schedulePostCommit(async () => {
-        await deps.publishStatus?.(threadId);
-      });
-    });
-  }
-  async function settleSweepLane<T>(threadId: ThreadId, repair: () => Promise<T>): Promise<T> {
-    return threadLock.withThreadLock(threadId, async () => {
-      const receipt = await leaseStore.lockThreadReceipt(threadId);
-      const result = await repair();
-      const repaired = await leaseStore.lockThreadReceipt(threadId);
-      if (
-        receipt &&
-        repaired?.lease.executionId === receipt.lease.executionId &&
-        repaired.lease.holderId === receipt.lease.holderId &&
-        repaired.turnId === null &&
-        repaired.ids.length === 0
-      )
-        await endExecution(receipt.lease);
-      schedulePostCommit(async () => {
-        await deps.publishStatus?.(threadId);
-      });
-      return result;
-    });
-  }
-  async function releaseExecution(lease: Lease): Promise<"released" | "ended" | "abandoned"> {
-    let outcome: "released" | "ended" | "abandoned";
-    try {
-      outcome = await threadLock.withThreadLock(lease.threadId, async () => {
-        if (!(await leaseStore.lockReceipt(lease))) {
-          // A close already ended it; only the physical claim may remain.
-          await deps.runClaim.release(lease);
-          return "released" as const;
-        }
-        const turns = await deps.repos.turns.listByExecution(lease.threadId, lease.executionId);
-        if (turns.some((turn) => !isTerminalTurnStatus(turn.status))) return "abandoned" as const;
-        await endExecution(lease);
-        return "ended" as const;
-      });
-    } catch (error) {
-      await deps.runClaim.abandon(lease);
-      throw error;
-    }
-    if (outcome === "abandoned") await deps.runClaim.abandon(lease);
-    return outcome;
-  }
+  const settlement = createExecutionSettlement({ ...deps, schedulePostCommit });
+  const { ack, clearBlockWhenIdle, deliveredBy, endExecution, settleStaleExecution } = settlement;
   type SelectedDelivery<TSelection> = {
     selection: TSelection;
     pendingBatch: InboxMessage[];
@@ -980,37 +709,6 @@ export function createDeliveryAdapter(
     });
   }
 
-  async function hasCompletedReplyInLineage(threadId: ThreadId): Promise<boolean> {
-    let thread = await deps.repos.threads.findByIdIncludingDeleted(threadId);
-    let throughPosition = Number.POSITIVE_INFINITY;
-    const visited = new Set<string>();
-    while (thread && !visited.has(thread.id)) {
-      visited.add(thread.id);
-      const localTurns = await deps.repos.turns.listByThread(thread.id as ThreadId);
-      if (
-        localTurns.some(
-          (turn) =>
-            turn.position <= throughPosition &&
-            turn.role === "assistant" &&
-            turn.status === "complete",
-        )
-      )
-        return true;
-      if (thread.originType !== "fork" || !thread.originTurnId) return false;
-      const cutoff = await turnGraph(deps.repos.turns).findById(thread.originTurnId as TurnId);
-      if (!cutoff) return false;
-      thread = await deps.repos.threads.findByIdIncludingDeleted(cutoff.threadId as ThreadId);
-      throughPosition = cutoff.position;
-    }
-    return false;
-  }
-
-  /** A failed or cancelled assistant delivers its messages: they are never taken on again. */
-  async function acknowledgeFailedReply(lease: Lease, turn: Turn, messageIds: readonly string[]) {
-    if (turn.role === "assistant" && (turn.status === "cancelled" || turn.status === "error"))
-      await ack(lease.threadId, messageIds, deliveredBy(lease, turn));
-  }
-
   const requireHandBacks = () => {
     if (!deps.handBacks) throw new Error("Hand-back is not configured for this delivery adapter");
     return deps.handBacks;
@@ -1094,10 +792,7 @@ export function createDeliveryAdapter(
       enqueue,
       // The control route applies an idle switch itself; a reply's release
       // wake reaches one the reply kept from it.
-      async enqueueWithoutWake(draft) {
-        const message = await inbox.enqueue(draft);
-        return message;
-      },
+      enqueueWithoutWake: inbox.enqueue,
       async enqueueSettled(draft, cancelledIds) {
         const message = await inbox.enqueue(draft);
         await ack(draft.threadId, [...cancelledIds, message.id]);
@@ -1113,7 +808,7 @@ export function createDeliveryAdapter(
       findControlTurn: (id, controlId) => deps.repos.turns.findByControlId(id, controlId),
       answerRunState: inbox.answerRunState,
       acknowledge: (id, controlIds) => ack(id, controlIds),
-      hasCompletedReply: hasCompletedReplyInLineage,
+      hasCompletedReply: (id) => hasCompletedReplyInLineage(deps.repos, id),
     }),
     threadChanged,
     async workChanged(workId, origin) {
@@ -1138,32 +833,14 @@ export function createDeliveryAdapter(
       if (failed?.status === "rejected") throw failed.reason;
       return threads.length;
     },
-    retireOrphanedReply: (threadId, turnId) =>
-      threadLock.withThreadLock(threadId, () => retireOrphanedReply(threadId, turnId)),
-    clearOrphanedTurn: (threadId, turnId) =>
-      threadLock.withThreadLock(threadId, () => clearOrphanedTurnForRepair(threadId, turnId)),
-    settleStaleExecution,
-    releaseExecution,
-    blockForUsage: (lease) =>
-      threadLock.withThreadLock(lease.threadId, async () => {
-        const receipt = await leaseStore.lockReceipt(lease);
-        const projection = await inbox.readPendingProjection(lease.threadId);
-        if (
-          !receipt ||
-          !projection.messages.some(
-            (message) => message.intent === "message" || message.intent === "control",
-          ) ||
-          projection.run?.turnId ||
-          projection.blocked?.reason === "credits_exhausted"
-        )
-          return;
-        await inbox.setBlockedReason(lease.threadId, "credits_exhausted");
-      }),
+    retireOrphanedReply: settlement.retireOrphanedReply,
+    clearOrphanedTurn: settlement.clearOrphanedTurn,
+    settleStaleExecution: settlement.settleStaleExecution,
+    releaseExecution: settlement.releaseExecution,
+    blockForUsage: settlement.blockForUsage,
     selectPending: inbox.selectPending,
     readPendingProjection: inbox.readPendingProjection,
-    pendingMessageThreads: async (limit, afterThreadId) => {
-      return inbox.pendingMessageThreads(limit, afterThreadId);
-    },
+    pendingMessageThreads: inbox.pendingMessageThreads,
     enqueue: (draft) => threadLock.withThreadLock(draft.threadId, () => enqueue(draft)),
     answerRunState: (threadId) =>
       threadLock.withThreadLock(threadId, () => inbox.answerRunState(threadId)),
@@ -1285,13 +962,12 @@ export function createDeliveryAdapter(
           }
         }
         await input.settleSummaryResponses?.();
-        const completion = await finalizeExecution(deps, {
-          threadId,
-          turnId: input.turnId,
+        const completion = await settlement.settleTerminal(
+          input.lease,
+          input.turnId,
           cause,
-        });
-        await acknowledgeFailedReply(input.lease, completion.turn, receipt?.ids ?? []);
-        await endExecution(input.lease);
+          receipt,
+        );
         return { kind: "completed" as const, completion };
       });
       if (disposition.kind === "completed") return disposition;
@@ -1301,23 +977,16 @@ export function createDeliveryAdapter(
       if (adopted.split) return { kind: "split", adopted };
       const completion = await threadLock.withThreadLock(threadId, async () => {
         const receipt = await leaseStore.lockReceipt(input.lease);
-        const result = await finalizeExecution(deps, {
-          threadId,
-          turnId: input.turnId,
-          cause: terminalCause(receipt),
-        });
-        await acknowledgeFailedReply(input.lease, result.turn, receipt?.ids ?? []);
-        await endExecution(input.lease);
-        return result;
+        return settlement.settleTerminal(
+          input.lease,
+          input.turnId,
+          terminalCause(receipt),
+          receipt,
+        );
       });
       return { kind: "completed", completion };
     },
   };
-}
-
-function prefixRows(eligible: readonly InboxMessage[]): InboxWorkSelection {
-  const rows = eligible.filter((row) => row.intent !== "control");
-  return rows.length > 0 ? { kind: "batch", rows } : { kind: "none" };
 }
 
 function sameInboxBatch(left: readonly InboxMessage[], right: readonly InboxMessage[]): boolean {

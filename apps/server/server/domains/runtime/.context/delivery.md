@@ -49,7 +49,9 @@ transcript ancestry or stream order.
   without a second landing). The
   run owner's cleanup calls `releaseExecution`: unlock only when the row is
   gone, end when every reserved turn is terminal, otherwise **abandon**
-  (expire the row now, unlock, journal nothing). `settleStaleExecution` runs
+  (expire the row now, unlock, journal nothing). Ending, abandoning and stale
+  settlement live in `adapters/execution-settlement.ts`; delivery keeps selection,
+  preparation, switches, reservation, hand-back and Stop. `settleStaleExecution` runs
   under a newly acquired claim before anything else (inside `startExecution`
   before the new row is inserted, and in `materializeIdle`, `applyDueSwitches`
   and the repair lane, which also scans expired lease rows): repairs commit

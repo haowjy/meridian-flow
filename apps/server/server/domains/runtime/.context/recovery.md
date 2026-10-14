@@ -11,7 +11,10 @@ for repair (`compaction` and handoff seed `system`). A run or brief owns the
 same destination claim while active, so a pending placeholder discovered after
 acquiring that claim is orphaned. `finalizeOrphanedTurns` and the placeholder
 lane in `spawn/orphan-report-repair.ts` repair it; they also repair dead
-primary assistant turns. Compactions use `finalizeExecution`. Handoff seeds
+primary assistant turns. The finalizer takes a repair scope: `sweep` (the
+default) leaves a subagent's assistant alone, and `claimed`, used only by the
+full settlement under a newly taken claim, adds it and any unsettled
+compaction, with the child failure text. Compactions use `finalizeExecution`. Handoff seeds
 use `completeHandoffSeed` to write an unavailable card, interrupted recovery
 metadata and history read line.
 
@@ -24,6 +27,10 @@ Repair finalizes that reply and atomically retires and acknowledges its exact
 receipt, whether the reply belongs to a primary or child thread. Late messages
 that the dead run never adopted stay queued, and a crashed child publishes one
 failure report without starting again for the retired parent message.
+`settleStaleExecution` belongs to `adapters/execution-settlement.ts`, which
+owns acknowledgement, ending an execution, abandoning a claim and orphan
+retirement for the delivery adapter; the stale lease is read with
+`lockThreadReceipt` and ended by the one end operation, `runClaim.release`.
 Run-start repair is `settleStaleExecution(threadId)` with no `repair`,
 run inside `startExecution`'s claim callback: the full settlement above, before
 the replacement run's lease row exists.

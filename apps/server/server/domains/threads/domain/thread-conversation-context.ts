@@ -154,3 +154,32 @@ function throughCutoff(loaded: Loaded, thread: Thread, throughTurnId?: TurnId): 
   });
   return { inherited: part(loaded.inherited), local: part(loaded.local), hidden: loaded.hidden };
 }
+
+/** Whether a reply completed in this chat's own history or, for a fork, before its cut point. */
+export async function hasCompletedReplyInLineage(
+  repos: { threads: ThreadRepository; turns: TurnRepository },
+  threadId: ThreadId,
+): Promise<boolean> {
+  let thread = await repos.threads.findByIdIncludingDeleted(threadId);
+  let throughPosition = Number.POSITIVE_INFINITY;
+  const visited = new Set<string>();
+  while (thread && !visited.has(thread.id)) {
+    visited.add(thread.id);
+    const localTurns = await repos.turns.listByThread(thread.id as ThreadId);
+    if (
+      localTurns.some(
+        (turn) =>
+          turn.position <= throughPosition &&
+          turn.role === "assistant" &&
+          turn.status === "complete",
+      )
+    )
+      return true;
+    if (thread.originType !== "fork" || !thread.originTurnId) return false;
+    const cutoff = await turnGraph(repos.turns).findById(thread.originTurnId as TurnId);
+    if (!cutoff) return false;
+    thread = await repos.threads.findByIdIncludingDeleted(cutoff.threadId as ThreadId);
+    throughPosition = cutoff.position;
+  }
+  return false;
+}
