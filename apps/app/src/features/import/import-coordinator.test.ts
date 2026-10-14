@@ -1,6 +1,7 @@
 import type { ImportEntryStatus, ImportStatus, ImportSummary } from "@meridian/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { ImportRequestError } from "@/client/api/imports-api";
+import type { ClientRow } from "./client-rows";
 import type { ImportDestination } from "./destination";
 import { fakeImportServer } from "./fake-import-server";
 import { type CatalogReader, type Clock, ImportCoordinator } from "./import-coordinator";
@@ -74,11 +75,18 @@ describe("ImportCoordinator.begin", () => {
     const store = coordinator.store(importId);
     expect(server.calls.plan).toBe(0);
     expect(displayOf(store.getSnapshot())).toBe("reading");
-    await until(() => (store.getSnapshot().local?.rows.length ?? 0) > 0);
-    expect(displayOf(store.getSnapshot())).toBe("preparing");
     // The rows are drawn before the plan is sent, and the plan's answer replaces them.
-    const rows = store.getSnapshot().local?.rows ?? [];
+    let rows: readonly ClientRow[] = [];
+    let drawnWhile: string | null = null;
+    store.subscribe(() => {
+      const local = store.getSnapshot().local;
+      if (rows.length === 0 && local && local.rows.length > 0) {
+        rows = local.rows;
+        drawnWhile = displayOf(store.getSnapshot());
+      }
+    });
     await settled(coordinator, importId);
+    expect(drawnWhile).toBe("preparing");
     expect(rows.length).toBeGreaterThan(0);
     const root = rows.find((row) => row.name === "vault");
     expect(rows.map((row) => [row.kind, row.name, row.parentId === root?.id])).toEqual(
