@@ -188,6 +188,7 @@ function reconcileInterruptResponsesForThread(
 function selectThreadActions(state: ThreadStoreSlice): ThreadStoreActions {
   return {
     turns: state.turns,
+    runState: state.runState,
     setStreamingThreadId: state.setStreamingThreadId,
     ensureThread: state.ensureThread,
     appendUserTurn: state.appendUserTurn,
@@ -254,6 +255,10 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
 
           turns(id: string) {
             return get().turnsByThread[id];
+          },
+
+          runState(id: string) {
+            return (get().runStateByThread[id] ?? INITIAL_RUN_STATE_SLICE).view;
           },
 
           setStreamingThreadId(id, projectId = null) {

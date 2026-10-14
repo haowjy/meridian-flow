@@ -9,7 +9,11 @@ import type {
   UserMessageBlock,
 } from "@meridian/contracts/protocol";
 import type { JsonValue } from "@meridian/contracts/threads";
-import type { EnsureAssistantTurnOptions, TurnStatusPatch } from "@meridian/thread-client";
+import type {
+  EnsureAssistantTurnOptions,
+  RunStateView,
+  TurnStatusPatch,
+} from "@meridian/thread-client";
 import type { RunStateAction } from "@/client/run-state/run-state-slice";
 import type {
   InterruptResponseEntry,
@@ -46,6 +50,8 @@ export type ThreadStoreState = {
 /** Mutations — use `useThreadActions()` only. */
 export type ThreadStoreActions = {
   turns(id: string): Turn[] | undefined;
+  /** The chat's run-state view (the initial one before any fact). */
+  runState(id: string): RunStateView;
   setStreamingThreadId(id: string | null, projectId?: string | null): void;
   ensureThread(thread: Thread): void;
   appendUserTurn(threadId: string, blocks: readonly UserMessageBlock[]): Turn;

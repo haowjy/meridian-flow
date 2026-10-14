@@ -103,7 +103,6 @@ import { useReplyRetry } from "./useReplyRetry";
 import { useThreadActivity } from "./useThreadActivity";
 import { useThreadDurableProjections } from "./useThreadDurableProjections";
 import { useThreadNavigationAnnounce } from "./useThreadNavigationAnnounce";
-import { useThreadRunResume } from "./useThreadRunResume";
 
 const EMPTY_TURNS: Turn[] = [];
 const NO_ITEMS: PendingInboxItem[] = [];
@@ -132,7 +131,6 @@ export type ChatViewProps = {
    * is not in this conversation.
    */
   historySettled: boolean;
-  activateProjection: (after?: string) => boolean;
   /** A notice framed onto the composer's top edge; the composer stays usable under it. */
   composerStrip?: ReactNode;
   /** False while the chat is mounted but hidden (collapsed dock, Settings). */
@@ -148,7 +146,6 @@ export function ChatView({
   snapshotLiveState = null,
   snapshotThreadUsage = null,
   historySettled,
-  activateProjection,
   composerStrip,
   active = true,
 }: ChatViewProps) {
@@ -399,12 +396,10 @@ export function ChatView({
   useChatThreadSession({
     threadId,
     projectId,
-    controller,
     actions,
     isStreaming,
   });
 
-  useThreadRunResume(threadId, controller, { liveState: snapshotLiveState, activateProjection });
   useLiveTurnAnnouncements(threadId, latestAssistantTurn, composerRef, chatSurfaceRef);
 
   // Generating signal: the latest assistant turn is streaming AND it started in
