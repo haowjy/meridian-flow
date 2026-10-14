@@ -98,8 +98,20 @@ describe("useThreadControls", () => {
     });
     expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "sending" }]);
     expect(announcements.announce).toHaveBeenCalledWith("Compaction queued");
-    await act(async () => response.resolve({ id, turnId: "c", runState: recordOf() }));
-    expect(latest.queued).toEqual([]);
+    // A reply is running, so the answer's record lists the command before the inbox frame does.
+    const listed = {
+      id,
+      intent: "control",
+      seq: 1,
+      control: { kind: "compact" },
+      provenance: { kind: "writer" },
+      deliveryState: "waiting",
+    } as PendingInboxItem;
+    await act(async () => response.resolve({ id, turnId: "c", runState: recordOf([listed]) }));
+    // Answer to record: the row holds, never vanishing in between.
+    expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "queued" }]);
+    await act(async () => root.render(<Probe items={[listed]} />));
+    expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "queued" }]);
     expect(invalidateQueries).toHaveBeenCalled();
   });
 
