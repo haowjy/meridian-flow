@@ -13,6 +13,7 @@
 
 import {
   blocksEqual,
+  captureRebaseCut,
   DRAFT_SERVER_CLIENT_ID,
   REVIEW_BASE_FRAGMENT,
   readBlocks,
@@ -166,11 +167,13 @@ export function createDraftRebase(deps: {
           const mergedBlocks = textBlocks(merged.blocks);
           // A fragment that already holds the result is left alone: rewriting equal text would still
           // replace its items, breaking the ancestry peers and the Yjs-lineage Apply hold with them.
+          // A rebase that changes the draft keeps the draft as it was, so a late peer's update can
+          // still be placed; one that leaves the draft alone kills nothing and keeps no cut.
+          const draftChanges = !blocksEqual(draft, mergedBlocks);
+          const rebaseCut = draftChanges ? captureRebaseCut(doc) : undefined;
           doc.clientID = DRAFT_SERVER_CLIENT_ID;
           doc.transact(() => {
-            if (!blocksEqual(draft, mergedBlocks)) {
-              writeBlocks(draftFragment, draftSchema, mergedBlocks);
-            }
+            if (draftChanges) writeBlocks(draftFragment, draftSchema, mergedBlocks);
             if (!blocksEqual(base, liveBlocks)) writeBlocks(baseFragment, draftSchema, liveBlocks);
           }, "rebase");
           return {
@@ -180,6 +183,7 @@ export function createDraftRebase(deps: {
               orderConflict: merged.orderConflict,
             },
             baseRevision: live.revision,
+            ...(rebaseCut ? { rebaseCut } : {}),
           };
         },
       );

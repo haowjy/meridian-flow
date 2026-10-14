@@ -352,3 +352,75 @@ describe("content rebase of a Work draft", () => {
     }
   });
 });
+
+describe("late-peer recovery in writer admission", () => {
+  const journalRows = async (branchId: string) =>
+    db
+      .select({ id: schema.branchWriteJournal.id, source: schema.branchWriteJournal.source })
+      .from(schema.branchWriteJournal)
+      .where(eq(schema.branchWriteJournal.branchId, branchId));
+
+  // Risk: a writer typing while live moves loses the words (Yjs merges them under deleted text), or the
+  // recovery lands as a second row that a review can attribute to nobody.
+  it("restores typing a rebase moved as the same single writer row, and keeps the rebase's deletion", async () => {
+    const { harness, draftRow, decode, read, rebaseTo, writerUpdate } = await setup();
+    try {
+      const start = (await draftRow()).baseRevision?.seq ?? 0;
+      await rebaseTo(start + 1, paragraphs("The fox ran. The dog slept.", "Blue."));
+      const seeded = await draftRow();
+      const peer = decode(seeded.state);
+      const rowsBefore = (await journalRows(seeded.id)).length;
+      // Live deletes a sentence and retypes the paragraph as a heading; the rebase replaces the
+      // draft's paragraph, so the peer's typing now sits under a deleted block.
+      await rebaseTo(start + 2, [
+        pm.node("heading", { level: 2 }, [pm.text("The fox ran.")]),
+        ...paragraphs("Blue."),
+      ]);
+      const rebased = await draftRow();
+      const outcome = await writerUpdate(
+        peer,
+        decode(rebased.state),
+        (d) => firstText(d, "prosemirror").insert(8, "quickly "),
+        rebased.id,
+      );
+      expect(outcome).toMatchObject({ admitted: true });
+      const { draft } = await read();
+      expect(draft.join("\n")).toContain("quickly");
+      expect(draft.join("\n")).not.toContain("slept");
+      expect(draft.join("\n").split("quickly")).toHaveLength(2);
+      const rows = await journalRows(seeded.id);
+      expect(rows.length - rowsBefore).toBe(1);
+      expect(rows.at(-1)?.source).toBe("writer");
+    } finally {
+      harness.cancelScheduledPulls();
+      harness.destroyWarmState();
+    }
+  });
+
+  // Risk: the retained cuts are not reaching the column, or an update older than every cut is dropped.
+  it("keeps a typed word when the peer predates every retained cut, with the column capped", async () => {
+    const { harness, draftRow, decode, read, rebaseTo, writerUpdate } = await setup();
+    try {
+      const start = (await draftRow()).baseRevision?.seq ?? 0;
+      await rebaseTo(start + 1, paragraphs("alpha beta gamma", "tail"));
+      const peer = decode((await draftRow()).state);
+      for (let i = 0; i < 34; i++) {
+        await rebaseTo(start + 2 + i, paragraphs(`step${i} delta epsilon`, "tail"));
+      }
+      const rebased = await draftRow();
+      expect(rebased.rebaseCuts).toHaveLength(32);
+      await writerUpdate(
+        peer,
+        decode(rebased.state),
+        (d) => firstText(d, "prosemirror").insert(5, " zzqq"),
+        rebased.id,
+      );
+      const { draft } = await read();
+      expect(draft.join("\n").split("zzqq")).toHaveLength(2);
+      expect(draft.join("\n")).not.toContain("alpha");
+    } finally {
+      harness.cancelScheduledPulls();
+      harness.destroyWarmState();
+    }
+  });
+});

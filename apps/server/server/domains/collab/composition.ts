@@ -36,6 +36,7 @@ import {
   createDraftBranchAheadDiagnostics,
   createDraftRebaseDiagnostics,
   createDraftReviewDiagnostics,
+  createLateWriterEditsReporter,
   createMarkdownSerializationAnomalyObserver,
   createResponseTransactionDiagnostics,
   createReversalNoticeDiagnostics,
@@ -211,6 +212,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     store: branches,
     criticalSections,
     onBranchUpdate: hocuspocusBinding.publishBranchUpdate,
+    onLateWriterEdits: createLateWriterEditsReporter(deps.eventSink),
     onBranchReset: ({ branchId }) => hocuspocusBinding.closeBranch(branchId),
     onPeerNotContained: ({ branchId, upstreamBranchId }) => {
       if (!deps.eventSink) return;
