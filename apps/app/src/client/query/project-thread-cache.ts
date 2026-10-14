@@ -5,7 +5,8 @@
  *
  * The cache stores `ThreadListItem[]` so consumers see the denormalized work +
  * lifecycle (`actionRequired`, `runningTurnId`) and draft-review count projection from the server.
- * Optimistic inserts produce a synthetic `ThreadListItem` from a base `Thread`
+ * A thread merged into an existing row never rewrites its `aiWriteMode`; only a new row takes
+ * the thread's. Optimistic inserts produce a synthetic `ThreadListItem` from a base `Thread`
  * with default lifecycle hints (no work, no live turn, not waiting); the next
  * server fetch reconciles them.
  */
@@ -48,9 +49,9 @@ export function upsertThreadInProject(
     (prev) => {
       const list = prev ?? [];
       if (list.some((t) => t.id === thread.id)) {
-        return list.map((t) =>
-          t.id === thread.id ? { ...t, ...thread, ...(lifecycle ?? {}) } : t,
-        );
+        // `aiWriteMode` belongs to the list's own refetch: a snapshot may be older than it.
+        const { aiWriteMode: _owned, ...rest } = thread;
+        return list.map((t) => (t.id === thread.id ? { ...t, ...rest, ...(lifecycle ?? {}) } : t));
       }
       return [toListItem(thread, lifecycle), ...list];
     },

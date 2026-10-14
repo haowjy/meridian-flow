@@ -72,3 +72,17 @@ it("keeps a failed optimistic writer row local instead of invalidating server tr
   expect(store.getState().turns("thread-1")?.[0]?.status).toBe("error");
   expect(client.getQueryState(key)?.isInvalidated).toBe(false);
 });
+
+it("a thread upsert inserts a new list row with its mode but never rewrites an existing row's mode", async () => {
+  const { QueryClient } = await import("@tanstack/react-query");
+  const { createThreadCache } = await import("./thread-cache");
+  const client = new QueryClient();
+  const key = ["projects", "project-1", "threads"];
+  const thread = { id: "thread-1", projectId: "project-1", aiWriteMode: "direct" } as never;
+  const cache = createThreadCache(client);
+  cache.upsertThread(thread);
+  expect(client.getQueryData<{ aiWriteMode: string }[]>(key)?.[0]?.aiWriteMode).toBe("direct");
+  // The list's own refetch owns the field: an older snapshot's mode must not replace it.
+  cache.upsertThread({ ...(thread as object), aiWriteMode: "draft" } as never);
+  expect(client.getQueryData<{ aiWriteMode: string }[]>(key)?.[0]?.aiWriteMode).toBe("direct");
+});
