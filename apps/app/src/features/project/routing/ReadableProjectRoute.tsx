@@ -797,6 +797,7 @@ function ReadableProjectDestination({
                 applyContextRemovalSearchUpdate({
                   search,
                   update,
+                  itemKey: address.itemKey,
                   relocated,
                   openContext,
                   goWorks: () => void go(toDestination({ kind: "works" }), { replace: true }),

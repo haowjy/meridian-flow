@@ -60,7 +60,7 @@ export function createEditorDocumentCommand({
       // only the fallback before that.
       const sameDocument = projectAddressMatchesContextTarget(
         current.address,
-        { ...requested, documentId: options?.documentId },
+        requested,
         current.noWorkId,
         current.addressDocumentId,
         current.editorWorkId,
