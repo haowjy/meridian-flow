@@ -1,10 +1,13 @@
 /**
- * DockDocumentIdentity — the header of a document open beside the chat: its
- * path (which navigates) and its chips, in the dock's header row. It takes the
- * place a tab strip has in the Editor, so the document's name shows once.
+ * DockDocumentIdentity — the header of a document open beside the chat: Close
+ * and Open in Editor, its path (which navigates), its version chip, and the
+ * dock's Collapse at the right. The change controls follow on the same line or
+ * wrap under it (DocumentIdentityBar). It takes the place a tab strip has in
+ * the Editor, so the document's name shows once.
  */
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { isWorkArchived, type Work } from "@meridian/contracts/works";
+import type { ReactNode } from "react";
 import { useWorks } from "@/client/query/useWorks";
 import type { ContextTab } from "@/client/stores";
 import { isDraftOnly } from "@/client/stores";
@@ -14,6 +17,7 @@ import {
 } from "@/features/draft-review/DraftReviewProvider";
 import { DocumentIdentityBar } from "../context/DocumentIdentityBar";
 import { useOpenDocumentInEditor } from "../routing/use-open-document-in-editor";
+import { DockDocumentCommands } from "./DockDocumentCommands";
 import { type DockDocument, useDockDocumentStore } from "./dock-document-store";
 import { ReviewLaunchContext, useDockReviewLauncher } from "./useAiDraftLauncher";
 
@@ -22,16 +26,18 @@ const noopCommitted = () => undefined;
 export function DockDocumentIdentity({
   projectId,
   document: dockDocument,
+  trailing,
 }: {
   projectId: string;
   document: DockDocument;
+  trailing: ReactNode;
 }) {
   const review = usePresentedDraftReview();
   const launch = useDockReviewLauncher(projectId, dockDocument);
   return (
     <ReviewLaunchContext.Provider value={launch}>
       <DraftReviewBoundary value={review}>
-        <DockIdentityBody projectId={projectId} document={dockDocument} />
+        <DockIdentityBody projectId={projectId} document={dockDocument} trailing={trailing} />
       </DraftReviewBoundary>
     </ReviewLaunchContext.Provider>
   );
@@ -40,9 +46,11 @@ export function DockDocumentIdentity({
 function DockIdentityBody({
   projectId,
   document: dockDocument,
+  trailing,
 }: {
   projectId: string;
   document: DockDocument;
+  trailing: ReactNode;
 }) {
   const tab = dockDocument.tab;
   const closeDocument = useDockDocumentStore((state) => state.closeDocument);
@@ -52,6 +60,8 @@ function DockIdentityBody({
     <DocumentIdentityBar
       key={tab.documentId}
       variant="header"
+      leading={<DockDocumentCommands document={dockDocument} />}
+      trailing={trailing}
       projectId={projectId}
       editorWorkId={tab.kind === "new" ? null : (tab.workId ?? null)}
       tab={tab}
