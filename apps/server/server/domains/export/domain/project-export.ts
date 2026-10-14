@@ -1,7 +1,11 @@
 /** Live single-file and incremental ZIP export over a frozen project inventory. */
 import { Readable } from "node:stream";
 import {
+  DEFAULT_EXPORT_AREA_NAMES,
   type DocumentId,
+  EXPORT_MARKER_FILENAME,
+  EXPORT_WORKS_FOLDER,
+  type ExportMarker,
   type ExportOutsideArea,
   type ProjectExportOptions,
   type ProjectExportPreview,
@@ -156,17 +160,19 @@ export function createProjectExport(deps: {
               entry.push(new Uint8Array(), true);
               yield* drain();
             }
-            const marker = new ZipPassThrough(`${root}/meridian-export.json`);
+            const marker = new ZipPassThrough(`${root}/${EXPORT_MARKER_FILENAME}`);
             zip.add(marker);
             marker.push(
               new TextEncoder().encode(
                 JSON.stringify(
                   {
                     formatVersion: 1,
-                    areas: { manuscript: "Manuscript", kb: "Knowledge Base", unfiled: "Unfiled" },
-                    works: [...paths.values()].some((path) => path.startsWith("Works/")),
+                    areas: DEFAULT_EXPORT_AREA_NAMES,
+                    works: [...paths.values()].some((path) =>
+                      path.startsWith(`${EXPORT_WORKS_FOLDER}/`),
+                    ),
                     excludedLinks,
-                  },
+                  } satisfies ExportMarker,
                   null,
                   2,
                 ),

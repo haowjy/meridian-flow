@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
+import { IMPORT_ADMISSION } from "@meridian/contracts";
 import { describe, expect, it } from "vitest";
 import { planBatches } from "./batching";
-import { IMPORT_FILE_LIMITS } from "./limits";
 import { buildManifest } from "./manifest";
 import type { Selection } from "./selection";
 
@@ -71,7 +71,7 @@ describe("buildManifest", () => {
   });
 
   it("does not read a file over the limit and gives the same stand-in digest for the same size", async () => {
-    const big = new File([new Uint8Array(IMPORT_FILE_LIMITS.fileBytes + 1)], "film.mp4");
+    const big = new File([new Uint8Array(IMPORT_ADMISSION.fileBytes + 1)], "film.mp4");
     const read = { arrayBuffer: 0 };
     const original = big.arrayBuffer.bind(big);
     big.arrayBuffer = async () => {
@@ -91,7 +91,7 @@ describe("buildManifest", () => {
       destinationUri: "kb://",
     });
     const second = await buildManifest(
-      selectionOf(root(new File([new Uint8Array(IMPORT_FILE_LIMITS.fileBytes + 1)], "film.mp4"))),
+      selectionOf(root(new File([new Uint8Array(IMPORT_ADMISSION.fileBytes + 1)], "film.mp4"))),
       { importId: "b", destinationUri: "kb://" },
     );
     expect(read.arrayBuffer).toBe(0);
@@ -128,7 +128,7 @@ describe("planBatches", () => {
     const small = Array.from({ length: 450 }, (_, entryId) => ({ entryId, size: 10 }));
     const batches = planBatches([
       ...small,
-      { entryId: 900, size: IMPORT_FILE_LIMITS.requestBytes + 1 },
+      { entryId: 900, size: IMPORT_ADMISSION.requestBytes + 1 },
       { entryId: 901, size: 5 },
     ]);
     expect(batches.map((batch) => batch.length)).toEqual([200, 200, 50, 1, 1]);
@@ -136,7 +136,7 @@ describe("planBatches", () => {
   });
 
   it("starts a new request when the byte budget would be crossed", () => {
-    const half = IMPORT_FILE_LIMITS.requestBytes / 2;
+    const half = IMPORT_ADMISSION.requestBytes / 2;
     const batches = planBatches([
       { entryId: 1, size: half },
       { entryId: 2, size: half },

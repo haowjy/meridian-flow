@@ -1,6 +1,6 @@
 /** Manifest refusals: every bound is checked before a node is minted, and answers a stable code. */
 import { randomUUID } from "node:crypto";
-import type { ImportManifest } from "@meridian/contracts";
+import { IMPORT_ADMISSION, type ImportManifest } from "@meridian/contracts";
 import { describe, expect, it } from "vitest";
 import { IMPORT_LIMITS, ImportError, validateManifest } from "./manifest.js";
 
@@ -59,7 +59,7 @@ describe("manifest bounds", () => {
         note(entryId, `b${entryId}/${"x/".repeat(depth - 1)}a.md`),
       ),
     );
-    expect(raw.entries.length).toBeLessThan(IMPORT_LIMITS.entries);
+    expect(raw.entries.length).toBeLessThan(IMPORT_ADMISSION.files);
     expect(refusal(raw)).toEqual({
       status: 400,
       code: "too_many_nodes",

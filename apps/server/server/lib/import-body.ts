@@ -1,4 +1,5 @@
 /** Bounded import request bodies: refused while reading, never after buffering. */
+import { IMPORT_ADMISSION } from "@meridian/contracts";
 import type { H3Event } from "nitro/h3";
 import { IMPORT_LIMITS, ImportError } from "../domains/import/index.js";
 
@@ -44,7 +45,7 @@ export async function readImportParts(
 ): Promise<{ entryId: number; bytes: Uint8Array }[]> {
   const bytes = await readBoundedBody(
     event,
-    IMPORT_LIMITS.fileBytes + IMPORT_LIMITS.multipartOverheadBytes,
+    IMPORT_ADMISSION.fileBytes + IMPORT_LIMITS.multipartOverheadBytes,
     "import_request_too_large",
   );
   let form: FormData;

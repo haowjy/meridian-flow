@@ -1,7 +1,7 @@
+import { IMPORT_ADMISSION } from "@meridian/contracts";
 import { describe, expect, it } from "vitest";
 import { readDropped } from "./read-dropped";
 import { readPicked } from "./read-picked";
-import { SIDE_FILE_MAX_CHARS } from "./selection";
 import { fakeDirectory, fakeEntry, pickedFile } from "./test-files";
 
 describe("a picked folder", () => {
@@ -37,7 +37,10 @@ describe("a folder's app settings", () => {
   it("sends none when the file is unreadable or too large, and still reads the notes", async () => {
     const unreadable = pickedFile("vault/.obsidian/app.json", "{}");
     unreadable.text = () => Promise.reject(new DOMException("gone", "NotReadableError"));
-    const huge = pickedFile("vault/.obsidian/app.json", " ".repeat(SIDE_FILE_MAX_CHARS + 1));
+    const huge = pickedFile(
+      "vault/.obsidian/app.json",
+      " ".repeat(IMPORT_ADMISSION.sideFileBytes + 1),
+    );
     for (const settings of [unreadable, huge]) {
       const selection = await readPicked([pickedFile("vault/Ch 1.md", "# One"), settings]);
       expect(selection.roots[0].appJson).toBeUndefined();

@@ -1,5 +1,5 @@
 /** Groups files into multipart requests under the server's request limits. */
-import { IMPORT_FILE_LIMITS } from "./limits";
+import { IMPORT_ADMISSION } from "@meridian/contracts";
 
 export type BatchItem = { entryId: number; size: number };
 
@@ -17,14 +17,14 @@ export function planBatches(items: readonly BatchItem[]): BatchItem[][] {
     bytes = 0;
   };
   for (const item of items) {
-    if (item.size > IMPORT_FILE_LIMITS.requestBytes) {
+    if (item.size > IMPORT_ADMISSION.requestBytes) {
       flush();
       batches.push([item]);
       continue;
     }
     if (
-      current.length >= IMPORT_FILE_LIMITS.partsPerRequest ||
-      bytes + item.size > IMPORT_FILE_LIMITS.requestBytes
+      current.length >= IMPORT_ADMISSION.partsPerRequest ||
+      bytes + item.size > IMPORT_ADMISSION.requestBytes
     )
       flush();
     current.push(item);

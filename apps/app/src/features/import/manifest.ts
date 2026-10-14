@@ -2,10 +2,14 @@
  * Builds the import manifest from a selection: roots, folders, SHA-256, sniff
  * bytes and frontmatter. Hashing happens here, after Import, never in the dialog.
  */
-import type { ImportManifest, ImportUnreadableReason } from "@meridian/contracts";
+import {
+  IMPORT_ADMISSION,
+  type ImportManifest,
+  type ImportUnreadableReason,
+} from "@meridian/contracts";
 import { filetypeForKnownPath } from "@meridian/contracts/protocol";
 import { splitFrontmatter } from "@meridian/markup/frontmatter";
-import { IMPORT_FILE_LIMITS } from "./limits";
+import { IMPORT_SCHEDULING } from "./limits";
 import { type Selection, unreadableReason } from "./selection";
 
 type ManifestEntry = ImportManifest["entries"][number];
@@ -46,8 +50,8 @@ async function describeFile(
   file: File,
   path: string,
 ): Promise<Omit<ManifestEntry, "entryId" | "rootId">> {
-  if (file.size > IMPORT_FILE_LIMITS.fileBytes) {
-    const sniff = new Uint8Array(await file.slice(0, IMPORT_FILE_LIMITS.sniffBytes).arrayBuffer());
+  if (file.size > IMPORT_ADMISSION.fileBytes) {
+    const sniff = new Uint8Array(await file.slice(0, IMPORT_ADMISSION.sniffBytes).arrayBuffer());
     return { path, size: file.size, sha256: await standInDigest(file.size), sniff: base64(sniff) };
   }
   const bytes = new Uint8Array(await file.arrayBuffer());
@@ -55,7 +59,7 @@ async function describeFile(
     path,
     size: bytes.length,
     sha256: await sha256Hex(bytes),
-    sniff: base64(bytes.subarray(0, IMPORT_FILE_LIMITS.sniffBytes)),
+    sniff: base64(bytes.subarray(0, IMPORT_ADMISSION.sniffBytes)),
   };
   // The server's text-inspection criterion: Markdown or an unknown filetype.
   const filetype = filetypeForKnownPath(path || file.name);
@@ -122,7 +126,7 @@ export async function buildManifest(
   let filesHashed = 0;
   const described = await mapLimited(
     jobs,
-    IMPORT_FILE_LIMITS.concurrentHashes,
+    IMPORT_SCHEDULING.concurrentHashes,
     async (job) => {
       try {
         const entry = await describeFile(job.file, job.path);
@@ -156,7 +160,7 @@ export function bytesToHash(selection: Selection): number {
     (sum, root) =>
       sum +
       root.files.reduce(
-        (inner, { file }) => (file.size > IMPORT_FILE_LIMITS.fileBytes ? inner : inner + file.size),
+        (inner, { file }) => (file.size > IMPORT_ADMISSION.fileBytes ? inner : inner + file.size),
         0,
       ),
     0,

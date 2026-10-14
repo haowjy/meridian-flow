@@ -1,5 +1,5 @@
 /** Portable, case-insensitive ZIP paths with one reservation space for files and folders. */
-import type { ProjectExportOptions } from "@meridian/contracts";
+import { DEFAULT_EXPORT_AREA_NAMES, type ProjectExportOptions } from "@meridian/contracts";
 import type { ExportDocument, ExportSourceRoot } from "../ports/export-snapshot.js";
 export function portableName(name: string): string {
   // biome-ignore lint/suspicious/noControlCharactersInRegex: ZIP names must exclude filesystem control bytes.
@@ -53,9 +53,7 @@ export function buildExportLayout(
       if (source.scheme === "scratch" && !source.workId)
         parent = folder(`chat:${source.rootThreadId}`, parent, source.chatTitle || "Untitled chat");
     } else {
-      const area = { manuscript: "Manuscript", kb: "Knowledge Base", unfiled: "Unfiled" }[
-        source.scheme as "kb"
-      ];
+      const area = DEFAULT_EXPORT_AREA_NAMES[source.scheme as "kb"];
       if (!area) return null;
       parent = folder(`area:${source.scheme}`, "", area);
     }

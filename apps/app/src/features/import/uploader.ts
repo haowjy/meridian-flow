@@ -6,7 +6,7 @@
  */
 import type { ImportEntryReport } from "@meridian/contracts";
 import { planBatches } from "./batching";
-import { IMPORT_FILE_LIMITS } from "./limits";
+import { IMPORT_SCHEDULING } from "./limits";
 import type { HeldFile } from "./manifest";
 
 export type SendFiles = (
@@ -82,7 +82,7 @@ export class UploadQueue {
       this.pending.push(file);
       added += 1;
     }
-    while (this.workers < IMPORT_FILE_LIMITS.concurrentRequests && this.pending.length > 0) {
+    while (this.workers < IMPORT_SCHEDULING.concurrentRequests && this.pending.length > 0) {
       this.workers += 1;
       void this.work();
     }

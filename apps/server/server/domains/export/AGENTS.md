@@ -19,6 +19,9 @@ files move while it streams.
   Reparsing an export must find exactly the document's links.
 - The visible `meridian-export.json` marker carries `formatVersion`, `areas`,
   `works`, and the count of internal link occurrences excluded from the vault.
+  Its shape, filename, default area names and the one parser live in
+  `packages/contracts/src/export-marker.ts`; import (server and app) reads it
+  through that parser.
 
 Project export is one session-authenticated GET `/api/projects/:id/export.zip`
 with `scratch=0|1&uploads=0|1`. Every request rechecks document/Work file policy,
