@@ -20,7 +20,7 @@ Returns 201 for a new row or 200 for an existing id:
 
 Instructions are trimmed, limited like writer-message text, and an empty value is omitted. A queued row carries its full control body in `pending.control`. Once executed, its
 turn carries `metadata.controlMessageId`. Completed controls return their turn
-id. A withdrawn row returns both `pending` and `turnId` null. Its key stays
+id. A pending write-mode switch answers `pending` and `turnId` null until a reply starts: it applies right before the next reply (a message, a compaction or a Retry), in an idle chat as in a running one. A withdrawn row returns both `pending` and `turnId` null. Its key stays
 retired: retrying enqueue never schedules a withdrawn or completed control.
 
 Commands wait until the message queue is empty. At a reply boundary, every
