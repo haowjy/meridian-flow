@@ -104,7 +104,21 @@ describe("draft tab settlement", () => {
   });
 
   it("keeps one tab per document with an entry per Work, so Works neither take nor close each other's", async () => {
-    const coordinator = new ContextRemovalCoordinator("account-a");
+    // Work B's editor is routed to the shared document: A's Discard must not move it.
+    const updateSearch = vi.fn();
+    const search: ProjectSearch = {
+      screen: "context",
+      scheme: "manuscript",
+      path: "/chapter.md",
+      work: "work-b",
+    };
+    const route = {
+      readSearch: () => search,
+      updateSearch,
+      transition: async () => ({ kind: "applied" as const }),
+    };
+    const coordinator = new ContextRemovalCoordinator("account-a", { route });
+    coordinator.registerRoutePort("project-a", route, "work-b");
     const store = useContextTabsStore.getState();
     const inWork = (workId: string) =>
       editorTabsForWork(getContextTabs("project-a").tabs, workId).map((tab) => tab.documentId);
@@ -120,10 +134,24 @@ describe("draft tab settlement", () => {
       },
     });
 
-    // Discard in A leaves B's entry and tab; A no longer shows it.
+    await store.selectTab("project-a", "work-b", "document-a");
+    const revision = coordinator.beginRouteSelection("project-a", {
+      scheme: "manuscript",
+      path: "/chapter.md",
+      workId: "work-b",
+    });
+    coordinator.bindRouteSelection("project-a", revision, {
+      kind: "server",
+      documentId: "document-a",
+    });
+
+    // Discard in A leaves B's entry, tab and routed screen; A no longer shows it.
     coordinator.discardDraft("project-a", "work-a", "draft-a");
     expect(inWork("work-a")).toEqual([]);
     expect(inWork("work-b")).toEqual(["document-a"]);
+    expect(updateSearch).not.toHaveBeenCalled();
+    expect(coordinator.getProjectSnapshot("project-a").selection.status).toBe("bound");
+    expect(getContextTabs("project-a").selectedTabIdByWork).toEqual({ "work-b": "document-a" });
     // A writer's close in A drops A's entry the same way.
     store.openTab("project-a", draftTab());
     coordinator.changeWorkSelection("project-a", "work-a", null);

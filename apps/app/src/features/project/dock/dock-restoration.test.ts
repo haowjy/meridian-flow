@@ -399,7 +399,7 @@ it.each([
       documentId: "stale",
       ...(hidden
         ? {
-            reviews: { ["work"]: { itemKey: review.itemKey, tabInstanceToken: "token" } },
+            reviews: { work: { itemKey: review.itemKey, tabInstanceToken: "token" } },
           }
         : {}),
     },
