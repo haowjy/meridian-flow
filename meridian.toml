@@ -10,6 +10,7 @@
 # max_retries = 3
 # Delay multiplier between retries in seconds (float).
 # retry_backoff_seconds = 0.25
+
 # -- Timeout behavior -------------------------------------------------------
 [timeouts]
 # Grace period before force-killing processes (float minutes).
@@ -39,7 +40,7 @@
 [primary]
 # Default agent profile launched when running `meridian` without `-a`.
 # Without this, meridian launches with no profile.
-agent = "product-lead"
+agent = "tech-lead"
 # Model override for the primary agent.
 # model = ""
 # Harness override for the primary agent.
