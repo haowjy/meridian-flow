@@ -171,23 +171,23 @@ reply with a long `delayMs` step (`./mf thread send <id> go --mock @script.json`
    (abort `**/messages` so a message ahead holds it) and the watching tab drops the row and the mode.
    While a reply ends with a queued switch, observe the DOM (a MutationObserver and a
    `requestAnimationFrame` sampler over body text and the toolbar label): no sample lacks both
-   the row and the divider, and the toolbar never shows the old mode.
+   the row and the switch turn, and the toolbar never shows the old mode.
 6. A refused first send with a switch queued behind it: abort the create route, send, switch,
    then set the message record's `state` to `rejected` in `localStorage` (the route tool can't
    return a 4xx). Edit returns to New chat with the message's draft and clears the switch.
 7. New chat: pick a mode in the new-chat composer and send. The chat starts in it.
 8. Two chats in one Work: switch A, then B, with A's snapshot held
    (`agent-browser network route "**/snapshot*" --abort`, then remove the route): the
-   new-chat composer shows B's choice after A's divider arrives, because the Work's
-   default is refetched, never patched from a divider.
+   new-chat composer shows B's choice after A's switch turn arrives, because the Work's
+   default is refetched, never patched from a frame.
 9. Steer, then switch, during a reply: once the later reply ends, the earlier one
-   shows Copy and its actions (the divider ends continuation).
+   shows Copy and its actions (the switch turn ends continuation).
 10. Two devices (two named browser sessions, one account, a slow reply): device 1 sends and
     chooses the other mode, so both show the queued row. Device 2 chooses the original mode.
     Sample both pages per frame (a MutationObserver and `requestAnimationFrame` over the row,
     Stop and the toolbar label): device 2's row disappears at its click and never comes
     back, the toolbar never reverts, device 1's row clears when the answer lands, and the
-    server's inbox holds only the message with no divider. Repeat three times.
+    server's inbox holds only the message with no switch turn. Repeat three times.
 11. Read the live region (`[role=status]`) through a switch, its apply and a
     switch back: "Switched to …" (idle) or "Switch to … queued" (during a reply) once, nothing
     when it applies, and nothing for the switch back.
@@ -205,9 +205,13 @@ reply with a long `delayMs` step (`./mf thread send <id> go --mock @script.json`
 14. A failed first load: apply several switches in a chat, abort `**/snapshot*` with
     `agent-browser network route`, and hard-reload. The chat shows its load failure with no
     "Switch to … queued" rows and no "Switched to …" announcement, and the toolbar shows the
-    thread's mode. Remove the route and press Retry: the dividers load and nothing is left over.
+    thread's mode. Remove the route and press Retry: the switch turns load and nothing is left over.
 15. An applied switch whose HTTP answer is lost: on device 1 wrap `window.fetch` so a `POST **/controls`
     resolves 12 seconds late (the route tool can't delay), choose the other mode on an idle chat, then
-    switch back on device 2 before the response lands. Device 1 settles on the original mode with no row, before
-    and after its delayed response. A Stop on a quiet chat also leaves its row gone and stays gone
-    without a reload.
+    send a message from device 2 so a run starts and applies the switch before the response lands.
+    Device 1 shows the applied mode and no row, before and after its delayed response, and the
+    switch turn sits above the reply in `./mf thread view`. A Stop on a quiet chat leaves its row
+    gone and stays gone without a reload, and the Work's default (new-chat composer) follows it.
+16. Draft count: in a draft-mode chat whose AI wrote two documents, the composer control and its
+    menu read "Draft (2)" (accessible name "AI write mode: Draft, 2 documents waiting"); with none
+    waiting, "Draft". Apply or discard a document and the count follows.
