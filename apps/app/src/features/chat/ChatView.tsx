@@ -30,7 +30,6 @@ import {
   useRunFacts,
   useRunFollowStatus,
 } from "@/client/copilot/MeridianCopilotProvider";
-import type { DeserializedThreadSnapshot } from "@/client/query/thread-snapshot-query";
 import { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
 import { useIsThreadPendingCreation, useThreadActions, useThreadStore } from "@/client/stores";
 import {
@@ -105,8 +104,6 @@ export type ChatViewProps = {
   activeThread?: Thread | null;
   /** The rendered snapshot's write mode: the ledger's base, consistent with the transcript it reads. */
   snapshotWriteMode?: AiWriteMode;
-  /** The snapshot the history host accepted and applied: the only one the switch ledger reads. */
-  snapshot?: DeserializedThreadSnapshot | null;
   activeWork?: Work | null;
   snapshotLiveState?: SnapshotLiveState | null;
   snapshotNextSeq?: string | null;
@@ -137,7 +134,6 @@ export function ChatView({
   projectId,
   activeThread = null,
   snapshotWriteMode,
-  snapshot = null,
   activeWork = null,
   snapshotLiveState = null,
   snapshotThreadUsage = null,
@@ -290,7 +286,6 @@ export function ChatView({
     writeMode:
       snapshotWriteMode ?? activeThread?.aiWriteMode ?? activeWork?.defaultAiWriteMode ?? "direct",
     turns,
-    snapshot,
     journal: submissions.switches,
   });
   const controls = useThreadControls({

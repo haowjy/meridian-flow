@@ -10,6 +10,7 @@ import type {
 } from "@meridian/contracts/protocol";
 import type { JsonValue } from "@meridian/contracts/threads";
 import type { EnsureAssistantTurnOptions, TurnStatusPatch } from "@meridian/thread-client";
+import type { RunStateAction } from "@/client/run-state/run-state-slice";
 import type {
   InterruptResponseEntry,
   InterruptResponseIdentity,
@@ -70,6 +71,8 @@ export type ThreadStoreActions = {
   applyTurnEvent(threadId: string, event: AGUIEvent, seq?: string): void;
   /** Remove turns that left the conversation, keeping a tombstone at `seq` (see `removeTurnsIn`). */
   removeTurns(threadId: string, ids: readonly string[], seq: string): void;
+  /** Take a fact about the chat's run state into its slice (`client/run-state/run-state-slice.ts`). */
+  dispatchRunState(threadId: string, action: RunStateAction): void;
   /** Reduce one durable block event; false when it is malformed or for another thread. */
   applyDurableBlockEvent(threadId: string, event: AGUIEvent): boolean;
   /** Admit a durable block wire sequence, independent of run cursor rewinds. */

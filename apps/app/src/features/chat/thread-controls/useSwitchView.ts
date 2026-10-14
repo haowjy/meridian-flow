@@ -1,13 +1,13 @@
 /**
  * useSwitchView — the chat's write-mode switch display, as a pure view over server facts.
  *
- * Every server fact about a switch is a whole `RunState`: the accepted snapshot's, each
- * `meridian.run_state` frame, the answer to a switch or its journal stamp. This hook only
- * receives them into the run-state view and folds the view for the toolbar's mode and the
- * queued rows. It carries the writer's Withdraw to the journal and the server, speaks queued
- * and applied transitions (the one announcer for a switch; a failure stays with the journal
- * owner's keyed announcement), and marks the Works and project thread lists stale when a
- * switch applies.
+ * Every server fact about a switch is a whole `RunState`, and the chat's mounted subscriber
+ * (`useThreadSnapshotSync`) takes them into the chat's run-state slice: the accepted snapshot's,
+ * each `meridian.run_state` frame, the `switched` frame. This hook reads that slice and folds
+ * it for the toolbar's mode and the queued rows. It carries the journal's switches and the
+ * writer's Withdraw into the slice, speaks queued and applied transitions (the one announcer
+ * for a switch; a failure stays with the journal owner's keyed announcement), and marks the
+ * Works and project thread lists stale when a switch applies.
  *
  * The bridge row, an applied switch whose divider has not rendered yet, is the transcript
  * layer's: it is keyed by the `write_mode.switched` frame's turn and leaves with its divider.
@@ -18,41 +18,23 @@
  */
 import { t } from "@lingui/core/macro";
 import type { Turn } from "@meridian/contracts/protocol";
-import {
-  compareSeq,
-  EventType,
-  parseSeq,
-  RUN_STATE_EVENT,
-  readRunState,
-  WRITE_MODE_SWITCHED_EVENT,
-} from "@meridian/contracts/protocol";
 import { readWriteModeSwitch } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useReducer,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { httpErrorStatus } from "@/client/api/http-client";
 import { withdrawThreadControl } from "@/client/api/threads-api";
 import type { JournalSwitch } from "@/client/chat-submissions/owner";
-import { useThreadTransport } from "@/client/providers/TransportProvider";
 import { invalidateProjectThreadData } from "@/client/query/project-invalidation";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
-import type { DeserializedThreadSnapshot } from "@/client/query/thread-snapshot-query";
-import { announce, announceError, useIsThreadPendingCreation } from "@/client/stores";
+import { switchDisplay } from "@/client/run-state/run-state-slice";
+import { announce, announceError, useRunStateSlice, useThreadActions } from "@/client/stores";
 import {
   controlAlreadyStartedCopy,
   controlStatusCopy,
   controlWithdrawnCopy,
   writeModeSwitchedCopy,
 } from "./control-copy";
-import { INITIAL_SWITCH_STATE, reduceSwitch, switchDisplay } from "./switch-reducer";
 import type { QueuedControl } from "./thread-controls";
 
 /** What the chat's submission journal offers the view: its switches, stamped once answered. */
@@ -89,19 +71,6 @@ function useSingleHostWarning(threadId: string) {
 
 type Applied = { turnId: string; controlId: string; mode: AiWriteMode };
 
-function switchedFrom(event: { type: string; name?: string; value?: unknown }): Applied | null {
-  if (event.type !== EventType.CUSTOM || event.name !== WRITE_MODE_SWITCHED_EVENT) return null;
-  const value = event.value as Partial<Record<string, unknown>> | undefined;
-  if (
-    !value ||
-    typeof value.turnId !== "string" ||
-    typeof value.controlId !== "string" ||
-    (value.mode !== "draft" && value.mode !== "direct")
-  )
-    return null;
-  return { turnId: value.turnId, controlId: value.controlId, mode: value.mode };
-}
-
 export type SwitchView = {
   rows: readonly QueuedControl[];
   /** The chat's mode as the writer should see it. */
@@ -118,64 +87,37 @@ export function useSwitchView(input: {
   /** The mode to show before the server has sent a record. */
   writeMode: AiWriteMode;
   turns: readonly Turn[];
-  /** The snapshot the chat's history host accepted and applied. */
-  snapshot: DeserializedThreadSnapshot | null;
   journal: SwitchJournal;
 }): SwitchView {
-  const { threadId, projectId, turns, snapshot, journal } = input;
+  const { threadId, projectId, turns, journal } = input;
   const queryClient = useQueryClient();
-  const transport = useThreadTransport();
-  const isPendingCreation = useIsThreadPendingCreation(threadId);
+  const actions = useThreadActions();
+  const { dispatchRunState: dispatch } = actions;
+  const { view, news, applied: appliedNews } = useRunStateSlice(threadId);
   useSingleHostWarning(threadId);
-  const [{ view, news }, dispatch] = useReducer(reduceSwitch, INITIAL_SWITCH_STATE);
   const [applied, setApplied] = useState<readonly Applied[]>([]);
   const latest = useRef({ journal, projectId });
   latest.current = { journal, projectId };
-  /** The first record's version: what it holds is not news, and neither is a frame at or below it. */
-  const seed = useRef<string | null>(null);
-  /** Applied switches already announced: a replayed frame is not news twice. */
-  const switchedTurns = useRef(new Set<string>());
   const announcedQueued = useRef(0);
-
-  useLayoutEffect(() => {
-    if (snapshot) dispatch({ type: "snapshot", runState: snapshot.liveState.runState });
-  }, [snapshot]);
+  const announcedApplied = useRef(0);
 
   useLayoutEffect(
-    () => dispatch({ type: "journal", switches: journal.pending }),
-    [journal.pending],
+    () => dispatch(threadId, { type: "journal", switches: journal.pending }),
+    [dispatch, threadId, journal.pending],
   );
 
+  // The slice decides what is news; this speaks each applied switch once and keeps its bridge.
   useEffect(() => {
-    if (isPendingCreation) return;
-    return transport.subscribe(threadId, {
-      onEvent: ({ event, seq, sourceThreadId }) => {
-        if (sourceThreadId && sourceThreadId !== threadId) return;
-        if ("threadId" in event && event.threadId !== threadId) return;
-        if (seq == null || parseSeq(seq) === null) return;
-        if (event.type === EventType.CUSTOM && event.name === RUN_STATE_EVENT) {
-          const runState = readRunState(event.value);
-          if (runState) dispatch({ type: "record", runState });
-          return;
-        }
-        const switched = switchedFrom(event);
-        if (!switched) return;
-        dispatch({ type: "switched", seq, controlId: switched.controlId });
-        if (seed.current === null || compareSeq(seq, seed.current) <= 0) return;
-        if (switchedTurns.current.has(switched.turnId)) return;
-        switchedTurns.current.add(switched.turnId);
-        setApplied((known) => [...known, switched]);
-        announce(writeModeSwitchedCopy(switched.mode));
-        void invalidateProjectThreadData(queryClient, latest.current.projectId);
-      },
-    });
-  }, [transport, threadId, isPendingCreation, queryClient]);
+    for (const entry of appliedNews) {
+      if (entry.n <= announcedApplied.current) continue;
+      announcedApplied.current = entry.n;
+      setApplied((known) => [...known, entry]);
+      announce(writeModeSwitchedCopy(entry.mode));
+      void invalidateProjectThreadData(queryClient, latest.current.projectId);
+    }
+  }, [appliedNews, queryClient]);
 
-  useEffect(() => {
-    if (view.record && seed.current === null) seed.current = view.record.version;
-  }, [view.record]);
-
-  // The reducer decides what is news; this speaks each queued switch once.
+  // The slice decides what is news; this speaks each queued switch once.
   useEffect(() => {
     for (const entry of news) {
       if (entry.n <= announcedQueued.current) continue;
@@ -200,20 +142,21 @@ export function useSwitchView(input: {
     (row: QueuedControl) => {
       const { id } = row;
       // The row goes at once, whichever side owns it.
-      dispatch({ type: "withdraw", id });
+      dispatch(threadId, { type: "withdraw", id });
       const onServer = async () => {
         try {
           const answer = await withdrawThreadControl(threadId, id);
           const { outcome } = answer;
-          dispatch({ type: "withdrawn", id, runState: answer.runState });
+          dispatch(threadId, { type: "withdrawn", id, runState: answer.runState });
           if (outcome === "withdrawn") announce(controlWithdrawnCopy(row.control));
           // The divider shows a started one.
           if (outcome === "already_started") announce(controlAlreadyStartedCopy(row.control));
           revalidate();
         } catch (error) {
           // The server never had it: nothing to withdraw.
-          if (httpErrorStatus(error) === 404) return dispatch({ type: "dropWithdraw", id });
-          dispatch({ type: "withdraw", id, failed: true });
+          if (httpErrorStatus(error) === 404)
+            return dispatch(threadId, { type: "dropWithdraw", id });
+          dispatch(threadId, { type: "withdraw", id, failed: true });
           announceError(t`Couldn't withdraw. Try again.`);
         }
       };
@@ -222,11 +165,11 @@ export function useSwitchView(input: {
       // One the server may hold stays, and offers Retry only.
       void latest.current.journal.withdraw(id).then((result) => {
         if (result === "admitted") return onServer();
-        dispatch({ type: "dropWithdraw", id });
+        dispatch(threadId, { type: "dropWithdraw", id });
         if (result === "removed") announce(controlWithdrawnCopy(row.control));
       });
     },
-    [revalidate, threadId],
+    [dispatch, revalidate, threadId],
   );
 
   const dividerIds = useMemo(

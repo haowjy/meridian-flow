@@ -10,15 +10,34 @@ vi.mock("@lingui/core/macro", () => ({
 }));
 const api = vi.hoisted(() => ({ withdrawThreadControl: vi.fn() }));
 vi.mock("@/client/api/threads-api", () => api);
-const announcements = vi.hoisted(() => ({
-  announce: vi.fn(),
-  announceError: vi.fn(),
-  useIsThreadPendingCreation: () => false,
-}));
-vi.mock("@/client/stores", () => announcements);
-vi.mock("@/client/providers/TransportProvider", () => ({
-  useThreadTransport: () => ({ subscribe: () => () => undefined }),
-}));
+const announcements = vi.hoisted(() => ({ announce: vi.fn(), announceError: vi.fn() }));
+// The chat's slice is the thread store's; here a one-chat stand-in over the real reducer.
+vi.mock("@/client/stores", async () => {
+  const { INITIAL_RUN_STATE_SLICE, reduceRunState } = await import(
+    "@/client/run-state/run-state-slice"
+  );
+  const { useSyncExternalStore } = await import("react");
+  let slice = INITIAL_RUN_STATE_SLICE;
+  const listeners = new Set<() => void>();
+  const actions = {
+    dispatchRunState: (_threadId: string, action: Parameters<typeof reduceRunState>[1]) => {
+      slice = reduceRunState(slice, action);
+      for (const listener of listeners) listener();
+    },
+  };
+  return {
+    ...announcements,
+    useThreadActions: () => actions,
+    useRunStateSlice: () =>
+      useSyncExternalStore(
+        (listener) => {
+          listeners.add(listener);
+          return () => listeners.delete(listener);
+        },
+        () => slice,
+      ),
+  };
+});
 vi.mock("@/client/query/project-invalidation", () => ({
   invalidateProjectThreadData: vi.fn(),
 }));
@@ -70,7 +89,6 @@ function Probe() {
     projectId: "P",
     writeMode: "direct",
     turns: [],
-    snapshot: null,
     journal,
   });
   return null;
