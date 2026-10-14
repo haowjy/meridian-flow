@@ -415,12 +415,10 @@ export function reduceEditorWorkspace(
             command.tab.kind !== "new" &&
             sameServerContextTabLocator(tab, command.tab))),
     );
-    // The join re-identifies one document: the draft-only tab the hidden draft
-    // showed it under is the same document, so the resource's tab absorbs it.
-    const absorbed = conflicts.filter(
-      (tab) =>
-        tab.kind !== "new" && tab.draftOnly === true && tab.documentId === command.tab.documentId,
-    );
+    // The join re-identifies one document: whatever other tab already shows
+    // that document (the draft-only tab, or its promoted successor) is the same
+    // document, so the resource's tab absorbs it.
+    const absorbed = conflicts.filter((tab) => tab.documentId === command.tab.documentId);
     if (conflicts.length > absorbed.length) return outcome("stale", current);
     const next = durableContextTab({
       ...command.tab,
