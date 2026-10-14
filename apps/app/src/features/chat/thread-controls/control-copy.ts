@@ -10,16 +10,34 @@ import type { ControlBody } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import type { QueuedControlStatus } from "./thread-controls";
 
-/** What the queued row says in each status. */
-export function controlStatusCopy(control: ControlBody, status: QueuedControlStatus): string {
+/**
+ * What a pending command's row says in each status. A switch waiting for no reply
+ * reads as the notice it becomes ("Switched to ..."); one waiting for a running
+ * reply says it is queued. `applied` is a switch whose turn has not rendered yet.
+ */
+export function controlStatusCopy(
+  control: ControlBody,
+  status: QueuedControlStatus,
+  replyRunning = false,
+): string {
   if (control.kind === "write_mode") {
     const draft = control.mode === "draft";
     switch (status) {
       case "sending":
-        return draft ? t`Switching to draft mode` : t`Switching to auto-apply`;
+        return replyRunning
+          ? draft
+            ? t`Switching to draft mode`
+            : t`Switching to auto-apply`
+          : writeModeSwitchedCopy(control.mode);
       case "queued":
       case "withdraw_failed":
-        return draft ? t`Switch to draft mode queued` : t`Switch to auto-apply queued`;
+        return replyRunning
+          ? draft
+            ? t`Switch to draft mode queued`
+            : t`Switch to auto-apply queued`
+          : writeModeSwitchedCopy(control.mode);
+      case "applied":
+        return writeModeSwitchedCopy(control.mode);
       case "failed":
         return draft ? t`Couldn't switch to draft mode.` : t`Couldn't switch to auto-apply.`;
     }
@@ -28,32 +46,34 @@ export function controlStatusCopy(control: ControlBody, status: QueuedControlSta
     case "sending":
     case "queued":
     case "withdraw_failed":
+    case "applied":
       return t`Compaction queued`;
     case "failed":
       return t`Couldn't queue the compaction.`;
   }
 }
 
-/** What a write-mode divider says, and the announcer says as it lands. */
+/** What a write-mode notice says, pending or applied. */
 export function writeModeSwitchedCopy(mode: AiWriteMode): string {
   return mode === "draft" ? t`Switched to draft mode` : t`Switched to auto-apply`;
 }
 
-/** What the announcer says when Withdraw came after the command began. */
+/** What the announcer says when Stop came after the command began. */
 export function controlAlreadyStartedCopy(control: ControlBody): string {
   return control.kind === "write_mode"
     ? t`This switch already happened.`
     : t`This compaction already started.`;
 }
 
-/** What the announcer says as a withdrawn row disappears. */
-export function controlWithdrawnCopy(control: ControlBody): string {
-  return control.kind === "write_mode" ? t`Switch withdrawn` : t`Compaction withdrawn`;
+/** What the announcer says as a stopped row disappears. */
+export function controlStoppedCopy(control: ControlBody): string {
+  return control.kind === "write_mode" ? t`Switch stopped` : t`Compaction stopped`;
 }
 
-/** The Withdraw button's accessible name. */
-export function controlWithdrawLabel(control: ControlBody): string {
-  return control.kind === "write_mode" ? t`Withdraw switch` : t`Withdraw compaction`;
+/** The Stop button's accessible name, specific so it differs from the composer's Stop. */
+export function controlStopLabel(control: ControlBody): string {
+  if (control.kind === "compact") return t`Stop compaction`;
+  return control.mode === "draft" ? t`Stop switch to draft mode` : t`Stop switch to auto-apply`;
 }
 
 /** The Retry button's accessible name. */

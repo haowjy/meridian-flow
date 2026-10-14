@@ -61,10 +61,10 @@ route in `seq` order with the messages around it, so a switch waits behind a
 chat's in-flight creation and a message never overtakes it, reload included. A
 record is marked `posted` durably before its first request leaves. A transient failure
 leaves it unresolved (same id on retry); a refusal stores `state: "rejected"` and holds
-the records after it until Withdraw or an admitted Retry. `withdrawControl` drops a
+the records after it until Stop or an admitted Retry. `withdrawControl` drops a
 record under the lock only when the server can't have it (never posted, or refused);
 a posted unresolved one is kept (Retry only), and a record already gone is the
-server's to withdraw. It has no writer row: its queued row, Retry and Withdraw come
+server's to withdraw. It has no writer row: its queued row, Retry and Stop come
 from `useThreadControls`.
 
 The driver does not delete a switch the server answers: it stamps `answer: { seq, mode, pending, at }`
@@ -73,11 +73,11 @@ applied mode and its queued switch, all read by the server in one transaction. E
 not, reads it as a server fact through `switches[].answer` (the owner exposes id, mode, `seq`, posted,
 refused, failed and the stamp), so the display needs no in-process answer channel and a hidden tab
 that drove the record cannot strand the tab that chose it. The drain skips a stamped record, Retry
-ignores it, and a Withdraw on it goes to the server (`admitted`). The journal prunes stamped records
+ignores it, and a Stop on it goes to the server (`admitted`). The journal prunes stamped records
 past 60 s at its next write; a record that vanishes unstamped was withdrawn or refused here, or its
 stamp was pruned while a tab was blind, and the tab drops it (frames bring the server state). The
 switch view (`features/chat/thread-controls/useSwitchView.ts`) decides what the writer sees. The owner
-keeps only the journal side: `seq`, `posted`, the posted-aware Withdraw, and the keyed "Couldn't
+keeps only the journal side: `seq`, `posted`, the posted-aware Stop, and the keyed "Couldn't
 switch" announcement (cleared on Retry and when the record leaves).
 
 `creation` carries first-send inputs; `draft` retains the composer snapshot.

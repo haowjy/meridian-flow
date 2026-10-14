@@ -90,9 +90,14 @@ facts plus this device's unanswered intents:
   device holds is `sending` (Retry only if posted and not refused); a failed or refused one shows
   Retry and is left out of the fold. An unanswered intent is laid over the record even if the record
   already includes it: the effect is bounded by the answer, which brings the state at its `seq`.
-- **The bridge row** is the transcript layer's, not the view's: an applied switch whose divider
-  has not rendered keeps a queued-looking row, keyed by the `write_mode.switched` frame's turn,
-  until that turn renders.
+- **The notice.** One component (`thread-controls/WriteModeNotice.tsx`) is a quiet, one-line
+  writer-action notice with an icon for the mode (no compaction mark, rule or icon). It is the
+  pending switch at the transcript tail and the applied switch turn. A pending switch reads
+  "Switched to …" while no reply holds the chat (it applies right before the next reply starts) and
+  "Switch to … queued" while one does, with Stop in both; Stop cancels it like a switch back. The
+  bridge row is the transcript layer's, not the view's: an applied switch whose turn has not
+  rendered shows the notice with no Stop, keyed by the `write_mode.switched` frame's turn, until
+  that turn renders.
 
 No client path writes a write mode into a cache: a snapshot may insert a project-list row with its
 mode but never rewrites an existing row's, and a `switched` frame invalidates the Works query and
@@ -103,9 +108,9 @@ between the center and the dock, so a chat has one mounted `ChatView` and one vi
 own lifetime. A dev-only registry in `useSwitchView` warns when a second view mounts for a chat that
 already has one.
 
-One reducer decides what is news, where a record is taken: "Switch to … queued" when a live inbox
-frame or an answer, taken after the first record, lists a queued switch not seen before, and
-"Switched to …" for a `switched` frame above the first record's version, once per applied turn.
+One reducer decides what is news, where a record is taken: a live inbox frame or an answer, taken
+after the first record, that lists a pending switch not seen before is announced once ("Switched to …"
+idle, "Switch to … queued" while a reply holds the chat). Applying it announces nothing again.
 The first record, a replayed frame and a snapshot, however much newer, are never news. A failure stays with the journal owner's keyed announcement, cleared on
 Retry and when the record is withdrawn.
 

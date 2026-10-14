@@ -26,7 +26,7 @@ import { enqueueThreadControl, withdrawThreadControl } from "@/client/api/thread
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { announce, announceError } from "@/client/stores";
 import { useTurnStop } from "../useTurnStop";
-import { controlAlreadyStartedCopy, controlStatusCopy, controlWithdrawnCopy } from "./control-copy";
+import { controlAlreadyStartedCopy, controlStatusCopy, controlStoppedCopy } from "./control-copy";
 import {
   type CompactControl,
   controlsReducer,
@@ -129,7 +129,7 @@ export function useThreadControls(input: {
     (queued: QueuedControl) => {
       if (queued.control.kind === "write_mode") return withdrawSwitch(queued);
       dispatch({ type: "withdraw", id: queued.id });
-      announce(controlWithdrawnCopy(queued.control));
+      announce(controlStoppedCopy(queued.control));
       const withdrawOnServer = async () => {
         try {
           const { outcome } = await withdrawThreadControl(threadId, queued.id);
@@ -144,7 +144,7 @@ export function useThreadControls(input: {
             return dispatch({ type: "withdraw_not_found", id: queued.id });
           }
           dispatch({ type: "withdraw_failed", id: queued.id });
-          announceError(t`Couldn't withdraw. Try again.`);
+          announceError(t`Couldn't stop. Try again.`);
         }
       };
       void (inflight.current.get(queued.id) ?? Promise.resolve()).then(withdrawOnServer);

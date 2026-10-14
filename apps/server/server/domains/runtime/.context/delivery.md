@@ -69,8 +69,8 @@ queued command; commands never run beside a tool call or at turn close. At run
 start, every non-command row runs if any message is waiting; otherwise the
 oldest command runs alone. Messages never wait behind a command, except behind
 a queued write-mode switch: then a request boundary returns `yield` (the execution
-ends there with no successor) and run start returns `switch` (applied by
-`applyDueSwitches` outside any run). See [controls](controls.md) for the
+ends there with no successor) and run start returns `switch` when something else will run (applied by
+`applyDueSwitches` outside any run); a lone switch stays pending. See [controls](controls.md) for the
 table, the yield and cancel-out. A notice-only queue does not start a run, but
 a Work refresh notice already waiting in the selected rows at a request
 boundary still closes that execution's batch. The selector returns at most one
@@ -78,8 +78,8 @@ command per run. Stop only ends the current turn; release then follows the
 same rule.
 
 After a run releases its claim, `wakeIfRunnable` refreshes pending state and
-uses the same run-start selector as setup; `RunStarter.start` applies any due
-write-mode switch before it starts a drain. It re-reads after runs that found no
+uses the same run-start selector as setup; `RunStarter.start` applies the pending
+write-mode switch, when a run is about to start, before it starts a drain. It re-reads after runs that found no
 work and after setup cancellation, so work enqueued while a claim was held is
 not lost. A failed assistant acknowledges its adopted messages before release,
 so neither the reread nor the periodic sweep replays that execution. The wake has no
