@@ -18,7 +18,23 @@ import { sql } from "drizzle-orm";
 import postgres from "postgres";
 import { readRunState } from "../domains/runtime/adapters/drizzle-run-state.js";
 
+const DROP_TIMEOUT_MS = 15_000;
 const POOL_CLOSE_TIMEOUT_MS = 5_000;
+
+/** Waits for `work` at most `ms`; a failure or a late finish is ignored, since this is cleanup. */
+async function within(ms: number, work: Promise<unknown> | undefined) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      work?.catch(() => {}),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, ms);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 export type AuditedDatabase = { db: Database; close: () => Promise<void> };
 
@@ -47,26 +63,17 @@ export async function openAuditedDatabase(
   };
   const admin = postgres(urlFor("postgres"), { max: 1 });
   let db: Database | undefined;
-  // Cleanup must never hang a suite. Dropping the clone WITH (FORCE) ends its sessions first, so a
-  // query a test left in flight cannot hold the pool open. `db.close()` waits for pending queries
-  // with no limit, so it only gets a short window once the sessions are gone.
+  // Cleanup must never hang a suite, and a slow host (DROP DATABASE waits on a checkpoint) must not
+  // fail it. Dropping the clone WITH (FORCE) ends its sessions first, so a query a test left in
+  // flight cannot hold the pool open. Each step gets a bounded window; a drop that does not finish
+  // is left to the managed run's own cleanup, which collects every database of this name shape.
   const close = async () => {
-    try {
-      await admin.unsafe(`DROP DATABASE IF EXISTS "${cloneName}" WITH (FORCE)`);
-    } finally {
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      try {
-        await Promise.race([
-          db?.close().catch(() => {}),
-          new Promise<void>((resolve) => {
-            timer = setTimeout(resolve, POOL_CLOSE_TIMEOUT_MS);
-          }),
-        ]);
-      } finally {
-        clearTimeout(timer);
-        await admin.end();
-      }
-    }
+    await within(
+      DROP_TIMEOUT_MS,
+      admin.unsafe(`DROP DATABASE IF EXISTS "${cloneName}" WITH (FORCE)`),
+    );
+    await within(POOL_CLOSE_TIMEOUT_MS, db?.close());
+    await within(POOL_CLOSE_TIMEOUT_MS, admin.end({ timeout: 1 }));
   };
   try {
     await admin.unsafe(`CREATE DATABASE "${cloneName}" WITH TEMPLATE "${templateName}"`);
