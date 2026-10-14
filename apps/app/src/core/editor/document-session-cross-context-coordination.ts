@@ -3,7 +3,6 @@ import type {
   AccountId,
   AvailabilityCommandId,
   AvailabilityGeneration,
-  LiveDocumentSessionLease,
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import { type CrossContextLockManager, nativeLocks } from "../cross-context-locks";
