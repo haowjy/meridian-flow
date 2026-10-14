@@ -130,7 +130,6 @@ export function ContextViewer({
   }, [active, openedDocumentId, projectId, recordOpenedDocument]);
   const optimisticTab = paneState.kind === "optimistic-loading" ? paneState.tab : null;
   const activeTabId = activeTab?.documentId ?? null;
-  // A masked destination is not any open tab: none reads as current.
   const masked = isProjectRouteMasked(mask);
   const name = activeTab?.name;
   const activeIsEditable = activeTab?.kind === "tracked" || activeTab?.kind === "new";
@@ -168,9 +167,9 @@ export function ContextViewer({
       ) : null}
       <ContextTabBar
         tabs={tabs}
-        activeTabId={masked ? null : activeTabId}
-        activeTabInstanceId={masked ? undefined : activeTab?.tabInstanceId}
-        reviewingTabId={activeReviewItemKey && !masked ? activeTabId : null}
+        activeTabId={activeTabId}
+        activeTabInstanceId={activeTab?.tabInstanceId}
+        reviewingTabId={activeReviewItemKey ? activeTabId : null}
         optimisticTab={optimisticTab}
         onSelect={onSelectTab}
         onClose={onCloseTab}
