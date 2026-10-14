@@ -2,7 +2,7 @@
 
 import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
-import { IMPORT_ADMISSION } from "@meridian/contracts";
+import { IMPORT_ADMISSION, importFileCount, overFileBudget } from "@meridian/contracts";
 import { formatBytes } from "./format-size";
 import { type Selection, selectionTotals } from "./selection";
 
@@ -17,8 +17,8 @@ export function refusalOf(
     if (source === "files") return t`Those files can't be imported.`;
     return t`There are no files to import here.`;
   }
-  if (totals.files > IMPORT_ADMISSION.files) {
-    const count = i18n.number(totals.files);
+  if (overFileBudget(totals.files, totals.unreadableFiles)) {
+    const count = i18n.number(importFileCount(totals.files, totals.unreadableFiles));
     const limit = i18n.number(IMPORT_ADMISSION.files);
     return t`That's ${count} files. Import up to ${limit} at a time.`;
   }
