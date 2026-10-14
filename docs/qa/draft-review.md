@@ -949,3 +949,39 @@ For the link chip, record every change of `data-link-chip` and `aria-description
 the `links/resolve` response held by an owned fetch seam. A live chapter holding an `ahead:` link to a document that
 exists only in a draft must settle on the "in a draft" state without reading "Doesn't exist yet" on the way.
 
+
+## A writer's New file joins the draft's document (browser, #757)
+
+A draft's new document is a real document with a draft, hidden live only because it is a
+draft. Making it live (New file, a link's Create, the AI) unhides it, and it stays one document
+with an ordinary draft over it. The device's instant create carries its destination, so the
+server joins the document waiting there. The only device work is identity: the reservation's id
+becomes the joined id, and what the writer typed is kept. No draft text is merged; the draft's
+text stays in the draft for review.
+
+Setup (own stack, `MODEL_PROVIDER=mock pnpm dev`): `./mf api` to create a Work with
+`aiWriteMode: "draft"` and a thread bound to it. `./mf thread send <thread> go --mock @script`
+with one scripted `write create` of `manuscript://Chapter 2` (give it text). Desktop 1440x900,
+then the phone 390x844 with touch emulation.
+
+1. **Online.** Open the project. Sidebar, Manuscript, New file, `Chapter 2`, Enter, and type a
+   line at once.
+   PASS: one `Chapter 2` row and one tab, on the draft's document (same id as the Work's draft
+   item, read with `./mf api`); the typed line is kept; the Work's review item is an edit, not
+   new. As soon as the create's answer lands, with no reload or navigation, the open document
+   shows the "Live" chip with the version menu, and Draft opens that draft's review. Measure
+   from the `create-untitled` response to the chip appearing. Check it inside the drafting
+   Work's chat and browsing live with no Work. Database: one `documents` row at that path
+   (`psql`, `hidden = false`).
+2. **Offline.** `agent-browser set offline on` before New file; New file `Chapter 2`, type a
+   line, set offline off. PASS: the same as step 1 once the connection returns; before it, the
+   row sits at `Chapter 2` in the Manuscript, not under Unfiled.
+3. **A rename while the create is out.** Offline, New file `Chapter 2`, rename it
+   `Chapter 2b`, reconnect. PASS: one row `Chapter 2b` on the draft's document; the rename is
+   not offered for repair.
+4. **A link's Create.** In a live chapter, link to a document that exists only in a draft (the
+   "In a draft" chip), then Create from the link. PASS: the same as step 1.
+5. **No regression.** New file at a free name, and at a name a visible document holds (the
+   second takes the free name, `Chapter 2 (2)`).
+
+Capture `agent-browser console` and `errors` at the end of each: clean is part of the pass.

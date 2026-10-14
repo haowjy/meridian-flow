@@ -14,6 +14,11 @@ whose captured revision is still current. A late response cannot regress a newer
 canonical location. Scope disappearance and invalidation change projection
 membership only; they never imply global deletion. Resource aliases are obsolete
 local identities after remint, not catalog identity aliases.
+A join (`resource-join.ts`) is the same re-identification triggered by a `joined`
+create answer or a catalog entry's `joinedFrom`: a create that carries its
+destination landed on a document that already existed (a draft's, hidden live only
+because it is a draft). The joined id becomes current, the handle stays, queued
+intents rebase, and no two records ever fold.
 
 `resource-records.ts` defines durable descriptors and ordered project-qualified
 namespace intentions. Submitted attempt payloads and outcomes are immutable.
