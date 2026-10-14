@@ -66,7 +66,7 @@ export function harness(
   coordinator.useJournal(journal);
   for (const [docId, doc] of coordinator.docs)
     journal.setCheckpoint(docId, Y.encodeStateAsUpdate(doc));
-  const rawCore = createAgentEditCore({
+  const core = createAgentEditCore({
     journal: options.journalOverride?.(journal) ?? journal,
     coordinator,
     ...(options.lifecycle === false ? {} : { lifecycle }),
@@ -96,26 +96,6 @@ export function harness(
       : {}),
     ...(options.onLinkSpliceFallback ? { onLinkSpliceFallback: options.onLinkSpliceFallback } : {}),
   });
-  const core = {
-    ...rawCore,
-    write(
-      command: Parameters<typeof rawCore.write>[0],
-      writeContext: Parameters<typeof rawCore.write>[1] = {},
-    ) {
-      if ((command.command === "undo" || command.command === "redo") && !writeContext.actor) {
-        return rawCore.write(command, {
-          ...writeContext,
-          actor: {
-            kind: "agent",
-            turnId: writeContext.turnId ?? "test-reversal",
-            threadId: writeContext.threadId ?? THREAD_ID,
-            responseId: "test-observed-response",
-          },
-        });
-      }
-      return rawCore.write(command, writeContext);
-    },
-  };
   return {
     core,
     coordinator,

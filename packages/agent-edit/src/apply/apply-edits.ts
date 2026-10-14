@@ -4,7 +4,6 @@ import type { ParsedContent } from "@meridian/markup";
 import type { Fragment } from "prosemirror-model";
 import type { BlockRef, DocHandle } from "../handles.js";
 import type { AgentEditModel, InlineTextReplacement } from "../ports/model.js";
-import { editSegments } from "./segments.js";
 import type { ApplyErrorCode, ApplyResult, ApplyTransactionOrigin, ResolvedEdit } from "./types.js";
 
 type Ref = BlockRef;
@@ -48,7 +47,6 @@ export function applyEdits(
   model: AgentEditModel,
   edits: ResolvedEdit | readonly ResolvedEdit[],
   origin: ApplyTransactionOrigin,
-  beforeSegment?: () => void,
   certifySegment?: (segment: readonly ResolvedEdit[]) => void,
 ): ApplyResult {
   const editList = Array.isArray(edits) ? [...edits] : [edits];
@@ -66,9 +64,7 @@ export function applyEdits(
     deletedHashes: new Set(),
   };
 
-  const segments = beforeSegment
-    ? editSegments(doc, model, editList)
-    : editList.map((edit) => [edit]);
+  const segments = editList.map((edit) => [edit]);
   let committedEdits = 0;
   for (const segment of segments) {
     const plans: PlannedEdit[] = [];
@@ -79,7 +75,6 @@ export function applyEdits(
       plans.push(planned.plan);
     }
     try {
-      beforeSegment?.();
       let failure: ApplyFailure | undefined;
       model.transact(
         doc,

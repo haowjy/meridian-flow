@@ -146,7 +146,6 @@ describe("write tool dispatch", () => {
         interactionContext: {
           mode: "threadPeer",
           afterJournalId: 0,
-          branchGeneration: 1,
           peerBranchId: "branch-peer",
         },
       },
@@ -172,7 +171,6 @@ describe("write tool dispatch", () => {
         interactionContext: {
           mode: "threadPeer",
           afterJournalId: 0,
-          branchGeneration: 1,
           peerBranchId: "branch-peer",
         },
       },

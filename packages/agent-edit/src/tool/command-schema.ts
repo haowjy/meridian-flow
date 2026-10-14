@@ -65,13 +65,6 @@ const READ_FIELDS = {
 };
 
 const WRITE_HANDLE = z.string().regex(/^w[1-9]\d*$/, "Expected an edit handle such as w5");
-const INVERSE_COUNT = z
-  .int()
-  .min(1)
-  .max(20)
-  .optional()
-  .describe("How many edits to undo or redo, all or nothing. Default 1.");
-
 /**
  * Which version of a document to read (D3, D14). It has no default: omitted
  * means the version this thread's writes change, which the host decides per
@@ -162,20 +155,10 @@ const MUTATION_BRANCHES = {
       "Remove the blocks selected by `in` or a `#heading-slug` in `path`. No command deletes a whole document: if asked to, tell the user you can't, and don't empty it.",
     fields: { in: BlockSelectorSchema.optional() },
   },
-  undo: {
-    description:
-      "Undo count edits (default 1) to this document, newest first, all or nothing. Each edit can be redone separately. Refused if the user applied or discarded one, or anyone edited it since; then use revert.",
-    fields: { count: INVERSE_COUNT },
-  },
   revert: {
     description:
       'Make a new edit reversing an earlier edit, named by handle from read(format: "edits") or a write result. Parts edited since stay. In draft mode it waits for review.',
     fields: { edit: WRITE_HANDLE },
-  },
-  redo: {
-    description:
-      "Redo count edits (default 1), last undone first, all or nothing. Not after you edit this document again.",
-    fields: { count: INVERSE_COUNT },
   },
 } as const;
 
@@ -238,8 +221,6 @@ function mutationUnion<Target extends z.ZodRawShape>(target: Target, targetKey: 
       branch("insert"),
       branch("replace"),
       branch("remove"),
-      branch("undo"),
-      branch("redo"),
       branch("revert"),
     ])
     .superRefine((value, ctx) => {
@@ -310,8 +291,6 @@ export function writeCommandName(input: unknown): WriteCommandName | undefined {
     case "insert":
     case "replace":
     case "remove":
-    case "undo":
-    case "redo":
     case "revert":
       return command;
     default:

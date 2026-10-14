@@ -30,8 +30,6 @@ export type JournalMutation = JournalMutationBase &
     | { mode: "live" }
     | {
         mode: "threadPeer";
-        /** Host branch generation captured with the write baseline. */
-        branchGeneration: number;
         /** Peer that accepted this buffered write, not its shared upstream. */
         peerBranchId?: string;
         /** Branch journal head captured while preparing an edit. */
