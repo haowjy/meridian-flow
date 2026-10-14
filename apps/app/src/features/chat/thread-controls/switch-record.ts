@@ -29,11 +29,14 @@ import {
 export const isWriteModeControl = (item: PendingInboxItem) =>
   item.intent === "control" && item.control?.kind === "write_mode";
 
-export function recordFromSnapshot(snapshot: {
+/** The facts of an accepted snapshot that make a record. */
+export type SnapshotFacts = {
   nextSeq: string;
   thread: { aiWriteMode: AiWriteMode };
   liveState: { pending?: ThreadPendingInbox };
-}): RunStateRecord {
+};
+
+export function recordFromSnapshot(snapshot: SnapshotFacts): RunStateRecord {
   return {
     version: headSeq(snapshot.nextSeq),
     mode: snapshot.thread.aiWriteMode,

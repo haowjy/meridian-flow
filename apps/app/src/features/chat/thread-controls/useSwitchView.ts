@@ -44,14 +44,6 @@ import { invalidateProjectThreadData } from "@/client/query/project-invalidation
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import type { DeserializedThreadSnapshot } from "@/client/query/thread-snapshot-query";
 import { switchState } from "@/client/run-state/fold-switches";
-import {
-  addIntent,
-  answerIntent,
-  dropIntent,
-  EMPTY_VIEW,
-  type RunStateView,
-  receiveRecord,
-} from "@/client/run-state/run-state-view";
 import { announce, announceError, useIsThreadPendingCreation } from "@/client/stores";
 import { pendingInboxFromEvent } from "../pending-inbox";
 import {
@@ -60,15 +52,8 @@ import {
   controlWithdrawnCopy,
   writeModeSwitchedCopy,
 } from "./control-copy";
-import {
-  isWriteModeControl,
-  type Received,
-  receiveFrame,
-  recordFromAnswer,
-  recordFromSnapshot,
-  type SwitchFrame,
-  seedFrames,
-} from "./switch-record";
+import { isWriteModeControl } from "./switch-record";
+import { INITIAL_SWITCH_STATE, reduceSwitch } from "./switch-reducer";
 import type { QueuedControl } from "./thread-controls";
 import { readWriteModeSwitch } from "./write-mode-model";
 
@@ -83,76 +68,6 @@ export type SwitchJournal = {
    */
   withdraw(id: string): Promise<"removed" | "admitted" | "kept">;
 };
-
-type Action =
-  | { type: "snapshot"; snapshot: DeserializedThreadSnapshot }
-  | { type: "frame"; frame: SwitchFrame }
-  | { type: "journal"; switches: readonly JournalSwitch[] }
-  | { type: "withdraw"; id: string; failed?: boolean }
-  | { type: "withdrawn"; id: string; seq: string }
-  | { type: "dropWithdraw"; id: string };
-
-function reduce(state: Received, action: Action): Received {
-  if (action.type === "frame") return receiveFrame(state, action.frame);
-  return seedFrames(reduceView(state.view, action), state.early);
-}
-
-function reduceView(view: RunStateView, action: Exclude<Action, { type: "frame" }>): RunStateView {
-  switch (action.type) {
-    case "snapshot":
-      return receiveRecord(view, recordFromSnapshot(action.snapshot));
-    case "journal": {
-      let next = view;
-      const held = new Set(action.switches.map((entry) => entry.id));
-      for (const entry of action.switches) {
-        // A stamp is the server's answer, read as a fact by every tab.
-        if (entry.answer) {
-          next = receiveRecord(next, recordFromAnswer(next.record, entry.answer));
-          next = answerIntent(
-            addIntent(next, {
-              kind: "switch",
-              id: entry.id,
-              order: entry.seq,
-              mode: entry.mode,
-              answer: null,
-            }),
-            "switch",
-            entry.id,
-            entry.answer.seq,
-          );
-        } else {
-          next = addIntent(next, {
-            kind: "switch",
-            id: entry.id,
-            order: entry.seq,
-            mode: entry.mode,
-            answer: null,
-            failed: entry.failed,
-            awaitingServer: entry.posted && !entry.refused,
-          });
-        }
-      }
-      // A record that vanished unstamped was withdrawn or refused here, or its stamp was
-      // pruned while this tab was blind: either way frames bring the server state.
-      for (const intent of next.intents)
-        if (intent.kind === "switch" && intent.answer === null && !held.has(intent.id))
-          next = dropIntent(next, "switch", intent.id);
-      return next;
-    }
-    case "withdraw":
-      return addIntent(view, {
-        kind: "withdraw",
-        id: action.id,
-        order: 0,
-        answer: null,
-        failed: action.failed,
-      });
-    case "withdrawn":
-      return answerIntent(view, "withdraw", action.id, action.seq);
-    case "dropWithdraw":
-      return dropIntent(view, "withdraw", action.id);
-  }
-}
 
 /** Dev-only: the chats whose view is mounted in this tab, to catch a second host. */
 const mountedViews = new Map<string, number>();
@@ -214,7 +129,7 @@ export function useSwitchView(input: {
   const transport = useThreadTransport();
   const isPendingCreation = useIsThreadPendingCreation(threadId);
   useSingleHostWarning(threadId);
-  const [{ view }, dispatch] = useReducer(reduce, { view: EMPTY_VIEW, early: [] });
+  const [{ view }, dispatch] = useReducer(reduceSwitch, INITIAL_SWITCH_STATE);
   const [applied, setApplied] = useState<readonly Applied[]>([]);
   const latest = useRef({ journal, projectId });
   latest.current = { journal, projectId };
