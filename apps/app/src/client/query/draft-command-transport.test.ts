@@ -11,7 +11,7 @@ afterEach(() => vi.useRealTimers());
 
 const applied = { status: "applied" as const };
 
-it("resends a request that got no answer, and carries the observed answer of a 202", async () => {
+it("resends a lost request, carries the observed answer of a 202, resends when nothing was committed, and stops when the claim ends", async () => {
   const send = vi
     .fn()
     .mockRejectedValueOnce(new TypeError("fetch failed"))
@@ -25,19 +25,32 @@ it("resends a request that got no answer, and carries the observed answer of a 2
   expect(await settled).toEqual({ kind: "result", result: applied });
   expect(send).toHaveBeenCalledTimes(2);
   expect(observe).toHaveBeenCalledTimes(2);
-});
 
-it("sends the command again when nothing was committed under its id, and stops when the claim ends", async () => {
-  const send = vi.fn().mockResolvedValue({ status: "pending" });
-  const observe = vi
+  const send2 = vi.fn().mockResolvedValue({ status: "pending" });
+  const observe2 = vi
     .fn()
     .mockResolvedValueOnce({ state: "unknown" })
     .mockResolvedValue({ state: "pending" });
   let live = true;
-  const settled = settleCommand({ send, observe, live: () => live });
+  const settled2 = settleCommand({ send: send2, observe: observe2, live: () => live });
   await vi.advanceTimersByTimeAsync(3000);
-  expect(send).toHaveBeenCalledTimes(2);
+  expect(send2).toHaveBeenCalledTimes(2);
   live = false;
   await vi.advanceTimersByTimeAsync(60_000);
-  expect(await settled).toEqual({ kind: "revoked" });
+  expect(await settled2).toEqual({ kind: "revoked" });
+
+  // A revoked claim never sends, and a direct answer that lands after revocation is not published.
+  const never = vi.fn().mockResolvedValue(applied);
+  expect(await settleCommand({ send: never, observe: observe2, live: () => false })).toEqual({
+    kind: "revoked",
+  });
+  expect(never).not.toHaveBeenCalled();
+  let open = true;
+  const late = vi.fn(async () => {
+    open = false;
+    return applied;
+  });
+  expect(await settleCommand({ send: late, observe: observe2, live: () => open })).toEqual({
+    kind: "revoked",
+  });
 });

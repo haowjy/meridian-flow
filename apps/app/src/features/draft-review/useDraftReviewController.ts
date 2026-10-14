@@ -252,12 +252,12 @@ export function useDraftReviewController({
           ? commands.applyDraft(draft, prepareFromFrame({ projectId, workId, ...draft }, frame))
           : commands.applyDraft(draft);
       }
-      // A text item's Discard is a local edit; a whole item has no base to return to and is closed.
-      const handle = isWholeItem(queryClient, { projectId, workId, ...draft })
-        ? null
-        : runtime?.editorHandle(from?.editor ?? undefined);
-      if (handle) {
-        if (commands.dispositionLocked)
+      // A text item's Discard is a local edit that Ctrl+Z undoes; only a whole item (created, binary or
+      // live-deleted) has no base to return to and is closed. A text item with no editor attached is never
+      // closed on the server: that cannot be undone, so the Discard waits for its room.
+      if (!isWholeItem(queryClient, { projectId, workId, ...draft })) {
+        const handle = runtime?.editorHandle(from?.editor ?? undefined);
+        if (!handle || commands.dispositionLocked)
           return { sent: false, outcome: Promise.resolve({ kind: "blocked" }) };
         const result = discardAll(handle);
         return {

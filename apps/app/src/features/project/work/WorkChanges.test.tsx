@@ -8,13 +8,16 @@ import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
 import { act, type ReactNode, useState } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import * as Y from "yjs";
 import * as projectsApi from "@/client/api/projects-api";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { DocumentSession } from "@/core/editor/document-session";
 import { ChatThreadNavigationProvider } from "@/features/chat/ChatThreadNavigation";
 import * as handoff from "@/features/project/dock/editor-review-handoff";
 import { ProjectNavigationProvider } from "@/features/project/routing/ProjectNavigationContext";
 import { createReviewScopeFixture, listed, workC } from "@/test-support/draft-review-scope";
+import { seedReviewBase } from "@/test-support/inline-review-editor";
 import { settleReact } from "@/test-support/react-dom-harness";
 import { WorkChanges } from "./WorkChanges";
 
@@ -177,6 +180,60 @@ it("a new document's row Discard closes the item on the server instead of editin
       expect(fixture.network.discardDraft.mock.calls[0][3]).toMatchObject({
         itemKey: created.itemKey,
       });
+    },
+    { surface: <Page />, host },
+  );
+});
+
+it("a refused Apply whose only change a peer removed keeps the file and says why, even once the list drops it", async () => {
+  const item = draftOf("b", "Chapter 13");
+  fixture.network.listWorkDrafts.mockResolvedValue({ items: [item] });
+  fixture.network.getDraftAttribution.mockResolvedValue({ edits: [] } as never);
+  fixture.network.getDraftMeta.mockResolvedValue({
+    kind: "text",
+    draftId: item.draftId,
+    itemKey: item.itemKey,
+    documentId: item.documentId,
+    roomName: "review-room-b",
+    wholeItem: false,
+    isNew: false,
+  } as never);
+  const room = new DocumentSession({ roomKey: "review-room-b", persistence: { kind: "none" } });
+  room.whenSynced = () => Promise.resolve();
+  fixture.rooms.set("review-room-b", room);
+  seedReviewBase(room.document, ["Door red."]);
+  const paragraph = new Y.XmlElement("paragraph");
+  const text = new Y.XmlText();
+  paragraph.insert(0, [text]);
+  text.insert(0, "Door green.");
+  room.document.getXmlFragment("prosemirror").insert(0, [paragraph]);
+  let answer!: (value: never) => void;
+  fixture.network.applyDraftChanges.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+  await fixture.render(
+    async () => {
+      await settleReact(() => expect(find("Changes in Chapter 13")).toBeDefined());
+      await press("Changes in Chapter 13");
+      await settleReact(() => expect(find("Apply")).toBeDefined());
+      await press("Apply");
+      await settleReact(() => expect(fixture.network.applyDraftChanges).toHaveBeenCalledOnce());
+      await act(async () => {
+        room.document.transact(() => {
+          text.delete(0, text.length);
+          text.insert(0, "Door red.");
+        }, "peer");
+        await vi.advanceTimersByTimeAsync(150);
+      });
+      fixture.network.listWorkDrafts.mockResolvedValue({ items: [] });
+      await act(async () => {
+        answer({
+          status: "held",
+          draftId: item.draftId,
+          itemKey: item.itemKey,
+          reason: { code: "clash" },
+        } as never);
+      });
+      await settleReact(() => expect(document.querySelector('[role="alert"]')).not.toBeNull());
+      expect(document.body.textContent).toContain("Chapter 13");
     },
     { surface: <Page />, host },
   );

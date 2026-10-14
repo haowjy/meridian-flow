@@ -51,6 +51,8 @@ export async function settleCommand<R extends { status: string }>({
   let resends = 0;
   const canResend = () => resends < RESEND_DELAYS_MS.length;
   for (;;) {
+    // The claim is checked before every request, the first included: a revoked intent never leaves.
+    if (!live()) return { kind: "revoked" };
     let response: R | DraftApplyPendingResponse;
     try {
       response = await send();
@@ -61,7 +63,8 @@ export async function settleCommand<R extends { status: string }>({
       if (!live()) return { kind: "revoked" };
       continue;
     }
-    if (response.status !== "pending") return { kind: "result", result: response as R };
+    if (response.status !== "pending")
+      return live() ? { kind: "result", result: response as R } : { kind: "revoked" };
 
     let delay = POLL_START_MS;
     let resend = false;
