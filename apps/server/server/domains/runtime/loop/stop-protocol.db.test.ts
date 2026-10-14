@@ -38,7 +38,7 @@ else
     beforeEach(() => deleteDrizzleRows(db, [schema.users]));
     afterAll(async () => {
       // Background work a run detached (a wake, a renewal) must settle before its database goes.
-      await processDetachedWork.drain(10_000);
+      await processDetachedWork.drain(8_000);
       await audited.close();
     });
     // Publication pins: no input write without a record, and the last record equals the rows.

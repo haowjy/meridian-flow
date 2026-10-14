@@ -206,12 +206,8 @@ export function useRetryStandIns(input: {
 
   const retry = useCallback<RetryStandIns["retry"]>(
     (from, build) => {
-      setRefused((current) => {
-        if (!current.has(from.id)) return current;
-        const next = new Set(current);
-        next.delete(from.id);
-        return next;
-      });
+      // One clearing rule: any next action of the writer drops every "Couldn't retry." note.
+      setRefused(NO_REFUSALS);
       const lost = localRef.current.find(
         (entry) => entry.turn.id === from.id && entry.request === "failed",
       );

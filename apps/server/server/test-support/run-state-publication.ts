@@ -18,19 +18,31 @@ import { sql } from "drizzle-orm";
 import postgres from "postgres";
 import { readRunState } from "../domains/runtime/adapters/drizzle-run-state.js";
 
-const DROP_TIMEOUT_MS = 15_000;
-const POOL_CLOSE_TIMEOUT_MS = 5_000;
+// A suite that drains detached work (up to 8 s) and then closes must fit the 30 s hook timeout:
+// 8 + 12 + 3 + 3 = 26 s.
+const DROP_TIMEOUT_MS = 12_000;
+const POOL_CLOSE_TIMEOUT_MS = 3_000;
 
-/** Waits for `work` at most `ms`; a failure or a late finish is ignored, since this is cleanup. */
-async function within(ms: number, work: Promise<unknown> | undefined) {
+/**
+ * Waits for `work` at most `ms`. Cleanup must not hang or fail a suite, but it must not hide a
+ * failure either: a step that errors or runs out of time is warned about, by name.
+ */
+async function within(ms: number, step: string, work: Promise<unknown> | undefined) {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    await Promise.race([
-      work?.catch(() => {}),
-      new Promise<void>((resolve) => {
-        timer = setTimeout(resolve, ms);
+    const outcome = await Promise.race([
+      (work ?? Promise.resolve()).then(
+        () => "done" as const,
+        (error: unknown) => error,
+      ),
+      new Promise<"timeout">((resolve) => {
+        timer = setTimeout(() => resolve("timeout"), ms);
       }),
     ]);
+    if (outcome !== "done")
+      console.warn(
+        `[audited-db] ${step} ${outcome === "timeout" ? `did not finish in ${ms} ms` : `failed: ${String(outcome)}`}`,
+      );
   } finally {
     clearTimeout(timer);
   }
@@ -41,18 +53,18 @@ export type AuditedDatabase = { db: Database; close: () => Promise<void> };
 /**
  * A disposable database owned by one suite: cloned from the managed run's template (which no session
  * connects to, so the clone cannot be blocked), audited, and dropped by `close`. The name keeps the
- * managed `<template>_test-run-<pid>-<ts>-worker-<n>` shape, so a crashed run's leftovers are
- * collected with the run's own databases.
+ * managed `<template>-worker-<n>` shape (`n` far above any worker index), so the run's managed cleanup
+ * collects a clone that a crash or a failed drop left, by the `<template>-worker-` prefix.
  */
 export async function openAuditedDatabase(
   workerUrl: string,
   options: { max: number },
 ): Promise<AuditedDatabase> {
   const workerName = decodeURIComponent(new URL(workerUrl).pathname.slice(1));
-  const managed = workerName.match(/^(.+_test-run-\d+)-\d+-worker-\d+$/);
+  const managed = /_test-run-\d+-\d+-worker-\d+$/.test(workerName);
   const templateName = managed ? workerName.replace(/-worker-\d+$/, "") : workerName;
   const cloneName = managed
-    ? `${managed[1]}-${Date.now()}-worker-${randomInt(1000, 1_000_000)}`
+    ? `${templateName}-worker-${randomInt(1000, 1_000_000)}`
     : `${workerName}_audit_${process.pid}_${Date.now()}`;
   if (Buffer.byteLength(cloneName) > 63)
     throw new Error(`Audit database name is longer than 63 bytes: ${cloneName}`);
@@ -66,14 +78,19 @@ export async function openAuditedDatabase(
   // Cleanup must never hang a suite, and a slow host (DROP DATABASE waits on a checkpoint) must not
   // fail it. Dropping the clone WITH (FORCE) ends its sessions first, so a query a test left in
   // flight cannot hold the pool open. Each step gets a bounded window; a drop that does not finish
-  // is left to the managed run's own cleanup, which collects every database of this name shape.
+  // is warned about and left to the managed run's own cleanup, which collects by this name prefix.
   const close = async () => {
     await within(
       DROP_TIMEOUT_MS,
+      `dropping ${cloneName}; the managed cleanup collects it`,
       admin.unsafe(`DROP DATABASE IF EXISTS "${cloneName}" WITH (FORCE)`),
     );
-    await within(POOL_CLOSE_TIMEOUT_MS, db?.close());
-    await within(POOL_CLOSE_TIMEOUT_MS, admin.end({ timeout: 1 }));
+    await within(POOL_CLOSE_TIMEOUT_MS, `closing the pool of ${cloneName}`, db?.close());
+    await within(
+      POOL_CLOSE_TIMEOUT_MS,
+      `closing the admin connection for ${cloneName}`,
+      admin.end({ timeout: 1 }),
+    );
   };
   try {
     await admin.unsafe(`CREATE DATABASE "${cloneName}" WITH TEMPLATE "${templateName}"`);

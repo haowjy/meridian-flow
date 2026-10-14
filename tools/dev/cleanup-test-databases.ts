@@ -1,6 +1,10 @@
 #!/usr/bin/env tsx
 /** Detached cleanup of exactly one parent's managed DB run; stale GC is the fallback. */
-import { dropDatabaseForUrl, parseTargetDatabase } from "./lib/dev-db";
+import {
+  dropDatabaseForUrl,
+  listDatabasesWithPrefixForUrl,
+  parseTargetDatabase,
+} from "./lib/dev-db";
 import { resolveCurrentRepoRoot, resolveMainDatabaseNames } from "./lib/dev-env";
 import { managedTestDatabaseOwnerPid, managedTestDatabaseWorkerUrl } from "./lib/test-db-lifecycle";
 
@@ -11,10 +15,20 @@ process.once("message", async (message: { databaseUrl: string; workerCount: numb
     if (managedTestDatabaseOwnerPid(targetDb, mainNames) !== process.ppid) {
       throw new Error("Refusing cleanup: managed database is not owned by the sending parent.");
     }
+    // `<template>-worker-` is unique to this run (the template name carries its pid and start time), so
+    // the prefix also finds a suite's disposable clone (`openAuditedDatabase`) that its own drop left.
+    const clones = await listDatabasesWithPrefixForUrl(message.databaseUrl, `${targetDb}-worker-`);
     const urls = [
-      ...Array.from({ length: message.workerCount }, (_, index) =>
-        managedTestDatabaseWorkerUrl(message.databaseUrl, index + 1),
-      ),
+      ...new Set([
+        ...Array.from({ length: message.workerCount }, (_, index) =>
+          managedTestDatabaseWorkerUrl(message.databaseUrl, index + 1),
+        ),
+        ...clones.map((name) => {
+          const url = new URL(message.databaseUrl);
+          url.pathname = `/${name}`;
+          return url.toString();
+        }),
+      ]),
       message.databaseUrl,
     ];
     // Acknowledge ownership while the parent is still alive. No credentials go in argv or logs.

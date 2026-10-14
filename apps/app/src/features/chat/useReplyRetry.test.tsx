@@ -174,9 +174,9 @@ describe("useReplyRetry", () => {
     expect(latest.refused.has("f")).toBe(true);
     expect(invalidateQueries).toHaveBeenCalled();
     expect(announcements.announce).toHaveBeenCalledWith("Couldn't retry.");
-    // Pressing Retry again clears the note while the new request runs.
+    // The next Retry, on any failed reply, clears the note while its request runs.
     api.retryReply.mockReturnValueOnce(new Promise(() => undefined));
-    await act(async () => latest.retry(failed));
+    await act(async () => latest.retry(turn("g", "assistant", "error", 4)));
     expect(latest.refused.has("f")).toBe(false);
   });
 
