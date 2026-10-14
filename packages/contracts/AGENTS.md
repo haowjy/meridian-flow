@@ -4,11 +4,11 @@ Shared TypeScript wire contracts for IDs, DTOs, protocols, thread events,
 agents, interrupts, preferences, projects, works, branch-backed draft review,
 runtime shapes, and observability records.
 
-- `drafts/` is UI vocabulary for branch review cards and Work draft lists. The
-  durable backend primitive is a branch (`document_branches` +
-  `branch_write_journal`), not legacy draft tables.
-- Yjs protocol contracts expose only live rooms and generation-fenced branch
-  rooms.
+- `drafts/` is the review wire: the Work draft list, item metadata, and the
+  Apply and Discard commands. The durable backend primitive is a text branch
+  (`document_branches` + `branch_write_journal`), which never crosses the wire.
+- Yjs protocol contracts expose live rooms and branch rooms (`branchRoomName`
+  of the branch id; the server returns the name).
 - Every Meridian WebSocket close pair used by a classifier is defined in
   `WS_CLOSE`; classifiers reference registry entries. Transport-local lifecycle
   and failure closes remain owned by their emitting transport.
