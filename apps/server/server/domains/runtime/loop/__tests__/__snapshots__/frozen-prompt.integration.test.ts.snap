@@ -12,7 +12,7 @@ exports[`frozen prompt provider requests > pins complete requests for a plain th
 
 <work_context>
 current: none
-  writes: auto-apply. Your changes go live right away.
+  writes: auto-apply. Your changes are written straight into the writer's documents.
   scratch: bare scratch:// is this chat's notes at scratch://@/c1/, shared with its forks and subagents. A handoff starts fresh notes.
   Move notes to kb:// or manuscript:// to keep them for the project. Rebinding never moves notes.
 </work_context>
@@ -84,7 +84,7 @@ Documents are Markdown with a few Meridian forms. You will see them when you rea
 
 <work_context>
 current: none
-  writes: auto-apply. Your changes go live right away.
+  writes: auto-apply. Your changes are written straight into the writer's documents.
   scratch: bare scratch:// is this chat's notes at scratch://@/c1/, shared with its forks and subagents. A handoff starts fresh notes.
   Move notes to kb:// or manuscript:// to keep them for the project. Rebinding never moves notes.
 </work_context>
@@ -147,7 +147,7 @@ Forked conversation through turn 00000000-0000-4000-8000-000000000012.
             "text": "<system_update>
 <work_context>
 current: none
-  writes: auto-apply. Your changes go live right away.
+  writes: auto-apply. Your changes are written straight into the writer's documents.
   scratch: bare scratch:// is this chat's notes at scratch://@/c1/, shared with its forks and subagents. A handoff starts fresh notes.
   Move notes to kb:// or manuscript:// to keep them for the project. Rebinding never moves notes.
 </work_context>
@@ -196,7 +196,7 @@ current: none
 
 <work_context>
 current: none
-  writes: auto-apply. Your changes go live right away.
+  writes: auto-apply. Your changes are written straight into the writer's documents.
   scratch: bare scratch:// is this chat's notes at scratch://@/c1/, shared with its forks and subagents. A handoff starts fresh notes.
   Move notes to kb:// or manuscript:// to keep them for the project. Rebinding never moves notes.
 </work_context>
@@ -259,7 +259,7 @@ Forked conversation through turn 00000000-0000-4000-8000-000000000012.
             "text": "<system_update>
 <work_context>
 current: none
-  writes: auto-apply. Your changes go live right away.
+  writes: auto-apply. Your changes are written straight into the writer's documents.
   scratch: bare scratch:// is this chat's notes at scratch://@/c1/, shared with its forks and subagents. A handoff starts fresh notes.
   Move notes to kb:// or manuscript:// to keep them for the project. Rebinding never moves notes.
 </work_context>
