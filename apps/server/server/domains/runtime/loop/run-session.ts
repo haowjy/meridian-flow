@@ -3,14 +3,12 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import {
-  isWriteModeSwitchTurn,
   type ThreadRepository,
   type TurnRepository,
   TurnStartConflictError,
 } from "../../threads/index.js";
 import type { DetachedWorkTracker } from "../detached-work.js";
 import { createLocalTurn } from "./local-turn.js";
-import { queuedWriteModeSwitch } from "./next-inbox-work.js";
 import { type CurrentTurn, DEFAULT_LEASE_TTL_MS, type Lease, type RunClaim } from "./ports.js";
 import {
   NoPendingWakeError,
@@ -25,6 +23,7 @@ import {
   UnsettledPlaceholderError,
 } from "./run-turn-port.js";
 import type { RuntimeDelivery } from "./runtime-delivery.js";
+import { pastTrailingSwitches } from "./write-mode-switch.js";
 
 type RunSession = {
   controller: AbortController;
@@ -48,11 +47,7 @@ export function createRunSessions(deps: {
   runClaim: RunClaim;
   delivery: Pick<
     RuntimeDelivery,
-    | "settleStaleExecution"
-    | "releaseExecution"
-    | "refreshPending"
-    | "selectPending"
-    | "applyDueSwitches"
+    "settleStaleExecution" | "releaseExecution" | "refreshPending" | "selectPending"
   >;
   handoffBriefs: import("../ports/handoff-briefs.js").HandoffBriefStopper;
   repos: { turns: TurnRepository; threads: Pick<ThreadRepository, "findById"> };
@@ -173,12 +168,6 @@ export function createRunSessions(deps: {
         Math.floor(DEFAULT_LEASE_TTL_MS / 3),
       );
       heartbeat.unref();
-      if (
-        "expectedLeafTurnId" in input &&
-        input.expectedLeafTurnId &&
-        (await deps.repos.turns.getLatestByThread(threadId))?.id !== input.expectedLeafTurnId
-      )
-        throw new ReplyRetryUnavailableError(threadId);
       const resumeAfterSeq = (await deps.headSeq(threadId)).toString();
       const loop = await deps.setup({
         ...input,
@@ -254,14 +243,6 @@ export function createRunSessions(deps: {
     }
   }
 
-  /** A switch applied after a failed reply must not take Retry away; the retry chains after it. */
-  async function pastTrailingSwitches(turn: Turn): Promise<Turn | null> {
-    let current: Turn | null = turn;
-    while (current && isWriteModeSwitchTurn(current) && current.prevTurnId)
-      current = await deps.repos.turns.findById(current.prevTurnId as TurnId);
-    return current;
-  }
-
   async function startDrain(threadId: ThreadId): Promise<void> {
     try {
       const run = await prepare({ threadId, drain: true });
@@ -328,17 +309,9 @@ export function createRunSessions(deps: {
         failedTurn.role !== "assistant" ||
         failedTurn.status !== "error" ||
         !latestTurn ||
-        (await pastTrailingSwitches(latestTurn))?.id !== failedTurn.id
+        (await pastTrailingSwitches(deps.repos.turns, latestTurn))?.id !== failedTurn.id
       )
         return refuse();
-
-      // A Retry starts a reply, so a pending switch applies first and the retry chains after it.
-      let leafTurn = latestTurn;
-      if (queuedWriteModeSwitch(await deps.delivery.selectPending(input.threadId))) {
-        if (!(await deps.delivery.applyDueSwitches(input.threadId, true)))
-          throw new ReplyRetryPendingError(input.threadId);
-        leafTurn = (await deps.repos.turns.getLatestByThread(input.threadId)) ?? latestTurn;
-      }
 
       let run: PreparedRun;
       try {
@@ -347,7 +320,6 @@ export function createRunSessions(deps: {
           drain: true,
           replyTurnId: input.replyTurnId,
           retryOf: input.failedTurnId,
-          expectedLeafTurnId: leafTurn.id,
         });
       } catch (error) {
         const raced = await accepted();
@@ -375,9 +347,9 @@ export function createRunSessions(deps: {
           createLocalTurn({
             id: input.replyTurnId,
             threadId: input.threadId,
-            prevTurnId: firstTurn?.role === "compaction" ? firstTurn.id : leafTurn.id,
+            prevTurnId: firstTurn?.role === "compaction" ? firstTurn.id : latestTurn.id,
             position:
-              (firstTurn?.role === "compaction" ? firstTurn.position : leafTurn.position) + 1,
+              (firstTurn?.role === "compaction" ? firstTurn.position : latestTurn.position) + 1,
             role: "assistant",
             origin: "assistant",
             status: "pending",

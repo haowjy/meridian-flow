@@ -100,13 +100,20 @@ export function createThreadControls(deps: {
       return deps.withThreadLock(input.threadId, async () => {
         const created = await enqueueRow(input, draft);
         const turn = await deps.findControlTurn(input.threadId, input.id);
-        const pending = (await deps.pending(input.threadId)).items.find(isQueuedSwitch) ?? null;
+        const items = (await deps.pending(input.threadId)).items;
         const mode = await deps.threadWriteMode(input.threadId);
         // Last, so it is at or past the frame of every transition read above.
         const seq = (await deps.headSeq(input.threadId)).toString();
         return {
           created,
-          response: { id: input.id, pending, turnId: turn?.id ?? null, seq, mode },
+          response: {
+            id: input.id,
+            queued: items.some((item) => item.id === input.id),
+            pending: items.find(isQueuedSwitch) ?? null,
+            turnId: turn?.id ?? null,
+            seq,
+            mode,
+          },
         };
       });
     },
@@ -129,9 +136,15 @@ export function createThreadControls(deps: {
         }
         // The ack's frame is appended inline above, so the queue and mode read here are the
         // switch state after the withdrawal; `seq` is read last, at or past that frame.
-        const pending = (await deps.pending(threadId)).items.find(isQueuedSwitch) ?? null;
+        const items = (await deps.pending(threadId)).items;
         const mode = await deps.threadWriteMode(threadId);
-        return { outcome, pending, mode, seq: (await deps.headSeq(threadId)).toString() };
+        return {
+          outcome,
+          queued: items.some((item) => item.id === controlId),
+          pending: items.find(isQueuedSwitch) ?? null,
+          mode,
+          seq: (await deps.headSeq(threadId)).toString(),
+        };
       }),
   };
 }

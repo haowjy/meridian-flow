@@ -172,9 +172,13 @@ export type EnqueueThreadControlRequest = { id: string; control: ControlBody };
  * switch state it reports is exactly the state after every frame at or below
  * it. Only switch transitions need that lock, so later frames at higher
  * seqs can change the switch state only by being later switch transitions.
+ *
+ * `queued` answers for this request alone; `pending` describes the chat.
  */
 export type EnqueueThreadControlResponse = {
   id: string;
+  /** This control is still waiting in the inbox (not started, cancelled out or withdrawn). */
+  queued: boolean;
   /** The thread's queued write-mode switch (not necessarily this request's row), or null. */
   pending: PendingInboxItem | null;
   turnId: string | null;
@@ -185,6 +189,8 @@ export type EnqueueThreadControlResponse = {
 };
 export type WithdrawThreadControlResponse = {
   outcome: "withdrawn" | "already_started";
+  /** The withdrawn control is still waiting in the inbox: false after either outcome. */
+  queued: boolean;
   /** The thread's queued write-mode switch after the withdrawal, or null. */
   pending: PendingInboxItem | null;
   /** The thread's applied write mode at the same read. */

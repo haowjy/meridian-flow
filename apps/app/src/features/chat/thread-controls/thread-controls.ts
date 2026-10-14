@@ -62,7 +62,7 @@ export type QueuedControl = {
 export type ControlAction =
   | { type: "enqueue"; id: string; control: CompactControl }
   | { type: "retry"; id: string }
-  | { type: "enqueued"; id: string; pending: PendingInboxItem | null; turnId: string | null }
+  | { type: "enqueued"; id: string; queued: boolean }
   | { type: "enqueue_failed"; id: string }
   | { type: "withdraw"; id: string }
   | { type: "withdrawn"; id: string }
@@ -91,8 +91,8 @@ export function controlsReducer(state: LocalControls, action: ControlAction): Lo
     case "retry":
       return patchSend(action.id, "sending");
     case "enqueued":
-      // No pending row: it already ran (turn id) or was withdrawn earlier.
-      return patchSend(action.id, action.pending ? "sent" : "finished");
+      // Not queued: it already ran or was withdrawn earlier.
+      return patchSend(action.id, action.queued ? "sent" : "finished");
     case "enqueue_failed":
       return patchSend(action.id, "failed");
     case "withdraw":
