@@ -28,6 +28,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("lists only direct live children and excludes trashed rows", async () => {
       const root = await repos.threads.create({
+        aiWriteMode: "direct",
         userId: ids.userId,
         projectId: ids.projectId,
         title: "Activity root",
@@ -39,6 +40,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         status: "complete",
       });
       const childA = await repos.threads.createSubagent({
+        aiWriteMode: "direct",
         userId: ids.userId,
         projectId: ids.projectId,
         parentThreadId: root.id,
@@ -54,6 +56,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         status: "complete",
       });
       const childB = await repos.threads.createSubagent({
+        aiWriteMode: "direct",
         userId: ids.userId,
         projectId: ids.projectId,
         parentThreadId: root.id,
@@ -63,6 +66,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         title: "Child B",
       });
       const grandchild = await repos.threads.createSubagent({
+        aiWriteMode: "direct",
         userId: ids.userId,
         projectId: ids.projectId,
         parentThreadId: childA.id,
@@ -79,6 +83,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         prevTurnId: childTurn.id,
       });
       const { thread: derivedPrimary } = await repos.threads.createDerivedPrimary({
+        aiWriteMode: "direct",
         id: crypto.randomUUID() as never,
         userId: ids.userId,
         projectId: ids.projectId,
@@ -104,6 +109,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("serves a fork's inherited turns after its source is trashed", async () => {
       const source = await repos.threads.create({
+        aiWriteMode: "direct",
         userId: ids.userId,
         projectId: ids.projectId,
         title: "Trashed source",
@@ -115,6 +121,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         status: "complete",
       });
       const { thread: fork } = await repos.threads.createDerivedPrimary({
+        aiWriteMode: "direct",
         id: crypto.randomUUID() as never,
         userId: ids.userId,
         projectId: ids.projectId,

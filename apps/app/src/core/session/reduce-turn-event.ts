@@ -4,7 +4,15 @@ import {
   interruptResolvedPropsFromAnswer,
 } from "@meridian/contracts/components";
 import type { AGUIEvent, Block, BlockType, JsonValue, Turn } from "@meridian/contracts/protocol";
-import { blockContentRecord, EventType, interruptIdForBlock } from "@meridian/contracts/protocol";
+import {
+  blockContentRecord,
+  EventType,
+  EXECUTION_ENDED_EVENT,
+  interruptIdForBlock,
+  MESSAGES_DELIVERED_EVENT,
+  readRunStartedMeta,
+  WRITE_MODE_SWITCHED_EVENT,
+} from "@meridian/contracts/protocol";
 import { isTerminalTurnStatus } from "@meridian/contracts/threads";
 import { WORK_CONTEXT_PROJECTION_EVENT } from "@meridian/contracts/works";
 import {
@@ -610,14 +618,6 @@ function toolNameFromEvent(event: Record<string, unknown>): string {
   return readString(event.toolCallName) ?? readString(event.toolName) ?? "tool";
 }
 
-function writeModeFromRunStarted(rawEvent: unknown): Turn["writeMode"] | undefined {
-  if (!rawEvent || typeof rawEvent !== "object" || Array.isArray(rawEvent)) return undefined;
-  const writeMode = (rawEvent as Record<string, unknown>).writeMode;
-  return writeMode === "direct" || writeMode === "draft" || writeMode === null
-    ? writeMode
-    : undefined;
-}
-
 /** The addressed block vocabulary has one reducer owner, independent of a run. */
 export function isDurableBlockEvent(event: AGUIEvent): boolean {
   return event.type === EventType.CUSTOM && event.name === "meridian.block.upserted";
@@ -661,7 +661,7 @@ export function applyAguiEventToStore(
     case EventType.RUN_STARTED:
       store.ensureAssistantTurn(threadId, event.runId, {
         createdAt: new Date().toISOString(),
-        writeMode: writeModeFromRunStarted(event.rawEvent),
+        writeMode: readRunStartedMeta(event.rawEvent).writeMode,
       });
       return;
 
@@ -1082,7 +1082,11 @@ export function applyAguiEventToStore(
         event.name === "meridian.turn_change_trail.updated" ||
         event.name === "meridian.turn_change_trail.settled" ||
         event.name === WORK_CONTEXT_PROJECTION_EVENT ||
-        event.name === "meridian.inbox.changed"
+        event.name === "meridian.inbox.changed" ||
+        // Run-boundary frames: the run controller and switch view consume them.
+        event.name === WRITE_MODE_SWITCHED_EVENT ||
+        event.name === MESSAGES_DELIVERED_EVENT ||
+        event.name === EXECUTION_ENDED_EVENT
       ) {
         return;
       }

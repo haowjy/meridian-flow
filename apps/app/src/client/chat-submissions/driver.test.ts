@@ -28,9 +28,11 @@ function record(): ChatSubmission {
     threadId: "thread_1",
     projectId: "project-1",
     createdAt: "2026-10-11T10:00:00Z",
+    seq: 1,
     creation: {
       title: "Opening",
       workId: null,
+      workAiWriteMode: "direct",
       agentName: "General",
       agentSlug: "general",
       agentSelection: { catalogEntryId: "general", definitionRevisionId: "rev" },
@@ -78,7 +80,16 @@ function rig(options: ConstructorParameters<typeof ThreadRunScenario>[0] = {}) {
         }
         return id;
       },
+      postControl: async () => ({
+        id: "control",
+        queued: false,
+        pending: null,
+        turnId: "switch-turn",
+        seq: "1",
+        mode: "direct",
+      }),
       status: (entry, status) => {
+        if (entry.control) return;
         let id = rows.get(entry.recordId);
         if (!id) {
           id = scenario.store.getState().appendUserTurn(entry.threadId, entry.blocks).id;
@@ -293,6 +304,7 @@ it("reports a projection exception and fails only the attempted record", async (
     submissionId: "sub-2",
     creation: undefined,
     createdAt: "2026-10-11T11:00:00Z",
+    seq: 2,
   });
   const statuses: string[] = [];
   const cause = new Error("row invariant");
@@ -366,6 +378,7 @@ it("a failed successor creation rewrite also fails its attempted predecessor", a
     recordId: "record-2",
     submissionId: "sub-2",
     createdAt: "2026-10-11T10:00:01Z",
+    seq: 2,
   });
   const status = vi.fn();
   const { owner } = test.mount({
@@ -504,6 +517,7 @@ it("later Sends behind incomplete deletion settle every row without admission", 
       recordId: "record-2",
       submissionId: "sub-2",
       createdAt: "2026-10-11T11:00:00Z",
+      seq: 2,
     };
     r.records.set(later.recordId, later);
     await owner.drive(original.threadId);
@@ -560,4 +574,126 @@ it("Retry and Edit finish incomplete deletion before handling a received first s
   } finally {
     r.dispose();
   }
+});
+
+const SWITCH_AT = "2026-10-11T10:01:00Z";
+describe("write-mode switches in the journal", () => {
+  const switchRecord = (seq: number): ChatSubmission => ({
+    recordId: "switch-1",
+    submissionId: "switch-1",
+    threadId: "thread_1",
+    projectId: "project-1",
+    createdAt: SWITCH_AT,
+    seq,
+    text: "",
+    blocks: [],
+    references: [],
+    activatedSkillSlugs: [],
+    control: { kind: "write_mode", mode: "draft" },
+  });
+  const messageAfter = (seq: number): ChatSubmission => {
+    const { creation: _creation, ...rest } = record();
+    // Same millisecond as the switch: only `seq` says which the writer did first.
+    return { ...rest, recordId: "record-2", submissionId: "sub-2", seq, createdAt: SWITCH_AT };
+  };
+
+  it("posts a reloaded switch between the messages around it, in the order the writer acted", async () => {
+    const r = rig();
+    const order: string[] = [];
+    try {
+      // Storage enumerates the later message first; the switch still goes before it.
+      r.records.set("record-2", messageAfter(3));
+      r.records.set("switch-1", switchRecord(2));
+      const { owner } = r.mount({
+        postControl: async () => {
+          order.push(`switch after ${r.scenario.appendRequests.length} message(s)`);
+          return {
+            id: "switch-1",
+            queued: false,
+            pending: null,
+            turnId: "switch-turn",
+            seq: "1",
+            mode: "direct",
+          };
+        },
+      });
+      await owner.drive("thread_1");
+      expect(order).toEqual(["switch after 1 message(s)"]);
+      expect(r.scenario.appendRequests).toHaveLength(2);
+      // The answer is stamped on the record for every tab to read; it is not posted again.
+      expect([...r.records.keys()]).toEqual(["switch-1"]);
+      expect(r.records.get("switch-1")?.answer).toMatchObject({
+        seq: "1",
+        mode: "direct",
+        pending: null,
+      });
+      await owner.drive("thread_1");
+      expect(order).toHaveLength(1);
+    } finally {
+      r.dispose();
+    }
+  });
+
+  it("holds what comes after a refused switch until Withdraw or an admitted Retry", async () => {
+    const r = rig();
+    let refuse = true;
+    let lost = false;
+    try {
+      r.records.clear();
+      r.records.set("switch-1", switchRecord(2));
+      r.records.set("record-2", messageAfter(3));
+      const { owner } = r.mount({
+        postControl: async () => {
+          if (lost) throw new HttpResponseError("busy", 503, null);
+          if (refuse) throw new HttpResponseError("work_unavailable", 400, null);
+          return {
+            id: "switch-1",
+            queued: false,
+            pending: null,
+            turnId: "switch-turn",
+            seq: "1",
+            mode: "direct",
+          };
+        },
+      });
+      await owner.drive("thread_1");
+      expect(r.records.get("switch-1")?.state).toBe("rejected");
+      expect(r.scenario.appendRequests).toHaveLength(0);
+      refuse = false;
+      await owner.retry("switch-1");
+      expect(r.scenario.appendRequests).toHaveLength(1);
+      expect(r.records.get("switch-1")?.answer).toBeDefined();
+      r.records.delete("switch-1");
+      // Withdraw is the other way out: it never reached the server, so the journal drops it.
+      refuse = true;
+      r.records.set("switch-1", switchRecord(4));
+      r.records.set("record-3", {
+        ...messageAfter(5),
+        recordId: "record-3",
+        submissionId: "sub-3",
+      });
+      await owner.drive("thread_1");
+      expect(r.scenario.appendRequests).toHaveLength(1);
+      expect(await owner.withdrawControl("switch-1", "thread_1")).toBe("removed");
+      expect(r.scenario.appendRequests).toHaveLength(2);
+      // One whose answer was lost may be on the server: it is marked posted before the
+      // request leaves, keeps its place, and a local Withdraw leaves it for Retry.
+      lost = true;
+      r.records.clear();
+      r.records.set("switch-1", switchRecord(6));
+      r.records.set("record-3", {
+        ...messageAfter(7),
+        recordId: "record-3",
+        submissionId: "sub-3",
+      });
+      await owner.drive("thread_1");
+      expect(r.records.get("switch-1")).toMatchObject({ posted: true });
+      expect(r.records.get("switch-1")?.state).toBeUndefined();
+      expect(await owner.withdrawControl("switch-1", "thread_1")).toBe("kept");
+      expect(r.records.has("switch-1")).toBe(true);
+      expect(r.scenario.appendRequests).toHaveLength(2);
+    } finally {
+      r.dispose();
+    }
+  });
 });

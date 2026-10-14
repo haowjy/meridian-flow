@@ -39,6 +39,7 @@ import {
   type RenameThreadRequest,
   type RenameThreadResponse,
   type ReplyRetryRequest,
+  type ReplyRetryResponse,
   type RetireAdmissionResult,
   type SendMessageResponse,
   type Thread,
@@ -122,7 +123,7 @@ export function retryReply(
   threadId: string,
   failedTurnId: string,
   request: ReplyRetryRequest,
-): Promise<Turn> {
+): Promise<ReplyRetryResponse> {
   return postJson(apiThreadTurnRetryPath(threadId, failedTurnId), request);
 }
 
@@ -192,8 +193,9 @@ export function cancelTurn({ data }: { data: CancelTurnInput }): Promise<CancelT
 export function enqueueThreadControl(
   threadId: string,
   request: EnqueueThreadControlRequest,
+  options?: { signal?: AbortSignal },
 ): Promise<EnqueueThreadControlResponse> {
-  return postJson(apiThreadControlsPath(threadId), request);
+  return postJson(apiThreadControlsPath(threadId), request, options);
 }
 
 /** Withdraw a queued control; one that already started answers `already_started`. */

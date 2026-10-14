@@ -10,7 +10,9 @@ writer watches.
 ## Snapshot revalidation
 
 `useThreadSnapshotSync` (`../../../client/query/useThreadSnapshotSync.ts`) owns
-the authoritative history fetch:
+the authoritative history fetch. Every producer of the snapshot key builds its options with
+`threadSnapshotQueryOptions` (`../../../client/query/thread-snapshot-query.ts`); the host adds
+the account abort signal and its identity and staleness checks as a guard.
 
 - The query is always stale (`staleTime: 0`) with `refetchOnMount: "always"`, so
   every activation refetches. Cached turns render first and the fetch reconciles

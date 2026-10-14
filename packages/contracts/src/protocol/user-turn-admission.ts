@@ -73,11 +73,8 @@ export type AcceptedAdmission = {
   threadId: ThreadId;
   submissionId: string;
   userTurnId: TurnId;
-  /**
-   * The live run's assistant turn when the send merged into a running run; null
-   * for a fresh run, whose assistant turn the client learns from RUN_STARTED.
-   */
-  assistantTurnId: TurnId | null;
+  /** The live reply this message was steered into; null when it waits for a new execution. */
+  steersTurnId: TurnId | null;
   resumeAfterSeq: string;
   snapshotFloorNextSeq: string;
 };

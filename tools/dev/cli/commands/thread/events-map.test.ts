@@ -10,11 +10,16 @@ function mapAll(events: AGUIEvent[]): CliEvent[] {
 }
 
 describe("RunEventMapper", () => {
-  it("folds a text turn into started, deltas, one completed message, finished", () => {
+  it("folds a text turn into started, deltas, one completed message, finished, ended", () => {
     const events = mapAll(SIMPLE_TEXT_TURN_AGUI);
     const types = events.map((event) => event.type);
-    expect(types[0]).toBe("turn.started");
-    expect(types.at(-1)).toBe("turn.finished");
+    expect(events[0]).toMatchObject({
+      type: "turn.started",
+      executionId: "execution_golden",
+      reservedForUserTurnIds: ["turn_golden_user"],
+    });
+    expect(types).toContain("messages.delivered");
+    expect(types.slice(-2)).toEqual(["turn.finished", "execution.ended"]);
     const completed = events.filter((event) => event.type === "message.completed");
     expect(completed).toHaveLength(1);
     const deltas = events
