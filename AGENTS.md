@@ -156,6 +156,20 @@ its side-lane branches remain provable as merged by PR match or by ancestry,
 and only a human who tracked the actual history can confirm by hand that they
 are safe to remove.
 
+**Clean up as soon as you're done with something.** Idle dev stacks, databases and
+checkouts waste the machine's memory, CPU and disk. When a worktree, dev stack, probe,
+review checkout or temporary branch has done its job:
+
+1. Stop its dev stack with `pnpm dev --stop`.
+2. End anything still running from it (the Nx daemon, `agent-browser` sessions, watchers).
+3. Remove the worktree, its database and its merged branch with
+   `pnpm dev:prune-worktrees -- --target <branch|path>`.
+4. For a detached checkout the tool refuses, run `pnpm dev --stop` in it, then
+   `git worktree remove` it, and drop its database with `pnpm dev:gc-dbs`.
+
+Run `pnpm dev:gc-dbs` after a batch of cleanups to drop databases that no worktree owns.
+Before you hand control back, check that nothing you started is still running.
+
 Never switch the branch of a checkout you do not own. From the primary
 checkout, create another branch under the sibling worktree root, then pass its
 path to spawns with `--task-dir`:
