@@ -43,5 +43,12 @@ export const asEventJournalId = (s: string) => s as EventJournalId;
 /** Identity held by one durable document authority head across its fenced generations. */
 export type DocumentAuthorityId = string;
 export const asDocumentAuthorityId = (s: string) => s as DocumentAuthorityId;
+/** A live document revision: one authority line and the journal position within it. */
+export type DraftBaseRevision = {
+  authorityId: DocumentAuthorityId;
+  /** Authority generation as a decimal string (it is a bigint in the head row). */
+  authorityGeneration: string;
+  seq: number;
+};
 export type DocumentRevision = string;
 export const asDocumentRevision = (s: string) => s as DocumentRevision;
