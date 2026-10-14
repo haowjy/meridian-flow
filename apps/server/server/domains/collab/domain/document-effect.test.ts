@@ -112,7 +112,6 @@ function verifyReplacementTrail(
     rows: rows.map((row) => ({
       ...row,
       branchId: "draft",
-      generation: 1,
       wId: row.id,
       source: "agent" as const,
       threadId: `thread-${row.id}` as ThreadId,

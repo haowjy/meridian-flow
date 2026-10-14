@@ -128,7 +128,7 @@ if (!enabled || !databaseUrl) {
           {
             indexname: "document_branches_active_work_draft_by_draft",
             indexdef:
-              "CREATE INDEX document_branches_active_work_draft_by_draft ON public.document_branches USING btree (draft_id, id, generation) WHERE ((kind = 'work_draft'::text) AND (status = 'active'::text))",
+              "CREATE INDEX document_branches_active_work_draft_by_draft ON public.document_branches USING btree (draft_id, id) WHERE ((kind = 'work_draft'::text) AND (status = 'active'::text))",
           },
         ]);
       } finally {

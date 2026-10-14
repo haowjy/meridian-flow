@@ -265,7 +265,6 @@ export function mapLineage(row: typeof pushLineage.$inferSelect): PushLineageRow
   return {
     id: row.id,
     branchId: row.branchId,
-    branchGeneration: row.branchGeneration,
     documentId: row.documentId,
     journalIds: row.journalIds,
     upstreamUpdateSeq: row.upstreamUpdateSeq,

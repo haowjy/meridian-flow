@@ -351,6 +351,34 @@
       "when": 1791973625570,
       "tag": "0049_dbr_trail_owners_content_apply",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1791986386269,
+      "tag": "0050_flawless_malice",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1791986393689,
+      "tag": "0051_lively_raza",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1791986419288,
+      "tag": "0052_fair_fabian_cortez",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1791986456465,
+      "tag": "0053_lucky_vivisector",
+      "breakpoints": true
     }
   ]
 }

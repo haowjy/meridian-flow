@@ -106,41 +106,6 @@ export function captureReceiptRows(
     origin: rows[i].origin,
   }));
 }
-export async function placeDraftRows(
-  db: Db,
-  branchId: string,
-  generation: number,
-  rowIds: readonly number[],
-  placement: EditPlacement,
-): Promise<void> {
-  if (!rowIds.length) return;
-  const placed = await db
-    .update(documentEditParts)
-    .set({ placement })
-    .where(
-      and(
-        sql`${documentEditParts.placement}->>'kind' = 'pending'`,
-        sql`${documentEditParts.placement}->>'branchId' = ${branchId}`,
-        sql`(${documentEditParts.placement}->>'generation')::integer = ${generation}`,
-        sql`(${documentEditParts.placement}->>'rowId')::bigint IN (${sql.join(
-          rowIds.map((id) => sql`${id}`),
-          sql`,`,
-        )})`,
-      ),
-    )
-    .returning({ editId: documentEditParts.editId, ordinal: documentEditParts.ordinal });
-  if (placed.length)
-    await db
-      .update(importedDocumentBranches)
-      .set({ blocking: false })
-      .where(eq(importedDocumentBranches.id, branchId));
-  if (placement.kind === "live" && placed.length === 1) {
-    await db
-      .update(documentYjsUpdates)
-      .set({ editId: placed[0].editId, editPartOrdinal: placed[0].ordinal })
-      .where(eq(documentYjsUpdates.id, placement.seq));
-  }
-}
 /** Mark the closed branches' pending edit parts discarded, so model `write undo` names the skip. */
 export async function discardDraftEditParts(db: Db, branchIds: readonly string[]): Promise<void> {
   if (branchIds.length === 0) return;

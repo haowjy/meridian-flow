@@ -84,10 +84,7 @@ export function createBranchPushService(inputDeps: BranchPushServiceInput): Bran
     receiptId: string;
     documentTitle: string;
   }): Promise<DurableTrailRecord> {
-    const rows = await input.journalReadStore.listReviewableJournalRows(
-      args.branch.branchId,
-      args.branch.generation,
-    );
+    const rows = await input.journalReadStore.listReviewableJournalRows(args.branch.branchId);
     const prepared = await preparePushUnderLiveLock(
       prepareDeps,
       {

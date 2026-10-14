@@ -19,10 +19,10 @@ export function commitSegmentRows(
   );
 }
 
-/** Journals `updateData` as one row on the branch's current generation. */
+/** Journals `updateData` as one row. */
 export function commitJournaledUpdate(
   coordinator: SessionDoors,
-  input: Omit<AppendBranchJournalInput, "generation">,
+  input: AppendBranchJournalInput,
 ): Promise<boolean> {
   return coordinator.withLeases([input.branchId], async (lease) => {
     const owned = coordinator.ownedSession(lease);

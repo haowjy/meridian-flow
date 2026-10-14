@@ -269,7 +269,7 @@ describe("ReviewAddressOwner", () => {
           wholeItem: true,
           conflict: null,
           settling: false,
-          tokens: { locationToken: "location", liveTextToken: null, branchGenerationToken: null },
+          tokens: { locationToken: "location" },
           contextLocation: { scheme: "manuscript", path: "/chapter.md" },
           isNew: true,
         },

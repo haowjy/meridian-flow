@@ -293,7 +293,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         source.getText("content").insert(source.getText("content").length, String(index));
         return {
           branchId: branch.branchId,
-          generation: snapshot.generation,
           source: "agent" as const,
           threadId: THREAD_ID,
           turnId: TURN_ID,
@@ -383,7 +382,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       await db.insert(branchWriteJournal).values({
         branchId: branch.branchId,
-        generation: branch.generation,
         updateData: Buffer.from(update),
         draftBaseUpdateSeq: 0,
         source: "agent",
@@ -421,7 +419,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       // Another process already staged this exact cut under its own command.
       await db.insert(pushLineage).values({
         branchId: branch.branchId,
-        branchGeneration: branch.generation,
         documentId: DOC_ID as never,
         journalIds: [],
         idempotencyKey: "one-cut",
@@ -541,7 +538,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await store.appendJournal?.({
         branchId: branch.branchId,
-        generation: branch.generation,
         updateData: new Uint8Array(),
         source: "agent",
       });
@@ -555,7 +551,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       await store.appendJournal?.({
         branchId: branch.branchId,
-        generation: branch.generation,
         updateData: new Uint8Array(),
         source: "agent",
       });
@@ -575,7 +570,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await store.appendJournal?.({
         branchId: branch.branchId,
-        generation: branch.generation,
         updateData: new Uint8Array(),
         source: "agent",
       });
@@ -599,7 +593,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         journals: [
           {
             branchId: branch.branchId,
-            generation: branch.generation,
             expectedJournalWatermark: planned.id,
             expectedJournalRevision: `${planned.id}:active`,
             updateData: Y.encodeStateAsUpdate(changed),

@@ -6,7 +6,7 @@ The contracts name five things; never let one stand in for another.
 |---|---|---|
 | **draft** | The Work's one active draft (a `drafts` row). Closes only on Discard all and purge. | `draftId` |
 | **item** | One document's reviewable change inside the draft, with or without a text branch (an empty create and a created image have none). | `itemKey` (`${draftId}:${documentId}`) |
-| **branch** | The server's per-document text branch of a draft. Never on the wire. | `branchGeneration` and the opaque `reviewRoomName` only |
+| **branch** | The server's per-document text branch of a draft. Never on the wire. | the opaque `roomName` only |
 | **command** | One writer action (Apply, Discard, per item, per change or for all). | a client-made `commandId` |
 | **presented address** | What the writer is looking at: `{ workId, itemKey, changeId? }`. | `item=` and `change=` in the URL, the API review selector `reviewWorkId` + `itemKey` |
 
@@ -27,11 +27,8 @@ The client never reads `draftId` as a branch id. The server alone maps an
   chat title at preview time); writer operations carry neither. A preview that
   cannot be read answers a refusal (`corrupt` carries the `draftId` so the
   writer can discard the whole draft).
-- `branchGeneration` (list row and preview) is the branch's generation; it is
-  null for an item with no branch. A reset keeps the branch and the item and
-  moves the generation up, so the number orders proposals of one item and never
-  decreases. The preview's `reviewRoomName` and tokens belong to its
-  generation. `draftRevisionToken` is only the stale-command fence and is not an
+- A draft keeps one branch per item for its life: there is no branch generation on the wire or in the store.
+  `draftRevisionToken` is only the stale-command fence and is not an
   identity.
 
 ## Commands
@@ -58,7 +55,7 @@ failure on the item), or 404 `unknown_command` (nothing committed, resend).
   returns `stale`; unrelated typing does not. Stable class identity alone is
   never admission evidence.
 - **Apply all** sends `{ draftId, commandId, items: [{ itemKey, locationToken,
-  liveTextToken?, branchGenerationToken? }] }`, each item once. `completed`
+  snapshot? }] }`, each item once. `completed`
   means the command settled, including a selection whose items were all held;
   `stale` names `staleItemKeys`; `gone` is not the Work's active draft.
 - **Discard all** sends `{ draftId, commandId }` and is the only command whose

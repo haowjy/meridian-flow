@@ -30,7 +30,6 @@ function snapshot(branchId: string): BranchSnapshot {
     workId: "work-1",
     threadId: branchId === PEER ? threadId : null,
     status: "active",
-    generation: 1,
     state: Y.encodeStateAsUpdate(doc),
     stateVector: Y.encodeStateVector(doc),
     schemaVersion: COLLAB_SCHEMA_VERSION,
@@ -65,7 +64,6 @@ describe("thread-core branch leases", () => {
         getBranch: store.getBranch,
         resolveThreadBranch: async () => ({
           branchId: PEER,
-          generation: 1,
           doc: createCollabYDoc({ gc: false }),
         }),
         ensureThreadPeerBranch: async () => {
@@ -73,7 +71,7 @@ describe("thread-core branch leases", () => {
         },
         listActiveWorkDraftBranchIds: async () => [UPSTREAM],
       },
-      // The staged write the access commits to the draft branch, fenced at its generation.
+      // The staged write the access commits to the draft branch.
       pendingJournalEntries: {
         push() {},
         shiftBatch: () => [
@@ -81,7 +79,7 @@ describe("thread-core branch leases", () => {
             docId: documentId,
             update: edit.update,
             meta: { origin: "agent:turn-1", seq: 0 },
-            mutation: { mode: "threadPeer", branchGeneration: 1, threadId, wId: 1 },
+            mutation: { mode: "threadPeer", threadId, wId: 1 },
           } as never,
         ],
       },

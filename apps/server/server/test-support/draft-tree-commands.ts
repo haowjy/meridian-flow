@@ -664,7 +664,7 @@ export function draftTreeCommands(
       const results: CommandRouteResult[] = [];
       for (const documentId of documentIds) {
         const item = items.find((candidate) => candidate.documentId === documentId);
-        if (!item?.branchGeneration) throw new Error(`No draft branch of ${documentId} to apply`);
+        if (!item) throw new Error(`No draft branch of ${documentId} to apply`);
         results.push(
           await handleApplyWorkDraftRequest(routes(), {
             projectId,

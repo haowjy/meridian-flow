@@ -1,4 +1,4 @@
-/** Loads current-generation Work-draft journal evidence for pending-review classification. */
+/** Loads Work-draft journal evidence for pending-review classification. */
 import type { DraftId } from "@meridian/contracts";
 import type { DocumentId, ProjectId, WorkId } from "@meridian/contracts/runtime";
 
@@ -15,7 +15,6 @@ export type WorkDraftPendingEvidence = {
     branchId: string;
     documentId: DocumentId;
     draftId: DraftId;
-    generation: number;
     updatedAt: Date;
     /** The membership effect (§4.1): the draft's text differs from its `review_base`. */
     hasEffect: boolean;

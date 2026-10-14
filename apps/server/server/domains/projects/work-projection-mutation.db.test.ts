@@ -454,7 +454,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       for (const branchId of [BRANCH_ID, OTHER_BRANCH_ID, SECOND_BRANCH_ID]) {
         await branches.appendJournal?.({
           branchId,
-          generation: 1,
           updateData: new Uint8Array([1]),
           source: "agent",
           updateMeta: { kind: "edit" },

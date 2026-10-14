@@ -42,13 +42,14 @@ export type LegacyDraftConversion =
 
 /**
  * Converts one legacy prose draft. With a `liveCut` the base is that cut's text. Without one the base
- * is the draft's own text, but only when legacy state proves the draft is unchanged from its cut:
- * `hadEffect` false, or nothing was ever written to it. Anything else is `unresolved`, never a guess.
+ * is the draft's own text, but only when `neverWritten`: the train's `ensureDraftBranch` inserts a
+ * branch without a cut and sets it on the first write, so a branch with no journal rows is an
+ * untouched copy of live. Anything else is `unresolved`, never a guess.
  */
 export function convertLegacyDraft(input: {
   state: Uint8Array;
   liveCut: Uint8Array | null;
-  hadEffect: boolean;
+  neverWritten: boolean;
 }): LegacyDraftConversion {
   const schema = buildDocumentSchema();
   const doc = createCollabYDoc({ gc: false });
@@ -60,7 +61,7 @@ export function convertLegacyDraft(input: {
     if (input.liveCut) {
       Y.applyUpdate(cut, input.liveCut);
       base = readBlocks(cut.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema);
-    } else if (!input.hadEffect || doc.store.clients.size === 0) {
+    } else if (input.neverWritten) {
       base = readBlocks(draftFragment, schema);
     } else {
       return { kind: "unresolved", reason: "no_live_cut" };

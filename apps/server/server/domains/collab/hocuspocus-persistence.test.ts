@@ -696,7 +696,6 @@ function branchSnapshot(doc: Y.Doc): BranchSnapshot {
     workId: "work-1" as never,
     threadId: null,
     status: "active",
-    generation: 2,
     state: Y.encodeStateAsUpdate(doc),
     stateVector: Y.encodeStateVector(doc),
     schemaVersion: COLLAB_SCHEMA_VERSION,

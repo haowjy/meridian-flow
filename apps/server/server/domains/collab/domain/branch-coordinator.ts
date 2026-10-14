@@ -50,10 +50,8 @@ export type BranchSnapshot = {
   workId: WorkId | null;
   threadId: ThreadId | null;
   status: BranchStatus;
-  generation: number;
   state: Uint8Array;
   stateVector: Uint8Array;
-  discardedStateVector?: Uint8Array | null;
   /** The live revision `review_base` reflects; null until a text branch's first rebase. */
   baseRevision?: DraftBaseRevision | null;
   schemaVersion: CollabSchemaVersion;
@@ -87,7 +85,6 @@ export type AppendBranchJournalInput = {
   /** One logical tool write, shared by its segment rows. */
   documentEditKey?: string;
   branchId: string;
-  generation: number;
   /** Rejects a staged reversal if branch history advanced after planning. */
   expectedJournalWatermark?: number;
   /** Rejects status-only Apply/discard/redo transitions after planning. */
@@ -125,7 +122,7 @@ export type BranchStore = {
 
 export class BranchStaleUpdateError extends Error {
   constructor(readonly branchId: string) {
-    super(`Branch ${branchId} update did not apply to the current generation`);
+    super(`Branch ${branchId} update did not apply to the current state`);
     this.name = "BranchStaleUpdateError";
   }
 }
@@ -179,7 +176,6 @@ export class BranchMissingError extends Error {
 }
 
 type CachedBranchDoc = {
-  generation: number;
   state: Uint8Array;
   stateVector: Uint8Array;
   doc: Y.Doc;
@@ -188,10 +184,10 @@ type CachedBranchDoc = {
 export type SegmentRowsInput = {
   branchId: string;
   sourceDoc: Y.Doc;
-  rows: readonly Omit<AppendBranchJournalInput, "generation">[];
+  rows: readonly AppendBranchJournalInput[];
 };
 
-/** The journal reads a save performs: the helper's generation history and attribution's concurrent rows. */
+/** The journal reads a save performs: the helper's history and attribution's concurrent rows. */
 export type BranchSaveJournalReads = Pick<BranchJournalReadStore, "listConcurrentJournalRows"> & {
   listJournalRowsForBranch(
     input: Parameters<BranchJournalReadStore["listJournalRowsForBranch"]>[0],
@@ -209,12 +205,12 @@ export type OwnedBranchSession = {
     run: (
       doc: Y.Doc,
       snapshot: BranchSnapshot,
-    ) => Promise<{ result: T; rows: readonly Omit<AppendBranchJournalInput, "generation">[] }>,
+    ) => Promise<{ result: T; rows: readonly AppendBranchJournalInput[] }>,
     commit: boolean,
   ): Promise<T>;
   commitSegmentRows(input: SegmentRowsInput): Promise<boolean>;
   checkpoint(branchId: string): Promise<void>;
-  /** The generation history B+ replays against, with each row's persisted inverse evidence. */
+  /** The branch history B+ replays against, with each row's persisted inverse evidence. */
   listHelperHistory: BranchSaveJournalReads["listJournalRowsForBranch"];
   listConcurrentRows: BranchSaveJournalReads["listConcurrentJournalRows"];
 };
@@ -265,7 +261,6 @@ export type BranchCoordinator = {
    * throws `BranchLeaseScopeError` for a branch the lease does not cover.
    */
   ownedSession(lease: BranchLockLease): OwnedBranchSession;
-  notifyReset(input: { branchId: string; generation: number }): void;
   broadcastUpdate(input: { branchId: string; update: Uint8Array }): void;
   /** Destroys every process replica; durable branches are untouched. Call after in-flight work finished. */
   dispose(): void;
@@ -284,7 +279,6 @@ export function createBranchCoordinator(input: {
   onBranchUpdate?: (input: { branchId: string; update: Uint8Array }) => void;
   /** A writer update touched text a rebase had already removed; recovery says what it placed. */
   onLateWriterEdits?: (input: LateWriterEdits) => void;
-  onBranchReset?: (input: { branchId: string; generation: number }) => void;
 }): BranchCoordinator {
   const criticalSections = input.criticalSections ?? createBranchCriticalSections();
   const documentContainment = createDocumentContainment();
@@ -343,7 +337,6 @@ export function createBranchCoordinator(input: {
     const current = cached.get(snapshot.branchId);
     if (
       current &&
-      current.generation === snapshot.generation &&
       (dirtyTransientBranches.has(snapshot.branchId) ||
         (bytesEqual(current.stateVector, snapshot.stateVector) &&
           bytesEqual(current.state, snapshot.state)))
@@ -354,7 +347,6 @@ export function createBranchCoordinator(input: {
       const doc = createCollabYDoc({ gc: false });
       Y.applyUpdate(doc, snapshot.state);
       const next = {
-        generation: snapshot.generation,
         state: snapshot.state,
         stateVector: snapshot.stateVector,
         doc,
@@ -399,7 +391,7 @@ export function createBranchCoordinator(input: {
           {
             readMutationTarget: () => ({
               documentId: snapshot.documentId,
-              generation: BigInt(snapshot.generation),
+              generation: 0n,
               doc,
             }),
             readCurrentRevision: async () => ir.inputRevision,
@@ -460,7 +452,7 @@ export function createBranchCoordinator(input: {
     }
     const publish = () => {
       dirtyTransientBranches.delete(snapshot.branchId);
-      remember(snapshot.branchId, { generation: snapshot.generation, state, stateVector, doc });
+      remember(snapshot.branchId, { state, stateVector, doc });
       const update = journals?.length
         ? Y.mergeUpdates(journals.map((row) => row.updateData))
         : publishUpdate;
@@ -472,13 +464,6 @@ export function createBranchCoordinator(input: {
     }
     if (!input.store.deferUntilCommit(publish)) publish();
     return true;
-  }
-
-  function notifyReset(reset: { branchId: string; generation: number }): void {
-    dirtyTransientBranches.delete(reset.branchId);
-    cached.delete(reset.branchId);
-    const publish = () => input.onBranchReset?.(reset);
-    if (!input.store.deferUntilCommit(publish)) publish();
   }
 
   /** One snapshot-clone-persist step of a branch operation; the caller holds the branch's lease. */
@@ -590,7 +575,6 @@ export function createBranchCoordinator(input: {
     await persist(snapshot, doc, [
       {
         ...journal,
-        generation: snapshot.generation,
         updateData: recovery.update
           ? Y.mergeUpdates([inputWriter.updateData, recovery.update])
           : inputWriter.updateData,
@@ -601,7 +585,7 @@ export function createBranchCoordinator(input: {
 
   async function persistJournaledUpdate(
     snapshot: BranchSnapshot,
-    inputJournal: Omit<AppendBranchJournalInput, "generation">,
+    inputJournal: AppendBranchJournalInput,
     currentDocument?: Y.Doc,
   ): Promise<boolean> {
     const cachedDoc = currentDocument ?? (await materialize(snapshot)).doc;
@@ -613,7 +597,7 @@ export function createBranchCoordinator(input: {
     if (bytesEqual(beforeState, Y.encodeStateAsUpdate(doc))) {
       throw new BranchStaleUpdateError(inputJournal.branchId);
     }
-    await persist(snapshot, doc, [{ ...inputJournal, generation: snapshot.generation }]);
+    await persist(snapshot, doc, [inputJournal]);
     return true;
   }
 
@@ -640,7 +624,6 @@ export function createBranchCoordinator(input: {
     const doc = cloneDoc(cachedDoc);
     const result = await fn(doc, snapshot);
     const next = {
-      generation: snapshot.generation,
       state: Y.encodeStateAsUpdate(doc),
       stateVector: Y.encodeStateVector(doc),
       doc,
@@ -674,7 +657,7 @@ export function createBranchCoordinator(input: {
     run: (
       doc: Y.Doc,
       snapshot: BranchSnapshot,
-    ) => Promise<{ result: T; rows: readonly Omit<AppendBranchJournalInput, "generation">[] }>,
+    ) => Promise<{ result: T; rows: readonly AppendBranchJournalInput[] }>,
     commit: boolean,
   ): Promise<T> {
     const snapshot = await loadSnapshot(branchId);
@@ -686,21 +669,13 @@ export function createBranchCoordinator(input: {
       if (commit && rows.length) {
         const admitted = cloneDoc((await materialize(snapshot)).doc);
         try {
-          await applySegmentRows(
-            admitted,
-            snapshot,
-            rows.map((row) => ({ ...row, generation: snapshot.generation })),
-          );
+          await applySegmentRows(admitted, snapshot, rows);
           if (!bytesEqual(Y.encodeStateAsUpdate(admitted), Y.encodeStateAsUpdate(doc)))
             throw new Error("Response replay differs from its admitted segment rows");
         } finally {
           admitted.destroy();
         }
-        await persist(
-          snapshot,
-          doc,
-          rows.map((row) => ({ ...row, generation: snapshot.generation })),
-        );
+        await persist(snapshot, doc, rows);
         published = true;
       }
       return result;
@@ -714,7 +689,7 @@ export function createBranchCoordinator(input: {
     const snapshot = await loadSnapshot(batch.branchId);
     assertWritableBranch(snapshot);
     const doc = cloneDoc((await materialize(snapshot)).doc);
-    const journals = batch.rows.map((row) => ({ ...row, generation: snapshot.generation }));
+    const journals = batch.rows;
     await applySegmentRows(doc, snapshot, journals);
     if (journalSyncDelta(batch.sourceDoc, doc))
       throw new Error("Segment publication left an unjournaled residual");
@@ -740,9 +715,9 @@ export function createBranchCoordinator(input: {
         under(branchId, () => retryCas(() => runUnder(branchId, async () => undefined))),
       listHelperHistory: (query) =>
         under(query.branchId, async () => requireJournalReads().listJournalRowsForBranch(query)),
-      listConcurrentRows: (branchId, generation, options) =>
+      listConcurrentRows: (branchId, options) =>
         under(branchId, async () =>
-          requireJournalReads().listConcurrentJournalRows(branchId, generation, options),
+          requireJournalReads().listConcurrentJournalRows(branchId, options),
         ),
     };
   }
@@ -753,7 +728,6 @@ export function createBranchCoordinator(input: {
   }
 
   return {
-    notifyReset,
     readBranch(branchId, fn) {
       return pinned([branchId], () =>
         criticalSections.withBranches([branchId], (lease) => readUnder(lease, branchId, fn)),

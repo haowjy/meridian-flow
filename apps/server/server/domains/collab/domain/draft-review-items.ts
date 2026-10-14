@@ -23,8 +23,6 @@ export type DraftReviewItem = {
   documentId: DocumentId;
   /** The draft's branch on the document; null for an image or a create with no text yet. */
   draftBranchId: string | null;
-  /** Transitional (R3 drops it from the wire): the branch row's remaining generation column. */
-  branchGeneration: number | null;
   /** The text branch still differs from its base (`has_effect`); false without a branch. */
   hasChanges: boolean;
   /** created: the draft has a `created` row; edited: branch rows only. */
@@ -36,12 +34,7 @@ export type DraftReviewItem = {
   /** Canonical URI in the draft's view (the last address for one deleted live). */
   path: string | null;
   conflict: { code: "path_taken"; path: string } | { code: "deleted_live" } | null;
-  /** Transitional: the wire type still names two retired tokens; both stay null until R3 drops them. */
-  tokens: {
-    locationToken: string;
-    liveTextToken: null;
-    branchGenerationToken: null;
-  };
+  tokens: { locationToken: string };
   /**
    * Deleted live (an edited document, or a revealed create): no view shows it, so it
    * authorizes through the draft's branch on it and its final location (F9, §13.3).
@@ -151,16 +144,11 @@ function toItem(
     binary: node.binary,
     wholeItem: isNew || node.binary || deletedLive,
     settling: settling.has(draftItemKey(draftId, node.nodeId)),
-    branchGeneration: evidence?.branch.generation ?? null,
     documentName: documentTitleFromUri(path),
     path,
     conflict: conflictOf(node),
     deletedLive,
-    tokens: {
-      locationToken: node.locationVersion.toString(),
-      liveTextToken: null,
-      branchGenerationToken: null,
-    },
+    tokens: { locationToken: node.locationVersion.toString() },
     actorThreadIds:
       creatorThreadId && !writers.includes(creatorThreadId)
         ? [...writers, creatorThreadId]

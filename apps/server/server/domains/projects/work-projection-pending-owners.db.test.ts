@@ -137,7 +137,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         drafts: createDrizzleDraftStore(db),
       }).appendJournal?.({
         branchId: BRANCH_ID,
-        generation: 1,
         updateData: new Uint8Array([1]),
         source: "agent",
         updateMeta: { kind: "edit" },

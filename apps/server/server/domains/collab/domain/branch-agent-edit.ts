@@ -265,10 +265,7 @@ export function createBranchAgentEditCoordinator(input: {
               Y.applyUpdate(planning, request.helperCut.state);
               const cut = Y.snapshot(planning);
               // The cut excludes already observed removals without a second sequence fence.
-              const rows = await owned.listHelperHistory({
-                branchId,
-                generation: snapshot.generation,
-              });
+              const rows = await owned.listHelperHistory({ branchId });
               for (const row of rows) {
                 if (
                   !Y.snapshotContainsUpdate(cut, row.updateData) &&
@@ -498,10 +495,7 @@ export type BranchLookupWithSnapshots = WorkDraftLookup &
   BranchResolver & {
     getBranch(
       branchId: string,
-    ): Promise<Pick<
-      BranchSnapshot,
-      "upstreamBranchId" | "draftId" | "generation" | "state"
-    > | null>;
+    ): Promise<Pick<BranchSnapshot, "upstreamBranchId" | "draftId" | "state"> | null>;
   };
 
 type BranchPendingJournalEntries = {
@@ -608,10 +602,9 @@ async function concurrentUpstreamJournalRows(
   if (!upstreamBranchId) return { rows: [] };
   return (owned ? owned.read : input.branchCoordinator.readBranch)(
     upstreamBranchId,
-    async (doc, snapshot) => {
+    async (doc) => {
       const rows = await (owned ? owned.listConcurrentRows : journalRows.listConcurrentJournalRows)(
         upstreamBranchId,
-        snapshot.generation,
         { afterJournalId, documentId },
       );
       return { rows, upstreamState: Y.encodeStateAsUpdate(doc) };

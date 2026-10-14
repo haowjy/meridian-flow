@@ -61,7 +61,7 @@ describeDraftTreeDb("deleted-live review preview", (start, db) => {
     const listed = await handleWorkDraftListRequest(deps, input);
     expect(listed.items).toHaveLength(1);
     const item = listed.items[0];
-    if (!item?.branchGeneration) throw new Error("Expected a pending draft branch");
+    if (!item) throw new Error("Expected a pending draft branch");
     const documentInput = { ...input, documentId, itemKey: item.itemKey };
     const body = { draftId: item.draftId, itemKey: item.itemKey, commandId: randomUUID() };
     await deleteWorkTransition(
