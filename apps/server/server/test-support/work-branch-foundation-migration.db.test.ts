@@ -367,6 +367,11 @@ describe.skipIf(!enabled)("Work-branch foundation migration (postgres)", () => {
           WHERE table_schema = 'public' AND table_name = 'document_branches'
             AND column_name IN ('work_id', 'deleted_by_work_id')`,
       ).toEqual([]);
+      // Migrations after the foundation are additive to this contract; apply them so the
+      // upgraded schema is the fresh one.
+      await rm(directory, { recursive: true, force: true });
+      await stageThrough(migrations, directory, journal, journal.entries.length);
+      await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
       // The repository's SQL functions follow its migrations, as `db:migrate` applies them.
       for (const file of (await readdir(FUNCTIONS_DIRECTORY))
         .filter((f) => f.endsWith(".sql"))
