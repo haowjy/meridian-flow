@@ -207,6 +207,27 @@ export const threadWorks = pgTable(
 );
 
 /**
+ * One row per hand-back request (Stop, the queue's x, Cancel queue): its decision, stored in the
+ * request's own transaction and replayed by request id, so a replay answers what the first call did
+ * even after the chat's state moved on.
+ */
+export const threadHandBacks = pgTable("thread_hand_backs", {
+  requestId: uuid("request_id").primaryKey(),
+  threadId: uuid("thread_id")
+    .$type<ThreadId>()
+    .notNull()
+    .references(() => threads.id, { onDelete: "cascade" }),
+  /** Hash of the request body: the same id with another body is refused. */
+  fingerprint: text("fingerprint").notNull(),
+  handedBack: uuid("handed_back").array().notNull(),
+  answered: uuid("answered").array().notNull(),
+  gone: uuid("gone").array().notNull(),
+  /** The execution a Stop press cancelled; null for a hand-back and for a press that cancelled none. */
+  cancelledExecutionId: text("cancelled_execution_id"),
+  createdAt: createdAt(),
+});
+
+/**
  * Durable per-thread message queue drained in a batch at the next delivery
  * boundary. Rows are marked delivered rather than deleted so the idempotency
  * key and replay facts survive. `seq` is a global bigserial; sequences order
@@ -235,9 +256,27 @@ export const threadInboxMessages = pgTable(
      * reserved turn, or a non-message row.
      */
     deliveredByTurnId: uuid("delivered_by_turn_id").$type<TurnId>(),
+    /**
+     * The hand-back request that took this waiting writer message out of the chat. Set with
+     * `delivered_at` and no deliverer; the message's turn and blocks stay for diagnostics, and no
+     * conversation read returns them.
+     */
+    handedBackBy: uuid("handed_back_by"),
   },
   (table) => [
+    foreignKey({
+      columns: [table.handedBackBy],
+      foreignColumns: [threadHandBacks.requestId],
+      name: "thread_inbox_messages_handed_back_by_fk",
+    }),
+    check(
+      "thread_inbox_messages_hand_back",
+      sql`${table.handedBackBy} IS NULL OR (${table.deliveredAt} IS NOT NULL AND ${table.deliveredByTurnId} IS NULL AND ${table.intent} = 'message')`,
+    ),
     unique("thread_inbox_messages_idem_unique").on(table.threadId, table.idempotencyKey),
+    index("thread_inbox_messages_handed_back")
+      .on(table.threadId)
+      .where(sql`${table.handedBackBy} IS NOT NULL`),
     index("thread_inbox_messages_pending")
       .on(table.threadId, table.seq)
       .where(sql`${table.deliveredAt} IS NULL`),
