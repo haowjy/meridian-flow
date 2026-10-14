@@ -121,6 +121,9 @@ class separately. Live remains exactly unchanged and the other class survives
 until its own Discard. Capture the previews, dispositions and readbacks, plus
 the change-list screenshot and browser errors. Stop only this worktree's stack.
 
+The per-change recipes below (tokens, closure classes, admission) belong to the review as it stands today; the
+diff-based review rework (work item `diff-based-review`) replaces per-change review and these with it.
+
 ## Coherent review reads (CLI)
 
 Stage two independent paragraph edits in a named Work. Save a preview and its
@@ -902,40 +905,36 @@ independent typing through the durable coordinator. Queue/retry evidence:
 with unchanged stable keys. These are integration/adapter checks, not browser
 smoke verification.
 
-## Review commands against a replying model (CLI, mock stack)
+## Review commands against a replying model (browser, mock stack)
 
-These probes cover the item, per-change and whole-draft commands, with `commandId`s, while a reply is still
-writing. Use a Work in `aiWriteMode: draft` and an owned project. Every command body carries `draftId`,
-`itemKey` and a fresh `commandId`; read live with `./mf doc read` after each one.
+The strip's and the Work page's Apply all and Discard all while a reply is still writing. Use a Work in
+`aiWriteMode: draft` and an owned project, and drive both pages in `agent-browser` (desktop 1440x900). `./mf` only
+sets up the Work, a thread bound to it and the scripted turns, and reads durable state (`doc read`, the drafts list,
+`thread view`) after each click. Per-change controls on the rows stay locked while a reply streams; this recipe does
+not cover them.
 
 **Holding a reply mid-write.** A reply saves once per model response, after all of that response's tools have
-run, so the mock's `delayMs` (which delays the model, not the tools) cannot hold it. Send one response with 15 to
-40 chained `replace` calls on one document (each `find` is the previous `content`) and send the command about one
-second after `./mf thread send --no-wait`; the batch takes seconds to stage. The item must already be listed, so
-run an earlier turn that saves a draft edit to it first. Take the Apply all request's tokens from the list
-before the long turn starts.
+run, so the mock's `delayMs` (which delays the model, not the tools) cannot hold it. Send one response with 120 to
+300 chained `replace` calls on one document (each `find` is the previous `content`) with `./mf thread send
+--no-wait`, and click about one second later. An earlier turn must already have saved a draft edit to the document, so
+it is listed.
 
-1. **Per-change Apply and Discard.** Live `Alpha`, `Beta`, `Gamma` paragraphs; the AI replaces Alpha and Gamma.
-   Apply only Alpha's class (`operationIds`, both revision tokens), read live: Alpha changed, Gamma not. Discard
-   the remaining class (`closureClassIds`, `admissionTokens`, `memberPartKeys`, both tokens), read live: unchanged,
-   and the item settles `itemClosed: true`. PASS when each readback is exact.
-2. **Empty create and created image.** The AI creates `manuscript://Blank.md` with empty content and copies an
-   uploaded image to `manuscript://art/map.png` (upload through `uploads://`, then `write copy` with
-   `from: { path }`). The list shows one item for each (`wholeItem: true`; the image is `binary: true` with a
-   null branch generation). Apply each item: the empty document reads `""` live and the image is live.
-3. **Item Discard while the reply writes.** Long chained batch on `X` plus one last edit on `Y`. Discard `X`'s
-   item during the batch. PASS: every `X` write fails with `Write did not land: the user discarded the text it
-   edited. Re-read and retry.`, the `Y` write lands, live `X` is unchanged, and a later write to `X` starts a fresh
-   draft.
-4. **Apply all while the reply writes.** Same setup with two drafted documents; Apply all during the batch. PASS:
-   live shows the text saved before the command, the late writes stay in the draft, and the item remains listed.
-5. **Discard all while the reply writes.** Discard the whole draft during the batch. PASS: in-flight writes fail
-   with `Write did not land: the user discarded this draft. Re-read and retry.`; live is unchanged; the list is
-   empty; a later write lands in a draft with a different `draftId`.
-6. **Model undo, redo, revert, elsewhere.** The AI edits two paragraphs of a drafted document, then (one turn
-   each) `write undo`, `redo`, and `revert` of the first edit: each acts in the draft only. Switch the Work to
-   `direct` with `pending: "keep"`, make the model `read` the document again, then undo: PASS is
-   `cant_undo_elsewhere` naming the version, and live unchanged.
+1. **Strip Discard during the reply.** Open the Work's chat. While the reply runs, click Discard on the strip and
+   confirm. PASS: one request goes out and the strip's list empties. Live text is unchanged, and the later writes fail.
+   The expanded failed row reads "You discarded the text it edited, so the change wasn't kept. The AI will read it
+   again." Not the old "This change was updated. Check it and discard again."
+2. **Strip Apply during the reply.** Same setup, click Apply. PASS: live shows the text saved before the click. The
+   reply finishes and the strip lists the late writes ("1 change", Discard, Apply) for the next review.
+3. **Work page Apply all during the reply.** Work page, Files tab, "All changes" menu, Apply all changes. PASS: live
+   has the text saved before the click, and the document is still under Changes to review for the late writes.
+4. **Work page Discard all during the reply.** The same menu, Discard all changes, confirm (at 390x844 too: the question
+   and both buttons stay on screen). PASS: the list is empty, live is unchanged, the in-flight writes fail "You discarded
+   this draft, so the change wasn't kept. The AI will read it again.", and a later write lands in a new draft.
+5. **Live-edit staleness.** Not covered here: an Apply with tokens from before a live edit refuses as `stale`, tested
+   by the DB suite (`draft-tree.apply-staleness.db.test.ts`).
+
+Capture `agent-browser console` and `errors` at the end of each: clean is part of the pass. The API-level answers
+(`commandId` resend, conflict, unknown, `whole_item`, `cant_undo_elsewhere`) are covered by tests, not by this recipe.
 
 ## Cold-open waterfall and the ahead-link chip (browser)
 
