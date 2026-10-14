@@ -1,6 +1,7 @@
 /** The current container's address, independent of collapse and retained Editor paint. */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { createContext, useContext } from "react";
+import { isDraftOnly } from "@/client/stores";
 import type { DockDocument } from "./dock/dock-document-store";
 import type { ScreenKey } from "./shell/screens";
 
@@ -52,7 +53,7 @@ export function resolvePresentedDocument(input: {
     scheme: tab.kind === "new" ? null : tab.scheme,
     path: tab.kind === "new" ? null : tab.path,
     review,
-    draftOnly: tab.kind === "tracked" && tab.draftOnly === true,
+    draftOnly: isDraftOnly(tab),
   };
 }
 
