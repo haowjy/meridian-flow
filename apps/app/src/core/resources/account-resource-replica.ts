@@ -149,6 +149,8 @@ export class AccountResourceReplica {
       snapshot: ResourceProjectionSnapshot | null;
     }
   >();
+  private readonly identityListeners = new Set<(projectId: string) => void>();
+  private readonly observedIdentityRevisions = new Map<string, number>();
   private readonly observedResourceRevisions = new Map<string, number>();
   private readonly observedFolderRevisions = new Map<string, number>();
   private readonly serverSessionCaptures = new Map<string, Promise<void>>();
@@ -731,11 +733,27 @@ export class AccountResourceReplica {
     }
   }
 
+  /**
+   * Called with the project when a resource's identity changed under it: a join followed (this or
+   * another tab, from the answer or the catalog entry) or a create reminted. What the server
+   * knows about the document, such as a draft over it, may have been out of reach until now.
+   */
+  onIdentityChanged(listener: (projectId: string) => void): () => void {
+    this.identityListeners.add(listener);
+    return () => this.identityListeners.delete(listener);
+  }
+
   private reconcileProjectionRecords(records: readonly ResourceRecord[]): void {
     for (const record of records) {
       const { handle, revision } = record.resource;
       if (this.observedResourceRevisions.get(handle) === revision) continue;
       this.observedResourceRevisions.set(handle, revision);
+      const identityRevision = record.resource.identity.revision;
+      const knownIdentity = this.observedIdentityRevisions.get(handle);
+      this.observedIdentityRevisions.set(handle, identityRevision);
+      const projectId = record.intents[0]?.projectId;
+      if (projectId && knownIdentity !== undefined && identityRevision > knownIdentity)
+        for (const listener of this.identityListeners) listener(projectId);
       this.content.reconcileMetadata(record);
       this.schedule(record.resource);
     }
