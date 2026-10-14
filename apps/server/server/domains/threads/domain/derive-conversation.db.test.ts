@@ -1,6 +1,7 @@
 /** PostgreSQL contracts for fork cutoffs, idempotency, retained bindings, and provenance. */
 
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { turnGraph } from "../ports/turn-graph.js";
 import {
   resetThreadWorkRaceFixture,
   THREAD_WORK_RACE,
@@ -452,7 +453,7 @@ else
         role: "user",
         origin: "writer",
         status: "complete",
-        prevTurnId: (await repos.turns.getLatestByThread(firstFork.thread.id as never))
+        prevTurnId: (await turnGraph(repos.turns).latest(firstFork.thread.id as never))
           ?.id as never,
         createdAt: "2026-01-01T00:05:00.000Z",
       });
@@ -472,7 +473,7 @@ else
         origin: "system",
         status: "complete",
         promptBakeId: forkEpoch.id,
-        prevTurnId: (await repos.turns.getLatestByThread(firstFork.thread.id as never))
+        prevTurnId: (await turnGraph(repos.turns).latest(firstFork.thread.id as never))
           ?.id as never,
       });
       const inheritedFork = await createFork(firstFork.thread, fixture.deps, {

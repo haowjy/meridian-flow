@@ -9,7 +9,6 @@ import type { Block, JsonValue, ThreadSnapshotResponse, Turn } from "@meridian/c
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { readThreadActivity } from "./domain/thread-activity.js";
 import { isThreadActionRequired } from "./domain/visible-conversation-policy.js";
-import { orderTurnsByPosition } from "./order-turns.js";
 import type {
   BlockRepository,
   ModelResponseRepository,
@@ -19,6 +18,7 @@ import type {
   ThreadStatusReader,
   TurnRepository,
 } from "./ports/index.js";
+import { turnGraph } from "./ports/turn-graph.js";
 import type { ThreadEventHub } from "./thread-event-hub.js";
 
 export interface ThreadSnapshotRepositories extends Pick<ThreadRepositories, "readSnapshot"> {
@@ -89,14 +89,12 @@ export async function buildThreadSnapshot(
     const headSeq = await hub.headSeq(threadId);
 
     // The graph keeps every turn (the leaf, `prevTurnId`); the snapshot shows the conversation.
-    const graph = orderTurnsByPosition(await repos.turns.listByThread(threadId));
+    const graph = await turnGraph(repos.turns).listByThread(threadId);
     const handedBack = await repos.turns.listHandedBackIds(threadId);
     const turns = graph.filter((turn) => !handedBack.has(turn.id));
     const deliveries = await repos.turns.listMessageDeliveries(threadId);
     const blocksByTurn = groupBy(
-      (await repos.blocks.listByThread(threadId))
-        .filter((block) => !handedBack.has(block.turnId))
-        .map(toClientSafeBlock),
+      (await repos.blocks.listByThread(threadId)).map(toClientSafeBlock),
       (block) => block.turnId,
     );
     const responsesByTurn = groupBy(

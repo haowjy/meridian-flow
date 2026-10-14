@@ -3,6 +3,7 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, Thread, Turn } from "@meridian/contracts/threads";
 import { orderTurnsByPosition } from "../order-turns.js";
 import type { BlockRepository, ThreadRepository, TurnRepository } from "../ports/index.js";
+import { turnGraph } from "../ports/turn-graph.js";
 
 export interface ThreadConversationContextDeps {
   threads: Pick<ThreadRepository, "findByIdIncludingDeleted">;
@@ -12,8 +13,8 @@ export interface ThreadConversationContextDeps {
 
 /**
  * The conversation: every turn and block the model, a page, a fork, a summary or a snapshot may see.
- * A handed-back writer message (`turns.listHandedBackIds`) is not in it; its turn stays in the graph
- * (`turns.listByThread`), which positions, `prevTurnId`, the leaf and fork cutoffs still read.
+ * A handed-back writer message is not in it; its turn stays in the graph (`turnGraph(turns)`), which
+ * this loader reads to resolve fork cutoffs and then filters.
  */
 export interface ThreadConversationContext {
   turns: Turn[];
@@ -24,7 +25,7 @@ export interface ThreadConversationContext {
   local: { turns: Turn[]; blocks: Block[] };
 }
 
-/** Graph turns and every block, before the hand-back filter. */
+/** Graph turns and conversation blocks, before the turn filter. */
 interface Part {
   turns: Turn[];
   blocks: Block[];
@@ -69,40 +70,16 @@ export async function loadThreadConversationContext(
   throughTurnId?: TurnId,
 ): Promise<ThreadConversationContext> {
   const loaded = await loadGraph(deps, thread, throughTurnId, new Set());
-  const keep = <T extends { id: string } | { turnId: string }>(items: T[]) =>
-    items.filter((item) => !loaded.hidden.has("turnId" in item ? item.turnId : item.id));
-  const inherited = { turns: keep(loaded.inherited.turns), blocks: keep(loaded.inherited.blocks) };
-  const local = { turns: keep(loaded.local.turns), blocks: keep(loaded.local.blocks) };
+  const keep = (turns: Turn[]) => turns.filter((turn) => !loaded.hidden.has(turn.id));
+  // Blocks come from the conversation read, so only the graph's turns need the filter.
+  const inherited = { turns: keep(loaded.inherited.turns), blocks: loaded.inherited.blocks };
+  const local = { turns: keep(loaded.local.turns), blocks: loaded.local.blocks };
   return {
     turns: orderTurnsByPosition([...inherited.turns, ...local.turns]),
     blocks: [...inherited.blocks, ...local.blocks],
     inherited,
     local,
   };
-}
-
-/** The thread's own conversation blocks: its blocks minus those of handed-back user turns. */
-export async function listConversationBlocks(
-  deps: Pick<ThreadConversationContextDeps, "turns" | "blocks">,
-  threadId: ThreadId,
-): Promise<Block[]> {
-  const [hidden, blocks] = await Promise.all([
-    deps.turns.listHandedBackIds(threadId),
-    deps.blocks.listByThread(threadId),
-  ]);
-  return blocks.filter((block) => !hidden.has(block.turnId));
-}
-
-/** The thread's own conversation turns in position order: its graph minus handed-back user turns. */
-export async function listConversationTurns(
-  deps: Pick<ThreadConversationContextDeps, "turns">,
-  threadId: ThreadId,
-): Promise<Turn[]> {
-  const [hidden, turns] = await Promise.all([
-    deps.turns.listHandedBackIds(threadId),
-    deps.turns.listByThread(threadId),
-  ]);
-  return orderTurnsByPosition(turns.filter((turn) => !hidden.has(turn.id)));
 }
 
 async function loadGraph(
@@ -119,7 +96,7 @@ async function loadGraph(
   const nextVisiting = new Set(visiting);
   nextVisiting.add(threadId);
   const local: Part = {
-    turns: orderTurnsByPosition(await deps.turns.listByThread(threadId)),
+    turns: orderTurnsByPosition(await turnGraph(deps.turns).listByThread(threadId)),
     blocks: await deps.blocks.listByThread(threadId),
   };
   const hidden = new Set(await deps.turns.listHandedBackIds(threadId));
@@ -133,7 +110,7 @@ async function loadGraph(
     throw new ThreadConversationContextError("missing_cutoff_turn", thread.id, null);
   }
 
-  const originTurn = await deps.turns.findById(originTurnId as TurnId);
+  const originTurn = await turnGraph(deps.turns).findById(originTurnId as TurnId);
   if (!originTurn) {
     throw new ThreadConversationContextError("missing_cutoff_turn", thread.id, originTurnId);
   }

@@ -52,6 +52,7 @@ import type {
 import type { AiWriteMode } from "@meridian/contracts/works";
 import type { CreateDerivedPrimaryThreadInput } from "../domain/thread-create-derived-primary.js";
 import type { CreateSubagentThreadInput } from "../domain/thread-create-subagent.js";
+import { TURN_GRAPH, type TurnGraph } from "./turn-graph.js";
 
 export interface CreateBlockInput {
   id?: string;
@@ -72,6 +73,10 @@ export interface UpsertBlockInput extends CreateBlockInput {
   id: string;
 }
 
+/**
+ * Every read returns the conversation: the blocks of a writer message a hand-back took out of the chat
+ * are not in it. They stay stored for diagnostics and are reachable by no port method.
+ */
 export interface BlockRepository {
   create(input: CreateBlockInput): Promise<Block>;
   upsert(input: UpsertBlockInput): Promise<Block>;
@@ -81,7 +86,7 @@ export interface BlockRepository {
   listByTurn(turnId: TurnId): Promise<Block[]>;
   /** Both sides of the requested tool calls, bounded by a transcript page's keys. */
   listToolBlocks(keys: readonly { turnId: TurnId; toolCallId: string }[]): Promise<Block[]>;
-  /** All blocks across all turns for a thread, ordered by turn creation then block sequence. */
+  /** All conversation blocks of a thread, ordered by turn position then block sequence. */
   listByThread(threadId: ThreadId): Promise<Block[]>;
 }
 
@@ -463,13 +468,22 @@ export interface ReadTranscriptItemsInput {
   through?: TranscriptKey;
 }
 
+/**
+ * Reads return the conversation: a writer message a hand-back took out of the chat is not returned by
+ * `findById` or `listByThread`, and its blocks are not in `BlockRepository`. Positions, `prevTurnId`,
+ * the leaf and fork cutoffs read the graph, `turnGraph(turns)` from `./turn-graph.js`, which only the
+ * modules that own that logic may import.
+ */
 export interface TurnRepository {
+  readonly [TURN_GRAPH]: TurnGraph;
   /** Inserts a turn row, or returns the existing row when replaying the same turn id. */
   create(input: CreateTurnInput): Promise<Turn>;
+  /** A conversation turn by id; null for a handed-back writer message. */
   findById(id: TurnId): Promise<Turn | null>;
   /** Latest execution or automatic satisfaction of one inbox control. */
   findByControlId(threadId: ThreadId, controlId: string): Promise<Turn | null>;
   findLatestHandoffSeed(threadId: ThreadId): Promise<Turn | null>;
+  /** The conversation turns in position order. */
   listByThread(threadId: ThreadId): Promise<Turn[]>;
   /** Latest local requester text per thread, without walking inherited transcript spans. */
   listLatestLocalRequesterText(threadIds: readonly ThreadId[]): Promise<Map<ThreadId, string>>;
@@ -498,11 +512,7 @@ export interface TurnRepository {
   listByExecution(threadId: ThreadId, executionId: string): Promise<Turn[]>;
   /** The first turn the Retry request `replyTurnId` reserved (`metadata.retryReplyId`), or null. */
   findRetryReservation(threadId: ThreadId, replyTurnId: TurnId): Promise<Turn | null>;
-  /**
-   * User turns of writer messages a hand-back took out of the chat. The turns and their blocks stay
-   * for diagnostics; `listByThread` is the graph (positions, `prevTurnId`, the leaf) and still
-   * returns them. Every conversation read drops these ids.
-   */
+  /** User turns of writer messages a hand-back took out of the chat. Their rows and blocks stay for diagnostics. */
   listHandedBackIds(threadId: ThreadId): Promise<ReadonlySet<string>>;
   /** Each delivered inbox message of the thread with its deliverer (null when unknown). */
   listMessageDeliveries(threadId: ThreadId): Promise<Map<string, TurnDelivery>>;
@@ -513,7 +523,6 @@ export interface TurnRepository {
     limit: number,
     after?: { threadId: ThreadId; position: number },
   ): Promise<Array<Pick<Turn, "id" | "threadId" | "position" | "role" | "status">>>;
-  getLatestByThread(threadId: ThreadId): Promise<Turn | null>;
   /**
    * The assistant container of a run that the caller has already proven live
    * (via the runner map), or null. Durable status is not a liveness authority:

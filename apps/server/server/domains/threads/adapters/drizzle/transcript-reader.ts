@@ -24,7 +24,7 @@ export function transcriptItemKeysSql(input: ReadTranscriptItemsInput) {
       sql`t.thread_id = ${span.threadId}::uuid`,
       sql`t.position > ${span.afterPosition}`,
       // Both page units, their counts and the bounds below read the conversation, not the graph.
-      notHandedBackSql("t"),
+      notHandedBackSql("t.id"),
     ];
     if (span.throughPosition !== null)
       positionConditions.push(sql`t.position <= ${span.throughPosition}`);
@@ -123,7 +123,7 @@ function conversationTurnBranches(spans: readonly TranscriptSpan[], beforePositi
         ${span.throughPosition === null ? sql`` : sql`AND t.position <= ${span.throughPosition}`}
         ${beforePosition === undefined ? sql`` : sql`AND t.position < ${beforePosition}`}
         AND ${conversationTurnSql}
-        AND ${notHandedBackSql("t")}
+        AND ${notHandedBackSql("t.id")}
     )`,
   );
 }

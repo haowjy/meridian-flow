@@ -1,4 +1,5 @@
 /** One process-local owner for prepared runs, cancellation, and terminal cleanup. */
+
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import {
   isTerminalTurnStatus,
@@ -13,6 +14,7 @@ import {
   type TurnRepository,
   TurnStartConflictError,
 } from "../../threads/index.js";
+import { turnGraph } from "../../threads/ports/turn-graph.js";
 import type { DetachedWorkTracker } from "../detached-work.js";
 import { createLocalTurn } from "./local-turn.js";
 import { type CurrentTurn, DEFAULT_LEASE_TTL_MS, type Lease, type RunClaim } from "./ports.js";
@@ -180,7 +182,7 @@ export function createRunSessions(deps: {
       if (
         "expectedLeafTurnId" in input &&
         input.expectedLeafTurnId &&
-        (await deps.repos.turns.getLatestByThread(threadId))?.id !== input.expectedLeafTurnId
+        (await turnGraph(deps.repos.turns).latest(threadId))?.id !== input.expectedLeafTurnId
       )
         throw new ReplyRetryUnavailableError(threadId);
       const resumeAfterSeq = (await deps.headSeq(threadId)).toString();
@@ -262,7 +264,7 @@ export function createRunSessions(deps: {
   async function pastTrailingSwitches(turn: Turn): Promise<Turn | null> {
     let current: Turn | null = turn;
     while (current && isWriteModeSwitchTurn(current) && current.prevTurnId)
-      current = await deps.repos.turns.findById(current.prevTurnId as TurnId);
+      current = await turnGraph(deps.repos.turns).findById(current.prevTurnId as TurnId);
     return current;
   }
 
@@ -321,7 +323,7 @@ export function createRunSessions(deps: {
 
       const [failedTurn, latestTurn, runState] = await Promise.all([
         deps.repos.turns.findById(input.failedTurnId),
-        deps.repos.turns.getLatestByThread(input.threadId),
+        turnGraph(deps.repos.turns).latest(input.threadId),
         authority.read(input.threadId),
       ]);
       if (shutdown.started) return refuse(new RuntimeShuttingDownError(input.threadId));
