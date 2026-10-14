@@ -458,6 +458,7 @@ export async function runtimeScenario(
                 id,
               ),
               pending: await readPendingInbox(harness.delivery, id),
+              runState: await harness.delivery.answerRunState(id),
               resumeAfterSeq: (await hub.headSeq(id)).toString(),
             };
           },

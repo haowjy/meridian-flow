@@ -24,6 +24,8 @@ export interface WriterEnqueueSettlement {
   userTurnId: TurnId;
   /** The live reply this message joins (a steer), or null when a new reply answers it. */
   joinedReplyId: TurnId | null;
+  /** Stream version of the run-state record this transaction published; null where none is. */
+  runStateVersion: string | null;
   resumeAfterSeq: string;
   snapshotFloorNextSeq: string;
 }
@@ -145,9 +147,13 @@ export async function persistWriterEnqueue<T>(input: {
             producer,
             draft: input.draft,
             afterEnqueue: async (userTurnId) => {
+              // Published before the answer is built, so the admission stores the version of a record
+              // that really arrives on the stream.
+              const runStateVersion = await producer.publishRunState();
               settled = await input.settle({
                 userTurnId,
                 joinedReplyId,
+                runStateVersion,
                 resumeAfterSeq,
                 snapshotFloorNextSeq: ((await input.hub.headSeq(input.threadId)) + 1n).toString(),
               });

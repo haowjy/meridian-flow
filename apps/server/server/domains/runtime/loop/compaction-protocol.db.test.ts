@@ -2,7 +2,7 @@
 import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
 import type { JsonObject } from "@meridian/contracts/threads";
 import { eq, inArray } from "drizzle-orm";
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import {
   CompactionMetadataCodec,
@@ -61,6 +61,12 @@ else
     const db = createDb(url, { max: 8 });
     beforeEach(() => deleteDrizzleRows(db, [schema.users]));
     afterAll(() => db.close());
+    // Publication pins: no input write without a record, and the last record equals the rows.
+    const { assertPublicationHooks, installPublicationAudit } = await import(
+      "../../../test-support/run-state-publication.js"
+    );
+    beforeAll(() => installPublicationAudit(db));
+    afterEach(() => assertPublicationHooks(db));
 
     const fixture = createCompactionFixture(db);
 

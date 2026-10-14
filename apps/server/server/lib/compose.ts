@@ -187,6 +187,7 @@ import {
   readAgentChain,
   readChainPermission,
   readPendingInbox,
+  readRunStateAtHead,
   requireWritableThread,
   type ShownLinkStore,
   sweepWakes,
@@ -882,7 +883,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     readActivity,
     eventSink: ports.eventSink,
   });
-  const threadLock = createDrizzleThreadLock(ports.db);
+  const threadLock = createDrizzleThreadLock(ports.db, threadEventHub);
   const inbox = delivery;
   const readPending = (threadId: ThreadId) => readPendingInbox(delivery, threadId);
   const reportPublisher = createReportPublisher({
@@ -1111,6 +1112,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       threads: ports.threadRepos.threads,
       executionReports: ports.threadRepos.executionReports,
       readPending,
+      readRunState: (threadId) => readRunStateAtHead(ports.db, threadId),
     }),
     documentSync: ports.documentSync,
     liveDocuments: createTreeReader(ports.db),
@@ -1414,6 +1416,9 @@ export function createInMemoryAppServices(): AppServices {
       },
       async readPending() {
         return { items: [] };
+      },
+      async readRunState() {
+        throw new Error("in-memory thread runtime has no run state");
       },
       async journalEvents() {
         return [];

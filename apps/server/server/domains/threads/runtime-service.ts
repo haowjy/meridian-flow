@@ -1,7 +1,7 @@
 /** Thread runtime reads used by HTTP and WebSocket transport boundaries. */
 import type { ThreadLiveState } from "@meridian/contracts/protocol";
 import type { ProjectId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
-import type { ThreadPendingInbox } from "@meridian/contracts/threads";
+import type { RunState, ThreadPendingInbox } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
 import { eventJournal } from "@meridian/database";
 import { eq } from "drizzle-orm";
@@ -34,6 +34,8 @@ export function createThreadRuntimeService(deps: {
   executionReports: Pick<ExecutionReportRepository, "listLatestByChildren">;
   /** Reads the thread's undelivered inbox as the writer-facing pending shape. */
   readPending: (threadId: ThreadId) => Promise<ThreadPendingInbox>;
+  /** Reads the chat's run-state record with the journal head in one read transaction. */
+  readRunState: (threadId: ThreadId) => Promise<RunState>;
 }) {
   async function requireOwnedThread(threadId: ThreadId, userId: UserId): Promise<OwnedThread> {
     const thread = await deps.threads.findByIdIncludingDeleted(threadId);
@@ -67,6 +69,7 @@ export function createThreadRuntimeService(deps: {
         threadId,
       ),
       pending: await deps.readPending(threadId),
+      runState: await deps.readRunState(threadId),
       resumeAfterSeq: headSeq.toString(),
     };
   }
@@ -83,6 +86,8 @@ export function createThreadRuntimeService(deps: {
     readOpenExecutionId: (threadId: ThreadId) => deps.statusReader.readOpenExecutionId(threadId),
     /** The undelivered inbox read, exposed so snapshot reads share one projection. */
     readPending: (threadId: ThreadId) => deps.readPending(threadId),
+    /** The run-state record at the journal head, so snapshot reads share one record. */
+    readRunState: (threadId: ThreadId) => deps.readRunState(threadId),
     async journalEvents(threadId: ThreadId) {
       return deps.db.select().from(eventJournal).where(eq(eventJournal.threadId, threadId));
     },

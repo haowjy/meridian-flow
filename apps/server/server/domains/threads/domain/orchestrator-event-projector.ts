@@ -17,6 +17,7 @@ import {
   type ExecutionEndedValue,
   MESSAGES_DELIVERED_EVENT,
   type MessagesDeliveredValue,
+  RUN_STATE_EVENT,
   type RunStartedMeta,
   WRITE_MODE_SWITCHED_EVENT,
   type WriteModeSwitchedValue,
@@ -499,6 +500,16 @@ export function createOrchestratorEventProjector() {
             type: EventType.CUSTOM,
             name: "meridian.inbox.changed",
             value: event.pending,
+          }),
+        ];
+
+      // The record without its version: the hub stamps the frame's own seq on it.
+      case "run_state.changed":
+        return [
+          parseAguiEvent({
+            type: EventType.CUSTOM,
+            name: RUN_STATE_EVENT,
+            value: event.runState,
           }),
         ];
 

@@ -8,6 +8,7 @@ import type { ThreadId } from "@meridian/contracts/runtime";
 import type {
   ControlBody,
   PendingInboxItem,
+  RunState,
   ThreadPendingInbox,
   Turn,
   WithdrawThreadControlResponse,
@@ -55,6 +56,8 @@ export function createThreadControls(deps: {
   replyHolds(threadId: ThreadId): Promise<boolean>;
   findControlTurn(threadId: ThreadId, controlId: string): Promise<Turn | null>;
   pending(threadId: ThreadId): Promise<ThreadPendingInbox>;
+  /** The run-state record an answer carries, read under the thread lock (publishes first if needed). */
+  answerRunState(threadId: ThreadId): Promise<RunState>;
   acknowledge(threadId: ThreadId, ids: readonly string[]): Promise<void>;
   hasCompletedReply(threadId: ThreadId): Promise<boolean>;
 }): ThreadControls {
@@ -123,7 +126,8 @@ export function createThreadControls(deps: {
         const mode = await deps.threadWriteMode(input.threadId);
         // Last, so it is at or past the frame of every transition read above.
         const seq = (await deps.headSeq(input.threadId)).toString();
-        return { id: input.id, pending, turnId: turn?.id ?? null, seq, mode };
+        const runState = await deps.answerRunState(input.threadId);
+        return { id: input.id, pending, turnId: turn?.id ?? null, seq, mode, runState };
       });
       return { created: outcome.created, response };
     },
@@ -135,7 +139,8 @@ export function createThreadControls(deps: {
         let outcome: WithdrawThreadControlResponse["outcome"] = "withdrawn";
         if (await deps.findControlTurn(threadId, controlId)) outcome = "already_started";
         else if (!row.deliveredAt) await deps.acknowledge(threadId, [controlId]);
-        return { outcome, seq: (await deps.headSeq(threadId)).toString() };
+        const runState = await deps.answerRunState(threadId);
+        return { outcome, seq: (await deps.headSeq(threadId)).toString(), runState };
       }),
   };
 }

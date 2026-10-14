@@ -1,13 +1,18 @@
 /** Control queue ordering, start consumption, and withdrawal against PostgreSQL. */
+
 import type { ThreadPendingInbox, Turn } from "@meridian/contracts/threads";
 import { eq, sql } from "drizzle-orm";
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { journalEventsByThread } from "../../../test-support/journal-events.js";
+import { releaseLeaseUnderLock } from "../../../test-support/release-lease.js";
 import {
   createOrchestratorEventProjector,
   cursorSeqForJournalHead,
+  eventSeqForJournalEvent,
   TurnStartConflictError,
 } from "../../threads/index.js";
 import { createDrizzleRunClaim } from "../adapters/drizzle-run-claim.js";
+import { readRunStateAtHead } from "../adapters/drizzle-run-state.js";
 import { createDrizzleThreadLock } from "../adapters/drizzle-thread-lock.js";
 import { createCompactionFixture } from "./__tests__/compaction-db-fixture.js";
 import { scriptedSummarizer } from "./__tests__/scripted-summarizer.js";
@@ -36,6 +41,12 @@ else
     const db = createDb(url, { max: 8 });
     beforeEach(() => deleteDrizzleRows(db, [schema.users]));
     afterAll(() => db.close());
+    // Publication pins: no input write without a record, and the last record equals the rows.
+    const { assertPublicationHooks, installPublicationAudit } = await import(
+      "../../../test-support/run-state-publication.js"
+    );
+    beforeAll(() => installPublicationAudit(db));
+    afterEach(() => assertPublicationHooks(db));
 
     const fixture = createCompactionFixture(db);
     const lowUsage = { inputTokens: 100, outputTokens: 10 };
@@ -823,6 +834,25 @@ else
       expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
     });
 
+    it("answers a withdrawal with the record its own transaction published", async () => {
+      const rig = await manualFixture();
+      const withdrawn = await compactControl(rig);
+      await rig.send(rig.threadId, "B behind withdrawn compact");
+      const answer = await rig.delivery.withdrawControl(rig.threadId, withdrawn.id);
+      const record = (await journalEventsByThread(db, rig.threadId))
+        .filter((row) => row.eventType === "run_state.changed")
+        .at(-1);
+      // Not the old head's rows under an existing version: the record the withdrawal appended.
+      expect(answer.runState).toEqual({
+        ...(record?.payload as { runState: object }).runState,
+        version: eventSeqForJournalEvent(record?.seq as bigint, 0).toString(),
+      });
+      expect(answer.runState.items.map((item) => item.id)).not.toContain(withdrawn.id);
+      // A snapshot at that version agrees.
+      const snapshot = await readRunStateAtHead(db, rig.threadId);
+      expect({ ...snapshot, version: answer.runState.version }).toEqual(answer.runState);
+    });
+
     it("withdrawal is replay-safe before start and refused after start", async () => {
       const rig = await manualFixture();
       const withdrawn = await compactControl(rig);
@@ -1062,7 +1092,7 @@ else
       const run = await rig.orchestrator.prepare({ threadId: rig.threadId, drain: true });
 
       // Drop the owning DB session after the command's start commit, as a process crash does.
-      await rig.runClaim.release({
+      await releaseLeaseUnderLock(db, rig.runClaim, {
         threadId: rig.threadId,
         executionId: run.executionId,
         holderId: "fixture-owner",
@@ -1194,7 +1224,7 @@ else
         const queued = await switchMode(rig, "draft");
         expect(queued.response.pending).not.toBeNull();
         await rig.repos.threads.setTrashState(rig.threadId, "deleted");
-        await rig.runClaim.release(lease);
+        await releaseLeaseUnderLock(db, rig.runClaim, lease);
         await processDetachedWork.drain();
         expect(await rig.delivery.applyDueSwitches(rig.threadId)).toBe(true);
         expect(await switchTurns(rig)).toEqual([]);
@@ -1275,6 +1305,30 @@ else
             outcome: "already_started",
           },
         );
+
+        // The apply's own transaction publishes the record with the new mode, after the divider's
+        // turn.created and the transitional inbox.changed.
+        const journal = await journalEventsByThread(db, rig.threadId);
+        const divider = journal.find(
+          (row) =>
+            row.eventType === "turn.created" &&
+            (row.payload as { turn: Turn }).turn.id === turn?.id,
+        );
+        const record = journal.filter((row) => row.eventType === "run_state.changed").at(-1);
+        const inboxRow = journal.filter((row) => row.eventType === "inbox.changed").at(-1);
+        expect(record?.seq).toBeGreaterThan(inboxRow?.seq as bigint);
+        expect(inboxRow?.seq).toBeGreaterThan(divider?.seq as bigint);
+        expect(record?.createdAt).toEqual(divider?.createdAt);
+        expect(record?.payload).toMatchObject({ runState: { mode: "draft", items: [] } });
+        // The answer's record is the rows read at a version at or past its own record's.
+        const fresh = await readRunStateAtHead(db, rig.threadId);
+        expect(applied.response.runState).toEqual({
+          ...fresh,
+          version: applied.response.runState.version,
+        });
+        expect(BigInt(applied.response.runState.version)).toBeGreaterThanOrEqual(
+          eventSeqForJournalEvent(record?.seq as bigint, 0),
+        );
       });
 
       it("answers a switch a reply's release applies mid-answer as queued or applied, never both null", async () => {
@@ -1300,7 +1354,7 @@ else
         let settled = false;
         // Started outside the route's call, so it shares none of its transaction.
         const applied = reached.then(async () => {
-          await rig.runClaim.release(lease);
+          await releaseLeaseUnderLock(db, rig.runClaim, lease);
           return rig.delivery.applyDueSwitches(rig.threadId as never).finally(() => {
             settled = true;
           });
@@ -1664,7 +1718,7 @@ else
           .where(eq(schema.threadRunLeases.threadId, rig.threadId));
         if (!lease) throw new Error("Expected the compaction's run lease");
         expect(lease.adoptedMessageIds).toEqual([run.userTurnId]);
-        await rig.runClaim.release({
+        await releaseLeaseUnderLock(db, rig.runClaim, {
           threadId: rig.threadId,
           executionId: run.executionId,
           holderId: "fixture-owner",
@@ -1766,7 +1820,7 @@ else
             newer,
           ]);
         } finally {
-          await rig.runClaim.release(reply);
+          await releaseLeaseUnderLock(db, rig.runClaim, reply);
         }
 
         await rig.delivery.applyDueSwitches(rig.threadId);
@@ -2094,10 +2148,12 @@ else
           metadata: { retryOf: failedRetry?.id, retryReplyId: replyTurnId },
         });
         expect((await identity(c?.id)).reservedForUserTurnIds).toEqual([m1.id]);
-        expect(await rig.orchestrator.retryReply(retry)).toEqual({
+        // A replay answers the record as of the replay: the open execution is this Retry's.
+        expect(await rig.orchestrator.retryReply(retry)).toMatchObject({
           created: false,
           turn: null,
           executionId: accepted.executionId,
+          runState: { execution: { executionId: accepted.executionId } },
         });
         await expect(
           rig.orchestrator.retryReply({ ...retry, replyTurnId: crypto.randomUUID() as never }),

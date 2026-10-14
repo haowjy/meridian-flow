@@ -21,6 +21,7 @@ import {
   type RunClaim,
   type ThreadPhase,
 } from "../loop/ports.js";
+import { markRunStateChanged } from "./drizzle-run-state.js";
 import { createDrizzleSessionLock, type SessionLockClaim } from "./drizzle-session-lock.js";
 
 export interface DrizzleRunClaimOptions {
@@ -43,6 +44,25 @@ export function createDrizzleRunClaim(
 
   const nextExpiry = () => new Date(Date.now() + leaseTtlMs);
   const db_ = () => currentDrizzleDb(db);
+
+  /** Whether the record showed the row: it bound a turn or receipt, or a turn carries its execution. */
+  const leaseWasVisible = async (
+    released: { threadId: ThreadId; executionId: string },
+    row: { turnId: string | null; adoptedMessageIds: string[] },
+  ) => {
+    if (row.turnId !== null || row.adoptedMessageIds.length > 0) return true;
+    const [carrier] = await db_()
+      .select({ id: schema.turns.id })
+      .from(schema.turns)
+      .where(
+        and(
+          eq(schema.turns.threadId, released.threadId),
+          sql`${schema.turns.executionId}::text = ${released.executionId}`,
+        ),
+      )
+      .limit(1);
+    return carrier !== undefined;
+  };
 
   // The one "live lease" predicate; every read and cancel derives from it.
   const liveLeaseWhere = (threadId: ThreadId) =>
@@ -269,10 +289,14 @@ export function createDrizzleRunClaim(
 
     async release(lease) {
       const entry = held.get(lease.threadId);
-      const deleted = await db_()
-        .delete(schema.threadRunLeases)
-        .where(ownedRow(lease))
-        .returning({ threadId: schema.threadRunLeases.threadId });
+      const deleted = await db_().delete(schema.threadRunLeases).where(ownedRow(lease)).returning({
+        turnId: schema.threadRunLeases.turnId,
+        adoptedMessageIds: schema.threadRunLeases.adoptedMessageIds,
+      });
+      // A row no turn carries and that bound nothing was never in the record, so deleting it changes
+      // nothing; a bare claim cycle needs no thread lock.
+      const [gone] = deleted;
+      if (gone && (await leaseWasVisible(lease, gone))) markRunStateChanged(lease.threadId);
       if (entry?.executionId !== lease.executionId || entry.holderId !== lease.holderId)
         return deleted.length > 0;
 

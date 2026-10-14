@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import { createNoopEventSink } from "../domains/observability/index.js";
 import type { SequencedEventInternal } from "../domains/threads/thread-event-hub.js";
 import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
+import { EMPTY_RUN_STATE } from "../test-support/run-state.js";
 import type { AppServices } from "./app.js";
 import { createThreadWebSocketSession, type WsPeer } from "./ws-thread-handler.js";
 
@@ -23,6 +24,7 @@ const LIVE_STATE: ThreadLiveState = {
   runningTurnId: null,
   activity: { children: [] },
   pending: { items: [] },
+  runState: EMPTY_RUN_STATE,
   resumeAfterSeq: "0",
 };
 

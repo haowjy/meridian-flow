@@ -7,6 +7,7 @@ import { z } from "zod";
 
 import { type MeridianError, meridianErrorSchema } from "../interrupt/index.js";
 import { controlBodySchema } from "../threads/control-body.js";
+import { aiWriteModeSchema } from "../works/ai-write-mode.js";
 import { type AGUIEvent, EventSchemas } from "./agui";
 import type { ThreadLiveState } from "./http-types";
 
@@ -171,12 +172,24 @@ const threadPendingInboxSchema: z.ZodType<import("../threads/index.js").ThreadPe
     items: z.array(pendingInboxItemSchema),
   });
 
+const runStateSchema: z.ZodType<import("../threads/index.js").RunState> = z.object({
+  version: wsEventSeqSchema,
+  items: z.array(pendingInboxItemSchema),
+  sentThrough: z.number().int().nonnegative(),
+  execution: z
+    .object({ executionId: z.string().min(1), currentTurnId: z.string().min(1).nullable() })
+    .nullable(),
+  mode: aiWriteModeSchema,
+  blocked: z.object({ reason: z.literal("credits_exhausted") }).nullable(),
+});
+
 const threadLiveStateSchema: z.ZodType<ThreadLiveState> = z.object({
   threadId: z.string().min(1),
   status: threadStatusSchema,
   runningTurnId: z.string().min(1).nullable(),
   activity: threadActivitySchema,
   pending: threadPendingInboxSchema,
+  runState: runStateSchema,
   resumeAfterSeq: wsEventSeqSchema,
 });
 

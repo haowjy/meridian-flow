@@ -8,6 +8,7 @@ import {
   blockContentRecord,
   EventType,
   interruptIdForBlock,
+  RUN_STATE_EVENT,
   readRunStartedMeta,
 } from "@meridian/contracts/protocol";
 import { isTerminalTurnStatus } from "@meridian/contracts/threads";
@@ -1084,7 +1085,8 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
           event.name === "meridian.turn_change_trail.updated" ||
           event.name === "meridian.turn_change_trail.settled" ||
           event.name === WORK_CONTEXT_PROJECTION_EVENT ||
-          event.name === "meridian.inbox.changed"
+          event.name === "meridian.inbox.changed" ||
+          event.name === RUN_STATE_EVENT
         ) {
           return;
         }

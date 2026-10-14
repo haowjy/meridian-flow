@@ -1,3 +1,5 @@
+import { releaseLeaseUnderLock } from "../../../../test-support/release-lease.js";
+import { EMPTY_RUN_STATE } from "../../../../test-support/run-state.js";
 import { createDrizzleLineageScratchLifecycle } from "../../../context/adapters/lineage-scratch-lifecycle.js";
 import { createTestDrizzleDelivery } from "../../../runtime/loop/__tests__/test-drizzle-delivery.js";
 /**
@@ -98,6 +100,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         readOpenExecutionId: async () => null,
         readMany: async () => new Map(),
         readPending: async () => ({ items: [] }),
+        readRunState: async () => EMPTY_RUN_STATE,
       };
       const snapshot = await buildThreadSnapshot(
         {
@@ -148,6 +151,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         threads: repo,
         executionReports: repos.executionReports,
         readPending: async () => ({ items: [] }),
+        readRunState: async () => EMPTY_RUN_STATE,
       });
 
       const lease = await authority.startExecution(THREAD_ID, "run-1", async () => {});
@@ -165,7 +169,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(live.runningTurnId).toBe(TURN_ID);
       expect(live.status).toEqual({ kind: "awake", phase: "generating", cancelRequested: false });
 
-      await authority.release(lease);
+      await releaseLeaseUnderLock(db, authority, lease);
 
       const afterRelease = (await repo.listByProject(PROJECT_ID)).find(
         (row) => row.id === THREAD_ID,

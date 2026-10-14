@@ -167,6 +167,7 @@ export {
 export {
   createThreadEventHub,
   cursorSeqForJournalHead,
+  eventSeqForJournalEvent,
   type SequencedEventInternal,
   type ThreadEventHub,
 } from "./thread-event-hub.js";

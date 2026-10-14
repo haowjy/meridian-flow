@@ -16,6 +16,7 @@ import type {
   ThreadPendingInboxReader,
   ThreadRepositories,
   ThreadRepository,
+  ThreadRunStateReader,
   ThreadStatusReader,
   TurnRepository,
 } from "./ports/index.js";
@@ -63,7 +64,7 @@ function groupBy<T, K>(items: T[], keyFor: (item: T) => K): Map<K, T[]> {
 export async function buildThreadSnapshot(
   repos: ThreadSnapshotRepositories,
   hub: Pick<ThreadEventHub, "headSeq" | "readModelProjectionWatermark">,
-  statusReader: ThreadStatusReader & ThreadPendingInboxReader,
+  statusReader: ThreadStatusReader & ThreadPendingInboxReader & ThreadRunStateReader,
   threadId: ThreadId,
 ): Promise<ThreadSnapshotResponse> {
   return repos.readSnapshot(async () => {
@@ -122,6 +123,7 @@ export async function buildThreadSnapshot(
       threadId,
     );
     const pending = await statusReader.readPending(threadId);
+    const runState = await statusReader.readRunState(threadId);
 
     return {
       threadId,
@@ -135,6 +137,7 @@ export async function buildThreadSnapshot(
         runningTurnId,
         activity,
         pending,
+        runState,
         // During an active run,
         // stream.delta rows can sit between that head and the last read-model
         // projection, so resume from the projection cursor and replay only the

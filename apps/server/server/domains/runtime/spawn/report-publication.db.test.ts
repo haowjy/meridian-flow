@@ -1,8 +1,10 @@
 /** PostgreSQL publication B and orphan recovery after durable terminal A. */
+
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { executionScenario } from "../../../test-support/execution-scenario.js";
 import { journalEventsByThread } from "../../../test-support/journal-events.js";
+import { releaseLeaseUnderLock } from "../../../test-support/release-lease.js";
 
 const runDb = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const databaseUrl = process.env.DATABASE_URL;
@@ -56,7 +58,7 @@ else
     const repos = createDrizzleRepositoriesForTest(db);
     const eventWriter = createDrizzleEventJournalWriter(db);
     const inbox = createDrizzleInbox(db);
-    const threadLock = createDrizzleThreadLock(db);
+    const threadLock = createDrizzleThreadLock(db, eventWriter);
     const eventSink = createInMemoryEventSink();
     const delivery = createTestDrizzleDelivery(db, { repos, eventWriter });
     const publisher = createReportPublisher({ repos, eventWriter, delivery, eventSink });
@@ -69,6 +71,12 @@ else
     afterAll(async () => {
       await db.close();
     });
+    // Publication pins: no input write without a record, and the last record equals the rows.
+    const { assertPublicationHooks, installPublicationAudit } = await import(
+      "../../../test-support/run-state-publication.js"
+    );
+    beforeAll(() => installPublicationAudit(db));
+    afterEach(() => assertPublicationHooks(db));
 
     async function terminal() {
       await repos.executionReports.captureOnce(ids.child, ids.execution, "return-1", {
@@ -240,6 +248,7 @@ else
         "block.updated",
         "agent.run_completed",
         "inbox.changed",
+        "run_state.changed",
       ]);
       expect(events[0]?.payload).toMatchObject({
         block: {
@@ -557,7 +566,11 @@ else
       expect(await repos.blocks.findById(ids.card)).toBeNull();
       expect(await inbox.selectPending(ids.caller)).toHaveLength(1);
       const events = await journalEventsByThread(db, ids.caller);
-      expect(events.map((row) => row.eventType)).toEqual(["agent.run_completed", "inbox.changed"]);
+      expect(events.map((row) => row.eventType)).toEqual([
+        "agent.run_completed",
+        "inbox.changed",
+        "run_state.changed",
+      ]);
     });
 
     it("advances a bounded sweep past one failing publication", async () => {
@@ -1112,7 +1125,7 @@ else
           };
         });
       } finally {
-        await authority.release(lease);
+        await releaseLeaseUnderLock(db, authority, lease);
       }
 
       expect(await repos.executionReports.findByExecution(ids.child, ids.execution)).toMatchObject({

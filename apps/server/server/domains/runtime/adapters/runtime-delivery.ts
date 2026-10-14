@@ -1,6 +1,7 @@
 /** Shared delivery transitions. Concrete adapters supply one compatible transaction/store bundle. */
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
+import type { RunState } from "@meridian/contracts/threads";
 import { isPendingPlaceholder, isTerminalTurnStatus, type Turn } from "@meridian/contracts/threads";
 import type { NoticePort } from "../../notices/index.js";
 import { SystemUpdateMetadataCodec } from "../../threads/index.js";
@@ -42,6 +43,15 @@ import { type WriteModeSwitchPort, writeModeSwitchTurn } from "../loop/write-mod
 /** Adapter-private storage primitives; never injected into the model loop or producers. */
 export interface DeliveryStore extends InboxReader {
   setBlockedReason(threadId: ThreadId, reason: "credits_exhausted" | null): Promise<void>;
+  /**
+   * Records that a write outside this store (the chat's write mode) changed an input of the chat's
+   * run-state record, so the transaction publishes a fresh record. Call under the thread lock.
+   */
+  markRunStateChanged(threadId: ThreadId): void;
+  /** Appends the chat's run-state record now, under its lock; returns its stream version (null: none). */
+  publishRunState(threadId: ThreadId): Promise<string | null>;
+  /** The record a command answers with, under the chat's lock; see `answerRunState`. */
+  answerRunState(threadId: ThreadId): Promise<RunState>;
   findMessage(id: string): Promise<InboxMessage | null>;
   workNoticeTargets(workId: WorkId): Promise<ThreadId[]>;
   canMaterializeWork(threadId: ThreadId): Promise<boolean>;
@@ -535,6 +545,7 @@ export function createDeliveryAdapter(
     });
     await persistAndAppendTurnStartEvents(deps, threadId, leaf, async () => {
       await deps.repos.threads.setAiWriteMode(threadId, mode);
+      inbox.markRunStateChanged(threadId);
       if (thread.workId) await deps.writeModeSwitch.setWorkDefault(thread.workId as WorkId, mode);
       return {
         result: undefined,
@@ -999,6 +1010,7 @@ export function createDeliveryAdapter(
       replyHolds: async (id) => (await deps.runClaim.holder(id)) !== null,
       findControlTurn: (id, controlId) => deps.repos.turns.findByControlId(id, controlId),
       pending: (id) => readPendingInbox(inbox, id),
+      answerRunState: inbox.answerRunState,
       acknowledge: async (id, controlIds) => {
         await ack(id, controlIds);
         await appendPending(id);
@@ -1058,10 +1070,13 @@ export function createDeliveryAdapter(
       return inbox.pendingMessageThreads(limit, afterThreadId);
     },
     enqueue: (draft) => threadLock.withThreadLock(draft.threadId, () => enqueue(draft)),
+    answerRunState: (threadId) =>
+      threadLock.withThreadLock(threadId, () => inbox.answerRunState(threadId)),
     withThreadLock: (threadId, operation) =>
       threadLock.withThreadLock(threadId, () =>
         operation({
           materializePrefix: () => materializePrefix(threadId),
+          publishRunState: () => inbox.publishRunState(threadId),
           // No reserved turn delivers these (a child run aborted before its reservation).
           async acknowledge(ids) {
             await ack(threadId, ids);

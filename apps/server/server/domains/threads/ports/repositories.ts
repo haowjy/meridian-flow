@@ -34,6 +34,7 @@ import type {
   PriceSource,
   ProjectChatItem,
   PromptBake,
+  RunState,
   SpawnStatus,
   Thread,
   ThreadKind,
@@ -369,6 +370,15 @@ export interface ThreadStatusReader {
  */
 export interface ThreadPendingInboxReader {
   readPending(threadId: ThreadId): Promise<ThreadPendingInbox>;
+}
+
+/**
+ * Read seam for the chat's run-state record at the journal head. Inside the snapshot's
+ * repeatable-read transaction it is coherent with the snapshot's turns; the runtime composition
+ * supplies it so the threads domain never imports the runtime's adapters.
+ */
+export interface ThreadRunStateReader {
+  readRunState(threadId: ThreadId): Promise<RunState>;
 }
 
 export interface ProjectChatCursorKey {

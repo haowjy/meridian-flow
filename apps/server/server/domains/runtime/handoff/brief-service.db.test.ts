@@ -2,6 +2,7 @@
 
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { releaseLeaseUnderLock } from "../../../test-support/release-lease.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import { createDrizzleRunClaim } from "../adapters/drizzle-run-claim.js";
 import { createDrizzleThreadLock } from "../adapters/drizzle-thread-lock.js";
@@ -26,7 +27,7 @@ else
     );
     const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
     const { executionScenario } = await import("../../../test-support/execution-scenario.js");
-    const { createDrizzleInbox } = await import("../adapters/drizzle-inbox.js");
+    const { createLockedDrizzleInbox } = await import("../../../test-support/locked-inbox.js");
     const { createDetachedWorkTracker } = await import("../detached-work.js");
     const { createDrizzleCreditLedger } = await import("../../billing/index.js");
     const { createTestDrizzleDelivery, createTestOrphanRepair } = await import(
@@ -195,7 +196,7 @@ else
         }),
       });
       const runClaim = createDrizzleRunClaim(db, { holderId: "source-run" });
-      const inbox = createDrizzleInbox(db);
+      const inbox = createLockedDrizzleInbox(db);
       const queued = await inbox.enqueue({
         threadId: destination.id,
         intent: "message",
@@ -295,7 +296,7 @@ else
           .from(schema.threadInboxMessages)
           .where(eq(schema.threadInboxMessages.threadId, source.id)),
       ).toEqual(sourceInboxBefore);
-      await runClaim.release(heldSourceLease);
+      await releaseLeaseUnderLock(db, runClaim, heldSourceLease);
     });
 
     it.each([
@@ -412,7 +413,7 @@ else
     it("settles paid rows on shutdown, leaves S pending, releases the claim, and skips the wake", async () => {
       const fixture = await handoffSeed();
       const runClaim = createDrizzleRunClaim(db, { holderId: "shutdown-brief" });
-      const inbox = createDrizzleInbox(db);
+      const inbox = createLockedDrizzleInbox(db);
       let startAttempts = 0;
       let startedRuns = 0;
       const runStarter = {
@@ -425,7 +426,7 @@ else
           );
           if (!lease) return;
           startedRuns += 1;
-          await runClaim.release(lease);
+          await releaseLeaseUnderLock(db, runClaim, lease);
         },
       };
       const delivery = createTestDrizzleDelivery(db, {
@@ -582,7 +583,7 @@ else
       ).rejects.toMatchObject({
         code: "handoff_retry_unavailable",
       });
-      await runClaim.release(heldLiveReply);
+      await releaseLeaseUnderLock(db, runClaim, heldLiveReply);
 
       const retried = await service.retry({ threadId: fixture.destination.id, seedId: retryId });
       expect(retried.created).toBe(true);
@@ -684,7 +685,7 @@ else
     it("keeps Stop's terminal block when a late provider result arrives", async () => {
       const fixture = await handoffSeed();
       const runClaim = createDrizzleRunClaim(db, { holderId: "stop-race" });
-      const inbox = createDrizzleInbox(db);
+      const inbox = createLockedDrizzleInbox(db);
       const compact = await inbox.enqueue({
         threadId: fixture.destination.id,
         intent: "control",
@@ -769,7 +770,7 @@ else
       let statusPublishes = 0;
       const repair = createTestOrphanRepair(db, {
         repos: fixture.repos,
-        inbox: createDrizzleInbox(db),
+        inbox: createLockedDrizzleInbox(db),
         eventWriter: createDrizzleEventJournalWriter(db),
         authority,
         async publishStatus(threadId) {

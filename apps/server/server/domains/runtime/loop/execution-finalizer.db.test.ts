@@ -50,10 +50,10 @@ else
     });
 
     it("cancels only the adopted inbox batch atomically, leaving later messages for a new turn", async () => {
-      const { createDrizzleInbox } = await import("../adapters/drizzle-inbox.js");
+      const { createLockedDrizzleInbox } = await import("../../../test-support/locked-inbox.js");
       const { createDrizzleRunClaim } = await import("../adapters/drizzle-run-claim.js");
       const { createRuntimeHarness } = await import("./__tests__/runtime-harness.js");
-      const inbox = createDrizzleInbox(db);
+      const inbox = createLockedDrizzleInbox(db);
       const authority = createDrizzleRunClaim(db);
       const enqueue = (text: string) =>
         inbox.enqueue({
@@ -100,14 +100,14 @@ else
       "tool",
       "rollback",
     ] as const)("splits an ordered mixed batch at %s with one lease and report", async (boundary) => {
-      const { createDrizzleInbox } = await import("../adapters/drizzle-inbox.js");
+      const { createLockedDrizzleInbox } = await import("../../../test-support/locked-inbox.js");
       const { createDrizzleRunClaim } = await import("../adapters/drizzle-run-claim.js");
       const { persistWriterEnqueue } = await import("./writer-enqueue.js");
       const { createRuntimeHarness } = await import("./__tests__/runtime-harness.js");
       const { readThreadReport } = await import("../spawn/read-thread-report.js");
       const { readPendingInbox } = await import("./pending-inbox.js");
       const { createInertGateway } = await import("./__tests__/test-gateway.js");
-      const inbox = createDrizzleInbox(db);
+      const inbox = createLockedDrizzleInbox(db);
       const authority = createDrizzleRunClaim(db);
       const producer = createTestDrizzleDelivery(db, { repos, eventWriter, runClaim: authority });
       const controller = new AbortController();

@@ -75,6 +75,8 @@ export type AcceptedAdmission = {
   userTurnId: TurnId;
   /** The live reply this message was steered into; null when it waits for a new execution. */
   steersTurnId: TurnId | null;
+  /** The stream version of the record the admission's own transaction published; null for older rows. */
+  runStateVersion: string | null;
   resumeAfterSeq: string;
   snapshotFloorNextSeq: string;
 };

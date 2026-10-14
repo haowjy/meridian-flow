@@ -322,6 +322,7 @@ export function defaultSendResponse(
     threadId: "thread_1",
     userTurnId: "turn-user",
     steersTurnId: "turn_1",
+    runStateVersion: null,
     resumeAfterSeq: "42",
     snapshotFloorNextSeq: "43",
     status: "accepted",

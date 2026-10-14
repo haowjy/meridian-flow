@@ -47,7 +47,11 @@ export function createRunSessions(deps: {
   runClaim: RunClaim;
   delivery: Pick<
     RuntimeDelivery,
-    "settleStaleExecution" | "releaseExecution" | "refreshPending" | "selectPending"
+    | "settleStaleExecution"
+    | "releaseExecution"
+    | "refreshPending"
+    | "selectPending"
+    | "answerRunState"
   >;
   handoffBriefs: import("../ports/handoff-briefs.js").HandoffBriefStopper;
   repos: { turns: TurnRepository; threads: Pick<ThreadRepository, "findById"> };
@@ -277,6 +281,11 @@ export function createRunSessions(deps: {
      * `retry_pending`.
      */
     async retryReply(input: { threadId: ThreadId; failedTurnId: TurnId; replyTurnId: TurnId }) {
+      // Every answer carries the record read at answer time, under the thread lock.
+      const answered = async <T extends object>(result: T) => ({
+        ...result,
+        runState: await deps.delivery.answerRunState(input.threadId),
+      });
       const accepted = async () => {
         const existing = await deps.repos.turns.findById(input.replyTurnId);
         if (existing) {
@@ -294,14 +303,14 @@ export function createRunSessions(deps: {
           : null;
       };
       const replay = await accepted();
-      if (replay) return replay;
+      if (replay) return answered(replay);
       // A refusal can rest on reads that raced this request's own reservation
       // elsewhere; that reservation commits with the leaf it moves, so a later
       // acceptance read sees it. Another tab's request id never matches.
       // Shutdown refuses too, but only new work: never an accepted request.
       const refuse = async (refusal: Error = new ReplyRetryUnavailableError(input.threadId)) => {
         const raced = await accepted();
-        if (raced) return raced;
+        if (raced) return answered(raced);
         throw refusal;
       };
 
@@ -338,7 +347,7 @@ export function createRunSessions(deps: {
         });
       } catch (error) {
         const raced = await accepted();
-        if (raced) return raced;
+        if (raced) return answered(raced);
         // Another holder took the claim before its lease row was visible.
         if (error instanceof TurnStartConflictError)
           throw new ReplyRetryPendingError(input.threadId);
@@ -377,7 +386,7 @@ export function createRunSessions(deps: {
         observe(input.threadId, "retry.describe_failed", error);
         return null;
       });
-      return { created: true as const, turn, executionId: run.executionId };
+      return answered({ created: true as const, turn, executionId: run.executionId });
     },
     startDrain,
     getRunningTurn(threadId: ThreadId) {
