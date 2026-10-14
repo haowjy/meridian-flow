@@ -22,7 +22,10 @@ and dock hosts.
   syntax lives in
   `apps/server/server/domains/runtime/gateway/adapters/mock/write-directive.ts`.
 - Drive the UI with `agent-browser` (snapshot → click by ref → re-snapshot).
-  Capture `agent-browser console` and `errors` at the end of every scenario —
+  Browsing live with no `?work=`, the Work scope has no draft list, so no chip shows for another
+Work's draft; that is the existing scope rule, not a miss. Use `?work=<the drafting Work>` for the chip.
+
+Capture `agent-browser console` and `errors` at the end of every scenario —
   a clean console is part of every pass criterion below.
 
 ### Controlled failures and evidence
@@ -979,9 +982,14 @@ then the phone 390x844 with touch emulation.
 3. **A rename while the create is out.** Offline, New file `Chapter 2`, rename it
    `Chapter 2b`, reconnect. PASS: one row `Chapter 2b` on the draft's document; the rename is
    not offered for repair.
-4. **A link's Create.** In a live chapter, link to a document that exists only in a draft (the
-   "In a draft" chip), then Create from the link. PASS: the same as step 1.
+4. **A link's Create.** The Create button exists only on a link that reads "doesn't exist yet", and
+   following an "In a draft" link opens the review instead. So make the link in the editor (select
+   text, Link, destination `manuscript://Chapter 10`), open it so its "Create" dialog is up, have
+   the AI draft `Chapter 10` in the Work, then press Create. PASS: the same as step 1.
 5. **No regression.** New file at a free name, and at a name a visible document holds (the
    second takes the free name, `Chapter 2 (2)`).
+
+Browsing live with no `?work=`, the Work scope has no draft list, so no chip shows for another
+Work's draft; that is the existing scope rule, not a miss. Use `?work=<the drafting Work>` for the chip.
 
 Capture `agent-browser console` and `errors` at the end of each: clean is part of the pass.
