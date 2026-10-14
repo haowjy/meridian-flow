@@ -58,7 +58,10 @@ export function useThreadSnapshotCache(
   const subscribe = useCallback(
     (listener: () => void) =>
       client.getQueryCache().subscribe((event) => {
-        if (event.query.queryHash === hash) listener();
+        // Only `updated` changes the state a reader sees. `added` and `observerResultsUpdated`
+        // fire synchronously inside another component's render (its `useQuery` builds and reads
+        // the query), and notifying then updates this store mid-render.
+        if (event.type === "updated" && event.query.queryHash === hash) listener();
       }),
     [client, hash],
   );
