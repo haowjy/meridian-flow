@@ -12,11 +12,14 @@ import {
 } from "@meridian/contracts/protocol";
 import { isTerminalTurnStatus } from "@meridian/contracts/threads";
 import {
+  applySnapshotTo,
   createTurnReducer,
   ensureAssistantTurnIn,
   isOptimisticTurnId,
   OPTIMISTIC_TURN_ID_PREFIX,
   patchTurnStatusIn,
+  removeTurnsIn,
+  type Tombstones,
   upsertBlockIn,
 } from "@meridian/thread-client";
 import { useQueryClient } from "@tanstack/react-query";
@@ -56,6 +59,8 @@ type ThreadStoreSliceState = ThreadStoreState & {
   turnsByThread: Record<string, Turn[]>;
   /** Minimum snapshot nextSeq accepted; snapshots below this floor are rejected. */
   snapshotNextSeqFloorByThread: Record<string, string>;
+  /** Turns removed from the conversation, until a snapshot covering the removal arrives. */
+  tombstonesByThread: Record<string, Tombstones>;
   durableBlockCursorByThread: Record<string, string>;
   pendingCreation: PendingCreationState;
   interruptResponses: Record<string, InterruptResponseEntry>;
@@ -187,6 +192,7 @@ function selectThreadActions(state: ThreadStoreSlice): ThreadStoreActions {
     pruneStaleAssistantTurns: state.pruneStaleAssistantTurns,
     bumpEventsApplied: state.bumpEventsApplied,
     applyTurnEvent: state.applyTurnEvent,
+    removeTurns: state.removeTurns,
     applyDurableBlockEvent: state.applyDurableBlockEvent,
     acceptDurableBlockSeq: state.acceptDurableBlockSeq,
     acceptsThreadSnapshot: state.acceptsThreadSnapshot,
@@ -217,6 +223,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
             upsertAssistantBlock: (...args) => get().upsertAssistantBlock(...args),
             invalidateThreadSnapshot: (threadId) => get().invalidateThreadSnapshot(threadId),
             patchTurnStatus: (...args) => get().patchTurnStatus(...args),
+            removeTurns: (...args) => get().removeTurns(...args),
             bumpEventsApplied: (threadId) => get().bumpEventsApplied(threadId),
             settleInterruptResponse: (identity) => get().settleInterruptResponse(identity),
           },
@@ -225,6 +232,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
           now,
           turnsByThread: {},
           snapshotNextSeqFloorByThread: {},
+          tombstonesByThread: {},
           durableBlockCursorByThread: {},
           liveMeta: {},
           pendingCreation: { threadIds: {} },
@@ -279,7 +287,10 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
               const optimisticTurn = turns.find((turn) => turn.id === optimisticTurnId);
               if (optimisticTurn?.role !== "user") return state;
 
-              const hasServerTurn = turns.some((turn) => turn.id === serverTurnId);
+              // Another tab handed this message back before the answer arrived: the row goes
+              // instead of becoming the turn that left the conversation.
+              const handedBack = state.tombstonesByThread[threadId]?.has(serverTurnId) === true;
+              const hasServerTurn = handedBack || turns.some((turn) => turn.id === serverTurnId);
 
               /** The POST /messages response is the explicit identity bridge from the local `turn_local_*` row to the persisted user turn. */
               const nextTurns = turns
@@ -469,8 +480,25 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
             return nextEventsApplied;
           },
 
-          applyTurnEvent(threadId, event) {
-            reducer.applyEvent(threadId, event);
+          applyTurnEvent(threadId, event, seq) {
+            reducer.applyEvent(threadId, event, seq);
+          },
+
+          removeTurns(threadId, ids, seq) {
+            set((state) => {
+              const next = removeTurnsIn(
+                {
+                  turns: state.turnsByThread[threadId] ?? [],
+                  tombstones: state.tombstonesByThread[threadId] ?? new Map(),
+                },
+                ids,
+                seq,
+              );
+              return {
+                turnsByThread: { ...state.turnsByThread, [threadId]: next.turns },
+                tombstonesByThread: { ...state.tombstonesByThread, [threadId]: next.tombstones },
+              };
+            });
           },
 
           applyDurableBlockEvent(threadId, event) {
@@ -512,12 +540,18 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
             set((state) => {
               const localTurns = state.turnsByThread[threadId] ?? [];
               const runningTurnId = lifecycle.runningTurnId;
-              const mergedTurns = reconcileSnapshotTurns(localTurns, serverTurns, {
+              const applied = applySnapshotTo(
+                state.tombstonesByThread[threadId] ?? new Map(),
+                serverTurns,
+                nextSeq,
+              );
+              const mergedTurns = reconcileSnapshotTurns(localTurns, applied.turns, {
                 runningTurnId,
               });
 
               const nextState: Partial<ThreadStoreSliceState> = {
                 turnsByThread: { ...state.turnsByThread, [threadId]: mergedTurns },
+                tombstonesByThread: { ...state.tombstonesByThread, [threadId]: applied.tombstones },
               };
 
               const reconciledInterruptResponses = reconcileInterruptResponsesForThread(

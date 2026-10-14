@@ -2,7 +2,7 @@
  * The reducer against the package's plain store: tool results, instance-owned
  * interrupt buffering, and the injected clock.
  */
-import type { AGUIEvent } from "@meridian/contracts/protocol";
+import type { AGUIEvent, Turn } from "@meridian/contracts/protocol";
 import { EventType } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 import {
@@ -64,5 +64,46 @@ describe("turn reducer", () => {
     second.reducer.applyEvent(THREAD, blockEvent("b2", "int-2", 2));
     const late = second.store.turns(THREAD)?.[0]?.blocks.find((block) => block.id === "b2");
     expect(late?.content).not.toHaveProperty("props.resolvedValue");
+  });
+
+  describe("a handed-back message leaving the conversation", () => {
+    const user = (id: string) => ({ id, role: "user", blocks: [] }) as unknown as Turn;
+    const handedBack = (...ids: string[]) =>
+      ({
+        type: EventType.CUSTOM,
+        name: "meridian.messages.handed_back",
+        value: { userTurnIds: ids },
+      }) as unknown as AGUIEvent;
+    const ids = (store: InMemoryTurnStore) => store.turns(THREAD)?.map((turn) => turn.id);
+
+    it("stays gone against a snapshot read before the removal, until a snapshot covers it", () => {
+      // Risk: a hand-back frame undone by an older in-flight snapshot, or a tombstone that
+      // outlives the snapshot that no longer has the turn.
+      const { store, reducer } = instance();
+      store.hydrate(THREAD, [user("m1"), user("m2")], "5000");
+      reducer.applyEvent(THREAD, handedBack("m2"), "7000");
+      expect(ids(store)).toEqual(["m1"]);
+      // Read before the removal (covers up to seq 6999): still lists m2.
+      store.hydrate(THREAD, [user("m1"), user("m2")], "6000");
+      expect(ids(store)).toEqual(["m1"]);
+      // A snapshot at or past the removal lacks it; the tombstone is spent, so a later
+      // appearance of the id is real.
+      store.hydrate(THREAD, [user("m1")], "7001");
+      store.hydrate(THREAD, [user("m1"), user("m2")], "8000");
+      expect(ids(store)).toEqual(["m1", "m2"]);
+    });
+
+    it("is a no-op when the hand-back answer removed the turns before the frame", () => {
+      // Risk: the answer and the frame each removing, or the second one failing or re-adding.
+      const { store, reducer } = instance();
+      store.hydrate(THREAD, [user("m1"), user("m2")], "5000");
+      store.removeTurns(THREAD, ["m2", "gone-already"], "7999");
+      const before = store.turns(THREAD);
+      reducer.applyEvent(THREAD, handedBack("m2"), "7000");
+      expect(store.turns(THREAD)).toBe(before);
+      // The later of two removals' seqs holds: a snapshot between them cannot revive m2.
+      store.hydrate(THREAD, [user("m1"), user("m2")], "7500");
+      expect(ids(store)).toEqual(["m1"]);
+    });
   });
 });

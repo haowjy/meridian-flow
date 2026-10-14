@@ -6,7 +6,12 @@
  * and live pending inbox frame also feeds the run controller's follow rule. Explicit activation
  * installs that owner synchronously after first-send admission succeeds.
  */
-import { EventType, EXECUTION_ENDED_EVENT, parseSeq } from "@meridian/contracts/protocol";
+import {
+  EventType,
+  EXECUTION_ENDED_EVENT,
+  MESSAGES_HANDED_BACK_EVENT,
+  parseSeq,
+} from "@meridian/contracts/protocol";
 import { isDurableBlockEvent, isWellFormedDurableBlockEvent } from "@meridian/thread-client";
 import { useQuery } from "@tanstack/react-query";
 import { useLayoutEffect, useMemo, useState } from "react";
@@ -124,6 +129,13 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
                 // when a divider reserves, settles, or stops.
                 if (event.type === EventType.CUSTOM && event.name === EXECUTION_ENDED_EVENT)
                   refresh(expected);
+                // Waiting messages that left the chat leave this transcript at the frame's seq.
+                if (
+                  event.type === EventType.CUSTOM &&
+                  event.name === MESSAGES_HANDED_BACK_EVENT &&
+                  parseSeq(seq) !== null
+                )
+                  actions.applyTurnEvent(threadId, event, seq);
                 const pending = pendingInboxFromEvent(event);
                 if (pending) {
                   // The chat's owed messages: every tab follows them, not just the sender.

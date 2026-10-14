@@ -1,6 +1,7 @@
 /** Platform-neutral client behavior shared by the app and ./mf. */
 
 export { buildMessageDoc } from "./message/build";
+export { composerDocFromHandedBack, prependMessageDoc } from "./message/hand-back";
 export {
   imageCapable,
   referenceOccurrence,
@@ -36,11 +37,15 @@ export {
 } from "./turns/reduce-turn-event";
 export { baseTurnFields } from "./turns/state-helpers";
 export {
+  applySnapshotTo,
   createAssistantTurn,
   type EnsureAssistantTurnOptions,
   ensureAssistantTurnIn,
   patchTurnStatusIn,
+  removeTurnsIn,
+  type Tombstones,
   type TurnStatusPatch,
+  type TurnsWithTombstones,
   upsertBlockIn,
 } from "./turns/turn-ops";
 export type { AssistantView, ViewItem, ViewRun } from "./view/assistant-view";

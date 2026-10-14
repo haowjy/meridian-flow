@@ -9,9 +9,12 @@ import type { Block, Turn } from "@meridian/contracts/protocol";
 import { compareSeq, parseSeq } from "@meridian/contracts/protocol";
 import type { TurnStore } from "./reduce-turn-event";
 import {
+  applySnapshotTo,
   type EnsureAssistantTurnOptions,
   ensureAssistantTurnIn,
   patchTurnStatusIn,
+  removeTurnsIn,
+  type Tombstones,
   type TurnStatusPatch,
   upsertBlockIn,
 } from "./turn-ops";
@@ -26,6 +29,7 @@ export class InMemoryTurnStore implements TurnStore {
   private readonly turnsByThread = new Map<string, Turn[]>();
   private readonly eventCounts = new Map<string, number>();
   private readonly floors = new Map<string, string>();
+  private readonly tombstonesByThread = new Map<string, Tombstones>();
 
   constructor(options: InMemoryTurnStoreOptions) {
     this.now = options.now;
@@ -41,7 +45,13 @@ export class InMemoryTurnStore implements TurnStore {
    */
   hydrate(threadId: string, turns: readonly Turn[], nextSeq: string): boolean {
     if (!this.acceptsSnapshot(threadId, nextSeq)) return false;
-    this.turnsByThread.set(threadId, [...turns]);
+    const applied = applySnapshotTo(
+      this.tombstonesByThread.get(threadId) ?? new Map(),
+      turns,
+      nextSeq,
+    );
+    this.turnsByThread.set(threadId, applied.turns);
+    this.tombstonesByThread.set(threadId, applied.tombstones);
     this.floors.set(threadId, nextSeq);
     return true;
   }
@@ -71,6 +81,19 @@ export class InMemoryTurnStore implements TurnStore {
   ): void {
     const next = patchTurnStatusIn(this.turnsByThread.get(threadId) ?? [], turnId, status, patch);
     if (next) this.turnsByThread.set(threadId, next);
+  }
+
+  removeTurns(threadId: string, ids: readonly string[], seq: string): void {
+    const next = removeTurnsIn(
+      {
+        turns: this.turnsByThread.get(threadId) ?? [],
+        tombstones: this.tombstonesByThread.get(threadId) ?? new Map(),
+      },
+      ids,
+      seq,
+    );
+    this.turnsByThread.set(threadId, next.turns);
+    this.tombstonesByThread.set(threadId, next.tombstones);
   }
 
   bumpEventsApplied(threadId: string): number {

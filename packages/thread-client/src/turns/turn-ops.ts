@@ -4,6 +4,7 @@
  * adapter and `InMemoryTurnStore`) calls these, so the semantics exist once.
  */
 import type { Block, Turn } from "@meridian/contracts/protocol";
+import { compareSeq } from "@meridian/contracts/protocol";
 import { baseTurnFields } from "./state-helpers";
 
 export type EnsureAssistantTurnOptions = {
@@ -124,6 +125,56 @@ export function patchTurnStatusIn(
     Object.entries(patch).filter(([, value]) => value !== undefined),
   ) as TurnStatusPatch;
   return turns.map((turn, index) => (index === turnIndex ? { ...turn, ...defined, status } : turn));
+}
+
+/** Turns that left the conversation, by id, with the stream seq of the frame that removed them. */
+export type Tombstones = ReadonlyMap<string, string>;
+
+/**
+ * A thread's turns with the tombstones of turns removed from them. A snapshot read before a
+ * removal still lists the turn, so removal alone is not enough: the tombstone keeps it gone
+ * until a snapshot that covers the removal arrives.
+ */
+export type TurnsWithTombstones = { turns: Turn[]; tombstones: Tombstones };
+
+/**
+ * Removes the named turns (a `meridian.messages.handed_back` frame, or the same fact in a
+ * hand-back answer) and keeps a tombstone for each. Applying it again changes nothing, so the
+ * frame and the HTTP answer may both call it. The later seq of two removals of one id wins.
+ */
+export function removeTurnsIn(
+  state: TurnsWithTombstones,
+  ids: readonly string[],
+  seq: string,
+): TurnsWithTombstones {
+  const drop = new Set(ids);
+  const turns = state.turns.filter((turn) => !drop.has(turn.id));
+  let tombstones: Map<string, string> | null = null;
+  for (const id of drop) {
+    const held = state.tombstones.get(id);
+    if (held !== undefined && compareSeq(held, seq) >= 0) continue;
+    tombstones ??= new Map(state.tombstones);
+    tombstones.set(id, seq);
+  }
+  if (turns.length === state.turns.length && !tombstones) return state;
+  return { turns, tombstones: tombstones ?? state.tombstones };
+}
+
+/**
+ * A server snapshot's turns, less those a removal the snapshot does not cover has taken out;
+ * tombstones the snapshot covers (`seq < nextSeq`) go, because its turn list lacks them from
+ * then on.
+ */
+export function applySnapshotTo(
+  tombstones: Tombstones,
+  serverTurns: readonly Turn[],
+  nextSeq: string,
+): { turns: Turn[]; tombstones: Tombstones } {
+  const live = new Map([...tombstones].filter(([, seq]) => compareSeq(seq, nextSeq) >= 0));
+  return {
+    turns: live.size ? serverTurns.filter((turn) => !live.has(turn.id)) : [...serverTurns],
+    tombstones: live.size === tombstones.size ? tombstones : live,
+  };
 }
 
 function sameBlock(left: Block, right: Block): boolean {
