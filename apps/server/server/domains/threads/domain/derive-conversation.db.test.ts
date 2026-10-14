@@ -118,6 +118,8 @@ else
         agentCatalog,
         agentRevisions: revisions,
         eventWriter,
+        effectiveWriteMode: async (id: string) =>
+          (await repos.threads.findById(id as never))?.aiWriteMode ?? "direct",
       };
       const firstTurn = await repos.turns.create({
         threadId: source.id,
