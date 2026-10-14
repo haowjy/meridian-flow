@@ -3,7 +3,13 @@
  * the accepted snapshot, socket frames, the journal's switches (stamped once answered),
  * and the writer's Withdraw. `useSwitchView` dispatches into it, and the display table
  * test drives it, so the table exercises the production ingestion path.
+ *
+ * It also classifies announcement eligibility where a record is taken, because only the
+ * carrier says whether a queued switch is news: a live inbox frame or an answer, taken
+ * after the first record, announces each queued switch once. The first record, a snapshot
+ * (however much newer) and the frames replayed after the first record stay silent.
  */
+import type { ControlBody } from "@meridian/contracts/threads";
 import type { JournalSwitch } from "@/client/chat-submissions/owner";
 import {
   addIntent,
@@ -14,6 +20,7 @@ import {
   receiveRecord,
 } from "@/client/run-state/run-state-view";
 import {
+  isWriteModeControl,
   type Received,
   receiveFrame,
   recordFromAnswer,
@@ -24,8 +31,24 @@ import {
   seedFrames,
 } from "./switch-record";
 
-export type SwitchState = Received;
-export const INITIAL_SWITCH_STATE: SwitchState = { view: EMPTY_VIEW, early: [] };
+/** A queued write-mode switch the writer should hear about; `n` counts them, from 1. */
+export type QueuedNews = {
+  n: number;
+  id: string;
+  control: Extract<ControlBody, { kind: "write_mode" }>;
+};
+
+export type SwitchState = Received & {
+  /** The queued switches already seen, from any carrier. */
+  heard: ReadonlySet<string>;
+  news: readonly QueuedNews[];
+};
+export const INITIAL_SWITCH_STATE: SwitchState = {
+  view: EMPTY_VIEW,
+  early: [],
+  heard: new Set(),
+  news: [],
+};
 
 export type SwitchAction =
   | { type: "snapshot"; snapshot: SnapshotFacts }
@@ -36,8 +59,24 @@ export type SwitchAction =
   | { type: "dropWithdraw"; id: string };
 
 export function reduceSwitch(state: SwitchState, action: SwitchAction): SwitchState {
-  if (action.type === "frame") return receiveFrame(state, action.frame);
-  return seedFrames(reduceView(state.view, action), state.early);
+  const received =
+    action.type === "frame"
+      ? receiveFrame(state, action.frame)
+      : seedFrames(reduceView(state.view, action), state.early);
+  const record = received.view.record;
+  if (!record || record === state.view.record) return { ...state, ...received };
+  const live =
+    state.view.record !== null &&
+    (action.type === "journal" || (action.type === "frame" && action.frame.kind === "inbox"));
+  const heard = new Set(state.heard);
+  const news = [...state.news];
+  for (const item of record.items) {
+    if (!isWriteModeControl(item) || item.control?.kind !== "write_mode") continue;
+    if (heard.has(item.id)) continue;
+    heard.add(item.id);
+    if (live) news.push({ n: news.length + 1, id: item.id, control: item.control });
+  }
+  return { ...received, heard, news };
 }
 
 function reduceView(

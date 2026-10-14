@@ -144,6 +144,8 @@ const SCENARIOS: {
   steps: [Event, mode: Mode, rows: string[]][];
   /** The intents (`kind:id`) the view still holds after the last step, where lifecycle is the risk. */
   retained?: string[];
+  /** The queued switches announced as news, in order. */
+  news?: string[];
 }[] = [
   {
     name: "R1: a delayed cancel-out answer says nothing about a switch queued after it",
@@ -356,6 +358,16 @@ const SCENARIOS: {
     ],
   },
   {
+    name: "the first record and a newer snapshot are not news; a live inbox frame is, once",
+    steps: [
+      [snapshot(1, "direct", ["s0", "draft"]), "draft", ["s0:queued"]],
+      [snapshot(2, "direct", ["s1", "draft"]), "draft", ["s1:queued"]],
+      [inbox(at(3), ["s3", "draft"]), "draft", ["s3:queued"]],
+      [inbox(at(3), ["s3", "draft"]), "draft", ["s3:queued"]],
+    ],
+    news: ["s3"],
+  },
+  {
     name: "a reload with a queued switch shows it queued, and its answer from the journal stamp retires nothing twice",
     steps: [
       [snapshot(4, "direct", ["s1", "draft"]), "draft", ["s1:queued"]],
@@ -377,6 +389,11 @@ it("derives the switch rows and toolbar mode from server facts at one seq and un
         label,
       ).toEqual(rows);
     });
+    if (scenario.news)
+      expect(
+        harness.state.news.map((entry) => entry.id),
+        `${scenario.name} (news)`,
+      ).toEqual(scenario.news);
     if (scenario.retained)
       expect(
         harness.state.view.intents.map((intent) => `${intent.kind}:${intent.id}`),
