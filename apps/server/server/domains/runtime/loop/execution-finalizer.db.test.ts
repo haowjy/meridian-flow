@@ -89,10 +89,12 @@ else
         expect((await repos.turns.findById(handle.executionTurnId))?.status).toBe("cancelled");
         expect((await inbox.selectPending(ids.caller)).map((row) => row.id)).toEqual([later.id]);
         expect(await authority.holder(ids.caller)).toBeNull();
-        const next = await orchestrator.prepare({ threadId: ids.caller, drain: true });
-        expect(next.userTurnId).toBe(later.id);
-        expect(next.executionTurnId).not.toBe(handle.executionTurnId);
-        await next.execute();
+        // The release's wake starts the later request in a new turn.
+        await processDetachedWork.drain();
+        expect(await inbox.selectPending(ids.caller)).toEqual([]);
+        const tail = (await repos.turns.listByThread(ids.caller)).at(-1);
+        expect(tail?.id).not.toBe(handle.executionTurnId);
+        expect(tail?.role).toBe("assistant");
       }
     });
 
@@ -105,7 +107,7 @@ else
       const { persistWriterEnqueue } = await import("./writer-enqueue.js");
       const { createRuntimeHarness } = await import("./__tests__/runtime-harness.js");
       const { readThreadReport } = await import("../spawn/read-thread-report.js");
-      const { readPendingInbox } = await import("./pending-inbox.js");
+      const { readRunStateAtHead } = await import("../adapters/drizzle-run-state.js");
       const { createInertGateway } = await import("./__tests__/test-gateway.js");
       const inbox = createLockedDrizzleInbox(db);
       const authority = createDrizzleRunClaim(db);
@@ -213,7 +215,7 @@ else
 
                   repos,
                 }),
-                pending: await readPendingInbox(inbox, ids.child),
+                pending: (await readRunStateAtHead(db, ids.child)).items,
               };
             }
             yield {
@@ -325,9 +327,7 @@ else
             run: run.executionId,
             report: { outcome: null, terminalTurnId: null },
             lookup: { status: "unavailable" },
-            pending: {
-              items: [{ deliveryState: "awaiting_run" }, { deliveryState: "awaiting_run" }],
-            },
+            pending: [{ deliveryState: "awaiting_run" }, { deliveryState: "awaiting_run" }],
           });
           const text = JSON.stringify(requests[1]?.messages);
           expect(text.indexOf("before steer")).toBeLessThan(text.indexOf("child notification"));

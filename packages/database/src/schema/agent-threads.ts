@@ -774,8 +774,6 @@ export const userTurnAdmissions = pgTable(
     state: text("state").notNull(),
     rejectionCode: text("rejection_code"),
     userTurnId: uuid("user_turn_id").$type<TurnId>(),
-    /** The live reply the admitted message was steered into; a Stop hint only. */
-    steersTurnId: uuid("steers_turn_id").$type<TurnId>(),
     /** Stream version of the run-state record the admission's transaction published; null for rows from before it existed. */
     runStateVersion: text("run_state_version"),
     resumeAfterSeq: text("resume_after_seq"),

@@ -7,9 +7,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type {
   ControlBody,
-  PendingInboxItem,
   RunState,
-  ThreadPendingInbox,
   Turn,
   WithdrawThreadControlResponse,
 } from "@meridian/contracts/threads";
@@ -48,14 +46,11 @@ export function createThreadControls(deps: {
   enqueueSettled(draft: MessageDraft, cancelledIds: readonly string[]): Promise<void>;
   selectPending(threadId: ThreadId): Promise<InboxMessage[]>;
   threadWriteMode(threadId: ThreadId): Promise<AiWriteMode>;
-  /** The thread's journal head in the socket's cursor space: the last frame seq it holds. */
-  headSeq(threadId: ThreadId): Promise<bigint>;
   /** Applies due switches under the run claim; false when the claim was busy. */
   applyDueSwitches(threadId: ThreadId): Promise<boolean>;
   /** Whether a reply holds the chat: its release wake applies the switch. */
   replyHolds(threadId: ThreadId): Promise<boolean>;
   findControlTurn(threadId: ThreadId, controlId: string): Promise<Turn | null>;
-  pending(threadId: ThreadId): Promise<ThreadPendingInbox>;
   /** The run-state record an answer carries, read under the thread lock (publishes first if needed). */
   answerRunState(threadId: ThreadId): Promise<RunState>;
   acknowledge(threadId: ThreadId, ids: readonly string[]): Promise<void>;
@@ -117,17 +112,12 @@ export function createThreadControls(deps: {
         return { created: true, apply: true };
       });
       if (outcome.apply) await applyIdleSwitch(input.threadId);
-      // One read under the lock: every switch transition commits under it, so
-      // the mode and queue read here are the server's switch state as of `seq`,
-      // and the answer never pairs a pre-apply turn read with a post-apply queue.
+      // One read under the lock: every switch transition commits under it, so the control's turn
+      // and the record read here are the server's state at the record's version.
       const response = await deps.withThreadLock(input.threadId, async () => {
         const turn = await deps.findControlTurn(input.threadId, input.id);
-        const pending = (await deps.pending(input.threadId)).items.find(isQueuedSwitch) ?? null;
-        const mode = await deps.threadWriteMode(input.threadId);
-        // Last, so it is at or past the frame of every transition read above.
-        const seq = (await deps.headSeq(input.threadId)).toString();
         const runState = await deps.answerRunState(input.threadId);
-        return { id: input.id, pending, turnId: turn?.id ?? null, seq, mode, runState };
+        return { id: input.id, turnId: turn?.id ?? null, runState };
       });
       return { created: outcome.created, response };
     },
@@ -139,12 +129,8 @@ export function createThreadControls(deps: {
         let outcome: WithdrawThreadControlResponse["outcome"] = "withdrawn";
         if (await deps.findControlTurn(threadId, controlId)) outcome = "already_started";
         else if (!row.deliveredAt) await deps.acknowledge(threadId, [controlId]);
-        // The ack's frame is appended inline above, so the queue and mode read here are the
-        // switch state after the withdrawal; `seq` is read last, at or past that frame.
-        const pending = (await deps.pending(threadId)).items.find(isQueuedSwitch) ?? null;
-        const mode = await deps.threadWriteMode(threadId);
-        const runState = await deps.answerRunState(threadId);
-        return { outcome, pending, mode, seq: (await deps.headSeq(threadId)).toString(), runState };
+        // The record read here includes the withdrawal's own transaction.
+        return { outcome, runState: await deps.answerRunState(threadId) };
       }),
   };
 }
@@ -153,8 +139,4 @@ function sameControl(left: ControlBody, right: ControlBody): boolean {
   if (left.kind === "compact")
     return right.kind === "compact" && left.instructions === right.instructions;
   return right.kind === "write_mode" && left.mode === right.mode;
-}
-
-function isQueuedSwitch(item: PendingInboxItem): boolean {
-  return item.control?.kind === "write_mode";
 }

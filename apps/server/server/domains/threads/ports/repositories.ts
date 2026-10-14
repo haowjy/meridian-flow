@@ -41,7 +41,6 @@ import type {
   ThreadLeaseState,
   ThreadLifecycleStatus,
   ThreadListItem,
-  ThreadPendingInbox,
   ThreadStatus,
   Turn,
   TurnDelivery,
@@ -353,23 +352,6 @@ export interface ThreadStatusReader {
    * liveness in SQL. Only live leases appear in the map.
    */
   readMany(threadIds: readonly ThreadId[]): Promise<Map<ThreadId, ThreadLeaseState>>;
-  /**
-   * The open execution's id: the lease row's, regardless of heartbeat expiry,
-   * when some turn carries it as `execution_id`; else null. An empty lease or
-   * one left by code before run identity is never open. Read it inside the
-   * snapshot transaction so it is coherent with the snapshot's turns.
-   */
-  readOpenExecutionId(threadId: ThreadId): Promise<string | null>;
-}
-
-/**
- * Read seam for a thread's undelivered inbox rows as the writer-facing
- * `ThreadPendingInbox`. The runtime composition supplies a projection over the
- * raw `InboxReader`; the threads domain depends on this narrow port, not the runtime
- * domain, so pending stays a pure read.
- */
-export interface ThreadPendingInboxReader {
-  readPending(threadId: ThreadId): Promise<ThreadPendingInbox>;
 }
 
 /**

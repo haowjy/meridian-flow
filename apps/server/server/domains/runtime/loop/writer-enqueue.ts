@@ -22,8 +22,6 @@ import { writerUserTurnBlocks } from "./user-turn-blocks.js";
 
 export interface WriterEnqueueSettlement {
   userTurnId: TurnId;
-  /** The live reply this message joins (a steer), or null when a new reply answers it. */
-  joinedReplyId: TurnId | null;
   /** Stream version of the run-state record this transaction published; null where none is. */
   runStateVersion: string | null;
   resumeAfterSeq: string;
@@ -152,7 +150,6 @@ export async function persistWriterEnqueue<T>(input: {
               const runStateVersion = await producer.publishRunState();
               settled = await input.settle({
                 userTurnId,
-                joinedReplyId,
                 runStateVersion,
                 resumeAfterSeq,
                 snapshotFloorNextSeq: ((await input.hub.headSeq(input.threadId)) + 1n).toString(),

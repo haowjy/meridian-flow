@@ -277,7 +277,7 @@ export function toThreadSnapshotApplyOptions(snapshot: ThreadSnapshotResponse) {
   return {
     lifecycle: {
       actionRequired: snapshot.actionRequired,
-      runningTurnId: snapshot.liveState.runningTurnId,
+      runningTurnId: snapshot.liveState.runState.execution?.currentTurnId ?? null,
     },
     nextSeq: snapshot.nextSeq,
   };

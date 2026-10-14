@@ -15,7 +15,6 @@ import type {
   JsonValue,
   PriceSource,
   ThreadActivity,
-  ThreadPendingInbox,
   ThreadStatus,
   Turn,
 } from "./index.js";
@@ -184,13 +183,6 @@ export type OrchestratorEvent =
       activity: ThreadActivity;
     }
   | {
-      type: "inbox.changed";
-      /** Thread whose pending inbox changed. */
-      threadId: string;
-      /** Full recomputed pending inbox, so the client replaces the tray state wholesale. */
-      pending: ThreadPendingInbox;
-    }
-  | {
       /** Waiting writer messages left the chat; their turns stay in the database but no conversation read returns them. */
       type: "messages.handed_back";
       userTurnIds: string[];
@@ -235,24 +227,6 @@ export type OrchestratorEvent =
       originTurnId: string;
     }
   | { type: "turn.completed"; turn: Turn }
-  | {
-      /**
-       * Message rows this ack actually delivered (`delivered_at` was null). The
-       * execution id is persisted here because the projector cannot read turns.
-       */
-      type: "messages.delivered";
-      /** The acknowledging turn; null when none was reserved (a child run aborted before it). */
-      byTurnId: string | null;
-      /** The acknowledging turn's `Turn.position`; null with `byTurnId`. */
-      byTurnPosition: number | null;
-      executionId: string | null;
-      userTurnIds: string[];
-    }
-  | {
-      /** Written once, after every turn the execution reserved is terminal. */
-      type: "execution.ended";
-      executionId: string;
-    }
   | { type: "turn.cancelled"; turn: Turn }
   | {
       type: "turn.change_trail_updated";

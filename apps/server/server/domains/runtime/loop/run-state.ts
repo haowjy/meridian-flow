@@ -2,10 +2,40 @@
  * The run-state record as a pure function of rows. The Drizzle reader gathers the rows on the ambient
  * connection and the in-memory adapter shares this projection, so the record never depends on the clock.
  */
-import type { RunState } from "@meridian/contracts/threads";
+import type { PendingInboxItem, RunState } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
-import { classifyDelivery, pendingInboxItem } from "./pending-inbox.js";
+import { inboxMessageText } from "./inbox-context.js";
 import type { InboxMessage } from "./ports.js";
+
+/** The lease's receipt as the record classifies items by: the bound turn and the messages it adopted. */
+export type PendingInboxRun = { turnId: string | null; messageIds: readonly string[] } | null;
+
+/** `waiting` once a bound turn exists that has not adopted the row; otherwise `awaiting_run`. */
+export function classifyDelivery(
+  messageId: string,
+  run: PendingInboxRun,
+): PendingInboxItem["deliveryState"] {
+  if (run === null || run.turnId === null) return "awaiting_run";
+  return run.messageIds.includes(messageId) ? "awaiting_run" : "waiting";
+}
+
+export function pendingInboxItem(
+  message: InboxMessage,
+  deliveryState: PendingInboxItem["deliveryState"],
+): PendingInboxItem {
+  return {
+    id: message.id,
+    seq: message.seq,
+    intent: message.intent,
+    ...(message.body.kind === "compact" || message.body.kind === "write_mode"
+      ? { control: message.body }
+      : {}),
+    provenance: message.provenance,
+    deliveryState,
+    summary: inboxMessageText(message),
+    enqueuedAt: message.enqueuedAt,
+  };
+}
 
 /** A record before it is stamped with a version. */
 export type RunStateBody = Omit<RunState, "version">;

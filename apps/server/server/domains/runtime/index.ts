@@ -87,10 +87,6 @@ export {
 } from "./loop/interrupts.js";
 export { createOrchestrator } from "./loop/orchestrator.js";
 export { finalizeOrphanedTurns } from "./loop/orphaned-placeholder.js";
-export {
-  projectPendingInbox,
-  readPendingInbox,
-} from "./loop/pending-inbox.js";
 export * from "./loop/permissions/index.js";
 export type {
   ContextPart,

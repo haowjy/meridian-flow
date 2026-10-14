@@ -338,13 +338,12 @@ export class ThreadRunController {
    */
   private attachAcceptedRun(
     threadId: string,
-    result: { userTurnId: string; steersTurnId: string | null; runStateVersion: string | null },
+    result: { userTurnId: string; runStateVersion: string | null },
   ): void {
     if (this.disposed || this.accountSignal.aborted) return;
     // Only a fresh send onto an idle chat proves an earlier non-terminal assistant row is
     // abandoned; a chat that is working still owns its rows.
-    if (result.steersTurnId === null && !isBusy(this.actions.runState(threadId)))
-      this.actions.pruneStaleAssistantTurns(threadId);
+    if (!isBusy(this.actions.runState(threadId))) this.actions.pruneStaleAssistantTurns(threadId);
     if (result.runStateVersion !== null)
       this.actions.dispatchRunState(threadId, {
         type: "intent",

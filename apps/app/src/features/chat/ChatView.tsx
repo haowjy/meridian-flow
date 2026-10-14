@@ -16,7 +16,7 @@
  * editor bar share one controller so preview selection cannot drift.
  */
 import { t } from "@lingui/core/macro";
-import type { SnapshotLiveState, Thread, Turn, Work } from "@meridian/contracts/protocol";
+import type { Thread, ThreadLiveState, Turn, Work } from "@meridian/contracts/protocol";
 import {
   answeredControlIds,
   isHandoffSeed,
@@ -114,7 +114,7 @@ export type ChatViewProps = {
   /** The rendered snapshot's write mode: the ledger's base, consistent with the transcript it reads. */
   snapshotWriteMode?: AiWriteMode;
   activeWork?: Work | null;
-  snapshotLiveState?: SnapshotLiveState | null;
+  snapshotLiveState?: ThreadLiveState | null;
   snapshotNextSeq?: string | null;
   snapshotThreadUsage?: {
     inputTokens: number;

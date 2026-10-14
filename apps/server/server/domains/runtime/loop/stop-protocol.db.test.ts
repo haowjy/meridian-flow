@@ -206,10 +206,16 @@ else
       );
       await processDetachedWork.drain();
     }
-    async function endsOf(rig: Rig, executionId: string | null) {
-      return (await journalTypes(rig, "execution.ended")).filter(
-        (event) => (event.payload as { executionId: string }).executionId === executionId,
-      ).length;
+    /** Whether an execution that reserved a turn has ended: its lease row is gone. */
+    async function ended(rig: Rig, executionId: string | null) {
+      if (!executionId) return false;
+      const carried = (await rig.repos.turns.listByExecution(rig.threadId as never, executionId))
+        .length;
+      const rows = await db
+        .select({ id: schema.threadRunLeases.executionId })
+        .from(schema.threadRunLeases)
+        .where(eq(schema.threadRunLeases.executionId, executionId));
+      return carried > 0 && rows.length === 0;
     }
 
     it("row 3: a message waiting after a yield and an applied switch is handed back, and no reply starts", async () => {
@@ -463,7 +469,7 @@ else
       await rig.orchestrator.startDrain(rig.threadId as never);
       await processDetachedWork.drain();
       expect(rig.gateway.requests).toHaveLength(0);
-      expect(await endsOf(rig, run.executionId)).toBe(1);
+      expect(await ended(rig, run.executionId)).toBe(true);
     });
 
     it("row 16: a manual compaction's waiting message is handed back and the compact control is untouched", async () => {
@@ -529,7 +535,7 @@ else
       expect((await rowOf(rig, m1)).by).toBe(dead.turn.id);
       expect((await rowOf(rig, m2)).handedBackBy).not.toBeNull();
       expect(await leaseRow(rig)).toBeNull();
-      expect(await endsOf(rig, dead.executionId)).toBe(1);
+      expect(await ended(rig, dead.executionId)).toBe(true);
     });
 
     it("row 31: Stop then a crash in a compaction leaves the message out of the chat for the next claim", async () => {
@@ -846,7 +852,7 @@ else
       const replay = await handBack(rig, request, ids([m2]));
       expect(replay).toMatchObject({ handedBack: [], answered: [m2], gone: [] });
       expect((await rowOf(rig, m2)).handedBackBy).toBeNull();
-      expect(await endsOf(rig, dead.executionId)).toBe(1);
+      expect(await ended(rig, dead.executionId)).toBe(true);
       await rig.orchestrator.startDrain(rig.threadId as never);
       await processDetachedWork.drain();
       expect((await rowOf(rig, m2)).by).not.toBeNull();

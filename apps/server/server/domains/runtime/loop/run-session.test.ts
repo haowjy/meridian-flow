@@ -201,7 +201,7 @@ describe("RunSession", () => {
     expect(start).not.toHaveBeenCalled();
   });
 
-  it("abandons, without an end, an execution whose terminal fallback failed; the next start settles it", async () => {
+  it("abandons, leaving its row open, an execution whose terminal fallback failed; the next start settles it", async () => {
     const f = await fixture();
     const run = await f.prepare();
     const listBlocks = f.deps.repos.blocks.listByThread;
@@ -220,20 +220,16 @@ describe("RunSession", () => {
     expect(f.runtime.getRunningTurn(f.thread.id)).toBeNull();
     // Unlocked and asleep, but the execution is still open: its turn never went terminal.
     expect(await f.deps.runClaim.holder(f.thread.id)).toBeNull();
-    const ended = async () =>
-      (await f.journal.listByType(f.thread.id, "execution.ended")).map((entry) => entry.payload);
-    expect(await ended()).toEqual([]);
     const abandoned = await f.deps.runClaim.readOpenExecutionId(f.thread.id);
     expect(abandoned).toEqual(expect.any(String));
 
     f.deps.repos.blocks.listByThread = listBlocks;
     f.deps.repos.transaction = transaction;
+    // The release's wake is detached work; let it settle so it does not race the start below for the claim.
+    await f.backgroundTasks.drain();
     await (await f.prepare()).execute();
     expect(await f.repos.turns.findById(run.executionTurnId)).toMatchObject({ status: "error" });
-    expect(await ended()).toEqual([
-      { type: "execution.ended", executionId: abandoned },
-      expect.objectContaining({ type: "execution.ended" }),
-    ]);
+    expect(await f.deps.runClaim.readOpenExecutionId(f.thread.id)).toBeNull();
   });
 
   it("terminalizes admitted setup when post-setup cursor capture fails", async () => {

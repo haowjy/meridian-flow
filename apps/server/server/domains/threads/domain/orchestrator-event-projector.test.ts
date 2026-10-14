@@ -2,11 +2,7 @@
  * Projector wire contracts: the client-facing custom event names and payloads
  * for durable block lifecycle facts. Pins the names the app reducer reads.
  */
-import {
-  EventType,
-  EXECUTION_ENDED_EVENT,
-  MESSAGES_DELIVERED_EVENT,
-} from "@meridian/contracts/protocol";
+import { EventType } from "@meridian/contracts/protocol";
 import { SIMPLE_TEXT_TURN_AGUI, SIMPLE_TEXT_TURN_ORCHESTRATOR } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import {
@@ -91,11 +87,11 @@ describe("historical card replacement", () => {
 });
 
 describe("run identity", () => {
-  it("projects the golden send: start, delivery, finish, execution end", () => {
+  it("projects the golden send: start, text, finish", () => {
     expect(projectOrchestratorEvents(SIMPLE_TEXT_TURN_ORCHESTRATOR)).toEqual(SIMPLE_TEXT_TURN_AGUI);
   });
 
-  it("names each split reply's execution and reservation, and ends the execution once", () => {
+  it("names each split reply's execution and reservation", () => {
     const projector = createOrchestratorEventProjector();
     const turn = (id: string, position: number, reservedForUserTurnIds: string[]) =>
       ({
@@ -111,14 +107,6 @@ describe("run identity", () => {
     projector.project({ type: "turn.created", turn: turn("a", 2, ["m1"]) });
     const finish = projector.project({ type: "turn.completed", turn: turn("a", 2, ["m1"]) });
     const start = projector.project({ type: "turn.created", turn: turn("b", 4, ["m2"]) });
-    const delivered = projector.project({
-      type: "messages.delivered",
-      byTurnId: "b",
-      byTurnPosition: 4,
-      executionId: "e1",
-      userTurnIds: ["m2"],
-    });
-    const ended = projector.project({ type: "execution.ended", executionId: "e1" });
 
     expect(finish.find((event) => event.type === EventType.RUN_FINISHED)).toEqual({
       type: EventType.RUN_FINISHED,
@@ -138,16 +126,6 @@ describe("run identity", () => {
         },
       },
     ]);
-    expect(delivered).toEqual([
-      {
-        type: EventType.CUSTOM,
-        name: MESSAGES_DELIVERED_EVENT,
-        value: { byTurnId: "b", byTurnPosition: 4, executionId: "e1", userTurnIds: ["m2"] },
-      },
-    ]);
-    expect(ended).toEqual([
-      { type: EventType.CUSTOM, name: EXECUTION_ENDED_EVENT, value: { executionId: "e1" } },
-    ]);
   });
 
   it("reads a reply journaled before run identity as unknown", () => {
@@ -165,12 +143,5 @@ describe("run identity", () => {
     expect(start).toMatchObject({
       rawEvent: { writeMode: null, executionId: null, reservedForUserTurnIds: [], position: null },
     });
-    const [delivered] = projector.project({
-      type: "messages.delivered",
-      byTurnId: "old",
-      executionId: null,
-      userTurnIds: ["m1"],
-    } as never);
-    expect(delivered).toMatchObject({ value: { byTurnId: "old", byTurnPosition: null } });
   });
 });

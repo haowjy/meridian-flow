@@ -13,7 +13,6 @@ import { orderTurnsByPosition } from "./order-turns.js";
 import type {
   BlockRepository,
   ModelResponseRepository,
-  ThreadPendingInboxReader,
   ThreadRepositories,
   ThreadRepository,
   ThreadRunStateReader,
@@ -64,7 +63,7 @@ function groupBy<T, K>(items: T[], keyFor: (item: T) => K): Map<K, T[]> {
 export async function buildThreadSnapshot(
   repos: ThreadSnapshotRepositories,
   hub: Pick<ThreadEventHub, "headSeq" | "readModelProjectionWatermark">,
-  statusReader: ThreadStatusReader & ThreadPendingInboxReader & ThreadRunStateReader,
+  statusReader: ThreadStatusReader & ThreadRunStateReader,
   threadId: ThreadId,
 ): Promise<ThreadSnapshotResponse> {
   return repos.readSnapshot(async () => {
@@ -87,7 +86,6 @@ export async function buildThreadSnapshot(
         : null;
     }
 
-    const runningTurnId = await statusReader.readRunningTurnId(threadId);
     const headSeq = await hub.headSeq(threadId);
 
     // The graph keeps every turn (the leaf, `prevTurnId`); the snapshot shows the conversation.
@@ -95,8 +93,6 @@ export async function buildThreadSnapshot(
     const handedBack = await repos.turns.listHandedBackIds(threadId);
     const turns = graph.filter((turn) => !handedBack.has(turn.id));
     const deliveries = await repos.turns.listMessageDeliveries(threadId);
-    // Same transaction as the turns, so an execution here that is not open has ended.
-    const openExecutionId = await statusReader.readOpenExecutionId(threadId);
     const blocksByTurn = groupBy(
       (await repos.blocks.listByThread(threadId))
         .filter((block) => !handedBack.has(block.turnId))
@@ -127,7 +123,6 @@ export async function buildThreadSnapshot(
       { threads: repos.threads, statusReader, executionReports: repos.executionReports },
       threadId,
     );
-    const pending = await statusReader.readPending(threadId);
     const runState = await statusReader.readRunState(threadId);
 
     return {
@@ -139,16 +134,13 @@ export async function buildThreadSnapshot(
       liveState: {
         threadId,
         status: await statusReader.read(threadId),
-        runningTurnId,
         activity,
-        pending,
         runState,
         // During an active run,
         // stream.delta rows can sit between that head and the last read-model
         // projection, so resume from the projection cursor and replay only the
         // unmaterialized delta window the snapshot could not include.
         resumeAfterSeq,
-        openExecutionId,
       },
       actionRequired: snapshotActionRequired(thread.activeLeafTurnId, graph, handedBack),
       nextSeq,

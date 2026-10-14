@@ -85,7 +85,6 @@ export const threadTailCommand: CommandSpec = {
           return (
             untilIdle &&
             (event.type === "turn.finished" ||
-              event.type === "execution.ended" ||
               event.type === "turn.failed" ||
               (event.type === "event" &&
                 ["meridian.thread.status", RUN_STATE_EVENT].includes(event.name)))

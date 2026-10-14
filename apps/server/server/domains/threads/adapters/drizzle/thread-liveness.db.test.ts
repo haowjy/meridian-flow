@@ -99,7 +99,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         readRunningTurnId: async () => null,
         readOpenExecutionId: async () => null,
         readMany: async () => new Map(),
-        readPending: async () => ({ items: [] }),
         readRunState: async () => EMPTY_RUN_STATE,
       };
       const snapshot = await buildThreadSnapshot(
@@ -138,7 +137,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(fresh.liveState.resumeAfterSeq).toBe("2999");
     });
 
-    it("reads the running turn from the lease in both the list and live state", async () => {
+    it("reads the running turn from the lease in the list and the status from it in live state", async () => {
       const authority = createDrizzleRunClaim(db);
       const repo = createDrizzleThreadRepository(db, {
         statusReader: authority,
@@ -150,7 +149,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         statusReader: authority,
         threads: repo,
         executionReports: repos.executionReports,
-        readPending: async () => ({ items: [] }),
         readRunState: async () => EMPTY_RUN_STATE,
       });
 
@@ -166,7 +164,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const listed = (await repo.listByProject(PROJECT_ID)).find((row) => row.id === THREAD_ID);
       const live = await runtime.liveState(THREAD_ID, USER_ID);
       expect(listed?.runningTurnId).toBe(TURN_ID);
-      expect(live.runningTurnId).toBe(TURN_ID);
       expect(live.status).toEqual({ kind: "awake", phase: "generating", cancelRequested: false });
 
       await releaseLeaseUnderLock(db, authority, lease);
@@ -176,7 +173,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       const liveAfterRelease = await runtime.liveState(THREAD_ID, USER_ID);
       expect(afterRelease?.runningTurnId).toBeNull();
-      expect(liveAfterRelease.runningTurnId).toBeNull();
       expect(liveAfterRelease.status).toEqual({ kind: "asleep" });
     });
   });

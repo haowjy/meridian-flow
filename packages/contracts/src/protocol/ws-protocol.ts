@@ -167,12 +167,6 @@ const pendingInboxItemSchema: z.ZodType<import("../threads/index.js").PendingInb
   enqueuedAt: z.string().min(1),
 });
 
-const threadPendingInboxSchema: z.ZodType<import("../threads/index.js").ThreadPendingInbox> =
-  z.object({
-    blocked: z.object({ reason: z.literal("credits_exhausted") }).optional(),
-    items: z.array(pendingInboxItemSchema),
-  });
-
 const runStateSchema: z.ZodType<RunState> = z.object({
   version: wsEventSeqSchema,
   items: z.array(pendingInboxItemSchema),
@@ -193,9 +187,7 @@ export function readRunState(value: unknown): RunState | null {
 const threadLiveStateSchema: z.ZodType<ThreadLiveState> = z.object({
   threadId: z.string().min(1),
   status: threadStatusSchema,
-  runningTurnId: z.string().min(1).nullable(),
   activity: threadActivitySchema,
-  pending: threadPendingInboxSchema,
   runState: runStateSchema,
   resumeAfterSeq: wsEventSeqSchema,
 });

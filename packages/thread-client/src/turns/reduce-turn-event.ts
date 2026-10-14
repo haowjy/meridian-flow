@@ -7,9 +7,7 @@ import type { AGUIEvent, Block, BlockType, JsonValue, Turn } from "@meridian/con
 import {
   blockContentRecord,
   EventType,
-  EXECUTION_ENDED_EVENT,
   interruptIdForBlock,
-  MESSAGES_DELIVERED_EVENT,
   MESSAGES_HANDED_BACK_EVENT,
   RUN_STATE_EVENT,
   readMessagesHandedBack,
@@ -1095,20 +1093,16 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
           return;
         }
         // Durable custom projections are consumed by live listeners — the
-        // useThreadDurableProjections trail/Work-binding listener and the
-        // pending-inbox projection (usePendingInbox) — so they are not transcript
+        // useThreadDurableProjections trail/Work-binding listener — so they are not transcript
         // content. Falling through here rendered each one as an "Unknown
         // component" note under the digest for the duration of the turn.
         if (
           event.name === "meridian.turn_change_trail.updated" ||
           event.name === "meridian.turn_change_trail.settled" ||
           event.name === WORK_CONTEXT_PROJECTION_EVENT ||
-          event.name === "meridian.inbox.changed" ||
-          // Run-state facts (delivery, execution end, write-mode switch, the run-state record)
-          // are read by their owners: the run controller and the switch view. The divider
-          // row comes from the durable system turn, never from this frame.
-          event.name === MESSAGES_DELIVERED_EVENT ||
-          event.name === EXECUTION_ENDED_EVENT ||
+          // Run-state facts (the write-mode switch, the run-state record) are the chat's
+          // run-state slice's. The divider row comes from the durable system turn, never
+          // from this frame.
           event.name === WRITE_MODE_SWITCHED_EVENT ||
           event.name === RUN_STATE_EVENT
         ) {

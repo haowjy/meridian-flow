@@ -13,11 +13,7 @@ import {
   type AGUIEvent,
   EventSchemas,
   EventType,
-  EXECUTION_ENDED_EVENT,
-  type ExecutionEndedValue,
-  MESSAGES_DELIVERED_EVENT,
   MESSAGES_HANDED_BACK_EVENT,
-  type MessagesDeliveredValue,
   type MessagesHandedBackValue,
   RUN_STATE_EVENT,
   type RunStartedMeta,
@@ -494,17 +490,6 @@ export function createOrchestratorEventProjector() {
           }),
         ];
 
-      // Same full-replace contract as activity: the producer read the current
-      // pending rows, so the tray state is replaced wholesale.
-      case "inbox.changed":
-        return [
-          parseAguiEvent({
-            type: EventType.CUSTOM,
-            name: "meridian.inbox.changed",
-            value: event.pending,
-          }),
-        ];
-
       // The record without its version: the hub stamps the frame's own seq on it.
       case "run_state.changed":
         return [
@@ -528,22 +513,6 @@ export function createOrchestratorEventProjector() {
           }),
         ];
 
-      // Identity facts ride beside the run lifecycle and never touch its state.
-      case "messages.delivered":
-        return [
-          parseAguiEvent({
-            type: EventType.CUSTOM,
-            name: MESSAGES_DELIVERED_EVENT,
-            value: {
-              byTurnId: event.byTurnId,
-              // Old journal payloads lack it; it reads as unknown.
-              byTurnPosition: event.byTurnPosition ?? null,
-              executionId: event.executionId,
-              userTurnIds: event.userTurnIds,
-            } satisfies MessagesDeliveredValue,
-          }),
-        ];
-
       // Waiting writer messages left the chat: clients remove those turns at this seq.
       case "messages.handed_back":
         return [
@@ -551,15 +520,6 @@ export function createOrchestratorEventProjector() {
             type: EventType.CUSTOM,
             name: MESSAGES_HANDED_BACK_EVENT,
             value: { userTurnIds: event.userTurnIds } satisfies MessagesHandedBackValue,
-          }),
-        ];
-
-      case "execution.ended":
-        return [
-          parseAguiEvent({
-            type: EventType.CUSTOM,
-            name: EXECUTION_ENDED_EVENT,
-            value: { executionId: event.executionId } satisfies ExecutionEndedValue,
           }),
         ];
 
