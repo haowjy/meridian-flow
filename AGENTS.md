@@ -113,13 +113,15 @@ noninteractive libpq authentication (`PGPASSWORD` or `-w`).
 Setup: [DEVELOPMENT.md](DEVELOPMENT.md). Dev tooling rules:
 [tools/dev/AGENTS.md](tools/dev/AGENTS.md).
 
-Driving or inspecting the running app (threads, docs, mock model, logs): use
-`./mf` for setup and durable reads (`thread view`, `thread events`, `thread context`,
-`log`, `doc read`). Until [#768](https://github.com/haowjy/meridian-flow/issues/768)
-lands, `./mf thread send` and `thread tail --until-idle` can report another message's
-reply or stop before the reply that answers yours: check run outcomes against
-`./mf thread view` (the durable transcript) or in the browser. See
-[docs/debugging.md](docs/debugging.md#drive-the-app-from-the-cli).
+**Verify app behavior in the browser.** A runtime check, a probe, or a PR's
+walkthrough or Before/After drives a real browser (`agent-browser`) and judges what
+the screen shows, with the durable transcript as truth. `./mf` doesn't test the app:
+it is a separate client over the API. Use it only to set up state (Works, threads,
+seeded documents, mock-model scripts, queued controls) and to read durable state
+(`thread view`, `thread events`, `thread context`, `log`, `doc read`). Never cite
+`./mf thread send` or `thread tail` output as evidence. Until
+[#768](https://github.com/haowjy/meridian-flow/issues/768) lands, they can also report
+another message's reply. See [docs/debugging.md](docs/debugging.md#set-up-and-read-with-the-cli).
 
 ## Build and test
 

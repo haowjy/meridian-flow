@@ -1,11 +1,15 @@
 # Runtime probes
 
 Use these recipes to check the running product, in addition to `pnpm check`.
+Run each one in a real browser (`agent-browser`) and judge it by what the screen
+shows, with the durable transcript as truth. `./mf` only sets up state (Works,
+threads, documents, mock-model scripts) and reads durable state; its output is
+never evidence that the app works. Write new recipes as browser steps.
 Keep evidence in the active work directory, not in this repository. Record the
 commit, date, stack/provider, outcome, and evidence path after each run. A recipe
 is not a claim that it passed on the current commit.
 
-- [Runtime protocols](runtime-probes.md): RP-1 through RP-12, driven with `./mf`.
+- [Runtime protocols](runtime-probes.md): RP-1 through RP-12, server protocol checks driven with `./mf`. They don't verify the app.
 - [Browser state envelopes](browser-state-envelopes.md): reload all browser-persisted surfaces and reject transplanted ownership.
 - [Chat submissions](chat-submissions.md): first-send and existing-send failure, FIFO ownership and tab takeover.
 - [Composer drafts](composer-drafts.md): per-tab reload, submission hand-off and missing-reference recovery.
