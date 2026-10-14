@@ -26,7 +26,14 @@ import {
   useDraftOnlyLifecycle,
 } from "./draft-only-lifecycle";
 
-export function DraftOnlySettlement({ projectId }: { projectId: string }) {
+export function DraftOnlySettlement({
+  projectId,
+  editorWorkId,
+}: {
+  projectId: string;
+  /** The Work the Editor presents documents in: the entry its tab restores when no review is addressed. */
+  editorWorkId: string | null;
+}) {
   const lifecycle = useDraftOnlyLifecycle(projectId);
   // Primitive snapshot: a fresh presentation array is not an external-store change.
   useSyncExternalStore(
@@ -41,6 +48,7 @@ export function DraftOnlySettlement({ projectId }: { projectId: string }) {
       key={workId}
       projectId={projectId}
       workId={workId}
+      editorWorkId={editorWorkId}
       lifecycle={lifecycle}
       membership={JSON.stringify(presentations.filter((draft) => draft.workId === workId))}
     />
@@ -50,11 +58,13 @@ export function DraftOnlySettlement({ projectId }: { projectId: string }) {
 function WorkSettlement({
   projectId,
   workId,
+  editorWorkId,
   lifecycle,
   membership,
 }: {
   projectId: string;
   workId: string;
+  editorWorkId: string | null;
   lifecycle: DraftOnlyContainer;
   membership: string;
 }) {
@@ -141,21 +151,30 @@ function WorkSettlement({
       if (draft.workId !== workId || !row || !identities.byDocumentId(draft.documentId)) continue;
       if (promoting.has(draft.documentId)) continue;
       promoting.add(draft.documentId);
+      // The review the Editor shows, captured before promotion clears the entries: its
+      // address, else (a route that has dropped `item`) its own Work's entry on the tab.
       const shown = presentedRef.current;
+      const own = lifecycle
+        .presentations(projectId)
+        .find(
+          (entry) =>
+            entry.container === "editor" &&
+            entry.documentId === draft.documentId &&
+            entry.workId === editorWorkId,
+        );
       const review =
         shown?.container === "editor" && shown.documentId === draft.documentId && shown.draftOnly
-          ? shown.review
+          ? (shown.review ?? (own ? { workId: own.workId, itemKey: own.itemKey } : null))
           : null;
       void lifecycle.promote(draft).then((promoted) => {
-        if (!promoted || !review) return;
         const now = presentedRef.current;
-        if (
-          now?.container !== "editor" ||
-          now.documentId !== draft.documentId ||
-          now.review?.workId !== review.workId ||
-          now.review.itemKey !== review.itemKey
-        )
-          return;
+        if (!promoted || !review) return;
+        // Promotion itself clears the address (the route drops `item`); only a different one means the writer moved.
+        const moved =
+          now?.review !== null &&
+          now?.review !== undefined &&
+          (now.review.workId !== review.workId || now.review.itemKey !== review.itemKey);
+        if (now?.container !== "editor" || now.documentId !== draft.documentId || moved) return;
         void openReview?.({
           workId: review.workId,
           documentId: draft.documentId,
@@ -173,6 +192,7 @@ function WorkSettlement({
     projection.records,
     projectId,
     workId,
+    editorWorkId,
     openReview,
   ]);
 

@@ -583,7 +583,7 @@ function HydratedReviewControllers({
   return (
     <PresentedDocumentContext.Provider value={presented}>
       <PresentedReviewScope value={presentedReview}>
-        <DraftOnlySettlement projectId={props.projectId} />
+        <DraftOnlySettlement projectId={props.projectId} editorWorkId={props.editorWorkId} />
         <ReviewAddressOwner
           review={presentedReview}
           presented={presented}
