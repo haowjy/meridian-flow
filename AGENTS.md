@@ -110,6 +110,13 @@ After installing, upgrading, or patching a package, run `pnpm dev:restart`.
 Postgres is a plain `postgres:16` container; `DATABASE_URL` is the app seam. Use
 noninteractive libpq authentication (`PGPASSWORD` or `-w`).
 
+Dev stacks are the largest single consumer on a shared host — measured at 14.9 GB
+across six worktrees, against ~9 GB for every test process running at the time,
+with one active stack at 6.6 GB. Run `pnpm dev:stacks` before blaming the tests:
+it reports each stack's memory and how long since its tmux session last produced
+output. `pnpm dev:stacks --reap-idle <minutes> --yes` stops the stale ones, but
+only when you ask: a stack belongs to whichever session started it.
+
 Setup: [DEVELOPMENT.md](DEVELOPMENT.md). Dev tooling rules:
 [tools/dev/AGENTS.md](tools/dev/AGENTS.md).
 
@@ -131,12 +138,42 @@ threads, seeded documents, mock-model scripts, queued controls). Until
 ## Build and test
 
 `pnpm check` is the full gate. `pnpm test:db` forces the DB suite.
-`pnpm test:all` runs unit and managed DB tests together. Keep automated tests
-below 2,000 expanded cases (including `it.each` rows and browser-device
-variants) and target at most 60 seconds for that full run. Write few unit
-tests: a new test must protect a named risk; prune weaker duplicate coverage
-rather than adding another layer. Skips, exclusions, and bundling unrelated
-cases do not satisfy the budget. To verify a change, prefer probes,
+`pnpm test:all` runs unit and managed DB tests together.
+
+There is no target case count. `tools/ci/test-budget-reporter.ts` holds the
+suite with a ratchet instead: the expanded case count per test file (including
+`it.each` rows and browser-device variants) may not grow against
+`tools/ci/test-case-baseline.json`. A new file, or a grown count, fails the run.
+Refresh the baseline deliberately with `TEST_BUDGET_UPDATE=1 pnpm test` when the
+growth is intended, so the increase is a reviewable line rather than silent
+drift. Skips, exclusions, and bundling unrelated cases satisfy neither the
+ratchet nor the ceilings below.
+
+The reporter also enforces a **wall-clock** and a **memory** ceiling.
+
+- Memory blocks on every run, CI or not: it is a property of the suite, not of
+  how busy the machine is. The reporter samples the whole process tree and fails
+  past `TEST_MEMORY_CEILING_MB` (default 4096).
+- Wall time is reported and never blocks: it is a property of the machine and of
+  the worker count as much as of the suite. The identical 2,414 cases measured
+  45 s to 104 s on one shared host, and the DB suite runs 89 s at four local
+  workers against 266-322 s serially in CI, so a hard gate would fail on
+  configuration and runner load rather than on a regression.
+  `TEST_DURATION_REFERENCE_SECONDS` sets the value it compares against (150 for
+  the unit suite, 600 for the serial DB suite).
+- Peak memory is `base + workers × module graph`, so it tracks worker count far
+  more than file count: `apps/app` alone (208 files) peaks the same as all 449,
+  and `apps/server` reaches 3.5 GB with no jsdom at all. Deleting tests will not
+  lower a peak. Measured, on a 24-core host: 8 unit workers 3.0 GB, 12 workers
+  4.0 GB, 24 workers 6.7 GB and a flake; 4 DB fork workers 3.5 GB, 8 workers
+  6.0 GB and a settlement flake. Never raise a worker count without measuring.
+
+Write few unit tests: a new test must protect a named risk that no KB decision
+and no probe already covers. A test whose only content is a decision already
+recorded in the knowledge base, or a step a browser recipe already drives,
+duplicates that decision rather than covering the code: delete it in the change
+that lands the decision that supersedes it, and prefer pruning a weaker
+duplicate to adding another layer. To verify a change, prefer probes,
 end-to-end smoke scripts and written manual-testing steps in the
 [runtime probe catalog](docs/qa/README.md); add or update the recipe that
 covers what you changed. Contracts, markup, and DB suites reuse worker module caches:

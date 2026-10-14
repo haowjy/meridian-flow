@@ -25,6 +25,37 @@ forces the DB suite. Migration checks and the two app boot jobs are unchanged.
 Do not cache `.nx` outputs across Actions runs: Nx inputs are project-scoped
 and can miss root config changes. The pnpm dependency cache is independent.
 
+## Test budget ratchet
+
+There is no target case count. `tools/ci/test-budget-reporter.ts` runs inside
+every unit and DB run and compares the **expanded case count per test file**
+(every `it`, every `it.each` / `describe.each` row) against
+`tools/ci/test-case-baseline.json`.
+
+- A file that has grown, or a test file that is missing from the baseline, fails
+  the run. Growth is allowed but must be declared: refresh with
+  `TEST_BUDGET_UPDATE=1 pnpm test` (or `pnpm test:all` for both suites) so the
+  change is a reviewable line instead of silent drift.
+- Comparison is per file rather than per run because CI shards the unit suite
+  across two jobs and neither job sees the whole suite. Counts come from
+  collection (`allTests()`), so skipped cases and `it.each` rows count.
+- The same reporter prints the run wall time and warns when it exceeds
+  `TEST_DURATION_REFERENCE_SECONDS`: 150 for the unit suite, 600 for the DB
+  suite, which runs serially in CI and so pays the sum of every test rather than
+  a fraction of it. The warning never fails the run. Wall time tracks the machine
+  and the worker count, not only the suite, so identical work has measured 45 s to
+  104 s on the unit side and 89 s to 322 s on the DB side. Read it as a signal to
+  check what changed, not as a gate.
+- It also samples RSS across the whole process tree (descendants included, so a
+  `forks` pool's children count) and enforces `TEST_MEMORY_CEILING_MB` (default
+  4096) **on every run**. Memory blocks everywhere because it is a property of
+  the suite, not of the machine's load. Known peaks: unit 3.0 GB at 8 workers,
+  DB 3.5 GB at 4 fork workers; the DB suite reaches 6.0 GB at 8 workers, so an
+  eight-worker local DB run will trip the ceiling — that is the intended signal.
+- The DB suite is not sharded, but it uses the same baseline file so one number
+  covers both suites. A unit-only or DB-only refresh merges rather than replaces,
+  and drops entries whose file no longer exists.
+
 ## Runtime verification
 
 Run from an owned checkout with dependencies installed:

@@ -210,6 +210,7 @@ export default defineProject({
     hookTimeout: 30_000,
     reporters: [
       "default",
+      fileURLToPath(new URL("../../tools/ci/test-budget-reporter.ts", import.meta.url)),
       fileURLToPath(new URL("../../tools/ci/db-test-reporter.ts", import.meta.url)),
     ],
   },
