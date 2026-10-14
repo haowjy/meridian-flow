@@ -15,9 +15,11 @@ const announcements = vi.hoisted(() => ({ announce: vi.fn(), announceError: vi.f
 vi.mock("@/client/stores", () => ({
   ...announcements,
   useThreadActions: () => ({ dispatchRunState: vi.fn() }),
+  useRunState: () => INITIAL_RUN_STATE_VIEW,
 }));
 
 import type { Turn } from "@meridian/contracts/protocol";
+import { INITIAL_RUN_STATE_VIEW } from "@meridian/thread-client";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { type HandoffBrief, useHandoffBrief } from "./useHandoffBrief";

@@ -8,7 +8,6 @@ export {
   isBusy,
   isOwed,
   isUsageBlocked,
-  retryRetired,
   type StopStatus,
   stopRequest,
   stopStatus,
@@ -17,6 +16,12 @@ export {
   writerMessages,
 } from "./fold-messages";
 export { type SwitchRow, type SwitchRowStatus, switchState } from "./fold-switches";
+export {
+  type RetryEntry,
+  type RetryReconciliation,
+  reconcileRetries,
+  retryTargetOf,
+} from "./retry";
 export {
   addIntent,
   answerIntent,

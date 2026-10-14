@@ -13,11 +13,12 @@
  * can't tell yet: the same id goes again after the server's `Retry-After`, a
  * bounded number of times, then waits for the writer's Retry like a lost request.
  *
- * A stand-in whose request's reservation ended without creating its turn (a
- * Retry whose compaction was stopped) is retired: the caller's `retired` reads
- * that from the run-state record at or after the answer's version
- * (`retryRetired`). A request whose answer never arrived has no version to
- * read, so its failed stand-in waits for the writer's Retry, which replays it.
+ * Which entries remain, which stand in as turns and which failed replies they hide is the
+ * package's one decision (`reconcileRetries`): a stand-in whose reservation ended without
+ * creating its turn (a Retry whose compaction was stopped) is retired by the run-state record at
+ * or after its answer's version. A request whose answer never arrived has no version to read,
+ * so its failed stand-in waits for the writer's Retry, which replays it. This hook keeps
+ * transport and storage.
  *
  * The handoff brief's Retry (`useHandoffBrief`) and a failed reply's Retry
  * (`useReplyRetry`) supply what to post and how the stand-in looks.
@@ -25,34 +26,21 @@
 import { t } from "@lingui/core/macro";
 import { REPLY_RETRY_PENDING_CODE, type Turn } from "@meridian/contracts/protocol";
 import type { RunState } from "@meridian/contracts/threads";
-import { placeStandIns } from "@meridian/thread-client";
+import { placeStandIns, type RetryEntry, reconcileRetries } from "@meridian/thread-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HttpResponseError, httpErrorStatus, retryAfterMs } from "@/client/api/http-client";
 import { isMeridianApiError } from "@/client/api/meridian-error";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
-import { announce, announceError, useThreadActions } from "@/client/stores";
+import { announce, announceError, useRunState, useThreadActions } from "@/client/stores";
 import { reportRetryRefused } from "./error-telemetry";
 
 export type StandInRequest = "sending" | "sent" | "failed";
 
-type StandIn = {
+type StandIn = RetryEntry & {
   /** The stand-in, then the server's turn once the response lands. */
   turn: Turn;
   request: StandInRequest;
-  /** The turn whose Retry the writer pressed. */
-  from: string;
-  /** The execution the server answered the request with; null until it does (or for no execution). */
-  executionId: string | null;
-  /** The version of the record the answer carried; null until it answers (or for a request with none). */
-  answerVersion: string | null;
-};
-
-/** What a stand-in's request is known by: its id, the execution answering it and the record version of the answer. */
-export type StandInIdentity = {
-  id: string;
-  executionId: string | null;
-  answerVersion: string | null;
 };
 
 /**
@@ -116,8 +104,6 @@ export function useRetryStandIns(input: {
   post: (id: string, from: string) => Promise<StandInAnswer>;
   /** On the failed stand-in and announced, when the request never answered. */
   lostCopy: string;
-  /** Whether a stand-in's reservation ended without creating its turn: nothing will now. */
-  retired?: (standIn: StandInIdentity) => boolean;
   /**
    * The Retry replaces the turn it retries in the transcript (a failed reply's Retry), so the
    * pressed turn stays out of view while the Retry is pending and until a stored turn carries
@@ -125,7 +111,7 @@ export function useRetryStandIns(input: {
    */
   supersedes?: boolean;
 }): RetryStandIns {
-  const { retired, supersedes = false } = input;
+  const { supersedes = false } = input;
   const { threadId, storedTurns } = input;
   const [local, setLocal] = useState<readonly StandIn[]>([]);
   const [refused, setRefused] = useState(NO_REFUSALS);
@@ -146,37 +132,14 @@ export function useRetryStandIns(input: {
     };
   }, []);
 
-  const storedIds = useMemo(() => new Set(storedTurns.map((turn) => turn.id)), [storedTurns]);
-  // The failed replies a stored turn says were retried. The Retry's first reserved turn carries
-  // it, which can be a compaction or a switch turn ahead of the reply.
-  const evidenced = useMemo(() => {
-    const targets = new Set<string>();
-    for (const turn of storedTurns) {
-      const target = (turn.metadata as { retryOf?: unknown } | null)?.retryOf;
-      if (typeof target === "string") targets.add(target);
-    }
-    return targets;
-  }, [storedTurns]);
-  // Once the snapshot has the turn, it is the authority (and, for a Retry that supersedes, has
-  // the turn that says so). A request whose reservation ended without the turn is over:
-  // nothing will create it now.
-  const settles = useCallback(
-    (entry: StandIn) =>
-      (storedIds.has(entry.turn.id) && (!supersedes || evidenced.has(entry.from))) ||
-      (retired?.({
-        id: entry.turn.id,
-        executionId: entry.executionId,
-        answerVersion: entry.answerVersion,
-      }) ??
-        false),
-    [evidenced, retired, storedIds, supersedes],
+  const runState = useRunState(threadId);
+  const reconciled = useMemo(
+    () => reconcileRetries({ entries: local, storedTurns, view: runState, supersedes }),
+    [local, runState, storedTurns, supersedes],
   );
   useEffect(() => {
-    setLocal((current) => {
-      const next = current.filter((entry) => !settles(entry));
-      return next.length === current.length ? current : next;
-    });
-  }, [settles]);
+    if (reconciled.remaining !== local) setLocal([...reconciled.remaining]);
+  }, [local, reconciled.remaining]);
 
   const patch = useCallback((id: string, change: (entry: StandIn) => StandIn) => {
     setLocal((current) => current.map((entry) => (entry.turn.id === id ? change(entry) : entry)));
@@ -271,6 +234,7 @@ export function useRetryStandIns(input: {
       setLocal((current) => [
         ...current,
         {
+          id: standIn.id,
           turn: standIn,
           request: "sending",
           from: from.id,
@@ -283,21 +247,16 @@ export function useRetryStandIns(input: {
     [patch, send],
   );
 
-  const unsettled = useMemo(() => local.filter((entry) => !settles(entry)), [local, settles]);
-  // An entry the store has by id but whose Retry it doesn't show yet is no stand-in, only a target.
-  const unstored = useMemo(
-    () => unsettled.filter((entry) => !storedIds.has(entry.turn.id)),
-    [storedIds, unsettled],
+  const standIns = useMemo(
+    () => reconciled.standIns.map((entry) => entry.turn),
+    [reconciled.standIns],
   );
-  const standIns = useMemo(() => unstored.map((entry) => entry.turn), [unstored]);
   const requestOf = useCallback(
-    (turnId: string) => unstored.find((entry) => entry.turn.id === turnId)?.request ?? null,
-    [unstored],
+    (turnId: string) =>
+      reconciled.standIns.find((entry) => entry.turn.id === turnId)?.request ?? null,
+    [reconciled.standIns],
   );
-  const retried = useMemo(
-    () => new Set(supersedes ? unsettled.map((entry) => entry.from) : []),
-    [supersedes, unsettled],
-  );
+  const retried = reconciled.hidden;
 
   return { standIns, requestOf, refused, retried, retry };
 }

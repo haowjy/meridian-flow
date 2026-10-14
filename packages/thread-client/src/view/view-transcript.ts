@@ -5,6 +5,7 @@
  * with the caller.
  */
 import type { Turn } from "@meridian/contracts/protocol";
+import { retryTargetOf } from "../run-state/retry";
 import { type AssistantView, viewAssistantTurn } from "./assistant-view";
 import { groupDeliveryEvents } from "./delivery-groups";
 import { isOptimisticTurnId } from "./optimistic-turn-id";
@@ -105,14 +106,6 @@ function responseOf(parts: readonly Turn[]): NonNullable<ViewRow["response"]> {
 
 const NO_DELIVERIES: readonly (readonly DeliveryEvent[])[] = [];
 
-/** The failed reply a turn is the Retry of, from the first reserved turn's (or a stand-in's) `metadata.retryOf`. */
-function retryTarget(turn: Turn): string | null {
-  const { metadata } = turn;
-  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
-  const target = (metadata as { retryOf?: unknown }).retryOf;
-  return typeof target === "string" ? target : null;
-}
-
 export function viewTranscript(input: TranscriptViewInput): TranscriptView {
   const standIns = input.standIns ?? [];
   const placed = placeStandIns(
@@ -125,7 +118,7 @@ export function viewTranscript(input: TranscriptViewInput): TranscriptView {
   // failed retries draws only the newest. The turns stay in the store; this is drawing only.
   const retried = new Set(input.retried);
   for (const turn of placed) {
-    const target = retryTarget(turn);
+    const target = retryTargetOf(turn);
     if (target !== null) retried.add(target);
   }
   const turns = placed.filter((turn) => !retried.has(turn.id) && !input.hidden?.has(turn.id));
