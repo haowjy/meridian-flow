@@ -9,6 +9,7 @@ import {
   handleApplyWorkDraftChangesRequest,
   handleApplyWorkDraftRequest,
   handleDiscardWorkDraftRequest,
+  handleDocumentDraftHintsRequest,
   handleWorkDraftPreviewRequest,
   selectDraftRouteServices,
 } from "../../lib/draft-review-route.js";
@@ -102,5 +103,41 @@ describeDraftTreeDb("review items (postgres)", (start) => {
     // Nothing was done to the item the wrong keys named.
     expect((await s.items(work)).map((item) => item.itemKey)).toEqual([mine.itemKey]);
     expect(await s.draftStatuses(work)).toEqual(["active"]);
+  });
+
+  it("a document's draft hints list every other Work's active draft with changes to it, and drop settled or deleted ones", async () => {
+    const { runtime, s } = await start();
+    const deps = selectDraftRouteServices(runtime.app);
+    const hints = async (documentId: DocumentId) =>
+      (
+        await handleDocumentDraftHintsRequest(deps, {
+          projectId: s.project.id,
+          documentId,
+          userId: s.project.userId,
+        })
+      ).items;
+    const northern = await s.work("Northern Arc", "draft");
+    const rival = await s.work("Rival", "draft");
+    const doomed = await s.work("Doomed", "draft");
+    const chapter = await s.writer.createDocument("chapter.md", "Opening.");
+    const untouched = await s.writer.createDocument("untouched.md", "Quiet.");
+    for (const work of [northern, rival, doomed]) {
+      await s.model(work).edit("chapter.md", "Opening.", `Opening by ${work.id}.`);
+    }
+
+    const all = await hints(chapter);
+    expect(all.map((hint) => [hint.label, hint.originWorkId])).toEqual([
+      ["Northern Arc", northern.id],
+      ["Rival", rival.id],
+      ["Doomed", doomed.id],
+    ]);
+    expect(all[0]?.itemKey).toBe((await s.items(northern))[0]?.itemKey);
+    expect(await hints(untouched)).toEqual([]);
+
+    await runtime.ports.workRepo.softDelete(doomed.id);
+    await s.discard(rival, "all");
+    expect((await hints(chapter)).map((hint) => hint.originWorkId)).toEqual([northern.id]);
+    await s.apply(northern, [chapter], { tokens: "none" });
+    expect(await hints(chapter)).toEqual([]);
   });
 });

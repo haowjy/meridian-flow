@@ -58,6 +58,24 @@ export interface ThreadDraftListItem {
   updatedAt: string;
 }
 
+/**
+ * One active draft with changes to a document, for the hint on an open document. A draft is
+ * named by its own `label`; `originWorkId` is where it came from, which today's review
+ * address still needs and a draft without a Work will not have.
+ */
+export interface DocumentDraftHint {
+  draftId: DraftId;
+  /** The draft's review identity for the document, as in the list. */
+  itemKey: DraftItemKey;
+  /** How the draft is named to the writer; null when it has no name (the client words that). */
+  label: string | null;
+  originWorkId: string | null;
+}
+
+export interface DocumentDraftHintsResponse {
+  items: DocumentDraftHint[];
+}
+
 export interface ThreadDraftListResponse {
   items: ThreadDraftListItem[];
 }

@@ -49,6 +49,7 @@ import type { DraftReviewItem } from "./domain/draft-review-items.js";
 import type { Drafts } from "./domain/drafts.js";
 import type { BoundWrite, LinkBinder } from "./domain/link-binding.js";
 import type { DocumentAuthorityHeads } from "./domain/ports/document-authority-heads.js";
+import type { DocumentDraftOrigin } from "./domain/ports/work-draft-pending-store.js";
 import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
 import type { DerivedReview } from "./domain/review-cut.js";
 import type { LiveLineageDocument, TurnEditedDocument } from "./domain/turn-live-lineage.js";
@@ -373,6 +374,11 @@ export type DraftReviewApi = {
     items: DraftReviewItem[];
     threadTitles: ReadonlyMap<string, string>;
   }>;
+  /** Every active draft in the project with changes to the document, oldest first. */
+  draftsChangingDocument(input: {
+    projectId: ProjectId;
+    documentId: DocumentId;
+  }): Promise<DocumentDraftOrigin[]>;
   /** The Work's active draft's listed items, live text tokens unread: what Apply authorizes. */
   items(input: { workId: WorkId }): Promise<{ draftId: DraftId | null; items: DraftReviewItem[] }>;
   resolveItem(input: { workId: WorkId; itemKey: string }): Promise<ResolvedReviewItem | null>;

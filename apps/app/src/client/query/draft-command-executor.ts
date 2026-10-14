@@ -155,6 +155,9 @@ function refresh(
     void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
   }
   void queryClient.invalidateQueries({ queryKey: projectQueryKeys.threads(draft.projectId) });
+  void queryClient.invalidateQueries({
+    queryKey: projectQueryKeys.documentDraftHintsOf(draft.projectId),
+  });
   return Promise.all([
     queryClient.invalidateQueries({
       queryKey: projectQueryKeys.workDrafts(draft.projectId, draft.workId),

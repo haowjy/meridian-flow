@@ -6,6 +6,7 @@
  * strings to query hooks.
  */
 import type {
+  DocumentDraftHintsResponse,
   DraftApplyAllRequest,
   DraftApplyAllResponse,
   DraftApplyChangesRequest,
@@ -22,6 +23,7 @@ import type {
   ThreadDraftListResponse,
 } from "@meridian/contracts/drafts";
 import {
+  apiProjectDocumentDraftsPath,
   apiProjectWorkDocumentDraftApplyChangesPath,
   apiProjectWorkDocumentDraftApplyPath,
   apiProjectWorkDocumentDraftDiscardPath,
@@ -39,6 +41,13 @@ export async function listWorkDrafts(
   workId: string,
 ): Promise<ThreadDraftListResponse> {
   return getJson<ThreadDraftListResponse>(apiProjectWorkDraftsPath(projectId, workId));
+}
+
+export function listDocumentDraftHints(
+  projectId: string,
+  documentId: string,
+): Promise<DocumentDraftHintsResponse> {
+  return getJson<DocumentDraftHintsResponse>(apiProjectDocumentDraftsPath(projectId, documentId));
 }
 
 export async function getDraftPreview(

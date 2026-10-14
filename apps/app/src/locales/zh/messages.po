@@ -116,6 +116,11 @@ msgstr ""
 msgid "{0, plural, one {read # document} other {read # documents}}"
 msgstr ""
 
+#. placeholder {0}: others.length
+#: src/features/editor/DocumentDraftHint.tsx
+msgid "{0, plural, other {# drafts have changes to this}}"
+msgstr ""
+
 #. placeholder {0}: list( entries.map( ({ name, outcome }) => `${name} ${outcome === "succeeded" ? i18n._("finished") : i18n._("stopped")}`, ), )
 #: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "{0}"
@@ -394,6 +399,15 @@ msgstr ""
 
 #: src/features/chat/DeletedChatNotice.tsx
 msgid "A chat you had open was deleted."
+msgstr ""
+
+#: src/features/editor/DocumentDraftHint.tsx
+msgid "A draft has changes to this"
+msgstr ""
+
+#. placeholder {0}: only.label
+#: src/features/editor/DocumentDraftHint.tsx
+msgid "A draft has changes to this ({0})"
 msgstr ""
 
 #. placeholder {0}: identityNote.name
@@ -3478,6 +3492,10 @@ msgstr ""
 msgid "Returned from the billing portal."
 msgstr ""
 
+#: src/features/editor/DocumentDraftHint.tsx
+msgid "Review"
+msgstr ""
+
 #: src/features/editor/surfaces/table/table-copy.ts
 #: src/features/editor/surfaces/toolbar/DocumentToolbar.tsx
 msgid "Right"
@@ -4656,6 +4674,10 @@ msgstr "未知"
 
 #: src/features/chat/CustomBlockRenderer.tsx
 msgid "Unknown component: {kindLabel}"
+msgstr ""
+
+#: src/features/editor/DocumentDraftHint.tsx
+msgid "Unnamed draft"
 msgstr ""
 
 #: src/features/draft-review/ReviewHeaderNotices.tsx
