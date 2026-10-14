@@ -33,7 +33,8 @@ answer reports is the server's switch state as of every frame at or below
 `runState.version`. The withdraw answer carries the record likewise, read after
 the acknowledgment, so a quiet chat's record can reach the answer.
 An applied switch also projects `meridian.write_mode.switched`
-(`{ threadId, mode, controlId, turnId }`) at its own journal `seq`, ahead of
+(`{ threadId, mode, controlId, turnId, prevTurnId, position }`, the last two being
+where the switch turn sits) at its own journal `seq`, ahead of
 the `meridian.run_state` record that empties the queue; catch-up replay delivers
 it. The snapshot's `thread.aiWriteMode`, `liveState.runState` and `nextSeq` are
 one transaction; label that state `nextSeq - 1`.

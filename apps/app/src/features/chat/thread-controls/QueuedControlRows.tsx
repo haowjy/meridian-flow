@@ -7,8 +7,7 @@
  * does. A queued `/compact` sits there as a dashed rule, the divider it will
  * become, with the writer's instructions under it verbatim. Stop is right after
  * the words on every pending row, a failed enqueue's too (beside its Retry), and
- * removes the row at once; it cancels the command the way a switch back does. An
- * applied switch whose turn has not rendered yet shows the notice with no Stop.
+ * removes the row at once; it cancels the command the way a switch back does.
  * The rows carry no live region: `useThreadControls` and `useSwitchView` announce
  * each change through the global polite announcer, which also reaches a row
  * scrolled out of the virtualized list.
@@ -91,7 +90,7 @@ function QueuedControlRow({
           <Trans>Retry</Trans>
         </Button>
       ) : null}
-      {onStop && status !== "applied" && !control.awaitingServer ? (
+      {onStop && !control.awaitingServer ? (
         <Button
           type="button"
           variant="quiet"

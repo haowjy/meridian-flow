@@ -107,30 +107,51 @@ describe("turn reducer", () => {
       expect(ids(store)).toEqual(["m1"]);
     });
   });
-  it("draws an idle switch's divider from its frame, and the stored turn replaces it by id", () => {
-    // Risk: an idle switch has no turn event, so a follower with no snapshot refresh never
-    // got the divider (and the app kept the answered switch queued).
+  it("places a switch's divider by the anchor its frame names, and a stale snapshot keeps it there", () => {
+    // Risk (#760 review B1): a divider put at the tail lands after a reply that finished before
+    // the frame, a snapshot, or a second switch, and its notice then jumps. Also: an answered
+    // switch showing queued again when a snapshot read before the frame drops the divider.
     const { store, reducer } = instance();
-    store.hydrate(THREAD, [{ id: "r1", role: "assistant", blocks: [] } as unknown as Turn], "5000");
-    const frame = {
-      type: EventType.CUSTOM,
-      name: "meridian.write_mode.switched",
-      value: { threadId: THREAD, mode: "draft", controlId: "c1", turnId: "d1" },
-    } as unknown as AGUIEvent;
-    reducer.applyEvent(THREAD, frame, "7000");
-    reducer.applyEvent(THREAD, frame, "7000");
+    const ids = (of: InMemoryTurnStore) => of.turns(THREAD)?.map((turn) => turn.id);
+    const t = (id: string, prevTurnId: string | null) =>
+      ({ id, role: "assistant", prevTurnId, blocks: [] }) as unknown as Turn;
+    // r2a and r2b are one reply split by an autocompaction; r3 is a later reply.
+    const replies = [t("r1", null), t("r2a", "r1"), t("r2b", "r2a"), t("r3", "r2b")];
+    store.hydrate(THREAD, replies, "5000");
+    const frame = (turnId: string, prevTurnId: string | null, position: number) =>
+      ({
+        type: EventType.CUSTOM,
+        name: "meridian.write_mode.switched",
+        value: {
+          threadId: THREAD,
+          mode: "draft",
+          controlId: `c-${turnId}`,
+          turnId,
+          prevTurnId,
+          position,
+        },
+      }) as unknown as AGUIEvent;
+    // Two switches in the window, the first before the reply's first part.
+    reducer.applyEvent(THREAD, frame("d1", "r1", 1), "7000");
+    reducer.applyEvent(THREAD, frame("d1", "r1", 1), "7000");
+    reducer.applyEvent(THREAD, frame("d2", "r2b", 4), "7100");
+    expect(ids(store)).toEqual(["r1", "d1", "r2a", "r2b", "d2", "r3"]);
     const turns = store.turns(THREAD) ?? [];
-    expect(turns.map((turn) => turn.id)).toEqual(["r1", "d1"]);
-    expect(readWriteModeSwitch(turns[1] as Turn)).toEqual({ mode: "draft", controlId: "c1" });
-    // Risk: a snapshot read before the frame (its seq is not covered) drops the divider again, so
-    // the answered switch shows as queued. The divider outlives it, then the covering snapshot's
-    // stored turn replaces it by id.
-    store.hydrate(THREAD, [{ id: "r1", role: "assistant", blocks: [] } as unknown as Turn], "6000");
-    expect(store.turns(THREAD)?.map((turn) => turn.id)).toEqual(["r1", "d1"]);
+    expect(readWriteModeSwitch(turns[1] as Turn)).toEqual({ mode: "draft", controlId: "c-d1" });
+    // A snapshot read before both frames keeps both where they were.
+    store.hydrate(THREAD, replies, "6000");
+    expect(ids(store)).toEqual(["r1", "d1", "r2a", "r2b", "d2", "r3"]);
+    // An anchor the store lacks is no guess: the divider is held out, and placed once a snapshot
+    // brings the anchor.
+    reducer.applyEvent(THREAD, frame("d3", "m9", 9), "7200");
+    expect(ids(store)).toEqual(["r1", "d1", "r2a", "r2b", "d2", "r3"]);
+    store.hydrate(THREAD, [...replies, t("m9", "r3")], "6500");
+    expect(ids(store)).toEqual(["r1", "d1", "r2a", "r2b", "d2", "r3", "m9", "d3"]);
+    // The covering snapshot's stored turn replaces the divider by id; a later one without it drops it.
     const stored = { ...turns[1], position: 3 } as Turn;
-    store.hydrate(THREAD, [turns[0] as Turn, stored], "7001");
+    store.hydrate(THREAD, [turns[0] as Turn, stored, ...replies.slice(1)], "7001");
     expect(store.turns(THREAD)?.[1]).toBe(stored);
-    store.hydrate(THREAD, [turns[0] as Turn], "8000");
-    expect(store.turns(THREAD)?.map((turn) => turn.id)).toEqual(["r1"]);
+    store.hydrate(THREAD, replies, "8000");
+    expect(ids(store)).toEqual(["r1", "r2a", "r2b", "r3"]);
   });
 });

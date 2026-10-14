@@ -34,6 +34,8 @@ export type RunStartedMeta = {
 /**
  * `meridian.write_mode.switched`: a queued or idle switch applied. Its journal seq answers the
  * switch intent for its control; the record of the same commit follows and carries the mode.
+ * The frame names where the switch turn sits, so a follower places it by the turn it follows
+ * and never by where its own transcript happens to end.
  */
 export type WriteModeSwitchedValue = {
   threadId: string;
@@ -42,18 +44,26 @@ export type WriteModeSwitchedValue = {
   controlId: string;
   /** The complete `system` switch turn. */
   turnId: string;
+  /** Where the switch turn sits: the turn it follows (null at the head of the chat) and its position. */
+  prevTurnId: string | null;
+  position: number;
 };
 
 const writeModeSwitchedSchema = z.object({
   mode: aiWriteModeSchema,
   controlId: z.string(),
   turnId: z.string(),
+  prevTurnId: z.string().nullable(),
+  position: z.number().int(),
 });
 
 /** Reads a `meridian.write_mode.switched` CUSTOM value; null when malformed. */
 export function readWriteModeSwitched(
   value: unknown,
-): Pick<WriteModeSwitchedValue, "mode" | "controlId" | "turnId"> | null {
+): Pick<
+  WriteModeSwitchedValue,
+  "mode" | "controlId" | "turnId" | "prevTurnId" | "position"
+> | null {
   const parsed = writeModeSwitchedSchema.safeParse(value);
   return parsed.success ? parsed.data : null;
 }

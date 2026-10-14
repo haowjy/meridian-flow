@@ -144,6 +144,8 @@ export function createOrchestratorEventProjector() {
                 mode: switched.data.mode,
                 controlId: switched.data.controlMessageId,
                 turnId: event.turn.id,
+                prevTurnId: event.turn.prevTurnId ?? null,
+                position: event.turn.position,
               } satisfies WriteModeSwitchedValue,
             }),
           ];

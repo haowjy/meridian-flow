@@ -78,9 +78,10 @@ an icon for the mode (no compaction mark, rule or icon). It is the pending switc
 transcript tail and the applied switch turn. A pending switch reads "Switched to …" while no reply
 holds the chat (it applies when the next run is admitted) and "Switch to … queued" while one does.
 Both carry **Stop**, not Withdraw, as do queued compactions; Stop cancels like a switch back, and
-the Work default follows the writer's latest choice, Stop included. The bridge row is the
-transcript layer's: an applied switch whose turn has not rendered shows the notice with no Stop,
-keyed by the `write_mode.switched` frame's turn, until that turn renders.
+the Work default follows the writer's latest choice, Stop included. An applied switch has no row of its own:
+the `write_mode.switched` frame carries the switch turn's anchor (`prevTurnId`, `position`) and the
+shared reducer inserts the turn right after that turn. When the anchor is not in the transcript the
+turn is held out and the subscriber's gap-only refresh brings both.
 
 No client path writes a write mode into a cache: a snapshot may insert a project-list row with its
 mode but never rewrites an existing row's, and a `switched` frame invalidates the Works query and

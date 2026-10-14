@@ -88,7 +88,6 @@ function Probe() {
     threadId: "T",
     projectId: "P",
     writeMode: "direct",
-    turns: [],
     journal,
     replyRunning: false,
   });

@@ -62,9 +62,3 @@ it("says a switch is queued while a reply runs, and names Stop for a compaction 
   expect(host.querySelector("[aria-label='Stop compaction']")).not.toBeNull();
   expect(host.querySelectorAll(".border-dashed")).toHaveLength(1);
 });
-
-it("shows an applied switch awaiting its turn with no Stop", async () => {
-  const host = await render([{ ...draftSwitch, status: "applied" }], true);
-  expect(host.textContent).toContain("Switched to draft mode");
-  expect(host.querySelector("button")).toBeNull();
-});

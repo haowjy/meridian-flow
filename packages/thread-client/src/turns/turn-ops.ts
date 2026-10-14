@@ -96,18 +96,41 @@ export function ensureAssistantTurnIn(
 }
 
 /** The facts a `meridian.write_mode.switched` frame carries about its divider turn. */
-export type SwitchTurnFacts = { turnId: string; controlId: string; mode: AiWriteMode };
+export type SwitchTurnFacts = {
+  turnId: string;
+  controlId: string;
+  mode: AiWriteMode;
+  /** The turn the divider follows, null at the head of the chat. */
+  prevTurnId: string | null;
+  position: number;
+};
 
 /** A divider a `switched` frame added, held until a snapshot covers that frame's seq. */
 export type HeldDividers = ReadonlyMap<string, { turn: Turn; seq: string }>;
 
 /**
- * Adds the write-mode divider a `meridian.write_mode.switched` frame names, at the end of the
- * thread, as a complete `system` turn carrying the metadata the divider reads. The frame is the
- * only live announcement of that turn, so this is how a stream follower gets the divider with no
- * snapshot; the stored turn replaces it by id. The divider is also held at the frame's seq: a
- * snapshot read before the switch still lacks it, and `applySnapshotTo` puts it back until a
- * snapshot covers the frame. The same state comes back when it is already there.
+ * The turns with `turn` placed straight after the turn it follows (`prevTurnId`), or at the head
+ * when it follows none. Null when the turn it follows is not in `turns`: the place is unknown,
+ * and a guess would put the divider where it never was.
+ */
+function placedAfterAnchor(turns: readonly Turn[], turn: Turn): Turn[] | null {
+  if (turn.prevTurnId === null) return [turn, ...turns];
+  const at = turns.findIndex((candidate) => candidate.id === turn.prevTurnId);
+  if (at < 0) return null;
+  return [...turns.slice(0, at + 1), turn, ...turns.slice(at + 1)];
+}
+
+/**
+ * Adds the write-mode divider a `meridian.write_mode.switched` frame names, as a complete
+ * `system` turn carrying the metadata the divider reads, right after the turn the frame says it
+ * follows. The frame is the only live announcement of that turn, so this is how a stream
+ * follower gets the divider with no snapshot; the stored turn replaces it by id. The divider is
+ * also held at the frame's seq: a snapshot read before the switch still lacks it, and
+ * `applySnapshotTo` places it again, by the same anchor, until a snapshot covers the frame.
+ *
+ * When the turn it follows is not in the store yet (another client's message the stream does
+ * not carry), the divider is held but not shown: the host's snapshot refresh brings the anchor,
+ * and the held divider is placed then. The same state comes back when it is already there.
  */
 export function ensureSwitchTurnIn(
   state: { turns: Turn[]; dividers: HeldDividers },
@@ -118,11 +141,16 @@ export function ensureSwitchTurnIn(
 ): { turns: Turn[]; dividers: HeldDividers } {
   const { turns: existing } = state;
   if (existing.some((turn) => turn.id === facts.turnId)) return state;
+  const held = state.dividers.get(facts.turnId);
+  if (held) {
+    const turns = placedAfterAnchor(existing, held.turn);
+    return turns ? { turns, dividers: state.dividers } : state;
+  }
   const turn: Turn = {
     id: facts.turnId,
     threadId,
-    position: 0,
-    prevTurnId: existing.at(-1)?.id ?? null,
+    position: facts.position,
+    prevTurnId: facts.prevTurnId,
     role: "system",
     origin: "system",
     writeMode: facts.mode,
@@ -146,7 +174,7 @@ export function ensureSwitchTurnIn(
     responses: [],
   };
   return {
-    turns: [...existing, turn],
+    turns: placedAfterAnchor(existing, turn) ?? existing,
     dividers: new Map(state.dividers).set(facts.turnId, { turn, seq }),
   };
 }
@@ -232,9 +260,12 @@ export function applySnapshotTo(
   const held = new Map([...dividers].filter(([, { seq }]) => compareSeq(seq, nextSeq) >= 0));
   const kept = live.size ? serverTurns.filter((turn) => !live.has(turn.id)) : [...serverTurns];
   const present = new Set(kept.map((turn) => turn.id));
-  const missing = [...held].filter(([id]) => !present.has(id));
+  // In frame order, so a divider that follows another is placed after it.
+  let turns = kept;
+  for (const [id, { turn }] of held)
+    if (!present.has(id)) turns = placedAfterAnchor(turns, turn) ?? turns;
   return {
-    turns: missing.length ? [...kept, ...missing.map(([, { turn }]) => turn)] : kept,
+    turns,
     tombstones: live.size === tombstones.size ? tombstones : live,
     dividers: held.size === dividers.size ? dividers : held,
   };
