@@ -54,6 +54,11 @@ exit code or result as evidence: after a Stop it can report `timeout` (exit 124)
 For each step, confirm in the browser last: open the thread, repeat the action with the Stop button, and
 check that the composer and the rows match `thread view --json`.
 
+The composer has one button (owner ruling, TL-MF-80). With the box empty and a reply running it is Stop (the
+Stopping and "Couldn't stop. Try again." states live on it); once you type it is Send with the running ring,
+and clearing the text brings Stop back, failed state included. Escape stops only while Stop shows. After a
+Stop hands a steer back, the box holds it and the button is Send.
+
 ## SB-26: a send in flight at the press is untouched (row 26)
 
 - **Setup:** idle thread (no execution). Send M1 and let it settle. Read `seen`: `seenThrough` is M1's seq.
