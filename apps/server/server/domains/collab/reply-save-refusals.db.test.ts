@@ -632,6 +632,43 @@ describe("reply save refusals (postgres)", () => {
     expect(await review.list()).not.toEqual([]);
   });
 
+  it("22c: a first write paused after its lease and before staging is refused at the write once Discard retires its peer", async () => {
+    const { fixture, branchId, responseId, review, write } = await setup();
+    const prepare = fixture.links.prepare;
+    let once = true;
+    fixture.links.prepare = (async (...args: Parameters<typeof prepare>) => {
+      if (once) {
+        once = false;
+        await review.discardItem(ALPHA_ID);
+      }
+      return prepare.apply(fixture.links, args);
+    }) as typeof prepare;
+    let paused: Awaited<ReturnType<typeof write>>;
+    try {
+      paused = await write("green", "lime", "w-paused");
+    } finally {
+      fixture.links.prepare = prepare;
+    }
+    expect(paused).toMatchObject({ isError: true, status: "invalid_write" });
+    expect(JSON.stringify(paused.result)).toContain(EDIT);
+    expect(refused(await harness.commit(responseId))).toEqual([]);
+    expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\ngreen\n");
+    const next = responseContext(await createResponse(db, 3));
+    expect(
+      await fixture.collab.agentEdit().write(
+        {
+          command: "replace",
+          file: "alpha.md",
+          documentId: ALPHA_ID,
+          find: "green",
+          content: "lime",
+          tool_use_id: "w-replacement",
+        },
+        next,
+      ),
+    ).toMatchObject({ phase: "staged" });
+  });
+
   it("19: a new reply writes through a fresh peer while the old retirement is held", async () => {
     const { fixture, branchId, responseId, review, write } = await setup();
     expect(await write("green", "lime", "w-green")).toMatchObject({ phase: "staged" });

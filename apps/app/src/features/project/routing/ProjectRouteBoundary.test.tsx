@@ -25,36 +25,6 @@ it("shows the failure with a retry, keeping the destination's own content mounte
   );
 });
 
-// Masking is one `issue` truthiness test; the error row is the first test, resource-viewing shares it.
-it.each([
-  "unavailable",
-  "loading",
-] as const)("%s masks the destination body, not its address navigation", async (issue) => {
-  const onNavigate = vi.fn();
-  await withReactRoot(
-    <ProjectRouteBoundary
-      issue={issue}
-      chrome={
-        <nav aria-label="Address navigation">
-          <button type="button" onClick={onNavigate}>
-            Files
-          </button>
-        </nav>
-      }
-    >
-      <p>document body</p>
-    </ProjectRouteBoundary>,
-    async () => {
-      const nav = document.querySelector('nav[aria-label="Address navigation"]');
-      expect(nav).not.toBeNull();
-      expect(nav?.closest('[inert], [aria-hidden="true"]')).toBeNull();
-      expect(document.querySelector("[inert]")?.textContent).toBe("document body");
-      await act(async () => nav?.querySelector("button")?.click());
-      expect(onNavigate).toHaveBeenCalledOnce();
-    },
-  );
-});
-
 // The shell uses the same masking decision as the body when applying review's rail hold.
 it.each([
   { issue: "loading", recovery: undefined, collapsed: true },

@@ -42,6 +42,7 @@ import {
 } from "./adapters/agent-edit-observability.js";
 import {
   SILENT_POST_DURABILITY_NOTICES,
+  SILENT_TURN_INVERSE_NOTICES,
   UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS,
 } from "./adapters/declared-stubs.js";
 import { createDrizzleAuthorityGenerationReplacement } from "./adapters/drizzle-authority-generation-replacement.js";
@@ -95,7 +96,10 @@ import type { CollabDomain } from "./contracts.js";
 import { createAgentEditRuntime, metaForOrigin } from "./domain/agent-edit-runtime.js";
 import { createBranchConcurrentJournalWatermarks } from "./domain/branch-agent-edit.js";
 import { createBranchCoordinator } from "./domain/branch-coordinator.js";
-import { createBranchCriticalSections } from "./domain/branch-critical-sections.js";
+import {
+  type BranchCriticalSections,
+  createBranchCriticalSections,
+} from "./domain/branch-critical-sections.js";
 import { createBranchPullService } from "./domain/branch-pulls.js";
 import { createBranchPushService } from "./domain/branch-push.js";
 import { fullStateFingerprint } from "./domain/branch-push-transition.js";
@@ -133,6 +137,7 @@ import { createResponseWriteFinalizer } from "./domain/response-write-finalizer.
 import {
   createDocumentPresentationResolver,
   createPostDurabilityNoticeService,
+  createReversalNoticePort,
 } from "./domain/reversal-notices.js";
 import { createTurnLiveLineageReadModel } from "./domain/turn-live-lineage.js";
 import {
@@ -163,6 +168,8 @@ type CollabDomainDeps = {
    * §5); the writer's turn undo also asks it for its grants.
    */
   fileAccess: Pick<FileAccess, "authorize" | "authorizeAt" | "confirmEdit">;
+  /** The branch lease adapter; tests pass an observed instance of their own. */
+  criticalSections?: BranchCriticalSections;
   /** How long a live AI write waits before merging into Work drafts; tests shorten it. */
   livePullDebounceMs?: number;
   /** Ahead-ref settlement at tracked creates and Apply completions (contract §9.3–9.4). */
@@ -187,7 +194,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     hocuspocus: hocuspocusBinding.require,
     journal: persistence.journal,
   });
-  const criticalSections = createBranchCriticalSections();
+  const criticalSections = deps.criticalSections ?? createBranchCriticalSections();
   const workDrafts = createDrafts({
     store: createDrizzleDraftStore(deps.db),
     boundary: createDrizzleDraftWriteBoundary(deps.db),
@@ -197,7 +204,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       journal: persistence.journal,
       lifecycle: persistence.lifecycle,
     },
-    ...(deps.workProjectionMutation ? { workProjection: deps.workProjectionMutation } : {}),
+    workProjection: deps.workProjectionMutation,
     drafts: workDrafts,
   });
   const branchJournal = createDrizzleBranchJournalReadStore(deps.db);
@@ -481,6 +488,14 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     resolveDocumentUri: documentUriResolver,
     refreshDocument: (documentId) => projectionRefresher.refresh({ documentId }),
     flushLivePull: branchPulls.flushLivePull,
+    notices: deps.notices
+      ? createReversalNoticePort({
+          notices: deps.notices,
+          documentUriResolver,
+          diagnostics: noticeDiagnostics,
+        })
+      : SILENT_TURN_INVERSE_NOTICES,
+    workProjection: deps.workProjectionMutation,
   });
   const responseFinalizer = scopeResponseFinalizer(
     createResponseWriteFinalizer({

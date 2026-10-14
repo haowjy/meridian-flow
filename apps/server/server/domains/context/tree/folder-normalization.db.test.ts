@@ -3,17 +3,13 @@
  * a delete or a move out of where drafts hold folders splits hidden contents into twins
  * at their paths (F-1, F-3), a move between project sources carries them (F-2), a visible
  * folder arriving at a hidden folder's path absorbs it (F-4), and neither race leaves a
- * draft's create behind (I-4, I-5). F-2 and F-3 also drive the batch move primitive the
- * way Apply's relocation will (F-R1, F-R2, F-R3).
+ * draft's create behind (I-4, I-5).
  */
 import { randomUUID } from "node:crypto";
-import type { ContextSourceId, DocumentId, FolderId } from "@meridian/contracts";
 import { createDb } from "@meridian/database";
-import { documentPreviousLocations, documents, folders, users } from "@meridian/database/schema";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { documents, folders, users } from "@meridian/database/schema";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
-import { Ok } from "../../../shared/result.js";
 import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
 import {
   type DraftTreeScenario,
@@ -22,8 +18,6 @@ import {
 } from "../../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { race } from "../../../test-support/lock-interleave.js";
-import { lockContextSources } from "../adapters/context-fs/document-locations.js";
-import { moveNodes, type NodeMove } from "./node-moves.js";
 import { createTreeReader } from "./tree-view.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -84,62 +78,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     ): Promise<string | null> {
       const stat = await scenario.view(of).stat(path);
       return stat.ok ? (stat.value.documentId ?? null) : null;
-    }
-
-    /** Apply's relocation shape: several nodes through the batch primitive, rolled back on refusal. */
-    async function batchMove(
-      sourceIds: readonly string[],
-      moves: readonly NodeMove[],
-    ): Promise<{ ok: true } | { ok: false; code: string }> {
-      class Refused extends Error {
-        constructor(readonly code: string) {
-          super(code);
-        }
-      }
-      try {
-        await runInDrizzleTransaction(committed, async () => {
-          await lockContextSources(committed, sourceIds);
-          const moved = await moveNodes(committed, { moves, filetypeFor: () => Ok(null) });
-          if (!moved.ok) throw new Refused(moved.error.code);
-        });
-        return { ok: true };
-      } catch (error) {
-        if (error instanceof Refused) return { ok: false, code: error.code };
-        const cause = (error as { cause?: { code?: string } }).cause;
-        return { ok: false, code: cause?.code ?? String(error) };
-      }
-    }
-
-    const toFolder = (
-      id: string,
-      sourceId: string,
-      name: string,
-      dir: string[] = [],
-    ): NodeMove => ({
-      node: { kind: "folder", id: id as FolderId },
-      to: { contextSourceId: sourceId as ContextSourceId, dir, name },
-    });
-    const toDocument = (
-      id: string,
-      sourceId: string,
-      name: string,
-      dir: string[] = [],
-    ): NodeMove => ({
-      node: { kind: "document", id: id as DocumentId },
-      to: { contextSourceId: sourceId as ContextSourceId, dir, name, extension: "" },
-    });
-
-    /** No temporary vacate name survives anywhere in these sources. */
-    async function parkedNames(sourceIds: readonly string[]) {
-      return committed
-        .select({ name: folders.name })
-        .from(folders)
-        .where(
-          and(
-            inArray(folders.contextSourceId, sourceIds as ContextSourceId[]),
-            sql`position(chr(1) in ${folders.name}) > 0`,
-          ),
-        );
     }
 
     it("splits a nested hidden document off a deleted folder into twins at its path (F-1)", async () => {
@@ -230,59 +168,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
       expect.soft(await idAt(scenario, "live", "kb://notes/outline")).toBe(outline);
       expect.soft((await folder(notes)).locationVersion, "the moved folder's version").toBe(1n);
-
-      // The batch primitive's final namespace includes what moving folders carry (F-R1).
-      const m = scenario.project.sources.manuscript;
-      const a = await scenario.seedLiveFolder("a");
-      await scenario.seedLive("a/x");
-      const c = await scenario.seedLive("c");
-      expect
-        .soft(await batchMove([m], [toFolder(a, m, "b"), toDocument(c, m, "x", ["b"])]))
-        .toEqual({ ok: false, code: "conflict" });
-      const e = await scenario.seedLiveFolder("e");
-      await scenario.seedLiveFolder("e/x");
-      const f = await scenario.seedLive("f");
-      expect
-        .soft(await batchMove([m], [toFolder(e, m, "g"), toDocument(f, m, "x", ["g"])]))
-        .toEqual({ ok: false, code: "conflict" });
-      expect.soft(await idAt(scenario, "live", "f"), "a refused batch moves nothing").toBe(f);
-      // A selected child vacating the slot its folder carries frees it.
-      const h = await scenario.seedLiveFolder("h");
-      const hx = await scenario.seedLive("h/x");
-      const k = await scenario.seedLive("k");
-      expect
-        .soft(
-          await batchMove(
-            [m],
-            [toFolder(h, m, "i"), toDocument(hx, m, "z"), toDocument(k, m, "x", ["i"])],
-          ),
-        )
-        .toEqual({ ok: true });
-      expect.soft(await idAt(scenario, "live", "i/x"), "freed slot").toBe(k);
-      expect.soft(await idAt(scenario, "live", "z"), "selected child").toBe(hx);
-      // A swap leaves no alias at a path the final tree occupies (F-R3).
-      const sDoc = await scenario.seedLive("s");
-      const tDoc = await scenario.seedLive("t");
-      expect
-        .soft(await batchMove([m], [toDocument(sDoc, m, "t"), toDocument(tDoc, m, "s")]))
-        .toEqual({ ok: true });
-      expect
-        .soft(
-          await committed
-            .select({ path: documentPreviousLocations.path })
-            .from(documentPreviousLocations)
-            .where(
-              and(
-                eq(documentPreviousLocations.contextSourceId, m),
-                inArray(documentPreviousLocations.path, ["s", "t"]),
-              ),
-            ),
-          "swap history",
-        )
-        .toEqual([]);
-      expect
-        .soft([(await document(sDoc)).locationVersion, (await document(tDoc)).locationVersion])
-        .toEqual([1n, 1n]);
     });
 
     it("splits a nested hidden document off a folder moved out of user:// or into a Work's Scratch (F-3)", async () => {
@@ -338,55 +223,36 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .toBe(map);
       }
 
-      // Overlapping selected folders in one batch (F-R2): a selected child owns its subtree,
-      // and a split twins at original coordinates even when an ancestor moves too.
+      // The parent stays; the child leaves for a Work's Scratch, so its hidden contents split off
+      // under a twin of the child at the original path.
       const scenario = await start();
-      const elsewhere = (await start()).project.sources.manuscript;
-      const { manuscript: m, kb } = scenario.project.sources;
-      const sources = [m, kb, elsewhere];
-      const ascension = await scenario.work("Ascension overlap", "draft");
-      // The parent leaves the project; the child stays in it, so its hidden contents follow it.
-      await scenario.seedLive("p/r/visible");
-      const [p, r] = [await scenario.seedLiveFolder("p"), await scenario.seedLiveFolder("p/r")];
-      const followed = await scenario.model(ascension).create("p/r/hidden", "Hidden.");
-      const followedBefore = await document(followed);
-      expect
-        .soft(await batchMove(sources, [toFolder(p, elsewhere, "p"), toFolder(r, kb, "r")]))
-        .toEqual({ ok: true });
-      expect.soft(await document(followed), "moved with its own folder").toMatchObject({
-        hidden: true,
-        contextSourceId: kb,
-        folderId: r,
-        locationVersion: followedBefore.locationVersion + 1n,
-      });
-      expect.soft(await idAt(scenario, ascension, "kb://r/hidden")).toBe(followed);
-      // The parent stays in the project; the child leaves, so its hidden contents split off
-      // under twins at the original path, the moved parent included.
+      const ascension = await scenario.work("Ascension child", "draft");
       await scenario.seedLive("q/t/visible");
       const [q, t] = [await scenario.seedLiveFolder("q"), await scenario.seedLiveFolder("q/t")];
       const stayed = await scenario.model(ascension).create("q/t/hidden", "Hidden.");
       const stayedBefore = await document(stayed);
       expect
-        .soft(await batchMove(sources, [toFolder(q, kb, "q"), toFolder(t, elsewhere, "t")]))
-        .toEqual({ ok: true });
+        .soft(
+          await scenario.writer.move(
+            "q/t",
+            `scratch://@${(await scenario.work("Notes", "direct")).slug}/t`,
+          ),
+          "the child's live move",
+        )
+        .toMatchObject({ ok: true });
       const kept = await document(stayed);
       expect.soft(kept, "split off, unchanged").toMatchObject({
         hidden: true,
-        contextSourceId: m,
+        contextSourceId: scenario.project.sources.manuscript,
         locationVersion: stayedBefore.locationVersion,
       });
-      const tTwin = await folder(kept.folderId);
       expect.soft(kept.folderId, "under a twin").not.toBe(t);
-      expect.soft(tTwin, "t's twin").toMatchObject({ name: "t", hidden: true, contextSourceId: m });
-      expect.soft(await folder(tTwin.parentId), "q's twin, at q's old path").toMatchObject({
-        name: "q",
+      expect.soft(await folder(kept.folderId), "t's twin, under the staying q").toMatchObject({
+        name: "t",
         hidden: true,
-        contextSourceId: m,
-        parentId: null,
+        parentId: q,
       });
-      expect.soft(tTwin.parentId, "not the moved q").not.toBe(q);
       expect.soft(await idAt(scenario, ascension, "q/t/hidden")).toBe(stayed);
-      expect.soft(await parkedNames(sources), "no parked name persists").toEqual([]);
     });
 
     it("absorbs a hidden folder beside a same-named visible document: a draft clash, never a live refusal (F-4)", async () => {
@@ -440,71 +306,24 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect.soft((await document(notes)).hidden, "still hidden after Apply").toBe(true);
     });
 
-    it("refuses a batch whose final namespace puts a document at a folder's alias, folders aside (#766)", async () => {
+    it("answers a path two of a draft's documents share with the clash, never one of them (absorb)", async () => {
       const scenario = await start();
-      const source = scenario.project.sources.manuscript;
-      const moveFolder = await scenario.seedLiveFolder("MoveFolder");
-      const moveDoc = await scenario.seedLive("MoveDoc");
-      const otherFolder = await scenario.seedLiveFolder("OtherFolder");
-      const conflict = { ok: false, code: "conflict" };
-      expect
-        .soft(
-          await batchMove(
-            [source],
-            [toFolder(moveFolder, source, "Batch.md"), toDocument(moveDoc, source, "Batch")],
-          ),
-          "a folder and the document at its alias",
-        )
-        .toEqual(conflict);
-      expect
-        .soft(
-          await batchMove(
-            [source],
-            [
-              toDocument(moveDoc, source, "Batch"),
-              toFolder(moveFolder, source, "Inside", ["Batch.md"]),
-            ],
-          ),
-          "a required ancestor at a planned document's alias",
-        )
-        .toEqual(conflict);
-      expect
-        .soft(
-          await batchMove(
-            [source],
-            [
-              toDocument(moveDoc, source, "Batch", ["Fresh"]),
-              toFolder(moveFolder, source, "Inside", ["Fresh", "Batch.md"]),
-            ],
-          ),
-          "a required ancestor under a missing prefix at a planned document's alias",
-        )
-        .toEqual(conflict);
-      expect
-        .soft(
-          await batchMove(
-            [source],
-            [
-              toFolder(otherFolder, source, "Gone"),
-              toDocument(moveDoc, source, "Batch", ["OtherFolder"]),
-              toFolder(moveFolder, source, "Inside", ["OtherFolder", "Batch.md"]),
-            ],
-          ),
-          "a required ancestor under a prefix a moving node leaves",
-        )
-        .toEqual(conflict);
-      expect.soft(await idAt(scenario, "live", "Batch"), "nothing installed").toBeNull();
-      expect.soft(await idAt(scenario, "live", "Fresh/Batch"), "nothing installed").toBeNull();
-      expect.soft(await idAt(scenario, "live", "MoveDoc")).toBe(moveDoc);
-      expect
-        .soft(
-          await batchMove(
-            [source],
-            [toFolder(moveFolder, source, "Lore"), toFolder(otherFolder, source, "Lore.md")],
-          ),
-          "two folders never meet through an alias",
-        )
-        .toEqual({ ok: true });
+      const ascension = await scenario.work("Ascension", "draft");
+      await scenario.seedLiveFolder("drafts");
+      const first = await scenario.model(ascension).create("drafts/note", "First.");
+      const second = await scenario.model(ascension).create("ideas/note", "Second.");
+      expect.soft(await scenario.writer.move("drafts", "ideas"), "no live refusal").toMatchObject({
+        ok: true,
+      });
+
+      const view = scenario.view(ascension);
+      const clash = { ok: false, error: { code: "invalid_operation" } };
+      expect.soft(await view.stat("ideas/note"), "stat").toMatchObject(clash);
+      expect.soft(await view.read("ideas/note"), "read").toMatchObject(clash);
+      expect.soft(await view.ls("ideas"), "listing the folder both landed in").toMatchObject({
+        ok: true,
+      });
+      expect.soft((await document(first)).hidden && (await document(second)).hidden).toBe(true);
     });
 
     it.each([

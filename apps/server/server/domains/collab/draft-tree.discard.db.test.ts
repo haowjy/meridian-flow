@@ -297,7 +297,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { waitMs: 500 },
       );
       expect.soft(run.a, "the item Discard").toMatchObject({ ok: true });
-      expect.soft(run.bWaited || run.bBlocked, "the other waits on its locks").toBe(true);
+      expect.soft(run.bWaited, "the other waits on its locks").toBe(true);
       expect.soft(run.b, "Discard all").toMatchObject({ ok: true, value: { status: "discarded" } });
       expect
         .soft(await row(ori), "one tombstone")

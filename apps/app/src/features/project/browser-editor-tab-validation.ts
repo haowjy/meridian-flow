@@ -9,7 +9,9 @@ import {
 } from "@meridian/contracts/protocol";
 import {
   createResourcePlacement,
+  type ResourceIdentityIndex,
   type ResourceRecord,
+  resourceIdentityIndex,
   resourcePlacementForSnapshot,
   resourceVisibleInProject,
 } from "@meridian/resource-replica";
@@ -38,22 +40,15 @@ type EditorTabValidationGuard = (scope: EditorTabValidationScope) => boolean;
 
 type ValidatedRoute = { tab: ContextTab | null; removedRoute: WorkingSetRoute | null };
 
-function indexResourceRecords(records: readonly ResourceRecord[]): Map<string, ResourceRecord> {
-  const index = new Map<string, ResourceRecord>();
-  for (const record of records) {
-    index.set(record.resource.handle, record);
-    index.set(record.resource.identity.documentId, record);
-    for (const alias of Object.keys(record.resource.aliases)) index.set(alias, record);
-  }
-  return index;
-}
-
+/** A stable handle names the resource; otherwise the replica's one alias rule resolves the id. */
 function resourceRecordForTab(
-  index: ReadonlyMap<string, ResourceRecord>,
+  index: ResourceIdentityIndex,
   tab: ContextTab,
 ): ResourceRecord | undefined {
   return (
-    (tab.resourceHandle ? index.get(tab.resourceHandle) : undefined) ?? index.get(tab.documentId)
+    (tab.resourceHandle ? index.byHandle(tab.resourceHandle) : null) ??
+    index.byDocumentId(tab.documentId) ??
+    undefined
   );
 }
 
@@ -117,7 +112,7 @@ export async function validateEditorWorkspaceTabs({
   const projection = needsProjection
     ? await resources.readProjection(projectId).then(
         (snapshot) => ({
-          records: indexResourceRecords(
+          records: resourceIdentityIndex(
             snapshot.records.filter((record) =>
               resourceVisibleInProject(projectId, record, snapshot.catalogs),
             ),
@@ -127,7 +122,7 @@ export async function validateEditorWorkspaceTabs({
         () => null,
       )
     : {
-        records: new Map<string, ResourceRecord>(),
+        records: resourceIdentityIndex([]),
         placement: createResourcePlacement(projectId, [], []),
       };
   const results = await Promise.allSettled(

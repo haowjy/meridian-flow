@@ -18,7 +18,6 @@ import {
   useContextTabsActions,
   useContextTabsStore,
 } from "@/client/stores";
-import { requestEditorFocus } from "@/features/editor/focus-on-open";
 import {
   useAccountResourceProjection,
   useAccountResourceReplica,
@@ -36,13 +35,17 @@ import {
   type OpenContextRoute,
   useCaptureProjectNavigation,
 } from "./routing/ProjectNavigationContext";
+import type { ProjectRouteMask } from "./routing/ProjectRouteBoundary";
 import type { NavigationOptions } from "./routing/project-route";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 
 export type ContextViewerSurfaceControllerProps = {
   projectId: string;
   resolvedEditor: ReturnType<typeof resolveVisibleEditorTab>;
-  editorWorkId: string;
+  /** Null while the requested Work cannot be shown; the frame keeps its navigation. */
+  editorWorkId: string | null;
+  /** What masks the document body; the tab strip and the address stay outside it. */
+  mask: ProjectRouteMask;
   /** The Editor's Work; its archived state makes its files read-only. */
   editorWork: Work | null;
   localDocumentId?: string;
@@ -73,6 +76,7 @@ export function ContextViewerSurfaceController({
   projectId,
   resolvedEditor,
   editorWorkId,
+  mask,
   editorWork,
   addressOwnsDocumentAdmission = false,
   activeContextScheme,
@@ -85,7 +89,7 @@ export function ContextViewerSurfaceController({
   onSelectContextPath,
   onOpenContextTarget,
 }: ContextViewerSurfaceControllerProps) {
-  const routeWorkId = editorWorkId;
+  const routeWorkId = editorWorkId ?? undefined;
   const captureNavigation = useCaptureProjectNavigation();
   const contextRemoval = useContextRemovalCoordinator();
   const availability = useProjectContextAvailabilityCoordinator();
@@ -96,7 +100,7 @@ export function ContextViewerSurfaceController({
   const workspaceHydrated = useContextTabsStore((state) => state._workspaceHydrated);
   const layoutSaveFailed = useContextTabsStore((state) => state._layoutPersistenceError != null);
   const { openTab, reconcileResourceTab, updateTrackedTab, selectTab } = useContextTabsActions();
-  const visibleTabs = editorTabsForWork(tabs, routeWorkId);
+  const visibleTabs = editorWorkId ? editorTabsForWork(tabs, editorWorkId) : [];
   const removalState = useContextRemovalProject(projectId);
   const { selectedDocumentId, workspaceRoute, tab: activeTab } = resolvedEditor;
 
@@ -106,7 +110,8 @@ export function ContextViewerSurfaceController({
     isError: routeTreeIsError,
     isFetching: routeTreeIsFetching,
   } = useContextCatalogView(projectId, activeContextScheme ?? "kb", {
-    enabled: activeContextScheme !== null && activeContextPath !== null,
+    enabled:
+      routeWorkId !== undefined && activeContextScheme !== null && activeContextPath !== null,
     ...contextOwner(routeWorkId, activeContextChat),
   });
 
@@ -183,7 +188,7 @@ export function ContextViewerSurfaceController({
   // no longer needs an auto-open, so closing a tab and revisiting the same
   // file later re-opens it instead of being permanently blocked.
   const openTabKey =
-    activeContextScheme !== null && activeContextPath !== null
+    routeWorkId !== undefined && activeContextScheme !== null && activeContextPath !== null
       ? contextTabRouteKey(projectId, {
           scheme: activeContextScheme,
           path: activeContextPath,
@@ -389,7 +394,10 @@ export function ContextViewerSurfaceController({
     <ContextViewer
       layoutSaveFailed={layoutSaveFailed}
       projectId={projectId}
-      editorWorkId={routeWorkId}
+      editorWorkId={editorWorkId}
+      mask={mask}
+      route={activeContextScheme ? { scheme: activeContextScheme, path: activeContextPath } : null}
+      onSelectContextPath={onSelectContextPath}
       editorWork={editorWork}
       tabs={visibleTabs}
       paneState={paneState}
@@ -406,11 +414,11 @@ export function ContextViewerSurfaceController({
         try {
           if (isCurrent?.() === false) return;
           const documentId = reservation.content.handle.documentId;
-          requestEditorFocus(documentId);
           const result = await onOpenContextTarget(
             { scheme: "unfiled", path: "", workId: routeWorkId, documentId },
             {
               isCurrent,
+              focus: true,
               tab: {
                 kind: "new",
                 documentId,
