@@ -45,6 +45,13 @@ acknowledgement all resume the same way. `ResourceContentAccess.abortTransfer`
 settles both reservation owners (the content entry and the registry facet) and
 is a no-op after the commit.
 
+The acknowledged generation is the room's incarnation, never a lease's
+admission, which can be fresher. The local commit reads it from the store's
+decision. Server-session capture reads it from the registry's private
+`LiveSessionIncarnationPort` (`incarnationOf(session)`), keeps the fresh
+admission only for the fence check, and records both the lifecycle and the
+retained ownership at the incarnation.
+
 Browser-local document reservations, stable resource handles, exact persistence,
 and namespace intentions belong to the account-global `AccountResourceReplica`,
 composed by `AccountFeatureLifetime`. The document-session runtime supplies its
