@@ -92,8 +92,19 @@ export type ContextCreateUntitledDocumentResult =
   | {
       status: "created";
       documentId: string;
+      scheme: ContextScheme;
       path: string;
       name: string;
+      workId?: string;
+    }
+  /** The create became a draft's document; `documentId` is that document, at its current address. */
+  | {
+      status: "joined";
+      documentId: string;
+      scheme: ContextScheme;
+      path: string;
+      name: string;
+      workId?: string;
     }
   | {
       status: "already-materialized";
@@ -108,6 +119,24 @@ export type ContextCreateUntitledDocumentResult =
 export interface ContextCreateUntitledDocumentOptions {
   documentId: string;
   origin: WriteProvenance;
+  /**
+   * The writer's chosen place for this document, the same identity-based address a move
+   * carries. The create joins a draft's hidden document waiting there. Without it the
+   * create is nameless: `Untitled N` in the home URI's folder.
+   */
+  destination?: { parent: NonNullable<MoveContextEntryRequest["destinationParent"]>; name: string };
+  /** Refuses a destination the caller may not edit; given the resolved destination URI. */
+  authorizeDestination?: (uri: string) => Promise<boolean>;
+}
+
+/** What the router hands an adapter: the destination resolved to a folder path and a leaf. */
+export interface AdapterCreateUntitledOptions {
+  documentId: string;
+  origin: WriteProvenance;
+  /** The typed leaf filename; absent for a nameless create. */
+  name?: string;
+  /** The folder identity the destination named: a stale one is retried, never made again. */
+  expectFolderId?: string;
 }
 
 interface BaseListEntry {
@@ -245,12 +274,6 @@ export interface ContextWriteOptions {
    * upload's reservation): a create mints it.
    */
   documentId?: string;
-  /**
-   * A draft's hidden document to reveal at the create's path (link Create on an "in a
-   * draft" link, contract §6.4). Only a hidden document of this project is revealed; any
-   * other id conflicts and is never minted.
-   */
-  revealDocumentId?: string;
   /** Recorded in `documents.metadata` when this call creates the document; never on an existing one. */
   metadata?: DocumentCreationMetadata;
 }

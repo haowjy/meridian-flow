@@ -82,12 +82,19 @@ The live create pipeline is `adapters/context-fs/live-create.ts`. A live create
 at a hidden document's or folder's path reveals it instead of inserting a twin;
 with content it discovers the candidate holding nothing, takes its live lease,
 and admits the content on a clone inside the reveal's transaction
-(`writeCollabMarkdownHeld`), applied to the warm room after commit. Create by id
-(`revealDocumentId`, link Create on an "in a draft" link) reveals only a hidden
-document of this project, locking its physical source; the identity lookup is
-project-scoped and never needs the destination source to exist. Any other id
-conflicts and never mints. `documentId` is a mint (an upload's reservation, an untitled
-create's client id). `retractCreate` reverses a create for a rolled-back reply
+(`writeCollabMarkdownHeld`), applied to the warm room after commit. A draft's new
+document is a real document hidden only because it is a draft, so a create at its
+path unhides it and the draft stays an ordinary peer over it. The writer's instant
+create (`createUntitledDocument` with a `destination`, run by
+`LiveCreate.createOptimistic`) is never refused for a name: nothing at the path
+inserts the device's minted id; a draft's hidden text document there is unhidden,
+keeps its id, and the device's id forwards to it (`document_forwards`, written in
+the reveal's transaction; the answer is `joined`); a visible node there leaves
+the create at the first free name. A replay answers from the forward first, with
+the joined document's current address, and catalog entries carry `joinedFrom`.
+Link resolution follows forwards for ids no document holds. A nameless create
+takes `Untitled N`, skipping names hidden documents hold. `documentId` is a mint
+(an upload's reservation, an untitled create's client id). `retractCreate` reverses a create for a rolled-back reply
 or a failed create write: the router deletes a live create; a draft placement
 ends the draft's use unless another thread's committed text makes it stand, and
 collab deletes that Work's draft branch and its peers, then retires exactly those

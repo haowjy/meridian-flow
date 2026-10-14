@@ -11,7 +11,6 @@ export type TreeHookPoint =
   | "endUse.afterRevalidate"
   | "moves.beforeInstall"
   | "place.afterRevalidate"
-  | "revealById.afterDiscovery"
   | "split.beforeRepoint";
 
 const hooks = new Map<TreeHookPoint, () => Promise<void>>();

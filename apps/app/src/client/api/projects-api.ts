@@ -37,8 +37,8 @@ import {
   type CreateProjectResponse,
   type CreateThreadRequest,
   type CreateThreadResponse,
+  type CreateUntitledContextDocumentAnswer,
   type CreateUntitledContextDocumentRequest,
-  type CreateUntitledContextDocumentResult,
   type DeleteContextEntryRequest,
   type DeleteContextEntryResult,
   type DocumentAddressRequestOptions,
@@ -333,8 +333,8 @@ export async function createUntitledContextDocument(
   body: CreateUntitledContextDocumentRequest,
   opts?: ProjectContextRequestOptions,
   init?: RequestInitOptions,
-): Promise<CreateUntitledContextDocumentResult> {
-  const response = await postJson<CreateUntitledContextDocumentResult>(
+): Promise<CreateUntitledContextDocumentAnswer> {
+  const response = await postJson<CreateUntitledContextDocumentAnswer>(
     urlFor(apiProjectContextCreateUntitledPath(projectId, scheme, opts), init),
     body,
     {
@@ -344,6 +344,16 @@ export async function createUntitledContextDocument(
     },
   );
   if (response.status === "conflict") return response;
+  if (response.status === "joined")
+    return {
+      ...response,
+      address: {
+        ...response.address,
+        path: response.address.path.startsWith("/")
+          ? response.address.path
+          : `/${response.address.path}`,
+      },
+    };
   return {
     ...response,
     path: response.path.startsWith("/") ? response.path : `/${response.path}`,

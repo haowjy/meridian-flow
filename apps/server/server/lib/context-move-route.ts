@@ -140,6 +140,60 @@ function parseLocator(input: {
   return { scope: "project", scheme: input.scheme as ProjectContextFsScheme, path: input.path };
 }
 
+/**
+ * A writer-selected parent folder, by identity: a folder id, or a scheme root and its
+ * owner, each with the missing-folder suffix (`createFolders`). Moves and creates share it.
+ */
+export function parseDestinationParent(
+  raw: unknown,
+): NonNullable<MoveContextEntryRequest["destinationParent"]> {
+  const parent = raw as Record<string, unknown> | null;
+  let destinationParent: NonNullable<MoveContextEntryRequest["destinationParent"]>;
+  if (parent?.kind === "folder") {
+    destinationParent = {
+      kind: "folder",
+      folderId: requireRequestId(parent.folderId, "destinationParent.folderId"),
+    };
+  } else if (
+    parent?.kind === "root" &&
+    isProjectContextTreeScheme(parent.scheme) &&
+    parent.owner &&
+    typeof parent.owner === "object"
+  ) {
+    const owner = parent.owner as Record<string, unknown>;
+    destinationParent = {
+      kind: "root",
+      scheme: parent.scheme,
+      owner: {
+        workId: parseWorkId(owner.workId, "destinationWorkId"),
+        ...(typeof owner.workSlug === "string" || owner.workSlug === null
+          ? { workSlug: owner.workSlug }
+          : {}),
+        ...(owner.rootThreadId != null
+          ? {
+              rootThreadId: requireRequestId(
+                owner.rootThreadId,
+                "destinationParent.owner.rootThreadId",
+              ),
+              rootThreadRef: typeof owner.rootThreadRef === "string" ? owner.rootThreadRef : null,
+            }
+          : {}),
+      },
+    };
+  } else throw createError({ statusCode: 400, message: "Destination parent is invalid" });
+  if (parent.createFolders !== undefined) {
+    if (!Array.isArray(parent.createFolders))
+      throw createError({
+        statusCode: 400,
+        message: "Destination folder suffix must be an array",
+      });
+    destinationParent.createFolders = parent.createFolders.map((segment) =>
+      parseContextMutationName(segment, "destinationParent.createFolders"),
+    );
+  }
+  return destinationParent;
+}
+
 export function parseContextMove(input: {
   sourceScheme: unknown;
   body: unknown;
@@ -159,53 +213,16 @@ export function parseContextMove(input: {
   }
   let destinationParent: MoveContextEntryRequest["destinationParent"];
   if (body.destinationParent !== undefined) {
-    const parent = body.destinationParent as Record<string, unknown> | null;
-    if (parent?.kind === "folder") {
-      destinationParent = {
-        kind: "folder",
-        folderId: requireRequestId(parent.folderId, "destinationParent.folderId"),
-      };
-    } else if (
-      parent?.kind === "root" &&
-      parent.scheme === body.destinationScheme &&
-      parent.owner &&
-      typeof parent.owner === "object"
-    ) {
-      const owner = parent.owner as Record<string, unknown>;
+    destinationParent = parseDestinationParent(body.destinationParent);
+    if (destinationParent.kind === "root") {
+      if (destinationParent.scheme !== body.destinationScheme)
+        throw createError({ statusCode: 400, message: "Destination parent is invalid" });
+      const owner = destinationParent.owner;
       if (
-        (owner.workId ?? null) !== (body.destinationWorkId ?? null) ||
+        (owner.workId ?? null) !== parseWorkId(body.destinationWorkId, "destinationWorkId") ||
         (owner.rootThreadId ?? null) !== (body.destinationRootThreadId ?? null)
       )
         throw createError({ statusCode: 400, message: "Destination root owner does not match" });
-      destinationParent = {
-        kind: "root",
-        scheme: parent.scheme as MoveContextEntryRequest["destinationScheme"],
-        owner: {
-          workId: parseWorkId(owner.workId, "destinationWorkId"),
-          ...(typeof owner.workSlug === "string" || owner.workSlug === null
-            ? { workSlug: owner.workSlug }
-            : {}),
-          ...(owner.rootThreadId != null
-            ? {
-                rootThreadId: requireRequestId(
-                  owner.rootThreadId,
-                  "destinationParent.owner.rootThreadId",
-                ),
-                rootThreadRef: typeof owner.rootThreadRef === "string" ? owner.rootThreadRef : null,
-              }
-            : {}),
-        },
-      };
-    } else throw createError({ statusCode: 400, message: "Destination parent is invalid" });
-    if (parent.createFolders !== undefined) {
-      if (!Array.isArray(parent.createFolders))
-        throw createError({
-          statusCode: 400,
-          message: "Destination folder suffix must be an array",
-        });
-      destinationParent.createFolders = parent.createFolders.map((segment) =>
-        parseContextMutationName(segment, "destinationParent.createFolders"),
-      );
     }
   }
   const sourcePath = parseContextMutationPath(body.path, "path");
