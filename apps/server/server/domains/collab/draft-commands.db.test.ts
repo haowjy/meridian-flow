@@ -292,4 +292,63 @@ describeDraftTreeDb("review commands (postgres)", (start, db) => {
     expect((await c.applyChange(request)).httpStatus).toBe(202);
     expect(await c.s.batchStates()).toEqual(["blocked"]);
   });
+
+  it("5: a live edit to the chosen change's own words is overrode, and the draft's words win", async () => {
+    const c = await twoChanges(start);
+    await c.s.model(c.ascension).edit("chapter.md", "End, drafted.", "Finale, drafted.");
+    const request = await c.click("last");
+    const remove = setCollabHook("applyItems.beforeStaging", async () => {
+      remove();
+      await c.s.writer.write("chapter.md", "Opening.\n\nMiddle.\n\nEnding.");
+    });
+    const answer = await c.applyChange(request);
+    expect(answer.body).toMatchObject({
+      status: "applied",
+      hasChanges: true,
+      overrode: [
+        { live: expect.stringContaining("Ending"), applied: expect.stringContaining("Finale") },
+      ],
+    });
+    expect(await c.s.view("live").text("chapter.md")).toContain("Finale, drafted.");
+  });
+
+  it("6: a change live already reads is already_live, writes nothing, and a fresh click settles the rest", async () => {
+    const c = await twoChanges(start);
+    const request = await c.click("first");
+    await c.s.writer.write("chapter.md", "Opening, drafted.\n\nMiddle.\n\nEnd.");
+    const answer = await c.applyChange(request);
+    expect(answer.body).toMatchObject({ status: "already_live", hasChanges: true });
+    expect(await c.s.batchStates()).toEqual(["completed"]);
+    expect(await c.s.view("live").text("chapter.md")).not.toContain("End, drafted.");
+  });
+
+  it("7: a planning exception is failed merge_failed: no content or tree effect commits, the item stays reviewable", async () => {
+    const c = await twoChanges(start);
+    const request = await c.click("first");
+    const remove = setCollabHook("applyItems.planning", async () => {
+      remove();
+      throw new Error("injected planning exception");
+    });
+    const answer = await c.applyChange(request);
+    expect(answer.body).toMatchObject({ status: "failed", reason: "merge_failed" });
+    expect(await c.s.view("live").text("chapter.md")).not.toContain("drafted");
+    expect((await c.s.items(c.ascension)).length).toBe(1);
+  });
+
+  it("8: a snapshotless Apply recovered after the draft grew applies the staging-time text", async () => {
+    const c = await twoChanges(start);
+    const remove = setCollabHook("applyItems.afterStaging", async () => {
+      remove();
+      throw new Error("injected process death after staging");
+    });
+    await expect(c.s.applyAll(c.ascension)).rejects.toThrow("process death");
+    await c.s.model(c.ascension).edit("chapter.md", "Middle.", "Middle, later.");
+    await c.s.expirePendingClaims();
+    await c.s.recover();
+    const text = await c.s.view("live").text("chapter.md");
+    expect(text).toContain("Opening, drafted.");
+    expect(text).toContain("End, drafted.");
+    expect(text).not.toContain("Middle, later.");
+    expect((await c.s.items(c.ascension)).length).toBe(1);
+  });
 });

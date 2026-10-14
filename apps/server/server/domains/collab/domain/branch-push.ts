@@ -316,6 +316,7 @@ export function createBranchPushService(inputDeps: BranchPushServiceInput): Bran
             const lockCutUpdate = lockCuts.get(branch.documentId) as Uint8Array;
             let result: ReturnType<typeof planContentApply>;
             try {
+              await collabHook("applyItems.planning");
               result = planContentApply({
                 input: member.input,
                 branchState: branch.state,
