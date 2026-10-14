@@ -109,8 +109,8 @@ describe.skipIf(!enabled)("chat write mode migration (postgres)", () => {
         await target`SELECT execution_id, turn_id FROM thread_run_leases WHERE thread_id = ${id(10)}`,
       ).toEqual([{ execution_id: "run-before-identity", turn_id: id(22) }]);
       expect(
-        await target`SELECT steers_turn_id FROM user_turn_admissions WHERE submission_id = 'old-submission'`,
-      ).toEqual([{ steers_turn_id: id(20) }]);
+        await target`SELECT submission_id FROM user_turn_admissions WHERE submission_id = 'old-submission'`,
+      ).toEqual([{ submission_id: "old-submission" }]);
       expect(
         await target`SELECT id, execution_id, reserved_for_user_turn_ids FROM turns
           WHERE thread_id = ${id(10)} ORDER BY position`,

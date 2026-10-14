@@ -13,8 +13,7 @@ import type { QueuedControlStatus } from "./thread-controls";
 /**
  * What a pending command's row says in each status. A switch that waits for no reply
  * reads as the notice it becomes ("Switched to ..."); one that waits for a reply that
- * held the chat first (`waiting`) says it is queued. `applied` is a switch whose turn
- * has not rendered yet.
+ * held the chat first (`waiting`) says it is queued.
  */
 export function controlStatusCopy(
   control: ControlBody,
@@ -37,8 +36,6 @@ export function controlStatusCopy(
             ? t`Switch to draft mode queued`
             : t`Switch to auto-apply queued`
           : writeModeSwitchedCopy(control.mode);
-      case "applied":
-        return writeModeSwitchedCopy(control.mode);
       case "failed":
         return draft ? t`Couldn't switch to draft mode.` : t`Couldn't switch to auto-apply.`;
     }
@@ -47,7 +44,6 @@ export function controlStatusCopy(
     case "sending":
     case "queued":
     case "withdraw_failed":
-    case "applied":
       return t`Compaction queued`;
     case "failed":
       return t`Couldn't queue the compaction.`;

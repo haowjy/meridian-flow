@@ -337,6 +337,20 @@
       "when": 1791915815119,
       "tag": "0047_d62_chat_write_mode_online",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1791960204081,
+      "tag": "0048_run_state_hand_back",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1791960207423,
+      "tag": "0049_run_state_hand_back_online",
+      "breakpoints": true
     }
   ]
 }

@@ -9,7 +9,7 @@
  * queued one.
  */
 import type { AiWriteMode } from "@meridian/contracts/works";
-import type { Intent, RunStateView } from "./run-state-view";
+import type { RunStateIntent, RunStateView } from "./run-state-view";
 
 export type SwitchRowStatus = "sending" | "queued" | "failed" | "withdraw_failed";
 
@@ -19,10 +19,16 @@ export type SwitchRow = {
   status: SwitchRowStatus;
   /** The server may hold it and hasn't answered: Retry only, no Withdraw. */
   awaitingServer?: boolean;
+  /**
+   * The record says the switch applies when the next run starts (`awaiting_run`), so its
+   * notice sits before that run's reply. Absent for a switch only this device holds, and for
+   * one a reply holds the chat for (`waiting`): those stay at the tail.
+   */
+  awaitsRun?: boolean;
 };
 
-type Switch = Extract<Intent, { kind: "switch" }>;
-type Queued = { id: string; mode: AiWriteMode; from: "server" | Switch };
+type Switch = Extract<RunStateIntent, { kind: "switch" }>;
+type Queued = { id: string; mode: AiWriteMode; from: "server" | Switch; awaitsRun?: boolean };
 
 const byOrder = (a: Switch, b: Switch) =>
   a.order - b.order || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
@@ -43,7 +49,12 @@ export function switchState(view: RunStateView): { mode: AiWriteMode; rows: Swit
   for (const item of view.record.items) {
     if (item.intent !== "control" || item.control?.kind !== "write_mode") continue;
     if (withdrawals.get(item.id) === false) continue;
-    queued = { id: item.id, mode: item.control.mode, from: "server" };
+    queued = {
+      id: item.id,
+      mode: item.control.mode,
+      from: "server",
+      awaitsRun: item.deliveryState === "awaiting_run",
+    };
     break;
   }
 
@@ -66,10 +77,15 @@ export function switchState(view: RunStateView): { mode: AiWriteMode; rows: Swit
 
   const rows = [...failedRows];
   if (queued) {
-    const { id, mode, from } = queued;
+    const { id, mode, from, awaitsRun } = queued;
     rows.push(
       from === "server"
-        ? { id, mode, status: withdrawals.get(id) === true ? "withdraw_failed" : "queued" }
+        ? {
+            id,
+            mode,
+            status: withdrawals.get(id) === true ? "withdraw_failed" : "queued",
+            ...(awaitsRun ? { awaitsRun: true } : {}),
+          }
         : {
             id,
             mode,

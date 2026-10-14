@@ -13,7 +13,7 @@ import { orderTurnsByPosition } from "../../../threads/order-turns.js";
 import type { PromptBakeRepository } from "../../../threads/ports/repositories.js";
 import { bakeHasHistoryTool } from "../history-tool-availability.js";
 import type { CompactionPlan } from "./plan.js";
-import { type CompactionCut, retainedTail } from "./tail.js";
+import { type CompactionCut, resolveCut, retainedTail } from "./tail.js";
 
 /** The durable model-visible summary block written by the compaction protocol. */
 export const CompactionPropsCodec = z
@@ -141,25 +141,20 @@ function projectActiveHistory(
 
   const { turn: compaction, metadata, props } = activeCompaction;
   const beforeCompaction = turns.filter((turn) => turn.position < compaction.position);
-  const pinnedRequests = metadata.pinnedRequestTurnIds.map((id) => {
+  // A pin to a turn the conversation no longer has is a hand-back: the pinned request left the chat.
+  const pinnedRequests = metadata.pinnedRequestTurnIds.flatMap((id) => {
     const turn = beforeCompaction.find(
       (turn) => turn.id === id && (turn.role === "user" || turn.role === "system"),
     );
-    if (!turn)
-      throw new Error(`Complete compaction ${compaction.id} has a missing pinned request ${id}`);
-    return turn;
+    return turn ? [turn] : [];
   });
-  const cutTurn = turns.find((turn) => turn.id === metadata.compactedThrough.turnId);
-  if (!cutTurn || cutTurn.position >= compaction.position) {
-    throw new Error(`Complete compaction ${compaction.id} has an invalid cut turn`);
-  }
-
-  const cut: CompactionCut = {
-    turnId: cutTurn.id,
+  const cut = resolveCut(turns, compaction, {
+    turnId: metadata.compactedThrough.turnId,
     ...(metadata.compactedThrough.blockSequence !== undefined
       ? { blockSequence: metadata.compactedThrough.blockSequence }
       : {}),
-  };
+  });
+  if (!cut) throw new Error(`Complete compaction ${compaction.id} has an invalid cut turn`);
   const retainable = new Map<string, boolean>();
   for (const turn of beforeCompaction) {
     const kind = classifyHistoryItem(turn).kind;

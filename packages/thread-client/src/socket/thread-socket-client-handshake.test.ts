@@ -28,6 +28,14 @@ const state = {
   runningTurnId: null,
   activity: { children: [] },
   pending: { items: [] },
+  runState: {
+    version: "1",
+    items: [],
+    sentThrough: 0,
+    execution: null,
+    mode: "direct" as const,
+    blocked: null,
+  },
   resumeAfterSeq: "100",
 };
 function delta(seq: string, text: string) {

@@ -8,8 +8,12 @@ import { sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { lockThreadForMutation } from "../../../shared/thread-work-lock.js";
 import { THREAD_LOCK_SEED, type ThreadLock, threadLockKey } from "../loop/thread-lock.js";
+import { noteThreadLocked, type RunStatePublisher } from "./drizzle-run-state.js";
 
-export function createDrizzleThreadLock(db: Database): ThreadLock {
+export function createDrizzleThreadLock(
+  db: Database,
+  events: RunStatePublisher["events"] | null = null,
+): ThreadLock {
   return {
     withThreadLock(threadId, operation) {
       return runInDrizzleTransaction(db, async () => {
@@ -17,6 +21,7 @@ export function createDrizzleThreadLock(db: Database): ThreadLock {
           sql`SELECT pg_advisory_xact_lock(hashtextextended(${threadLockKey(threadId)}, ${THREAD_LOCK_SEED}))`,
         );
         await lockThreadForMutation(db, threadId);
+        noteThreadLocked(threadId, events && { db, events });
         return operation();
       });
     },

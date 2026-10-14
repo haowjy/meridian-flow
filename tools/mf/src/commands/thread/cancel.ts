@@ -8,6 +8,7 @@ import { CliError, EXIT } from "../../core/cli-error";
 import { type CommandSpec, requirePositional, stringOption } from "../../core/command";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
 import { terminalResult } from "./result";
+import { currentTurnId } from "./run-state";
 
 export const threadCancelCommand: CommandSpec = {
   path: ["thread", "cancel"],
@@ -32,7 +33,7 @@ export const threadCancelCommand: CommandSpec = {
         "GET",
         apiThreadSnapshotPath(threadId),
       );
-      turnId = snapshot.liveState.runningTurnId ?? undefined;
+      turnId = currentTurnId(snapshot.liveState.runState) ?? undefined;
       if (!turnId) throw new CliError("not_found", "Thread has no running turn");
     }
     const response = await session.request<CancelTurnResponse>(

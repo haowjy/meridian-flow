@@ -5,6 +5,7 @@
  */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { CurrentToolCall, ThreadLeaseState } from "@meridian/contracts/threads";
+import type { Lease } from "../../loop/ports.js";
 import {
   DEFAULT_LEASE_TTL_MS,
   type ExecutionId,
@@ -13,14 +14,26 @@ import {
   type RunStarter,
   type ThreadPhase,
 } from "../../loop/ports.js";
+import { projectRunState } from "../../loop/run-state.js";
 import type { ThreadLock } from "../../loop/thread-lock.js";
-import { createDeliveryAdapter, type DeliveryStore } from "../runtime-delivery.js";
+import type { DeliveryStore } from "../delivery-ports.js";
+import { createDeliveryAdapter } from "../runtime-delivery.js";
 
 export function createInMemoryInbox(): DeliveryStore {
   const blocked = new Map<ThreadId, "credits_exhausted">();
   const messages: InboxMessage[] = [];
   let nextSeq = 0;
   return {
+    // The in-memory adapter publishes no run-state record.
+    markRunStateChanged() {},
+    async publishRunState() {
+      return null;
+    },
+    async answerRunState() {
+      throw new Error(
+        "The in-memory inbox answers run state through createInMemoryRuntimeDelivery",
+      );
+    },
     async setBlockedReason(threadId, reason) {
       if (reason) blocked.set(threadId, reason);
       else blocked.delete(threadId);
@@ -141,7 +154,7 @@ export interface InMemoryRunClaimOptions {
 }
 
 export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): RunClaim &
-  import("../runtime-delivery.js").DeliveryLeaseStore & {
+  import("../delivery-ports.js").DeliveryLeaseStore & {
     readDeliveryRun(threadId: ThreadId): import("../../loop/ports.js").InboxProjection["run"];
   } {
   const holderId = options.holderId ?? crypto.randomUUID();
@@ -149,8 +162,13 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
   const now = options.now ?? (() => Date.now());
   const leases = new Map<ThreadId, InMemoryLease>();
   const shortClaims = new Set<ThreadId>();
-  // The execution claim, apart from its row: abandon unlocks and keeps the row.
-  const locked = new Set<ThreadId>();
+  // The execution claim, apart from its row: abandon unlocks and keeps the row. It records the
+  // claimant's execution, because settling a stale row happens under the new claimant's claim:
+  // ending the old execution must not unlock the thread the new one holds.
+  const locked = new Map<ThreadId, ExecutionId>();
+  const unlockIfHeldBy = (lease: Lease) => {
+    if (locked.get(lease.threadId) === lease.executionId) locked.delete(lease.threadId);
+  };
 
   const liveLease = (threadId: ThreadId): InMemoryLease | null => {
     const lease = leases.get(threadId);
@@ -191,7 +209,7 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
     },
     async startExecution(threadId, executionId, settle) {
       if (shortClaims.has(threadId) || locked.has(threadId)) return null;
-      locked.add(threadId);
+      locked.set(threadId, executionId);
       try {
         await settle();
         if (leases.has(threadId)) throw new Error("Stale execution row survived settlement");
@@ -284,12 +302,6 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
       row.messageIds = [];
       return true;
     },
-    async cancelThreadReceipt(threadId, turnId) {
-      const row = leases.get(threadId);
-      if (!row || row.turnId !== turnId) return false;
-      row.cancelRequested = true;
-      return true;
-    },
     async lockThreadReceipt(threadId) {
       const row = leases.get(threadId);
       return row
@@ -311,6 +323,13 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
       const row = liveLease(threadId);
       if (!row) return { kind: "asleep" };
       return { kind: "awake", phase: row.phase, cancelRequested: row.cancelRequested };
+    },
+
+    async readOwned(lease) {
+      const row = leases.get(lease.threadId);
+      return row?.executionId === lease.executionId && row.holderId === lease.holderId
+        ? { cancelRequested: row.cancelRequested }
+        : null;
     },
 
     async readMany(threadIds) {
@@ -341,22 +360,11 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
         .slice(0, limit);
     },
 
-    async lockStaleExecution(threadId) {
-      const row = leases.get(threadId);
-      return row ? { executionId: row.executionId } : null;
-    },
-
-    async deleteStaleExecution(threadId, executionId) {
-      if (leases.get(threadId)?.executionId !== executionId) return false;
-      leases.delete(threadId);
-      return true;
-    },
-
     async abandon(lease) {
       const row = leases.get(lease.threadId);
       if (row?.executionId === lease.executionId && row.holderId === lease.holderId) {
         row.expiresAt = now();
-        locked.delete(lease.threadId);
+        unlockIfHeldBy(lease);
       }
     },
 
@@ -375,7 +383,7 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
       const row = leases.get(lease.threadId);
       if (!row || row.executionId !== lease.executionId) return false;
       leases.delete(lease.threadId);
-      locked.delete(lease.threadId);
+      unlockIfHeldBy(lease);
       return true;
     },
   };
@@ -417,6 +425,8 @@ export function createInMemoryThreadLock(): ThreadLock {
 export function createInMemoryRuntimeDelivery(
   deps: Omit<Parameters<typeof createDeliveryAdapter>[0], "leaseStore" | "runClaim"> & {
     runClaim: ReturnType<typeof createInMemoryRunClaim>;
+    /** The thread's journal head as the socket numbers its frames: the in-memory record's version. */
+    headSeq(threadId: ThreadId): Promise<bigint>;
   },
 ) {
   return createDeliveryAdapter({
@@ -424,6 +434,29 @@ export function createInMemoryRuntimeDelivery(
     leaseStore: deps.runClaim,
     inbox: {
       ...deps.inbox,
+      // In memory the record is derived on demand at the journal head; nothing is published.
+      async answerRunState(threadId) {
+        const projection = await deps.inbox.readPendingProjection(threadId);
+        const run = deps.runClaim.readDeliveryRun(threadId);
+        const executionId = await deps.runClaim.readOpenExecutionId(threadId);
+        const thread = await deps.repos.threads.findById(threadId);
+        const body = projectRunState({
+          messages: projection.messages,
+          lease: executionId
+            ? { executionId, turnId: run?.turnId ?? null, adoptedMessageIds: run?.messageIds ?? [] }
+            : null,
+          executionOpen: executionId !== null,
+          sentThrough: Math.max(
+            0,
+            ...projection.messages
+              .filter((m) => m.intent === "message" && m.provenance.kind === "writer")
+              .map((m) => m.seq),
+          ),
+          mode: thread?.aiWriteMode ?? "direct",
+          blockedReason: projection.blocked?.reason ?? null,
+        });
+        return { ...body, version: (await deps.headSeq(threadId)).toString() };
+      },
       async readPendingProjection(threadId) {
         return {
           ...(await deps.inbox.readPendingProjection(threadId)),

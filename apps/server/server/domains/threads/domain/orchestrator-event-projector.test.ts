@@ -2,11 +2,7 @@
  * Projector wire contracts: the client-facing custom event names and payloads
  * for durable block lifecycle facts. Pins the names the app reducer reads.
  */
-import {
-  EventType,
-  EXECUTION_ENDED_EVENT,
-  MESSAGES_DELIVERED_EVENT,
-} from "@meridian/contracts/protocol";
+import { EventType } from "@meridian/contracts/protocol";
 import { SIMPLE_TEXT_TURN_AGUI, SIMPLE_TEXT_TURN_ORCHESTRATOR } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import {
@@ -91,7 +87,7 @@ describe("historical card replacement", () => {
 });
 
 describe("run identity", () => {
-  it("projects the golden send: start, delivery, finish, execution end", () => {
+  it("projects the golden send: start, text, finish", () => {
     expect(projectOrchestratorEvents(SIMPLE_TEXT_TURN_ORCHESTRATOR)).toEqual(SIMPLE_TEXT_TURN_AGUI);
   });
 
@@ -110,12 +106,34 @@ describe("run identity", () => {
     expect(start).toMatchObject({
       rawEvent: { writeMode: null, executionId: null, reservedForUserTurnIds: [], position: null },
     });
-    const [delivered] = projector.project({
-      type: "messages.delivered",
-      byTurnId: "old",
-      executionId: null,
-      userTurnIds: ["m1"],
-    } as never);
-    expect(delivered).toMatchObject({ value: { byTurnId: "old", byTurnPosition: null } });
+    // Risk: a stateful projector reusing the first segment's identity. A split reply's second
+    // segment names its own run, execution, reservation and position.
+    const second = {
+      id: "b",
+      position: 4,
+      threadId: "thread-1",
+      role: "assistant",
+      blocks: [],
+      writeMode: "direct",
+      executionId: "e1",
+      reservedForUserTurnIds: ["m2"],
+    } as never;
+    projector.project({
+      type: "turn.completed",
+      turn: { id: "old", threadId: "thread-1", role: "assistant", blocks: [] } as never,
+    });
+    expect(projector.project({ type: "turn.created", turn: second })).toEqual([
+      {
+        type: EventType.RUN_STARTED,
+        threadId: "thread-1",
+        runId: "b",
+        rawEvent: {
+          writeMode: "direct",
+          executionId: "e1",
+          reservedForUserTurnIds: ["m2"],
+          position: 4,
+        },
+      },
+    ]);
   });
 });

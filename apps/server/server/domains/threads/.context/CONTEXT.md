@@ -318,7 +318,7 @@ transactions. See [runtime delivery](../../runtime/.context/delivery.md).
 | `ThreadRepository` | Thread lifecycle plus writer-facing project lists (`kind: "primary"` only) and the hard-bounded `listRecentByWork` model summary. It does not expose an unbounded Work list. Get-by-id still returns subagents. |
 | `ProjectChatFeedRepository` | Flat primary-chat pages ranked by latest visible activity, with Favorite, title-search, and nullable Work-association filters before pagination. Project and Work Chats hide archived chats. |
 | `ThreadUserStateRepository` | Per-writer favorite authority. |
-| `TurnRepository` | `create / findById / findByControlId / listByThread / listPendingPlaceholdersForThread / listPendingPlaceholders / getLatestByThread / findRunningAssistantId / updateStatus / recomputeRollups` |
+| `TurnRepository` | `create / findById / findByControlId / listByThread (conversation) / listPendingPlaceholdersForThread / listPendingPlaceholders / `turnGraph(turns).{listByThread,findById,latest}` (graph) / findRunningAssistantId / updateStatus / recomputeRollups` |
 | `BlockRepository` | `create / upsert / replaceExisting / findById / listByTurn / listByThread`. Blocks carry no model-only state: compaction elisions live in the compaction turn's metadata, never on block rows. |
 | `ModelResponseRepository` | `create / findById / listByTurn / listByThread / findLatestByThread / sumUsageByThread / cacheResetContext` |
 | `ThreadRepositories` | aggregate of the repositories + `transaction<T>` for atomic multi-repo writes + `runTurnStartTransition` for thread-row-serialized turn setup |
@@ -566,7 +566,11 @@ CRUD. This intentionally diverges from `packages/database/.context/CONTEXT.md`'s
 no-triggers rule for thread rollup columns: that rule protects columns with
 exactly one writer (the read-model projector); this projection's defining risk
 is a *future* writer bypassing recompute (branch switching), which only a
-database-level trigger closes.
+database-level trigger closes. A handed-back writer message (a hand-back
+request's `thread_inbox_messages.handed_back_by`) never anchors the head or
+its preview: migration `0049` adds the predicate to the function and an
+`AFTER UPDATE OF handed_back_by` trigger on `thread_inbox_messages` that
+recomputes the chat.
 
 ### Turn authorship (`turns.origin`)
 

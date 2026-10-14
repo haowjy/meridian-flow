@@ -1,11 +1,10 @@
 # @meridian/thread-client
 
 The framework-free thread socket and message-document core shared by the app
-and `./mf`. Keep protocol readiness, deadlines, cursor recovery and turn
-reduction (`turns/`) here so the clients cannot disagree. Every chat decision
-between the server and the screen is headed here: design A's run-state reader
-and the chat session belong in this package, never in `apps/app`. Reply
-following stays client-owned until they land.
+and `./mf`. Keep protocol readiness, deadlines, cursor recovery, turn
+reduction (`turns/`) and run state (`run-state/`) here so the clients cannot
+disagree. Every chat decision between the server and the screen is headed here,
+never into `apps/app`; the chat session moves the rest.
 
 - Platform differences enter through injected ports at each composition root.
   No React, stores, browser or Node globals at module evaluation,
@@ -20,8 +19,17 @@ following stays client-owned until they land.
   functions. The app draws its output and `./mf thread view` prints it. It emits
   counts, kinds and numbers; Lingui and `Intl` strings stay in the app. Memoized
   by input identity (`WeakMap`) so unchanged turns keep their items.
+- Run state is selectors over one whole `RunState` record and this device's
+  intents (`run-state/`). No store: hosts hold the view, and the newest record
+  wins by `version`. Never derive a run fact from execution ids, stream order or
+  timers, and never compose a record from parts.
+- Share a decision's inputs and recovery, not only its reducer. A rule that
+  needs a snapshot to finish (a divider waiting for its anchor, a waiting
+  message the stream didn't carry) exposes what waits, and both hosts refresh
+  from it; otherwise `./mf` silently diverges.
 - Clients own HTTP, auth, persistence, printing and editor lifecycle.
   Observers must not affect product transport behavior.
 
 Read [the contracts](.context/CONTEXT.md) for socket composition, deadline and
-recovery guarantees, and message-document serialization.
+recovery guarantees, message-document serialization and its hand-back inverse,
+the seq fences on removals and dividers, and the run-state selectors.

@@ -107,9 +107,15 @@ function liveState(seq: string, pendingItems: unknown[] = []) {
   return {
     threadId: THREAD_ID,
     status: { kind: "asleep" },
-    runningTurnId: null,
     activity: { children: [] },
-    pending: { items: pendingItems },
+    runState: {
+      version: seq,
+      items: pendingItems,
+      sentThrough: 0,
+      execution: null,
+      mode: "direct",
+      blocked: null,
+    },
     resumeAfterSeq: seq,
   };
 }
@@ -168,20 +174,39 @@ function createFake() {
     for (const socket of sockets) if (socket.readyState === 1) socket.send(JSON.stringify(frame));
   };
 
-  const currentLiveState = () => {
-    const runningTurnId = !snapshotPolicy.running
+  const runningTurn = () =>
+    !snapshotPolicy.running
       ? null
       : (turns
           .slice()
           .reverse()
           .find((turn) => ["streaming", "waiting_interrupt"].includes(turn.status))?.id ?? null);
+
+  /** The chat's whole run-state record, as the server publishes it. */
+  const runStateRecord = (version: string, items: unknown[], blocked: boolean, ended = false) => {
+    const turn = ended ? null : runningTurn();
+    return {
+      version,
+      items,
+      sentThrough: 0,
+      execution: turn ? { executionId: `exec-${turn}`, currentTurnId: turn } : null,
+      mode: "direct",
+      blocked: blocked ? { reason: "credits_exhausted" } : null,
+    };
+  };
+
+  const publishRunState = (items: unknown[], blocked: boolean, ended = false) =>
+    publish({
+      type: "CUSTOM",
+      name: "meridian.run_state",
+      value: runStateRecord(nextSeq(), items, blocked, ended),
+    } as AGUIEvent);
+
+  const currentLiveState = () => {
+    const runningTurnId = runningTurn();
     return {
       ...liveState(String(journal.length), pendingItems),
-      pending: {
-        items: pendingItems,
-        ...(blockedForUsage ? { blocked: { reason: "credits_exhausted" } } : {}),
-      },
-      runningTurnId,
+      runState: runStateRecord(String(journal.length), pendingItems, blockedForUsage),
       status:
         runningTurnId || leaseReleasePending || snapshotPolicy.awake
           ? { kind: "awake", phase: "generating", cancelRequested: false }
@@ -218,13 +243,8 @@ function createFake() {
       rawEvent: { writeMode: null, executionId, reservedForUserTurnIds },
     } as AGUIEvent);
   };
-  /** The followed reply's execution ended: its terminal finish or error carried no successor. */
-  const publishEnded = (runId: string) =>
-    publish({
-      type: "CUSTOM",
-      name: "meridian.execution.ended",
-      value: { executionId: executionOf.get(runId) ?? `execution-${runId}` },
-    } as AGUIEvent);
+  /** The followed reply's execution ended: the record that follows carries no open execution. */
+  const publishEnded = (_runId: string) => publishRunState(pendingItems, blockedForUsage, true);
 
   const runScenario = (text: string) => {
     runCounter += 1;
@@ -526,7 +546,7 @@ function createFake() {
         return send(202, {
           threadId: THREAD_ID,
           userTurnId,
-          steersTurnId: first.id,
+          runStateVersion: null,
           resumeAfterSeq,
           snapshotFloorNextSeq: resumeAfterSeq,
           status: "accepted",
@@ -596,7 +616,7 @@ function createFake() {
         return send(202, {
           threadId: THREAD_ID,
           userTurnId,
-          steersTurnId: runningTurnId,
+          runStateVersion: null,
           resumeAfterSeq,
           snapshotFloorNextSeq: resumeAfterSeq,
           status: "accepted",
@@ -661,7 +681,7 @@ function createFake() {
         return send(202, {
           threadId: THREAD_ID,
           userTurnId,
-          steersTurnId: runningTurnId,
+          runStateVersion: null,
           resumeAfterSeq,
           snapshotFloorNextSeq: resumeAfterSeq,
           status: "accepted",
@@ -736,7 +756,7 @@ function createFake() {
         return send(202, {
           threadId: THREAD_ID,
           userTurnId,
-          steersTurnId: null,
+          runStateVersion: null,
           resumeAfterSeq,
           snapshotFloorNextSeq: resumeAfterSeq,
           status: "accepted",
@@ -805,7 +825,7 @@ function createFake() {
         return send(202, {
           threadId: THREAD_ID,
           userTurnId,
-          steersTurnId: null,
+          runStateVersion: null,
           resumeAfterSeq,
           snapshotFloorNextSeq: resumeAfterSeq,
           status: "accepted",
@@ -831,18 +851,10 @@ function createFake() {
           summary: body.text,
           enqueuedAt: "2026-01-02T00:00:00.000Z",
         };
-        publish({
-          type: "CUSTOM",
-          name: "meridian.inbox.changed",
-          value: { items: [item], blocked: { reason: "credits_exhausted" } },
-        } as AGUIEvent);
+        publishRunState([item], true);
         blockedForUsage = false;
         pendingItems.splice(0, pendingItems.length);
-        publish({
-          type: "CUSTOM",
-          name: "meridian.inbox.changed",
-          value: { items: [] },
-        } as AGUIEvent);
+        publishRunState([], false);
         turns.push({
           id: replyId,
           role: "assistant",
@@ -857,7 +869,7 @@ function createFake() {
         return send(202, {
           threadId: THREAD_ID,
           userTurnId,
-          steersTurnId: null,
+          runStateVersion: null,
           resumeAfterSeq,
           snapshotFloorNextSeq: resumeAfterSeq,
           status: "accepted",
@@ -877,16 +889,12 @@ function createFake() {
         });
         setTimeout(() => {
           blockedForUsage = true;
-          publish({
-            type: "CUSTOM",
-            name: "meridian.inbox.changed",
-            value: { items: pendingItems, blocked: { reason: "credits_exhausted" } },
-          } as AGUIEvent);
+          publishRunState(pendingItems, true);
         }, 50);
         return send(202, {
           threadId: THREAD_ID,
           userTurnId,
-          steersTurnId: null,
+          runStateVersion: null,
           resumeAfterSeq,
           snapshotFloorNextSeq: resumeAfterSeq,
           status: "accepted",
@@ -899,7 +907,7 @@ function createFake() {
         threadId: THREAD_ID,
         submissionId: body.submissionId,
         userTurnId: `turn-u${runCounter}`,
-        steersTurnId: null,
+        runStateVersion: null,
         resumeAfterSeq,
         snapshotFloorNextSeq: resumeAfterSeq,
         status: "accepted",

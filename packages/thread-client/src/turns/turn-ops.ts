@@ -4,6 +4,8 @@
  * adapter and `InMemoryTurnStore`) calls these, so the semantics exist once.
  */
 import type { Block, Turn } from "@meridian/contracts/protocol";
+import { compareSeq } from "@meridian/contracts/protocol";
+import type { AiWriteMode } from "@meridian/contracts/works";
 import { baseTurnFields } from "./state-helpers";
 
 export type EnsureAssistantTurnOptions = {
@@ -93,6 +95,113 @@ export function ensureAssistantTurnIn(
   return { kind: "created", turns: [...existing, turn], turn };
 }
 
+/** The facts a `meridian.write_mode.switched` frame carries about its divider turn. */
+export type SwitchTurnFacts = {
+  turnId: string;
+  controlId: string;
+  mode: AiWriteMode;
+  /** The turn the divider follows, null at the head of the chat. */
+  prevTurnId: string | null;
+  position: number;
+};
+
+/** A divider a `switched` frame added, held until a snapshot covers that frame's seq. */
+export type HeldDividers = ReadonlyMap<string, { turn: Turn; seq: string }>;
+
+/**
+ * The turns with `turn` placed straight after the turn it follows (`prevTurnId`), or at the head
+ * when it follows none. Null when the turn it follows is not in `turns`: the place is unknown,
+ * and a guess would put the divider where it never was.
+ */
+function placedAfterAnchor(turns: readonly Turn[], turn: Turn): Turn[] | null {
+  if (turn.prevTurnId === null) return [turn, ...turns];
+  const at = turns.findIndex((candidate) => candidate.id === turn.prevTurnId);
+  if (at < 0) return null;
+  return [...turns.slice(0, at + 1), turn, ...turns.slice(at + 1)];
+}
+
+/**
+ * Adds the write-mode divider a `meridian.write_mode.switched` frame names, as a complete
+ * `system` turn carrying the metadata the divider reads, right after the turn the frame says it
+ * follows. The frame is the only live announcement of that turn, so this is how a stream
+ * follower gets the divider with no snapshot; the stored turn replaces it by id. The divider is
+ * also held at the frame's seq: a snapshot read before the switch still lacks it, and
+ * `applySnapshotTo` places it again, by the same anchor, until a snapshot covers the frame.
+ *
+ * When the turn it follows is not in the store yet (another client's message the stream does
+ * not carry), the divider is held but not shown: the host's snapshot refresh brings the anchor,
+ * and the held divider is placed then. The same state comes back when it is already there.
+ */
+export function ensureSwitchTurnIn(
+  state: { turns: Turn[]; dividers: HeldDividers },
+  threadId: string,
+  facts: SwitchTurnFacts,
+  seq: string,
+  createdAt: string,
+): { turns: Turn[]; dividers: HeldDividers } {
+  const { turns: existing } = state;
+  if (existing.some((turn) => turn.id === facts.turnId)) return state;
+  const held = state.dividers.get(facts.turnId);
+  if (held) {
+    const turns = placedAfterAnchor(existing, held.turn);
+    return turns ? { turns, dividers: state.dividers } : state;
+  }
+  const turn: Turn = {
+    id: facts.turnId,
+    threadId,
+    position: facts.position,
+    prevTurnId: facts.prevTurnId,
+    role: "system",
+    origin: "system",
+    writeMode: facts.mode,
+    status: "complete",
+    promptBakeId: null,
+    finishReason: null,
+    ...baseTurnFields(),
+    error: null,
+    createdAt,
+    completedAt: createdAt,
+    blocks: [],
+    metadata: {
+      kind: "write_mode_switch",
+      mode: facts.mode,
+      controlMessageId: facts.controlId,
+    },
+    executionId: null,
+    reservedForUserTurnIds: [],
+    delivery: null,
+    siblingIds: [],
+    responses: [],
+  };
+  return {
+    turns: placedAfterAnchor(existing, turn) ?? existing,
+    dividers: new Map(state.dividers).set(facts.turnId, { turn, seq }),
+  };
+}
+
+/** A held divider that still waits for the turn it follows, with the seq of the frame that named it. */
+export type AwaitingDivider = { turnId: string; seq: string };
+
+/**
+ * The held dividers not placed because their anchor is missing from `turns`. A snapshot that
+ * covers a divider's frame releases the hold itself (`applySnapshotTo`), present turn or not,
+ * so what is listed here is exactly what only a newer snapshot can resolve: the one rule both
+ * the app and `./mf` ask before they refresh.
+ */
+export function dividersAwaitingAnchorIn(state: {
+  turns: readonly Turn[];
+  dividers: HeldDividers;
+}): AwaitingDivider[] {
+  const present = new Set(state.turns.map((turn) => turn.id));
+  const waiting: AwaitingDivider[] = [];
+  for (const [turnId, { turn, seq }] of state.dividers) {
+    if (present.has(turnId)) continue;
+    const anchor = turn.prevTurnId;
+    if (typeof anchor === "string" && !present.has(anchor)) waiting.push({ turnId, seq });
+  }
+  return waiting;
+}
+
 /**
  * Replaces the block at `block.sequence`, keeps blocks sorted, and returns null
  * when the turn is unknown or the block is identical (callers skip the write).
@@ -124,6 +233,65 @@ export function patchTurnStatusIn(
     Object.entries(patch).filter(([, value]) => value !== undefined),
   ) as TurnStatusPatch;
   return turns.map((turn, index) => (index === turnIndex ? { ...turn, ...defined, status } : turn));
+}
+
+/** Turns that left the conversation, by id, with the stream seq of the frame that removed them. */
+export type Tombstones = ReadonlyMap<string, string>;
+
+/**
+ * A thread's turns with the tombstones of turns removed from them. A snapshot read before a
+ * removal still lists the turn, so removal alone is not enough: the tombstone keeps it gone
+ * until a snapshot that covers the removal arrives.
+ */
+export type TurnsWithTombstones = { turns: Turn[]; tombstones: Tombstones };
+
+/**
+ * Removes the named turns (a `meridian.messages.handed_back` frame, or the same fact in a
+ * hand-back answer) and keeps a tombstone for each. Applying it again changes nothing, so the
+ * frame and the HTTP answer may both call it. The later seq of two removals of one id wins.
+ */
+export function removeTurnsIn(
+  state: TurnsWithTombstones,
+  ids: readonly string[],
+  seq: string,
+): TurnsWithTombstones {
+  const drop = new Set(ids);
+  const turns = state.turns.filter((turn) => !drop.has(turn.id));
+  let tombstones: Map<string, string> | null = null;
+  for (const id of drop) {
+    const held = state.tombstones.get(id);
+    if (held !== undefined && compareSeq(held, seq) >= 0) continue;
+    tombstones ??= new Map(state.tombstones);
+    tombstones.set(id, seq);
+  }
+  if (turns.length === state.turns.length && !tombstones) return state;
+  return { turns, tombstones: tombstones ?? state.tombstones };
+}
+
+/**
+ * A server snapshot's turns, less those a removal the snapshot does not cover has taken out, and
+ * plus the dividers a frame the snapshot does not cover has added; both fences are the same
+ * (`seq < nextSeq` is covered), because a covering snapshot lists the stored turns itself.
+ */
+export function applySnapshotTo(
+  fences: { tombstones: Tombstones; dividers: HeldDividers },
+  serverTurns: readonly Turn[],
+  nextSeq: string,
+): { turns: Turn[]; tombstones: Tombstones; dividers: HeldDividers } {
+  const { tombstones, dividers } = fences;
+  const live = new Map([...tombstones].filter(([, seq]) => compareSeq(seq, nextSeq) >= 0));
+  const held = new Map([...dividers].filter(([, { seq }]) => compareSeq(seq, nextSeq) >= 0));
+  const kept = live.size ? serverTurns.filter((turn) => !live.has(turn.id)) : [...serverTurns];
+  const present = new Set(kept.map((turn) => turn.id));
+  // In frame order, so a divider that follows another is placed after it.
+  let turns = kept;
+  for (const [id, { turn }] of held)
+    if (!present.has(id)) turns = placedAfterAnchor(turns, turn) ?? turns;
+  return {
+    turns,
+    tombstones: live.size === tombstones.size ? tombstones : live,
+    dividers: held.size === dividers.size ? dividers : held,
+  };
 }
 
 function sameBlock(left: Block, right: Block): boolean {

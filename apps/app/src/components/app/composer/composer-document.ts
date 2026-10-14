@@ -11,8 +11,8 @@ import { decodeWorkSlug } from "@meridian/contracts/works";
 import { formatMarkdownLink } from "@meridian/markup/links";
 import {
   imageCapable,
-  type MessageReference,
   type MessageSkill,
+  type RestorableReference,
   referenceSpelling,
   serializeMessageDoc,
 } from "@meridian/thread-client";
@@ -60,7 +60,7 @@ export type ComposerSubmitEnvelope = Readonly<{
 }>;
 
 export type ComposerReferenceAttrs = AuthoritativeReference &
-  MessageReference & {
+  RestorableReference & {
     upload: ComposerOwnedUpload | null;
   };
 export type ComposerPendingUploadAttrs = {

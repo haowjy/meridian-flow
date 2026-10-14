@@ -97,10 +97,16 @@ export type ComposerProps = {
   onStop?: () => void;
   /**
    * A run is active on this thread (a reply streaming, a compaction, a brief).
-   * Stop replaces an empty Send, Escape in the empty composer presses it, and a
-   * send queues behind the run.
+   * Stop shows beside Send, whatever the composer holds; Escape in the empty composer
+   * presses it, and a send queues behind the run.
    */
   running?: boolean;
+  /**
+   * This tab's Stop request. Pending and stopping read Stopping and do nothing on a press;
+   * failed says so beside the control and keeps it, even after the chat goes idle, so the
+   * retry stays reachable.
+   */
+  stopStatus?: "idle" | "pending" | "stopping" | "failed";
   placeholder?: string;
   autoFocus?: boolean;
   variant?: "hero" | "pinned";
@@ -138,6 +144,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     onDraftChange,
     onStop,
     running = false,
+    stopStatus = "idle",
     placeholder,
     autoFocus,
     variant = "hero",
@@ -501,9 +508,14 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     });
   }, [editor]);
 
-  // Escape is the Stop button: it stops only while Stop shows. With a draft it
-  // leaves the run and the draft alone for other Escape owners.
-  const showStop = running && !hasContent;
+  // Where Stop shows: whenever a reply runs or this tab's Stop is pending, stopping or failed,
+  // beside Send, whatever the composer holds. Send shows whenever there is something to send.
+  const showStop = running || stopStatus !== "idle";
+  const showSend = hasContent || !showStop;
+  // Escape presses Stop only in the empty composer. With a draft it leaves the run and the
+  // draft alone for other Escape owners (menus, dialogs): ending a reply is not a side effect.
+  const escapeStops = showStop && !hasContent;
+  const stopInProgress = stopStatus === "pending" || stopStatus === "stopping";
   const keyDown = (event: React.KeyboardEvent) => {
     if (
       event.target instanceof Element &&
@@ -512,7 +524,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       )
     )
       return;
-    if (event.key === "Escape" && showStop) {
+    if (event.key === "Escape" && escapeStops && !stopInProgress) {
       event.preventDefault();
       onStop?.();
     }
@@ -580,27 +592,61 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             </>
           ) : null}
 
-          <Button
-            type="button"
-            size="icon-sm"
-            onClick={() => (showStop ? onStop?.() : void submit())}
-            disabled={!showStop && (!hasContent || submitDisabled || pending > 0)}
-            aria-label={showStop ? t`Stop` : t`Send message`}
-            aria-describedby={!showStop && submitDisabledReason ? disabledReasonId : undefined}
-            className={running ? "relative rounded-full" : "rounded-field"}
-          >
-            {showStop ? (
+          {showStop && stopStatus !== "idle" ? (
+            <span
+              className={cn(
+                "text-xs",
+                stopStatus === "failed" ? "text-destructive" : "text-ink-subtle",
+              )}
+              data-composer-stop-status={stopStatus}
+            >
+              {stopStatus === "failed" ? t`Couldn't stop. Try again.` : t`Stopping`}
+            </span>
+          ) : null}
+          {showStop ? (
+            <Button
+              type="button"
+              size="icon-sm"
+              data-composer-stop=""
+              onClick={() => onStop?.()}
+              disabled={stopInProgress}
+              aria-label={
+                stopInProgress
+                  ? t`Stopping`
+                  : stopStatus === "failed"
+                    ? t`Couldn't stop. Try again.`
+                    : t`Stop`
+              }
+              className="relative rounded-full"
+            >
               <span className="size-2.5 rounded-[3px] bg-primary-foreground" />
-            ) : (
+              {stopInProgress ? (
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute -inset-1 rounded-full border-2 border-primary/30 border-t-primary motion-safe:animate-spin"
+                />
+              ) : null}
+            </Button>
+          ) : null}
+          {showSend ? (
+            <Button
+              type="button"
+              size="icon-sm"
+              onClick={() => void submit()}
+              disabled={!hasContent || submitDisabled || pending > 0}
+              aria-label={t`Send message`}
+              aria-describedby={submitDisabledReason ? disabledReasonId : undefined}
+              className={running ? "relative rounded-full" : "rounded-field"}
+            >
               <ArrowUp className="size-4" />
-            )}
-            {running && hasContent ? (
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute -inset-1 rounded-full border-2 border-primary/30 border-t-primary motion-safe:animate-spin"
-              />
-            ) : null}
-          </Button>
+              {running && hasContent ? (
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute -inset-1 rounded-full border-2 border-primary/30 border-t-primary motion-safe:animate-spin"
+                />
+              ) : null}
+            </Button>
+          ) : null}
           {submitDisabledReason ? (
             <span id={disabledReasonId} className="sr-only">
               {submitDisabledReason}

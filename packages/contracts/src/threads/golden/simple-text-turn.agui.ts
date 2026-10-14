@@ -2,15 +2,12 @@
  * Purpose: Defines the expected AG-UI event stream for the simple text golden turn.
  * Why independent: The fixture is a shared protocol contract example consumed by projectors and client tests, not runtime orchestration code.
  */
-import {
-  type AGUIEvent,
-  EventType,
-  EXECUTION_ENDED_EVENT,
-  MESSAGES_DELIVERED_EVENT,
-} from "../../protocol/index.js";
+import { type AGUIEvent, EventType, RUN_STATE_EVENT } from "../../protocol/index.js";
 
 import {
   GOLDEN_ASSISTANT_TURN_ID,
+  GOLDEN_RECORD_IDLE,
+  GOLDEN_RECORD_RUNNING,
   GOLDEN_THREAD_ID,
   GOLDEN_USER_TURN_ID,
 } from "./simple-text-turn.js";
@@ -44,16 +41,7 @@ export const SIMPLE_TEXT_TURN_AGUI: AGUIEvent[] = [
     messageId: `${GOLDEN_ASSISTANT_TURN_ID}::0`,
     delta: " world",
   },
-  {
-    type: EventType.CUSTOM,
-    name: MESSAGES_DELIVERED_EVENT,
-    value: {
-      byTurnId: GOLDEN_ASSISTANT_TURN_ID,
-      byTurnPosition: 1,
-      executionId: GOLDEN_EXECUTION_ID,
-      userTurnIds: [GOLDEN_USER_TURN_ID],
-    },
-  },
+  { type: EventType.CUSTOM, name: RUN_STATE_EVENT, value: GOLDEN_RECORD_RUNNING },
   {
     type: EventType.TEXT_MESSAGE_END,
     messageId: `${GOLDEN_ASSISTANT_TURN_ID}::0`,
@@ -63,9 +51,5 @@ export const SIMPLE_TEXT_TURN_AGUI: AGUIEvent[] = [
     threadId: GOLDEN_THREAD_ID,
     runId: GOLDEN_ASSISTANT_TURN_ID,
   },
-  {
-    type: EventType.CUSTOM,
-    name: EXECUTION_ENDED_EVENT,
-    value: { executionId: GOLDEN_EXECUTION_ID },
-  },
+  { type: EventType.CUSTOM, name: RUN_STATE_EVENT, value: GOLDEN_RECORD_IDLE },
 ];

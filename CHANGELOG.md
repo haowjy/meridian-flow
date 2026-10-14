@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+- Stop hands the messages still waiting behind the reply back to the composer, above any draft, in send order with a blank line between them. They never reach the model, a fork or a summary, and a lost Stop answer can be retried without duplicating the returned text.
+- Stop sits beside Send while a reply runs, even with a draft typed; Send still queues a steer. Stop reads `Stopping` and disables at once, and a failed one reads `Couldn't stop. Try again.` on the control, keeps the draft and retries the same request. A compaction divider's Stop does the same and ends on `Compaction stopped`.
+- Retry replaces a failed reply in place, and a chain of failed retries shows only the latest failure. A refused Retry keeps `Couldn't retry.` under that reply until Retry or Send clears it.
+- Messages another tab or `./mf` leaves waiting show as `Queued` in an open tab without a reload.
+- A mode switch applies at its own turn, and its notice stays anchored there, before the Retry stand-in when one is showing, with no blink or duplicate. A queued row stays until its turn shows.
+- The usage notice shows only while a writer message is actually blocked, not for an empty record.
+- A failed-send Edit puts the returned text above the existing draft with a blank line, like Stop's hand-back.
+- `./mf` follows run state through the same `@meridian/thread-client` module as the app, including recovering a held switch divider. `./mf thread view` shows the mode and handed-back messages.
+- API: a chat's run state is one whole `runState` record (waiting messages, open execution, write mode, sent watermark, usage block) on the snapshot, the stream (`meridian.run_state`) and the control, Retry, Stop and send answers. It replaces `inbox.changed`, the delivered-message events and `execution.ended`, which are removed.
+- New `POST /api/threads/:id/stop` cancels the reply the writer saw and hands back the waiting writer messages. It is decided once under the thread lock and stored by request id, so a resend returns the same answer. See `docs/api/thread-stop.md`.
+
 - A document the AI drafted keeps the name the writer gives it after revealing it. Apply publishes it where it now lives, and draft links spell the new name.
 - Apply and Discard, for an item, a change or the whole draft, are server commands that carry a command id, so a lost response can be resent without applying twice. Apply never closes the draft; only Discard all does. Work Files' Apply all and Discard all are one command each.
 - Discarding one document's draft while the AI is still replying fails that reply's writes to it ("the user discarded the text it edited"), saves its other documents, and lets a later write start a fresh draft.

@@ -82,13 +82,18 @@ afterEach(async () => {
 });
 
 describe("Composer during a live run", () => {
-  it("leaves the run and the draft alone on Escape while drafting", async () => {
+  it("keeps Stop beside Send while drafting, and leaves the run and the draft alone on Escape", async () => {
     const onStop = vi.fn();
     await render({ running: true, initialDraft: draft("Follow up"), onStop });
     await pressEscape();
     expect(onStop).not.toHaveBeenCalled();
     expect(editorElement()?.textContent).toBe("Follow up");
     expect(button()?.getAttribute("aria-label")).toBe("Send message");
+    const stop = host.querySelector<HTMLButtonElement>("[data-composer-stop]");
+    expect(stop?.getAttribute("aria-label")).toBe("Stop");
+    await act(async () => stop?.click());
+    expect(onStop).toHaveBeenCalledOnce();
+    expect(editorElement()?.textContent).toBe("Follow up");
   });
 });
 

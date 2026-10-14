@@ -98,7 +98,10 @@ Until [#768](https://github.com/haowjy/meridian-flow/issues/768)'s second phase 
 reports complete while its own message remains pending, but absence from pending
 alone is not reply binding. Check the reported reply against `./mf thread view`
 (the durable transcript) or in the browser. `tail --until-idle` now confirms idle
-at its final snapshot; it does not attribute replies to messages.
+at its final snapshot; it does not attribute replies to messages. A `send` whose
+message a Stop handed back, or whose reply a Stop cancelled, can report `timeout`
+(exit 124) rather than `cancelled`; read `thread view` instead. Plain `tail` and
+`send`'s live output don't draw queued rows.
 
 - Content comes from the app's own event processing. `thread view` hydrates the
   snapshot into the shared `@meridian/thread-client` turn store, runs the shared
@@ -119,6 +122,11 @@ at its final snapshot; it does not attribute replies to messages.
   live, server }` rows (text mode prints one line), or `not_observed` when the
   follow had a replay gap or a compared turn's events were not seen from its
   start. It is absent when nothing was followed.
+  - It compares only the status and final text of the followed turns, so it
+    can't catch a missing write-mode divider, a misplaced row or a missing
+    queued row. Read those from `thread view` (the snapshot) and in the browser.
+    The follow does guarantee that a divider whose anchor turn the stream never
+    carried is recovered from a bounded snapshot, as the app recovers it.
   - It is not a certificate of any browser screen. It leaves out tools,
     reasoning, interrupts, the optimistic UI and the visible-turn policy, and the
     app reconciles to the server at turn end.
@@ -157,16 +165,16 @@ at its final snapshot; it does not attribute replies to messages.
   A failed or cancelled run is a `result`, never a terminal `error` record.
 - A send deadline reads one final snapshot. Its result
   reports `stillRunning` (turn id and status, or null), `owed` (pending writer
-  messages), and `next` commands. The pending inbox is a mandatory live-state
-  field. Text says when the server is
+  messages), and `next` commands. The run-state record (`liveState.runState`) is
+  a mandatory live-state field. Text says when the server is
   still running and how to stop it. **Timeout never cancels a run.** Plain
   `tail` remains a bounded live view and exits 0 when its wait expires.
 - `tail --until-idle` returns immediately if the initial snapshot is idle.
   Otherwise it follows from the last sequence and checks a snapshot after each
-  turn finish/failure, journaled lease/pending update or idle subscription state. Idle means
-  `liveState.runningTurnId` is null, `liveState.status.kind` is `asleep`
-  (no awake lease), and no writer-provenance message remains in
-  `liveState.pending.items`. A successor run or owed writer message keeps it
+  turn finish/failure, a journaled `meridian.run_state` record or idle subscription state. Idle means
+  the shared run-state module's `isBusy` is false for the snapshot's `liveState.runState` (no open
+  `execution`, no writer-provenance message in `items`) and `liveState.status.kind` is `asleep`
+  (no awake lease). A successor run or owed writer message keeps it
   following until a snapshot confirms idle or the deadline exits 124 with the
   timeout report. Durable `thread.status` alone is not evidence of idle.
   One subscription and event mapper stay alive through checkpoints, including
@@ -197,10 +205,10 @@ at its final snapshot; it does not attribute replies to messages.
   or not seen exits 1; a failed lookup or still-pending admission exits 6
   `admission_unknown`. `send --no-wait` proves admission only and reports `outcome: "accepted"`, never `complete`.
 - Before reporting complete, `send` reads a snapshot. If its admitted user turn
-  id is still in `liveState.pending.items`, it exits 6 `unproven` with reason
+  id is still in `liveState.runState.items`, it exits 6 `unproven` with reason
   `owed`, `stillRunning`, the pending writer messages, and
   `./mf thread tail <thread> --until-idle` as the next command. It prints no
-  answer for this unproven result. Absence from pending does not yet prove
+  answer for this unproven result. Absence from the record's items does not yet prove
   which reply answered the message; that binding remains phase 2.
 - Write tools emit `tool.completed` for the staged result, then `tool.settled`
   for the committed receipt, in both JSON and text. There is no `settled` flag.
@@ -208,9 +216,12 @@ at its final snapshot; it does not attribute replies to messages.
 - `send` currently follows a steer or a compaction split with an interim rule:
   reservation hints on a reply's start (the user turns it was reserved for) and
   successor following within one execution, plus ancestry in recovery. It does
-  not bind to `Turn.delivery` or `messages.delivered`, so the result is the
+  not bind to `Turn.delivery`, so the result is the
   reply the follower selected, not proof that this reply answered your message.
-  The binding is #768's second phase.
+  The binding is #768's second phase. A `send` that joined a running reply and
+  sees the record show no open execution while its message is still waiting
+  follows for a short grace for the reply that takes it, then exits 6 `unproven`
+  with reason `owed`; it never reports that message answered.
 - `thread view` (`chatView: 2`) prints a compaction row as its trigger, control
   ID, summary and model, and token counts before and after; `--json` carries the
   same facts under `compaction`. It does not print a failed compaction's reason
