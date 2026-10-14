@@ -19,16 +19,11 @@ import {
   schemeIcon,
   schemeLabel,
 } from "./context-schemes";
-import {
-  type EntrySelection,
-  EntrySelectionProvider,
-  useEntrySelection,
-} from "./entry-drag/selection";
-import { useEntryMoveRoute } from "./entry-drag/use-entry-move-route";
+import { EntryList, useEntryList } from "./entry-drag/use-entry-list";
 import { PaneHeaderActionButton, RailPaneHeader } from "./RailPaneHeader";
 import { type TreeCreationRequest, useOptionalTreeCreation } from "./TreeCreationProvider";
 import { AreaDropRegion } from "./tree-drop/AreaDropRegion";
-import { dragEdgeScroll, TreeDropScope, type TreeDropTarget } from "./tree-drop/tree-drop";
+import { dragEdgeScroll } from "./tree-drop/tree-drop";
 import { treeFolderIds } from "./tree-expansion-state";
 import { useTreeExpansion } from "./use-tree-expansion";
 
@@ -80,8 +75,14 @@ export function ContextTreePanel({
   }
   const schemes = EDITOR_CONTEXT_SCHEMES;
   const scroller = useRef<HTMLDivElement>(null);
-  const selection = useEntrySelection();
   const catalogs = useContextCatalogViews(projectId, schemes, { workId: editorWorkId });
+  const list = useEntryList({
+    projectId,
+    areas: schemes.flatMap((scheme) => {
+      const catalog = catalogs[scheme].catalog;
+      return catalog ? [{ scheme, owner: { workId: editorWorkId }, catalog, movable: true }] : [];
+    }),
+  });
   const renderScheme = (scheme: (typeof EDITOR_CONTEXT_SCHEMES)[number]) => (
     <SchemeSection
       key={`${projectId}:${scheme}:${isWorkScopedProjectContextScheme(scheme) ? editorWorkId : "project"}`}
@@ -89,7 +90,6 @@ export function ContextTreePanel({
       editorWorkId={editorWorkId}
       scheme={scheme}
       catalogState={catalogs[scheme]}
-      selection={selection}
       activeScheme={activeScheme}
       activePath={activePath}
       onSelectFile={onSelectFile}
@@ -113,9 +113,7 @@ export function ContextTreePanel({
         onDragOver={(event) => dragEdgeScroll(scroller.current, event)}
         className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden pb-2"
       >
-        <EntrySelectionProvider selection={selection}>
-          {schemes.map(renderScheme)}
-        </EntrySelectionProvider>
+        <EntryList list={list}>{schemes.map(renderScheme)}</EntryList>
       </div>
     </div>
   );
@@ -123,7 +121,6 @@ export function ContextTreePanel({
 
 function SchemeSection({
   catalogState,
-  selection,
   projectId,
   editorWorkId,
   scheme,
@@ -135,8 +132,6 @@ function SchemeSection({
   onCreateDone,
 }: {
   catalogState: ReturnType<typeof useContextCatalogViews>[ProjectContextTreeScheme];
-  /** One selection across the tree's areas. */
-  selection: EntrySelection;
   projectId: string;
   editorWorkId: string | null;
   scheme: ProjectContextTreeScheme;
@@ -227,25 +222,6 @@ function SchemeSection({
   }, [pendingOpenPath, catalog, onSelectFile, scheme]);
 
   const owner = useMemo(() => ({ workId: editorWorkId }), [editorWorkId]);
-  const onLanded = useCallback(
-    (target: TreeDropTarget) => {
-      setExpanded(true);
-      const folderId = target.folder?.entryId;
-      if (folderId) setExpandedEntryIds((current) => ({ ...current, [folderId]: true }));
-    },
-    [setExpanded, setExpandedEntryIds],
-  );
-  const areas = useMemo(
-    () => (catalog ? [{ scheme, owner, catalog, movable: true }] : []),
-    [scheme, owner, catalog],
-  );
-  const moveRoute = useEntryMoveRoute({
-    projectId,
-    areas,
-    selection,
-    surface: "sidebar",
-    onLanded,
-  });
   const deleteConfirm = useDeleteConfirmation({ projectId });
   const env = useMemo<TreeEnv | null>(
     () =>
@@ -325,42 +301,40 @@ function SchemeSection({
   );
 
   return (
-    <TreeDropScope route={moveRoute}>
-      <section>
-        <AreaDropRegion
-          scheme={scheme}
-          catalogRootId={catalog?.root.entryId ?? null}
-          onSpring={() => !expanded && setExpanded(true)}
-          header={header}
-        >
-          {expanded && catalog && env ? (
-            <TreeEnvProvider value={env}>
-              <div>
-                <TreeChildren parentId={catalog.root.entryId} parentPath="" depth={1} />
-                {/* "No context files yet." is a claim about the tree, so it waits
+    <section>
+      <AreaDropRegion
+        scheme={scheme}
+        catalogRootId={catalog?.root.entryId ?? null}
+        reveal={() => !expanded && setExpanded(true)}
+        header={header}
+      >
+        {expanded && catalog && env ? (
+          <TreeEnvProvider value={env}>
+            <div>
+              <TreeChildren parentId={catalog.root.entryId} parentPath="" depth={1} />
+              {/* "No context files yet." is a claim about the tree, so it waits
                 for a RESOLVED tree. While the query is in flight with nothing
                 cached the pane body stays blank (no spinner) — prefetch at
                 mount makes that window nearly unhittable. */}
-                {isError ? (
-                  <InlineErrorRow message={t`Couldn't load files.`} onRetry={refetch} />
-                ) : catalog.children(catalog.root.entryId).length === 0 && !creating ? (
-                  <EmptyHint depth={1}>
-                    <Trans>No context files yet.</Trans>
-                  </EmptyHint>
-                ) : null}
-              </div>
-            </TreeEnvProvider>
-          ) : null}
-        </AreaDropRegion>
-        <DeleteConfirmationDialog
-          target={deleteConfirm.target}
-          isPending={deleteConfirm.isPending}
-          error={deleteConfirm.error}
-          onCancel={deleteConfirm.cancel}
-          onConfirm={deleteConfirm.confirm}
-        />
-      </section>
-    </TreeDropScope>
+              {isError ? (
+                <InlineErrorRow message={t`Couldn't load files.`} onRetry={refetch} />
+              ) : catalog.children(catalog.root.entryId).length === 0 && !creating ? (
+                <EmptyHint depth={1}>
+                  <Trans>No context files yet.</Trans>
+                </EmptyHint>
+              ) : null}
+            </div>
+          </TreeEnvProvider>
+        ) : null}
+      </AreaDropRegion>
+      <DeleteConfirmationDialog
+        target={deleteConfirm.target}
+        isPending={deleteConfirm.isPending}
+        error={deleteConfirm.error}
+        onCancel={deleteConfirm.cancel}
+        onConfirm={deleteConfirm.confirm}
+      />
+    </section>
   );
 }
 

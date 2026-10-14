@@ -111,8 +111,8 @@ msgstr "{0, plural, one {# part stayed} other {# parts stayed}}"
 msgid "{0, plural, one {Changes in # more document did not apply} other {Changes in # more documents did not apply}}"
 msgstr "{0, plural, one {Changes in # more document did not apply} other {Changes in # more documents did not apply}}"
 
-#. placeholder {0}: stuck.length
-#: src/features/project/context/entry-drag/use-entry-move-route.ts
+#. placeholder {0}: failed.length
+#: src/features/project/context/entry-drag/move-notice.tsx
 msgid "{0, plural, one {Couldn't move # item back.} other {Couldn't move # items back.}}"
 msgstr "{0, plural, one {Couldn't move # item back.} other {Couldn't move # items back.}}"
 
@@ -122,7 +122,7 @@ msgstr "{0, plural, one {Couldn't move # item back.} other {Couldn't move # item
 #~ msgstr "{0, plural, one {Couldn't move # item to {destinationName}.} other {Couldn't move # items to {destinationName}.}}"
 
 #. placeholder {0}: failed.length
-#: src/features/project/context/entry-drag/use-entry-move-route.ts
+#: src/features/project/context/entry-drag/move-notice.tsx
 msgid "{0, plural, one {Couldn't move # item.} other {Couldn't move # items.}}"
 msgstr "{0, plural, one {Couldn't move # item.} other {Couldn't move # items.}}"
 
@@ -137,7 +137,7 @@ msgstr "{0, plural, one {Couldn't move # item.} other {Couldn't move # items.}}"
 #~ msgstr "{0, plural, one {edited # document} other {edited # documents}}"
 
 #. placeholder {0}: moved.length
-#: src/features/project/context/entry-drag/use-entry-move-route.ts
+#: src/features/project/context/entry-drag/move-notice.tsx
 msgid "{0, plural, one {Moved # item to {destinationName}.} other {Moved # items to {destinationName}.}}"
 msgstr "{0, plural, one {Moved # item to {destinationName}.} other {Moved # items to {destinationName}.}}"
 
@@ -283,8 +283,12 @@ msgstr "{days}d"
 
 #. placeholder {0}: refusal.entry.name
 #: src/features/project/context/entry-drag/use-entry-move-route.ts
-msgid "{destinationName} already has {0}"
-msgstr "{destinationName} already has {0}"
+#~ msgid "{destinationName} already has {0}"
+#~ msgstr "{destinationName} already has {0}"
+
+#: src/features/project/context/entry-drag/use-entry-list.tsx
+msgid "{destinationName} already has {name}"
+msgstr "{destinationName} already has {name}"
 
 #: src/features/chat/tool-result-preview.ts
 msgid "{documents, plural, one {# document} other {# documents}}"
@@ -810,7 +814,7 @@ msgstr "Cache resets"
 msgid "Calls"
 msgstr "Calls"
 
-#: src/features/project/context/entry-drag/use-entry-move-route.ts
+#: src/features/project/context/entry-drag/use-entry-list.tsx
 msgid "Can't go inside itself"
 msgstr "Can't go inside itself"
 
@@ -1485,7 +1489,7 @@ msgid "Couldn't load. Check your connection."
 msgstr "Couldn't load. Check your connection."
 
 #. placeholder {0}: lost.name
-#: src/features/project/context/entry-drag/use-entry-move-route.ts
+#: src/features/project/context/entry-drag/move-notice.tsx
 msgid "Couldn't move {0} back."
 msgstr "Couldn't move {0} back."
 
@@ -1495,7 +1499,7 @@ msgstr "Couldn't move {0} back."
 #~ msgstr "Couldn't move {0} to {destinationName}."
 
 #. placeholder {0}: lost.name
-#: src/features/project/context/entry-drag/use-entry-move-route.ts
+#: src/features/project/context/entry-drag/move-notice.tsx
 msgid "Couldn't move {0}."
 msgstr "Couldn't move {0}."
 
@@ -2796,7 +2800,7 @@ msgstr "Move row up"
 msgid "Move to {0}"
 msgstr "Move to {0}"
 
-#: src/features/project/context/entry-drag/use-entry-move-route.ts
+#: src/features/project/context/entry-drag/use-entry-list.tsx
 msgid "Move to {destinationName}"
 msgstr "Move to {destinationName}"
 
@@ -2809,7 +2813,7 @@ msgid "Move…"
 msgstr "Move…"
 
 #. placeholder {0}: first.name
-#: src/features/project/context/entry-drag/use-entry-move-route.ts
+#: src/features/project/context/entry-drag/move-notice.tsx
 msgid "Moved {0} to {destinationName}."
 msgstr "Moved {0} to {destinationName}."
 

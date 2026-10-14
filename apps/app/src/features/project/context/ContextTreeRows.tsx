@@ -20,7 +20,7 @@ import {
   contextTreeRowGrowClassName,
 } from "./context-row-geometry";
 import { EntryNameField } from "./EntryNameField";
-import { selectableEntry } from "./entry-drag/entry";
+import { dragEntry } from "./entry-drag/entry";
 import { useEntryRow } from "./entry-drag/use-entry-row";
 import { LinkUpdateNote } from "./LinkUpdateNote";
 import { NamespaceFailureMark } from "./NamespaceFailureMark";
@@ -184,13 +184,10 @@ function DirRow({
   const folder: DropFolder = { entryId: dir.entryId, path: dir.path, name: dir.name };
   const drop = useTreeDropTarget(
     { scheme: env.scheme, catalogRootId: env.catalog.root.entryId, folder },
-    { onSpring: () => !env.isExpanded(dir.entryId) && env.toggleEntry(dir.entryId) },
+    { reveal: () => !env.isExpanded(dir.entryId) && env.toggleEntry(dir.entryId) },
   );
   const movable = interaction.actions.includes("move");
-  const entry = useMemo(
-    () => selectableEntry(dir, env.scheme, env.owner, env.catalog.root, movable),
-    [dir, env.scheme, env.owner, env.catalog.root, movable],
-  );
+  const entry = useMemo(() => dragEntry(dir, movable), [dir, movable]);
   const row = useEntryRow(entry, false);
   const toggle = () => {
     if (env.creation?.creating) env.creation.done();
@@ -286,10 +283,7 @@ function FileRow({
   const select = () => env.onSelectFile(env.scheme, file);
   const active = env.scheme === env.activeScheme && file.path === env.activePath;
   const movable = interaction.actions.includes("move");
-  const entry = useMemo(
-    () => selectableEntry(file, env.scheme, env.owner, env.catalog.root, movable),
-    [file, env.scheme, env.owner, env.catalog.root, movable],
-  );
+  const entry = useMemo(() => dragEntry(file, movable), [file, movable]);
   const row = useEntryRow(entry, active);
   if (interaction.renaming) {
     return <RenameRow options={interaction.rename} depth={depth} icon={fileKindIcon(file)} />;

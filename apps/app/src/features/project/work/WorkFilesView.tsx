@@ -10,22 +10,17 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { isWorkArchived } from "@meridian/contracts/works";
 import { FilePlus } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { CatalogDirectory } from "@/client/query/context-catalog-projection";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import type { AddressableWork } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { DeleteConfirmationDialog, useDeleteConfirmation } from "../context/ContextEntryActions";
-import { MoveNotice } from "../context/entry-drag/move-notice";
-import { EntrySelectionProvider, useEntrySelection } from "../context/entry-drag/selection";
-import { useEntryMoveRoute } from "../context/entry-drag/use-entry-move-route";
+import { MoveNotice, MoveNoticeHost } from "../context/entry-drag/move-notice";
+import { EntryList, useEntryList } from "../context/entry-drag/use-entry-list";
 import { DropRegion } from "../context/tree-drop/DropRegion";
-import {
-  TreeDropScope,
-  type TreeDropTarget,
-  useTreeDropTarget,
-} from "../context/tree-drop/tree-drop";
+import { useTreeDropTarget } from "../context/tree-drop/tree-drop";
 import { useTreeExpansion } from "../context/use-tree-expansion";
 import { RuledList, type RuledRow } from "../RuledList";
 import { useWorkNoteIntake } from "./use-work-note-intake";
@@ -81,17 +76,23 @@ export function WorkFilesActions({ files }: { files: WorkFiles }) {
   );
 }
 
-export function WorkFilesView({
-  projectId,
-  work,
-  search,
-  files,
-}: {
+type WorkFilesViewProps = {
   projectId: string;
   work: AddressableWork;
   search: string;
   files: WorkFiles;
-}) {
+};
+
+/** Drops here report under the list, which stays visible with the sidebar collapsed. */
+export function WorkFilesView(props: WorkFilesViewProps) {
+  return (
+    <MoveNoticeHost projectId={props.projectId}>
+      <WorkFilesList {...props} />
+    </MoveNoticeHost>
+  );
+}
+
+function WorkFilesList({ projectId, work, search, files }: WorkFilesViewProps) {
   const { scratch, intake } = files;
   const scratchDelete = useDeleteConfirmation({ projectId });
   const scratchRoot = scratch.catalog?.root.entryId;
@@ -134,21 +135,7 @@ export function WorkFilesView({
       catalog ? [{ scheme: "scratch" as const, owner, catalog, movable: files.editable }] : [],
     [catalog, owner, files.editable],
   );
-  const selection = useEntrySelection();
-  const onLanded = useCallback(
-    (target: TreeDropTarget) => {
-      const folderId = target.folder?.entryId;
-      if (folderId && !isExpanded(folderId)) toggleEntry(folderId);
-    },
-    [isExpanded, toggleEntry],
-  );
-  const moveRoute = useEntryMoveRoute({
-    projectId,
-    areas,
-    selection,
-    surface: "work-files",
-    onLanded,
-  });
+  const list = useEntryList({ projectId, areas });
   const matchesSearch = workFileSearch(search);
   const visible = [...scratchFolders, ...scratchFiles].filter((node) => matchesSearch(node.name));
 
@@ -205,30 +192,28 @@ export function WorkFilesView({
   return (
     <div className="min-w-0 [--row-rule-inset:--spacing(2)]">
       <WorkChanges projectId={projectId} work={work} matchesSearch={matchesSearch} />
-      <TreeDropScope route={moveRoute}>
-        <EntrySelectionProvider selection={selection}>
-          <ScratchDropGroup catalogRootId={catalog?.root.entryId ?? null}>
-            <WorkFileGroup label={t`Scratch`}>
-              {scratch.isError ? (
-                <InlineErrorRow message={t`Scratch couldn’t load`} onRetry={scratch.refetch} />
-              ) : !scratch.catalog ? (
-                <WorkFileGroupLoading />
-              ) : scratchRows.length ? (
-                <RuledList className="-mx-2" rows={scratchRows} />
-              ) : (
-                <WorkFileGroupNote>
-                  {search ? (
-                    <Trans>No scratch notes match “{search}”.</Trans>
-                  ) : (
-                    <Trans>No scratch notes yet.</Trans>
-                  )}
-                </WorkFileGroupNote>
-              )}
-            </WorkFileGroup>
-          </ScratchDropGroup>
-        </EntrySelectionProvider>
-      </TreeDropScope>
-      <MoveNotice surface="work-files" className="sticky bottom-2 mt-2" />
+      <EntryList list={list}>
+        <ScratchDropGroup catalogRootId={catalog?.root.entryId ?? null}>
+          <WorkFileGroup label={t`Scratch`}>
+            {scratch.isError ? (
+              <InlineErrorRow message={t`Scratch couldn’t load`} onRetry={scratch.refetch} />
+            ) : !scratch.catalog ? (
+              <WorkFileGroupLoading />
+            ) : scratchRows.length ? (
+              <RuledList className="-mx-2" rows={scratchRows} />
+            ) : (
+              <WorkFileGroupNote>
+                {search ? (
+                  <Trans>No scratch notes match “{search}”.</Trans>
+                ) : (
+                  <Trans>No scratch notes yet.</Trans>
+                )}
+              </WorkFileGroupNote>
+            )}
+          </WorkFileGroup>
+        </ScratchDropGroup>
+      </EntryList>
+      <MoveNotice className="sticky bottom-2 mt-2" />
       <DeleteConfirmationDialog
         target={scratchDelete.target}
         isPending={scratchDelete.isPending}

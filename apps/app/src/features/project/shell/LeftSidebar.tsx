@@ -14,7 +14,7 @@ import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-
 import { RailScratchSection } from "../chat/ChatScratch";
 import { ContextTreePanel } from "../context/ContextTreePanel";
 import { serverTabFromFile } from "../context/context-tab-from-file";
-import { MoveNotice } from "../context/entry-drag/move-notice";
+import { MoveNotice, MoveNoticeHost } from "../context/entry-drag/move-notice";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import { DragHint } from "../context/tree-drop/drag-hint";
 import { useDockDocument } from "../dock/dock-document-store";
@@ -90,51 +90,53 @@ export function LeftSidebar({
   const docked = activeScreen === "chat" && !projectedDock.gone ? projectedDock.tab : null;
 
   return (
-    <nav
-      aria-label={t`Workspace navigation`}
-      className="relative flex h-full min-h-0 w-full flex-col text-foreground"
-    >
-      <div className="flex h-10 shrink-0 items-center gap-1 px-2">
-        <PanelToggleButton
-          icon={PanelLeftClose}
-          label={t`Collapse sidebar  [`}
-          onClick={onCollapse}
-        />
-        <InlineProjectTitle
-          title={projectTitle}
-          {...titleEdit}
-          className="focus-ring flex h-8 min-w-0 flex-1 cursor-default items-center rounded-md px-2 text-left text-[14px] font-semibold hover:bg-sidebar-accent"
-          inputClassName="h-8 px-2 text-[14px] font-semibold"
-        />
-      </div>
-
-      <WorkspaceNavBody
-        activeScreen={activeScreen}
-        onSelectScreen={onSelectScreen}
-        presentation="desktop"
-        scratch={
-          <RailScratchSection
-            projectId={projectId}
-            threadId={chatThreadId}
-            editorWorkId={editorWorkId}
-            resizable
-          />
-        }
+    <MoveNoticeHost projectId={projectId}>
+      <nav
+        aria-label={t`Workspace navigation`}
+        className="relative flex h-full min-h-0 w-full flex-col text-foreground"
       >
-        {contextLive ? (
-          <ContextTreePanel
-            projectId={projectId}
-            editorWorkId={editorWorkId}
-            activeScheme={
-              docked ? (docked.kind === "new" ? "unfiled" : docked.scheme) : activeContextScheme
-            }
-            activePath={docked ? (docked.kind === "new" ? null : docked.path) : activeContextPath}
-            onSelectFile={handleSelectFile}
+        <div className="flex h-10 shrink-0 items-center gap-1 px-2">
+          <PanelToggleButton
+            icon={PanelLeftClose}
+            label={t`Collapse sidebar  [`}
+            onClick={onCollapse}
           />
-        ) : null}
-      </WorkspaceNavBody>
-      <MoveNotice surface="sidebar" className="absolute inset-x-2 bottom-2" />
-      <DragHint />
-    </nav>
+          <InlineProjectTitle
+            title={projectTitle}
+            {...titleEdit}
+            className="focus-ring flex h-8 min-w-0 flex-1 cursor-default items-center rounded-md px-2 text-left text-[14px] font-semibold hover:bg-sidebar-accent"
+            inputClassName="h-8 px-2 text-[14px] font-semibold"
+          />
+        </div>
+
+        <WorkspaceNavBody
+          activeScreen={activeScreen}
+          onSelectScreen={onSelectScreen}
+          presentation="desktop"
+          scratch={
+            <RailScratchSection
+              projectId={projectId}
+              threadId={chatThreadId}
+              editorWorkId={editorWorkId}
+              resizable
+            />
+          }
+        >
+          {contextLive ? (
+            <ContextTreePanel
+              projectId={projectId}
+              editorWorkId={editorWorkId}
+              activeScheme={
+                docked ? (docked.kind === "new" ? "unfiled" : docked.scheme) : activeContextScheme
+              }
+              activePath={docked ? (docked.kind === "new" ? null : docked.path) : activeContextPath}
+              onSelectFile={handleSelectFile}
+            />
+          ) : null}
+        </WorkspaceNavBody>
+        <MoveNotice className="absolute inset-x-2 bottom-2" />
+        <DragHint />
+      </nav>
+    </MoveNoticeHost>
   );
 }

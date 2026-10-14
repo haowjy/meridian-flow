@@ -6,32 +6,17 @@
  */
 import type { DragEvent } from "react";
 import { MERIDIAN_ENTRIES_MIME } from "../tree-drop/drag-payload";
-import { entrySystem, type SelectableEntry } from "./entry";
+import type { DragEntry } from "./entry";
 
-type EntryDrag = {
-  entries: readonly SelectableEntry[];
-  /**
-   * The one system every row belongs to, or null: a selection that spans
-   * systems, or holds a row without Move, moves nowhere (until Move or Copy
-   * across systems exists) rather than silently dropping some rows.
-   */
-  system: string | null;
-};
+let active: readonly DragEntry[] | null = null;
 
-let active: EntryDrag | null = null;
-
-export function activeEntryDrag(): EntryDrag | null {
+export function activeEntryDrag(): readonly DragEntry[] | null {
   return active;
 }
 
-export function startEntryDrag(event: DragEvent, entries: readonly SelectableEntry[]) {
-  const first = entries[0];
-  if (!first) return;
-  const system = entrySystem(first.scheme, first.owner);
-  const one = entries.every(
-    (entry) => entry.movable && entrySystem(entry.scheme, entry.owner) === system,
-  );
-  active = { entries, system: one ? system : null };
+export function startEntryDrag(event: DragEvent, entries: readonly DragEntry[]) {
+  if (entries.length === 0) return;
+  active = entries;
   const transfer = event.dataTransfer;
   transfer.effectAllowed = "copyMove";
   transfer.setData(MERIDIAN_ENTRIES_MIME, JSON.stringify(entries.map((entry) => entry.uri)));
@@ -44,7 +29,7 @@ export function endEntryDrag() {
 }
 
 /** The chip under the pointer: the first row's name, and +N for the rest. */
-function setPreview(transfer: DataTransfer, entries: readonly SelectableEntry[]) {
+function setPreview(transfer: DataTransfer, entries: readonly DragEntry[]) {
   const chip = document.createElement("div");
   chip.className =
     "pointer-events-none fixed -top-96 left-0 flex items-center gap-1.5 rounded-md border border-border bg-popover px-2.5 py-1.5 text-sm text-popover-foreground shadow-sm";

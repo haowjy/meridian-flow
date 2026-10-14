@@ -19,7 +19,7 @@ import { fileKindIcon } from "../context/context-file-icon";
 import { contextTreeDropTargetClassName } from "../context/context-row-geometry";
 import { serverTabFromFile } from "../context/context-tab-from-file";
 import { EntryNameField } from "../context/EntryNameField";
-import { selectableEntry } from "../context/entry-drag/entry";
+import { dragEntry } from "../context/entry-drag/entry";
 import { useEntryRow } from "../context/entry-drag/use-entry-row";
 import { LinkUpdateNote } from "../context/LinkUpdateNote";
 import { NamespaceFailureMark } from "../context/NamespaceFailureMark";
@@ -80,13 +80,9 @@ export function FolderRow({
     owner: { workId: management.workId },
     scheme: "scratch",
   });
-  const { catalog, workId } = management;
-  const owner = useMemo(() => ({ workId }), [workId]);
+  const { catalog } = management;
   const movable = interaction.actions.includes("move");
-  const entry = useMemo(
-    () => selectableEntry(folder, "scratch", owner, catalog.root, movable),
-    [folder, owner, catalog.root, movable],
-  );
+  const entry = useMemo(() => dragEntry(folder, movable), [folder, movable]);
   const row = useEntryRow(entry, false);
   const drop = useTreeDropTarget(
     scratchDropTarget(catalog, {
@@ -94,7 +90,7 @@ export function FolderRow({
       path: folder.path,
       name: folder.name,
     }),
-    { onSpring: () => !open && onToggle() },
+    { reveal: () => !open && onToggle() },
   );
   if (interaction.renaming)
     return (
@@ -181,12 +177,8 @@ export function ScratchFileRow({
     requestRename,
     onRenameDone,
   });
-  const owner = useMemo(() => ({ workId }), [workId]);
   const movable = interaction.actions.includes("move");
-  const entry = useMemo(
-    () => selectableEntry(file, "scratch", owner, catalog.root, movable),
-    [file, owner, catalog.root, movable],
-  );
+  const entry = useMemo(() => dragEntry(file, movable), [file, movable]);
   const row = useEntryRow(entry, docked);
   const drop = useTreeDropTarget(scratchDropTarget(catalog, parentFolder(catalog, file)));
   if (interaction.renaming)

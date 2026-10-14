@@ -1,42 +1,26 @@
 /**
  * Selection is explicit or it is the open row: Ctrl/Cmd-click toggles rows in
  * and out (starting from the open row) without ever re-adding what the writer
- * removed, a row reselected after a move stays the selection on its own, and a
- * drag that spans systems carries everything but moves nowhere.
+ * removed, and a row reselected after a move stays the selection on its own.
  */
 import { act } from "react";
 import { expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { activeEntryDrag, endEntryDrag, startEntryDrag } from "./drag-session";
-import type { SelectableEntry } from "./entry";
+import { type DragEntry, entryKey } from "./entry";
 import { EntrySelectionProvider, useEntrySelection, useEntrySelectionRow } from "./selection";
 
 vi.mock("@/hooks/use-phone-shell", () => ({ usePhoneShell: () => false }));
 
-const root = { entryId: "root", uri: "scratch://@w/" };
-function entry(id: string, owner: SelectableEntry["owner"] = { workId: "w" }): SelectableEntry {
-  return {
-    key: `scratch:${id}`,
-    kind: "file",
-    id,
-    name: id,
-    path: id,
-    uri: `scratch://@w/${id}`,
-    parentId: "root",
-    catalogRootId: "root",
-    origin: { scheme: "scratch", owner, root, entryId: "root" },
-    movable: true,
-    scheme: "scratch",
-    owner,
-  };
+function entry(id: string): DragEntry {
+  return { ref: { kind: "file", id }, name: id, uri: `scratch://@w/${id}`, movable: true };
 }
 
-function Row({ row, active }: { row: SelectableEntry; active: boolean }) {
+function Row({ row, active }: { row: DragEntry; active: boolean }) {
   const { selection, selected, rowProps } = useEntrySelectionRow(row, active);
   return (
     <button
       type="button"
-      id={row.id}
+      id={row.ref.id}
       data-selected={selected}
       {...rowProps}
       onClick={(event) => selection?.click(row, event)}
@@ -44,13 +28,17 @@ function Row({ row, active }: { row: SelectableEntry; active: boolean }) {
   );
 }
 
-function List({ rows }: { rows: SelectableEntry[] }) {
+function List({ rows }: { rows: DragEntry[] }) {
   const selection = useEntrySelection();
   return (
     <EntrySelectionProvider selection={selection}>
-      <button type="button" id="moved" onClick={() => selection.replace([rows[1]?.key ?? ""])} />
+      <button
+        type="button"
+        id="moved"
+        onClick={() => selection.replace([entryKey(rows[1]?.ref ?? entry("").ref)])}
+      />
       {rows.map((row, index) => (
-        <Row key={row.key} row={row} active={index === 0} />
+        <Row key={row.ref.id} row={row} active={index === 0} />
       ))}
     </EntrySelectionProvider>
   );
@@ -81,20 +69,5 @@ it("keeps a lone moved row as the selection, not the open row", async () => {
     await click("moved");
     await click("c", true);
     expect([selected("a"), selected("b"), selected("c")]).toEqual(["false", "true", "true"]);
-  });
-});
-
-it("moves nowhere when the dragged rows span systems", async () => {
-  await withReactRoot(null, () => {
-    vi.stubGlobal("requestAnimationFrame", () => 0);
-    const transfer = { setData: vi.fn(), setDragImage: vi.fn(), effectAllowed: "" };
-    startEntryDrag({ dataTransfer: transfer } as never, [
-      entry("a"),
-      entry("b", { rootThreadId: "t1" }),
-    ]);
-    expect(activeEntryDrag()?.entries).toHaveLength(2);
-    expect(activeEntryDrag()?.system).toBeNull();
-    endEntryDrag();
-    vi.unstubAllGlobals();
   });
 });

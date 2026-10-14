@@ -25,16 +25,8 @@ const folder: TreeDropTarget = {
 const area: TreeDropTarget = { ...folder, folder: null };
 const accept: EntriesVerdict = { kind: "accept", label: "Move to Act 2" };
 
-function Row({
-  id,
-  target,
-  onSpring,
-}: {
-  id: string;
-  target: TreeDropTarget;
-  onSpring?: () => void;
-}) {
-  const drop = useTreeDropTarget(target, { onSpring });
+function Row({ id, target, reveal }: { id: string; target: TreeDropTarget; reveal?: () => void }) {
+  const drop = useTreeDropTarget(target, { reveal });
   return <div id={id} data-state={drop.dropState} {...drop.dropProps} />;
 }
 
@@ -94,7 +86,7 @@ it("cancels a pending spring-open when the drag ends elsewhere", async () => {
   vi.useFakeTimers();
   const spring = vi.fn();
   await withReactRoot(
-    scope(() => accept, <Row id="folder" target={folder} onSpring={spring} />),
+    scope(() => accept, <Row id="folder" target={folder} reveal={spring} />),
     async () => {
       await fire("folder", "dragenter");
       await act(async () => {

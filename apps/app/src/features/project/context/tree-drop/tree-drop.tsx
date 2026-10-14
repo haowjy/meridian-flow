@@ -50,7 +50,7 @@ type ScopeValue = {
   route: EntriesRoute;
   over: Over;
   /** An element of `key` came under the drag; arms the spring for an accepted target. */
-  enter(key: string, refused: boolean, onSpring: (() => void) | undefined): void;
+  enter(key: string, refused: boolean, reveal: (() => void) | undefined): void;
   /** Re-lights `key` on every `dragover` (its verdict can change while hovering). */
   relight(key: string, refused: boolean): void;
   /** An element of `key` left; the target goes dark once none remain. */
@@ -85,15 +85,15 @@ export function TreeDropScope({ route, children }: { route: EntriesRoute; childr
       springs.current.delete(key);
     };
     return {
-      enter(key: string, refused: boolean, onSpring: (() => void) | undefined) {
+      enter(key: string, refused: boolean, reveal: (() => void) | undefined) {
         counts.current.set(key, (counts.current.get(key) ?? 0) + 1);
         setOver({ key, refused });
-        if (!refused && onSpring && !springs.current.has(key))
+        if (!refused && reveal && !springs.current.has(key))
           springs.current.set(
             key,
             setTimeout(() => {
               springs.current.delete(key);
-              onSpring();
+              reveal();
             }, SPRING_MS),
           );
       },
@@ -157,18 +157,19 @@ const claimed = new WeakSet<Event>();
  * Drop handlers for one target. A file row passes its folder as the target, so
  * hovering anywhere in an open folder lights that folder. Each element remembers
  * whether it lit its target, so it always gives that back on leave, whatever
- * the verdict is by then. Hovering an accepted target for 600 ms calls
- * `onSpring` (a collapsed folder opens).
+ * the verdict is by then. `reveal` shows what the target holds (a collapsed
+ * folder opens): after hovering an accepted target for 600 ms, and on its drop,
+ * so the rows that arrived are in view.
  */
 export function useTreeDropTarget(
   target: TreeDropTarget,
-  options: { onSpring?: () => void } = {},
+  options: { reveal?: () => void } = {},
 ): { dropProps: DropProps; dropState: TreeDropState } {
   const scope = useContext(ScopeContext);
   const key = targetKey(target);
   const held = useRef<{ generation: number } | null>(null);
-  const latest = useRef({ target, scope, onSpring: options.onSpring });
-  latest.current = { target, scope, onSpring: options.onSpring };
+  const latest = useRef({ target, scope, reveal: options.reveal });
+  latest.current = { target, scope, reveal: options.reveal };
 
   /** Claims the event for this target when the drag carries rows and the scope has a route. */
   const claim = useCallback((event: DragEvent): boolean => {
@@ -201,7 +202,7 @@ export function useTreeDropTarget(
       const refused = verdict.kind === "refuse";
       if (!holding()) {
         held.current = { generation: currentScope.generation() };
-        currentScope.enter(key, refused, latest.current.onSpring);
+        currentScope.enter(key, refused, latest.current.reveal);
       } else currentScope.relight(key, refused);
       showDragHint(key, verdict, event);
       if (refused) {
@@ -245,6 +246,7 @@ export function useTreeDropTarget(
         event.stopPropagation();
         const { scope: currentScope, target: dropped } = latest.current;
         currentScope?.route.drop(dropped);
+        latest.current.reveal?.();
       },
     }),
     [hover, claim, verdictFor, release],

@@ -12,7 +12,7 @@ import { type TreeDropTarget, useTreeDropTarget } from "./tree-drop";
 export function AreaDropRegion({
   scheme,
   catalogRootId,
-  onSpring,
+  reveal,
   header,
   className,
   children,
@@ -20,7 +20,7 @@ export function AreaDropRegion({
   scheme: ProjectContextTreeScheme;
   /** Null until the area's catalog loads; the header is not a target before then. */
   catalogRootId: string | null;
-  onSpring: () => void;
+  reveal: () => void;
   header: (dropProps: React.HTMLAttributes<HTMLElement>) => React.ReactNode;
   className?: string;
   children: React.ReactNode;
@@ -29,7 +29,7 @@ export function AreaDropRegion({
     () => ({ scheme, catalogRootId: catalogRootId ?? `${scheme}:loading`, folder: null }),
     [scheme, catalogRootId],
   );
-  const drop = useTreeDropTarget(target, { onSpring });
+  const drop = useTreeDropTarget(target, { reveal });
   return (
     <DropRegion state={drop.dropState} className={className}>
       {header(drop.dropProps)}
