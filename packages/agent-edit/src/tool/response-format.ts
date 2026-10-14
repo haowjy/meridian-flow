@@ -144,6 +144,7 @@ export function isWriteErrorStatus(status: WriteStatus): status is WriteErrorSta
   return (
     status === "not_found" ||
     status === "ambiguous_match" ||
+    status === "ambiguous_path" ||
     status === "invalid_write" ||
     status === "document_not_found" ||
     status === "partial_failure" ||
