@@ -50,7 +50,7 @@ function entry(row: typeof importEntries.$inferSelect): ImportEntry {
     objectSweptAt: row.objectSweptAt,
   };
 }
-/** Column-owned patch fields with their column and SQL type; every other patch field is payload. */
+/** Column-owned patch fields with their column and SQL type; payload fields are listed in PAYLOAD_KEYS. */
 const COLUMNS: Record<keyof ImportEntryColumnPatch, readonly [column: string, type: string]> = {
   state: ["state", "text"],
   prepared: ["prepared", "boolean"],
@@ -61,11 +61,21 @@ const COLUMNS: Record<keyof ImportEntryColumnPatch, readonly [column: string, ty
   uri: ["uri", "text"],
   objectSweptAt: ["object_swept_at", "timestamptz"],
 };
+const PAYLOAD_KEYS: ReadonlySet<string> = new Set<keyof ImportEntryPayloadPatch>([
+  "name",
+  "reason",
+  "reasonParams",
+  "prependOnRetry",
+]);
+/** Selects allowed keys positively; a key neither a column nor payload is a caller bug, never silently stored in `spec`. */
 function splitPatch(patch: ImportEntryPatch) {
   const payload: ImportEntryPayloadPatch = {},
     columns: ImportEntryColumnPatch = {};
-  for (const [key, value] of Object.entries(patch))
-    Object.assign(key in COLUMNS ? columns : payload, { [key]: value });
+  for (const [key, value] of Object.entries(patch)) {
+    if (key in COLUMNS) Object.assign(columns, { [key]: value });
+    else if (PAYLOAD_KEYS.has(key)) Object.assign(payload, { [key]: value });
+    else throw new Error(`Import entry patch has unknown field ${key}`);
+  }
   return { payload, columns };
 }
 export function createDrizzleImportRepository(db: Database): ImportRepository {
