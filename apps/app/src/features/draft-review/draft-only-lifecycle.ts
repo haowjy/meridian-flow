@@ -5,6 +5,7 @@ import type { DraftRef } from "@/client/query/draft-command-record";
 import {
   type ContextTab,
   getContextTabs,
+  isDraftOnly,
   matchesReviewItem,
   useContextTabsStore,
 } from "@/client/stores";
@@ -23,12 +24,13 @@ export type DraftOnlyPresentation = DraftRef & {
 export interface DraftOnlyContainer {
   presentations(projectId: string): readonly DraftOnlyPresentation[];
   subscribe(listener: () => void): () => void;
+  /** Document-wide: every Work's entry clears, and each container keeps the review it showed. */
   promote(draft: DraftRef): Promise<boolean>;
   remove(draft: DraftRef): void;
 }
 
 function presentations(projectId: string, tab: ContextTab, container: "editor" | "dock") {
-  if (tab.kind !== "tracked" || !tab.draftOnly) return [];
+  if (tab.kind !== "tracked") return [];
   return Object.entries(tab.reviews ?? {}).map(([workId, entry]) => ({
     projectId,
     documentId: tab.documentId,
@@ -39,26 +41,21 @@ function presentations(projectId: string, tab: ContextTab, container: "editor" |
     contextLocation: { scheme: tab.scheme, path: tab.path },
   }));
 }
-function matches(tab: ContextTab, draft: DraftRef) {
-  return (
-    tab.kind === "tracked" &&
-    matchesReviewItem(tab, {
-      reviewWorkId: draft.workId,
-      reviewItemKey: draft.itemKey,
-    })
-  );
-}
 
-/** Exact occupant identity fences replacement instances; settlement never claims. */
+/**
+ * The dock holds one review (its admission kept a single entry). Discard is that
+ * review's address alone; becoming live is document-wide and keeps the dock's
+ * chosen review. Exact occupant identity fences replacement instances.
+ */
 function settleDock(draft: DraftRef, promote: boolean): boolean {
   const occupant = useDockDocumentStore.getState().occupant;
-  if (!occupant || occupant.projectId !== draft.projectId || !matches(occupant.tab, draft))
+  if (!occupant || occupant.projectId !== draft.projectId || occupant.tab.kind !== "tracked")
     return false;
-  const {
-    draftOnly: _,
-    reviews: __,
-    ...tab
-  } = occupant.tab as Extract<ContextTab, { kind: "tracked" }>;
+  const holds = promote
+    ? isDraftOnly(occupant.tab) && occupant.tab.documentId === draft.documentId
+    : matchesReviewItem(occupant.tab, { reviewWorkId: draft.workId, reviewItemKey: draft.itemKey });
+  if (!holds) return false;
+  const { reviews: _, ...tab } = occupant.tab;
   useDockDocumentStore.setState((state) =>
     state.occupant === occupant ? { occupant: promote ? { ...occupant, tab } : null } : state,
   );
@@ -90,7 +87,10 @@ export function useDraftOnlyLifecycle(projectId: string): DraftOnlyContainer {
       },
       promote: async (draft) => {
         if (epoch?.aborted) return false;
-        const tab = getContextTabs(draft.projectId).tabs.find((tab) => matches(tab, draft));
+        // The document becomes live once, whichever Work's draft supplied the evidence.
+        const tab = getContextTabs(draft.projectId).tabs.find(
+          (tab) => tab.documentId === draft.documentId && isDraftOnly(tab),
+        );
         const editor =
           tab?.kind === "tracked"
             ? removal.promoteAppliedDraft(draft.projectId, tab)

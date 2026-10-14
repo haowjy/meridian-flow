@@ -69,9 +69,8 @@ it("a hidden link with no existing tab becomes a draft-only review, not a live t
   expect(tabs).toHaveLength(1);
   expect(tabs[0]).toMatchObject({
     documentId: "document-h",
-    draftOnly: true,
     reviews: {
-      ["work-a"]: { itemKey: "draft-1:document-h", tabInstanceToken: expect.any(String) },
+      "work-a": { itemKey: "draft-1:document-h", tabInstanceToken: expect.any(String) },
     },
   });
   expect(recentOpening("project-a", tabs[0], "now")).toBeNull();
@@ -83,7 +82,7 @@ it("a hidden link with no existing tab becomes a draft-only review, not a live t
 it("a new-tab gesture installs the review in the background without navigating", async () => {
   const { tabs, route, liveOpen, openLive } = await follow("new-tab");
   expect(tabs).toHaveLength(1);
-  expect(tabs[0]).toMatchObject({ documentId: "document-h", draftOnly: true });
+  expect(tabs[0]).toMatchObject({ documentId: "document-h", reviews: expect.any(Object) });
   expect(route).not.toHaveBeenCalled();
   expect(liveOpen).not.toHaveBeenCalled();
   expect(openLive).not.toHaveBeenCalled();
