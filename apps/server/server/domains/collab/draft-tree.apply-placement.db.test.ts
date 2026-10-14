@@ -1,6 +1,6 @@
 /**
  * Apply's tree work (contract §11.2, ledger E-1, E-2, E-4, E-8): a create the writer also
- * made live merges and a live rename is named back, a second draft sees only its part of a
+ * made live merges and a live rename stands, a second draft sees only its part of a
  * shared create, a create applies at its path after a live folder rename absorbed its
  * hidden folder, and a document deleted live is restored with its folder unless another
  * document took its path. Driven through the review route cores. The device that deleted the
@@ -25,7 +25,7 @@ import { createDrizzleContextCatalog } from "../context/adapters/context-catalog
 import { setCollabHook } from "./domain/collab-test-hooks.js";
 
 describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
-  it("merges a create the writer also made live, names a live rename back, and refuses the model's later create usefully (E-1)", async () => {
+  it("merges a create the writer also made live, keeps a live rename, and refuses the model's later create usefully (E-1)", async () => {
     const { s } = await start();
     const ascension = await s.work("Ascension", "draft");
     const kael = await s.model(ascension).create("characters/kael", "Kael guards the gate.");
@@ -70,7 +70,8 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
       .soft(JSON.stringify(refused.output), "create after reveal")
       .toContain("Read it, then edit it");
 
-    // The writer renames it live; Apply names it back at the draft's location.
+    // The writer renames it live: the document's place is its row, so the rename stands
+    // for the draft's view, its links and Apply (S6).
     expect
       .soft(await s.writer.move("characters/kael", "characters/kael-fix"))
       .toMatchObject({ ok: true });
@@ -78,37 +79,23 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
     const reviewed = itemFor(await s.items(ascension), kael);
     expect.soft(reviewed, "revealed, then renamed live").toMatchObject({
       isNew: false,
-      contextLocation: { scheme: "manuscript", path: "/characters/kael" },
-      livePath: "manuscript://characters/kael-fix",
-      conflict: { code: "rename_replaced", livePath: "manuscript://characters/kael-fix" },
+      contextLocation: { scheme: "manuscript", path: "/characters/kael-fix" },
+      conflict: null,
     });
     expect.soft(await s.applyAll(ascension), "one command, one publication").toEqual({
       status: "completed",
       draftId: reviewed.draftId,
-      items: [
-        {
-          itemKey: reviewed.itemKey,
-          status: "applied",
-          notes: [
-            {
-              code: "rename_replaced",
-              replacedPath: "manuscript://characters/kael-fix",
-              path: "manuscript://characters/kael",
-            },
-          ],
-        },
-      ],
+      items: [{ itemKey: reviewed.itemKey, status: "applied", notes: [] }],
     });
     const live = s.view("live");
-    expect.soft(await live.idAt("characters/kael"), "named back").toBe(kael);
-    expect.soft(await live.idAt("characters/kael-fix"), "the rename's path freed").toBeNull();
-    const text = await live.text("characters/kael");
+    expect.soft(await live.idAt("characters/kael-fix"), "the rename stands").toBe(kael);
+    expect.soft(await live.idAt("characters/kael"), "not named back").toBeNull();
+    const text = await live.text("characters/kael-fix");
     expect.soft(text, "the draft's text").toContain("Kael guards the gate.");
     expect.soft(text, "the writer's live edit").toContain("The writer's second line.");
     expect.soft(await s.draftStatuses(ascension), "Apply never closes D").toEqual(["active"]);
 
-    // A rename that lands after a tokenless Apply read the draft is named back, and the
-    // receipt says so: notes come from what completion did (E-R5).
+    // A rename that lands after a tokenless Apply read the draft stands too, with no note.
     const notes = await s.model(ascension).create("notes/original", "Notes, drafted.");
     await s.writer.create("notes/original", { content: "Writer's notes." });
     const renameLate = setCollabHook("applyItems.beforeStaging", async () => {
@@ -117,23 +104,12 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
     });
     const [raced] = await s.apply(ascension, [notes], { tokens: "none" });
     renameLate();
-    expect.soft(raced, "the raced rename is named back").toMatchObject({
+    expect.soft(raced, "the raced rename stands").toMatchObject({
       httpStatus: 200,
-      body: {
-        item: {
-          status: "applied",
-          notes: [
-            {
-              code: "rename_replaced",
-              replacedPath: "manuscript://notes/renamed",
-              path: "manuscript://notes/original",
-            },
-          ],
-        },
-      },
+      body: { item: { status: "applied", notes: [] } },
     });
-    expect.soft(await live.idAt("notes/original")).toBe(notes);
-    expect.soft(await live.idAt("notes/renamed")).toBeNull();
+    expect.soft(await live.idAt("notes/renamed")).toBe(notes);
+    expect.soft(await live.idAt("notes/original")).toBeNull();
   });
 
   it("shows a second draft only its own part after the first applies their shared create (E-2)", async () => {

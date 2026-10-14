@@ -67,7 +67,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       };
     }
 
-    it("shows hidden rows only in the draft that created them, at the draft's location (T-1a)", async () => {
+    it("shows hidden rows only in the draft that created them, at their rows' locations (T-1a)", async () => {
       const db = database.current;
       const scenario = await draftTreeScenario(db);
       const tree = createTreeReader(db);
@@ -79,17 +79,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const prologue = await scenario.seedLive("prologue");
       const harbor = await scenario.seedHidden(ascension, "world/places/harbor");
       const atlas = await scenario.seedHidden(rival, "lore/atlas");
-      // Revealed, then renamed live: the draft keeps it at its own location.
+      // Revealed, then renamed live: the draft sees the new name too, a row has one place.
       const chapter = await scenario.seedHidden(ascension, "chapters/one");
       await reveal(chapter, ["chapters"]);
       await db.update(documents).set({ name: "chapter-one" }).where(eq(documents.id, chapter));
-      // A live absorb repoints a second hidden document onto the first one's address.
+      // A live absorb reparents a second hidden document onto the first one's address.
       const notes = await scenario.seedHidden(ascension, "drafts/notes");
       const scraps = await scenario.seedHidden(ascension, "scraps/notes");
       await db
-        .update(draftTreeChanges)
-        .set({ parentFolderId: await folderId("drafts") })
-        .where(eq(draftTreeChanges.nodeId, scraps));
+        .update(documents)
+        .set({ folderId: await folderId("drafts") })
+        .where(eq(documents.id, scraps));
 
       const draft: TreeView = {
         kind: "draft",
@@ -133,12 +133,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect(await tree.findById(draft, chapter)).toMatchObject({
         kind: "found",
-        document: { path: "chapters/one", hidden: false },
+        document: { path: "chapters/chapter-one", hidden: false },
         clashesWith: [],
       });
-      expect(await tree.resolvePath(draft, at("chapters/chapter-one"))).toEqual({
-        kind: "not_found",
-      });
+      expect(await tree.resolvePath(draft, at("chapters/one"))).toEqual({ kind: "not_found" });
       expect(await tree.findFolderById(draft, await folderId("places"))).toMatchObject({
         name: "places",
         hidden: true,
@@ -186,16 +184,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const first = await scenario.draftOf(ascension);
       const second = await scenario.draftOf(rival);
       const third = await scenario.draftOf(stray);
-      // Rival joined the harbor too, under another name; Ascension is the older draft.
+      // Rival joined the harbor too; Ascension is the older draft.
       await db.insert(draftTreeChanges).values({
         draftId: second.id,
         nodeKind: "document",
         nodeId: harbor,
         created: true,
-        contextSourceId: scenario.project.sources.manuscript,
-        parentFolderId: await folderId("world"),
-        name: "harbor-two",
-        extension: "",
       });
       await db
         .update(drafts)
@@ -249,14 +243,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(rivalView.get(harbor)).toMatchObject({
         kind: "visible",
         hidden: true,
-        address: { path: "world/harbor-two" },
+        address: { path: "world/harbor" },
       });
       expect(rivalView.get(tomb)).toEqual({ kind: "gone", documentId: tomb });
       expect(
         (await tree.identityStatus({ kind: "draft", draftId: third.id }, [harbor])).get(harbor),
       ).toMatchObject({ kind: "hidden", draft: { draftId: first.id } });
 
-      // Tree state: created items at the draft's location, edited ones at their own.
+      // Tree state: every item at its row's location.
       const liveIntro = await scenario.seedLive("intro");
       const intro = await scenario.seedHidden(ascension, "intro");
       const coast = await scenario.seedHidden(ascension, "maps/coast");
@@ -313,8 +307,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           uri: "manuscript://chapters/chapter-one",
           deleted: false,
         },
-        target: { path: "chapters/one", uri: "manuscript://chapters/one" },
-        conflict: { kind: "relocated" },
+        target: { path: "chapters/chapter-one", uri: "manuscript://chapters/chapter-one" },
+        conflict: { kind: "none" },
       });
       expect(state.get(scene)).toMatchObject({
         origin: "created",
