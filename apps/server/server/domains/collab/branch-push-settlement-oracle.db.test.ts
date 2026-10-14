@@ -266,7 +266,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     if (!heldByRival) throw new Error("the rival did not claim the batch");
     // The same token reclaiming after backoff is a new owner: its old epoch is stale.
     await expect(
-      rival.recordFailure({ batchId, claim: heldByRival, error: "backoff" }),
+      rival.recordFailure({ batchId, claim: heldByRival, stage: "execute", error: "backoff" }),
     ).resolves.toBe(true);
     await expirePendingClaims(db);
     const reclaimed = await rival.claimRecoverableBatch({ batchId, token: rivalToken });
@@ -445,6 +445,14 @@ describe("durable branch-push settlement oracle (postgres)", () => {
           },
         });
         await expect(failingCompletion.recoverPendingLiveSettlements()).resolves.toBe(0);
+        // A swallowed execution failure is never silent: one event names the batch.
+        expect(failingCompletion.eventsNamed("settlement.batch_failed")).toEqual([
+          expect.objectContaining({
+            level: "warn",
+            correlation: { batchId: expect.any(String) },
+            payload: expect.objectContaining({ stage: "execute", attemptCount: 1 }),
+          }),
+        ]);
         await expect(settlementStates(db, [COLD_SCENARIO_IDS.ALPHA_ID])).resolves.toEqual([
           expect.objectContaining({ state: "pending" }),
         ]);
