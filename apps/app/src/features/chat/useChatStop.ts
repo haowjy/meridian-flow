@@ -16,15 +16,25 @@
  * - A lost request keeps the command and marks the intent failed (the messages show again);
  *   pressing Stop again re-posts the same id and body. A refusal drops both.
  * - A reload re-posts every command still in the draft; one whose receipt is recorded is dropped.
+ *
+ * The hook also owns the Stop control's state (`StopStatus`), which only this tab has: other tabs
+ * see the record, never Stopping. The press is `pending` (Stopping at once). On the answer, an
+ * answer that names a cancelled execution is `stopping` while the held record still shows that
+ * execution; any other answer clears with the answer. A failed request is `failed`, which stays
+ * until the next press, even after the chat goes idle, so the retry stays reachable.
  */
 import { t } from "@lingui/core/macro";
 import type { StopResponse } from "@meridian/contracts/threads";
 import {
+  type ChatReferenceScope,
+  chatReferenceResolver,
   composerDocFromHandedBack,
   handBackCandidates,
+  type StopStatus,
   stopRequest,
+  stopStatus,
 } from "@meridian/thread-client";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { httpErrorStatus } from "@/client/api/http-client";
 import { stopThread } from "@/client/api/threads-api";
 import {
@@ -40,12 +50,37 @@ function isRefusal(error: unknown): boolean {
   return status !== undefined && status >= 400 && status < 500;
 }
 
-export function useChatStop(input: { threadId: string; accountId: string }): () => void {
-  const { threadId, accountId } = input;
+export type ChatStop = {
+  status: StopStatus;
+  /** Press Stop. While pending or stopping it does nothing; after a failure it re-posts. */
+  stop: () => void;
+};
+
+type StopCommandState = {
+  request: "idle" | "pending" | "failed";
+  cancelledExecutionId: string | null;
+};
+
+export function useChatStop(input: {
+  threadId: string;
+  accountId: string;
+  /** Where the chat's handed-back references live; null until the chat has loaded. */
+  scope: ChatReferenceScope | null;
+}): ChatStop {
+  const { threadId, accountId, scope } = input;
   const view = useRunState(threadId);
   const actions = useThreadActions();
-  const latest = useRef({ view, actions });
-  latest.current = { view, actions };
+  const latest = useRef({ view, actions, scope });
+  latest.current = { view, actions, scope };
+  const [command, setCommand] = useState<StopCommandState>({
+    request: "idle",
+    cancelledExecutionId: null,
+  });
+  const requestIs = useCallback(
+    (request: StopCommandState["request"], cancelledExecutionId: string | null = null) =>
+      setCommand({ request, cancelledExecutionId }),
+    [],
+  );
 
   const post = useCallback(
     (draft: ComposerSessionDraft, command: PendingHandBack) => {
@@ -58,8 +93,16 @@ export function useChatStop(input: { threadId: string; accountId: string }): () 
           // Handed back or found already gone: both left the conversation at this record.
           const left = [...answer.handedBack.map((message) => message.userTurnId), ...answer.gone];
           if (left.length) store.removeTurns(threadId, left, answer.runState.version);
+          const { scope: where } = latest.current;
           const written = answer.handedBack.length
-            ? draft.receiveHandBack(requestId, composerDocFromHandedBack(answer.handedBack))
+            ? draft.receiveHandBack(
+                requestId,
+                // Without the chat's facts a reference comes back as its link text.
+                composerDocFromHandedBack(
+                  answer.handedBack,
+                  where ? chatReferenceResolver(where) : () => null,
+                ),
+              )
             : draft.dropHandBack(requestId);
           if (!written) {
             // The content is still on the server's side of the line, and the command is kept: the
@@ -74,6 +117,7 @@ export function useChatStop(input: { threadId: string; accountId: string }): () 
                 answer: null,
               },
             });
+            requestIs("failed");
             announceError(t`Couldn't stop. Try again.`);
             return;
           }
@@ -83,6 +127,7 @@ export function useChatStop(input: { threadId: string; accountId: string }): () 
             id: requestId,
             version: answer.runState.version,
           });
+          requestIs("idle", answer.cancelledExecutionId);
         },
         (error: unknown) => {
           if (isRefusal(error)) {
@@ -105,11 +150,12 @@ export function useChatStop(input: { threadId: string; accountId: string }): () 
               },
             });
           }
+          requestIs("failed");
           announceError(t`Couldn't stop. Try again.`);
         },
       );
     },
-    [threadId],
+    [requestIs, threadId],
   );
 
   /** Hide the covered messages and send: the intent first, so the rows leave at once. */
@@ -136,9 +182,10 @@ export function useChatStop(input: { threadId: string; accountId: string }): () 
           answer: null,
         },
       });
+      requestIs("pending");
       post(draft, command);
     },
-    [post, threadId],
+    [post, requestIs, threadId],
   );
 
   // A reload re-posts every command the draft still holds; one already received is dropped.
@@ -150,27 +197,39 @@ export function useChatStop(input: { threadId: string; accountId: string }): () 
     }
   }, [accountId, threadId, send]);
 
-  return useCallback(() => {
+  const stop = useCallback(() => {
     const draft = composerSessionDraft(accountId, { kind: "chat", id: threadId });
     const { view: held } = latest.current;
-    // Pressing again after a lost request re-posts that request, same id and body.
-    const failed = held.intents.find((intent) => intent.kind === "handBack" && intent.failed);
-    const pending = failed && draft.handBacks.find((command) => command.requestId === failed.id);
+    // Pressing again after a lost request re-posts the stored one, same id and body.
+    const pending = draft.handBacks.find((stored) => stored.kind === "stop");
     if (pending) {
       send(draft, pending);
       return;
     }
     const requestId = crypto.randomUUID();
-    const command: PendingHandBack = {
+    const next: PendingHandBack = {
       kind: "stop",
       requestId,
       body: stopRequest(held, requestId),
     };
-    if (!draft.recordHandBack(command)) {
+    if (!draft.recordHandBack(next)) {
+      requestIs("failed");
       announceError(t`Couldn't stop. Try again.`);
       return;
     }
     announce(t`Stopping`);
-    send(draft, command);
-  }, [accountId, send, threadId]);
+    send(draft, next);
+  }, [accountId, requestIs, send, threadId]);
+
+  const status = stopStatus(view, command);
+  const pressed = useRef(status);
+  pressed.current = status;
+  return {
+    status,
+    // Ignored while Stopping: the request is out, or the cancel is landing.
+    stop: useCallback(() => {
+      if (pressed.current === "pending" || pressed.current === "stopping") return;
+      stop();
+    }, [stop]),
+  };
 }

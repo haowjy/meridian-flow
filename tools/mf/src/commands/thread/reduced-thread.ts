@@ -64,11 +64,13 @@ export class ReducedThread {
   /**
    * Applies every delivered event. Which events arrive is the subscription's
    * cursor (`resumeAfterSeq`); `nextSeq` only decides which snapshot is fresh
-   * enough to hydrate, so it never filters events here.
+   * enough to hydrate, so it never filters events here. The event's seq is required, as in the
+   * app: a removal (`messages.handed_back`) tombstones its turns at that seq, so a snapshot read
+   * before it can't bring them back.
    */
-  apply(event: AGUIEvent): void {
+  apply(event: AGUIEvent, seq: string): void {
     if (event.type === "RUN_STARTED") this.observedFromStart.add(event.runId);
-    this.reducer.applyEvent(this.threadId, event);
+    this.reducer.applyEvent(this.threadId, event, seq);
   }
 
   turns(): Turn[] {

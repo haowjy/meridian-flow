@@ -5,15 +5,77 @@
  * `UserMessageBlock` shape: serializing its document again gives the blocks that were handed
  * back. `prependMessageDoc` puts that document above what the writer has typed.
  */
+import { type ProjectId, parseContextUri, type UserId, type WorkId } from "@meridian/contracts";
 import type { UserMessageBlock } from "@meridian/contracts/protocol";
+import { classifyFiletype, filetypeForExtension } from "@meridian/contracts/protocol";
 import type { HandBackResult } from "@meridian/contracts/threads";
+import type { WorkSlug } from "@meridian/contracts/works";
 import type {
   BuiltMessageDoc,
   MessageDoc,
   MessageInlineNode,
   MessageParagraphNode,
-  MessageReference,
+  RestorableReference,
+  StableReferenceAuthority,
 } from "./types";
+
+/** What a reference chip needs beyond the occurrence the server kept. */
+export type ReferenceFacts = Pick<RestorableReference, "fileType" | "authority">;
+export type ResolveReference = (
+  target: Pick<RestorableReference, "documentId" | "uri">,
+) => ReferenceFacts | null;
+
+/** The chat's own place: the owners its handed-back references can name. */
+export type ChatReferenceScope = {
+  projectId: ProjectId;
+  userId: UserId;
+  work: { id: WorkId; slug: WorkSlug | null };
+  /** The lineage's first chat, which owns a No Work chat's Scratch. */
+  rootThreadId: string;
+};
+
+/**
+ * Resolve a handed-back reference from its URI and the chat it came from. The occurrence keeps
+ * only the document and URI, so the owner is read off the URI's authority; a URI outside the
+ * chat's own owners resolves to nothing and comes back as its link text.
+ */
+export function chatReferenceResolver(scope: ChatReferenceScope): ResolveReference {
+  return ({ uri }) => {
+    const parsed = parseContextUri(uri);
+    if (!parsed.ok) return null;
+    const extension = parsed.value.path.split("/").at(-1)?.split(".").at(-1) ?? "";
+    const fileType = filetypeForExtension(extension);
+    if (!fileType || classifyFiletype(fileType).kind === "unknown") return null;
+    const { scheme, authority } = parsed.value;
+    let owner: StableReferenceAuthority | null = null;
+    if (authority.kind === "lineage") {
+      if (scheme === "scratch")
+        owner = {
+          kind: "lineage",
+          projectId: scope.projectId,
+          rootThreadId: scope.rootThreadId,
+          rootThreadRef: authority.rootThreadRef,
+        };
+    } else if (authority.kind === "none") {
+      if (scope.work.slug === null)
+        owner = { kind: "work", projectId: scope.projectId, workId: scope.work.id, workSlug: null };
+    } else if (authority.kind === "work") {
+      if (authority.workSlug === scope.work.slug)
+        owner = {
+          kind: "work",
+          projectId: scope.projectId,
+          workId: scope.work.id,
+          workSlug: scope.work.slug,
+        };
+    } else if (scheme !== "scratch" && scheme !== "uploads") {
+      owner =
+        scheme === "user"
+          ? { kind: "user", userId: scope.userId }
+          : { kind: "project", projectId: scope.projectId };
+    }
+    return owner && { fileType, authority: owner };
+  };
+}
 
 /** The label of a `[label](destination)` spelling, undoing `formatMarkdownLink`'s escapes. */
 function spelledLabel(text: string): string {
@@ -37,7 +99,10 @@ function uriName(uri: string): string {
 }
 
 /** One message's paragraphs: a newline in text starts a new paragraph. */
-function paragraphsOf(blocks: readonly UserMessageBlock[]): MessageParagraphNode[] {
+function paragraphsOf(
+  blocks: readonly UserMessageBlock[],
+  resolve: ResolveReference,
+): MessageParagraphNode[] {
   const paragraphs: MessageInlineNode[][] = [[]];
   const inline = (node: MessageInlineNode) => paragraphs.at(-1)?.push(node);
   for (let index = 0; index < blocks.length; index += 1) {
@@ -59,11 +124,9 @@ function paragraphsOf(blocks: readonly UserMessageBlock[]): MessageParagraphNode
       const hasImage =
         next?.type === "image" && next.documentId === block.documentId && next.uri === block.uri;
       if (hasImage) index += 1;
-      inline(
-        chip({ documentId: block.documentId, uri: block.uri }, spelledLabel(block.text), hasImage),
-      );
+      inline(chip(block, resolve, spelledLabel(block.text), hasImage) ?? textOf(block.text));
     } else {
-      inline(chip({ documentId: block.documentId, uri: block.uri }, uriName(block.uri), true));
+      inline(chip(block, resolve, uriName(block.uri), true) ?? textOf(block.uri));
     }
   }
   return paragraphs.map((content) =>
@@ -71,15 +134,30 @@ function paragraphsOf(blocks: readonly UserMessageBlock[]): MessageParagraphNode
   );
 }
 
+const textOf = (text: string): MessageInlineNode => ({ type: "text", text });
+
+/** A reference chip, or null when the chat can't say who owns the document. */
 function chip(
-  target: { documentId: MessageReference["documentId"]; uri: string },
+  target: Pick<RestorableReference, "documentId" | "uri">,
+  resolve: ResolveReference,
   label: string,
   imageCapable: boolean,
-): MessageInlineNode {
+): MessageInlineNode | null {
+  const facts = resolve(target);
+  if (!facts) return null;
   // The upload was adopted at admission, so it is an ordinary document now.
   return {
     type: "composerReference",
-    attrs: { reference: { ...target, label, imageCapable, upload: null } },
+    attrs: {
+      reference: {
+        documentId: target.documentId,
+        uri: target.uri,
+        ...facts,
+        label,
+        imageCapable,
+        upload: null,
+      },
+    },
   };
 }
 
@@ -89,11 +167,12 @@ function chip(
  */
 export function composerDocFromHandedBack(
   handedBack: HandBackResult["handedBack"],
+  resolve: ResolveReference,
 ): BuiltMessageDoc {
   const content: MessageParagraphNode[] = [];
   handedBack.forEach((message, index) => {
     if (index) content.push({ type: "paragraph" });
-    content.push(...paragraphsOf(message.blocks));
+    content.push(...paragraphsOf(message.blocks, resolve));
   });
   return { type: "doc", content: content.length ? content : [{ type: "paragraph" }] };
 }

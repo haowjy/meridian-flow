@@ -67,6 +67,27 @@ export function isUsageBlocked(view: RunStateView): boolean {
   return view.record?.blocked?.reason === "credits_exhausted";
 }
 
+/**
+ * Whether one writer message is still owed a reply: the record lists it, or it was admitted
+ * (a message intent) and no record at or past its admission has been read to say otherwise.
+ */
+export function isOwed(view: RunStateView, userTurnId: string): boolean {
+  return (
+    (view.record?.items.some((item) => item.id === userTurnId) ?? false) ||
+    view.intents.some((intent) => intent.kind === "message" && intent.id === userTurnId)
+  );
+}
+
+/** The writer messages waiting on usage: the ones the record holds while it says a start is blocked. */
+export function usageBlockedMessages(view: RunStateView): PendingInboxItem[] {
+  return isUsageBlocked(view) ? writerItems(view) : [];
+}
+
+/** Whether this writer message waits on usage. */
+export function isBlockedForUsage(view: RunStateView, userTurnId: string): boolean {
+  return usageBlockedMessages(view).some((item) => item.id === userTurnId);
+}
+
 /** The queued tray: writer messages waiting on the open reply, or all of them while a start is blocked. */
 export function waitingWriterMessages(view: RunStateView): PendingInboxItem[] {
   const blocked = view.record?.blocked != null;
@@ -113,4 +134,23 @@ export function retryRetired(
   const record = view.record;
   if (!record || compareSeq(record.version, retry.answerVersion) < 0) return false;
   return record.execution === null || record.execution.executionId !== retry.executionId;
+}
+
+/** Where this tab's Stop control stands. Other tabs never see Stopping: they see the record. */
+export type StopStatus = "idle" | "pending" | "stopping" | "failed";
+
+/**
+ * Stop's control state for the tab that pressed it. A request in flight or a failed one stands
+ * as it is. Once answered, an answer that named a cancelled execution reads Stopping while the
+ * held record still shows that execution; any other answer is already idle.
+ */
+export function stopStatus(
+  view: RunStateView,
+  command: { request: "idle" | "pending" | "failed"; cancelledExecutionId: string | null },
+): StopStatus {
+  if (command.request !== "idle") return command.request;
+  const cancelled = command.cancelledExecutionId;
+  return cancelled !== null && view.record?.execution?.executionId === cancelled
+    ? "stopping"
+    : "idle";
 }

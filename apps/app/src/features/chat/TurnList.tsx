@@ -28,6 +28,7 @@ import { WriteModeDivider } from "./thread-controls/WriteModeDivider";
 import { UserTurn } from "./UserTurn";
 import { useChangeTrailNavigation } from "./useChangeTrailNavigation";
 import { useChatFollowScroll } from "./useChatFollowScroll";
+import type { ChatStop } from "./useChatStop";
 import type { ReplyRetry } from "./useReplyRetry";
 import { useTurnRevealLanding } from "./useTurnRevealLanding";
 
@@ -47,6 +48,8 @@ export type TurnListProps = {
   waitingForUsage?: boolean;
   /** Writer commands: queued `/compact`, withdrawal, and Stop on a running divider. */
   controls?: ThreadControls | null;
+  /** The chat's Stop: a compaction divider's Stop is this one, not a turn cancel. */
+  chatStop?: ChatStop | null;
   /** Retry and Stop on this handoff destination's brief cards. */
   brief?: HandoffBrief | null;
   /** Retry on the latest failed reply, and the new replies it stands in for. */
@@ -97,6 +100,7 @@ export function TurnList({
   submissionRecoveryByTurnId,
   waitingForUsage,
   controls = null,
+  chatStop = null,
   brief = null,
   replyRetry = null,
   busy = false,
@@ -215,8 +219,8 @@ export function TurnList({
         return (
           <CompactionDivider
             turn={turn}
-            stopping={local && (controls?.stoppingTurnIds.has(turn.id) ?? false)}
-            onStop={local ? controls?.stop : undefined}
+            stopping={local && (chatStop?.status === "pending" || chatStop?.status === "stopping")}
+            onStop={local ? chatStop?.stop : undefined}
           />
         );
       }
@@ -312,6 +316,7 @@ export function TurnList({
       enterFollow,
       replyRetry,
       controls,
+      chatStop,
       lastAssistantIdx,
       lastReplyRowIdx,
       navigateToChange,

@@ -5,9 +5,13 @@ import {
   cancelQueueScope,
   handBackCandidates,
   hiddenWriterTurns,
+  isBlockedForUsage,
   isBusy,
+  isOwed,
   retryRetired,
   stopRequest,
+  stopStatus,
+  usageBlockedMessages,
   waitingWriterMessages,
 } from "./fold-messages";
 import {
@@ -92,6 +96,22 @@ describe("message folds", () => {
     ]);
     const blocked = record("2999", { items, blocked: { reason: "credits_exhausted" } });
     expect(waitingWriterMessages(viewOf(blocked)).map((i) => i.id)).toEqual(["m1", "m2"]);
+
+    // The same record answers the app's notice and `./mf`'s guards: blocked messages, and owed.
+    expect(usageBlockedMessages(viewOf(blocked)).map((i) => i.id)).toEqual(["m1", "m2"]);
+    expect(usageBlockedMessages(viewOf(record("1999", { items })))).toEqual([]);
+    expect(isBlockedForUsage(viewOf(blocked), "m1")).toBe(true);
+    expect(isBlockedForUsage(viewOf(blocked), "m9")).toBe(false);
+    expect(isOwed(viewOf(blocked), "m2")).toBe(true);
+    expect(isOwed(viewOf(blocked), "m9")).toBe(false);
+    // An admitted message no record covers yet is owed; a covering record without it is not.
+    const admitted = addIntent(INITIAL_RUN_STATE_VIEW, {
+      kind: "message",
+      id: "m9",
+      answer: "5000",
+    });
+    expect(isOwed(admitted, "m9")).toBe(true);
+    expect(isOwed(receiveRecord(admitted, record("5000")), "m9")).toBe(false);
   });
 
   it("builds Stop from the record the writer saw, and from nothing before the first", () => {
@@ -108,6 +128,17 @@ describe("message folds", () => {
     );
     expect(stopRequest(seen, "req2")).toMatchObject({ seenThrough: 4, seenExecutionId: "e1" });
     expect(cancelQueueScope(seen)).toEqual({ kind: "seen", seenThrough: 4, mine: [] });
+
+    // Stop's control: a request out or failed stands as it is; an answer that cancelled an
+    // execution reads Stopping while the record still shows it, and any other answer is idle.
+    const idle = { request: "idle", cancelledExecutionId: null } as const;
+    expect(stopStatus(seen, { ...idle, request: "pending" })).toBe("pending");
+    expect(stopStatus(seen, { ...idle, request: "failed" })).toBe("failed");
+    expect(stopStatus(seen, { ...idle, cancelledExecutionId: "e1" })).toBe("stopping");
+    expect(stopStatus(seen, idle)).toBe("idle");
+    expect(
+      stopStatus(receiveRecord(seen, record("7999")), { ...idle, cancelledExecutionId: "e1" }),
+    ).toBe("idle");
   });
 
   it("hides only the waiting messages its press covered, while it is unanswered and not failed", () => {

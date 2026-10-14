@@ -105,4 +105,16 @@ it("drops an optimistic row whose admission answer names a message another tab h
     },
   );
   expect(store.getState().turns("thread-1")).toEqual([]);
+
+  // A newer snapshot clears the removal's tombstone while the optimistic row still waits for its
+  // answer; the late answer must still find the removal.
+  const waiting = actions.appendUserTurn("thread-2", [{ type: "text", text: "Steer" }]);
+  actions.removeTurns("thread-2", ["turn-server-2"], "7000");
+  actions.applyThreadSnapshot({ id: "thread-2", projectId: "project-1" } as never, [], {
+    nextSeq: "8000",
+    lifecycle: { actionRequired: false, runningTurnId: null },
+  });
+  expect(actions.turns("thread-2")?.map((turn) => turn.id)).toEqual([waiting.id]);
+  actions.acknowledgeUserTurn("thread-2", waiting.id, "turn-server-2", "6001");
+  expect(actions.turns("thread-2")).toEqual([]);
 });

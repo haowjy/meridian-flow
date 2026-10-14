@@ -141,8 +141,9 @@ export class ComposerSessionDraft {
   /**
    * A hand-back's content above what is typed, the receipt, and the command's retirement in one
    * checked write. A request already received prepends nothing (two answers for one request, or
-   * a reload after the write). False when the write failed: the command stays, and a retry of
-   * the same request brings the content again.
+   * a reload after the write). False when the write failed or the merged document wouldn't
+   * restore after a reload: the command stays, and a retry of the same request brings the
+   * content again. A document that can't restore never retires the command.
    */
   receiveHandBack(requestId: string, returned: MessageDoc): boolean {
     if (this.hasReceivedHandBack(requestId)) return this.dropHandBack(requestId);
@@ -158,6 +159,7 @@ export class ComposerSessionDraft {
       ownedUploads: typed?.ownedUploads ?? [],
       doc,
     };
+    if (!parseRestorableComposerDraft(edited)) return false;
     return this.commit(edited, {
       received: new Set([...this.received, handBackReceipt(requestId)]),
       notices: this.notices,

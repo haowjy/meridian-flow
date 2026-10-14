@@ -9,8 +9,9 @@ import type { PendingInboxItem, RunState } from "@meridian/contracts/threads";
 import {
   addIntent,
   INITIAL_RUN_STATE_VIEW,
+  isBlockedForUsage,
   isBusy,
-  isUsageBlocked,
+  isOwed,
   type RunStateView,
   receiveRecord,
   writerMessages,
@@ -63,19 +64,13 @@ export class AdmittedMessage {
     this.view = receiveRecord(this.view, runState);
   }
 
-  /** The record lists this message, or no record has covered its admission yet. */
+  /** The shared rule (`isOwed`): the record lists this message, or no record has covered its admission yet. */
   owed(): boolean {
-    return (
-      (this.view.record?.items.some((item) => item.id === this.userTurnId) ?? false) ||
-      this.view.intents.length > 0
-    );
+    return isOwed(this.view, this.userTurnId);
   }
 
-  /** This message is waiting on usage: the record holds it and says the start is blocked. */
+  /** The shared rule (`isBlockedForUsage`): the record holds this message and says the start is blocked. */
   blockedForUsage(): boolean {
-    return (
-      isUsageBlocked(this.view) &&
-      (this.view.record?.items.some((item) => item.id === this.userTurnId) ?? false)
-    );
+    return isBlockedForUsage(this.view, this.userTurnId);
   }
 }

@@ -573,10 +573,16 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
               const mergedTurns = reconcileSnapshotTurns(localTurns, applied.turns, {
                 runningTurnId,
               });
+              // A row still waiting on its admission answer is an identity bridge: the answer
+              // may name a turn another tab handed back. Covered tombstones stay until it settles.
+              const awaitingAdmission = localTurns.some((turn) => isOptimisticTurnId(turn.id));
+              const tombstones = awaitingAdmission
+                ? (state.tombstonesByThread[threadId] ?? applied.tombstones)
+                : applied.tombstones;
 
               const nextState: Partial<ThreadStoreSliceState> = {
                 turnsByThread: { ...state.turnsByThread, [threadId]: mergedTurns },
-                tombstonesByThread: { ...state.tombstonesByThread, [threadId]: applied.tombstones },
+                tombstonesByThread: { ...state.tombstonesByThread, [threadId]: tombstones },
               };
 
               const reconciledInterruptResponses = reconcileInterruptResponsesForThread(

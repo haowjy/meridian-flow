@@ -1,7 +1,14 @@
 /** Platform-neutral client behavior shared by the app and ./mf. */
 
 export { buildMessageDoc } from "./message/build";
-export { composerDocFromHandedBack, prependMessageDoc } from "./message/hand-back";
+export {
+  type ChatReferenceScope,
+  chatReferenceResolver,
+  composerDocFromHandedBack,
+  prependMessageDoc,
+  type ReferenceFacts,
+  type ResolveReference,
+} from "./message/hand-back";
 export {
   imageCapable,
   referenceOccurrence,
@@ -20,7 +27,9 @@ export type {
   MessageSkill,
   MessageSkillNode,
   MessageTextNode,
+  RestorableReference,
   SerializedMessage,
+  StableReferenceAuthority,
 } from "./message/types";
 export * from "./run-state";
 export type * from "./socket/socket-ports";

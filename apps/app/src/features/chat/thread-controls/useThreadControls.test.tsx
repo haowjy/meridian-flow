@@ -223,14 +223,6 @@ describe("useThreadControls", () => {
     expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "queued" }]);
   });
 
-  it("stops a pending divider through the cancel route and marks it stopping", async () => {
-    transport.cancel.mockResolvedValue({ status: "cancelled" });
-    await act(async () => latest.stop("c"));
-    expect(transport.cancel).toHaveBeenCalledWith("thread-1", "c");
-    expect(latest.stoppingTurnIds.has("c")).toBe(true);
-    expect(invalidateQueries).toHaveBeenCalled();
-  });
-
   it("drops the row and says so when Withdraw comes after the compaction started", async () => {
     api.withdrawThreadControl.mockResolvedValue({
       outcome: "already_started",
