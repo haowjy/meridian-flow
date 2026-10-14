@@ -1,23 +1,20 @@
 /** POST /api/projects/:projectId/works/:workId/drafts/apply: Apply all, one server command. */
-import { DraftApplyAllRequestSchema } from "@meridian/contracts/drafts";
 import type { ProjectId, WorkId } from "@meridian/contracts/runtime";
-import { createError, defineEventHandler, getRouterParam, readBody } from "nitro/h3";
+import { defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import { requireAppUser } from "../../../../../../../lib/auth-gate.js";
 import {
   handleApplyAllWorkDraftRequest,
+  parseDraftApplyAll,
   selectDraftRouteServices,
 } from "../../../../../../../lib/draft-review-route.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
-  const request = DraftApplyAllRequestSchema.safeParse(await readBody(event));
-  if (!request.success)
-    throw createError({ statusCode: 400, message: "Invalid Apply all request" });
   const result = await handleApplyAllWorkDraftRequest(selectDraftRouteServices(app), {
     projectId: (getRouterParam(event, "projectId") ?? "") as ProjectId,
     workId: (getRouterParam(event, "workId") ?? "") as WorkId,
     userId: user.userId,
-    request: request.data,
+    request: parseDraftApplyAll(await readBody(event)),
     signal: event.req.signal,
   });
   event.res.status = result.httpStatus;

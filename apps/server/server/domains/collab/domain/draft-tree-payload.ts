@@ -27,43 +27,43 @@ const PayloadItemSchema = z.object({
   draftBranchId: z.string().nullable(),
   origin: z.enum(["created", "edited"]),
   /**
-   * The tokens the item is published against (§11.3): the writer's render, or the read
-   * `applyItems` made when the request carried none. Null: the item has no live text
-   * (hidden, deleted, binary) or no branch.
+   * The one freshness token left (contract §1.1): the writer's render, or the read `applyItems`
+   * made when the request carried none. Live text moving never refuses (D6).
    */
   locationToken: z.string(),
-  liveTextToken: z.string().nullable(),
-  branchGenerationToken: z.string().nullable(),
-  /**
-   * Per-change Apply: the classes and operations it published, so completion places exactly
-   * those parts and resets a drained item (§4.1). Null for item Apply, which takes the branch.
-   */
-  selection: z
-    .object({
-      operationIds: z.array(z.string()).readonly(),
-      closureClassIds: z.array(z.string()).readonly(),
-    })
-    .nullable(),
 });
 
-/** How the writer's command is answered once the batch is terminal (§4.5, §4.6). */
+/** An outcome decided at staging, before anything reaches live (contract §1.2). */
+const DecidedSchema = z.discriminatedUnion("status", [
+  z.object({ itemKey: z.string(), status: z.literal("already_live") }),
+  z.object({ itemKey: z.string(), status: z.literal("not_found") }),
+  z.object({
+    itemKey: z.string(),
+    status: z.literal("failed"),
+    reason: z.enum(["settlement_unfinished", "base_uninitialized", "merge_failed"]),
+  }),
+]);
+
+/** How the writer's command is answered once the batch is terminal (§1.4, §2.4). */
 const CommandSchema = z.object({
   shape: z.enum(["item", "all", "changes"]),
-  /** Every item the command named, in order: a held item leaves `items` but not the answer. */
+  /** Every item the command named, in order: a held or failed item leaves `items` but not the answer. */
   itemKeys: z.array(z.string()).readonly(),
+  /** What content planning decided at staging; joins the terminal result at completion. */
+  decided: z.array(DecidedSchema).readonly(),
 });
 
 const PayloadSchema = z.object({
   draftId: z.string(),
-  /** Null for a publication no writer command owns (D40's switch). */
-  command: CommandSchema.nullable(),
+  /** Every publication has a writer command (#760 deleted D40's Work write-mode switch). */
+  command: CommandSchema,
   items: z.array(PayloadItemSchema).readonly(),
 });
 
 /**
  * The step's durable input, immutable once staged. Apply never closes the draft (§2.4).
- * `items` keeps only the items eligible
- * at the pre-staging check, so completion and recovery publish from this snapshot.
+ * `items` keeps only the items eligible at the pre-staging check and whose content planning did
+ * not fail, so completion and recovery publish from this snapshot.
  */
 export type DraftTreePayload = z.infer<typeof PayloadSchema>;
 export type DraftTreePayloadItem = DraftTreePayload["items"][number];

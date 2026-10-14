@@ -15,14 +15,12 @@ import {
 } from "../../observability/index.js";
 import type { BranchAgentEditDiagnostics } from "../domain/branch-agent-edit.js";
 import type { BranchPullDiagnostics } from "../domain/branch-pulls.js";
-import type { SweepProjectionDiagnostics } from "../domain/branch-push-contracts.js";
 import type { DocumentProjectionDiagnostics } from "../domain/document-projection-refresher.js";
 import type { DraftBranchAheadDiagnostics } from "../domain/draft-branch-ahead-registration.js";
 import type { DraftRebaseDiagnostics } from "../domain/draft-rebase.js";
 import type { MarkdownSerializationAnomalyObserver } from "../domain/markdown-document.js";
 import type { ResponseTransactionDiagnostics } from "../domain/response-transaction.js";
 import type { ReversalNoticeDiagnostics } from "../domain/reversal-notices.js";
-import type { DraftReviewDiagnostics } from "../domain/work-draft-review-service.js";
 
 export function createBranchPullDiagnostics(eventSink?: EventSink): BranchPullDiagnostics {
   return {
@@ -152,23 +150,6 @@ export function createAgentEditInvariantDiagnostic(
       name: "invariant_violation",
       payload,
     });
-  };
-}
-
-export function createSweepProjectionDiagnostics(
-  eventSink?: EventSink,
-): SweepProjectionDiagnostics {
-  return {
-    unavailable({ pushId, documentId, cause }) {
-      if (!eventSink) return;
-      emitEvent(eventSink, {
-        level: "warn",
-        source: "collab.change_event",
-        name: "sweep_projection.unavailable",
-        correlation: { pushId: String(pushId) },
-        payload: { documentId, ...unknownToEventPayload(cause) },
-      });
-    },
   };
 }
 
@@ -415,20 +396,5 @@ function idempotencyHitObserver(
       name: "write.idempotency_hit",
       payload: { ...event },
     });
-  };
-}
-
-export function createDraftReviewDiagnostics(eventSink?: EventSink): DraftReviewDiagnostics {
-  return {
-    unattributedHunks({ documentId, hunkIds }) {
-      if (!eventSink) return;
-      emitEvent(eventSink, {
-        level: "warn",
-        source: "collab.draft_review",
-        name: "attribution.incomplete",
-        correlation: { documentId },
-        payload: { hunkCount: hunkIds.length },
-      });
-    },
   };
 }

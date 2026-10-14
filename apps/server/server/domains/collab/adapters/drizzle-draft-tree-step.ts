@@ -1,32 +1,31 @@
 /**
- * The draft tree step on the settlement seam (contract §11.2, `kind: "draft_tree"`): what
- * Apply publishes with a draft's text, in the batch's one lock order (D's Work, D, every
- * current and final source, every item's document).
+ * The draft tree step on the settlement seam (`kind: "draft_tree"`): what Apply publishes beside a
+ * draft's text, in the batch's one lock order (D's Work, D, every current and final source, every
+ * item's document).
  *
- * The check (before staging) and `beforeAdmission` (completion) make the same decision,
- * except that the rendered tokens (#420, S2: location version, the live full-state
- * fingerprint, the branch generation) are compared only at the check: staging is the consent
- * boundary and a staged batch is never withdrawn as stale. 5a holds per item, first the draft's own view, then the
- * live tree, once: an item is blocked by what stands at its row's location now, never by another item.
- * The check refines the payload to the eligible items. `beforeAdmission` then installs: reveals
- * of still-hidden creates and restores of documents deleted live (F9) through placement,
- * each at its row's location, and reports each item's receipt notes.
- * `afterAdmission` settles arrivals once against the final tree (an ahead ref binds there,
- * once, for every holder), reconciles the catalog for every source it
- * touched (F23), drops the draft's applied rows, resets every admitted item whose branch
- * has nothing left to review (`settleDrainedItems`, in the completion transaction and keyed
- * to the staged generation) and records the writer's command with its terminal result.
- * Apply never closes the draft (§2.4).
+ * The check (before staging) and `beforeAdmission` (completion) make the same decision: the
+ * source-lock check at both, the location-consent check only at staging (staging is the consent
+ * boundary and a staged batch is never withdrawn as stale; later live edits merge as ordinary peer
+ * edits). 5a holds per item in one pass, first the draft's own view, then the live tree: an item is
+ * blocked by what stands at its row's location now, never by another item. The check refines the
+ * payload to the eligible items. `beforeAdmission` then installs: reveals of still-hidden creates
+ * and restores of documents deleted live (F9), each at its row's current location through
+ * placement, and reports each item's receipt notes. `afterAdmission` settles arrivals once against
+ * the final tree, reconciles the catalog for every source it touched (F23), drops the draft's
+ * applied created rows, and stores the writer's command with its terminal result, composed from the
+ * holds, the member outcomes content settlement decided, the outcomes decided at staging and the
+ * restoration notes. Apply never closes the draft (§2.4).
  */
 import type { ContextSourceId, DocumentId } from "@meridian/contracts";
 import type {
-  DraftApplyItemResult,
-  DraftCommandResult,
-  DraftItemSettlement,
+  DraftApplyAllResult,
+  DraftCommandOutcome,
+  DraftItemApplyResult,
+  DraftItemOutcome,
 } from "@meridian/contracts/drafts";
 import type { Database } from "@meridian/database";
-import { createCollabYDoc } from "@meridian/prosemirror-schema";
-import * as Y from "yjs";
+import { documentBranches } from "@meridian/database/schema";
+import { eq } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { ContextCatalogMutationPort } from "../../context/ports/context-catalog.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
@@ -34,13 +33,6 @@ import { dropDocumentRows } from "../../context/tree/draft-tree-store.js";
 import { type PlaceTarget, place } from "../../context/tree/placement.js";
 import { createTreeReader, LIVE_TREE, type TreeStateNode } from "../../context/tree/tree-view.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
-import type {
-  BranchCoordinator,
-  BranchSnapshot,
-  BranchStore,
-} from "../domain/branch-coordinator.js";
-import { BranchCasConflictError } from "../domain/branch-coordinator.js";
-import { documentEffectsEqual } from "../domain/document-content.js";
 import {
   type ApplyNote,
   DRAFT_TREE_STEP,
@@ -57,6 +49,7 @@ import {
 } from "../domain/draft-tree-payload.js";
 import type { Drafts } from "../domain/drafts.js";
 import type {
+  MemberOutcome,
   PublicationAdmission,
   PublicationItemHold,
   PublicationRefusal,
@@ -66,8 +59,8 @@ import { settleCommandForBatchWithinTx } from "./drizzle-draft-commands.js";
 
 type Refusal = Extract<PublicationAdmission, { kind: "refuse" }>;
 
-/** One item that publishes, with its node and branch read under the locks. */
-type Eligible = { item: DraftTreePayloadItem; node: TreeStateNode; branch: BranchSnapshot | null };
+/** One item that publishes, with its node read under the locks. */
+type Eligible = { item: DraftTreePayloadItem; node: TreeStateNode };
 
 type Decided = { kind: "proceed"; holds: PublicationItemHold[]; apply: Eligible[] };
 
@@ -75,11 +68,6 @@ export function createDrizzleDraftTreeStep(
   db: Database,
   deps: {
     drafts: Pick<Drafts, "byIds">;
-    branches: Pick<BranchStore, "getBranch">;
-    /** The reset of a drained branch, under the lease the completion's caller holds. */
-    coordinator: Pick<BranchCoordinator, "resetFromDocIfUnchangedWithLease">;
-    /** The live document as the completion transaction sees it, admissions included. */
-    liveDoc(documentId: DocumentId): Promise<Y.Doc>;
     workProjection: Pick<WorkProjectionMutation, "mutatePendingDraft">;
     /** Catalog reconciliation in the completion transaction, so its replay sees the tree (F23). */
     catalog: ContextCatalogMutationPort;
@@ -125,10 +113,7 @@ export function createDrizzleDraftTreeStep(
         const apply: Eligible[] = [];
         for (const item of payload.items) {
           const node = nodes.get(item.documentId);
-          const branch = item.draftBranchId
-            ? await deps.branches.getBranch(item.draftBranchId)
-            : null;
-          if (!node || tokensMoved(item, node, branch)) {
+          if (!node || tokensMoved(item, node)) {
             stale.push(item.itemKey);
           } else if (node.conflict.kind === "clash") {
             holds.push({
@@ -137,7 +122,7 @@ export function createDrizzleDraftTreeStep(
               reason: draftTreeHold(node.conflict.uri ?? node.conflict.at),
             });
           } else {
-            apply.push({ item, node, branch });
+            apply.push({ item, node });
           }
         }
         if (stale.length > 0) return refuse(draftTreeRefusal.stale(stale));
@@ -180,39 +165,28 @@ export function createDrizzleDraftTreeStep(
         return { kind: "proceed", holds, apply };
       }
 
-      function tokensMoved(
-        item: DraftTreePayloadItem,
-        node: TreeStateNode,
-        branch: BranchSnapshot | null,
-      ): boolean {
-        // A source outside the planned set isn't locked: the tokens would show it anyway.
+      function tokensMoved(item: DraftTreePayloadItem, node: TreeStateNode): boolean {
+        // A source outside the planned set isn't locked: the token would show it anyway.
         if (!sourceIds.has(node.target.contextSourceId)) return true;
         // Staging is the consent boundary: what the writer saw is compared only at the check.
         // Later live edits merge as ordinary peer edits and never withdraw an accepted batch.
-        if (scope.stage !== "check") return false;
-        if (node.locationVersion.toString() !== item.locationToken) return true;
-        // A member's live text under its coordinator lease; an item with no text member
-        // publishes no text, so its live text can't be stale.
-        const live = scope.liveTextFingerprints.get(item.documentId);
-        if (item.liveTextToken !== null && live !== undefined && live !== item.liveTextToken) {
-          return true;
-        }
-        if (item.branchGenerationToken !== null) {
-          return !branch || String(branch.generation) !== item.branchGenerationToken;
-        }
-        return false;
+        return scope.stage === "check" && node.locationVersion.toString() !== item.locationToken;
       }
 
       // What completion decided, for the command's terminal result (§4.5, §4.6).
       let completionHolds: readonly PublicationItemHold[] = [];
       let completionNotes: ReadonlyMap<string, readonly ApplyNote[]> = new Map();
 
-      /** The command's terminal result when the batch completed. */
-      function completedResult(
-        settled: ReadonlyMap<DocumentId, DraftItemSettlement>,
-      ): DraftCommandResult | null {
+      /**
+       * The command's terminal result when the batch completed (§1.2, §2.2's disposition table):
+       * an item decided `failed` or `not_found` at staging answers that; a hold answers `held`;
+       * otherwise it is `applied` when its member merged, or when the tree revealed, restored or
+       * dropped its created row, and `already_live` when nothing changed.
+       */
+      async function completedResult(
+        outcomes: ReadonlyMap<DocumentId, MemberOutcome>,
+      ): Promise<DraftCommandOutcome> {
         const { command, draftId } = payload;
-        if (!command) return null;
         const checkHeld = scope.stage === "completion" ? scope.held : [];
         const holds = new Map(
           [...checkHeld, ...completionHolds].flatMap((hold) => {
@@ -220,37 +194,63 @@ export function createDrizzleDraftTreeStep(
             return reason ? [[hold.itemKey, reason] as const] : [];
           }),
         );
-        const results = command.itemKeys.map((itemKey): DraftApplyItemResult => {
+        const decided = new Map(command.decided.map((outcome) => [outcome.itemKey, outcome]));
+        const results: DraftItemOutcome[] = [];
+        for (const itemKey of command.itemKeys) {
+          const said = decided.get(itemKey);
+          if (said && said.status !== "already_live") {
+            results.push(said);
+            continue;
+          }
           const reason = holds.get(itemKey);
-          return reason
-            ? { itemKey, status: "held", reason }
-            : { itemKey, status: "applied", notes: [...(completionNotes.get(itemKey) ?? [])] };
-        });
-        if (command.shape === "all") return { status: "completed", draftId, items: results };
-        const [result] = results;
-        const itemKey = command.itemKeys[0];
-        if (!result || !itemKey) return { status: "gone", draftId };
-        if (result.status === "held") {
-          return { status: "held", draftId, itemKey, reason: result.reason };
+          if (reason) {
+            results.push({ itemKey, status: "held", reason });
+            continue;
+          }
+          const item = payload.items.find((candidate) => candidate.itemKey === itemKey);
+          if (!item) throw new Error(`Apply lost item ${itemKey} between staging and completion`);
+          const member = outcomes.get(item.documentId as DocumentId);
+          const notes = [...(completionNotes.get(itemKey) ?? [])];
+          // A created item's row drops with this command whether it revealed the document or
+          // another Work already had (a shared create); an edited one never closes.
+          const closed = item.origin === "created";
+          const hasChanges = member?.hasChanges ?? (await textBranchHasChanges(item));
+          if (member?.status === "applied" || closed || notes.length > 0) {
+            results.push({
+              itemKey,
+              status: "applied",
+              notes,
+              overrode: member?.status === "applied" ? member.overrode : [],
+              hasChanges,
+              itemClosed: closed,
+              ...(closed ? { itemDisposition: "applied" as const } : {}),
+            });
+          } else {
+            results.push({ itemKey, status: "already_live", hasChanges });
+          }
         }
-        if (command.shape === "item") return { status: "applied", draftId, itemKey, item: result };
-        const item = payload.items.find((candidate) => candidate.itemKey === itemKey);
-        const closed = item ? settled.get(item.documentId as DocumentId) : undefined;
-        return {
-          status: "applied",
-          draftId,
-          itemKey,
-          operationIds: [...(item?.selection?.operationIds ?? [])],
-          closureClassIds: [...(item?.selection?.closureClassIds ?? [])],
-          itemClosed: closed?.itemClosed ?? false,
-          ...(closed?.itemDisposition ? { itemDisposition: closed.itemDisposition } : {}),
-        };
+        if (command.shape === "all") {
+          return { status: "completed", draftId, items: results } satisfies DraftApplyAllResult;
+        }
+        const [result] = results;
+        if (!result) return { status: "gone", draftId, itemKey: command.itemKeys[0] ?? "" };
+        return { draftId, ...result } as DraftItemApplyResult;
+      }
+
+      /** Whether an item's text branch still differs from its base: read in this transaction. */
+      async function textBranchHasChanges(item: DraftTreePayloadItem): Promise<boolean> {
+        if (!item.draftBranchId) return false;
+        const [branch] = await currentDrizzleDb(db)
+          .select({ hasEffect: documentBranches.hasEffect, status: documentBranches.status })
+          .from(documentBranches)
+          .where(eq(documentBranches.id, item.draftBranchId))
+          .limit(1);
+        return branch?.status === "active" && branch.hasEffect;
       }
 
       /** The command's terminal result when completion withdrew the batch. */
-      function withdrawnResult(reason: PublicationRefusal): DraftCommandResult | null {
+      function withdrawnResult(reason: PublicationRefusal): DraftCommandOutcome {
         const { command, draftId } = payload;
-        if (!command) return null;
         const gone = readDraftTreeRefusal(reason)?.kind === "gone";
         if (command.shape === "all") {
           return gone
@@ -258,61 +258,8 @@ export function createDrizzleDraftTreeStep(
             : { status: "stale", draftId, staleItemKeys: [...command.itemKeys] };
         }
         const itemKey = command.itemKeys[0];
-        return itemKey
-          ? { status: gone ? "gone" : "stale", draftId, itemKey }
-          : { status: "gone", draftId };
-      }
-
-      /**
-       * Drained items reset inside the completion transaction (§4.1, LA-2): each admitted
-       * text item whose branch is still at the staged generation and whose live-vs-branch
-       * effect is empty against the transaction-visible live text is reset to G+1, edit
-       * parts retired, peers kept, draft open. The reset, the terminal batch and the
-       * command's result commit together.
-       */
-      async function settleDrainedItems(
-        apply: readonly Eligible[],
-        admitted: ReadonlySet<DocumentId>,
-      ): Promise<Map<DocumentId, DraftItemSettlement>> {
-        const settled = new Map<DocumentId, DraftItemSettlement>();
-        for (const { item } of apply) {
-          if (!item.draftBranchId || item.branchGenerationToken === null) continue;
-          if (!admitted.has(item.documentId as DocumentId)) continue;
-          const branch = await deps.branches.getBranch(item.draftBranchId);
-          if (
-            branch?.status !== "active" ||
-            String(branch.generation) !== item.branchGenerationToken
-          ) {
-            continue;
-          }
-          const live = await deps.liveDoc(item.documentId as DocumentId);
-          const draft = createCollabYDoc({ gc: false });
-          try {
-            Y.applyUpdate(draft, branch.state);
-            if (!documentEffectsEqual(live, draft)) continue;
-            if (scope.stage !== "completion" || !scope.lease) {
-              throw new Error("A drained item resets under the completion's branch lease");
-            }
-            const reset = await deps.coordinator.resetFromDocIfUnchangedWithLease(scope.lease, {
-              branchId: branch.branchId,
-              upstream: live,
-              expectedGeneration: branch.generation,
-              expectedStateVector: branch.stateVector,
-              expectedState: branch.state,
-              schemaVersion: branch.schemaVersion,
-              editDisposition: "retired",
-            });
-            if (!reset) throw new BranchCasConflictError(branch.branchId);
-            settled.set(item.documentId as DocumentId, {
-              itemClosed: true,
-              itemDisposition: "applied",
-            });
-          } finally {
-            draft.destroy();
-            live.destroy();
-          }
-        }
-        return settled;
+        if (!itemKey) return { status: "gone", draftId };
+        return gone ? { status: "gone", draftId, itemKey } : { status: "stale", draftId, itemKey };
       }
 
       // What `beforeAdmission` placed, for `afterAdmission`.
@@ -337,16 +284,7 @@ export function createDrizzleDraftTreeStep(
             hold: decided.holds,
             payload: encodeDraftTreePayload({
               ...payload,
-              // A per-change Apply's live token is the lock cut's: the live-revision fence
-              // just proved live unchanged since the selection (§4.1).
-              items: decided.apply.map(({ item }) =>
-                item.selection && item.liveTextToken === null
-                  ? {
-                      ...item,
-                      liveTextToken: scope.liveTextFingerprints.get(item.documentId) ?? null,
-                    }
-                  : item,
-              ),
+              items: decided.apply.map(({ item }) => item),
             }),
           };
         },
@@ -402,7 +340,7 @@ export function createDrizzleDraftTreeStep(
           };
         },
 
-        async afterAdmission(admitted) {
+        async afterAdmission(outcomes) {
           if (!installed) throw new Error("draft_tree afterAdmission ran without beforeAdmission");
           const { apply, arrived } = installed;
           // A restore or a reveal is an arrival; settled once against the final tree.
@@ -423,16 +361,19 @@ export function createDrizzleDraftTreeStep(
                 .map(({ node }) => node.nodeId),
             });
           });
-          const settled = await settleDrainedItems(apply, new Set(admitted));
-          const result = completedResult(settled);
-          if (result)
-            await settleCommandForBatchWithinTx(currentDrizzleDb(db), scope.batchId, result);
+          await settleCommandForBatchWithinTx(
+            currentDrizzleDb(db),
+            scope.batchId,
+            await completedResult(outcomes),
+          );
         },
 
         async onRefused(reason) {
-          const result = withdrawnResult(reason);
-          if (result)
-            await settleCommandForBatchWithinTx(currentDrizzleDb(db), scope.batchId, result);
+          await settleCommandForBatchWithinTx(
+            currentDrizzleDb(db),
+            scope.batchId,
+            withdrawnResult(reason),
+          );
         },
       };
     },

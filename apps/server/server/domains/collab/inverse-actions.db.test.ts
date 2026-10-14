@@ -1,10 +1,7 @@
 /** Shared effective-action history across card and model selectors. */
 import { randomUUID } from "node:crypto";
-import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
-import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeEach, expect, it } from "vitest";
-import * as Y from "yjs";
 import { testFileGrant } from "../../test-support/file-grants.js";
 import {
   ALPHA_ID,

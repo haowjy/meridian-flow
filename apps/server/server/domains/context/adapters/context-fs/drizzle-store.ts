@@ -5,13 +5,9 @@
  */
 
 import type { ContextSourceId, DocumentId, FolderId, ProjectId } from "@meridian/contracts";
-import {
-  type DocumentFileType,
-  type Filetype,
-  folderDocumentName,
-} from "@meridian/contracts/protocol";
+import { type DocumentFileType, type Filetype } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import { documentMarkdownProjections, documents } from "@meridian/database/schema";
+import { documentMarkdownProjections } from "@meridian/database/schema";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import {
   currentDrizzleDb,

@@ -4,8 +4,9 @@ import type { AgentEditCodec } from "@meridian/agent-edit/integration";
 import type { ChangeEventProjection, ChangeEventWsMessage } from "@meridian/contracts/protocol";
 import type { UserId } from "@meridian/contracts/runtime";
 import type { CommittedChangeTrailProjection } from "./ports/change-trail-persistence.js";
-import type { SweptChangesByRecipient } from "./sweep-policy.js";
 import { bodyFromHashline } from "./trail-read-kernel.js";
+
+export type SweptChangesByRecipient = ReadonlyMap<UserId, ReadonlySet<string>>;
 
 export function projectCommittedChangeEvent(
   projection: CommittedChangeTrailProjection,

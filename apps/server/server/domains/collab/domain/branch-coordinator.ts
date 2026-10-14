@@ -5,7 +5,6 @@ import { bytesEqual } from "@meridian/agent-edit/integration";
 import type { DraftBaseRevision, DraftId } from "@meridian/contracts";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import {
-  allocateDocumentClient,
   COLLAB_SCHEMA_VERSION,
   type CollabSchemaVersion,
   createCollabYDoc,
@@ -25,7 +24,7 @@ import {
   admitWriterUpdate,
   replicateFrozenIdentity,
 } from "./document-mutation-policy.js";
-import { draftDiffersFromBase, writeBaseFrom } from "./draft-rebase.js";
+import { draftDiffersFromBase } from "./draft-rebase.js";
 import { currentResponseTransactionId, enlistResponseParticipant } from "./response-transaction.js";
 import { DocumentSchemaMajorMismatchError, isStaleSchema } from "./stale-schema.js";
 import { certifyWriterRestorations } from "./writer-restoration.js";
@@ -97,23 +96,10 @@ export type AppendBranchJournalInput = {
   semanticEditIr?: SemanticEditIRV1;
 };
 
-export type ResetBranchSnapshotInput = {
-  editDisposition?: "discarded" | "retired";
-  branchId: string;
-  expectedGeneration: number;
-  expectedStateVector: Uint8Array;
-  expectedState: Uint8Array;
-  state: Uint8Array;
-  stateVector: Uint8Array;
-  discardedStateVector: Uint8Array;
-  schemaVersion: CollabSchemaVersion;
-};
-
 export type BranchStore = {
   getBranch(branchId: string): Promise<BranchSnapshot | null>;
   updateBranchSnapshot(input: PersistBranchInput): Promise<boolean>;
   commitBranchMutation(input: CommitBranchMutationInput): Promise<boolean>;
-  resetBranchSnapshot(input: ResetBranchSnapshotInput): Promise<boolean>;
   /** Defers cache-visible effects when persistence joined a response transaction. */
   deferUntilCommit(callback: () => void): boolean;
 };
@@ -233,18 +219,6 @@ export type BranchCoordinator = {
       snapshot: BranchSnapshot,
     ) => Promise<{ result: T; baseRevision?: DraftBaseRevision }>,
   ): Promise<T>;
-  resetFromDocIfUnchangedWithLease(
-    lease: BranchLockLease,
-    input: {
-      branchId: string;
-      upstream: Y.Doc;
-      expectedGeneration: number;
-      expectedStateVector: Uint8Array;
-      expectedState: Uint8Array;
-      schemaVersion?: CollabSchemaVersion;
-      editDisposition?: "discarded" | "retired";
-    },
-  ): Promise<boolean>;
   /**
    * These branches' leases in one ordered acquisition, for an operation that touches
    * several (a peer and its draft branch) and runs every step under the one lease.
@@ -326,38 +300,6 @@ export function createBranchCoordinator(input: {
       }
       trimReplicas();
     }
-  }
-
-  async function resetFromDocIfUnchangedWithLease(
-    lease: BranchLockLease,
-    resetInput: {
-      branchId: string;
-      upstream: Y.Doc;
-      expectedGeneration: number;
-      expectedStateVector: Uint8Array;
-      expectedState: Uint8Array;
-      schemaVersion?: CollabSchemaVersion;
-      editDisposition?: "discarded" | "retired";
-    },
-  ): Promise<boolean> {
-    assertBranchLeaseCovers(lease, resetInput.branchId);
-    const snapshot = await loadSnapshot(resetInput.branchId);
-    assertWorkDraftResetTarget(snapshot);
-    if (
-      snapshot.generation !== resetInput.expectedGeneration ||
-      !bytesEqual(snapshot.stateVector, resetInput.expectedStateVector) ||
-      !bytesEqual(snapshot.state, resetInput.expectedState)
-    ) {
-      cached.delete(resetInput.branchId);
-      return false;
-    }
-    await persistReset(
-      snapshot,
-      resetInput.upstream,
-      resetInput.schemaVersion ?? snapshot.schemaVersion,
-      resetInput.editDisposition,
-    );
-    return true;
   }
 
   async function loadSnapshot(branchId: string): Promise<BranchSnapshot> {
@@ -509,44 +451,6 @@ export function createBranchCoordinator(input: {
     cached.delete(reset.branchId);
     const publish = () => input.onBranchReset?.(reset);
     if (!input.store.deferUntilCommit(publish)) publish();
-  }
-
-  async function persistReset(
-    snapshot: BranchSnapshot,
-    upstream: Y.Doc,
-    schemaVersion: CollabSchemaVersion,
-    editDisposition: "discarded" | "retired" = "discarded",
-  ): Promise<void> {
-    const resetDoc = createCollabYDoc({ gc: false });
-    await replicateFrozenSource(upstream, resetDoc);
-    // A reset draft is live again: its base is live's text, so the draft has no change left.
-    // It writes as a fresh client: a reset restarts the server client's clocks, which older peers still hold.
-    if (snapshot.kind === "work_draft") {
-      writeBaseFrom(resetDoc, upstream, allocateDocumentClient(resetDoc));
-    }
-    const state = Y.encodeStateAsUpdate(resetDoc);
-    const stateVector = Y.encodeStateVector(resetDoc);
-    const ok = await input.store.resetBranchSnapshot({
-      branchId: snapshot.branchId,
-      expectedGeneration: snapshot.generation,
-      expectedStateVector: snapshot.stateVector,
-      expectedState: snapshot.state,
-      state,
-      stateVector,
-      editDisposition,
-      discardedStateVector: mergeStateVectors(snapshot.discardedStateVector, snapshot.stateVector),
-      schemaVersion,
-    });
-    if (!ok) {
-      resetDoc.destroy();
-      cached.delete(snapshot.branchId);
-      dirtyTransientBranches.delete(snapshot.branchId);
-      throw new BranchCasConflictError(snapshot.branchId);
-    }
-    dirtyTransientBranches.delete(snapshot.branchId);
-    cached.delete(snapshot.branchId);
-    resetDoc.destroy();
-    notifyReset({ branchId: snapshot.branchId, generation: snapshot.generation + 1 });
   }
 
   /** One snapshot-clone-persist step of a branch operation; the caller holds the branch's lease. */
@@ -763,12 +667,6 @@ export function createBranchCoordinator(input: {
     return input.journalReads;
   }
 
-  function assertWorkDraftResetTarget(snapshot: BranchSnapshot): void {
-    if (snapshot.kind !== "work_draft" || snapshot.status !== "active") {
-      throw new Error(`Branch ${snapshot.branchId} is not an active work draft reset target`);
-    }
-  }
-
   return {
     notifyReset,
     readBranch(branchId, fn) {
@@ -794,8 +692,6 @@ export function createBranchCoordinator(input: {
         ),
       );
     },
-
-    resetFromDocIfUnchangedWithLease,
 
     rewriteDraft(lease, branchId, run) {
       assertBranchLeaseCovers(lease, branchId);

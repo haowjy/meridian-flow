@@ -15,13 +15,8 @@ import type {
   TrailContributionReplacement,
 } from "./branch-push-contracts.js";
 import { blockTextMap } from "./branch-push-plan.js";
-import {
-  diffAlignedBlocks,
-  documentDifference,
-  hunkDeletedRanges,
-  hunkInsertedRanges,
-} from "./document-difference.js";
-import { type IndexedDraftUpdate, indexDraftUpdates } from "./draft-review-attribution.js";
+import { changedRangesByBlock, documentDifference } from "./document-difference.js";
+import { type IndexedDraftUpdate, indexJournalClockOwners } from "./journal-clock-owners.js";
 import type {
   ChangeTrailPersistence,
   DurableTrailRecord,
@@ -43,8 +38,60 @@ type TrailProjectionLocation = {
   afterIdentity: CanonicalBlockIdentityV1 | null;
   navigation: RawTrailChange["navigation"];
 };
+/**
+ * The draft as it stood before `rows`, rebuilt from the draft's own state: every
+ * struct the rows introduced is cut off and every deletion they made is lifted.
+ * A draft's rows are authored in the draft's identity space, so replaying them
+ * over a live doc would not land.
+ */
+export function draftPriorDoc(draftState: Uint8Array, rows: readonly BranchJournalRow[]): Y.Doc {
+  const draft = createCollabYDoc({ gc: false });
+  try {
+    Y.applyUpdate(draft, draftState);
+    const stateVector = Y.decodeStateVector(Y.encodeStateVector(draft));
+    const rowDeletes = new Map<number, Array<{ clock: number; len: number }>>();
+    for (const row of rows) {
+      const decoded = Y.decodeUpdate(row.updateData);
+      for (const struct of decoded.structs) {
+        const cut = stateVector.get(struct.id.client);
+        if (cut !== undefined && struct.id.clock < cut) {
+          if (struct.id.clock === 0) stateVector.delete(struct.id.client);
+          else stateVector.set(struct.id.client, struct.id.clock);
+        }
+      }
+      for (const [client, items] of decoded.ds.clients) {
+        rowDeletes.set(client, [...(rowDeletes.get(client) ?? []), ...items]);
+      }
+    }
+    const deleteSet = Y.createDeleteSetFromStructStore(draft.store);
+    for (const [client, lifted] of rowDeletes) {
+      const kept: Array<{ clock: number; len: number }> = [];
+      for (const item of deleteSet.clients.get(client) ?? []) {
+        let start = item.clock;
+        const end = item.clock + item.len;
+        for (const gap of [...lifted].sort((a, b) => a.clock - b.clock)) {
+          const gapEnd = gap.clock + gap.len;
+          if (gapEnd <= start || gap.clock >= end) continue;
+          if (gap.clock > start) kept.push({ clock: start, len: gap.clock - start });
+          start = Math.max(start, gapEnd);
+        }
+        if (start < end) kept.push({ clock: start, len: end - start });
+      }
+      deleteSet.clients.set(client, kept as never);
+    }
+    return Y.createDocFromSnapshot(
+      draft,
+      new Y.Snapshot(deleteSet, stateVector),
+      createCollabYDoc({ gc: false }),
+    );
+  } finally {
+    draft.destroy();
+  }
+}
+
 export function journalAttributionByChangedBlock(input: {
-  liveDoc: Y.Doc;
+  /** The draft before `rows`; see `draftPriorDoc`. */
+  priorDoc: Y.Doc;
   rows: readonly BranchJournalRow[];
   model: YProsemirrorDocumentModel;
 }): {
@@ -66,7 +113,7 @@ export function journalAttributionByChangedBlock(input: {
     journalRowIndex: number;
   }> = [];
   try {
-    Y.applyUpdate(scratch, Y.encodeStateAsUpdate(input.liveDoc));
+    Y.applyUpdate(scratch, Y.encodeStateAsUpdate(input.priorDoc));
     for (const [journalRowIndex, row] of input.rows.entries()) {
       const before = canonicalSnapshot(input.model, scratch);
       Y.applyUpdate(scratch, row.updateData);
@@ -90,7 +137,7 @@ export function journalAttributionByChangedBlock(input: {
     }
     const rowsById = new Map(input.rows.map((row) => [String(row.id), row]));
     const operationIdsByBlock = draftOperationIdsByChangedBlock({
-      liveDoc: input.liveDoc,
+      priorDoc: input.priorDoc,
       draftDoc: scratch,
       model: input.model,
       draftUpdates: input.rows.map((row) => ({
@@ -167,6 +214,8 @@ export function preparedTrailChanges(input: {
   changedBlocks: readonly PublicationBlockChange[];
   receiptId: string;
   ownersByBlock: ReadonlyMap<string, readonly ({ threadId: ThreadId; turnId: TurnId } | null)[]>;
+  /** Owners of a changed block the draft's identities do not name (a content Apply writes fresh live items). */
+  fallbackOwners?: readonly ({ threadId: ThreadId; turnId: TurnId } | null)[];
   operations: readonly ReplacementOperation[];
   before: readonly {
     hash: string;
@@ -300,7 +349,7 @@ export function preparedTrailChanges(input: {
       block.afterText !== null &&
       afterBody.status === "available" &&
       afterBody.markdown.length === 0;
-    const owners = input.ownersByBlock.get(block.blockId) ?? [null];
+    const owners = input.ownersByBlock.get(block.blockId) ?? input.fallbackOwners ?? [null];
     const afterBlockIdentity = replacement?.afterBlockIdentity ?? block.afterBlockIdentity;
     const afterIdentity =
       emptiedSurvivingBlock || contentRelocated || !afterBlockIdentity
@@ -436,12 +485,13 @@ export function buildDurablePushTrail(input: {
   prepared: PreparedPush;
   documentTitle: string;
 }): DurableTrailRecord {
-  const journalOwners = input.prepared.prepared.journalRows.map((row) =>
+  // A manifest push is owned by the rows it moves; a content Apply by the draft's pending rows (the
+  // rows that fed `attributionRows`), since it writes fresh live items and moves none.
+  const rows = input.prepared.attributionRows;
+  const journalOwners = rows.map((row) =>
     row.threadId && row.turnId ? { threadId: row.threadId, turnId: row.turnId } : null,
   );
-  const threadIds = new Set(
-    input.prepared.prepared.journalRows.flatMap((row) => (row.threadId ? [row.threadId] : [])),
-  );
+  const threadIds = new Set(rows.flatMap((row) => (row.threadId ? [row.threadId] : [])));
   return {
     documentId: input.prepared.prepared.branch.documentId,
     documentTitle: input.documentTitle,
@@ -454,28 +504,19 @@ export function buildDurablePushTrail(input: {
 
 /** Net publication ownership uses the same clock attribution as review, not canceled keystrokes. */
 function draftOperationIdsByChangedBlock(input: {
-  liveDoc: Y.Doc;
+  priorDoc: Y.Doc;
   draftDoc: Y.Doc;
   model: AgentEditModel;
   draftUpdates: readonly IndexedDraftUpdate[];
 }): Map<string, string[]> {
-  const attribution = indexDraftUpdates({ baseDoc: input.liveDoc, updates: input.draftUpdates });
-  const rawHunks = diffAlignedBlocks(
-    documentDifference(input.liveDoc, input.draftDoc, input.model),
-    input.draftDoc,
-  );
+  const attribution = indexJournalClockOwners({
+    baseDoc: input.priorDoc,
+    updates: input.draftUpdates,
+  });
   const result = new Map<string, string[]>();
-  for (const hunk of rawHunks) {
-    const owners = attribution.attributeRanges({
-      insertedRanges: hunkInsertedRanges(hunk),
-      deletedRanges: hunkDeletedRanges(hunk),
-    });
-    const blockKeys = [
-      hunk.blockKey,
-      ...(hunk.kind === "block" && hunk.beforeBlockKey ? [hunk.beforeBlockKey] : []),
-    ];
-    for (const blockKey of blockKeys)
-      result.set(blockKey, [...new Set([...(result.get(blockKey) ?? []), ...owners.operationIds])]);
-  }
+  for (const [blockKey, ranges] of changedRangesByBlock(
+    documentDifference(input.priorDoc, input.draftDoc, input.model),
+  ))
+    result.set(blockKey, attribution.owningRowIds(ranges));
   return result;
 }

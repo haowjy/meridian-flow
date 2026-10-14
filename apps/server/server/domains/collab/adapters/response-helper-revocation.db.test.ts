@@ -1,25 +1,16 @@
-// Whole Discard revokes Alpha helpers while Beta keeps the response open.
-import { randomUUID } from "node:crypto";
 import { branchRoomName } from "@meridian/contracts/protocol";
-import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
-import { testFileGrant } from "../../../test-support/file-grants.js";
 import {
   ALPHA_ID,
   BETA_ID,
   closeDatabase,
   createHarness,
   createTestDatabase,
-  PROJECT_ID,
   resetDatabase,
-  schema,
   THREAD_ID,
-  USER_ID,
-  WORK_ID,
 } from "../test-support/change-trail-postgres-harness.js";
 import {
   createResponse,
-  inProject,
   responseContext,
   stageDraft,
 } from "../test-support/document-edit-receipt-fixture.js";

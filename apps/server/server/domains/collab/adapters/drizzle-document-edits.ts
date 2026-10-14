@@ -141,20 +141,19 @@ export async function placeDraftRows(
       .where(eq(documentYjsUpdates.id, placement.seq));
   }
 }
-export async function settleDraftGeneration(
-  db: Db,
-  branchId: string,
-  generation: number,
-  kind: "discarded" | "retired",
-): Promise<void> {
+/** Mark the closed branches' pending edit parts discarded, so model `write undo` names the skip. */
+export async function discardDraftEditParts(db: Db, branchIds: readonly string[]): Promise<void> {
+  if (branchIds.length === 0) return;
   await db
     .update(documentEditParts)
-    .set({ placement: { kind } })
+    .set({ placement: { kind: "discarded" } })
     .where(
       and(
         sql`${documentEditParts.placement}->>'kind' = 'pending'`,
-        sql`${documentEditParts.placement}->>'branchId' = ${branchId}`,
-        sql`(${documentEditParts.placement}->>'generation')::integer = ${generation}`,
+        sql`${documentEditParts.placement}->>'branchId' IN (${sql.join(
+          branchIds.map((id) => sql`${id}`),
+          sql`,`,
+        )})`,
       ),
     );
 }

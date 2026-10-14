@@ -13,7 +13,6 @@ import {
   closeDatabase,
   createHarness,
   createTestDatabase,
-  PROJECT_ID,
   resetDatabase,
   schema,
   THREAD_ID,

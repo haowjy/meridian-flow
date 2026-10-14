@@ -6,7 +6,7 @@
  */
 import { createHash } from "node:crypto";
 import type { DraftCommandId, DraftId, UserId, WorkId } from "@meridian/contracts";
-import type { DraftCommandKind, DraftCommandResult } from "@meridian/contracts/drafts";
+import type { DraftCommandKind, DraftCommandOutcome } from "@meridian/contracts/drafts";
 
 /** Who sent which command and what it said: the identity a resend must match exactly. */
 export type DraftCommandEnvelope = {
@@ -47,7 +47,7 @@ export type CommandLookup =
   /** Another digest, Work or account under this id: reveals nothing. */
   | { kind: "conflict" }
   | { kind: "pending"; draftId: DraftId | null }
-  | { kind: "done"; commandKind: DraftCommandKind; result: DraftCommandResult }
+  | { kind: "done"; commandKind: DraftCommandKind; result: DraftCommandOutcome }
   | { kind: "blocked" };
 
 /** What a lookup needs; the observation route has no body to digest, so it names none. */
@@ -58,6 +58,12 @@ export type CommandLookupKey = Pick<DraftCommandEnvelope, "commandId" | "workId"
 export interface DraftCommands {
   /** Fresh and authenticated: the account and Work the key names are all it reads. */
   lookup(key: CommandLookupKey): Promise<CommandLookup>;
+  /**
+   * Stores a terminal outcome decided where nothing else commits (a refusal before any lease, or
+   * the staging that found nothing to stage), in its own small transaction. The loser of a race
+   * on the id writes nothing: the caller answers the winner's row (§1.4).
+   */
+  record(envelope: DraftCommandEnvelope, result: DraftCommandOutcome): Promise<void>;
 }
 
 /** The id is already taken by a committed or in-flight command: the caller answers that one. */

@@ -477,6 +477,34 @@ export type DraftCommandOutcome =
   | DraftItemDiscardResult
   | DraftDiscardAllResponse;
 
+/**
+ * `GET documents/:documentId/draft?itemKey=`: an item's existence and where to open it. Answers for
+ * every addressable item, listed or not. A 200 means the item exists; `404 { code: "gone" }` means
+ * it is closed. A branchless item (a created image or blank create with no text branch) has no
+ * room: only item-level actions exist for it, so `wholeItem` is true.
+ */
+export type DraftItemMeta =
+  | {
+      kind: "text";
+      draftId: DraftId;
+      itemKey: DraftItemKey;
+      documentId: string;
+      /** The text branch's collaboration room, returned by the server; the client never builds it. */
+      roomName: string;
+      isNew: boolean;
+      wholeItem: boolean;
+      hasChanges: boolean;
+    }
+  | {
+      kind: "branchless";
+      draftId: DraftId;
+      itemKey: DraftItemKey;
+      documentId: string;
+      isNew: boolean;
+      wholeItem: true;
+      hasChanges: false;
+    };
+
 // Strict command bodies. Unknown fields answer 400, so an old tab's per-change Discard can never
 // be read as item Discard. Request types are the schemas' inference.
 
