@@ -25,7 +25,7 @@ import {
   useState,
 } from "react";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
-import type { SelectableEntry } from "./entry";
+import { type DragEntry, entryKey } from "./entry";
 
 export type EntrySelection = {
   /** Rows drag on the desktop shell only; the phone has no drag (owner, 2026-10-11). */
@@ -33,25 +33,31 @@ export type EntrySelection = {
   /** Shown as selected: part of an explicit selection. The open row has its own highlight. */
   isSelected(key: string): boolean;
   /** True when the click was a selection gesture and must not open the row. */
-  click(entry: SelectableEntry, event: MouseEvent | KeyboardEvent): boolean;
+  click(entry: DragEntry, event: MouseEvent | KeyboardEvent): boolean;
   /** What a drag of this row carries, in screen order; a row outside the selection goes alone. */
-  dragged(entry: SelectableEntry): SelectableEntry[];
+  dragged(entry: DragEntry): DragEntry[];
   /** Selects exactly these keys (after a move), even one; none returns to the open row. */
   replace(keys: readonly string[]): void;
   clear(): void;
   /** Rows announce themselves while mounted; the open row says so. */
-  register(entry: SelectableEntry, active: boolean): () => void;
+  register(entry: DragEntry, active: boolean): () => void;
   root: RefObject<HTMLDivElement | null>;
 };
 
 const KEY_ATTRIBUTE = "data-entry-key";
 
-/** One list's selection; the list component owns it and hands it to its rows and drop route. */
-export function useEntrySelection(): EntrySelection {
+/**
+ * One list's selection; the list component owns it and hands it to its rows and
+ * drop route. `prune` drops from a drag the rows a carried folder already
+ * carries; the list knows the current ancestry, the selection does not.
+ */
+export function useEntrySelection(
+  prune: (entries: DragEntry[]) => DragEntry[] = (entries) => entries,
+): EntrySelection {
   // null: no explicit selection, so the selection is the open row.
   const [explicit, setExplicit] = useState<ReadonlySet<string> | null>(null);
   const anchor = useRef<string | null>(null);
-  const registry = useRef(new Map<string, { entry: SelectableEntry; active: boolean }>());
+  const registry = useRef(new Map<string, { entry: DragEntry; active: boolean }>());
   const root = useRef<HTMLDivElement>(null);
   const draggable = usePhoneShell() !== true;
 
@@ -76,10 +82,11 @@ export function useEntrySelection(): EntrySelection {
       root,
       isSelected: (key) => explicit?.has(key) ?? false,
       click(entry, event) {
+        const key = entryKey(entry.ref);
         if (event.shiftKey && anchor.current) {
           const order = screenOrder();
           const from = order.indexOf(anchor.current);
-          const to = order.indexOf(entry.key);
+          const to = order.indexOf(key);
           if (from >= 0 && to >= 0) {
             const [start, end] = from < to ? [from, to] : [to, from];
             setExplicit(new Set(order.slice(start, end + 1)));
@@ -87,28 +94,28 @@ export function useEntrySelection(): EntrySelection {
           }
         }
         if (event.metaKey || event.ctrlKey) {
-          anchor.current = entry.key;
+          anchor.current = key;
           setExplicit((previous) => {
             const open = openKey();
             const next = new Set(previous ?? (open ? [open] : []));
-            if (next.has(entry.key)) next.delete(entry.key);
-            else next.add(entry.key);
+            if (next.has(key)) next.delete(key);
+            else next.add(key);
             return next;
           });
           return true;
         }
-        anchor.current = entry.key;
+        anchor.current = key;
         setExplicit(null);
         return false;
       },
       dragged(entry) {
         const selected = current();
-        if (!selected.has(entry.key)) return [entry];
+        if (!selected.has(entryKey(entry.ref))) return [entry];
         const rows = screenOrder()
           .filter((key) => selected.has(key))
           .map((key) => registry.current.get(key)?.entry)
-          .filter((row): row is SelectableEntry => row !== undefined);
-        return withoutNested(rows);
+          .filter((row): row is DragEntry => row !== undefined);
+        return prune(rows);
       },
       replace(keys) {
         setExplicit(keys.length > 0 ? new Set(keys) : null);
@@ -117,13 +124,14 @@ export function useEntrySelection(): EntrySelection {
         setExplicit(null);
       },
       register(entry, active) {
-        registry.current.set(entry.key, { entry, active });
+        const key = entryKey(entry.ref);
+        registry.current.set(key, { entry, active });
         return () => {
-          if (registry.current.get(entry.key)?.entry === entry) registry.current.delete(entry.key);
+          if (registry.current.get(key)?.entry === entry) registry.current.delete(key);
         };
       },
     };
-  }, [explicit, draggable, screenOrder, openKey]);
+  }, [explicit, draggable, screenOrder, openKey, prune]);
 }
 
 const SelectionContext = createContext<EntrySelection | null>(null);
@@ -149,28 +157,15 @@ export function EntrySelectionProvider({
   );
 }
 
-/** A folder carries its contents, so a selected row inside a selected folder is dropped. */
-function withoutNested(entries: SelectableEntry[]): SelectableEntry[] {
-  const folders = entries.filter((entry) => entry.kind === "folder");
-  return entries.filter(
-    (entry) =>
-      !folders.some(
-        (folder) =>
-          folder !== entry &&
-          folder.catalogRootId === entry.catalogRootId &&
-          entry.path.startsWith(`${folder.path}/`),
-      ),
-  );
-}
-
 /** A row's place in its list's selection; inert outside one (phone browsing). */
-export function useEntrySelectionRow(entry: SelectableEntry, active: boolean) {
+export function useEntrySelectionRow(entry: DragEntry, active: boolean) {
   const selection = useContext(SelectionContext);
+  const key = entryKey(entry.ref);
   useLayoutEffect(() => selection?.register(entry, active), [selection, entry, active]);
   return {
     selection,
-    selected: selection?.isSelected(entry.key) ?? false,
+    selected: selection?.isSelected(key) ?? false,
     /** Spread on the row so range selection can read screen order. */
-    rowProps: { [KEY_ATTRIBUTE]: entry.key },
+    rowProps: { [KEY_ATTRIBUTE]: key },
   };
 }

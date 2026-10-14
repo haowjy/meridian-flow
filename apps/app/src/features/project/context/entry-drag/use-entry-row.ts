@@ -1,10 +1,10 @@
 /** What a list row needs to be selectable and draggable. */
 import type { DragEvent, KeyboardEvent, MouseEvent } from "react";
 import { startEntryDrag } from "./drag-session";
-import type { SelectableEntry } from "./entry";
+import type { DragEntry } from "./entry";
 import { useEntrySelectionRow } from "./selection";
 
-export function useEntryRow(entry: SelectableEntry, active: boolean) {
+export function useEntryRow(entry: DragEntry, active: boolean) {
   const { selection, selected, rowProps } = useEntrySelectionRow(entry, active);
   return {
     selected,

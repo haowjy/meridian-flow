@@ -111,8 +111,8 @@ msgstr ""
 msgid "{0, plural, one {Changes in # more document did not apply} other {Changes in # more documents did not apply}}"
 msgstr ""
 
-#. placeholder {0}: stuck.length
-#: src/features/project/context/entry-drag/use-entry-move-route.ts
+#. placeholder {0}: failed.length
+#: src/features/project/context/entry-drag/move-notice.tsx
 msgid "{0, plural, one {Couldn't move # item back.} other {Couldn't move # items back.}}"
 msgstr ""
 
@@ -122,7 +122,7 @@ msgstr ""
 #~ msgstr ""
 
 #. placeholder {0}: failed.length
-#: src/features/project/context/entry-drag/use-entry-move-route.ts
+#: src/features/project/context/entry-drag/move-notice.tsx
 msgid "{0, plural, one {Couldn't move # item.} other {Couldn't move # items.}}"
 msgstr ""
 
@@ -137,7 +137,7 @@ msgstr ""
 #~ msgstr ""
 
 #. placeholder {0}: moved.length
-#: src/features/project/context/entry-drag/use-entry-move-route.ts
+#: src/features/project/context/entry-drag/move-notice.tsx
 msgid "{0, plural, one {Moved # item to {destinationName}.} other {Moved # items to {destinationName}.}}"
 msgstr ""
 
@@ -283,7 +283,11 @@ msgstr "{days}天"
 
 #. placeholder {0}: refusal.entry.name
 #: src/features/project/context/entry-drag/use-entry-move-route.ts
-msgid "{destinationName} already has {0}"
+#~ msgid "{destinationName} already has {0}"
+#~ msgstr ""
+
+#: src/features/project/context/entry-drag/use-entry-list.tsx
+msgid "{destinationName} already has {name}"
 msgstr ""
 
 #: src/features/chat/tool-result-preview.ts
@@ -810,7 +814,7 @@ msgstr "缓存重置"
 msgid "Calls"
 msgstr "调用"
 
-#: src/features/project/context/entry-drag/use-entry-move-route.ts
+#: src/features/project/context/entry-drag/use-entry-list.tsx
 msgid "Can't go inside itself"
 msgstr ""
 
@@ -1485,7 +1489,7 @@ msgid "Couldn't load. Check your connection."
 msgstr ""
 
 #. placeholder {0}: lost.name
-#: src/features/project/context/entry-drag/use-entry-move-route.ts
+#: src/features/project/context/entry-drag/move-notice.tsx
 msgid "Couldn't move {0} back."
 msgstr ""
 
@@ -1495,7 +1499,7 @@ msgstr ""
 #~ msgstr ""
 
 #. placeholder {0}: lost.name
-#: src/features/project/context/entry-drag/use-entry-move-route.ts
+#: src/features/project/context/entry-drag/move-notice.tsx
 msgid "Couldn't move {0}."
 msgstr ""
 
@@ -2796,7 +2800,7 @@ msgstr ""
 msgid "Move to {0}"
 msgstr ""
 
-#: src/features/project/context/entry-drag/use-entry-move-route.ts
+#: src/features/project/context/entry-drag/use-entry-list.tsx
 msgid "Move to {destinationName}"
 msgstr ""
 
@@ -2809,7 +2813,7 @@ msgid "Move…"
 msgstr ""
 
 #. placeholder {0}: first.name
-#: src/features/project/context/entry-drag/use-entry-move-route.ts
+#: src/features/project/context/entry-drag/move-notice.tsx
 msgid "Moved {0} to {destinationName}."
 msgstr ""
 

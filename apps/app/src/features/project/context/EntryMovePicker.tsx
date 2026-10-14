@@ -12,12 +12,11 @@ import { useAccountResourceReplica } from "./account-feature-context";
 import { moveEntryName } from "./context-entry-name";
 import { schemeLabel } from "./context-schemes";
 import {
+  destinationParent,
   type MoveDestination,
   type MoveSubject,
   moveRefusal,
   placeEntry,
-  placementParent,
-  resourceDestination,
 } from "./move-entry";
 import { moveRepairTrail } from "./move-repair-trail";
 import { useProjectMenuSource } from "./use-catalog-menu-source";
@@ -106,9 +105,9 @@ function OpenMovePicker({
     setPending(true);
     setError(null);
     try {
-      const location = resourceDestination(placementParent(destination), name, works, noWork);
-      if (!location) throw new Error(unavailable);
-      const operationId = await placeEntry(resources, projectId, entry, location);
+      const parent = destinationParent(destination, works, noWork);
+      if (!parent) throw new Error(unavailable);
+      const operationId = await placeEntry(resources, projectId, entry, { parent, name });
       if (operationId) onMoved(operationId);
       onOpenChange(false);
     } catch {
