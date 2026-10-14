@@ -89,6 +89,7 @@ export {
   modelBlockItem,
   modelConcurrentResult,
   modelResult,
+  type WriteRejection,
 } from "./tool/model-result.js";
 export {
   agentEditResultSummary,
