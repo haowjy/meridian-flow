@@ -52,7 +52,6 @@ import {
   controlWithdrawnCopy,
   writeModeSwitchedCopy,
 } from "./control-copy";
-import { isWriteModeControl } from "./switch-record";
 import { INITIAL_SWITCH_STATE, reduceSwitch } from "./switch-reducer";
 import type { QueuedControl } from "./thread-controls";
 import { readWriteModeSwitch } from "./write-mode-model";
@@ -129,13 +128,15 @@ export function useSwitchView(input: {
   const transport = useThreadTransport();
   const isPendingCreation = useIsThreadPendingCreation(threadId);
   useSingleHostWarning(threadId);
-  const [{ view }, dispatch] = useReducer(reduceSwitch, INITIAL_SWITCH_STATE);
+  const [{ view, news }, dispatch] = useReducer(reduceSwitch, INITIAL_SWITCH_STATE);
   const [applied, setApplied] = useState<readonly Applied[]>([]);
   const latest = useRef({ journal, projectId });
   latest.current = { journal, projectId };
   /** The first record's version: what it holds is not news, and neither is a frame at or below it. */
   const seed = useRef<string | null>(null);
-  const heard = useRef(new Set<string>());
+  /** Applied switches already announced: a replayed frame is not news twice. */
+  const switchedTurns = useRef(new Set<string>());
+  const announcedQueued = useRef(0);
 
   useLayoutEffect(() => {
     if (snapshot) dispatch({ type: "snapshot", snapshot });
@@ -163,28 +164,27 @@ export function useSwitchView(input: {
           frame: { kind: "switched", seq, mode: switched.mode, controlId: switched.controlId },
         });
         if (seed.current === null || compareSeq(seq, seed.current) <= 0) return;
-        setApplied((known) =>
-          known.some((entry) => entry.turnId === switched.turnId) ? known : [...known, switched],
-        );
+        if (switchedTurns.current.has(switched.turnId)) return;
+        switchedTurns.current.add(switched.turnId);
+        setApplied((known) => [...known, switched]);
         announce(writeModeSwitchedCopy(switched.mode));
         void invalidateProjectThreadData(queryClient, latest.current.projectId);
       },
     });
   }, [transport, threadId, isPendingCreation, queryClient]);
 
-  // A queued switch the server newly lists is news; the first record's, and a replay, are not.
   useEffect(() => {
-    const { record } = view;
-    if (!record) return;
-    const first = seed.current === null;
-    if (first) seed.current = record.version;
-    for (const item of record.items) {
-      if (!isWriteModeControl(item) || item.control?.kind !== "write_mode") continue;
-      if (heard.current.has(item.id)) continue;
-      heard.current.add(item.id);
-      if (!first) announce(controlStatusCopy(item.control, "queued"));
-    }
+    if (view.record && seed.current === null) seed.current = view.record.version;
   }, [view.record]);
+
+  // The reducer decides what is news; this speaks each queued switch once.
+  useEffect(() => {
+    for (const entry of news) {
+      if (entry.n <= announcedQueued.current) continue;
+      announcedQueued.current = entry.n;
+      announce(controlStatusCopy(entry.control, "queued"));
+    }
+  }, [news]);
 
   const revalidate = useCallback(
     () => void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) }),
@@ -235,6 +235,14 @@ export function useSwitchView(input: {
     () => new Set(turns.flatMap((turn) => (readWriteModeSwitch(turn) ? [turn.id] : []))),
     [turns],
   );
+  // Only a switch whose divider has not rendered yet needs the bridge.
+  useEffect(() => {
+    setApplied((known) =>
+      known.some((entry) => dividerIds.has(entry.turnId))
+        ? known.filter((entry) => !dividerIds.has(entry.turnId))
+        : known,
+    );
+  }, [dividerIds, applied]);
   const folded = useMemo(() => switchState(view, input.writeMode), [view, input.writeMode]);
   const rows = useMemo<QueuedControl[]>(() => {
     const own = folded.rows.map((row) => ({
