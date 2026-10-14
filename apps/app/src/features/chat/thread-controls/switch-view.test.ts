@@ -17,8 +17,8 @@ import {
   receiveRecord,
 } from "@/client/run-state/run-state-view";
 import {
+  receiveFrame,
   recordFromAnswer,
-  recordFromFrame,
   recordFromSnapshot,
   type SwitchFrame,
 } from "./switch-record";
@@ -78,10 +78,7 @@ function step(view: RunStateView, event: Event): RunStateView {
         liveState: { pending: pending(...(event.queued ?? [])) },
       }),
     );
-  if ("frame" in event) {
-    const record = recordFromFrame(view.record, event.frame);
-    return record ? receiveRecord(view, record) : view;
-  }
+  if ("frame" in event) return receiveFrame(view, event.frame);
   if ("choose" in event)
     return addIntent(view, {
       kind: "switch",
@@ -249,6 +246,17 @@ const SCENARIOS: { name: string; steps: [Event, mode: Mode, rows: string[]][] }[
       [{ withdraw: "s1" }, "direct", []],
       [{ withdrawn: "s1", j: 2 }, "direct", []],
       [inbox(at(2)), "direct", []],
+    ],
+  },
+  {
+    name: "a switched frame answers its control: a delayed HTTP answer cannot ghost after a switch back",
+    steps: [
+      [snapshot(1, "direct"), "direct", []],
+      [choose("s1", "draft", 1), "draft", ["s1:sending"]],
+      [switched(at(2), "draft", "s1"), "draft", []],
+      // Another device switches back before s1's own answer arrives.
+      [switched(at(3), "direct", "s9"), "direct", []],
+      [answer("s1", 2, "draft"), "direct", []],
     ],
   },
   {

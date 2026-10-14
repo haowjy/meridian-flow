@@ -62,8 +62,8 @@ import {
 } from "./control-copy";
 import {
   isWriteModeControl,
+  receiveFrame,
   recordFromAnswer,
-  recordFromFrame,
   recordFromSnapshot,
   type SwitchFrame,
 } from "./switch-record";
@@ -94,10 +94,8 @@ function reduce(view: RunStateView, action: Action): RunStateView {
   switch (action.type) {
     case "snapshot":
       return receiveRecord(view, recordFromSnapshot(action.snapshot));
-    case "frame": {
-      const record = recordFromFrame(view.record, action.frame);
-      return record ? receiveRecord(view, record) : view;
-    }
+    case "frame":
+      return receiveFrame(view, action.frame);
     case "journal": {
       let next = view;
       const held = new Set(action.switches.map((entry) => entry.id));
