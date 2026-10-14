@@ -1,6 +1,8 @@
 /** Atomic inbox transitions; journal publication is part of every committed mutation. */
+
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, OrchestratorEvent, Turn } from "@meridian/contracts/threads";
+import type { AiWriteMode } from "@meridian/contracts/works";
 import type { Notice } from "../../notices/index.js";
 import type { WorkContextNotices } from "../../projects/index.js";
 import type { ShownLinkShowing } from "../ports/shown-links.js";
@@ -16,7 +18,10 @@ export type DeliveryTransaction = {
   materializePrefix(): Promise<void>;
 };
 export type DeliveryProducer = Pick<RuntimeDelivery, "enqueue" | "withThreadLock">;
-export type ThreadControls = Pick<RuntimeDelivery, "enqueueControl" | "withdrawControl">;
+export type ThreadControls = Pick<
+  RuntimeDelivery,
+  "enqueueControl" | "withdrawControl" | "effectiveWriteMode"
+>;
 export type DeliveryBoundary<TCurrent = undefined> = Pick<
   Parameters<typeof drainInbox>[0],
   "knownTurnIds" | "expectedLeafTurnId" | "prepareAdoptedTurn"
@@ -118,12 +123,8 @@ export interface RuntimeDelivery
     threadId: ThreadId,
     controlId: string,
   ): Promise<import("@meridian/contracts/threads").WithdrawThreadControlResponse>;
-  /**
-   * Applies queued write-mode switches that are due while no reply holds the
-   * chat; answers false, doing nothing, when the run claim is held. Called
-   * after a control enqueue commits and before every run start.
-   */
-  applyDueSwitches(threadId: ThreadId): Promise<boolean>;
+  /** The mode the writer sees: a pending switch's, else the chat's applied mode. */
+  effectiveWriteMode(threadId: ThreadId): Promise<AiWriteMode>;
   /** Whether a message waits behind the queued switch, so the next request boundary ends the reply. */
   yieldsAtBoundary(threadId: ThreadId): Promise<boolean>;
   /** Reclassify expired leases after recovery or a backstop release. */
@@ -162,7 +163,10 @@ export interface RuntimeDelivery
   /** Initial assistant setup and exact receipt commit before model execution. */
   adoptBatch<T>(
     lease: Lease,
-    /** Pure preparation; writes belong in `persist`. Null retires stale controls without a reservation. */
+    /**
+     * Pure preparation; writes belong in `persist`. Null retires stale controls without a reservation.
+     * A queued write-mode switch that is due has already applied: the selection never offers it.
+     */
     prepare: (selection: DeliverySelection) => Promise<{
       value: T;
       completedControlIds?: string[];
@@ -176,6 +180,13 @@ export interface RuntimeDelivery
     } | null>,
     options?: {
       signal?: AbortSignal;
+      /**
+       * The failed reply a Retry re-answers. A Retry starts a reply by itself,
+       * so a queued switch is due at its run start; once any switch has landed,
+       * looking past trailing switch turns must still reach this reply, else
+       * the Retry is refused (a newer message or another Retry moved the leaf).
+       */
+      retryOf?: TurnId;
     },
   ): Promise<T>;
   /** Persists a response and delivers `ids` by `byTurn`, the assistant it answers them with. */

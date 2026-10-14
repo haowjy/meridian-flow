@@ -52,62 +52,42 @@ running turn's own mode.
 The **switch view** is the one owner of a switch on screen (`client/run-state/`, pure, importing
 only `@meridian/contracts`; `thread-controls/useSwitchView.ts` is its hook). Every server fact
 about a switch carries one clock, the thread's event `seq`, and the view is a function of those
-facts plus this device's unanswered intents:
+facts plus this device's unanswered intents. The mechanics live in the module headers:
+`switch-record.ts` (where a record comes from), `switch-reducer.ts` (the one reducer, and what is
+news), `run-state/run-state-view.ts` (records, intents, answers) and `run-state/fold-switches.ts`
+(the fold the toolbar and rows read). The constraints that shape callers:
 
-- **Records.** `RunStateRecord = { version, mode, items }` is the server's state at `version`: the
-  applied write mode and the unacknowledged inbox, which holds the queued switch as a control row.
-  `receiveRecord` replaces the current record only if `compareSeq` says the new one is newer.
-  Nothing else compares versions.
-- **Where a record comes from** (`thread-controls/switch-record.ts`, which design A's server record
-  replaces; `switch-reducer.ts` is the one reducer every fact goes through): the accepted snapshot
-  (`nextSeq - 1` as version, `thread.aiWriteMode`, `liveState.pending.items`, read in one
-  transaction); an `inbox.changed` frame at K (`{ ...current, version: K, items }`); a
-  `write_mode.switched` frame at K (`{ ...current, version: K, mode }` without the row of the
-  control it applied, because the apply removed that row in the same transaction); and a switch's or
-  a withdrawal's answer, which carries `seq`, `mode` and `pending` (the current items with every
-  write-mode control row replaced by `pending`). The first record is always a snapshot: a frame
-  before it is held (a newer inbox frame replaces held ones), then applied in order once the
-  snapshot lands, because subscribe-then-fetch makes a snapshot older than frames already received a
-  normal race. A stamp or answer before the snapshot extends nothing: it is evidence for its intent
-  (and makes no row if this tab never chose it), so a failed first load shows no rows and announces
-  nothing. `subscribed` is never a source.
-- **Intents.** A `switch` intent is a journal record the writer chose; a `withdraw` intent is a
-  Withdraw in flight. An intent with an `answer` leaves once the record's version is at or after it;
-  an unanswered one leaves only by `dropIntent` (the journal record vanished unstamped, a refusal
-  withdrawn, a Withdraw the server never had). Another tab's stamp (below) answers a record this tab
-  chose, so a hidden driving tab cannot strand the choosing tab's row. A `write_mode.switched` frame
-  is also its control's answer (the apply it reports is that control's effect, at the frame's seq),
-  and a withdrawal's answer brings `pending` and `mode` like an enqueue answer's, so a quiet chat's
-  record reaches it. The view keeps `answers` (`kind:id` to version, at most 32, lowest evicted)
-  beside the intents: an answer that arrives before its intent, or an intent the journal adds again
-  after it left, still meets its answer. A switch keeps its answer through retirement; `dropIntent`
-  forgets it, and the hook drops a switch intent once its journal entry is gone.
-- **The fold** (`fold-switches.ts`, a selector): starting from the record's applied mode and its
-  queued switch, the switch intents in `(order, id)` order apply the server's enqueue rule (a switch
-  to the mode the chat is heading to changes nothing; the other mode withdraws the queued one). The
-  toolbar shows the mode the chat is heading to. `switchState(view)` is null before the first
-  record; the hook's adapter (`switchDisplay`) folds over the thread row's mode instead. A row the server lists is `queued`; one only this
-  device holds is `sending` (Retry only if posted and not refused); a failed or refused one shows
-  Retry and is left out of the fold. An unanswered intent is laid over the record even if the record
-  already includes it: the effect is bounded by the answer, which brings the state at its `seq`.
-- **The bridge row** is the transcript layer's, not the view's: an applied switch whose divider
-  has not rendered keeps a queued-looking row, keyed by the `write_mode.switched` frame's turn,
-  until that turn renders.
+- The first record is always a snapshot. A frame, stamp or answer before it extends nothing, so a
+  failed first load shows no rows and announces nothing. `subscribed` is never a source.
+- Another tab's stamp answers a record this tab chose, so a hidden driving tab cannot strand the
+  choosing tab's row. An unanswered intent is laid over the record even if the record already
+  includes it; the answer's `seq` bounds the effect.
+- A row the server lists is `queued`; one only this device holds is `sending`; a failed or refused
+  one shows Retry and is left out of the fold.
+- One reducer decides what is news. A pending switch learned from a live frame or an answer after
+  the first record is announced once; a snapshot, a replayed frame and the apply are silent. A
+  failure stays with the journal owner's keyed announcement.
+- One view host per chat per tab. The desktop shell keeps a single `ChatSurface` and moves it
+  between the center and the dock; mobile has its own lifetime. A dev-only registry in
+  `useSwitchView` warns when a second view mounts for a chat.
+- Ordering within a chat belongs to the submission driver's per-chat lock, so a switch is posted
+  in order with the messages around it.
+
+**The notice.** `thread-controls/WriteModeNotice.tsx` is a quiet, one-line writer-action notice with
+an icon for the mode (no compaction mark, rule or icon). It is the pending switch at the
+transcript tail and the applied switch turn. A pending switch reads "Switched to …" while no reply
+holds the chat (it applies when the next run is admitted) and "Switch to … queued" while one does.
+Both carry **Stop**, not Withdraw, as do queued compactions; Stop cancels like a switch back, and
+the Work default follows the writer's latest choice, Stop included. The bridge row is the
+transcript layer's: an applied switch whose turn has not rendered shows the notice with no Stop,
+keyed by the `write_mode.switched` frame's turn, until that turn renders.
 
 No client path writes a write mode into a cache: a snapshot may insert a project-list row with its
 mode but never rewrites an existing row's, and a `switched` frame invalidates the Works query and
 the project thread lists instead.
 
-One view host per chat per tab. The desktop shell keeps a single `ChatSurface` and moves it
-between the center and the dock, so a chat has one mounted `ChatView` and one view; mobile has its
-own lifetime. A dev-only registry in `useSwitchView` warns when a second view mounts for a chat that
-already has one.
-
-One reducer decides what is news, where a record is taken: "Switch to … queued" when a live inbox
-frame or an answer, taken after the first record, lists a queued switch not seen before, and
-"Switched to …" for a `switched` frame above the first record's version, once per applied turn.
-The first record, a replayed frame and a snapshot, however much newer, are never news. A failure stays with the journal owner's keyed announcement, cleared on
-Retry and when the record is withdrawn.
+The composer control shows the number of documents waiting beside Draft ("Draft (3)"), from the
+Work's draft list, in the trigger and the menu option; with none it reads "Draft".
 
 The dock projection is tri-state while its query loads: pending count and review
 availability are `null`, distinct from loaded zero/false; loading client state

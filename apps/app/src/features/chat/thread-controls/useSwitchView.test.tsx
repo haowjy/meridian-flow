@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The view's shell with real React and an injected API, transport and journal: what Withdraw
+ * The view's shell with real React and an injected API, transport and journal: what Stop
  * announces, and when. The display itself is `switch-view.test.ts`.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
@@ -72,6 +72,7 @@ function Probe() {
     turns: [],
     snapshot: null,
     journal,
+    replyRunning: false,
   });
   return null;
 }
@@ -95,7 +96,7 @@ afterEach(async () => {
   client.clear();
 });
 
-it("announces a Withdraw only once its outcome is known", async () => {
+it("announces a Stop only once its outcome is known", async () => {
   await act(async () =>
     root.render(
       <QueryClientProvider client={client}>
@@ -119,7 +120,7 @@ it("announces a Withdraw only once its outcome is known", async () => {
     ],
     ["w4", "admitted", new HttpResponseError("gone", 404, null), []],
     ["w5", "kept", undefined, []],
-    ["w6", "admitted", new Error("offline"), ["error:Couldn't withdraw. Try again."]],
+    ["w6", "admitted", new Error("offline"), ["error:Couldn't stop. Try again."]],
   ];
   for (const [id, outcome, server, expected] of cases) {
     vi.clearAllMocks();
@@ -134,7 +135,7 @@ it("announces a Withdraw only once its outcome is known", async () => {
       ...announcements.announce.mock.calls.map(([copy]) => `say:${copy}`),
       ...announcements.announceError.mock.calls.map(([copy]) => `error:${copy}`),
     ].map((line) =>
-      /withdrawn/i.test(line) ? "say:withdrawn" : /already/i.test(line) ? "say:already" : line,
+      /stopped/i.test(line) ? "say:withdrawn" : /already/i.test(line) ? "say:already" : line,
     );
     expect(heard, id).toEqual(expected);
     await show([]);

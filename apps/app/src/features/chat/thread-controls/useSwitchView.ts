@@ -5,13 +5,14 @@
  * accepted snapshot (labelled at its head), `inbox.changed` and `write_mode.switched`
  * frames, and the answer to a switch or its journal stamp. This hook only receives them
  * into the run-state view (`switch-record.ts` composes the record each one makes) and
- * folds the view for the toolbar's mode and the queued rows. It carries the writer's
- * Withdraw to the journal and the server, speaks queued and applied transitions (the one
- * announcer for a switch; a failure stays with the journal owner's keyed announcement),
- * and marks the Works and project thread lists stale when a switch applies.
+ * folds the view for the toolbar's mode and the pending rows. It carries the writer's
+ * Stop to the journal and the server, speaks a switch once when it becomes pending (the
+ * one announcer for a switch, silent when it applies; a failure stays with the journal
+ * owner's keyed announcement), and marks the Works and project thread lists stale when a
+ * switch applies.
  *
- * The bridge row, an applied switch whose divider has not rendered yet, is the transcript
- * layer's: it is keyed by the `write_mode.switched` frame's turn and leaves with its divider.
+ * The bridge row, an applied switch whose turn has not rendered yet, is the transcript
+ * layer's: it is keyed by the `write_mode.switched` frame's turn and leaves with that turn.
  *
  * One host per chat per tab: the desktop shell keeps one `ChatSurface` and moves it between
  * the center and the dock, so a chat has one mounted `ChatView` and so one view. Two would
@@ -46,12 +47,7 @@ import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import type { DeserializedThreadSnapshot } from "@/client/query/thread-snapshot-query";
 import { announce, announceError, useIsThreadPendingCreation } from "@/client/stores";
 import { pendingInboxFromEvent } from "../pending-inbox";
-import {
-  controlAlreadyStartedCopy,
-  controlStatusCopy,
-  controlWithdrawnCopy,
-  writeModeSwitchedCopy,
-} from "./control-copy";
+import { controlAlreadyStartedCopy, controlStatusCopy, controlStoppedCopy } from "./control-copy";
 import { switchDisplay } from "./switch-record";
 import { INITIAL_SWITCH_STATE, reduceSwitch } from "./switch-reducer";
 import type { QueuedControl } from "./thread-controls";
@@ -122,16 +118,18 @@ export function useSwitchView(input: {
   /** The snapshot the chat's history host accepted and applied. */
   snapshot: DeserializedThreadSnapshot | null;
   journal: SwitchJournal;
+  /** A reply or compaction holds the chat: a pending switch waits for it, and says so. */
+  replyRunning: boolean;
 }): SwitchView {
-  const { threadId, projectId, turns, snapshot, journal } = input;
+  const { threadId, projectId, turns, snapshot, journal, replyRunning } = input;
   const queryClient = useQueryClient();
   const transport = useThreadTransport();
   const isPendingCreation = useIsThreadPendingCreation(threadId);
   useSingleHostWarning(threadId);
   const [{ view, news }, dispatch] = useReducer(reduceSwitch, INITIAL_SWITCH_STATE);
   const [applied, setApplied] = useState<readonly Applied[]>([]);
-  const latest = useRef({ journal, projectId });
-  latest.current = { journal, projectId };
+  const latest = useRef({ journal, projectId, replyRunning });
+  latest.current = { journal, projectId, replyRunning };
   /** The first record's version: what it holds is not news, and neither is a frame at or below it. */
   const seed = useRef<string | null>(null);
   /** Applied switches already announced: a replayed frame is not news twice. */
@@ -167,7 +165,6 @@ export function useSwitchView(input: {
         if (switchedTurns.current.has(switched.turnId)) return;
         switchedTurns.current.add(switched.turnId);
         setApplied((known) => [...known, switched]);
-        announce(writeModeSwitchedCopy(switched.mode));
         void invalidateProjectThreadData(queryClient, latest.current.projectId);
       },
     });
@@ -182,7 +179,7 @@ export function useSwitchView(input: {
     for (const entry of news) {
       if (entry.n <= announcedQueued.current) continue;
       announcedQueued.current = entry.n;
-      announce(controlStatusCopy(entry.control, "queued"));
+      announce(controlStatusCopy(entry.control, "queued", latest.current.replyRunning));
     }
   }, [news]);
 
@@ -208,15 +205,15 @@ export function useSwitchView(input: {
           const answer = await withdrawThreadControl(threadId, id);
           const { outcome } = answer;
           dispatch({ type: "withdrawn", id, answer });
-          if (outcome === "withdrawn") announce(controlWithdrawnCopy(row.control));
-          // The divider shows a started one.
+          if (outcome === "withdrawn") announce(controlStoppedCopy(row.control));
+          // The switch turn shows a started one.
           if (outcome === "already_started") announce(controlAlreadyStartedCopy(row.control));
           revalidate();
         } catch (error) {
           // The server never had it: nothing to withdraw.
           if (httpErrorStatus(error) === 404) return dispatch({ type: "dropWithdraw", id });
           dispatch({ type: "withdraw", id, failed: true });
-          announceError(t`Couldn't withdraw. Try again.`);
+          announceError(t`Couldn't stop. Try again.`);
         }
       };
       // A switch the journal holds that the server can't have (never posted, or refused):
@@ -225,7 +222,7 @@ export function useSwitchView(input: {
       void latest.current.journal.withdraw(id).then((result) => {
         if (result === "admitted") return onServer();
         dispatch({ type: "dropWithdraw", id });
-        if (result === "removed") announce(controlWithdrawnCopy(row.control));
+        if (result === "removed") announce(controlStoppedCopy(row.control));
       });
     },
     [revalidate, threadId],
@@ -235,7 +232,7 @@ export function useSwitchView(input: {
     () => new Set(turns.flatMap((turn) => (readWriteModeSwitch(turn) ? [turn.id] : []))),
     [turns],
   );
-  // Only a switch whose divider has not rendered yet needs the bridge.
+  // Only a switch whose turn has not rendered yet needs the bridge.
   useEffect(() => {
     setApplied((known) =>
       known.some((entry) => dividerIds.has(entry.turnId))
@@ -258,7 +255,7 @@ export function useSwitchView(input: {
       .map((entry) => ({
         id: entry.controlId,
         control: { kind: "write_mode" as const, mode: entry.mode },
-        status: "queued" as const,
+        status: "applied" as const,
       }));
     return [...own, ...bridge];
   }, [folded.rows, applied, dividerIds]);

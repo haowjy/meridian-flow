@@ -24,7 +24,7 @@ import type { HandoffBrief } from "./derivation/useHandoffBrief";
 import { QueuedControlRows } from "./thread-controls/QueuedControlRows";
 import type { QueuedControl } from "./thread-controls/thread-controls";
 import type { ThreadControls } from "./thread-controls/useThreadControls";
-import { WriteModeDivider } from "./thread-controls/WriteModeDivider";
+import { AppliedWriteModeNotice } from "./thread-controls/WriteModeNotice";
 import { UserTurn } from "./UserTurn";
 import { useChangeTrailNavigation } from "./useChangeTrailNavigation";
 import { useChatFollowScroll } from "./useChatFollowScroll";
@@ -45,7 +45,7 @@ export type TurnListProps = {
   /** Recovered failed submissions, keyed by the restored user turn id. */
   submissionRecoveryByTurnId?: ReadonlyMap<string, UserTurnRecovery>;
   waitingForUsage?: boolean;
-  /** Writer commands: queued `/compact`, withdrawal, and Stop on a running divider. */
+  /** Writer commands: queued `/compact` and switches with their Stop, and Stop on a running divider. */
   controls?: ThreadControls | null;
   /** Retry and Stop on this handoff destination's brief cards. */
   brief?: HandoffBrief | null;
@@ -220,7 +220,7 @@ export function TurnList({
           />
         );
       }
-      if (row.kind === "write-mode") return <WriteModeDivider turn={turn} />;
+      if (row.kind === "write-mode") return <AppliedWriteModeNotice turn={turn} />;
       if (row.kind === "thread-reference") {
         return (
           <div data-thread-references className="flex flex-wrap gap-[var(--chat-space-inline)]">
@@ -342,10 +342,11 @@ export function TurnList({
         return (
           <QueuedControlRows
             controls={row.controls}
-            onWithdraw={
+            replyRunning={busy}
+            onStop={
               withdraw
                 ? (control) => {
-                    // Withdraw removes the row at once. The last one takes the
+                    // Stop removes the row at once. The last one takes the
                     // whole tail with it, so keep focus in the transcript.
                     if (row.controls.length === 1)
                       viewportRef.current?.focus({ preventScroll: true });
@@ -366,7 +367,7 @@ export function TurnList({
         content
       );
     },
-    [controls, inherited?.owners, onRetryInherited, renderTranscriptRow, rowOffset],
+    [busy, controls, inherited?.owners, onRetryInherited, renderTranscriptRow, rowOffset],
   );
 
   return (

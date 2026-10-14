@@ -26,7 +26,7 @@ export type CompactionTrigger = "auto" | "manual";
 
 export type CompactionFacts = {
   trigger: CompactionTrigger;
-  /** The writer command this divider ran (`controlMessageId`); null for an automatic one. */
+  /** The writer command this switch turn ran (`controlMessageId`); null for an automatic one. */
   controlId: string | null;
   /** The writer's `/compact <instructions>`, verbatim; null for a plain `/compact`. */
   instructions: string | null;
@@ -155,12 +155,12 @@ export function readThreadReferences(blocks: readonly Block[]): ThreadReference[
 
 export type WriteModeSwitchFacts = {
   mode: AiWriteMode;
-  /** The writer command this divider ran (`controlMessageId`). */
+  /** The writer command this switch turn ran (`controlMessageId`). */
   controlId: string | null;
 };
 
 /**
- * A write-mode divider is a complete `system` turn with `metadata.kind === "write_mode_switch"`.
+ * A write-mode switch is a complete `system` turn with `metadata.kind === "write_mode_switch"`.
  * Metadata is read defensively: the server owns its shape.
  */
 export function readWriteModeSwitch(turn: Turn): WriteModeSwitchFacts | null {

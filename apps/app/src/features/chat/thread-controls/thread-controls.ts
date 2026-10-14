@@ -18,11 +18,7 @@
  * A command runs only when no message waits, so every queued command renders
  * after every queued message, at the end of the queue, oldest first.
  */
-import type {
-  ControlBody,
-  PendingInboxItem,
-  ThreadPendingInbox,
-} from "@meridian/contracts/threads";
+import type { ControlBody, ThreadPendingInbox } from "@meridian/contracts/threads";
 
 export type CompactControl = Extract<ControlBody, { kind: "compact" }>;
 
@@ -43,7 +39,13 @@ export type LocalControls = {
 export const NO_LOCAL_CONTROLS: LocalControls = { sends: [], withdrawals: new Map() };
 
 /** `sending`: the writer asked and the server has not answered. */
-export type QueuedControlStatus = "sending" | "queued" | "failed" | "withdraw_failed";
+export type QueuedControlStatus =
+  | "sending"
+  | "queued"
+  | "failed"
+  | "withdraw_failed"
+  /** A switch the server applied whose turn has not rendered yet: the notice, no Stop. */
+  | "applied";
 
 export type QueuedControl = {
   id: string;
@@ -56,7 +58,7 @@ export type QueuedControl = {
 export type ControlAction =
   | { type: "enqueue"; id: string; control: CompactControl }
   | { type: "retry"; id: string }
-  | { type: "enqueued"; id: string; pending: PendingInboxItem | null; turnId: string | null }
+  | { type: "enqueued"; id: string; queued: boolean }
   | { type: "enqueue_failed"; id: string }
   | { type: "withdraw"; id: string }
   | { type: "withdrawn"; id: string }
@@ -85,8 +87,8 @@ export function controlsReducer(state: LocalControls, action: ControlAction): Lo
     case "retry":
       return patchSend(action.id, "sending");
     case "enqueued":
-      // No pending row: it already ran (turn id) or was withdrawn earlier.
-      return patchSend(action.id, action.pending ? "sent" : "finished");
+      // Not queued: it already ran or was withdrawn earlier.
+      return patchSend(action.id, action.queued ? "sent" : "finished");
     case "enqueue_failed":
       return patchSend(action.id, "failed");
     case "withdraw":

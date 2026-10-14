@@ -22,6 +22,6 @@ export const controlBodySchema = z.discriminatedUnion("kind", [
 
 /**
  * Runtime commands take their transcript position at execution, not enqueue.
- * `write_mode` switches one chat's AI write mode once no reply holds the chat.
+ * `write_mode` switches one chat's AI write mode at the start of the next admitted run.
  */
 export type ControlBody = z.infer<typeof controlBodySchema>;

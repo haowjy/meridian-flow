@@ -1,6 +1,6 @@
 /** Control queue ordering, start consumption, and withdrawal against PostgreSQL. */
 import type { ThreadPendingInbox, Turn } from "@meridian/contracts/threads";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createOrchestratorEventProjector,
@@ -8,7 +8,6 @@ import {
   TurnStartConflictError,
 } from "../../threads/index.js";
 import { createDrizzleRunClaim } from "../adapters/drizzle-run-claim.js";
-import { createDrizzleThreadLock } from "../adapters/drizzle-thread-lock.js";
 import { createCompactionFixture } from "./__tests__/compaction-db-fixture.js";
 import { scriptedSummarizer } from "./__tests__/scripted-summarizer.js";
 import {
@@ -145,6 +144,7 @@ else
       ).length;
     }
 
+    /** Starts a reply; a due switch applies at its run-start boundary. */
     async function drainControls(rig: Awaited<ReturnType<typeof fixture>>) {
       const run = await rig.orchestrator.prepare({ threadId: rig.threadId, drain: true });
       return run.execute();
@@ -1200,7 +1200,7 @@ else
         await rig.repos.threads.setTrashState(rig.threadId, "deleted");
         await rig.runClaim.release(lease);
         await processDetachedWork.drain();
-        expect(await rig.delivery.applyDueSwitches(rig.threadId)).toBe(true);
+        await expect(rig.orchestrator.startDrain(rig.threadId)).rejects.toThrow("Thread not found");
         expect(await switchTurns(rig)).toEqual([]);
         expect((await rig.repos.threads.lockByIdIncludingDeleted(rig.threadId))?.aiWriteMode).toBe(
           "direct",
@@ -1224,112 +1224,88 @@ else
         expect((await rig.runClaim.read(rig.threadId)).kind).toBe("asleep");
       });
 
-      it("applies at once in an idle chat as one complete switch turn", async () => {
-        const rig = await manualFixture();
-        const leaf = (await rig.repos.threads.findById(rig.threadId))?.activeLeafTurnId;
-        const appended = vi.spyOn(rig.eventWriter, "appendEvent");
-        const applied = await switchMode(rig, "draft");
+      it("keeps an idle switch pending until a reply starts, then applies it as one complete switch turn", async () => {
+        const gateway = scriptedGateway({ usage: lowUsage });
+        const rig = await manualFixture({ gateway });
+        const queued = await switchMode(rig, "draft");
 
-        const [turn] = await switchTurns(rig);
-        expect(applied).toMatchObject({
+        // Nothing runs, so nothing applies: no turn, the chat keeps its mode, and
+        // the answer carries the pending switch for the toolbar.
+        expect(queued).toMatchObject({
           created: true,
-          response: { pending: null, turnId: turn?.id, mode: "draft" },
+          response: { pending: { id: queued.response.id }, turnId: null, mode: "direct" },
         });
-        // The apply is a frame of its own, ahead of the inbox.changed that
-        // empties the queue, and the answer's seq is at or past that frame.
-        const rows = await appendedFrames(appended);
-        const names = rows.flatMap((row) => row.frames.map((frame) => frame.name));
-        const switched = names.indexOf("meridian.write_mode.switched");
-        expect(switched).toBeGreaterThan(-1);
-        expect(names.lastIndexOf("meridian.inbox.changed")).toBeGreaterThan(switched);
-        const lastInbox = [...rows]
-          .reverse()
-          .find((row) => row.frames.some((frame) => frame.name === "meridian.inbox.changed"));
-        expect(BigInt(applied.response.seq)).toBeGreaterThanOrEqual(
-          cursorSeqForJournalHead(lastInbox?.journalSeq as bigint),
-        );
-        expect(
-          rows.flatMap((row) => row.frames).find((f) => f.name === "meridian.write_mode.switched"),
-        ).toMatchObject({
-          value: {
-            threadId: rig.threadId,
-            mode: "draft",
-            controlId: applied.response.id,
-            turnId: turn?.id,
-          },
-        });
+        expect(await switchTurns(rig)).toEqual([]);
+        expect(await threadMode(rig)).toBe("direct");
+
+        const appended = vi.spyOn(rig.eventWriter, "appendEvent");
+        // Writer admission persists the message first; the switch applies behind it, before the reply.
+        const admitted = await rig.send(rig.threadId, "Write it.");
+        await drainControls(rig);
+        const turns = await settled(rig);
+        const [turn] = await switchTurns(rig);
         expect(turn).toMatchObject({
           role: "system",
           status: "complete",
           writeMode: "draft",
-          prevTurnId: leaf,
+          prevTurnId: admitted.userTurnId,
           metadata: {
             kind: "write_mode_switch",
             mode: "draft",
-            controlMessageId: applied.response.id,
+            controlMessageId: queued.response.id,
           },
         });
         expect((await rig.repos.blocks.listByTurn(turn?.id as never))[0]?.textContent).toContain(
           "The writer switched this chat to draft mode.",
         );
+        const tail = turns.slice(turns.findIndex((entry) => entry.id === admitted.userTurnId));
+        expect(tail.map((entry) => entry.role)).toEqual(["user", "system", "assistant"]);
+        expect(tail[2]).toMatchObject({ writeMode: "draft" });
         expect(await threadMode(rig)).toBe("draft");
-        expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
-        expect(await rig.delivery.withdrawControl(rig.threadId, applied.response.id)).toMatchObject(
-          {
-            outcome: "already_started",
-          },
+        expect(JSON.stringify(gateway.requests.at(-1)?.messages)).toContain(
+          "The writer switched this chat to draft mode.",
         );
+        // The apply is a frame of its own, ahead of the inbox.changed that empties the queue.
+        const frames = (await appendedFrames(appended)).flatMap((row) => row.frames);
+        const names = frames.map((frame) => frame.name);
+        const switched = names.indexOf("meridian.write_mode.switched");
+        expect(switched).toBeGreaterThan(-1);
+        expect(names.lastIndexOf("meridian.inbox.changed")).toBeGreaterThan(switched);
+        expect(frames[switched]).toMatchObject({
+          value: {
+            threadId: rig.threadId,
+            mode: "draft",
+            controlId: queued.response.id,
+            turnId: turn?.id,
+          },
+        });
+        expect(await rig.delivery.withdrawControl(rig.threadId, queued.response.id)).toMatchObject({
+          outcome: "already_started",
+        });
       });
 
-      it("answers a switch a reply's release applies mid-answer as queued or applied, never both null", async () => {
-        const rig = await manualFixture();
-        const lease = await rig.runClaim.startExecution(
-          rig.threadId as never,
-          crypto.randomUUID() as never,
-          async () => {},
+      it("leaves no turn and no notice for a switch and its switch back in an idle chat", async () => {
+        const gateway = scriptedGateway({ usage: lowUsage });
+        const rig = await manualFixture({ gateway });
+        await switchMode(rig, "draft");
+        expect((await switchMode(rig, "direct")).response).toMatchObject({
+          pending: null,
+          mode: "direct",
+        });
+        await rig.delivery.enqueue({
+          threadId: rig.threadId,
+          intent: "message",
+          provenance: { kind: "writer", actorId: rig.ids.user },
+          body: { kind: "text", text: "Nothing changed." },
+          idempotencyKey: "after-switch-back",
+        });
+        await drainControls(rig);
+        await settled(rig);
+
+        expect(await switchTurns(rig)).toEqual([]);
+        expect(JSON.stringify(gateway.requests.at(-1)?.messages)).not.toContain(
+          "The writer switched",
         );
-        if (!lease) throw new Error("Expected the reply's run claim");
-        // The reply releases and applies S between the route's answer reads.
-        // Each read waits until that apply finishes or blocks on the thread lock.
-        const blockedOnLock = async () =>
-          (
-            await db.execute(
-              sql`select 1 from pg_locks where locktype = 'advisory' and not granted and database = (select oid from pg_database where datname = current_database())`,
-            )
-          ).length > 0;
-        let betweenReads!: () => void;
-        const reached = new Promise<void>((resolve) => {
-          betweenReads = resolve;
-        });
-        let settled = false;
-        // Started outside the route's call, so it shares none of its transaction.
-        const applied = reached.then(async () => {
-          await rig.runClaim.release(lease);
-          return rig.delivery.applyDueSwitches(rig.threadId as never).finally(() => {
-            settled = true;
-          });
-        });
-        const find = rig.repos.turns.findByControlId.bind(rig.repos.turns);
-        vi.spyOn(rig.repos.turns, "findByControlId").mockImplementationOnce(async (...args) => {
-          const turn = await find(...args);
-          betweenReads();
-          await vi.waitFor(
-            async () => {
-              if (!settled && !(await blockedOnLock())) throw new Error("apply still running");
-            },
-            { interval: 5, timeout: 5000 },
-          );
-          return turn;
-        });
-
-        const { response } = await switchMode(rig, "draft");
-        expect(await applied).toBe(true);
-        const [turn] = await switchTurns(rig);
-
-        expect(turn).toBeDefined();
-        expect(await threadMode(rig)).toBe("draft");
-        // A coherent answer is queued (read before the apply) or applied, never both null.
-        expect(response.pending !== null || response.turnId === turn?.id).toBe(true);
       });
 
       it("ends the reply at the next request boundary for a message behind a queued switch, even out of budget", async () => {
@@ -1443,7 +1419,7 @@ else
         expect(await endsOf(a.executionId)).toBe(1);
       });
 
-      it("names no reply for a message admitted after the live reply ended and its switch applied", async () => {
+      it("names no reply for a message admitted after the live reply ended and its switch pending", async () => {
         const gateway = scriptedGateway({ usage: lowUsage, pauseAt: [1] });
         const rig = await manualFixture({ gateway });
         const a = await rig.orchestrator.prepare({
@@ -1460,7 +1436,7 @@ else
           gateway.release();
           await aDone;
           await processDetachedWork.drain();
-          expect(await threadMode(rig)).toBe("draft");
+          expect(await threadMode(rig)).toBe("direct");
           return lock(...args);
         });
 
@@ -1472,7 +1448,10 @@ else
 
         await drainControls(rig);
         const turns = await settled(rig);
-        const answer = turns.find((turn) => turn.prevTurnId === admitted.userTurnId);
+        // The message's turn is persisted at admission; the pending switch applies after it, before the reply.
+        const switchTurn = turns.find((turn) => turn.prevTurnId === admitted.userTurnId);
+        expect(switchTurn?.metadata).toMatchObject({ kind: "write_mode_switch" });
+        const answer = turns.find((turn) => turn.prevTurnId === switchTurn?.id);
         expect(answer).toMatchObject({ role: "assistant", status: "complete", writeMode: "draft" });
         expect(answer?.id).not.toBe(a.executionTurnId);
       });
@@ -1686,10 +1665,7 @@ else
         const wake = createWakeIfRunnable({
           delivery,
           runStarter: createRunStarter(
-            {
-              applyDueSwitches: delivery.applyDueSwitches,
-              startDrain: (id) => recovery.startDrain(id),
-            },
+            { startDrain: (id) => recovery.startDrain(id) },
             rig.deps.eventSink,
           ),
         });
@@ -1726,54 +1702,50 @@ else
               ? [(event as { pending: ThreadPendingInbox }).pending.items.map((item) => item.id)]
               : [],
           );
-        // A run lease stands in for a running reply, so the route leaves the switch queued.
-        const reply = await rig.runClaim.startExecution(
-          rig.threadId,
-          "running-reply",
-          async () => {},
-        );
-        if (!reply) throw new Error("Expected the reply's run claim");
-        try {
-          expect((await switchMode(rig, "draft", first)).response).toMatchObject({
-            pending: { id: first },
-            turnId: null,
-          });
-          appended.mockClear();
-          expect(await switchMode(rig, "direct", back)).toMatchObject({
-            created: true,
-            response: { id: back, pending: null, turnId: null, mode: "direct" },
-          });
-          expect(publishedQueues()).toEqual([[]]);
-          expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
+        expect((await switchMode(rig, "draft", first)).response).toMatchObject({
+          pending: { id: first },
+          turnId: null,
+        });
+        appended.mockClear();
+        expect(await switchMode(rig, "direct", back)).toMatchObject({
+          created: true,
+          response: { id: back, pending: null, turnId: null, mode: "direct" },
+        });
+        expect(publishedQueues()).toEqual([[]]);
+        expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
 
-          expect((await switchMode(rig, "draft", newer)).response.pending).toMatchObject({
-            id: newer,
-          });
-          appended.mockClear();
-          // Same mode as the queued switch: written settled, the queued one stays.
-          // The answer names the thread's queued switch, not only its own row.
-          expect((await switchMode(rig, "draft")).response).toMatchObject({
-            pending: { id: newer },
-            turnId: null,
-          });
-          expect(publishedQueues()).toEqual([[newer]]);
-          // A retried cancel answers its own settled row.
-          expect(await switchMode(rig, "direct", back)).toMatchObject({
-            created: false,
-            response: { id: back, pending: { id: newer }, turnId: null, mode: "direct" },
-          });
-          await expect(switchMode(rig, "draft", back)).rejects.toMatchObject({
-            statusCode: 409,
-            message: "control_id_conflict",
-          });
-          expect((await rig.delivery.selectPending(rig.threadId)).map((row) => row.id)).toEqual([
-            newer,
-          ]);
-        } finally {
-          await rig.runClaim.release(reply);
-        }
-
-        await rig.delivery.applyDueSwitches(rig.threadId);
+        expect((await switchMode(rig, "draft", newer)).response.pending).toMatchObject({
+          id: newer,
+        });
+        appended.mockClear();
+        // Same mode as the queued switch: written settled, the queued one stays.
+        // The answer names the thread's queued switch, not only its own row.
+        expect((await switchMode(rig, "draft")).response).toMatchObject({
+          pending: { id: newer },
+          turnId: null,
+        });
+        expect(publishedQueues()).toEqual([[newer]]);
+        // A retried cancel answers its own settled row.
+        expect(await switchMode(rig, "direct", back)).toMatchObject({
+          created: false,
+          response: { id: back, pending: { id: newer }, turnId: null, mode: "direct" },
+        });
+        await expect(switchMode(rig, "draft", back)).rejects.toMatchObject({
+          statusCode: 409,
+          message: "control_id_conflict",
+        });
+        expect((await rig.delivery.selectPending(rig.threadId)).map((row) => row.id)).toEqual([
+          newer,
+        ]);
+        // A message starts the next run, which applies the switch queued ahead of it.
+        await rig.delivery.enqueue({
+          threadId: rig.threadId,
+          intent: "message",
+          provenance: { kind: "writer", actorId: rig.ids.user },
+          body: { kind: "text", text: "Go." },
+          idempotencyKey: "after-newer-switch",
+        });
+        await drainControls(rig);
         const turns = await switchTurns(rig);
         expect(
           turns.map((turn) => (turn.metadata as { controlMessageId: string }).controlMessageId),
@@ -1793,6 +1765,7 @@ else
       it("blocks a saved message and its queued switch for usage, then answers both once usage returns", async () => {
         const rig = await manualFixture();
         const canStart = vi.spyOn(rig.deps.billingUsage, "canStartTurn").mockResolvedValue(false);
+        await switchMode(rig, "draft");
         const message = await rig.delivery.enqueue({
           threadId: rig.threadId,
           intent: "message",
@@ -1800,12 +1773,14 @@ else
           body: { kind: "text", text: "Wait for usage." },
           idempotencyKey: "blocked-with-switch",
         });
-        await switchMode(rig, "draft");
         const turnsBefore = (await rig.repos.turns.listByThread(rig.threadId)).length;
 
-        await expect(
-          rig.orchestrator.prepare({ threadId: rig.threadId, drain: true }),
-        ).rejects.toMatchObject({ code: "credits_exhausted" });
+        // The production starter: the refusal comes before the switch applies.
+        const starter = createRunStarter(
+          { startDrain: (id) => rig.orchestrator.startDrain(id) },
+          rig.deps.eventSink,
+        );
+        await starter.start(rig.threadId);
 
         // The refusal reserves nothing: no turn, no lease, no execution, no switch.
         expect((await rig.delivery.readPendingProjection(rig.threadId)).blocked).toEqual({
@@ -1818,10 +1793,9 @@ else
         expect(await switchTurns(rig)).toEqual([]);
 
         canStart.mockRestore();
-        const outcome = await drainControls(rig);
+        await starter.start(rig.threadId);
         const tail = (await settled(rig)).slice(turnsBefore);
 
-        expect(outcome.status).toBe("complete");
         const reply = tail.find((turn) => turn.role === "assistant");
         expect(reply).toMatchObject({ status: "complete" });
         expect(await switchTurns(rig)).toHaveLength(1);
@@ -1836,7 +1810,8 @@ else
         expect(await db.select().from(schema.threadRunLeases)).toEqual([]);
       });
 
-      it("keeps Retry available after a switch and chains the retry after it", async () => {
+      /** A chat whose latest reply failed, and a hook that runs while a start waits on the run claim. */
+      async function failedReplyRig() {
         const gateway = scriptedGateway({ usage: lowUsage });
         let fail = true;
         const stream = gateway.stream.bind(gateway);
@@ -1854,41 +1829,104 @@ else
           };
         };
         const rig = await manualFixture({ gateway });
-        await rig.delivery.enqueue({
-          threadId: rig.threadId,
-          intent: "message",
-          provenance: { kind: "writer", actorId: rig.ids.user },
-          body: { kind: "text", text: "Answer after the switch." },
-          idempotencyKey: "retry-after-switch",
-        });
+        await rig.send(rig.threadId, "Answer after the switch.");
         expect((await drainControls(rig)).status).toBe("error");
         await processDetachedWork.drain();
         const failed = await rig.repos.turns.getLatestByThread(rig.threadId);
         if (!failed) throw new Error("Failed reply was not persisted");
-        const applied = await switchMode(rig, "draft");
         fail = false;
+        const start = rig.runClaim.startExecution.bind(rig.runClaim);
+        return {
+          gateway,
+          rig,
+          failed,
+          /** Runs `interleave` after Retry's eligibility reads, before its run-start boundary. */
+          whileClaiming(interleave: () => Promise<unknown>) {
+            rig.runClaim.startExecution = (threadId, executionId, settle) =>
+              start(threadId, executionId, async () => {
+                await settle();
+                await interleave();
+              });
+          },
+          /**
+           * Runs `interleave` once, at the first boundary a pending switch can apply behind:
+           * a separate pre-claim apply step where one exists, otherwise the run claim.
+           */
+          beforeSwitchApplies(interleave: () => Promise<unknown>) {
+            let armed = true;
+            const fire = async () => {
+              if (!armed) return;
+              armed = false;
+              await interleave();
+            };
+            const delivery = rig.delivery as unknown as Record<string, unknown>;
+            const preClaim = delivery.applyDueSwitches;
+            if (typeof preClaim === "function")
+              delivery.applyDueSwitches = async (...args: unknown[]) => {
+                await fire();
+                return preClaim.apply(rig.delivery, args);
+              };
+            rig.runClaim.startExecution = (threadId, executionId, settle) =>
+              start(threadId, executionId, async () => {
+                await settle();
+                await fire();
+              });
+          },
+          retry: (replyTurnId: string) =>
+            rig.orchestrator.retryReply({
+              threadId: rig.threadId,
+              failedTurnId: failed.id as never,
+              replyTurnId: replyTurnId as never,
+            }),
+        };
+      }
+
+      it("applies a switch queued while Retry claims the chat and chains the retry after it", async () => {
+        const { gateway, rig, failed, whileClaiming, retry } = await failedReplyRig();
+        whileClaiming(() => switchMode(rig, "draft"));
 
         const replyTurnId = crypto.randomUUID();
-        const started = await rig.orchestrator.retryReply({
-          threadId: rig.threadId,
-          failedTurnId: failed.id as never,
-          replyTurnId: replyTurnId as never,
-        });
+        const started = await retry(replyTurnId);
         await processDetachedWork.drain();
 
+        // The Retry starts a reply, so the switch applies first, though it arrived after Retry's reads.
+        const [switchTurn] = await switchTurns(rig);
+        expect(switchTurn).toBeDefined();
         expect(started).toMatchObject({
           created: true,
-          turn: { prevTurnId: applied.response.turnId },
+          turn: { prevTurnId: switchTurn?.id },
         });
         // The switch turn between them does not hide the failed reply's user turn.
         expect((await identity(replyTurnId)).reservedForUserTurnIds).toEqual([failed.prevTurnId]);
         expect(await rig.repos.turns.findById(replyTurnId as never)).toMatchObject({
           role: "assistant",
           status: "complete",
-          prevTurnId: applied.response.turnId,
+          prevTurnId: switchTurn?.id,
+          writeMode: "draft",
         });
         expect(JSON.stringify(gateway.requests.at(-1)?.messages)).toContain(
           "The writer switched this chat to draft mode.",
+        );
+      });
+
+      it("refuses a Retry a newer message overtook and leaves the queued switch pending", async () => {
+        const { rig, beforeSwitchApplies, retry } = await failedReplyRig();
+        // The switch is already queued when Retry starts; the message lands after Retry's
+        // eligibility reads and before the switch applies, so applying would bury it.
+        await switchMode(rig, "draft");
+        expect(await switchTurns(rig)).toEqual([]);
+        beforeSwitchApplies(async () => {
+          await rig.send(rig.threadId, "A newer message");
+        });
+
+        const replyTurnId = crypto.randomUUID();
+        await expect(retry(replyTurnId)).rejects.toMatchObject({ code: "reply_retry_unavailable" });
+
+        expect(await switchTurns(rig)).toEqual([]);
+        expect(await threadMode(rig)).toBe("direct");
+        expect(await rig.repos.turns.findById(replyTurnId as never)).toBeNull();
+        expect((await rig.delivery.selectPending(rig.threadId)).map((row) => row.intent)).toContain(
+          "control",
         );
       });
     });
@@ -1966,7 +2004,9 @@ else
         expect(await done).toMatchObject({ status: "cancelled" });
         await processDetachedWork.drain();
         if ((await rig.delivery.selectPending(rig.threadId)).length > 0) {
-          await rig.orchestrator.startDrain(rig.threadId);
+          await expect(rig.orchestrator.startDrain(rig.threadId)).rejects.toThrow(
+            "Thread not found",
+          );
           await processDetachedWork.drain();
         }
 
