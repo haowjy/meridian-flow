@@ -16,7 +16,12 @@ import type { DetachedWorkTracker } from "../detached-work.js";
 import { finalizeExecution } from "../loop/execution-finalizer.js";
 import { drainInbox, planMessageTurns } from "../loop/inbox-context.js";
 import { currentTurnKind, reservationTurn } from "../loop/local-turn.js";
-import { type InboxWorkSelection, next, prefixRows } from "../loop/next-inbox-work.js";
+import {
+  type InboxWorkSelection,
+  next,
+  prefixRows,
+  type WriteModeSwitchMessage,
+} from "../loop/next-inbox-work.js";
 import { persistAndAppendEvents, persistAndAppendTurnStartEvents } from "../loop/persistence.js";
 import type { InboxMessage, MessageDraft, RunClaim, RunStarter } from "../loop/ports.js";
 import { preparationFailureError } from "../loop/preparation-failure.js";
@@ -75,6 +80,8 @@ export function createDeliveryAdapter(
     selection: TSelection;
     pendingBatch: InboxMessage[];
     work: Awaited<ReturnType<typeof workBatch>>;
+    /** A due switch applies only with the reservation, so preparation must hold the thread lock. */
+    requiresLock?: boolean;
   };
   async function selectForPreparation(
     threadId: ThreadId,
@@ -168,20 +175,9 @@ export function createDeliveryAdapter(
     return attemptPreparation();
 
     async function attemptPreparation(): Promise<TResult> {
-      for (let attempt = 0; attempt < PREPARATION_ATTEMPTS; attempt += 1) {
-        const lockedPreparation = attempt === PREPARATION_ATTEMPTS - 1;
-        if (lockedPreparation) {
-          return threadLock.withThreadLock(input.threadId, async () => {
-            const selected = await input.select(true);
-            input.signal?.throwIfAborted();
-            const prepared = await input.prepare(selected.selection, selected.work);
-            input.signal?.throwIfAborted();
-            await input.validate?.();
-            return commitSelected(selected, prepared);
-          });
-        }
-
+      for (let attempt = 0; attempt < PREPARATION_ATTEMPTS - 1; attempt += 1) {
         const selected = await input.select(false);
+        if (selected.requiresLock) break;
         input.signal?.throwIfAborted();
         const prepared = await input.prepare(selected.selection, selected.work);
         input.signal?.throwIfAborted();
@@ -194,7 +190,15 @@ export function createDeliveryAdapter(
         });
         if (!result.retry) return result.value;
       }
-      throw new Error("Unreachable delivery preparation loop exit");
+      // The last attempt prepares under the lock, so nothing can change between selection and commit.
+      return threadLock.withThreadLock(input.threadId, async () => {
+        const selected = await input.select(true);
+        input.signal?.throwIfAborted();
+        const prepared = await input.prepare(selected.selection, selected.work);
+        input.signal?.throwIfAborted();
+        await input.validate?.();
+        return commitSelected(selected, prepared);
+      });
     }
 
     async function commitSelected(
@@ -269,14 +273,14 @@ export function createDeliveryAdapter(
       : ("delivered" as const);
   }
   /**
-   * The admitted run-start boundary's switch rule. Under the run's claim and
-   * after the start refusals, the queued write-mode switch applies in one
-   * transaction (the chat's mode, the switch turn at the active leaf, the
-   * control's ack) when `next` says a run follows it, or a Retry runs. A
-   * switch queued while setup was in flight is found by the retry loop in
-   * `prepareAndCommit`, whose commit validates this very selection. An
-   * optimistic preparation attempt can commit the switch before its reservation;
-   * a discarded attempt leaves the switch applied.
+   * The admitted run-start boundary's switch rule. A due write-mode switch (`next`
+   * says a run follows it, or a Retry runs) applies in the same thread-lock
+   * transaction that reserves the run: the chat's mode, the switch turn at the
+   * active leaf and the control's ack commit with the reservation, or none do.
+   * Preparation reads storage, so it can't run under the lock for every start;
+   * an optimistic attempt that finds a due switch asks for the locked attempt
+   * instead and applies nothing. A Retry whose leaf moved is refused before the
+   * switch applies, leaving it pending.
    */
   async function selectRunStart(
     threadId: ThreadId,
@@ -284,13 +288,14 @@ export function createDeliveryAdapter(
     lockHeld: boolean,
   ) {
     for (;;) {
-      const apply = () => applyDueSwitch(threadId, retryOf);
-      if (lockHeld) await apply();
-      else await threadLock.withThreadLock(threadId, apply);
       const selected = await selectForPreparation(threadId, "run_start", !!retryOf);
-      if (selected.selection.next.kind === "switch") continue;
-      await assertRetryLeaf(threadId, selected.selection.activeLeafTurnId, retryOf);
-      return selected;
+      const due = selected.selection.next;
+      if (due.kind !== "switch") {
+        await assertRetryLeaf(threadId, selected.selection.activeLeafTurnId, retryOf);
+        return selected;
+      }
+      if (!lockHeld) return { ...selected, requiresLock: true };
+      await applyDueSwitch(threadId, due.control, retryOf);
     }
   }
   /**
@@ -303,15 +308,16 @@ export function createDeliveryAdapter(
     const past = leafTurn ? await pastTrailingSwitches(deps.repos.turns, leafTurn) : null;
     if (past?.id !== retryOf) throw new ReplyRetryUnavailableError(threadId);
   }
-  async function applyDueSwitch(threadId: ThreadId, retryOf?: TurnId): Promise<boolean> {
-    const selected = next(await inbox.selectPending(threadId), "run_start", !!retryOf);
-    if (selected.kind !== "switch") return false;
-    const control = selected.control;
+  /** Runs under the thread lock the run's reservation also commits in. */
+  async function applyDueSwitch(
+    threadId: ThreadId,
+    control: WriteModeSwitchMessage,
+    retryOf?: TurnId,
+  ) {
     const thread = await deps.repos.threads.findById(threadId);
-    if (!thread) return false;
+    if (!thread) throw new Error(`Thread not found: ${threadId}`);
     const mode = control.body.mode;
     const leaf = thread.activeLeafTurnId as TurnId | null;
-    // A refused Retry leaves the switch pending.
     await assertRetryLeaf(threadId, leaf, retryOf);
     const leafTurn = leaf ? await turnGraph(deps.repos.turns).findById(leaf) : null;
     if (leaf && !leafTurn) throw new Error(`Missing causal turn: ${leaf}`);
@@ -335,7 +341,6 @@ export function createDeliveryAdapter(
       };
     });
     await ack(threadId, [control.id]);
-    return true;
   }
   async function threadChanged(threadId: ThreadId, mutationId = crypto.randomUUID()) {
     // Work mutations already hold Work rows. Taking the thread lock here would
@@ -948,29 +953,13 @@ export function createDeliveryAdapter(
       if (!result) throw new NoPendingWakeError(lease.threadId);
       return result.value;
     },
-    ackWithResponse: (lease, ids, byTurn, persist) =>
-      threadLock.withThreadLock(lease.threadId, async () => {
-        const result = await persist();
-        if (ids.length > 0) {
-          if (!(await leaseStore.clearReceipt(lease, ids)))
-            throw new Error("Cannot ack after losing live run lease");
-          await ack(lease.threadId, ids, deliveredBy(lease, byTurn));
-        }
-        return result;
-      }),
+    ackWithResponse: settlement.ackWithResponse,
     splitAndContinue: (input) => adopt(input),
     close: async (input) => {
       const threadId = input.lease.threadId;
-      // Serialize the terminal decision with cancellation, not only the loop's
-      // cached flag: the durable flag for a remote Stop, the local signal for
-      // a parent's cancel or shutdown.
-      const terminalCause = (receipt: { cancelRequested: boolean } | null) =>
-        receipt?.cancelRequested
-          ? { kind: "cancelled" as const, reason: "cancelled" }
-          : (input.localCancellation?.() ?? input.cause);
       const disposition = await threadLock.withThreadLock(threadId, async () => {
         const receipt = await leaseStore.lockReceipt(input.lease);
-        const cause = terminalCause(receipt);
+        const cause = settlement.closeCause(input, receipt);
         if (input.continueWith && cause.kind === "success") {
           // A yield selects no rows, so the reply closes here with no successor.
           const { selection } = await selectForPreparation(threadId, "boundary");
@@ -995,15 +984,7 @@ export function createDeliveryAdapter(
       const boundary = input.continueWith as DeliveryBoundary;
       const adopted = await adopt(boundary);
       if (adopted.split) return { kind: "split", adopted };
-      const completion = await threadLock.withThreadLock(threadId, async () => {
-        const receipt = await leaseStore.lockReceipt(input.lease);
-        return settlement.settleTerminal(
-          input.lease,
-          input.turnId,
-          terminalCause(receipt),
-          receipt,
-        );
-      });
+      const completion = await settlement.settleClosed(input);
       return { kind: "completed", completion };
     },
   };
