@@ -25,11 +25,14 @@ export type InboxWorkSelection =
   | { kind: "yield" }
   | { kind: "none" };
 
+/** `retry`: a Retry starts a reply by itself, so a lone queued switch is due at run start. */
 export function next(
   pending: readonly InboxMessage[],
   at: "run_start" | "boundary",
+  retry = false,
 ): InboxWorkSelection {
   const queuedSwitch = pending.find(isWriteModeSwitch);
+  if (queuedSwitch && at === "run_start" && retry) return { kind: "switch", control: queuedSwitch };
   if (queuedSwitch && pending.some((row) => row.intent === "message" && row.seq > queuedSwitch.seq))
     return at === "boundary" ? { kind: "yield" } : { kind: "switch", control: queuedSwitch };
 
