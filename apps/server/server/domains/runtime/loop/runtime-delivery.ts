@@ -1,6 +1,8 @@
 /** Atomic inbox transitions; journal publication is part of every committed mutation. */
+
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, OrchestratorEvent, Turn } from "@meridian/contracts/threads";
+import type { AiWriteMode } from "@meridian/contracts/works";
 import type { Notice } from "../../notices/index.js";
 import type { WorkContextNotices } from "../../projects/index.js";
 import type { ShownLinkShowing } from "../ports/shown-links.js";
@@ -16,7 +18,10 @@ export type DeliveryTransaction = {
   materializePrefix(): Promise<void>;
 };
 export type DeliveryProducer = Pick<RuntimeDelivery, "enqueue" | "withThreadLock">;
-export type ThreadControls = Pick<RuntimeDelivery, "enqueueControl" | "withdrawControl">;
+export type ThreadControls = Pick<
+  RuntimeDelivery,
+  "enqueueControl" | "withdrawControl" | "effectiveWriteMode"
+>;
 export type DeliveryBoundary<TCurrent = undefined> = Pick<
   Parameters<typeof drainInbox>[0],
   "knownTurnIds" | "expectedLeafTurnId" | "prepareAdoptedTurn"
@@ -119,11 +124,13 @@ export interface RuntimeDelivery
     controlId: string,
   ): Promise<import("@meridian/contracts/threads").WithdrawThreadControlResponse>;
   /**
-   * Applies queued write-mode switches that are due while no reply holds the
-   * chat; answers false, doing nothing, when the run claim is held. Called
-   * after a control enqueue commits and before every run start.
+   * Applies the queued write-mode switch when a run is about to start (the
+   * run starter, or `retrying` for a Retry) while no reply holds the chat;
+   * answers false, doing nothing, when the run claim is held.
    */
-  applyDueSwitches(threadId: ThreadId): Promise<boolean>;
+  applyDueSwitches(threadId: ThreadId, retrying?: boolean): Promise<boolean>;
+  /** The mode the writer sees: a pending switch's, else the chat's applied mode. */
+  effectiveWriteMode(threadId: ThreadId): Promise<AiWriteMode>;
   /** Whether a message waits behind the queued switch, so the next request boundary ends the reply. */
   yieldsAtBoundary(threadId: ThreadId): Promise<boolean>;
   /** Reclassify expired leases after recovery or a backstop release. */

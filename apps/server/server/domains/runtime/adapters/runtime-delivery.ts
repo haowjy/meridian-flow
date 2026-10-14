@@ -9,7 +9,7 @@ import type { DetachedWorkTracker } from "../detached-work.js";
 import { finalizeExecution } from "../loop/execution-finalizer.js";
 import { drainInbox, planMessageTurns } from "../loop/inbox-context.js";
 import { currentTurnKind, reservationTurn } from "../loop/local-turn.js";
-import { type InboxWorkSelection, next } from "../loop/next-inbox-work.js";
+import { type InboxWorkSelection, next, queuedWriteModeSwitch } from "../loop/next-inbox-work.js";
 import { finalizeOrphanedTurns } from "../loop/orphaned-placeholder.js";
 import { readPendingInbox } from "../loop/pending-inbox.js";
 import {
@@ -502,25 +502,32 @@ export function createDeliveryAdapter(
       : ("delivered" as const);
   }
   /**
-   * Applies the chat's due write-mode switches while no reply holds it. Each
-   * switch is one transaction: the chat's mode, its Work's default (thread
-   * then Work), the switch turn at the active leaf, and the control's ack. No
-   * model call and no lease: a reply never sees its mode change.
+   * Applies the chat's pending write-mode switch right before a run starts
+   * (`next` says when, or a Retry, which always starts one), while no reply
+   * holds the chat. One transaction: the chat's mode, the switch turn at the
+   * active leaf, and the control's ack. No model call and no lease: a reply
+   * never sees its mode change.
    */
-  async function applyDueSwitches(threadId: ThreadId) {
+  async function applyDueSwitches(threadId: ThreadId, retrying = false) {
     const ran = await deps.runClaim.withExclusiveThread(threadId, async () => {
       await settleStaleExecution(threadId);
-      while (await threadLock.withThreadLock(threadId, () => applyDueSwitch(threadId))) {}
+      while (await threadLock.withThreadLock(threadId, () => applyDueSwitch(threadId, retrying))) {}
       return true;
     });
     return ran === true;
   }
-  async function applyDueSwitch(threadId: ThreadId): Promise<boolean> {
-    const selected = next(await inbox.selectPending(threadId), "run_start");
-    if (selected.kind !== "switch") return false;
+  async function applyDueSwitch(threadId: ThreadId, retrying: boolean): Promise<boolean> {
+    const pending = await inbox.selectPending(threadId);
+    const selected = next(pending, "run_start");
+    const control =
+      selected.kind === "switch"
+        ? selected.control
+        : retrying
+          ? queuedWriteModeSwitch(pending)
+          : null;
+    if (!control) return false;
     const thread = await deps.repos.threads.findById(threadId);
     if (!thread) return false;
-    const { control } = selected;
     const mode = control.body.mode;
     const leaf = thread.activeLeafTurnId as TurnId | null;
     const leafTurn = leaf ? await deps.repos.turns.findById(leaf) : null;
@@ -535,7 +542,6 @@ export function createDeliveryAdapter(
     });
     await persistAndAppendTurnStartEvents(deps, threadId, leaf, async () => {
       await deps.repos.threads.setAiWriteMode(threadId, mode);
-      if (thread.workId) await deps.writeModeSwitch.setWorkDefault(thread.workId as WorkId, mode);
       return {
         result: undefined,
         events: [
@@ -995,8 +1001,11 @@ export function createDeliveryAdapter(
         return thread.aiWriteMode;
       },
       headSeq: deps.headSeq,
-      applyDueSwitches,
-      replyHolds: async (id) => (await deps.runClaim.holder(id)) !== null,
+      async setWorkDefault(threadId, mode) {
+        const thread = await deps.repos.threads.findById(threadId);
+        if (thread?.workId)
+          await deps.writeModeSwitch.setWorkDefault(thread.workId as WorkId, mode);
+      },
       findControlTurn: (id, controlId) => deps.repos.turns.findByControlId(id, controlId),
       pending: (id) => readPendingInbox(inbox, id),
       acknowledge: async (id, controlIds) => {
