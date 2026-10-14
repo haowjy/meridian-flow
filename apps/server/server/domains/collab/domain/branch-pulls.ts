@@ -15,6 +15,7 @@ import * as Y from "yjs";
 import type { BranchConcurrentJournalWatermarks } from "./branch-agent-edit.js";
 import {
   BranchCasConflictError,
+  BranchClosedError,
   type BranchCoordinator,
   BranchMissingError,
   type BranchSnapshot,
@@ -350,12 +351,15 @@ export function createBranchPullService(input: {
               input.rootTransaction(async () => {
                 const read = await input.branchCoordinator
                   .ownedSession(lease)
-                  .read(upstreamBranchId, (doc, snapshot) =>
-                    Promise.resolve({
+                  .read(upstreamBranchId, (doc, snapshot) => {
+                    // An item Discard closes its branch without touching the text: a peer never
+                    // pulls from an upstream that ended while it waited for the leases.
+                    if (snapshot.status === "closed") throw new BranchClosedError(upstreamBranchId);
+                    return Promise.resolve({
                       generation: snapshot.generation,
                       state: Y.encodeStateAsUpdate(doc),
-                    }),
-                  );
+                    });
+                  });
                 await pullPeerFromCapturedUpstream(lease, peer.branchId, read.state);
                 return read;
               }),
@@ -373,6 +377,7 @@ export function createBranchPullService(input: {
             identity.upstreamBranchId &&
             (cause instanceof BranchStaleUpdateError ||
               cause instanceof BranchCasConflictError ||
+              cause instanceof BranchClosedError ||
               cause instanceof BranchMissingError)
           )
             throw new ThreadPeerPullLost(identity.peerBranchId, identity.upstreamBranchId, cause);

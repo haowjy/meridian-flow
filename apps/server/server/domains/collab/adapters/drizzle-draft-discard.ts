@@ -27,6 +27,7 @@ import {
   type EndUseRequest,
   EndUseScopeChangedError,
   endUse,
+  hiddenDocumentIds,
   readEndUseScope,
 } from "../../context/tree/end-use.js";
 import type { WorkDraftDisposal, WorkProjectionMutation } from "../../projects/index.js";
@@ -86,7 +87,7 @@ function retired(
 async function closeDraftBranches(
   db: Database,
   draftId: DraftId,
-  cause: PeerRetirementCause,
+  cause: PeerRetirementCause | ((documentId: DocumentId) => PeerRetirementCause),
   documentIds?: readonly DocumentId[],
 ): Promise<RetiredBranch[]> {
   if (documentIds?.length === 0) return [];
@@ -114,16 +115,13 @@ async function closeDraftBranches(
       textBranches.map((branch) => branch.branchId),
     );
   }
-  return closed.map((branch) =>
-    retired(
-      {
-        ...branch,
-        documentId: branch.documentId as DocumentId,
-        threadId: branch.threadId as ThreadId | null,
-      },
-      cause,
-    ),
-  );
+  return closed.map((branch) => {
+    const documentId = branch.documentId as DocumentId;
+    return retired(
+      { ...branch, documentId, threadId: branch.threadId as ThreadId | null },
+      typeof cause === "function" ? cause(documentId) : cause,
+    );
+  });
 }
 
 /**
@@ -203,6 +201,12 @@ export function createDrizzleDraftDiscard(
     // holds: another Work's Apply may have revealed a create since the item was resolved.
     // The draft's create row goes either way; only a hidden document can be tombstoned by it.
     const withRows = items.filter((item) => item.origin === "created").map((i) => i.documentId);
+    // Read before the end of use tombstones what no draft uses any more (§5.2): a hidden create is
+    // a discarded document, a live document (a revealed create, an edit) a discarded edit.
+    const hiddenNow = await hiddenDocumentIds(
+      db,
+      items.map((item) => item.documentId),
+    );
     const ended = await endUseReconciled(
       db,
       deps,
@@ -215,7 +219,7 @@ export function createDrizzleDraftDiscard(
     const closed = await closeDraftBranches(
       db,
       draftId,
-      "document_discarded",
+      (documentId) => (hiddenNow.has(documentId) ? "document_discarded" : "edit_discarded"),
       items.map((item) => item.documentId),
     );
     return {

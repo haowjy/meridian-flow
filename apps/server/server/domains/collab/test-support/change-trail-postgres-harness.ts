@@ -27,6 +27,7 @@ import { createAllowAllFileAccess } from "../../../domains/file-policy/index.js"
 import { grantedJournal, testFileGrant } from "../../../test-support/file-grants.js";
 import { createDocumentLastAddress } from "../../context/document-uri-resolver.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
+import { hiddenDocumentIds } from "../../context/tree/end-use.js";
 import type { FileGrant } from "../../file-policy/index.js";
 import { createDrizzleCollabLookups } from "../adapters/drizzle-collab-lookups.js";
 import { createDrizzleDocumentDerivationStore } from "../adapters/drizzle-document-derivations.js";
@@ -674,6 +675,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       branches: branchStore,
       branchCoordinator,
       criticalSections: branchCriticalSections,
+      hiddenDocumentIds: (ids) => hiddenDocumentIds(db, ids),
       branchPulls,
       branchJournal: durableBranchJournalReadStore,
       concurrentJournalWatermarks: watermarks,

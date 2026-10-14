@@ -21,6 +21,7 @@ import {
 } from "../context/document-uri-resolver.js";
 import type { ContextCatalogMutationPort } from "../context/ports/context-catalog.js";
 import type { DocumentArrivals } from "../context/ports/document-arrivals.js";
+import { hiddenDocumentIds } from "../context/tree/end-use.js";
 import { createTreeReader } from "../context/tree/tree-view.js";
 import type { FileAccess } from "../file-policy/index.js";
 import type { NoticePort } from "../notices/index.js";
@@ -400,6 +401,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       criticalSections,
       branchPulls,
       branchJournal,
+      hiddenDocumentIds: (ids) => hiddenDocumentIds(deps.db, ids),
       concurrentJournalWatermarks,
       diagnostics: createBranchAgentEditDiagnostics(deps.eventSink),
       afterCommit: runAfterDrizzleCommit,

@@ -58,6 +58,8 @@ export function createReplySaveFences(deps: {
   diagnostics?: Pick<BranchAgentEditDiagnostics, "replyPinMismatch">;
   fileAccess: Pick<FileAccess, "confirmEdit">;
   lockWorks(workIds: readonly string[]): Promise<void>;
+  /** Which documents are hidden creates (§5.2): a closed upstream on one is a discarded document, on a live one a discarded edit. */
+  hiddenDocumentIds?(ids: readonly DocumentId[]): Promise<ReadonlySet<DocumentId>>;
   lockLiveDocuments(documentIds: readonly DocumentId[]): Promise<void>;
 }): ReplySaveFences {
   return {
@@ -89,7 +91,11 @@ export function createReplySaveFences(deps: {
         const peer = await deps.branches.getBranch(pin.peerBranchId);
         let reason: StagedWriteRejectionReason | undefined;
         if (!active.get(pin.draftId)) reason = "discarded_draft";
-        else if (!upstream || upstream.status === "closed") reason = "discarded_document";
+        else if (!upstream || upstream.status === "closed")
+          reason =
+            !upstream || (await deps.hiddenDocumentIds?.([documentId]))?.has(documentId) !== false
+              ? "discarded_document"
+              : "discarded_edit";
         else if (!peer || peer.status === "closed") reason = "discarded_edit";
         else if (
           peer.draftId !== pin.draftId ||

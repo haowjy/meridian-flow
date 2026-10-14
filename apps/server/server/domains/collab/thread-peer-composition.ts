@@ -81,8 +81,10 @@ export function createBranchThreadPeerAgentEditCore(input: {
   lockLiveDocuments(documentIds: readonly DocumentId[]): Promise<void>;
   drafts: Pick<Drafts, "viewForWork" | "ensureActiveForWrite" | "shareActive">;
   criticalSections: BranchCriticalSections;
+  hiddenDocumentIds(ids: readonly DocumentId[]): Promise<ReadonlySet<DocumentId>>;
 }): ThreadPeerAgentEditCore {
   return createThreadPeerCorePool({
+    hiddenDocumentIds: input.hiddenDocumentIds,
     drafts: input.drafts,
     branches: input.branches,
     fences: createReplySaveFences({
@@ -94,6 +96,7 @@ export function createBranchThreadPeerAgentEditCore(input: {
       fileAccess: input.fileAccess,
       lockWorks: input.lockWorks,
       lockLiveDocuments: input.lockLiveDocuments,
+      hiddenDocumentIds: input.hiddenDocumentIds,
     }),
     liveUtilityCore: input.liveUtilityCore,
     afterLiveCommit: (documentId) => input.branchPulls.scheduleLivePull(documentId),

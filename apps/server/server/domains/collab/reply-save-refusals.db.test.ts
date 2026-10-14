@@ -61,6 +61,13 @@ function refused(saved: Saved) {
   );
 }
 
+/** The Work's active draft text of the document, after an item Discard closed the earlier branch. */
+async function freshDraftMarkdown(fixture: Fixture) {
+  const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+  branch.doc.destroy();
+  return fixture.draftMarkdown(branch.branchId);
+}
+
 describe("reply save refusals (postgres)", () => {
   const db = createTestDatabase();
   let harness: ReturnType<typeof createHarness>;
@@ -100,16 +107,6 @@ describe("reply save refusals (postgres)", () => {
     return { ...staged, responseId, context, core, review, write };
   }
 
-  it("1: independent staged writes survive the writer discarding another change in the room", async () => {
-    const { fixture, branchId, responseId, review, write } = await setup();
-    expect(await write("green", "lime", "w-green")).toMatchObject({ phase: "staged" });
-    expect(await write("gold", "silver", "w-gold")).toMatchObject({ phase: "staged" });
-    await discardChangeLocally(fixture, ALPHA_ID, "azure");
-    const saved = await harness.commit(responseId);
-    expect(saved).toMatchObject({ status: "committed", documents: [{ updateCount: 2 }] });
-    expect(await fixture.draftMarkdown(branchId)).toBe("silver\n\nblue\n\nlime\n");
-  });
-
   it("3: Discard all while staged refuses the save with one receipt per write and nothing live", async () => {
     const { fixture, branchId, responseId, review, write } = await setup();
     expect(await write("green", "lime", "w-green")).toMatchObject({ phase: "staged" });
@@ -123,20 +120,6 @@ describe("reply save refusals (postgres)", () => {
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe("red\n\nblue\n\ngreen\n");
     expect(await review.list()).toEqual([]);
     expect(await fixture.draftMarkdown(branchId)).toContain("gold");
-  });
-
-  it("2: after two reforks and a prepared read, only edits on discarded text fail", async () => {
-    const { fixture, branchId, responseId, review, write, core, context } = await setup();
-    expect(await write("green", "lime", "w-green")).toMatchObject({ phase: "staged" });
-    expect(await write("azure", "cyan", "w-azure")).toMatchObject({ phase: "staged" });
-    await discardChangeLocally(fixture, ALPHA_ID, "azure");
-    expect(
-      await core.read({ file: "alpha.md", documentId: ALPHA_ID, tool_use_id: "read-2" }, context),
-    ).toMatchObject({ status: "success" });
-    await discardChangeLocally(fixture, ALPHA_ID);
-    const saved = await harness.commit(responseId);
-    expect(refused(saved)).toEqual([[ALPHA_ID, EDIT]]);
-    expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\nlime\n");
   });
 
   it("4: a mixed reply saves its other document and receipts the refused one", async () => {
@@ -162,7 +145,7 @@ describe("reply save refusals (postgres)", () => {
     const beta = await fixture.branchStore.resolveWorkDraftBranchForThread(BETA_ID, THREAD_ID);
     beta.doc.destroy();
     expect(await fixture.draftMarkdown(beta.branchId)).toBe("Beta staged.\n");
-    expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\ngreen\n");
+    expect(await fixture.draftMarkdown(branchId)).toBe("gold\n\nazure\n\ngreen\n");
   });
 
   it("5: a write after Discard all in the same reply lands in a fresh draft beside the first refusal", async () => {
@@ -284,7 +267,7 @@ describe("reply save refusals (postgres)", () => {
     void fixture;
   });
 
-  it("15b: another Work revealing the create while Discard waits for its leases keeps the branch and refuses discarded_edit", async () => {
+  it("15b: another Work revealing the create while Discard waits for its leases closes the branch and refuses discarded_edit", async () => {
     const { second, review, fixture } = await createdThenStaged();
     const remove = setCollabHook("discard.afterLeases", async () => {
       remove();
@@ -306,11 +289,8 @@ describe("reply save refusals (postgres)", () => {
           eq(schema.documentBranches.kind, "work_draft"),
         ),
       );
-    expect(branch?.status).toBe("active");
-    // Reset from live, not closed: the branch holds exactly what the revealed document does.
-    expect(await fixture.draftMarkdown(branch?.id as string)).toBe(
-      await harness.liveMarkdown(NEW_ID),
-    );
+    // Close-only: the revealed document is live text now, and the draft's branch ends with it.
+    expect(branch?.status).toBe("closed");
   });
 
   it("11: Apply all while staged drains the draft, which stays active, and the write lands in it even once the chat writes direct", async () => {
@@ -512,7 +492,7 @@ describe("reply save refusals (postgres)", () => {
     expect(paused).toMatchObject({ isError: true, status: "invalid_write" });
     expect(JSON.stringify(paused.result)).toContain(EDIT);
     expect(refused(await harness.commit(responseId))).toEqual([]);
-    expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\ngreen\n");
+    expect(await fixture.draftMarkdown(branchId)).toBe("gold\n\nazure\n\ngreen\n");
     const next = responseContext(await createResponse(db, 3));
     expect(
       await fixture.collab.agentEdit().write(
@@ -557,7 +537,7 @@ describe("reply save refusals (postgres)", () => {
     nextSaved = await harness.commit(next as string);
     expect(refused(oldSaved as Saved)).toEqual([[ALPHA_ID, EDIT]]);
     expect(refused(nextSaved)).toEqual([]);
-    expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nnavy\n\ngreen\n");
+    expect(await freshDraftMarkdown(fixture)).toBe("red\n\nnavy\n\ngreen\n");
   });
 
   it("21: a same-reply write after the old peer's delayed retirement commits; the old write is receipted separately", async () => {
@@ -570,7 +550,7 @@ describe("reply save refusals (postgres)", () => {
     expect(await review.discardItem(ALPHA_ID)).toMatchObject({ status: "discarded" });
     const saved = await harness.commit(responseId);
     expect(refused(saved)).toEqual([[ALPHA_ID, EDIT]]);
-    expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nnavy\n\ngreen\n");
+    expect(await freshDraftMarkdown(fixture)).toBe("red\n\nnavy\n\ngreen\n");
   });
 
   it("8: a save with a concurrent upstream edit makes no nested acquisition and names the edit", async () => {
