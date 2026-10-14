@@ -510,8 +510,8 @@ export async function readSettlementMember(
         level: "warn",
         source: "collab.change_event",
         name: "sweep_projection.unavailable",
+        correlation: { pushId: String(pushId) },
         payload: {
-          pushId,
           documentId: row.outbox.documentId,
           ...unknownToEventPayload(cause),
         },

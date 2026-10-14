@@ -17,6 +17,7 @@ import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizz
 import { Ok } from "../../../shared/result.js";
 import { draftTreeScenario } from "../../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
+import { createDrizzleWorkDraftPendingStore } from "../../collab/adapters/drizzle-branch-push.js";
 import type { BindMarkdownInput } from "../../collab/index.js";
 import { fakeBoundWrite } from "../../collab/test-support/bound-writes.js";
 import { createTestDocumentLinkScopes } from "../../collab/test-support/document-link-scopes.js";
@@ -577,7 +578,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         lineageScratch: createDrizzleLineageScratchLifecycle(db),
         db,
         fileAccessChanges: createLocalFileAccessChanges(),
-        projectionMutation: createWorkProjectionMutation({ db, availability, catalog }),
+        projectionMutation: createWorkProjectionMutation({
+          db,
+          availability,
+          catalog,
+          pending: createDrizzleWorkDraftPendingStore(db),
+        }),
       });
       const workId = "00000000-0000-4000-8000-000000000807" as never;
       const scope = { kind: "project", projectId: PROJECT_ID } as const;
@@ -609,6 +615,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         fileAccessChanges: createLocalFileAccessChanges(),
         projectionMutation: createWorkProjectionMutation({
           db,
+          pending: createDrizzleWorkDraftPendingStore(db),
           availability,
           catalog: {
             async refreshProject(projectId) {

@@ -25,6 +25,7 @@ export type ContextPaneState =
 
 export function deriveContextPaneState({
   activeTab,
+  masked,
   destination,
   catalog,
   isFetching,
@@ -32,6 +33,8 @@ export function deriveContextPaneState({
   removalFenced,
 }: {
   activeTab: ContextTab | null;
+  /** The destination's body is masked: the retained tab is not where the writer is going. */
+  masked: boolean;
   destination: {
     path: string;
     scheme: ProjectContextTreeScheme;
@@ -42,7 +45,7 @@ export function deriveContextPaneState({
   isError: boolean;
   removalFenced: boolean;
 }): ContextPaneState {
-  if (activeTab) return { kind: "document", tab: activeTab };
+  if (activeTab && !masked) return { kind: "document", tab: activeTab };
   if (!destination || removalFenced) return { kind: "empty-workspace" };
 
   const routeExists = catalog?.findPath(destination.path)?.kind === "file";

@@ -20,6 +20,7 @@ import { deleteDrizzleRows, useRollbackTestDatabase } from "../../test-support/d
 import {
   createDrizzleBranchJournalReadStore,
   createDrizzlePushCommitStore,
+  createDrizzleWorkDraftPendingStore,
 } from "../collab/adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "../collab/adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailAggregateWriter } from "../collab/adapters/drizzle-change-trail-aggregate.js";
@@ -99,7 +100,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const catalog = createDrizzleContextCatalog(db, undefined, {
         availabilityMutations: availability,
       });
-      const projection = createWorkProjectionMutation({ db, availability, catalog });
+      const projection = createWorkProjectionMutation({
+        db,
+        availability,
+        catalog,
+        pending: createDrizzleWorkDraftPendingStore(db),
+      });
       await catalog.refreshProject(PROJECT_ID);
       return { db, projection };
     }
@@ -202,7 +208,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const discarded = await projectionState();
       expect(discarded.entityRevision).toBe((appended.entityRevision ?? 0n) + 1n);
-      // The discard closed those rows; the push stages a fresh one.
+      // The discard closed those rows and left the branch equal to live; a fresh write makes it
+      // differ again before the push stages its row.
+      await db
+        .update(documentBranches)
+        .set({ hasEffect: true })
+        .where(eq(documentBranches.id, BRANCH_ID));
       await appendJournal({ kind: "edit" });
       const staged = await projectionState();
       const pushRows = await journal.listReviewableJournalRows(BRANCH_ID, 1);
@@ -333,6 +344,53 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         settle("00000000-0000-4000-8000-000000000949", "00000000-0000-4000-8000-00000000094a"),
       ).resolves.toMatchObject({ status: "completed", held: [{ itemKey: "chapter" }] });
       await expectPublishedAfter(repushed);
+    });
+
+    it("publishes an effect toggle on a branch that keeps its reviewable rows", async () => {
+      const { db, projection } = await fixture();
+      const pending = createDrizzleWorkDraftPendingStore(db);
+      await createDrizzleBranchStore(db, {
+        workProjection: projection,
+        drafts: createDrizzleDraftStore(db),
+      }).appendJournal?.({
+        branchId: BRANCH_ID,
+        generation: 1,
+        updateData: new Uint8Array([1]),
+        source: "agent",
+        updateMeta: { kind: "edit" },
+      });
+      const setEffect = (hasEffect: boolean) =>
+        projection.mutatePendingBranches([BRANCH_ID], async () => {
+          await db
+            .update(documentBranches)
+            .set({ hasEffect })
+            .where(eq(documentBranches.id, BRANCH_ID));
+        });
+      // The hint and the catalog count read the one membership relation; the Work revision follows.
+      const agree = async (members: number) => {
+        expect(
+          (await pending.countPendingByWorkIds([WORK_ID as never])).get(WORK_ID as never) ?? 0,
+        ).toBe(members);
+        await expect(
+          pending.listDraftsChangingDocument({
+            projectId: PROJECT_ID as never,
+            documentId: DOCUMENT_ID as never,
+          }),
+        ).resolves.toHaveLength(members);
+      };
+      await agree(1);
+      for (const [hasEffect, members] of [
+        [false, 0],
+        [true, 1],
+      ] as const) {
+        const before = await projectionState();
+        await setEffect(hasEffect);
+        await agree(members);
+        const after = await projectionState();
+        expect(after.entityRevision).toBe((before.entityRevision ?? 0n) + 1n);
+        expect(BigInt(after.catalogEntityRevision ?? "0")).toBe(after.entityRevision);
+        expect(after.availabilityGeneration).toBeGreaterThan(before.availabilityGeneration ?? 0);
+      }
     });
   });
 }

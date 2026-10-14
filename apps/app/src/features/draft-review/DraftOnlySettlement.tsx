@@ -1,8 +1,9 @@
 /** One project lifecycle owner settles remote dispositions for every Work with draft-only presentations. */
 
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
+import { resourceIdentityIndex } from "@meridian/resource-replica";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import type { DraftRef } from "@/client/query/draft-command-record";
 import {
   currentDraftCommandRecords,
@@ -13,7 +14,13 @@ import {
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { contextCatalogScope } from "@/client/query/useContextCatalog";
 import { useWorkDrafts } from "@/client/query/useWorkDrafts";
-import { useOptionalAccountResourceReplica } from "@/features/project/context/account-feature-context";
+import {
+  useObservedResourceProjection,
+  useOptionalAccountResourceReplica,
+} from "@/features/project/context/account-feature-context";
+import { useDockDocumentStore } from "@/features/project/dock/dock-document-store";
+import { useOptionalOpenEditorReview } from "@/features/project/dock/editor-review-handoff";
+import { usePresentedDocument } from "@/features/project/presented-document";
 import {
   type DraftOnlyContainer,
   type DraftOnlyPresentation,
@@ -56,6 +63,7 @@ function WorkSettlement({
   const resources = useOptionalAccountResourceReplica();
   const drafts = useWorkDrafts(projectId, workId);
   const records = useDraftCommandRecords();
+  const projection = useObservedResourceProjection(resources, projectId);
   // A draft-only tab whose draft left the active list was disposed of
   // elsewhere. The list cannot say how, so the catalog decides: a document
   // that now exists was applied, otherwise the draft was discarded.
@@ -115,6 +123,51 @@ function WorkSettlement({
     queryClient,
     resources,
     workId,
+  ]);
+
+  const presented = usePresentedDocument();
+  const presentedRef = useRef(presented);
+  presentedRef.current = presented;
+  const openReview = useOptionalOpenEditorReview();
+  // Draft-only means "hidden live". The replica showing the document (by its
+  // current id or an alias: a join, New file, a link's Create) makes it live at
+  // once, so its tab becomes the ordinary tab, and a tab the writer was looking
+  // at opens the draft's review over it, the view the chip's Draft choice gives.
+  useEffect(() => {
+    if (drafts.status !== "ready") return;
+    const identities = resourceIdentityIndex(projection.records);
+    for (const draft of lifecycle.presentations(projectId)) {
+      const row = drafts.drafts?.find((candidate) => candidate.itemKey === draft.itemKey);
+      if (draft.workId !== workId || !row || !identities.byDocumentId(draft.documentId)) continue;
+      const current = presentedRef.current;
+      const shown =
+        current?.container === draft.container &&
+        current.documentId === draft.documentId &&
+        current.draftOnly;
+      void lifecycle.promote(draft).then((promoted) => {
+        if (!promoted || !shown) return;
+        if (draft.container === "dock") {
+          useDockDocumentStore.getState().setDocumentReview({ workId, itemKey: draft.itemKey });
+          return;
+        }
+        void openReview?.({
+          workId,
+          documentId: draft.documentId,
+          itemKey: draft.itemKey,
+          contextLocation: draft.contextLocation,
+          isNew: false,
+        }).catch(() => undefined);
+      });
+    }
+  }, [
+    lifecycle,
+    membership,
+    drafts.drafts,
+    drafts.status,
+    projection.records,
+    projectId,
+    workId,
+    openReview,
   ]);
 
   return null;

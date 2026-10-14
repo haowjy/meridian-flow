@@ -341,6 +341,14 @@ export function createResponseCommitter(deps: {
     }
     return { responseId, docId, epoch: entry.epoch };
   }
+  /** Invalidates outstanding leases by exact document and thread (and peer, when given), buffered or not. */
+  function revokeEpochs(docId: string, threadId: string, peerBranchId?: string): void {
+    for (const docs of documentEpochs.values()) {
+      const entry = docs.get(docId);
+      if (entry?.threadId === threadId && (!peerBranchId || entry.peerBranchId === peerBranchId))
+        entry.epoch = nextDocumentEpoch++;
+    }
+  }
   function ownsLifetime(token: DocumentLifetime): boolean {
     return documentEpochs.get(token.responseId)?.get(token.docId)?.epoch === token.epoch;
   }
@@ -429,6 +437,7 @@ export function createResponseCommitter(deps: {
     dropForThread,
     refuseStaged,
     retirePeer: ({ documentId, threadId, peerBranchId, reason }) => {
+      revokeEpochs(documentId, threadId, peerBranchId);
       for (const [responseId, state] of responses)
         if (
           state.kind === "buffered" &&
@@ -1616,10 +1625,7 @@ export function createResponseCommitter(deps: {
   }
 
   function dropForThread(docId: string, threadId: string): void {
-    for (const docs of documentEpochs.values()) {
-      const entry = docs.get(docId);
-      if (entry?.threadId === threadId) entry.epoch = nextDocumentEpoch++;
-    }
+    revokeEpochs(docId, threadId);
     for (const [responseId, state] of [...responses]) {
       if (state.kind !== "buffered") continue;
       const buffer = state.buffer;

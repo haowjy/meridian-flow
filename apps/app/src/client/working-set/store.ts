@@ -314,6 +314,26 @@ export function replaceSnapshotRoute(
   return { ...snapshot, recentRoutes };
 }
 
+/**
+ * A route written under a document's old id follows its new one (a join makes the
+ * device's minted id an alias the server never saw). Returns the same array when
+ * nothing names the old id; the route already under the new id wins a duplicate.
+ */
+export function followRouteIdentity(
+  routes: readonly WorkingSetRoute[],
+  fromDocumentId: string,
+  toDocumentId: string,
+): readonly WorkingSetRoute[] {
+  if (!routes.some((route) => route.documentId === fromDocumentId)) return routes;
+  const followed = routes.map((route) =>
+    route.documentId === fromDocumentId ? { ...route, documentId: toDocumentId } : route,
+  );
+  return followed.filter(
+    (route, index) =>
+      followed.findIndex((other) => other.documentId === route.documentId) === index,
+  );
+}
+
 /** Applies a complete context-route transition at one snapshot boundary. */
 export function reconcileSnapshotContextRoutes(
   snapshot: WorkingSetSnapshot,

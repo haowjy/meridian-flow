@@ -28,7 +28,6 @@ import {
   type CreateDocumentInput,
   LiveCreateCandidateChangedError,
   type LiveDocumentCreation,
-  type UpsertBinaryDocumentInput,
 } from "../../ports/context-document-store.js";
 import type { DocumentArrivals } from "../../ports/document-arrivals.js";
 import { createLive, findLiveCreateCandidate } from "../../tree/creates.js";
@@ -40,6 +39,7 @@ import { ensureLiveFolderPath } from "../../tree/placement.js";
 import {
   createTreeReader,
   LIVE_TREE,
+  type PathResolution,
   type TreeView,
   type VisibleDocument,
   visibleDocuments,
@@ -116,25 +116,34 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
     return runInDrizzleTransaction(this.db, operation);
   }
 
-  async findFolder(view: TreeView, parentId: string | null, name: string) {
-    const vf = visibleFolders(view);
-    const [row] = await this.db
-      .select({ id: vf.id, parentId: vf.parentId, name: vf.name })
-      .from(vf)
-      .where(
-        and(
-          eq(vf.contextSourceId, this.sourceId),
-          parentId === null ? isNull(vf.parentId) : eq(vf.parentId, parentId as FolderId),
-          eq(vf.name, name),
-        ),
-      )
-      .orderBy(vf.id)
-      .limit(1);
-    return row ? mapFolder(row) : null;
+  async resolveDocumentAt(view: TreeView, path: string): Promise<PathResolution<ContextDocument>> {
+    const found = await createTreeReader(this.deps.db).resolvePath(view, {
+      contextSourceId: this.sourceId,
+      path,
+    });
+    if (found.kind !== "found") return found;
+    return found.node.kind === "document"
+      ? { kind: "found", node: mapDocument(found.node.document) }
+      : { kind: "not_found" };
   }
 
-  async findDocument(view: TreeView, folderId: string | null, name: string, extension: string) {
-    const vd = visibleDocuments(view);
+  async resolveFolderAt(
+    view: TreeView,
+    path: string,
+  ): Promise<PathResolution<ContextFolder | null>> {
+    if (path.split("/").every((segment) => segment === "")) return { kind: "found", node: null };
+    const found = await createTreeReader(this.deps.db).resolvePath(view, {
+      contextSourceId: this.sourceId,
+      path,
+    });
+    if (found.kind !== "found") return found;
+    return found.node.kind === "folder"
+      ? { kind: "found", node: mapFolder(found.node.folder) }
+      : { kind: "not_found" };
+  }
+
+  async findDocument(folderId: string | null, name: string, extension: string) {
+    const vd = visibleDocuments(LIVE_TREE);
     const [row] = await this.db
       .select()
       .from(vd)
@@ -163,14 +172,6 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
 
   async findForward(fromId: string, projectId: ProjectId) {
     return findForward(this.deps.db, fromId, projectId);
-  }
-
-  async recordForward(input: { fromId: string; toId: string; projectId: ProjectId }) {
-    await recordForward(this.deps.db, {
-      fromId: input.fromId as DocumentId,
-      toId: input.toId as DocumentId,
-      projectId: input.projectId,
-    });
   }
 
   async listHiddenNames(folderId: string | null) {
@@ -208,12 +209,6 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       name,
       extension,
     });
-  }
-
-  async createDocument(input: CreateDocumentInput): Promise<ContextDocument> {
-    const created = await this.claimLive(input, { kind: "any" });
-    if (!created) throw new ContextEntryConflictError("file");
-    return created.document;
   }
 
   async createDocumentRecordIfAbsent(
@@ -269,12 +264,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
           outcome.placed.placed.map((node) => node.id),
         );
       }
-      const document = await this.findDocument(
-        LIVE_TREE,
-        input.folderId,
-        input.name,
-        input.extension,
-      );
+      const document = await this.findDocument(input.folderId, input.name, input.extension);
       if (!document) throw new Error(`Created document ${created.value.documentId} is not live`);
       return { document, revealed: created.value.kind === "revealed" };
     });
@@ -287,52 +277,6 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       name: input.name,
       extension: input.extension,
     };
-  }
-
-  async upsertBinaryDocument(input: UpsertBinaryDocumentInput): Promise<ContextDocument> {
-    return runInDrizzleTransaction(this.deps.db, async () => {
-      await lockContextSources(this.deps.db, [this.sourceId]);
-      if (
-        await hasOppositeContextEntry(
-          this.db,
-          this.sourceId,
-          input.folderId,
-          renderFilename(input.name, input.extension),
-          "file",
-        )
-      )
-        throw new ContextEntryConflictError("folder");
-      const existing = await this.findDocument(
-        LIVE_TREE,
-        input.folderId,
-        input.name,
-        input.extension,
-      );
-      if (existing) {
-        const [row] = await this.db
-          .update(documents)
-          .set({
-            fileType: input.fileType,
-            storageUrl: input.storageUrl,
-            mimeType: input.mimeType,
-            sizeBytes: input.sizeBytes,
-            updatedAt: new Date(),
-          })
-          .where(eq(documents.id, existing.id))
-          .returning({ id: documents.id });
-        if (!row) throw new Error(`Failed to update binary document: ${existing.id}`);
-        await this.deps.catalogMutations?.refreshSources([this.sourceId]);
-        const updated = await this.findDocument(
-          LIVE_TREE,
-          input.folderId,
-          input.name,
-          input.extension,
-        );
-        if (!updated) throw new Error(`Updated binary document ${existing.id} is not live`);
-        return updated;
-      }
-      return this.createBinaryDocument(input);
-    });
   }
 
   async createBinaryDocument(input: CreateBinaryDocumentInput): Promise<ContextDocument> {
@@ -359,12 +303,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       // The upload is an arrival (contract §9.3): its live identity and the settlement of a ref
       // waiting at this address publish together, under the namespace key this command holds.
       await this.deps.arrivals?.settle([documentId]);
-      const document = await this.findDocument(
-        LIVE_TREE,
-        input.folderId,
-        input.name,
-        input.extension,
-      );
+      const document = await this.findDocument(input.folderId, input.name, input.extension);
       if (!document) throw new Error(`Created binary document ${documentId} is not live`);
       return document;
     });
@@ -418,7 +357,7 @@ async function liveFileOccupant(
   sourceId: string,
   input: { folderId: string | null; name: string; extension: string },
 ): Promise<"file" | "folder" | null> {
-  if (await store.findDocument(LIVE_TREE, input.folderId, input.name, input.extension)) {
+  if (await store.findDocument(input.folderId, input.name, input.extension)) {
     return "file";
   }
   const folder = await hasOppositeContextEntry(

@@ -462,7 +462,7 @@ it("atomically claims opposite-kind names across in-memory store instances", asy
   for (const [index, fileFirst] of [true, false].entries()) {
     const name = `Clash ${index}`;
     const file = () =>
-      left.createDocument({
+      left.createDocumentRecordIfAbsent({
         folderId: null,
         name,
         extension: "",

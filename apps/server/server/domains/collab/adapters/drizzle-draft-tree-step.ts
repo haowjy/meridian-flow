@@ -7,7 +7,7 @@
  * except that the rendered tokens (#420, S2: location version, the live full-state
  * fingerprint, the branch generation) are compared only at the check: staging is the consent
  * boundary and a staged batch is never withdrawn as stale. 5a holds per item, first the draft's own view, then the
- * final live tree to a fixed point (an item waits for what only a held item would free).
+ * live tree, once: an item is blocked by what stands at its row's location now, never by another item.
  * The check refines the payload to the eligible items. `beforeAdmission` then installs: reveals
  * of still-hidden creates and restores of documents deleted live (F9) through placement,
  * each at its row's location, and reports each item's receipt notes.
@@ -110,7 +110,6 @@ export function createDrizzleDraftTreeStep(
       const sourceIds = new Set<ContextSourceId>();
       for (const node of await tree.treeState(payload.draftId, editedIds)) {
         if (!selected.has(node.nodeId)) continue;
-        sourceIds.add(node.live.contextSourceId);
         sourceIds.add(node.target.contextSourceId);
       }
 
@@ -160,28 +159,25 @@ export function createDrizzleDraftTreeStep(
         ];
         const found = await tree.occupancy(LIVE_TREE, slots);
         const occupied = new Map(slots.map((slot, index) => [slot.key, found[index]]));
-        let apply = decided.apply;
         const holds = [...decided.holds];
-        for (;;) {
-          const blocked = apply.flatMap((eligible) => {
-            const at = (needs.get(eligible) ?? []).find((slot) => {
-              const there = occupied.get(slot.key);
-              const staying = there?.documents.some((id) => id !== eligible.node.nodeId);
-              return staying || (slot.target && (there?.folders.length ?? 0) > 0);
-            });
-            return at ? [{ eligible, at }] : [];
+        const apply: Eligible[] = [];
+        for (const eligible of decided.apply) {
+          const at = (needs.get(eligible) ?? []).find((slot) => {
+            const there = occupied.get(slot.key);
+            const staying = there?.documents.some((id) => id !== eligible.node.nodeId);
+            return staying || (slot.target && (there?.folders.length ?? 0) > 0);
           });
-          if (blocked.length === 0) return { kind: "proceed", holds, apply };
-          for (const { eligible, at } of blocked) {
-            holds.push({
-              itemKey: eligible.item.itemKey,
-              ...(eligible.item.draftBranchId ? { documentId: eligible.item.documentId } : {}),
-              reason: draftTreeHold(uriIn(eligible.node, at.path)),
-            });
+          if (!at) {
+            apply.push(eligible);
+            continue;
           }
-          const out = new Set(blocked.map(({ eligible }) => eligible));
-          apply = apply.filter((eligible) => !out.has(eligible));
+          holds.push({
+            itemKey: eligible.item.itemKey,
+            ...(eligible.item.draftBranchId ? { documentId: eligible.item.documentId } : {}),
+            reason: draftTreeHold(uriIn(eligible.node, at.path)),
+          });
         }
+        return { kind: "proceed", holds, apply };
       }
 
       function tokensMoved(
@@ -190,12 +186,7 @@ export function createDrizzleDraftTreeStep(
         branch: BranchSnapshot | null,
       ): boolean {
         // A source outside the planned set isn't locked: the tokens would show it anyway.
-        if (
-          !sourceIds.has(node.live.contextSourceId) ||
-          !sourceIds.has(node.target.contextSourceId)
-        ) {
-          return true;
-        }
+        if (!sourceIds.has(node.target.contextSourceId)) return true;
         // Staging is the consent boundary: what the writer saw is compared only at the check.
         // Later live edits merge as ordinary peer edits and never withdraw an accepted batch.
         if (scope.stage !== "check") return false;

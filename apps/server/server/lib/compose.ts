@@ -24,6 +24,7 @@ import {
   createInMemoryCreditLedger,
 } from "../domains/billing/index.js";
 import { createChangeTrailWorker } from "../domains/collab/adapters/change-trail-worker.js";
+import { createDrizzleWorkDraftPendingStore } from "../domains/collab/adapters/drizzle-branch-push.js";
 import { createDrizzleChangeTrailReader } from "../domains/collab/adapters/drizzle-change-trail-reader.js";
 import { createStaticDocumentLinkScopes } from "../domains/collab/adapters/in-memory/static-document-link-scopes.js";
 import {
@@ -489,6 +490,7 @@ export async function createProductionAppPorts(input: {
     db,
     availability: projectContextAvailability,
     catalog: contextCatalog,
+    pending: createDrizzleWorkDraftPendingStore(db),
   });
   const runClaim = createDrizzleRunClaim(db, {
     holderId: `${process.pid}-${crypto.randomUUID()}`,
