@@ -26,7 +26,7 @@ function map(row: typeof userTurnAdmissions.$inferSelect): AdmissionRecord {
         threadId: row.threadId,
         submissionId: row.submissionId,
         userTurnId: row.userTurnId,
-        assistantTurnId: row.assistantTurnId ?? null,
+        steersTurnId: row.steersTurnId ?? null,
         resumeAfterSeq: row.resumeAfterSeq,
         snapshotFloorNextSeq: row.snapshotFloorNextSeq,
       },
@@ -137,7 +137,7 @@ export function createDrizzleAdmissionRecords(db: Database): AdmissionPersistenc
         if (row.claimExpiresAt > input.now || (await input.hasLiveClaim(input.threadId))) {
           return map(row);
         }
-        const turnIds = [row.userTurnId, row.assistantTurnId].filter(
+        const turnIds = [row.userTurnId, row.steersTurnId].filter(
           (id): id is NonNullable<typeof id> => id !== null,
         );
         if (turnIds.length > 0) {
@@ -186,7 +186,7 @@ export function createDrizzleAdmissionRecords(db: Database): AdmissionPersistenc
         .set({
           state: "accepted",
           userTurnId: input.response.userTurnId,
-          assistantTurnId: input.response.assistantTurnId,
+          steersTurnId: input.response.steersTurnId,
           resumeAfterSeq: input.response.resumeAfterSeq,
           snapshotFloorNextSeq: input.response.snapshotFloorNextSeq,
           claimExpiresAt: null,

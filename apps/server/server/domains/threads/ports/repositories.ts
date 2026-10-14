@@ -43,6 +43,7 @@ import type {
   ThreadPendingInbox,
   ThreadStatus,
   Turn,
+  TurnDelivery,
   TurnOrigin,
   TurnRole,
   TurnStatus,
@@ -236,6 +237,8 @@ export interface CreateThreadInput {
   userId: UserId;
   projectId: ProjectId;
   workId?: WorkId | null;
+  /** No default: every creation path chooses the chat's mode. */
+  aiWriteMode: AiWriteMode;
   kind?: ThreadKind;
   title?: string | null;
   parentThreadId?: ThreadId | null;
@@ -302,6 +305,8 @@ export interface ThreadRepository {
   updateStatus(id: ThreadId, status: ThreadLifecycleStatus): Promise<Thread>;
   /** Persists a writer-authored title and refreshes `updatedAt`; returns the authoritative row. */
   updateTitle(id: ThreadId, title: string): Promise<Thread>;
+  /** Sets the chat's AI write mode; only an applied write-mode switch calls it, under the run claim. */
+  setAiWriteMode(id: ThreadId, mode: AiWriteMode): Promise<void>;
   /** Locks, inserts, and points at the first bake; contenders receive the winner. */
   bakeInitialPrompt(
     id: ThreadId,
@@ -347,6 +352,13 @@ export interface ThreadStatusReader {
    * liveness in SQL. Only live leases appear in the map.
    */
   readMany(threadIds: readonly ThreadId[]): Promise<Map<ThreadId, ThreadLeaseState>>;
+  /**
+   * The open execution's id: the lease row's, regardless of heartbeat expiry,
+   * when some turn carries it as `execution_id`; else null. An empty lease or
+   * one left by code before run identity is never open. Read it inside the
+   * snapshot transaction so it is coherent with the snapshot's turns.
+   */
+  readOpenExecutionId(threadId: ThreadId): Promise<string | null>;
 }
 
 /**
@@ -414,6 +426,10 @@ export interface CreateTurnInput {
   origin: TurnOrigin;
   writeMode?: AiWriteMode | null;
   status?: TurnStatus;
+  /** The execution reserving this turn; write-once, null for turns no execution reserves. */
+  executionId?: string | null;
+  /** The messages the reservation is for; write-once. */
+  reservedForUserTurnIds?: readonly string[] | null;
   requestParams?: JsonValue | null;
   metadata?: JsonValue | null;
 }
@@ -483,6 +499,15 @@ export interface TurnRepository {
   findFirstUnsettledTranscriptTurn(spans: readonly TranscriptSpan[]): Promise<Turn | null>;
   /** Unsettled turns in one claimed thread, ordered by transcript position. */
   listUnsettledForThread(threadId: ThreadId): Promise<Turn[]>;
+  /**
+   * Every turn an execution reserved, ordered by position. Empty for an
+   * execution that reserved nothing, and for ids that are not UUIDs.
+   */
+  listByExecution(threadId: ThreadId, executionId: string): Promise<Turn[]>;
+  /** The first turn the Retry request `replyTurnId` reserved (`metadata.retryReplyId`), or null. */
+  findRetryReservation(threadId: ThreadId, replyTurnId: TurnId): Promise<Turn | null>;
+  /** Each delivered inbox message of the thread with its deliverer (null when unknown). */
+  listMessageDeliveries(threadId: ThreadId): Promise<Map<string, TurnDelivery>>;
   /** Complete epoch boundaries in the supplied transcript spans. */
   listTranscriptBoundaries(spans: readonly TranscriptSpan[]): Promise<Turn[]>;
   /** Bounded global discovery for startup orphan repair, ordered by owner and position. */

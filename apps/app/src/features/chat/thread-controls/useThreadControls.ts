@@ -1,18 +1,24 @@
 /**
- * useThreadControls — the imperative shell around `thread-controls.ts`.
+ * useThreadControls — the imperative shell around `thread-controls.ts`, and the
+ * one list of queued commands the transcript shows.
  *
- * Mints command ids, shows the queued row before the network answers,
- * enqueues and withdraws through the threads API, and asks the snapshot to
- * revalidate so the new state reaches the transcript. Withdraw removes the row
- * at once and, once any in-flight enqueue settles, always asks the server: an
- * enqueue that looked failed may still have landed. A 404 means the server
- * did not have it yet: the local send goes, and the row shows again if the
- * inbox lists it later. Also stops a running compaction
- * divider through the turn cancel route. Announces each state change the
- * writer caused.
+ * `/compact` posts from this hook: it mints the command id, shows the queued
+ * row before the network answers, enqueues and withdraws through the threads
+ * API, and asks the snapshot to revalidate so the new state reaches the
+ * transcript. Withdraw removes the row at once and, once any in-flight enqueue
+ * settles, always asks the server: an enqueue that looked failed may still
+ * have landed. A 404 means the server did not have it yet: the local send
+ * goes, and the row shows again if the inbox lists it later. Also stops a
+ * running compaction divider through the turn cancel route, and announces each
+ * state change the writer caused.
+ *
+ * A write-mode switch is the switch view's (`useSwitchView`): its rows,
+ * Retry, Withdraw and the chat's mode come from there and are listed after the
+ * compaction rows.
  */
 import { t } from "@lingui/core/macro";
-import type { ControlBody, ThreadPendingInbox } from "@meridian/contracts/threads";
+import type { ThreadPendingInbox } from "@meridian/contracts/threads";
+import type { AiWriteMode } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import { httpErrorStatus } from "@/client/api/http-client";
@@ -20,18 +26,24 @@ import { enqueueThreadControl, withdrawThreadControl } from "@/client/api/thread
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { announce, announceError } from "@/client/stores";
 import { useTurnStop } from "../useTurnStop";
-import { controlAlreadyStartedCopy, controlStatusCopy, controlWithdrawnCopy } from "./control-copy";
+import { controlAlreadyStartedCopy, controlStatusCopy, controlStoppedCopy } from "./control-copy";
 import {
+  type CompactControl,
   controlsReducer,
   mergeQueuedControls,
   NO_LOCAL_CONTROLS,
   type QueuedControl,
 } from "./thread-controls";
+import type { SwitchView } from "./useSwitchView";
 
 export type ThreadControls = {
   queued: readonly QueuedControl[];
   stoppingTurnIds: ReadonlySet<string>;
-  enqueue: (control: ControlBody) => string;
+  /** The chat's mode as the writer should see it: the switch view's fold over the server's record. */
+  writeMode: AiWriteMode;
+  enqueue: (control: CompactControl) => string;
+  /** Switch the chat's write mode; the row shows at once and the journal posts it in order. */
+  switchWriteMode: (mode: AiWriteMode) => void;
   retry: (controlId: string) => void;
   withdraw: (control: QueuedControl) => void;
   /** Stop a running compaction divider. */
@@ -41,9 +53,10 @@ export type ThreadControls = {
 export function useThreadControls(input: {
   threadId: string;
   pending: ThreadPendingInbox;
-  answeredControlIds: ReadonlySet<string>;
+  answeredCompactionIds: ReadonlySet<string>;
+  switches: SwitchView;
 }): ThreadControls {
-  const { threadId, pending, answeredControlIds } = input;
+  const { threadId, pending, answeredCompactionIds, switches } = input;
   const [local, dispatch] = useReducer(controlsReducer, NO_LOCAL_CONTROLS);
   const localRef = useRef(local);
   localRef.current = local;
@@ -61,21 +74,17 @@ export function useThreadControls(input: {
   }, [pending]);
 
   const send = useCallback(
-    (id: string, control: ControlBody) => {
+    (id: string, control: CompactControl) => {
       const request = enqueueThreadControl(threadId, { id, control }).then(
         (response) => {
-          dispatch({
-            type: "enqueued",
-            id,
-            pending: response.pending,
-            turnId: response.turnId,
-          });
+          dispatch({ type: "enqueued", id, queued: response.queued });
           revalidate();
         },
         () => {
           dispatch({ type: "enqueue_failed", id });
           // A command the writer already withdrew has no failure to show.
-          if (!localRef.current.withdrawals.has(id)) announceError(controlStatusCopy("failed"));
+          if (!localRef.current.withdrawals.has(id))
+            announceError(controlStatusCopy(control, "failed"));
         },
       );
       inflight.current.set(id, request);
@@ -87,40 +96,41 @@ export function useThreadControls(input: {
   );
 
   const enqueue = useCallback(
-    (control: ControlBody) => {
+    (control: CompactControl) => {
       const id = crypto.randomUUID();
       dispatch({ type: "enqueue", id, control });
-      announce(controlStatusCopy("queued"));
+      announce(controlStatusCopy(control, "queued"));
       send(id, control);
       return id;
     },
     [send],
   );
 
+  const { retry: retrySwitch, withdraw: withdrawSwitch } = switches;
   const retry = useCallback(
     (controlId: string) => {
       const entry = localRef.current.sends.find((candidate) => candidate.id === controlId);
-      if (entry?.request !== "failed") return;
+      if (!entry) return retrySwitch(controlId);
+      if (entry.request !== "failed") return;
       dispatch({ type: "retry", id: controlId });
-      announce(controlStatusCopy("queued"));
+      announce(controlStatusCopy(entry.control, "queued"));
       // Same id: the server treats a repeat as the original request.
       send(controlId, entry.control);
     },
-    [send],
+    [retrySwitch, send],
   );
 
   const withdraw = useCallback(
     (queued: QueuedControl) => {
+      if (queued.control.kind === "write_mode") return withdrawSwitch(queued);
       dispatch({ type: "withdraw", id: queued.id });
-      announce(controlWithdrawnCopy());
-      const settle = () => dispatch({ type: "withdrawn", id: queued.id });
-      const enqueueing = inflight.current.get(queued.id) ?? Promise.resolve();
-      void enqueueing.then(async () => {
+      announce(controlStoppedCopy(queued.control));
+      const withdrawOnServer = async () => {
         try {
           const { outcome } = await withdrawThreadControl(threadId, queued.id);
-          settle();
-          // The row goes either way; the compaction divider shows a started one.
-          if (outcome === "already_started") announce(controlAlreadyStartedCopy());
+          dispatch({ type: "withdrawn", id: queued.id });
+          // The row goes either way; the divider shows a started one.
+          if (outcome === "already_started") announce(controlAlreadyStartedCopy(queued.control));
           revalidate();
         } catch (error) {
           // Not there yet: the send goes, but an enqueue still committing can
@@ -129,11 +139,12 @@ export function useThreadControls(input: {
             return dispatch({ type: "withdraw_not_found", id: queued.id });
           }
           dispatch({ type: "withdraw_failed", id: queued.id });
-          announceError(t`Couldn't withdraw. Try again.`);
+          announceError(t`Couldn't stop. Try again.`);
         }
-      });
+      };
+      void (inflight.current.get(queued.id) ?? Promise.resolve()).then(withdrawOnServer);
     },
-    [revalidate, threadId],
+    [revalidate, threadId, withdrawSwitch],
   );
 
   const { stop: stopTurn } = turnStop;
@@ -146,15 +157,20 @@ export function useThreadControls(input: {
     [stopTurn],
   );
 
-  const queued = useMemo(
-    () =>
-      mergeQueuedControls({
-        local,
-        pending,
-        executedControlIds: answeredControlIds,
-      }),
-    [answeredControlIds, local, pending],
+  const compactRows = useMemo(
+    () => mergeQueuedControls({ local, pending, executedControlIds: answeredCompactionIds }),
+    [answeredCompactionIds, local, pending],
   );
+  const queued = useMemo(() => [...compactRows, ...switches.rows], [compactRows, switches.rows]);
 
-  return { queued, stoppingTurnIds: turnStop.stopping, enqueue, retry, withdraw, stop };
+  return {
+    queued,
+    stoppingTurnIds: turnStop.stopping,
+    writeMode: switches.writeMode,
+    enqueue,
+    switchWriteMode: switches.switchWriteMode,
+    retry,
+    withdraw,
+    stop,
+  };
 }

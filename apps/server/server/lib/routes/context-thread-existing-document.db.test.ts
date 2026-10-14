@@ -114,7 +114,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           createdByUserId: USER_ID,
           name: "Direct",
           slug: "direct",
-          aiWriteMode: "direct",
         },
         {
           id: DRAFT_WORK_ID,
@@ -122,7 +121,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           createdByUserId: USER_ID,
           name: "Draft",
           slug: "draft",
-          aiWriteMode: "draft",
         },
       ]);
       await db.insert(schema.threads).values({
@@ -189,6 +187,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     // A writer overwrite stays live even when the thread drafts model writes.
     it("overwrites an existing document from a draft-mode thread at once", async () => {
       await bindThread(DRAFT_WORK_ID);
+      await db
+        .update(schema.threads)
+        .set({ aiWriteMode: "draft" })
+        .where(eq(schema.threads.id, THREAD_ID));
       const fixture = await createFixture();
       const existingId = await seedExisting(fixture, "target.md");
 

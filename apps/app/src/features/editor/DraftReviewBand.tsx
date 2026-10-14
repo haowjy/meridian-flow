@@ -3,15 +3,19 @@
  * (`DocumentIdentityBar`) rather than a header of their own: the Draft chip with
  * its menu right after the breadcrumb, then, on the right, the stepper, Show
  * changes, Discard draft and Apply draft (the per-change bar's Discard and
- * Apply act on one change; these name their scope). Everything is sized to the row's 22px box, so
- * entering or leaving review moves nothing below it.
+ * Apply act on one change; these name their scope). They sit at the end of the
+ * row's first line or wrap to a second one, so entering or leaving review may
+ * add or remove that line.
  *
  * The list button, left of the stepper, opens this document's own change list
  * (`DocumentChanges`) in a popover under the row, independent of marks
  * visibility. Focusing a row closes it; dispositions leave it open until the
  * last change is handled. Completion stays in the identity row.
  *
- * Collapse priority and invisible phone hit boxes belong to the identity row.
+ * The row lays the two parts out (`children` receives them): the chip beside the
+ * breadcrumb, the controls wrapping to a line of their own when the first is too
+ * narrow for both. Label collapse and invisible phone hit boxes also belong to
+ * the identity row (document-identity-row.css).
  *
  * Refusals the review holds are not here: they need a line of their own and
  * sit under the row (`DraftReviewFailureNotices`).
@@ -20,7 +24,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Check, Eye, EyeOff, List, Loader2, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { PaintCapture } from "@/components/app/PaintHold";
 import { Button } from "@/components/ui/button";
@@ -53,8 +57,18 @@ export type DraftReviewBandProps = {
   onRename?: () => void;
 };
 
-/** Children of the identity row's flex band: the chip, a spacer, the controls. */
-export function DraftReviewBand(props: DraftReviewBandProps) {
+/**
+ * The review's two parts, for the identity row to place: the version chip and
+ * the controls. With an empty `itemKey` (no shown review) there are no parts,
+ * but the wrapper stays mounted so the row beneath it keeps its identity when
+ * a review begins or ends.
+ */
+export function DraftReviewBand({
+  children,
+  ...props
+}: DraftReviewBandProps & {
+  children: (parts: { version: ReactNode; controls: ReactNode }) => ReactNode;
+}) {
   const header = useReviewHeader(props);
   const { controller, view, locked, finished } = header;
   const { status } = view;
@@ -62,10 +76,11 @@ export function DraftReviewBand(props: DraftReviewBandProps) {
   const listed = view.status === "ready" && count > 0;
   // A finger's 44px targets leave no room for every control in a docked row, so the
   // version menu carries Show changes, and the list and stepper give way before
-  // Discard draft and Apply draft do (document-identity-row.css, collapse 5).
+  // Discard draft and Apply draft do (document-identity-row.css, collapse 4).
   const coarse = useCoarsePointer();
+  if (!props.itemKey) return children({ version: null, controls: null });
 
-  return (
+  const version = (
     <>
       <PaintCapture surface={status} state={status === "loading" ? "pending" : "painted"} />
       <DraftSwitcher
@@ -79,83 +94,83 @@ export function DraftReviewBand(props: DraftReviewBandProps) {
             : undefined
         }
       />
-      <span className="identity-spacer min-w-0 flex-1" />
-      <span
-        className="flex shrink-0 items-center gap-1.5 font-sans text-xs"
-        data-draft-review-controls
-      >
-        <ChangeListPopover header={header} />
-        {listed ? (
-          <>
-            <span data-review-secondary className="contents">
-              <ReviewStepper
-                compact
-                count={count}
-                focusedIndex={view.focusedIndex}
-                disabled={false}
-                onStep={view.step}
-              />
-            </span>
-            {coarse ? null : (
-              <ShowChangesToggle
-                visible={controller.marksVisible}
-                onChange={controller.setMarksVisible}
-              />
-            )}
-          </>
-        ) : null}
-        <ReviewStateInline
-          finished={finished}
-          unlisted={header.unlisted}
-          completing={header.completing}
-          next={header.next}
-          draftOnly={header.draftOnly}
-          onOpenNext={header.openDraft}
-          onShowLive={header.showLive}
-        />
-        {finished ? null : (
-          <>
-            <Button
-              variant="quiet"
-              size="xs"
-              className="identity-discard h-5.5"
-              aria-label={t`Discard draft`}
-              disabled={locked}
-              onClick={header.discardDraft}
-            >
-              <Trash2 aria-hidden className="identity-command-icon hidden size-3.5" />
-              <span className="identity-command-label">
-                <Trans>Discard draft</Trans>
-              </span>
-              <span className="identity-command-short hidden">
-                <Trans>Discard</Trans>
-              </span>
-            </Button>
-            <Button
-              size="xs"
-              className="identity-apply h-5.5"
-              aria-label={t`Apply draft`}
-              disabled={locked || !controller.canApplyReviewedDraft}
-              onClick={header.applyDraft}
-            >
-              {controller.isApplying ? (
-                <Loader2 className="size-3 animate-spin" aria-hidden />
-              ) : null}
-              {controller.isApplying ? null : (
-                <Check aria-hidden className="identity-command-icon hidden size-3.5" />
-              )}
-              <span className="identity-command-label">
-                <Trans>Apply draft</Trans>
-              </span>
-              <span className="identity-command-short hidden">
-                <Trans>Apply</Trans>
-              </span>
-            </Button>
-          </>
-        )}
-      </span>
     </>
   );
+  const controls = (
+    <span
+      className="ml-auto flex shrink-0 items-center gap-1.5 font-sans text-xs"
+      data-draft-review-controls
+    >
+      <ChangeListPopover header={header} />
+      {listed ? (
+        <>
+          <span data-review-secondary className="contents">
+            <ReviewStepper
+              compact
+              count={count}
+              focusedIndex={view.focusedIndex}
+              disabled={false}
+              onStep={view.step}
+            />
+          </span>
+          {coarse ? null : (
+            <ShowChangesToggle
+              visible={controller.marksVisible}
+              onChange={controller.setMarksVisible}
+            />
+          )}
+        </>
+      ) : null}
+      <ReviewStateInline
+        finished={finished}
+        unlisted={header.unlisted}
+        completing={header.completing}
+        next={header.next}
+        draftOnly={header.draftOnly}
+        onOpenNext={header.openDraft}
+        onShowLive={header.showLive}
+      />
+      {finished ? null : (
+        <>
+          <Button
+            variant="quiet"
+            size="xs"
+            className="identity-discard h-5.5"
+            aria-label={t`Discard draft`}
+            disabled={locked}
+            onClick={header.discardDraft}
+          >
+            <Trash2 aria-hidden className="identity-command-icon hidden size-3.5" />
+            <span className="identity-command-label">
+              <Trans>Discard draft</Trans>
+            </span>
+            <span className="identity-command-short hidden">
+              <Trans>Discard</Trans>
+            </span>
+          </Button>
+          <Button
+            size="xs"
+            className="identity-apply h-5.5"
+            aria-label={t`Apply draft`}
+            disabled={locked || !controller.canApplyReviewedDraft}
+            onClick={header.applyDraft}
+          >
+            {controller.isApplying ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}
+            {controller.isApplying ? null : (
+              <Check aria-hidden className="identity-command-icon hidden size-3.5" />
+            )}
+            <span className="identity-command-label">
+              <Trans>Apply draft</Trans>
+            </span>
+            <span className="identity-command-short hidden">
+              <Trans>Apply</Trans>
+            </span>
+          </Button>
+        </>
+      )}
+    </span>
+  );
+  return children({ version, controls });
 }
 
 /**

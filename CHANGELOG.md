@@ -181,6 +181,12 @@
 - Draft review stays quick on long chapters and large projects: building changes no longer compares every edit with every other, the file tree only redraws rows that changed, stepping between changes no longer re-anchors every mark, and opening a draft no longer prepares two whole copies of the document nobody reads.
 ### Changed
 
+- Each chat has its own AI write mode (draft or auto-apply). A new chat starts in its Work's last-used mode; subagents, forks and handoffs start in their source chat's mode. Switching one chat leaves the Work's other chats as they are.
+- A switch made while the AI is replying waits for that reply to finish, then takes effect before any message you sent after it. Switching back before it takes effect cancels it.
+- The chat shows where a switch took effect.
+- Switching to auto-apply no longer offers to apply pending changes; they stay in the draft for review.
+- Until the matching app update lands, the current write-mode control fails to switch (this change ships together with it).
+
 - Documents and folders an AI draft creates stay out of your Manuscript, and out of other Works, until you apply them. If you create a document the draft already made, you get that same document, with the draft's text waiting for review. Discarding a draft leaves nothing behind: its new documents and folders are gone and their names are free again. A link to a document that exists only in a draft reads "in a draft" instead of missing. Apply all applies every item in one step, so an interruption never leaves the draft half applied.
 
 - Deleting a chat also clears its unsent and failed messages from this browser. If a chat is deleted elsewhere while you're in it, what you wrote moves to New chat under a note naming the chat.

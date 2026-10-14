@@ -110,6 +110,8 @@ function defaultThread(input: CreateThreadInput): Thread {
     id,
     projectId: input.projectId,
     workId: null,
+    aiWriteMode: input.aiWriteMode,
+    effectiveAiWriteMode: input.aiWriteMode,
     userId: input.userId,
     kind: normalized.kind,
     status: "idle",
@@ -143,6 +145,9 @@ function defaultTurn(input: CreateTurnInput): Omit<Turn, "position"> {
     origin: input.origin,
     writeMode: input.writeMode ?? null,
     status: input.status ?? "pending",
+    executionId: input.executionId ?? null,
+    reservedForUserTurnIds: [...(input.reservedForUserTurnIds ?? [])],
+    delivery: null,
     promptBakeId: input.promptBakeId ?? null,
     compactionModel: input.compactionModel ?? null,
     parentTurnId: input.prevTurnId ?? null,
@@ -443,6 +448,16 @@ export function createInMemoryRepositories(
       };
       threads.set(id, updated);
       return projectThread(updated);
+    },
+    async setAiWriteMode(id, mode) {
+      const thread = threads.get(id);
+      if (!thread) throw new Error(`Thread not found: ${id}`);
+      threads.set(id, {
+        ...thread,
+        aiWriteMode: mode,
+        effectiveAiWriteMode: mode,
+        updatedAt: toIsoString(new Date()),
+      });
     },
     async bakeInitialPrompt(id, input) {
       const thread = threads.get(id);
@@ -796,6 +811,31 @@ export function createInMemoryRepositories(
         ),
       );
       return matches.sort((left, right) => left.position - right.position)[0] ?? null;
+    },
+    async listByExecution(threadId, executionId) {
+      return orderTurnsByPosition(
+        [...turns.values()].filter(
+          (turn) => turn.threadId === threadId && turn.executionId === executionId,
+        ),
+      );
+    },
+    async findRetryReservation(threadId, replyTurnId) {
+      return (
+        orderTurnsByPosition(
+          [...turns.values()].filter(
+            (turn) =>
+              turn.threadId === threadId &&
+              typeof turn.metadata === "object" &&
+              turn.metadata !== null &&
+              !Array.isArray(turn.metadata) &&
+              turn.metadata.retryReplyId === replyTurnId,
+          ),
+        )[0] ?? null
+      );
+    },
+    // The in-memory inbox lives in the runtime adapter; deliveries read as unknown.
+    async listMessageDeliveries() {
+      return new Map();
     },
     async listUnsettledForThread(threadId) {
       return orderTurnsByPosition(

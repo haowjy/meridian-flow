@@ -6,6 +6,7 @@
 
 import type { PromptBakeId, ThreadId } from "../runtime/ids.js";
 import type { AiWriteMode } from "../works/index.js";
+import type { ControlBody } from "./control-body.js";
 import type {
   PrefixCachePredictionReason,
   PrefixCachePredictionState,
@@ -157,16 +158,45 @@ export type ThreadActivity = {
  */
 export type MessageIntent = "message" | "notice" | "control";
 
-/** Runtime commands take their transcript position at execution, not enqueue. */
-export type ControlBody = { kind: "compact"; instructions?: string };
+export {
+  type ControlBody,
+  compactControlBodySchema,
+  controlBodySchema,
+  writeModeControlBodySchema,
+} from "./control-body.js";
 export type EnqueueThreadControlRequest = { id: string; control: ControlBody };
+/**
+ * The answer to a control request, read in one transaction under the thread
+ * lock. `seq` is the thread's journal head (the last frame seq the socket
+ * carries, the same space as the snapshot's `nextSeq - 1`) at that read; the
+ * switch state it reports is exactly the state after every frame at or below
+ * it. Only switch transitions need that lock, so later frames at higher
+ * seqs can change the switch state only by being later switch transitions.
+ *
+ * `queued` answers for this request alone; `pending` describes the chat.
+ */
 export type EnqueueThreadControlResponse = {
   id: string;
+  /** This control is still waiting in the inbox (not started, cancelled out or withdrawn). */
+  queued: boolean;
+  /** The thread's queued write-mode switch (not necessarily this request's row), or null. */
   pending: PendingInboxItem | null;
   turnId: string | null;
+  /** Decimal string of the journal head at the read. */
+  seq: string;
+  /** The thread's applied write mode at the same read. */
+  mode: AiWriteMode;
 };
 export type WithdrawThreadControlResponse = {
   outcome: "withdrawn" | "already_started";
+  /** The withdrawn control is still waiting in the inbox: false after either outcome. */
+  queued: boolean;
+  /** The thread's queued write-mode switch after the withdrawal, or null. */
+  pending: PendingInboxItem | null;
+  /** The thread's applied write mode at the same read. */
+  mode: AiWriteMode;
+  /** Decimal string of the journal head at the read; same clock as the enqueue answer. */
+  seq: string;
 };
 
 /** Who authored a durable inbox message. JSON-natural; ids are plain strings at the wire. */
@@ -230,6 +260,8 @@ export type JournalEventType =
   | "turn.completed"
   | "turn.cancelled"
   | "turn.error"
+  | "messages.delivered" // PRODUCED NOW — inbox ack of message rows, with the delivering turn
+  | "execution.ended" // PRODUCED NOW — one run-lease hold ended after its turns went terminal
   | "interrupt.created"
   | "interrupt.resolved"
   | "interrupt.expired"
@@ -291,6 +323,10 @@ export interface Thread {
   projectId: string;
   /** Work item this thread belongs to; null when ungrouped. */
   workId: string | null;
+  /** The chat's own write mode, copied at creation from the request or its Work's default. */
+  aiWriteMode: AiWriteMode;
+  /** The mode the chat writes in next: a queued mode switch's mode, else `aiWriteMode`. */
+  effectiveAiWriteMode: AiWriteMode;
   userId: string;
   kind: ThreadKind;
   status: ThreadLifecycleStatus;
@@ -350,6 +386,9 @@ export type TurnUsage = {
   responseCount: number;
 };
 
+/** A delivered message's acknowledgement; write-once. */
+export type TurnDelivery = { byTurnId: string | null };
+
 /** JSON-natural turn with nested blocks for snapshots and UI. */
 export interface Turn {
   id: string;
@@ -364,6 +403,23 @@ export interface Turn {
   /** Write policy frozen when this turn began; null identifies pre-contract turns. */
   writeMode: AiWriteMode | null;
   status: TurnStatus;
+  /**
+   * The execution (one run-lease hold) that reserved this turn. Null on turns no
+   * execution reserves (user, switch, notice, handoff seed) and on turns
+   * reserved before run identity.
+   */
+  executionId: string | null;
+  /**
+   * The messages (= user turn ids) this turn was reserved to handle; a Retry
+   * carries its failed reply's. A binding and Stop hint, never proof of delivery.
+   */
+  reservedForUserTurnIds: string[];
+  /**
+   * On a user turn whose inbox message was delivered: the delivering turn, or
+   * null when unknown (delivered before run identity, or by no reserved turn).
+   * Null while undelivered and on every other turn.
+   */
+  delivery: TurnDelivery | null;
   /** Set once on a completed prompt-epoch boundary. */
   promptBakeId: PromptBakeId | null;
   compactionModel?: string | null;

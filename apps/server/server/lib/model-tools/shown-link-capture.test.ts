@@ -631,7 +631,11 @@ const rows: Array<{
     name: "a result whose persistence fails leaves no evidence",
     async act(check) {
       const h = await harness();
-      const thread = await h.repos.threads.create({ projectId: PROJECT, userId: USER });
+      const thread = await h.repos.threads.create({
+        aiWriteMode: "direct",
+        projectId: PROJECT,
+        userId: USER,
+      });
       const turn = await h.repos.turns.create({
         threadId: thread.id,
         role: "assistant",

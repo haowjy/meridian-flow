@@ -145,7 +145,7 @@ export function CompactionDivider({ turn, stopping, onStop }: CompactionDividerP
           </span>
         ) : null}
 
-        <span aria-hidden className="h-px min-w-3 flex-1 bg-border" />
+        <DividerRule />
       </div>
 
       {view.instructions ? <CompactionInstructions instructions={view.instructions} /> : null}
@@ -211,7 +211,12 @@ function DividerLabel({ label, className }: { label: StateLabel; className: stri
   );
 }
 
-function DividerMark({ state, loud }: { state: DividerView["state"]; loud: boolean }) {
+/** The rule that runs out from a divider's words. */
+export function DividerRule() {
+  return <span aria-hidden className="h-px min-w-3 flex-1 bg-border" />;
+}
+
+export function DividerMark({ state, loud }: { state: DividerView["state"]; loud: boolean }) {
   if (state === "pending") return <span aria-hidden className="streaming-dot mx-1" />;
   if (loud) return <CircleAlert aria-hidden className="size-3.5 shrink-0 text-destructive" />;
   return <FoldVertical aria-hidden className="size-3.5 shrink-0 text-ink-subtle" />;

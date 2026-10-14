@@ -36,8 +36,8 @@ import {
 
 /**
  * A Work as the handler returns it; `renderWorkResult` decides what the model
- * reads. Write mode and pending changes use the writer's words (draft mode,
- * auto-apply), as the work context does.
+ * reads. Pending changes use the writer's words. A Work has no write mode of
+ * its own: the chat's mode is in its work context (D62).
  */
 function modelWork(work: Work): ModelWork {
   const { slug, name, goal, status, archivedAt, createdAt, updatedAt, lastActivityAt } = work;
@@ -47,7 +47,6 @@ function modelWork(work: Work): ModelWork {
     goal,
     status,
     archivedAt,
-    writes: work.aiWriteMode === "draft" ? "draft mode" : "auto-apply",
     createdAt,
     updatedAt,
     lastActivityAt,

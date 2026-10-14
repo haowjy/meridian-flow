@@ -103,8 +103,8 @@ no scheme whitelist; each row opens its own location.
 ## Rich-only paragraph changes (CLI and visual)
 
 With this worktree's mock stack running, seed `## Scene` followed by
-`The red gate opens.`. Create a named Work, set its `aiWriteMode` to `draft`,
-and bind a thread to it. Through `./mf thread send --mock`, read the document,
+`The red gate opens.`. Create a named Work and a thread bound to it with
+`aiWriteMode: "draft"` in the create body. Through `./mf thread send --mock`, read the document,
 then replace its two blocks with `### Scene` and `The **red** gate opens.`.
 Use tool `path` arguments, not the agent-edit core's internal `file` name.
 
@@ -234,10 +234,11 @@ for ~200ms).
 2. With the Manuscript tree mounted, have the agent write a new document in
    auto-apply mode. PASS: the tree shows the document within ~5s of turn end
    with no navigation or reload.
-3. With the Work holding no pending changes (no strip, no Changes to review
-   group), the Draft → Auto-apply switch
-   must not warn about phantom pending changes (and must be disabled until
-   the drafts query has settled).
+3. With drafts pending, switch the chat to auto-apply through its controls
+   queue (`./mf api POST /api/threads/$T/controls --data
+   '{"id":"<uuid>","control":{"kind":"write_mode","mode":"direct"}}'`).
+   PASS: the answer has a `turnId`, the Work's drafts list is unchanged, and
+   the chat's next write lands live.
 
 ## Probe E — cold load and reload of a draft-only review
 
@@ -716,7 +717,7 @@ Use only your own stack. Start `MODEL_PROVIDER=mock pnpm dev`, discover routes
 with `pnpm portless:list`, and use `./mf` for fixtures and API actions. Do not
 reuse another worktree's project, database, thread or browser session.
 
-1. Create a Work and thread. Set its write mode to `draft`. Seed two manuscript
+1. Create a Work and a draft-mode thread. Seed two manuscript
    documents using `./mf doc put`: `Seed.` and `Alpha Beta.`. Use a scripted
    mock read/write/text reply for each fixture, not free-form generated prose:
    insert `Added once.` in the first; replace `Beta` with `Gamma` in the second.
@@ -914,11 +915,11 @@ smoke verification.
 ## Review commands against a replying model (browser, mock stack)
 
 The chat strip is disabled while a reply is still writing, and the Work page's Apply all and Discard all keep
-working. Use a Work in `aiWriteMode: draft` and an owned project, and drive both pages in `agent-browser` (desktop
-1440x900). `./mf` only sets up the Work, a thread bound to it and the scripted turns, and reads durable state (`doc
-read`, the drafts list, `thread view`) after each click. Per-change controls on the rows stay locked while a reply
-streams; this recipe does not cover them. Strip commands during a reply come with the review rework
-(`diff-based-review`, ruling W4).
+working. Use a draft-mode chat in a Work (`aiWriteMode: "draft"` at thread creation) and an owned project, and drive
+both pages in `agent-browser` (desktop 1440x900). `./mf` only sets up the Work, a thread bound to it and the scripted
+turns, and reads durable state (`doc read`, the drafts list, `thread view`) after each click. Per-change controls on
+the rows stay locked while a reply streams; this recipe does not cover them. Strip commands during a reply come with
+the review rework (`diff-based-review`, ruling W4).
 
 **Holding a reply mid-write.** A reply saves once per model response, after all of that response's tools have
 run, so the mock's `delayMs` (which delays the model, not the tools) cannot hold it. Send one response with 120 to

@@ -1,10 +1,16 @@
 /** Owns a thread run from submission through transport recovery. */
 import {
+  type AGUIEvent,
+  type CancelTurnResponse,
   EventType,
+  EXECUTION_ENDED_EVENT,
+  MESSAGES_DELIVERED_EVENT,
+  parseSeq,
   type SubmittedReference,
+  type ThreadSnapshotResponse,
   type UserMessageBlock,
 } from "@meridian/contracts/protocol";
-import type { JsonValue } from "@meridian/contracts/threads";
+import type { JsonValue, ThreadPendingInbox } from "@meridian/contracts/threads";
 import { HttpResponseError } from "@/client/api/http-client";
 import { isMeridianApiError } from "@/client/api/meridian-error";
 import {
@@ -22,6 +28,22 @@ import { announceError } from "@/client/stores";
 import type { InterruptResponseState } from "@/core/session/interrupt-response";
 import { applyAguiEventToStore, isDurableBlockEvent } from "@/core/session/reduce-turn-event";
 import type { InterruptRespondInput, ThreadTransport } from "@/core/transport";
+import {
+  EMPTY_THREAD_PENDING_INBOX,
+  owedWriterMessageIds,
+  pendingInboxFromEvent,
+} from "@/features/chat/pending-inbox";
+import {
+  EMPTY_RUN_FACTS,
+  INITIAL_RUN_FOLLOW,
+  isBound,
+  type RunFacts,
+  type RunFollow,
+  type RunFollowInput,
+  type RunFollowView,
+  stepRunFollow,
+  viewRunFollow,
+} from "./run-follow";
 import { StreamDeltaCoalescer } from "./stream-delta-coalescer";
 
 type AppendUserMessageFn = typeof appendUserMessage;
@@ -29,13 +51,14 @@ type LookupAdmissionFn = typeof lookupUserMessageAdmission;
 type RetireAdmissionFn = typeof retireUserMessageAdmission;
 
 type GetThreadSnapshotFn = typeof getThreadSnapshot;
-type DeserializedThreadSnapshot = ReturnType<typeof deserializeThreadSnapshot>;
 
-export type SubscribeLiveOptions = {
-  /** Server-side cursor: last event seq the client has already incorporated. */
-  after?: string;
-  /** Server-assigned assistant turn id; stale same-thread events for other runs are ignored. */
-  expectedTurnId?: string;
+/** Attach to the open execution a settled snapshot shows. */
+export type AttachOptions = {
+  executionId: string;
+  /** Server-side cursor: last event seq the snapshot already incorporated. */
+  after: string;
+  /** The reply streaming at the snapshot, which un-addressed stream deltas belong to. */
+  runningTurnId?: string | null;
 };
 
 export type SubmitOptions = {
@@ -64,6 +87,17 @@ export type SubmissionOutcome = {
   submissionId: string;
 };
 
+/**
+ * What the composer reads: the controller follows work for this chat
+ * (`following`), and none of it runs yet (`waiting`: messages are owed, but no
+ * execution that took one on is running).
+ */
+export type RunFollowStatus = { following: boolean; waiting: boolean };
+
+const SETTLED: RunFollowStatus = { following: false, waiting: false };
+const RUNNING: RunFollowStatus = { following: true, waiting: false };
+const WAITING: RunFollowStatus = { following: true, waiting: true };
+
 type SessionFence = () => boolean;
 
 /** A refusal proves rejection; transport, server errors and pending admissions do not. */
@@ -87,14 +121,36 @@ export type ThreadRunControllerOptions = {
   accountId: string;
 };
 
-type ActiveRun = {
-  threadId: string;
+/** The live stream feeding the store while a thread is unsettled. */
+type Subscription = {
   token: number;
-  turnId?: string;
+  /** The reply un-addressed stream deltas belong to (one run claim per thread). */
+  streamTurn?: string;
+  /**
+   * The seq `streamTurn` was observed at. A late HTTP snapshot is read before
+   * newer starts and ends this stream already applied, so it must not move it.
+   */
+  streamSeq: string | null;
   unsubscribe?: () => void;
-  dispose?: () => void;
-  flush?: () => void;
-  splitBoundaryPending?: boolean;
+  dispose: () => void;
+  flush: () => void;
+};
+
+/**
+ * One thread's follow: the pure rule's state plus where its obligations come
+ * from. What binds, what Stop targets and when it settles is `run-follow.ts`.
+ */
+type Follow = {
+  threadId: string;
+  rule: RunFollow;
+  /** `viewRunFollow(rule)`, recomputed only when `step` changes the rule (stream deltas read it). */
+  view: RunFollowView;
+  /** The latest pending projection's writer messages, and the seq it was read at. */
+  pending: { ids: readonly string[]; seq: string | null };
+  /** Admitted messages no pending projection has shown yet (it will, before delivering them). */
+  admitted: Set<string>;
+  status: RunFollowStatus;
+  subscription: Subscription | null;
 };
 
 function waitForSnapshotRetry(signal: AbortSignal): Promise<void> {
@@ -118,6 +174,38 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
+function isRunIdentityEvent(event: AGUIEvent): boolean {
+  return (
+    event.type === EventType.CUSTOM &&
+    (event.name === MESSAGES_DELIVERED_EVENT || event.name === EXECUTION_ENDED_EVENT)
+  );
+}
+
+/** True when `seq` is older than `than`; an unparseable seq is never older. */
+function isOlderSeq(seq: string | null, than: string | null): boolean {
+  if (seq === null || than === null) return false;
+  const a = parseSeq(seq);
+  const b = parseSeq(than);
+  return a !== null && b !== null && BigInt(a) < BigInt(b);
+}
+
+/**
+ * Point un-addressed deltas at `turnId` as of `seq`, unless this stream already
+ * observed a newer start or end. `onlyIfUnset` keeps a hint from replacing a
+ * known reply.
+ */
+function routeStream(
+  subscription: Subscription,
+  turnId: string | undefined,
+  seq: string | null,
+  onlyIfUnset = false,
+): void {
+  if (onlyIfUnset && subscription.streamTurn !== undefined) return;
+  if (isOlderSeq(seq, subscription.streamSeq)) return;
+  subscription.streamTurn = turnId;
+  if (seq !== null) subscription.streamSeq = seq;
+}
+
 export class ThreadRunController {
   private readonly transport: ThreadTransport;
   private readonly actions: ThreadStoreActions;
@@ -130,11 +218,10 @@ export class ThreadRunController {
   private disposed = false;
   private activationGeneration = 0;
 
-  private activeRun: ActiveRun | null = null;
-  private leaseTail: Promise<void> = Promise.resolve();
+  private readonly follows = new Map<string, Follow>();
+  private readonly listeners = new Set<() => void>();
   private recoverySessions = new Set<object>();
-  private abortRequested = false;
-  private runToken = 0;
+  private subscriptionToken = 0;
   private readonly gapSnapshotsByThreadId = new Map<
     string,
     { token: number; promise: Promise<void>; abort: AbortController }
@@ -225,61 +312,41 @@ export class ThreadRunController {
     const signal = AbortSignal.any([this.accountSignal, options.signal]);
     const current = () => fence() && !signal.aborted;
     if (!current()) return outcome("abandoned");
-    const previous = this.leaseTail;
-    let release!: () => void;
-    const completed = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    this.leaseTail = previous.then(() => completed);
+    let result: Awaited<ReturnType<AppendUserMessageFn>>;
     try {
-      await abortable(previous, signal);
-    } catch {
-      release();
-      return outcome("abandoned");
-    }
-    if (!current()) {
-      release();
-      return outcome("abandoned");
-    }
-    try {
-      let result: Awaited<ReturnType<AppendUserMessageFn>>;
-      try {
-        result = await abortable(
-          this.appendUserMessageFn({
-            data: {
-              threadId,
-              submissionId: envelope.submissionId,
-              text: envelope.text,
-              blocks: envelope.blocks,
-              references: envelope.references,
-              activatedSkillSlugs: envelope.activatedSkillSlugs,
-            },
-            signal,
-          }),
+      result = await abortable(
+        this.appendUserMessageFn({
+          data: {
+            threadId,
+            submissionId: envelope.submissionId,
+            text: envelope.text,
+            blocks: envelope.blocks,
+            references: envelope.references,
+            activatedSkillSlugs: envelope.activatedSkillSlugs,
+          },
           signal,
-        );
-      } catch (error) {
-        if (!current()) return outcome("abandoned");
-        const availability = threadAvailability(error, this.accountId);
-        if (availability === "deleted" || availability === "project-deleted")
-          return outcome(availability);
-        if (classifyWriteFailure(error) === "rejected") {
-          return outcome("rejected");
-        }
-        return outcome("ambiguous");
-      }
-      if (!current()) return outcome("abandoned");
-      this.actions.acknowledgeUserTurn(
-        threadId,
-        options.optimisticUserTurnId,
-        result.userTurnId,
-        result.snapshotFloorNextSeq,
+        }),
+        signal,
       );
-      this.attachAcceptedRun(threadId, result);
-      return outcome("accepted");
-    } finally {
-      release();
+    } catch (error) {
+      if (!current()) return outcome("abandoned");
+      const availability = threadAvailability(error, this.accountId);
+      if (availability === "deleted" || availability === "project-deleted")
+        return outcome(availability);
+      if (classifyWriteFailure(error) === "rejected") {
+        return outcome("rejected");
+      }
+      return outcome("ambiguous");
     }
+    if (!current()) return outcome("abandoned");
+    this.actions.acknowledgeUserTurn(
+      threadId,
+      options.optimisticUserTurnId,
+      result.userTurnId,
+      result.snapshotFloorNextSeq,
+    );
+    this.attachAcceptedRun(threadId, result);
+    return outcome("accepted");
   }
 
   /** Reconcile a durable journal entry. */
@@ -350,10 +417,52 @@ export class ThreadRunController {
     return outcome("ambiguous");
   }
 
-  resume(threadId: string, options: SubscribeLiveOptions = {}): void {
+  /**
+   * Follow the open execution a snapshot shows. Only while settled: an
+   * unsettled thread already follows what its owed messages need, and a Stop
+   * waiting there must not land on attached work.
+   */
+  attach(threadId: string, options: AttachOptions): void {
     if (this.disposed || this.accountSignal.aborted) return;
-    const token = this.startRun(threadId);
-    this.attachLiveSubscription(threadId, token, options);
+    const follow = this.followFor(threadId);
+    // The rule refuses the attach while unsettled; the step still reopens a lost stream.
+    this.step(follow, { kind: "attach", executionId: options.executionId }, options.after);
+    if (follow.subscription && options.runningTurnId)
+      routeStream(follow.subscription, options.runningTurnId, options.after, true);
+  }
+
+  /** Merge a durable snapshot's facts and pending projection (the mounted snapshot owner's feed). */
+  observeSnapshot(threadId: string, snapshot: ThreadSnapshotResponse): void {
+    if (this.disposed || this.accountSignal.aborted) return;
+    const follow = this.followFor(threadId);
+    this.mergeSnapshot(follow, snapshot);
+  }
+
+  /** Merge a live `meridian.inbox.changed` projection read at `seq`. */
+  observePending(threadId: string, pending: ThreadPendingInbox, seq: string): void {
+    if (this.disposed || this.accountSignal.aborted) return;
+    this.mergePending(this.followFor(threadId), pending, seq);
+  }
+
+  /**
+   * The run identity facts this controller has merged for a thread (stream and
+   * snapshots); a new value only when they change, for `useSyncExternalStore`.
+   */
+  runFacts(threadId: string): RunFacts {
+    return this.follows.get(threadId)?.rule.facts ?? EMPTY_RUN_FACTS;
+  }
+
+  /** The composer's view of this thread's follow; stable per state for `useSyncExternalStore`. */
+  runFollowStatus(threadId: string): RunFollowStatus {
+    return this.follows.get(threadId)?.status ?? SETTLED;
+  }
+
+  /** Called when any thread's follow status or run facts change. */
+  subscribeRunFollow(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
   }
 
   respondInterrupt(input: InterruptRespondInput): InterruptResponseState {
@@ -394,46 +503,47 @@ export class ThreadRunController {
     });
   }
 
+  /** The composer's Stop: cancel the rule's target, or wait for work on what is owed now. */
   cancel(threadId: string): void {
-    const activeRun = this.activeRun;
-    if (!activeRun || activeRun.threadId !== threadId) return;
-
-    // The server-assigned turn id may not exist until RUN_STARTED arrives.
-    // Keep the abort request sticky for this active run so an early Stop click
-    // is not lost while the HTTP append/subscription handshake is still racing.
-    this.abortRequested = true;
-    if (!activeRun.turnId) return;
-
-    this.abortRequested = false;
-    this.requestCancel(activeRun.threadId, activeRun.turnId);
+    const follow = this.follows.get(threadId);
+    if (!follow) return;
+    this.step(follow, { kind: "stop" });
   }
 
   teardown(threadId?: string): void {
-    if (threadId && this.activeRun?.threadId !== threadId) return;
-    this.runToken += 1;
-    this.cleanupActiveRun();
+    for (const follow of [...this.follows.values()]) {
+      if (threadId && follow.threadId !== threadId) continue;
+      this.closeSubscription(follow);
+      this.follows.delete(follow.threadId);
+      // Its status reads as settled and its facts as empty from here.
+      this.notify();
+    }
   }
 
+  /**
+   * The lock-holding tab's admission. The message is pending at this point,
+   * and the stream from `resumeAfterSeq` carries the projection that shows it;
+   * `steersTurnId` is the reply it was steered into, a Stop hint.
+   */
   private attachAcceptedRun(
     threadId: string,
-    result: { assistantTurnId: string | null; resumeAfterSeq: string },
+    result: { userTurnId: string; steersTurnId: string | null; resumeAfterSeq: string },
   ): void {
-    if (result.assistantTurnId && this.isAttachedToRun(threadId, result.assistantTurnId)) return;
-    const token = this.startRun(threadId, {
-      pruneAbandonedTurn: result.assistantTurnId == null,
-    });
-    this.attachLiveSubscription(threadId, token, {
-      after: result.resumeAfterSeq,
-      ...(result.assistantTurnId ? { expectedTurnId: result.assistantTurnId } : {}),
-    });
-  }
-
-  private isAttachedToRun(threadId: string, assistantTurnId: string): boolean {
-    const activeRun = this.activeRun;
-    if (!activeRun || activeRun.threadId !== threadId || !activeRun.unsubscribe) return false;
-    // Before RUN_STARTED the client's turn id is unknown; the subscription will
-    // publish it. Once known, it must match the run the server reports.
-    return activeRun.turnId === undefined || activeRun.turnId === assistantTurnId;
+    if (this.disposed || this.accountSignal.aborted) return;
+    const follow = this.followFor(threadId);
+    // Only a fresh send onto an idle follow proves an earlier non-terminal
+    // assistant row is abandoned; a live subscription still owns its rows.
+    if (!follow.subscription && result.steersTurnId === null)
+      this.actions.pruneStaleAssistantTurns(threadId);
+    if (!follow.rule.facts.deliveries.has(result.userTurnId)) {
+      follow.admitted.add(result.userTurnId);
+      this.step(follow, this.obligationsInput(follow), result.resumeAfterSeq);
+    }
+    if (result.steersTurnId) {
+      this.step(follow, { kind: "steer", turnId: result.steersTurnId }, result.resumeAfterSeq);
+      if (follow.subscription)
+        routeStream(follow.subscription, result.steersTurnId, result.resumeAfterSeq, true);
+    }
   }
 
   /** Release controller-lifetime subscriptions (provider unmount). */
@@ -449,180 +559,211 @@ export class ThreadRunController {
     this.unsubscribeSocketGenerationClosed = null;
   }
 
-  private startRun(threadId: string, options: { pruneAbandonedTurn?: boolean } = {}): number {
-    this.runToken += 1;
-    this.cleanupActiveRun();
-    if (options.pruneAbandonedTurn) {
-      // Only a fresh user submit proves the previous non-terminal assistant row
-      // is abandoned. Resume/reconnect must preserve the same live row.
-      this.actions.pruneStaleAssistantTurns(threadId);
-    }
-    this.abortRequested = false;
-    this.activeRun = { threadId, token: this.runToken };
-    return this.runToken;
+  flushPendingDeltas(threadId: string): void {
+    if (!this.accountSignal.aborted) this.follows.get(threadId)?.subscription?.flush();
   }
 
-  private attachLiveSubscription(
-    threadId: string,
-    token: number,
-    { after, expectedTurnId }: SubscribeLiveOptions,
-  ): void {
-    if (!this.isActiveToken(token)) return;
+  private followFor(threadId: string): Follow {
+    let follow = this.follows.get(threadId);
+    if (!follow) {
+      follow = {
+        threadId,
+        rule: INITIAL_RUN_FOLLOW,
+        view: viewRunFollow(INITIAL_RUN_FOLLOW),
+        pending: { ids: [], seq: null },
+        admitted: new Set(),
+        status: SETTLED,
+        subscription: null,
+      };
+      this.follows.set(threadId, follow);
+    }
+    return follow;
+  }
 
-    let disposed = false;
-    let awaitingSplitStart = false;
-    let splitFinishTimer: ReturnType<typeof setTimeout> | undefined;
-    let currentExpectedTurnId = expectedTurnId;
-    // One frame boundary for the whole run: append-only text/reasoning deltas
+  private obligationsInput(follow: Follow): RunFollowInput {
+    for (const id of follow.admitted)
+      if (follow.pending.ids.includes(id) || follow.rule.facts.deliveries.has(id))
+        follow.admitted.delete(id);
+    return { kind: "obligations", userTurnIds: [...follow.pending.ids, ...follow.admitted] };
+  }
+
+  private mergePending(follow: Follow, pending: ThreadPendingInbox, seq: string | null): void {
+    if (isOlderSeq(seq, follow.pending.seq)) return;
+    follow.pending = { ids: owedWriterMessageIds(pending), seq };
+    this.step(follow, this.obligationsInput(follow), seq ?? undefined);
+  }
+
+  private mergeSnapshot(follow: Follow, snapshot: ThreadSnapshotResponse): void {
+    const { liveState } = snapshot;
+    this.step(follow, { kind: "snapshot", snapshot }, liveState.resumeAfterSeq);
+    this.mergePending(
+      follow,
+      liveState.pending ?? EMPTY_THREAD_PENDING_INBOX,
+      liveState.resumeAfterSeq,
+    );
+    // The snapshot's facts merge whatever its age; its running reply routes
+    // deltas only when the stream has seen nothing newer.
+    if (follow.subscription && liveState.runningTurnId)
+      routeStream(follow.subscription, liveState.runningTurnId, liveState.resumeAfterSeq);
+  }
+
+  /**
+   * Apply one rule input, then act on it: send the cancel it names, open the
+   * stream (from `after`) while unsettled, close it once settled.
+   */
+  private step(follow: Follow, input: RunFollowInput, after?: string): void {
+    const { follow: rule, cancel } = stepRunFollow(follow.rule, input);
+    const factsChanged = rule.facts !== follow.rule.facts;
+    if (rule !== follow.rule) {
+      follow.rule = rule;
+      follow.view = viewRunFollow(rule);
+    }
+    const { view } = follow;
+    if (cancel) this.requestCancel(follow, cancel);
+    if (view.settled) this.closeSubscription(follow);
+    else if (!follow.subscription && after !== undefined) this.openSubscription(follow, after);
+    const status = view.settled ? SETTLED : view.running.size > 0 ? RUNNING : WAITING;
+    const statusChanged = follow.status !== status;
+    follow.status = status;
+    if (statusChanged || factsChanged) this.notify();
+  }
+
+  private notify(): void {
+    for (const listener of [...this.listeners]) listener();
+  }
+
+  private openSubscription(follow: Follow, after: string): void {
+    const { threadId } = follow;
+    const token = ++this.subscriptionToken;
+    const live = () =>
+      !this.disposed && !this.accountSignal.aborted && follow.subscription?.token === token;
+    // One frame boundary for the stream: append-only text/reasoning deltas
     // coalesce into a single store update; everything else flushes first.
     const coalescer = new StreamDeltaCoalescer((event) => {
-      if (disposed || this.accountSignal.aborted || !this.isActiveToken(token)) return;
-      applyAguiEventToStore(this.actions, threadId, event);
+      if (live()) applyAguiEventToStore(this.actions, threadId, event);
     });
-    const markDisposed = () => {
-      if (splitFinishTimer) clearTimeout(splitFinishTimer);
-      if (!this.accountSignal.aborted) coalescer.flush();
-      disposed = true;
-    };
-
-    this.activeRun = {
-      ...this.activeRun,
-      threadId,
+    let lastPushedTurn: string | undefined;
+    const subscription: Subscription = {
       token,
-      turnId: expectedTurnId,
-      dispose: markDisposed,
-      flush: () => {
-        if (!disposed && !this.accountSignal.aborted) coalescer.flush();
+      streamSeq: after,
+      dispose: () => {
+        if (!this.accountSignal.aborted) coalescer.flush();
       },
+      flush: () => {
+        if (live()) coalescer.flush();
+      },
+    };
+    follow.subscription = subscription;
+    const push = (turnId: string, event: AGUIEvent) => {
+      // Flush the previous reply before the next enters the durable snapshot owner.
+      if (lastPushedTurn !== undefined && lastPushedTurn !== turnId) coalescer.flush();
+      lastPushedTurn = turnId;
+      coalescer.push(event);
     };
 
     const unsubscribe = this.transport.subscribe(
       threadId,
       {
-        onEvent: ({ event, error, sourceThreadId }) => {
-          if (disposed || this.accountSignal.aborted || !this.isActiveToken(token)) return;
+        onEvent: ({ event, error, seq, sourceThreadId }) => {
+          if (!live()) return;
           if (sourceThreadId && sourceThreadId !== threadId) return;
           const effectiveEvent =
             event.type === EventType.RUN_ERROR && error
               ? { ...event, message: error.message }
               : event;
-          // Same-thread replays can contain events from a superseded run; the
-          // runId check is intentionally limited to events that carry runId so
-          // vocabulary events without run identity still pass through unchanged.
-          if (
-            currentExpectedTurnId &&
-            "runId" in effectiveEvent &&
-            effectiveEvent.runId !== currentExpectedTurnId &&
-            !(awaitingSplitStart && effectiveEvent.type === EventType.RUN_STARTED)
-          )
-            return;
-
           if (isDurableBlockEvent(effectiveEvent)) return;
-
-          if (currentExpectedTurnId && effectiveEvent.type !== EventType.RUN_STARTED) {
-            this.actions.ensureAssistantTurn(threadId, currentExpectedTurnId);
+          const pending = pendingInboxFromEvent(effectiveEvent);
+          if (pending) {
+            this.mergePending(follow, pending, seq);
+            return;
           }
-
+          if (isRunIdentityEvent(effectiveEvent)) {
+            // Flush first: an execution's end can settle and close this stream.
+            coalescer.flush();
+            this.step(follow, { kind: "event", event: effectiveEvent });
+            return;
+          }
           if (effectiveEvent.type === EventType.RUN_STARTED) {
-            if (awaitingSplitStart) {
-              // A and B are separate assistant turns in one admitted execution.
-              // Flush A before B enters the durable snapshot owner, but retain the
-              // subscription/token and optimistic writer row across the boundary.
-              coalescer.flush();
-              awaitingSplitStart = false;
-              if (splitFinishTimer) clearTimeout(splitFinishTimer);
-            }
-            currentExpectedTurnId = effectiveEvent.runId;
-            this.activeRun = {
-              ...this.activeRun,
-              threadId,
-              token,
-              turnId: effectiveEvent.runId,
-              splitBoundaryPending: false,
-              unsubscribe: this.activeRun?.unsubscribe,
-              dispose: markDisposed,
-              flush: () => {
-                if (!disposed && !this.accountSignal.aborted) coalescer.flush();
-              },
-            };
-            if (this.abortRequested) {
-              this.abortRequested = false;
-              this.requestCancel(threadId, effectiveEvent.runId);
-            }
+            this.step(follow, { kind: "event", event: effectiveEvent });
+            if (!live()) return;
+            routeStream(subscription, effectiveEvent.runId, seq);
+            if (isBound(follow.rule, effectiveEvent.runId, follow.view))
+              push(effectiveEvent.runId, effectiveEvent);
+            return;
           }
-
-          coalescer.push(effectiveEvent);
-
-          if (effectiveEvent.type === EventType.RUN_FINISHED && currentExpectedTurnId) {
-            // A same-lease steer is journaled as A-finish then B-start. Keep the
-            // mounted owner alive for that transition; an ordinary terminal run
-            // settles after the short boundary window.
-            awaitingSplitStart = true;
-            this.activeRun = { threadId, token, ...this.activeRun, splitBoundaryPending: true };
-            splitFinishTimer = setTimeout(() => {
-              if (awaitingSplitStart && this.isActiveToken(token)) this.cleanupActiveRun();
-            }, 250);
-          } else if (effectiveEvent.type === EventType.RUN_ERROR) {
-            this.cleanupActiveRun();
-          }
+          const turnId =
+            "runId" in effectiveEvent && typeof effectiveEvent.runId === "string"
+              ? effectiveEvent.runId
+              : subscription.streamTurn;
+          // Another execution's events, or a reply this client does not follow.
+          if (!turnId || !isBound(follow.rule, turnId, follow.view)) return;
+          this.actions.ensureAssistantTurn(threadId, turnId);
+          push(turnId, effectiveEvent);
+          if (
+            (effectiveEvent.type === EventType.RUN_FINISHED ||
+              effectiveEvent.type === EventType.RUN_ERROR) &&
+            subscription.streamTurn === turnId
+          )
+            routeStream(subscription, undefined, seq);
         },
         onError: (error) => {
-          if (disposed || this.accountSignal.aborted || !this.isActiveToken(token)) return;
+          if (!live()) return;
           coalescer.flush();
-          this.cleanupActiveRun();
+          this.closeSubscription(follow);
           announceError(errorMessage(error, "Thread stream failed"));
         },
         onGap: ({ threadId: gapThreadId }) => {
-          if (disposed || this.accountSignal.aborted || !this.isActiveToken(token)) return;
+          if (!live()) return;
           coalescer.flush();
-          void this.replaceFromSnapshot(gapThreadId, token).catch((error) => {
-            if (!this.isActiveToken(token)) return;
-            this.cleanupActiveRun();
+          void this.replaceFromSnapshot(follow, gapThreadId, token).catch((error) => {
+            if (follow.subscription?.token !== token) return;
+            this.closeSubscription(follow);
             announceError(errorMessage(error, "Failed to recover thread snapshot"));
           });
         },
       },
-      after ? { after } : undefined,
+      { after },
     );
-
-    if (!this.isActiveToken(token)) {
-      disposed = true;
+    if (!live()) {
       unsubscribe();
       return;
     }
+    subscription.unsubscribe = unsubscribe;
+  }
 
-    this.activeRun = {
-      ...this.activeRun,
-      threadId,
-      token,
-      unsubscribe,
-      dispose: markDisposed,
-      flush: () => {
-        if (!disposed && !this.accountSignal.aborted) coalescer.flush();
+  private closeSubscription(follow: Follow): void {
+    const subscription = follow.subscription;
+    if (!subscription) return;
+    // Dispose (flush the coalescer) before clearing the subscription: the
+    // coalesced apply is gated on it, so clearing first would drop the last
+    // buffered frame on settle, teardown and unmount.
+    subscription.dispose();
+    const recovery = this.gapSnapshotsByThreadId.get(follow.threadId);
+    if (recovery?.token === subscription.token) {
+      recovery.abort.abort();
+      this.gapSnapshotsByThreadId.delete(follow.threadId);
+    }
+    follow.subscription = null;
+    subscription.unsubscribe?.();
+  }
+
+  private requestCancel(follow: Follow, turnId: string): void {
+    void this.transport.cancel(follow.threadId, turnId).then(
+      (answer: CancelTurnResponse) => {
+        if (this.follows.get(follow.threadId) !== follow) return;
+        this.step(follow, { kind: "cancel-answer", turnId, status: answer.status });
       },
-    };
-
-    // If admission received the turn id from HTTP before RUN_STARTED arrives,
-    // an early cancel can execute now instead of waiting for the stream echo.
-    if (this.abortRequested && this.activeRun.turnId) {
-      this.abortRequested = false;
-      this.requestCancel(this.activeRun.threadId, this.activeRun.turnId);
-    }
+      (error) => {
+        console.error("Failed to cancel active Meridian turn", error);
+      },
+    );
   }
 
-  flushPendingDeltas(threadId: string): void {
-    if (this.activeRun?.threadId === threadId && !this.accountSignal.aborted) {
-      this.activeRun.flush?.();
-    }
-  }
-
-  private requestCancel(threadId: string, turnId: string): void {
-    void this.transport.cancel(threadId, turnId).catch((error) => {
-      console.error("Failed to cancel active Meridian turn", error);
-    });
-  }
-
-  private async replaceFromSnapshot(threadId: string, token: number): Promise<void> {
+  private async replaceFromSnapshot(
+    follow: Follow,
+    threadId: string,
+    token: number,
+  ): Promise<void> {
     const existing = this.gapSnapshotsByThreadId.get(threadId);
     if (existing) {
       if (existing.token === token) return existing.promise;
@@ -630,29 +771,30 @@ export class ThreadRunController {
       this.gapSnapshotsByThreadId.delete(threadId);
     }
 
+    const current = () =>
+      !this.disposed && !this.accountSignal.aborted && follow.subscription?.token === token;
     const abort = new AbortController();
     const signal = AbortSignal.any([this.accountSignal, abort.signal]);
     const recovery = (async () => {
-      while (
-        this.isActiveToken(token) &&
-        !signal.aborted &&
-        !this.activeRun?.splitBoundaryPending
-      ) {
+      while (current() && !signal.aborted) {
         const snapshot = deserializeThreadSnapshot(
           await this.getThreadSnapshotFn({ data: { threadId }, signal }),
         );
-        if (
-          signal.aborted ||
-          !this.isActiveToken(token) ||
-          this.activeRun?.threadId !== threadId ||
-          this.activeRun.splitBoundaryPending
-        )
-          return;
+        if (signal.aborted || !current()) return;
         if (snapshot.thread.id !== threadId || snapshot.thread.userId !== this.accountId) {
           await waitForSnapshotRetry(signal);
           continue;
         }
-        if (this.applySnapshot(snapshot)) return;
+        if (
+          this.actions.applyThreadSnapshot(
+            snapshot.thread,
+            snapshot.turns,
+            toThreadSnapshotApplyOptions(snapshot),
+          )
+        ) {
+          this.mergeSnapshot(follow, snapshot);
+          return;
+        }
         await waitForSnapshotRetry(signal);
       }
     })().finally(() => {
@@ -662,32 +804,5 @@ export class ThreadRunController {
     });
     this.gapSnapshotsByThreadId.set(threadId, { token, promise: recovery, abort });
     return recovery;
-  }
-
-  private applySnapshot(snapshot: DeserializedThreadSnapshot): boolean {
-    const { thread, turns } = snapshot;
-    return this.actions.applyThreadSnapshot(thread, turns, toThreadSnapshotApplyOptions(snapshot));
-  }
-
-  private cleanupActiveRun(): void {
-    this.abortRequested = false;
-    const activeRun = this.activeRun;
-    // Dispose (flush the coalescer) before clearing `activeRun`: the coalesced
-    // apply is gated on `isActiveToken`, so nulling first would drop the last
-    // buffered frame on teardown, run switch, and unmount.
-    activeRun?.dispose?.();
-    if (activeRun) {
-      const recovery = this.gapSnapshotsByThreadId.get(activeRun.threadId);
-      if (recovery?.token === activeRun.token) {
-        recovery.abort.abort();
-        this.gapSnapshotsByThreadId.delete(activeRun.threadId);
-      }
-    }
-    activeRun?.unsubscribe?.();
-    this.activeRun = null;
-  }
-
-  private isActiveToken(token: number): boolean {
-    return !this.disposed && !this.accountSignal.aborted && this.activeRun?.token === token;
   }
 }

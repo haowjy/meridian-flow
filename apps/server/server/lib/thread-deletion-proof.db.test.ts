@@ -237,7 +237,11 @@ describe("root creation policy shared by POST /api/threads and POST /api/project
   it("answers foreign live and deleted ids identically", async () => {
     const { create, app } = await fixture();
     const foreignProject = await app.projectRepo.create({ userId: OTHER, title: "Foreign" });
-    const foreign = await app.repos.threads.create({ userId: OTHER, projectId: foreignProject.id });
+    const foreign = await app.repos.threads.create({
+      userId: OTHER,
+      projectId: foreignProject.id,
+      aiWriteMode: "direct",
+    });
     const live = JSON.stringify(await failure(() => create({ id: foreign.id })));
     await database.current
       .update(schema.threads)

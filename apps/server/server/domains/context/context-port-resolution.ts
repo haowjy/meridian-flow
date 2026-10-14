@@ -18,7 +18,7 @@ export interface ThreadContextResolution {
   primaryWorkId: string | null;
   workAuthorities: ReadonlyMap<WorkSlug, ResolvedWorkAuthority>;
   primaryWorkAuthority: ResolvedWorkAuthority | null;
-  /** The thread's Work when it drafts AI writes; null in auto-apply. */
+  /** The thread's Work when the chat drafts AI writes; null in auto-apply. */
   primaryDraftWork: WorkRef | null;
   scratchLineages?: import("./scratch-owner.js").ScratchLineages;
   scratchOwner?: import("./scratch-owner.js").ScratchOwner;
@@ -55,7 +55,7 @@ export async function resolveThreadContext(
       )
       .map((authority) => [authority.workSlug, authority]),
   );
-  // By id: the project listing leaves out No Work, which can be in draft mode too.
+  // By id: the project listing leaves out No Work, whose chats can draft too.
   const primaryWork = primaryMembership
     ? await deps.works.findById(primaryMembership.workId)
     : null;
@@ -67,7 +67,9 @@ export async function resolveThreadContext(
     workAuthorities,
     primaryWorkAuthority,
     primaryDraftWork:
-      primaryWork?.aiWriteMode === "draft" ? { id: primaryWork.id, slug: primaryWork.slug } : null,
+      primaryWork && thread.aiWriteMode === "draft"
+        ? { id: primaryWork.id, slug: primaryWork.slug }
+        : null,
   };
 }
 
@@ -77,7 +79,7 @@ export function contextPortForThread(
   options: {
     responseId?: string | null;
     version?: DocumentVersion;
-    /** Write live whatever the Work's mode, as a binary copy does (D24). */
+    /** Write live whatever the chat's mode, as a binary copy does (D24). */
     liveWrites?: boolean;
   } = {},
 ): ContextPort {

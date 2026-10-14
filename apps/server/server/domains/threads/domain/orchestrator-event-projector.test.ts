@@ -2,9 +2,17 @@
  * Projector wire contracts: the client-facing custom event names and payloads
  * for durable block lifecycle facts. Pins the names the app reducer reads.
  */
-import { EventType } from "@meridian/contracts/protocol";
+import {
+  EventType,
+  EXECUTION_ENDED_EVENT,
+  MESSAGES_DELIVERED_EVENT,
+} from "@meridian/contracts/protocol";
+import { SIMPLE_TEXT_TURN_AGUI, SIMPLE_TEXT_TURN_ORCHESTRATOR } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
-import { createOrchestratorEventProjector } from "./orchestrator-event-projector.js";
+import {
+  createOrchestratorEventProjector,
+  projectOrchestratorEvents,
+} from "./orchestrator-event-projector.js";
 
 describe("tool results", () => {
   it("sends the typed result beside the model's text", () => {
@@ -74,5 +82,35 @@ describe("historical card replacement", () => {
     expect(first.find((event) => event.type === EventType.TEXT_MESSAGE_START)).toMatchObject({
       messageId: "active-turn::0",
     });
+  });
+});
+
+describe("run identity", () => {
+  it("projects the golden send: start, delivery, finish, execution end", () => {
+    expect(projectOrchestratorEvents(SIMPLE_TEXT_TURN_ORCHESTRATOR)).toEqual(SIMPLE_TEXT_TURN_AGUI);
+  });
+
+  it("reads a reply journaled before run identity as unknown", () => {
+    const projector = createOrchestratorEventProjector();
+    const [start] = projector.project({
+      type: "turn.created",
+      turn: {
+        id: "old",
+        threadId: "thread-1",
+        role: "assistant",
+        blocks: [],
+        writeMode: null,
+      } as never,
+    });
+    expect(start).toMatchObject({
+      rawEvent: { writeMode: null, executionId: null, reservedForUserTurnIds: [], position: null },
+    });
+    const [delivered] = projector.project({
+      type: "messages.delivered",
+      byTurnId: "old",
+      executionId: null,
+      userTurnIds: ["m1"],
+    } as never);
+    expect(delivered).toMatchObject({ value: { byTurnId: "old", byTurnPosition: null } });
   });
 });

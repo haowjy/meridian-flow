@@ -1,0 +1,179 @@
+/**
+ * The run-state view: the server's latest record of a chat, and this device's
+ * intents that the record does not yet cover.
+ *
+ * A record is a server fact stamped with a `version` (an event seq). Everything the
+ * server says about a chat's run state, whether it arrives in a snapshot, a socket frame
+ * or an HTTP answer, is received as a record, and versions are compared with
+ * `compareSeq` and nothing else. An intent is something the writer did that the server
+ * has not shown yet. This module owns the one rule for newness and retirement:
+ *
+ * - a record replaces the current one only if it is newer;
+ * - an intent with an answer leaves once the record's version is at or after its answer;
+ * - an intent with no answer leaves only by `dropIntent`;
+ * - an answer is kept beside the intents (`answers`), so one that arrives before its intent,
+ *   or an intent that a journal rebuild adds again after it left, still meets its answer.
+ *
+ * Folds (`fold-switches.ts`) are pure selectors over the view and decide nothing about
+ * either. This directory imports only `@meridian/contracts`.
+ */
+import { compareSeq } from "@meridian/contracts/protocol";
+import type { PendingInboxItem } from "@meridian/contracts/threads";
+import type { AiWriteMode } from "@meridian/contracts/works";
+
+export type RunStateRecord = {
+  version: string;
+  /** The chat's applied write mode. */
+  mode: AiWriteMode;
+  /** The unacknowledged inbox, including the queued write-mode switch as a control row. */
+  items: readonly PendingInboxItem[];
+};
+
+export type Intent =
+  | {
+      kind: "switch";
+      id: string;
+      /** The local journal's per-chat order: unique and monotonic. */
+      order: number;
+      mode: AiWriteMode;
+      /** The version of the server's answer, once it has answered. */
+      answer: string | null;
+      /** The last attempt did not succeed: shown with Retry, and the fold leaves it out. */
+      failed?: boolean;
+      /** Posted and not refused: the server may hold it, so Retry only. */
+      awaitingServer?: boolean;
+    }
+  | {
+      kind: "withdraw";
+      /** The control withdrawn. */
+      id: string;
+      order: number;
+      answer: string | null;
+      /** The request failed: the row stays, with the failure on it. */
+      failed?: boolean;
+    };
+
+export type RunStateView = {
+  record: RunStateRecord | null;
+  intents: readonly Intent[];
+  /**
+   * Answer evidence by `${kind}:${id}`. It outlives the intent, so a source that adds the
+   * intent again (the journal re-adds every unstamped entry on each rebuild) cannot erase it.
+   */
+  answers: ReadonlyMap<string, string>;
+};
+
+export const EMPTY_VIEW: RunStateView = { record: null, intents: [], answers: new Map() };
+
+/** Answers held per view: other devices' switches have no local source to clear them. */
+const MAX_ANSWERS = 32;
+
+const same = (a: Intent, kind: Intent["kind"], id: string) => a.kind === kind && a.id === id;
+const answerKey = (kind: Intent["kind"], id: string) => `${kind}:${id}`;
+
+const covered = (record: RunStateRecord | null, answer: string | null) =>
+  answer !== null && record !== null && compareSeq(record.version, answer) >= 0;
+
+/** The later of two answers. */
+const later = (a: string | null | undefined, b: string | null | undefined) =>
+  a == null ? (b ?? null) : b == null ? a : compareSeq(a, b) >= 0 ? a : b;
+
+/** Record an answer, keeping the later of two, and the newest ones when over the cap. */
+function withAnswer(
+  answers: ReadonlyMap<string, string>,
+  kind: Intent["kind"],
+  id: string,
+  version: string,
+): ReadonlyMap<string, string> {
+  const key = answerKey(kind, id);
+  const held = answers.get(key);
+  if (held !== undefined && compareSeq(held, version) >= 0) return answers;
+  const next = new Map(answers).set(key, version);
+  if (next.size > MAX_ANSWERS) {
+    let lowest: [string, string] | null = null;
+    for (const entry of next) if (!lowest || compareSeq(entry[1], lowest[1]) < 0) lowest = entry;
+    if (lowest) next.delete(lowest[0]);
+  }
+  return next;
+}
+
+/**
+ * Covered intents leave. A switch keeps its answer, because the journal can add that intent
+ * again; `message` and `withdraw` intents come from one call and take their answer with them.
+ */
+function retire(view: RunStateView): RunStateView {
+  const gone = view.intents.filter((intent) => covered(view.record, intent.answer));
+  if (gone.length === 0) return view;
+  const answers = new Map(view.answers);
+  for (const intent of gone)
+    if (intent.kind !== "switch") answers.delete(answerKey(intent.kind, intent.id));
+  return {
+    ...view,
+    intents: view.intents.filter((intent) => !gone.includes(intent)),
+    answers,
+  };
+}
+
+/** Take a server record: it replaces the current one only if newer, then covered intents leave. */
+export function receiveRecord(view: RunStateView, record: RunStateRecord): RunStateView {
+  const current = view.record;
+  if (current && compareSeq(record.version, current.version) <= 0) return view;
+  return retire({ ...view, record });
+}
+
+/**
+ * Add an intent, or replace the same one. Its answer is the latest of its own, the held
+ * intent's and the evidence for it. An intent the record already covers is not kept.
+ */
+export function addIntent(view: RunStateView, intent: Intent): RunStateView {
+  const existing = view.intents.find((known) => same(known, intent.kind, intent.id));
+  const answer = later(
+    later(intent.answer, existing?.answer),
+    view.answers.get(answerKey(intent.kind, intent.id)),
+  );
+  // An answer a switch brings is evidence too: a later rebuild adds the bare intent again.
+  const answers =
+    answer !== null && intent.kind === "switch"
+      ? withAnswer(view.answers, intent.kind, intent.id, answer)
+      : view.answers;
+  const others = view.intents.filter((known) => known !== existing);
+  if (covered(view.record, answer)) return { ...view, intents: others, answers };
+  const next = { ...intent, answer } as Intent;
+  return {
+    ...view,
+    answers,
+    intents: existing
+      ? view.intents.map((known) => (known === existing ? next : known))
+      : [...view.intents, next],
+  };
+}
+
+/**
+ * Record the server's answer for an intent, even before the intent exists, then stamp the
+ * intent if it does and retire it if the record already covers it.
+ */
+export function answerIntent(
+  view: RunStateView,
+  kind: Intent["kind"],
+  id: string,
+  version: string,
+): RunStateView {
+  const answers = withAnswer(view.answers, kind, id, version);
+  const existing = view.intents.find((known) => same(known, kind, id));
+  const answered = existing
+    ? view.intents.map((known) =>
+        known === existing ? { ...known, answer: later(known.answer, version) } : known,
+      )
+    : view.intents;
+  return retire({ ...view, answers, intents: answered as readonly Intent[] });
+}
+
+/** Remove an intent the server will never answer, and its evidence: a refusal, a failed request, a local cancel. */
+export function dropIntent(view: RunStateView, kind: Intent["kind"], id: string): RunStateView {
+  const intents = view.intents.filter((known) => !same(known, kind, id));
+  const key = answerKey(kind, id);
+  if (intents.length === view.intents.length && !view.answers.has(key)) return view;
+  const answers = new Map(view.answers);
+  answers.delete(key);
+  return { ...view, intents, answers };
+}

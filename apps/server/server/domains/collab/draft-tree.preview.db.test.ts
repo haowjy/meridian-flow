@@ -14,10 +14,6 @@ import {
   handleWorkDraftPreviewRequest,
   selectDraftRouteServices,
 } from "../../lib/draft-review-route.js";
-import {
-  handleWorkWriteModeRequest,
-  selectWorkWriteModeServices,
-} from "../../lib/work-write-mode-route.js";
 import { describeDraftTreeDb } from "../../test-support/draft-tree-suite.js";
 import { isDrafted } from "../file-policy/index.js";
 import { deleteWorkTransition, restoreWork } from "../projects/index.js";
@@ -101,12 +97,6 @@ describeDraftTreeDb("deleted-live review preview", (start, db) => {
         handleDiscardAllWorkDraftRequest(deps, {
           ...input,
           request: { draftId: item.draftId, commandId: randomUUID() as never },
-        }),
-      () =>
-        handleWorkWriteModeRequest(selectWorkWriteModeServices(runtime.app), {
-          ...input,
-          aiWriteMode: "direct",
-          pending: "apply",
         }),
     ]) {
       await expect(request()).rejects.toMatchObject({

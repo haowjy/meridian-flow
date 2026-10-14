@@ -259,9 +259,6 @@ const IN_MEMORY_BRANCH_PUSH_STUB: BranchPushAccess = {
   async countPendingByWorkIds() {
     return new Map();
   },
-  async setWorkPushPolicy() {
-    throw new Error("Branch push service is not configured");
-  },
 };
 
 function createInMemoryBranchPeerStub(

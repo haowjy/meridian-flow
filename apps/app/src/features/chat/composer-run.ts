@@ -9,6 +9,11 @@
  * queues like any send during a run. The placeholder is read from turns rather
  * than the lease because the turn settles with the row the writer sees; the
  * snapshot's status can trail it.
+ *
+ * Between replies the run controller may still be following work for the
+ * chat: a writer message is owed and no reply streams yet (the gap after a
+ * yield, before the next execution takes it on). Stop stays, and the
+ * controller owns it.
  */
 import type { Turn } from "@meridian/contracts/protocol";
 import { isHandoffSeed } from "./derivation/handoff-seed";
@@ -18,13 +23,15 @@ export type ComposerRun =
   | { kind: "reply" }
   /** A compaction or a handoff brief is in progress; cancel targets its turn. */
   | { kind: "placeholder"; turn: Turn }
+  /** No reply streams, but the run controller follows work for the chat; it stops it. */
+  | { kind: "following" }
   | null;
 
 function inProgress(turn: Turn): boolean {
   return turn.status === "pending" || turn.status === "streaming";
 }
 
-export function composerRun(turns: readonly Turn[]): ComposerRun {
+export function composerRun(turns: readonly Turn[], following = false): ComposerRun {
   for (let index = turns.length - 1; index >= 0; index -= 1) {
     const turn = turns[index];
     if (!turn) continue;
@@ -36,5 +43,5 @@ export function composerRun(turns: readonly Turn[]): ComposerRun {
     if ((turn.role === "compaction" || isHandoffSeed(turn)) && inProgress(turn))
       return { kind: "placeholder", turn };
   }
-  return null;
+  return following ? { kind: "following" } : null;
 }

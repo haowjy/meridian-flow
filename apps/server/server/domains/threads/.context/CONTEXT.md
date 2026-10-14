@@ -256,15 +256,25 @@ owns only the SQL predicate beside its partial index.
 - **Access control** — `requireThreadOwner` gates thread operations behind
   ownership + project ownership, returning 404 on any mismatch to avoid
   existence leaks.
-- **AI write mode** — `works.ai_write_mode` column (`'direct'` | `'draft'`)
-  controls whether AI edits go into branch review or directly to live.
-  The column is owned by the Work, not the thread. It is seeded from the
-  project's `ProjectPreferences.aiWriteMode` at Work creation. Write-time routing resolves `thread → primary Work → works.ai_write_mode`. Missing primary is corrupt. No Work uses the same column; `draftOwner` is null only for Auto-apply.
+- **AI write mode** — `threads.ai_write_mode` (`'direct'` | `'draft'`) is the
+  chat's mode: whether its AI edits wait in its Work's draft or go live (D62).
+  A chat copies it when it is made: the creation request's `aiWriteMode`, else
+  its Work's `works.default_ai_write_mode`; subagent children copy the parent,
+  forks and handoffs the source chat. Nothing follows the Work afterwards, and
+  rebind, archive and restore never change it. Write-time routing reads the
+  thread's mode over its current primary Work (`threadExecutionContext`), so
+  draft mode drafts into whatever Work the chat is bound to at the call; a
+  missing primary is corrupt. Two chats in one Work may write in different
+  modes. A reply runs in one mode: `turns.ai_write_mode` records it, and the
+  mode changes only between replies.
 
-  The write-mode route (`lib/work-write-mode-route.ts`) sets only the Work's
-  mode; branches carry no push policy (D59). `draft` → `direct` with pending
-  changes needs a choice (D40): `apply` pushes each pending draft first, `keep`
-  leaves them for review. `direct` → `draft` is always permitted.
+  The Work's column is only the default a new chat starts with. An explicit
+  mode on chat creation and every writer switch (or the Stop of a pending one) set
+  it, applied or not; nothing else does.
+  The writer switches a chat through its controls queue
+  (`POST /api/threads/:id/controls`, `{ kind: "write_mode" }`). Switching to
+  auto-apply applies nothing: pending drafts stay for review. Branches carry no
+  push policy (D59).
 
   → See [`domains/collab/.context/CONTEXT.md`](../../collab/.context/CONTEXT.md)
     for the branch review model.

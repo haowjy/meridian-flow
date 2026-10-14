@@ -9,12 +9,25 @@
  * contracts.
  */
 import type { InterruptAnswerProvenance } from "@meridian/contracts/components";
-import { type AGUIEvent, EventSchemas, EventType } from "@meridian/contracts/protocol";
+import {
+  type AGUIEvent,
+  EventSchemas,
+  EventType,
+  EXECUTION_ENDED_EVENT,
+  type ExecutionEndedValue,
+  MESSAGES_DELIVERED_EVENT,
+  type MessagesDeliveredValue,
+  type RunStartedMeta,
+  WRITE_MODE_SWITCHED_EVENT,
+  type WriteModeSwitchedValue,
+} from "@meridian/contracts/protocol";
 import type { BlockUpsertedRow, OrchestratorEvent } from "@meridian/contracts/threads";
 import {
   WORK_CONTEXT_PROJECTION_EVENT,
   type WorkContextProjectionSignal,
 } from "@meridian/contracts/works";
+
+import { WriteModeSwitchMetadataCodec } from "./turn-metadata.js";
 
 const USER_INTERRUPT_PROVENANCE: InterruptAnswerProvenance = "user";
 
@@ -117,7 +130,22 @@ export function createOrchestratorEventProjector() {
   function project(event: OrchestratorEvent): AGUIEvent[] {
     switch (event.type) {
       case "turn.created": {
-        if (event.turn.role !== "assistant") return [];
+        if (event.turn.role !== "assistant") {
+          const switched = WriteModeSwitchMetadataCodec.safeParse(event.turn.metadata);
+          if (event.turn.role !== "system" || !switched.success) return [];
+          return [
+            parseAguiEvent({
+              type: EventType.CUSTOM,
+              name: WRITE_MODE_SWITCHED_EVENT,
+              value: {
+                threadId: event.turn.threadId,
+                mode: switched.data.mode,
+                controlId: switched.data.controlMessageId,
+                turnId: event.turn.id,
+              } satisfies WriteModeSwitchedValue,
+            }),
+          ];
+        }
         state.activeRunId = event.turn.id;
         state.activeThreadId = event.turn.threadId;
         state.nextBlockSequence = event.turn.blocks.length;
@@ -126,7 +154,13 @@ export function createOrchestratorEventProjector() {
             type: EventType.RUN_STARTED,
             threadId: event.turn.threadId,
             runId: event.turn.id,
-            rawEvent: { writeMode: event.turn.writeMode },
+            rawEvent: {
+              writeMode: event.turn.writeMode,
+              // Old journal payloads lack these; they read as unknown.
+              executionId: event.turn.executionId ?? null,
+              reservedForUserTurnIds: event.turn.reservedForUserTurnIds ?? [],
+              position: event.turn.position ?? null,
+            } satisfies RunStartedMeta,
           }),
         ];
       }
@@ -475,6 +509,31 @@ export function createOrchestratorEventProjector() {
               status: event.status,
               runningTurnId: event.runningTurnId,
             },
+          }),
+        ];
+
+      // Identity facts ride beside the run lifecycle and never touch its state.
+      case "messages.delivered":
+        return [
+          parseAguiEvent({
+            type: EventType.CUSTOM,
+            name: MESSAGES_DELIVERED_EVENT,
+            value: {
+              byTurnId: event.byTurnId,
+              // Old journal payloads lack it; it reads as unknown.
+              byTurnPosition: event.byTurnPosition ?? null,
+              executionId: event.executionId,
+              userTurnIds: event.userTurnIds,
+            } satisfies MessagesDeliveredValue,
+          }),
+        ];
+
+      case "execution.ended":
+        return [
+          parseAguiEvent({
+            type: EventType.CUSTOM,
+            name: EXECUTION_ENDED_EVENT,
+            value: { executionId: event.executionId } satisfies ExecutionEndedValue,
           }),
         ];
 
