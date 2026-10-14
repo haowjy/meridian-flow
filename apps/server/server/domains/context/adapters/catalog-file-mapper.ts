@@ -1,4 +1,6 @@
 /** Shared authoritative row-to-file mapping for catalog and project availability. */
+
+import type { DocumentId } from "@meridian/contracts";
 import {
   type CanonicalContextAuthority,
   type ContextUriScheme,
@@ -31,6 +33,8 @@ export type CatalogFileRow = {
   mimeType: string | null;
   metadata: unknown;
   provisionalName: boolean;
+  /** Ids a device's create forwarded into this document (a join). */
+  joinedFrom?: readonly string[];
 };
 
 export function catalogSourceAuthority(
@@ -109,5 +113,6 @@ export function mapAuthoritativeFile(input: {
     ),
     ...persistedClassification,
     provisionalName: document.provisionalName,
+    ...(document.joinedFrom?.length ? { joinedFrom: document.joinedFrom as DocumentId[] } : {}),
   };
 }

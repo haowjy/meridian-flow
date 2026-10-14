@@ -11,6 +11,7 @@
  * folders are the live ones plus the hidden ones its documents sit under.
  */
 import type { ContextSourceId, DocumentId, DraftId, FolderId, WorkId } from "@meridian/contracts";
+import { folderDocumentName, renderFilename } from "@meridian/contracts/protocol";
 import type { JsonObject } from "@meridian/contracts/threads";
 import { documents, folders } from "@meridian/database/schema";
 import { getTableColumns, type SQL, Subquery, sql } from "drizzle-orm";
@@ -622,50 +623,27 @@ export async function loadHiddenDocumentCandidates(
   }));
 }
 
-/** A caller-named document's lifecycle facts, for §6.4's authority and identity checks. */
-export type RevealIdentityRow = {
-  id: DocumentId;
-  hidden: boolean;
-  deleted: boolean;
-  /** The row's physical source, never a draft's address for it. */
-  sourceId: ContextSourceId;
-  owner: SourceOwner;
-  /**
-   * Active drafts with a `created` row on it, in any project: only drafts that may hold
-   * the document ever use it, so a caller that may hold it shares their authority.
-   */
-  activeUses: number;
-};
-
-export async function loadRevealIdentityRow(
+/** Filenames the live hidden documents and folders of one folder hold: names no live create takes. */
+export async function loadHiddenFilenames(
   db: DrizzleDb,
-  documentId: DocumentId,
-): Promise<RevealIdentityRow | null> {
-  const [row] = await currentDrizzleDb(db).execute<{
-    hidden: boolean;
-    deleted: boolean;
-    source_id: string;
-    active_uses: number;
-  }>(sql`
-    SELECT d.hidden, d.deleted_at IS NOT NULL AS deleted, d.context_source_id::text AS source_id,
-      (SELECT count(*)::int FROM draft_tree_changes c JOIN drafts r ON r.id = c.draft_id
-        WHERE c.node_kind = 'document' AND c.node_id = d.id AND c.created
-          AND r.status = 'active') AS active_uses
-    FROM documents d
-    WHERE d.id = ${documentId}::uuid`);
-  if (!row) return null;
-  const sourceId = row.source_id as ContextSourceId;
-  const owner = (await loadSourceOwners(db, [sourceId])).get(sourceId);
-  return owner
-    ? {
-        id: documentId,
-        hidden: row.hidden,
-        deleted: row.deleted,
-        sourceId,
-        owner,
-        activeUses: Number(row.active_uses),
-      }
-    : null;
+  contextSourceId: ContextSourceId,
+  folderId: FolderId | null,
+): Promise<string[]> {
+  const inFolder = (column: string) =>
+    folderId === null ? sql.raw(`${column} IS NULL`) : sql`${sql.raw(column)} = ${folderId}::uuid`;
+  const tx = currentDrizzleDb(db);
+  const docs = await tx.execute<{ name: string; extension: string }>(sql`
+    SELECT d.name, d.extension FROM documents d
+    WHERE d.hidden AND d.deleted_at IS NULL AND d.context_source_id = ${contextSourceId}::uuid
+      AND ${inFolder("d.folder_id")}`);
+  const subfolders = await tx.execute<{ name: string }>(sql`
+    SELECT f.name FROM folders f
+    WHERE f.hidden AND f.deleted_at IS NULL AND f.context_source_id = ${contextSourceId}::uuid
+      AND ${inFolder("f.parent_id")}`);
+  return [
+    ...docs.map((row) => renderFilename(row.name, row.extension)),
+    ...subfolders.map((row) => folderDocumentName(row.name)),
+  ];
 }
 
 /** The oldest hidden, live folder at (source, parent, name), else null. */
