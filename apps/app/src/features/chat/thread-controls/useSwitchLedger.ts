@@ -25,7 +25,7 @@ import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import {
   snapshotRequestCount,
   threadSnapshotQueryOptions,
-} from "@/client/query/useThreadSnapshotSync";
+} from "@/client/query/thread-snapshot-query";
 import { announce, announceError } from "@/client/stores";
 import {
   controlAlreadyStartedCopy,
@@ -37,11 +37,12 @@ import {
   EMPTY_LEDGER,
   ledgerReducer,
   overlaidMode,
-  proofKey,
+  proofNeed,
   switchRows,
   transitions,
 } from "./switch-ledger";
 import type { QueuedControl } from "./thread-controls";
+import { useProofLoop } from "./useProofLoop";
 import { readWriteModeSwitch } from "./write-mode-model";
 
 /** What the chat's submission journal offers the ledger: its switches and their order. */
@@ -56,9 +57,6 @@ export type SwitchJournal = {
   withdraw(id: string): Promise<"removed" | "admitted" | "kept">;
   onAnswered(listener: (answer: SwitchAnswer) => void): () => void;
 };
-
-/** Retry a snapshot this long after a failed one while the ledger still waits on it. */
-const PROOF_RETRY_MS = 3000;
 
 const dividersOf = (turns: readonly Turn[]) =>
   turns.flatMap((turn) => {
@@ -174,16 +172,16 @@ export function useSwitchLedger(input: {
     if (change.applied) void invalidateProjectThreadData(queryClient, latest.current.projectId);
   }, [ledger, queryClient]);
 
-  const waiting = proofKey(ledger);
-  useEffect(() => {
-    if (waiting) revalidate();
-  }, [waiting, revalidate]);
-  const { errorUpdatedAt } = snapshot;
-  useEffect(() => {
-    if (!waiting || !errorUpdatedAt) return;
-    const timer = setTimeout(revalidate, PROOF_RETRY_MS);
-    return () => clearTimeout(timer);
-  }, [waiting, errorUpdatedAt, revalidate]);
+  useProofLoop({
+    need: proofNeed(ledger),
+    snapshot: {
+      requestSeq: snapshot.data?.requestSeq,
+      dataUpdatedAt: snapshot.dataUpdatedAt,
+      errorUpdatedAt: snapshot.errorUpdatedAt,
+      isFetching: snapshot.isFetching,
+    },
+    acquire: revalidate,
+  });
 
   const switchWriteMode = useCallback((mode: AiWriteMode) => {
     if (!latest.current.journal.submit(crypto.randomUUID(), mode)) {

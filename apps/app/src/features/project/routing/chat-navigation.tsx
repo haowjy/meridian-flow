@@ -20,7 +20,7 @@ import {
 import { isThreadAwaitingCreation } from "@/client/chat-submissions";
 import { threadAvailability } from "@/client/chat-submissions/thread-availability";
 import { readCurrentChat, writeCurrentChat } from "@/client/current-chat";
-import { threadSnapshotQueryOptions } from "@/client/query/useThreadSnapshotSync";
+import { threadSnapshotQueryOptions } from "@/client/query/thread-snapshot-query";
 import { useIsThreadPendingCreation } from "@/client/stores";
 import { useConversationRevealRouting } from "@/features/chat/conversation-reveal";
 import type { ScreenKey } from "../shell/screens";

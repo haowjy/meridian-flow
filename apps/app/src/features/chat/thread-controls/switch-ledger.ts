@@ -24,8 +24,8 @@
  *   turns and inbox in one transaction, so absence in a fresh snapshot is proof.
  *
  * A record leaving the journal, or the id leaving the inbox, proves nothing:
- * the entry stays where it was, `needsProof` turns true, and the caller asks
- * for a snapshot. `at` and `request` are readings of one counter of snapshot
+ * the entry stays where it was, the ledger's `proofNeed` turns non-null, and the
+ * caller asks for a snapshot. `at` and `request` are readings of one counter of snapshot
  * requests started; a snapshot proves absence only when `request > observedAt`,
  * so a failed, skipped or joined-older fetch never does.
  *
@@ -289,7 +289,7 @@ function step(ledger: Ledger, event: LedgerEvent): Ledger {
       );
     }
     case "answer": {
-      let next = upsert(
+      const next = upsert(
         ledger,
         event.id,
         event.mode,
@@ -498,11 +498,11 @@ export function overlaidMode(base: AiWriteMode, ledger: Ledger): AiWriteMode {
 }
 
 /**
- * Whether the ledger holds a switch no live source shows and no fresh snapshot
- * has settled, and the readings that identify the wait. The caller refreshes the
- * snapshot when the key changes.
+ * The bar for settling what the ledger waits on: a switch no live source shows (or a
+ * cancel-out only predicted) is settled by a snapshot whose request began above the highest
+ * reading at which any of them was seen. Null when the ledger waits on nothing.
  */
-export function proofKey(ledger: Ledger): string | null {
+export function proofNeed(ledger: Ledger): number | null {
   const waiting = ledger.entries.filter(
     (entry) =>
       entry.state !== "gone" &&
@@ -511,7 +511,7 @@ export function proofKey(ledger: Ledger): string | null {
       (entry.predicted ||
         (!entry.inJournal && !entry.inInbox && entry.observedAt > entry.provedAt)),
   );
-  return waiting.length ? waiting.map((entry) => `${entry.id}@${entry.observedAt}`).join() : null;
+  return waiting.length ? Math.max(...waiting.map((entry) => entry.observedAt)) : null;
 }
 
 export type LedgerTransitions = {

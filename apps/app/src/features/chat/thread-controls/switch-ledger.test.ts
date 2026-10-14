@@ -12,7 +12,7 @@ import {
   type LedgerEvent,
   ledgerReducer,
   overlaidMode,
-  proofKey,
+  proofNeed,
   switchRows,
   transitions,
 } from "./switch-ledger";
@@ -300,6 +300,6 @@ it("derives what the writer sees and hears from the sources' events alone", () =
     expect(queued, label).toEqual(scenario.expect.heard?.queued ?? []);
     expect(switched, label).toEqual(scenario.expect.heard?.switched ?? []);
     if (scenario.expect.waiting !== undefined)
-      expect(proofKey(ledger) !== null, label).toBe(scenario.expect.waiting);
+      expect(proofNeed(ledger) !== null, label).toBe(scenario.expect.waiting);
   }
 });
