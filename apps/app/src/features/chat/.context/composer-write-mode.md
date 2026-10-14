@@ -95,7 +95,7 @@ items (another tab's queue, cancel or withdrawal): `useSwitchView` compares that
 records, taking the first record as its baseline, and calls `invalidateWriteModeReads`.
 
 The composer control shows the number of documents waiting beside Draft ("Draft (3)"), from the
-Work's draft list, in the trigger and the menu option; with none it reads "Draft".
+Work's draft list, in the trigger (while in Draft) and the menu option (in either mode); with none it reads "Draft".
 
 The dock projection is tri-state while its query loads: pending count and review
 availability are `null`, distinct from loaded zero/false; loading client state

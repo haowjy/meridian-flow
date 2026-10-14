@@ -124,3 +124,9 @@
   catches up. `shouldAdjustScrollPositionOnItemSizeChange` only compensates rows
   wholly above the viewport. It hits any tail row, not only queued commands. No unit
   seam measures it: take it with a browser recipe that samples row tops per frame.
+
+## Stop the reply and send this message now, from the queue (lane Q)
+
+The owner, on removing Stop from beside Send (TL-MF-80): "why would u want to prepare something but stop it...?
+unless u want to stop and send it... which there should be a way to do that in the queue". Lane Q owns the queue's
+controls: add a per-message "stop the reply and send this now" there. The composer no longer offers it.

@@ -13,6 +13,9 @@ Local-dev-only utilities. Never imported by the application runtime.
   PostgreSQL failures and function synchronization (`migrate-db.ts`, called by
   `prepare-db.ts`)
 - `pnpm dev` orchestration (tmux + portless + dev modes + readiness + tailscale)
+- Dev-stack memory reporting and opt-in idle reaping (`pnpm dev:stacks`). Dev
+  stacks hold more memory than every test process combined, so check this before
+  attributing an out-of-memory to the suite.
 - Dev session planning (canonical env, redacted commands, internal API origin)
 - Tailscale serve/funnel lifecycle (stale route pruning, verified external routes)
 - Worktree cleanup (`pnpm dev:prune-worktrees`)
@@ -60,7 +63,7 @@ Local-dev-only utilities. Never imported by the application runtime.
   [`packages/database`](../../packages/database/.context/CONTEXT.md). Only reset a
   database owned by the current dev checkout; shared and deployed resets
   require explicit owner authorization.
-- **New DB-shape contracts get tests.** Slug-rewrite, name-validation, idempotency, and reserved-name behavior are covered by `__tests__/dev-env.test.ts` and `__tests__/dev-db.test.ts`. Add cases when you change those contracts.
+- **New DB-shape contracts get tests.** Slug-rewrite, name-validation, idempotency, and reserved-name behavior are covered by `__tests__/dev-db-target.test.ts`, `__tests__/test-db-lifecycle.test.ts` and `__tests__/live-worktree-databases.test.ts`. Add cases when you change those contracts.
 - **The local DB gate is reachability-aware, not optional on failure.** `pnpm check` runs `check-db-gate.ts`: it skips loudly only when the configured Postgres server is absent or unreachable, then runs the full managed `pnpm test:db` suite once the server is reachable. `pnpm test:db` always forces the gate.
 - **Dev stack cleanup is targeted.** Use `pnpm dev --stop` to stop this worktree's dev tmux session(s) and prune portless routes. Never stop dev servers by pattern (`pkill -f "pnpm dev"`, `killall node`): it matches every worktree's stack on the machine. Tailscale cleanup is surgical per-route `off` only; never use `tailscale serve reset`, and never remove routes whose local target is still listening.
 - **Restart owns its configured ports.** After tmux teardown it sends SIGTERM to every discovered holder, waits briefly, then sends SIGKILL to stragglers. Holder discovery is never gated on tmux, cwd, or ancestry. An uninspectable bound port still aborts startup loudly.
@@ -76,7 +79,7 @@ Local-dev-only utilities. Never imported by the application runtime.
 - **Surgical Tailscale cleanup in pruning.** Stale route removal goes through `findStaleTailscaleRoutes` + `tailscaleRouteOffArgs` (per-port `off`). Never call `tailscale serve reset` or `tailscale funnel reset`. Never prune a route with any live listener.
 - **WS 426 is not a warning.** Plain HTTP hits to `/api/threads/ws` and `/ws/yjs` produce expected 426 responses. `routeStatusEvent` in `apps/server/server/lib/request-observability.ts` suppresses these. When adding a new WebSocket route, add it to `isExpectedWsPlainHttpStatus`.
 
-- **DB test concurrency:** eight owned workers by default; `DB_TEST_WORKERS=1..8` lowers concurrency under shared-server load. Do not use CPU-count scaling against the shared 100-connection server.
+- **DB test concurrency:** local default is four owned workers; `DB_TEST_WORKERS=1..8` overrides. Workers are local-only — each needs its own cloned database and only the local path provisions them, so CI gets no worker URLs and `vitest.db.config.ts` falls to `maxWorkers: 1` with `fileParallelism: false`. The CI DB suite is therefore serial and its wall clock is the sum of every test (about 322 s, against 89 s at four local workers), which is why the DB suite carries its own 600 s duration reference rather than the unit suite's 150 s. It warns; it does not fail the run. Raising workers locally costs memory superlinearly in wall-time terms: at 8 the suite peaked at 6,038MB and flaked a settlement test, at 4 it peaked at 3,869MB and ran all 912 green. Do not use CPU-count scaling against the shared 100-connection server.
 - **Test cleanup:** hand off only this invocation’s managed DBs to `cleanup-test-databases.ts`; it checks parent ownership before the runner exits. Drops are detached because PostgreSQL forces a checkpoint. Inspect `.meridian/db-test-cleanup/` for failures; stale-run `dev:gc-dbs` remains the fallback.
 - **Test durability:** only managed worker URLs receive `synchronous_commit=off` as a session startup setting. Never change shared server settings or dev database durability.
 - **DB fixture isolation:** use the shared [test-support reset policy](../../apps/server/server/test-support/AGENTS.md). Never add per-case TRUNCATE; rollback is the default, FK-ordered DELETE the committed-data escape hatch.
