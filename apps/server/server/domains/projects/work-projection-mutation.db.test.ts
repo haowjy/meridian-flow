@@ -27,6 +27,7 @@ import { deleteDrizzleRows, useRollbackTestDatabase } from "../../test-support/d
 import {
   createDrizzleBranchJournalReadStore,
   createDrizzlePushCommitStore,
+  createDrizzleWorkDraftPendingStore,
 } from "../collab/adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "../collab/adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailAggregateWriter } from "../collab/adapters/drizzle-change-trail-aggregate.js";
@@ -204,7 +205,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const catalog = createDrizzleContextCatalog(db, undefined, {
         availabilityMutations: availability,
       });
-      const projection = createWorkProjectionMutation({ db, availability, catalog });
+      const projection = createWorkProjectionMutation({
+        db,
+        availability,
+        catalog,
+        pending: createDrizzleWorkDraftPendingStore(db),
+      });
       await catalog.refreshProject(PROJECT_ID);
       await catalog.refreshProject(OTHER_PROJECT_ID);
       return { db, projection, catalog };
@@ -299,7 +305,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           availabilityMutations: availability,
         },
       );
-      const measured = createWorkProjectionMutation({ db, availability, catalog });
+      const measured = createWorkProjectionMutation({
+        db,
+        availability,
+        catalog,
+        pending: createDrizzleWorkDraftPendingStore(db),
+      });
       const scopeKey = catalogScopeKey({ kind: "project", projectId: PROJECT_ID });
       const [headBefore] = await db
         .select({ revision: contextCatalogScopeHeads.headRevision })
@@ -379,7 +390,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         { availabilityMutations: availability },
       );
-      const measured = createWorkProjectionMutation({ db, availability, catalog });
+      const measured = createWorkProjectionMutation({
+        db,
+        availability,
+        catalog,
+        pending: createDrizzleWorkDraftPendingStore(db),
+      });
       const scopeKey = catalogScopeKey({ kind: "project", projectId: PROJECT_ID });
       const [headBefore] = await db
         .select({ revision: contextCatalogScopeHeads.headRevision })
@@ -428,7 +444,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         { availabilityMutations: availability },
       );
-      const projection = createWorkProjectionMutation({ db, availability, catalog });
+      const projection = createWorkProjectionMutation({
+        db,
+        availability,
+        catalog,
+        pending: createDrizzleWorkDraftPendingStore(db),
+      });
       const branches = createDrizzleBranchStore(db, {
         workProjection: projection,
         drafts: createDrizzleDraftStore(db),
