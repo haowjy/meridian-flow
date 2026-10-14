@@ -4598,6 +4598,14 @@ msgstr ""
 msgid "Turns {0}"
 msgstr "轮次 {0}"
 
+#: src/features/chat/tool-renderers.tsx
+msgid "Two files in the draft share the path {name}. Review the draft to keep one."
+msgstr "草稿中有两个文件使用同一路径 {name}。请审阅草稿，保留其中一个。"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Two files in the draft share this path. Review the draft to keep one."
+msgstr "草稿中有两个文件使用同一路径。请审阅草稿，保留其中一个。"
+
 #: src/features/chat/TextBlock.tsx
 msgid "Type your answer…"
 msgstr ""
