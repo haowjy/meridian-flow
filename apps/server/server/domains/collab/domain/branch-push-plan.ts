@@ -46,10 +46,6 @@ export function assertRowsIntegrated(
   }
 }
 
-export function wholeBranchPushUpdate(input: { branchDoc: Y.Doc; liveDoc: Y.Doc }): Uint8Array {
-  return Y.encodeStateAsUpdate(input.branchDoc, Y.encodeStateVector(input.liveDoc));
-}
-
 export function publicationBlockChanges(input: {
   model: YProsemirrorDocumentModel;
   beforeDoc: Y.Doc;

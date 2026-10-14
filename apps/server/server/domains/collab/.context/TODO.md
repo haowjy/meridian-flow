@@ -77,11 +77,8 @@ and delete-only changes. This is the remaining owner of the unfulfilled overall
 approximately 10% later/first target, alongside the peer pull task above. Evidence:
 `experiments/draft-speed-fix-probe.md` in the model-tool-surface work item.
 
-## Dead code left by the diff-based review landing
+## Unused columns left by the diff-based review landing
 
-No production caller remains for `wholeBranchPushUpdate`
-(`domain/branch-push-plan.ts`) or `documentEffectsEqual`
-(`domain/document-content.ts`, only its test). Delete them with their tests.
 `branch_write_journal.reviewed_by`, `reviewed_at` and `pushed_at` have no
 writer; retiring the columns needs a migration, and `push_lineage.journal_ids`
 (`NOT NULL`, written `'{}'` by content members) can go with it.
