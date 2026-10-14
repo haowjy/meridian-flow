@@ -48,17 +48,23 @@ export function NavigationDrawer({
   chatThreadId,
 }: NavigationDrawerProps) {
   const openDocument = useOpenProjectDocument(projectId);
-  const handleSelectFile = (scheme: ProjectContextTreeScheme, file: ContextFile) => {
+  const handleSelectFile = (
+    scheme: ProjectContextTreeScheme,
+    file: ContextFile,
+    options?: { focus?: true },
+  ) => {
     if (!file.editable) {
       onSelectContextPath(file.path, scheme);
       onOpenChange(false);
       return;
     }
-    void openDocument({ documentId: file.documentId, workId: editorWorkId ?? undefined }).then(
-      (result) => {
-        if (result.kind === "opened") onOpenChange(false);
-      },
-    );
+    void openDocument({
+      documentId: file.documentId,
+      workId: editorWorkId ?? undefined,
+      ...options,
+    }).then((result) => {
+      if (result.kind === "opened") onOpenChange(false);
+    });
   };
   // The drawer owns its own inline-create state: the desktop shell's shared
   // creation seam (empty state → sidebar) has no phone counterpart — phone

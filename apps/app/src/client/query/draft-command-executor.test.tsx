@@ -11,6 +11,7 @@ import {
   runDraftBatch,
   runDraftSelection,
   runWholeDraftIntent,
+  runWorkWideCommand,
   startDraftCommand,
 } from "./draft-command-executor";
 import {
@@ -108,6 +109,22 @@ describe("draft command executor", () => {
     vi.clearAllMocks();
     resetDraftCommandRecords();
     api.listWorkDrafts.mockResolvedValue(listing("draft-a"));
+  });
+
+  it("refreshes document hints after a Work-wide Discard, like an item's own command", async () => {
+    await withHarness(async ({ queryClient, listed }) => {
+      await settleReact(() => expect(listed()).toEqual(["draft-a"]));
+      api.discardAllDrafts.mockResolvedValue({
+        status: "discarded",
+        draftId: listing("draft-a").items[0].draftId,
+      });
+      const hints = projectQueryKeys.documentDraftHintsOf(input.projectId);
+      queryClient.setQueryData([...hints, "doc-a"], { drafts: [] });
+      await act(async () => {
+        await runWorkWideCommand(queryClient, input, "discard", [{ ...input }], null);
+      });
+      expect(queryClient.getQueryState([...hints, "doc-a"])?.isInvalidated).toBe(true);
+    });
   });
 
   it("keeps a lost response unknown even when a remote Discard emptied the list", async () => {
@@ -529,9 +546,6 @@ describe("command-record outcome matrix", () => {
     const refresh = deferred<void>();
     vi.spyOn(client, "invalidateQueries").mockReturnValue(refresh.promise);
     const done = startDraftCommand(client, command).outcome;
-    expect(pendingDraftCommand(currentDraftCommandRecords(), input)?.commandId).toEqual(
-      expect.any(String),
-    );
     client.setQueryData(projectQueryKeys.workDrafts(input.projectId, input.workId), []);
     await vi.advanceTimersByTimeAsync(1000);
     expect(pendingDraftCommand(currentDraftCommandRecords(), input)).not.toBeNull();

@@ -132,6 +132,7 @@ export function useChatLinkFollowing({
     (document, gesture) =>
       openReferenceDocument({
         documentId: document.documentId,
+        ...(document.focus ? { focus: true as const } : {}),
         disposition: gesture === "new-tab" ? "background" : "current",
       }),
     [openReferenceDocument],
