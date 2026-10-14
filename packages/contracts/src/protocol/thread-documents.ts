@@ -35,6 +35,8 @@ export interface TurnLiveLineageDocumentItem {
   /** Slash-prefixed display path derived from the canonical context URI. */
   path: string;
   scope: "live" | "draft";
+  /** Some of the turn's words went into draft text the writer had discarded. */
+  invisibleWrites?: true;
 }
 
 export type TurnReceiptState =
