@@ -17,11 +17,7 @@ import { finalizeExecution } from "../loop/execution-finalizer.js";
 import { drainInbox, planMessageTurns } from "../loop/inbox-context.js";
 import { currentTurnKind, reservationTurn } from "../loop/local-turn.js";
 import { type InboxWorkSelection, next, prefixRows } from "../loop/next-inbox-work.js";
-import {
-  type PersistenceDeps,
-  persistAndAppendEvents,
-  persistAndAppendTurnStartEvents,
-} from "../loop/persistence.js";
+import { persistAndAppendEvents, persistAndAppendTurnStartEvents } from "../loop/persistence.js";
 import type { InboxMessage, MessageDraft, RunClaim, RunStarter } from "../loop/ports.js";
 import { preparationFailureError } from "../loop/preparation-failure.js";
 import { NoPendingWakeError } from "../loop/run-turn-port.js";
@@ -43,14 +39,8 @@ import {
   type StopFacts,
 } from "../loop/stop-rule.js";
 import { createThreadControls } from "../loop/thread-controls.js";
-import type { ThreadLock } from "../loop/thread-lock.js";
 import { type WriteModeSwitchPort, writeModeSwitchTurn } from "../loop/write-mode-switch.js";
-import type {
-  DeliveryLeaseStore,
-  DeliveryStore,
-  HandBackStore,
-  StoredHandBack,
-} from "./delivery-ports.js";
+import type { HandBackStore, StoredHandBack } from "./delivery-ports.js";
 import { createExecutionSettlement, type ExecutionSettlementDeps } from "./execution-settlement.js";
 
 const PREPARATION_ATTEMPTS = 3;

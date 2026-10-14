@@ -150,7 +150,7 @@ export function createExecutionSettlement(deps: ExecutionSettlementDeps) {
   async function settleStaleExecution<T = void>(
     threadId: ThreadId,
     repair?: () => Promise<T>,
-  ): Promise<T | void> {
+  ): Promise<T | undefined> {
     if (repair) return settleSweepLane(threadId, repair);
     const reports = await threadLock.withThreadLock(threadId, async () =>
       repairOrphans(threadId, (await leaseStore.lockThreadReceipt(threadId)) ? "claimed" : "sweep"),
@@ -166,6 +166,7 @@ export function createExecutionSettlement(deps: ExecutionSettlementDeps) {
       // The row's deletion is what turns the chat idle for readers.
       publishIdle(threadId);
     });
+    return undefined;
   }
 
   async function settleSweepLane<T>(threadId: ThreadId, repair: () => Promise<T>): Promise<T> {
