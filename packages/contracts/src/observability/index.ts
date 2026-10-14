@@ -36,6 +36,15 @@ export interface EventCorrelation {
   documentId?: string;
   branchId?: string;
   branchGeneration?: number;
+  /** Operational ids of branch-push settlement and draft-lineage diagnostics. */
+  batchId?: string;
+  pushId?: string;
+  draftId?: string;
+  peerBranchId?: string;
+  upstreamBranchId?: string;
+  /** Comma-joined ids (at most three; see `joinIds`), like `yjsSpans`. */
+  folderIds?: string;
+  releasedBranchIds?: string;
   yjsClient?: number;
   /**
    * Canonical Yjs update spans key from `@meridian/yjs-inspect`'s `summarizeUpdate().spansKey`:

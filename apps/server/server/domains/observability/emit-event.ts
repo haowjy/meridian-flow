@@ -28,6 +28,11 @@ const SAFE_ERROR_CODES = new Set([
   "ETIMEDOUT",
 ]);
 
+/** Comma-joins at most three ids so the list fits one bounded correlation value. */
+export function joinIds(ids: readonly string[]): string {
+  return ids.slice(0, 3).join(",");
+}
+
 function ownDataValue(value: object, key: string): unknown {
   try {
     const descriptor = Object.getOwnPropertyDescriptor(value, key);

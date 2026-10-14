@@ -20,7 +20,7 @@ export {
   enterEventCorrelation,
   runWithEventCorrelation,
 } from "./causal-context.js";
-export { emitEvent, errorMessageOf, unknownToEventPayload } from "./emit-event.js";
+export { emitEvent, errorMessageOf, joinIds, unknownToEventPayload } from "./emit-event.js";
 export {
   type EventQuery,
   type EventQueryFilter,

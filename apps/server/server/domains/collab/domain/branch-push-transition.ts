@@ -384,6 +384,7 @@ export function createBranchPushTransition(input: {
     await input.settlementStore.recordFailure({
       batchId,
       claim,
+      stage: "execute",
       error: "live document changed during settlement",
     });
     throw new PendingLiveSettlementError(batchId);
@@ -479,6 +480,7 @@ export function createBranchPushTransition(input: {
             await input.settlementStore.recordFailure({
               batchId,
               claim: settled.claim,
+              stage: "handoff",
               error: "publication branch leases changed",
             });
           } else {
@@ -489,7 +491,8 @@ export function createBranchPushTransition(input: {
           await input.settlementStore.recordFailure({
             batchId: batch.batchId,
             claim: batch.claim,
-            error: cause instanceof Error ? cause.message : String(cause),
+            stage: "execute",
+            error: cause,
           });
         }
       });
