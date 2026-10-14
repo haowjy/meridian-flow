@@ -135,7 +135,11 @@ export function createThreadControls(deps: {
         let outcome: WithdrawThreadControlResponse["outcome"] = "withdrawn";
         if (await deps.findControlTurn(threadId, controlId)) outcome = "already_started";
         else if (!row.deliveredAt) await deps.acknowledge(threadId, [controlId]);
-        return { outcome, seq: (await deps.headSeq(threadId)).toString() };
+        // The ack's frame is appended inline above, so the queue and mode read here are the
+        // switch state after the withdrawal; `seq` is read last, at or past that frame.
+        const pending = (await deps.pending(threadId)).items.find(isQueuedSwitch) ?? null;
+        const mode = await deps.threadWriteMode(threadId);
+        return { outcome, pending, mode, seq: (await deps.headSeq(threadId)).toString() };
       }),
   };
 }

@@ -185,7 +185,11 @@ export type EnqueueThreadControlResponse = {
 };
 export type WithdrawThreadControlResponse = {
   outcome: "withdrawn" | "already_started";
-  /** Decimal string of the journal head after the withdrawal; same clock as the enqueue answer. */
+  /** The thread's queued write-mode switch after the withdrawal, or null. */
+  pending: PendingInboxItem | null;
+  /** The thread's applied write mode at the same read. */
+  mode: AiWriteMode;
+  /** Decimal string of the journal head at the read; same clock as the enqueue answer. */
   seq: string;
 };
 
