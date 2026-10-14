@@ -54,6 +54,9 @@ export type EditorViewProps = Omit<EditorSurfaceOptions, "held"> & {
 
 const REVIEW_MARKS_WAIT_MS = 1500;
 
+/** What the editor body shows: the card only for a failed review room. */
+type EditorSurface = "pending" | "review-error" | `live:${string}` | `review:${string}`;
+
 export function EditorView(props: EditorViewProps) {
   const { controller, roomOwner } = useDraftReview();
   // Resolve once against the canonical scope binding, never host-mirrored room/Work fields.
@@ -158,7 +161,9 @@ export function EditorView(props: EditorViewProps) {
   const schemaStale =
     snapshot?.connectionState?.kind === "reset" &&
     snapshot.connectionState.reason === WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason;
-  const terminal = review?.roomError || schemaStale || (props.draftOnly && !reviewRequested);
+  // Only a failed review room is terminal. A draft-only tab whose route has no
+  // review item yet is `pending`; a gone draft is the lifecycle closing its tab.
+  const terminal = review?.roomError || schemaStale;
 
   // Review chrome (the header, its change list, the phone's sheet) shows with
   // the review body and never before it, and then stays for the draft: a new
@@ -171,7 +176,7 @@ export function EditorView(props: EditorViewProps) {
     setInlineReviewShown(props.documentId, review.itemKey, chromeShown);
   }, [setInlineReviewShown, props.documentId, review?.itemKey, chromeShown]);
   const liveKey = liveSession ? `${editorMountKey(liveIdentity)}|${liveSession.document.guid}` : "";
-  const surface = terminal
+  const surface: EditorSurface = terminal
     ? "review-error"
     : settled
       ? `live:${liveKey}`
@@ -356,11 +361,7 @@ function ReviewError({ props }: { props: EditorViewProps }) {
     <div className="flex min-h-0 flex-1 items-center justify-center p-6">
       <div className="surface-card max-w-sm space-y-3 rounded-lg border border-border-subtle p-4 text-center shadow-sm">
         <p className="font-medium text-foreground text-sm">
-          {props.reviewItemKey ? (
-            <Trans>Couldn't open review mode.</Trans>
-          ) : (
-            <Trans>Couldn't open this draft.</Trans>
-          )}
+          <Trans>Couldn't open review mode.</Trans>
         </p>
         <p className="text-muted-foreground text-xs">
           {props.draftOnly ? (

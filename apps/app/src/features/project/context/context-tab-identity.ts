@@ -15,7 +15,7 @@ type RouteLocator = Pick<ContextRouteTarget, "scheme" | "path" | "workId" | "roo
 
 export function contextTabMatchesRoute(tab: ContextTab, target: RouteLocator): boolean {
   if (tab.kind === "new") return false;
-  if (tab.draftOnly && tab.reviewWorkId !== target.workId) return false;
+  if (tab.draftOnly && !(target.workId && tab.reviews?.[target.workId])) return false;
   if (tab.scheme !== target.scheme || tab.path !== target.path) return false;
   if (!isWorkScopedProjectContextScheme(target.scheme)) return true;
   return target.rootThreadId !== undefined
