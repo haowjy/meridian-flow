@@ -1,6 +1,6 @@
 /**
  * Canonical immutable turn targets shared by authorization, lineage and inverse admission:
- * documents the turn edited that are not deleted (the set lineage shows).
+ * documents the turn edited that are not tombstoned. Final address liveness stays with the lineage reader.
  */
 import type { Database } from "@meridian/database";
 import { documentEditParts, documentEdits, documents } from "@meridian/database";

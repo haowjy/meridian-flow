@@ -3,8 +3,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
+import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { ThreadStoreProvider, useIsThreadPendingCreation, useThreadActions } from "@/client/stores";
+import { AccountResourceReplica } from "@/core/resources/account-resource-replica";
+import { AccountFeatureTestProvider } from "@/test-support/account-feature-provider";
 import {
   bindChatSubmissions,
   CHAT_SUBMISSIONS_STORAGE_PREFIX,
@@ -16,6 +19,65 @@ import {
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
+
+it("holds only the lineage catalog read while its chat is pending creation", async () => {
+  window.localStorage.clear();
+  bindChatSubmissions("catalog-account");
+  recordChatSubmission("catalog-account", {
+    recordId: "record",
+    submissionId: "submission",
+    threadId: "thread",
+    projectId: "project",
+    createdAt: "2026-10-11T12:00:00Z",
+    text: "Words",
+    blocks: [{ type: "text", text: "Words" }],
+    references: [],
+    activatedSkillSlugs: [],
+    creation: {
+      title: "Words",
+      workId: null,
+      agentSelection: { catalogEntryId: "agent", definitionRevisionId: "revision" },
+      agentName: "Agent",
+      agentSlug: "agent",
+    },
+  });
+  const acquired: string[] = [];
+  const spy = vi
+    .spyOn(AccountResourceReplica.prototype, "acquireCatalog")
+    .mockImplementation((_projectId, scope) => {
+      acquired.push(scope.kind);
+      return new Promise(() => undefined);
+    });
+  const client = new QueryClient();
+  const root = createRoot(document.createElement("div"));
+  function Reader() {
+    useContextCatalogViews("project", ["manuscript", "user", "scratch"], {
+      rootThreadId: "thread",
+    });
+    return null;
+  }
+  try {
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <AccountFeatureTestProvider accountId="catalog-account">
+            <ThreadStoreProvider now={0}>
+              <Reader />
+            </ThreadStoreProvider>
+          </AccountFeatureTestProvider>
+        </QueryClientProvider>,
+      ),
+    );
+    expect([...acquired].sort()).toEqual(["project", "user"]);
+    await act(async () => retireChatSubmission("catalog-account", "record"));
+    expect([...acquired].sort()).toEqual(["lineage", "project", "user"]);
+  } finally {
+    await act(async () => root.unmount());
+    spy.mockRestore();
+    client.clear();
+    window.localStorage.clear();
+  }
+});
 
 it("reads creation synchronously on reload and updates on local writes, storage events and pending flags", async () => {
   window.localStorage.clear();

@@ -206,7 +206,7 @@ it("Discard of the mixed document's Undo change reactivates its applied part", a
   }
 });
 
-it("a discarded created document is no inverse target, so the applied one keeps Undo", async () => {
+it("a tombstoned draft document with released storage does not stop another document's receipt from offering Undo", async () => {
   const { harness, view, responseId, context } = await fixture();
   try {
     const betaContext = {
