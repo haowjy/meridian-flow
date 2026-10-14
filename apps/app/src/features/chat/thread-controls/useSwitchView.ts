@@ -25,6 +25,7 @@ import {
   parseSeq,
   WRITE_MODE_SWITCHED_EVENT,
 } from "@meridian/contracts/protocol";
+import { readWriteModeSwitch } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -68,7 +69,6 @@ import {
   type SwitchFrame,
 } from "./switch-record";
 import type { QueuedControl } from "./thread-controls";
-import { readWriteModeSwitch } from "./write-mode-model";
 
 /** What the chat's submission journal offers the view: its switches, stamped once answered. */
 export type SwitchJournal = {

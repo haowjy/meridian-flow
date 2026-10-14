@@ -17,6 +17,13 @@ import type {
   Turn,
 } from "@meridian/contracts/protocol";
 import { goldenAssistantTurn } from "@meridian/contracts/threads";
+import type {
+  InterruptRespondInput,
+  InterruptRespondReceipt,
+  ThreadTransport,
+  ThreadTransportHandlers,
+  ThreadTransportSubscribeOptions,
+} from "@meridian/thread-client";
 import { QueryClient } from "@tanstack/react-query";
 import { createThreadCache } from "@/client/stores/thread-store/thread-cache";
 import { createThreadStore } from "@/client/stores/thread-store/thread-store";
@@ -24,13 +31,6 @@ import {
   plainComposerDoc,
   serializeComposerDraft,
 } from "@/components/app/composer/composer-document";
-import type {
-  InterruptRespondInput,
-  InterruptRespondReceipt,
-  ThreadTransport,
-  ThreadTransportHandlers,
-  ThreadTransportSubscribeOptions,
-} from "@/core/transport";
 import {
   type AttachOptions,
   type SubmitOptions,

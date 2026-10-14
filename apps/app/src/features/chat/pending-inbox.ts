@@ -9,21 +9,6 @@ import type { ThreadPendingInbox } from "@meridian/contracts/threads";
 
 export const EMPTY_THREAD_PENDING_INBOX: ThreadPendingInbox = { items: [] };
 
-/** Writer turns still waiting for the model to read them; inbox IDs are turn IDs. */
-export function queuedWriterTurnIds(pending: ThreadPendingInbox): ReadonlySet<string> {
-  const ids = new Set<string>();
-  for (const item of pending.items) {
-    // A control is writer-authored but never a turn; it renders as its own row.
-    if (
-      item.intent !== "control" &&
-      item.provenance.kind === "writer" &&
-      (item.deliveryState === "waiting" || pending.blocked?.reason === "credits_exhausted")
-    )
-      ids.add(item.id);
-  }
-  return ids;
-}
-
 /**
  * The writer's messages the chat still owes an answer: writer-provenance
  * message rows in either delivery state. A row leaves the projection in the

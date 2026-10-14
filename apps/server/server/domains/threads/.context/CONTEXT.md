@@ -232,7 +232,7 @@ owns only the SQL predicate beside its partial index.
   recomputed `ThreadActivity`; the producer computed it at emit time so the
   projector stays a pure function of the journal. **Every CUSTOM name this
   projector emits needs an explicit client decision** in the app's
-  `core/session/reduce-turn-event.ts` (apply, refetch, or ignore) and a
+  `@meridian/thread-client`'s `src/turns/reduce-turn-event.ts` (apply, refetch, or ignore) and a
   reducer test. An unknown name falls through to an opaque custom block in the
   streaming reply, which renders "Unknown component"; a server test that the
   event is projected does not catch that.
@@ -526,7 +526,7 @@ contract shapes.
   projections walk its active lineage past hidden Work-context and
   inbox-message user turns, compaction turns, `subagent_update` system turns,
   and other non-custom system turns. Both visible-turn mirrors
-  (`domain/visible-conversation-policy.ts` and the app's `visible-chat-turns.ts`)
+  (`domain/visible-conversation-policy.ts` and the view model's `classifyTurn` in `@meridian/thread-client`)
   keep `subagent_update` and adopted inbox-message turns out of the top-level
   bubble list; the app renders them inside the preceding assistant's activity
   steps. `inbox_message` marks machine deliveries only (agent `thread_message`
@@ -537,7 +537,7 @@ contract shapes.
   is a frozen SQL copy of this same predicate, and `threadActionRequiredSql`
   (`adapters/drizzle/visible-conversation-sql.ts`) is the SQL copy of
   `isThreadActionRequired`; change the TS policy, both SQL copies, and the
-  app's `visible-chat-turns.ts` together. Project and Work lists, and
+  view model's `classifyTurn` together. Project and Work lists, and
   snapshots and thread lists derive the independent `actionRequired` fact from
   the nearest assistant turn in the active lineage. Lineage walks stop at that
   assistant and are capped at a depth of 10,000; the chat-activity projection

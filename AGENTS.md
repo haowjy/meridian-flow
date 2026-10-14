@@ -113,13 +113,20 @@ noninteractive libpq authentication (`PGPASSWORD` or `-w`).
 Setup: [DEVELOPMENT.md](DEVELOPMENT.md). Dev tooling rules:
 [tools/dev/AGENTS.md](tools/dev/AGENTS.md).
 
-Driving or inspecting the running app (threads, docs, mock model, logs): use
-`./mf` for setup and durable reads (`thread view`, `thread events`, `thread context`,
-`log`, `doc read`). Until [#768](https://github.com/haowjy/meridian-flow/issues/768)
-lands, `./mf thread send` and `thread tail --until-idle` can report another message's
-reply or stop before the reply that answers yours: check run outcomes against
-`./mf thread view` (the durable transcript) or in the browser. See
-[docs/debugging.md](docs/debugging.md#drive-the-app-from-the-cli).
+**Verify with `./mf` while working, and in the browser at the end.** `./mf` runs the
+app's socket client, message serializer, chat event processing (the turn reducer)
+and transcript view model (`thread view` prints the rows the app draws), so a
+`./mf` run is evidence for that shared code against the real server. A command
+with no shared client code behind it is evidence of the server only. What the
+writer sees (rendering, card wording, the composer, optimistic UI, client state)
+is checked in the browser (`agent-browser`), and a PR that changes app behavior
+confirms it there at least once, at the end. `./mf` also sets up state (Works,
+threads, seeded documents, mock-model scripts, queued controls). Until
+[#768](https://github.com/haowjy/meridian-flow/issues/768)'s second phase lands, a
+`send` exit 0 doesn't prove which reply answered your message: check it against
+`./mf thread view`. Exit codes are in
+[docs/debugging.md](docs/debugging.md#set-up-and-verify-with-the-cli). See
+[`./mf` drives shared client cores][mf-shared-cores].
 
 ## Build and test
 
@@ -154,6 +161,20 @@ its side-lane branches remain provable as merged by PR match or by ancestry,
 and only a human who tracked the actual history can confirm by hand that they
 are safe to remove.
 
+**Clean up as soon as you're done with something.** Idle dev stacks, databases and
+checkouts waste the machine's memory, CPU and disk. When a worktree, dev stack, probe,
+review checkout or temporary branch has done its job:
+
+1. Stop its dev stack with `pnpm dev --stop`.
+2. End anything still running from it (the Nx daemon, `agent-browser` sessions, watchers).
+3. Remove the worktree, its database and its merged branch with
+   `pnpm dev:prune-worktrees -- --target <branch|path>`.
+4. For a detached checkout the tool refuses, run `pnpm dev --stop` in it, then
+   `git worktree remove` it, and drop its database with `pnpm dev:gc-dbs`.
+
+Run `pnpm dev:gc-dbs` after a batch of cleanups to drop databases that no worktree owns.
+Before you hand control back, check that nothing you started is still running.
+
 Never switch the branch of a checkout you do not own. From the primary
 checkout, create another branch under the sibling worktree root, then pass its
 path to spawns with `--task-dir`:
@@ -169,4 +190,5 @@ git worktree add ../meridian-flow.worktrees/<name> -b <branch> <base>
 - Prefer reference-style links.
 
 [meridian-flow-docs]: https://github.com/haowjy/meridian-flow-docs
+[mf-shared-cores]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/dev-cli/mf-drives-shared-client-cores.md
 [model-work-switch]: apps/server/server/domains/runtime/.context/tools.md#permissions

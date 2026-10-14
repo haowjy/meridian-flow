@@ -2,6 +2,8 @@
 
 This directory owns authored text, reference atoms, skill atoms, and pending/failed uploads.
 
+- Message serialization and occurrence spelling live in `@meridian/thread-client`.
+  This directory keeps the TipTap schema, clipboard, selection, and upload ownership.
 - A reference reads in text as a standard Markdown link to its canonical URI,
   `[label](uri)` (`referenceSpelling`): the occurrence a sent message carries,
   which is what the model reads, and the plain clipboard form. The destination

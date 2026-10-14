@@ -9,11 +9,12 @@
  */
 import { t } from "@lingui/core/macro";
 import type { Turn } from "@meridian/contracts/protocol";
+import { readHandoffSeed } from "@meridian/contracts/threads";
 import { useCallback } from "react";
 import { retryHandoffBrief } from "@/client/api/threads-api";
 import { useRetryStandIns } from "../useRetryStandIns";
 import { type TurnStop, useTurnStop } from "../useTurnStop";
-import { isOptimisticSeed, optimisticHandoffSeed, readHandoffSeed } from "./handoff-seed";
+import { isOptimisticSeed, optimisticHandoffSeed } from "./handoff-seed";
 
 export type HandoffBrief = {
   /** Retry seeds the store does not have yet, in the order they were asked for. */

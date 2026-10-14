@@ -9,6 +9,25 @@
 - The review list reads live document fingerprints from a cache keyed by the document's authority head, and one Apply refreshes only its own project's chats.
 
 - Deleted Works no longer serve pending drafts. Restoring a Work keeps its drafts available, without a draft-loading error after deletion.
+- `./mf thread view` prints the shared transcript view model (`chatView: 2`, `inputs`).
+
+- `./mf thread send` `finalText` is the visible text.
+
+- A reply you stopped now shows as stopped in every open tab the moment the run ends, instead of "complete" until a refetch. The server's finish event now says the run was cancelled.
+
+- A reply that started elsewhere (another tab, `./mf`, a server wake) no longer begins mid-sentence while the page catches up, and no longer repeats text after a socket catch-up. Each socket listener gets every event after its own cursor, exactly once.
+
+- `./mf thread view`, `send` and `tail --until-idle` build turns with the app's own event reducer, shared through `@meridian/thread-client`. `tail --until-idle` applies every replayed event, and `send` reads no snapshot before its deadline starts. `send` and `tail --until-idle` results add `liveView`: `matches`, `differs` (with a compact `liveDiff`) or `not_observed`. It is a diagnostic comparing reduced status and final text with the stored reply; it never changes the outcome or exit code.
+
+- `./mf thread send --no-wait` reports `outcome: "accepted"` (admission only) instead of `complete`.
+
+- `./mf doc put --overwrite` says it deletes and recreates the document (new id), reports the deleted id, and says so when the create fails after the delete.
+
+- `./mf` deadline reports leave running turns and owed messages unknown when no snapshot was read, and tell an awake run lease from pending writer messages and unconfirmed idle state, without claiming success.
+
+- Thread socket deadline and recovery contracts now live with the shared client package.
+
+- The development CLI `./mf` now lives in its own workspace package at `tools/mf`, with unchanged commands and exit codes.
 
 - Separate Apply and selective Discard admission types while sharing review-cut consistency and row selection.
 

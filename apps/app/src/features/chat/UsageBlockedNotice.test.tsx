@@ -4,10 +4,10 @@ import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
 import { parseWsServerMessage } from "@meridian/contracts/protocol";
 import type { Turn } from "@meridian/contracts/threads";
+import { projectWriterText, queuedWriterTurnIds } from "@meridian/thread-client";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
-import { queuedWriterTurnIds } from "./pending-inbox";
 import { UsageBlockedNotice } from "./UsageBlockedNotice";
 import { UserTurn } from "./UserTurn";
 
@@ -65,6 +65,7 @@ it("shows a nondismissible usage note and replaces Queued from the inbox project
           blocked ? createElement(UsageBlockedNotice) : null,
           createElement(UserTurn, {
             turn,
+            writer: projectWriterText(turn),
             queued: blocked && queuedWriterTurnIds(pending).has(turn.id),
             waitingForUsage: blocked,
           }),

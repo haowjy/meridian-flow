@@ -102,7 +102,7 @@ export function createOrchestratorEventProjector() {
     state.nextBlockSequence = Math.max(state.nextBlockSequence, block.sequence + 1);
   }
 
-  function finalizeRun(errorMessage?: string): AGUIEvent[] {
+  function finalizeRun(errorMessage?: string, cancelled = false): AGUIEvent[] {
     const events = [...closeOpenTextMessage(), ...closeOpenReasoningMessage()];
     if (errorMessage) {
       events.push(
@@ -117,6 +117,9 @@ export function createOrchestratorEventProjector() {
           type: EventType.RUN_FINISHED,
           threadId: state.activeThreadId,
           runId: state.activeRunId,
+          // Every cancellation is stored as status "cancelled"; clients read this
+          // marker instead of guessing from a bare finish.
+          ...(cancelled ? { result: { stopReason: "user_cancelled" } } : {}),
         }),
       );
     }
@@ -541,7 +544,7 @@ export function createOrchestratorEventProjector() {
         return finalizeRun();
 
       case "turn.cancelled":
-        return finalizeRun();
+        return finalizeRun(undefined, true);
 
       case "turn.error":
         return finalizeRun(event.error.message);

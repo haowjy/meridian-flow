@@ -99,7 +99,7 @@ advertise `ask_user` until its rework
 interrupt card and its response path, they are not dead code.
 
 Cards hide their tool_use/tool_result rows (`tool-view-visibility.ts` per tool,
-`partitionTurn` by the card's `toolCallId`). The custom card is the surface.
+`partitionTurn` by the card's `toolCallId`, both in `@meridian/thread-client`). The custom card is the surface.
 Every reader takes the typed `result`; `output` is the model's text and the app
 never parses it (`ToolView` does not carry it). Spawn and `return_result` protocol remain model
 history; the writer does not see their duplicate rows.
@@ -135,8 +135,8 @@ expanding to that report.
 Child completion delivery persists one system turn with `subagent_update`
 metadata validated by the shared contracts parser; it carries `childThreadId`
 and `agentName` as well as execution/outcome correlation. `transcript-model.ts`
-classifies turns and indexes delivery events alongside the server visible-
-conversation policy; `AssistantTurn` renders completion events as their own
+(`@meridian/thread-client`) classifies turns and indexes delivery events alongside the server visible-
+conversation policy; `AssistantTurn` draws completion events as their own
 quiet render item after the turn's block items.
 The row shows the child's resolved name and outcome (never the raw handle) and
 correlates the internal execution id to its invocation card for navigation.
@@ -247,7 +247,7 @@ keys must be real runtime tool names from
 through custom cards; `spawn` and a foreground `thread_message` that ran have
 hidden tool rows because the retained invocation card owns their writer
 surface, while a queued or failed `thread_message` shows as its own row
-(`tool-view-visibility.ts`). `thread_report` is a
+(`tool-view-visibility.ts` in `@meridian/thread-client`). `thread_report` is a
 process row with its own renderer (`thread-report-renderer.tsx`).
 `return_result` remains a report render item, not a child-report artifact.
 Interrupt cards render in the shared `ArtifactCard` shell; invocation cards
@@ -277,26 +277,22 @@ Neutral tools (`read`, `write`, `work`, `ls`, `search`) get explicit titles/icon
 may expose curated result rows without implying any external execution
 substrate. Adding a renderer is a presentation change only: append
 the real runtime tool name to the `RENDERERS` map and keep protocol pairing in
-`group-delivery-segments.ts`.
+`group-delivery-segments.ts` (`@meridian/thread-client`).
 
 Key files:
 
 | File | Role |
 |---|---|
-| `AssistantTurn.tsx` | Top-level turn render; drives partition + item mounting |
-| `transcript-model.ts` | Shared turn classifier, delivery/invocation indexes, response grouping, and reveal targets |
+| `AssistantTurn.tsx` | Draws the items the view model hands it; mounts each item |
 | `subagent/` | Normalized `SubagentRun`, activity index, disclosure state, and shared row anatomy |
-| `partition-turn.ts` | Ordered walk from `Block[]` to `RenderItem[]` (process/text/artifact) |
-| `tool-kind.ts` | `artifact` vs `process` tool kinds |
-| `group-delivery-segments.ts` | Pairs adjacent tool protocol blocks into ToolViews, then emits single-tool or tool-run segments |
+| `@meridian/thread-client` `src/view/` | `viewTranscript` and its parts: `transcript-model.ts` (turn classifier, delivery indexes, response grouping, reveal targets), `partition-turn.ts` (ordered walk from `Block[]` to process/text/report/artifact items), `assistant-view.ts` (items with visible tools and digest counts), `group-delivery-segments.ts` (pairs adjacent tool protocol blocks into ToolViews), `tool-kind.ts`, `tool-view-visibility.ts`, `tool-command.ts`, `block-kind.ts`, `retry-stand-ins.ts`, `turn-stats.ts`, `writer.ts` |
 | `ProcessDisclosure.tsx` | Collapsible `Thinking` disclosure with sticky user-toggle state |
 | `CustomBlockRenderer.tsx` | Renders `custom` blocks; interrupts pass through `onRespondToInterrupt` |
 | `tool-renderers.tsx` | Tool renderer registry; unknown tools show name only, registered tools use `toolActivityPhrase()` for tense and may show curated expand content. Mismatched keys don't error — a renamed tool silently falls through to the bare-name default, so verify registry keys against the server tool names when either side changes |
-| `AssistantTurn.tsx` (`DeliverySegments`) | Renders adjacent ToolViews as sibling `ToolRow`s inside a fold |
+| `AssistantTurn.tsx` (`FoldRun`) | Renders a fold's visible ToolViews as sibling `ToolRow`s |
 | `ActivityRow.tsx` | Timeline row primitive: 19px icon gutter where each row paints its own 1px rail segment (no sibling-aware CSS). The rail invariants live in its header comment |
 | `TurnBlockStep.tsx` | Compact label/body row for reasoning blocks inside a fold; text and artifacts are handled upstream |
 | `block-render-key.ts` | Positional render keys — `turnId::sequence` |
-| `block-kind.ts` | Block type predicates (`isToolDeliveryBlock`, `isImageBlock`) |
 | `@meridian/contracts` → `threads/index.ts` | `Block`, `BlockType`, `Turn` types |
 
 ### Block types (`BlockType` from `@meridian/contracts`)
@@ -305,14 +301,14 @@ Key files:
 |---|---|---|
 | `reasoning`, `thinking` | process (reasoning run) | `TurnBlockStep` inside the fold |
 | `text` | text | `Markdown` (settled) / `StreamingText` (partial) |
-| `tool_use`, `tool_result` | process (activity run) | Paired into ToolViews by `groupDeliverySegments`, then sibling `ToolRow`s; dropped when hidden |
+| `tool_use`, `tool_result` | process (activity run) | Paired into ToolViews by `groupDeliverySegments` (in the view model), then sibling `ToolRow`s; dropped when hidden |
 | `image` | artifact | `ImageBlock` |
 | `file` | artifact | `TurnBlockStep` fallback |
 | `custom` | artifact | `CustomBlockRenderer` → component registry |
 
 ## Implementation status
 
-Implemented in `partition-turn.ts`, `ProcessDisclosure.tsx`, and
+Implemented in the view model's `partition-turn.ts`, `ProcessDisclosure.tsx`, and
 `AssistantTurn.tsx`. The partition returns an ordered `RenderItem[]`:
 `process` items carry their ordered reasoning/activity runs, `text` and
 `artifact` items carry their block, and `report` items carry a captured
@@ -320,4 +316,5 @@ Implemented in `partition-turn.ts`, `ProcessDisclosure.tsx`, and
 items compose reasoning rows and folded activity runs. Delivery turns
 (`inbox_message`, `subagent_update`) never become bubbles; `AssistantTurn`
 renders them through `subagent/DeliveryEventRows` after the preceding
-assistant turn's block items.
+assistant turn's block items. The view model groups them (`ViewRow.deliveries`);
+the component only draws each group and keeps disclosure, wording and navigation.

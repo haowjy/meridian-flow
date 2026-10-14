@@ -6,9 +6,9 @@
  * queued row that becomes this divider is `QueuedControlRows`.
  */
 import type { Turn } from "@meridian/contracts/protocol";
+import { readWriteModeSwitch } from "@meridian/contracts/threads";
 import { DividerMark, DividerRule } from "../compaction/CompactionDivider";
 import { writeModeSwitchedCopy } from "./control-copy";
-import { readWriteModeSwitch } from "./write-mode-model";
 
 export function WriteModeDivider({ turn }: { turn: Turn }) {
   const facts = readWriteModeSwitch(turn);

@@ -11,10 +11,10 @@
  */
 import { t } from "@lingui/core/macro";
 import type { Turn } from "@meridian/contracts/protocol";
+import { isHandoffSeed, readCompactionFacts } from "@meridian/contracts/threads";
 import { useEffect, useRef } from "react";
 import { announce } from "@/client/stores";
-import { isHandoffSeed } from "../derivation/handoff-seed";
-import { compactionFailureCopy, readCompactionFacts } from "./compaction-model";
+import { compactionFailureCopy } from "./compaction-model";
 
 function announcementFor(turn: Turn): string | null {
   if (turn.role === "compaction") {

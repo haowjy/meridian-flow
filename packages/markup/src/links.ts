@@ -24,3 +24,4 @@ export {
   spelledLinks,
   walkLinkOccurrences,
 } from "./link-occurrences.js";
+export { formatMarkdownLink, markdownLinkDestination } from "./markdown/marks/link.js";

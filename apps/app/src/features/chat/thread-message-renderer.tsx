@@ -6,10 +6,9 @@
  */
 
 import { Trans } from "@lingui/react/macro";
-import type { ToolView } from "./group-delivery-segments";
-import { threadMessageRow } from "./thread-message-result";
+import type { ToolView } from "@meridian/thread-client";
+import { stringInput, threadMessageRow, toolInputObject } from "@meridian/thread-client";
 import { SubagentRefLine } from "./thread-report-renderer";
-import { stringInput, toolInputObject } from "./tool-command";
 import type { ToolExpand, ToolRenderer } from "./tool-renderers";
 
 function ThreadMessageTitle({ tool }: { tool: ToolView }) {

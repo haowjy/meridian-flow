@@ -3,6 +3,7 @@
 import { t } from "@lingui/core/macro";
 import { parseContextUri } from "@meridian/contracts";
 import type { UploadIntakeResult } from "@meridian/contracts/protocol";
+import { imageCapable } from "@meridian/thread-client";
 import { EditorContent, ReactNodeViewRenderer, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { ArrowUp, Paperclip } from "lucide-react";
@@ -220,7 +221,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                   range,
                   composerReferenceContent({
                     ...reference,
-                    imageCapable: row.fileKind === "asset" && reference.fileType === "image",
+                    imageCapable: row.fileKind === "asset" && imageCapable(reference.fileType),
                     upload: null,
                   }),
                 )
@@ -449,7 +450,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               ...ready,
               authority: authorityForUpload(scope, ready.uri),
               label: file.name,
-              imageCapable: ready.fileType === "image",
+              imageCapable: imageCapable(ready.fileType),
               upload: {
                 intakeId,
                 documentId: ready.documentId,

@@ -19,6 +19,7 @@ export default defineConfig({
       "apps/*/vitest.config.ts",
       "apps/server/vitest.isolated.config.ts",
       "tools/dev/vitest.config.ts",
+      "tools/mf/vitest.config.ts",
       ...(includeDatabase ? ["apps/server/vitest.db.config.ts"] : []),
     ],
   },
