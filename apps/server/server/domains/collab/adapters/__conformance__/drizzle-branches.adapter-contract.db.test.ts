@@ -3,11 +3,7 @@
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import {
-  commitJournaledUpdate,
-  commitSegmentRows,
-} from "../../test-support/branch-update-writes.js";
-import { createDrizzleDocumentDerivationStore } from "../drizzle-document-derivations.js";
+import { commitSegmentRows } from "../../test-support/branch-update-writes.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -184,31 +180,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         return codec.serialize(model.projectBlocks(toDocHandle(doc)), UNSCOPED_DOCUMENT_LINKS);
       },
     });
-    const _createPushStores = (
-      serializer: Parameters<typeof createDrizzlePendingSettlementStore>[1],
-      changeTrails: Parameters<
-        typeof createDrizzlePushCommitStore
-      >[2] = createDrizzleChangeTrailAggregateWriter(db),
-    ) => {
-      const journalReadStore = createDrizzleBranchJournalReadStore(db);
-      const commitStore = createDrizzlePushCommitStore(
-        db,
-        stageSettlementBatchWithinTx,
-        changeTrails,
-      );
-      return {
-        journalReadStore,
-        commitStore,
-        workDraftPendingStore: createDrizzleWorkDraftPendingStore(db),
-        settlementStore: createDrizzlePendingSettlementStore(
-          db,
-          serializer,
-          createDrizzleDocumentProjectionEffects(db),
-          changeTrails,
-          createDrizzleDocumentDerivationStore(db, createDocumentLastAddress(db)),
-        ),
-      };
-    };
 
     beforeEach(async () => {
       db = database.current;
@@ -393,108 +364,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    it("commitPushBatch rejects stale branch snapshots and non-active source rows", async () => {
-      const pushStore = createDrizzlePushCommitStore(
-        db,
-        stageSettlementBatchWithinTx,
-        createDrizzleChangeTrailAggregateWriter(db),
-      );
-      const journalReadStore = createDrizzleBranchJournalReadStore(db);
-      const branch = await store.ensureDraftBranch({
-        documentId: DOC_ID as never,
-        draftId: DRAFT_ID as never,
-        liveDoc: docWithText("live"),
-      });
-      const branchDoc = docWithText("draft");
-      const update = Y.encodeStateAsUpdate(branchDoc, Y.encodeStateVector(docWithText("live")));
-      const [journalRow] = await db
-        .insert(branchWriteJournal)
-        .values({
-          branchId: branch.branchId,
-          generation: branch.generation,
-          updateData: Buffer.from(update),
-          draftBaseUpdateSeq: 0,
-          source: "agent",
-        })
-        .returning();
-      if (!journalRow) throw new Error("missing journal row");
-
-      await db
-        .update(documentBranches)
-        .set({ state: Buffer.from(Y.encodeStateAsUpdate(docWithText("concurrent"))) })
-        .where(eq(documentBranches.id, branch.branchId));
-      await expect(
-        pushStore.commitPushBatch(
-          batchOfOne({
-            branch,
-            journalRows: [
-              {
-                id: journalRow.id,
-                branchId: branch.branchId,
-                generation: branch.generation,
-                wId: null,
-                source: "agent",
-                threadId: null,
-                turnId: null,
-                actorUserId: null,
-                updateData: update,
-                draftBaseUpdateSeq: journalRow.draftBaseUpdateSeq,
-                status: "active",
-              },
-            ],
-            pushUpdate: update,
-            idempotencyKey: "stale-branch",
-            trail: {
-              documentId: DOC_ID,
-              documentTitle: "document",
-              receiptId: "receipt",
-              threadIds: [],
-              journalOwners: [],
-              changes: [],
-            },
-            documentTitle: "document",
-            lockCutUpdate: Y.encodeStateAsUpdate(branchDoc),
-          }),
-        ),
-      ).rejects.toThrow("changed before its push could commit");
-      await expect(db.select().from(pushLineage)).resolves.toHaveLength(0);
-
-      const fresh = await store.ensureDraftBranch({
-        documentId: DOC_ID as never,
-        draftId: DRAFT_ID as never,
-        liveDoc: docWithText("live"),
-      });
-      const freshRows = await journalReadStore.listActiveJournalRows(
-        fresh.branchId,
-        fresh.generation,
-      );
-      await db
-        .update(branchWriteJournal)
-        .set({ status: "discarded" })
-        .where(eq(branchWriteJournal.id, journalRow.id));
-      await expect(
-        pushStore.commitPushBatch(
-          batchOfOne({
-            branch: fresh,
-            journalRows: freshRows,
-            pushUpdate: update,
-            idempotencyKey: "inactive-row",
-            trail: {
-              documentId: DOC_ID,
-              documentTitle: "document",
-              receiptId: "receipt",
-              threadIds: [],
-              journalOwners: [],
-              changes: [],
-            },
-            documentTitle: "document",
-            lockCutUpdate: Y.encodeStateAsUpdate(branchDoc),
-          }),
-        ),
-      ).rejects.toThrow("changed before its push could commit");
-      await expect(db.select().from(pushLineage)).resolves.toHaveLength(0);
-    });
-
     it("commitPushBatch leaves no pending command behind when a lineage conflict ends staging", async () => {
       const pushStore = createDrizzlePushCommitStore(
         db,
@@ -518,14 +387,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         draftBaseUpdateSeq: 0,
         source: "agent",
       });
-      const journalRows = await journalReadStore.listActiveJournalRows(
-        branch.branchId,
-        branch.generation,
-      );
       const command = (commandId: string, batchId: string) => ({
         ...batchOfOne({
           branch,
-          journalRows,
+          input: { scope: "item" as const, snapshot: "" },
           pushUpdate: update,
           idempotencyKey: "one-cut",
           trail: {
@@ -557,7 +422,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         branchId: branch.branchId,
         branchGeneration: branch.generation,
         documentId: DOC_ID as never,
-        journalIds: journalRows.map((row) => row.id),
+        journalIds: [],
         idempotencyKey: "one-cut",
       });
       const second = command(

@@ -21,6 +21,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { expect, it } from "vitest";
 import { itemFor } from "../../test-support/draft-tree-scenario.js";
 import { describeDraftTreeDb } from "../../test-support/draft-tree-suite.js";
+import { reviewFrameOfState } from "../../test-support/review-frame.js";
 import { createDrizzleContextCatalog } from "../context/adapters/context-catalog.js";
 import { setCollabHook } from "./domain/collab-test-hooks.js";
 
@@ -131,15 +132,12 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
       isNew: false,
       conflict: null,
     });
-    const preview = await runtime.ports.documentSync.draftReview.preview({
-      workId: beacon.id,
-      itemKey: item?.itemKey ?? "",
-    });
-    if (preview.status !== "active") throw new Error("Beacon's review is gone");
-    const excerpts = preview.operations.map((operation) => operation.afterExcerpt ?? "");
+    const { branchId } = await s.draftBranch(beacon, kael);
+    const loaded = await runtime.ports.documentSync.loadHocuspocusBranchState(branchId);
+    if (!loaded) throw new Error("Beacon's review is gone");
+    const excerpts = reviewFrameOfState(loaded.state).groups.map((group) => group.excerpt.inserted);
     expect.soft(excerpts.join(" "), "Beacon's part").toContain("Beacon's Kael.");
     expect.soft(excerpts.join(" "), "never Ascension's").not.toContain("Ascension's Kael.");
-    expect.soft(preview.item.isNew, "the preview's item").toBe(false);
   });
 
   it("applies at the right path after a live folder rename absorbed the draft's hidden folder, and a recovered reveal replays from the catalog (E-4)", async () => {

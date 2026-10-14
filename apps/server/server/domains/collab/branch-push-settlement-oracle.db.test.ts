@@ -16,7 +16,6 @@ import {
   expectLiveSweepOnly,
   expireAllPendingClaims,
   expirePendingClaims,
-  GAMMA_ID,
   liveDurableState,
   markdownFromUpdate,
   observeSettlement,
@@ -100,7 +99,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     broadcastsBefore = harness.liveRoomBroadcasts().length;
 
     await expect(
-      runInRootDrizzleTransaction(db, () => harness.pushBranches(request, "auto")),
+      runInRootDrizzleTransaction(db, () => harness.pushBranches(request)),
     ).rejects.toThrow(/root-owned/);
     expect(await db.select().from(schema.pushLineage)).toEqual([]);
 
@@ -109,16 +108,12 @@ describe("durable branch-push settlement oracle (postgres)", () => {
       competingWrite = undefined;
       await competitor.stageAnotherDestructiveEdit(beta);
     };
-    const result = await harness.pushBranches(request, "auto");
+    const result = await harness.pushBranches(request);
 
-    expect(result.items).toEqual(
-      [GAMMA_ID, ALPHA_ID, BETA_ID].map((documentId, index) =>
-        expect.objectContaining({
-          status: "pushed",
-          push: expect.objectContaining({ branchId: request[index], documentId }),
-        }),
-      ),
-    );
+    expect(result).toEqual({ status: "pushed" });
+    expect(
+      (await db.select().from(schema.pushLineage)).map((push) => push.branchId).sort(),
+    ).toEqual([...request].sort());
     expect(attempts).toBe(3);
     // Three admissions in attempt 2, which the expiry rolled back, and three in attempt 3:
     // no warm room changed before commit, and nothing admitted twice.

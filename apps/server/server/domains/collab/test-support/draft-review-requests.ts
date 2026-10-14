@@ -17,6 +17,7 @@ import {
   PROSEMIRROR_FRAGMENT_NAME,
 } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
+import { reviewFrameOf } from "../../../test-support/review-frame.js";
 import type { DraftReviewApi } from "../contracts.js";
 import { commandDigest, type DraftCommandEnvelope } from "../domain/draft-commands.js";
 import { commitSegmentRows } from "./branch-update-writes.js";
@@ -27,7 +28,6 @@ import {
   USER_ID,
   WORK_ID,
 } from "./change-trail-postgres-harness.js";
-import { reviewFrameOf } from "../../../test-support/review-frame.js";
 import { captureHistoricalBranchRow } from "./historical-branch-row.js";
 
 type Fixture = ReturnType<ReturnType<typeof createHarness>["crossWorkProbeFixture"]>;
@@ -111,7 +111,9 @@ export function testEnvelope(input: {
 export async function reviewFrame(fixture: Fixture, documentId: string) {
   const { item } = await reviewDriver(fixture.collab.draftReview).resolved(documentId);
   if (!item.draftBranchId) throw new Error(`${documentId} has no text branch`);
-  return fixture.branchCoordinator.readBranch(item.draftBranchId, async (doc) => reviewFrameOf(doc));
+  return fixture.branchCoordinator.readBranch(item.draftBranchId, async (doc) =>
+    reviewFrameOf(doc),
+  );
 }
 
 /**
@@ -122,22 +124,32 @@ export async function discardChangeLocally(fixture: Fixture, documentId: string,
   const { item } = await reviewDriver(fixture.collab.draftReview).resolved(documentId);
   if (!item.draftBranchId) throw new Error(`${documentId} has no text branch`);
   const schema = buildDocumentSchema();
-  await commitBranchEdit(fixture, item.draftBranchId, { source: "writer", threadId: null }, (doc) => {
-    const base = readBlocks(doc.getXmlFragment(REVIEW_BASE_FRAGMENT), schema);
-    const draft = readBlocks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema);
-    const projection = projectReview(diffBlocks(base, draft));
-    const groups =
-      excerpt === undefined
-        ? projection.groups
-        : projection.groups.filter((candidate) => candidate.excerpt.inserted.includes(excerpt));
-    if (groups.length === 0) throw new Error(`No change inserts ${excerpt}`);
-    const next = applySpanPatches(
-      draft,
-      composeGroups(schema, projection, groups.map((group) => group.id), "discard"),
-      "draft",
-    );
-    doc.transact(() => writeBlocks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema, next));
-  });
+  await commitBranchEdit(
+    fixture,
+    item.draftBranchId,
+    { source: "writer", threadId: null },
+    (doc) => {
+      const base = readBlocks(doc.getXmlFragment(REVIEW_BASE_FRAGMENT), schema);
+      const draft = readBlocks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema);
+      const projection = projectReview(diffBlocks(base, draft));
+      const groups =
+        excerpt === undefined
+          ? projection.groups
+          : projection.groups.filter((candidate) => candidate.excerpt.inserted.includes(excerpt));
+      if (groups.length === 0) throw new Error(`No change inserts ${excerpt}`);
+      const next = applySpanPatches(
+        draft,
+        composeGroups(
+          schema,
+          projection,
+          groups.map((group) => group.id),
+          "discard",
+        ),
+        "draft",
+      );
+      doc.transact(() => writeBlocks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema, next));
+    },
+  );
 }
 
 /**
@@ -151,7 +163,11 @@ export async function applyChangesWhere(fixture: Fixture, documentId: string, ex
       ? frame.groups[0]
       : frame.groups.find((candidate) => candidate.excerpt.inserted.includes(excerpt));
   if (!group) throw new Error(`No change inserts ${excerpt}: ${JSON.stringify(frame.groups)}`);
-  return reviewDriver(fixture.collab.draftReview).applyChanges(documentId, [group.id], frame.snapshot);
+  return reviewDriver(fixture.collab.draftReview).applyChanges(
+    documentId,
+    [group.id],
+    frame.snapshot,
+  );
 }
 
 /**

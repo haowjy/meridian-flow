@@ -10,8 +10,8 @@ import {
   handleApplyWorkDraftRequest,
   handleDiscardAllWorkDraftRequest,
   handleDiscardWorkDraftRequest,
-  handleWorkDraftListRequest,
   handleWorkDraftItemMetaRequest,
+  handleWorkDraftListRequest,
   selectDraftRouteServices,
 } from "../../lib/draft-review-route.js";
 import { describeDraftTreeDb } from "../../test-support/draft-tree-suite.js";
@@ -35,13 +35,16 @@ describeDraftTreeDb("deleted-live review preview", (start, db) => {
         const row = review.items.find((item) => item.documentId === documentId);
         expect(row).toMatchObject({ contextLocation: { scheme, path }, isNew: isNewDocument });
         if (!row) throw new Error("Expected a review row");
-        const preview = await handleWorkDraftItemMetaRequest(selectDraftRouteServices(runtime.app), {
-          projectId: s.project.id,
-          userId: s.project.userId,
-          workId: work.id,
-          documentId,
-          itemKey: row.itemKey,
-        });
+        const preview = await handleWorkDraftItemMetaRequest(
+          selectDraftRouteServices(runtime.app),
+          {
+            projectId: s.project.id,
+            userId: s.project.userId,
+            workId: work.id,
+            documentId,
+            itemKey: row.itemKey,
+          },
+        );
         expect(preview).toMatchObject({ kind: "text", isNew: isNewDocument });
         expect(await s.view(work).text(`${prefix}${path.slice(1)}`)).toContain(text);
       }

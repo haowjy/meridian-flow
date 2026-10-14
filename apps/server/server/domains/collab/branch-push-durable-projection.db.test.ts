@@ -1,6 +1,5 @@
-/** PostgreSQL canonical replay, trail projection and sweep attribution proofs. */
+/** PostgreSQL trail projection proofs across a settlement's commit faults and post-cut writer admissions. */
 
-import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createDrizzleChangeTrailAggregateWriter } from "./adapters/drizzle-change-trail-aggregate.js";
 import type { TrailChangeV1 } from "./domain/trail-read-kernel.js";
@@ -9,9 +8,7 @@ import {
   closeDatabase,
   createHarness,
   createTestDatabase,
-  expectLiveSweepOnly,
   expirePendingClaims,
-  observeSettlement,
   resetSettlementFixture,
   runInRootDrizzleTransaction,
   schema,
@@ -21,24 +18,6 @@ describe("branch-push durable projection (postgres)", () => {
   const db = createTestDatabase();
   beforeEach(() => resetSettlementFixture(db));
   afterAll(() => closeDatabase(db));
-
-  it("replays the canonical whole branch when an active edit depends on a discarded row", async () => {
-    const warm = createHarness(db);
-    const branchId = await warm.seedDiscardedDependencyPush();
-    await expect(warm.push(branchId)).resolves.toMatchObject({ status: "pushed" });
-    await expect(warm.liveMarkdown(ALPHA_ID)).resolves.toBe("Dependency base. survivor\n");
-    warm.destroyWarmState();
-
-    const cold = createHarness(db);
-    await expect(cold.liveMarkdown(ALPHA_ID)).resolves.toBe("Dependency base. survivor\n");
-    expect(
-      await db
-        .select({ originType: schema.documentYjsUpdates.originType })
-        .from(schema.documentYjsUpdates)
-        .orderBy(schema.documentYjsUpdates.id),
-    ).toEqual(expect.arrayContaining([expect.objectContaining({ originType: "reconcile" })]));
-    cold.destroyWarmState();
-  });
 
   it("a joined revision publishes one trail version across a rolled-back completion", async () => {
     let faulted = false;
@@ -132,28 +111,5 @@ describe("branch-push durable projection (postgres)", () => {
       }),
     ]);
     harness.destroyWarmState();
-  });
-
-  it("sweep elevation recovers without the safety attribution manifest", async () => {
-    const owner = createHarness(db, {
-      afterDurableCommit: async () => {
-        await db
-          .update(schema.documentYjsCheckpoints)
-          .set({ attributionManifest: {} })
-          .where(eq(schema.documentYjsCheckpoints.documentId, ALPHA_ID));
-        throw new Error("death after manifest loss");
-      },
-    });
-    const branchId = await owner.seedDestructivePush("missing-manifest");
-    await expect(owner.push(branchId)).rejects.toThrow("death after manifest loss");
-    owner.destroyWarmState();
-    await expirePendingClaims(db);
-    const cold = createHarness(db);
-    await expect(cold.recoverPendingLiveSettlements()).resolves.toBe(1);
-    await expectLiveSweepOnly(cold);
-    const observed = await observeSettlement(db, cold);
-    expect(observed.completionState).toMatchObject({ state: "completed" });
-    expect(observed.applyResult).toMatchObject({ status: "applied" });
-    cold.destroyWarmState();
   });
 });

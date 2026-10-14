@@ -1,17 +1,10 @@
 /** Shadow branch coordinator conformance for peer pulls and CAS persistence. */
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
-import {
-  allocateDocumentClient,
-  COLLAB_SCHEMA_VERSION,
-  type CollabSchemaVersion,
-} from "@meridian/prosemirror-schema";
+import { allocateDocumentClient, COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
-import {
-  commitJournaledUpdate,
-  commitSegmentRows,
-} from "../test-support/branch-update-writes.js";
+import { commitJournaledUpdate, commitSegmentRows } from "../test-support/branch-update-writes.js";
 import { captureHistoricalBranchRow } from "../test-support/historical-branch-row.js";
 import {
   type BranchSnapshot,
@@ -304,7 +297,6 @@ describe("BranchCoordinator", () => {
     expect(store.journal).toHaveLength(0);
     expect(materialize(storedBranch(store, "work")).getText("content").toString()).toBe("");
   });
-
 });
 
 function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {

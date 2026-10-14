@@ -489,7 +489,8 @@ export function draftTreeCommands(
     const item = await review.resolveItemByDocument({ workId: work.id, documentId });
     if (!item) throw new Error(`No draft of ${documentId} in ${work.slug}`);
     const meta = await review.itemMeta({ workId: work.id, itemKey: item.itemKey });
-    if (!("kind" in meta) || meta.kind !== "text") throw new Error(`The draft of ${documentId} is gone`);
+    if (!("kind" in meta) || meta.kind !== "text")
+      throw new Error(`The draft of ${documentId} is gone`);
     const room = parseYjsRoomName(meta.roomName);
     if (room?.kind !== "branch") throw new Error(`Not a branch room: ${meta.roomName}`);
     return { branchId: room.branchId };

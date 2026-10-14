@@ -1,10 +1,6 @@
 /** Contract tests for deterministic provenance replay and the reserved namespace. */
 
-import {
-  normalizeLineageRanges,
-  type SemanticEditIRV1,
-  type SemanticOutputRun,
-} from "@meridian/agent-edit/integration";
+import type { SemanticEditIRV1, SemanticOutputRun } from "@meridian/agent-edit/integration";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { Fragment } from "prosemirror-model";
 import { describe, expect, it } from "vitest";
@@ -14,7 +10,6 @@ import {
   appendProvenanceFacts,
   createSemanticProvenanceWriter,
   type DocumentAuthorityId,
-  journalInsertionRanges,
   materializeCandidateProvenance,
   materializeProvenanceView,
   PROVENANCE_TARGETS_TYPE,

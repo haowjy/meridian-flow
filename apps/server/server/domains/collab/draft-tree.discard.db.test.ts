@@ -472,14 +472,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const review = runtime.ports.documentSync.draftReview;
       const itemKey = item?.itemKey ?? "";
       expect
-        .soft(await review.preview({ workId: ascension.id, itemKey }), "the preview refuses")
-        .toMatchObject({ status: "corrupt", draftId: item?.draftId, itemKey });
+        .soft(await review.itemMeta({ workId: ascension.id, itemKey }), "the item still opens")
+        .toMatchObject({ kind: "text", itemKey });
       expect
-        .soft(await s.discard(ascension, [chapter]), "Discard repairs it")
+        .soft(await s.discard(ascension, [chapter]), "Discard closes it, corrupt or not")
         .toMatchObject([{ status: "discarded" }]);
       expect
-        .soft(await review.preview({ workId: ascension.id, itemKey }), "the review is whole again")
-        .toMatchObject({ status: "active", operations: [] });
+        .soft(await review.itemMeta({ workId: ascension.id, itemKey }), "the item is closed")
+        .toMatchObject({ status: "gone" });
       const saved = (await staged.save()) as {
         status: string;
         receipts: { documentId: string }[];

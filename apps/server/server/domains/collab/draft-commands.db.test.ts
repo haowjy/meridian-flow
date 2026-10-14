@@ -18,8 +18,8 @@ import {
 } from "../../lib/draft-review-route.js";
 import { throwHttpInterrupt } from "../../shared/interrupt-boundary.js";
 import { type DraftTreeStart, describeDraftTreeDb } from "../../test-support/draft-tree-suite.js";
-import { reviewFrameOfState } from "../../test-support/review-frame.js";
 import { interleave } from "../../test-support/lock-interleave.js";
+import { reviewFrameOfState } from "../../test-support/review-frame.js";
 import { setCollabHook } from "./domain/collab-test-hooks.js";
 
 /** A live chapter with two independent drafted changes in Ascension's draft. */
