@@ -204,6 +204,16 @@ const SCENARIOS: { name: string; events: LedgerEvent[]; expect: Outcome }[] = [
     expect: { rows: ["s1:queued", "s2:queued"], mode: "direct", heard: { queued: ["direct"] } },
   },
   {
+    // R4: the server can't cancel a switch it already applied, so the later switch is its own row.
+    name: "shows a switch made after one that applied but has no divider yet",
+    events: [
+      journal(1, record("s1", "draft", { posted: true })),
+      answer("s1", "draft", "applied", 2),
+      journal(3, record("s1", "draft", { posted: true }), record("s2", "direct")),
+    ],
+    expect: { rows: ["s1:queued", "s2:sending"], mode: "direct" },
+  },
+  {
     name: "a refused switch shows Retry and a local Withdraw, which settles it",
     events: [
       journal(1, record("s1", "draft", { posted: true, refused: true, failed: true })),
