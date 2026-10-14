@@ -10,6 +10,7 @@ commit, date, stack/provider, outcome, and evidence path after each run. A recip
 is not a claim that it passed on the current commit.
 
 - [Runtime protocols](runtime-probes.md): RP-1 through RP-12, server protocol checks driven with `./mf`. They don't verify the app.
+- [Project chrome and shell](project-chrome-manual.md): the Work rows, composer, dock, rename feedback and frame-hold checks that replaced nine slow DOM tests in `apps/app`.
 - [Browser state envelopes](browser-state-envelopes.md): reload all browser-persisted surfaces and reject transplanted ownership.
 - [Chat submissions](chat-submissions.md): first-send and existing-send failure, FIFO ownership and tab takeover.
 - [Composer drafts](composer-drafts.md): per-tab reload, submission hand-off and missing-reference recovery.
