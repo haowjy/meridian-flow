@@ -1,23 +1,36 @@
-/** Context/collab import adapter using bulk creation, identity fill and the isolated binder. */
+/**
+ * Context/collab import adapter: which project areas are importable, destination resolution
+ * with its ImportError mapping, sibling-batch creation, identity fill and the isolated binder.
+ */
+import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { Database } from "@meridian/database";
 import { documents } from "@meridian/database/schema";
 import { eq, inArray, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { CollabDomain, ImportLinkBinder } from "../../collab/index.js";
 import {
-  type ContextBulkCreation,
-  ContextImportDestinationError,
-  type ContextImportLocations,
-  ContextImportParentMovedError,
+  type ContextChildCreation,
+  type ContextParentLocations,
+  ContextParentMovedError,
   type ContextPort,
   type LinkAheadRegistry,
+  type ProjectContextFsScheme,
 } from "../../context/index.js";
 import { ImportError } from "../domain/manifest.js";
 import { type ImportTreeWriter, ParentMovedError } from "../ports/import-tree-writer.js";
+/** The project areas imports may read from and write into. */
+export const IMPORT_AREAS = [
+  "manuscript",
+  "kb",
+  "unfiled",
+] as const satisfies readonly ProjectContextFsScheme[];
+const isImportArea = (scheme: string): scheme is (typeof IMPORT_AREAS)[number] =>
+  (IMPORT_AREAS as readonly string[]).includes(scheme);
+
 export function createContextImportTreeWriter(deps: {
   db: Database;
-  locations: ContextImportLocations;
-  bulk: ContextBulkCreation;
+  locations: ContextParentLocations;
+  children: ContextChildCreation;
   context: ContextPort;
   collab: CollabDomain;
   binder: ImportLinkBinder;
@@ -48,7 +61,7 @@ export function createContextImportTreeWriter(deps: {
             });
         }
       }
-      for (const area of ["manuscript", "kb", "unfiled"]) await visit(`${area}://`);
+      for (const area of IMPORT_AREAS) await visit(`${area}://`);
       const rows = files.length
         ? await currentDrizzleDb(deps.db)
             .select({ id: documents.id, metadata: documents.metadata })
@@ -85,19 +98,25 @@ export function createContextImportTreeWriter(deps: {
         .where(eq(documents.id, id));
     },
     async destination(uri) {
-      try {
-        return await deps.locations.destination(uri);
-      } catch (error) {
-        if (error instanceof ContextImportDestinationError)
-          throw new ImportError(error.code === "destination_invalid" ? 400 : 404, error.code);
-        throw error;
+      const parsed = parseContextUri(uri);
+      if (!parsed.ok || !parsed.value || !isImportArea(parsed.value.scheme))
+        throw new ImportError(400, "destination_invalid");
+      const { scheme, path } = parsed.value;
+      const segments = path.split("/").filter(Boolean);
+      let found = await deps.locations.findFolder(scheme, segments);
+      // A fresh project has no area source yet: importing to its root creates it.
+      if (!found && !segments.length) {
+        await deps.locations.ensureSource(scheme);
+        found = await deps.locations.findFolder(scheme, segments);
       }
+      if (!found) throw new ImportError(404, "destination_not_found");
+      return found;
     },
     async parent(record, folderId) {
       try {
         return await deps.locations.lockParent(record.sourceId, folderId);
       } catch (error) {
-        if (error instanceof ContextImportParentMovedError) throw new ParentMovedError();
+        if (error instanceof ContextParentMovedError) throw new ParentMovedError();
         throw error;
       }
     },
@@ -105,21 +124,20 @@ export function createContextImportTreeWriter(deps: {
       try {
         return await deps.locations.lockDocument(id);
       } catch (error) {
-        if (error instanceof ContextImportParentMovedError) throw new ParentMovedError();
+        if (error instanceof ContextParentMovedError) throw new ParentMovedError();
         throw error;
       }
     },
     async create(parent, nodes) {
-      await deps.bulk.create({
-        contextSourceId: parent.sourceId,
+      await deps.children.createChildren({
+        parent: { sourceId: parent.sourceId, folderId: parent.folderId },
         folders: nodes
           .filter((node) => node.kind === "folder")
-          .map((node) => ({ id: node.id, parentId: parent.folderId, name: node.name })),
-        placeholders: nodes
+          .map((node) => ({ id: node.id, name: node.name })),
+        documents: nodes
           .filter((node) => node.kind !== "folder")
           .map((node) => ({
             id: node.id,
-            folderId: parent.folderId,
             name: node.name,
             extension: node.extension,
             filetype: node.filetype,

@@ -1,4 +1,4 @@
-/** PostgreSQL proof for chunk atomicity, seeded placeholder identities and linear catalog refresh count. */
+/** PostgreSQL proof for sibling-batch atomicity, seeded placeholder identities and linear catalog refresh count. */
 import { randomUUID } from "node:crypto";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
@@ -18,10 +18,10 @@ import { createInMemoryCoordinator } from "../../collab/adapters/in-memory/agent
 import { createStaticDocumentLinkScopes } from "../../collab/adapters/in-memory/static-document-link-scopes.js";
 import { createAgentEditRuntime } from "../../collab/domain/agent-edit-runtime.js";
 import { createDrizzleContextCatalog } from "./context-catalog.js";
-import { createDrizzleContextBulkCreation } from "./drizzle-context-bulk-creation.js";
+import { createDrizzleContextChildCreation } from "./drizzle-context-children.js";
 
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
-describe.skipIf(!enabled || !process.env.DATABASE_URL)("context bulk creation (postgres)", () => {
+describe.skipIf(!enabled || !process.env.DATABASE_URL)("context child creation (postgres)", () => {
   const db = createDb(process.env.DATABASE_URL ?? "postgres://unused", { max: 4 });
   let projectId: string, sourceId: string;
   let refreshes: number;
@@ -46,7 +46,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("context bulk creation (p
       inTransaction: () => false,
     });
     const catalog = createDrizzleContextCatalog(db);
-    const bulk = createDrizzleContextBulkCreation({
+    const children = createDrizzleContextChildCreation({
       db,
       documents: {
         bindStatic: runtime.linkBinder.bindStatic,
@@ -62,11 +62,10 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("context bulk creation (p
         },
       },
     });
-    return { bulk, catalog };
+    return { children, catalog };
   }
-  const placeholder = (id = randomUUID(), name = "note", folderId: string | null = null) => ({
+  const placeholder = (id = randomUUID(), name = "note") => ({
     id,
-    folderId,
     name,
     extension: "",
     filetype: "markdown" as const,
@@ -87,6 +86,8 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("context bulk creation (p
     await db.close();
   });
 
+  const root = () => ({ sourceId, folderId: null });
+
   // Operation count, not time: one catalog refresh per chunk, whatever its size.
   // Scale timings live in apps/server/scripts/probe-import-performance.ts.
   it("creates each chunk's placeholders with exactly one real catalog refresh", async () => {
@@ -94,13 +95,19 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("context bulk creation (p
     const chunks = 3,
       size = 4;
     const ids = Array.from({ length: chunks * size }, () => randomUUID());
+    await subject.children.createChildren({
+      parent: root(),
+      folders: [{ id: folderId, name: "Notes" }],
+      documents: [],
+    });
+    refreshes = 0;
     for (let chunk = 0; chunk < chunks; chunk++) {
-      await subject.bulk.create({
-        contextSourceId: sourceId,
-        folders: chunk === 0 ? [{ id: folderId, parentId: null, name: "Notes" }] : [],
-        placeholders: ids
+      await subject.children.createChildren({
+        parent: { sourceId, folderId },
+        folders: [],
+        documents: ids
           .slice(chunk * size, (chunk + 1) * size)
-          .map((id, index) => placeholder(id, `note-${chunk * size + index}`, folderId)),
+          .map((id, index) => placeholder(id, `note-${chunk * size + index}`)),
       });
     }
     expect(refreshes).toBe(chunks);
@@ -116,13 +123,12 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("context bulk creation (p
   });
 
   it("rolls all identities, seeds and catalog rows back with its caller", async () => {
-    const folderId = randomUUID();
     await expect(
       runInDrizzleTransaction(db, async () => {
-        await subject.bulk.create({
-          contextSourceId: sourceId,
-          folders: [{ id: folderId, parentId: null, name: "Notes" }],
-          placeholders: [placeholder(undefined, "one", folderId)],
+        await subject.children.createChildren({
+          parent: root(),
+          folders: [{ id: randomUUID(), name: "Notes" }],
+          documents: [placeholder(undefined, "one")],
         });
         expect(await currentDrizzleDb(db).select().from(documents)).toHaveLength(1);
         throw new Error("rollback");
@@ -140,49 +146,36 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("context bulk creation (p
 
   it("a taken name or opposite-kind claim refuses the whole chunk without merging", async () => {
     const kept = placeholder(undefined, "kept");
-    await subject.bulk.create({ contextSourceId: sourceId, folders: [], placeholders: [kept] });
+    await subject.children.createChildren({ parent: root(), folders: [], documents: [kept] });
     await expect(
-      subject.bulk.create({
-        contextSourceId: sourceId,
-        folders: [{ id: randomUUID(), parentId: null, name: "new-folder" }],
-        placeholders: [placeholder(undefined, "kept")],
+      subject.children.createChildren({
+        parent: root(),
+        folders: [{ id: randomUUID(), name: "new-folder" }],
+        documents: [placeholder(undefined, "kept")],
       }),
     ).rejects.toThrow();
     expect(await db.select().from(folders)).toEqual([]);
     expect((await db.select().from(documents)).map(({ id }) => id)).toEqual([kept.id]);
     await expect(
-      subject.bulk.create({
-        contextSourceId: sourceId,
-        folders: [{ id: randomUUID(), parentId: null, name: "taken.md" }],
-        placeholders: [placeholder(undefined, "taken")],
+      subject.children.createChildren({
+        parent: root(),
+        folders: [{ id: randomUUID(), name: "taken.md" }],
+        documents: [placeholder(undefined, "taken")],
       }),
     ).rejects.toThrow("already exists");
     expect(await db.select().from(folders)).toEqual([]);
     expect(refreshes).toBe(1);
   });
 
-  it("rejects a foreign parent and cyclic folders without creating rows", async () => {
+  it("rejects a parent that is not live in the source without creating rows", async () => {
     await expect(
-      subject.bulk.create({
-        contextSourceId: sourceId,
+      subject.children.createChildren({
+        parent: { sourceId, folderId: randomUUID() },
         folders: [],
-        placeholders: [placeholder(undefined, "one", randomUUID())],
+        documents: [placeholder(undefined, "one")],
       }),
     ).rejects.toThrow("parent");
-    const a = randomUUID(),
-      b = randomUUID();
-    await expect(
-      subject.bulk.create({
-        contextSourceId: sourceId,
-        folders: [
-          { id: a, parentId: b, name: "a" },
-          { id: b, parentId: a, name: "b" },
-        ],
-        placeholders: [],
-      }),
-    ).rejects.toThrow("Cyclic");
     expect(await db.select().from(documents)).toEqual([]);
-    expect(await db.select().from(folders)).toEqual([]);
     expect(refreshes).toBe(0);
   });
 });

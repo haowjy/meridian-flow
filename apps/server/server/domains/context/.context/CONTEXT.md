@@ -200,7 +200,7 @@ router resolves to exact project-scoped Work authority before dispatch.
   candidate loader or resolution cache. Personal scope comes from authenticated
   route identity, never from the URI.
 - **Selection import** lives in `domains/import/`. Context supplies identity-based
-  parent lookup, bulk creation and bound writes; no corpus intake remains.
+  parent lookup, sibling-batch creation and bound writes; no corpus intake remains.
 - **Browse layer scheme** (`browse-layer-scheme.ts`) — HTTP browse scheme
   vocabulary, routing, and work-scope membership gating for work-scoped schemes.
 - **Result promotion** prepares exact resolved/no-Work URI identity before an
@@ -594,14 +594,17 @@ durable Work-switch Notice names the previous canonical Scratch root.
 Creation conflicts carry `occupantKind` (`file` or `folder`) through ContextError
 and HTTP error data; it is absent when the failure cannot prove an occupant.
 
-`ContextBulkCreation.create` creates one planning chunk by source and stable
-folder/document ids. Its Drizzle adapter shares the Context namespace lock,
-checks live same-source parents and acyclic folder input, inserts folder and
-placeholder identities in batches, initializes tracked seeds and reconciles membership once for the complete chunk,
-settles arrivals, then refreshes the catalog once. It joins an ambient transaction;
-a collision rolls back the whole chunk. It neither reallocates nor replays ids:
-the caller owns allocation and planning receipts. The caller resolves a moved
-parent's current source before invoking this source-scoped door.
+`ContextChildCreation.createChildren` creates one live parent's new children: sibling
+folders and tracked-document seeds under one `{sourceId, folderId}` (null is the source
+root), by caller-planned ids. Children cannot name each other as parents, so no cycle is
+expressible. It shares `context-fs/entry-rows.ts` (opposite-kind conflict check, insert,
+location claim) with singleton folder and document creation. Under the Context namespace
+lock it checks the parent is live in the source, creates folders then documents,
+reconciles membership once for the chunk, initializes seeds, settles arrivals, then
+refreshes the catalog once. It joins an ambient transaction; a collision rolls back the
+whole chunk. It neither reallocates nor replays ids: the caller owns allocation and
+planning receipts, and resolves a moved parent's current source before invoking this
+source-scoped door.
 Catalog file entries expose strict boolean `importPending`, true only for
 `metadata.importPending === true`, and strict boolean `hasProperties`, true only for stored
 properties (`metadata.properties`, `{format:"yaml", text}`) with non-blank text. The properties
@@ -618,10 +621,12 @@ document properties in v1 (ruling I6, [#778](https://github.com/haowjy/meridian-
 Copy inheriting them is invisible metadata inheritance, not model visibility; no `stat`, `ls`,
 `read` or verbose tool projection may render them.
 
-Import parent lookup is a Context capability (ContextImportLocations).
-It resolves folder identity, takes the current project-area namespace lock,
-rereads the parent and lists its live children in the ambient transaction.
-A source change retries the transaction; deleted ancestors suppress arrival.
+Parent lookup is a Context capability (`ContextParentLocations`) over a caller-supplied
+set of project areas; which areas an import may use is import's policy, not Context's.
+It resolves folder identity, provisions an absent area source through
+`context-source-provisioning.ts`, takes the current area namespace lock, rereads the
+parent and lists its live children in the ambient transaction. A source change throws
+`ContextParentMovedError` and retries the transaction; deleted ancestors suppress arrival.
 Upload reservations compare exact case, matching document namespace claims.
 
 Existing-file metadata changes can use ContextCatalogFileMutationPort.refreshFiles.

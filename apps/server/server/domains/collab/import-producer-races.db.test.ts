@@ -27,7 +27,7 @@ import {
 } from "../../shared/drizzle-transaction.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
 import {
-  createDrizzleContextBulkCreation,
+  createDrizzleContextChildCreation,
   createDrizzleDocumentArrivals,
 } from "../context/index.js";
 import { createNoopEventSink } from "../observability/index.js";
@@ -267,7 +267,7 @@ describe.skipIf(!enabled)("import producer races (postgres)", () => {
       { aheadId, holderProjectId: projectId, address: "manuscript://same" },
     ]);
     let refreshes = 0;
-    const bulk = createDrizzleContextBulkCreation({
+    const children = createDrizzleContextChildCreation({
       db,
       documents: ports.documentSync,
       recordMembership: () => ports.documentSync.reconcileProjectManifest(projectId as never),
@@ -281,17 +281,16 @@ describe.skipIf(!enabled)("import producer races (postgres)", () => {
     });
     const placeholder = (id: string, name: string) => ({
       id,
-      folderId: null,
       name,
       extension: "",
       filetype: "markdown" as const,
       metadata: { importPending: true },
     });
     const chunk = () =>
-      bulk.create({
-        contextSourceId: sourceId,
-        folders: [{ id: folderId, parentId: null, name: "chunk-folder" }],
-        placeholders: [placeholder(placeholderId, "same"), placeholder(extraId, "extra")],
+      children.createChildren({
+        parent: { sourceId, folderId: null },
+        folders: [{ id: folderId, name: "chunk-folder" }],
+        documents: [placeholder(placeholderId, "same"), placeholder(extraId, "extra")],
       });
     const ordinaryBound = await ok(context.bindTrackedDocument("manuscript://same", "ordinary"));
     const ordinary = async () =>

@@ -15,15 +15,15 @@ import {
 import {
   type ContextCatalogFileMutationPort,
   type ContextCatalogMutationPort,
-  createDrizzleContextBulkCreation,
-  createDrizzleContextImportLocations,
+  createDrizzleContextChildCreation,
+  createDrizzleContextParentLocations,
   createDrizzleDocumentArrivals,
   type LinkAheadRegistry,
   type UnifiedContextPortFactory,
 } from "../context/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
 import type { ObjectStorePort } from "../storage/index.js";
-import { createContextImportTreeWriter } from "./adapters/context-tree-writer.js";
+import { createContextImportTreeWriter, IMPORT_AREAS } from "./adapters/context-tree-writer.js";
 import { createDrizzleImportRepository } from "./adapters/drizzle-import-repository.js";
 import { createMammothDocumentConverter } from "./adapters/mammoth-document-converter.js";
 import { createImportService } from "./domain/import-service.js";
@@ -50,7 +50,7 @@ export function createProductionImportPorts(
   projectId: string,
   userId: string,
 ): Parameters<typeof createImportService>[0] {
-  const bulk = createDrizzleContextBulkCreation({
+  const children = createDrizzleContextChildCreation({
     db: deps.db,
     documents: deps.collab,
     recordMembership: () => deps.collab.reconcileProjectManifest(projectId as never),
@@ -98,8 +98,8 @@ export function createProductionImportPorts(
     },
     tree: createContextImportTreeWriter({
       db: deps.db,
-      locations: createDrizzleContextImportLocations(deps.db, projectId, userId),
-      bulk,
+      locations: createDrizzleContextParentLocations(deps.db, { projectId, userId }, IMPORT_AREAS),
+      children,
       context: deps.contextPorts.forProject(projectId, userId, new Map()),
       collab: deps.collab,
       binder,
