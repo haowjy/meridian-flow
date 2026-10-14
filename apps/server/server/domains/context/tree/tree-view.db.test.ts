@@ -302,22 +302,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect(state.get(chapter)).toMatchObject({
         hidden: false,
-        live: {
-          path: "chapters/chapter-one",
-          uri: "manuscript://chapters/chapter-one",
-          deleted: false,
-        },
+        deleted: false,
         target: { path: "chapters/chapter-one", uri: "manuscript://chapters/chapter-one" },
         conflict: { kind: "none" },
       });
       expect(state.get(scene)).toMatchObject({
         origin: "created",
-        live: { deleted: true, deletedAncestors: [await folderId("gone")] },
+        deleted: true,
         conflict: { kind: "deleted_live" },
       });
       expect(state.get(arc)).toMatchObject({
         origin: "edited",
-        live: { path: "arc/two", deleted: true, deletedAncestors: [await folderId("arc")] },
+        deleted: true,
         target: { path: "arc/two" },
         conflict: { kind: "deleted_live" },
       });

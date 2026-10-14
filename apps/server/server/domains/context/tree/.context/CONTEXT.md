@@ -15,7 +15,7 @@ keep their plans.
 
 - **Live:** rows not deleted and not hidden.
 - **Draft D, documents:** a `UNION ALL` of live rows D says nothing about, and the rows
-  D has a change row for, at D's location (`draft_located`), hidden ones only when D
+  D has a change row for, at the document row's own location, hidden ones only when D
   created them. Branch two is bounded by the change table's `draft_id` key prefix.
 - **Draft D, folders:** live folders, plus the hidden folders D places something under
   (and their ancestors). Folders have no change rows yet; a folder D sees is implied by
