@@ -14,8 +14,9 @@ import {
   selectDraftRouteServices,
 } from "../../lib/draft-review-route.js";
 import { describeDraftTreeDb } from "../../test-support/draft-tree-suite.js";
+import { createDrizzleWorkDraftPendingStore } from "./adapters/drizzle-branch-push.js";
 
-describeDraftTreeDb("review items (postgres)", (start) => {
+describeDraftTreeDb("review items (postgres)", (start, db) => {
   it("a created document is a whole-item row: a per-change request refuses, item Discard of one leaves the other", async () => {
     const { runtime, s } = await start();
     const work = await s.work("Ascension", "draft");
@@ -135,5 +136,32 @@ describeDraftTreeDb("review items (postgres)", (start) => {
     expect((await hints(chapter)).map((hint) => hint.originWorkId)).toEqual([northern.id]);
     await s.apply(northern, [chapter], { tokens: "none" });
     expect(await hints(chapter)).toEqual([]);
+  });
+
+  it("the review list, the catalog count and the document hints read one item relation", async () => {
+    const { runtime, s } = await start();
+    const work = await s.work("Ascension", "draft");
+    const chapter = await s.writer.createDocument("chapter.md", "Opening.");
+    await s.writer.createDocument("quiet.md", "Quiet.");
+    await s.model(work).edit("chapter.md", "Opening.", "Opening, drafted.");
+    const blank = await s
+      .model(work)
+      .now("write", { command: "create", path: "manuscript://notes/blank.md" });
+    expect(blank.isError).not.toBe(true);
+    const listed = await s.items(work);
+    expect(listed).toHaveLength(2);
+    const counts = await createDrizzleWorkDraftPendingStore(db).countPendingByWorkIds([work.id]);
+    expect(counts.get(work.id)).toBe(listed.length);
+    const deps = selectDraftRouteServices(runtime.app);
+    for (const item of listed) {
+      const { items: hints } = await handleDocumentDraftHintsRequest(deps, {
+        projectId: s.project.id,
+        documentId: item.documentId as DocumentId,
+        userId: s.project.userId,
+      });
+      expect(hints.map((hint) => hint.itemKey)).toEqual(
+        item.documentId === chapter ? [item.itemKey] : expect.any(Array),
+      );
+    }
   });
 });
