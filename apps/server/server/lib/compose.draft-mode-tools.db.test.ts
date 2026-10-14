@@ -336,10 +336,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
         const switched = await answer;
         const [turn] = await switchTurns();
-        expect(switched?.response).toEqual({
+        expect(switched?.response).toMatchObject({
           id: switched?.response.id,
           pending: null,
           turnId: turn?.id,
+          mode: "direct",
         });
         expect(await modeOf(THREAD.threadId)).toBe("direct");
         const [after] = await db.select().from(schema.works).where(eq(schema.works.id, WORK_ID));
