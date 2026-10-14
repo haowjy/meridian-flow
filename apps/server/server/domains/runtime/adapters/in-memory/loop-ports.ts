@@ -325,7 +325,7 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
 
     async readOwned(lease) {
       const row = leases.get(lease.threadId);
-      return row?.executionId === lease.executionId
+      return row?.executionId === lease.executionId && row.holderId === lease.holderId
         ? { cancelRequested: row.cancelRequested }
         : null;
     },
