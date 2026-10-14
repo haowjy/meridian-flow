@@ -80,11 +80,9 @@ approximately 10% later/first target, alongside the peer pull task above. Eviden
 ## Dead code left by the diff-based review landing
 
 No production caller remains for `wholeBranchPushUpdate`
-(`domain/branch-push-plan.ts`), `documentEffectsEqual`
-(`domain/document-content.ts`, only its test), `domain/draft-review-presentation.ts`
-and the contract types only it reads (`ReviewOperation`, `ReviewHunk` and their
-siblings in `packages/contracts/src/drafts/review.ts`). Delete them with their
-tests. `branch_write_journal.reviewed_by`, `reviewed_at` and `pushed_at` have no
+(`domain/branch-push-plan.ts`) or `documentEffectsEqual`
+(`domain/document-content.ts`, only its test). Delete them with their tests.
+`branch_write_journal.reviewed_by`, `reviewed_at` and `pushed_at` have no
 writer; retiring the columns needs a migration, and `push_lineage.journal_ids`
 (`NOT NULL`, written `'{}'` by content members) can go with it.
 
