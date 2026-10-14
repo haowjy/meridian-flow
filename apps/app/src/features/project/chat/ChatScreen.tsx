@@ -131,7 +131,6 @@ function ChatScreenLoaded({
     thread: snapshotThread,
     liveState: snapshotLiveState,
     nextSeq: snapshotNextSeq,
-    activateProjection,
     snapshot,
     isError,
     settled: historySettled,
@@ -200,7 +199,6 @@ function ChatScreenLoaded({
             snapshotNextSeq={snapshotNextSeq}
             snapshotThreadUsage={snapshot?.threadUsage}
             historySettled={historySettled}
-            activateProjection={activateProjection}
             active={visible}
             composerStrip={
               activeWork && isWorkArchived(activeWork) ? (

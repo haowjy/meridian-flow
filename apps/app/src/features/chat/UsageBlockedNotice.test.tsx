@@ -1,10 +1,16 @@
 // @vitest-environment jsdom
-/** The saved inbox block renders as a quiet note and waiting writer rows, not a failure. */
+/** The record's usage block renders as a quiet note and waiting writer rows, not a failure. */
 import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
 import { parseWsServerMessage } from "@meridian/contracts/protocol";
 import type { Turn } from "@meridian/contracts/threads";
-import { projectWriterText, queuedWriterTurnIds } from "@meridian/thread-client";
+import {
+  INITIAL_RUN_STATE_VIEW,
+  isUsageBlocked,
+  projectWriterText,
+  receiveRecord,
+  waitingWriterMessages,
+} from "@meridian/thread-client";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
@@ -14,7 +20,7 @@ import { UserTurn } from "./UserTurn";
 const open = vi.fn();
 vi.mock("@/features/account/SettingsDialog", () => ({ useSettingsNavigation: () => ({ open }) }));
 
-it("shows a nondismissible usage note and replaces Queued from the inbox projection", async () => {
+it("shows a nondismissible usage note and replaces Queued from the run-state record", async () => {
   const host = document.createElement("div");
   const root = createRoot(host);
   i18n.loadAndActivate({ locale: "en", messages: {} });
@@ -63,7 +69,8 @@ it("shows a nondismissible usage note and replaces Queued from the inbox project
     }),
   );
   if (frame?.type !== "subscribed") throw new Error("Expected subscription state");
-  expect(frame.state.pending.blocked).toEqual(pending.blocked);
+  const view = receiveRecord(INITIAL_RUN_STATE_VIEW, frame.state.runState);
+  expect(isUsageBlocked(view)).toBe(true);
   const render = (blocked: boolean) =>
     act(() =>
       root.render(
@@ -74,7 +81,7 @@ it("shows a nondismissible usage note and replaces Queued from the inbox project
           createElement(UserTurn, {
             turn,
             writer: projectWriterText(turn),
-            queued: blocked && queuedWriterTurnIds(pending).has(turn.id),
+            queued: blocked && waitingWriterMessages(view).some((item) => item.id === turn.id),
             waitingForUsage: blocked,
           }),
         ),
