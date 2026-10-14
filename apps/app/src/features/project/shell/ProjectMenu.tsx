@@ -1,7 +1,7 @@
 /** Project-title menu shared by the desktop rail and phone drawer. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { Download, MoreHorizontal } from "lucide-react";
+import { MoreHorizontal, Upload } from "lucide-react";
 import { useRef, useState } from "react";
 import {
   DropdownMenu,
@@ -55,7 +55,7 @@ export function ProjectMenu({
               setExporting(true);
             }}
           >
-            <Download aria-hidden className="size-3.5" />
+            <Upload aria-hidden className="size-3.5" />
             <Trans>Export project…</Trans>
           </DropdownMenuItem>
         </DropdownMenuContent>

@@ -5,7 +5,7 @@ import {
   isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
-import { FilePlus, FolderPlus, Upload } from "lucide-react";
+import { FilePlus, FolderPlus, ImportIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
@@ -468,7 +468,7 @@ function AreaHeader({
             {onImport ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <PaneHeaderActionButton icon={Upload} label={t`Import…`} />
+                  <PaneHeaderActionButton icon={ImportIcon} label={t`Import…`} />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start">
                   <ImportMenuItems onPick={onImport} />

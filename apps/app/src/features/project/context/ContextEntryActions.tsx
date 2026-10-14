@@ -9,11 +9,11 @@ import {
   Folder,
   FolderOutput,
   FolderPlus,
+  ImportIcon,
   type LucideIcon,
   Pencil,
   RotateCcw,
   Trash2,
-  Upload,
 } from "lucide-react";
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui";
 import { Fragment, useCallback, useRef, useState } from "react";
@@ -252,7 +252,7 @@ function ContextActionItems({
                   "data-[state=open]:bg-dropdown-hover",
                 )}
               >
-                <Upload className="size-3.5 text-muted-foreground" aria-hidden />
+                <ImportIcon className="size-3.5 text-muted-foreground" aria-hidden />
                 <Trans>Import…</Trans>
                 <ChevronRight className="ml-auto size-3.5" aria-hidden />
               </ContextMenuPrimitive.SubTrigger>
@@ -300,7 +300,7 @@ function DropdownActionItems({
       ) : (
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
-            <Upload className="size-3.5 text-muted-foreground" aria-hidden />
+            <ImportIcon className="size-3.5 text-muted-foreground" aria-hidden />
             <Trans>Import…</Trans>
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent>{row.specs.map(item)}</DropdownMenuSubContent>
