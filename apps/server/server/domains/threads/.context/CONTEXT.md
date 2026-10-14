@@ -269,7 +269,8 @@ owns only the SQL predicate beside its partial index.
   mode changes only between replies.
 
   The Work's column is only the default a new chat starts with. An explicit
-  mode on chat creation and every applied switch set it; nothing else does.
+  mode on chat creation and every writer switch (or the Stop of a pending one) set
+  it, applied or not; nothing else does.
   The writer switches a chat through its controls queue
   (`POST /api/threads/:id/controls`, `{ kind: "write_mode" }`). Switching to
   auto-apply applies nothing: pending drafts stay for review. Branches carry no
