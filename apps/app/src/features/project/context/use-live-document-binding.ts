@@ -52,6 +52,8 @@ export function useLiveDocumentBinding({
           documentId,
           signal: abort.signal,
         });
+        // Account shutdown cancels the open without aborting this effect; that is teardown, not a failure.
+        if (opened.kind === "cancelled") return;
         if (opened.kind !== "opened")
           throw new Error(
             opened.kind === "unavailable"
