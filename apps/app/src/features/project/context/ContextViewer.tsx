@@ -129,7 +129,8 @@ export function ContextViewer({
     recordOpenedDocument(opening);
   }, [active, openedDocumentId, projectId, recordOpenedDocument]);
   const optimisticTab = paneState.kind === "optimistic-loading" ? paneState.tab : null;
-  const activeTabId = activeTab?.documentId ?? null;
+  const settledTab = paneState.kind === "optimistic-loading" ? paneState.settledTab : null;
+  const activeTabId = (activeTab ?? settledTab)?.documentId ?? null;
   const masked = isProjectRouteMasked(mask);
   const name = activeTab?.name;
   const activeIsEditable = activeTab?.kind === "tracked" || activeTab?.kind === "new";
@@ -168,9 +169,9 @@ export function ContextViewer({
       <ContextTabBar
         tabs={tabs}
         activeTabId={activeTabId}
-        activeTabInstanceId={activeTab?.tabInstanceId}
+        activeTabInstanceId={(activeTab ?? settledTab)?.tabInstanceId}
         reviewingTabId={activeReviewItemKey ? activeTabId : null}
-        optimisticTab={optimisticTab}
+        optimisticTab={settledTab ? null : optimisticTab}
         onSelect={onSelectTab}
         onClose={onCloseTab}
         onNewDocument={onNewDocument}
