@@ -59,9 +59,12 @@ describe("draft tab settlement", () => {
     expect(getContextTabs("project-a")).toEqual(before);
   });
 
-  it("keeps one tab per document through a join, and absorbs the hidden draft's tab", async () => {
+  it.each([
+    "draft-only",
+    "promoted first",
+  ])("keeps one tab per document through a join (%s)", async (order) => {
     const store = useContextTabsStore.getState();
-    const project = "project-join";
+    const project = `project-join-${order}`;
     const distinct = () => {
       const ids = getContextTabs(project).tabs.map((tab) => tab.documentId);
       expect(new Set(ids).size).toBe(ids.length);
@@ -77,7 +80,13 @@ describe("draft tab settlement", () => {
     });
     await store.selectTab(project, "work-a", "document-n");
     distinct();
-    // The join re-identifies N to D; D's draft-only tab is the same document.
+    // The join re-identifies N to D; D's tab (draft-only, or already promoted by the
+    // replica showing D) is the same document.
+    if (order === "promoted first") {
+      const draft = getContextTabs(project).tabs[0];
+      if (draft?.kind !== "tracked") throw new Error("Expected the draft tab");
+      await store.settleDraft(project, draft);
+    }
     await store.reconcileResourceTab(project, "handle-h", {
       ...liveTab("document-a", "/chapter.md"),
       resourceHandle: "handle-h",
