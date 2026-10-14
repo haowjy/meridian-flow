@@ -23,8 +23,8 @@ It is the single local contract reference; this file maps ownership.
 | Review composition, construction receipt and paint readiness | `features/editor/EditorView.tsx` |
 | Common editor construction | `features/editor/SessionEditor.tsx` |
 | Active editor projection and live presence lease | `useActiveReviewBinding.ts` |
-| Remote draft-only settlement, and a draft-only tab promoted the moment the replica shows its document live (a join; never a drafts refetch) | `DraftOnlySettlement.tsx` |
-| Cross-container promotion/removal | `draft-only-lifecycle.ts` (Editor route repair delegates to the context removal coordinator) |
+| Remote draft-only settlement, and a draft-only tab settled in place the moment the replica shows its document live (a join; never a drafts refetch) | `DraftOnlySettlement.tsx` |
+| Cross-container settlement/removal | `draft-only-lifecycle.ts` (Editor route repair delegates to the context removal coordinator) |
 | Catalog-labelled files and stable order | `client/query/work-draft-files.ts`, exposed by `useWorkDrafts.ts` |
 | Domain change/action index and attribution | `review-changes.ts`, `change-attribution.ts` |
 | Claim-to-review completion projection | `useReviewCommandCompletion.ts` |
@@ -80,12 +80,12 @@ Paths outside this directory are relative to `apps/app/src`.
   insertions, never the operations’ first-hunk summaries. Only row CSS truncates
   their display; repeated words in separate runs remain separate.
 - A draft-only tab is the document's one workspace tab and is never persisted: its
-  address (document and item key) reopens it. Apply promotion drops the review
-  metadata in place; a gone/404 read is not remote-Discard evidence. Apply and
+  address (document and item key) reopens it. Apply settles the same tab in place
+  (`settle-draft` drops the review metadata); a gone/404 read is not remote-Discard evidence. Apply and
   Discard settle every container through `draft-only-lifecycle.ts`; Close and
   Back to live stay with the container used. A review tab is identified by
   document, Work and draft (`ReviewItemTabIdentity`): Close and Discard remove
-  that exact tab. Promotion needs a resolved live
+  that exact tab. Settling needs a resolved live
   presentation of the same document, Work and draft, never a flag transition.
 - Presentational components receive props and callbacks, not controllers.
   Layout belongs to components; pane continuity belongs to shared `PaintHold`.
