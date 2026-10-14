@@ -71,6 +71,8 @@ export function NewThreadComposerToolbar({
   }
   return (
     <AvailableNewThreadControls
+      projectId={projectId}
+      workId={work.id}
       writeMode={writeMode}
       agent={agent}
       workControl={workControl}
@@ -80,17 +82,26 @@ export function NewThreadComposerToolbar({
 }
 
 function AvailableNewThreadControls({
+  projectId,
+  workId,
   writeMode,
   agent,
   workControl,
   onWriteModeChange,
 }: {
+  projectId: string;
+  workId: string;
   writeMode: AiWriteMode;
   agent: ComposerToolbarControl;
   workControl: ComposerToolbarControl;
   onWriteModeChange(mode: AiWriteMode): void;
 }) {
-  const mode = useWriteModeToolbarControl({ value: writeMode, onChoose: onWriteModeChange });
+  const mode = useWriteModeToolbarControl({
+    projectId,
+    workId,
+    value: writeMode,
+    onChoose: onWriteModeChange,
+  });
   return (
     <ComposerToolbar
       ariaLabel={t`Composer controls`}

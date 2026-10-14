@@ -332,6 +332,10 @@ msgstr ""
 msgid "{title} removed from Favorites"
 msgstr ""
 
+#: src/components/app/work-composer-controls/WriteModeControl.tsx
+msgid "{waiting, plural, one {Draft, # document waiting} other {Draft, # documents waiting}}"
+msgstr ""
+
 #: src/core/editor/extensions/inline-review/removal-widget.ts
 msgid "{words, plural, one {# word removed} other {# words removed}}"
 msgstr ""
@@ -527,7 +531,7 @@ msgid "AI write mode"
 msgstr ""
 
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
-msgid "AI write mode: {localizedValue}"
+msgid "AI write mode: {spokenValue}"
 msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
@@ -1836,6 +1840,10 @@ msgstr ""
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
 #: src/features/draft-review/DraftSwitcher.tsx
 msgid "Draft"
+msgstr ""
+
+#: src/components/app/work-composer-controls/WriteModeControl.tsx
+msgid "Draft ({waiting})"
 msgstr ""
 
 #: src/features/project/work/WorkScreen.tsx
