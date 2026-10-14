@@ -14,6 +14,11 @@ import type { RunStateView } from "./run-state-view";
 const isWriterMessage = (item: PendingInboxItem) =>
   item.intent === "message" && item.provenance.kind === "writer";
 
+/** The writer messages a record holds, in inbox order: the one rule for "a writer message", for every reader. */
+export function writerMessages(record: { items: readonly PendingInboxItem[] }): PendingInboxItem[] {
+  return record.items.filter(isWriterMessage);
+}
+
 /**
  * The messages an unretired, unfailed hand-back hides: left out of every fold below and, through
  * `viewTranscript`'s `hidden` input, out of the transcript. A failed one shows its rows again,
@@ -31,7 +36,7 @@ export function hiddenWriterTurns(view: RunStateView): ReadonlySet<string> {
 function writerItems(view: RunStateView): PendingInboxItem[] {
   if (!view.record) return [];
   const hidden = hiddenWriterTurns(view);
-  return view.record.items.filter((item) => isWriterMessage(item) && !hidden.has(item.id));
+  return writerMessages(view.record).filter((item) => !hidden.has(item.id));
 }
 
 const messageIntentIds = (view: RunStateView): string[] =>
@@ -47,6 +52,19 @@ export function isBusy(view: RunStateView): boolean {
   if (writerItems(view).length > 0) return true;
   const hidden = hiddenWriterTurns(view);
   return view.intents.some((intent) => intent.kind === "message" && !hidden.has(intent.id));
+}
+
+/**
+ * Whether the chat owes work with no open execution: a writer message waits (or was just
+ * admitted) and nothing runs yet. The gap after a yield, or a start the usage balance blocks.
+ */
+export function isAwaitingExecution(view: RunStateView): boolean {
+  return isBusy(view) && !view.record?.execution;
+}
+
+/** Whether the record says a start is blocked because the account is out of usage. */
+export function isUsageBlocked(view: RunStateView): boolean {
+  return view.record?.blocked?.reason === "credits_exhausted";
 }
 
 /** The queued tray: writer messages waiting on the open reply, or all of them while a start is blocked. */
