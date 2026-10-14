@@ -40,6 +40,7 @@ import {
   createResultAwareCommandExecutor,
   type ResultAwareCommandExecutor,
 } from "../../context/result-aware-command-executor.js";
+import { documentMetadataFacts } from "../../document-metadata.js";
 import type {
   AdapterDeleteResult,
   AdapterFault,
@@ -417,6 +418,7 @@ export class ContextFS implements ContextSchemeAdapter {
       documentId: doc.id,
       sizeBytes: doc.sizeBytes ?? undefined,
       updatedAt: doc.updatedAt,
+      ...documentMetadataFacts(doc.metadata),
     };
     if (doc.fileType === null) {
       const filetype = doc.filetype ?? DEFAULT_EDITABLE_FILETYPE;
@@ -580,7 +582,7 @@ export class ContextFS implements ContextSchemeAdapter {
     bound: BoundWrite | null,
     options?: ContextWriteOptions,
   ): Promise<Result<{ documentId: string }, AdapterFault>> {
-    if (bound && !this.boundWrites.boundFor(path, bound, null)) {
+    if (bound && !this.boundWrites.boundFor(path, bound, null, options?.documentId)) {
       return Err({ code: "io_error", message: `Content was bound for another document` });
     }
     return this.commandExecutor.run(() =>

@@ -6,11 +6,21 @@ export * from "./context-uri.js";
 export * from "./document-href.js";
 export * from "./document-link.js";
 export * from "./document-link-api.js";
+export * from "./document-properties.js";
 export * from "./document-ref.js";
 export * from "./drafts/index.js";
 export type { EditOrigin, EditPlacement } from "./edit-placement.js";
 export * from "./enums";
+export * from "./export-marker.js";
 export * from "./ids";
+export * from "./import-admission.js";
+export * from "./import-node-id.js";
+export * from "./imports.js";
 export * from "./jsonb";
 export type { ModelResponseIdentity } from "./model-response-identity.js";
+export type {
+  ExportOutsideArea,
+  ProjectExportOptions,
+  ProjectExportPreview,
+} from "./project-export.js";
 export * from "./usage";

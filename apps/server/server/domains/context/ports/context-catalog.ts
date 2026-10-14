@@ -52,3 +52,8 @@ export interface WorkAuthorityCatalogMutationPort {
 export interface ContextCatalogWakePort {
   publish(hint: CatalogWakeHint): void | Promise<void>;
 }
+
+/** Exact-document metadata/content changes, without a whole-tree rebuild. */
+export interface ContextCatalogFileMutationPort {
+  refreshFiles(documentIds: readonly string[]): Promise<void>;
+}

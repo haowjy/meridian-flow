@@ -1,6 +1,7 @@
 /**
  * DocumentPaneChrome — the strip above an open document's editor: the passage
- * notice, the archived-Work notice, and the review-capable identity bar.
+ * notice, the archived-Work notice, an import's arrival notice, the
+ * review-capable identity bar, and the document's properties.
  * The Editor's page and the dock's document stack the same chrome, so an open
  * document looks and behaves alike wherever it is shown; the dock shows the
  * identity bar in its header instead (`identity: null`).
@@ -9,8 +10,10 @@ import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts
 import type { Work } from "@meridian/contracts/works";
 import type { ContextTab } from "@/client/stores";
 import { PassageNotice } from "@/features/editor/PassageNotice";
+import { ImportDocumentNotice } from "@/features/import/ImportDocumentNotice";
 import { ArchivedWorkNotice } from "../work/ArchivedWorkNotice";
 import { DocumentIdentityBar } from "./DocumentIdentityBar";
+import { DocumentProperties } from "./DocumentProperties";
 import type { IdentityCommitOwnership, IdentityCommitted } from "./use-identity-commit";
 
 /** The identity bar's inputs, or null where the pane's header shows the path instead (the dock). */
@@ -51,6 +54,8 @@ export function DocumentPaneChrome({
       {archivedWork ? (
         <ArchivedWorkNotice projectId={projectId} work={archivedWork} className="px-4 pt-3" />
       ) : null}
+      {/* An import's file still arriving, paused or failed says so before its page. */}
+      <ImportDocumentNotice projectId={projectId} tab={tab} className="mx-4 mt-3" />
       {/* Identity bar — the top edge of the page every open document
           shares. Keyed by document so edit state never crosses tabs. */}
       {identity ? (
@@ -65,6 +70,9 @@ export function DocumentPaneChrome({
           onOpenExisting={identity.onOpenExisting}
         />
       ) : null}
+      {/* Properties — read-only frontmatter, under the path in the Editor and
+          the first row in the dock, where the path is in the dock header. */}
+      <DocumentProperties projectId={projectId} tab={tab} />
     </>
   );
 }

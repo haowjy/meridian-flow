@@ -57,6 +57,9 @@ editor UI or transport-shell policy.
   only reduce latency. Push derivation joins its completion transaction.
 - Route schema-aware content reads, seeds, and writes through
   `domain/markdown-document.ts`.
+- Downloads and project ZIPs use the explicit `readForExport` door with a
+  frozen export scope and separate export codec. Never route model reads
+  through it or rewrite stored links for export.
 - Build the markup codec once, in `domain/agent-edit-runtime.ts`, where the
   composition root injects `DocumentLinkScopes`. Links and image sources spell
   from the document tree per operation (`domain/document-link-scope-doors.ts`

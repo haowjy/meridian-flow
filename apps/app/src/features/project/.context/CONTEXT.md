@@ -716,3 +716,18 @@ otherwise repeat owner and shell-data reads in the background.
 ## Document system map
 
 [Current project document architecture](resource-lifecycle-architecture.md) connects browser-local views, local creation, session persistence, catalog acquisition and backend synchronization. It separates resource durability, browser-local views, backend namespace acknowledgement, and Yjs synchronization.
+
+## Imports in the tree and Editor
+
+`ImportProvider` (`features/import`) wraps the project view: one coordinator for
+the project's imports, the import dialogs and the unload warning. The tree
+reads an import through `useImportedCatalog` (arriving rows layered over the
+catalog; status rows by folder), the Editor shows its report at the address
+`/editor/imports/<importId>` (`ImportRoute`, provided by `ReadableProjectRoute`,
+so the report is linkable and Back works), and `DocumentPaneChrome` mounts
+`ImportDocumentNotice` for a file that is still arriving or failed.
+
+The tree's one drop dispatcher is `context/tree-drop/`: `Files` payloads go to
+import, `entries` payloads are reserved for drag-anywhere. A window guard keeps a
+stray file drop from replacing the app; the editor's picture drop is untouched
+because it claims the event first.

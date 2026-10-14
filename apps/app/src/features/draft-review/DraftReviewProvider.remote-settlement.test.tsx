@@ -76,6 +76,7 @@ let projection: ReturnType<typeof vi.spyOn>;
 let discard: ReturnType<typeof vi.spyOn>;
 
 vi.mock("@/client/query/useContextCatalog", () => ({
+  useContextCatalogView: () => ({ catalog: null }),
   contextCatalogScope: () => ({ kind: "project", projectId: "project-a" }),
   useContextCatalogViews: (_projectId: string, schemes: readonly string[]) =>
     Object.fromEntries(schemes.map((scheme) => [scheme, { catalog: null }])),

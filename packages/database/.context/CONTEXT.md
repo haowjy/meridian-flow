@@ -190,6 +190,11 @@ Write migrations as if production data exists ([decision][kb-real-data]).
   the server version it replaces; a broken deploy is reset with owner
   authorization. Do not build expand/contract releases, rollout fences or
   old-binary tolerance code.
+- **Import schema.** `0044_import_schema` is transactional (tables, awaited-document
+  column, `NOT VALID` FKs under `lock_timeout`); `0045_import_indexes` is the
+  no-transaction file: every concurrent index, the FK validations, and the upload
+  guard swap (build `upload_intakes_source_path_exact_live`, drop the old
+  `upload_intakes_source_path_live` last).
 - **Regeneration drops hand edits.** Reapply these online-safety edits whenever
   a branch regenerates migrations after merging the base.
 

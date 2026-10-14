@@ -76,10 +76,7 @@ import {
 } from "./adapters/drizzle-work-draft-discard.js";
 import { createHocuspocusBinding } from "./adapters/hocuspocus-binding.js";
 import { createHocuspocusChangeEventDelivery } from "./adapters/hocuspocus-change-event-delivery.js";
-import {
-  createDeferredLiveProjectionCoordinator,
-  createHocuspocusCoordinator,
-} from "./adapters/hocuspocus-coordinator.js";
+import { createHocuspocusCoordinator } from "./adapters/hocuspocus-coordinator.js";
 import { createWriterIngressBinding } from "./adapters/writer-ingress-binding.js";
 import { createCheckpointService } from "./checkpoints.js";
 import { createCollabFacade } from "./collab-facade.js";
@@ -267,19 +264,10 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     coordinator: liveCoordinator,
   });
   const runtime = createAgentEditRuntime({
+    landingJournal: persistence.journal,
     documentEdits: modelDocumentEdits,
     journal: persistence.journal,
     coordinator: liveCoordinator,
-    agentCoordinator: createDeferredLiveProjectionCoordinator({
-      hocuspocus: hocuspocusBinding.require,
-      journal: persistence.journal,
-      live: liveCoordinator,
-      transactions: {
-        inTransaction: isInDrizzleTransaction,
-        outsideTransaction: runOutsideDrizzleTransaction,
-        afterCommit: deferUntilDrizzleCommit,
-      },
-    }),
     lifecycle: documentCreation,
     initialDocumentSeeds: persistence.lifecycle,
     deferUntilCommit: deferUntilDrizzleCommit,
@@ -565,10 +553,13 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     reversal: turnReversal,
     documents: {
       ensureDocument: persistence.lifecycle.ensureDocument,
+      readForExport: runtime.markdownDocuments.readForExport,
       readAsMarkdown: runtime.markdownDocuments.readAsMarkdown,
       readVersionedMarkdown: runtime.markdownDocuments.readVersionedMarkdown,
       seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
       writeDocument: runtime.markdownDocuments.writeDocument,
+      fillEmptyDocument: runtime.markdownDocuments.fillEmptyDocument,
+      prependBlocks: runtime.markdownDocuments.prependBlocks,
       bindMarkdown: runtime.linkBinder.bindMarkdown,
       bindStatic: runtime.linkBinder.bindStatic,
     },

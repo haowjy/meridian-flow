@@ -27,6 +27,7 @@
   },
   "dependencies": {
     "@ag-ui/core": "0.0.57",
+    "@noble/hashes": "2.4.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

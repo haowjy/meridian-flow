@@ -1,4 +1,5 @@
 /** Canonical decoding of catalog-visible document metadata. */
+import { readStoredDocumentProperties, type StoredDocumentProperties } from "@meridian/contracts";
 export function documentAliases(metadata: unknown): string[] {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return [];
   const aliases = (metadata as { aliases?: unknown }).aliases;
@@ -19,4 +20,30 @@ export interface CopiedFrom {
 /** Metadata a document is created with. */
 export interface DocumentCreationMetadata {
   copiedFrom?: CopiedFrom;
+  importPending?: boolean;
+  properties?: StoredDocumentProperties;
+  aliases?: string[];
+}
+
+/** Only an explicit metadata boolean marks an arriving import. */
+export function documentImportPending(metadata: unknown): boolean {
+  return (
+    !!metadata &&
+    typeof metadata === "object" &&
+    !Array.isArray(metadata) &&
+    (metadata as { importPending?: unknown }).importPending === true
+  );
+}
+
+/** What a copy inherits from its source: imported properties and aliases, when it has them. */
+export function documentMetadataFacts(metadata: unknown): {
+  properties?: StoredDocumentProperties;
+  aliases?: string[];
+} {
+  const properties = readStoredDocumentProperties(metadata);
+  const aliases = documentAliases(metadata);
+  return {
+    ...(properties ? { properties } : {}),
+    ...(aliases.length > 0 ? { aliases } : {}),
+  };
 }

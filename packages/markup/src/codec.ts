@@ -1,17 +1,17 @@
 /** Builder for assembling markdown/MDX codecs from markup plugins. */
 
-import type { Extension } from "mdast-util-from-markdown";
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import remarkGfm from "remark-gfm";
-import remarkParse from "remark-parse";
 import remarkStringify from "remark-stringify";
-import { type PluggableList, type Processor, unified } from "unified";
+import { type PluggableList, unified } from "unified";
 
 import type { MdastRoot } from "./ast.js";
 import { CodecParseError } from "./error.js";
 import { EMPTY_PARAGRAPH_SENTINEL, parseBlockAst } from "./helpers.js";
 import { blockOccurrenceSpans } from "./link-occurrences.js";
 import { attentionHandlers } from "./markdown/attention.js";
+import { exportBlockquote, exportText } from "./markdown/export-text.js";
+import { markdownParser } from "./markdown-parse.js";
 import { type CodecRuntime, MARKDOWN_STRINGIFY_OPTIONS, withRuntime } from "./runtime.js";
 import type {
   BuildOptions,
@@ -79,9 +79,15 @@ function buildMarkupCodec(
       throw new Error(`codec missing BlockCodec for schema node "${blockName}"`);
   }
 
-  const parseProcessor = unified().use(remarkParse).use(positionedGfm).use(remarkPlugins);
+  const parseProcessor = markdownParser(remarkPlugins);
   const stringifyProcessor = unified()
-    .use(remarkStringify, { ...MARKDOWN_STRINGIFY_OPTIONS, handlers: attentionHandlers })
+    .use(remarkStringify, {
+      ...MARKDOWN_STRINGIFY_OPTIONS,
+      handlers: {
+        ...attentionHandlers,
+        ...(options.export ? { text: exportText, blockquote: exportBlockquote } : {}),
+      },
+    })
     .use(remarkGfm)
     .use(remarkPlugins);
 
@@ -247,19 +253,4 @@ function ensureTrailingNewline(value: string): string {
 
 function trimOneTrailingNewline(value: string): string {
   return value.endsWith("\n") ? value.slice(0, -1) : value;
-}
-
-/** Keep GFM token positions; its legacy text transform invents positionless links even from escaped URLs. */
-function positionedGfm(this: Processor): void {
-  remarkGfm.call(this);
-  // Depends on remark-gfm's extension shape; the bare-prose round-trip row guards upgrades.
-  const extensions = this.data().fromMarkdownExtensions ?? [];
-  const removeLegacyAutolinks = (extension: Extension | Extension[]): void => {
-    if (Array.isArray(extension)) {
-      extension.forEach(removeLegacyAutolinks);
-    } else if (extension.enter?.literalAutolink) {
-      extension.transforms = [];
-    }
-  };
-  extensions.forEach(removeLegacyAutolinks);
 }

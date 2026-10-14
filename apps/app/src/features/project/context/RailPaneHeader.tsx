@@ -4,6 +4,7 @@ import type React from "react";
 
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
+import { contextTreeDropTargetClassName } from "./context-row-geometry";
 
 export function RailPaneHeader({
   label,
@@ -12,7 +13,11 @@ export function RailPaneHeader({
   title,
   expanded,
   onExpandedChange,
+  status,
   actions,
+  dropProps,
+  dropState = "idle",
+  dropLabel,
 }: {
   /** Header text, rendered in UPPERCASE at the tree rows' `text-sm` scale. */
   label: string;
@@ -25,12 +30,26 @@ export function RailPaneHeader({
   expanded: boolean;
   /** Click toggles; ArrowLeft/ArrowRight force collapse/expand. */
   onExpandedChange: (expanded: boolean) => void;
+  /** Always visible at the right edge, before the actions: an import's spinner or warning. */
+  status?: React.ReactNode;
   /** Hover-revealed `PaneHeaderActionButton`s; hidden while collapsed. */
   actions?: React.ReactNode;
+  /** Drop handlers when the header is a drop target (the tree's areas). */
+  dropProps?: React.HTMLAttributes<HTMLElement>;
+  /** `over` lights the header as the target of the drag in progress. */
+  dropState?: "idle" | "over";
+  /** What dropping here will do, said at the header's right edge while it is lit. */
+  dropLabel?: React.ReactNode;
 }) {
   return (
     /* This row stays on the rail material at rest and only lifts on hover. */
-    <div className="group relative mx-2 flex h-7 items-center rounded-md transition-colors hover:bg-sidebar-accent/50">
+    <div
+      {...dropProps}
+      className={cn(
+        "group relative mx-2 flex h-7 items-center rounded-md transition-colors hover:bg-sidebar-accent/50",
+        dropState === "over" && contextTreeDropTargetClassName,
+      )}
+    >
       <button
         type="button"
         aria-expanded={expanded}
@@ -60,13 +79,18 @@ export function RailPaneHeader({
           {label}
         </span>
       </button>
-      {/* VS Code's expanded-only rule: no actions on a collapsed pane. The
-          shelf sits in normal flow at the row's end (VS Code: titles
-          ellipsize, actions hold the right edge) so it needs no background
-          mask over the translucent tint; invisible at rest, revealed on
-          header hover / focus-within. */}
-      {expanded && actions ? (
-        <span className="mr-2 flex shrink-0 items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+      {/* Actions show on hover whether or not the pane is open, so a writer
+          can create or import into a collapsed area; the caller opens the
+          pane when an action runs. The shelf sits in normal flow at the
+          row's end (titles ellipsize, actions hold the right edge) so it
+          needs no background mask over the translucent tint; invisible at
+          rest, revealed on header hover / focus-within. */}
+      {dropState === "over" && dropLabel ? (
+        <span className="mr-2 shrink-0 text-caption text-ink-muted">{dropLabel}</span>
+      ) : null}
+      {status}
+      {actions && dropState !== "over" ? (
+        <span className="mr-2 flex shrink-0 items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 has-[[data-state=open]]:opacity-100">
           {actions}
         </span>
       ) : null}

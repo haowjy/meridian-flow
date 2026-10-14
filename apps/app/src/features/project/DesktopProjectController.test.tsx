@@ -487,6 +487,8 @@ async function seedProjection(
             parentId: "manuscript",
             name: "A.md",
             aliases: [],
+            importPending: false,
+            hasProperties: false,
             path: ["A.md"],
             uri: "manuscript://@/A.md",
             provisionalName: false,

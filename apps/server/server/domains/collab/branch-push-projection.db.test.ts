@@ -141,6 +141,7 @@ describe("branch-push durable projection", () => {
     const model = yProsemirrorModel(schema);
     const codec = mdxCodec({ schema });
     const engine = createMarkdownDocumentEngine({
+      exportCodec: mdxCodec({ schema, export: true }),
       links: createStaticDocumentLinkScopes(),
       model,
       codec,
@@ -350,6 +351,7 @@ describe("branch-push durable projection", () => {
     const model = yProsemirrorModel(schema);
     const codec = mdxCodec({ schema });
     const engine = createMarkdownDocumentEngine({
+      exportCodec: mdxCodec({ schema, export: true }),
       links: createStaticDocumentLinkScopes(),
       model,
       codec,

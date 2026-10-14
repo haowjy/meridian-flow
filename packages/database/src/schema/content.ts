@@ -348,8 +348,8 @@ export const uploadIntakes = pgTable(
   (table) => [
     unique("upload_intakes_project_intake_unique").on(table.projectId, table.intakeId),
     unique("upload_intakes_document_unique").on(table.documentId),
-    uniqueIndex("upload_intakes_source_path_live")
-      .on(table.contextSourceId, sql`lower(${table.finalPath})`)
+    uniqueIndex("upload_intakes_source_path_exact_live")
+      .on(table.contextSourceId, table.finalPath)
       .where(sql`${table.state} <> 'deleted'`),
     check(
       "upload_intakes_state_valid",
@@ -446,6 +446,12 @@ export const linkAheadRefs = pgTable(
     settledDocumentId: uuid("settled_document_id")
       .$type<DocumentId>()
       .references(() => documents.id, { onDelete: "set null" }),
+    /**
+     * A planned identity (an import's unlanded file) the ref awaits: no other
+     * document at the address settles it until the import releases it. No FK:
+     * the document has no row until it lands.
+     */
+    awaitedDocumentId: uuid("awaited_document_id").$type<DocumentId>(),
     registeredAt: timestamp("registered_at", { withTimezone: true }).notNull().defaultNow(),
     settledAt: timestamp("settled_at", { withTimezone: true }),
   },
@@ -456,5 +462,9 @@ export const linkAheadRefs = pgTable(
       .on(table.projectId, table.scheme, table.workId, table.rootThreadId, sql`md5(${table.path})`)
       .where(sql`${table.settledDocumentId} IS NULL`),
     index("link_ahead_refs_settled_document").on(table.settledDocumentId),
+    // Arrival of a planned document finds the refs awaiting its id, wherever they were minted.
+    index("link_ahead_refs_awaited_document")
+      .on(table.awaitedDocumentId)
+      .where(sql`${table.awaitedDocumentId} IS NOT NULL AND ${table.settledDocumentId} IS NULL`),
   ],
 );

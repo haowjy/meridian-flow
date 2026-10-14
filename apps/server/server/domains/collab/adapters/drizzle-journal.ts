@@ -41,6 +41,7 @@ import type {
   CheckpointAuthority,
   CheckpointJournal,
 } from "../domain/ports/checkpoint-authority.js";
+import type { DocumentLandingJournal } from "../domain/ports/document-landing-journal.js";
 import {
   insertionAttributions,
   materializeCandidateProvenance,
@@ -83,9 +84,10 @@ export type CollabFacadeStore = {
   latestUpdateSeq(docId: string): Promise<number>;
 };
 
-export type CollabJournal = CheckpointJournal & {
-  headSchemaVersion(documentId: string): Promise<CollabSchemaVersion | null>;
-};
+export type CollabJournal = CheckpointJournal &
+  DocumentLandingJournal & {
+    headSchemaVersion(documentId: string): Promise<CollabSchemaVersion | null>;
+  };
 
 export type DrizzleCollabPersistence = {
   journal: CollabJournal;
@@ -603,7 +605,25 @@ async function materializeCurrentCheckpoint(
 }
 
 export function createDrizzleJournal(db: JournalDb): CollabJournal {
-  return {
+  const journal: CollabJournal = {
+    async admitDocumentLanding(docId, onlySeed, prepare) {
+      return runInDrizzleTransaction(db as Database, async () => {
+        const tx = await enterJournalSeam(db, [docId], []);
+        const [head] = await tx
+          .select({
+            next: documentYjsHeads.nextAdmissionSequence,
+            generation: documentYjsHeads.authorityGeneration,
+          })
+          .from(documentYjsHeads)
+          .where(eq(documentYjsHeads.documentId, asDocumentId(docId)));
+        // Admission sequences restart on restore. A replaced authority can never
+        // prove pristine-since-initial-seed, even when its restored text is empty.
+        if (onlySeed && head && (head.next !== 1n || head.generation !== 1n)) return null;
+        const prepared = await prepare(await journal.read(docId));
+        const { seq } = await appendUpdate(tx, docId, prepared.update, prepared.meta);
+        return { seq, update: prepared.update, meta: { ...prepared.meta, seq } };
+      });
+    },
     headSchemaVersion: (documentId) => readHeadSchemaVersion(db, documentId),
 
     async append(docId, update, meta, authority) {
@@ -945,6 +965,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
       });
     },
   };
+  return journal;
 }
 
 export function createServerDocumentLifecycle(

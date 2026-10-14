@@ -144,4 +144,41 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
       await arrivals.settle([replacement as never]);
       expect((await settlements()).get(ahead)).toBe(note);
     });
+  /** Test: stripes are held to commit, so a restore of several lineages settles them in one call. */
+  it("restoring two lineages settles every restored document in one call", async () => {
+    const db = database.current;
+    const root2 = crypto.randomUUID(),
+      source2 = crypto.randomUUID(),
+      first = crypto.randomUUID(),
+      second = crypto.randomUUID();
+    await db
+      .insert(threads)
+      .values({ id: root2, projectId: p, rootThreadId: root2, createdByUserId: u, ref: "c2" });
+    await db.insert(contextSources).values({
+      id: source2,
+      projectId: p,
+      rootThreadId: root2,
+      scope: "lineage",
+      name: "Scratch",
+      slug: "scratch",
+    });
+    await db.insert(documents).values([
+      { id: first, contextSourceId: source, name: "a", extension: "toml" },
+      { id: second, contextSourceId: source2, name: "b", extension: "toml" },
+    ]);
+    await db
+      .update(contextSources)
+      .set({ deletedAt: new Date() })
+      .where(eq(contextSources.scope, "lineage"));
+    const calls: string[][] = [];
+    const lifecycle = createDrizzleLineageScratchLifecycle(db, undefined, {
+      settle: async (ids) => {
+        calls.push([...ids]);
+        return 0;
+      },
+    });
+    await lifecycle.reconcile([root, root2]);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].sort()).toEqual([first, second].sort());
+  });
 });

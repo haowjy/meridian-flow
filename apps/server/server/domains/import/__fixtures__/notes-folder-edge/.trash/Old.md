@@ -1,0 +1,1 @@
+Deleted Obsidian note.

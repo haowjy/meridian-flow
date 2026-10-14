@@ -19,7 +19,6 @@ import {
   paragraphCodec,
   tableCodec,
 } from "./blocks/index.js";
-import { normalizeGfmTableHardBreaks } from "./blocks/table.js";
 import {
   codeMarkCodec,
   emMarkCodec,
@@ -27,6 +26,7 @@ import {
   strikeMarkCodec,
   strongMarkCodec,
 } from "./marks/index.js";
+import { normalizeGfmTableHardBreaks } from "./table-ingress.js";
 
 export const markdownBlockCodecs: readonly BlockCodec[] = [
   tableCodec,

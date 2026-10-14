@@ -11,7 +11,7 @@ import {
   t,
 } from "./codec-test-support.js";
 import { markdownCodec, mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "./index.js";
-import { normalizeGfmTableHardBreaks } from "./markdown/blocks/table.js";
+import { normalizeGfmTableHardBreaks } from "./markdown/table-ingress.js";
 
 const codec = mdxCodec({ schema, components });
 

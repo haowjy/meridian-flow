@@ -77,6 +77,14 @@ runtime shapes, and observability records.
   request schema, runtime `pending-inbox.ts`, and the database inbox body
   check (`schema/agent-threads.ts`, then regenerate). A missing kind drops that
   queued item from the tray or fails its enqueue.
+- Import wire rules are defined once, for the browser and the server alike:
+  `import-admission.ts` (budgets, the one file count `importFileCount`, and
+  `importPathDisposition`), `export-marker.ts` (the marker codec), and
+  `import-node-id.ts`. `importNodeId` is how predicted browser rows and the
+  server's plan agree on ids: keep its encoding and output byte-identical, and
+  keep it synchronous (`@noble/hashes`' `sha256`, not async WebCrypto): the
+  plan's id mint and the browser's row builder call it inline. A drifted id
+  draws a row twice.
 - Work retention timing is canonical in `src/works/work-retention.ts`; server jobs and UI countdowns consume its exported constants and helpers.
 - `protocol/document-filename.ts` is the input codec for document basenames. Prose
   stores empty extension and markdown filetype; registered non-prose suffixes

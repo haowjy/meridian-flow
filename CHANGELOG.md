@@ -170,6 +170,39 @@
 - Undo and Redo in draft review keep the original author of the text they restore, including after reload and when the draft is applied. Retyping the same words by hand stays yours.
 - Independent AI replacements stay separate changes: each AI write records only its own edits, including when a chat's edit is published into the Work's draft. Discarding a draft's last change keeps it discarded when the same chat writes again.
 - Draft review stays quick on long chapters and large projects: building changes no longer compares every edit with every other, the file tree only redraws rows that changed, stepping between changes no longer re-anchors every mark, and opening a draft no longer prepares two whole copies of the document nobody reads.
+### Added
+
+- Import a folder or files of Markdown into Manuscript, Knowledge Base or Unfiled: Import… (Folder…, Files…) on area headers, folder menus and the phone's `+` menu, or drop them on the tree. Picking starts the import; there is no dialog.
+- Imported rows show in the tree at once and fill in as files land. The import's folder carries a mark: a spinner while files are prepared or sent (Stop import), and a warning when an import is interrupted, has failed files or didn't start (Continue import, Retry failed files, Stop here, Try again, Discard).
+- A failed file keeps a warning on its row and a notice in the document with Retry. After a reload, Continue import re-picks the folder and sends only the files the server still wants.
+- Markdown notes import as documents: frontmatter kept verbatim as read-only Properties with derived aliases; wiki-links, embeds and internal Markdown links bound by id to selected or existing documents; images as attachments. Comments (`%%`, `<!-- -->`), callouts, highlights, tags and footnotes stay literal text.
+- A name already in use counts up (`Notes (2)`); an import never replaces a document.
+- Imports over 10,000 files or 2 GiB are refused before anything uploads; a single file over 50 MB is skipped.
+- Export project…: a ZIP of Markdown folders with relative `.md` links, frontmatter, a `meridian-export.json` marker and optional Work Scratch and Uploads, after a preview of outside links and unapplied drafts. Exported callouts and footnotes stay unescaped.
+- Importing an exported folder routes its Manuscript, Knowledge Base and Unfiled folders back to their areas and skips Works.
+- Documents with imported frontmatter show a read-only Properties row under the path, in the Editor and the dock. The model's `copy` carries a document's properties and aliases.
+- Document downloads preserve frontmatter and spell relative Markdown links.
+- Import API: plan, per-file landing, Finish, resume by id and incremental status.
+- Save binary API downloads with `./mf api GET <path> --output <file>`.
+
+### Changed
+
+- Wikilink paste and import share one wiki-link scanner, frontmatter splitter and project link ranking.
+- Uploads and imports share file classification and filename decoding. Upload names are case-sensitive.
+- A link to a document that hasn't landed yet settles to it by identity, wherever it lands.
+
+### Fixed
+
+- Upload intake rejects a request with several file parts instead of keeping the first.
+- A name containing `%` keeps its links and survives an export round trip.
+- A path-qualified wikilink reaches an exact Unfiled path before suffix matches in other areas.
+- Pasted wikilinks keep comment context across formatting and paragraphs.
+- Reading an import landing never publishes uncommitted text to open editors, and restoring a checkpoint never makes an edited imported placeholder replaceable again.
+
+### Removed
+
+- The old corpus import service and the Knowledge Base batch-import route, which answered a ZIP with success and imported nothing.
+
 ### Changed
 
 - Deleting a chat also clears its unsent and failed messages from this browser. If a chat is deleted elsewhere while you're in it, what you wrote moves to New chat under a note naming the chat.

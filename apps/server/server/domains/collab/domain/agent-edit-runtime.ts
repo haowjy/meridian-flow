@@ -22,6 +22,7 @@ import {
   type MarkdownSerializationAnomalyObserver,
   type RuntimeOrigin,
 } from "./markdown-document.js";
+import type { DocumentLandingJournal } from "./ports/document-landing-journal.js";
 import type { AheadRefRegistrar, DocumentLinkScopes } from "./ports/document-link-scope.js";
 import type { InitialDocumentSeeds } from "./ports/initial-document-seeds.js";
 import { createSemanticProvenanceWriter } from "./provenance.js";
@@ -38,13 +39,9 @@ type AgentEditObservability = Pick<
 
 export function createAgentEditRuntime(input: {
   journal: UpdateJournal;
+  landingJournal?: DocumentLandingJournal;
   documentEdits?: DocumentEdits;
   coordinator: DocumentCoordinator;
-  /**
-   * The live agent-edit core's coordinator when it differs from `coordinator`:
-   * production defers live projection until a reply's transaction commits.
-   */
-  agentCoordinator?: DocumentCoordinator;
   lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
   initialDocumentSeeds: InitialDocumentSeeds;
   deferUntilCommit?(callback: () => void | Promise<void>): boolean;
@@ -73,7 +70,7 @@ export function createAgentEditRuntime(input: {
       }),
       journal: input.journal,
       documentEdits: input.documentEdits,
-      coordinator: input.agentCoordinator ?? input.coordinator,
+      coordinator: input.coordinator,
       lifecycle: input.lifecycle,
       codec,
       model,
@@ -85,9 +82,11 @@ export function createAgentEditRuntime(input: {
   const markdownDocuments = scopeMarkdownEngine(
     createMarkdownDocumentEngine({
       codec: markupCodec,
+      exportCodec: mdxCodec({ schema, export: true }),
       links: input.links,
       model,
       journal: input.journal,
+      landingJournal: input.landingJournal,
       coordinator: input.coordinator,
       lifecycle: input.lifecycle,
       initialDocumentSeeds: input.initialDocumentSeeds,

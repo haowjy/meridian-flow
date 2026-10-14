@@ -1,0 +1,243 @@
+/** Fixture and boundary contracts for the shared wiki-style Markdown scanner. */
+
+import { readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
+
+import { markdownParser } from "../markdown-parse.js";
+import { locate, rankWikilinkMatches, scanWikilinks, splitFrontmatter } from "./index.js";
+
+const fixture = (name: string) =>
+  readFileSync(new URL(`./fixtures/${name}.md`, import.meta.url), "utf8");
+
+describe("fixture vault", () => {
+  it("recognizes Chapter 1 without rewriting its text", () => {
+    const input = fixture("Chapter 1 - The Gate");
+    const { source, findings } = scanWikilinks(input);
+    expect(source).toBe(input);
+    const frontmatter = findings.find((finding) => finding.kind === "frontmatter");
+    expect(frontmatter?.text).toBe(
+      "aliases: [Gate Opening, First Chapter]\ntags: [serial, progression-fantasy]\nstatus: revised\n",
+    );
+    const links = findings.filter((finding) => finding.kind === "wikilink");
+    expect(
+      links.map(({ linkpath, heading, block, label, embed }) => ({
+        linkpath,
+        heading,
+        block,
+        label,
+        embed,
+      })),
+    ).toEqual([
+      { linkpath: "Lin Feng", label: "the protagonist", heading: null, block: null, embed: false },
+      {
+        linkpath: "Cultivation Realms",
+        label: null,
+        heading: "Foundation",
+        block: null,
+        embed: false,
+      },
+      { linkpath: "Sects", label: null, heading: null, block: null, embed: false },
+      { linkpath: "map.png", label: null, heading: null, block: null, embed: true },
+      {
+        linkpath: "Cultivation Realms",
+        label: null,
+        heading: null,
+        block: "core-oath",
+        embed: false,
+      },
+    ]);
+    expect(findings.filter((finding) => finding.kind === "comment")).toHaveLength(1);
+    for (const link of links) expect(source.slice(link.from, link.to)).toMatch(/^!?\[\[.*\]\]$/);
+  });
+
+  it("recognizes Ch 2's note embed and ordinary Markdown links", () => {
+    const { findings } = scanWikilinks(fixture("Ch 2"));
+    expect(
+      findings.filter((finding) => finding.kind === "wikilink" && !finding.embed),
+    ).toHaveLength(2);
+    expect(findings.filter((finding) => finding.kind === "wikilink" && finding.embed)).toHaveLength(
+      1,
+    );
+    expect(
+      findings.filter((finding) => finding.kind === "markdownLink").map((finding) => finding.url),
+    ).toEqual(["../Lore/Sects.md", "Sects%20and%20Clans.md"]);
+    for (const kind of ["frontmatter", "comment"])
+      expect(
+        findings.filter((finding) => finding.kind === kind),
+        kind,
+      ).toHaveLength(1);
+  });
+});
+
+describe("syntax boundaries", () => {
+  it("scans a prose projection without reinterpreting Markdown code or frontmatter", () => {
+    const input =
+      "---\n[[Front]]\n---\n\n    [[Indented]] `[[Ticks]]` %% [[Hidden]] %% [[Visible]]";
+    const { source, findings } = scanWikilinks(input, { context: "prose" });
+    expect(source).toBe(input);
+    expect(findings.filter((finding) => finding.kind === "wikilink")).toMatchObject([
+      { linkpath: "Front" },
+      { linkpath: "Indented" },
+      { linkpath: "Ticks" },
+      { linkpath: "Visible" },
+    ]);
+  });
+
+  it("preserves literal table continuations in comments while normalizing real tables", () => {
+    const comment = "%%\n| a |\n| - |\n| first\\\nsecond |\n%%";
+    const real = "| a |\n| - |\n| first\\\nsecond |";
+    const { source, findings } = scanWikilinks(`${comment}\n\n${real}\n\n[[A]]`);
+    const found = findings.find((finding) => finding.kind === "comment");
+    expect(source.slice(found?.from, found?.to)).toBe(comment);
+    expect(source).toContain("first<br/>second");
+    const link = findings.find((finding) => finding.kind === "wikilink");
+    expect(source.slice(link?.from, link?.to)).toBe("[[A]]");
+  });
+
+  it.each([
+    "%% secret %%",
+    "<!-- secret -->",
+  ])("keeps prose following inline comment %s", (comment) => {
+    const { findings } = scanWikilinks(`${comment} [[Visible]]`);
+    expect(findings.filter((finding) => finding.kind === "wikilink")).toMatchObject([
+      { linkpath: "Visible" },
+    ]);
+  });
+
+  it("does not let a fence inside a comment hide later comment delimiters", () => {
+    const { findings } = scanWikilinks("%%\n```\n%%\n\n%% [[hidden]] %%\n\n[[real]]");
+    expect(findings.filter((finding) => finding.kind === "comment")).toHaveLength(2);
+    expect(findings.filter((finding) => finding.kind === "wikilink")).toMatchObject([
+      { linkpath: "real" },
+    ]);
+  });
+
+  it("never links special syntax inside code and comments", () => {
+    const input =
+      "`[[span]] %% code %%`\n\n~~~md\n[[fence]]\n<!-- code -->\n~~~\n\n%% [[inline]] %%\n\n%%\n[[block]]\n%%\n\n<!-- [[html]] -->\n\n[[real]]";
+    const { findings } = scanWikilinks(input);
+    expect(findings.filter((finding) => finding.kind === "wikilink")).toMatchObject([
+      { linkpath: "real" },
+    ]);
+    expect(findings.filter((finding) => finding.kind === "comment")).toHaveLength(3);
+  });
+
+  it("keeps escaped aliases in table cells and the mdast table intact", () => {
+    const input = "| Who |\n| --- |\n| [[Lin Feng\\|Lin]] |";
+    const result = scanWikilinks(input);
+    expect(result.source).toBe(input);
+    expect(result.findings).toMatchObject([
+      { kind: "wikilink", linkpath: "Lin Feng", label: "Lin" },
+    ]);
+    expect(markdownParser().parse(result.source)).toMatchObject({ children: [{ type: "table" }] });
+    const link = result.findings[0];
+    expect(input.slice(link?.from, link?.to)).toBe("[[Lin Feng\\|Lin]]");
+  });
+
+  it("reports sizes only on embeds and preserves local heading/block targets", () => {
+    expect(
+      scanWikilinks("![[map.png|300]] ![[map.png|300x200]] [[A|300]] [[#Heading]] [[#^block]]")
+        .findings,
+    ).toMatchObject([
+      { embed: true, size: { width: 300, height: null }, label: null },
+      { embed: true, size: { width: 300, height: 200 }, label: null },
+      { embed: false, label: "300", size: null },
+      { linkpath: "", heading: "Heading" },
+      { linkpath: "", block: "block" },
+    ]);
+  });
+
+  it("reports escapes even when unclosed, but ignores escaped links and code", () => {
+    expect(scanWikilinks("\\[[A]] \\[\\[B]] \\[[ `\\[[C]]` [[D]]").findings).toMatchObject([
+      { kind: "escape", literal: "[[" },
+      { kind: "escape", literal: "[[" },
+      { kind: "escape", literal: "[[" },
+      { kind: "wikilink", linkpath: "D" },
+    ]);
+    expect(scanWikilinks("\\\\[[A]]").findings).toMatchObject([
+      { kind: "wikilink", linkpath: "A" },
+    ]);
+  });
+
+  it("uses preprocessed-source offsets after continued table rows", () => {
+    const input = "| A |\n| --- |\n| first\\\nsecond |\n\n[[After]]";
+    const { source, findings } = scanWikilinks(input);
+    expect(source).toContain("first<br/>second");
+    const link = findings.find((finding) => finding.kind === "wikilink");
+    expect(link?.from).toBe(source.indexOf("[[After]]"));
+    expect(source.slice(link?.from, link?.to)).toBe("[[After]]");
+  });
+
+  it("keeps already-parsed paste text and its offsets without repeating ingress", () => {
+    const text = "| A |\n| --- |\n| first\\\nsecond |\n\n[[After]]";
+    const { source, findings } = scanWikilinks(text, { preprocessed: true });
+    expect(source).toBe(text);
+    expect(findings.find((finding) => finding.kind === "wikilink")?.from).toBe(
+      text.indexOf("[[After]]"),
+    );
+  });
+
+  it("reports unclosed comments through EOF without leaking their links", () => {
+    expect(scanWikilinks("%% [[hidden]]").findings).toEqual([
+      { kind: "comment", syntax: "percent", from: 0, to: 13 },
+    ]);
+    expect(scanWikilinks("<!-- [[hidden]]").findings).toHaveLength(1);
+  });
+});
+
+describe("raw frontmatter", () => {
+  it("preserves BOM, CRLF, invalid YAML and exact body bytes", () => {
+    const raw = "\uFEFF---\r\nbroken: [\r\n---\r\nBody\r\n";
+    expect(splitFrontmatter(raw)).toEqual({
+      frontmatter: { kind: "frontmatter", from: 0, to: raw.indexOf("Body"), text: "broken: [\r\n" },
+      body: "Body\r\n",
+    });
+    expect(splitFrontmatter("---\n---").frontmatter?.text).toBe("");
+  });
+
+  it("requires a leading, closed delimiter block", () => {
+    for (const input of ["---\nnot closed", "text\n---\na: b\n---\n", "---", " ---\na: b\n---\n"])
+      expect(splitFrontmatter(input)).toEqual({ frontmatter: null, body: input });
+  });
+});
+
+describe("Markdown link destinations", () => {
+  it("spans only each destination, through nested pictures, code-span labels and angle brackets", () => {
+    const source =
+      '[![cover](map.png)](Note.md) [`x](x`](<A B.md> "t") [ref][n] [](Empty.md)\n\n[n]: R.md\n';
+    const destinations = scanWikilinks(source)
+      .findings.filter((finding) => finding.kind === "markdownLink")
+      .map((finding) =>
+        finding.kind === "markdownLink" && finding.destination
+          ? source.slice(finding.destination.from, finding.destination.to)
+          : null,
+      );
+    expect(destinations).toEqual(["Note.md", "map.png", "<A B.md>", "Empty.md"]);
+  });
+});
+
+describe("project wikilink ranking", () => {
+  const located = (uri: string) => {
+    const item = locate(uri, uri);
+    if (!item) throw new Error(uri);
+    return item;
+  };
+  it("prefers an exact path at any other area's root, Unfiled included, over a suffix match", () => {
+    const holder = located("manuscript://Holder");
+    const target = { folders: ["Lore"], name: "Sects" };
+    expect(
+      rankWikilinkMatches(
+        [located("manuscript://Archive/Lore/Sects"), located("unfiled://Lore/Sects")],
+        target,
+        holder,
+      )?.uri,
+    ).toBe("unfiled://Lore/Sects");
+    expect(
+      rankWikilinkMatches(
+        [located("unfiled://Lore/Sects"), located("kb://Lore/Sects")],
+        target,
+        holder,
+      )?.uri,
+    ).toBe("kb://Lore/Sects");
+  });
+});

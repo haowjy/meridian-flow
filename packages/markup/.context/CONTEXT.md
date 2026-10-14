@@ -5,6 +5,12 @@
 The root `@meridian/markup` exports:
 
 - Presets: `markdownCodec({ schema })` and `mdxCodec({ schema, components })`.
+  The separate `mdxCodec({ schema, export: true })` instance preserves literal
+  wiki-style text spans: `[[…]]`/`![[…]]`, a `[!type]` callout marker
+  opening a blockquote's first line, and footnote `[^id]` (so `[^id]:`
+  definitions too) unless a neighbouring `(`, `[`, `]` or `!` could still form
+  a link. Other bracket constructs stay escaped. Ordinary and model output keep
+  the default configuration.
 - `DocumentLinkScope` and `UNSCOPED_DOCUMENT_LINKS` (no tree: every stored
   href and src spells as written, `asset:` refs stay refs). It is for
   comparing stored bytes and for tests; no reader is ever spelled through it. The fixed-table
@@ -34,6 +40,28 @@ loads neither Yjs nor the schema builder):
   and `storedLinkKeys(...)`, the Yjs twin of the occurrence walk. It takes the
   fragment name from `@meridian/prosemirror-schema/protocol`, never the schema
   builder.
+
+Wiki-style link syntax ships at `@meridian/markup/wikilinks`: `scanWikilinks(text)`
+returns `{ source, findings }`. Findings are a discriminated
+`WikilinkSyntaxFinding` union (frontmatter, links, embeds, escapes, comments and
+Markdown links; callouts, highlights, tags and footnotes stay plain text and are
+not recognized) with half-open UTF-16 `from`/`to` ranges into the
+returned source. Table ingress leaves frontmatter and comment contents verbatim.
+It uses the codec's positioned Markdown parser, masking frontmatter and comments without changing offsets; code,
+comments and Markdown destinations never yield wikilinks. It reports only,
+without resolution or prose conversion. Paste retains its app-side ranking
+and display policy. Its whole-slice text projection uses `{ context: "prose" }`: no
+ingress,
+frontmatter or Markdown AST interpretation; the host supplies code/link semantics.
+Comments still span formatting and paragraph boundaries. `{ preprocessed: true }`
+remains available for Markdown source whose ingress has already run.
+
+`splitFrontmatter(text)` also ships alone at
+`@meridian/markup/frontmatter`, without parser or codec imports.
+It returns `{ frontmatter, body }`; the frontmatter range includes both
+delimiters and the closing line ending, while `text` contains only the YAML
+between them, verbatim. It accepts a leading BOM and CRLF; an unclosed or
+non-leading block is body, and YAML validity is left to the consumer.
 
 Preset-internal codec lists (`markdownBlockCodecs`, `markdownMarkCodecs`,
 `mdxBlockCodecs`, and required-block-name lists) are not exported from the

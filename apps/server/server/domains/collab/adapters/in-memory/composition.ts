@@ -71,6 +71,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
   });
   const links = createStaticDocumentLinkScopes();
   const runtime = createAgentEditRuntime({
+    landingJournal: journal,
     links,
     aheadRefs: UNSUPPORTED_AHEAD_REFS,
     inTransaction: () => false,
@@ -169,10 +170,13 @@ export function createInMemoryCollabDomain(): CollabDomain {
     },
     documents: {
       ensureDocument: lifecycle.ensureDocument,
+      readForExport: runtime.markdownDocuments.readForExport,
       readAsMarkdown: runtime.markdownDocuments.readAsMarkdown,
       readVersionedMarkdown: runtime.markdownDocuments.readVersionedMarkdown,
       seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
       writeDocument: runtime.markdownDocuments.writeDocument,
+      fillEmptyDocument: runtime.markdownDocuments.fillEmptyDocument,
+      prependBlocks: runtime.markdownDocuments.prependBlocks,
       bindMarkdown: runtime.linkBinder.bindMarkdown,
       bindStatic: runtime.linkBinder.bindStatic,
     },

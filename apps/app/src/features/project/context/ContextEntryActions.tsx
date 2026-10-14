@@ -2,7 +2,19 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ContextOwner } from "@meridian/contracts/protocol";
-import { FilePlus, FolderInput, FolderPlus, type LucideIcon, Pencil, Trash2 } from "lucide-react";
+import {
+  ChevronRight,
+  FilePlus,
+  Files,
+  Folder,
+  FolderOutput,
+  FolderPlus,
+  ImportIcon,
+  type LucideIcon,
+  Pencil,
+  RotateCcw,
+  Trash2,
+} from "lucide-react";
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui";
 import { Fragment, useCallback, useRef, useState } from "react";
 import { isMeridianApiError } from "@/client/api/http-client";
@@ -16,7 +28,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import {
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   dropdownMenuContentClass,
   dropdownMenuItemClass,
@@ -31,7 +49,15 @@ import { contextTreeOverflowTriggerClassName } from "./context-row-geometry";
 
 // ─── Action types ────────────────────────────────────────────────────────────
 
-export type EntryAction = "new-file" | "new-folder" | "rename" | "move" | "delete";
+export type EntryAction =
+  | "retry-import"
+  | "new-file"
+  | "new-folder"
+  | "import-folder"
+  | "import-files"
+  | "rename"
+  | "move"
+  | "delete";
 
 type EntryActionSpec = {
   action: EntryAction;
@@ -39,13 +65,30 @@ type EntryActionSpec = {
   icon: LucideIcon;
   group: "create" | "manage";
   destructive?: true;
+  /** Shown inside the "Import…" submenu instead of at the menu's top level. */
+  inImportMenu?: true;
 };
 
 const ENTRY_ACTIONS: readonly EntryActionSpec[] = [
+  { action: "retry-import", label: <Trans>Retry import</Trans>, icon: RotateCcw, group: "create" },
   { action: "new-file", label: <Trans>New file</Trans>, icon: FilePlus, group: "create" },
   { action: "new-folder", label: <Trans>New folder</Trans>, icon: FolderPlus, group: "create" },
+  {
+    action: "import-folder",
+    label: <Trans>Folder…</Trans>,
+    icon: Folder,
+    group: "create",
+    inImportMenu: true,
+  },
+  {
+    action: "import-files",
+    label: <Trans>Files…</Trans>,
+    icon: Files,
+    group: "create",
+    inImportMenu: true,
+  },
   { action: "rename", label: <Trans>Rename</Trans>, icon: Pencil, group: "manage" },
-  { action: "move", label: <Trans>Move…</Trans>, icon: FolderInput, group: "manage" },
+  { action: "move", label: <Trans>Move…</Trans>, icon: FolderOutput, group: "manage" },
   {
     action: "delete",
     label: <Trans>Delete</Trans>,
@@ -54,6 +97,26 @@ const ENTRY_ACTIONS: readonly EntryActionSpec[] = [
     destructive: true,
   },
 ];
+
+/** The menu's rows in order: actions, with the import actions gathered into one "Import…" submenu. */
+type MenuRow =
+  | { kind: "action"; spec: EntryActionSpec; startsGroup: boolean }
+  | { kind: "import"; specs: EntryActionSpec[]; startsGroup: boolean };
+
+function menuRows(allowedActions: readonly EntryAction[]): MenuRow[] {
+  const specs = ENTRY_ACTIONS.filter((spec) => allowedActions.includes(spec.action));
+  const rows: MenuRow[] = [];
+  let previous: EntryActionSpec | undefined;
+  for (const spec of specs) {
+    const startsGroup = previous !== undefined && previous.group !== spec.group;
+    previous = spec;
+    const last = rows.at(-1);
+    if (spec.inImportMenu && last?.kind === "import") last.specs.push(spec);
+    else if (spec.inImportMenu) rows.push({ kind: "import", specs: [spec], startsGroup });
+    else rows.push({ kind: "action", spec, startsGroup });
+  }
+  return rows;
+}
 
 export type EntryActionTarget = {
   /** Display name of the entry (basename). */
@@ -146,6 +209,13 @@ export function EntryKebabButton({
 
 // ─── Primitive-specific renderers over the shared action specification ─────
 
+function ActionIcon({ spec }: { spec: EntryActionSpec }) {
+  const Icon = spec.icon;
+  return (
+    <Icon className={cn("size-3.5", !spec.destructive && "text-muted-foreground")} aria-hidden />
+  );
+}
+
 function ContextActionItems({
   allowedActions,
   onAction,
@@ -153,31 +223,54 @@ function ContextActionItems({
   allowedActions: readonly EntryAction[];
   onAction: (action: EntryAction) => void;
 }) {
-  const actions = ENTRY_ACTIONS.filter((spec) => allowedActions.includes(spec.action));
+  const item = (spec: EntryActionSpec) => (
+    <ContextMenuPrimitive.Item
+      key={spec.action}
+      data-variant={spec.destructive ? "destructive" : "default"}
+      className={cn(dropdownRowVariants(), dropdownMenuItemClass)}
+      onSelect={() => onAction(spec.action)}
+    >
+      <ActionIcon spec={spec} />
+      {spec.label}
+    </ContextMenuPrimitive.Item>
+  );
   return (
     <>
-      {actions.map((spec, index) => {
-        const Icon = spec.icon;
-        const startsGroup = index > 0 && actions[index - 1]?.group !== spec.group;
-        return (
-          <Fragment key={spec.action}>
-            {startsGroup ? (
-              <ContextMenuPrimitive.Separator className={dropdownMenuSeparatorClass} />
-            ) : null}
-            <ContextMenuPrimitive.Item
-              data-variant={spec.destructive ? "destructive" : "default"}
-              className={cn(dropdownRowVariants(), dropdownMenuItemClass)}
-              onSelect={() => onAction(spec.action)}
-            >
-              <Icon
-                className={cn("size-3.5", !spec.destructive && "text-muted-foreground")}
-                aria-hidden
-              />
-              {spec.label}
-            </ContextMenuPrimitive.Item>
-          </Fragment>
-        );
-      })}
+      {menuRows(allowedActions).map((row) => (
+        <Fragment key={row.kind === "import" ? "import" : row.spec.action}>
+          {row.startsGroup ? (
+            <ContextMenuPrimitive.Separator className={dropdownMenuSeparatorClass} />
+          ) : null}
+          {row.kind === "action" ? (
+            item(row.spec)
+          ) : (
+            <ContextMenuPrimitive.Sub>
+              <ContextMenuPrimitive.SubTrigger
+                className={cn(
+                  dropdownRowVariants(),
+                  dropdownMenuItemClass,
+                  "data-[state=open]:bg-dropdown-hover",
+                )}
+              >
+                <ImportIcon className="size-3.5 text-muted-foreground" aria-hidden />
+                <Trans>Import…</Trans>
+                <ChevronRight className="ml-auto size-3.5" aria-hidden />
+              </ContextMenuPrimitive.SubTrigger>
+              <ContextMenuPrimitive.Portal>
+                <ContextMenuPrimitive.SubContent
+                  className={cn(
+                    dropdownNavigationPageClass,
+                    dropdownMenuContentClass,
+                    "origin-(--radix-context-menu-content-transform-origin)",
+                  )}
+                >
+                  {row.specs.map(item)}
+                </ContextMenuPrimitive.SubContent>
+              </ContextMenuPrimitive.Portal>
+            </ContextMenuPrimitive.Sub>
+          )}
+        </Fragment>
+      ))}
     </>
   );
 }
@@ -189,26 +282,32 @@ function DropdownActionItems({
   allowedActions: readonly EntryAction[];
   onAction: (action: EntryAction) => void;
 }) {
-  const actions = ENTRY_ACTIONS.filter((spec) => allowedActions.includes(spec.action));
-  return actions.map((spec, index) => {
-    const Icon = spec.icon;
-    const startsGroup = index > 0 && actions[index - 1]?.group !== spec.group;
-    return (
-      <Fragment key={spec.action}>
-        {startsGroup ? <DropdownMenuSeparator /> : null}
-        <DropdownMenuItem
-          variant={spec.destructive ? "destructive" : "default"}
-          onSelect={() => onAction(spec.action)}
-        >
-          <Icon
-            className={cn("size-3.5", !spec.destructive && "text-muted-foreground")}
-            aria-hidden
-          />
-          {spec.label}
-        </DropdownMenuItem>
-      </Fragment>
-    );
-  });
+  const item = (spec: EntryActionSpec) => (
+    <DropdownMenuItem
+      key={spec.action}
+      variant={spec.destructive ? "destructive" : "default"}
+      onSelect={() => onAction(spec.action)}
+    >
+      <ActionIcon spec={spec} />
+      {spec.label}
+    </DropdownMenuItem>
+  );
+  return menuRows(allowedActions).map((row) => (
+    <Fragment key={row.kind === "import" ? "import" : row.spec.action}>
+      {row.startsGroup ? <DropdownMenuSeparator /> : null}
+      {row.kind === "action" ? (
+        item(row.spec)
+      ) : (
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <ImportIcon className="size-3.5 text-muted-foreground" aria-hidden />
+            <Trans>Import…</Trans>
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent>{row.specs.map(item)}</DropdownMenuSubContent>
+        </DropdownMenuSub>
+      )}
+    </Fragment>
+  ));
 }
 
 // ─── Delete confirmation dialog ─────────────────────────────────────────────

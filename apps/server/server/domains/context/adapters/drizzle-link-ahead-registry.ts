@@ -2,8 +2,24 @@
  * Drizzle persistence for ahead-link identities (contract §9): durable rows minted
  * for addresses with no document yet, settled by the first live document that
  * arrives at the exact address (or at registration, if one is already there).
+ * A row awaiting a planned identity is settled only by that document, wherever
+ * it lands, until it is released, and then behaves like any other row.
+ *
+ * Serialization. One lock order per transaction: namespace keys (sorted), then awaited
+ * stripes (sorted), then registry rows. A row at an address settles under that address's
+ * namespace key, which registration, every arrival and `releaseAwaiting` take. A row awaiting
+ * an id has no address to lock (the document has no row until it lands), so registration
+ * and arrival meet on a stripe of advisory locks keyed by the awaited id. Stripes are held
+ * to commit, so a transaction takes them in one sorted phase: `settleArrivals` is called
+ * once per transaction with every arrival (lineage reconciliation hands its ids back to the
+ * caller, Work restore settles the union), and a call that would take a stripe below one
+ * already held throws. A stripe holder never waits on a namespace key, so no cycle closes.
+ * Either registration commits first and the arrival's settle sees the row, or the arrival
+ * commits first and registration finds the document live. Release flips refs to address mode
+ * under their addresses' keys, so an uncommitted foreign arrival there finishes first and a
+ * later one finds the ref in address mode.
  */
-import type { ContextUriScheme } from "@meridian/contracts/context-uri";
+import { type ContextUriScheme, isProjectScopedScheme } from "@meridian/contracts/context-uri";
 import { parseRequestId } from "@meridian/contracts/request-id";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
@@ -15,7 +31,7 @@ import {
   projects,
   works,
 } from "@meridian/database/schema";
-import { and, eq, gt, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   isInDrizzleTransaction,
@@ -72,21 +88,32 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
           resolved.push({
             aheadId,
             address: await resolveCanonicalAddress(this.db, registration),
+            awaitedDocumentId: registration.awaitedDocumentId ?? null,
           });
         }
         // Namespace keys only: registration is not an authored write (archived Work
         // scratch is a valid target) and holds nothing else, so it cannot close a cycle.
+        // A ref awaiting an id never settles by address, so it takes no address key.
         await lockNamespaceKeys(
           this.db,
-          resolved.map(({ address }) => ({ ...address, workId: address.lockWorkId })),
+          resolved
+            .filter(({ awaitedDocumentId }) => !awaitedDocumentId)
+            .map(({ address }) => ({ ...address, workId: address.lockWorkId })),
+        );
+        await lockAwaitedStripes(
+          this.db,
+          resolved.flatMap(({ awaitedDocumentId }) =>
+            awaitedDocumentId ? [awaitedDocumentId] : [],
+          ),
         );
 
         const ids = resolved.map(({ aheadId }) => aheadId);
         await tx
           .insert(linkAheadRefs)
           .values(
-            resolved.map(({ aheadId, address }) => ({
+            resolved.map(({ aheadId, address, awaitedDocumentId }) => ({
               aheadId,
+              awaitedDocumentId,
               projectId: address.projectId,
               scheme: address.scheme,
               workId: address.workId,
@@ -111,9 +138,16 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
           }
         }
 
-        for (const { aheadId, address } of resolved) {
-          const documentId = await this.liveDocumentAt(address);
-          if (documentId) await this.settle(address, documentId, aheadId);
+        for (const { aheadId, address, awaitedDocumentId } of resolved) {
+          if (awaitedDocumentId) {
+            // Wherever it landed: the awaited document is live in this ref's project.
+            const landed = await currentDocumentAddress(this.db, awaitedDocumentId);
+            if (landed && (await this.isLive(landed, awaitedDocumentId)))
+              await this.settle(landed, awaitedDocumentId, aheadId);
+          } else {
+            const documentId = await this.liveDocumentAt(address);
+            if (documentId) await this.settle(address, documentId, aheadId);
+          }
         }
       }),
     );
@@ -121,18 +155,99 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
 
   async settleArrivals(documentIds: readonly DocumentId[]): Promise<number> {
     let settled = 0;
+    await lockAwaitedStripes(this.db, documentIds);
     for (const documentId of new Set(documentIds)) {
       const address = await currentDocumentAddress(this.db, documentId);
       // Every arrival calls this; the manifest read is paid only when a ref waits here.
       if (
         address &&
-        (await this.hasUnsettled(address)) &&
+        (await this.hasUnsettled(address, documentId)) &&
         (await this.isLive(address, documentId))
       ) {
         settled += await this.settle(address, documentId);
       }
     }
     return settled;
+  }
+
+  async releaseAwaiting(documentIds: readonly DocumentId[]): Promise<number> {
+    const ids = [...new Set(documentIds)];
+    if (ids.length === 0) return 0;
+    const tx = currentDrizzleDb(this.db);
+    // Release and an arrival meet at the address: an arrival that skipped a ref (it still
+    // awaited another id) is invisible to us until it commits, so the address's namespace key
+    // comes first, then the stripes, then the rows. Refs registered after this read hold
+    // their key from registration on, not ours; Finish refuses to bind once it is terminal.
+    const awaiting = await tx
+      .selectDistinct({
+        projectId: linkAheadRefs.projectId,
+        scheme: linkAheadRefs.scheme,
+        workId: linkAheadRefs.workId,
+        rootThreadId: linkAheadRefs.rootThreadId,
+      })
+      .from(linkAheadRefs)
+      .where(
+        and(inArray(linkAheadRefs.awaitedDocumentId, ids), isNull(linkAheadRefs.settledDocumentId)),
+      );
+    // Registration's keys, rebuilt from the row: a ref with no Work and no chat lives in its
+    // project's No Work namespace unless its scheme is project-scoped; `user` keys the owner.
+    const projectIds = [...new Set(awaiting.map((row) => row.projectId))];
+    const [owners, noWorks] = projectIds.length
+      ? await Promise.all([
+          tx
+            .select({ id: projects.id, userId: projects.userId })
+            .from(projects)
+            .where(inArray(projects.id, projectIds)),
+          tx
+            .select({ id: works.id, projectId: works.projectId })
+            .from(works)
+            .where(
+              and(
+                inArray(works.projectId, projectIds),
+                eq(works.isNoWork, true),
+                isNull(works.deletedAt),
+              ),
+            ),
+        ])
+      : [[], []];
+    const ownerOf = new Map(owners.map((row) => [row.id, row.userId]));
+    const noWorkOf = new Map(noWorks.map((row) => [row.projectId, row.id]));
+    await lockNamespaceKeys(
+      this.db,
+      awaiting.map((row) => ({
+        projectId: row.projectId,
+        userId: ownerOf.get(row.projectId) ?? "",
+        scheme: row.scheme,
+        workId:
+          row.workId ??
+          (row.rootThreadId || isProjectScopedScheme(row.scheme as ContextUriScheme)
+            ? null
+            : (noWorkOf.get(row.projectId) ?? null)),
+      })),
+    );
+    await lockAwaitedStripes(this.db, ids);
+    const released = await tx
+      .update(linkAheadRefs)
+      .set({ awaitedDocumentId: null })
+      .where(
+        and(inArray(linkAheadRefs.awaitedDocumentId, ids), isNull(linkAheadRefs.settledDocumentId)),
+      )
+      .returning();
+    for (const row of released) {
+      // As registration would: a document already at the address settles the ref now.
+      const address: Address = {
+        projectId: row.projectId,
+        userId: "",
+        scheme: row.scheme as ContextUriScheme,
+        workId: row.workId,
+        lockWorkId: row.workId,
+        rootThreadId: row.rootThreadId,
+        path: row.path,
+      };
+      const documentId = await this.liveDocumentAt(address);
+      if (documentId) await this.settle(address, documentId, row.aheadId);
+    }
+    return released.length;
   }
 
   async registerUnregistered(
@@ -205,13 +320,27 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
     return documentId && (await this.isLive(address, documentId)) ? documentId : null;
   }
 
-  private async hasUnsettled(address: Address): Promise<boolean> {
+  private async hasUnsettled(address: Address, documentId: string): Promise<boolean> {
     const [row] = await currentDrizzleDb(this.db)
       .select({ id: linkAheadRefs.aheadId })
       .from(linkAheadRefs)
-      .where(and(this.atAddress(address), isNull(linkAheadRefs.settledDocumentId)))
+      .where(and(isNull(linkAheadRefs.settledDocumentId), this.settlableBy(address, documentId)))
       .limit(1);
     return Boolean(row);
+  }
+
+  /**
+   * Which unsettled rows this document settles: the rows awaiting its id in its project,
+   * wherever the ref was minted, and the rows awaiting nothing at its exact address.
+   */
+  private settlableBy(address: Address, documentId: string) {
+    return or(
+      and(
+        eq(linkAheadRefs.awaitedDocumentId, documentId as DocumentId),
+        eq(linkAheadRefs.projectId, address.projectId),
+      ),
+      and(isNull(linkAheadRefs.awaitedDocumentId), this.atAddress(address)),
+    );
   }
 
   private atAddress(address: Address) {
@@ -237,13 +366,45 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
       .set({ settledDocumentId: documentId, settledAt: new Date() })
       .where(
         and(
-          this.atAddress(address),
           isNull(linkAheadRefs.settledDocumentId),
+          this.settlableBy(address, documentId),
           aheadId ? eq(linkAheadRefs.aheadId, aheadId) : undefined,
         ),
       )
       .returning({ id: linkAheadRefs.aheadId });
     return rows.length;
+  }
+}
+
+/**
+ * Awaiting stripes: a fixed few keys, so a bulk arrival never holds a lock per document.
+ * Sorted, taken after every namespace key the caller needs.
+ */
+const AWAITED_STRIPES = 64;
+const stripeOf = (documentId: string) =>
+  Number.parseInt(documentId.replaceAll("-", "").slice(-4), 16) % AWAITED_STRIPES;
+export const awaitedStripeKey = (documentId: string) =>
+  `link-ahead-awaited:${stripeOf(documentId)}`;
+
+/** Stripe keys each open transaction holds: a later call may not take a key below one held. */
+const heldStripes = new WeakMap<object, Set<string>>();
+
+async function lockAwaitedStripes(db: Database, documentIds: readonly string[]): Promise<void> {
+  const tx = currentDrizzleDb(db);
+  const keys = [...new Set(documentIds.map(awaitedStripeKey))].sort();
+  let held: Set<string> | undefined;
+  if (isInDrizzleTransaction()) {
+    held = heldStripes.get(tx) ?? new Set<string>();
+    heldStripes.set(tx, held);
+    // Stripes last to commit, so order is per transaction: callers gather every arrival of
+    // the transaction into one call. A violation is a caller bug, never retried around.
+    const top = [...held].sort().at(-1);
+    const late = keys.find((key) => !held?.has(key) && top !== undefined && key < top);
+    if (late) throw new Error(`Awaited stripe ${late} taken after ${top}`);
+  }
+  for (const key of keys) {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0::bigint))`);
+    held?.add(key);
   }
 }
 

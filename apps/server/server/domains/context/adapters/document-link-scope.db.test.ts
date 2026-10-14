@@ -1,4 +1,5 @@
 /** PostgreSQL proof for the document-link scope: batched prepare, views, and snapshot lifetime. */
+import { yProsemirrorModel } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
@@ -10,6 +11,8 @@ import {
   projects,
   users,
 } from "@meridian/database/schema";
+import { mdxCodec } from "@meridian/markup";
+import { walkLinkOccurrences } from "@meridian/markup/links";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
@@ -17,6 +20,7 @@ import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { createScopedDocumentLinks, liveViewFor } from "../../collab/domain/document-links-port.js";
+import { createImportLinkBinder, createLinkBinder } from "../../collab/domain/link-binding.js";
 import { createLinkScopeObserver } from "../../collab/index.js";
 import type { FileAccess } from "../../file-policy/index.js";
 import {
@@ -110,6 +114,105 @@ if (!RUN) {
       fileAccess,
       membership,
       observer: createLinkScopeObserver(),
+    });
+
+    it("planned binder overrides an occupied address and rejects deleted, foreign and unreadable identities", async () => {
+      const deps = {
+        codec: mdxCodec({ schema }),
+        schema,
+        model: yProsemirrorModel(schema),
+        coordinator: {
+          withDocument: async () => {
+            throw new Error("fresh binding never reads content");
+          },
+        },
+        links: scopes,
+        registrar: { register: async () => {} },
+        resolveFiletype: async () => "md",
+        inTransaction: () => false,
+      };
+      const binder = createImportLinkBinder(deps);
+      const input = {
+        holder: { documentId: HOLDER as DocumentId },
+        markdown: "[x](manuscript://part1/target)",
+      };
+      const result = await binder.bindMarkdown({
+        ...input,
+        targets: new Map([[0, NOTES as DocumentId]]),
+      });
+      expect(walkLinkOccurrences(result.blocks)[0]?.attrs.ref).toBe(`doc:${NOTES}`);
+      for (const target of [DELETED, FOREIGN, SECRET]) {
+        const invalid = await binder.bindMarkdown({
+          ...input,
+          targets: new Map([[0, target as DocumentId]]),
+        });
+        expect(walkLinkOccurrences(invalid.blocks)[0]?.attrs).toMatchObject({
+          ref: null,
+          href: "",
+        });
+      }
+      await expect(
+        createLinkBinder(deps).bindMarkdown({ ...input, targets: new Map() } as never),
+      ).rejects.toThrow("import binder");
+      const ahead = await binder.bindMarkdown({ ...input, markdown: "[x](manuscript://missing)" });
+      expect(walkLinkOccurrences(ahead.blocks)[0]?.attrs.ref).toMatch(/^ahead:/);
+    });
+
+    it("planned binding refuses nameable personal-project identities", async () => {
+      await db.update(projects).set({ isPersonal: true }).where(eq(projects.id, OTHER_PROJECT));
+      await db
+        .update(contextSources)
+        .set({ slug: "user" })
+        .where(eq(contextSources.id, OTHER_SOURCE));
+      const deps = {
+        codec: mdxCodec({ schema }),
+        schema,
+        links: scopes,
+        registrar: { register: async () => {} },
+        resolveFiletype: async () => "md",
+        inTransaction: () => false,
+      };
+      // Ordinary reachability includes the reader's personal project.
+      const ordinary = createLinkBinder({
+        ...deps,
+        model: yProsemirrorModel(schema),
+        coordinator: {
+          withDocument: async () => {
+            throw new Error("unused");
+          },
+        },
+      });
+      const input = {
+        holder: { documentId: HOLDER as DocumentId },
+        markdown: "[x](user://foreign)",
+      };
+      expect(walkLinkOccurrences((await ordinary.bindMarkdown(input)).blocks)[0]?.attrs.ref).toBe(
+        `doc:${FOREIGN}`,
+      );
+      const bound = await createImportLinkBinder(deps).bindMarkdown({
+        ...input,
+        targets: new Map([[0, FOREIGN as DocumentId]]),
+      });
+      expect(walkLinkOccurrences(bound.blocks)[0]?.attrs).toMatchObject({ ref: null, href: "" });
+    });
+
+    it("planned binding refuses draft views and draft-only identities", async () => {
+      const binder = createImportLinkBinder({
+        codec: mdxCodec({ schema }),
+        schema,
+        links: scopes,
+        registrar: { register: async () => {} },
+        resolveFiletype: async () => "md",
+        inTransaction: () => false,
+      });
+      const input = {
+        holder: { documentId: HOLDER as DocumentId },
+        markdown: "[x](manuscript://drafted)",
+        targets: new Map([[0, DRAFTED as DocumentId]]),
+      };
+      await expect(binder.bindMarkdown({ ...input, view: DRAFT })).rejects.toThrow("live");
+      const bound = await binder.bindMarkdown(input);
+      expect(walkLinkOccurrences(bound.blocks)[0]?.attrs).toMatchObject({ ref: null, href: "" });
     });
 
     async function seed() {

@@ -20,17 +20,19 @@
  * document.
  */
 import {
-  assignLinkRefs,
+  type AheadMint,
+  assignOccurrences,
   type DocumentCoordinator,
   isDocumentNotFoundError,
+  rebuildOccurrences,
   toDocHandle,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
-import type { LinkView } from "@meridian/contracts";
+import { documentRef, type LinkView, parseLinkRef } from "@meridian/contracts";
 import { classifyFiletype, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { MarkupCodec, PMNode } from "@meridian/markup";
-import { walkLinkOccurrences, writtenAddresses } from "@meridian/markup/links";
+import { assignFreshLink, walkLinkOccurrences, writtenAddresses } from "@meridian/markup/links";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import type { Schema } from "prosemirror-model";
 import * as Y from "yjs";
@@ -126,7 +128,60 @@ export interface LinkBinderDeps {
   inTransaction(): boolean;
 }
 
+/** Identity overrides are a separate capability, never on the model/editor binder. */
+export interface ImportLinkBinder {
+  /** Link-free code may be bound to its planned identity before its row exists. */
+  bindPlannedCode(documentId: DocumentId, filetype: string, text: string): BoundWrite;
+  bindMarkdown(input: ImportBindInput): Promise<BoundWrite>;
+}
+export type ImportBindInput = Omit<BindMarkdownInput, "against"> & {
+  /** Identity per occurrence of `markdown`'s own parse. */
+  targets?: ReadonlyMap<number, DocumentId>;
+  /**
+   * Written href per occurrence of `markdown`'s own parse. `markdown` spells
+   * these destinations apart, so adjacent links that share an address stay
+   * separate occurrences through assignment; equal results merge only after.
+   */
+  hrefs?: ReadonlyMap<number, string>;
+  /**
+   * Planned identities that may not exist yet. A target among them that is not
+   * live gets a fresh ahead ref at its written address, settled later by id; the
+   * address is never resolved, so whatever occupies it is not bound.
+   */
+  pending?: ReadonlySet<DocumentId>;
+};
+
 export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
+  return binderFor(deps);
+}
+
+/** Fresh identity binding needs no current room or document projection. */
+export type ImportLinkBinderDeps = Omit<LinkBinderDeps, "coordinator" | "model">;
+
+/** Only the import tree writer composes this capability; ordinary CollabDomain does not expose it. */
+export function createImportLinkBinder(deps: ImportLinkBinderDeps): ImportLinkBinder {
+  return {
+    ...binderFor(deps, true),
+    bindPlannedCode(documentId, filetype, text) {
+      const classification = classifyFiletype(filetype);
+      if (classification.kind !== "tracked" || classification.schemaType !== "code")
+        throw new Error("Planned code binding requires a code filetype");
+      const block = deps.schema.nodes.code_block.create(
+        { language: filetype },
+        text ? deps.schema.text(text) : undefined,
+      );
+      return {
+        holder: { kind: "document", documentId },
+        fresh: true,
+        blocks: [block],
+        markdown: text,
+        schemaType: "code",
+      } as unknown as BoundWrite;
+    },
+  };
+}
+
+function binderFor(deps: LinkBinderDeps | ImportLinkBinderDeps, planned = false): LinkBinder {
   function schemaTypeOf(filetype: string | null): YjsTrackedSchemaType {
     const classification = classifyFiletype(filetype);
     if (classification.kind === "tracked") return classification.schemaType;
@@ -147,6 +202,7 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
 
   /** The holder's current nodes, projected from a private clone; null if it has no state yet. */
   async function currentBlocks(documentId: DocumentId): Promise<PMNode[] | null> {
+    if (!("coordinator" in deps)) throw new Error("Import binding is fresh only");
     let state: Uint8Array;
     try {
       state = await deps.coordinator.withDocument(documentId, async (doc) =>
@@ -165,7 +221,7 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
     }
   }
 
-  async function bind(input: BindMarkdownInput): Promise<BoundWrite> {
+  async function bind(input: BindMarkdownInput & ImportBindInput): Promise<BoundWrite> {
     const { holder } = input;
     const view = input.view ?? LIVE_VIEW;
     const documentId = "documentId" in holder ? holder.documentId : null;
@@ -179,14 +235,42 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
     const previous =
       input.against === "current" && documentId ? await currentBlocks(documentId) : null;
     const finish = (blocks: readonly PMNode[], markdown: string) =>
-      boundWrite({ holder: boundHolder, fresh: previous === null, blocks, markdown, schemaType });
+      boundWrite({
+        holder: boundHolder,
+        fresh: previous === null,
+        blocks,
+        markdown,
+        schemaType,
+      });
 
     const { markdown } = input;
     if (schemaType === "code") return finish([codeBlock(markdown, filetype)], markdown);
 
-    const written = deps.codec.parse(markdown).blocks;
+    const parsed = deps.codec.parse(markdown).blocks;
+    const spelled = walkLinkOccurrences(parsed);
+    for (const occurrence of [...(input.targets?.keys() ?? []), ...(input.hrefs?.keys() ?? [])]) {
+      if (!Number.isInteger(occurrence) || occurrence < 0 || occurrence >= spelled.length)
+        throw new RangeError(`Invalid link occurrence: ${occurrence}`);
+    }
+    // Occurrences keep the parsed boundaries; only their hrefs are the written ones.
+    const occurrences = spelled.map((occurrence, index) => {
+      const href = input.hrefs?.get(index);
+      return href === undefined
+        ? occurrence
+        : { ...occurrence, attrs: { ...occurrence.attrs, href } };
+    });
+    const written = input.hrefs?.size
+      ? rebuildOccurrences(
+          parsed,
+          spelled,
+          occurrences.map(({ attrs }) => attrs),
+        )
+      : parsed;
     await deps.links.prepare({
       holders: documentId ? [{ documentId, view }] : [],
+      refs: [...(input.targets?.values() ?? [])]
+        .filter((id) => parseLinkRef(`doc:${id}`)?.kind === "doc")
+        .map(documentRef),
       stored: previous ?? [],
       written,
       ...(documentId ? {} : { addresses: writtenAddresses(written, holderUri), views: [view] }),
@@ -194,21 +278,68 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
     const scope: HolderLinkScope = documentId
       ? deps.links.holder({ documentId, view })
       : deps.links.reader({ uri: holderUri, view });
-    const assigned = assignLinkRefs({
+    const assigned = assignOccurrences({
       old: walkLinkOccurrences(previous ?? []),
-      written,
+      written: occurrences,
       scope,
       shown: [],
     });
-    if (assigned.minted.length > 0) {
-      await deps.registrar.register(aheadRegistrations(assigned.minted));
-    }
-    return finish(assigned.nodes, markdown);
+    const pendingMints: (AheadMint & { awaitedDocumentId: DocumentId })[] = [];
+    const attrs = occurrences.map((occurrence, index) => {
+      const target = input.targets?.get(index);
+      if (!input.targets?.has(index)) return assigned.attrs[index];
+      const parsed = parseLinkRef(`doc:${target ?? ""}`);
+      const ref = parsed?.kind === "doc" ? documentRef(parsed.documentId) : null;
+      const resolved = ref ? scope.resolve({ ref, href: occurrence.attrs.href }) : null;
+      if (
+        resolved?.kind !== "document" ||
+        resolved.document.projectId !== scope.holder.projectId ||
+        resolved.document.presence !== "live"
+      ) {
+        if (ref && input.pending?.has(target as DocumentId)) {
+          const fresh = assignFreshLink({
+            href: occurrence.attrs.href,
+            grammar: occurrence.kind === "link" ? "link" : "source",
+            holderUri: scope.holder.uri,
+            documentFor: () => null,
+          });
+          if (fresh.kind === "ahead") {
+            pendingMints.push({
+              ref: fresh.ref,
+              address: fresh.address,
+              holderProjectId: scope.holder.projectId,
+              awaitedDocumentId: target as DocumentId,
+            });
+            return { ...occurrence.attrs, ref: fresh.ref, href: fresh.href };
+          }
+        }
+        return { ...occurrence.attrs, ref: null, href: "" };
+      }
+      return { ...occurrence.attrs, ref };
+    });
+    const nodes = rebuildOccurrences(parsed, spelled, attrs);
+    const keptRefs = new Set(walkLinkOccurrences(nodes).map(({ attrs }) => attrs.ref));
+    const minted = assigned.minted.filter(({ ref }) => keptRefs.has(ref));
+    const awaiting = pendingMints.filter(({ ref }) => keptRefs.has(ref));
+    if (minted.length + awaiting.length > 0)
+      await deps.registrar.register([
+        ...aheadRegistrations(minted),
+        ...awaiting.map(({ awaitedDocumentId, ...mint }) => ({
+          ...aheadRegistrations([mint])[0],
+          awaitedDocumentId,
+        })),
+      ]);
+    return boundWrite(finish(nodes, markdown));
   }
 
   return {
     async bindMarkdown(input) {
       if (deps.inTransaction()) throw new LinkBindingInsideTransactionError();
+      if (planned && input.against) throw new Error("Import binding is fresh only");
+      if (planned && input.view && input.view.kind !== "live")
+        throw new Error("Import binding requires a live view");
+      if (!planned && ("targets" in input || "hrefs" in input))
+        throw new Error("Planned targets require the import binder");
       const key =
         "documentId" in input.holder
           ? { documentId: input.holder.documentId }
@@ -232,7 +363,13 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
       if (walkLinkOccurrences(blocks).length > 0) {
         throw new Error("Static content names a link or source; bind it with bindMarkdown");
       }
-      return boundWrite({ holder, fresh: true, blocks, markdown, schemaType });
+      return boundWrite({
+        holder,
+        fresh: true,
+        blocks,
+        markdown,
+        schemaType,
+      });
     },
   };
 }

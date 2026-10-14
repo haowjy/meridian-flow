@@ -9,6 +9,11 @@ import {
   type UpdateJournal,
 } from "@meridian/agent-edit/integration";
 import * as Y from "yjs";
+import {
+  deferUntilDrizzleCommit,
+  isInDrizzleTransaction,
+  runOutsideDrizzleTransaction,
+} from "../../../shared/drizzle-transaction.js";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
 import {
   documentAuthority,
@@ -37,19 +42,25 @@ const RECOVERY_ORIGIN = {
 } satisfies TransactionOrigin;
 
 export function createHocuspocusCoordinator(deps: CoordinatorDeps): DocumentCoordinator {
-  return createCoordinator(deps, defaultOpenLiveDocument(deps.hocuspocus));
+  return createTransactionAwareCoordinator({
+    journal: deps.journal,
+    live: createCoordinator(deps, defaultOpenLiveDocument(deps.hocuspocus)),
+    transactions: {
+      inTransaction: isInDrizzleTransaction,
+      outsideTransaction: runOutsideDrizzleTransaction,
+      afterCommit: deferUntilDrizzleCommit,
+    },
+  });
 }
 
 /**
- * The live agent-edit core's coordinator (D42). Outside a database
- * transaction it is the live coordinator. Inside one, agent-edit works on a
- * private copy of the live document as others see it (the open room plus
- * committed journal rows), and open editors receive the result only after
+ * The single live coordinator boundary (D42). Outside a database
+ * transaction it uses the live room. Inside one, every caller works on a
+ * private copy of the committed durable cut, and open editors receive the result only after
  * commit, through `recover`. A rollback therefore leaves nothing on screen.
- * The copy needs no document mutex: the room is only read, synchronously.
+ * The copy never opens, reads or hydrates a room.
  */
-export function createDeferredLiveProjectionCoordinator(deps: {
-  hocuspocus: () => Hocuspocus;
+function createTransactionAwareCoordinator(deps: {
   journal: UpdateJournal;
   live: DocumentCoordinator;
   transactions: {
@@ -59,29 +70,28 @@ export function createDeferredLiveProjectionCoordinator(deps: {
   };
 }): DocumentCoordinator {
   return {
+    documentAuthority,
     async withDocument<T>(
       docId: string,
       fn: (doc: Y.Doc) => Promise<T>,
       options?: DocumentLockOptions,
     ): Promise<T> {
       if (!deps.transactions.inTransaction()) return deps.live.withDocument(docId, fn, options);
-      const loaded = deps.hocuspocus().documents.get(docId);
-      // The transaction's own rows stay out of the copy, as they stay out of
-      // the room until commit; only a document created in this transaction
-      // has nothing committed to start from.
-      const committed = await deps.transactions.outsideTransaction(() =>
-        loadDocumentState(deps.journal, docId),
-      );
-      const seed = loaded || committed ? committed : await loadDocumentState(deps.journal, docId);
-      if (!loaded && !seed) throw new DocumentNotFoundError(docId);
+      // A newly created document has only transaction-local seed state. Existing
+      // documents expose committed state, even to the transaction that staged a landing.
+      const committed = await deps.transactions.outsideTransaction(() => deps.journal.read(docId));
+      const snapshot =
+        committed.checkpoint || committed.updates.length
+          ? committed
+          : await deps.journal.read(docId);
       const copy = new Y.Doc({ gc: false });
       try {
-        if (loaded) Y.applyUpdate(copy, Y.encodeStateAsUpdate(loaded), RECOVERY_ORIGIN);
-        if (seed)
-          Y.applyUpdate(copy, Y.diffUpdate(seed, Y.encodeStateVector(copy)), RECOVERY_ORIGIN);
-        const seeded = Y.encodeStateVector(copy);
+        const seed = await loadDocumentState(deps.journal, docId, copy, snapshot);
+        if (!seed) throw new DocumentNotFoundError(docId);
+        Y.applyUpdate(copy, seed, RECOVERY_ORIGIN);
+        const seeded = Y.encodeStateAsUpdate(copy);
         const result = await fn(copy);
-        if (!sameStateVector(seeded, Y.encodeStateVector(copy))) {
+        if (!sameBytes(seeded, Y.encodeStateAsUpdate(copy))) {
           deps.transactions.afterCommit(() => deps.live.recover(docId));
         }
         return result;
@@ -89,11 +99,15 @@ export function createDeferredLiveProjectionCoordinator(deps: {
         copy.destroy();
       }
     },
-    recover: (docId) => deps.live.recover(docId),
+    async recover(docId) {
+      if (!deps.transactions.afterCommit(() => deps.live.recover(docId))) {
+        await deps.live.recover(docId);
+      }
+    },
   };
 }
 
-function sameStateVector(left: Uint8Array, right: Uint8Array): boolean {
+function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
   return left.length === right.length && left.every((byte, index) => byte === right[index]);
 }
 

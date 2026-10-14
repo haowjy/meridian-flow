@@ -30,7 +30,10 @@ renderer: `modelOutput` renders it once as its message plus the code
 or the message already holds it), and `details` stays on `result`. Results are
 short text by default: no ids, nulls, zero counts, echoed inputs or flags that
 restate the default; `verbose: true` on `ls`, `work` (`list`, `show`) and
-`search` adds the rest. Parse failures return `invalid_arguments` with `result`
+`search` adds the rest. Binding (ruling I6, [#778][i6]): the model never sees
+document properties in v1. A file ref's `properties` and `aliases` are
+host-only; `copy` carries them to the new document as invisible metadata, which
+is not visibility. No output, default or verbose, may render them. Parse failures return `invalid_arguments` with `result`
 `{ error, issues }` and a rendered text. Timeout, abort, and thrown failures
 belong to the executor; it delegates those to the registration's
 `formatExecutionError` when present and otherwise uses the generic Meridian
@@ -159,3 +162,5 @@ Skill sources retain the on-disk Mars filenames (`SKILL.md` and resource files).
 The model-only `skills://` adapter exposes text files at the document codec’s
 name (`SKILL`, `resources/line-edit`), accepts typed prose suffixes, and uses
 codec filetype rather than a suffix to offer headings. Binary paths keep theirs.
+
+[i6]: https://github.com/haowjy/meridian-flow/issues/778

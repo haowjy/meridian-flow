@@ -1,7 +1,7 @@
 /** Downloads derive the file suffix from the persisted document type. */
 import { describe, expect, it } from "vitest";
 import { exportFilename as attachmentFilename } from "../domains/context/index.js";
-import { attachmentDisposition } from "../routes/api/documents/[documentId]/download.get.js";
+import { attachmentDisposition } from "./attachment-disposition.js";
 
 describe("document download names", () => {
   it("adds md to prose, preserves dots and leaves other stored names alone", () => {

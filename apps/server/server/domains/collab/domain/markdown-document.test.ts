@@ -36,10 +36,12 @@ function setup(filetype = "typescript") {
   const coordinator = createInMemoryCoordinator(journal);
   const eventSink = createInMemoryEventSink();
   const engine = createMarkdownDocumentEngine({
+    exportCodec: mdxCodec({ schema, export: true }),
     links: createStaticDocumentLinkScopes(),
     codec: mdxCodec({ schema }),
     model,
     journal,
+    landingJournal: journal,
     coordinator,
     lifecycle: createInMemoryDocumentLifecycle(coordinator),
     initialDocumentSeeds: {
@@ -248,5 +250,87 @@ describe("schema-aware serialization purity", () => {
       deletedClockCount: 2,
     });
     input.destroy();
+  });
+});
+
+describe("by-identity document landing", () => {
+  it("prepends code inside its single existing block", async () => {
+    const subject = setup("typescript");
+    await seedCode(subject, "const kept = 1;");
+    expect(
+      (await subject.engine.prependBlocks(DOCUMENT_ID, await subject.bind("const added = 2;"))).ok,
+    ).toBe(true);
+    expect(await subject.engine.readAsMarkdown(DOCUMENT_ID)).toEqual({
+      ok: true,
+      value: "const added = 2;\nconst kept = 1;",
+    });
+    await subject.coordinator.withDocument(DOCUMENT_ID, async (doc) =>
+      expect(fragmentOf(doc).length).toBe(1),
+    );
+  });
+
+  it("fills a seed once, including an empty landing", async () => {
+    const subject = setup("md");
+    const empty = await subject.bind("");
+    await subject.engine.seedFromMarkdown(DOCUMENT_ID, empty, SYSTEM_ORIGIN);
+    expect(await subject.engine.fillEmptyDocument(DOCUMENT_ID, empty)).toMatchObject({
+      ok: true,
+      value: { updateSeq: expect.any(Number) },
+    });
+    expect(await subject.engine.fillEmptyDocument(DOCUMENT_ID, await subject.bind("late"))).toEqual(
+      { ok: true, value: null },
+    );
+  });
+
+  it("refuses fill after writer admission, then prepends while preserving existing Yjs nodes", async () => {
+    const subject = setup("md");
+    await subject.engine.seedFromMarkdown(DOCUMENT_ID, await subject.bind(""), SYSTEM_ORIGIN);
+    const doc = createCollabYDoc({ gc: false });
+    const seed = await subject.journal.read(DOCUMENT_ID);
+    if (seed.checkpoint) Y.applyUpdate(doc, seed.checkpoint);
+    doc.transact(() => {
+      const fragment = fragmentOf(doc);
+      if (fragment.length) fragment.delete(0, fragment.length);
+      model.insertBlocks(toDocHandle(doc), null, {
+        blocks: mdxCodec({ schema }).parse("typed").blocks,
+      });
+    });
+    await subject.journal.append(DOCUMENT_ID, Y.encodeStateAsUpdate(doc), {
+      origin: "human:writer",
+      seq: 0,
+    });
+    await subject.coordinator.recover(DOCUMENT_ID);
+    const original = fragmentOf(doc).get(0) as Y.XmlElement;
+    expect(
+      await subject.engine.fillEmptyDocument(DOCUMENT_ID, await subject.bind("imported")),
+    ).toEqual({ ok: true, value: null });
+    expect(
+      (await subject.engine.prependBlocks(DOCUMENT_ID, await subject.bind("imported"))).ok,
+    ).toBe(true);
+    const snapshot = await subject.journal.read(DOCUMENT_ID);
+    for (const row of snapshot.updates) Y.applyUpdate(doc, row.update);
+    expect(fragmentOf(doc).get(1)).toBe(original);
+    expect(await subject.engine.readAsMarkdown(DOCUMENT_ID)).toEqual({
+      ok: true,
+      value: "imported\n\ntyped\n",
+    });
+    doc.destroy();
+  });
+});
+
+describe("live export read door", () => {
+  it("uses its supplied scope and export codec without changing ordinary reads", async () => {
+    const subject = setup("markdown");
+    await seedCode(subject, "[[Not a link]] [ref] [^1] [target](https://example.com)");
+    const exported = await subject.engine.readForExport(DOCUMENT_ID, (links) => ({
+      spellLink: () => ({ href: "../Knowledge%20Base/Target.md", address: "kb://Target" }),
+      spellSource: links.spellSource,
+    }));
+    expect(exported).toEqual({
+      ok: true,
+      value: "[[Not a link]] \\[ref] [^1] [target](../Knowledge%20Base/Target.md)\n",
+    });
+    const ordinary = await subject.engine.readAsMarkdown(DOCUMENT_ID);
+    expect(ordinary.ok && ordinary.value).toContain("\\[\\[Not a link]]");
   });
 });

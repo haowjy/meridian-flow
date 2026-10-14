@@ -10,6 +10,7 @@
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { PanelLeftClose } from "lucide-react";
+import { useRef } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { RailScratchSection } from "../chat/ChatScratch";
 import { ContextTreePanel } from "../context/ContextTreePanel";
@@ -20,7 +21,9 @@ import { useDockDocumentTab } from "../dock/use-dock-document-tab";
 import { useDockPlacement } from "../dock/use-dock-placement";
 import { InlineProjectTitle, type ProjectTitleEdit } from "./InlineProjectTitle";
 import { PanelToggleButton } from "./PanelToggleButton";
+import { ProjectMenu } from "./ProjectMenu";
 import type { ScreenKey } from "./screens";
+import type { TitleEditHandle } from "./TitleEditSlot";
 import { WorkspaceNavBody } from "./WorkspaceNavBody";
 
 /**
@@ -67,6 +70,7 @@ export function LeftSidebar({
   // chat on the Chat screen (the dock hosts images, PDFs and binaries in its viewer too),
   // and the Editor path everywhere else (see `use-dock-placement`).
   const placement = useDockPlacement();
+  const titleEditor = useRef<TitleEditHandle>(null);
   const openDocument = useOpenProjectDocument(projectId);
   const handleSelectFile = (scheme: ProjectContextTreeScheme, file: ContextFile) => {
     if (placement.besideChat) {
@@ -99,10 +103,17 @@ export function LeftSidebar({
           onClick={onCollapse}
         />
         <InlineProjectTitle
+          editRef={titleEditor}
           title={projectTitle}
           {...titleEdit}
           className="focus-ring flex h-8 min-w-0 flex-1 cursor-default items-center rounded-md px-2 text-left text-[14px] font-semibold hover:bg-sidebar-accent"
           inputClassName="h-8 px-2 text-[14px] font-semibold"
+        />
+        <ProjectMenu
+          key={projectId}
+          projectId={projectId}
+          project={projectTitle}
+          onRename={() => titleEditor.current?.start(projectTitle)}
         />
       </div>
 

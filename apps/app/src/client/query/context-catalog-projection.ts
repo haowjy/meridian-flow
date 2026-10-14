@@ -1,10 +1,51 @@
 /** Flat UI projection types over the replica-owned normalized catalog. */
+import type { ImportEntryReason, ImportRefusalCode } from "@meridian/contracts";
 import type {
   DocumentFileType,
   Filetype,
   YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
 import type { CatalogCacheView, ParentRef, ResourceDestination } from "@meridian/resource-replica";
+
+/**
+ * The import's own run, once the plan is accepted: what it is doing and what the
+ * writer can do about it. The mark's menu and the future progress popup read this.
+ */
+export type ImportRunInfo = {
+  importId: string;
+  /** Sending: files are arriving. Interrupted: the server wants files this tab does not hold. */
+  kind: "sending" | "stopping" | "interrupted" | "failed";
+  arrived: number;
+  total: number;
+  failed: number;
+  /** Files the import still lacks (arriving or failed); what Stop here gives up. */
+  remaining: number;
+  /** This tab holds the files, so Retry can send the failed ones. */
+  canRetry: boolean;
+};
+
+/** How an import touches a row: drawn by the importing tab, still arriving, or failed. */
+export type ImportRowInfo = {
+  /** Not a catalog entry yet; the importing tab draws it from its selection. */
+  client?: true;
+  /** Text (or the file) has not landed yet. */
+  arriving?: true;
+  /** An import into this folder is still reading what the writer chose. */
+  reading?: true;
+  /** Hashing and planning: the selection is read, the server has not answered. Stop ends it. */
+  preparing?: { importId: string };
+  /** The plan was refused or lost; this row carries the import's warning, Try again and Discard. */
+  /** The accepted import's own state, carried by its root row, destination or area header. */
+  run?: ImportRunInfo;
+  notStarted?: { importId: string; code: ImportRefusalCode | null };
+  failure?: {
+    importId: string;
+    entryId: number;
+    reason: ImportEntryReason | null;
+    /** This tab still holds the file, so Retry can send it. */
+    canRetry: boolean;
+  };
+};
 
 type CatalogFileBase = {
   kind: "file";
@@ -16,6 +57,11 @@ type CatalogFileBase = {
   path: string;
   uri: string;
   provisionalName: boolean;
+  /** The document has imported properties to show; they load by document id. */
+  hasProperties: boolean;
+  /** The document is an import placeholder whose text has not landed yet. */
+  importPending?: boolean;
+  import?: ImportRowInfo;
   /** Present only for a locally owned resource not yet represented by server authority. */
   resourceHandle?: string;
   resourceState?: "local" | "acknowledged";
@@ -54,6 +100,7 @@ export type CatalogDirectory = {
   name: string;
   path: string;
   uri: string;
+  import?: ImportRowInfo;
   /** A refused rename or move put this folder back; the writer retries from here. */
   namespaceFailure?: "delete" | "set-location";
   namespaceRepairName?: string;

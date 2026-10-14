@@ -85,9 +85,7 @@ const { ensureAndReadDocumentAuthorityHead, replaceDocumentAuthorityHeadGenerati
 );
 const { lockDocumentMutation } = await import("../../../shared/document-mutation-lock.js");
 const { createDrizzleCollabPersistence } = await import("../adapters/drizzle-journal.js");
-const { createDeferredLiveProjectionCoordinator, createHocuspocusCoordinator } = await import(
-  "../adapters/hocuspocus-coordinator.js"
-);
+const { createHocuspocusCoordinator } = await import("../adapters/hocuspocus-coordinator.js");
 const {
   createAgentEditObservabilityOptions,
   createBranchAgentEditDiagnostics,
@@ -378,6 +376,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   const notices = createDrizzleNoticePort(db);
   const changeTrails = createDrizzleChangeTrailAggregateWriter(db);
   const durableProjectionSerializer = createMarkdownDocumentEngine({
+    exportCodec: mdxCodec({ schema: documentSchema, export: true }),
     links,
     model,
     codec: markupCodec,
@@ -549,16 +548,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     aheadRefs: UNSUPPORTED_AHEAD_REFS,
     journal: persistence.journal,
     coordinator: liveCoordinator,
-    agentCoordinator: createDeferredLiveProjectionCoordinator({
-      hocuspocus: () => hocuspocus as never,
-      journal: persistence.journal,
-      live: liveCoordinator,
-      transactions: {
-        inTransaction: isInDrizzleTransaction,
-        outsideTransaction: runOutsideDrizzleTransaction,
-        afterCommit: deferUntilDrizzleCommit,
-      },
-    }),
     lifecycle: persistence.lifecycle,
     initialDocumentSeeds: persistence.lifecycle,
     runDocumentWriteHook,
@@ -698,6 +687,8 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     reverseTurn: turnReversal.reverseTurn,
     getTurnReceiptChip: turnInverse.getTurnReceiptChip,
     writeDocument: runtime.markdownDocuments.writeDocument,
+    fillEmptyDocument: runtime.markdownDocuments.fillEmptyDocument,
+    prependBlocks: runtime.markdownDocuments.prependBlocks,
     bindMarkdown: runtime.linkBinder.bindMarkdown,
     ...responseFinalizer,
     ...drafts,

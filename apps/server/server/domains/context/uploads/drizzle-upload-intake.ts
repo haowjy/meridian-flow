@@ -191,14 +191,11 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
               ),
             ),
         ]);
-        // The intake reservation index currently folds case, even though document keys do not.
         const used = new Set([
-          ...documentNames.map((row) => renderFilename(row.name, row.extension).toLowerCase()),
-          ...reservedNames.map((row) => row.path.toLowerCase()),
+          ...documentNames.map((row) => renderFilename(row.name, row.extension)),
+          ...reservedNames.map((row) => row.path),
         ]);
-        const finalPath = await allocateFilename(input.documentFilename, (path) =>
-          used.has(path.toLowerCase()),
-        );
+        const finalPath = await allocateFilename(input.documentFilename, (path) => used.has(path));
         const documentId = crypto.randomUUID();
         const workAuthority = owner.workSlug ? `@${owner.workSlug}` : "@";
         const canonicalUri = `uploads://${workAuthority}/${finalPath}`;

@@ -59,6 +59,7 @@ import {
   type WorkDraftCommands,
   WorkDraftCommandsBoundary,
 } from "@/features/draft-review/useWorkDraftCommands";
+import { ImportProvider } from "@/features/import/ImportProvider";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { ChatIndexController } from "./ChatIndexController";
 import { ChatPaneController } from "./ChatPaneController";
@@ -74,6 +75,7 @@ import { ProjectContextRemovalController } from "./context/ProjectContextRemoval
 import type { AvailabilityWatchRecord } from "./context/project-context-availability-coordinator";
 import { recentAddressFromTab } from "./context/recent-opening";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
+import { WindowDropGuard } from "./context/tree-drop/WindowDropGuard";
 import {
   DesktopProjectPresentationProvider,
   useDesktopProjectController,
@@ -362,11 +364,14 @@ export function ProjectView(props: ProjectViewProps) {
               route={props.contextRemovalRoute}
             />
           ) : null}
-          <HydratedReviewProject
-            {...resolvedProps}
-            projectTitle={projectTitle}
-            titleEdit={{ projectId: props.projectId, onSave: renameProject }}
-          />
+          <ImportProvider key={props.projectId} projectId={props.projectId}>
+            <WindowDropGuard />
+            <HydratedReviewProject
+              {...resolvedProps}
+              projectTitle={projectTitle}
+              titleEdit={{ projectId: props.projectId, onSave: renameProject }}
+            />
+          </ImportProvider>
         </>
       ) : null}
     </div>

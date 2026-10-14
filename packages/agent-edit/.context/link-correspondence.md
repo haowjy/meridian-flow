@@ -146,3 +146,8 @@ API. Generated exhaustive-oracle tests vary counts, labels, liveness,
 showing history and relative-URL normalization across holder URIs.
 
 [design]: https://github.com/haowjy/meridian-flow-docs/blob/main/work/model-tool-surface/design/link-identity-729-730.md
+
+Host integration also exports the pure `assignOccurrences` and
+`rebuildOccurrences` primitives. The server's import binder uses them to override
+specific occurrences with validated planned identities; that capability is not
+part of the model's ref-assignment input.

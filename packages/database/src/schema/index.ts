@@ -5,6 +5,7 @@ export * from "./billing";
 export * from "./content";
 export * from "./context-catalog";
 export * from "./context-operation-receipts";
+export * from "./imports";
 export * from "./preferences";
 export * from "./provenance";
 export * from "./recent-documents";
@@ -23,6 +24,7 @@ import * as content from "./content";
 import * as contextCatalog from "./context-catalog";
 import * as contextOperations from "./context-operation-receipts";
 import * as documentEdits from "./document-edits";
+import * as imports from "./imports";
 import * as preferences from "./preferences";
 import * as provenance from "./provenance";
 import * as recentDocuments from "./recent-documents";
@@ -39,6 +41,7 @@ export const schema = {
   ...accountSkillInstalls,
   ...billing,
   ...content,
+  ...imports,
   ...contextCatalog,
   ...contextOperations,
   ...agentThreads,

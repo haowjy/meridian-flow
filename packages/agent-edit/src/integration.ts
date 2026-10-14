@@ -43,8 +43,9 @@ export {
   subtractLineageRanges,
 } from "./lineage/range-set.js";
 export type { AssignInput, AssignResult } from "./links/assign-refs.js";
-export { assignLinkRefs } from "./links/assign-refs.js";
+export { assignLinkRefs, assignOccurrences } from "./links/assign-refs.js";
 export type { ShownLink } from "./links/correspondence.js";
+export { rebuildOccurrences } from "./links/occurrences.js";
 export type { LinkShowing } from "./links/shown.js";
 export type { BlockItemId } from "./model/block-hash.js";
 export { getBlockItemId } from "./model/block-hash.js";

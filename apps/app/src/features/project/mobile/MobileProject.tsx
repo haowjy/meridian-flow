@@ -32,8 +32,8 @@ import { MobileBreadcrumb, type MobileBreadcrumbSegment } from "./MobileBreadcru
 import { MobileChatHost } from "./MobileChatHost";
 import { MobileChatSheetHeader } from "./MobileChatSheetHeader";
 import { MobileContextBrowser } from "./MobileContextBrowser";
-import { MobileCreateEntryMenu } from "./MobileCreateEntryMenu";
 import { MobileDocumentHost } from "./MobileDocumentHost";
+import { MobileFilesActions } from "./MobileFilesActions";
 import { MobileKeyboardAware } from "./MobileKeyboardAware";
 import { MobileTopBar } from "./MobileTopBar";
 import { NavigationDrawer } from "./NavigationDrawer";
@@ -200,7 +200,15 @@ function trailingAction(
     !props.activeContextPath &&
     !props.activeLocalDocumentId
   ) {
-    return <MobileCreateEntryMenu onSelect={onRequestCreate} />;
+    return (
+      <MobileFilesActions
+        projectId={props.projectId}
+        editorWorkId={props.editorWorkId}
+        scheme={props.activeContextScheme}
+        folder={props.activeContextFolder}
+        onSelect={onRequestCreate}
+      />
+    );
   }
   return undefined;
 }

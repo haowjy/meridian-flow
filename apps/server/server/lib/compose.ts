@@ -1,8 +1,3 @@
-import {
-  type AccountSettingsRepository,
-  createDrizzleAccountSettingsRepository,
-  createInMemoryAccountSettingsRepository,
-} from "../domains/preferences/index.js";
 /**
  * Composition root: wires production adapters into AppServices and owns the pure
  * runtime service graph. App startup supplies process-level resources; this file
@@ -35,6 +30,7 @@ import {
 } from "../domains/collab/index.js";
 import {
   type ContextCatalog,
+  type ContextCatalogFileMutationPort,
   type ContextCatalogMutationPort,
   type ContextCatalogWakeHub,
   createContextCatalogWakeHub,
@@ -47,6 +43,7 @@ import {
   createDrizzleDocumentArrivals,
   createDrizzleDocumentLinkHistory,
   createDrizzleDocumentLinkScopes,
+  createDrizzleDocumentPropertiesReader,
   createDrizzleFigureDocumentRepository,
   createDrizzleLineageScratchLifecycle,
   createDrizzleLinkAheadRegistry,
@@ -63,6 +60,7 @@ import {
   createUploadIntake,
   type DocumentAddressResolver,
   type DocumentLinkResolver,
+  type DocumentPropertiesReader,
   type FigureAssetService,
   InMemoryContextCatalog,
   type LinkAheadRegistry,
@@ -75,6 +73,12 @@ import {
   type UploadIdentityPort,
   type UploadIntake,
 } from "../domains/context/index.js";
+import { createDrizzleExportSnapshotStore } from "../domains/export/adapters/drizzle-export-snapshot.js";
+import {
+  createProjectExport,
+  type ProjectExport,
+} from "../domains/export/domain/project-export.js";
+import type { ExportSnapshotStore } from "../domains/export/ports/export-snapshot.js";
 import {
   type AgentChain,
   createAllowAllFileAccess,
@@ -87,6 +91,7 @@ import {
   type FileAccessChanges,
   type PgFileAccessChanges,
 } from "../domains/file-policy/index.js";
+import { createProductionImportService, type ImportService } from "../domains/import/index.js";
 import { createDrizzleNoticePort, type Notice, type NoticePort } from "../domains/notices/index.js";
 import {
   createNoopEventSink,
@@ -111,7 +116,12 @@ import {
 } from "../domains/packages/index.js";
 import { createInMemoryProjectPreferencesRepository } from "../domains/preferences/adapters/in-memory/project-preferences-repository.js";
 import type { ProjectPreferencesRepository } from "../domains/preferences/index.js";
-import { createDrizzleProjectPreferencesRepository } from "../domains/preferences/index.js";
+import {
+  type AccountSettingsRepository,
+  createDrizzleAccountSettingsRepository,
+  createDrizzleProjectPreferencesRepository,
+  createInMemoryAccountSettingsRepository,
+} from "../domains/preferences/index.js";
 import {
   createDrizzleProjectBootstrapRepository,
   createDrizzleProjectRepository,
@@ -252,6 +262,8 @@ import { createObjectStoreFromEnv } from "./object-store-factory.js";
 import { APP_DRAIN_DEADLINE_MS } from "./shutdown-deadlines.js";
 
 export type AppServices = {
+  projectExport: ProjectExport;
+  imports(projectId: string, userId: string): ImportService;
   gateway: Gateway;
   threadRepos: ThreadRepositories;
   journalReader: EventJournalReader;
@@ -317,6 +329,7 @@ export type AppServices = {
   uploadIntake: UploadIntake;
   uploadIdentity: UploadIdentityPort;
   figureAssets: FigureAssetService;
+  documentProperties: DocumentPropertiesReader;
   /** The file policy every route and model call asks (file-access §1). */
   fileAccess: FileAccess;
   /** Work lifecycle changes that re-decide live rooms' access, on every instance (§7). */
@@ -352,6 +365,7 @@ export type ProductionAppPorts = {
   contextPorts: UnifiedContextPortFactory;
   contextCatalog: ContextCatalog &
     ContextCatalogMutationPort &
+    ContextCatalogFileMutationPort &
     ProjectCatalogLifecyclePort &
     ProjectDocumentCatalogRefreshPort;
   projectContextAvailability: ProjectContextAvailabilityPort;
@@ -363,6 +377,7 @@ export type ProductionAppPorts = {
    * through them and the resolver endpoint answers ref links from one.
    */
   linkScopes: DocumentLinkScopes;
+  exportSnapshot: ExportSnapshotStore;
   linkAheadRegistry: LinkAheadRegistry;
   projects: ProjectBootstrapRepository;
   works: ProjectWorkRepository;
@@ -387,6 +402,7 @@ export type ProductionAppPorts = {
   uploadIntake: UploadIntake;
   uploadIdentity: UploadIdentityPort;
   figureAssets: FigureAssetService;
+  documentProperties: DocumentPropertiesReader;
   promotionService: PromotionService;
   notices: NoticePort;
   activeDocuments: ActiveDocumentResolver;
@@ -686,6 +702,7 @@ export async function createProductionAppPorts(input: {
       history: createDrizzleDocumentLinkHistory(db),
       lineages: createDrizzleScratchLineages(db),
     }),
+    exportSnapshot: createDrizzleExportSnapshotStore(db),
     linkScopes: documentLinks,
     projects,
     works: workRepo,
@@ -710,6 +727,7 @@ export async function createProductionAppPorts(input: {
     uploadIntake,
     uploadIdentity,
     figureAssets,
+    documentProperties: createDrizzleDocumentPropertiesReader(db),
     promotionService,
     notices,
     activeDocuments,
@@ -1071,6 +1089,23 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   });
 
   return {
+    projectExport: createProjectExport({
+      snapshot: ports.exportSnapshot,
+      pendingDrafts: {
+        async count(projectId) {
+          const works = await ports.workRepo.listByProject(projectId, { lifecycle: "all" });
+          const noWork = await ports.workRepo.findNoWork(projectId);
+          const counts = await ports.documentSync.countPendingByWorkIds([
+            ...works.map((work) => work.id),
+            ...(noWork ? [noWork.id] : []),
+          ]);
+          return [...counts.values()].reduce((sum, count) => sum + count, 0);
+        },
+      },
+      documents: ports.documentSync,
+      files: ports.fileAccess,
+      objects: ports.objectStore,
+    }),
     gateway: ports.gateway,
     threadRepos: ports.threadRepos,
     repos: ports.threadRepos,
@@ -1088,6 +1123,21 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     documentSync: ports.documentSync,
     linkAheadRegistry: ports.linkAheadRegistry,
     contextPorts: ports.contextPorts,
+    imports: (projectId, userId) =>
+      createProductionImportService(
+        {
+          db: ports.db,
+          collab: ports.documentSync,
+          contextPorts: ports.contextPorts,
+          catalog: ports.contextCatalog,
+          links: ports.linkScopes,
+          ahead: ports.linkAheadRegistry,
+          objects: ports.objectStore,
+          eventSink: ports.eventSink,
+        },
+        projectId,
+        userId,
+      ),
     contextCatalog: ports.contextCatalog,
     contextCatalogRefresh: ports.contextCatalog,
     projectContextAvailability: ports.projectContextAvailability,
@@ -1138,6 +1188,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     uploadIntake: ports.uploadIntake,
     uploadIdentity: ports.uploadIdentity,
     figureAssets: ports.figureAssets,
+    documentProperties: ports.documentProperties,
     fileAccess: ports.fileAccess,
     fileAccessChanges: ports.fileAccessChanges,
     notices: ports.notices,
@@ -1299,6 +1350,7 @@ export function createInMemoryAppServices(): AppServices {
   const linkAheadRegistry: LinkAheadRegistry = {
     register: async () => unsupported(),
     settleArrivals: async () => unsupported(),
+    releaseAwaiting: async () => unsupported(),
     registerUnregistered: async () => unsupported(),
   };
 
@@ -1381,6 +1433,9 @@ export function createInMemoryAppServices(): AppServices {
     documentSync,
     linkAheadRegistry,
     contextPorts: createInMemoryUnifiedContextPortFactory({ documentSync }),
+    imports: () => {
+      throw new Error("Import requires durable persistence");
+    },
     contextCatalog,
     contextCatalogRefresh: {
       async refreshProjectDocuments() {
@@ -1407,6 +1462,25 @@ export function createInMemoryAppServices(): AppServices {
     },
     contextCatalogWakeHub: createContextCatalogWakeHub(),
     documentLinks: createDocumentLinkResolver({ catalog: contextCatalog, workAuthorityResolver }),
+    projectExport: createProjectExport({
+      pendingDrafts: {
+        async count() {
+          return 0;
+        },
+      },
+      snapshot: {
+        async read() {
+          return { documents: [], sources: [], settlements: new Map() };
+        },
+      },
+      documents: documentSync,
+      files: createAllowAllFileAccess(),
+      objects: {
+        async get() {
+          throw new Error("No export objects in memory");
+        },
+      },
+    }),
     linkScopes: createStaticDocumentLinkScopes(),
     projects: {
       async ensureDefaultBootstrapReady() {
@@ -1667,6 +1741,7 @@ export function createInMemoryAppServices(): AppServices {
         throw new Error("in-memory figure assets are not implemented");
       },
     },
+    documentProperties: { findStored: async () => null },
     fileAccess: createAllowAllFileAccess(),
     fileAccessChanges: createLocalFileAccessChanges(),
     notices,

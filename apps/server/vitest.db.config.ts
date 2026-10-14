@@ -16,6 +16,13 @@ const workerDatabaseUrls = process.env.DB_TEST_DATABASE_URLS
   ? (JSON.parse(process.env.DB_TEST_DATABASE_URLS) as string[])
   : [];
 const expectedSuites = [
+  "apps/server/server/domains/collab/import-producer-races.db.test.ts",
+  "apps/server/server/domains/import/import-conversion.db.test.ts",
+  "apps/server/server/domains/import/import-landing.db.test.ts",
+  "apps/server/server/domains/import/import-planning.db.test.ts",
+  "apps/server/server/domains/import/import-reports.db.test.ts",
+  "apps/server/server/domains/context/adapters/drizzle-context-bulk-creation.db.test.ts",
+  "apps/server/server/domains/collab/document-landing.db.test.ts",
   "apps/server/server/domains/collab/branch-pulls-locks.db.test.ts",
   "apps/server/server/domains/collab/adapters/drizzle-document-edits.db.test.ts",
   "apps/server/server/domains/collab/adapters/response-helper-replay.db.test.ts",
@@ -71,7 +78,6 @@ const expectedSuites = [
   "apps/server/server/domains/context/adapters/lineage-scratch-arrivals.db.test.ts",
   "apps/server/server/domains/context/link-ahead-arrivals.db.test.ts",
   "apps/server/server/domains/context/uploads/upload-intake.db.test.ts",
-  "apps/server/server/domains/context/corpus-import/corpus-import.db.test.ts",
   "apps/server/server/domains/context/figures/figure-assets.db.test.ts",
   "apps/server/server/domains/context/promotion/adapters/drizzle-result-repository.db.test.ts",
   "apps/server/server/domains/file-policy/adapters/drizzle-file-facts.db.test.ts",
@@ -114,6 +120,7 @@ const expectedSuites = [
   "apps/server/server/lib/compose.file-access-tools.db.test.ts",
   "apps/server/server/lib/compose.runtime-settlement.db.test.ts",
   "apps/server/server/lib/model-tools/skills.db.test.ts",
+  "apps/server/server/lib/document-properties-route.db.test.ts",
   "apps/server/server/lib/routes/yjs-generation-stale.db.test.ts",
   "apps/server/server/lib/routes/context-create-read.db.test.ts",
   "apps/server/server/lib/routes/context-thread-existing-document.db.test.ts",

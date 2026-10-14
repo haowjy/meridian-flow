@@ -5,11 +5,28 @@ import {
   isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
-import { FilePlus, FolderPlus } from "lucide-react";
+import { FilePlus, FolderPlus, ImportIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
+import type {
+  CatalogFile as ContextFile,
+  ImportRowInfo,
+} from "@/client/query/context-catalog-projection";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { type ImportDestination, isImportScheme } from "@/features/import/destination";
+import { ImportMenuItems } from "@/features/import/ImportMenuItems";
+import {
+  type PickKind,
+  useImportsSnapshot,
+  useOptionalImports,
+} from "@/features/import/ImportProvider";
+import { canPickFolders } from "@/features/import/SelectionPicker";
+import { useImportedCatalog } from "@/features/import/use-imported-catalog";
 import { DeleteConfirmationDialog, useDeleteConfirmation } from "./ContextEntryActions";
 import { TreeChildren, type TreeEnv, TreeEnvProvider } from "./ContextTreeRows";
 import type { ContextCreateKind } from "./context-create-kind";
@@ -19,8 +36,16 @@ import {
   schemeIcon,
   schemeLabel,
 } from "./context-schemes";
+import { ImportRunMark } from "./ImportRunMark";
 import { PaneHeaderActionButton, RailPaneHeader } from "./RailPaneHeader";
 import { type TreeCreationRequest, useOptionalTreeCreation } from "./TreeCreationProvider";
+import {
+  dragEdgeScroll,
+  type TreeDropRoutes,
+  TreeDropScope,
+  type TreeDropTarget,
+  useTreeDropTarget,
+} from "./tree-drop/tree-drop";
 import { treeFolderIds } from "./tree-expansion-state";
 import { useTreeExpansion } from "./use-tree-expansion";
 
@@ -71,6 +96,7 @@ export function ContextTreePanel({
     throw new Error("ContextTreePanel requires creation controls");
   }
   const schemes = EDITOR_CONTEXT_SCHEMES;
+  const scroller = useRef<HTMLDivElement>(null);
   const catalogs = useContextCatalogViews(projectId, schemes, { workId: editorWorkId });
   const renderScheme = (scheme: (typeof EDITOR_CONTEXT_SCHEMES)[number]) => (
     <SchemeSection
@@ -96,11 +122,36 @@ export function ContextTreePanel({
     <div className="flex h-full min-h-0 w-full flex-col">
       {/* The destination rows own the sidebar's single rule. Explorer panes
           stay on one uninterrupted rail material beneath it. */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden pb-2">
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: a drag is a pointer shortcut; every drop has a menu path (Import… on the same header or folder). */}
+      <div
+        ref={scroller}
+        onDragOver={(event) => dragEdgeScroll(scroller.current, event)}
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden pb-2"
+      >
         {schemes.map(renderScheme)}
       </div>
     </div>
   );
+}
+
+/** Where an import lands when dropped on, or started from, this target. */
+function importDestination(target: TreeDropTarget): ImportDestination | null {
+  if (!isImportScheme(target.scheme)) return null;
+  return target.folder
+    ? {
+        scheme: target.scheme,
+        path: target.folder.path,
+        uri: target.folder.uri,
+        name: target.folder.name,
+        folderId: target.folder.entryId,
+      }
+    : {
+        scheme: target.scheme,
+        path: "/",
+        uri: `${target.scheme}://`,
+        name: schemeLabel(target.scheme),
+        folderId: null,
+      };
 }
 
 function SchemeSection({
@@ -131,7 +182,9 @@ function SchemeSection({
   // selection and creation changes below expand it as one-shot events, so a
   // later user collapse sticks until the user reopens it or a new selection
   // lands inside.
-  const { catalog, isComplete, isError, refetch } = catalogState;
+  const { isComplete, isError, refetch } = catalogState;
+  const imports = useOptionalImports();
+  const catalog = useImportedCatalog(catalogState.catalog, scheme);
   const folderIds = useMemo(() => {
     if (!catalog || !isComplete) return null;
     return treeFolderIds((parentId) =>
@@ -169,6 +222,43 @@ function SchemeSection({
     [catalog, setExpandedEntryIds],
   );
 
+  // A new import opens its area and its destination folder; its new top-level folders
+  // open one level as the run knows them (their ids are known from the pick).
+  const importSnapshot = useImportsSnapshot(imports?.coordinator ?? null);
+  const arrived = useRef(new Set<string>());
+  const opened = useRef(new Set<string>());
+  useEffect(() => {
+    for (const { importId, target } of importSnapshot.imports) {
+      if (!target?.schemes.includes(scheme as never)) continue;
+      const first = !arrived.current.has(importId);
+      const fresh = target.rootIds.filter((id) => !opened.current.has(id));
+      if (!first && fresh.length === 0) continue;
+      arrived.current.add(importId);
+      for (const id of fresh) opened.current.add(id);
+      if (first) {
+        setExpanded(true);
+        if (
+          target.destination &&
+          target.destination.scheme === scheme &&
+          target.destination.path !== "/"
+        )
+          revealPath(target.destination.path);
+      }
+      setExpandedEntryIds((current) => {
+        const next = { ...current };
+        for (const id of fresh) next[id] = true;
+        const here = target.destination?.scheme === scheme ? target.destination : null;
+        const destination =
+          first && here
+            ? (here.folderId ??
+              (here.path !== "/" ? catalog?.findPath(here.path)?.entryId : undefined))
+            : undefined;
+        if (destination) next[destination] = true;
+        return next;
+      });
+    }
+  }, [importSnapshot, scheme, setExpanded, revealPath, setExpandedEntryIds, catalog]);
+
   useEffect(() => {
     if (!activeLocationPath) {
       revealed.current = null;
@@ -205,6 +295,21 @@ function SchemeSection({
     setPendingOpenPath(null);
   }, [pendingOpenPath, catalog, onSelectFile, scheme]);
 
+  const importable = imports !== null && isImportScheme(scheme);
+  const pickImport = imports?.pick;
+  const dropImport = imports?.drop;
+  const importRoutes = useMemo<TreeDropRoutes>(
+    () => ({
+      files: {
+        accepts: (target) => importDestination(target) !== null,
+        drop: (target, items) => {
+          const destination = importDestination(target);
+          if (destination) dropImport?.(destination, items);
+        },
+      },
+    }),
+    [dropImport],
+  );
   const deleteConfirm = useDeleteConfirmation({ projectId });
   const env = useMemo<TreeEnv | null>(
     () =>
@@ -230,6 +335,15 @@ function SchemeSection({
               : undefined,
             onSelectFile,
             onRequestDelete: deleteConfirm.requestDelete,
+            importHere: importable
+              ? {
+                  folders: canPickFolders(),
+                  start: (folder, kind) => {
+                    const destination = importDestination({ scheme, folder });
+                    if (destination) pickImport?.(destination, kind);
+                  },
+                }
+              : undefined,
             catalog,
             isExpanded,
             toggleEntry,
@@ -245,6 +359,8 @@ function SchemeSection({
       onSelectFile,
       requestCreate,
       deleteConfirm.requestDelete,
+      importable,
+      pickImport,
       onCreateDone,
       isExpanded,
       toggleEntry,
@@ -258,59 +374,129 @@ function SchemeSection({
   };
 
   const header = (
+    <AreaHeader
+      scheme={scheme}
+      expanded={expanded}
+      onExpandedChange={handleExpandedChange}
+      onOpenExpanded={() => setExpanded(true)}
+      onRequestCreate={requestCreate}
+      importInfo={catalog?.root.import}
+      onImport={
+        importable
+          ? (kind) => {
+              const destination = importDestination({ scheme, folder: null });
+              if (destination) pickImport?.(destination, kind);
+            }
+          : undefined
+      }
+    />
+  );
+
+  return (
+    <TreeDropScope routes={importRoutes}>
+      <section>
+        {header}
+        {expanded && catalog && env ? (
+          <TreeEnvProvider value={env}>
+            <div>
+              <TreeChildren parentId={catalog.root.entryId} parentPath="" depth={1} />
+              {/* "No context files yet." is a claim about the tree, so it waits
+                for a RESOLVED tree. While the query is in flight with nothing
+                cached the pane body stays blank (no spinner) — prefetch at
+                mount makes that window nearly unhittable. */}
+              {isError ? (
+                <InlineErrorRow message={t`Couldn't load files.`} onRetry={refetch} />
+              ) : catalog.children(catalog.root.entryId).length === 0 && !creating ? (
+                <EmptyHint depth={1}>
+                  <Trans>No context files yet.</Trans>
+                </EmptyHint>
+              ) : null}
+            </div>
+          </TreeEnvProvider>
+        ) : null}
+        <DeleteConfirmationDialog
+          target={deleteConfirm.target}
+          isPending={deleteConfirm.isPending}
+          error={deleteConfirm.error}
+          onCancel={deleteConfirm.cancel}
+          onConfirm={deleteConfirm.confirm}
+        />
+      </section>
+    </TreeDropScope>
+  );
+}
+
+/** An area's header: its actions, and the area root as a drop target (it lives inside the drop scope). */
+function AreaHeader({
+  scheme,
+  expanded,
+  onExpandedChange,
+  onOpenExpanded,
+  onRequestCreate,
+  importInfo,
+  onImport,
+}: {
+  scheme: ProjectContextTreeScheme;
+  expanded: boolean;
+  onExpandedChange: (expanded: boolean) => void;
+  onOpenExpanded: () => void;
+  onRequestCreate: (kind: ContextCreateKind, parentPath: string) => void;
+  /** What an import's own run shows on the area root: reading, or didn't start. */
+  importInfo?: ImportRowInfo;
+  /** Present where the area takes imports: opens the OS picker for a folder or files. */
+  onImport?: (kind: PickKind) => void;
+}) {
+  const rootTarget = useMemo<TreeDropTarget>(() => ({ scheme, folder: null }), [scheme]);
+  // Hovering a collapsed area during a drag opens it.
+  const drop = useTreeDropTarget(rootTarget, { onSpring: () => !expanded && onOpenExpanded() });
+  // Actions show on a collapsed header too; running one opens the area so its result is visible.
+  const create = (kind: ContextCreateKind) => {
+    if (!expanded) onOpenExpanded();
+    onRequestCreate(kind, "");
+  };
+  const pick = onImport
+    ? (kind: PickKind) => {
+        if (!expanded) onOpenExpanded();
+        onImport(kind);
+      }
+    : undefined;
+  return (
     <RailPaneHeader
       label={schemeLabel(scheme)}
       icon={schemeIcon(scheme)}
       expanded={expanded}
-      onExpandedChange={handleExpandedChange}
+      onExpandedChange={onExpandedChange}
+      dropProps={drop.dropProps}
+      dropState={drop.dropState}
+      dropLabel={<Trans>Import here</Trans>}
+      status={<ImportRunMark info={importInfo} />}
       actions={
         schemeAllowsCreation(scheme) ? (
           <>
             <PaneHeaderActionButton
               icon={FilePlus}
               label={t`New file`}
-              onClick={() => requestCreate("file", "")}
+              onClick={() => create("file")}
             />
             <PaneHeaderActionButton
               icon={FolderPlus}
               label={t`New folder`}
-              onClick={() => requestCreate("folder", "")}
+              onClick={() => create("folder")}
             />
+            {pick ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <PaneHeaderActionButton icon={ImportIcon} label={t`Import…`} />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  <ImportMenuItems onPick={pick} />
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
           </>
         ) : undefined
       }
     />
-  );
-
-  return (
-    <section>
-      {header}
-      {expanded && catalog && env ? (
-        <TreeEnvProvider value={env}>
-          <div>
-            <TreeChildren parentId={catalog.root.entryId} parentPath="" depth={1} />
-            {/* "No context files yet." is a claim about the tree, so it waits
-                for a RESOLVED tree. While the query is in flight with nothing
-                cached the pane body stays blank (no spinner) — prefetch at
-                mount makes that window nearly unhittable. */}
-            {isError ? (
-              <InlineErrorRow message={t`Couldn't load files.`} onRetry={refetch} />
-            ) : catalog.children(catalog.root.entryId).length === 0 && !creating ? (
-              <EmptyHint depth={1}>
-                <Trans>No context files yet.</Trans>
-              </EmptyHint>
-            ) : null}
-          </div>
-        </TreeEnvProvider>
-      ) : null}
-      <DeleteConfirmationDialog
-        target={deleteConfirm.target}
-        isPending={deleteConfirm.isPending}
-        error={deleteConfirm.error}
-        onCancel={deleteConfirm.cancel}
-        onConfirm={deleteConfirm.confirm}
-      />
-    </section>
   );
 }
 

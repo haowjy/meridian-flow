@@ -381,43 +381,6 @@ export type ContextReadBinaryResponse = {
 
 export type ContextReadResponse = ContextReadTrackedResponse | ContextReadBinaryResponse;
 
-export type CorpusImportSourceKind = "upload" | "google_drive_fixture" | "google_drive";
-
-export type CorpusImportItemResponse =
-  | {
-      status: "imported";
-      filename: string;
-      title: string;
-      uri: string;
-      documentId?: string;
-      source: { kind: CorpusImportSourceKind };
-      messages: string[];
-    }
-  | {
-      status: "skipped";
-      filename: string;
-      title: string;
-      reason: string;
-      source: { kind: CorpusImportSourceKind };
-    }
-  | {
-      status: "failed";
-      filename: string;
-      title: string;
-      reason: string;
-      source: { kind: CorpusImportSourceKind };
-    };
-
-export type CorpusImportResponse = {
-  projectId: string;
-  targetScheme: "kb";
-  requestedCount: number;
-  importedCount: number;
-  skippedCount: number;
-  failedCount: number;
-  items: CorpusImportItemResponse[];
-};
-
 export type CreateThreadRequest = {
   /** Client-provided ID for optimistic creation. Server generates one if omitted. */
   id?: string;

@@ -1,4 +1,6 @@
 /** Shared authoritative row-to-file mapping for catalog and project availability. */
+
+import { hasDisplayableProperties } from "@meridian/contracts";
 import {
   type CanonicalContextAuthority,
   type ContextUriScheme,
@@ -7,7 +9,7 @@ import {
 import type { CatalogFileEntry, CatalogScope, Filetype } from "@meridian/contracts/protocol";
 import { classifyFiletype } from "@meridian/contracts/protocol";
 import { decodeWorkSlug, type ResolvedWorkAuthority } from "@meridian/contracts/works";
-import { documentAliases } from "../document-metadata.js";
+import { documentAliases, documentImportPending } from "../document-metadata.js";
 
 const BINARY_FILE_TYPES = new Set(["docx", "image", "pdf", "binary"]);
 
@@ -91,7 +93,9 @@ export function mapAuthoritativeFile(input: {
     sourceId: document.contextSourceId,
     parentId: document.folderId ?? document.contextSourceId,
     name: filename,
-    aliases: documentAliases(document.metadata as never),
+    aliases: documentAliases(document.metadata),
+    importPending: documentImportPending(document.metadata),
+    hasProperties: hasDisplayableProperties(document.metadata),
     path,
     uri: canonicalContextUri(
       scheme,
