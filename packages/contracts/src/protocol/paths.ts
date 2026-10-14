@@ -116,6 +116,11 @@ export function apiProjectWorkWriteModePath(projectId: string, workId: string): 
   return `${apiProjectWorksPath(projectId)}/${workId}/write-mode`;
 }
 
+/** The active drafts with changes to one document, from any view. */
+export function apiProjectDocumentDraftsPath(projectId: string, documentId: string): string {
+  return `${apiProjectPath(projectId)}/documents/${documentId}/drafts`;
+}
+
 export function apiProjectWorkDraftsPath(projectId: string, workId: string): string {
   return `${apiProjectWorksPath(projectId)}/${workId}/drafts`;
 }
