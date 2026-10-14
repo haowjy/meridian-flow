@@ -97,6 +97,9 @@ left" with Next draft are therefore the desktop's behaviour, not a copy of it. T
 the review is read-only (no editor history), so every phone Discard (bar, sheet, header) is a headless edit of
 the draft's room (`useHeadlessDiscards`, scoped to this document's open review) with its own history. It leaves
 its own `DiscardedRow` above the bar and in the sheet, and that row's Undo restores that change only, in any order.
+The Discard binds to the open review (its document, item key and room), never to Work-list membership: a draft
+that lists no changes after its last Discard keeps the same path, so the phone has no route into the editor-surface
+Discard.
 
 - **Header** (`MobileReviewHeader`): the Draft chip (`DraftSwitcher`), the
   stepper and the list button (with the change count when there are changes),
