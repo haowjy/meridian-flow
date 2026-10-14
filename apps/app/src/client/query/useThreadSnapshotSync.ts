@@ -7,10 +7,14 @@
  * installs that owner synchronously after first-send admission succeeds.
  */
 import {
+  compareSeq,
   EventType,
   EXECUTION_ENDED_EVENT,
   MESSAGES_HANDED_BACK_EVENT,
   parseSeq,
+  RUN_STATE_EVENT,
+  readRunState,
+  WRITE_MODE_SWITCHED_EVENT,
 } from "@meridian/contracts/protocol";
 import { isDurableBlockEvent, isWellFormedDurableBlockEvent } from "@meridian/thread-client";
 import { useQuery } from "@tanstack/react-query";
@@ -18,6 +22,7 @@ import { useLayoutEffect, useMemo, useState } from "react";
 import { toThreadSnapshotApplyOptions } from "@/client/api/threads-api";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { useThreadTransport } from "@/client/providers/TransportProvider";
+import { readSwitchedFrame } from "@/client/run-state/run-state-slice";
 import { useIsThreadPendingCreation, useThreadActions } from "@/client/stores";
 import { pendingInboxFromEvent } from "@/features/chat/pending-inbox";
 import {
@@ -87,6 +92,8 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
     let timer: ReturnType<typeof setTimeout> | null = null;
     let generation = 0;
     let refreshQuery: () => void = () => undefined;
+    /** The newest record this owner has seen, to tell a frame whose execution changed. */
+    let seen: { version: string; executionId: string | null } | null = null;
     const current = (expected: number) =>
       mounted && !accountSignal.aborted && generation === expected;
     const refresh = (expected: number) => {
@@ -97,6 +104,14 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
       }, 250);
     };
     return {
+      /** Note a record taken outside the stream (the accepted snapshot), so a frame is compared with it. */
+      noteRecord(runState: { version: string; execution: { executionId: string } | null }) {
+        if (seen === null || compareSeq(runState.version, seen.version) > 0)
+          seen = {
+            version: runState.version,
+            executionId: runState.execution?.executionId ?? null,
+          };
+      },
       setRefetch(next: () => void) {
         refreshQuery = next;
       },
@@ -136,6 +151,25 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
                   parseSeq(seq) !== null
                 )
                   actions.applyTurnEvent(threadId, event, seq);
+                if (event.type === EventType.CUSTOM && event.name === RUN_STATE_EVENT) {
+                  const runState = readRunState(event.value);
+                  if (runState && parseSeq(seq) !== null) {
+                    actions.dispatchRunState(threadId, { type: "record", runState });
+                    // A cancelled compaction ends with no RUN_FINISHED, and a divider reserves
+                    // or settles with the execution: a record whose execution changed revalidates.
+                    const executionId = runState.execution?.executionId ?? null;
+                    if (seen !== null && compareSeq(runState.version, seen.version) > 0) {
+                      if (seen.executionId !== executionId) refresh(expected);
+                    }
+                    if (seen === null || compareSeq(runState.version, seen.version) > 0)
+                      seen = { version: runState.version, executionId };
+                  }
+                }
+                if (event.type === EventType.CUSTOM && event.name === WRITE_MODE_SWITCHED_EVENT) {
+                  const switched = readSwitchedFrame(event.value);
+                  if (switched && parseSeq(seq) !== null)
+                    actions.dispatchRunState(threadId, { type: "switched", seq, ...switched });
+                }
                 const pending = pendingInboxFromEvent(event);
                 if (pending) {
                   // The chat's owed messages: every tab follows them, not just the sender.
@@ -155,6 +189,14 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
                 controller.flushPendingDeltas(threadId);
                 if (!current(expected) || !actions.acceptDurableBlockSeq(threadId, seq)) return;
                 actions.applyDurableBlockEvent(threadId, event);
+              },
+              // The `subscribed` state is a whole record, read after catch-up.
+              onLiveState: (state) => {
+                if (current(expected))
+                  actions.dispatchRunState(threadId, {
+                    type: "snapshot",
+                    runState: state.runState,
+                  });
               },
               onGap: () => refresh(expected),
             },
@@ -209,9 +251,14 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
       snapshot.turns,
       toThreadSnapshotApplyOptions(snapshot),
     );
+    actions.dispatchRunState(threadId, {
+      type: "snapshot",
+      runState: snapshot.liveState.runState,
+    });
+    owner.noteRecord(snapshot.liveState.runState);
     controller.observeSnapshot(threadId, snapshot);
     setAppliedThreadId(snapshot.thread.id);
-  }, [accountSignal, actions, controller, snapshot, threadId]);
+  }, [accountSignal, actions, controller, owner, snapshot, threadId]);
 
   return {
     snapshot,

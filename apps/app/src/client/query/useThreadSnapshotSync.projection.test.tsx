@@ -62,6 +62,15 @@ vi.mock("@/client/query/project-invalidation", () => ({
   invalidateWorkThreads: async () => undefined,
 }));
 
+const IDLE_RUN_STATE = {
+  version: "0",
+  items: [],
+  sentThrough: 0,
+  execution: null,
+  mode: "direct",
+  blocked: null,
+} as const;
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((done) => {
@@ -363,7 +372,7 @@ describe("stale acquisition and missing targets", () => {
       turns,
       nextSeq,
       actionRequired: false,
-      liveState: { runningTurnId: null },
+      liveState: { runningTurnId: null, runState: IDLE_RUN_STATE },
     });
     first.resolve(response(staleTurns, "4000"));
     await act(async () => {
@@ -400,7 +409,7 @@ describe("stale acquisition and missing targets", () => {
         turns: [],
         nextSeq: "1000",
         actionRequired: false,
-        liveState: { runningTurnId: null },
+        liveState: { runningTurnId: null, runState: IDLE_RUN_STATE },
       })
       .mockImplementationOnce(() => held.promise)
       .mockImplementationOnce(() => recovered.promise);
@@ -429,7 +438,7 @@ describe("stale acquisition and missing targets", () => {
       turns: [],
       nextSeq: "4000",
       actionRequired: false,
-      liveState: { runningTurnId: null },
+      liveState: { runningTurnId: null, runState: IDLE_RUN_STATE },
     });
     await act(async () => {
       await vi.waitFor(() => expect(harness.snapshotRequest).toHaveBeenCalledTimes(3));
@@ -441,7 +450,7 @@ describe("stale acquisition and missing targets", () => {
       ],
       nextSeq: "7000",
       actionRequired: false,
-      liveState: { runningTurnId: null },
+      liveState: { runningTurnId: null, runState: IDLE_RUN_STATE },
     });
     await act(async () => {
       await vi.waitFor(() => expect(observed.current?.snapshot?.nextSeq).toBe("7000"));
@@ -456,7 +465,7 @@ describe("stale acquisition and missing targets", () => {
       turns: [],
       nextSeq: "1000",
       actionRequired: false,
-      liveState: { runningTurnId: null },
+      liveState: { runningTurnId: null, runState: IDLE_RUN_STATE },
     }));
     const scenario = mountThreadProjectionScenario();
     const { bus } = scenario;
@@ -542,14 +551,14 @@ describe("stale acquisition and missing targets", () => {
         turns: [compaction("pending")],
         nextSeq: "1000",
         actionRequired: false,
-        liveState: { runningTurnId: null },
+        liveState: { runningTurnId: null, runState: IDLE_RUN_STATE },
       })
       .mockResolvedValue({
         thread: { id: "thread-1", projectId: "project-1", userId: "account-1" },
         turns: [compaction("cancelled")],
         nextSeq: "2000",
         actionRequired: false,
-        liveState: { runningTurnId: null },
+        liveState: { runningTurnId: null, runState: IDLE_RUN_STATE },
       });
     const scenario = mountThreadProjectionScenario();
     const { bus } = scenario;
@@ -629,7 +638,7 @@ describe("stale acquisition and missing targets", () => {
       ],
       nextSeq: "1000",
       actionRequired: false,
-      liveState: { runningTurnId: null },
+      liveState: { runningTurnId: null, runState: IDLE_RUN_STATE },
     });
     await act(async () => {
       await vi.waitFor(() => expect(renders.at(-1)?.turns).toBe(2));
@@ -717,7 +726,7 @@ describe("projection lifetime fencing", () => {
       turns: [],
       nextSeq: "3000",
       actionRequired: false,
-      liveState: { runningTurnId: null },
+      liveState: { runningTurnId: null, runState: IDLE_RUN_STATE },
     });
     await act(async () => {
       await gate.promise;

@@ -18,6 +18,7 @@ import {
   isOptimisticTurnId,
   OPTIMISTIC_TURN_ID_PREFIX,
   patchTurnStatusIn,
+  type RunStateView,
   removeTurnsIn,
   type Tombstones,
   upsertBlockIn,
@@ -42,6 +43,11 @@ import {
   subscribeChatSubmissions,
 } from "@/client/chat-submissions";
 import {
+  INITIAL_RUN_STATE_SLICE,
+  type RunStateSlice,
+  reduceRunState,
+} from "@/client/run-state/run-state-slice";
+import {
   type InterruptResponseEntry,
   interruptResponseKey,
 } from "@/core/session/interrupt-response";
@@ -57,6 +63,8 @@ type PendingCreationState = {
 
 type ThreadStoreSliceState = ThreadStoreState & {
   turnsByThread: Record<string, Turn[]>;
+  /** Each chat's run state: the newest record, this device's unanswered intents, and what is news. */
+  runStateByThread: Record<string, RunStateSlice>;
   /** Minimum snapshot nextSeq accepted; snapshots below this floor are rejected. */
   snapshotNextSeqFloorByThread: Record<string, string>;
   /** Turns removed from the conversation, until a snapshot covering the removal arrives. */
@@ -193,6 +201,7 @@ function selectThreadActions(state: ThreadStoreSlice): ThreadStoreActions {
     bumpEventsApplied: state.bumpEventsApplied,
     applyTurnEvent: state.applyTurnEvent,
     removeTurns: state.removeTurns,
+    dispatchRunState: state.dispatchRunState,
     applyDurableBlockEvent: state.applyDurableBlockEvent,
     acceptDurableBlockSeq: state.acceptDurableBlockSeq,
     acceptsThreadSnapshot: state.acceptsThreadSnapshot,
@@ -231,6 +240,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
         return {
           now,
           turnsByThread: {},
+          runStateByThread: {},
           snapshotNextSeqFloorByThread: {},
           tombstonesByThread: {},
           durableBlockCursorByThread: {},
@@ -443,6 +453,16 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
             // projector-only fields such as final usage/cost metadata. The port
             // owns the render-safe deferral.
             threadCache.invalidateThread(threadId, terminalProjectId);
+          },
+
+          dispatchRunState(threadId, action) {
+            set((state) => {
+              const slice = state.runStateByThread[threadId] ?? INITIAL_RUN_STATE_SLICE;
+              const next = reduceRunState(slice, action);
+              return next === slice
+                ? state
+                : { runStateByThread: { ...state.runStateByThread, [threadId]: next } };
+            });
           },
 
           pruneStaleAssistantTurns(threadId) {
@@ -764,6 +784,16 @@ export function ThreadStoreProvider({ now, children }: ThreadStoreSeed & { child
 
 export function useThreadStore<T>(selector: (state: ThreadStoreSlice) => T): T {
   return useStore(useThreadStoreApi(), selector);
+}
+
+/** The chat's run-state slice: its newest record, this device's intents, and the news the hooks speak. */
+export function useRunStateSlice(threadId: string): RunStateSlice {
+  return useThreadStore((state) => state.runStateByThread[threadId] ?? INITIAL_RUN_STATE_SLICE);
+}
+
+/** The chat's run-state view, the one input to the package's selectors (`isBusy`, `stopRequest`, ...). */
+export function useRunState(threadId: string): RunStateView {
+  return useRunStateSlice(threadId).view;
 }
 
 export function useThreadActions(): ThreadStoreActions {

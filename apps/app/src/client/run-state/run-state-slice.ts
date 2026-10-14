@@ -1,19 +1,23 @@
 /**
- * The chat's switch state and the one reducer every fact about a switch goes through:
- * the accepted snapshot, `meridian.run_state` frames, the journal's switches (stamped once
- * answered), and the writer's Withdraw. `useSwitchView` dispatches into it, and the display
- * table test drives it, so the table exercises the production ingestion path.
+ * The chat's run-state slice and the one reducer every fact about the chat's run state goes
+ * through: the accepted snapshot, the `subscribed` state, `meridian.run_state` frames, answers,
+ * the journal's switches (stamped once answered), and this device's intents (admitted messages,
+ * switches, Withdraws, hand-backs). The thread store holds one slice per chat; the mounted
+ * subscriber, the composer, the queued tray, Stop, the transcript and the switch hook all read
+ * it, and the display table test drives this reducer, so the table exercises the production
+ * ingestion path.
  *
  * Every server fact is a whole `RunState`, so a frame before the snapshot is simply the first
  * record: nothing is buffered, and `run-state-view.ts` alone decides what is newer. A
- * `write_mode.switched` frame is not a record but the server's answer for its control's
- * intent.
+ * `write_mode.switched` frame is not a record but the server's answer for its control's intent.
  *
- * It also classifies announcement eligibility where a record is taken, because only the
- * carrier says whether a queued switch is news: a live record frame or a journal stamp, taken
- * after the first record, announces each queued switch once. The first record, a snapshot
- * (however much newer) and the frames replayed after the first record stay silent.
+ * It also classifies announcement eligibility where a record is taken, because only the carrier
+ * says whether a queued switch is news: a live record frame or a journal stamp, taken after the
+ * first record, announces each queued switch once. The first record, a snapshot (however much
+ * newer) and the frames replayed after the first record stay silent. The same holds for an
+ * applied switch: a `switched` frame at or below the first record's version is not news.
  */
+import { compareSeq } from "@meridian/contracts/protocol";
 import type { ControlBody, PendingInboxItem, RunState } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import {
@@ -21,6 +25,7 @@ import {
   answerIntent,
   dropIntent,
   INITIAL_RUN_STATE_VIEW,
+  type RunStateIntent,
   type RunStateView,
   receiveRecord,
   switchState,
@@ -52,6 +57,21 @@ export function switchDisplay(view: RunStateView, base: AiWriteMode) {
   );
 }
 
+/** A `meridian.write_mode.switched` frame's value, or null when it is malformed. */
+export function readSwitchedFrame(
+  value: unknown,
+): { turnId: string; controlId: string; mode: AiWriteMode } | null {
+  const frame = value as Partial<Record<string, unknown>> | undefined;
+  if (
+    !frame ||
+    typeof frame.turnId !== "string" ||
+    typeof frame.controlId !== "string" ||
+    (frame.mode !== "draft" && frame.mode !== "direct")
+  )
+    return null;
+  return { turnId: frame.turnId, controlId: frame.controlId, mode: frame.mode };
+}
+
 /** A queued write-mode switch the writer should hear about; `n` counts them, from 1. */
 export type QueuedNews = {
   n: number;
@@ -59,49 +79,96 @@ export type QueuedNews = {
   control: Extract<ControlBody, { kind: "write_mode" }>;
 };
 
-export type SwitchState = {
+/** A switch applied since the first record, which the writer should hear about; `n` counts them, from 1. */
+export type AppliedNews = { n: number; turnId: string; controlId: string; mode: AiWriteMode };
+
+export type RunStateSlice = {
   view: RunStateView;
   /** The queued switches already seen, from any carrier. */
   heard: ReadonlySet<string>;
   news: readonly QueuedNews[];
+  /** The first record's version: what it holds is not news, and neither is a frame at or below it. */
+  seed: string | null;
+  /** The applied switches already seen, by their divider's turn. */
+  appliedHeard: ReadonlySet<string>;
+  applied: readonly AppliedNews[];
 };
-export const INITIAL_SWITCH_STATE: SwitchState = {
+export const INITIAL_RUN_STATE_SLICE: RunStateSlice = {
   view: INITIAL_RUN_STATE_VIEW,
   heard: new Set(),
   news: [],
+  seed: null,
+  appliedHeard: new Set(),
+  applied: [],
 };
 
-export type SwitchAction =
+export type RunStateAction =
+  /** A record that is not news: an accepted snapshot, a `subscribed` state, or an answer's. */
   | { type: "snapshot"; runState: RunState }
   /** A `meridian.run_state` frame. */
   | { type: "record"; runState: RunState }
   /** A `meridian.write_mode.switched` frame: the server's answer for its control. */
-  | { type: "switched"; seq: string; controlId: string }
+  | { type: "switched"; seq: string; controlId: string; turnId: string; mode: AiWriteMode }
+  /** This device's intent: an admitted message, or a hand-back request. */
+  | { type: "intent"; intent: RunStateIntent }
+  | { type: "answer"; kind: RunStateIntent["kind"]; id: string; version: string }
+  | { type: "drop"; kind: RunStateIntent["kind"]; id: string }
   | { type: "journal"; switches: readonly JournalSwitch[] }
   | { type: "withdraw"; id: string; failed?: boolean }
   | { type: "withdrawn"; id: string; runState: RunState }
   | { type: "dropWithdraw"; id: string };
 
-export function reduceSwitch(state: SwitchState, action: SwitchAction): SwitchState {
+export function reduceRunState(state: RunStateSlice, action: RunStateAction): RunStateSlice {
   const view = reduceView(state.view, action);
   const record = view.record;
+  const seeded =
+    state.seed === null && record !== null ? { ...state, seed: record.version } : state;
+  const withApplied = action.type === "switched" ? appliedBy(seeded, action) : seeded;
   if (!record || record === state.view.record)
-    return view === state.view ? state : { ...state, view };
+    return view === state.view ? withApplied : { ...withApplied, view };
   const live =
     state.view.record !== null && (action.type === "journal" || action.type === "record");
-  const heard = new Set(state.heard);
-  const news = [...state.news];
+  const heard = new Set(withApplied.heard);
+  const news = [...withApplied.news];
   for (const item of record.items) {
     if (!isWriteModeControl(item) || item.control?.kind !== "write_mode") continue;
     if (heard.has(item.id)) continue;
     heard.add(item.id);
     if (live) news.push({ n: news.length + 1, id: item.id, control: item.control });
   }
-  return { view, heard, news };
+  return { ...withApplied, view, heard, news };
 }
 
-function reduceView(view: RunStateView, action: SwitchAction): RunStateView {
+/** A switched frame past the first record, whose divider the writer has not been told about. */
+function appliedBy(
+  state: RunStateSlice,
+  action: Extract<RunStateAction, { type: "switched" }>,
+): RunStateSlice {
+  if (state.seed === null || compareSeq(action.seq, state.seed) <= 0) return state;
+  if (state.appliedHeard.has(action.turnId)) return state;
+  return {
+    ...state,
+    appliedHeard: new Set(state.appliedHeard).add(action.turnId),
+    applied: [
+      ...state.applied,
+      {
+        n: state.applied.length + 1,
+        turnId: action.turnId,
+        controlId: action.controlId,
+        mode: action.mode,
+      },
+    ],
+  };
+}
+
+function reduceView(view: RunStateView, action: RunStateAction): RunStateView {
   switch (action.type) {
+    case "intent":
+      return addIntent(view, action.intent);
+    case "answer":
+      return answerIntent(view, action.kind, action.id, action.version);
+    case "drop":
+      return dropIntent(view, action.kind, action.id);
     case "snapshot":
     case "record":
       return receiveRecord(view, action.runState);

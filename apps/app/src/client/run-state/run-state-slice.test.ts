@@ -1,5 +1,5 @@
 /**
- * The switch display as a table through the hook's own reducer. Each scenario is a list of
+ * The switch display as a table through the run-state slice's own reducer. Each scenario is a list of
  * server facts (a snapshot, run-state frames, answers, each a whole record carrying its
  * version) and this device's intents, and asserts the toolbar mode and the rows after every
  * event. The scenarios are the reviewers' own scripts from five rounds of #760 review (R1, R4,
@@ -10,12 +10,12 @@ import type { RunState } from "@meridian/contracts/threads";
 import { expect, it } from "vitest";
 import type { JournalSwitch } from "@/client/chat-submissions/owner";
 import {
-  INITIAL_SWITCH_STATE,
-  reduceSwitch,
-  type SwitchAction,
-  type SwitchState,
+  INITIAL_RUN_STATE_SLICE,
+  type RunStateAction,
+  type RunStateSlice,
+  reduceRunState,
   switchDisplay,
-} from "./switch-reducer";
+} from "./run-state-slice";
 
 type Mode = "draft" | "direct";
 type Queued = [id: string, mode: Mode];
@@ -73,7 +73,7 @@ const answer = (id: string, j: number, mode: Mode, queued?: Queued): Event => ({
 });
 
 type Journal = Record<string, JournalSwitch>;
-type Harness = { state: SwitchState; journal: Journal };
+type Harness = { state: RunStateSlice; journal: Journal };
 
 const answerFacts = (j: number, mode: Mode, queued?: Queued) => ({
   runState: runState(head(j), mode, queued ? [queued] : []),
@@ -82,8 +82,8 @@ const answerFacts = (j: number, mode: Mode, queued?: Queued) => ({
 
 /** One event through the reducer the hook runs, with the journal the hook would be handed. */
 function step({ state, journal }: Harness, event: Event): Harness {
-  const dispatch = (action: SwitchAction, next = journal) => ({
-    state: reduceSwitch(state, action),
+  const dispatch = (action: RunStateAction, next = journal) => ({
+    state: reduceRunState(state, action),
     journal: next,
   });
   const ingest = (next: Journal) =>
@@ -99,7 +99,13 @@ function step({ state, journal }: Harness, event: Event): Harness {
       runState: runState(event.record, event.mode, event.queued ?? []),
     });
   if ("switched" in event)
-    return dispatch({ type: "switched", seq: event.switched, controlId: event.id });
+    return dispatch({
+      type: "switched",
+      seq: event.switched,
+      controlId: event.id,
+      turnId: `divider-${event.id}`,
+      mode: "direct",
+    });
   if ("choose" in event)
     return ingest({
       ...journal,
@@ -428,7 +434,7 @@ const SCENARIOS: {
 
 it("derives the switch rows and toolbar mode from server facts at one seq and unanswered intents", () => {
   for (const scenario of SCENARIOS) {
-    let harness: Harness = { state: INITIAL_SWITCH_STATE, journal: {} };
+    let harness: Harness = { state: INITIAL_RUN_STATE_SLICE, journal: {} };
     scenario.steps.forEach(([event, mode, rows], index) => {
       harness = step(harness, event);
       const shown = switchDisplay(harness.state.view, "direct");
