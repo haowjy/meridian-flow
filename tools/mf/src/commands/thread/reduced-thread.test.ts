@@ -27,7 +27,14 @@ it("applies journal-only deltas between the replay cursor and nextSeq, and rejec
     event({
       type: EventType.CUSTOM,
       name: WRITE_MODE_SWITCHED_EVENT,
-      value: { threadId: THREAD, mode: "direct", controlId: "c1", turnId: "sys-1" },
+      value: {
+        threadId: THREAD,
+        mode: "direct",
+        controlId: "c1",
+        turnId: "sys-1",
+        prevTurnId: null,
+        position: 0,
+      },
     }),
   );
   replay.forEach((item, index) => {

@@ -5,22 +5,19 @@
  * (`useThreadSnapshotSync`) takes them into the chat's run-state slice: the accepted snapshot's,
  * each `meridian.run_state` frame, the `switched` frame. This hook reads that slice and folds
  * it for the toolbar's mode and the queued rows. It carries the journal's switches and the
- * writer's Withdraw into the slice, speaks queued and applied transitions (the one announcer
+ * writer's Withdraw into the slice, speaks a switch when it becomes pending (the one announcer
  * for a switch; a failure stays with the journal owner's keyed announcement), and marks the
  * Works and project thread lists stale when a switch applies.
  *
- * The bridge row, an applied switch whose switch turn has not rendered yet, is derived here from the
- * slice's applied facts and the dividers the transcript shows: it leaves with its divider, and
- * once the divider has shown the slice retires the bridge for good. What
- * has been spoken is the slice's too, so a remount repeats no announcement.
+ * An applied switch is silent and has no row here: it was spoken when it became pending, and its
+ * notice is the switch turn the `switched` frame inserts into the transcript at the anchor the
+ * frame names. What has been spoken is the slice's, so a remount repeats no announcement.
  *
  * One host per chat per tab: the desktop shell keeps one `ChatSurface` and moves it between
  * the center and the dock, so a chat has one mounted `ChatView` and so one view. Two would
  * each announce. A dev-only registry warns when a second mounts for a chat that has one.
  */
 import { t } from "@lingui/core/macro";
-import type { Turn } from "@meridian/contracts/protocol";
-import { readWriteModeSwitch } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
@@ -81,16 +78,15 @@ export function useSwitchView(input: {
   projectId: string;
   /** The mode to show before the server has sent a record. */
   writeMode: AiWriteMode;
-  turns: readonly Turn[];
   journal: SwitchJournal;
   /** A reply or compaction holds the chat: a pending switch waits for it, and says so. */
   replyRunning: boolean;
 }): SwitchView {
-  const { threadId, projectId, turns, journal, replyRunning } = input;
+  const { threadId, projectId, journal, replyRunning } = input;
   const queryClient = useQueryClient();
   const actions = useThreadActions();
   const { dispatchRunState: dispatch } = actions;
-  const { view, news, applied, spoken, retired } = useRunStateSlice(threadId);
+  const { view, news, applied, spoken } = useRunStateSlice(threadId);
   useSingleHostWarning(threadId);
   const latest = useRef({ journal, projectId, replyRunning });
   latest.current = { journal, projectId, replyRunning };
@@ -164,42 +160,17 @@ export function useSwitchView(input: {
     [dispatch, revalidate, threadId],
   );
 
-  const dividerIds = useMemo(
-    () => new Set(turns.flatMap((turn) => (readWriteModeSwitch(turn) ? [turn.id] : []))),
-    [turns],
-  );
-  // Once a divider has shown, its bridge is gone for good: a snapshot that lacks it again
-  // does not bring the switch back as queued.
-  useLayoutEffect(() => {
-    const shown = applied.filter(
-      (entry) => dividerIds.has(entry.turnId) && !retired.has(entry.turnId),
-    );
-    if (shown.length)
-      dispatch(threadId, { type: "retired", turnIds: shown.map((entry) => entry.turnId) });
-  }, [applied, dividerIds, retired, dispatch, threadId]);
   const folded = useMemo(() => switchDisplay(view, input.writeMode), [view, input.writeMode]);
-  const rows = useMemo<QueuedControl[]>(() => {
-    const own = folded.rows.map((row) => ({
-      id: row.id,
-      control: { kind: "write_mode" as const, mode: row.mode },
-      status: row.status,
-      ...(row.awaitingServer ? { awaitingServer: true } : {}),
-    }));
-    // The bridge: an applied switch whose divider has not rendered yet.
-    const bridge = applied
-      .filter(
-        (entry) =>
-          !dividerIds.has(entry.turnId) &&
-          !retired.has(entry.turnId) &&
-          !own.some((row) => row.id === entry.controlId),
-      )
-      .map((entry) => ({
-        id: entry.controlId,
-        control: { kind: "write_mode" as const, mode: entry.mode },
-        status: "applied" as const,
-      }));
-    return [...own, ...bridge];
-  }, [folded.rows, applied, dividerIds, retired]);
+  const rows = useMemo<QueuedControl[]>(
+    () =>
+      folded.rows.map((row) => ({
+        id: row.id,
+        control: { kind: "write_mode" as const, mode: row.mode },
+        status: row.status,
+        ...(row.awaitingServer ? { awaitingServer: true } : {}),
+      })),
+    [folded.rows],
+  );
 
   return { rows, writeMode: folded.mode, switchWriteMode, retry, withdraw };
 }

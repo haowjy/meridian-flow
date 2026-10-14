@@ -39,13 +39,7 @@ export type LocalControls = {
 export const NO_LOCAL_CONTROLS: LocalControls = { sends: [], withdrawals: new Map() };
 
 /** `sending`: the writer asked and the server has not answered. */
-export type QueuedControlStatus =
-  | "sending"
-  | "queued"
-  | "failed"
-  | "withdraw_failed"
-  /** A switch the server applied whose turn has not rendered yet: the notice, no Stop. */
-  | "applied";
+export type QueuedControlStatus = "sending" | "queued" | "failed" | "withdraw_failed";
 
 export type QueuedControl = {
   id: string;

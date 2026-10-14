@@ -294,7 +294,6 @@ export function ChatView({
     projectId,
     writeMode:
       snapshotWriteMode ?? activeThread?.aiWriteMode ?? activeWork?.defaultAiWriteMode ?? "direct",
-    turns,
     journal: submissions.switches,
     replyRunning: running,
   });
