@@ -25,6 +25,21 @@ chunks, streaming memo/coalesce) live in [frontend-perf.md](frontend-perf.md).
 The Chat index feed/row contract and interaction ownership live with the feature in
 [`src/features/project/chat-index/.context/CONTEXT.md`](../src/features/project/chat-index/.context/CONTEXT.md).
 
+## Activity toasts
+
+`components/app/toast-registry.tsx` is the keyed store behind the app-wide
+`ToastRegion` (mounted once in `routes/_authenticated.tsx`, role `region`
+labelled "Activity"). An owner calls `useActivityToast(key, spec | null)` (or
+`useToastRegistry()` for `show`, `update`, `remove`, `reveal`) and supplies its
+own title, detail, progress, body, actions and `onClose`; the registry knows
+nothing about what a toast is for. Omitting `onClose` means the card has no
+close control. The region stacks the newest three bottom-left on desktop (older
+ones fold into "+N more") and shows one compact bar plus a bottom sheet on the
+phone shell. It reports the toasts it shows in a visible tab, and
+`useToastVisible(key)` exposes that, so an owner can time "seen for N seconds"
+without owning visibility logic. Collapse is remembered for the life of the
+tab, not across reloads. `ReviewToast` stays a separate transient hint.
+
 ## Server config and auth surface
 
 `src/server/config.ts` is the app server's config seam. It parses the

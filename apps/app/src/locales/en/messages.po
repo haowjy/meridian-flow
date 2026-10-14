@@ -181,6 +181,11 @@ msgstr "{0} for {ownerName}"
 msgid "{0} imported, but its link had moved on."
 msgstr "{0} imported, but its link had moved on."
 
+#. placeholder {0}: running.length
+#: src/components/app/ToastRegion.tsx
+msgid "{0} in progress"
+msgstr "{0} in progress"
+
 #. placeholder {0}: file.name
 #: src/core/editor/images/image-uploads.ts
 msgid "{0} is not an image. Choose a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
@@ -419,6 +424,10 @@ msgstr "{total, plural, one {{arrived} of # file has arrived.} other {{arrived} 
 msgid "{words, plural, one {# word removed} other {# words removed}}"
 msgstr "{words, plural, one {# word removed} other {# words removed}}"
 
+#: src/components/app/ToastRegion.tsx
+msgid "+{hidden} more"
+msgstr "+{hidden} more"
+
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "<0.1 s"
 msgstr "<0.1 s"
@@ -544,6 +553,10 @@ msgstr "Active"
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Active Work"
 msgstr "Active Work"
+
+#: src/components/app/ToastRegion.tsx
+msgid "Activity"
+msgstr "Activity"
 
 #: src/components/app/composer/placeholders.ts
 msgid "Actually…"
@@ -1047,6 +1060,8 @@ msgstr "Choose Work for new chat, currently {0}"
 msgid "Choose Work for new chat, currently {unavailableLabel}"
 msgstr "Choose Work for new chat, currently {unavailableLabel}"
 
+#: src/components/app/ToastRegion.tsx
+#: src/components/ui/persistent-toast.tsx
 #: src/features/editor/EditorView.tsx
 #: src/features/import/ImportProvider.tsx
 #: src/features/links/FollowOutcomeContent.tsx
@@ -1125,6 +1140,10 @@ msgstr "Collaborative document editor"
 msgid "Collaborator"
 msgstr "Collaborator"
 
+#: src/components/ui/persistent-toast.tsx
+msgid "Collapse"
+msgstr "Collapse"
+
 #: src/features/chat/DraftDock.tsx
 msgid "Collapse changes"
 msgstr "Collapse changes"
@@ -1149,6 +1168,10 @@ msgstr "Column"
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Column options"
 msgstr "Column options"
+
+#: src/components/app/ToastRegion.tsx
+msgid "Combined progress"
+msgstr "Combined progress"
 
 #: src/components/app/composer/Composer.tsx
 msgid "Commands"
@@ -2122,6 +2145,10 @@ msgstr "Enter an amount in USD."
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "epigraph"
 msgstr "epigraph"
+
+#: src/components/ui/persistent-toast.tsx
+msgid "Expand"
+msgstr "Expand"
 
 #: src/features/chat/DraftDock.tsx
 msgid "Expand changes"
@@ -3962,6 +3989,10 @@ msgstr "Show changes"
 msgid "Show chats"
 msgstr "Show chats"
 
+#: src/components/app/ToastRegion.tsx
+msgid "Show fewer"
+msgstr "Show fewer"
+
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Show less"
@@ -5083,6 +5114,10 @@ msgstr "What are you working on?"
 #: src/features/home/NewProjectView.tsx
 msgid "What are you writing?"
 msgstr "What are you writing?"
+
+#: src/components/app/ToastRegion.tsx
+msgid "What is running in the background, with its controls."
+msgstr "What is running in the background, with its controls."
 
 #: src/features/project/work/WorkScreen.tsx
 msgid "What is your goal?"
