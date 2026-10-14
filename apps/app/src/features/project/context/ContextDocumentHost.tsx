@@ -170,6 +170,7 @@ export function ContextDocumentHost({
                 className={editorClassName}
                 projectId={projectId}
                 documentId={tab.documentId}
+                focusKey={tab.tabInstanceId}
                 session={session ?? undefined}
                 bindingKey={bindingKey}
                 // A warm editor is hidden, not gone. Its chrome portals to
