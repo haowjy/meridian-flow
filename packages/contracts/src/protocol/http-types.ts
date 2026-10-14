@@ -513,6 +513,14 @@ export type HandoffBriefRetryRequest = z.infer<typeof handoffBriefRetryRequestSc
 export const replyRetryRequestSchema = z.strictObject({ id: z.uuid() });
 export type ReplyRetryRequest = z.infer<typeof replyRetryRequestSchema>;
 
+/** Chat Stop: the press set's watermark and the execution the writer saw. Types: `StopRequest`. */
+export const stopRequestSchema = z.strictObject({
+  requestId: z.uuid(),
+  seenThrough: z.number().int().min(0),
+  seenExecutionId: z.string().min(1).nullable(),
+  mine: z.array(z.uuid()).max(500),
+});
+
 /**
  * An accepted Retry: 201 when this request started it, 200 on a replay. The
  * execution is what a client follows until `meridian.execution.ended`; it may end

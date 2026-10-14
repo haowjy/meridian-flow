@@ -136,7 +136,11 @@ export {
   RuntimeShuttingDownError,
   type WriterRunTurnInput,
 } from "./loop/run-turn-port.js";
-export type { DeliveryProducer, RuntimeDelivery } from "./loop/runtime-delivery.js";
+export {
+  type DeliveryProducer,
+  HandBackConflictError,
+  type RuntimeDelivery,
+} from "./loop/runtime-delivery.js";
 export {
   isSkillsUri,
   listSkillDir,
