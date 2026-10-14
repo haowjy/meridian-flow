@@ -17,6 +17,7 @@ import {
   permutations,
   submit,
 } from "./namespace-schedule-fixtures";
+import type { ResourceRecord } from "./resource-records";
 
 const boundedMs = 500;
 
@@ -166,4 +167,41 @@ it("roots a self-parent canonical observation without attaching its old home", (
   const placement = createResourcePlacement("p", [entries[0], node("F", "old/F", "F")], []);
   expect(placement.folderLocation("F")?.path).toBe("/old/F");
   expect(placement.parentForFolder("F")?.kind).toBe("root");
+});
+
+it("parents a just-created document by the folder that holds its shown location", () => {
+  const create = (folderPath: string): ResourceRecord => ({
+    resource: {
+      handle: "r",
+      revision: 1,
+      identity: { documentId: "d", revision: 1 },
+      content: { kind: "exact", databaseName: "c", schema: null },
+      classification: { editable: true, filetype: "markdown", schemaType: "document" },
+      canonical: null,
+      lifecycle: { kind: "local" },
+      aliases: {},
+      obligations: { createEligibility: { eligibleAt: 1 } },
+    },
+    intents: [
+      {
+        projectId: "p",
+        handle: "r",
+        intentId: "i",
+        sequence: 1,
+        identityRevision: 1,
+        desired: { kind: "create", folderPath, provisionalName: "Untitled" },
+        attempts: [],
+        state: "pending",
+      },
+    ],
+  });
+  // Creates live in the unfiled area, so the holding folder does too.
+  const unfiled = { ...entries[0], scheme: "unfiled", uri: "unfiled://" } as (typeof entries)[0];
+  const folder = { ...node("F", "drafts"), uri: "unfiled://drafts" };
+  const placement = createResourcePlacement("p", [unfiled, folder], []);
+  expect(placement.parentForResource(create("drafts"))).toEqual({
+    kind: "folder",
+    folderId: "F",
+  });
+  expect(placement.parentForResource(create(""))).toMatchObject({ kind: "root" });
 });
