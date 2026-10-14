@@ -59,6 +59,7 @@ export {
 } from "./domain/thread-activity.js";
 export { threadAvailabilityCode } from "./domain/thread-availability.js";
 export {
+  hasCompletedReplyInLineage,
   loadThreadConversationContext,
   type ThreadConversationContext,
   type ThreadConversationContextDeps,

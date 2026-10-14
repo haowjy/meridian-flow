@@ -63,7 +63,7 @@ export function createRuntimeHarness(
     repos?: ThreadRepositories;
     /** The owner supplied `repos` commit through; the in-memory shown-link store joins it. */
     transactionOwner?: InMemoryTransactionOwner;
-    inbox?: import("../../adapters/runtime-delivery.js").DeliveryStore;
+    inbox?: import("../../adapters/delivery-ports.js").DeliveryStore;
     threadLock?: import("../thread-lock.js").ThreadLock;
     creditLedger?: CreditLedger;
     boundThreads?: () => readonly string[];

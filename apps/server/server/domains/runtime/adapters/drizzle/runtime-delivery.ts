@@ -5,11 +5,12 @@ import { pendingPlaceholderPredicate } from "@meridian/database/schema/pending-p
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { currentDrizzleDb, runAfterDrizzleCommit } from "../../../../shared/drizzle-transaction.js";
 import type { Lease } from "../../loop/ports.js";
+import type { DeliveryLeaseStore } from "../delivery-ports.js";
 import { createDrizzleHandBacks } from "../drizzle-hand-backs.js";
 import { createDrizzleInbox } from "../drizzle-inbox.js";
 import { markRunStateChanged } from "../drizzle-run-state.js";
 import { createDrizzleThreadLock } from "../drizzle-thread-lock.js";
-import { createDeliveryAdapter, type DeliveryLeaseStore } from "../runtime-delivery.js";
+import { createDeliveryAdapter } from "../runtime-delivery.js";
 
 export function createDrizzleRuntimeDelivery(
   db: Database,
@@ -115,27 +116,6 @@ export function createDrizzleRuntimeDelivery(
             lease: { threadId, executionId: row.executionId, holderId: row.holderId },
           }
         : null;
-    },
-    async lockStaleExecution(threadId) {
-      const [row] = await db_()
-        .select({ executionId: schema.threadRunLeases.executionId })
-        .from(schema.threadRunLeases)
-        .where(eq(schema.threadRunLeases.threadId, threadId))
-        .for("update");
-      return row ?? null;
-    },
-    async deleteStaleExecution(threadId, executionId) {
-      const rows = await db_()
-        .delete(schema.threadRunLeases)
-        .where(
-          and(
-            eq(schema.threadRunLeases.threadId, threadId),
-            eq(schema.threadRunLeases.executionId, executionId),
-          ),
-        )
-        .returning({ threadId: schema.threadRunLeases.threadId });
-      if (rows.length > 0) markRunStateChanged(threadId);
-      return rows.length > 0;
     },
     async lockReceipt(lease) {
       const [row] = await db_()
