@@ -67,7 +67,6 @@ it.each([
           expect(tabs[0].tabInstanceId).toBe(before.tabInstanceId);
           if (isNew)
             expect(tabs[0]).toMatchObject({
-              draftOnly: true,
               reviews: {
                 ["work-a"]: { itemKey: "branch-a", tabInstanceToken: expect.any(String) },
               },

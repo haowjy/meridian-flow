@@ -18,7 +18,6 @@ import {
   useObservedResourceProjection,
   useOptionalAccountResourceReplica,
 } from "@/features/project/context/account-feature-context";
-import { useDockDocumentStore } from "@/features/project/dock/dock-document-store";
 import { useOptionalOpenEditorReview } from "@/features/project/dock/editor-review-handoff";
 import { usePresentedDocument } from "@/features/project/presented-document";
 import {
@@ -131,29 +130,36 @@ function WorkSettlement({
   const openReview = useOptionalOpenEditorReview();
   // Draft-only means "hidden live". The replica showing the document (by its
   // current id or an alias: a join, New file, a link's Create) makes it live at
-  // once, so its tab becomes the ordinary tab, and a tab the writer was looking
-  // at opens the draft's review over it, the view the chip's Draft choice gives.
+  // once for every Work. A tab the writer was looking at keeps the review it
+  // showed, opened over the live document: the view the chip's Draft choice gives.
   useEffect(() => {
     if (drafts.status !== "ready") return;
     const identities = resourceIdentityIndex(projection.records);
+    const promoting = new Set<string>();
     for (const draft of lifecycle.presentations(projectId)) {
       const row = drafts.drafts?.find((candidate) => candidate.itemKey === draft.itemKey);
       if (draft.workId !== workId || !row || !identities.byDocumentId(draft.documentId)) continue;
-      const current = presentedRef.current;
-      const shown =
-        current?.container === draft.container &&
-        current.documentId === draft.documentId &&
-        current.draftOnly;
+      if (promoting.has(draft.documentId)) continue;
+      promoting.add(draft.documentId);
+      const shown = presentedRef.current;
+      const review =
+        shown?.container === "editor" && shown.documentId === draft.documentId && shown.draftOnly
+          ? shown.review
+          : null;
       void lifecycle.promote(draft).then((promoted) => {
-        if (!promoted || !shown) return;
-        if (draft.container === "dock") {
-          useDockDocumentStore.getState().setDocumentReview({ workId, itemKey: draft.itemKey });
+        if (!promoted || !review) return;
+        const now = presentedRef.current;
+        if (
+          now?.container !== "editor" ||
+          now.documentId !== draft.documentId ||
+          now.review?.workId !== review.workId ||
+          now.review.itemKey !== review.itemKey
+        )
           return;
-        }
         void openReview?.({
-          workId,
+          workId: review.workId,
           documentId: draft.documentId,
-          itemKey: draft.itemKey,
+          itemKey: review.itemKey,
           contextLocation: draft.contextLocation,
           isNew: false,
         }).catch(() => undefined);

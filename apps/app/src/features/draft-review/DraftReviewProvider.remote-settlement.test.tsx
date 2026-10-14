@@ -256,14 +256,14 @@ describe("DraftReviewProvider remote settlement", () => {
         // room reset. Lifecycle alone decides whether this overlay promotes or closes.
         if (container === "dock") {
           expect(selected?.controller.inlineReview?.itemKey).toBe("draft-a");
-          expect(useDockDocumentStore.getState().occupant?.tab).toHaveProperty("draftOnly", true);
+          expect(useDockDocumentStore.getState().occupant?.tab).toHaveProperty("reviews");
           expect(useContextTabsStore.getState().byProject).toEqual({});
         }
         await act(async () => finishCatalog());
         await vi.waitFor(() => {
           if (container !== "dock") expect(mode === "apply" ? promote : discard).toHaveBeenCalled();
           if (mode === "apply")
-            expect(useDockDocumentStore.getState().occupant?.tab).not.toHaveProperty("draftOnly");
+            expect(useDockDocumentStore.getState().occupant?.tab).not.toHaveProperty("reviews");
           else expect(useDockDocumentStore.getState().occupant).toBeNull();
         });
         if (container === "dock" && mode === "apply") {
