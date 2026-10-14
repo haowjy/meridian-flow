@@ -44,7 +44,7 @@ export type ContextTab =
       path: string;
       name: string;
       /**
-       * Per-Work draft-only entries of a hidden draft-created document; never persisted.
+       * Per-Work draft-only entries of a hidden draft-created document; the Editor workspace never persists them, the dock keeps its one.
        * A tab with entries IS draft-only (`isDraftOnly`); dropping the last entry closes it.
        */
       reviews?: ReviewEntries;

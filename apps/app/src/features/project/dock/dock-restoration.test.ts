@@ -433,6 +433,20 @@ it.each([
   });
   expect(restored && isDraftOnly(restored.tab)).toBe(hidden);
 });
+it("a draft-only dock tab is still draft-only after a persistence round trip and selector admission", async () => {
+  const review = { workId: "work", itemKey: "draft:admitted" };
+  const saved: DockDocument = {
+    ...document,
+    review,
+    tab: { ...tab, reviews: { work: { itemKey: review.itemKey, tabInstanceToken: "token" } } },
+  };
+  const replica = resources();
+  const restoring = reload(saved).getState().restoring;
+  expect(restoring).not.toBeNull();
+  const restored = await restoreDockDocument(restoring as DockDocument, replica);
+  expect(restored).toMatchObject({ reviewAdmission: "admitted" });
+  expect(restored && isDraftOnly(restored.tab)).toBe(true);
+});
 it("keeps failed and unavailable saved selectors without showing a live occupant", async () => {
   const review = { workId: "work", itemKey: "draft:doc" };
   const candidate = { ...document, review };
