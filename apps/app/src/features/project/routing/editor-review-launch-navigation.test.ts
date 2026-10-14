@@ -3,6 +3,7 @@
 import "fake-indexeddb/auto";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { describe, expect, it, vi } from "vitest";
+import { applyContextRemovalSearchUpdate } from "./context-removal-route-repair";
 import { createEditorDocumentCommand } from "./editor-document-command";
 import { parseProjectAddress } from "./project-address";
 import { createProjectNavigation } from "./project-navigation";
@@ -10,7 +11,11 @@ import { createProjectNavigation } from "./project-navigation";
 const projectId = "550e8400-e29b-41d4-a716-446655440000";
 const workId = "700db898-57fb-4ffa-8366-46ad6a3880be";
 
-function setup(lookup: () => Promise<{ kind: "failed" }>, path = `/p/${projectId}/chats`) {
+function setup(
+  lookup: () => Promise<{ kind: "failed" }>,
+  path = `/p/${projectId}/chats`,
+  addressDocumentId?: string,
+) {
   const history = createMemoryHistory({ initialEntries: [path] });
   const navigation = createProjectNavigation(
     {
@@ -43,6 +48,7 @@ function setup(lookup: () => Promise<{ kind: "failed" }>, path = `/p/${projectId
       editorWorkId: workId,
       noWorkId: null,
       documentCatalog: null,
+      addressDocumentId,
     }),
     lookup,
     admitDraftReview: () => undefined,
@@ -86,17 +92,38 @@ describe("review launch navigation", () => {
     expect(history.location.href).toContain("item=draft-1");
   });
 
-  it("opening a different document drops the address's review item (Discard's fallback repair)", async () => {
-    const { open, history } = setup(
-      vi.fn(async () => ({ kind: "failed" as const })),
-      `/p/${projectId}/editor/manuscript/gone.md?work=${workId}&item=draft-1`,
-    );
-    const result = await open(
-      { scheme: "manuscript", path: "/fallback.md", documentId: "doc-2", workId },
-      { replace: true },
-    );
-    expect(result.kind).toBe("applied");
-    expect(history.location.href).toContain("/fallback.md");
-    expect(history.location.href).not.toContain("item=");
+  describe("Editor address repair", () => {
+    const itemUrl = (path: string) =>
+      `/p/${projectId}/editor/manuscript/${path}?work=${workId}&item=draft-1&change=c1`;
+    const repair = (path: string, next: string, relocated: { documentId: string } | undefined) => {
+      const { open, history } = setup(
+        vi.fn(async () => ({ kind: "failed" as const })),
+        itemUrl(path),
+        "doc-1",
+      );
+      applyContextRemovalSearchUpdate({
+        search: { screen: "context", scheme: "manuscript", path, work: workId },
+        update: (latest) => ({ ...latest, path: next }),
+        relocated,
+        openContext: open,
+        goWorks: () => undefined,
+        goEditor: () => undefined,
+      });
+      return history;
+    };
+
+    it("a fallback document opens without the discarded item, however the draft list reads", async () => {
+      const history = repair("gone.md", "fallback.md", undefined);
+      await vi.waitFor(() => expect(history.location.href).toContain("fallback.md"));
+      expect(history.location.href).not.toContain("item=");
+      expect(history.location.href).not.toContain("change=");
+    });
+
+    it("a relocation of the same document keeps its review address", async () => {
+      const history = repair("old.md", "renamed.md", { documentId: "doc-1" });
+      await vi.waitFor(() => expect(history.location.href).toContain("renamed.md"));
+      expect(history.location.href).toContain("item=draft-1");
+      expect(history.location.href).toContain("change=c1");
+    });
   });
 });
