@@ -28,6 +28,7 @@ import { ContextViewerBareHost } from "../context/ContextViewerHost";
 import { resolveWorkspaceRoute } from "../context/context-route-workspace-owner";
 import { PHONE_DOCUMENT_PRESENTATION } from "../context/document-presentation";
 import { useContextRemovalProject } from "../context/use-context-removal-project";
+import { useDockArchivedWork } from "../dock/DockDocumentIdentity";
 import { MobileDocumentReview } from "./MobileDocumentReview";
 import type { MobileDocumentRoute } from "./mobile-document-route";
 
@@ -170,6 +171,8 @@ function PhoneDocument({
   tab: EditableContextTab;
   children?: React.ReactNode;
 }) {
+  // The room's scope follows the Work; the presentation is what keeps the phone from typing.
+  const archived = useDockArchivedWork(projectId, tab);
   return (
     <div className="relative min-h-0 flex-1">
       {children}
@@ -178,7 +181,7 @@ function PhoneDocument({
         projectId={projectId}
         tab={tab}
         active
-        readOnly
+        readOnly={Boolean(archived)}
         presentation={PHONE_DOCUMENT_PRESENTATION}
       />
     </div>
