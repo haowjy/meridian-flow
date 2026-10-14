@@ -36,3 +36,5 @@ drift from the export. The request's abort signal stops that pass between
 documents, so a superseded or closed-dialog preview does not keep reading. Preview
 and download can differ when content changes. Browser owns download progress/failure; preview errors
 belong in the dialog and do not prevent Export.
+
+See [`.context/TODO.md`](.context/TODO.md) for deferred export work.

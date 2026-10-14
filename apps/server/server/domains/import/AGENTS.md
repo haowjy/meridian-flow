@@ -11,4 +11,5 @@ file until Finish releases it; nothing arriving at its address may capture it. S
 Resolve parents and placeholders by identity after moves; never recreate a
 writer-deleted node. Finish is terminal.
 
-See [.context/CONTEXT.md](.context/CONTEXT.md) for the transaction protocol.
+See [.context/CONTEXT.md](.context/CONTEXT.md) for the transaction protocol and
+[.context/FUTURE.md](.context/FUTURE.md) for deferred import work.

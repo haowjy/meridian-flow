@@ -19,6 +19,9 @@ global progress popup goes. It will read `coordinator.view` and
 planning, allocation, conversion and landing; this feature owns what the browser
 can do about it.
 
+See [`.context/TODO.md`](.context/TODO.md) for deferred browser verification and
+cleanup.
+
 - **Navigate first, begin before reading.** `ImportCoordinator.begin(destination,
   read)` mints the id, the run and its abort signal before the selection is read;
   the provider keeps only the synchronous picker click and `DataTransfer` capture.
