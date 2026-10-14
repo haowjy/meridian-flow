@@ -52,36 +52,22 @@ function reduceView(
       const held = new Set(action.switches.map((entry) => entry.id));
       for (const entry of action.switches) {
         // A stamp is the server's answer, read as a fact by every tab.
-        if (entry.answer) {
-          next = receiveRecord(next, recordFromAnswer(next.record, entry.answer));
-          next = answerIntent(
-            addIntent(next, {
-              kind: "switch",
-              id: entry.id,
-              order: entry.seq,
-              mode: entry.mode,
-              answer: null,
-            }),
-            "switch",
-            entry.id,
-            entry.answer.seq,
-          );
-        } else {
-          next = addIntent(next, {
-            kind: "switch",
-            id: entry.id,
-            order: entry.seq,
-            mode: entry.mode,
-            answer: null,
-            failed: entry.failed,
-            awaitingServer: entry.posted && !entry.refused,
-          });
-        }
+        if (entry.answer) next = receiveRecord(next, recordFromAnswer(next.record, entry.answer));
+        next = addIntent(next, {
+          kind: "switch",
+          id: entry.id,
+          order: entry.seq,
+          mode: entry.mode,
+          answer: entry.answer?.seq ?? null,
+          ...(entry.answer
+            ? {}
+            : { failed: entry.failed, awaitingServer: entry.posted && !entry.refused }),
+        });
       }
-      // A record that vanished unstamped was withdrawn or refused here, or its stamp was
-      // pruned while this tab was blind: either way frames bring the server state.
+      // An entry that left the journal was withdrawn or refused here, or pruned while this
+      // tab was blind: its intent and evidence go, and frames bring the server state.
       for (const intent of next.intents)
-        if (intent.kind === "switch" && intent.answer === null && !held.has(intent.id))
+        if (intent.kind === "switch" && !held.has(intent.id))
           next = dropIntent(next, "switch", intent.id);
       return next;
     }

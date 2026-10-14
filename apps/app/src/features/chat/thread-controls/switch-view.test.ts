@@ -311,6 +311,51 @@ const SCENARIOS: {
     ],
   },
   {
+    name: "answer evidence outlives a retired intent: a journal rebuild does not bring a ghost back",
+    steps: [
+      [snapshot(1, "direct"), "direct", []],
+      [choose("s1", "draft", 1), "draft", ["s1:sending"]],
+      [switched(at(2), "draft", "s1"), "draft", []],
+      [switched(at(3), "direct", "s9"), "direct", []],
+      // The journal still holds s1 unstamped; adding s2 re-adds it.
+      [choose("s2", "draft", 2), "draft", ["s2:sending"]],
+    ],
+    retained: ["switch:s2"],
+  },
+  {
+    name: "answer evidence arrives before the intent: a frame ahead of the journal entry is not lost",
+    steps: [
+      [snapshot(1, "direct"), "direct", []],
+      [switched(at(2), "draft", "s1"), "draft", []],
+      [switched(at(3), "direct", "s9"), "direct", []],
+      [choose("s1", "draft", 1), "direct", []],
+    ],
+    retained: [],
+  },
+  {
+    name: "a lost response whose switch applied: the frame answers it, so no failed row and no ghost remain",
+    steps: [
+      [snapshot(1, "direct"), "direct", []],
+      [
+        { choose: "s1", mode: "draft", order: 1, failed: true, awaiting: true },
+        "direct",
+        ["s1:failed:awaiting"],
+      ],
+      [switched(at(2), "draft", "s1"), "draft", []],
+      [switched(at(3), "direct", "s9"), "direct", []],
+      [choose("s2", "direct", 2), "direct", []],
+    ],
+    retained: ["switch:s2"],
+  },
+  {
+    name: "a switched frame leaves no applied control queued: the next choice folds against the applied mode",
+    steps: [
+      [snapshot(1, "direct", ["s1", "draft"]), "draft", ["s1:queued"]],
+      [switched(at(2), "draft", "s1"), "draft", []],
+      [choose("s2", "direct", 2), "direct", ["s2:sending"]],
+    ],
+  },
+  {
     name: "a reload with a queued switch shows it queued, and its answer from the journal stamp retires nothing twice",
     steps: [
       [snapshot(4, "direct", ["s1", "draft"]), "draft", ["s1:queued"]],
