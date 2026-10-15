@@ -44,7 +44,7 @@ export function writeModeSwitchNotice(
     noWork: work.isNoWork,
   }).instructions.join(" ");
   return mode === "direct"
-    ? `The writer switched this chat to auto-apply. ${modeText} Changes already in the draft stay there for the writer to review.`
+    ? `The writer switched this chat to auto-apply. ${modeText} Drafts you already wrote stay for the writer to review.`
     : `The writer switched this chat to draft mode. ${modeText}`;
 }
 
