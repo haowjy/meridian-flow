@@ -98,7 +98,7 @@
     "apps/app/src/features/chat/composer-run.test.ts": 3,
     "apps/app/src/features/chat/DeletedChatNotice.test.tsx": 1,
     "apps/app/src/features/chat/derivation/derive-conversation.test.ts": 3,
-    "apps/app/src/features/chat/derivation/inherited-view.test.ts": 3,
+    "apps/app/src/features/chat/derivation/inherited-view.test.ts": 4,
     "apps/app/src/features/chat/derivation/useHandoffBrief.test.tsx": 2,
     "apps/app/src/features/chat/document-display-name.test.ts": 3,
     "apps/app/src/features/chat/ErrorCard.test.tsx": 5,
