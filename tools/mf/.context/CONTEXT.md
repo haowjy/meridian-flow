@@ -111,8 +111,10 @@ contains. It carries no run identity: `turn.started` has only the turn id.
   (`submissionId`); a failed lookup or pending admission is 6 `admission_unknown`.
 - **`stop`** posts the app's Stop body (`stopRequest` over a snapshot's record, `mine: []`)
   to the Stop route, printing the request first. The request is frozen, then posted, then the
-  answer is validated; no answer, a 5xx or a body that is not a Stop answer exits 4 with the
-  request in `details` (so `--json` keeps it), while a 4xx stays a refusal. `--replay` input is
+  answer is validated against the contract's `stopResponseSchema` (blocks and id arrays
+  included) before anything is confirmed. Every failure to read or validate it (no answer, a 5xx,
+  a response over the session's size limit, a non-JSON or malformed body) exits 4 with the
+  request in `details` (so `--json` keeps it); only a 4xx status stays a refusal. `--replay` input is
   the contract's `stopRequestSchema`. A lost answer exits 4; only
   `--replay <request>` (same id and body, no new snapshot) recovers it, since a plain re-run is
   a new press; **`cancel --turn`** serves a handoff brief's Stop only.
@@ -137,7 +139,8 @@ contains. It carries no run identity: `turn.started` has only the turn id.
   anchor is a user turn the stream never carried, the store holds the divider out
   (`ReducedThread.awaitsAnchor()`) and `followThread` hydrates one snapshot within
   the remaining deadline, at most once per 250 ms (`ReducedThread.recover`, which ends those
-  turns' standing as stream evidence, so `liveView` is `not_observed` for them). It never
+  turns' standing as stream evidence, permanently for the follow: a later `RUN_STARTED` for
+  them does not restore it, so `liveView` stays `not_observed` for them). It never
   inserts the divider at the tail. Sharing the reducer without this recovery left
   `./mf` holding the divider forever.
 - `respond` uses the shared interrupt sender and confirms its interrupt's

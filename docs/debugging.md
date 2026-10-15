@@ -202,9 +202,12 @@ messages. Plain `tail` and `send`'s live output don't draw queued rows.
   envelope carries it as `request`. The envelope proves the server's answer:
   `cancelledExecutionId`, `handedBack` (user turn ids; the blocks with `--full`), `answered`,
   `gone`. `--full` text mode also prints each handed-back message's text in send order, blank
-  lines between. If the answer is lost (timeout, connection failure, a 5xx, or a reply that is
-  not a Stop answer) the Stop may have landed: it exits 4, and the error says how to replay and
-  carries the request (`details.request` under `--json`). A 4xx refusal is reported as one. **Never re-run it plain**: that
+  lines between. The envelope is printed only for an answer that passes the contract's
+  `stopResponseSchema` in full (hand-back blocks and id arrays included). Anything else leaves
+  the Stop possibly landed: timeout, connection failure, a 5xx, an answer over the 20 MiB
+  response limit, a body that is not JSON, or a malformed one (such as a null block). It exits 4,
+  and the error says how to replay and carries the request (`details.request` under `--json`).
+  Only a 4xx refusal is reported as one, with no replay. **Never re-run it plain**: that
   is a new press, takes a new snapshot and request id, and can cancel the next reply while the
   first press's handed-back text is lost. `--replay <request.json|@file|->` posts exactly the
   printed request, no new snapshot; the server returns its stored decision with the
@@ -245,6 +248,9 @@ messages. Plain `tail` and `send`'s live output don't draw queued rows.
   reads, anchor recovery and snapshot reads) so the printed log is whole. That log is
   best-effort: a timeout, transport or protocol error during catch-up keeps the claim and marks
   `liveView` `not_observed`.
+  Anchor recovery (a snapshot hydrated mid-follow) ends the standing of every turn it
+  overwrote for the rest of that follow: a later `RUN_STARTED` for one of them does not restore
+  it, so those turns stay `not_observed`.
 - Write tools emit `tool.completed` for the staged result, then `tool.settled`
   for the committed receipt, in both JSON and text. There is no `settled` flag.
   The staged result alone does not prove a committed write.
