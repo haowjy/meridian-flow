@@ -196,7 +196,7 @@
     "apps/server/server/domains/billing/domain/free-grants.test.ts": 2,
     "apps/server/server/domains/billing/domain/stripe-webhook-grants.test.ts": 10,
     "apps/server/server/domains/billing/service.test.ts": 12,
-    "apps/server/server/domains/collab/adapters/__conformance__/drizzle-branches.adapter-contract.db.test.ts": 9,
+    "apps/server/server/domains/collab/adapters/__conformance__/drizzle-branches.adapter-contract.db.test.ts": 8,
     "apps/server/server/domains/collab/adapters/branch-journal-reads.db.test.ts": 1,
     "apps/server/server/domains/collab/adapters/checkpoint-capability.test.ts": 1,
     "apps/server/server/domains/collab/adapters/drizzle-change-trail-aggregate.db.test.ts": 4,
