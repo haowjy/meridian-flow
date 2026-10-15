@@ -26,9 +26,10 @@ export type ErrorBlockProps = {
   /** Retry this turn. Omit to hide the control. */
   onRetry?: () => void;
   /**
-   * The server refused this turn's last Retry; the cause stays in diagnostics.
-   * Shown until the writer's next action (another Retry, or a send), even once the chat has
-   * moved on, because it says what became of that press.
+   * The server refused this turn's last Retry; the cause stays in diagnostics. A red error
+   * card in both modes, on the turn the writer pressed, whether or not it is still the latest.
+   * Temporary: it clears at the writer's next action (another Retry, or a send) or when the
+   * next reply completes (`useRetryStandIns` owns that rule).
    */
   retryRefused?: boolean;
 };
@@ -63,7 +64,7 @@ export function ErrorBlock({
     return (
       <div className="flex flex-col gap-1">
         <p className="text-caption text-muted-foreground">{copy(kind, false)}</p>
-        {retryRefused ? <RefusedNote /> : null}
+        {retryRefused ? <RefusedCard /> : null}
       </div>
     );
   }
@@ -74,9 +75,21 @@ export function ErrorBlock({
   );
 }
 
+/** The refusal on its own, for a failed reply that is history: its marker stays quiet above. */
+function RefusedCard() {
+  return (
+    <NoticeCard tone="error">
+      <p data-retry-refused>
+        <Trans>Couldn't retry.</Trans>
+      </p>
+    </NoticeCard>
+  );
+}
+
+/** The refusal inside the latest failure's own card. */
 function RefusedNote() {
   return (
-    <p className="text-caption text-muted-foreground" data-retry-refused>
+    <p className="text-caption" data-retry-refused>
       <Trans>Couldn't retry.</Trans>
     </p>
   );

@@ -5,8 +5,10 @@
  * asks the server to write it. The server's turn replaces the stand-in by id,
  * first from the response and then from the snapshot. A refusal (409: the chat
  * moved on first; or the server is shutting down) wrote nothing: the stand-in
- * goes, the turn the writer pressed is noted with a generic "Couldn't retry.",
- * and the snapshot refreshes to show the true state. A lost
+ * goes, the turn the writer pressed gets a temporary "Couldn't retry." error card,
+ * and the snapshot refreshes to show the true state. The card clears at the writer's next
+ * Retry or send, or when a reply completes that wasn't complete at the refusal (read from
+ * the stored turns' status; a reply that fails or is cancelled leaves it). A lost
  * request keeps the stand-in, failed, and its Retry re-sends under the same
  * id: the lost request may have arrived. The server answers that replay with
  * the execution the first request started, or `retry_pending` (503) while it
@@ -58,7 +60,7 @@ export type RetryStandIns = {
   standIns: readonly Turn[];
   /** Where a stand-in's request is; null once the store has it, or for any other turn. */
   requestOf: (turnId: string) => StandInRequest | null;
-  /** Turns whose Retry the server refused; nothing was written. */
+  /** Turns whose Retry the server refused and no reply has completed since; nothing was written. */
   refused: ReadonlySet<string>;
   /**
    * Failed replies whose Retry is pending or accepted but no stored turn names it yet
@@ -69,12 +71,21 @@ export type RetryStandIns = {
    * Retry from `from`. A failed stand-in re-sends under its own id; any other
    * turn gets a new stand-in from `build`, which may decline with null.
    */
-  /** The writer acted elsewhere (sent a message): refusals are answered, so they clear. */
+  /** The writer acted elsewhere (sent a message): their refusals are answered, so they clear. */
   clearRefused: () => void;
   retry: (from: Turn, build: (input: { id: string; leaf: Turn | null }) => Turn | null) => void;
 };
 
-const NO_REFUSALS: ReadonlySet<string> = new Set();
+const NO_REFUSALS: ReadonlyMap<string, ReadonlySet<string>> = new Map();
+
+/** Ids of the replies already complete: a refusal is answered by one that isn't in this set. */
+function completedReplies(turns: readonly Turn[]): ReadonlySet<string> {
+  return new Set(
+    turns
+      .filter((turn) => turn.role === "assistant" && turn.status === "complete")
+      .map((t) => t.id),
+  );
+}
 
 /** The server answered and wrote nothing: the chat moved on, or it is shutting down. */
 function isRetryRefusal(error: unknown): boolean {
@@ -116,7 +127,19 @@ export function useRetryStandIns(input: {
   const { supersedes = false } = input;
   const { threadId, storedTurns } = input;
   const [local, setLocal] = useState<readonly StandIn[]>([]);
-  const [refused, setRefused] = useState(NO_REFUSALS);
+  // Refused turn → the replies complete when it was refused. The refusal is temporary: it ends
+  // when a reply completes that is not in that set (durable turn status, not timers).
+  const [refusals, setRefusals] = useState(NO_REFUSALS);
+  const refused = useMemo<ReadonlySet<string>>(() => {
+    const open = new Set<string>();
+    for (const [from, before] of refusals) {
+      const answered = storedTurns.some(
+        (turn) => turn.role === "assistant" && turn.status === "complete" && !before.has(turn.id),
+      );
+      if (!answered) open.add(from);
+    }
+    return open;
+  }, [refusals, storedTurns]);
   const localRef = useRef(local);
   localRef.current = local;
   const storedRef = useRef(storedTurns);
@@ -183,7 +206,9 @@ export function useRetryStandIns(input: {
           if (isRetryRefusal(error)) {
             reportRetryRefused({ threadId, from, status: httpErrorStatus(error), error });
             setLocal((current) => current.filter((entry) => entry.turn.id !== id));
-            setRefused((current) => new Set(current).add(from));
+            setRefusals((current) =>
+              new Map(current).set(from, completedReplies(storedRef.current)),
+            );
             announce(t`Couldn't retry.`);
             refresh();
             return;
@@ -206,8 +231,8 @@ export function useRetryStandIns(input: {
 
   const retry = useCallback<RetryStandIns["retry"]>(
     (from, build) => {
-      // One clearing rule: any next action of the writer drops every "Couldn't retry." note.
-      setRefused(NO_REFUSALS);
+      // One clearing rule: any next action of the writer drops every "Couldn't retry." card.
+      setRefusals(NO_REFUSALS);
       const lost = localRef.current.find(
         (entry) => entry.turn.id === from.id && entry.request === "failed",
       );
@@ -245,7 +270,7 @@ export function useRetryStandIns(input: {
     [patch, send],
   );
 
-  const clearRefused = useCallback(() => setRefused(NO_REFUSALS), []);
+  const clearRefused = useCallback(() => setRefusals(NO_REFUSALS), []);
 
   const standIns = useMemo(
     () => reconciled.standIns.map((entry) => entry.turn),

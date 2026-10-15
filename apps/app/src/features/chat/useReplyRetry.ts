@@ -7,7 +7,7 @@
  * from the ordinary conversation history (`POST /turns/:turnId/retry`). The
  * failed reply is not drawn: the Retry takes its place (`viewTranscript`, from the
  * stand-in's `metadata.retryOf` and the explicit `retried` set). `useRetryStandIns` owns the stand-in,
- * the refusal note, and the re-send of a lost request.
+ * the refusal card, and the re-send of a lost request.
  *
  * The request is known by its execution and the record version of its answer. When it ends is
  * the package's decision (`reconcileRetries`). A lost response has no version: its stand-in
