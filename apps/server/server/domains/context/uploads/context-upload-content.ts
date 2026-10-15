@@ -1,8 +1,7 @@
 /** ContextFS-backed upload content adapter. */
+import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import { classifyFiletype } from "@meridian/contracts/protocol";
-import { decodeWorkSlug } from "@meridian/contracts/works";
 import type { BoundWrite } from "../../collab/index.js";
-import { resolvedWorkAuthority } from "../../projects/index.js";
 import type { ContextPort } from "../ports/context-port.js";
 import type { UnifiedContextPortFactory } from "../unified-context-port-factory.js";
 import type { UploadContentPort, UploadReservation } from "./upload-intake.js";
@@ -13,17 +12,20 @@ type BoundUpload = BoundWrite | null;
 export function createContextUploadContentPort(
   contextPorts: UnifiedContextPortFactory,
 ): UploadContentPort<BoundUpload> {
-  function portFor(reservation: UploadReservation, actorUserId: string): ContextPort | null {
-    const owner = reservation.owner;
-    const workSlug = owner.workSlug === null ? null : decodeWorkSlug(owner.workSlug);
-    if (owner.workSlug !== null && !workSlug) return null;
-    const authority = resolvedWorkAuthority({
-      workId: owner.workId as never,
-      workSlug,
-    });
-    const authorities = authority.workSlug ? new Map([[authority.workSlug, authority]]) : new Map();
-    return contextPorts.forWork(authority, reservation.projectId, actorUserId, authorities);
+  /**
+   * The chat's own port, written at the chat-relative `uploads://name`: a New-chat upload has no
+   * handle yet, and the write must not depend on one.
+   */
+  function portFor(reservation: UploadReservation, actorUserId: string): ContextPort {
+    return contextPorts.forChatUploads(
+      reservation.projectId,
+      actorUserId,
+      reservation.owner.chatId,
+    );
   }
+
+  const writeUri = (reservation: UploadReservation) =>
+    canonicalContextUri("uploads", reservation.finalPath, { kind: "contextual" });
 
   const isTracked = (reservation: UploadReservation) =>
     classifyFiletype(reservation.fileType).kind === "tracked";
@@ -33,14 +35,12 @@ export function createContextUploadContentPort(
       const text = Buffer.from(bytes).toString("utf8");
       if (!isTracked(reservation) || text.length === 0) return { ok: true, bound: null };
       const port = portFor(reservation, actorUserId);
-      if (!port) return { ok: false, definite: true };
-      const bound = await port.bindTrackedDocument(reservation.canonicalUri, text);
+      const bound = await port.bindTrackedDocument(writeUri(reservation), text);
       return bound.ok ? { ok: true, bound: bound.value } : { ok: false, definite: true };
     },
 
     async persist(input) {
       const port = portFor(input.reservation, input.actorUserId);
-      if (!port) return { ok: false, definite: true };
       const origin = {
         type: "import" as const,
         userId: input.actorUserId,
@@ -51,11 +51,11 @@ export function createContextUploadContentPort(
       const classification = classifyFiletype(input.reservation.fileType);
       const result =
         classification.kind === "tracked"
-          ? await port.createBoundDocument(input.reservation.canonicalUri, input.bound, {
+          ? await port.createBoundDocument(writeUri(input.reservation), input.bound, {
               documentId: input.reservation.documentId,
               origin,
             })
-          : await port.writeBinary(input.reservation.canonicalUri, {
+          : await port.writeBinary(writeUri(input.reservation), {
               documentId: input.reservation.documentId,
               fileType: classification.kind === "unknown" ? "binary" : classification.fileType,
               storageUrl: input.storageUrl ?? "",
@@ -64,7 +64,7 @@ export function createContextUploadContentPort(
               origin,
             });
       return result.ok &&
-        result.value.uri === input.reservation.canonicalUri &&
+        result.value.uri === writeUri(input.reservation) &&
         result.value.documentId === input.reservation.documentId
         ? { ok: true }
         : { ok: false, definite: true };
@@ -72,8 +72,7 @@ export function createContextUploadContentPort(
 
     async remove({ reservation, actorUserId }) {
       const port = portFor(reservation, actorUserId);
-      if (!port) return { ok: false, stale: true };
-      const removed = await port.delete(reservation.canonicalUri, {
+      const removed = await port.delete(writeUri(reservation), {
         expected: { kind: "file", documentId: reservation.documentId },
       });
       if (removed.ok) return { ok: true };

@@ -237,7 +237,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
               const uploaded = await app.uploadIntake.intake({
                 intakeId: randomUUID(),
                 actorUserId: userId,
-                owner: { kind: "work", projectId, workId: noWorkId },
+                owner: { kind: "chat", projectId, chatId: randomUUID() },
                 filename: "upload.md",
                 mimeType: "text/markdown",
                 bytes,

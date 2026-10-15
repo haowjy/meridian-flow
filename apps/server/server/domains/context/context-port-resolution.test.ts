@@ -95,6 +95,9 @@ describe("thread context-port resolution", () => {
       forProject: () => {
         throw new Error("thread with primary work must not fall back to project port");
       },
+      forChatUploads: () => {
+        throw new Error("a thread's port is not a chat-uploads port");
+      },
     };
 
     contextPortForThread(contextPorts, resolution);

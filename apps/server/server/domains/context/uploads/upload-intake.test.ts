@@ -24,17 +24,13 @@ function harness() {
         filename: input.filename,
         finalPath: input.filename,
         objectKey: "uploads/project/document",
-        canonicalUri: `uploads://@/${input.filename}`,
+        canonicalUri: `uploads://${input.filename}`,
         locationRevision: "revision-1",
         fileType: input.fileType,
         state: "reserved",
         storageUrl: null,
         consumed: false,
-        owner: {
-          kind: "work",
-          workId: input.owner.kind === "work" ? input.owner.workId : "",
-          workSlug: null,
-        },
+        owner: { kind: "chat", chatId: input.owner.chatId, chatRef: null },
       };
       return { kind: "reserved", reservation: row };
     },
@@ -106,7 +102,7 @@ function input() {
   return {
     intakeId: "intake-1",
     actorUserId: "user-1",
-    owner: { kind: "work" as const, projectId: "project-1", workId: "no-work-1" },
+    owner: { kind: "chat" as const, projectId: "project-1", chatId: "chat-1" },
     filename: "chapter.md",
     mimeType: "text/markdown",
     byteDigest: digest,

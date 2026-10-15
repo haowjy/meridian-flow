@@ -43,6 +43,7 @@ import {
   createDocumentAddressResolver,
   createDocumentLinkResolver,
   createDocumentRevisions,
+  createDraftUploadVerifier,
   createDrizzleContextCatalog,
   createDrizzleDocumentAddressStore,
   createDrizzleDocumentArrivals,
@@ -228,6 +229,7 @@ import { readThreadActivity } from "../domains/threads/domain/thread-activity.js
 import {
   type ActiveDocumentResolver,
   createActiveDocumentResolver,
+  createDrizzleTopPrimaryChatResolver,
   createInMemoryEventJournalWriter,
   requireThreadOwner,
 } from "../domains/threads/index.js";
@@ -958,10 +960,10 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     async threadProject(threadId) {
       return (await ports.threadRepos.threads.findById(threadId as never))?.projectId ?? null;
     },
-    async verifyDraftUpload(reference) {
-      const identity = await ports.uploadIdentity.lookupUpload(reference.documentId);
-      return identity?.intakeId === reference.intakeId && identity.uri === reference.uri;
-    },
+    verifyDraftUpload: createDraftUploadVerifier({
+      identities: ports.uploadIdentity,
+      chats: createDrizzleTopPrimaryChatResolver(ports.db),
+    }),
     async authorizeActivatedSkills({ threadId, slugs }) {
       const thread = await ports.threadRepos.threads.findById(threadId as never);
       if (!thread) throw new InvalidAdmissionError("thread is unavailable");

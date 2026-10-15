@@ -6,7 +6,7 @@ import type { UploadReservation } from "./upload-intake.js";
 
 it("rejects a committed address different from the reservation", async () => {
   const reservation: UploadReservation = {
-    owner: { kind: "work", workId: "no-work", workSlug: null },
+    owner: { kind: "chat", chatId: "chat", chatRef: null },
     projectId: "project",
     intakeId: "pending",
     fingerprint: "fingerprint",
@@ -16,16 +16,16 @@ it("rejects a committed address different from the reservation", async () => {
     state: "reserved",
     storageUrl: null,
     consumed: false,
-    canonicalUri: "uploads://@/upload.md",
+    canonicalUri: "uploads://upload.md",
     finalPath: "upload.md",
     documentId: "document",
     fileType: "markdown",
   };
   const content = createContextUploadContentPort({
-    forWork: () => ({
+    forChatUploads: () => ({
       createBoundDocument: async () => ({
         ok: true,
-        value: { documentId: "document", uri: "uploads://@/upload" },
+        value: { documentId: "document", uri: "uploads://upload" },
       }),
     }),
   } as unknown as UnifiedContextPortFactory);
