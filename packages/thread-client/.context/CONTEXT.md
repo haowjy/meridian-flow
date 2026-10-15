@@ -146,6 +146,13 @@ refresh signal. A switch never counts as a writer message. `reconcileRetries` is
 Retry's one retirement rule: a stand-in whose reservation ended without its reply
 retires once the record at or past its answer shows another execution or none.
 
+`messageFate` (`message-fate.ts`) is the one rule for what became of an admitted writer
+message, from a single snapshot's record and turns: waiting, handed back (a user turn
+absent from the snapshot; a snapshot that hides turns another way must expose
+`handedBackIds`), answering or answered by the chain's last reply (the deliverer's
+execution, then Retries by `metadata.retryOf`), or unproven. It is server-only (the app
+follows no run since #849; `./mf thread send` is its caller) and stream frames are never inputs.
+
 The record arrives whole on every carrier (snapshot, `subscribed`,
 `meridian.run_state`, every command answer), so no host composes one from parts.
 
