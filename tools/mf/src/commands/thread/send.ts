@@ -42,11 +42,11 @@ import { replyText } from "./reply-text";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
 import {
   type Claim,
+  classifyDeadline,
   finishResult,
   snapshotActivity,
   type TerminalResult,
   terminalResult,
-  timeoutReport,
 } from "./result";
 import { followThread } from "./stream";
 import { createThreadClient } from "./transport";
@@ -230,6 +230,8 @@ async function followToOutcome(
   // The stream only decides when to look. Every claim comes from a confirming snapshot read
   // through the shared `messageFate`; a frame is never an input to it.
   let lastAnswering: string | null = null;
+  // The newest snapshot that completed; the deadline classifies it and never reads another.
+  let lastSnapshot: ThreadSnapshotResponse | null = null;
   let settled: { fate: Settled; snapshot: ThreadSnapshotResponse } | null = null;
   // Once a snapshot settles the claim, the stream gets a short bounded time to reach that
   // snapshot's position, so the printed log and the live view are whole. It never changes the claim.
@@ -270,6 +272,7 @@ async function followToOutcome(
           undefined,
           { timeoutMs: remaining },
         );
+        lastSnapshot = snapshot;
         const fate = messageFate({
           messageId: admitted.userTurnId,
           admittedVersion: admitted.runStateVersion,
@@ -296,12 +299,13 @@ async function followToOutcome(
       return fateResult(threadId, admitted.userTurnId, settled, reduced, true);
     }
     if (error instanceof CliError && error.code === "timeout") {
-      const { reason, ...report } = await timeoutReport(session, threadId);
+      const { reason, ...report } = classifyDeadline(lastSnapshot, threadId);
       return terminalResult(
         "thread.send",
         { outcome: "timeout", reason },
         {
           ...report,
+          ...(lastSnapshot ? { snapshotStale: true } : { snapshotUnavailable: true }),
           threadId,
           userTurnId: admitted.userTurnId,
           turnId: lastAnswering,
