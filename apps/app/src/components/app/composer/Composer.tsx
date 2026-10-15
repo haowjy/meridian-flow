@@ -128,6 +128,10 @@ export type ComposerProps = {
 };
 export type ComposerHandle = {
   focus: () => void;
+  /** Adds a file the writer picked outside the `@` menu (the chat's uploads list) at the caret. */
+  insertReference: (reference: AuthoritativeReference, fileKind: "document" | "asset") => void;
+  /** Drops every chip that references the document (a file the writer deleted elsewhere). */
+  removeReferences: (documentId: string) => void;
   getDraft: () => string;
   /**
    * Whether the composer holds anything the writer authored, including a
@@ -138,6 +142,15 @@ export type ComposerHandle = {
   snapshot: () => ComposerDraftSnapshot;
   restoreSnapshot: (snapshot: ComposerDraftSnapshot, expectedRevision?: number) => boolean;
 };
+
+/** The chip the `@` picker and the uploads list both insert for a file the writer chose. */
+function pickedReferenceContent(reference: AuthoritativeReference, fileKind: "document" | "asset") {
+  return composerReferenceContent({
+    ...reference,
+    imageCapable: fileKind === "asset" && imageCapable(reference.fileType),
+    upload: null,
+  });
+}
 
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(props, ref) {
   const {
@@ -221,18 +234,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           return {
             ...catalog,
             insertReference: (current, range, row) => {
-              const reference = row.action.reference;
               return current
                 .chain()
                 .focus()
-                .insertContentAt(
-                  range,
-                  composerReferenceContent({
-                    ...reference,
-                    imageCapable: row.fileKind === "asset" && imageCapable(reference.fileType),
-                    upload: null,
-                  }),
-                )
+                .insertContentAt(range, pickedReferenceContent(row.action.reference, row.fileKind))
                 .run();
             },
           };
@@ -368,6 +373,25 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       focus: () => {
         if (!editor || editor.isDestroyed) return;
         editor.commands.focus(undefined, { scrollIntoView: false });
+      },
+      insertReference: (reference, fileKind) => {
+        if (!editor || editor.isDestroyed) return;
+        editor.chain().focus().insertContent(pickedReferenceContent(reference, fileKind)).run();
+      },
+      removeReferences: (documentId) => {
+        if (!editor || editor.isDestroyed) return;
+        const ranges: { from: number; to: number }[] = [];
+        editor.state.doc.descendants((node, pos) => {
+          if (
+            node.type.name === "composerReference" &&
+            (node.attrs.reference as AuthoritativeReference).documentId === documentId
+          )
+            ranges.push({ from: pos, to: pos + node.nodeSize });
+        });
+        if (ranges.length === 0) return;
+        const tr = editor.state.tr;
+        for (const { from, to } of ranges.reverse()) tr.delete(from, to);
+        editor.view.dispatch(tr);
       },
       getDraft: () =>
         editor && !editor.isDestroyed ? serializeComposerDraft(editor.getJSON()).text : "",
