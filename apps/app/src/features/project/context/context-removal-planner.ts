@@ -210,6 +210,7 @@ export function workingSetRouteForTab(tab: ContextTab) {
         tab.path,
         isWorkScopedProjectContextScheme(tab.scheme) ? tab.workId : undefined,
         tab.rootThreadId,
+        tab.chatId,
       );
 }
 

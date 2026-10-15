@@ -289,6 +289,8 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
               documentId: uploadIntakes.documentId,
               createdAt: uploadIntakes.createdAt,
               consumedAt: uploadIntakes.consumedAt,
+              intakeId: uploadIntakes.intakeId,
+              locationRevision: uploadIntakes.locationRevision,
             })
             .from(uploadIntakes)
             .where(
@@ -299,7 +301,12 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
             )
         ).map((row) => [
           row.documentId as string,
-          { attachedAt: row.createdAt, consumed: row.consumedAt !== null },
+          {
+            attachedAt: row.createdAt,
+            consumed: row.consumedAt !== null,
+            intakeId: row.intakeId,
+            locationRevision: row.locationRevision,
+          },
         ]),
   );
   const foldersById = new Map(folderRows.map((folder) => [folder.id, folder]));

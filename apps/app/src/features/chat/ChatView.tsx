@@ -71,6 +71,7 @@ import { useOpenChatThread } from "./ChatThreadNavigation";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { chatLineageId } from "./chat-scratch-owner";
 import { useControlTurnAnnouncements } from "./compaction/useControlTurnAnnouncements";
+import { useRegisterChatComposer } from "./composer-insertion";
 import { composerRun } from "./composer-run";
 import { DraftDock } from "./DraftDock";
 import {
@@ -157,6 +158,7 @@ export function ChatView({
   const actions = useThreadActions();
   const { changeTrails } = useThreadDurableProjections({ threadId, projectId });
   const composerRef = useRef<ComposerHandle>(null);
+  useRegisterChatComposer(threadId, composerRef);
   const chatSurfaceRef = useRef<HTMLDivElement>(null);
   const [tailFollowRevision, requestTailFollow] = useReducer((value: number) => value + 1, 0);
 

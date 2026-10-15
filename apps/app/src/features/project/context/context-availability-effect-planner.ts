@@ -114,8 +114,14 @@ export function planContextAvailabilityBatch(
         : never;
       const path = `/${entry.path.join("/")}`;
       const lineageId = entry.scope.kind === "lineage" ? entry.scope.rootThreadId : undefined;
-      if (isWorkScopedProjectContextScheme(scheme) && entry.scope.kind !== "work" && !lineageId)
-        throw new Error("Work-scoped availability requires a Work or chat owner");
+      // A chat's upload is never an Editor tab, so it has no Editor route to plan.
+      if (
+        isWorkScopedProjectContextScheme(scheme) &&
+        entry.scope.kind !== "work" &&
+        entry.scope.kind !== "chat" &&
+        !lineageId
+      )
+        throw new Error("Work-scoped availability requires a Work, a chat or a lineage owner");
       // A chat's Scratch keeps the Editor's own Work in its route, as a project document does.
       const lineageRef = lineageId
         ? (() => {

@@ -65,8 +65,11 @@ type CatalogFileEntryBase = {
    * reservation under one of them follows the join. Absent when none were.
    */
   joinedFrom?: readonly DocumentId[];
-  /** Set on a chat's uploads: when the file was attached and whether a sent message has used it. */
-  upload?: { attachedAt: string; used: boolean };
+  /**
+   * Set on a chat's uploads: when the file was attached, whether a sent message has used it,
+   * and the identity its deletion must present (an unused upload is the only one the writer deletes).
+   */
+  upload?: { attachedAt: string; used: boolean; intakeId: string; locationRevision: string };
 };
 
 /** Persisted viewer/storage classification. It is never reconstructed from a filename. */

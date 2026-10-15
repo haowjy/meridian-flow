@@ -6,6 +6,7 @@
  */
 import type { CatalogFileEntry } from "@meridian/contracts/protocol";
 import { useMemo } from "react";
+import { type AuthoritativeReference, authoritativeReferenceForFile } from "@/core/completion";
 import { useContextCatalogScope } from "./useContextCatalog";
 
 export type ChatUpload = {
@@ -18,7 +19,15 @@ export type ChatUpload = {
   attachedAt: string | null;
   /** A sent message used it, so it can no longer be deleted. */
   used: boolean;
+  /** What deleting it must present; null until the server reports the upload's facts. */
+  deletion: { intakeId: string; locationRevision: string } | null;
+  /** The `@` reference the composer inserts for it; null when its address is not stable yet. */
+  reference: AuthoritativeReference | null;
+  /** Whether the composer inserts it as an image (an asset) or a document reference. */
+  fileKind: "document" | "asset";
 };
+
+const NO_AUTHORITIES = new Map();
 
 export function useChatUploads(projectId: string, chatId: string | null | undefined) {
   const query = useContextCatalogScope(
@@ -38,6 +47,11 @@ export function useChatUploads(projectId: string, chatId: string | null | undefi
         uri: entry.uri,
         attachedAt: entry.upload?.attachedAt ?? null,
         used: entry.upload?.used ?? false,
+        deletion: entry.upload
+          ? { intakeId: entry.upload.intakeId, locationRevision: entry.upload.locationRevision }
+          : null,
+        reference: authoritativeReferenceForFile(entry, NO_AUTHORITIES),
+        fileKind: entry.editable ? ("document" as const) : ("asset" as const),
       }))
       .sort((left, right) => (right.attachedAt ?? "").localeCompare(left.attachedAt ?? ""));
   }, [query.data]);
@@ -45,5 +59,7 @@ export function useChatUploads(projectId: string, chatId: string | null | undefi
     uploads,
     isLoading: Boolean(chatId) && query.data === undefined && !query.isError,
     isError: query.isError,
+    /** `used` changes with a send, which fires no catalog event: refetch when the menu opens. */
+    refetch: query.refetch,
   };
 }
