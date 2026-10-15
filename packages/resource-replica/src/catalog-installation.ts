@@ -107,15 +107,6 @@ export function catalogEntryLocation(
       ...resourceChatOwner(view.scope, authority.chatRef),
     };
   }
-  if (authority.kind === "none") {
-    return {
-      scheme,
-      path: displayedPath(path),
-      name: entry.name,
-      workId: view.scope.workId,
-      workSlug: null,
-    };
-  }
   if (authority.kind !== "work") throw new Error("Catalog file URI has invalid Work authority");
   return {
     scheme,

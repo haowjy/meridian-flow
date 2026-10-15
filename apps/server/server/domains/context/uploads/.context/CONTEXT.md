@@ -17,8 +17,8 @@ Filename validation runs after upload normalization and before reservation or
 storage. It uses the shared Context entry-name validator and returns typed
 client errors; intake does not relax ContextFS naming rules.
 
-Named Work authorities serialize as `uploads://@slug/name`; No Work as
-`uploads://@/name`. Uploads are flat and cannot be created through general
+A chat's uploads serialize as `uploads://@/c12/name`; a Work owns none, and
+`uploads://@/name` without a handle is an error. Uploads are flat and cannot be created through general
 ContextFS operations. A same-key retry returns the original result only when
 the complete normalized owner/name/MIME/digest fingerprint matches.
 
