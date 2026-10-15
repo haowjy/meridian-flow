@@ -1,19 +1,20 @@
 # contracts/drafts — Work-draft review wire DTOs
 
-`review.ts` holds every shape and uses D68 names: `draftId` is the whole draft,
-`itemKey` (`${draftId}:${documentId}`) is the one review identity for a
-document, `commandId` names a writer command, and a document's text branch never
-crosses the wire. Wire DTOs never expose any other storage identity. `reviewRoomName` is an opaque,
-generation-fenced transport address, not another application identity.
+This directory owns the review wire vocabulary. `draftId` names the active
+Work draft, `itemKey` names one document review, `commandId` names one writer
+action, and a text branch never crosses the wire.
 
-Each row carries its document URI's `contextLocation: { scheme, path } | null`
-(with a leading slash on the path), not a manuscript-only path.
+- Rows carry `contextLocation: { scheme, path } | null`; preserve the scheme
+  and the leading slash in the path.
+- `reviewRoomName` is an opaque, generation-fenced transport address, not an
+  application identity.
+- The list contains current reviewable work only; completed review is not a
+  durable draft-list receipt.
+- Keep storage identities behind the DTOs; the server maps an `itemKey` to its
+  branch and owns branch integration.
+- Preview and command responses preserve explicit stale, gone, held, and
+  incomplete outcomes so clients do not infer closure from operation counts.
+- Apply and discard remain writer commands, not branch-storage operations.
 
-The list contains current reviewable work only; completed review is not retained
-as a draft-list receipt.
-
-→ [`.context/CONTEXT.md`](.context/CONTEXT.md)
-
-Review rows carry `contextLocation: { scheme, path } | null`, parsed from the
-item URI. The path has a leading slash; launchers and review tabs preserve its
-scheme, including draft-only documents outside Manuscript.
+See [`.context/CONTEXT.md`](.context/CONTEXT.md) for command, preview, and
+closure contracts.
