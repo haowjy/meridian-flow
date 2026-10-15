@@ -5,6 +5,8 @@ export const ResolveDocumentLinksRequestSchema = z
   .object({
     rootThreadId: z.string().uuid().nullable().optional(),
     workId: z.string().uuid().nullable().optional(),
+    /** The chat holding the links (a chat message): its uploads answer a bare `uploads://`. */
+    chatId: z.string().uuid().nullable().optional(),
     /** The holder's URI; null for chat, which alone may fall back to previous locations. */
     baseUri: z.string().max(2048).nullable(),
     /**
@@ -39,6 +41,7 @@ export type DocumentLinkAnswer =
         uri: string;
         workId: string | null;
         rootThreadId?: string | null;
+        chatThreadId?: string | null;
       };
       inDraft: boolean;
       /** Present iff `inDraft`: the draft the chip opens (the reader's own if it uses it, else the oldest). */
