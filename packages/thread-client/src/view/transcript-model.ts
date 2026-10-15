@@ -61,7 +61,7 @@ export type TranscriptRow =
   | { kind: "compaction"; turn: Turn; inherited: InheritedMark | null }
   /** A write-mode switch: the line where the chat's mode changed. It ends a reply. */
   | { kind: "write-mode"; turn: Turn; inherited: InheritedMark | null }
-  /** A handoff seed S: the brief card. Only the newest local seed can be retried. */
+  /** A handoff seed S: the brief card. Only the newest local seed can be retried, and only while no closing row follows it. */
   | { kind: "handoff-seed"; turn: Turn; latest: boolean; inherited: InheritedMark | null }
   /**
    * The `from` sources a spawned child's seed message names. The seed itself
@@ -132,8 +132,14 @@ export function buildTranscriptModel(
     if (references.length)
       rows.push({ kind: "thread-reference", turn, references, inherited: mark });
   });
+  // A seed is `latest` while it is the newest local seed and no closing row (a writer message, a reply or a
+  // compaction) follows it: once the chat moves on, its failure and Retry end.
   const latestSeed = rows[latestSeedIndex];
-  if (latestSeed?.kind === "handoff-seed") rows[latestSeedIndex] = { ...latestSeed, latest: true };
+  const closedAfter = rows
+    .slice(latestSeedIndex + 1)
+    .some((row) => row.kind === "turn" || row.kind === "compaction");
+  if (latestSeed?.kind === "handoff-seed" && !closedAfter)
+    rows[latestSeedIndex] = { ...latestSeed, latest: true };
   markInheritedRuns(rows);
   // Index-aligned with `rows`: response grouping and reveal landing read turns.
   const visibleTurns = rows.map((row) => row.turn);
