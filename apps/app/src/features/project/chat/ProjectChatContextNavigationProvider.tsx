@@ -2,36 +2,66 @@
  * ProjectChatContextNavigationProvider — adapts chat-local document URI opens
  * to the project route's context-file selection contract.
  *
- * Every door routes the same way, and every door tells passage navigation it
- * happened — carrying an anchor when the row had one. That second call is not
- * an extra for passage rows: it is where navigation ownership changes hands,
- * so an ordinary door retires whatever a search row was still resolving. It
- * never gates the route change, so a search row whose passage has moved still
- * opens its document.
+ * A door asks the question a transcript link asks, through the same follower
+ * (`features/links`): what document is at this address, and is it live or only in a
+ * draft? A live answer opens where the door always opened it; a hidden document goes
+ * to its Work's review by item identity (a plain address of it is refused by design);
+ * a missing one routes anyway, so the route says so in place. A cold answer rides the
+ * follower's own checking and failure states. This file keeps only the door's own
+ * policy: placement (the Editor route, or the dock beside the chat) and its dock claim.
+ *
+ * Every door tells passage navigation it happened — carrying an anchor when the row had
+ * one. That second call is not an extra for passage rows: it is where navigation
+ * ownership changes hands, so an ordinary door retires whatever a search row was still
+ * resolving. It never gates the route change, so a search row whose passage has moved
+ * still opens its document.
  */
-import { contextOwner } from "@meridian/contracts/protocol";
-import { type ReactNode, useCallback, useContext, useMemo } from "react";
-import { lookupContextCatalogFile } from "@/client/query/useContextCatalog";
+import { type ReactNode, useCallback, useContext, useEffect, useMemo, useRef } from "react";
 import { useLineage } from "@/client/query/useLineageTitle";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorks } from "@/client/query/useWorks";
-
+import { classifyLinkTarget, type LinkTarget } from "@/core/editor/links";
 import {
   ChatContextNavigationProvider,
   type ContextPassageAnchor,
 } from "@/features/chat/ChatContextNavigation";
 import {
+  CHECKING_DELAY_MS,
+  type FollowReporter,
+  type LinkDestination,
+  LinkFollowDialog,
+  type LinkResolutionScope,
+  useFollowOutcomeState,
+  useLinkableDocuments,
+  useLinkFollower,
+} from "@/features/links";
+import {
   type ChatLineages,
   contextRouteTargetFromUri,
   canOpenContextUri as isContextUriRoutable,
 } from "@/lib/context-uri";
+import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
 import { BesideChatContext, useOpenChatDocument } from "../context/open-chat-document";
 import { useDockDocumentStore } from "../dock/dock-document-store";
+import { useReviewingLinkDestination } from "../dock/useAiDraftLauncher";
 import type { ContextRouteRequest } from "../routing/project-route";
 import { canonicalDoorUri } from "./canonical-door-uri";
 import { usePassageDoors } from "./usePassageDoors";
 
 type OpenContextTarget = (target: ContextRouteRequest) => void;
+
+/** How long a "missing" answer waits for the Work's draft list before the route says so. */
+const MISSING_HOLD_MS = 4000;
+
+/** The door being followed: what the follower's destination needs besides the answer. */
+type DoorIntent = {
+  target: NonNullable<ReturnType<typeof contextRouteTargetFromUri>>;
+  uri: string;
+  passage?: ContextPassageAnchor;
+  /** The dock claim a beside-chat door took when it was clicked. */
+  claim: number | null;
+  link: LinkTarget;
+};
 
 export function ProjectChatContextNavigationProvider({
   projectId,
@@ -70,6 +100,149 @@ export function ProjectChatContextNavigationProvider({
   const doorOpened = usePassageDoors(projectId, activeWork?.id ?? null);
   const besideChat = useContext(BesideChatContext);
   const openChatDocument = useOpenChatDocument(projectId);
+  const intent = useRef<DoorIntent | null>(null);
+  const route = useCallback(
+    ({ target }: Pick<DoorIntent, "target">) =>
+      onOpenContextTarget?.({ ...target, workId: target.workId ?? undefined }),
+    [onOpenContextTarget],
+  );
+
+  // A document that exists is opened where this door opens documents.
+  const openFound = useCallback<LinkDestination>(
+    async (document) => {
+      const door = intent.current;
+      if (!door) return;
+      const dock = useDockDocumentStore.getState();
+      if (door.claim !== null && !dock.isCurrent(door.claim)) return;
+      const opened = { ...door.target, uri: door.uri };
+      if (!besideChat) {
+        route(door);
+        doorOpened(opened, door.passage);
+      } else if (door.passage) {
+        // The passage door opens the document itself, once, and lands on the passage.
+        doorOpened(opened, door.passage, {
+          documentId: document.documentId,
+          claim: door.claim ?? undefined,
+        });
+      } else {
+        void openChatDocument({
+          documentId: document.documentId,
+          workId: door.target.workId ?? undefined,
+          claim: door.claim ?? undefined,
+        });
+        doorOpened(opened);
+      }
+    },
+    [besideChat, doorOpened, openChatDocument, route],
+  );
+  const openReviewing = useReviewingLinkDestination(openFound);
+  // A hidden document is a review. Beside the chat it opens in the dock, as everything
+  // beside the chat does; elsewhere the review handoff opens it in the Editor.
+  const open = useCallback<LinkDestination>(
+    async (document, gesture) => {
+      const door = intent.current;
+      const { review } = document;
+      if (!door || !review) return openReviewing(document, gesture);
+      const dock = useDockDocumentStore.getState();
+      if (door.claim !== null && !dock.isCurrent(door.claim)) return;
+      doorOpened({ ...door.target, uri: door.uri });
+      if (besideChat && door.claim !== null) {
+        const tab = contextTabFromDraftGroup({
+          documentId: document.documentId,
+          ...review,
+          isNew: true,
+        });
+        if (tab)
+          besideChat(tab, door.claim, undefined, {
+            workId: review.workId,
+            itemKey: review.itemKey,
+          });
+        return;
+      }
+      return openReviewing(document, gesture);
+    },
+    [besideChat, doorOpened, openReviewing],
+  );
+
+  const scope = useMemo<LinkResolutionScope | null>(
+    () =>
+      activeWork && noWorkId
+        ? {
+            projectId,
+            workId: activeWork.id,
+            // Only a No Work chat's bare `scratch://` is its lineage's.
+            rootThreadId: activeWork.id === noWorkId ? rootThreadId : null,
+            baseUri: null,
+          }
+        : null,
+    [activeWork, noWorkId, projectId, rootThreadId],
+  );
+  const index = useLinkableDocuments({
+    ...(scope ?? { projectId: null, workId: null }),
+    withDraftDocuments: true,
+  });
+  const { outcome, reporter: outcomeReporter } = useFollowOutcomeState();
+  // Nothing at the address is not this door's to announce: the route says so in place. But the
+  // server cannot see a document that exists only in the Work's draft, so while the index is
+  // still loading that list, "missing" is held for one more look: shown as checking after the
+  // follower's usual delay, and routed anyway if the list never arrives.
+  const held = useRef<{ door: DoorIntent; timers: ReturnType<typeof setTimeout>[] } | null>(null);
+  const releaseHeld = useCallback(() => {
+    for (const timer of held.current?.timers ?? []) clearTimeout(timer);
+    held.current = null;
+  }, []);
+  const indexComplete = useRef(index.complete);
+  indexComplete.current = index.complete;
+  const routeMissing = useCallback(
+    (door: DoorIntent) => {
+      outcomeReporter.clear();
+      const dock = useDockDocumentStore.getState();
+      if (door.claim !== null && !dock.isCurrent(door.claim)) return;
+      route(door);
+      doorOpened({ ...door.target, uri: door.uri }, door.passage);
+    },
+    [doorOpened, outcomeReporter, route],
+  );
+  const reporter = useMemo<FollowReporter>(
+    () => ({
+      clear: outcomeReporter.clear,
+      report(result) {
+        if (result.state !== "missing") return outcomeReporter.report(result);
+        const door = intent.current;
+        if (!door) return;
+        if (indexComplete.current) return routeMissing(door);
+        outcomeReporter.clear();
+        releaseHeld();
+        held.current = {
+          door,
+          timers: [
+            setTimeout(
+              () => outcomeReporter.report({ ...result, state: "checking" }),
+              CHECKING_DELAY_MS,
+            ),
+            setTimeout(() => {
+              held.current = null;
+              if (intent.current === door) routeMissing(door);
+            }, MISSING_HOLD_MS),
+          ],
+        };
+      },
+    }),
+    [outcomeReporter, releaseHeld, routeMissing],
+  );
+  const follower = useLinkFollower({ scope, index, open, reporter });
+  useEffect(() => {
+    const waiting = held.current;
+    if (!index.complete || !waiting) return;
+    releaseHeld();
+    if (intent.current === waiting.door) follower.follow(waiting.door.link);
+  }, [follower, index.complete, releaseHeld]);
+  useEffect(() => releaseHeld, [releaseHeld]);
+  const dismiss = useCallback(() => {
+    releaseHeld();
+    follower.dismiss();
+  }, [follower, releaseHeld]);
+
   const openContextUri = useCallback(
     (uri: string, passage?: ContextPassageAnchor) => {
       if (!onOpenContextTarget || !activeWork || !noWorkId) return;
@@ -87,59 +260,25 @@ export function ProjectChatContextNavigationProvider({
           ? null
           : (availableWorks.find(({ id }) => id === target.workId)?.slug ?? undefined);
       const catalogUri = canonicalDoorUri(target, { ownerRef, workSlug }) ?? uri;
-      const route = () => onOpenContextTarget({ ...target, workId: target.workId ?? undefined });
-      if (!besideChat) {
-        route();
-        doorOpened({ ...target, uri: catalogUri }, passage);
-        return;
-      }
-      // The chat is in the middle: the document opens beside it and the route stays on the
-      // chat. The door claims the dock now, so the lookup is inside the claim.
-      const dock = useDockDocumentStore.getState();
-      const claim = dock.claim();
-      void lookupContextCatalogFile(
-        projectId,
-        target.scheme,
-        contextOwner(target.workId, target.rootThreadId),
-        { uri: catalogUri },
-      ).then(
-        (file) => {
-          if (!dock.isCurrent(claim)) return;
-          if (!file) {
-            // Nothing is there: the route says so in place, as it always has.
-            route();
-            doorOpened({ ...target, uri: catalogUri }, passage);
-          } else if (passage && file.editable) {
-            // The passage door opens the document itself, once, and lands on the passage.
-            doorOpened({ ...target, uri: catalogUri }, passage, {
-              documentId: file.documentId,
-              editable: true,
-              claim,
-            });
-          } else {
-            void openChatDocument({
-              documentId: file.documentId,
-              workId: target.workId ?? undefined,
-              claim,
-            });
-            doorOpened({ ...target, uri: catalogUri });
-          }
-        },
-        () => {
-          if (dock.isCurrent(claim)) route();
-        },
-      );
+      // The dock is claimed now, so whatever answers later is inside the claim.
+      const claim = besideChat ? useDockDocumentStore.getState().claim() : null;
+      releaseHeld();
+      const link = classifyLinkTarget(catalogUri);
+      if (!link) return route({ target });
+      const door = { target, uri: catalogUri, passage, claim, link };
+      intent.current = door;
+      follower.follow(link);
     },
     [
       activeWork,
       availableWorks,
       noWorkId,
       lineages,
-      doorOpened,
       onOpenContextTarget,
       besideChat,
-      openChatDocument,
-      projectId,
+      follower,
+      releaseHeld,
+      route,
       rootThreadId,
       ownHandle,
       threads,
@@ -159,6 +298,14 @@ export function ProjectChatContextNavigationProvider({
       canOpenContextUri={onOpenContextTarget ? canOpenContextUri : null}
     >
       {children}
+      <LinkFollowDialog
+        outcome={outcome}
+        projectId={projectId}
+        scratchRootThreadId={scope?.rootThreadId ?? null}
+        onClose={dismiss}
+        onRetry={follower.retry}
+        onOpen={(document) => open(document, "current")}
+      />
     </ChatContextNavigationProvider>
   );
 }

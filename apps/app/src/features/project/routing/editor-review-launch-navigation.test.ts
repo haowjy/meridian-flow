@@ -52,7 +52,6 @@ function setup(
       addressDocumentId,
     }),
     lookup,
-    draftOnlyItemKey: async () => undefined,
     admitDraftReview: () => undefined,
   });
   return { open, history };
