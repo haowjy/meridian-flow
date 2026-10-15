@@ -26,6 +26,8 @@ import {
 import type { AiWriteMode } from "@meridian/contracts/works";
 import {
   type ChatReferenceScope,
+  type HandBackCard,
+  handBackCards,
   hiddenWriterTurns,
   isAwaitingExecution,
   isBusy,
@@ -85,11 +87,13 @@ import {
 import { optimisticHandoffSeed } from "./derivation/handoff-seed";
 import { optimisticForkPrefix, useInheritedView } from "./derivation/inherited-view";
 import { useHandoffBrief } from "./derivation/useHandoffBrief";
+import { HandBackCards } from "./HandBackCards";
 import { reportPersistedContractFailure } from "./persisted-contract-debug";
 import { RunningSubagentsStrip } from "./RunningSubagentsStrip";
 import { ReferenceAvailabilityContext } from "./reference-availability";
 import { SubagentActivityProvider } from "./subagent/ActivityContext";
 import { SubagentDisclosureProvider } from "./subagent/DisclosureStore";
+import type { TurnQueueControls } from "./TurnList";
 import { TurnList } from "./TurnList";
 import { activeChildren } from "./thread-activity";
 import { useSwitchView } from "./thread-controls/useSwitchView";
@@ -101,8 +105,11 @@ import { useChatSubmissions } from "./useChatSubmissions";
 import { useChatThreadSession } from "./useChatThreadSession";
 import { useComposerSessionDraft } from "./useComposerSessionDraft";
 import { useDraftDock } from "./useDraftDock";
+import { useHandBack } from "./useHandBack";
 import { useLiveTurnAnnouncements } from "./useLiveTurnAnnouncements";
+import { useQueueControls } from "./useQueueControls";
 import { useReplyRetry } from "./useReplyRetry";
+import { useSendNow } from "./useSendNow";
 import { useThreadActivity } from "./useThreadActivity";
 import { useThreadDurableProjections } from "./useThreadDurableProjections";
 import { useThreadNavigationAnnounce } from "./useThreadNavigationAnnounce";
@@ -447,7 +454,37 @@ export function ChatView({
         : null,
     [accountId, activeThread, activeWork, lineage?.rootThreadRef, projectId],
   );
-  const chatStop = useChatStop({ threadId, accountId, scope: stopScope });
+  const handBack = useHandBack({ threadId, accountId, scope: stopScope });
+  const chatStop = useChatStop({ threadId, handBack });
+  const queueControls = useQueueControls({ threadId, handBack });
+  const sendNow = useSendNow(threadId);
+  const { remove, cancelQueue } = queueControls;
+  const { available: sendNowAvailable, busy: sendNowBusy, send: sendNowPress } = sendNow;
+  const queue = useMemo<TurnQueueControls>(
+    () => ({
+      remove,
+      cancelQueue,
+      sendNow: { available: sendNowAvailable, busy: sendNowBusy, send: sendNowPress },
+    }),
+    [remove, cancelQueue, sendNowAvailable, sendNowBusy, sendNowPress],
+  );
+  const handBackCardList = useMemo(
+    () =>
+      handBackCards(
+        [...handBack.unresolved, ...(sendNow.failed ? [sendNow.failed] : [])],
+        runState,
+      ),
+    [handBack.unresolved, runState, sendNow.failed],
+  );
+  const retryCard = (card: HandBackCard) => {
+    if (card.source.kind === "send-now") sendNow.retry();
+    else void handBack.settle(handBack.operation.retry(card.source.requestId));
+  };
+  const dismissCard = (card: HandBackCard) => {
+    if (card.source.kind === "send-now") return sendNow.dismiss();
+    handBack.operation.dismiss(card.source.requestId);
+    void handBack.settle(Promise.resolve());
+  };
   function handleStop() {
     // A brief being written holds the chat with no run: its own Stop. Everything else, a reply,
     // a compaction, the gap between replies, is the chat's Stop, decided on the server, and
@@ -472,7 +509,18 @@ export function ChatView({
           footer={
             <div data-debug-composer={threadId}>
               <Composer
-                notices={usageBlocked ? <UsageBlockedNotice /> : undefined}
+                notices={
+                  usageBlocked || handBackCardList.length > 0 ? (
+                    <>
+                      {usageBlocked ? <UsageBlockedNotice /> : null}
+                      <HandBackCards
+                        cards={handBackCardList}
+                        onRetry={retryCard}
+                        onDismiss={dismissCard}
+                      />
+                    </>
+                  ) : undefined
+                }
                 key={draft.key}
                 initialDraft={draft.initialDraft}
                 onDraftChange={draft.updateDraft}
@@ -543,6 +591,7 @@ export function ChatView({
                     submissionRecoveryByTurnId={submissions.presentation}
                     controls={controls}
                     chatStop={chatStop}
+                    queue={queue}
                     brief={brief}
                     replyRetry={replyRetry}
                     busy={running}
