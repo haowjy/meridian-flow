@@ -1,5 +1,8 @@
 /** `thread` commands end to end against the fake stack: refs, send-and-wait outcomes, events, view. */
 
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { EventType } from "@meridian/contracts/protocol";
 import { serializeMessageDoc } from "@meridian/thread-client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -295,15 +298,45 @@ describe("thread", () => {
     try {
       const sending = isolated.mf(["thread", "send", THREAD_ID, "queued for stop"]);
       while (isolated.messageBodies.length === 0) await new Promise((r) => setTimeout(r, 10));
-      const stopped = await isolated.mf(["thread", "stop", THREAD_ID, "--json"]);
+      // The answer is lost after the press landed: exit 4, and the request to replay is printed.
+      isolated.stopPolicy.loseAnswer = true;
+      const lost = await isolated.mf(["thread", "stop", THREAD_ID, "--full"]);
+      expect(lost.code).toBe(EXIT.unavailable);
+      expect(lost.stderr).toContain("--replay");
+      const printed = lost.stderr.match(/^stop request (\{.*\})$/m)?.[1];
+      expect(printed).toBeDefined();
+      const requestFile = join(await mkdtemp(join(tmpdir(), "mf-stop-")), "request.json");
+      await writeFile(requestFile, printed ?? "");
+      // The replay posts the identical request (no new snapshot) and returns the stored decision,
+      // with the handed-back text in send order.
+      const stopped = await isolated.mf([
+        "thread",
+        "stop",
+        THREAD_ID,
+        "--replay",
+        `@${requestFile}`,
+        "--full",
+      ]);
       expect(stopped.code).toBe(EXIT.ok);
+      expect(stopped.stdout).toContain("queued for stop");
       // The shared Stop body: the record's watermark and execution, and no intents of ours.
       expect(isolated.stopBodies).toEqual([
         expect.objectContaining({ seenThrough: 1, seenExecutionId: expect.any(String), mine: [] }),
+        JSON.parse(printed ?? ""),
       ]);
-      expect(JSON.parse(stopped.stdout)).toMatchObject({
+      expect(isolated.stopBodies[0]).toEqual(isolated.stopBodies[1]);
+      const json = await isolated.mf([
+        "thread",
+        "stop",
+        THREAD_ID,
+        "--replay",
+        `@${requestFile}`,
+        "--json",
+      ]);
+      expect(JSON.parse(json.stdout)).toMatchObject({
         command: "thread.stop",
         handedBack: [{ userTurnId: "turn-u1" }],
+        request: JSON.parse(printed ?? ""),
       });
       const result = await sending;
       expect(result.code).toBe(EXIT.cancelled);

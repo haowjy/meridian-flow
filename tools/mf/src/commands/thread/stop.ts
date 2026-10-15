@@ -1,4 +1,9 @@
-/** `thread stop`: the chat's Stop, with the body the app builds (`stopRequest` over the newest record). */
+/**
+ * `thread stop`: the chat's Stop, with the body the app builds (`stopRequest` over the newest record).
+ * The request (id and frozen body) is printed before posting, so a lost answer can be replayed
+ * with `--replay`: the server returns its stored decision for the same id and body, and the
+ * handed-back text with it. A re-run without `--replay` is a new press and may cancel the next reply.
+ */
 import { randomUUID } from "node:crypto";
 import {
   apiThreadSnapshotPath,
@@ -7,7 +12,14 @@ import {
 } from "@meridian/contracts/protocol";
 import type { StopResponse } from "@meridian/contracts/threads";
 import { INITIAL_RUN_STATE_VIEW, receiveRecord, stopRequest } from "@meridian/thread-client";
-import { type CommandSpec, flag, requirePositional, stringOption } from "../../core/command";
+import { CliError, usageError } from "../../core/cli-error";
+import {
+  type CommandSpec,
+  flag,
+  readJsonArg,
+  requirePositional,
+  stringOption,
+} from "../../core/command";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
 import { terminalResult } from "./result";
 
@@ -19,8 +31,13 @@ export const threadStopCommand: CommandSpec = {
   options: {
     ...THREAD_TARGET_OPTIONS,
     full: { type: "boolean", description: "Include the handed-back messages' blocks" },
+    replay: {
+      type: "string",
+      description:
+        "Post exactly this printed Stop request (JSON, @file, or -) with no new snapshot; recovers a lost answer",
+    },
   },
-  examples: ["./mf thread stop <id> --json"],
+  examples: ["./mf thread stop <id> --json", "./mf thread stop <id> --replay @stop-request.json"],
   async run(ctx) {
     const session = await ctx.session();
     const threadId = await resolveThreadId(
@@ -28,22 +45,48 @@ export const threadStopCommand: CommandSpec = {
       requirePositional(ctx, 0, "<thread>"),
       stringOption(ctx, "project"),
     );
-    const snapshot = await session.request<ThreadSnapshotResponse>(
-      "GET",
-      apiThreadSnapshotPath(threadId),
-    );
-    // `mine` is empty: every message ./mf admitted is in the record at or below `sentThrough`.
-    const body = stopRequest(
-      receiveRecord(INITIAL_RUN_STATE_VIEW, snapshot.liveState.runState),
-      randomUUID(),
-    );
-    const response = await session.request<StopResponse>("POST", apiThreadStopPath(threadId), body);
+    const replay = stringOption(ctx, "replay");
+    let body: StopRequest;
+    if (replay !== undefined) {
+      const parsed = readJsonArg(replay, "--replay");
+      if (!isStopRequest(parsed)) throw usageError("--replay is not a printed Stop request");
+      body = parsed;
+    } else {
+      const snapshot = await session.request<ThreadSnapshotResponse>(
+        "GET",
+        apiThreadSnapshotPath(threadId),
+      );
+      // `mine` is empty: every message ./mf admitted is in the record at or below `sentThrough`.
+      body = stopRequest(
+        receiveRecord(INITIAL_RUN_STATE_VIEW, snapshot.liveState.runState),
+        randomUUID(),
+      );
+    }
+    const requestJson = JSON.stringify(body);
+    ctx.out.note(`stop request ${requestJson}`);
+    let response: StopResponse;
+    try {
+      response = await session.request<StopResponse>("POST", apiThreadStopPath(threadId), body);
+    } catch (error) {
+      // No answer, or one we cannot read: the press may have landed. Only a replay is safe.
+      if (
+        error instanceof CliError &&
+        (error.code === "timeout" || error.code === "unavailable" || error.code === "protocol")
+      ) {
+        throw new CliError("unavailable", `Stop answer lost (${error.message})`, {
+          hint: `The Stop may have landed. Replay the same request, not a new press: echo '${requestJson}' | ./mf thread stop ${threadId} --replay -`,
+          details: { threadId, request: body },
+        });
+      }
+      throw error;
+    }
     const full = flag(ctx, "full");
     const terminal = terminalResult(
       "thread.stop",
       { outcome: "complete", reason: null },
       {
         threadId,
+        request: body,
         cancelledExecutionId: response.cancelledExecutionId,
         handedBack: response.handedBack.map((message) =>
           full ? message : { userTurnId: message.userTurnId },
@@ -53,11 +96,27 @@ export const threadStopCommand: CommandSpec = {
         next: [`./mf thread tail ${threadId} --until-idle`],
       },
     );
-    ctx.out.result(
-      terminal.result,
-      (value) =>
-        `stopped ${value.cancelledExecutionId ?? "(no running reply)"}, handed back ${value.handedBack.length}`,
-    );
+    ctx.out.result(terminal.result, (value) => {
+      const summary = `stopped ${value.cancelledExecutionId ?? "(no running reply)"}, handed back ${value.handedBack.length}`;
+      if (!full) return summary;
+      // In send order, blank lines between messages: what the app's composer would receive.
+      const texts = response.handedBack.map((message) =>
+        message.blocks.flatMap((block) => (block.type === "text" ? [block.text] : [])).join(""),
+      );
+      return [summary, ...texts].join("\n\n");
+    });
     return terminal.exitCode;
   },
 };
+
+type StopRequest = ReturnType<typeof stopRequest>;
+
+function isStopRequest(value: unknown): value is StopRequest {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.requestId === "string" &&
+    typeof record.seenThrough === "number" &&
+    Array.isArray(record.mine)
+  );
+}

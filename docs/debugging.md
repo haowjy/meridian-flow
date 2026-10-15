@@ -194,11 +194,18 @@ messages. Plain `tail` and `send`'s live output don't draw queued rows.
   the result carries no `stillRunning` or `owed`: absent means unknown, never
   none. No post-deadline snapshot request extends the wait.
 - `stop` is the chat's Stop: it builds the app's body with `stopRequest` from a snapshot's
-  record (`seenThrough`, `seenExecutionId`, `mine: []`) and posts it to the Stop route. Its
-  complete envelope proves the server's answer: `cancelledExecutionId`, `handedBack` (user
-  turn ids; the blocks with `--full`), `answered`, `gone`. A lost answer exits 4. Follow it
-  with `./mf thread tail <thread> --until-idle`. The text comes back in this output, not in a
-  browser's composer.
+  record (`seenThrough`, `seenExecutionId`, `mine: []`) and posts it to the Stop route. Before
+  posting it prints the request (id and frozen body) to stderr in text mode; the complete
+  envelope carries it as `request`. The envelope proves the server's answer:
+  `cancelledExecutionId`, `handedBack` (user turn ids; the blocks with `--full`), `answered`,
+  `gone`. `--full` text mode also prints each handed-back message's text in send order, blank
+  lines between. If the answer is lost (timeout, connection failure, unreadable reply) the Stop
+  may have landed: it exits 4, and the error says how to replay. **Never re-run it plain**: that
+  is a new press, takes a new snapshot and request id, and can cancel the next reply while the
+  first press's handed-back text is lost. `--replay <request.json|@file|->` posts exactly the
+  printed request, no new snapshot; the server returns its stored decision with the
+  handed-back content. Follow it with `./mf thread tail <thread> --until-idle`. The text comes
+  back in this output, not in a browser's composer.
 - `cancel --turn <id>` (required) serves a handoff brief's Stop. Its complete envelope proves
   the server acknowledged cancellation or reported the target already finished, not that a
   reply was answered. Its `status` carries that acknowledgement. A missing target keeps exit 3.
@@ -230,6 +237,10 @@ messages. Plain `tail` and `send`'s live output don't draw queued rows.
   success. When later messages join the same execution, the execution's last reply answers
   all of them. A Retry pressed after `send` reported failed isn't waited for; use
   `tail --until-idle`. A gap marks `liveView` `not_observed` and never weakens the claim.
+  After a claim settles, the stream gets a short catch-up (1.5 s, one deadline for stream
+  reads, anchor recovery and snapshot reads) so the printed log is whole. That log is
+  best-effort: a timeout, transport or protocol error during catch-up keeps the claim and marks
+  `liveView` `not_observed`.
 - Write tools emit `tool.completed` for the staged result, then `tool.settled`
   for the committed receipt, in both JSON and text. There is no `settled` flag.
   The staged result alone does not prove a committed write.
