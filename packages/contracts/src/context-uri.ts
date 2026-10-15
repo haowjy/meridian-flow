@@ -60,8 +60,6 @@ export function holderAuthorities(
     case "chat":
       return { scratch: null, uploads: authority };
     case "none":
-      // TODO(#875 P2/P3): No Work's `uploads://@/` spelling goes with the Work upload paths.
-      return { scratch: null, uploads: authority };
     case "contextual":
       return { scratch: null, uploads: null };
   }
@@ -151,6 +149,9 @@ export function canonicalContextUri(
   }
   if (scheme === "scratch" && normalizedPath && authorityQualifier(authority) === "@") {
     throw new RangeError(missingScratchHandle);
+  }
+  if (scheme === "uploads" && normalizedPath && authorityQualifier(authority) === "@") {
+    throw new RangeError(missingUploadsHandle);
   }
   const qualifier = authorityQualifier(authority);
   if (qualifier)
@@ -302,9 +303,7 @@ function parseAuthorityPrefix(
         value: { authority: { kind: "chat", chatRef }, rawPath: segments.join("/") },
       };
     }
-    // TODO(#875 P2/P3): `uploads://@/name` without a handle becomes an error mirroring
-    // `missingScratchHandle` once No Work intake is gone; until then it is No Work's spelling.
-    segments.unshift(chatRef);
+    return invalidContextUri(rawUri, missingUploadsHandle);
   }
   if (qualifier === "@") {
     return { ok: true, value: { authority: { kind: "none" }, rawPath: segments.join("/") } };
@@ -381,5 +380,7 @@ export function documentTitleFromUri(uri: string | null | undefined): string | n
   return parsed.ok ? renderFilename(parsed.value.name, parsed.value.extension) : segment;
 }
 
+const missingUploadsHandle =
+  "Uploads under @/ require the chat handle. Use uploads://x for this chat’s files, or uploads://@/c12/x for a specific chat.";
 const missingScratchHandle =
   "Scratch under @/ requires the first chat handle. Use scratch://x for this chat’s notes, or scratch://@/c12/x for a specific chat. List chats with ls scratch://@/.";

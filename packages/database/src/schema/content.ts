@@ -181,6 +181,11 @@ export const contextSources = pgTable(
       "context_sources_exactly_one_scope",
       sql`(${table.scope} = 'project' AND ${table.projectId} IS NOT NULL AND ${table.workId} IS NULL AND ${table.rootThreadId} IS NULL AND ${table.chatThreadId} IS NULL) OR (${table.scope} = 'work' AND ${table.projectId} IS NULL AND ${table.workId} IS NOT NULL AND ${table.rootThreadId} IS NULL AND ${table.chatThreadId} IS NULL) OR (${table.scope} = 'lineage' AND ${table.projectId} IS NOT NULL AND ${table.workId} IS NULL AND ${table.rootThreadId} IS NOT NULL AND ${table.chatThreadId} IS NULL AND ${table.slug} = 'scratch') OR (${table.scope} = 'chat' AND ${table.projectId} IS NOT NULL AND ${table.workId} IS NULL AND ${table.rootThreadId} IS NULL AND ${table.chatThreadId} IS NOT NULL AND ${table.slug} = 'uploads')`,
     ),
+    // An uploads source belongs to a chat; the other scopes never carry that slug.
+    check(
+      "context_sources_uploads_chat_only",
+      sql`${table.slug} <> 'uploads' OR ${table.scope} = 'chat'`,
+    ),
     check(
       "context_sources_scope_valid",
       sql`${table.scope} IN ('project', 'work', 'lineage', 'chat')`,
@@ -368,12 +373,9 @@ export const uploadIntakes = pgTable(
       .$type<UserId>()
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    workId: uuid("work_id")
-      .$type<WorkId>()
-      .references(() => works.id, { onDelete: "cascade" }),
     // The owning chat's thread id. No FK: the chat's row may not exist yet at attach time, and
     // trashing or purging it must not cascade (the same as lineage Scratch's root id).
-    ownerThreadId: uuid("owner_thread_id").$type<ThreadId>(),
+    ownerThreadId: uuid("owner_thread_id").$type<ThreadId>().notNull(),
     contextSourceId: uuid("context_source_id")
       .$type<ContextSourceId>()
       .notNull()
@@ -386,7 +388,6 @@ export const uploadIntakes = pgTable(
     finalPath: text("final_path").notNull(),
     objectKey: text("object_key").notNull(),
     fileType: text("file_type").notNull(),
-    canonicalUri: text("canonical_uri").notNull(),
     locationRevision: uuid("location_revision").notNull(),
     state: text("state").notNull().default("reserved"),
     storageUrl: text("storage_url"),
@@ -485,7 +486,10 @@ export const linkAheadRefs = pgTable(
     workId: uuid("work_id")
       .$type<WorkId>()
       .references(() => works.id, { onDelete: "cascade" }),
+    /** Lineage Scratch's first chat. */
     rootThreadId: uuid("root_thread_id"),
+    /** A chat's uploads' chat. */
+    chatThreadId: uuid("chat_thread_id"),
     path: text("path").notNull(),
     settledDocumentId: uuid("settled_document_id")
       .$type<DocumentId>()
@@ -497,7 +501,14 @@ export const linkAheadRefs = pgTable(
     // A decoded path has no byte bound, so the key carries its md5; lookups recheck the
     // exact path (Postgres B-tree tuples cap near 2.7 kB).
     index("link_ahead_refs_owner_unsettled")
-      .on(table.projectId, table.scheme, table.workId, table.rootThreadId, sql`md5(${table.path})`)
+      .on(
+        table.projectId,
+        table.scheme,
+        table.workId,
+        table.rootThreadId,
+        table.chatThreadId,
+        sql`md5(${table.path})`,
+      )
       .where(sql`${table.settledDocumentId} IS NULL`),
     index("link_ahead_refs_settled_document").on(table.settledDocumentId),
   ],

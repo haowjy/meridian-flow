@@ -84,11 +84,8 @@ export interface ContextPortRouterDeps {
   resolveWorkAdapters?: (
     authority: ResolvedWorkAuthority,
   ) => ReadonlyMap<ContextScheme, ContextSchemeAdapter>;
-  /** Builds No Work Scratch and Uploads adapters for explicit `@/` authority. */
-  resolveNoWork?: () => Promise<{
-    adapters: ReadonlyMap<ContextScheme, ContextSchemeAdapter>;
-    workId: string;
-  } | null>;
+  /** The No Work row's id, the work scope of notes written outside any named Work. */
+  resolveNoWorkId?: () => Promise<string | null>;
   /** URI parse options — unified port passes manuscript default + extended schemes. */
   parseOptions?: ParseContextUriOptions;
   commandTransaction?: ContextCommandTransaction;
@@ -273,21 +270,16 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       locationKeys.add(key);
       locations.push({ scheme, authority, workScopeId, adapter: candidate });
     };
-    const noWork = await deps.resolveNoWork?.();
+    const noWorkId = await deps.resolveNoWorkId?.();
     for (const [scheme, { adapter: candidate, authority }] of await contextualSources()) {
       addLocation(
         scheme,
         authority,
         scheme === "scratch" && !("kind" in authority && authority.kind === "lineage")
-          ? (deps.primaryWorkAuthority?.workId ?? noWork?.workId ?? null)
+          ? (deps.primaryWorkAuthority?.workId ?? noWorkId ?? null)
           : null,
         candidate,
       );
-    }
-    if (noWork) {
-      for (const [scheme, candidate] of noWork.adapters) {
-        addLocation(scheme, { kind: "none" }, noWork.workId, candidate);
-      }
     }
     for (const authority of deps.workAuthorities.values()) {
       for (const [scheme, candidate] of deps.resolveWorkAdapters?.(authority) ?? []) {
@@ -437,20 +429,13 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       adapter = lineageSource.adapter;
       canonicalAuthority = lineageSource.authority;
       workScopeId = null;
-    } else if (authority.kind === "none") {
-      const noWork = await deps.resolveNoWork?.();
-      if (noWork) {
-        adapter = noWork.adapters.get(scheme);
-        workScopeId = noWork.workId;
-      }
     } else if (
       authority.kind === "contextual" &&
       !workScopeId &&
       !("kind" in canonicalAuthority && canonicalAuthority.kind === "lineage") &&
       scheme === "scratch"
     ) {
-      const noWork = await deps.resolveNoWork?.();
-      if (noWork) workScopeId = noWork.workId;
+      workScopeId = (await deps.resolveNoWorkId?.()) ?? workScopeId;
     } else if (authority.kind === "work") {
       const resolvedAuthority = deps.workAuthorities.get(authority.workSlug) ?? null;
       if (!resolvedAuthority) {
@@ -484,6 +469,13 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       }
     }
 
+    if (scheme === "uploads" && authority.kind === "none")
+      return Err({
+        code: "invalid_uri",
+        uri,
+        reason:
+          "Uploads belong to a chat. Use uploads://x for this chat's files, or uploads://@/c12/x for another chat's.",
+      });
     if (scheme === "uploads" && authority.kind === "contextual" && !adapter)
       return Err({
         code: "invalid_uri",
