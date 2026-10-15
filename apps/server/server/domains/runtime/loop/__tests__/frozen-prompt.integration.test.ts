@@ -79,6 +79,9 @@ async function fixture(
   const workContext = createWorkContextReader({
     ...repos,
     works,
+    topPrimaryChats: {
+      resolveTopPrimaryChat: async (id) => ({ chatId: id, chatRef: thread.ref ?? "c1" }),
+    },
     readChainPermission: async () => "edit" as const,
   });
   const accountSkillInstalls = createInMemoryAccountSkillInstallStore();
