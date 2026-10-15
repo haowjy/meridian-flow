@@ -85,7 +85,7 @@ export type WriteRejection =
 export interface AgentEditModelPayload {
   /** The document path the command read or changed, as the caller named it. */
   path?: string;
-  /** Where a write landed: the live document, or the Work draft named by `draftWork`. */
+  /** Where a write landed: the live document, or the draft of the Work named by `draftWork`. */
   destination?: "live" | "draft";
   /** The drafted Work's slug, `/` for No Work; present only when `destination` is `draft`. */
   draftWork?: string;
