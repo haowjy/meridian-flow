@@ -12,7 +12,6 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { UserTurnRecovery } from "@/client/chat-submissions/presentation";
 import { AssistantTurn, type AssistantTurnProps } from "./AssistantTurn";
-import { ErrorBlock } from "./ErrorBlock";
 import { UserTurn } from "./UserTurn";
 
 vi.mock("@/features/project/context/open-project-document", () => ({
