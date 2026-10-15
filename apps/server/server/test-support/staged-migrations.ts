@@ -1,11 +1,11 @@
 /**
  * Populated-upgrade harness for migration tests: stage the repository's migrations up to a
- * journal entry in a schema moved aside from the worker's database, so rows can be seeded
- * in that shape before the rest run, as a deploy at that point would.
+ * journal entry in an isolated scratch database, so rows can be seeded in that shape before
+ * the rest run, as a deploy at that point would, without mutating the worker's database.
  */
 import { cp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type postgres from "postgres";
+import postgres from "postgres";
 
 export const MIGRATIONS = path.resolve(
   import.meta.dirname,
@@ -40,22 +40,37 @@ export async function stageThrough(
   );
 }
 
-/** Moves the database's schemas aside, so the upgrade runs in an empty one. */
-export async function isolateSchemas(target: postgres.Sql) {
-  await target.begin(async (tx) => {
-    await tx`ALTER SCHEMA public RENAME TO staged_upgrade_saved_public`;
-    await tx`ALTER SCHEMA drizzle RENAME TO staged_upgrade_saved_drizzle`;
-    await tx`CREATE SCHEMA public`;
-    await tx`ALTER EXTENSION pg_trgm SET SCHEMA public`;
-  });
+export interface ScratchDatabase {
+  readonly url: string;
+  readonly sql: postgres.Sql;
+  close(): Promise<void>;
 }
 
-export async function restoreSchemas(target: postgres.Sql) {
-  await target.begin(async (tx) => {
-    await tx`ALTER EXTENSION pg_trgm SET SCHEMA staged_upgrade_saved_public`;
-    await tx`DROP SCHEMA IF EXISTS public CASCADE`;
-    await tx`DROP SCHEMA IF EXISTS drizzle CASCADE`;
-    await tx`ALTER SCHEMA staged_upgrade_saved_public RENAME TO public`;
-    await tx`ALTER SCHEMA staged_upgrade_saved_drizzle RENAME TO drizzle`;
-  });
+/** Creates an empty scratch database with `pg_trgm` installed, never touching the worker DB. */
+export async function createScratchDatabase(
+  baseUrl: string,
+  prefix: string,
+): Promise<ScratchDatabase> {
+  const scratchName = `${prefix}_${process.pid}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const adminUrl = new URL(baseUrl);
+  adminUrl.pathname = "/postgres";
+  const scratch = new URL(baseUrl);
+  scratch.pathname = `/${scratchName}`;
+  const scratchUrl = scratch.toString();
+  const admin = postgres(adminUrl.toString(), { max: 1, onnotice: () => {} });
+  await admin.unsafe(`CREATE DATABASE "${scratchName}"`);
+  const sql = postgres(scratchUrl, { max: 1, onnotice: () => {} });
+  await sql`CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public`;
+  return {
+    url: scratchUrl,
+    sql,
+    async close() {
+      try {
+        await sql.end();
+        await admin.unsafe(`DROP DATABASE IF EXISTS "${scratchName}" WITH (FORCE)`);
+      } finally {
+        await admin.end();
+      }
+    },
+  };
 }
