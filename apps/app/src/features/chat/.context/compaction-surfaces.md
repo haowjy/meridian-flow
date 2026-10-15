@@ -68,7 +68,7 @@ reply's, stay shown while Info's popover is open, and stay visible on touch. The
 read defensively), in every state.
 
 The divider is one line at every width, at one text size: the state label,
-Stop, Withdraw, Retry, any status words in the row (queued rows too), and the
+Stop (a queued row's too), Retry, any status words in the row (queued rows too), and the
 instructions and failure copy under the line all use the small action size
 (`text-meta`). Only the opened summary reads at chat body size. Its section is a container: below
 `@lg` the state label switches to a short form ("Compacted") and truncates
@@ -105,19 +105,21 @@ draft, Esc leaves the run alone) only ends the turn; the same rule picks what
 runs next. The client special-cases none of it and just shows the server's
 state.
 
-`useThreadControls` is the shell over `compaction/thread-controls.ts`. It mints
+`useThreadControls` is the shell over `thread-controls/thread-controls.ts` (kind-aware: `/compact` and write-mode switches). It mints
 the id, shows the item as queued before the network answers, and keeps a
 failed enqueue on the item with Retry under the same id (the server treats a
-repeat as the original) and Withdraw beside it. A queued command is a dashed
-rule, "Compaction queued" with Withdraw, and its instructions verbatim under
-it, at once. Queued
+repeat as the original) and Stop beside it. A queued compaction is a dashed
+rule, "Compaction queued" with Stop, and its instructions verbatim under
+it, at once. A pending write-mode switch is not a compaction: it renders as the
+quiet write-mode notice (`WriteModeNotice`), with Stop too. Queued
 commands render at the transcript tail, after every queued message whatever
 order they were sent in, oldest first; they take no transcript position until
-they run. Queued rows have no Stop.
+they run. A queued row's Stop cancels the command before it runs; it is not the Stop of a running
+compaction divider.
 
 The local state is two small pieces: sends the inbox has not listed yet
 (dropped once it lists the id, since the server owns it then) and withdrawals.
-Withdraw removes the row at once (focus stays in the transcript when it was
+Stop on a queued row removes it at once (focus stays in the transcript when it was
 the last) and, once any in-flight enqueue settles, always calls the server,
 even for a row whose enqueue looked failed: only the response may have been
 lost, and a command the client hid must not run unseen. The server answers
@@ -127,15 +129,15 @@ when it does not have the command. A confirmed answer (`withdrawn` or
 `already_started` the row still goes and the pending divider carries the
 state; the announcer says "This compaction already started." A 404 only drops
 the local send: the enqueue may still have been committing, so if the inbox
-lists the id later the row shows again, queued, with Withdraw. A failed
+lists the id later the row shows again, queued, with Stop. A failed
 withdrawal brings the row back with "Couldn't withdraw. Try again." A command
 a divider already names (`controlMessageId`) is no longer queued.
 
 One announcer. Rows and dividers carry no live region; `useThreadControls`
 announces each writer-caused change and `useControlTurnAnnouncements` each
-turn-driven one (dividers and brief seeds), through the global
+turn-driven one (dividers, including write-mode, and brief seeds), through the global
 polite announcer, which reaches rows the virtualized list has scrolled away.
-Status words come from `compaction/control-copy.ts`, so the announcement and
+Status words come from `thread-controls/control-copy.ts`, so the announcement and
 the row say the same thing.
 
 Compaction turns have no AG-UI stream, and a cancelled one ends without

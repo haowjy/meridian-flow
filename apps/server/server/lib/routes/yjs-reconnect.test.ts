@@ -1,12 +1,12 @@
 /** Real-provider regression coverage for reconnect writer admission. */
 import { HocuspocusProvider, HocuspocusProviderWebsocket } from "@hocuspocus/provider";
 import { Server } from "@hocuspocus/server";
-import type { UpdateJournal } from "@meridian/agent-edit/integration";
 import { describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
 import { messageYjsSyncStep2, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
 import { bindDocumentAuthority } from "../../domains/collab/domain/document-handle.js";
+import type { CheckpointJournal } from "../../domains/collab/domain/ports/checkpoint-authority.js";
 import { createHocuspocusPersistenceService } from "../../domains/collab/hocuspocus-persistence.js";
 import { admitWriterSync } from "../yjs-ws-handler.js";
 
@@ -25,7 +25,6 @@ describe("Yjs reconnect writer admission", () => {
       journal,
       hocuspocus: () => server?.hocuspocus ?? null,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      latestUpdateSeq: async () => 0,
       emitAgentEditInvariantViolation: () => undefined,
       onLiveUpdatePersisted,
     });
@@ -119,12 +118,16 @@ function tombstoneBearingDoc(): Y.Doc {
   return doc;
 }
 
-function fakeJournal(): UpdateJournal {
+function fakeJournal(): CheckpointJournal {
   return {
+    reserveWriteOrdinal: async () => {
+      throw new Error("Transport does not allocate edit ordinals");
+    },
     append: vi.fn(async () => 1),
     appendBatch: vi.fn(async () => []),
     read: vi.fn(async () => ({ checkpoint: null, updates: [] })),
-    checkpoint: vi.fn(async () => undefined),
-    compact: vi.fn(async () => ({ updatesFolded: 0, reversalsExpired: 0 })),
+    captureCheckpoint: vi.fn(async () => null),
+    storeCheckpoint: vi.fn(async () => undefined),
+    compact: vi.fn(async () => ({ updatesFolded: 0 })),
   };
 }

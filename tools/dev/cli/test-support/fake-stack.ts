@@ -5,7 +5,7 @@ import {
   serializeTransport,
   type WsServerMessage,
 } from "@meridian/contracts/protocol";
-import type { Thread } from "@meridian/contracts/threads";
+import type { PendingInboxItem, Thread } from "@meridian/contracts/threads";
 import { type WebSocket, WebSocketServer } from "ws";
 import { runCli } from "../main";
 
@@ -32,6 +32,8 @@ function threadDto(): Thread {
     id: THREAD_ID,
     projectId: PROJECT_ID,
     workId: null,
+    aiWriteMode: "direct",
+    effectiveAiWriteMode: "direct",
     userId: "u1",
     kind: "primary",
     status: "idle",
@@ -119,15 +121,8 @@ function childNode(status: unknown, spawnStatus: string, currentTool: unknown) {
 function createFake() {
   const journal: Journal = [];
   const turns: FakeTurn[] = [];
-  const pendingItems: {
-    id: string;
-    seq: number;
-    intent: "message";
-    provenance: { kind: "writer"; actorId: string };
-    deliveryState: "waiting";
-    summary: string;
-    enqueuedAt: string;
-  }[] = [];
+  const pendingItems: PendingInboxItem[] = [];
+  let blockedForUsage = false;
   const sockets = new Set<WebSocket>();
   const mockScripts: unknown[] = [];
   const removedMockScripts: string[] = [];
@@ -141,24 +136,55 @@ function createFake() {
     for (const socket of sockets) socket.send(JSON.stringify(frame));
   };
 
+  /**
+   * A reply start, as the server projects it: its execution (a split successor
+   * shares its predecessor's; a new one is named after the reply) and the user
+   * turns it was reserved for.
+   */
+  const executionOf = new Map<string, string>();
+  const publishStart = (
+    runId: string,
+    reservedForUserTurnIds: string[],
+    successorOf: string | null = null,
+  ) => {
+    const executionId = (successorOf && executionOf.get(successorOf)) || `execution-${runId}`;
+    executionOf.set(runId, executionId);
+    publish({
+      type: "RUN_STARTED",
+      threadId: THREAD_ID,
+      runId,
+      rawEvent: { writeMode: null, executionId, reservedForUserTurnIds },
+    } as AGUIEvent);
+  };
+  /** The followed reply's execution ended: its terminal finish or error carried no successor. */
+  const publishEnded = (runId: string) =>
+    publish({
+      type: "CUSTOM",
+      name: "meridian.execution.ended",
+      value: { executionId: executionOf.get(runId) ?? `execution-${runId}` },
+    } as AGUIEvent);
+
   const runScenario = (text: string) => {
     runCounter += 1;
     const runId = `turn-a${runCounter}`;
-    turns.push({ id: `turn-u${runCounter}`, role: "user", status: "complete", error: null, text });
+    const userTurnId = `turn-u${runCounter}`;
+    turns.push({ id: userTurnId, role: "user", status: "complete", error: null, text });
     const assistant: FakeTurn = {
       id: runId,
       role: "assistant",
+      prevTurnId: `turn-u${runCounter}`,
       status: "streaming",
       error: null,
       text: "",
     };
     turns.push(assistant);
     setTimeout(() => {
-      publish({ type: "RUN_STARTED", threadId: THREAD_ID, runId } as AGUIEvent);
+      publishStart(runId, [userTurnId]);
       if (text.includes("fail")) {
         assistant.status = "error";
         assistant.error = "boom";
         publish({ type: "RUN_ERROR", message: "boom" } as AGUIEvent);
+        publishEnded(runId);
         return;
       }
       if (text.includes("ask")) {
@@ -223,6 +249,7 @@ function createFake() {
       assistant.status = "complete";
       assistant.text = "Hello there";
       publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId } as AGUIEvent);
+      publishEnded(runId);
     }, 10);
     return runId;
   };
@@ -326,8 +353,9 @@ function createFake() {
           };
           turns.push(reply);
           publish({ type: "RUN_ERROR", message: "cancelled" } as AGUIEvent);
+          publishEnded(runningTurnId);
           setTimeout(() => {
-            publish({ type: "RUN_STARTED", threadId: THREAD_ID, runId: replyId } as AGUIEvent);
+            publishStart(replyId, [userTurnId]);
             const messageId = `${replyId}::0`;
             publish({ type: "TEXT_MESSAGE_START", messageId, role: "assistant" } as AGUIEvent);
             publish({
@@ -339,22 +367,314 @@ function createFake() {
             reply.status = "complete";
             reply.text = "Answered the queued message";
             publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId: replyId } as AGUIEvent);
+            publishEnded(replyId);
           }, 20);
         }, 5);
         return send(202, {
           threadId: THREAD_ID,
           userTurnId,
-          assistantTurnId: runningTurnId,
+          steersTurnId: runningTurnId,
           resumeAfterSeq,
           snapshotFloorNextSeq: resumeAfterSeq,
           status: "accepted",
         });
       }
+      if (body.text === "steer into a running reply") {
+        // The message joins the running reply A, so admission names A. A's
+        // lease splits at its next boundary: A finishes `continued` and B,
+        // which answers this message, continues A.
+        runCounter += 1;
+        const userTurnId = `turn-u${runCounter}`;
+        const runningTurnId = `turn-running-${runCounter}`;
+        const running: FakeTurn = {
+          id: runningTurnId,
+          role: "assistant",
+          status: "streaming",
+          error: null,
+          text: "",
+        };
+        turns.push(running, {
+          id: userTurnId,
+          role: "user",
+          prevTurnId: runningTurnId,
+          status: "complete",
+          error: null,
+          text: body.text,
+        });
+        setTimeout(() => {
+          running.status = "complete";
+          running.text = "The old reply";
+          const replyId = `turn-reply-${runCounter}`;
+          const reply: FakeTurn = {
+            id: replyId,
+            role: "assistant",
+            prevTurnId: userTurnId,
+            status: "streaming",
+            error: null,
+            text: "",
+          };
+          turns.push(reply);
+          publish({
+            type: "RUN_FINISHED",
+            threadId: THREAD_ID,
+            runId: runningTurnId,
+          } as AGUIEvent);
+          publishStart(replyId, [userTurnId], runningTurnId);
+          setTimeout(() => {
+            const messageId = `${replyId}::0`;
+            publish({ type: "TEXT_MESSAGE_START", messageId, role: "assistant" } as AGUIEvent);
+            publish({
+              type: "TEXT_MESSAGE_CONTENT",
+              messageId,
+              delta: "The steered answer",
+            } as AGUIEvent);
+            publish({ type: "TEXT_MESSAGE_END", messageId } as AGUIEvent);
+            reply.status = "complete";
+            reply.text = "The steered answer";
+            publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId: replyId } as AGUIEvent);
+            publishEnded(replyId);
+          }, 50);
+        }, 20);
+        return send(202, {
+          threadId: THREAD_ID,
+          userTurnId,
+          steersTurnId: runningTurnId,
+          resumeAfterSeq,
+          snapshotFloorNextSeq: resumeAfterSeq,
+          status: "accepted",
+        });
+      }
+      if (body.text === "wait behind queued switch") {
+        // The running reply ends at its next boundary; a new reply, after the
+        // switch, answers this message. Admission names no reply for it.
+        runCounter += 1;
+        const userTurnId = `turn-u${runCounter}`;
+        const runningTurnId = `turn-running-${runCounter}`;
+        const running: FakeTurn = {
+          id: runningTurnId,
+          role: "assistant",
+          status: "streaming",
+          error: null,
+          text: "",
+        };
+        turns.push(running, {
+          id: userTurnId,
+          role: "user",
+          prevTurnId: runningTurnId,
+          status: "complete",
+          error: null,
+          text: body.text,
+        });
+        pendingItems.push(
+          {
+            id: `switch-${runCounter}`,
+            seq: runCounter,
+            intent: "control",
+            control: { kind: "write_mode", mode: "draft" },
+            provenance: { kind: "writer", actorId: "u1" },
+            deliveryState: "waiting",
+            summary: "",
+            enqueuedAt: "2026-01-02T00:00:00.000Z",
+          },
+          {
+            id: userTurnId,
+            seq: runCounter,
+            intent: "message",
+            provenance: { kind: "writer", actorId: "u1" },
+            deliveryState: "waiting",
+            summary: body.text,
+            enqueuedAt: "2026-01-02T00:00:00.000Z",
+          },
+        );
+        setTimeout(() => {
+          running.status = "complete";
+          running.text = "The old reply";
+          publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId: runningTurnId } as AGUIEvent);
+          publishEnded(runningTurnId);
+          pendingItems.splice(0, pendingItems.length);
+          setTimeout(() => {
+            const replyId = `turn-reply-${runCounter}`;
+            const reply: FakeTurn = {
+              id: replyId,
+              role: "assistant",
+              prevTurnId: userTurnId,
+              status: "streaming",
+              error: null,
+              text: "",
+            };
+            turns.push(reply);
+            publishStart(replyId, [userTurnId]);
+            reply.status = "complete";
+            reply.text = "Answered in the new mode";
+            publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId: replyId } as AGUIEvent);
+            publishEnded(replyId);
+          }, 20);
+        }, 50);
+        return send(202, {
+          threadId: THREAD_ID,
+          userTurnId,
+          steersTurnId: null,
+          resumeAfterSeq,
+          snapshotFloorNextSeq: resumeAfterSeq,
+          status: "accepted",
+        });
+      }
+      if (body.text === "wait past an unrelated start") {
+        // The admission cursor was read before an unrelated reply to an earlier
+        // message started; that start replays first, then the real answer runs.
+        runCounter += 1;
+        const userTurnId = `turn-u${runCounter}`;
+        const unrelatedId = `turn-unrelated-${runCounter}`;
+        const unrelated: FakeTurn = {
+          id: unrelatedId,
+          role: "assistant",
+          prevTurnId: `turn-m${runCounter}`,
+          status: "streaming",
+          error: null,
+          text: "",
+        };
+        turns.push(
+          { id: `turn-m${runCounter}`, role: "user", status: "complete", error: null, text: "M1" },
+          unrelated,
+          {
+            id: userTurnId,
+            role: "user",
+            prevTurnId: unrelatedId,
+            status: "complete",
+            error: null,
+            text: body.text,
+          },
+        );
+        publishStart(unrelatedId, [`turn-m${runCounter}`]);
+        pendingItems.push({
+          id: userTurnId,
+          seq: runCounter,
+          intent: "message",
+          provenance: { kind: "writer", actorId: "u1" },
+          deliveryState: "waiting",
+          summary: body.text,
+          enqueuedAt: "2026-01-02T00:00:00.000Z",
+        });
+        setTimeout(() => {
+          unrelated.status = "complete";
+          unrelated.text = "The answer to M1";
+          publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId: unrelatedId } as AGUIEvent);
+          publishEnded(unrelatedId);
+          setTimeout(() => {
+            pendingItems.splice(0, pendingItems.length);
+            const replyId = `turn-reply-${runCounter}`;
+            const reply: FakeTurn = {
+              id: replyId,
+              role: "assistant",
+              prevTurnId: userTurnId,
+              status: "streaming",
+              error: null,
+              text: "",
+            };
+            turns.push(reply);
+            publishStart(replyId, [userTurnId]);
+            reply.status = "complete";
+            reply.text = "The answer to this message";
+            publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId: replyId } as AGUIEvent);
+            publishEnded(replyId);
+          }, 20);
+        }, 50);
+        return send(202, {
+          threadId: THREAD_ID,
+          userTurnId,
+          steersTurnId: null,
+          resumeAfterSeq,
+          snapshotFloorNextSeq: resumeAfterSeq,
+          status: "accepted",
+        });
+      }
+      if (body.text === "recovered before admission returns") {
+        runCounter += 1;
+        const userTurnId = `turn-u${runCounter}`;
+        const replyId = `turn-a${runCounter}`;
+        turns.push({
+          id: userTurnId,
+          role: "user",
+          status: "complete",
+          error: null,
+          text: body.text,
+        });
+        const item = {
+          id: userTurnId,
+          seq: runCounter,
+          intent: "message",
+          provenance: { kind: "writer", actorId: "u1" },
+          deliveryState: "waiting",
+          summary: body.text,
+          enqueuedAt: "2026-01-02T00:00:00.000Z",
+        };
+        publish({
+          type: "CUSTOM",
+          name: "meridian.inbox.changed",
+          value: { items: [item], blocked: { reason: "credits_exhausted" } },
+        } as AGUIEvent);
+        blockedForUsage = false;
+        pendingItems.splice(0, pendingItems.length);
+        publish({
+          type: "CUSTOM",
+          name: "meridian.inbox.changed",
+          value: { items: [] },
+        } as AGUIEvent);
+        turns.push({
+          id: replyId,
+          role: "assistant",
+          prevTurnId: userTurnId,
+          status: "complete",
+          error: null,
+          text: "Recovered reply",
+        });
+        publish({ type: "RUN_STARTED", threadId: THREAD_ID, runId: replyId } as AGUIEvent);
+        publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId: replyId } as AGUIEvent);
+        return send(202, {
+          threadId: THREAD_ID,
+          userTurnId,
+          assistantTurnId: null,
+          resumeAfterSeq,
+          snapshotFloorNextSeq: resumeAfterSeq,
+          status: "accepted",
+        });
+      }
+      if (body.text === "wait for usage") {
+        runCounter += 1;
+        const userTurnId = `turn-u${runCounter}`;
+        pendingItems.push({
+          id: userTurnId,
+          seq: runCounter,
+          intent: "message",
+          provenance: { kind: "writer", actorId: "u1" },
+          deliveryState: "waiting",
+          summary: body.text,
+          enqueuedAt: "2026-01-02T00:00:00.000Z",
+        });
+        setTimeout(() => {
+          blockedForUsage = true;
+          publish({
+            type: "CUSTOM",
+            name: "meridian.inbox.changed",
+            value: { items: pendingItems, blocked: { reason: "credits_exhausted" } },
+          } as AGUIEvent);
+        }, 50);
+        return send(202, {
+          threadId: THREAD_ID,
+          userTurnId,
+          assistantTurnId: null,
+          resumeAfterSeq,
+          snapshotFloorNextSeq: resumeAfterSeq,
+          status: "accepted",
+        });
+      }
+      blockedForUsage = false;
+      pendingItems.splice(0, pendingItems.length);
       runScenario(body.text);
       return send(202, {
         threadId: THREAD_ID,
         userTurnId: `turn-u${runCounter}`,
-        assistantTurnId: null,
+        steersTurnId: null,
         resumeAfterSeq,
         snapshotFloorNextSeq: resumeAfterSeq,
         status: "accepted",
@@ -365,7 +685,13 @@ function createFake() {
         threadId: THREAD_ID,
         thread: threadDto(),
         turns: turns.map(turnDto),
-        liveState: liveState(String(journal.length), pendingItems),
+        liveState: {
+          ...liveState(String(journal.length), pendingItems),
+          pending: {
+            items: pendingItems,
+            ...(blockedForUsage ? { blocked: { reason: "credits_exhausted" } } : {}),
+          },
+        },
         actionRequired: false,
         nextSeq: String(journal.length + 1),
       });

@@ -5,15 +5,12 @@ import {
   isRecord,
   type RecordStorage,
 } from "@/client/storage/browser-record";
-import { durableContextTab, parseContextTab } from "@/client/stores";
-import type { ScreenKey } from "../shell/screens";
-import type { DockDocument } from "./dock-view-store";
-import { DOCK_VIEW_SETS, type DockView } from "./dock-views";
+import { type ContextTab, durableContextTab, parseContextTab } from "@/client/stores";
+import type { DockDocument } from "./dock-document-store";
 
 export const DOCK_STORAGE_KEY = "meridian:dock:v1";
 export type DockSnapshot = {
   accountId: string;
-  byScreen: Partial<Record<ScreenKey, DockView>>;
   occupant: DockDocument | null;
 };
 export type DockStorage = RecordStorage;
@@ -30,32 +27,68 @@ export function readDockSnapshot(
       { key: DOCK_STORAGE_KEY, version: 1, accountId },
       (input) => {
         if (!isRecord(input)) return undefined;
-        if (!isRecord(input.byScreen)) return undefined;
-        const byScreen: DockSnapshot["byScreen"] = {};
-        for (const [screen, view] of Object.entries(input.byScreen)) {
-          if (!Object.hasOwn(DOCK_VIEW_SETS, screen)) return undefined;
-          const key = screen as ScreenKey;
-          if (!DOCK_VIEW_SETS[key].views.some((supported) => supported === view)) return undefined;
-          byScreen[key] = view as DockView;
-        }
-        const occupant = input.occupant as Record<string, unknown> | null;
-        if (occupant === null) return { accountId, byScreen, occupant: null };
+        const occupant = input.occupant;
+        if (occupant === null) return { accountId, occupant: null };
         if (
-          !occupant ||
+          !isRecord(occupant) ||
           typeof occupant.projectId !== "string" ||
           !occupant.projectId ||
-          typeof occupant.screen !== "string" ||
-          !Object.hasOwn(DOCK_VIEW_SETS, occupant.screen) ||
-          occupant.screen === "context"
+          (occupant.screen !== "chat" && occupant.screen !== "work") ||
+          (occupant.screen === "work"
+            ? typeof occupant.screenWorkId !== "string" || !occupant.screenWorkId
+            : occupant.screenWorkId !== null)
+        )
+          return undefined;
+        const review = occupant.review;
+        if (
+          review !== null &&
+          (!isRecord(review) ||
+            typeof review.workId !== "string" ||
+            !review.workId ||
+            typeof review.itemKey !== "string" ||
+            !review.itemKey ||
+            (review.changeId !== undefined &&
+              (typeof review.changeId !== "string" || !review.changeId)))
         )
           return undefined;
         const tab = parseContextTab(occupant.tab);
         return tab
-          ? { accountId, byScreen, occupant: { ...occupant, tab } as DockDocument }
+          ? {
+              accountId,
+              occupant: {
+                projectId: occupant.projectId,
+                screen: occupant.screen,
+                screenWorkId: occupant.screenWorkId as string | null,
+                tab,
+                review:
+                  review === null
+                    ? null
+                    : {
+                        workId: review.workId as string,
+                        itemKey: review.itemKey as string,
+                        ...(typeof review.changeId === "string"
+                          ? { changeId: review.changeId }
+                          : {}),
+                      },
+              },
+            }
           : undefined;
       },
     ).read() ?? null
   );
+}
+
+/**
+ * The Editor workspace drops `reviews` because it re-derives them from the Work's drafts list. Dock
+ * restore admission never consults that list (a hidden draft is addressable only by its saved selector), and
+ * nothing else says a restored tab is draft-only rather than a live document under review, so the
+ * dock's one entry is durable.
+ */
+function durableDockTab(tab: ContextTab): ContextTab {
+  const durable = durableContextTab(tab);
+  return tab.kind === "tracked" && tab.reviews && durable.kind === "tracked"
+    ? { ...durable, reviews: tab.reviews }
+    : durable;
 }
 
 export function writeDockSnapshot(storage: () => DockStorage | null, snapshot: DockSnapshot): void {
@@ -64,9 +97,14 @@ export function writeDockSnapshot(storage: () => DockStorage | null, snapshot: D
     { key: DOCK_STORAGE_KEY, version: 1, accountId: snapshot.accountId },
     () => undefined,
   ).write({
-    byScreen: snapshot.byScreen,
     occupant: snapshot.occupant
-      ? { ...snapshot.occupant, tab: durableContextTab(snapshot.occupant.tab) }
+      ? {
+          projectId: snapshot.occupant.projectId,
+          screen: snapshot.occupant.screen,
+          screenWorkId: snapshot.occupant.screenWorkId,
+          review: snapshot.occupant.review,
+          tab: durableDockTab(snapshot.occupant.tab),
+        }
       : null,
   });
 }

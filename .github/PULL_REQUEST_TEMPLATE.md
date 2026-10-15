@@ -1,14 +1,41 @@
 <!-- Describe the PR's final state, not its history. Give reviewers enough
-     context to understand the change. -->
+     context to understand the change.
+
+     Every ## section below is required, and the PR-body check fails when one
+     is missing. When a section doesn't apply, keep its heading and write
+     "None." with a short reason. Use ### for your own subheadings inside a
+     section; the check reads only ## headings. -->
 
 ## Why
 
 <!-- State the problem or opportunity and why it matters. For UI changes, show
      the current experience when useful. -->
 
+## Core design decisions
+
+<!-- Name the core design decisions behind the change: the underlying
+     problems, not just their symptoms. For each, say what was wrong, what this
+     PR decides, and what it rules out. Quote the owner's rulings where they
+     set a decision. -->
+
+1. **<decision>.** <the problem>. <what this PR decides>. Ruled out: <alternative and why>.
+
 ## Goal
 
-<!-- State what must be true after merge. -->
+<!-- Start with the long-term goal this PR serves: the product direction it
+     moves toward, even when this PR is one step of it. Then state what must
+     be true after merge. Then list related work: PRs this builds on or
+     unblocks, issues it fixes or prepares for, follow-ups, and the work item. -->
+
+**Long term.** <the direction this PR moves toward>
+
+**This PR.**
+
+- <what must be true after merge>
+
+**Related work.**
+
+- #N: <how it relates>
 
 ## Summary
 
@@ -66,14 +93,15 @@
 
 ## DB Changes
 
-<!-- Remove if no schema changes. Otherwise name migrations; diagram changed
+<!-- Write "None." when the PR changes no schema. Otherwise name migrations;
+     diagram changed
      tables/relationships in Mermaid, mark added/dropped/renamed columns, and
      list new constraints/indexes. -->
 
 ## Work Item
 
-<!-- Link the issue, work item, design, or plan; otherwise say this was direct
-     maintenance. -->
+<!-- Link the work item, design, or plan; otherwise say this was direct
+     maintenance. Related PRs and issues go under Goal. -->
 
 ## Testing
 
@@ -105,6 +133,16 @@
      cleanup deferred for speed/product clarity needs a removal trigger. Say if none. -->
 
 - [ ] Tracking home for each deferral; removal/cleanup trigger when applicable, or none
+
+## Follow-ups
+
+<!-- What to do right after this merges, in order: the next PR in a sequence,
+     stacked or sibling branches that must take main, issues to start, probes to
+     rerun on main. Link each issue or PR. Deferred is scope this PR leaves out;
+     Follow-ups is what someone does next. Skip routine cleanup that AGENTS.md
+     already requires. Write "None." when nothing follows. -->
+
+- [ ] #N: <what to do right after merge>
 
 ## Knowledge Updates
 

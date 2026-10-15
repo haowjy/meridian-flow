@@ -7,6 +7,11 @@ export const ResolveDocumentLinksRequestSchema = z
     workId: z.string().uuid().nullable().optional(),
     /** The holder's URI; null for chat, which alone may fall back to previous locations. */
     baseUri: z.string().max(2048).nullable(),
+    /**
+     * The holder document, when the client knows it: pins the holder whatever `baseUri`
+     * now spells (a renamed holder still resolves its relative links).
+     */
+    holderDocumentId: z.string().uuid().optional(),
     links: z
       .array(
         z.object({
@@ -36,6 +41,8 @@ export type DocumentLinkAnswer =
         rootThreadId?: string | null;
       };
       inDraft: boolean;
+      /** Present iff `inDraft`: the draft the chip opens (the reader's own if it uses it, else the oldest). */
+      draft?: { draftId: string; workId: string | null };
       /** An ahead ref answered through its settlement: it never answers by address again. */
       settled?: true;
     }
@@ -47,4 +54,8 @@ export type DocumentLinkAnswer =
   | { state: "unresolvable" };
 
 /** Answers in request order. */
-export type ResolveDocumentLinksResponse = { answers: DocumentLinkAnswer[] };
+export type ResolveDocumentLinksResponse = {
+  answers: DocumentLinkAnswer[];
+  /** The pinned holder's current canonical URI, when it differs from `baseUri` (it moved). */
+  holderUri?: string;
+};

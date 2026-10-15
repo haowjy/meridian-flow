@@ -1,339 +1,425 @@
-/** Work-draft listing, repair, preview, Apply, and Discard orchestration. */
+/**
+ * Work-draft review (contract §3, §4): the list, the preview from one cut, and every Apply
+ * and Discard command through the one pipeline. A writer's command is looked up before
+ * anything is resolved, claimed in its effect transaction and answered from its stored
+ * result (§4.6); a refusal before any effect looks the id up again before it answers (LA-1).
+ */
 import type { YProsemirrorDocumentModel } from "@meridian/agent-edit/integration";
-import { branchRoomName } from "@meridian/contracts/protocol";
-import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
-import { createCollabYDoc } from "@meridian/prosemirror-schema";
-import * as Y from "yjs";
-import type { CollabDrafts } from "../contracts.js";
-import type { ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
-import type { BranchCoordinator } from "./branch-coordinator.js";
+import type { DraftId, UserId, WorkId } from "@meridian/contracts";
+import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
+import type { DraftCommandResult, ThreadDraftListItem } from "@meridian/contracts/drafts";
+import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type {
-  BranchJournalReadStore,
-  BranchPushService,
-  BranchReviewService,
-  PushToLiveResult,
-} from "./branch-push-contracts.js";
+  CollabDrafts,
+  CommandOutcome,
+  DraftPreviewResult,
+  ModelDraftRow,
+  ReviewSelectionCommand,
+} from "../contracts.js";
+import { type BranchReviewService, DraftChangeRefusal } from "./branch-push-contracts.js";
 import { BranchCorruptError } from "./branch-resolver.js";
-import type { ReviewableDraft } from "./branch-review.js";
-import { computeDraftReviewHunks } from "./draft-review-hunks.js";
-import type { MarkdownDocumentEngine } from "./markdown-document.js";
-import type { ApplicationBranchStore, WorkDraftDiscard } from "./ports/application-branch-store.js";
-import { type DocumentLinkScopes, LIVE_VIEW } from "./ports/document-link-scope.js";
-import { documentTitleFromUri } from "./reversal-notices.js";
-import type { WorkDraftPending } from "./work-draft-pending.js";
+import {
+  type CommandLookup,
+  type DraftCommandEnvelope,
+  DraftCommandExistsError,
+  type DraftCommands,
+} from "./draft-commands.js";
+import type { DraftDiscard } from "./draft-discard.js";
+import { DraftApplyPendingError, type DraftPublication } from "./draft-publication.js";
+import type { DraftReviewIdentity } from "./draft-review-identity.js";
+import type { DraftReviewItem, DraftReviewItems } from "./draft-review-items.js";
+import type { Drafts } from "./drafts.js";
+import type { ReadReviewCut } from "./ports/review-cut.js";
+import type { WorkDraftPendingStore } from "./ports/work-draft-pending-store.js";
+import { deriveReviewCut, selectReviewCut } from "./review-cut.js";
+
+export type DraftReviewDiagnostics = {
+  unattributedHunks(detail: { documentId: string; draftId: string; hunkIds: string[] }): void;
+};
 
 export function createWorkDraftReviewService(input: {
-  /** Both sides of a preview spell from one snapshot: live in the live view, the draft in its own. */
-  links: DocumentLinkScopes;
-  branches: ApplicationBranchStore;
-  discardWorkDraft: WorkDraftDiscard;
-  branchCoordinator: BranchCoordinator;
-  branchJournal: BranchJournalReadStore;
-  branchPush: BranchPushService;
+  diagnostics: DraftReviewDiagnostics;
+  drafts: Pick<Drafts, "activeForWork">;
+  reviewItems: DraftReviewItems;
+  identity: DraftReviewIdentity;
+  publication: DraftPublication;
+  discard: DraftDiscard;
   branchReview: BranchReviewService;
-  workDraftPending: WorkDraftPending;
-  liveCoordinator: {
-    withDocument<T>(documentId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T>;
-  };
-  documents: Pick<MarkdownDocumentEngine, "serializeDocument">;
+  commands: DraftCommands;
+  readReviewCut: ReadReviewCut;
   model: YProsemirrorDocumentModel;
-  agentEdit: ThreadPeerAgentEditCore;
-  resolveDocumentUri(documentId: string): Promise<string | null>;
-  latestUpdateSeq(documentId: string): Promise<number>;
+  resolveThreadTitles(threadIds: readonly string[]): Promise<ReadonlyMap<string, string>>;
+  pending: Pick<WorkDraftPendingStore, "listDraftsChangingDocument">;
 }): CollabDrafts {
-  async function resolveDraftOnlyDocumentIds(command: {
-    projectId?: ProjectId;
-    workId: WorkId;
-  }): Promise<Set<DocumentId>> {
-    if (!command.projectId) return new Set();
-    // Resolve live first: both adapter calls ensure the project manifest,
-    // and racing them on a project without one violates its unique identity.
-    const liveMembership = await input.branches.resolveManifestMembership({
-      projectId: command.projectId,
-    });
-    const draftMembership = await input.branches.resolveManifestMembership({
-      projectId: command.projectId,
-      workId: command.workId,
-    });
-    const liveDocumentIds = new Set(liveMembership.members);
-    return new Set(
-      draftMembership.members.filter((documentId) => !liveDocumentIds.has(documentId)),
-    );
-  }
-
-  async function listReviewableWorkDraftBranches(
+  async function workItems(
     workId: WorkId,
-    projectId?: ProjectId,
-  ): Promise<ReviewableDraft[]> {
-    const draftOnlyDocumentIds = await resolveDraftOnlyDocumentIds({ projectId, workId });
-    const drafts: ReviewableDraft[] = [];
-    for (const { branch, rows } of await input.workDraftPending.list(workId)) {
-      const uri = await input.resolveDocumentUri(branch.documentId);
-      drafts.push({
-        draftId: branch.branchId,
-        documentId: branch.documentId,
-        workId,
-        status: "active",
-        lastActorTurnId: rows.find((row) => row.turnId)?.turnId ?? null,
-        wordsAdded: null,
-        wordsRemoved: null,
-        updatedAt: new Date(),
-        documentName: documentTitleFromUri(uri),
-        contextPath: manuscriptContextPath(uri),
-        ...(draftOnlyDocumentIds.has(branch.documentId) ? { createdDocument: true } : {}),
+  ): Promise<{ draftId: DraftId | null; items: DraftReviewItem[] }> {
+    const draft = await input.drafts.activeForWork(workId);
+    if (!draft) return { draftId: null, items: [] };
+    return { draftId: draft.id, items: await input.reviewItems.list(draft.id) };
+  }
+
+  function replay(found: CommandLookup): CommandOutcome | null {
+    switch (found.kind) {
+      case "none":
+        return null;
+      case "conflict":
+        return { kind: "conflict" };
+      case "pending":
+        return { kind: "pending" };
+      case "done":
+        return { kind: "result", result: found.result };
+      case "blocked":
+        return { kind: "blocked" };
+    }
+  }
+
+  /** Command lookup, first: an existing id answers whatever the draft's state is now. */
+  async function known(envelope: DraftCommandEnvelope): Promise<CommandOutcome | null> {
+    return replay(await input.commands.lookup(envelope));
+  }
+
+  /**
+   * The command's answer once the call has finished: what it stored if it stored anything
+   * (a completed Apply, a withdrawn one, a Discard), else the result this call computed.
+   * Every pre-effect refusal comes through here, so an id that committed meanwhile
+   * answers its own outcome (LA-1).
+   */
+  async function answer(
+    envelope: DraftCommandEnvelope,
+    computed: DraftCommandResult,
+  ): Promise<CommandOutcome> {
+    return (await known(envelope)) ?? { kind: "result", result: computed };
+  }
+
+  /** Runs an effect that may hand its batch to recovery or lose the id to another request. */
+  async function effect(
+    envelope: DraftCommandEnvelope,
+    run: () => Promise<DraftCommandResult>,
+  ): Promise<CommandOutcome> {
+    try {
+      return await answer(envelope, await run());
+    } catch (cause) {
+      if (cause instanceof DraftApplyPendingError || cause instanceof DraftCommandExistsError) {
+        return (await known(envelope)) ?? { kind: "pending" };
+      }
+      throw cause;
+    }
+  }
+
+  async function preview(command: {
+    workId: WorkId;
+    itemKey: string;
+  }): Promise<DraftPreviewResult> {
+    let cut: Awaited<ReturnType<ReadReviewCut>>;
+    try {
+      cut = await input.readReviewCut(command);
+    } catch (cause) {
+      if (cause instanceof DraftChangeRefusal && cause.status === "gone") {
+        return { status: "gone", itemKey: command.itemKey };
+      }
+      if (cause instanceof BranchCorruptError) {
+        // The refusal carries the draft so a corrupt item missing from the list can still
+        // build its whole-item Discard, the recovery path.
+        const resolved = await input.identity.resolveReviewItem(command);
+        return resolved
+          ? {
+              status: "corrupt",
+              draftId: resolved.draftId,
+              itemKey: command.itemKey,
+              branchGeneration: cause.generation ?? 0,
+            }
+          : { status: "gone", itemKey: command.itemKey };
+      }
+      throw cause;
+    }
+    const { preview: derived, diagnostics } = deriveReviewCut(cut, input.model);
+    if (diagnostics.length) {
+      input.diagnostics.unattributedHunks({
+        documentId: cut.item.documentId,
+        draftId: cut.item.draftId,
+        hunkIds: diagnostics.map((diagnostic) => diagnostic.hunkId),
       });
     }
-    return drafts;
+    const [item] = await input.reviewItems.withLiveTextTokens([cut.item]);
+    return { ...derived, item: item ?? cut.item, threadTitles: cut.threadTitles };
   }
 
-  async function isDraftOnlyManifestDocument(command: {
-    projectId?: ProjectId;
-    workId: WorkId;
-    documentId: DocumentId;
-  }): Promise<boolean> {
-    return (await resolveDraftOnlyDocumentIds(command)).has(command.documentId);
+  /** A per-change command needs a listed-or-not text item that is not whole-item. */
+  async function changeTarget(
+    command: { workId: WorkId; itemKey: string },
+    envelope: DraftCommandEnvelope,
+  ): Promise<{ item: DraftReviewItem } | { refused: CommandOutcome }> {
+    const resolved = await input.identity.resolveReviewItem(command);
+    const draftId = resolved?.draftId ?? (envelope.draftId as DraftId);
+    const refuse = async (status: "gone" | "whole_item") => ({
+      refused: await answer(envelope, { status, draftId, itemKey: command.itemKey }),
+    });
+    if (!resolved?.draftBranchId) return refuse("gone");
+    if (resolved.item.wholeItem) return refuse("whole_item");
+    return { item: resolved.item };
   }
 
-  async function previewWorkDraftBranch(command: {
-    projectId?: ProjectId;
-    documentId: DocumentId;
-    workId: WorkId;
-    draftId: string;
-  }) {
-    return input.links.within({ documentId: command.documentId }, async () => {
-      const liveState = await input.liveCoordinator.withDocument(
-        command.documentId,
-        async (liveDoc) => ({
-          state: Y.encodeStateAsUpdate(liveDoc),
-          markdown: await input.documents.serializeDocument(command.documentId, liveDoc, LIVE_VIEW),
-        }),
-      );
-      const liveDoc = createCollabYDoc({ gc: false });
-      Y.applyUpdate(liveDoc, liveState.state);
-      let notice: { code: "branch_corrupt_reset"; message: string } | undefined;
-      try {
-        let branch: { branchId: string; generation: number; doc: Y.Doc };
-        try {
-          branch = await input.branches.resolveWorkDraftBranchForWork({
-            documentId: command.documentId,
-            workId: command.workId,
-            liveDoc,
-          });
-        } catch (cause) {
-          if (!(cause instanceof BranchCorruptError)) throw cause;
-          const corrupt = await input.branches.getBranch(cause.branchId);
-          if (corrupt?.kind !== "work_draft" || corrupt.status !== "active") throw cause;
-          await input.branchCoordinator.resetFromDoc(corrupt.branchId, liveDoc);
-          await input.agentEdit.invalidateThread(command.documentId, "");
-          notice = {
-            code: "branch_corrupt_reset",
-            message: "Review state was repaired from the live document.",
-          };
-          branch = await input.branches.resolveWorkDraftBranchForWork({
-            documentId: command.documentId,
-            workId: command.workId,
-            liveDoc,
-          });
-        }
-        if (branch.branchId !== command.draftId) throw new Error("draft_not_found");
-        try {
-          const draftUpdates = (
-            await input.branchJournal.listReviewableJournalRows(branch.branchId, branch.generation)
-          ).map((row) => ({
-            id: row.id,
-            actorTurnId: row.turnId,
-            actorUserId: row.actorUserId,
-            updateData: row.updateData,
-            updateKind: row.status === "rollback_pending" ? "rollback_pending" : row.source,
-          }));
-          const review = computeDraftReviewHunks({
-            liveDoc,
-            draftDoc: branch.doc,
-            model: input.model,
-            draftUpdates,
-          });
-          return {
-            status: "active" as const,
-            draftId: command.draftId,
-            reviewRoomName: branchRoomName(branch.branchId, branch.generation),
-            live: liveState.markdown,
-            markdown: await input.documents.serializeDocument(command.documentId, branch.doc, {
-              kind: "draft",
-              workId: command.workId,
-            }),
-            isNewDocument: await isDraftOnlyManifestDocument(command),
-            liveRevisionToken: await input.latestUpdateSeq(command.documentId),
-            draftRevisionToken: branch.generation,
-            inlineModelPresent: true as const,
-            operations: review.operations,
-            hunks: review.hunks,
-            ...(notice ? { notice } : {}),
-          };
-        } finally {
-          branch.doc.destroy();
-        }
-      } finally {
-        liveDoc.destroy();
-      }
+  /** Refusals a selection raises from inside the lease answer as the command's own body. */
+  async function refusal(
+    cause: unknown,
+    envelope: DraftCommandEnvelope,
+    item: DraftReviewItem,
+  ): Promise<CommandOutcome> {
+    if (!(cause instanceof DraftChangeRefusal)) throw cause;
+    return answer(envelope, {
+      status: cause.status,
+      draftId: item.draftId,
+      itemKey: item.itemKey,
     });
   }
 
-  async function pushNewDocumentToLiveWithManifest(command: {
-    projectId: ProjectId;
+  async function applyChanges(command: {
     workId: WorkId;
-    documentId: DocumentId;
-    branchId: string;
+    itemKey: string;
     userId: UserId;
+    envelope: DraftCommandEnvelope;
+    selection: Extract<ReviewSelectionCommand, { kind: "apply" }>;
     signal?: AbortSignal;
-  }): Promise<PushToLiveResult> {
-    const manifest = await input.branches.ensureProjectManifest({ projectId: command.projectId });
+  }): Promise<CommandOutcome> {
+    const { envelope, selection } = command;
+    const first = await known(envelope);
+    if (first) return first;
+    const target = await changeTarget(command, envelope);
+    if ("refused" in target) return target.refused;
+    const { item } = target;
     try {
-      const manifestBranch = await input.branches.resolveWorkDraftBranchForWork({
-        documentId: manifest.documentId,
-        workId: command.workId,
-        liveDoc: manifest.doc,
-      });
-      try {
-        return await input.branchPush.pushToLiveWithManifestEntry({
-          branchId: command.branchId,
-          manifestBranchId: manifestBranch.branchId,
-          manifestEntryDocumentId: command.documentId,
-          pushedByUserId: command.userId,
-          signal: command.signal,
-        });
-      } finally {
-        manifestBranch.doc.destroy();
-      }
-    } finally {
-      manifest.doc.destroy();
-    }
-  }
-
-  async function resolveActiveWorkDraft(command: {
-    draftId: string;
-    documentId: DocumentId;
-    workId: WorkId;
-  }) {
-    const branch = await input.branches.getBranch(command.draftId);
-    return branch?.kind === "work_draft" &&
-      branch.status === "active" &&
-      branch.workId === command.workId &&
-      branch.documentId === command.documentId
-      ? branch
-      : null;
-  }
-
-  async function applyWorkDraft(command: {
-    projectId?: ProjectId;
-    workId: WorkId;
-    documentId: DocumentId;
-    draftId: string;
-    userId: UserId;
-    signal?: AbortSignal;
-  }) {
-    const branch = await resolveActiveWorkDraft(command);
-    if (!branch) return { status: "not_found" as const, draftId: command.draftId };
-
-    if (
-      command.projectId &&
-      (await isDraftOnlyManifestDocument({
-        projectId: command.projectId,
-        workId: command.workId,
-        documentId: command.documentId,
-      }))
-    ) {
-      await pushNewDocumentToLiveWithManifest({
-        projectId: command.projectId,
-        workId: command.workId,
-        documentId: command.documentId,
-        branchId: branch.branchId,
-        userId: command.userId,
-        signal: command.signal,
-      });
-    } else {
-      await input.branchPush.pushToLive({
-        branchId: branch.branchId,
-        pushedByUserId: command.userId,
-        signal: command.signal,
-      });
-    }
-    return { status: "applied" as const, draftId: command.draftId };
-  }
-
-  async function discardWorkDraft(command: {
-    projectId?: ProjectId;
-    workId: WorkId;
-    documentId: DocumentId;
-    draftId: string;
-    userId?: UserId;
-    threadId?: string;
-    operationIds?: string[];
-  }) {
-    const projectId = command.projectId;
-    const branch = await resolveActiveWorkDraft(command);
-    if (!branch) return { status: "discarded" as const, draftId: command.draftId };
-
-    if (command.operationIds && command.operationIds.length > 0) {
-      const preview = await previewWorkDraftBranch(command);
-      const requestedClassIds = new Set(
-        preview.operations
-          .filter((operation) => command.operationIds?.includes(operation.operationId))
-          .map((operation) => operation.closureClassId),
-      );
-      const updateIds = new Set<number>();
-      for (const operation of preview.operations) {
-        if (!requestedClassIds.has(operation.closureClassId)) continue;
-        for (const id of operation.discardUpdateIds) updateIds.add(id);
-      }
-      await input.branchReview.discardSelected({
-        branchId: branch.branchId,
-        journalIds: [...updateIds],
-        reviewedByUserId: command.userId,
-      });
-    } else {
-      const draftOnly =
-        projectId &&
-        (await isDraftOnlyManifestDocument({
-          projectId,
+      return await effect(envelope, async () => {
+        const result = await input.publication.applyChanges({
           workId: command.workId,
-          documentId: command.documentId,
-        }));
-      await input.discardWorkDraft({
-        draftOnlyProjectId: draftOnly ? projectId : undefined,
-        workId: command.workId,
-        documentId: command.documentId,
-        contentBranchId: branch.branchId,
+          item,
+          userId: command.userId,
+          command: { envelope, shape: "changes" },
+          ...(command.signal ? { signal: command.signal } : {}),
+          select: async (branch, rows) => {
+            const cut = await input.readReviewCut({
+              workId: command.workId,
+              itemKey: command.itemKey,
+            });
+            const chosen = selectReviewCut(cut, input.model, branch, rows, selection);
+            return {
+              ...chosen,
+              locationToken: cut.item.tokens.locationToken,
+              branchGenerationToken: String(cut.branch.generation),
+            };
+          },
+        });
+        if (result.status === "command_exists")
+          throw new DraftCommandExistsError(envelope.commandId);
+        if (result.status === "stale") {
+          return { status: "stale", draftId: item.draftId, itemKey: item.itemKey };
+        }
+        if (result.status === "gone")
+          return { status: "gone", draftId: item.draftId, itemKey: item.itemKey };
+        // A completed command stored its own body; `answer` reads it back over this one.
+        return { status: "gone", draftId: item.draftId, itemKey: item.itemKey };
       });
-      await input.agentEdit.invalidateThread(command.documentId, command.threadId ?? "");
+    } catch (cause) {
+      return refusal(cause, envelope, item);
     }
-    return { status: "discarded" as const, draftId: command.draftId };
+  }
+
+  async function discardChanges(command: {
+    workId: WorkId;
+    itemKey: string;
+    userId: UserId;
+    envelope: DraftCommandEnvelope;
+    selection: Extract<ReviewSelectionCommand, { kind: "discard" }>;
+  }): Promise<CommandOutcome> {
+    const { envelope, selection } = command;
+    const first = await known(envelope);
+    if (first) return first;
+    const target = await changeTarget(command, envelope);
+    if ("refused" in target) return target.refused;
+    const { item } = target;
+    try {
+      return await effect(envelope, async () => {
+        const discarded = await input.branchReview.discardSelected({
+          branchId: item.draftBranchId as string,
+          reviewedByUserId: command.userId,
+          selectRows: async (branch, rows) => {
+            const cut = await input.readReviewCut({
+              workId: command.workId,
+              itemKey: command.itemKey,
+            });
+            return selectReviewCut(cut, input.model, branch, rows, selection);
+          },
+          command: {
+            envelope,
+            result: (outcome) => ({
+              status: "discarded",
+              draftId: item.draftId,
+              itemKey: item.itemKey,
+              ...outcome,
+            }),
+          },
+        });
+        return discarded.status === "discarded"
+          ? {
+              status: "discarded",
+              draftId: item.draftId,
+              itemKey: item.itemKey,
+              itemClosed: discarded.itemClosed,
+              ...(discarded.itemDisposition ? { itemDisposition: discarded.itemDisposition } : {}),
+            }
+          : { status: "gone", draftId: item.draftId, itemKey: item.itemKey };
+      });
+    } catch (cause) {
+      return refusal(cause, envelope, item);
+    }
+  }
+
+  /** The answer an Apply computes when it stored none: its own wire body (§4.5). */
+  function applyBody(
+    result: Awaited<ReturnType<DraftPublication["applyItems"]>>,
+    item: DraftReviewItem | null,
+    draftId: DraftId,
+  ): DraftCommandResult {
+    if (result.status === "command_exists")
+      throw new DraftCommandExistsError(item?.itemKey as never);
+    // An item Apply answers about its own item (§4.5); the batch's key list is not its wire shape.
+    if (item && result.status === "stale")
+      return { status: "stale", draftId, itemKey: item.itemKey };
+    if (!item || result.status !== "completed") return result;
+    const [applied] = result.items;
+    if (!applied) return { status: "gone", draftId };
+    return applied.status === "held"
+      ? { status: "held", draftId, itemKey: item.itemKey, reason: applied.reason }
+      : { status: "applied", draftId, itemKey: item.itemKey, item: applied };
   }
 
   return {
     draftReview: {
       async list(command) {
-        return listReviewableWorkDraftBranches(command.workId, command.projectId);
+        const { items } = await workItems(command.workId);
+        return items.map(
+          (item): ModelDraftRow => ({
+            documentId: item.documentId,
+            documentName: item.documentName,
+            contextLocation: reviewContextLocation(item.path),
+            ...(item.isNew ? { createdDocument: true } : {}),
+          }),
+        );
       },
-      async preview(command) {
-        return previewWorkDraftBranch(command);
+      async listItems(command) {
+        const { draftId, items } = await workItems(command.workId);
+        const rendered = await input.reviewItems.withLiveTextTokens(items);
+        const threadTitles = await input.resolveThreadTitles([
+          ...new Set(rendered.flatMap((item) => item.actorThreadIds)),
+        ]);
+        return { draftId, items: rendered, threadTitles };
       },
-      async applyWorkDraft(command) {
-        return applyWorkDraft(command);
+      draftsChangingDocument: (command) => input.pending.listDraftsChangingDocument(command),
+      items: (command) => workItems(command.workId),
+      resolveItem: (command) => input.identity.resolveReviewItem(command),
+      resolveItemByDocument: (command) => input.identity.resolveReviewItemByDocument(command),
+      preview,
+      lookupCommand: (envelope) => input.commands.lookup(envelope),
+      async applyItem(command) {
+        const { envelope, item } = command;
+        const first = await known(envelope);
+        if (first) return first;
+        return effect(envelope, async () =>
+          applyBody(
+            await input.publication.applyItems({
+              workId: command.workId,
+              draftId: item.draftId,
+              selection: {
+                kind: "rendered",
+                items: [{ ...command.tokens, itemKey: item.itemKey }],
+              },
+              userId: command.userId,
+              command: { envelope, shape: "item" },
+              ...(command.signal ? { signal: command.signal } : {}),
+            }),
+            item,
+            item.draftId,
+          ),
+        );
       },
-      async discardWorkDraft(command) {
-        return discardWorkDraft(command);
+      async applyAll(command) {
+        const { envelope, draftId } = command;
+        const first = await known(envelope);
+        if (first) return first;
+        return effect(envelope, async () =>
+          applyBody(
+            await input.publication.applyItems({
+              workId: command.workId,
+              draftId,
+              selection: { kind: "rendered", items: command.items },
+              userId: command.userId,
+              command: { envelope, shape: "all" },
+              ...(command.signal ? { signal: command.signal } : {}),
+            }),
+            null,
+            draftId,
+          ),
+        );
       },
-    },
-    draftSessionStats: {
-      async listActiveDraftsByWork(command) {
-        return listReviewableWorkDraftBranches(command.workId);
+      applyChanges,
+      async discardItem(command) {
+        const { envelope, item } = command;
+        const first = await known(envelope);
+        if (first) return first;
+        const settled: DraftCommandResult = {
+          status: "discarded",
+          draftId: item.draftId,
+          itemKey: item.itemKey,
+          itemClosed: true,
+          itemDisposition: "discarded",
+        };
+        return effect(envelope, async () => {
+          const result = await input.discard.discardItems({
+            workId: command.workId,
+            draftId: item.draftId,
+            selection: {
+              kind: "items",
+              items: [
+                {
+                  documentId: item.documentId,
+                  draftBranchId: item.draftBranchId,
+                  origin: item.origin,
+                },
+              ],
+            },
+            userId: command.userId,
+            command: { envelope, result: settled },
+          });
+          return result.status === "gone"
+            ? { status: "gone", draftId: item.draftId, itemKey: item.itemKey }
+            : settled;
+        });
+      },
+      discardChanges,
+      async discardAll(command) {
+        const { envelope, draftId } = command;
+        const first = await known(envelope);
+        if (first) return first;
+        const settled: DraftCommandResult = { status: "discarded", draftId };
+        return effect(envelope, async () => {
+          const result = await input.discard.discardItems({
+            workId: command.workId,
+            draftId,
+            selection: { kind: "whole" },
+            userId: command.userId,
+            command: { envelope, result: settled },
+          });
+          return result.status === "gone" ? { status: "gone", draftId } : settled;
+        });
       },
     },
   };
 }
 
-function manuscriptContextPath(uri: string | null): string | null {
-  if (!uri?.startsWith("manuscript://")) return null;
-  const path = uri.slice("manuscript://".length).replace(/^\/+/, "");
-  return path ? `/${path}` : null;
+export function reviewContextLocation(uri: string | null): ThreadDraftListItem["contextLocation"] {
+  if (!uri) return null;
+  const parsed = parseUnifiedContextUri(uri);
+  return parsed.ok && isProjectContextTreeScheme(parsed.value.scheme)
+    ? { scheme: parsed.value.scheme, path: `/${parsed.value.path}` }
+    : null;
 }

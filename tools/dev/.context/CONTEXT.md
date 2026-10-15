@@ -1,301 +1,149 @@
-# tools/dev — Dev tooling
+# tools/dev — development contracts
 
-Local-dev-only utilities. Not loaded by the application runtime.
+This page records the safety boundaries for local databases, dev sessions,
+cleanup, migrations, and the `./mf` wrapper. The scripts are implementation;
+this page keeps only contracts that cross them.
 
-**Onboarding:** [DEVELOPMENT.md](../../../DEVELOPMENT.md). **Rules when editing this module:** [AGENTS.md](../AGENTS.md).
+## Environment and database
 
-## What this module owns
+`DEV_DATABASES` is the single registry. Main `.env` values are loaded through
+the shared environment helpers, and linked worktrees rewrite registered URLs to
+an idempotent worktree database. Non-interactive shells need the same
+`applyDevEnvToProcess` path as `.envrc`; failure to derive a scoped database is
+loud, never a fallback.
 
-- **Environment resolution** — `lib/dev-env.ts` (`DEV_DATABASES`, worktree URL rewrite, `applyDevEnvToProcess`, `ensureDirenvAllowed`)
-- **Database admin** — `lib/dev-db.ts` (ensure/create/drop/reset against local Postgres)
-- **Infra lifecycle** — `lib/dev-infra.ts` + `docker-compose.yml` (`postgres:16` on `:54422`)
-- **Schema application** — `bootstrap.ts`, `prepare-db.ts` (ensure DB + extensions; `db:migrate` applies migrations and SQL functions)
-- **Dev orchestration** — `dev-tmux.ts` (worktree-scoped tmux + portless routes)
-- **Session planning** — `dev-session-plan.ts` (canonical env, redacted commands, internal API origin)
-- **Readiness** — `dev-readiness.ts` (real HTTP probes before reporting started)
-- **Tailscale lifecycle** — `lib/tailscale-lifecycle.ts` (stale route pruning, verified external routes)
-- **Worktree cleanup** — `lib/worktree-cleanup.ts` + `prune-worktrees.ts` (merged-branch resource teardown)
-- **`./mf` dev CLI** — `cli/` is the agent-facing CLI behind the repo-root `./mf`
-  shim: a thin wrapper over the app's own HTTP routes and thread WebSocket. It
-  never reads Postgres and holds no business logic; when the API cannot answer a
-  question, add a server route behind the debug gate instead of a CLI-side query.
-  - `cli/core/` is the framework and knows no domain: `command.ts` (`CommandSpec`,
-    `CommandGroup`, strict flat-arg parsing, option helpers), `output.ts` (text /
-    `--json` / NDJSON), `cli-error.ts` (the exit-code contract), `session.ts`
-    (Portless discovery, in-memory dev-login cookie, bounded requests).
-  - `cli/commands/<group>/` holds one command group each (`thread`, `doc`,
-    `project`, `mock`, `log`, `seed`, `api`): one file per command, an `index.ts`
-    exporting the `CommandGroup`, and the group's own helpers (thread:
-    `socket.ts`, `stream.ts`, `events-map.ts`, `transcript.ts`, `resolve.ts`;
-    project: `resolve.ts`; doc: `uri.ts`; mock: `queue.ts`). Groups may import
-    another group's helper module (`thread/send` uses `mock/queue`, `doc/uri`),
-    never `main.ts`; `core/` imports no group.
-  - **Adding a group:** create `cli/commands/<group>/` with its commands and an
-    `index.ts` exporting a `CommandGroup`, then list it in `GROUPS` in
-    `cli/main.ts`. Help, parsing, output, and errors come from `core/`.
-  - **Output contract:** compact text by default; `--json` prints exactly one
-    object, or NDJSON for streams with the terminal envelope last; errors go to
-    stderr. `EXIT` in `cli/core/cli-error.ts` is the exit-code contract. Set
-    `process.exitCode`; never call `process.exit()` (it truncates piped output).
-  - **Missing data** means a new server route behind the debug gate
-    (`resolveDebugPathsEnabled`, `APP_DEBUG=1`, never production), which
-    `pnpm dev` opens by default.
-  - Document commands parse the final path segment with the contracts name codec;
-    `doc put` reports the canonical URI returned by creation. Seed scenario names
-    use writer spelling, not slugs or prose suffixes.
-  - **Imports:** `cli/` may import `@meridian/contracts` (wire types, schemas,
-    path helpers) so it cannot drift from the API, and no other package. A group
-    that needs more (e.g. a live Yjs editor peer needing prosemirror-schema,
-    markup, agent-edit) is the trigger to move `./mf` into its own workspace
-    package rather than widening the tools/dev import rule.
-  - Tests share `cli/test-support/fake-stack.ts` (fake API + thread socket on the
-    real contracts); `cli/main.test.ts` also boots the real `./mf` shim.
+`db:migrate` and `db:apply-functions` resolve the checkout the same way and
+refuse a registered main database unless a human passes `--allow-main-database`;
+their managed-test bypass accepts only a local disposable database whose owner
+PID is a live, distinct ancestor of the command. Any other direct admin or test
+command resolves the checkout the same way before touching a database.
 
-## Directory layout
+`drop-db` protects every reserved main-checkout database; new main-like names
+extend `RESERVED_DATABASES`, not the CLI. `db:reset` is the
+schema-only reset for an owned active database; a full infrastructure wipe is a
+separate explicit operation. `db:migrate` runs the locked migration runner and
+function synchronization.
 
-```
-tools/dev/
-├── lib/
-│   ├── dev-env.ts             DEV_DATABASES registry + worktree URL rewrite
-│   ├── dev-db.ts              CREATE/DROP/EXTENSION admin
-│   ├── test-db-lifecycle.ts   Per-run DB test identity + owner liveness
-│   ├── dev-infra.ts           DB preflight + migration drift check
-│   ├── dev-share-ports.ts     Deterministic Tailscale/backend port assignment per worktree
-│   ├── tailscale-lifecycle.ts Stale route pruning + external route verification
-│   ├── tailscale-external-routes.ts  Pure policy: verify expected bindings
-│   ├── tailscale-stale-routes.ts     Parse serve/funnel status; find dead-target routes
-│   ├── migration-history.ts   Migration identity; repository-history comparison; database plan
-│   ├── migration-runner.ts    Locked, history-checked programmatic migrator (`runMigrations`)
-│   ├── migration-sql.ts       Shared marker/encoding, identifier and chunk parsing for runner + lint
-│   ├── app-boot-contract.ts   Exact child-owned smoke route contract
-│   ├── app-boot-smoke.ts      Shared child lifecycle + route probe harness
-│   ├── worktree-cleanup-ancestry.ts  Remote-first ancestry ref selection
-│   ├── worktree-cleanup-eligibility.ts  Commit-bound cleanup authorization
-│   ├── worktree-cleanup-readiness.ts  Auto cleanup ownership/liveness gates
-│   └── worktree-cleanup.ts    Cleanup resolver + execution engine
-├── docker-compose.yml
-├── bootstrap.ts               pnpm bootstrap
-├── check-db-gate.ts           Reachability-aware local `pnpm check` DB gate
-├── cli/                       ./mf: main.ts (GROUPS, help, dispatch), core/, commands/<group>/, test-support/, fixtures/
-├── dev-tmux.ts                pnpm dev entry point (thin — see session plan, readiness, tailscale)
-├── dev-session-plan.ts        Session command construction + redaction + internal API origin
-├── dev-readiness.ts           HTTP readiness probes (server /readyz + app origin)
-├── dev-output.ts              Structured startup / failure output
-├── dev-mode.ts                CLI arg parsing + mode detection (local/tailscale/funnel)
-├── dev-app-env-passthrough.ts App env key allowlist for tmux command
-├── ensure-db.ts / prepare-db.ts / drop-db.ts / reset-db.ts
-├── smoke-app-dev-transform.ts  Vite dev transform/render boot gate
-├── smoke-app-prod-boot.ts      Production build + Nitro boot gate
-├── run-db-tests.ts             Owned local DB lifecycle + shared Vitest suite
-├── gc-dbs.ts                  Stale worktree database cleanup
-├── print-worktree-env.ts      eval'd by .envrc
-├── portless-routes.ts / portless-prefix.ts / session-identity.ts / tmux-session-store.ts
-├── prune-worktrees.ts         Merged worktree + branch + DB + work-item cleanup
-├── migrate-db.ts              pnpm db:migrate (runner + SQL function sync)
-├── check-migration-history.ts pnpm db:migration-history -- --base <ref> (CI frozen-history check)
-├── migration-lint.ts
-├── project.json               Nx project; exposes the tools typecheck target
-└── tsconfig.json              Canonical strict TypeScript boundary for this directory
-```
+Managed DB tests provision owned databases and route each worker to its own
+clone. Cleanup hands only this invocation's databases to the detached cleanup
+child, verifies owner liveness, and leaves failures for GC. Shared or deployed
+Postgres remains serial. Fixtures isolate state with rollback or the catalog-
+derived FK delete policy, not per-case truncation. Only managed worker URLs get
+`synchronous_commit=off` (a session startup setting); never change shared server
+settings or dev database durability. Do not scale workers with CPU count against
+the shared connection limit, and do not run `pnpm check` and `pnpm test:db` at
+once in one worktree. `pnpm test:all` runs unit and DB projects together; its DB
+reporter rejects a run with no passed or failed DB test, so a unit-only result
+is not combined-run evidence.
 
-## Environment contract
+`pnpm check` ends with `check-db-gate.ts`: it skips loudly only when the
+configured Postgres server is absent or unreachable (the static CI job has no
+database service), and otherwise runs the full managed `pnpm test:db` suite and
+propagates failures. `pnpm test:db` always forces the gate.
 
-- **`DEV_DATABASES`** (`lib/dev-env.ts`) is the single registry — consumers iterate it; never hard-code a second DB env var.
-- Main-checkout **`.env`** is loaded via `loadMainEnvFile`; linked worktrees rewrite registered URLs to `<baseDbName>_<slug>` (idempotent; no silent fallback to shared `meridian`).
-- **`.envrc`** → `print-worktree-env.ts`; **`applyDevEnvToProcess`** applies the same rewrite for pnpm scripts.
+## Session and readiness
 
-## Database contract
+`applyDevEnvToProcess(repoRoot)` precedes `createDevSessionCommand`. The
+executable command may contain secrets and is sent only to tmux; display output
+and `.meridian/dev-session.json` contain the redacted command. The internal SSR
+API origin is the paired worktree server origin, not the public app URL.
 
-- One Postgres server (`:54422`), many databases. Main checkout: **`meridian`** (reserved). Worktrees: **`meridian_<slug>`**.
-- **Garbage collection:** `pnpm dev:gc-dbs -- --yes` considers every database prefixed by a registered main-checkout name (for example, `meridian_*`). It preserves live worktrees, active managed test runs, explicit `<base>_test-manual-*` databases, and reserved names. It drops stale worktree databases and managed test databases whose owner process has stopped.
-- **DB test lifecycle:** against local Postgres, `pnpm test:db` creates and
-  migrates one `<base>_test-run-<pid>-<timestamp>` template, clones eight
-  `-worker-<n>` databases, and routes each Vitest worker to its own clone.
-  `DB_TEST_WORKERS=1..8` can lower concurrency when sharing a busy server; the
-  cap leaves connection headroom rather than scaling with host CPU count.
-  Migration catalog assertions run against those fresh clones instead of
-  replaying migrations in a nested process. After Vitest exits, the runner hands
-  only its own clone/template URLs to
-  a detached cleanup child over IPC. Ownership is checked against the live
-  sending parent before acknowledgment. Cleanup logs live in
-  `.meridian/db-test-cleanup/<owner-pid>.log`; the CLI does not wait on
-  PostgreSQL's forced DROP checkpoint. `dev:gc-dbs` recognizes the encoded
-  owner PID and can reclaim both leftovers and in-flight detached cleanup once
-  that owner exits. Failed drops leave remaining databases for GC. CI/external
-  Postgres instances retain serial execution against their
-  pre-provisioned ephemeral database.
-- **DB suites under load:** runs never share databases, but under shared
-  Postgres load a timed-out fixture hook's async work can overlap the next
-  rollback or FK-DELETE reset inside one worker database, which can cause
-  duplicate-key errors or lock contention that looks like cross-run interference.
-  The 30-second `hookTimeout` mitigates it; the harness fix is
-  [#616](https://github.com/haowjy/meridian-flow/issues/616). Do not run
-  `pnpm check` and `pnpm test:db` at once in one worktree. Inspect the cleanup
-  log when detached drops are still waiting on a
-  PostgreSQL checkpoint. Cleanup relocates that I/O; it does not eliminate it.
-- **Combined tests:** `pnpm test:all` provisions the same managed database fleet,
-  then runs unit and DB projects in one Vitest invocation. The root worker
-  budget matches the owned clone count; a per-project DB cap alone is not
-  sufficient. Unit workers use threads; DB workers use forks. The DB project
-  sets both `root` and `test.dir` to the repository root so package and tooling
-  cases are collected alongside server cases. The configured DB reporter
-  rejects runs with no passed or failed DB test, including tests nested in
-  suites. Caller-selected reporters must preserve that execution guard; a
-  unit-only result is not combined-run evidence. `pnpm test` remains
-  database-free, and `pnpm test:db` remains the DB-only command.
-  Contracts and markup reuse pure worker modules; DB suites reuse modules
-  while suite-owned connections and rollback/FK resets isolate state. Other
-  unit projects retain normal per-file module isolation.
-- **Root check integration:** `pnpm check` ends with `check-db-gate.ts`. A
-  missing or unreachable configured Postgres server is a loud skip because the
-  static CI job has no database service; a reachable server runs the same
-  managed `pnpm test:db` gate and propagates failures. Invoke `pnpm test:db`
-  directly when the DB suite must not skip.
-- **`drop-db`** refuses reserved/main-checkout names. Use **`db:reset`** (schema-only) rather than dropping `meridian`.
-- **Reset:** `db:reset` — drop/recreate `public` + `drizzle` on the active DB, then `prepare-db`.
-- **Full wipe:** `dev:infra:down`, remove `meridian-dev_meridian-postgres-data` volume, `bootstrap`.
+`resolveCheckoutPortlessPrefix` owns hostname derivation for startup, `./mf`,
+and browser tests. Only the primary checkout gets bare names. Linked detached
+checkouts include their session slug and path hash, so equal commits cannot
+alias each other. Commands use Portless named mode, not its branch inference;
+session metadata retains the prefix used by a running stack across Git changes.
+`dev-session-state.ts` validates the checkout-bound launch record and discovers
+its live tmux session. Startup, `./mf`, and browser discovery use that active
+identity, not current HEAD; Git derives only the next launch's identity. A
+single resolved `DevSessionPlan` supplies commands, ports and verification
+expectations. New/reused sessions share one readiness-and-publication pipeline.
 
-## Session planning contract
+Portless is the URL source of truth. `pnpm dev` reports `started` only after
+expected routes, real HTTP readiness probes, and (when enabled) verified
+Tailscale bindings pass. Startup failures identify the repository-relative
+portless log. Tailscale cleanup probes target liveness and turns off individual
+stale routes; it never calls a global reset or removes a live route. `--restart`
+owns its configured ports: after tmux teardown it SIGTERMs every discovered
+holder, waits briefly, then SIGKILLs stragglers, with discovery never gated on
+tmux, cwd, or ancestry; a bound port it cannot inspect aborts startup loudly.
+Fixed app backend ports sit in 20000-27999, below Linux's ephemeral range, so
+an outgoing connection's source port can never hold one; a port busy with no
+listener is reported as such.
+`--force` requests restart semantics too. Both explicitly take over expected
+Portless hostnames with warnings identifying the old PID, cwd when inspectable,
+and backend port; ordinary startup refuses occupied names. Takeover uses
+Portless's route-locked `--force` registration, not a global proxy reset.
+Readiness requires positive route PIDs with cwd evidence inside this checkout,
+and exact configured backend ports, before HTTP probes may pass.
 
-`dev-session-plan.ts` separates **what to run** from **what to print/persist**:
+App boot smokes trust only a live spawned child and the exact shared route
+contract. A foreign listener or generic non-5xx response is not evidence of a
+successful boot.
 
-- **Canonical env before construction.** `applyDevEnvToProcess(repoRoot)` runs before `createDevSessionCommand`, so the tmux command consumes resolved worktree-scoped URLs — never ambient `.env` + ad-hoc pass-through. `dev-tmux.ts` preserves that ordering without tying the contract to source line numbers.
-- **Executable vs display.** `createDevSessionCommand` returns a `DevSessionCommand`: `executable` (may contain secrets, sent to tmux only), `display` (redacted, printed to stdout and persisted in metadata), and `internalApiOrigin` (used by app SSR).
-- **Redaction.** `redactEnvValue` replaces `DATABASE_URL` with `<postgres:host/dbname>`, API keys and cookie passwords with `<redacted>`, and `WORKOS_DEV_LOGIN_EMAIL` with `<redacted>`. Portless env keys (`PORTLESS_*`) and non-sensitive app config pass through unredacted.
-- **Metadata** (`.meridian/dev-session.json`) stores the **display** command only. The `DevSessionMetadata.command` field is redacted; the executable command is never persisted. External routes are verified before being written.
-- **Internal API origin.** `resolveInternalApiOrigin` produces a worktree-prefixed `https://<prefix>.server.meridian.localhost`. This is the paired server origin for SSR API calls — the app never self-proxies through the public Tailnet app URL. Exposed on `DevSessionCommand.internalApiOrigin`; injected as `MERIDIAN_API_ORIGIN` in the tmux command's pass-through exports.
-- **`--print`** dry-run uses the **display** command only.
+## Cleanup and CLI
 
-## Dev server contract
+Worktree cleanup is target-first and commit-bound. It refuses the primary,
+current, dirty, locked, detached, live, or insufficiently evidenced target;
+revalidates ownership, liveness, and the planned ref OID before destructive
+steps; and performs targeted stop, database removal, worktree removal, work-item
+completion, and ref deletion in that order. Batch cleanup needs explicit risk
+acknowledgement and exact merged-PR evidence (ancestry alone is not enough).
+Target-only `--force` permits managed dev-stack and Nx shutdown despite cwd
+occupants, then rechecks that only known shell/tmux executables remain before
+dropping the database and removing the checkout. It never signals those user
+shells/panes and prints their PIDs and tmux pane IDs so owners can `cd` out of
+the deleted directory. Unknown processes, unreadable attributed processes,
+inspection failures, active work items and dirty state still block. Force does
+not bypass merge evidence, branch/HEAD revalidation or structural protections,
+and is rejected with `--auto`. Git worktree removal itself never uses `--force`.
+Never infer staleness from branch ancestry or a branch name, and add no cleanup
+script that bypasses the shared resolver in `lib/worktree-cleanup.ts`. Prune a side-lane
+branch when it merges into its integration branch: once that branch is
+squash-merged, no automatic proof survives, and
+[`WORKTREE-CLEANUP.md`](../WORKTREE-CLEANUP.md) reconstructs evidence for the
+targeted `--manually-verified <reason>` path. That path replaces only automatic
+eligibility discovery; every structural, readiness, and commit-movement guard
+still applies.
 
-- Portless-first — `pnpm portless:list` is the URL source of truth; no raw localhost port assumptions in new dev tools.
-- **Readiness gates.** `pnpm dev` reports `started` only after three gates pass:
-  1. Portless routes present and PIDs registered (`readPortlessState` → `validateExpectedRoutes`)
-  2. Server `/readyz` returns 200 and app origin returns 200 or 3xx (`waitForDevReadiness`, HTTP probes via portless CA)
-  3. Tailscale external routes verified against `tailscale serve status --json` (`TailscaleDevLifecycle.ensureExternalRoutes`)
-  If any gate fails, the script exits with an actionable message and prints the repository-relative `logs/portless.log` path — never prints URLs the app can't reach.
-- **App boot ownership and routes.** `smoke-app-dev-transform.ts` and `smoke-app-prod-boot.ts` trust only the spawned child's reported origin, check that child remains alive, and apply `lib/app-boot-contract.ts`: `/` must return 307; `/login` must return 200 with the Meridian login-page marker. The production gate runs the package's real `build` and validated `start` scripts with fake config scoped to its child. A foreign listener or merely non-5xx response is not success.
-- **Verified Tailscale external routes.** External URLs are only printed after `verifyTailscaleExternalRoutes` confirms the expected `serve`/`funnel` binding exists in `tailscale serve status --json`. An unverified route is treated as a startup failure.
-- **Shared service ports** are deterministic per worktree (`lib/dev-share-ports.ts`): app backend ports in `[20000, 28000)` (below Linux's ephemeral range, so no outgoing connection can take one as its source port), Tailscale HTTPS ports in `[47000, 55000)`, funnel ports are fixed (`443`, `8443`). Hash-based collision avoidance across worktrees.
-- `pnpm dev` → worktree-scoped tmux session; `--stop` terminates this worktree's owned tmux session and routes. `--restart` tears down the session, then owns the configured backend ports: discovered holders receive SIGTERM, a bounded wait, then SIGKILL if needed. Each holder is logged by PID and command. An uninspectable bound port still aborts startup loudly.
-- Before launching portless, dev start prunes stale Tailscale serve/funnel routes whose `127.0.0.1:<port>` target has no live listener. Cleanup is surgical per HTTPS port (`off`) only: never `tailscale serve reset`, and never prune a route with any live target.
-- Tailscale serve is the default (`--tailscale`); `--no-tailscale` opts out to local-only; funnel is explicit opt-in (`--funnel` / `PORTLESS_FUNNEL=1`).
-- Smoke/e2e should use portless/TLS routes unless intentionally in-process.
+The `./mf` shim wraps the app API and thread WebSocket. CLI output is compact
+text by default, exactly one JSON object for `--json`, and NDJSON for streams;
+errors go to stderr and commands set `process.exitCode` rather than calling
+`process.exit()` (it truncates piped output). CLI imports only `@meridian/contracts`
+and asks the debug-gated server for missing data (`resolveDebugPathsEnabled`,
+`APP_DEBUG=1`, never production). A group that needs more, such as a live Yjs
+editor peer, is the trigger to move `./mf` into its own workspace package, not to
+widen this import rule.
 
-## Tailscale lifecycle contract
+`cli/core/` is the domain-free framework (command parsing, output, the exit-code
+contract, session) and imports no group. Each `cli/commands/<group>/` owns its
+commands and helpers; a group may import another group's helper module but never
+`main.ts`. A new group is listed in `GROUPS` in `cli/main.ts`. Document commands
+parse the final path segment with the contracts name codec and report the
+canonical URI creation returns; seed scenario names use writer spelling. A usage
+refusal is current pending state, not a terminal run event: `send` reconciles a
+replayed block with the durable snapshot before exiting 1, and an already
+recovered reply wins over the obsolete refusal.
 
-`lib/tailscale-lifecycle.ts` owns all Tailscale serve/funnel state management during dev startup and teardown:
+## Migration and observability helpers
 
-- **Prune stale routes on start.** `pruneStaleRoutes` reads `serve status --json` + `funnel status --json`, probes every localhost target for liveness, and calls `off` on routes whose targets are all dead. Never touches a route with any live listener.
-- **Surgical per-port cleanup only.** `cleanupExternalRoutes` disables known external routes or falls back to the expected set derived from `SharedDevServicePorts`. Never calls `tailscale serve reset`.
-- **Verified before printed.** `ensureExternalRoutes` registers routes only if `verifyTailscaleExternalRoutes` fails; then re-verifies. Startup fails visibly if verification still fails.
-- **`tailscaleRouteOffArgs`** in `lib/tailscale-stale-routes.ts` is the single call site that produces `off` arguments — no other module touches Tailscale route state.
+Migration identity is the journal entry plus SQL hash. History checks reject
+removed, edited, renumbered, retimestamped, non-contiguous, or out-of-order
+entries. Ordinary files commit each file with history; marked no-transaction
+files autocommit breakpoint chunks and record history last. Lint rules are
+centralized and a skip must be safe on populated tables.
 
-## Worktree cleanup contract
+Gate policy: lint errors always block and warnings block only under `--strict`
+(CI PRs targeting `main` or `staging`); `--changed <ref>` scopes PR lint,
+`--staged` powers pre-commit (errors only), and the `0000_` baseline is
+warning-exempt except `DELETE_WITHOUT_WHERE`. CI always runs `drizzle-kit check`.
+`check-migration-history.ts` compares the head against the base ref's journal
+and SQL without a checkout; CI runs it on PRs into `main`/`staging` and on
+pushes to `main` and `staging`, and only a manual `workflow_dispatch` skips it.
+A column retirement needs a transactional `SET LOCAL lock_timeout` of 1 to 5
+seconds before the drop (it bounds lock acquisition, not hold time), with reads
+removed and data moved in the same change.
 
-`pnpm dev:prune-worktrees` safely tears down merged worktree resources, one deliberate target at a time:
-
-- **Target-first cleanup:** `--target <value>` accepts a work id, worktree path, branch name, or PR number via `gh`.
-- **Manual evidence:** `--manually-verified <reason>` is available only with a direct targeted reference, never a PR number or `--auto`. It records operator-reconstructed evidence when squash history makes automatic proof impossible. It replaces only automatic eligibility discovery and remains bound to the planned local branch OID.
-- **Advanced batch cleanup:** `--auto` is not yet trusted for routine use and requires `--acknowledge-batch-risk`. The acknowledgement permits batch selection only; it bypasses no eligibility or readiness gate.
-- **Resolver** (`lib/worktree-cleanup.ts`) correlates work item ↔ task dir/worktree ↔ branch ↔ PR head branch. Ambiguous matches (multiple worktrees for a target, multiple work items for a worktree) refuse to resolve with candidate lists.
-- **Commit-bound eligibility.** The base branch is detected from `origin/HEAD` (fallback `main`), not hardcoded. Ancestry uses the fetched `origin/<base>` remote-tracking ref when present and falls back to the bare local branch when it is absent; fetch failure is non-fatal so offline cleanup can use existing refs. Planning resolves the local branch ref OID. Explicit `--target` cleanup requires that exact OID to be either an ancestor of the base, the unique head OID of a merged PR matching the base, branch, and repository owner, or covered by a non-empty `--manually-verified` reason on a direct target. Historical same-name PRs, ambiguous matches, GitHub discovery failures, and moved refs are safe refusals. The OID (and ancestry evidence when used) is revalidated immediately before every action against the same selected ancestry ref.
-- **Target readiness.** `--target` applies the same ownership and liveness inspection as `--auto`: dirty or locked worktrees, active Meridian work items, live tmux dev sessions, and processes under the worktree all block planning. Registration, lock state, active work, and liveness are revalidated before stopping dev and again immediately before database teardown.
-- **Batch readiness.** `--auto` accepts exact merged-PR evidence only—ancestry alone is not stale evidence—and skips dirty or locked worktrees, active Meridian work items, live tmux dev sessions, and processes whose cwd is inside the worktree. A missing tmux server/socket with no live listener means no session; an existing but unqueryable server/socket remains an inspection failure. These gates run during planning, before stopping dev, and again immediately before database teardown.
-- **Process-location evidence is target-specific.** A readable cwd inside a worktree blocks that target. When cwd is unreadable, a cmdline reference to the worktree path blocks only that target; unattributed PIDs are surfaced once as a global caveat instead of poisoning every candidate. Residual risk: a process with an unreadable cwd inside the target and no target-path argument cannot be attributed, so `--auto` may miss that holder.
-- **Cleanup order:** targeted cleanup runs stop dev stack → drop DB → remove git worktree → mark linked Meridian work done → atomically delete the local ref with `git update-ref -d <ref> <plannedOid>`. Auto cleanup requires active work to be done before selection, so its reachable order omits the work-item action.
-- **Safety gates:** refuses primary worktree, current or locked worktrees, the base branch, branches that lack mode-appropriate commit evidence, detached worktrees, dirty targets, and auto targets with ownership or liveness evidence.
-- **Confirmation:** dry-run prints every planned action and target; destructive cleanup requires interactive `[y/N]` or `--yes`.
-- **`--dry-run`** prints the plan without executing it.
-
-## WS 426 noise suppression (server-side)
-
-Plain HTTP hits to WebSocket routes (`/api/threads/ws`, `/ws/yjs`) produce 426 Upgrade Required responses. The server observability layer (`apps/server/server/lib/request-observability.ts`, `routeStatusEvent`) suppresses these from the event log — they are expected for non-upgrade requests and never indicate a broken WebSocket:
-
-- `isExpectedWsPlainHttpStatus` returns `true` when `statusCode === 426` and the route is `/api/threads/ws` or `/ws/yjs`.
-- `routeStatusEvent` returns `null` for expected WS status codes (and all sub-400 statuses).
-
-## Migration tooling
-
-`lib/migration-history.ts` is the one owner of migration identity: a journal
-entry (`idx`, `tag`, `when`, `breakpoints`) plus the SHA-256 of its SQL bytes.
-Two consumers compare it:
-
-- `check-migration-history.ts` reads the base ref's journal and SQL with
-  `git show` / `git ls-tree` (no checkout) and refuses any removed, edited,
-  renumbered, or re-timestamped base entry, plus a head journal that is not
-  contiguous in `idx`, strictly increasing and unique in `when`, and unique in
-  tags. CI runs it on PRs into `main`/`staging` (base `HEAD^1`) and on pushes
-  to `main` and, through Deploy Staging's `workflow_call`, `staging` (base
-  `github.event.before`, failing if that commit is gone). Only a manual
-  `workflow_dispatch` skips it.
-- `planDatabaseMigrations` classifies applied `__drizzle_migrations` rows as
-  `edited`, `retimestamped`, `missing-timestamp`, or `unknown`, and pending
-  entries not newer than the newest applied row as `out-of-order`. Any issue
-  is a full refusal. `runMigrations` takes a session `pg_advisory_lock` on a
-  reserved connection before it reads applied rows or creates the Drizzle
-  schema, and holds it for the whole run, so concurrent runners cannot
-  double-apply; the `pnpm dev` preflight in `dev-infra.ts` uses the same plan.
-
-`runMigrations` executes each pending file on that one connection:
-
-- **Ordinary file:** explicit `BEGIN`, its statements and history row, then
-  `COMMIT`. A failure rolls back only that file; earlier files stay applied.
-  postgres.js reserved sessions expose no `begin()`, which is why transaction
-  control is plain SQL on the lock-owning connection.
-- **`-- migration: no-transaction` file** (`lib/migration-sql.ts` normalizes BOM
-  and CRLF before detection): first, for each `CREATE INDEX CONCURRENTLY IF NOT
-  EXISTS` it names, drop that index concurrently if it exists and is INVALID;
-  then autocommit each breakpoint chunk; record history last. A failure leaves
-  partial effects and no history row, so the retry reruns the whole file.
-- **Lost backend:** cleanup never sends `ROLLBACK` or unlock to a dead session
-  (termination already released the lock), and cleanup errors never replace the
-  file-aware failure that `formatMigrationFailure` prints.
-
-`migration-lint.ts` scans migration SQL for risky production patterns: renames,
-drops, unsafe `SET NOT NULL`, CHECKs and FKs without `NOT VALID`, index builds
-and drops without `CONCURRENTLY`, table-wide deletes/updates, `CONCURRENTLY`
-outside a no-transaction file, a concurrent build without `IF NOT EXISTS`, and a
-concurrent statement sharing its breakpoint chunk. All rules live in one `RULES`
-list, evaluated per executable chunk and per `ALTER TABLE` clause. A line can
-opt out with `-- migration-lint: skip <RULE_ID>` only when the statement is
-safe on populated tables; an empty-table reason is not accepted.
-
-Supported modes:
-
-| Mode | Use |
-|---|---|
-| `--all` | Lint every `packages/database/src/migrations/*.sql` file. Used by `pnpm db:migration-lint`. |
-| `--staged` | Lint staged migration SQL only. Used by pre-commit. |
-| `--changed <ref>` | Lint migration SQL added/modified/renamed since `<ref>...HEAD`. Used by PR CI. |
-| `--strict` | Promote warnings to blocking failures. |
-
-Policy:
-
-- Errors always exit non-zero.
-- Warnings exit non-zero only with `--strict`.
-- The squashed `0000_` baseline is warning-exempt; `DELETE_WITHOUT_WHERE` remains
-  an error there too.
-- CI `migration-checks` always runs `drizzle-kit check` as a blocking journal /
-  snapshot-chain check. PRs then run `migration-lint --changed origin/$BASE`;
-  `--strict` is added only when the PR targets `main` or `staging`.
-- Pre-commit runs `migration-lint --staged` when migration SQL is staged. It
-  blocks errors, not warnings.
-
-## Conventions
-
-- Top-level scripts stay thin; reusable logic in `lib/`.
-- `tools/dev/tsconfig.json` is the canonical strict type boundary.
-  `tools/dev/project.json` registers `meridian-dev-tools:typecheck` as
-  `tsc --noEmit -p tsconfig.json`; Nx discovers it for the root
-  `pnpm typecheck` / `pnpm check` gate.
-- URL transforms use `new URL()` — no regex surgery on connection strings.
-- Explicit errors over silent fallback.
-- Provider assumptions stay in dev tooling, not domain code.
-- No file crosses 1,000 lines; `dev-tmux.ts` owns orchestration only, with session planning, readiness, port lifecycle, Tailscale lifecycle, and output policy extracted behind clear interfaces.
-
-## Related documentation
-
-- [`DEVELOPMENT.md`](../../../DEVELOPMENT.md) — env, worktrees, hooks, command reference
-- [`packages/database/README.md`](../../../packages/database/README.md)
-- [`tests/smoke/README.md`](../../../tests/smoke/README.md)
+Plain HTTP requests to `/api/threads/ws` and `/ws/yjs` produce expected 426
+responses and are suppressed by server observability. Add new WebSocket routes
+to the same expected-status policy.

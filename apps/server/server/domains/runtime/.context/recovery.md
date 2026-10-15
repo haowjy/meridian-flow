@@ -1,68 +1,63 @@
 # Recovery: orphan repair and process lanes
 
-Recovery repairs pending runs, placeholders and child reports. A handoff brief
-is protected by the destination's ordinary run claim, not a separate recovery
-owner. See the [process-death decision][kb-process-death].
+Recovery repairs pending runs, placeholders, and child reports after ownership
+is proven dead. A handoff brief uses the destination's ordinary run claim, not a
+separate recovery owner. See the [process-death decision][kb-process-death].
 
-## Placeholder repair
+## Placeholder and run repair
 
-`PENDING_PLACEHOLDER_ROLES` defines both transcript placeholders and discovery
-for repair (`compaction` and handoff seed `system`). A run or brief owns the
-same destination claim while active, so a pending placeholder discovered after
-acquiring that claim is orphaned. `finalizeOrphanedTurns` and the placeholder
-lane in `spawn/orphan-report-repair.ts` repair it; they also repair dead
-primary assistant turns. Compactions use `finalizeExecution`. Handoff seeds
-use `completeHandoffSeed` to write an unavailable card, interrupted recovery
-metadata and history read line, then publish a status refresh.
+`PENDING_PLACEHOLDER_ROLES` discovers compaction and handoff system placeholders.
+The repair lane first acquires the destination session claim and thread lock;
+expired lease time alone never proves death. It then finalizes the dead reply,
+retains its adopted-message receipt long enough to retire and acknowledge the
+exact batch, and clears the turn selector/bound-turn set. Messages not adopted
+by the dead run remain queued. A crashed child publishes one failure report and
+is not restarted for its retired parent message.
 
-Run repair holds the destination thread lock and run claim. Expired lease rows
-alone do not prove death. Once the session claim proves the prior owner is gone,
-the replacement lease retains the dead reply's turn and adopted-message IDs.
-Repair finalizes that reply and atomically retires and acknowledges its exact
-receipt, whether the reply belongs to a primary or child thread. Late messages
-that the dead run never adopted stay queued, and a crashed child publishes one
-failure report without starting again for the retired parent message.
-Every finalized orphan clears the dead turn selector and bound-turn set before
-later work can start. Non-reply repair, including a crashed compaction, clears
-the receipt without acknowledging its adopted messages so the next run can
-deliver them.
+Once the session claim proves the prior owner is gone, `settleStaleExecution`
+repairs while the stale row still holds the dead reply's turn and
+adopted-message IDs, then ends that execution and deletes the row before any
+new lease is inserted ([run identity](delivery.md#run-identity)). Compaction
+uses `finalizeExecution`; handoff uses `completeHandoffSeed` to write an
+unavailable card, interrupted metadata, and history read line. A durable failed
+reply acknowledges its adopted messages and is not restarted by the periodic
+wake sweep. Explicit Retry of the latest failed assistant starts an ordinary
+no-input run with the failed turn in history.
 
-A reply that reaches a durable failed terminal state, including through orphan
-repair, acknowledges every message it adopted and is never restarted by the
-30-second inbox wake sweep. Crash repair keeps the internal `orphaned` reason
-because no shutdown signal reached the runtime, but uses the same writer copy,
-“This response failed.” An explicit Retry of the latest
-failed assistant on an idle primary or subagent thread starts an ordinary
-no-input run; prior user turns already carry its request history. Shutdown
-abort is finalized the same way as a failed reply, with `reason: shutdown` and
-“This response failed.”, after paid rows settle and adopted messages are
-acknowledged, so the writer can Retry after restart.
+## Lease settlement
 
-Production SIGTERM and SIGINT run the bounded shutdown drain before exit. Nitro
-dev intentionally keeps the upstream crash-style worker termination and relies
-on this repair path after Ctrl+C or SIGTERM.
+Sweep lanes (unsettled-turn, placeholder, report, and expired-lease) delegate to
+delivery's `settleStaleExecution` inside one thread-lock transaction. The
+callback decides whether to delete the stale lease and journals the resulting
+projection; status publishes only after commit. A rollback keeps both
+unfinished work and lease. Every path that finalizes orphans under the claim
+(run start, idle materialization, applying due write-mode switches) goes through
+the delivery adapter's one `repairOrphans` helper.
 
-## Handoff claim and release
+Release is guarded: delivery re-reads the receipt and ends the execution
+(`execution.ended` journaled when a turn carries it) only if the same execution
+and holder still own the row and both selector and adopted IDs are empty. A
+sweep candidate may have become a newer orphan; unconditional deletion would
+lose that receipt and replay its adopted message. Terminal paths release their
+lease in their own terminal transaction, including terminal placeholders,
+normal close, and failed compaction successors.
 
-Hand off and Retry take `RunClaim.hold` before creating S. The claim has no
-lease, so pending S reports `awake/generating` with no running turn id. Once
-the ending transaction finishes, the brief releases the claim and calls
-`wakeIfRunnable`; a lost wake during brief generation is picked up by this
-queue reread. A shutdown or lost claim abort leaves S pending; the next run
-start or bounded placeholder sweep repairs it as interrupted. An ending
-transaction failure follows the same path. There is no handoff sweep, relaunch,
-counter or brief-specific claim.
+Recovery decisions must be proven against the production database adapter; an
+in-memory claim is not parity authority. Paid response rows held only in memory
+at process death are lost and cannot be debited.
 
-The ordinary wake sweep remains the backstop for durable inbox messages whose
-wake could not start a run. `drizzle-session-lock.ts` invalidates claims when a
-database session dies, but it detects that only on the session lock's next
-query. While a brief is inside a provider call, its five-second S status poll
-is how it notices that repair has settled S after the claim was lost; the brief
-then aborts without relaunching. This allows stale ownership to clear without
-wedging later claim attempts.
+## Handoff and process lanes
 
-Paid response rows held only in memory at process death are lost and cannot be
-debited; the next repaired or retried attempt may make a duplicate provider
-call.
+A pending handoff seed is repaired by the ordinary placeholder sweep after a
+shutdown, claim loss, or ending-transaction failure. There is no handoff
+relaunch counter or separate handoff sweep. While a brief is in a provider call,
+its bounded status poll notices that repair settled S and aborts without
+relaunching. The ordinary wake sweep remains the backstop for durable inbox
+messages.
+
+Production SIGTERM/SIGINT runs the bounded shutdown drain. Nitro dev may exit
+through its worker runner, leaving repair to restart. Shutdown aborts live work
+with reason `shutdown` after paid rows settle, acknowledges receipts, and
+suppresses new starts and wakes.
 
 [kb-process-death]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/runtime/process-death-turn-recovery.md

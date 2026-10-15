@@ -1,5 +1,8 @@
 # markup — contracts and invariants
 
+This page covers the codec and shared link-scope contracts. The codec owns
+syntax and canonical wire spelling; hosts own identity assignment and storage.
+
 ## Public surface
 
 The root `@meridian/markup` exports:

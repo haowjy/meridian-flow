@@ -1,6 +1,6 @@
 /** Exact, heuristic-free resolution of the Editor workspace owner for one committed route. */
 
-import type { ContextTab } from "@/client/stores";
+import { type ContextTab, editorTabsForWork, isDraftOnly, reviewEntryOf } from "@/client/stores";
 import { type ContextRouteTarget, targetInEditorOf } from "../routing/project-route";
 import { type ContextRouteIdentity, routeTargetForTab } from "./context-removal-planner";
 import { contextTabMatchesRoute } from "./context-tab-identity";
@@ -31,10 +31,16 @@ export function resolveWorkspaceRoute({
   boundDocumentId?: string | null;
 }): WorkspaceRouteResolution {
   if (!locator) return { kind: "unowned" };
+  tabs = editorTabsForWork(tabs, locator.workId);
   // Identity before path (see route-document-owner): a bound document's tab owns the route
   // wherever the tab's path went, and no other tab may own it by holding the path.
   const server = boundDocumentId
-    ? tabs.find((tab) => tab.kind !== "new" && tab.documentId === boundDocumentId)
+    ? tabs.find(
+        (tab) =>
+          tab.kind !== "new" &&
+          tab.documentId === boundDocumentId &&
+          (!isDraftOnly(tab) || (locator.workId && reviewEntryOf(tab, locator.workId))),
+      )
     : tabs.find((tab) => tab.kind !== "new" && contextTabMatchesRoute(tab, locator));
   if (server) {
     return {

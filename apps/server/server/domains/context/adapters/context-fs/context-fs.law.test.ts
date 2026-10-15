@@ -39,6 +39,7 @@ function createUntitledFs(input: {
   const mutationStore = new InMemoryContextTreeMutationStore(backing);
   return {
     fs: new ContextFS({
+      placement: { kind: "live" },
       holder: { projectId: "test-project" },
       links: { within: (_key, operation) => operation() },
       store,
@@ -62,6 +63,7 @@ function createKbFs(documentSync: object = {}) {
     store,
     mutationStore,
     context: new ContextFS({
+      placement: { kind: "live" },
       holder: { projectId: "test-project" },
       links: { within: (_key, operation) => operation() },
       store,
@@ -97,6 +99,7 @@ function manuscriptFs(documentSync: ContextFSDeps["documentSync"]) {
   const backing = createInMemoryContextDocumentStoreBacking();
   const store = new InMemoryContextDocumentStore({ backing });
   return new ContextFS({
+    placement: { kind: "live" },
     holder: { projectId: "test-project" },
     links: { within: (_key, operation) => operation() },
     store,
@@ -219,6 +222,7 @@ describe("ContextFS rename filetype invariant", () => {
     const markdownByDocument = new Map<string, string>();
     const mutationStore = new InMemoryContextTreeMutationStore(backing);
     const context = new ContextFS({
+      placement: { kind: "live" },
       holder: { projectId: "test-project" },
       links: { within: (_key, operation) => operation() },
       store,
@@ -329,11 +333,11 @@ describe("ContextFS write and read", () => {
 });
 
 describe("ContextFS ensureTrackedDocument", () => {
-  it("materializes new tracked documents atomically even when response staging defers later writes", async () => {
+  it("materializes new tracked documents empty and atomically", async () => {
     const { documentSync, ensured, seeded } = documentSyncProbe();
     const fs = manuscriptFs(documentSync);
 
-    const created = await fs.ensureTrackedDocument("chapter-1.md", { deferDocumentSync: true });
+    const created = await fs.ensureTrackedDocument("chapter-1.md");
     if (!created.ok) throw new Error(`create failed: ${created.error.code}`);
     expect(created.value.created).toBe(true);
     expect(ensured).toEqual([created.value.documentId]);
@@ -427,7 +431,11 @@ describe("canonical document naming laws", () => {
       error: { code: "conflict" },
     });
     await fs.ensureTrackedDocument("Chapter.md");
-    await expect(fs.mkdir("Chapter")).rejects.toThrow("Context entry already exists");
+    // A namespace clash is a conflict result naming its occupant, never a throw.
+    await expect(fs.mkdir("Chapter")).resolves.toEqual({
+      ok: false,
+      error: { code: "conflict", occupantKind: "file" },
+    });
     const mover = new ContextTreeMover();
     const dispatch = (path: string): ContextTreeDispatch => ({
       adapter: fs,
@@ -454,14 +462,14 @@ it("atomically claims opposite-kind names across in-memory store instances", asy
   for (const [index, fileFirst] of [true, false].entries()) {
     const name = `Clash ${index}`;
     const file = () =>
-      left.createDocument({
+      left.createDocumentRecordIfAbsent({
         folderId: null,
         name,
         extension: "",
         filetype: "markdown",
         markdown: "",
       });
-    const folder = () => right.createFolder(null, name);
+    const folder = () => right.ensureFolderPath([name]);
     const results = await Promise.allSettled(fileFirst ? [file(), folder()] : [folder(), file()]);
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
     const rejected = results.find((result) => result.status === "rejected");
@@ -534,7 +542,11 @@ describe("router through real ContextFS naming", () => {
     });
     const chapter = await port.ensureTrackedDocument("manuscript://Chapter");
     expect(chapter.ok).toBe(true);
-    await expect(fs.mkdir("Chapter.txt/child")).rejects.toThrow("Context entry already exists");
+    // A namespace clash is a conflict result naming its occupant, never a throw.
+    await expect(fs.mkdir("Chapter.txt/child")).resolves.toEqual({
+      ok: false,
+      error: { code: "conflict", occupantKind: "file" },
+    });
     expect(
       await port.commitWriterLocation("manuscript://Chapter", "manuscript://Lore"),
     ).toMatchObject({ ok: false, error: { code: "conflict" } });

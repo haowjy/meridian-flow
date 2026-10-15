@@ -1,38 +1,37 @@
 # @meridian/agent-edit
 
-Reusable Yjs agent-edit core: model-facing document `read` and `write`,
-response-scoped commit buffering, write handles, and cold undo/redo over
-host-provided ports. `read()` and `write()` are separate entry points; every
-`write` command changes a document.
+Reusable Yjs editing core for model-facing document `read` and `write`,
+response-scoped commit buffering, write handles, and forward inverses. Reads
+and writes are separate entry points; every write command changes a document.
 
 ## Mental model
 
-Agent-edit edits a memory-only runtime Y.Doc. The host supplies durable journal
-ports and live/branch coordinators; the package never owns Postgres, Hocuspocus,
-routes, auth, or Meridian Work/Project concepts. The coordinator's document is
-this core's canonical world; it need not be the host's live document.
+Agent-edit owns a memory-only runtime Y.Doc. The host supplies durable journal,
+coordinator, lifecycle, link, and model ports; this package owns no Postgres,
+routes, auth, or Meridian Project/Work concepts. Runtime state is rebuilt from
+host-retained updates and checkpoints.
 
-Runtime sync state is memory-only. The journal is the only durable record;
-restart/cold paths reconstruct from retained updates/checkpoints. Attribution is
-host-provided per interaction and must not depend on session-lifetime snapshots.
-
-`ResponseCommitter` owns deferred response writes as an explicit durability
-lifecycle: journal submission precedes coordinator projection, but submission can
-be host-staged rather than durable. Finalization follows the host transaction;
-recovery follows the explicit acceptance state, never an inferred catch path.
-The committer owns one immutable snapshot and one promise while committing;
-immediate writes use the journal kind returned by submission to restore or recover atomically.
+`ResponseCommitter` is the explicit response durability lifecycle: it stages
+writes, accepts or rolls them back according to host settlement, and owns
+private draft helpers. A prepared read is a disposable lease. Reporting is
+best-effort and never mutates recovery state.
 
 ## Rules
 
-- Public reads go through `read()`; mutations go through `write()` / `reverse()` /
-  response lifecycle APIs.
-- Do not bypass `ResponseCommitter` or infer durability from live projection; the
-  journal boundary decides whether rollback may discard or must recover.
-- Destructive policy is report-only: Yjs merge never blocks an agent write.
-  Echo reports best-effort direct-write destructive evidence. That evidence never
-  feeds branch-settlement sweep or apply authority.
-- Keep the kernel CRDT-neutral but be honest that v1 content currency is
-  ProseMirror via `@meridian/markup`.
+- Public reads use `read()` and mutations use `write()` or response lifecycle
+  APIs. The browser-safe `./yjs-mutation` subpath is only the host's pinned
+  reconstruction adapter; it does not own persistence, attribution, or undo.
+- Never bypass `ResponseCommitter` or infer durability from live projection.
+  The journal boundary decides whether rollback discards or recovers.
+- Yjs merge is trusted. Destructive policy is report-only; it never blocks an
+  otherwise valid agent write. Echo reports best-effort direct-write
+  destructive evidence, and that evidence never feeds branch-settlement sweep
+  or apply authority.
+- Attribution is host-provided per interaction and must not depend on
+  session-lifetime snapshots.
+- Keep the kernel CRDT-neutral while treating v1 content as ProseMirror via
+  `@meridian/markup`.
 
-→ [`.context/CONTEXT.md`](.context/CONTEXT.md)
+See [contracts and architecture](.context/CONTEXT.md), which links the port,
+write, invariant, link, and tool-surface references. Deferred work and rejected
+alternatives are [TODO/FUTURE](.context/TODO.md) and [ALTERNATIVES](.context/ALTERNATIVES.md).

@@ -1,6 +1,7 @@
 /** Project first Send: mint ids, record the durable intent, select the current chat, persist in the background. */
 import type { SubmittedReference, UserMessageBlock } from "@meridian/contracts/protocol";
-import type { ChatSubmission } from "@/client/chat-submissions";
+import type { AiWriteMode } from "@meridian/contracts/works";
+import type { NewChatSubmission } from "@/client/chat-submissions";
 import { recordAndProjectSubmission } from "@/client/chat-submissions/owner";
 import type { ThreadStoreActions } from "@/client/stores";
 import type { ComposerDraftSnapshot } from "@/components/app/composer/composer-document";
@@ -19,6 +20,10 @@ export type SendProjectChatArgs = {
   activatedSkillSlugs?: readonly string[];
   agent: CreationAgent;
   workId: string;
+  /** The selected Work's default: the new chat's mode unless the writer chose one. */
+  workAiWriteMode: AiWriteMode;
+  /** The writer's explicit choice in this composer; it becomes the Work's default too. */
+  aiWriteMode?: AiWriteMode;
   threadActions: ThreadStoreActions;
   selectChat: (threadId: string) => void;
   now?: number;
@@ -39,6 +44,8 @@ export function sendProjectChat({
   activatedSkillSlugs,
   agent,
   workId,
+  workAiWriteMode,
+  aiWriteMode,
   threadActions,
   selectChat,
   now,
@@ -51,7 +58,7 @@ export function sendProjectChat({
     // Durable witness before any display or navigation: if the intent cannot be
     // persisted, do not show a destination or dispatch it. Keep the draft so
     // the composer can report the local failure.
-    const submission: ChatSubmission = {
+    const submission: NewChatSubmission = {
       recordId: submissionId,
       submissionId,
       threadId,
@@ -65,6 +72,8 @@ export function sendProjectChat({
       creation: {
         title,
         workId,
+        workAiWriteMode,
+        ...(aiWriteMode ? { aiWriteMode } : {}),
         agentSelection: agent.selection,
         agentName: agent.name,
         agentSlug: agent.slug,

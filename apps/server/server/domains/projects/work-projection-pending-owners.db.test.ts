@@ -1,4 +1,4 @@
-/** PostgreSQL barriers for real discard, redo, push, and rollback Work projection owners. */
+/** PostgreSQL barriers for real discard, push, and rollback Work projection owners. */
 import { catalogScopeKey } from "@meridian/contracts/protocol";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
@@ -7,6 +7,7 @@ import {
   contextSources,
   documentBranches,
   documents,
+  drafts,
   projects,
   users,
   works,
@@ -19,11 +20,16 @@ import { deleteDrizzleRows, useRollbackTestDatabase } from "../../test-support/d
 import {
   createDrizzleBranchJournalReadStore,
   createDrizzlePushCommitStore,
+  createDrizzleWorkDraftPendingStore,
 } from "../collab/adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "../collab/adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailAggregateWriter } from "../collab/adapters/drizzle-change-trail-aggregate.js";
-import { stagePendingSettlementWithinTx } from "../collab/adapters/drizzle-pending-settlement.js";
-import { createBranchCriticalSections } from "../collab/domain/branch-critical-sections.js";
+import { createDrizzleDraftStore } from "../collab/adapters/drizzle-drafts.js";
+import {
+  createDrizzlePendingSettlementStore,
+  stageSettlementBatchWithinTx,
+} from "../collab/adapters/drizzle-pending-settlement.js";
+import { trailContributionReplacement } from "../collab/domain/branch-trail-projection.js";
 import { createDrizzleContextCatalog } from "../context/adapters/context-catalog.js";
 import { createDrizzleProjectContextAvailability } from "../context/adapters/project-context-availability.js";
 import { createWorkProjectionMutation } from "./adapters/work-projection-mutation.js";
@@ -41,6 +47,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const SOURCE_ID = "00000000-0000-4000-8000-000000000944";
     const DOCUMENT_ID = "00000000-0000-4000-8000-000000000945";
     const BRANCH_ID = "branch_work_projection_pending_owner";
+    const DRAFT_ID = "00000000-0000-4000-8000-00000000094b";
     const database = useRollbackTestDatabase(DATABASE_URL, {
       prepareSuite: (db) => deleteDrizzleRows(db, [users]),
     });
@@ -75,19 +82,30 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         extension: "",
         fileType: "markdown",
       });
+      await db.insert(drafts).values({
+        id: DRAFT_ID,
+        projectId: PROJECT_ID,
+        originWorkId: WORK_ID,
+        createdBy: USER_ID,
+      });
       await db.insert(documentBranches).values({
         id: BRANCH_ID,
         documentId: DOCUMENT_ID,
         kind: "work_draft",
-        workId: WORK_ID,
-        state: Buffer.from([0]),
+        draftId: DRAFT_ID,
+        state: Buffer.from([0, 0]),
         stateVector: Buffer.from([0]),
       });
       const availability = createDrizzleProjectContextAvailability(db);
       const catalog = createDrizzleContextCatalog(db, undefined, {
         availabilityMutations: availability,
       });
-      const projection = createWorkProjectionMutation({ db, availability, catalog });
+      const projection = createWorkProjectionMutation({
+        db,
+        availability,
+        catalog,
+        pending: createDrizzleWorkDraftPendingStore(db),
+      });
       await catalog.refreshProject(PROJECT_ID);
       return { db, projection };
     }
@@ -122,14 +140,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       };
     }
 
-    it("drives real discard, redo, push, and forced rollback owners", async () => {
+    it("drives real discard, push, and forced rollback owners", async () => {
       const { db, projection } = await fixture();
-      const branches = createDrizzleBranchStore(
-        db,
-        undefined,
-        createBranchCriticalSections(),
-        projection,
-      );
+      const branches = createDrizzleBranchStore(db, {
+        workProjection: projection,
+        drafts: createDrizzleDraftStore(db),
+      });
       const appendJournal = (updateMeta: unknown) =>
         branches.appendJournal?.({
           branchId: BRANCH_ID,
@@ -139,8 +155,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           updateMeta,
         }) ?? Promise.reject(new Error("Drizzle branch journal append is unavailable"));
       const initial = await projectionState();
-      await appendJournal({ kind: "manifest_membership", documentId: DOCUMENT_ID });
-      await expect(projectionState()).resolves.toEqual(initial);
       await appendJournal({ kind: "edit" });
       const appended = await projectionState();
       expect(appended.entityRevision).toBe((initial.entityRevision ?? 0n) + 1n);
@@ -154,17 +168,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: DOCUMENT_ID as never,
         kind: "work_draft" as const,
         upstreamBranchId: null,
+        draftId: DRAFT_ID,
         workId: WORK_ID as never,
         threadId: null,
         generation: 1,
         status: "active" as const,
-        state: new Uint8Array([0]),
+        state: new Uint8Array([0, 0]),
         stateVector: new Uint8Array([0]),
         schemaVersion: 1 as never,
       };
       const pushStore = createDrizzlePushCommitStore(
         db,
-        stagePendingSettlementWithinTx,
+        stageSettlementBatchWithinTx,
         createDrizzleChangeTrailAggregateWriter(db),
         undefined,
         projection,
@@ -193,15 +208,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const discarded = await projectionState();
       expect(discarded.entityRevision).toBe((appended.entityRevision ?? 0n) + 1n);
-      await pushStore.commitTurnRedo({
-        branch,
-        journalRows: rows,
-        state: branch.state,
-        stateVector: branch.stateVector,
-      });
-      const redone = await projectionState();
-      expect(redone.entityRevision).toBe((discarded.entityRevision ?? 0n) + 1n);
-
+      // The discard closed those rows and left the branch equal to live; a fresh write makes it
+      // differ again before the push stages its row.
+      await db
+        .update(documentBranches)
+        .set({ hasEffect: true })
+        .where(eq(documentBranches.id, BRANCH_ID));
+      await appendJournal({ kind: "edit" });
+      const staged = await projectionState();
+      const pushRows = await journal.listReviewableJournalRows(BRANCH_ID, 1);
       const validUpdate = Y.encodeStateAsUpdate(new Y.Doc());
       const trail = {
         documentId: DOCUMENT_ID,
@@ -211,34 +226,171 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         journalOwners: [],
         changes: [],
       };
-      await pushStore.commitPush({
-        branch,
-        journalRows: rows,
-        pushUpdate: validUpdate,
-        idempotencyKey: "work-projection-pending-owner-push",
-        trail,
-        pendingLiveSettlement: {
-          documentTitle: "chapter.md",
-          lockCutUpdate: validUpdate,
-          pushUpdate: validUpdate,
-          postCutUpdates: [],
-          trail,
-          sweepEvidence: null,
-          joinVersion: 0,
-          settledJoinVersion: null,
-          claim: {
-            token: "00000000-0000-4000-8000-000000000947",
-            epoch: 1,
-            kind: "warm",
-            leaseExpiresAt: new Date(Date.now() + 30_000),
-          },
-          attemptCount: 0,
-          state: "pending",
+      await pushStore.commitPushBatch({
+        settlement: {
+          batchId: "00000000-0000-4000-8000-000000000948",
+          claimToken: "00000000-0000-4000-8000-000000000947",
         },
+        pushes: [
+          {
+            branch,
+            journalRows: pushRows,
+            pushUpdate: validUpdate,
+            idempotencyKey: "work-projection-pending-owner-push",
+            trail,
+            documentTitle: "chapter.md",
+            lockCutUpdate: validUpdate,
+          },
+        ],
       });
       const pushed = await projectionState();
-      expect(pushed.entityRevision).toBe((redone.entityRevision ?? 0n) + 1n);
+      expect(pushed.entityRevision).toBe((staged.entityRevision ?? 0n) + 1n);
       expect(BigInt(pushed.catalogEntityRevision ?? "0")).toBe(pushed.entityRevision);
+
+      // Withdrawal makes the draft pending again: a refused batch, then a batch whose only
+      // member is held, each publish the Work like the push that staged them did.
+      let decision: "refuse" | "hold" = "refuse";
+      const settlement = createDrizzlePendingSettlementStore(
+        db,
+        {} as never,
+        {} as never,
+        createDrizzleChangeTrailAggregateWriter(db),
+        {} as never,
+        undefined,
+        undefined,
+        {
+          steps: [
+            {
+              kind: "test_decision",
+              async plan() {
+                return {
+                  async beforeAdmission() {
+                    return decision === "refuse"
+                      ? { kind: "refuse" as const, reason: { code: "stale" } }
+                      : {
+                          kind: "proceed" as const,
+                          hold: [
+                            {
+                              itemKey: "chapter",
+                              documentId: DOCUMENT_ID as never,
+                              reason: { code: "path_taken" },
+                            },
+                          ],
+                        };
+                  },
+                };
+              },
+            },
+          ],
+        },
+        projection,
+      );
+      const settle = async (batchId: string, claimToken: string) => {
+        const batch = await settlement.loadSettlementBatch({
+          batchId,
+          owner: { token: claimToken, epoch: 1 },
+        });
+        if (!batch) throw new Error("the committer lost its batch");
+        return settlement.completeBatch({
+          batchId,
+          claim: batch.claim,
+          members: batch.members.map((member) => ({
+            push: member.push,
+            joinVersion: member.joinVersion,
+            trail: member.trail,
+            replacement: trailContributionReplacement(member.trail, member.push),
+          })),
+          payloads: batch.payloads,
+          liveTextFingerprints: new Map(),
+          leasedBranchIds: [],
+          recheck: () => "commit",
+          afterCommit() {},
+        });
+      };
+      const expectPublishedAfter = async (
+        previous: Awaited<ReturnType<typeof projectionState>>,
+      ) => {
+        const state = await projectionState();
+        expect(state.entityRevision).toBe((previous.entityRevision ?? 0n) + 1n);
+        expect(BigInt(state.catalogEntityRevision ?? "0")).toBe(state.entityRevision);
+        expect(state.availabilityGeneration).toBeGreaterThan(previous.availabilityGeneration ?? 0);
+        return state;
+      };
+      await expect(
+        settle("00000000-0000-4000-8000-000000000948", "00000000-0000-4000-8000-000000000947"),
+      ).resolves.toMatchObject({ status: "refused" });
+      const refused = await expectPublishedAfter(pushed);
+
+      decision = "hold";
+      await pushStore.commitPushBatch({
+        settlement: {
+          batchId: "00000000-0000-4000-8000-000000000949",
+          claimToken: "00000000-0000-4000-8000-00000000094a",
+        },
+        pushes: [
+          {
+            branch,
+            journalRows: await journal.listReviewableJournalRows(BRANCH_ID, 1),
+            pushUpdate: validUpdate,
+            idempotencyKey: "work-projection-pending-owner-push",
+            trail,
+            documentTitle: "chapter.md",
+            lockCutUpdate: validUpdate,
+          },
+        ],
+      });
+      const repushed = await expectPublishedAfter(refused);
+      await expect(
+        settle("00000000-0000-4000-8000-000000000949", "00000000-0000-4000-8000-00000000094a"),
+      ).resolves.toMatchObject({ status: "completed", held: [{ itemKey: "chapter" }] });
+      await expectPublishedAfter(repushed);
+    });
+
+    it("publishes an effect toggle on a branch that keeps its reviewable rows", async () => {
+      const { db, projection } = await fixture();
+      const pending = createDrizzleWorkDraftPendingStore(db);
+      await createDrizzleBranchStore(db, {
+        workProjection: projection,
+        drafts: createDrizzleDraftStore(db),
+      }).appendJournal?.({
+        branchId: BRANCH_ID,
+        generation: 1,
+        updateData: new Uint8Array([1]),
+        source: "agent",
+        updateMeta: { kind: "edit" },
+      });
+      const setEffect = (hasEffect: boolean) =>
+        projection.mutatePendingBranches([BRANCH_ID], async () => {
+          await db
+            .update(documentBranches)
+            .set({ hasEffect })
+            .where(eq(documentBranches.id, BRANCH_ID));
+        });
+      // The hint and the catalog count read the one membership relation; the Work revision follows.
+      const agree = async (members: number) => {
+        expect(
+          (await pending.countPendingByWorkIds([WORK_ID as never])).get(WORK_ID as never) ?? 0,
+        ).toBe(members);
+        await expect(
+          pending.listDraftsChangingDocument({
+            projectId: PROJECT_ID as never,
+            documentId: DOCUMENT_ID as never,
+          }),
+        ).resolves.toHaveLength(members);
+      };
+      await agree(1);
+      for (const [hasEffect, members] of [
+        [false, 0],
+        [true, 1],
+      ] as const) {
+        const before = await projectionState();
+        await setEffect(hasEffect);
+        await agree(members);
+        const after = await projectionState();
+        expect(after.entityRevision).toBe((before.entityRevision ?? 0n) + 1n);
+        expect(BigInt(after.catalogEntityRevision ?? "0")).toBe(after.entityRevision);
+        expect(after.availabilityGeneration).toBeGreaterThan(before.availabilityGeneration ?? 0);
+      }
     });
   });
 }

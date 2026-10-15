@@ -71,6 +71,8 @@ export type EditorUser = {
 /** Project whose asset namespace resolves `asset:<documentId>` image sources. */
 export type AssetRenderContext = {
   projectId?: string;
+  /** The Work the viewer is in: a picture still in its draft is signed through it. */
+  workId?: string;
 };
 
 export type CreateEditorExtensionsOptions = {
@@ -309,7 +311,14 @@ export function createEditorExtensions({
     // ephemeral half of image ingress mounts here rather than beside the door.
     ...(schemaType === "document" ? [ImageUploadPresenceExtension.configure({ presence })] : []),
     ...(markerStore ? [PeerMarkerExtension.configure({ markerStore, agentNames })] : []),
-    ...(enableDraftInlineReview ? [DraftInlineReviewExtension] : []),
+    ...(enableDraftInlineReview
+      ? [
+          DraftInlineReviewExtension.configure({
+            document,
+            adoptDocumentClient: presence.adoptDocumentClient,
+          }),
+        ]
+      : []),
   ];
 }
 
@@ -355,11 +364,15 @@ export function createStandaloneEditorExtensions({
     MeridianTableHeader,
     MeridianTableCell,
     MeridianCodeBlockLowlight.configure({ lowlight }),
-    MeridianImage.configure({ projectId: assetRenderContext?.projectId }),
+    MeridianImage.configure({
+      projectId: assetRenderContext?.projectId,
+      workId: assetRenderContext?.workId,
+    }),
     MeridianJsxLeaf,
     MeridianJsxContainer,
     MeridianFigure.configure({
       projectId: assetRenderContext?.projectId,
+      workId: assetRenderContext?.workId,
     }),
     ...(slashCommands
       ? [

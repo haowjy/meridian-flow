@@ -1,7 +1,17 @@
 /** Document commands normalize preparation failures and install tabs before any transfer effect. */
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { parseRequestId } from "@meridian/contracts/request-id";
-import { type ContextTab, getContextTabs, useContextTabsStore } from "@/client/stores";
+import {
+  type ContextTab,
+  editorTabsForWork,
+  getContextTabs,
+  isDraftOnly,
+  matchesReviewItem,
+  matchesTabInstance,
+  reviewEntryOf,
+  useContextTabsStore,
+} from "@/client/stores";
+import { armEditorFocus } from "@/features/editor/focus-on-open";
 import { routeTargetForTab } from "../context/context-removal-planner";
 import { contextTabMatchesRoute } from "../context/context-tab-identity";
 import { resolveLaunchLocator } from "./launch-locator";
@@ -23,7 +33,7 @@ export type EditorCommandSnapshot = {
   editorWorkId: string | null;
   noWorkId: string | null;
   addressDocumentId?: string;
-  manuscriptCatalog: Parameters<typeof resolveLaunchLocator>[0]["catalog"];
+  documentCatalog: Parameters<typeof resolveLaunchLocator>[0]["catalog"];
 };
 export function createEditorDocumentCommand({
   projectId,
@@ -36,7 +46,7 @@ export function createEditorDocumentCommand({
   accountId: string;
   read: () => EditorCommandSnapshot;
   lookup: Parameters<typeof resolveLaunchLocator>[0]["lookup"];
-  admitDraftReview: (tab: Extract<ContextTab, { kind: "tracked" }>) => void;
+  admitDraftReview: (tab: Extract<ContextTab, { kind: "tracked" }>, workId: string) => void;
 }): OpenContextRoute {
   return async (request, options) => {
     const current = read();
@@ -64,8 +74,9 @@ export function createEditorDocumentCommand({
           tabs: getContextTabs(projectId).tabs,
           addressed: current.address.destination,
           addressNamesIt: sameDocument,
-          draftOnly: options.tab?.kind === "tracked" && options.tab.draftOnly === true,
-          catalog: current.manuscriptCatalog,
+          draftOnly: options.tab !== undefined && isDraftOnly(options.tab),
+          catalog: current.documentCatalog,
+          selected: !!options.itemKey && !!requested.workId,
           lookup,
         });
         if (options.isCurrent?.() === false) return { kind: "superseded" };
@@ -74,21 +85,40 @@ export function createEditorDocumentCommand({
       // Re-opening the document the address names (a rename or move following
       // its own placement, a review re-launch) keeps the review the address
       // carries; any other document starts without one.
+      // A draft-only tab has no live document: its own review identity is the only
+      // destination that resolves, so every re-select or restore of it carries that.
+      // A request naming an open draft-only tab without carrying it (a repair's fallback) gets
+      // that tab's review the same way a click on it does.
+      const addressedTab =
+        options?.tab ?? openDraftOnlyTabFor(getContextTabs(projectId).tabs, requested);
+      const itemKey =
+        options?.itemKey ??
+        (addressedTab ? reviewItemKeyOf(addressedTab, requested.workId) : undefined) ??
+        (sameDocument ? current.address.itemKey : undefined);
       const next = prepareEditorDestination(
         { projectId, accountId, address: current.address, noWorkId: current.noWorkId },
         target,
         preparedTab,
-        options?.draftId ?? (sameDocument ? current.address.draftId : undefined),
+        itemKey,
+        options?.changeId ??
+          (sameDocument && (!itemKey || itemKey === current.address.itemKey)
+            ? current.address.changeId
+            : undefined),
       );
       const tab = next.tab;
       if (!navigation.isCurrent(ticket)) return { kind: "superseded" };
       const commit = () => {
         let selected = tab;
         if (preparedTab) {
-          const installed = useContextTabsStore.getState().openTab(projectId, preparedTab);
+          const installed = useContextTabsStore
+            .getState()
+            .openTab(projectId, preparedTab, undefined, resolvedWorkId ?? undefined);
           if (installed.kind !== "opened") throw new Error("Editor tab could not be opened");
-          if (installed.tab.kind === "tracked") admitDraftReview(installed.tab);
+          if (installed.tab.kind === "tracked" && resolvedWorkId)
+            admitDraftReview(installed.tab, resolvedWorkId);
           selected = installed.tab;
+          if (options?.focus && installed.tab.tabInstanceId)
+            armEditorFocus(installed.tab.tabInstanceId);
         }
         if (selected && resolvedWorkId)
           void useContextTabsStore
@@ -99,6 +129,7 @@ export function createEditorDocumentCommand({
                 ? routeTargetForTab(selected, resolvedWorkId).workId
                 : resolvedWorkId,
               selected.documentId,
+              selected,
             );
       };
       if (
@@ -155,7 +186,8 @@ export function prepareEditorDestination(
   },
   target: ContextRouteRequest,
   preparedTab?: ContextTab,
-  draftId?: string,
+  itemKey?: string,
+  changeId?: string,
 ) {
   let state: Record<string, unknown> | undefined;
   const workspace = getContextTabs(projectId);
@@ -165,13 +197,23 @@ export function prepareEditorDestination(
     (target.path === "" && resolvedWorkId
       ? workspace.selectedTabIdByWork[resolvedWorkId]
       : undefined);
-  const tab = documentId
-    ? workspace.tabs.find((tab) => tab.documentId === documentId)
-    : resolvedWorkId
-      ? workspace.tabs.find((tab) =>
-          contextTabMatchesRoute(tab, { ...target, workId: resolvedWorkId }),
+  const eligible = editorTabsForWork(workspace.tabs, resolvedWorkId ?? null);
+  const addressedDraft =
+    itemKey && documentId && resolvedWorkId
+      ? eligible.find((tab) =>
+          matchesReviewItem(tab, {
+            reviewWorkId: resolvedWorkId,
+            reviewItemKey: itemKey,
+          }),
         )
       : undefined;
+  const tab =
+    addressedDraft ??
+    (documentId
+      ? eligible.find((tab) => tab.documentId === documentId)
+      : resolvedWorkId
+        ? eligible.find((tab) => contextTabMatchesRoute(tab, { ...target, workId: resolvedWorkId }))
+        : undefined);
   const selected = preparedTab ?? tab;
   // A locally created document keeps its stable selection even when its
   // readable address is reused or its background placement is rejected.
@@ -180,7 +222,7 @@ export function prepareEditorDestination(
     (selected?.kind === "tracked" && selected.origin === "local-resource")
   ) {
     const tabs = preparedTab
-      ? [...workspace.tabs.filter((tab) => tab.documentId !== preparedTab.documentId), preparedTab]
+      ? [...workspace.tabs.filter((tab) => !matchesTabInstance(tab, preparedTab)), preparedTab]
       : workspace.tabs;
     if (
       !selected?.resourceHandle ||
@@ -222,11 +264,26 @@ export function prepareEditorDestination(
         ? { kind: "absent" }
         : workSelectionFor(destination, target.workId, noWorkId),
       ...(target.rootThreadId ? { lineage: parseRequestId(target.rootThreadId) } : {}),
-      draftId,
+      itemKey,
+      changeId: itemKey ? changeId : undefined,
     } as ProjectAddress,
     state,
   };
 }
+function openDraftOnlyTabFor(
+  tabs: readonly ContextTab[],
+  request: ContextRouteRequest,
+): ContextTab | undefined {
+  if (!request.workId) return undefined;
+  const workId = request.workId;
+  return editorTabsForWork(tabs, workId).find(
+    (tab) => isDraftOnly(tab) && contextTabMatchesRoute(tab, { ...request, workId }),
+  );
+}
+function reviewItemKeyOf(tab: ContextTab, workId: string | undefined): string | undefined {
+  return workId ? reviewEntryOf(tab, workId)?.itemKey : undefined;
+}
+
 /** A prepared tab states the locator the route will use, not the one it was built from. */
 function tabAtLocator(tab: ContextTab, locator: ContextRouteRequest): ContextTab {
   if (tab.kind === "new" || (tab.scheme === locator.scheme && tab.path === locator.path))

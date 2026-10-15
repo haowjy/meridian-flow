@@ -4,7 +4,15 @@ import {
   isWorkScopedProjectContextScheme,
   type WorkingSetRoute,
 } from "@meridian/contracts/protocol";
-import type { ContextTab } from "@/client/stores";
+import {
+  type ContextTab,
+  editorTabsForWork,
+  isDraftOnly,
+  matchesTabInstance,
+  reviewEntriesOf,
+  reviewEntryOf,
+  withoutReviewEntry,
+} from "@/client/stores";
 import {
   buildWorkingSetRoute,
   type ReconcileContextRoutesInput,
@@ -25,6 +33,10 @@ export type ContextRemovalIntent = {
     | "work-prune"
     | "draft-discard";
   documentIds: readonly string[];
+  /** Writer close and draft settlement address a mounted tab, not every document representation. */
+  tabInstanceId?: string;
+  /** Discard and a writer's close of a draft-only tab are one Work's: the tab stays while another Work still reviews the document. */
+  reviewWorkId?: string;
 };
 
 export type ContextRouteIdentity = { kind: "server" | "local"; documentId: string };
@@ -100,11 +112,6 @@ export type ContextRemovalPlannerInput = {
     current: RouteContinuityVerdict;
   };
   intent: ContextRemovalIntent;
-  /** Exact transient representation already consumed, with its authoritative survivors. */
-  consumed?: {
-    removed: readonly ContextTab[];
-    survivors: readonly ContextTab[];
-  };
 };
 
 export type ExactRouteCleanup = {
@@ -175,12 +182,14 @@ export function contextTabEligibleForRemoval(
   intent: ContextRemovalIntent,
 ): boolean {
   if (!intent.documentIds.includes(tab.documentId)) return false;
+  if (intent.tabInstanceId !== undefined && tab.tabInstanceId !== intent.tabInstanceId)
+    return false;
   switch (intent.cause) {
     case "writer-close":
       return true;
     case "catalog-unavailable":
     case "authority-unavailable":
-      return tab.kind !== "new" && !tab.draftOnly;
+      return tab.kind !== "new" && !isDraftOnly(tab);
     case "work-prune":
       return (
         tab.kind !== "new" &&
@@ -188,7 +197,7 @@ export function contextTabEligibleForRemoval(
         isWorkScopedProjectContextScheme(tab.scheme)
       );
     case "draft-discard":
-      return tab.kind !== "new" && tab.draftOnly === true;
+      return tab.kind !== "new" && isDraftOnly(tab);
   }
 }
 
@@ -214,7 +223,8 @@ export function routeTargetForTab(tab: ContextTab, activeWorkId: string): Contex
       workId: activeWorkId,
       rootThreadId: tab.rootThreadId,
     };
-  let workId = activeWorkId;
+  const reviewers = Object.keys(reviewEntriesOf(tab));
+  let workId = reviewEntryOf(tab, activeWorkId) ? activeWorkId : (reviewers[0] ?? activeWorkId);
   if (isWorkScopedProjectContextScheme(tab.scheme)) {
     if (!tab.workId) throw new Error("Work-scoped tab has no Work owner");
     workId = tab.workId;
@@ -230,13 +240,14 @@ function adjacentSurvivor(
   if (!anchorDocumentId) return remaining[0] ?? null;
   const anchor = tabs.findIndex((tab) => tab.documentId === anchorDocumentId);
   if (anchor < 0) return remaining[0] ?? null;
-  const surviving = new Set(remaining.map((tab) => tab.documentId));
+  const survives = (tab: ContextTab) =>
+    remaining.some((member) => matchesTabInstance(member, tab) || member === tab);
   return (
-    tabs.slice(anchor + 1).find((tab) => surviving.has(tab.documentId)) ??
+    tabs.slice(anchor + 1).find((tab) => survives(tab)) ??
     tabs
       .slice(0, anchor)
       .reverse()
-      .find((tab) => surviving.has(tab.documentId)) ??
+      .find((tab) => survives(tab)) ??
     null
   );
 }
@@ -244,12 +255,15 @@ function adjacentSurvivor(
 /** Query/cache state is deliberately absent: exact commands are the only removal evidence. */
 export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRemovalPlan {
   const requested = new Set(input.intent.documentIds);
-  const removed =
-    input.consumed?.removed ??
-    input.tabs.filter((tab) => contextTabEligibleForRemoval(tab, input.intent));
+  const removed = input.tabs.filter((tab) => contextTabEligibleForRemoval(tab, input.intent));
   const removedIds = new Set(removed.map((tab) => tab.documentId));
-  const remaining =
-    input.consumed?.survivors ?? input.tabs.filter((tab) => !removedIds.has(tab.documentId));
+  // The membership after the removal, decided once: a review removal can leave
+  // the tab in place for the Works that still present it.
+  const reviewWorkId = input.intent.reviewWorkId;
+  const remaining = input.tabs.flatMap((tab) => {
+    if (!removedIds.has(tab.documentId)) return [tab];
+    return (reviewWorkId && withoutReviewEntry(tab, reviewWorkId)) || [];
+  });
   if (input.activeWorkId === null) {
     // Before any route port registers there is no Editor locator to repair.
     return {
@@ -274,13 +288,16 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
     };
   }
   const activeWorkId = input.activeWorkId;
-  const survives = (documentId: string) => remaining.some((tab) => tab.documentId === documentId);
+  const visibleRemaining = editorTabsForWork(remaining, activeWorkId);
+  const visibleTabs = editorTabsForWork(input.tabs, activeWorkId);
+  const survives = (documentId: string) =>
+    visibleRemaining.some((tab) => tab.documentId === documentId);
   const workspaceSelectedRemoved =
     input.selectedTabId !== null &&
     removedIds.has(input.selectedTabId) &&
     !survives(input.selectedTabId);
   const workspaceSelectedTab =
-    input.tabs.find((tab) => tab.documentId === input.selectedTabId) ?? null;
+    visibleTabs.find((tab) => tab.documentId === input.selectedTabId) ?? null;
   const workspaceSelectedIneligibleForWork =
     input.intent.cause === "work-prune" &&
     workspaceSelectedTab !== null &&
@@ -315,7 +332,6 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
     .filter((route) => !survivingRoutes.some((survivor) => workingSetRouteEquals(survivor, route)));
   const admittedWasRemoved =
     input.admitted !== null &&
-    (input.consumed === undefined || admittedTab === null) &&
     ((provenRemoved !== null && sameTarget(provenRemoved.locator, input.admitted)) ||
       (input.route.cleanup !== null &&
         sameTarget(input.route.cleanup.locator, input.admitted) &&
@@ -349,26 +365,22 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
 
   const routedIdentity = boundSelection?.identity ?? provenRemoved?.identity ?? null;
   const routedTab = routedIdentity
-    ? (input.tabs.find((tab) => tab.documentId === routedIdentity.documentId) ?? null)
+    ? (visibleTabs.find((tab) => tab.documentId === routedIdentity.documentId) ?? null)
     : null;
   const survivingRoutedTab =
     boundSelection && !routedDocumentRemoved
-      ? (remaining.find((tab) => tab.documentId === boundSelection.identity.documentId) ?? null)
+      ? (visibleRemaining.find((tab) => tab.documentId === boundSelection.identity.documentId) ??
+        null)
       : null;
   const anchorDocumentId = routedDocumentRemoved
     ? (routedTab?.documentId ?? null)
     : workspaceSelectionNeedsFallback
       ? input.selectedTabId
       : null;
-  const eligibleRemaining =
-    input.intent.cause === "work-prune"
-      ? remaining.filter((tab) => {
-          return targetInEditorOf(routeTargetForTab(tab, activeWorkId), activeWorkId);
-        })
-      : remaining;
+  const eligibleRemaining = visibleRemaining;
   const fallback =
     routedDocumentRemoved || workspaceSelectionNeedsFallback
-      ? adjacentSurvivor(input.tabs, eligibleRemaining, anchorDocumentId)
+      ? adjacentSurvivor(visibleTabs, eligibleRemaining, anchorDocumentId)
       : null;
   const selectedFallback =
     workspaceSelectedRemoved && survivingRoutedTab ? survivingRoutedTab : fallback;
@@ -498,9 +510,7 @@ export function chooseAdmittedFallback(input: {
     targetInEditorOf(target, input.activeWorkId) &&
     (!input.excluded || !sameContinuityLocator(target, input.excluded));
   const activeTab =
-    input.tabs.find(
-      (tab) => tab.documentId === input.selectedTabId && (tab.kind === "new" || !tab.draftOnly),
-    ) ?? null;
+    input.tabs.find((tab) => tab.documentId === input.selectedTabId && !isDraftOnly(tab)) ?? null;
   const activeTarget = activeTab ? routeTargetForTab(activeTab, input.activeWorkId) : null;
   if (eligible(activeTarget)) return activeTarget;
   if (eligible(input.admitted))
@@ -511,7 +521,7 @@ export function chooseAdmittedFallback(input: {
   }
   if (input.allowWorkspaceFallback !== false) {
     for (const tab of input.tabs) {
-      if (tab.kind !== "new" && tab.draftOnly) continue;
+      if (isDraftOnly(tab)) continue;
       const target = routeTargetForTab(tab, input.activeWorkId);
       if (eligible(target)) return target;
     }

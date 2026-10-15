@@ -20,7 +20,7 @@
     "format:write": "biome check --write .",
     "typecheck": "node tools/ci/run-nx-target.mjs typecheck",
     "test": "vitest run --passWithNoTests --pool=threads",
-    "check": "pnpm lint && pnpm check:debug-probes && pnpm check:negative-space && pnpm check:i18n && pnpm typecheck && pnpm test && pnpm check:graph && pnpm check:db",
+    "check": "pnpm lint && pnpm check:debug-probes && pnpm check:negative-space && pnpm check:tree-visibility && pnpm check:i18n && pnpm typecheck && pnpm test && pnpm check:graph && pnpm check:db",
     "portless:trust": "portless trust",
     "portless:list": "portless list",
     "prepare": "lefthook install",
@@ -40,9 +40,11 @@
     "smoke:app-dev-transform": "tsx tools/dev/smoke-app-dev-transform.ts",
     "smoke:prod-boot": "tsx tools/dev/smoke-app-prod-boot.ts",
     "dev:gc-dbs": "tsx tools/dev/gc-dbs.ts",
+    "dev:stacks": "tsx tools/dev/dev-stacks.ts",
     "dev:prune-worktrees": "tsx tools/dev/prune-worktrees.ts",
     "test:db": "tsx tools/dev/run-db-tests.ts",
-    "test:all": "tsx tools/dev/run-db-tests.ts --all"
+    "test:all": "tsx tools/dev/run-db-tests.ts --all",
+    "check:tree-visibility": "node tools/ci/check-tree-visibility.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.1",

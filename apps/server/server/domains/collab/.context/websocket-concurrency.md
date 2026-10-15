@@ -1,31 +1,25 @@
 # Collab — WebSocket concurrency boundary
 
-## LOCK-WS boundary
+This page defines the LOCK-WS rule: coordinator serialization does not exclude
+writer WebSocket mutations. Any content apply after an `await` must recheck
+durable authority synchronously before applying or broadcasting.
 
-`withDocument()` serializes coordinator callers, not writer WebSocket updates:
-Hocuspocus can mutate the same in-memory Y.Doc while a coordinator callback is
-awaiting journal or detection work. Any content apply after an `await` must use
-the durable settlement row, and the live recheck and apply share one synchronous
-fence. Writer admission is journal-first; optional sweep detection may degrade
-to no elevation, but it never supplies apply authority.
+`withDocument()` serializes coordinator callers only. Writer admission is
+journal-first; optional sweep detection may degrade to no elevation but never
+supplies apply authority. Agent-edit's
+`applyCommittedUpdateWithRecheck`, branch push, and reversal execution all use
+this final recheck. Keep sorted branch locks ahead of sorted live-document
+locks, and do not treat the coordinator mutex as coverage for socket writes.
 
-The response phase-C path enforces this in
-`@meridian/agent-edit`'s `applyCommittedUpdateWithRecheck`. Branch push also
-enforces the invariant while holding sorted branch locks followed by sorted live
-document locks. Reversal `executePrepared` snapshots around the durable write,
-then delegates its final recheck and apply to `applyCommittedUpdateWithRecheck`.
-Do not treat the coordinator mutex as coverage for WebSocket mutations.
+Push settlement rechecks inside its completion transaction under document locks
+and applies to warm rooms only after commit. A writer admitted after the
+recheck waits on those locks and journals after the push. The merge order may
+vary, but durable Yjs state converges and rollback never reaches a warm room.
 
-- **Push LOCK-WS cut**: the first instruction in each live-document lock captures
-  the complete Yjs update. The push transaction stores that immutable cut and its
-  durable post-cut delta; warm execution reloads the row and uses the same
-  final-pre-push materializer as cold recovery. Rechecks compare complete updates,
-  never state vectors, so delete-only divergence is visible.
+The push LOCK-WS cut captures the complete Yjs update at the first instruction
+inside each live-document lock. Rechecks compare complete updates, including
+delete-only divergence; state vectors alone are insufficient.
 
-## Live writer-admission close
-
-Live writer-admission failure closes with `1013 writer-journal-admission-failed`
-(retryable). Drive the close through the raw crossws peer
-(`closeWriterTransport` → `wsPeer.close`). Do not rely on throwing
-`permissionDenied`: Hocuspocus swallows a thrown error's `.code`, so only the
-direct peer close preserves the declared code and reason.
+A failed live writer admission closes the raw CrossWS peer with retryable code
+`1013 writer-journal-admission-failed`. Do not rely on a thrown Hocuspocus
+error to preserve that transport code.

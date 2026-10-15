@@ -1,90 +1,75 @@
-# Collab — reversal
+# Collab — reversal contracts
 
-## Undo guard and push safety
+Reversal uses the same forward-inverse primitive for card actions, model
+Undo/Redo/Revert, and failed-response rollback. An inverse is an ordinary
+immutable journal edit; it never rewrites a target row or marks it reversed.
 
-`reverseThreadContext` is the route-facing reversal command. It owns the choice
-between context-document and turn-lineage reversal, write-handle parsing,
-projection refresh, and aggregate result status; the HTTP route only authenticates,
-validates its transport body, invokes the command, and serializes the result.
-For compatibility, a top-level array, primitive, or `null` body is normalized
-to `{}` before validation and returns `400 direction must be undo or redo`.
-`TurnReversalServiceDeps` is total: each composition supplies its dependencies
-or the declared unsupported stubs; do not restore optional dependencies that
-fail only when a command reaches them.
+## Commands and policy
 
-Context-document reversal adopts the context resolver's successful canonical
-URI together with its document ID. The request URI is syntax to resolve, never
-stable reversal-result identity.
+`reverseThreadContext` is the whole-turn card command. Its authenticated POST
+accepts only `{ scope: "turn", target: turnId, direction }`; authorization
+precedes inverse planning. One action may cover several documents, but each
+inverse edit transitions one target edit and carries restoration aliases.
+Dry-run and execution choose one destination view per document.
 
-- **Live receipt reversal state uses the command planner**:
-  `drizzle-turn-receipt.ts` asks agent-edit `planUndo` and `planRedo` for each
-  live document instead of projecting availability from mutation status.
-  Command execution uses the same planners. The planner rejects redo after a
-  later writer (`human:*`) row but ignores the undo's system row, other system
-  bookkeeping, and later agent rows. Persist-time guards repeat the writer-only
-  watermark check under the document lock, covering a writer admission between
-  planning and persistence. Active Work-draft receipt and command paths both use
-  `branch-turn-reversal-plan.ts`; its authority is branch generation, journal
-  status, dependency analysis, and successful peer reconstruction. Undo treats
-  both `active` and `rollback_pending` rows as current effects; redo rebuilds
-  from active survivors plus only the selected discarded target.
-- **Receipt command unavailable states are semantic outcomes**: the reverse endpoint may
-  return `nothing_to_undo`, `nothing_to_redo`, `cant_undo_dependent`, `expired`,
-  or `partial` with HTTP 200 when state races the projection. The app invalidates
-  the turn query after the command and retains the raced reason while the receipt
-  changes to its unavailable state; callers must not discard these outcomes.
-- **Canonical reversal is live-scoped**: hosted `reverse()` uses the live utility
-  core, never the thread-peer branch committer. The host captures a live Yjs
-  snapshot and live-journal sequence together before entering agent-edit.
-- **Model undo and redo reverse each write where it landed**:
-  `thread-peer-reversals.ts` loads both histories once, `splitReversal`
-  (`reversal-routing.ts`) reads which selected
-  handles sit in the thread's Work-draft rows and which in the live journal,
-  and runs the selection once per journal with that journal's share (`last: N`
-  counts per journal). Each part carries a grant at its own destination, so a
-  drafted write in an archived Work is refused with `work_archived` while live
-  parts of the same call still reverse; `mergeReversals` makes a mixed result
-  `partial` and names the kept handles.
-- **Work-draft write-command reversal is branch-scoped**: for the drafted part of
-  a selection, `write(command="undo"|"redo")`
-  reconstructs and stages reversals exclusively from those rows. The staged
-  system row carries the Work-draft generation and becomes durable in the same
-  branch commit that projects its Yjs update; it never writes the live journal.
-  The command pins one branch scope from planning through persistence, and cold
-  replay is reconciled to the authoritative branch snapshot.
-  The commit also checks the planned branch-journal watermark and status revision
-  under the branch snapshot CAS, so appended rows and status-only Apply/review
-  transitions both reject the stale reversal for replanning.
-  After Apply advances to an empty generation, reversal lookup falls back to the
-  live store so pushed writes retain their normal undo path.
-- **Turn reversal is durable-atomic and runtime-staged**: production persists
-  branch and live changes in one ambient Drizzle transaction. Across distinct
-  documents, a no-op or unavailable result mixed with success makes the aggregate partial
-  and aborts the whole transaction. Duplicate branch/live results for the same
-  document are folded first, so one successful scope plus its no-op peer remains
-  successful. Branch broadcasts, live Y.Doc application, runtime synchronization,
-  and projection refresh run only after commit, with per-document journal
-  recovery; rollback publishes none of them. Cross-room publication is
-  serialized, not a simultaneous transport primitive. Branch candidates are
-  restricted to the command's authorized document set.
-- **Work-draft handles name durable response groups**: response buffering and branch
-  projection fold all same-document mutations in one response into one
-  `branch_write_journal` row. Every write in that group therefore receives the
-  same `w<N>` handle. Selectors operate on durable rows, not transient tool-call
-  boundaries; redo may further group handles that share one atomic reversal
-  update. This matches the folded, turn-scoped diff contract rather than
-  advertising per-write identity the journal does not retain.
-  Apply materializes only handles whose final branch state is active; handles
-  eliminated by Work-draft write reversal are squashed rather than recreated as active live
-  mutations for content that is absent. Each surviving branch journal row keeps
-  its own live update identity and attribution. Writer rows therefore remain
-  visible to the dependency predicate instead of being folded into an AI
-  mutation or representative push author.
-- **Intrinsic undo guard**: `persistUndo` in `adapters/drizzle-journal.ts` runs
-  the dependency check (`@meridian/agent-edit`'s `hasDependentLaterRows`, the
-  same rule `planUndo` uses for the receipt) inside the same transaction, under
-  `lockDocumentMutation` advisory lock; nothing else guards a live
-  reversal commit. Work-draft reversal uses the generation and
-  journal-watermark fence above.
-- **Tombstone cap**: `gc: false` on all branch `Y.Doc` instances — full struct
-history is preserved for attribution, echo, and undo dependency checking.
+Redo is preferred when the latest unconsumed Undo has a reapplicable part;
+otherwise an invertible active part offers Undo. Effective action state is
+indexed per immutable part. A partial writer Undo does not expose an older
+entry or mark the whole action undone. A rolled-back action has no stack
+impact, and repeated rollback does not append another inverse.
+
+The model owns one strict stack per thread/document. `write undo` and `write
+redo` accept a count; `write revert` creates a new edit at the current
+(destination) view; `read(format: "edits")` reads immutable parts through the
+host port. Model actions cannot use a reconstruction endpoint, reversal table,
+or reserved client. A multi-edit Undo is all-or-nothing and Redo restores the
+last undone edit first; a count beyond what is available refuses with the
+available count and changes nothing. User-actuated entries refuse model stack
+commands, and a model Undo of a draft edit after the chat's Work moved refuses
+`cant_undo_elsewhere`. A card Undo names and skips a part whose draft was
+discarded (`expired`) or that a later writer edit depends on
+(`cant_undo_dependent`), and inverts the rest.
+A turn's edit targets exclude tombstoned documents (`documentNotDeletedSql`), so
+a discarded draft-created document or one the writer deleted is never an
+inverse target and drops out of Undo as it does from lineage. Final address
+liveness stays with the lineage reader.
+
+Card authorization and change-viewer discovery share immutable edit and
+placement targets with inverse admission; mutation and branch transport
+journals are never authorization lineage. Card inverse rows are writer rows
+with no turn, and restoration correspondence comes from certified aliases on
+immutable parts, never equal text. Save and rollback take a
+`ModelResponseIdentity`, not a bare string that could mean provider response or
+helper scope: `response_id` keeps provider authorship and `edit_scope_id`
+selects the rotated scope.
+
+Apply moves a part's placement to its authored live row, never the reconcile
+row; Discard and empty-draft reset make discarded and retired placements
+terminal. Runtime context reports a card action by turn and document, not by
+model handle.
+
+## Holds, effects, and failures
+
+A pending inverse holds the roots whose draft identity differs from live. Holds
+and destinations are branch-scoped and prepared from one locked invocation
+view. Only intersecting holds can select a holding draft. A skipped hold keeps
+the draft blocking so Apply/Discard remains reachable even when visible prose
+equals live.
+
+`hasEffect` compares prose and managed manifest membership with the draft's
+last pulled live cut; pending lists, counts, and Work notifications read that
+effect or `blocking`, never raw journal-row count. Pull snapshot, effect, and projection updates commit in
+their own root transaction. Inverses take sorted transition locks, branch/live
+process locks, Work rows, and ordinary admission locks; Apply does not take
+the transition lock. Root pulls must not be awaited while holding Work locks.
+
+A card outcome reports committed destination per document. Draft Undo says that
+Apply is needed to change the manuscript. The reverse endpoint may return
+semantic unavailable outcomes such as `nothing_to_undo`, `nothing_to_redo`,
+`cant_undo_dependent`, `expired`, or `partial` with HTTP 200; callers retain
+those outcomes and refresh the turn query.
+
+Failed-response rollback selects immutable parts by `editScopeId`, records
+accepted parts as terminal rollback edits, and keeps only uninvertible pending
+targets in `rollback_pending`. A failed checkpoint or report cannot reject a
+durable save.

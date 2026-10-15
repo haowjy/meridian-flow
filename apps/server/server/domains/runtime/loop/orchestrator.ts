@@ -1,3 +1,4 @@
+import type { ModelResponseIdentity } from "@meridian/contracts";
 /**
  * Ordered model/tool loop. Preparation commits initial turns and report admission;
  * execution publishes through the journal, never a caller-driven event generator.
@@ -54,6 +55,7 @@ import {
   modelResult,
   type ResponseCommitWriteReceipt,
   renderAgentEditResult,
+  type WriteRejection,
 } from "@meridian/agent-edit/integration";
 import {
   type MeridianError,
@@ -76,7 +78,6 @@ import type {
   Thread,
   Turn,
 } from "@meridian/contracts/threads";
-import type { AiWriteMode } from "@meridian/contracts/works";
 import type { BillingUsagePolicy } from "../../billing/index.js";
 import type { DocumentRevisions } from "../../context/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
@@ -237,9 +238,6 @@ export interface OrchestratorDeps {
   projectPreferences: {
     read(userId: string, projectId: string): Promise<ProjectPreferences>;
   };
-  workWriteMode: {
-    read(workId: string): Promise<AiWriteMode>;
-  };
   workContext: WorkContextReader;
   billingUsage: BillingUsagePolicy;
   /** Interrupt-boundary artifact flush; explicit noop adapter means disabled. */
@@ -262,12 +260,12 @@ export interface OrchestratorDeps {
   shownLinks: Pick<ShownLinkStore, "record">;
   responseWrites: {
     commitResponse(
-      responseId: string,
+      responseIdentity: ModelResponseIdentity,
       ctx: { threadId: ThreadId; turnId: TurnId },
       beforeTransactionCommit: (result: ResponseWriteCommitOutcome) => Promise<void>,
     ): Promise<ResponseWriteCommitOutcome>;
     rollbackResponse(
-      responseId: string,
+      responseIdentity: ModelResponseIdentity,
       ctx: { threadId: ThreadId; turnId: TurnId },
     ): Promise<void>;
   };
@@ -443,6 +441,7 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
   // New turns require positive balance; the mid-stream gate in turn-accounting
   // allows zero grace only after an already-started turn is in flight.
   if (!(await deps.billingUsage.canStartTurn(thread.userId))) {
+    if (isDrainRun(input)) await deps.delivery.blockForUsage(input.lease);
     throw meridianErrorFromSystem(
       "credits_exhausted",
       "Your usage balance is exhausted; add balance before starting a new turn",
@@ -539,6 +538,11 @@ async function runDrainTurn(
       const turnById = new Map(
         [...inheritedTurns, ...priorTurns].map((turn) => [turn.id as string, turn]),
       );
+      // A Retry is reserved for its failed reply's messages. Those inbox rows
+      // were acknowledged by the failure, so the execution carries them itself.
+      const retryReservedFor = input.retryOf
+        ? (turnById.get(input.retryOf)?.reservedForUserTurnIds ?? [])
+        : [];
       const knownTurnIds = new Set([
         ...inheritedTurns.map((turn) => turn.id as TurnId),
         ...priorTurns.map((turn) => turn.id as TurnId),
@@ -633,6 +637,15 @@ async function runDrainTurn(
           position: nextTurnPosition(
             imageUpdateTurn ?? plan.turns.at(-1) ?? skillBody?.turn ?? previousTurn,
           ),
+          identity: {
+            executionId: input.lease.executionId,
+            reservedForUserTurnIds: [
+              ...new Set([...retryReservedFor, ...selection.outstanding.map(({ id }) => id)]),
+            ],
+            ...(input.retryOf && input.replyTurnId
+              ? { retry: { of: input.retryOf, replyTurnId: input.replyTurnId } }
+              : {}),
+          },
         },
         preflight?.compaction ?? { kind: "generate" },
       );
@@ -644,6 +657,9 @@ async function runDrainTurn(
           trigger: "manual",
           controlMessageId: control.id,
           ...(control.body.instructions ? { instructions: control.body.instructions } : {}),
+          ...(input.retryOf && input.replyTurnId
+            ? { retryOf: input.retryOf, retryReplyId: input.replyTurnId }
+            : {}),
         };
       }
       const value = {
@@ -659,6 +675,8 @@ async function runDrainTurn(
         inheritedTurns,
         inheritedBlocks,
         executionAdmitted: selection.outstanding.length > 0 || !!input.replyTurnId,
+        // A start-time compaction hands the Retry's list on to the first assistant.
+        carriedReservedFor: reservedTurn.role === "assistant" ? [] : retryReservedFor,
       };
       const events = [
         ...(skillBody
@@ -694,9 +712,8 @@ async function runDrainTurn(
                   preflight.assembled,
                   deps.repos.threads.bakeInitialPrompt.bind(deps.repos.threads),
                 );
-              reservedTurn.writeMode = setupThread.workId
-                ? await deps.workWriteMode.read(setupThread.workId)
-                : "direct";
+              // A reply holds the run claim, so the chat's mode can't change under it (D62).
+              reservedTurn.writeMode = setupThread.aiWriteMode;
               return {
                 result: undefined,
                 events,
@@ -720,6 +737,7 @@ async function runDrainTurn(
     },
     {
       signal: input.signal,
+      retryOf: input.retryOf,
     },
   );
 
@@ -760,6 +778,7 @@ async function runDrainTurn(
         initialContext: preflight?.assembled,
         initialCompaction: preflight?.compaction ?? { kind: "generate" },
         initialExecutionAdmitted: setup.executionAdmitted,
+        carriedReservedFor: setup.carriedReservedFor,
         treeBudget:
           input.treeBudget ??
           createDefaultTreeBudget({ maxDepth: resolveMaxSpawnDepth(process.env) }),
@@ -875,6 +894,7 @@ async function persistModelResponse(input: {
   const persistedResponse = await deps.delivery.ackWithResponse(
     runInput.lease,
     input.inboxAckIds,
+    currentTurn,
     () =>
       persistAndAppendEvents(deps, runInput.threadId, async () => {
         const responseId = crypto.randomUUID();
@@ -1033,10 +1053,16 @@ async function settleCancelledResponse(input: {
     });
     currentTurn = persistedResponse.updatedTurn;
     input.allBlocks.push(...persistedResponse.createdBlocks);
-    await input.deps.responseWrites.rollbackResponse(persistedResponse.responseId, {
-      threadId: input.runInput.threadId,
-      turnId: currentTurn.id,
-    });
+    await input.deps.responseWrites.rollbackResponse(
+      {
+        providerResponseId: persistedResponse.responseId,
+        editScopeId: persistedResponse.responseId,
+      },
+      {
+        threadId: input.runInput.threadId,
+        turnId: currentTurn.id,
+      },
+    );
   }
   return currentTurn;
 }
@@ -1107,14 +1133,18 @@ async function persistUncommittedWriteResult(input: {
   threadId: ThreadId;
   block: Block;
   text: string;
+  /** Already-rendered per-write failure from the save boundary. */
+  message?: string;
   status?: "internal_error" | "invalid_write";
   /** A file-policy refusal at the save: `permission_denied` with this reason. */
   reason?: PermissionDeniedReason;
+  /** Why the host rejected a staged write, so the chat can say it plainly. */
+  rejected?: WriteRejection;
 }): Promise<{ block: Block }> {
   const content = input.block.content as { toolCallId?: string } | null;
   const toolCallId = content?.toolCallId ?? "";
   const staged = stagedWriteResult(input.block);
-  const message = ["Write did not land.", input.text].join("\n\n");
+  const message = input.message ?? ["Write did not land.", input.text].join("\n\n");
   const { output, result } = writeResultContent(
     modelResult({
       command: staged?.command ?? "unknown",
@@ -1122,6 +1152,7 @@ async function persistUncommittedWriteResult(input: {
       payload: {
         ...(staged?.path ? { path: staged.path } : {}),
         ...(input.reason ? { reason: input.reason } : {}),
+        ...(input.rejected ? { rejected: input.rejected } : {}),
         message,
       },
     }),
@@ -1393,10 +1424,12 @@ function buildGenerateRequestFromAssembled(input: {
  */
 function isSaveBoundary(call: { name: string; arguments?: unknown }): boolean {
   const args = call.arguments;
-  if (call.name !== "write" || !args || typeof args !== "object" || !("command" in args)) {
+  if (!args || typeof args !== "object") return false;
+  if (call.name === "read" && "format" in args && args.format === "edits") return true;
+  if (call.name !== "write" || !("command" in args)) {
     return false;
   }
-  return args.command === "undo" || args.command === "redo";
+  return args.command === "undo" || args.command === "redo" || args.command === "revert";
 }
 
 /** Staged edits belong to a response scope, which rotates at a save boundary. */
@@ -1461,6 +1494,16 @@ function createResponseScope(input: {
         write: { block: Block; uri: string | null },
         receipt: ResponseCommitWriteReceipt,
       ) => {
+        if (receipt.result.status !== "success")
+          return persistUncommittedWriteResult({
+            deps,
+            threadId,
+            block: write.block,
+            status: "invalid_write",
+            text: "the user discarded the text it edited. Re-read and retry.",
+            message: receipt.result.message,
+            ...(receipt.result.rejected ? { rejected: receipt.result.rejected } : {}),
+          });
         // The settled receipt replaces the staged echo; both were shown.
         await recordShown(documentId, receipt);
         return persistCommittedWriteResult({
@@ -1473,7 +1516,7 @@ function createResponseScope(input: {
       };
       const finalized: Array<{ write: { block: Block }; block: Block }> = [];
       const outcome = await deps.responseWrites.commitResponse(
-        id,
+        { providerResponseId: input.responseId, editScopeId: id },
         { threadId, turnId },
         async (settled) => {
           for (const [documentId, blocks] of writes) {
@@ -1561,7 +1604,10 @@ function createResponseScope(input: {
     async rollback() {
       if (!active) return;
       active = false;
-      await deps.responseWrites.rollbackResponse(id, { threadId, turnId });
+      await deps.responseWrites.rollbackResponse(
+        { providerResponseId: input.responseId, editScopeId: id },
+        { threadId, turnId },
+      );
     },
   };
 }
@@ -1576,6 +1622,7 @@ async function executeLoop({
   initialContext,
   initialCompaction,
   initialExecutionAdmitted,
+  carriedReservedFor: initialCarriedReservedFor,
   treeBudget,
   skillBodies,
 }: {
@@ -1589,6 +1636,7 @@ async function executeLoop({
   initialContext: AssembledNextTurnContext | undefined;
   initialCompaction: CompactionDecision;
   initialExecutionAdmitted: boolean;
+  carriedReservedFor: readonly string[];
   treeBudget: TreeBudget;
   skillBodies: ReturnType<typeof createSkillBodyPreparation>;
 }): Promise<Turn> {
@@ -1609,13 +1657,15 @@ async function executeLoop({
         level: "warn",
         source: "runtime.run-lease",
         name: "lease.publish_failed",
-        correlation: { threadId: input.threadId, runId: lease.runId },
+        correlation: { threadId: input.threadId, runId: lease.executionId },
         payload: unknownToEventPayload(error),
       });
     }
   }
 
   let currentTurn: Turn = reservedTurn;
+  // Carried until the execution reserves its first assistant.
+  let carriedReservedFor = initialCarriedReservedFor;
   const requestedReplyTurnId = "replyTurnId" in input ? input.replyTurnId : undefined;
   let preferredSuccessorTurnId =
     requestedReplyTurnId && reservedTurn.id !== requestedReplyTurnId
@@ -1656,6 +1706,8 @@ async function executeLoop({
   let executionSelector: TurnId | null = initialExecutionAdmitted ? reservedTurn.id : null;
   let endTurnRequested = false;
   let terminalControl = false;
+  // A message waits behind a queued write-mode switch: end the reply here.
+  let yieldRequested = false;
   let continuingTask = false;
   let iteration = 0;
   // One emergency retry per reply, even across tool iterations and compaction splits.
@@ -1666,6 +1718,9 @@ async function executeLoop({
       lease: input.lease,
       currentTurn: currentTurn,
       ...(preferredSuccessorTurnId ? { preferredSuccessorTurnId } : {}),
+      ...(carriedReservedFor.length > 0
+        ? { carriedReservedForUserTurnIds: carriedReservedFor }
+        : {}),
       current: { kind: "assistant" },
       // Turn-end controls defer to a new run; an assistant boundary here has a task to continue.
       continueTask:
@@ -1804,6 +1859,20 @@ async function executeLoop({
     if (result.terminal) {
       currentTurn = result.next;
       terminalControl = true;
+      // A compaction successor that failed preparation landed terminal and
+      // ended the execution in the same commit; nothing is left to throw to.
+      if (result.preparationFailure !== undefined)
+        emitEvent(eventSink, {
+          level: "error",
+          source: "runtime.orchestrator",
+          name: "execution.failed",
+          correlation: { threadId: input.threadId, turnId: result.next.id },
+          payload: unknownToEventPayload(result.preparationFailure),
+        });
+      return result.drain;
+    }
+    if (result.yielded) {
+      yieldRequested = true;
       return result.drain;
     }
     if (result.compaction && currentTurn.role === "assistant") continuingTask = true;
@@ -1811,6 +1880,7 @@ async function executeLoop({
       const next = result.next;
       allTurns.push(next);
       currentTurn = next;
+      if (next.role === "assistant") carriedReservedFor = [];
       endTurnRequested = false;
       input.onCurrentTurnChanged?.({
         id: next.id,
@@ -1863,6 +1933,7 @@ async function executeLoop({
       lease: input.lease,
       turnId: currentTurn.id,
       cause,
+      localCancellation: () => (input.signal?.aborted ? abortTerminal() : null),
       settleSummaryResponses: () => settlePendingSummary(),
       ...(continueOnPending ? { continueWith: boundaryInput() } : {}),
     });
@@ -1891,6 +1962,14 @@ async function executeLoop({
     kind: "success",
     finishReason: result.finishReason,
   });
+  // The yield ends A exactly as a steer split would, but releases the claim
+  // instead of reserving a successor. Cancellation wins: the local signal is
+  // read after the asynchronous boundary read, and close rereads both it and
+  // the durable flag under the lock.
+  const yieldExit = () =>
+    input.signal?.aborted
+      ? cancelExit()
+      : exitRun(false, { kind: "success", finishReason: "end_turn" });
 
   // The one cancel exit: discard an in-flight response, then finalize through
   // `exitRun`. Every cancel site calls this so the rollback+cancel sequence
@@ -1938,6 +2017,15 @@ async function executeLoop({
       // Every cancellation/error path must persist terminal events, not just
       // return/throw, so subscribers see the turn lifecycle closure.
       async function iterate(): Promise<boolean> {
+        // Before the budget and iteration checks, so a reply out of credits
+        // still yields to the switch instead of failing.
+        if (
+          yieldRequested ||
+          (!queuedDrain &&
+            currentTurn.role === "assistant" &&
+            (await deps.delivery.yieldsAtBoundary(input.threadId)))
+        )
+          return yieldExit();
         iteration += 1;
         if (iteration > MAX_TURN_ITERATIONS) {
           return exitRun(false, errorTerminal("exceeded max tool iterations"));
@@ -1978,6 +2066,7 @@ async function executeLoop({
 
         queuedDrain = undefined;
         if (terminalControl) return false;
+        if (yieldRequested) return yieldExit();
 
         if (!preparedContext)
           throw new Error("Request context must be prepared before assistant generation");

@@ -5,6 +5,8 @@ import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createDrizzleWorkDraftPendingStore } from "../collab/adapters/drizzle-branch-push.js";
+import { createPostgresWorkDraftDisposal } from "../collab/test-support/work-draft-disposal.js";
 import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
 import { createLocalFileAccessChanges, type FileAccessChange } from "../file-policy/index.js";
 import { createTestDrizzleDelivery } from "../runtime/loop/__tests__/test-drizzle-delivery.js";
@@ -59,6 +61,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
     const projectionMutation = createWorkProjectionMutation({
       db,
+      pending: createDrizzleWorkDraftPendingStore(db),
       availability,
       catalog,
     });
@@ -471,7 +474,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    it("deletes content and restores only rows hidden by the Work deletion", async () => {
+    it("deletes content and restores only rows cascade-deleted by the Work deletion", async () => {
       const empty = await works.create({ projectId: PROJECT_ID, name: "Empty source" });
       await db.insert(schema.contextSources).values({
         workId: empty.id,
@@ -489,7 +492,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .values({ workId: withFile.id, name: "Uploads", slug: "uploads", scope: "work" })
         .returning();
       if (!source) throw new Error("Expected context source");
-      await db
+      const [document] = await db
         .insert(schema.documents)
         .values({
           contextSourceId: source.id,
@@ -516,11 +519,34 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           deletedAt: new Date("2025-01-01T00:00:00.000Z"),
         })
         .returning();
-      if (!folder || !alreadyDeletedFolder || !alreadyDeletedDocument) {
+      if (!document || !folder || !alreadyDeletedFolder || !alreadyDeletedDocument) {
         throw new Error("Expected context children");
       }
 
+      async function versions() {
+        const documentRows = await db
+          .select({ id: schema.documents.id, version: schema.documents.locationVersion })
+          .from(schema.documents)
+          .where(eq(schema.documents.contextSourceId, source.id));
+        const folderRows = await db
+          .select({ id: schema.folders.id, version: schema.folders.locationVersion })
+          .from(schema.folders)
+          .where(eq(schema.folders.contextSourceId, source.id));
+        return Object.fromEntries(
+          [...documentRows, ...folderRows].map((row) => [row.id, row.version]),
+        );
+      }
+      const expectedVersions = (changed: bigint) => ({
+        [document.id]: changed,
+        [folder.id]: changed,
+        [alreadyDeletedDocument.id]: 0n,
+        [alreadyDeletedFolder.id]: 0n,
+      });
+      expect(await versions()).toEqual(expectedVersions(0n));
       const deletion = await works.softDelete(withFile.id);
+      expect(await versions()).toEqual(expectedVersions(1n));
+      await works.softDelete(withFile.id);
+      expect(await versions()).toEqual(expectedVersions(1n));
       expect(deletion.after?.deletedAt).toBeTruthy();
       await expect(
         db
@@ -534,6 +560,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         after: { deletedAt: null },
         changed: true,
       });
+      expect(await versions()).toEqual(expectedVersions(2n));
+      await works.restore(withFile.id);
+      expect(await versions()).toEqual(expectedVersions(2n));
       await expect(
         db.select().from(schema.contextSources).where(eq(schema.contextSources.id, source.id)),
       ).resolves.toMatchObject([{ deletedAt: null, deletedByWorkId: null }]);
@@ -586,7 +615,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
     });
 
-    it("hides Work chats, drafts, and context from their read surfaces, then restores them", async () => {
+    it("cascade-deletes Work chats, drafts, and context from their read surfaces, then restores them", async () => {
       await works.ensureNoWork(PROJECT_ID);
       const work = await works.create({ projectId: PROJECT_ID, name: "Hidden Work" });
       const [source] = await db
@@ -599,11 +628,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .values({ contextSourceId: source.id, name: "outline" })
         .returning();
       if (!document) throw new Error("Expected Work document");
+      const [draft] = await db
+        .insert(schema.drafts)
+        .values({ projectId: PROJECT_ID, originWorkId: work.id, createdBy: USER_ID })
+        .returning({ id: schema.drafts.id });
+      if (!draft) throw new Error("Expected the Work's draft");
       await db.insert(schema.documentBranches).values({
         id: "work-delete-draft",
         documentId: document.id,
         kind: "work_draft",
-        workId: work.id,
+        draftId: draft.id,
         state: Buffer.from([]),
         stateVector: Buffer.from([]),
       });
@@ -790,7 +824,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .select()
           .from(schema.documentBranches)
           .where(eq(schema.documentBranches.id, "work-delete-draft")),
-      ).resolves.toMatchObject([{ status: "closed", deletedByWorkId: work.id }]);
+        "soft delete leaves the Work's draft untouched (§2.6)",
+      ).resolves.toMatchObject([{ status: "active" }]);
 
       await works.restore(work.id);
       await expect(
@@ -814,7 +849,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .select()
           .from(schema.documentBranches)
           .where(eq(schema.documentBranches.id, "work-delete-draft")),
-      ).resolves.toMatchObject([{ status: "active", deletedByWorkId: null }]);
+      ).resolves.toMatchObject([{ status: "active" }]);
       expect((await catalog.snapshot(scope)).entries.map((entry) => entry.entryId)).toContain(
         document.id,
       );
@@ -935,7 +970,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const sourceWork = await works.create({ projectId: PROJECT_ID, name: "Source" });
       const destinationWork = await works.create({ projectId: PROJECT_ID, name: "Destination" });
       const unrelatedWork = await works.create({ projectId: PROJECT_ID, name: "Unrelated" });
-      const source = await threadRepos.threads.create({ projectId: PROJECT_ID, userId: USER_ID });
+      const source = await threadRepos.threads.create({
+        aiWriteMode: "direct",
+        projectId: PROJECT_ID,
+        userId: USER_ID,
+      });
       const turn = await threadRepos.turns.create({
         threadId: source.id,
         role: "assistant",
@@ -1030,6 +1069,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         objectStore: createInMemoryObjectStore(),
         eventSink: createInMemoryEventSink(),
+        drafts: createPostgresWorkDraftDisposal(db),
       });
       await expect(purger.sweep()).resolves.toBe(1);
       await expect(works.findById(unrelatedWork.id)).resolves.toBeNull();
@@ -1060,7 +1100,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       };
       const eventSink = createInMemoryEventSink();
-      const purger = createDrizzleWorkPurger({ db, objectStore, eventSink });
+      const purger = createDrizzleWorkPurger({
+        db,
+        objectStore,
+        eventSink,
+        drafts: createPostgresWorkDraftDisposal(db),
+      });
       const other = await works.create({ projectId: PROJECT_ID, name: "Keep me" });
       const expiredTrashThreadId = "00000000-0000-4000-8000-000000000847";
       await db.insert(schema.threads).values({
@@ -1197,11 +1242,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         })
         .returning();
       if (!document) throw new Error("Expected uploaded document");
+      const [draft] = await db
+        .insert(schema.drafts)
+        .values({ projectId: PROJECT_ID, originWorkId: work.id, createdBy: USER_ID })
+        .returning({ id: schema.drafts.id });
+      if (!draft) throw new Error("Expected the Work's draft");
       await db.insert(schema.documentBranches).values({
         id: "purged-work-draft",
         documentId: document.id,
         kind: "work_draft",
-        workId: work.id,
+        draftId: draft.id,
         state: Buffer.from([]),
         stateVector: Buffer.from([]),
       });

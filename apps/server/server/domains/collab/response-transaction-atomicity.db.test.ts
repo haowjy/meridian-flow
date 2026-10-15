@@ -1,10 +1,10 @@
 import { toDocHandle } from "@meridian/agent-edit/integration";
-import type { DocumentId, ProjectId, WorkId } from "@meridian/contracts/runtime";
 import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { testFileGrant } from "../../test-support/file-grants.js";
-import type { DraftReviewApi } from "./contracts.js";
+import { applyDraftDocument } from "./test-support/apply-draft-document.js";
+import { commitJournaledUpdate, commitSegmentRows } from "./test-support/branch-update-writes.js";
 import {
   ALPHA_ID,
   BETA_ID,
@@ -21,22 +21,14 @@ import {
   USER_ID,
   WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
+import { reviewDriver } from "./test-support/draft-review-requests.js";
+import { captureHistoricalBranchRow } from "./test-support/historical-branch-row.js";
 
 const DRAFT_DESTINATION = { kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" } as const;
 
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 if (!enabled || !process.env.DATABASE_URL) {
   throw new Error("DB suites require RUN_DB_TESTS=1 and DATABASE_URL");
-}
-
-async function currentDraftId(
-  draftReview: DraftReviewApi,
-  input: { projectId?: ProjectId; workId: WorkId; documentId: DocumentId },
-): Promise<string> {
-  const drafts = await draftReview.list(input);
-  const draft = drafts.find((candidate) => candidate.documentId === input.documentId);
-  if (!draft) throw new Error("missing reviewable draft");
-  return draft.draftId;
 }
 
 // A live write records its authoring response, so this reply is a real response row.
@@ -46,6 +38,32 @@ describe("change trail (postgres)", () => {
   const db = createTestDatabase();
   beforeEach(() => resetDatabase(db));
   afterAll(() => closeDatabase(db));
+
+  it.each([
+    false,
+    true,
+  ])("a post-root refresh failure cannot reopen or skip later documents in committed response (mixed=%s)", async (liveBeta) => {
+    const harness = createHarness(db);
+    const responseId = "00000000-0000-4000-8000-000000000832";
+    await harness.seedAndStage(responseId, { liveBeta });
+    harness.failFirstRefresh = true;
+    await expect(harness.commit(responseId)).resolves.toMatchObject({ status: "committed" });
+    expect(harness.refreshObservedDurability).toBe(true);
+    // The failed first refresh must not stop the second document's.
+    expect(new Set(harness.refreshedDocuments)).toEqual(new Set([ALPHA_ID, BETA_ID]));
+    expect(harness.responseEvents(responseId)).toContainEqual(
+      expect.objectContaining({ transition: "closed" }),
+    );
+    expect(harness.stagedUpdates(responseId)).toEqual([[], []]);
+    const draftText = await harness.workDraftMarkdown();
+    expect(draftText).toContainEqual(expect.stringContaining("Agent alpha."));
+    if (liveBeta) expect(await harness.liveMarkdown(BETA_ID)).toContain("Agent beta.");
+    else expect(draftText).toContainEqual(expect.stringContaining("Agent beta."));
+    expect(
+      await db.select().from(schema.documentEdits).where(eq(schema.documentEdits.kind, "rollback")),
+    ).toEqual([]);
+    expect(await harness.responseJournalRows()).not.toEqual([]);
+  });
 
   it("rolls back all ten state surfaces and commits the retained response on retry", async () => {
     const harness = createHarness(db);
@@ -99,6 +117,12 @@ describe("change trail (postgres)", () => {
       "00000000-0000-4000-8000-0000000008d1",
       "00000000-0000-4000-8000-0000000008d2",
     ] as const;
+    // The Work's draft created both: hidden rows and the draft's `created` rows.
+    const [draft] = await db
+      .select({ id: schema.drafts.id })
+      .from(schema.drafts)
+      .where(eq(schema.drafts.originWorkId, WORK_ID));
+    if (!draft) throw new Error("the harness seeds the Work's draft");
     await db.insert(schema.documents).values(
       created.map((id, index) => ({
         id: id as never,
@@ -106,14 +130,27 @@ describe("change trail (postgres)", () => {
         name: `new-${index + 1}`,
         extension: "",
         fileType: "markdown" as const,
+        hidden: true,
+      })),
+    );
+    await db.insert(schema.draftTreeChanges).values(
+      created.map((id, index) => ({
+        draftId: draft.id,
+        nodeKind: "document" as const,
+        nodeId: id,
+        created: true,
+        contextSourceId: SOURCE_ID as never,
+        parentFolderId: null,
+        name: `new-${index + 1}`,
+        extension: "md",
       })),
     );
     for (const [index, documentId] of created.entries()) {
       await fixture.persistence.lifecycle.ensureDocument(documentId as never);
       const emptyLive = new Y.Doc({ gc: false });
-      const branch = await fixture.branchStore.ensureWorkDraftBranch({
+      const branch = await fixture.branchStore.ensureDraftBranch({
         documentId: documentId as never,
-        workId: WORK_ID,
+        draftId: draft.id,
         liveDoc: emptyLive,
       });
       emptyLive.destroy();
@@ -123,18 +160,13 @@ describe("change trail (postgres)", () => {
         null,
         fixture.markupCodec.parse(`Created document ${index + 1}.`),
       );
-      await fixture.branchCoordinator.commitUpdate({
+      await commitJournaledUpdate(fixture.branchCoordinator, {
         branchId: branch.branchId,
         updateData: Y.encodeStateAsUpdate(content),
         source: "agent",
         threadId: THREAD_ID,
       });
       content.destroy();
-      await fixture.branchStore.recordManifestDocumentCreated(documentId as never, {
-        projectId: PROJECT_ID as never,
-        workId: WORK_ID,
-        threadId: THREAD_ID,
-      });
     }
 
     const drafts = await fixture.collab.draftReview.list({
@@ -159,20 +191,14 @@ describe("change trail (postgres)", () => {
       if (!draft) throw new Error(`missing draft for ${documentId}`);
       await expect(
         withDeadline(
-          fixture.collab.draftReview.applyWorkDraft({
-            projectId: PROJECT_ID as never,
+          applyDraftDocument(fixture.collab.draftReview, {
             workId: WORK_ID,
             documentId: documentId as never,
-            draftId: draft.draftId,
             userId: USER_ID as never,
           }),
         ),
       ).resolves.toMatchObject({ status: "applied" });
     }
-
-    await expect(
-      fixture.branchStore.resolveManifestMembership({ projectId: PROJECT_ID as never }),
-    ).resolves.toMatchObject({ members: expect.arrayContaining([...created]) });
     for (const [index, documentId] of created.entries()) {
       await expect(harness.liveMarkdown(documentId as never)).resolves.toContain(
         `Created document ${index + 1}.`,
@@ -360,25 +386,12 @@ describe("change trail (postgres)", () => {
       });
     });
 
-    const preview = await fixture.collab.draftReview.preview({
-      projectId: PROJECT_ID as never,
-      workId: WORK_ID,
-      documentId: ALPHA_ID,
-      draftId: await currentDraftId(fixture.collab.draftReview, {
-        projectId: PROJECT_ID as never,
-        workId: WORK_ID,
-        documentId: ALPHA_ID,
-      }),
-    });
-    if (preview.status !== "active" || !preview.draftId) {
-      throw new Error("missing draft preview");
-    }
+    const preview = await reviewDriver(fixture.collab.draftReview).preview(ALPHA_ID);
+    if (preview.status !== "active") throw new Error("missing draft preview");
 
-    const result = await fixture.collab.draftReview.applyWorkDraft({
-      projectId: PROJECT_ID as never,
+    const result = await applyDraftDocument(fixture.collab.draftReview, {
       workId: WORK_ID,
       documentId: ALPHA_ID,
-      draftId: preview.draftId,
       userId: USER_ID as never,
     });
 
@@ -399,26 +412,9 @@ describe("change trail (postgres)", () => {
       content: "AI DRAFT PROPOSAL",
     });
     const fixture = harness.crossWorkProbeFixture();
-    const reviewed = await fixture.collab.draftReview.preview({
-      projectId: PROJECT_ID as never,
-      workId: WORK_ID,
-      documentId: ALPHA_ID,
-      draftId: await currentDraftId(fixture.collab.draftReview, {
-        projectId: PROJECT_ID as never,
-        workId: WORK_ID,
-        documentId: ALPHA_ID,
-      }),
-    });
-    if (reviewed.status !== "active" || !reviewed.draftId) {
-      throw new Error("missing reviewed draft preview");
-    }
-    const branch = await fixture.liveCoordinator.withDocument(ALPHA_ID, (liveDoc) =>
-      fixture.branchStore.resolveWorkDraftBranchForWork({
-        documentId: ALPHA_ID,
-        workId: WORK_ID,
-        liveDoc,
-      }),
-    );
+    const reviewed = await reviewDriver(fixture.collab.draftReview).preview(ALPHA_ID);
+    if (reviewed.status !== "active") throw new Error("missing reviewed draft preview");
+    const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
     const block = fixture.model.getBlocks(toDocHandle(branch.doc))[0];
     if (!block) throw new Error("draft writer block missing");
     const draftTextLength = fixture.model.getText(block).length;
@@ -428,30 +424,31 @@ describe("change trail (postgres)", () => {
       { from: draftTextLength, to: draftTextLength },
       " WRITER DRAFT MARKER",
     );
-    const committed = await fixture.branchCoordinator.commitSyncFromDoc({
+    const committed = await commitSegmentRows(fixture.branchCoordinator, {
       branchId: branch.branchId,
       sourceDoc: branch.doc,
       expectedGeneration: branch.generation,
-      source: "writer",
-      actorUserId: USER_ID as never,
-      threadId: null,
-      turnId: null,
-      wId: null,
-      updateMeta: null,
+      rows: [
+        {
+          branchId: branch.branchId,
+          updateData: await captureHistoricalBranchRow(
+            fixture.branchCoordinator,
+            branch.branchId,
+            branch.doc,
+          ),
+          source: "writer",
+          actorUserId: USER_ID as never,
+          threadId: null,
+          turnId: null,
+          wId: null,
+          updateMeta: null,
+        },
+      ],
     });
     branch.doc.destroy();
     expect(committed).toBe(true);
 
-    const current = await fixture.collab.draftReview.preview({
-      projectId: PROJECT_ID as never,
-      workId: WORK_ID,
-      documentId: ALPHA_ID,
-      draftId: await currentDraftId(fixture.collab.draftReview, {
-        projectId: PROJECT_ID as never,
-        workId: WORK_ID,
-        documentId: ALPHA_ID,
-      }),
-    });
+    const current = await reviewDriver(fixture.collab.draftReview).preview(ALPHA_ID);
     expect(current).toMatchObject({
       status: "active",
       operations: expect.arrayContaining([
@@ -460,11 +457,9 @@ describe("change trail (postgres)", () => {
     });
 
     await expect(
-      fixture.collab.draftReview.applyWorkDraft({
-        projectId: PROJECT_ID as never,
+      applyDraftDocument(fixture.collab.draftReview, {
         workId: WORK_ID,
         documentId: ALPHA_ID,
-        draftId: reviewed.draftId,
         userId: USER_ID as never,
       }),
     ).resolves.toMatchObject({ status: "applied" });
@@ -477,20 +472,15 @@ describe("change trail (postgres)", () => {
         direction: "undo",
         actor: { type: "user", userId: USER_ID },
       }),
-    ).resolves.toMatchObject({ status: "cant_undo_dependent" });
-    await expect(
-      fixture.collab.draftReview.list({
-        projectId: PROJECT_ID as never,
-        workId: WORK_ID,
-      }),
-    ).resolves.toEqual([]);
+    ).resolves.toMatchObject({ status: "expired" });
+    await expect(reviewDriver(fixture.collab.draftReview).list()).resolves.toEqual([]);
     await expect(
       db
         .select({ id: schema.branchWriteJournal.id })
         .from(schema.branchWriteJournal)
         .where(
           and(
-            eq(schema.branchWriteJournal.branchId, reviewed.draftId),
+            eq(schema.branchWriteJournal.branchId, branch.branchId),
             inArray(schema.branchWriteJournal.status, ["active", "rollback_pending"]),
           ),
         ),
@@ -507,7 +497,7 @@ describe("change trail (postgres)", () => {
       grant: testFileGrant(DRAFT_DESTINATION),
       threadId: THREAD_ID,
       turnId: TURN_ID,
-      responseId,
+      responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
     };
     await expect(
       fixture.collab.agentEdit().write(
@@ -534,10 +524,13 @@ describe("change trail (postgres)", () => {
       ),
     ).resolves.toMatchObject({ status: "success", phase: "staged" });
     await expect(
-      fixture.collab.finalizeResponseCommit(responseId, {
-        threadId: THREAD_ID,
-        turnId: context.turnId as never,
-      }),
+      fixture.collab.finalizeResponseCommit(
+        { providerResponseId: responseId, editScopeId: responseId },
+        {
+          threadId: THREAD_ID,
+          turnId: context.turnId as never,
+        },
+      ),
     ).resolves.toMatchObject({ status: "committed" });
 
     await fixture.liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
@@ -554,25 +547,12 @@ describe("change trail (postgres)", () => {
       });
     });
 
-    const preview = await fixture.collab.draftReview.preview({
-      projectId: PROJECT_ID as never,
-      workId: WORK_ID,
-      documentId: ALPHA_ID,
-      draftId: await currentDraftId(fixture.collab.draftReview, {
-        projectId: PROJECT_ID as never,
-        workId: WORK_ID,
-        documentId: ALPHA_ID,
-      }),
-    });
-    if (preview.status !== "active" || !preview.draftId) {
-      throw new Error("missing draft preview");
-    }
+    const preview = await reviewDriver(fixture.collab.draftReview).preview(ALPHA_ID);
+    if (preview.status !== "active") throw new Error("missing draft preview");
     await expect(
-      fixture.collab.draftReview.applyWorkDraft({
-        projectId: PROJECT_ID as never,
+      applyDraftDocument(fixture.collab.draftReview, {
         workId: WORK_ID,
         documentId: ALPHA_ID,
-        draftId: preview.draftId,
         userId: USER_ID as never,
       }),
     ).resolves.toMatchObject({ status: "applied" });
@@ -591,7 +571,7 @@ describe("change trail (postgres)", () => {
       grant: testFileGrant(DRAFT_DESTINATION),
       threadId: THREAD_ID,
       turnId: TURN_ID,
-      responseId,
+      responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
       createdDocument: false,
     };
     await expect(
@@ -619,10 +599,13 @@ describe("change trail (postgres)", () => {
       ),
     ).resolves.toMatchObject({ status: "success", phase: "staged" });
     await expect(
-      fixture.collab.finalizeResponseCommit(responseId, {
-        threadId: THREAD_ID,
-        turnId: TURN_ID,
-      }),
+      fixture.collab.finalizeResponseCommit(
+        { providerResponseId: responseId, editScopeId: responseId },
+        {
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+        },
+      ),
     ).resolves.toMatchObject({ status: "committed" });
 
     await fixture.liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
@@ -639,25 +622,12 @@ describe("change trail (postgres)", () => {
       });
     });
 
-    const preview = await fixture.collab.draftReview.preview({
-      projectId: PROJECT_ID as never,
-      workId: WORK_ID,
-      documentId: ALPHA_ID,
-      draftId: await currentDraftId(fixture.collab.draftReview, {
-        projectId: PROJECT_ID as never,
-        workId: WORK_ID,
-        documentId: ALPHA_ID,
-      }),
-    });
-    if (preview.status !== "active" || !preview.draftId) {
-      throw new Error("missing draft preview");
-    }
+    const preview = await reviewDriver(fixture.collab.draftReview).preview(ALPHA_ID);
+    if (preview.status !== "active") throw new Error("missing draft preview");
     await expect(
-      fixture.collab.draftReview.applyWorkDraft({
-        projectId: PROJECT_ID as never,
+      applyDraftDocument(fixture.collab.draftReview, {
         workId: WORK_ID,
         documentId: ALPHA_ID,
-        draftId: preview.draftId,
         userId: USER_ID as never,
       }),
     ).resolves.toMatchObject({ status: "applied" });

@@ -2,11 +2,26 @@
  * Folds the thread socket's AG-UI stream into compact, dotted CLI events
  * (codex-exec style) and renders each as one text line.
  */
-import type { SequencedEvent } from "@meridian/contracts/protocol";
+import {
+  EXECUTION_ENDED_EVENT,
+  MESSAGES_DELIVERED_EVENT,
+  readExecutionEnded,
+  readMessagesDelivered,
+  readRunStartedMeta,
+  type SequencedEvent,
+} from "@meridian/contracts/protocol";
 import { oneLine, truncate } from "../../core/output";
 
 export type CliEvent =
-  | { type: "turn.started"; seq: string; turnId: string }
+  | {
+      type: "turn.started";
+      seq: string;
+      turnId: string;
+      /** The execution that reserved this reply; a split successor shares it. */
+      executionId: string | null;
+      /** User turns this reply was reserved for; how a send recognizes its own reply. */
+      reservedForUserTurnIds: readonly string[];
+    }
   | { type: "message.delta"; seq: string; messageId: string; text: string }
   | {
       type: "message.completed";
@@ -37,6 +52,15 @@ export type CliEvent =
     }
   | { type: "turn.finished"; seq: string; turnId: string }
   | {
+      type: "messages.delivered";
+      seq: string;
+      byTurnId: string | null;
+      executionId: string | null;
+      userTurnIds: readonly string[];
+    }
+  /** Every turn the execution reserved is terminal; it does no further work. */
+  | { type: "execution.ended"; seq: string; executionId: string }
+  | {
       type: "turn.failed";
       seq: string;
       message: string;
@@ -59,8 +83,18 @@ export class RunEventMapper {
     const { seq, event } = sequenced;
     const e = event as unknown as Record<string, unknown> & { type: string };
     switch (e.type) {
-      case "RUN_STARTED":
-        return [{ type: "turn.started", seq, turnId: String(e.runId) }];
+      case "RUN_STARTED": {
+        const { executionId, reservedForUserTurnIds } = readRunStartedMeta(e.rawEvent);
+        return [
+          {
+            type: "turn.started",
+            seq,
+            turnId: String(e.runId),
+            executionId,
+            reservedForUserTurnIds,
+          },
+        ];
+      }
       case "RUN_FINISHED":
         return [{ type: "turn.finished", seq, turnId: String(e.runId) }];
       case "RUN_ERROR": {
@@ -158,6 +192,14 @@ export class RunEventMapper {
 
   private mapCustom(seq: string, name: string, value: unknown): CliEvent[] {
     const record = (value ?? {}) as Record<string, unknown>;
+    if (name === EXECUTION_ENDED_EVENT) {
+      const ended = readExecutionEnded(value);
+      return ended ? [{ type: "execution.ended", seq, executionId: ended.executionId }] : [];
+    }
+    if (name === MESSAGES_DELIVERED_EVENT) {
+      const delivered = readMessagesDelivered(value);
+      return delivered ? [{ type: "messages.delivered", seq, ...delivered }] : [];
+    }
     if (name === "meridian.interrupt") {
       const state = String(record.state);
       const type =
@@ -210,6 +252,10 @@ export function renderEventLine(event: CliEvent, full: boolean): string | null {
       return `${event.type} ${event.interruptId}`;
     case "turn.finished":
       return `turn.finished ${event.turnId}`;
+    case "messages.delivered":
+      return null;
+    case "execution.ended":
+      return `execution.ended ${event.executionId}`;
     case "turn.failed":
       return `turn.failed ${event.message}${event.failureReason ? ` (failure reason: ${event.failureReason})` : ""}`;
   }

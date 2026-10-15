@@ -6,6 +6,7 @@
 import { z } from "zod";
 
 import { type MeridianError, meridianErrorSchema } from "../interrupt/index.js";
+import { controlBodySchema } from "../threads/control-body.js";
 import { type AGUIEvent, EventSchemas } from "./agui";
 import type { ThreadLiveState } from "./http-types";
 
@@ -157,7 +158,7 @@ const pendingInboxItemSchema: z.ZodType<import("../threads/index.js").PendingInb
   id: z.string().min(1),
   seq: z.number().int(),
   intent: z.enum(["message", "notice", "control"]),
-  control: z.object({ kind: z.literal("compact"), instructions: z.string().optional() }).optional(),
+  control: controlBodySchema.optional(),
   provenance: messageProvenanceSchema,
   deliveryState: z.enum(["awaiting_run", "waiting"]),
   summary: z.string(),
@@ -166,6 +167,7 @@ const pendingInboxItemSchema: z.ZodType<import("../threads/index.js").PendingInb
 
 const threadPendingInboxSchema: z.ZodType<import("../threads/index.js").ThreadPendingInbox> =
   z.object({
+    blocked: z.object({ reason: z.literal("credits_exhausted") }).optional(),
     items: z.array(pendingInboxItemSchema),
   });
 

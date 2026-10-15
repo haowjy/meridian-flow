@@ -354,6 +354,29 @@ export class DeviceAccountRecentsStore {
     return true;
   }
 
+  /**
+   * A joined document's old id is an alias the server never saw: its row moves to
+   * the id the server knows, and the newer of two rows for one document stays.
+   */
+  followIdentity(accountId: string, projectId: string, from: string, to: string): boolean {
+    const state = this.bound(accountId);
+    if (!state?.items.some((i) => i.projectId === projectId && i.documentId === from)) return false;
+    const moved = state.items.map((item) =>
+      item.projectId === projectId && item.documentId === from ? { ...item, documentId: to } : item,
+    );
+    const newest = new Map<string, AccountRecentItem>();
+    for (const item of moved) {
+      const held = newest.get(`${item.projectId}/${item.documentId}`);
+      if (!held || held.openedAt < item.openedAt)
+        newest.set(`${item.projectId}/${item.documentId}`, item);
+    }
+    state.items = moved.filter(
+      (item) => newest.get(`${item.projectId}/${item.documentId}`) === item,
+    );
+    this.persist();
+    return true;
+  }
+
   patchFromTabs(
     accountId: string,
     projectId: string,

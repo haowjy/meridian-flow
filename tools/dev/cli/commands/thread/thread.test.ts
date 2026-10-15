@@ -24,6 +24,41 @@ const fake = {
 };
 
 describe("thread", () => {
+  it("exits on a proven usage block for its own accepted message", async () => {
+    const result = await mf([
+      "thread",
+      "send",
+      THREAD_ID,
+      "wait for usage",
+      "--timeout",
+      "2s",
+      "--json",
+    ]);
+    expect(result.code).toBe(EXIT.failed);
+    expect(JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "")).toMatchObject({
+      status: "blocked",
+      reason: "credits_exhausted",
+      turnId: null,
+    });
+  });
+  it("uses the recovered outcome rather than an obsolete catch-up usage block", async () => {
+    const result = await mf([
+      "thread",
+      "send",
+      THREAD_ID,
+      "recovered before admission returns",
+      "--timeout",
+      "2s",
+      "--json",
+    ]);
+    expect(result.code).toBe(EXIT.ok);
+    expect(JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "")).toMatchObject({
+      type: "result",
+      status: "complete",
+      finalText: "Recovered reply",
+      turnId: expect.any(String),
+    });
+  });
   it("resolves cN refs through the by-ref route in the default or given project", async () => {
     const byRef = await mf(["thread", "view", "c1", "--json", "--fields", "thread"]);
     expect(byRef.code).toBe(EXIT.ok);
@@ -73,6 +108,46 @@ describe("thread", () => {
       type: "result",
       status: "complete",
       finalText: "Answered the queued message",
+    });
+  });
+
+  it("send behind a queued switch follows the new reply, not the running one", async () => {
+    const result = await mf(["thread", "send", THREAD_ID, "wait behind queued switch", "--json"]);
+    expect(result.stderr).not.toContain("Unparseable");
+    expect(result.code).toBe(EXIT.ok);
+    expect(JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "")).toMatchObject({
+      type: "result",
+      status: "complete",
+      turnId: expect.stringMatching(/^turn-reply-/),
+      finalText: "Answered in the new mode",
+    });
+  });
+
+  it("send into a running reply follows its successor to the reply that answers the steer", async () => {
+    const result = await mf(["thread", "send", THREAD_ID, "steer into a running reply", "--json"]);
+    expect(result.code).toBe(EXIT.ok);
+    expect(JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "")).toMatchObject({
+      type: "result",
+      status: "complete",
+      turnId: expect.stringMatching(/^turn-reply-/),
+      finalText: "The steered answer",
+    });
+  });
+
+  it("send with no admitted reply binds the reply to its own message, not an earlier start", async () => {
+    const result = await mf([
+      "thread",
+      "send",
+      THREAD_ID,
+      "wait past an unrelated start",
+      "--json",
+    ]);
+    expect(result.code).toBe(EXIT.ok);
+    expect(JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "")).toMatchObject({
+      type: "result",
+      status: "complete",
+      turnId: expect.stringMatching(/^turn-reply-/),
+      finalText: "The answer to this message",
     });
   });
 

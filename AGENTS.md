@@ -102,29 +102,73 @@ Dev uses Portless HTTPS routes. Never assume raw ports, bind ports manually, or
 probe `ws://127.0.0.1:<port>`. Start with `pnpm dev`; discover URLs with
 `pnpm portless:list`.
 
+The dev server doesn't watch `node_modules`: pnpm hardlinks its shared store into
+every worktree, so another worktree's install would otherwise restart this one's
+server and kill in-flight replies ([#817](https://github.com/haowjy/meridian-flow/issues/817)).
+After installing, upgrading, or patching a package, run `pnpm dev:restart`.
+
 Postgres is a plain `postgres:16` container; `DATABASE_URL` is the app seam. Use
 noninteractive libpq authentication (`PGPASSWORD` or `-w`).
+
+Dev stacks are the largest single consumer on a shared host — measured at 14.9 GB
+across six worktrees, against ~9 GB for every test process running at the time,
+with one active stack at 6.6 GB. Run `pnpm dev:stacks` before blaming the tests:
+it reports each stack's memory and how long since its tmux session last produced
+output. `pnpm dev:stacks --reap-idle <minutes> --yes` stops the stale ones, but
+only when you ask: a stack belongs to whichever session started it.
 
 Setup: [DEVELOPMENT.md](DEVELOPMENT.md). Dev tooling rules:
 [tools/dev/AGENTS.md](tools/dev/AGENTS.md).
 
-Driving or inspecting the running app (threads, docs, mock model, logs): use
-`./mf` for setup and durable reads (`thread view`, `thread events`, `thread context`,
-`log`, `doc read`). Until [#768](https://github.com/haowjy/meridian-flow/issues/768)
-lands, `./mf thread send` and `thread tail --until-idle` can report another message's
-reply or stop before the reply that answers yours: check run outcomes against
-`./mf thread view` (the durable transcript) or in the browser. See
-[docs/debugging.md](docs/debugging.md#drive-the-app-from-the-cli).
+**Verify app behavior in the browser.** A runtime check, a probe, or a PR's
+walkthrough or Before/After drives a real browser (`agent-browser`) and judges what
+the screen shows, with the durable transcript as truth. `./mf` doesn't test the app:
+it is a separate client over the API. Use it only to set up state (Works, threads,
+seeded documents, mock-model scripts, queued controls) and to read durable state
+(`thread view`, `thread events`, `thread context`, `log`, `doc read`). Never cite
+`./mf thread send` or `thread tail` output as evidence. Until
+[#768](https://github.com/haowjy/meridian-flow/issues/768) lands, they can also report
+another message's reply. See [docs/debugging.md](docs/debugging.md#set-up-and-read-with-the-cli).
 
 ## Build and test
 
 `pnpm check` is the full gate. `pnpm test:db` forces the DB suite.
-`pnpm test:all` runs unit and managed DB tests together. Keep automated tests
-below 2,000 expanded cases (including `it.each` rows and browser-device
-variants) and target at most 60 seconds for that full run. Write few unit
-tests: a new test must protect a named risk; prune weaker duplicate coverage
-rather than adding another layer. Skips, exclusions, and bundling unrelated
-cases do not satisfy the budget. To verify a change, prefer probes,
+`pnpm test:all` runs unit and managed DB tests together.
+
+There is no target case count. `tools/ci/test-budget-reporter.ts` holds the
+suite with a ratchet instead: the expanded case count per test file (including
+`it.each` rows and browser-device variants) may not grow against
+`tools/ci/test-case-baseline.json`. A new file, or a grown count, fails the run.
+Refresh the baseline deliberately with `TEST_BUDGET_UPDATE=1 pnpm test` when the
+growth is intended, so the increase is a reviewable line rather than silent
+drift. Skips, exclusions, and bundling unrelated cases satisfy neither the
+ratchet nor the ceilings below.
+
+The reporter also enforces a **wall-clock** and a **memory** ceiling.
+
+- Memory blocks on every run, CI or not: it is a property of the suite, not of
+  how busy the machine is. The reporter samples the whole process tree and fails
+  past `TEST_MEMORY_CEILING_MB` (default 4096).
+- Wall time is reported and never blocks: it is a property of the machine and of
+  the worker count as much as of the suite. The identical 2,414 cases measured
+  45 s to 104 s on one shared host, and the DB suite runs 89 s at four local
+  workers against 266-322 s serially in CI, so a hard gate would fail on
+  configuration and runner load rather than on a regression.
+  `TEST_DURATION_REFERENCE_SECONDS` sets the value it compares against (150 for
+  the unit suite, 600 for the serial DB suite).
+- Peak memory is `base + workers × module graph`, so it tracks worker count far
+  more than file count: `apps/app` alone (208 files) peaks the same as all 449,
+  and `apps/server` reaches 3.5 GB with no jsdom at all. Deleting tests will not
+  lower a peak. Measured, on a 24-core host: 8 unit workers 3.0 GB, 12 workers
+  4.0 GB, 24 workers 6.7 GB and a flake; 4 DB fork workers 3.5 GB, 8 workers
+  6.0 GB and a settlement flake. Never raise a worker count without measuring.
+
+Write few unit tests: a new test must protect a named risk that no KB decision
+and no probe already covers. A test whose only content is a decision already
+recorded in the knowledge base, or a step a browser recipe already drives,
+duplicates that decision rather than covering the code: delete it in the change
+that lands the decision that supersedes it, and prefer pruning a weaker
+duplicate to adding another layer. To verify a change, prefer probes,
 end-to-end smoke scripts and written manual-testing steps in the
 [runtime probe catalog](docs/qa/README.md); add or update the recipe that
 covers what you changed. Contracts, markup, and DB suites reuse worker module caches:
@@ -148,6 +192,20 @@ Don't defer this: if the integration branch is later squash-merged, none of
 its side-lane branches remain provable as merged by PR match or by ancestry,
 and only a human who tracked the actual history can confirm by hand that they
 are safe to remove.
+
+**Clean up as soon as you're done with something.** Idle dev stacks, databases and
+checkouts waste the machine's memory, CPU and disk. When a worktree, dev stack, probe,
+review checkout or temporary branch has done its job:
+
+1. Stop its dev stack with `pnpm dev --stop`.
+2. End anything still running from it (the Nx daemon, `agent-browser` sessions, watchers).
+3. Remove the worktree, its database and its merged branch with
+   `pnpm dev:prune-worktrees -- --target <branch|path>`.
+4. For a detached checkout the tool refuses, run `pnpm dev --stop` in it, then
+   `git worktree remove` it, and drop its database with `pnpm dev:gc-dbs`.
+
+Run `pnpm dev:gc-dbs` after a batch of cleanups to drop databases that no worktree owns.
+Before you hand control back, check that nothing you started is still running.
 
 Never switch the branch of a checkout you do not own. From the primary
 checkout, create another branch under the sibling worktree root, then pass its

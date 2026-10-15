@@ -48,7 +48,8 @@ function eventSeqForJournalEvent(journalSeq: bigint, projectedIndex: number): bi
   return journalSeq * EVENT_SEQ_FACTOR + BigInt(projectedIndex);
 }
 
-function cursorSeqForJournalHead(journalSeq: bigint): bigint {
+/** The socket seq of the last frame a journal row can carry; the snapshot's `nextSeq - 1`. */
+export function cursorSeqForJournalHead(journalSeq: bigint): bigint {
   if (journalSeq === 0n) return 0n;
   return journalSeq * EVENT_SEQ_FACTOR + EVENT_SEQ_CURSOR_OFFSET;
 }

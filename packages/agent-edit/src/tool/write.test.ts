@@ -9,7 +9,6 @@ import {
   hashAt,
   humanText,
   outcomeText,
-  serializeDoc,
 } from "./test-support/assertions.js";
 import { codec, context, harness, model } from "./test-support/write-tool-harness.js";
 
@@ -39,9 +38,11 @@ describe("write tool dispatch", () => {
   });
 
   it("reports degraded awareness when destructive reporting fails after append", async () => {
+    const transitions: string[] = [];
     const ctx = harness(
       { "chapter.md": "Writer protected." },
       {
+        onResponseCommitterTransition: (event) => transitions.push(event.transition),
         journalOverride: (journal) => {
           const destructiveJournal: UpdateJournal = journal;
           destructiveJournal.materializeDestructiveProvenance = async () => {
@@ -67,6 +68,27 @@ describe("write tool dispatch", () => {
     expect(outcomeText(result)).toContain("destructive awareness degraded");
     expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(1);
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Agent replacement."]);
+    const staged = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "Agent replacement.",
+        content: "Accepted response text.",
+      },
+      {
+        ...context,
+        responseIdentity: { providerResponseId: "report-failure", editScopeId: "report-failure" },
+        turnId: "report-failure",
+      },
+    );
+    expectOutcome(staged, "success");
+    const committed = await ctx.core.commitResponse("report-failure");
+    expect(committed.documents[0].receipts).toMatchObject([
+      { writeId: staged.result.write?.id, result: { status: "success", awarenessDegraded: true } },
+    ]);
+    expect(transitions).not.toContain("recovery_succeeded");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Accepted response text."]);
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(2);
   });
 
   it("leaves no phantom runtime mutation when write ordinal reservation fails", async () => {
@@ -125,6 +147,7 @@ describe("write tool dispatch", () => {
           mode: "threadPeer",
           afterJournalId: 0,
           branchGeneration: 1,
+          peerBranchId: "branch-peer",
         },
       },
     );
@@ -150,6 +173,7 @@ describe("write tool dispatch", () => {
           mode: "threadPeer",
           afterJournalId: 0,
           branchGeneration: 1,
+          peerBranchId: "branch-peer",
         },
       },
     );
@@ -201,8 +225,9 @@ describe("write tool dispatch", () => {
 
     expect(outcomeText(result)).toContain("status: invalid_write");
     expectOutcome(result, "invalid_write", true);
-    expect(outcomeText(result)).toContain("File already exists: chapter.md");
-    expect(outcomeText(result)).toContain("overwrite=true");
+    expect(outcomeText(result)).toContain(
+      "File already exists: chapter.md. Read it, then edit it; use overwrite=true only to replace all of its content.",
+    );
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Already here."]);
 
     // A host's fresh bound write: empty when checked and restored, then a writer's paragraph is
@@ -318,6 +343,7 @@ describe("write tool dispatch", () => {
 
   it("scopes tool_use_id idempotency to the response identity", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
+    const appended = vi.spyOn(ctx.journal, "appendBatch");
     await ctx.core.read({ file: "chapter.md" }, context);
 
     const first = await ctx.core.write(
@@ -330,7 +356,10 @@ describe("write tool dispatch", () => {
       {
         ...context,
         turnId: "turn-provider-local-a",
-        responseId: "response-provider-local-a",
+        responseIdentity: {
+          providerResponseId: "response-provider-local-a",
+          editScopeId: "response-provider-local-a",
+        },
       },
     );
     await ctx.core.commitResponse("response-provider-local-a");
@@ -345,7 +374,10 @@ describe("write tool dispatch", () => {
       {
         ...context,
         turnId: "turn-provider-local-b",
-        responseId: "response-provider-local-b",
+        responseIdentity: {
+          providerResponseId: "response-provider-local-b",
+          editScopeId: "response-provider-local-b",
+        },
       },
     );
     await ctx.core.commitResponse("response-provider-local-b");
@@ -360,9 +392,38 @@ describe("write tool dispatch", () => {
       "Second response write.",
     ]);
     expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(2);
-    expect(ctx.journal.mutationRecords("chapter.md").map((row) => row.writeId)).toEqual([
+    expect(
+      appended.mock.calls.flatMap(([entries]) => entries.map((entry) => entry.mutation?.writeId)),
+    ).toEqual([
       "response:response-provider-local-a:tool:provider-local-write",
       "response:response-provider-local-b:tool:provider-local-write",
+    ]);
+  });
+
+  it("hands the model's own tool call id to the journal, unscoped", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    await ctx.core.read({ file: "chapter.md" }, context);
+    const appended = vi.spyOn(ctx.journal, "appendBatch");
+
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta.", tool_use_id: "call-write-9" },
+      {
+        ...context,
+        turnId: "turn-9",
+        responseIdentity: { providerResponseId: "response-9", editScopeId: "response-9" },
+      },
+    );
+    await ctx.core.commitResponse("response-9");
+
+    const mutations = appended.mock.calls.flatMap(([entries]) =>
+      entries.map((entry) => entry.mutation),
+    );
+    expect(mutations).toEqual([
+      expect.objectContaining({
+        turnId: "turn-9",
+        toolCallId: "call-write-9",
+        writeId: "response:response-9:tool:call-write-9",
+      }),
     ]);
   });
 
@@ -372,7 +433,10 @@ describe("write tool dispatch", () => {
     const responseContext = {
       ...context,
       turnId: "turn-idempotency-after-rollback",
-      responseId: "response-idempotency-after-rollback",
+      responseIdentity: {
+        providerResponseId: "response-idempotency-after-rollback",
+        editScopeId: "response-idempotency-after-rollback",
+      },
     };
     const command = {
       command: "insert" as const,
@@ -391,58 +455,6 @@ describe("write tool dispatch", () => {
     expect(outcomeText(replay)).toContain("Response lifecycle closed");
     expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(0);
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha."]);
-  });
-
-  it("replaces text and formatting, then structurally deletes and restores a block range", async () => {
-    const ctx = harness({
-      "chapter.md": "Alpha sword.\n\nDelete one.\n\n## Delete two\n\nKeep me.",
-    });
-    await ctx.core.read({ file: "chapter.md" }, context);
-
-    const text = await ctx.core.write(
-      { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
-      context,
-    );
-    expect(outcomeText(text)).toContain("status: success");
-    expect(outcomeText(text)).toContain("|Alpha blade.");
-    expect(blockTexts(ctx.liveDoc("chapter.md"))[0]).toBe("Alpha blade.");
-
-    const formatted = await ctx.core.write(
-      { command: "replace", file: "chapter.md", content: "**blade**", find: "blade" },
-      context,
-    );
-    expect(outcomeText(formatted)).toContain("status: success");
-    expect(outcomeText(formatted)).toContain("|Alpha **blade**.");
-    expect(serializeDoc(ctx.liveDoc("chapter.md"))).toContain("Alpha **blade**.");
-
-    const beforeDelete = serializeDoc(ctx.liveDoc("chapter.md"));
-    const firstDeleteHash = hashAt(ctx.liveDoc("chapter.md"), 1);
-    const lastDeleteHash = hashAt(ctx.liveDoc("chapter.md"), 2);
-    const deletion = await ctx.core.write(
-      { command: "remove", file: "chapter.md", in: [firstDeleteHash, lastDeleteHash] },
-      context,
-    );
-
-    expect(outcomeText(deletion)).toContain("status: success");
-    expect(deletion.result).toMatchObject({
-      command: "remove",
-      write: { deletedHashes: [firstDeleteHash, lastDeleteHash] },
-    });
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade.", "Keep me."]);
-
-    const undo = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
-    expect(undo.result).toMatchObject({
-      command: "undo",
-      reversal: { direction: "undo", writes: ["w3"] },
-    });
-    expect(serializeDoc(ctx.liveDoc("chapter.md"))).toBe(beforeDelete);
-
-    const rejectedSentinel = await ctx.core.write(
-      { command: "replace", file: "chapter.md", content: "", in: 4 },
-      context,
-    );
-    expect(rejectedSentinel.status).toBe("invalid_write");
-    expect(outcomeText(rejectedSentinel)).toContain("Use `remove` to remove blocks");
   });
 
   it("restores the pre-write runtime snapshot after an apply failure", async () => {
@@ -516,12 +528,48 @@ describe("write tool dispatch", () => {
       { command: "replace", file: "chapter.md", content: "kitten", find: "cat" },
       context,
     );
-    expectOutcome(failed, "internal_error", true);
+    expectOutcome(failed, "partial_failure", true);
     expect(writeCertifiedFacts).toHaveBeenCalledOnce();
 
     const reread = await ctx.core.read({ file: "chapter.md" }, context);
     expectOutcome(reread, "success");
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["cat one"]);
+    for (const command of [
+      {
+        command: "replace" as const,
+        file: "chapter.md",
+        in: [1, 2] as [number, number],
+        content: "kitten one\n\nkitten two",
+      },
+      {
+        command: "create" as const,
+        file: "chapter.md",
+        overwrite: true,
+        content: "kitten one\n\nkitten two",
+      },
+    ]) {
+      let certified = 0;
+      const multipart = harness(
+        { "chapter.md": "cat one\n\ncat two" },
+        {
+          semanticProvenance: {
+            writeCertifiedFacts() {
+              if (++certified === 2) throw new Error("second part rejected");
+            },
+          },
+        },
+      );
+      const rejected = await multipart.core.write(command, {
+        ...context,
+        responseIdentity: { providerResponseId: "certification", editScopeId: "certification" },
+        createdDocument: false,
+      });
+      expectOutcome(rejected, "partial_failure", true);
+      expect(certified).toBe(2);
+      expect((await multipart.core.commitResponse("certification")).updateCount).toBe(0);
+      expect((await multipart.journal.read("chapter.md")).updates).toHaveLength(0);
+      expect(blockTexts(multipart.liveDoc("chapter.md"))).toEqual(["cat one", "cat two"]);
+    }
   });
 });
 

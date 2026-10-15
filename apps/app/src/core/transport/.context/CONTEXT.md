@@ -1,5 +1,9 @@
 # Client transport seams
 
+This page records the transport contracts consumed by document sessions and
+debug observers. Transport owns wire evidence and lifecycle, not editor policy
+or debug-event interpretation.
+
 ## Document status
 
 Every `DocumentSessionTransportProvider.subscribeStatus` implementation emits
@@ -21,6 +25,31 @@ socket. `CollabSchemaWebSocket` formats the current version through
 `@meridian/prosemirror-schema`; the Yjs URL carries no schema parameter. The
 subclass wraps `TappedWebSocket` in debug builds and the native `WebSocket` in
 production so observation does not create a second transport path.
+
+## Outbox and acknowledgement edges
+
+The outbox is the session layer's evidence that the writer has typing the
+server has not acknowledged. Draft review counts it as changes at the shown
+generation, and `BranchWriterHandoff` carries it into the next generation, so
+it must be visible to every observer before anything can act on its absence.
+
+- **Store, then send.** `handleDocumentUpdate` registers on the `Y.Doc` before
+  `HocuspocusProvider` is constructed. Yjs (lib0 `ObservableV2`) runs update
+  listeners in registration order, so local bytes are stored before the
+  provider's own listener sends them and the native send tracker publishes
+  acknowledgement `false`. The provider constructor does not mutate the
+  document, and the explicit websocket keeps it from attaching on its own, so
+  the early registration sees no constructor updates.
+- **Edges only.** The transport publishes its own acknowledgement observation
+  only when the outbox goes from empty to pending. An acknowledgement clears
+  the outbox before notifying. `DocumentSession.recomputeStatus` deduplicates
+  on status, server acknowledgement and outbox presence, so a typing burst
+  yields one pending snapshot and one clearing snapshot. A per-update emission
+  re-rendered every subscribed editor on each keystroke.
+
+The ordering is a live transport contract, not a test-double detail. A witness
+for it must exercise `test-support/DocumentSocketHarness`, as the transport
+acknowledgement and remote whole-discard probes do.
 
 ## Access scope and 4409
 

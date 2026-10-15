@@ -7,6 +7,7 @@ import type {
   ResponseCommitWriteReceipt,
   ResponseStagedCreateOutcome,
 } from "@meridian/agent-edit/integration";
+import type { ModelResponseIdentity } from "@meridian/contracts";
 import type { PermissionDeniedReason } from "@meridian/contracts/protocol";
 import type { ContextPort } from "../../domains/context/ports/context-port.js";
 import type { FileAccessDenied } from "../../domains/file-policy/index.js";
@@ -28,12 +29,12 @@ type StagedCreateCleanup = {
 export interface AgentEditResponseWriteLifecycle {
   trackStagedCreate(input: StagedCreateCleanup): void;
   commitResponse(
-    responseId: string,
+    responseIdentity: ModelResponseIdentity,
     ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
     beforeTransactionCommit?: (result: ResponseWriteLifecycleCommitResult) => Promise<void>,
   ): Promise<ResponseWriteLifecycleCommitResult>;
   rollbackResponse(
-    responseId: string,
+    responseIdentity: ModelResponseIdentity,
     ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
   ): Promise<void>;
 }
@@ -57,17 +58,17 @@ function refusedAtSave(denial: FileAccessDenied): {
   return { message: permissionDeniedMessage(denial), reason: denial.reason };
 }
 
-export async function deleteCreatedTrackedDocument(input: {
+/**
+ * Reverse a reply's create (contract §12.5): a live create is deleted; a drafted one ends
+ * its draft's use of the document, unless another thread's committed text makes it stand.
+ */
+export async function retractCreatedTrackedDocument(input: {
   port: ContextPort;
   path: string;
   documentId: string;
 }): Promise<void> {
-  const deleted = await input.port.delete(input.path, {
-    expected: { kind: "file", documentId: input.documentId },
-  });
-  if (!deleted.ok && deleted.error.code !== "not_found" && deleted.error.code !== "stale_target") {
-    throw new Error(contextErrorMessage(deleted.error));
-  }
+  const retracted = await input.port.retractCreate(input.path, { documentId: input.documentId });
+  if (!retracted.ok) throw new Error(contextErrorMessage(retracted.error));
 }
 
 export function createAgentEditResponseWriteLifecycle(
@@ -83,7 +84,7 @@ export function createAgentEditResponseWriteLifecycle(
     const discarded = new Set(discardedDocumentIds);
     for (const record of records) {
       if (!discarded.has(record.documentId)) continue;
-      await deleteCreatedTrackedDocument(record);
+      await retractCreatedTrackedDocument(record);
     }
   }
 
@@ -101,10 +102,11 @@ export function createAgentEditResponseWriteLifecycle(
     },
 
     async commitResponse(
-      responseId: string,
+      responseIdentity: ModelResponseIdentity,
       ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
       beforeTransactionCommit?: (result: ResponseWriteLifecycleCommitResult) => Promise<void>,
     ): Promise<ResponseWriteLifecycleCommitResult> {
+      const responseId = responseIdentity.editScopeId;
       const mapResult = (
         result: Awaited<ReturnType<typeof deps.documentSync.finalizeResponseCommit>>,
       ): ResponseWriteLifecycleCommitResult => {
@@ -121,14 +123,16 @@ export function createAgentEditResponseWriteLifecycle(
               ? [{ documentId: document.documentId, concurrentEdits: document.concurrentEdits }]
               : [],
           ),
-          refused: result.refused.map((refusal) => ({
-            documentId: refusal.documentId,
-            ...refusedAtSave(refusal.denial),
-          })),
+          // A refusal with a reason is receipted write by write in `documents`.
+          refused: result.refused.flatMap((refusal) =>
+            "denial" in refusal
+              ? [{ documentId: refusal.documentId, ...refusedAtSave(refusal.denial) }]
+              : [],
+          ),
         };
       };
       const result = await deps.documentSync.finalizeResponseCommit(
-        responseId,
+        responseIdentity,
         ctx,
         async (commitResult) => beforeTransactionCommit?.(mapResult(commitResult)),
       );
@@ -138,10 +142,11 @@ export function createAgentEditResponseWriteLifecycle(
     },
 
     async rollbackResponse(
-      responseId: string,
+      responseIdentity: ModelResponseIdentity,
       ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
     ): Promise<void> {
-      const result = await deps.documentSync.finalizeResponseRollback(responseId, ctx);
+      const responseId = responseIdentity.editScopeId;
+      const result = await deps.documentSync.finalizeResponseRollback(responseIdentity, ctx);
       try {
         await cleanupDiscardedStagedCreates(responseId, result.stagedCreates.discarded);
       } finally {

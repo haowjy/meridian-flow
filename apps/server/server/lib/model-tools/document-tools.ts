@@ -47,11 +47,9 @@ import {
   firstRefusal,
   inContainer,
   keptDraftReader,
-  withDraftWork,
-  withRefusedWrites,
 } from "./file-access.js";
 import { readDocument } from "./read-document.js";
-import { deleteCreatedTrackedDocument } from "./response-write-lifecycle.js";
+import { retractCreatedTrackedDocument } from "./response-write-lifecycle.js";
 import { showingOf, threadShownLinks } from "./shown-link-capture.js";
 import {
   contextErrorMessage,
@@ -73,7 +71,6 @@ export async function resolveDocumentAddress(
   path: string,
   options: {
     sourceExtension?: string;
-    deferTrackedDocumentSync?: boolean;
     metadata?: DocumentCreationMetadata;
     origin?: import("../../domains/context/index.js").WriteProvenance;
   } = {},
@@ -88,7 +85,6 @@ export async function resolveDocumentAddress(
         ? { sourceExtension: options.sourceExtension }
         : {}),
       ...(options.origin ? { origin: options.origin } : {}),
-      ...(options.deferTrackedDocumentSync ? { deferDocumentSync: true } : {}),
       ...(options.metadata ? { metadata: options.metadata } : {}),
     };
     const ensured = await port.ensureTrackedDocument(
@@ -117,6 +113,11 @@ export async function resolveDocumentAddress(
     const unknownAddress =
       ref.error.code === "invalid_uri" &&
       (ref.error.workSlug !== undefined || ref.error.unknownScheme !== undefined);
+    if (ref.error.code === "invalid_operation" && ref.error.reason === "ambiguous_path") {
+      return writeToolError(command, contextErrorMessage(ref.error), "ambiguous_path", {
+        path: canonicalPath,
+      });
+    }
     return writeToolError(
       command,
       contextErrorMessage(ref.error),
@@ -210,7 +211,7 @@ async function writeUnderGrant(
         sessionId: ctx.threadId,
         threadId: ctx.threadId,
         turnId: ctx.turnId,
-        responseId: ctx.responseId,
+        responseIdentity: ctx.responseIdentity,
         tool_use_id: ctx.toolCallId,
         createdDocument: address.created === true,
         grant,
@@ -227,12 +228,10 @@ async function writeUnderGrant(
   if (written.isError) return { isError: true, output: written.result, shown };
   // The showing is host-only evidence: it leaves here only as `shown`.
   const { showing: _showing, ...outcome } = written;
-  // Undo and redo go where history says, so only forward writes name a destination.
-  const reversal = parsed.command === "undo" || parsed.command === "redo";
-  const routed = reversal
-    ? withRefusedWrites(outcome)
-    : withDestination(outcome, grant.destination);
-  return { ...routed, shown } as WriteOutcome & { isError: false; shown: ShownLinkShowing[] };
+  return { ...withDestination(outcome, grant.destination), shown } as WriteOutcome & {
+    isError: false;
+    shown: ShownLinkShowing[];
+  };
 }
 
 export function createReadHandler(deps: ToolWiringDeps) {
@@ -306,8 +305,9 @@ export function createWriteHandler(deps: ToolWiringDeps) {
             fromMessage(parsed.from, sourceGrant.output.message ?? ""),
           );
         }
-        // A binary copy always lands live (D24), so its folder is judged live.
-        return inContainer(deps, withDraftWork(principal, null), parsed.command, target, () =>
+        // A binary copy lands where a create would: in a draft-mode chat, a hidden row
+        // holding the draft's own object (12b-Q2).
+        return inContainer(deps, principal, parsed.command, target, () =>
           copyBinary(deps, context, parsed, binary, sourceGrant, ctx),
         );
       }
@@ -335,7 +335,6 @@ export function createWriteHandler(deps: ToolWiringDeps) {
           threadId: ctx.threadId,
           turnId: ctx.turnId,
         },
-        deferTrackedDocumentSync: creates && ctx.responseId !== undefined,
         ...(parsed.command === "copy" && copied
           ? {
               metadata: { copiedFrom: copied.copiedFrom },
@@ -347,11 +346,12 @@ export function createWriteHandler(deps: ToolWiringDeps) {
     if (isToolError(address)) return address;
 
     const outcome = await writeUnderGrant(deps, principal, parsed, address, copied, ctx);
-    const stagedCreate = creates && ctx.responseId !== undefined && address.created === true;
+    const stagedCreate =
+      creates && ctx.responseIdentity?.editScopeId !== undefined && address.created === true;
     if (outcome.isError) {
       if (stagedCreate) {
         try {
-          await deleteCreatedTrackedDocument({
+          await retractCreatedTrackedDocument({
             port: context.port,
             path: parsed.path,
             documentId: address.documentId,
@@ -369,7 +369,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       return { isError: true, output: outcome.output, shown: outcome.shown };
     }
     if (stagedCreate) {
-      const responseId = ctx.responseId;
+      const responseId = ctx.responseIdentity?.editScopeId;
       if (responseId === undefined) {
         return writeToolError(parsed.command, "Missing staged response id", "internal_error");
       }
@@ -382,14 +382,9 @@ export function createWriteHandler(deps: ToolWiringDeps) {
     }
 
     recordTouchInBackground(deps, address.documentId, ctx);
-    // Undo and redo apply at once; every other write stages until the response
-    // commits. A write that changed nothing has nothing to stage or refresh.
+    // Settlement phase, not command names, decides who still owes admission.
     const unchanged = outcome.result.unchanged === true;
-    const stagedWrite =
-      !unchanged &&
-      ctx.responseId !== undefined &&
-      parsed.command !== "undo" &&
-      parsed.command !== "redo";
+    const stagedWrite = outcome.status === "success" && outcome.phase === "staged";
     if (!stagedWrite && !unchanged) {
       await deps.documentSync.refreshDocumentProjection({
         documentId: address.documentId,

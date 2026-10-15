@@ -10,6 +10,7 @@ import { resolve } from "node:path";
 import type { ProjectId, UserId } from "@meridian/contracts/runtime";
 import { createDb, projects } from "@meridian/database";
 import { eq } from "drizzle-orm";
+import { createDrizzleWorkDraftPendingStore } from "../../apps/server/server/domains/collab/adapters/drizzle-branch-push.ts";
 import { createDrizzleContextCatalog } from "../../apps/server/server/domains/context/adapters/context-catalog.ts";
 import { createDrizzleLineageScratchLifecycle } from "../../apps/server/server/domains/context/adapters/lineage-scratch-lifecycle.ts";
 import { createDrizzleProjectContextAvailability } from "../../apps/server/server/domains/context/adapters/project-context-availability.ts";
@@ -86,6 +87,7 @@ async function main(): Promise<void> {
     db,
     availability: projectContextAvailability,
     catalog: contextCatalog,
+    pending: createDrizzleWorkDraftPendingStore(db),
   });
 
   const lineageScratch = createDrizzleLineageScratchLifecycle(db, contextCatalog);
@@ -152,6 +154,7 @@ async function main(): Promise<void> {
       userId,
       projectId: PROJECT_ID,
       workId: null,
+      aiWriteMode: "direct",
       title: "Chat",
     });
     const threads = await repos.threads.listByProject(PROJECT_ID);

@@ -10,7 +10,9 @@ writer watches.
 ## Snapshot revalidation
 
 `useThreadSnapshotSync` (`../../../client/query/useThreadSnapshotSync.ts`) owns
-the authoritative history fetch:
+the authoritative history fetch. Every producer of the snapshot key builds its options with
+`threadSnapshotQueryOptions` (`../../../client/query/thread-snapshot-query.ts`); the host adds
+the account abort signal and its identity and staleness checks as a guard.
 
 - The query is always stale (`staleTime: 0`) with `refetchOnMount: "always"`, so
   every activation refetches. Cached turns render first and the fetch reconciles
@@ -27,6 +29,11 @@ the authoritative history fetch:
   durable wire cursor and snapshot floor reject replay rewinds and old HTTP
   responses. A server-initiated run has no local submit to learn it from, so
   this subscription also surfaces its turn and card.
+
+- `settled` means the snapshot's turns are in the transcript store (or the
+  load failed), not merely fetched: the accepted snapshot is visible one commit
+  before `applyThreadSnapshot` lands it, and a reader such as the turn reveal
+  would take that empty transcript for "no such turn".
 
 Both this fetch and the transport's gap recovery funnel through
 `applyThreadSnapshot`. The reconciliation mechanics — identity bridge, monotonic

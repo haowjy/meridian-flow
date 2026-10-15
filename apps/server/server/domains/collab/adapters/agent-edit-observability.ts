@@ -3,19 +3,24 @@ import type {
   createAgentEditCore,
   LinkSpliceFallbackDetail,
   ResponseLifecycleClaimDiscardedDetail,
-  ReversalNoticeFailedDetail,
-  ReversalNoticePort,
   UnexpectedWriteErrorDetail,
   WriteIdempotencyHitDetail,
 } from "@meridian/agent-edit/integration";
-import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
+import {
+  type EventSink,
+  emitEvent,
+  errorMessageOf,
+  unknownToEventPayload,
+} from "../../observability/index.js";
 import type { BranchAgentEditDiagnostics } from "../domain/branch-agent-edit.js";
 import type { BranchPullDiagnostics } from "../domain/branch-pulls.js";
 import type { SweepProjectionDiagnostics } from "../domain/branch-push-contracts.js";
 import type { DocumentProjectionDiagnostics } from "../domain/document-projection-refresher.js";
+import type { DraftBranchAheadDiagnostics } from "../domain/draft-branch-ahead-registration.js";
 import type { MarkdownSerializationAnomalyObserver } from "../domain/markdown-document.js";
 import type { ResponseTransactionDiagnostics } from "../domain/response-transaction.js";
 import type { ReversalNoticeDiagnostics } from "../domain/reversal-notices.js";
+import type { DraftReviewDiagnostics } from "../domain/work-draft-review-service.js";
 
 export function createBranchPullDiagnostics(eventSink?: EventSink): BranchPullDiagnostics {
   return {
@@ -26,6 +31,23 @@ export function createBranchPullDiagnostics(eventSink?: EventSink): BranchPullDi
         source: "collab.branch_pull",
         name: "background.failed",
         correlation: { documentId },
+        payload: unknownToEventPayload(cause),
+      });
+    },
+  };
+}
+
+export function createDraftBranchAheadDiagnostics(
+  eventSink?: EventSink,
+): DraftBranchAheadDiagnostics {
+  return {
+    registrationFailed({ branchId, cause }) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "warn",
+        source: "collab.draft_links",
+        name: "registration.failed",
+        correlation: { branchId },
         payload: unknownToEventPayload(cause),
       });
     },
@@ -44,6 +66,7 @@ export function createResponseTransactionDiagnostics(
       payload: {
         responseTransactionId: input.responseTransactionId,
         ...unknownToEventPayload(input.cause),
+        ...errorMessageOf(input.cause),
       },
     });
   };
@@ -76,6 +99,21 @@ export function createBranchAgentEditDiagnostics(
         payload,
       });
     },
+    replyPinMismatch(payload) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "error",
+        source: "collab.reply_save_fences",
+        name: "reply_pin.identity_mismatch",
+        correlation: {
+          documentId: payload.documentId,
+          draftId: payload.pin.draftId,
+          peerBranchId: payload.pin.peerBranchId,
+          upstreamBranchId: payload.pin.upstreamBranchId,
+        },
+        payload: { threadId: payload.threadId ?? null, refusal: "integration" },
+      });
+    },
   };
 }
 
@@ -103,7 +141,8 @@ export function createSweepProjectionDiagnostics(
         level: "warn",
         source: "collab.change_event",
         name: "sweep_projection.unavailable",
-        payload: { pushId, documentId, ...unknownToEventPayload(cause) },
+        correlation: { pushId: String(pushId) },
+        payload: { documentId, ...unknownToEventPayload(cause) },
       });
     },
   };
@@ -217,23 +256,6 @@ export function createReversalNoticeDiagnostics(eventSink?: EventSink): Reversal
           threadId: input.threadId,
           documentIds: [...input.documentIds],
           ...(input.responseId ? { responseId: input.responseId } : {}),
-          ...(input.affectedBlockHashes
-            ? { affectedBlockHashes: [...input.affectedBlockHashes] }
-            : {}),
-          cause: unknownToEventPayload(input.cause),
-        },
-      });
-    },
-    degradedRecordFailedAfterDurability(input) {
-      if (!eventSink) return;
-      emitEvent(eventSink, {
-        level: "error",
-        source: "collab.model_context_notices",
-        name: "degraded_record_failed_after_durability",
-        payload: {
-          threadId: input.threadId,
-          documentIds: [...input.documentIds],
-          ...(input.responseId ? { responseId: input.responseId } : {}),
           cause: unknownToEventPayload(input.cause),
         },
       });
@@ -243,28 +265,21 @@ export function createReversalNoticeDiagnostics(eventSink?: EventSink): Reversal
 
 export function createAgentEditObservabilityOptions(input: {
   eventSink?: EventSink;
-  reversalNoticePort?: ReversalNoticePort;
 }): Pick<
   Parameters<typeof createAgentEditCore>[0],
-  | "reversalNoticePort"
-  | "onInvariantViolation"
   | "onResponseLifecycleError"
   | "onResponseClaimDiscarded"
   | "onResponseCommitterTransition"
   | "onIdempotencyHit"
   | "onUnexpectedWriteError"
-  | "onReversalNoticeFailed"
   | "onLinkSpliceFallback"
 > {
   return {
-    ...(input.reversalNoticePort ? { reversalNoticePort: input.reversalNoticePort } : {}),
-    onInvariantViolation: invariantPolicy(input.eventSink),
     onResponseLifecycleError: responseLifecycleObserver(input.eventSink),
     onResponseClaimDiscarded: responseClaimDiscardedObserver(input.eventSink),
     onResponseCommitterTransition: responseCommitterTransitionObserver(input.eventSink),
     onIdempotencyHit: idempotencyHitObserver(input.eventSink),
     onUnexpectedWriteError: unexpectedWriteErrorObserver(input.eventSink),
-    onReversalNoticeFailed: reversalNoticeFailedObserver(input.eventSink),
     onLinkSpliceFallback: linkSpliceFallbackObserver(input.eventSink),
   };
 }
@@ -312,25 +327,6 @@ function unexpectedWriteErrorObserver(
         ...unknownToEventPayload(event.cause),
       },
     });
-  };
-}
-
-function invariantPolicy(eventSink?: EventSink): (message: string) => void {
-  return (message) => {
-    if (process.env.NODE_ENV !== "production") throw new Error(message);
-
-    if (eventSink) {
-      try {
-        emitEvent(eventSink, {
-          level: "error",
-          source: "collab.agent_edit",
-          name: "invariant_violation",
-          payload: { errorCode: "invariant_violation" },
-        });
-      } catch {
-        // Invariant reporting is best-effort after production policy has handled it.
-      }
-    }
   };
 }
 
@@ -398,22 +394,17 @@ function idempotencyHitObserver(
   };
 }
 
-function reversalNoticeFailedObserver(
-  eventSink?: EventSink,
-): NonNullable<Parameters<typeof createAgentEditCore>[0]["onReversalNoticeFailed"]> {
-  return (event: ReversalNoticeFailedDetail) => {
-    if (eventSink) {
-      try {
-        emitEvent(eventSink, {
-          level: "error",
-          source: "collab.undo_notifications",
-          name: "record.failed",
-          payload: { ...event },
-        });
-        return;
-      } catch {
-        // Notice diagnostics cannot change the already-durable reversal outcome.
-      }
-    }
+export function createDraftReviewDiagnostics(eventSink?: EventSink): DraftReviewDiagnostics {
+  return {
+    unattributedHunks({ documentId, hunkIds }) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "warn",
+        source: "collab.draft_review",
+        name: "attribution.incomplete",
+        correlation: { documentId },
+        payload: { hunkCount: hunkIds.length },
+      });
+    },
   };
 }

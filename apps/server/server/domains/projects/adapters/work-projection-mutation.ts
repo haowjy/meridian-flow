@@ -1,21 +1,30 @@
 /** Canonical transaction participant for every mutation visible in a Works snapshot. */
+import type { DraftId } from "@meridian/contracts";
 import type { WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { branchWriteJournal, documentBranches, works } from "@meridian/database/schema";
-import { and, countDistinct, eq, inArray, sql } from "drizzle-orm";
+import { drafts, works } from "@meridian/database/schema";
+import { inArray, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   type DrizzleTransactionParticipant,
   enlistDrizzleTransactionParticipant,
   runInDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
+import { draftBranchWorks } from "../../../shared/work-draft-lifecycle.js";
 import type { ProjectContextAvailabilityMutationPort } from "../../context/ports/project-context-availability.js";
 import type { ContextCatalogLifecyclePort } from "../ports/context-catalog-lifecycle.js";
+import type { WorkDraftPendingCounts } from "../ports/work-draft-pending-counts.js";
 
 export type WorkProjectionMutation = {
   publishWorks(workIds: readonly WorkId[]): Promise<void>;
   touchWorks(workIds: readonly WorkId[], activityAt?: Date): Promise<void>;
+  /** Enrolls the Works whose pending count `operation` changed, by these branches' drafts. */
   mutatePendingBranches<T>(branchIds: readonly string[], operation: () => Promise<T>): Promise<T>;
+  /**
+   * The same for a change to these drafts' tree rows or branches (contract §13.2): a
+   * branchless image create or an empty tracked create moves the Work's badge too.
+   */
+  mutatePendingDraft<T>(draftIds: readonly DraftId[], operation: () => Promise<T>): Promise<T>;
 };
 
 const PUBLICATION_STATE = {};
@@ -26,8 +35,10 @@ type PublicationState = {
 
 export function createWorkProjectionMutation(input: {
   db: Database;
-  availability: ProjectContextAvailabilityMutationPort;
+  availability: Pick<ProjectContextAvailabilityMutationPort, "advance">;
   catalog: ContextCatalogLifecyclePort;
+  /** Read in the caller's transaction, so before and after count what the list and catalog do. */
+  pending: WorkDraftPendingCounts;
 }): WorkProjectionMutation {
   const publicationParticipant: DrizzleTransactionParticipant<PublicationState> = {
     key: PUBLICATION_STATE,
@@ -79,34 +90,20 @@ export function createWorkProjectionMutation(input: {
     }
   }
 
-  async function pendingCounts(workIds: readonly WorkId[]): Promise<Map<WorkId, number>> {
-    if (workIds.length === 0) return new Map();
-    const rows = await currentDrizzleDb(input.db)
-      .select({ workId: documentBranches.workId, count: countDistinct(documentBranches.id) })
-      .from(documentBranches)
-      .innerJoin(
-        branchWriteJournal,
-        and(
-          eq(branchWriteJournal.branchId, documentBranches.id),
-          eq(branchWriteJournal.generation, documentBranches.generation),
-          inArray(branchWriteJournal.status, ["active", "rollback_pending"]),
-        ),
-      )
-      .where(
-        and(
-          inArray(documentBranches.workId, workIds),
-          eq(documentBranches.kind, "work_draft"),
-          eq(documentBranches.status, "active"),
-          sql`(${branchWriteJournal.updateMeta}->>'kind') is distinct from 'manifest_membership'
-            or jsonb_typeof(${branchWriteJournal.updateMeta}->'documentId') is distinct from 'string'`,
-        ),
-      )
-      .groupBy(documentBranches.workId);
-    return new Map(
-      rows.flatMap(({ workId, count }) =>
-        workId === null ? [] : [[workId as WorkId, Number(count)] as const],
-      ),
+  /** Before and after `operation`, these Works' pending counts; touch those that moved. */
+  async function enrollPendingChange<T>(
+    workIds: readonly WorkId[],
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const unique = [...new Set(workIds)].sort() as WorkId[];
+    if (unique.length === 0) return operation();
+    const before = await input.pending.countPendingByWorkIds(unique);
+    const result = await operation();
+    const after = await input.pending.countPendingByWorkIds(unique);
+    await mutation.touchWorks(
+      unique.filter((workId) => (before.get(workId) ?? 0) !== (after.get(workId) ?? 0)),
     );
+    return result;
   }
 
   const mutation: WorkProjectionMutation = {
@@ -133,22 +130,27 @@ export function createWorkProjectionMutation(input: {
     },
     async mutatePendingBranches(branchIds, operation) {
       return runInDrizzleTransaction(input.db, async () => {
-        const unique = [...new Set(branchIds)].sort();
-        if (unique.length === 0) return operation();
-        const branchRows = await currentDrizzleDb(input.db)
-          .select({ workId: documentBranches.workId })
-          .from(documentBranches)
-          .where(inArray(documentBranches.id, unique));
-        const workIds = [
-          ...new Set(branchRows.flatMap(({ workId }) => (workId ? [workId] : []))),
-        ].sort() as WorkId[];
-        const before = await pendingCounts(workIds);
-        const result = await operation();
-        const after = await pendingCounts(workIds);
-        await mutation.touchWorks(
-          workIds.filter((workId) => (before.get(workId) ?? 0) !== (after.get(workId) ?? 0)),
+        const mapped = await draftBranchWorks(input.db, branchIds);
+        return enrollPendingChange(
+          mapped.flatMap(({ workId }) => (workId ? [workId] : [])),
+          operation,
         );
-        return result;
+      });
+    },
+    async mutatePendingDraft(draftIds, operation) {
+      return runInDrizzleTransaction(input.db, async () => {
+        const ids = [...new Set(draftIds)];
+        const rows =
+          ids.length === 0
+            ? []
+            : await currentDrizzleDb(input.db)
+                .select({ workId: drafts.originWorkId })
+                .from(drafts)
+                .where(inArray(drafts.id, ids));
+        return enrollPendingChange(
+          rows.flatMap(({ workId }) => (workId ? [workId as WorkId] : [])),
+          operation,
+        );
       });
     },
   };

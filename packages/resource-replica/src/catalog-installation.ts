@@ -10,6 +10,7 @@ import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { newerCanonicalObservation } from "./canonical-observation";
 import { type CatalogCacheView, catalogFiles, indexCatalogView } from "./catalog";
 import { catalogScopeBelongsToProject, sameCatalogScope } from "./catalog-scope";
+import { joinReservation } from "./resource-join";
 import { installCanonicalRefresh } from "./resource-namespace";
 import {
   ownerOf,
@@ -191,6 +192,7 @@ function observedResourceWrite(input: {
 }): ResourceWrite | null {
   const { record, location, classification, parent, fence } = input;
   const current = record.resource;
+  if (current.lifecycle.kind === "terminal") return revivedResourceWrite(input);
   if (current.lifecycle.kind !== "acknowledged") return null;
   const newer = newerCanonicalObservation(input.observationVersion, current.observationVersion);
   const observed = fence.resources?.get(current.handle);
@@ -228,6 +230,41 @@ function observedResourceWrite(input: {
   return { expectedRevision: current.revision, next: { resource: next, intents: record.intents } };
 }
 
+/**
+ * A terminal document holds the server version that proved its deletion. A strictly newer catalog
+ * observation of it as present is a later restore: it returns as acknowledged at the server's location,
+ * with content reacquired from the server. The request must have started after the terminal
+ * transition, and any purge of the deleted lineage's local content must have finished.
+ */
+function revivedResourceWrite(
+  input: Parameters<typeof observedResourceWrite>[0],
+): ResourceWrite | null {
+  const { record, location, classification, parent, fence } = input;
+  const current = record.resource;
+  if (current.lifecycle.kind !== "terminal" || current.obligations.cleanup) return null;
+  if (fence.resources?.get(current.handle)?.revision !== current.revision) return null;
+  // A versionless terminal cannot tell a restore from replayed pre-deletion history.
+  const deletionVersion = current.lifecycle.deletionVersion;
+  if (deletionVersion === undefined) return null;
+  if (!newerCanonicalObservation(input.observationVersion, deletionVersion)) return null;
+  const next: ResourceDescriptor = {
+    ...current,
+    revision: current.revision + 1,
+    content: { kind: "unacquired" },
+    classification,
+    canonical: location,
+    canonicalParent: parent,
+    observationVersion: input.observationVersion,
+    lifecycle: { kind: "acknowledged", availabilityGeneration: null },
+    revivedFrom: {
+      generation: current.lifecycle.generation,
+      transitionId: current.lifecycle.transitionId,
+    },
+    obligations: {},
+  };
+  return { expectedRevision: current.revision, next: { resource: next, intents: record.intents } };
+}
+
 function discoveredResource(entry: CatalogFileEntry, location: ResourceLocation) {
   const handle = resourceHandle(entry.entryId);
   const resource: ResourceDescriptor = {
@@ -244,6 +281,33 @@ function discoveredResource(entry: CatalogFileEntry, location: ResourceLocation)
     obligations: {},
   };
   return { expectedRevision: null, next: { resource, intents: [] } } satisfies ResourceWrite;
+}
+
+function joinedReservation(
+  records: readonly ResourceRecord[],
+  current: ReadonlyMap<string, ResourceRecord>,
+  entry: CatalogFileEntry,
+  observed: {
+    location: ResourceLocation;
+    parent: ParentRef;
+    classification: CatalogFileClassification;
+  },
+): ResourceWrite | null {
+  for (const id of entry.joinedFrom ?? []) {
+    const reservation = current.get(id);
+    if (!reservation || !records.includes(reservation)) continue;
+    const write = joinReservation({
+      record: reservation,
+      target: {
+        documentId: entry.entryId,
+        observationVersion: entry.observationVersion,
+        ...observed,
+      },
+      settledAt: Date.now(),
+    });
+    if (write) return write;
+  }
+  return null;
 }
 
 /** Plan one atomic checkpoint/resource installation. Scope disappearance never deletes a resource. */
@@ -278,6 +342,18 @@ export function planCatalogInstallation(input: {
         observationVersion: entry.observationVersion,
       });
       if (write) resources.push(write);
+      continue;
+    }
+    // A device's create that joined this document: the reservation follows it instead of a
+    // second record being discovered beside it.
+    const joined = joinedReservation(input.records, index.current, entry, {
+      location,
+      parent: catalogEntryParent(entry, location),
+      classification: classificationFor(entry),
+    });
+    if (joined) {
+      resources.push(joined);
+      index.current.set(entry.entryId, joined.next);
       continue;
     }
     // Resource aliases are obsolete local identities. The server document still

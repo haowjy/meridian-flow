@@ -7,6 +7,7 @@ import { createDb } from "@meridian/database";
 import {
   changeTrailDocumentDetails,
   documents,
+  draftTreeChanges,
   folders,
   modelResponses,
 } from "@meridian/database/schema";
@@ -18,12 +19,9 @@ import { testFileGrant } from "../../test-support/file-grants.js";
 import { ContextFS } from "../context/adapters/context-fs/context-fs.js";
 import { DrizzleContextDocumentStore } from "../context/adapters/context-fs/drizzle-store.js";
 import { DrizzleContextTreeMutationStore } from "../context/adapters/context-fs/drizzle-tree-mutation-store.js";
-import type { LinkScopeKey } from "./domain/ports/document-link-scope.js";
+import { applyDraftDocument } from "./test-support/apply-draft-document.js";
 import { writeMarkdown } from "./test-support/bound-writes.js";
-import {
-  createTestDocumentLinkScopes,
-  lateBoundManifestMembership,
-} from "./test-support/document-link-scopes.js";
+import { createTestDocumentLinkScopes } from "./test-support/document-link-scopes.js";
 import {
   createWorkDraftFixture,
   DOC_ID,
@@ -45,6 +43,11 @@ const DATABASE_URL = process.env.DATABASE_URL;
 if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe.skip("collab image paths (postgres)", () => {});
 } else {
+  const identity = (responseId: string) => ({
+    providerResponseId: responseId,
+    editScopeId: responseId,
+  });
+
   describe("collab image paths (postgres)", () => {
     const queries: string[] = [];
     const db = createDb(DATABASE_URL, {
@@ -55,8 +58,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       },
     });
-    const { hocuspocus, createTestCollab, reset, dispose, applyDraft, currentDraftId } =
-      createWorkDraftFixture(db);
+    const { hocuspocus, createTestCollab, reset, dispose, applyDraft } = createWorkDraftFixture(db);
     beforeEach(reset);
     afterEach(dispose);
     afterAll(async () => {
@@ -139,6 +141,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await db.update(folders).set({ name: "art" }).where(eq(folders.contextSourceId, SOURCE_ID));
       }
       const context = new ContextFS({
+        placement: { kind: "live" },
         holder: { projectId: PROJECT_ID },
         scheme: "manuscript",
         links,
@@ -213,56 +216,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    it("keeps one link snapshot when an image moves between preview serializations", async () => {
-      const links = createTestDocumentLinkScopes(db);
-      let moveAfterSerialization = false;
-      const collab = createTestCollab({
-        ...links,
-        within: <T>(key: LinkScopeKey, operation: () => Promise<T>) =>
-          links.within(key, async () => {
-            const result = await operation();
-            // The engine's live serialization completes before preview reads the draft.
-            if (moveAfterSerialization) {
-              moveAfterSerialization = false;
-              await db
-                .update(folders)
-                .set({ name: "art" })
-                .where(eq(folders.contextSourceId, SOURCE_ID));
-            }
-            return result;
-          }),
-      });
-      collab.bindHocuspocus(hocuspocus as never);
-      await seedChapterWithMap(collab);
-      const command = {
-        projectId: PROJECT_ID as never,
-        workId: WORK_ID as never,
-        documentId: DOC_ID as never,
-        draftId: await currentDraftId(collab, DOC_ID),
-      };
-      moveAfterSerialization = true;
-      const preview = await collab.draftReview.preview(command);
-      if (preview.status !== "active") throw new Error("missing draft preview");
-      expect(preview.live).toContain("assets/map.png");
-      expect(preview.markdown).toContain("assets/map.png");
-      expect(preview.markdown).not.toContain("art/map.png");
-      const next = await collab.draftReview.preview(command);
-      if (next.status !== "active") throw new Error("missing draft preview");
-      expect(next.live).toContain("art/map.png");
-      expect(next.markdown).toContain("art/map.png");
-    });
-
     it("accepts a draft on a chapter with an image", async () => {
       const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);
       await seedChapterWithMap(collab);
 
       await expect(
-        collab.draftReview.applyWorkDraft({
-          projectId: PROJECT_ID as never,
+        applyDraftDocument(collab.draftReview, {
           workId: WORK_ID as never,
           documentId: DOC_ID as never,
-          draftId: await currentDraftId(collab, DOC_ID),
           userId: USER_ID as never,
         }),
       ).resolves.toMatchObject({ status: "applied" });
@@ -279,26 +241,37 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("spells a reply's own create alike at every door, and in its draft after a cold undo", async () => {
-      // The real manifest authority: the created chapter exists only in this
-      // reply's draft until it saves, and only for this thread.
-      const manifest = lateBoundManifestMembership();
-      const links = createTestDocumentLinkScopes(db, { membership: manifest.membership });
+      // All effective rendering doors share the real tree-backed scope.
+      const links = createTestDocumentLinkScopes(db);
       const start = () => {
         const started = createTestCollab(links);
-        manifest.bind(started);
         started.bindHocuspocus(hocuspocus as never);
         return started;
       };
       let collab = start();
       await collab.seedFromMarkdown(DOC_ID, collab.bindStatic("Holder."), { type: "system" });
-      await collab.reconcileProjectManifest(PROJECT_ID as never);
       const CREATED_ID = "00000000-0000-4000-8000-000000000714";
       const RESPONSE_ID = "00000000-0000-4000-8000-000000000715";
+      // The Work's draft created this chapter: a hidden row and the draft's created row,
+      // as ContextFS leaves a model's create in a draft-mode Work.
+      const draft = await collab.drafts.ensureActiveForWrite({
+        workId: WORK_ID as never,
+        projectId: PROJECT_ID as never,
+        threadId: THREAD_ID as never,
+        userId: USER_ID as never,
+      });
       await db.insert(documents).values({
         id: CREATED_ID,
         contextSourceId: SOURCE_ID,
         name: "created",
         extension: "",
+        hidden: true,
+      });
+      await db.insert(draftTreeChanges).values({
+        draftId: draft.id,
+        nodeKind: "document",
+        nodeId: CREATED_ID,
+        created: true,
       });
       await db.insert(modelResponses).values({
         id: RESPONSE_ID as never,
@@ -330,7 +303,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
                 target: { kind: "document", documentId: CREATED_ID as never },
               },
             },
-            responseId: RESPONSE_ID,
+            responseIdentity: identity(RESPONSE_ID),
             createdDocument: true,
           },
         ),
@@ -352,7 +325,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             documentId: DOC_ID,
             overwrite: true,
           },
-          { ...ctx, responseId: RESPONSE_ID, createdDocument: false, copiedNodes: [link] },
+          {
+            ...ctx,
+            responseIdentity: identity(RESPONSE_ID),
+            createdDocument: false,
+            copiedNodes: [link],
+          },
         ),
       ).resolves.toMatchObject({ status: "success", phase: "staged" });
 
@@ -366,22 +344,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       };
       const read = await core.read(
         { file: "chapter", documentId: DOC_ID },
-        { ...ctx, responseId: RESPONSE_ID },
+        { ...ctx, responseIdentity: identity(RESPONSE_ID) },
       );
       const markdown = await collab.readEffectiveMarkdown(view);
       const hashlines = await collab.readEffectiveHashlines(view);
       const search = await new ContextFS({
+        placement: { kind: "live" },
         holder: { projectId: PROJECT_ID },
         scheme: "manuscript",
         links,
         store: new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID }),
         mutationStore: new DrizzleContextTreeMutationStore(db),
-        manifestView: {
-          projectId: PROJECT_ID,
-          workId: WORK_ID,
-          threadId: THREAD_ID,
-          responseId: RESPONSE_ID,
-        },
         threadView: {
           threadId: THREAD_ID,
           responseId: RESPONSE_ID,
@@ -405,14 +378,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       // Saved, then written again; a fresh process undoes that write in the
       // draft it landed in, so its echo spells there and its token is the
       // draft read's.
-      await collab.finalizeResponseCommit(RESPONSE_ID, {
+      await collab.finalizeResponseCommit(identity(RESPONSE_ID), {
         threadId: THREAD_ID as never,
         turnId: TURN_ID as never,
-      });
-      await collab.recordManifestDocumentCreated(CREATED_ID as never, {
-        projectId: PROJECT_ID as never,
-        workId: WORK_ID as never,
-        threadId: THREAD_ID as never,
       });
       await expect(
         core.write(
@@ -432,16 +400,22 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await collab.documentDerivations.stop();
       collab.dispose();
       collab = start();
-      const undone = await collab.agentEdit().undo(DOC_ID, THREAD_ID);
+      const undone = await collab
+        .agentEdit()
+        .write(
+          { command: "undo", file: "chapter", documentId: DOC_ID },
+          { ...ctx, turnId: TURN_2_ID },
+        );
       const after = await collab.readEffectiveHashlines(draftRead);
       if (!after.ok) throw new Error(JSON.stringify(after));
-      expect(undone.status).toBe("reversed");
+      expect(undone.status).toBe("success");
       expect.soft(JSON.stringify(undone.result), "cold undo echo").toContain(spelled);
       expect.soft(after.value.content.join("\n")).toContain(spelled);
       expect.soft(undone.revision, "cold undo token").toBe(after.value.revision);
 
-      // The same comparison in live: a reply that creates a chapter live sees it
-      // in its own live view, never in baseline live or its draft view.
+      // The same comparison in live. A create is a row, not a reply's in-memory set: a live
+      // create is visible in every view at once, and the draft's hidden create is "in a
+      // draft" in both views, spelled at its path only where its draft can read it.
       const LIVE_CREATED_ID = "00000000-0000-4000-8000-000000000716";
       const LIVE_RESPONSE_ID = "00000000-0000-4000-8000-000000000717";
       await db.insert(documents).values({
@@ -478,7 +452,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
                 target: { kind: "document", documentId: LIVE_CREATED_ID as never },
               },
             },
-            responseId: LIVE_RESPONSE_ID,
+            responseIdentity: identity(LIVE_RESPONSE_ID),
             createdDocument: true,
           },
         ),
@@ -486,24 +460,30 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await links.within(
         { projectId: PROJECT_ID, viewer: { accountId: USER_ID, threadId: THREAD_ID } },
         async () => {
-          const replyLive = { kind: "live", responseId: LIVE_RESPONSE_ID } as const;
-          const replyDraft = {
-            kind: "draft",
-            workId: WORK_ID,
-            responseId: LIVE_RESPONSE_ID,
-          } as const;
-          const views = [replyLive, { kind: "live" } as const, replyDraft];
+          const live = { kind: "live" } as const;
+          const drafted = { kind: "draft", draftId: draft.id } as const;
           await links.prepare({
-            holders: views.map((each) => ({ documentId: DOC_ID, view: each })),
-            refs: [`doc:${LIVE_CREATED_ID}`],
+            holders: [live, drafted].map((view) => ({ documentId: DOC_ID, view })),
+            refs: [`doc:${LIVE_CREATED_ID}`, `doc:${CREATED_ID}`],
           });
-          const link = { ref: `doc:${LIVE_CREATED_ID}`, href: "manuscript://stale" };
-          const [ownLive, baseline, ownDraft] = views.map((each) =>
-            links.holder({ documentId: DOC_ID, view: each }),
+          const [inLive, inDraft] = [live, drafted].map((view) =>
+            links.holder({ documentId: DOC_ID, view }),
           );
-          expect.soft(ownLive?.spellLink(link).href, "the reply's live view").toBe("live-created");
-          expect.soft(baseline?.resolve(link), "baseline live").toEqual({ kind: "gone" });
-          expect.soft(ownDraft?.resolve(link), "the reply's draft view").toEqual({ kind: "gone" });
+          const liveCreate = { ref: `doc:${LIVE_CREATED_ID}`, href: "manuscript://stale" };
+          const draftCreate = { ref: `doc:${CREATED_ID}`, href: "manuscript://stale-created" };
+          expect.soft(inLive?.spellLink(liveCreate).href, "live create, live").toBe("live-created");
+          expect
+            .soft(inDraft?.resolve(liveCreate), "live create, draft")
+            .toMatchObject({ kind: "document", inDraft: false });
+          expect
+            .soft(inLive?.resolve(draftCreate), "draft create, live")
+            .toMatchObject({ kind: "document", inDraft: true });
+          expect
+            .soft(inDraft?.resolve(draftCreate), "draft create, its draft")
+            .toMatchObject({ kind: "document", inDraft: true });
+          expect
+            .soft(inDraft?.spellLink(draftCreate).href, "draft create spelled in its draft")
+            .toBe("created");
         },
       );
       await collab.agentEdit().rollbackResponse(LIVE_RESPONSE_ID);

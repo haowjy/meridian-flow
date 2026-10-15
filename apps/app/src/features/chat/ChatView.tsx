@@ -16,10 +16,16 @@
  * editor bar share one controller so preview selection cannot drift.
  */
 import { t } from "@lingui/core/macro";
-import type { Thread, ThreadLiveState, Turn, Work } from "@meridian/contracts/protocol";
+import type { SnapshotLiveState, Thread, Turn, Work } from "@meridian/contracts/protocol";
+import type { AiWriteMode } from "@meridian/contracts/works";
 import { type ReactNode, useCallback, useMemo, useReducer, useRef } from "react";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
-import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
+import {
+  useMeridianAgent,
+  useRunFacts,
+  useRunFollowStatus,
+} from "@/client/copilot/MeridianCopilotProvider";
+import type { DeserializedThreadSnapshot } from "@/client/query/thread-snapshot-query";
 import { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
 import { useIsThreadPendingCreation, useThreadActions, useThreadStore } from "@/client/stores";
 import {
@@ -46,11 +52,10 @@ import { ChatSurface } from "./ChatSurface";
 import { useOpenChatThread } from "./ChatThreadNavigation";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { chatLineageId } from "./chat-scratch-owner";
-import { answeredControlIds } from "./compaction/compaction-model";
+import { answeredCompactionIds } from "./compaction/compaction-model";
 import { useControlTurnAnnouncements } from "./compaction/useControlTurnAnnouncements";
-import { useThreadControls } from "./compaction/useThreadControls";
 import { composerRun } from "./composer-run";
-import { DraftDock, useDraftDock } from "./DraftDock";
+import { DraftDock } from "./DraftDock";
 import {
   canDeriveFrom,
   type TurnDerivation,
@@ -72,11 +77,16 @@ import { SubagentActivityProvider } from "./subagent/ActivityContext";
 import { SubagentDisclosureProvider } from "./subagent/DisclosureStore";
 import { TurnList } from "./TurnList";
 import { activeChildren } from "./thread-activity";
+import { useSwitchView } from "./thread-controls/useSwitchView";
+import { useThreadControls } from "./thread-controls/useThreadControls";
+import { UsageBlockedNotice } from "./UsageBlockedNotice";
 import { useChatLinkFollowing } from "./useChatLinkFollowing";
 import { useChatSubmissions } from "./useChatSubmissions";
 import { useChatThreadSession } from "./useChatThreadSession";
 import { useComposerSessionDraft } from "./useComposerSessionDraft";
+import { useDraftDock } from "./useDraftDock";
 import { useLiveTurnAnnouncements } from "./useLiveTurnAnnouncements";
+import { useOwedMessagesBlocked } from "./useOwedMessagesBlocked";
 import { usePendingInbox } from "./usePendingInbox";
 import { useReplyRetry } from "./useReplyRetry";
 import { useThreadActivity } from "./useThreadActivity";
@@ -90,8 +100,12 @@ export type ChatViewProps = {
   threadId: string;
   projectId: string;
   activeThread?: Thread | null;
+  /** The rendered snapshot's write mode: the ledger's base, consistent with the transcript it reads. */
+  snapshotWriteMode?: AiWriteMode;
+  /** The snapshot the history host accepted and applied: the only one the switch ledger reads. */
+  snapshot?: DeserializedThreadSnapshot | null;
   activeWork?: Work | null;
-  snapshotLiveState?: ThreadLiveState | null;
+  snapshotLiveState?: SnapshotLiveState | null;
   snapshotNextSeq?: string | null;
   snapshotThreadUsage?: {
     inputTokens: number;
@@ -119,6 +133,8 @@ export function ChatView({
   threadId,
   projectId,
   activeThread = null,
+  snapshotWriteMode,
+  snapshot = null,
   activeWork = null,
   snapshotLiveState = null,
   snapshotThreadUsage = null,
@@ -145,7 +161,8 @@ export function ChatView({
   const inherited = useInheritedView(activeThread, derivation?.inherited ?? null);
   const storedTurns = useThreadStore((state) => state.turnsByThread[threadId] ?? EMPTY_TURNS);
   const brief = useHandoffBrief({ threadId, storedTurns });
-  const replyRetry = useReplyRetry({ threadId, storedTurns });
+  const runFacts = useRunFacts(threadId);
+  const replyRetry = useReplyRetry({ threadId, storedTurns, runFacts });
   // A handoff's brief is on its way the moment the writer lands; until the
   // server's seed arrives the card stands in for it (it has nothing to stop
   // yet). A Retry's new card, or a failed reply's new reply, stands after the
@@ -180,9 +197,16 @@ export function ChatView({
   const isStreaming = latestAssistantTurn?.status === "streaming";
   // Only what the server has can be stopped: a stand-in brief is not a run yet.
   const { canStop: canStopSeed } = brief;
+  const followStatus = useRunFollowStatus(threadId);
+  const owedMessagesBlocked = useOwedMessagesBlocked(followStatus.waiting);
+  const following = followStatus.following && !owedMessagesBlocked;
   const run = useMemo(
-    () => composerRun(turns.filter((turn) => !isHandoffSeed(turn) || canStopSeed(turn))),
-    [canStopSeed, turns],
+    () =>
+      composerRun(
+        turns.filter((turn) => !isHandoffSeed(turn) || canStopSeed(turn)),
+        following,
+      ),
+    [canStopSeed, following, turns],
   );
   const composerAgentName = activeThread?.agentName ?? "General";
 
@@ -207,16 +231,55 @@ export function ChatView({
     () => selectQueuedWriterTurnIds(pendingInbox),
     [pendingInbox],
   );
-  const answeredControls = useMemo(() => answeredControlIds(turns), [turns]);
+  const submissions = useChatSubmissions(
+    threadId,
+    projectId,
+    accountId,
+    controller,
+    actions,
+    () => composerRef.current?.focus(),
+    () => {
+      navigation.forgetChat(threadId);
+      void navigation.openNewChat(undefined, { replace: true });
+    },
+    {
+      visible: active,
+      title:
+        !activeThread?.title?.trim() || activeThread.title.trim() === defaultThreadTitle()
+          ? null
+          : activeThread.title,
+      leave: (moved) => {
+        navigation.forgetChat(threadId);
+        if (moved) void navigation.openNewChat(undefined, { replace: true });
+        else if (displayedChatThreadId(navigation.display) === threadId)
+          void navigation.openNewChat(undefined, { replace: true });
+      },
+    },
+  );
+  const answeredCompactions = useMemo(() => answeredCompactionIds(turns), [turns]);
+  // The snapshot revalidates as a compaction reserves and settles, so its live
+  // state is fresher here than the subscription seed.
+  const replyBusy = (snapshotLiveState?.status ?? activity.status).kind === "awake" || run !== null;
+  const switches = useSwitchView({
+    threadId,
+    projectId,
+    writeMode:
+      snapshotWriteMode ??
+      activeThread?.effectiveAiWriteMode ??
+      activeWork?.defaultAiWriteMode ??
+      "direct",
+    turns,
+    snapshot,
+    journal: submissions.switches,
+    replyRunning: replyBusy,
+  });
   const controls = useThreadControls({
     threadId,
     pending: pendingInbox,
-    answeredControlIds: answeredControls,
+    answeredCompactionIds: answeredCompactions,
+    switches,
   });
   useControlTurnAnnouncements(turns);
-  // The snapshot revalidates as a compaction reserves and settles, so its live
-  // state is fresher here than the subscription seed.
-  const liveStatus = snapshotLiveState?.status ?? activity.status;
   const { enqueue: enqueueControl } = controls;
   // `/compact` is always the command. A chat with nothing to summarize yet is
   // refused by the server, and that refusal shows on the command's own row.
@@ -251,6 +314,7 @@ export function ChatView({
       sourceThreadId: threadId,
       sourceTitle: activeThread.title,
       workId: activeWork?.id ?? activeThread.workId,
+      aiWriteMode: activeThread.aiWriteMode,
     };
     return {
       projectId,
@@ -311,41 +375,16 @@ export function ChatView({
     isStreaming,
   });
 
-  const submissions = useChatSubmissions(
-    threadId,
-    projectId,
-    accountId,
-    controller,
-    actions,
-    () => composerRef.current?.focus(),
-    () => {
-      navigation.forgetChat(threadId);
-      void navigation.openNewChat(undefined, { replace: true });
-    },
-    {
-      visible: active,
-      title:
-        !activeThread?.title?.trim() || activeThread.title.trim() === defaultThreadTitle()
-          ? null
-          : activeThread.title,
-      leave: (moved) => {
-        navigation.forgetChat(threadId);
-        if (moved) void navigation.openNewChat(undefined, { replace: true });
-        else if (displayedChatThreadId(navigation.display) === threadId)
-          void navigation.openNewChat(undefined, { replace: true });
-      },
-    },
-  );
   useThreadRunResume(threadId, controller, { liveState: snapshotLiveState, activateProjection });
   useLiveTurnAnnouncements(threadId, latestAssistantTurn, composerRef, chatSurfaceRef);
 
-  const draftMode = activeWork?.aiWriteMode === "draft";
-  // Generating signal: the current thread's latest assistant turn is streaming
-  // AND the Work is in draft mode. That is the cleanest "this streaming turn is
-  // producing draft edits" signal available client-side (per-turn draft lineage
-  // is a later server phase); auto-apply streams never light the dock.
-  const generating = isStreaming && draftMode;
-  const dock = useDraftDock({ generating });
+  // Generating signal: the latest assistant turn is streaming AND it started in
+  // draft mode. A reply keeps the mode it started with while the chat's mode may
+  // already be queued to change, so the running turn's own mode is the signal;
+  // auto-apply streams never light the dock.
+  const generating =
+    isStreaming && (latestAssistantTurn?.writeMode ?? activeThread?.aiWriteMode) === "draft";
+  const dock = useDraftDock({ threadId, generating });
 
   async function handleSubmit(envelope: ComposerSubmitEnvelope) {
     const recorded = await submissions.submit(envelope);
@@ -356,6 +395,7 @@ export function ChatView({
   function handleStop() {
     // A compaction or brief has no reply stream for the run controller to
     // stop: cancel its turn, as the divider's and the card's own Stop do.
+    // A streaming reply, or followed work between replies, is the controller's.
     if (run?.kind === "placeholder") {
       if (run.turn.role === "compaction") controls.stop(run.turn.id);
       else brief.stop(run.turn.id);
@@ -380,6 +420,11 @@ export function ChatView({
           footer={
             <div data-debug-composer={threadId}>
               <Composer
+                notices={
+                  pendingInbox.blocked?.reason === "credits_exhausted" ? (
+                    <UsageBlockedNotice />
+                  ) : undefined
+                }
                 key={draft.key}
                 initialDraft={draft.initialDraft}
                 onDraftChange={draft.updateDraft}
@@ -424,6 +469,8 @@ export function ChatView({
                       threadId={threadId}
                       work={activeWork}
                       agentName={composerAgentName}
+                      writeMode={controls.writeMode}
+                      onWriteModeChange={controls.switchWriteMode}
                     />
                   ) : undefined
                 }
@@ -447,10 +494,11 @@ export function ChatView({
                     changeTrails={changeTrails.byId}
                     submissionRecoveryByTurnId={submissions.presentation}
                     queuedWriterTurnIds={queuedWriterTurnIds}
+                    waitingForUsage={pendingInbox.blocked?.reason === "credits_exhausted"}
                     controls={controls}
                     brief={brief}
                     replyRetry={replyRetry}
-                    busy={liveStatus.kind === "awake" || run !== null}
+                    busy={replyBusy}
                     inherited={inheritedView}
                     onRetryInherited={inherited.failed ? inherited.retry : null}
                     threadUsage={snapshotThreadUsage}

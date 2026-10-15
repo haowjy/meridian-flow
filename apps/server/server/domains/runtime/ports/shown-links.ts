@@ -17,7 +17,7 @@ import type { SpelledLinkFact } from "@meridian/markup/links";
 
 /** One recorded showing; `at` is its global sequence, larger is more recent. */
 export interface ShownLink extends CorrespondenceShownLink {
-  /** `live` or `draft:<workId>`. */
+  /** `live` or `draft:<draftId>`. */
   view: string;
 }
 
@@ -46,7 +46,7 @@ export interface ShownLinkStore {
 }
 
 export function linkViewKey(view: LinkView): string {
-  return view.kind === "draft" ? `draft:${view.workId}` : "live";
+  return view.kind === "draft" ? `draft:${view.draftId}` : "live";
 }
 
 /** One thread whose rows a reader sees; `maxPosition` caps an inherited source by turn position. */

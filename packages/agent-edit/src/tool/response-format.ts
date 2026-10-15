@@ -1,10 +1,5 @@
-// Formats shared write and reversal responses for the tool surface.
-import type * as Y from "yjs";
-import { truncateSerializedBlock } from "../apply/echo.js";
+// Formats document-write responses for the model tool surface.
 import type { ApplyEchoHunk, ConcurrentEditInfo } from "../apply/types.js";
-import type { AgentEditCodec } from "../codec-adapter.js";
-import type { DocHandle } from "../handles.js";
-import type { AgentEditModel } from "../ports/model.js";
 import type { CopySummary } from "./copy-receipt.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import {
@@ -14,9 +9,8 @@ import {
   modelConcurrentResult,
   modelResult,
 } from "./model-result.js";
-import type { DestructiveSweepReport, SyncedMutationSummary } from "./mutation-commit.js";
+import type { DestructiveSweepReport } from "./mutation-commit.js";
 import type {
-  UndoRedoOutcome,
   WriteErrorDetail,
   WriteErrorStatus,
   WriteOutcome,
@@ -43,27 +37,6 @@ export interface ApplySuccessResponseInput {
 /** A write whose content the document already held: nothing is reserved, applied or journaled. */
 export function formatUnchangedSuccess(): InternalWriteResult {
   return { status: "success", phase: "committed", revision: null, model: { unchanged: true } };
-}
-
-export interface ReversalSuccessResponseInput {
-  direction: "undo" | "redo";
-  status: UndoRedoOutcome;
-  /** Write handles actually reversed, oldest first. */
-  writeIds: readonly string[];
-  sync: SyncedMutationSummary;
-}
-
-/** True when the document is down to one blank block, which removing every block leaves. */
-export function isDocumentEmpty(
-  model: AgentEditModel,
-  codec: AgentEditCodec,
-  doc: DocHandle,
-): boolean {
-  const blocks = model.getBlocks(doc);
-  return (
-    blocks.length <= 1 &&
-    model.serializeBlockBodies(doc, codec, blocks).every((body) => body.trim() === "")
-  );
 }
 
 export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWriteResult {
@@ -104,33 +77,6 @@ export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWr
     ...(input.writeId ? { writeId: input.writeId } : {}),
     ...(input.settlementId ? { settlementId: input.settlementId } : {}),
   };
-}
-
-export function formatReversalSuccess(input: ReversalSuccessResponseInput): InternalWriteResult {
-  const blocks = echoGroups(input.sync.echo);
-  return {
-    status: input.status,
-    revision: input.sync.revision ?? null,
-    model: {
-      reversal: {
-        direction: input.direction,
-        writes: [...input.writeIds],
-      },
-      ...(blocks.length > 0 ? { blocks } : {}),
-      ...(input.sync.concurrentEdits
-        ? { concurrent: modelConcurrentResult(input.sync.concurrentEdits) }
-        : {}),
-    },
-  };
-}
-
-export function truncateCreateEcho(
-  renderer: { renderBlockLines: (doc: DocHandle, codec: AgentEditCodec) => string[] },
-  codec: AgentEditCodec,
-  doc: Y.Doc,
-  toDocHandle: (doc: Y.Doc) => DocHandle,
-): string[] {
-  return renderer.renderBlockLines(toDocHandle(doc), codec).map(truncateSerializedBlock);
 }
 
 export function status(
@@ -198,10 +144,24 @@ export function isWriteErrorStatus(status: WriteStatus): status is WriteErrorSta
   return (
     status === "not_found" ||
     status === "ambiguous_match" ||
+    status === "ambiguous_path" ||
     status === "invalid_write" ||
     status === "document_not_found" ||
     status === "partial_failure" ||
     status === "cant_undo_dependent" ||
+    status === "cant_undo_applied" ||
+    status === "cant_undo_discarded" ||
+    status === "cant_undo_changed" ||
+    status === "cant_undo_held" ||
+    status === "cant_undo_elsewhere" ||
+    status === "cant_redo_applied" ||
+    status === "cant_redo_discarded" ||
+    status === "cant_redo_changed" ||
+    status === "cant_redo_held" ||
+    status === "cant_redo_elsewhere" ||
+    status === "cant_redo_users_undo" ||
+    status === "nothing_to_revert" ||
+    status === "work_archived" ||
     status === "read_required" ||
     status === "binary_file" ||
     status === "permission_denied" ||

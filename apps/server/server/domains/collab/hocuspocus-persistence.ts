@@ -6,6 +6,7 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import { RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
+import { type DetachedWorkTracker, processDetachedWork } from "../runtime/detached-work.js";
 import { loadDocumentState } from "./adapters/document-loader.js";
 import type { CollabPersistenceMetrics, CollabTransport, UpdateOrigin } from "./contracts.js";
 import type {
@@ -41,8 +42,6 @@ type PendingAppend = {
 type PendingCheckpoint = {
   document: Y.Doc;
   authority: CheckpointAuthority;
-  state: Uint8Array;
-  upToSeq: number;
 };
 
 type CheckpointSlot = {
@@ -52,12 +51,12 @@ type CheckpointSlot = {
 
 type HocuspocusPersistenceDeps = {
   journal: CheckpointJournal;
+  backgroundTasks?: DetachedWorkTracker;
   branchStore?: BranchStore;
   branchCoordinator?: BranchCoordinator;
   hocuspocus(): Hocuspocus | null;
   eventSink?: EventSink;
   metaForOrigin(origin: UpdateOrigin): UpdateMeta;
-  latestUpdateSeq(documentId: string): Promise<number>;
   /**
    * Runs `callback` once the caller's ambient DB transaction commits, outside
    * it, and drops it on rollback; with no ambient transaction it runs now.
@@ -67,6 +66,8 @@ type HocuspocusPersistenceDeps = {
   readAuthorityHeadGeneration?(documentId: DocumentId): Promise<bigint>;
   emitAgentEditInvariantViolation(payload: Record<string, unknown>): void;
   onLiveUpdatePersisted?(documentId: DocumentId): void;
+  /** A writer's update to a draft branch is durable (the draft's own links register, §10.7). */
+  onBranchWriterUpdateAdmitted?(branchId: string): void;
   offlineReconciliation?: OfflineReconciliation;
 };
 
@@ -95,6 +96,7 @@ export type HocuspocusPersistenceService = Pick<
 export function createHocuspocusPersistenceService(
   deps: HocuspocusPersistenceDeps,
 ): HocuspocusPersistenceService {
+  const backgroundTasks = deps.backgroundTasks ?? processDetachedWork;
   const pendingAppends = new Map<number, PendingAppend>();
   const droppedByDocument = new Map<string, number>();
   const unsafeCheckpointDocuments = new Map<string, number>();
@@ -209,7 +211,7 @@ export function createHocuspocusPersistenceService(
 
   /**
    * Writes live checkpoints in the background, one at a time per document; a
-   * snapshot that arrives while one is writing replaces any queued one.
+   * request that arrives while one is writing replaces any queued one.
    */
   function startCheckpoint(documentId: string, pending: PendingCheckpoint): void {
     const slot = checkpointSlots.get(documentId);
@@ -219,24 +221,41 @@ export function createHocuspocusPersistenceService(
     }
     const created: CheckpointSlot = { next: pending, running: Promise.resolve() };
     checkpointSlots.set(documentId, created);
-    created.running = (async () => {
-      while (created.next) {
-        const { document, authority, state, upToSeq } = created.next;
-        created.next = undefined;
-        // A retired room's state belongs to an authority generation that has
-        // since been replaced.
-        if (isDocumentHandleRetired(document)) {
-          continue;
+    created.running = backgroundTasks.track(
+      (async () => {
+        while (created.next) {
+          const { document, authority } = created.next;
+          created.next = undefined;
+          // A retired room's state belongs to an authority generation that has
+          // since been replaced.
+          if (isDocumentHandleRetired(document)) {
+            continue;
+          }
+          try {
+            const cut = await deps.journal.captureCheckpoint(documentId, authority);
+            if (cut) {
+              const state = await cut.materializeState();
+              await deps.journal.storeCheckpoint(cut);
+              if (deps.eventSink)
+                emitEvent(deps.eventSink, {
+                  level: "debug",
+                  source: "collab.hocuspocus",
+                  name: "checkpoint.clients",
+                  payload: {
+                    documentId,
+                    clientCount: Y.decodeStateVector(Y.encodeStateVectorFromUpdate(state)).size,
+                  },
+                });
+            }
+          } catch (cause) {
+            emitCheckpointFailure(documentId, cause);
+          }
         }
-        try {
-          await deps.journal.checkpoint(documentId, state, upToSeq, authority);
-        } catch (cause) {
-          emitCheckpointFailure(documentId, cause);
-        }
-      }
-    })().finally(() => {
-      checkpointSlots.delete(documentId);
-    });
+      })().finally(() => {
+        checkpointSlots.delete(documentId);
+      }),
+      "Hocuspocus checkpoint",
+    );
   }
 
   async function drainCheckpoints(): Promise<void> {
@@ -493,13 +512,14 @@ export function createHocuspocusPersistenceService(
       const queueKey = branchRoomName(input.branchId, input.expectedGeneration);
       const admission = (async () => {
         try {
-          await requireBranchCoordinator().commitWriterUpdate({
+          const { admitted } = await requireBranchCoordinator().commitWriterUpdate({
             branchId: input.branchId,
             expectedGeneration: input.expectedGeneration,
             updateData: input.update,
             actorUserId: input.origin.type === "user" ? input.origin.userId : undefined,
             roomDocument: input.document,
           });
+          if (admitted) deps.onBranchWriterUpdateAdmitted?.(input.branchId);
         } catch (cause) {
           if (
             cause instanceof ReservedNamespaceAdmissionError ||
@@ -534,23 +554,14 @@ export function createHocuspocusPersistenceService(
         });
         return;
       }
-      const upToSeq = await deps.latestUpdateSeq(documentId);
-      // upToSeq must be ≤ the updates reflected in state; appends after this
-      // point are intentionally replayed when the document reloads.
-      const pending: PendingCheckpoint = {
-        document,
-        authority,
-        state: Y.encodeStateAsUpdate(document),
-        upToSeq,
-      };
+      const pending: PendingCheckpoint = { document, authority };
       // Releasing a server-side room runs this hook inline in the releaser's
-      // async context, often inside its DB transaction. The checkpoint takes the
+      // async context, often inside its DB transaction. Capturing the cut takes the
       // document's mutation lock, so writing it here either holds that lock for
       // the rest of the caller's transaction or waits on a lock the caller holds;
       // either way a caller that then waits on another connection deadlocks.
       // A checkpoint only caches durable journal state, so it is written after
-      // the caller commits, and skipped if the caller rolls back, since the
-      // room may hold that transaction's uncommitted updates.
+      // the caller commits, and skipped if the caller rolls back.
       afterCallerCommit(() => startCheckpoint(documentId, pending));
     },
 

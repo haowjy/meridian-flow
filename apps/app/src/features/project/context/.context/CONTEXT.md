@@ -89,8 +89,8 @@ ContextPaneController
        └─ ContextViewer
               ├─ ContextTabBar (reviewing tab surfaces dock tone)
               ├─ DocumentPaneChrome (shared with the dock's document)
-              │     ├─ PassageNotice, DraftReviewHeader, ArchivedWorkNotice
-              │     └─ DocumentIdentityBar (DocumentPath crumbs + chips, incl. DraftReviewChip)
+              │     ├─ PassageNotice, ArchivedWorkNotice
+              │     └─ DocumentIdentityBar (DocumentPath crumbs + chips and painted DraftReviewBand)
               ├─ ContextEditorMountHost (warm-set LRU)
               │     └─ ContextDocumentHost per tab (session boundary + EditorView;
               │        the dock's document renders the same host)
@@ -142,9 +142,18 @@ Resting crumbs are passive: project-menu acquisition mounts only when a crumb
 opens. The source owns `own.crumbTrail(path, depth)`, including the exception for
 an area not offered at the root; `own.openAt(path)` remains the full folder trail
 used by placement. The first menu mounts with its final trail and highlight IDs.
-Path fit is selected from intrinsic-width candidates rendered by the same
-`CrumbRow` as the visible path. A link-update note is a direct sibling of the
-path, so an absent note occupies neither a flex item nor a gap.
+`DocumentIdentityBar` wraps first: the path and chip stay on line one, and the
+review controls drop to a second line when they don't fit beside them (flex-wrap,
+no breakpoint). The dock's trailing Collapse is pinned to line one and precedes
+the controls in DOM order, so Tab goes line one, then line two. Only a line too
+narrow for the controls even alone gives up labels, in order (stepper count, then
+Apply label), and the path drops its parent crumbs only when the leaf would be
+cut. A link-update note is a direct sibling of the path, so an absent note
+occupies neither a flex item nor a gap. Under a coarse pointer every control
+owns a 44px box (the row grows to 44px; the paired collapse/expand toggles share
+one size), except the filename, whose width yields so line one fits the 280px
+dock. Horizontal hit areas are exactly the visible box; gaps stay unclaimed.
+
 
 Link-update feedback derives its destination from the matched move receipt, not
 from a picker-provided label. The remount registry retains only operation

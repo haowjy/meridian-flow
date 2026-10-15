@@ -7,7 +7,8 @@ helpers accept those connections explicitly. Do not mock modules or process glob
 
 Use `drizzle-reset.ts` for database isolation. Single-connection suites use
 `useRollbackTestDatabase`: read `current` inside hooks/tests and build adapters
-from that transaction. Its optional `prepareSuite` establishes the committed
+from that transaction. The harness drains detached work before rolling back,
+while transaction-backed adapters are still usable. Its optional `prepareSuite` establishes the committed
 baseline once. Never use the root connection inside a rollback-isolated case.
 
 Suites testing commits, locks, LISTEN/NOTIFY, or multiple connections use
@@ -17,8 +18,15 @@ follows the live FK graph and deletes dependents first in one transaction.
 Include owner tables for insert-only data (prompt bakes are deleted through
 their thread). Do not add TRUNCATE or bespoke reset helpers. Runtime harnesses
 and manually composed DB-test runtimes use that same tracker; don't create an
-isolated tracker that the reset helper cannot drain. Rollback cannot isolate
+isolated tracker that the reset helper cannot drain. Production composition accepts
+`backgroundTasks`; DB-test compositions inject `processDetachedWork`. Hocuspocus
+room stores enqueue checkpoints: unloading a room does not await that checkpoint,
+so checkpoints join the same tracker as repairs and runtime work. Rollback cannot isolate
 other connections.
+
+Composed runtimes must unload rooms, shut down background app work, and drain
+`documentSync.drainHocuspocusPersistence()` before the next fixture reset. Room
+unload schedules checkpoint stores; it does not await their persistence.
 
 Hoist immutable large fixtures to `beforeAll` only when each case restores its
 mutations. Keep query-plan fixtures large enough for their stated plan contract.
@@ -34,3 +42,16 @@ The Scratch archival upgrade contract owns an isolated historical schema and
 fixed pre-upgrade Yjs inputs (`scratch-archive-fixture.ts`). It applies the
 committed migration chain through the real runner, then exercises typed server
 consumers. Do not regenerate historical fixture bytes with current writers.
+
+Draft-tree suites build one world per case: `draft-tree-seeds.ts` writes rows the
+way the product leaves them (no runtime); `draft-tree-commands.ts` drives the
+composed runtime (model replies, the writer's route cores, readers' ports,
+review commands: `review`, `apply` and `applyAll` call the review route cores
+with the tokens their items rendered, `discard` the per-document Discard or Discard
+all, `purge` deletes the Work, ages it past the cutoff and runs the purge sweep;
+readers such as `view(...).text`, `liveMeaning` and `batchStates`);
+`draft-tree-scenario.ts` joins the two, and `draft-tree-suite.ts` is the committing
+describe block those suites share.
+Assert through these verbs (what the writer or a reader sees), not raw tables. Seed only states the
+product can't reach yet. Lock races go through `lock-interleave.ts`: `race`
+names each run, so an order table reads the same outcome whichever ran first.

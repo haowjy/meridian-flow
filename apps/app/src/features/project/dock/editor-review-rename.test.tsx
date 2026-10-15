@@ -5,14 +5,37 @@ import { describe, expect, it, vi } from "vitest";
 import {
   DraftReviewBoundary,
   type DraftReviewContextValue,
-} from "@/features/chat/DraftReviewProvider";
+} from "@/features/draft-review/DraftReviewProvider";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { EditorReviewAddressOwner } from "./EditorReviewAddressOwner";
-import { EditorReviewHandoffProvider, EditorReviewIntentClaimant } from "./editor-review-handoff";
+import { ReviewAddressOwner } from "../ReviewAddressOwner";
+import {
+  EditorReviewHandoffProvider,
+  EditorReviewIntentClaimant,
+  useOpenEditorReview,
+} from "./editor-review-handoff";
 
 const documentId = "document-a";
-const draftId = "draft-a";
+const itemKey = "draft-a";
 const workId = "work-1";
+
+function Restore({ review }: { review: DraftReviewContextValue }) {
+  const admit = useOpenEditorReview();
+  return (
+    <ReviewAddressOwner
+      admission="admitted"
+      review={review}
+      presented={{
+        container: "editor",
+        documentId,
+        scheme: "manuscript",
+        path: "chapters/renamed.md",
+        draftOnly: false,
+        review: { workId, itemKey },
+      }}
+      port={{ write: vi.fn(), admit }}
+    />
+  );
+}
 
 describe("review restoration after a rename", () => {
   it("enters review at a renamed address although the draft list still names the old path", async () => {
@@ -20,12 +43,12 @@ describe("review restoration after a rename", () => {
     const group = {
       documentId,
       documentName: "A",
-      contextPath: "chapters/old-name.md",
+      contextLocation: { scheme: "manuscript", path: "chapters/old-name.md" },
       draft: {
-        draftId,
+        itemKey,
         documentId,
         documentName: "A",
-        contextPath: "chapters/old-name.md",
+        contextLocation: { scheme: "manuscript", path: "chapters/old-name.md" },
         status: "active",
         updatedAt: "2026-10-06T00:00:00.000Z",
       },
@@ -33,8 +56,8 @@ describe("review restoration after a rename", () => {
     const review = {
       controller: { workId, inlineReview: null, enterInlineReview, exitInlineReview: vi.fn() },
       drafts: { status: "ready" },
-      groups: [group],
-      groupForDocument: (id: string | null | undefined) => (id === documentId ? group : null),
+      files: [group],
+      fileForDocument: (id: string | null | undefined) => (id === documentId ? group : null),
       activeEditorDocumentId: documentId,
     } as unknown as DraftReviewContextValue;
     const navigate = vi.fn(async () => ({ kind: "applied" as const }));
@@ -42,15 +65,7 @@ describe("review restoration after a rename", () => {
     await withReactRoot(
       <EditorReviewHandoffProvider projectId="project-1" openContextRoute={navigate}>
         <DraftReviewBoundary value={review}>
-          <EditorReviewAddressOwner
-            review={review}
-            requestedDraftId={draftId}
-            activeScreen="context"
-            activeScheme="manuscript"
-            activePath="chapters/renamed.md"
-            activeDocumentId={documentId}
-            onSetDraftId={vi.fn()}
-          />
+          <Restore review={review} />
           <EditorReviewIntentClaimant editorWorkId={workId} activeScheme="manuscript" />
         </DraftReviewBoundary>
       </EditorReviewHandoffProvider>,
@@ -58,9 +73,9 @@ describe("review restoration after a rename", () => {
         await act(async () => undefined);
         expect(navigate).toHaveBeenCalledWith(
           expect.objectContaining({ documentId }),
-          expect.objectContaining({ draftId, replaceIfSameDocument: true }),
+          expect.objectContaining({ itemKey, replaceIfSameDocument: true }),
         );
-        expect(enterInlineReview).toHaveBeenCalledWith(documentId, draftId);
+        expect(enterInlineReview).toHaveBeenCalledWith(documentId, itemKey);
       },
     );
   });

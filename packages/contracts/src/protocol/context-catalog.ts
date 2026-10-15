@@ -59,6 +59,11 @@ type CatalogFileEntryBase = {
   uri: CanonicalContextUri;
   /** Catalog-visible identity state used by cross-device untitled reconciliation. */
   provisionalName: boolean;
+  /**
+   * Ids a device's create forwarded into this document (a join). A device holding a
+   * reservation under one of them follows the join. Absent when none were.
+   */
+  joinedFrom?: readonly DocumentId[];
 };
 
 /** Persisted viewer/storage classification. It is never reconstructed from a filename. */

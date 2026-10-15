@@ -44,6 +44,8 @@ export type ContextAvailabilityLocalBatchPlan = Readonly<{
   transitionRevision: number;
   recentRoutes: readonly WorkingSetRoute[];
   routeSearch: ProjectSearch | null;
+  /** The document whose move rewrote `routeSearch`, so the route can tell relocation from replacement. */
+  relocatedRouteDocumentId: string | null;
   generationRecords: readonly (AppliedAvailabilityCommand & { documentId: string })[];
   sessionEffects: readonly {
     commandId: string;
@@ -51,6 +53,7 @@ export type ContextAvailabilityLocalBatchPlan = Readonly<{
     projectId: string;
     documentId: string;
     generation: string;
+    deletionVersion: string | null;
   }[];
 }>;
 
@@ -81,6 +84,7 @@ export function planContextAvailabilityBatch(
   let transitionRevision = input.project.transitionRevision;
   let recentRoutes = [...input.recentRoutes];
   let routeSearch = input.routeSearch;
+  let relocatedRouteDocumentId: string | null = null;
   const generationRecords: Array<AppliedAvailabilityCommand & { documentId: string }> = [];
   const sessionEffects: ContextAvailabilityLocalBatchPlan["sessionEffects"][number][] = [];
   const unavailableWorkIds = new Set(
@@ -182,6 +186,7 @@ export function planContextAvailabilityBatch(
           contextRouteMatchesSearch(routeSearch, previous, input.project.activeWorkId)
         ) {
           routeSearch = openContextRouteSearch(routeSearch, target);
+          relocatedRouteDocumentId = id;
         }
       } else if (target && priorTargets.some((prior) => sameTarget(admitted, prior))) {
         admitted = target;
@@ -307,6 +312,7 @@ export function planContextAvailabilityBatch(
       projectId,
       documentId: id,
       generation: command.generation,
+      deletionVersion: command.kind === "terminal-remove" ? command.deletionVersion : null,
     });
   }
 
@@ -346,6 +352,7 @@ export function planContextAvailabilityBatch(
     transitionRevision,
     recentRoutes,
     routeSearch,
+    relocatedRouteDocumentId,
     generationRecords,
     sessionEffects,
   };

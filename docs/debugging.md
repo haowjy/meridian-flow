@@ -10,7 +10,7 @@ Start from your symptom in [Strategies](#strategies), or scan the
 | --- | --- | --- |
 | Temporary console probes | You need a one-off signal from a live bug, now | [Temporary Probes](#temporary-probes) |
 | `EventSink` / `emitEvent` | The signal would help another agent tomorrow | [Durable Logs](#durable-logs) |
-| `./mf` | An agent needs setup, durable reads, or mock-model scripts; verify send/tail outcomes with the transcript or browser | [Drive the App from the CLI](#drive-the-app-from-the-cli) |
+| `./mf` | An agent needs setup, durable reads, or mock-model scripts. It doesn't test the app: verify behavior in the browser | [Set Up and Read with the CLI](#set-up-and-read-with-the-cli) |
 | `./mf log` | An agent needs bounded JSON for one known event/trace/domain id | [Consume Server Events](#consume-server-events) |
 | `./mf thread context` | An agent needs the model's canonical request, digest, or tool-loop prefix | [Inspect Model Context](#inspect-model-context) |
 | `GET /api/debug/events` | Query recent server events by correlation/source/level | [Consume Server Events](#consume-server-events) |
@@ -33,10 +33,12 @@ Start from your symptom in [Strategies](#strategies), or scan the
 - **Something is slow or chatty.** LLM Calls panel first (latency, retries,
   token counts per call). For per-chunk granularity, opt into
   `OBS_VERBOSE=gateway.chunks` (dev/test only) and re-run.
-- **An LLM is debugging.** Reproduce with `./mf thread send` (pair
-  `MODEL_PROVIDER=mock` with `--mock` for deterministic tool paths), read the
-  durable transcript with `./mf thread view` to check which reply answered
-  your message (send/tail outcomes are not proof until [#768](https://github.com/haowjy/meridian-flow/issues/768) lands),
+- **An LLM is debugging.** Reproduce the writer's steps in the browser
+  (`agent-browser`), with `MODEL_PROVIDER=mock` and `./mf mock script` for
+  deterministic tool paths. `./mf thread send` can drive a server-only
+  reproduction, but it doesn't exercise the app, so confirm the bug and its fix
+  in the browser. Read the durable transcript with `./mf thread view` to check
+  which reply answered (send/tail outcomes are not proof until [#768](https://github.com/haowjy/meridian-flow/issues/768) lands),
   then `./mf log --thread <id>` or
   `./mf log --trace <id>`. Add `--full` only when compact metadata is
   insufficient. Use `./mf thread context` when the question is what the model
@@ -46,16 +48,25 @@ Start from your symptom in [Strategies](#strategies), or scan the
 - **Polling from a script or agent.** Use `sinceEventId` cursors — event IDs
   are stable at emit time, so incremental polls never re-read history.
 
-## Drive the App from the CLI
+## Set Up and Read with the CLI
 
-Repeatable verification recipes live in the [runtime probe catalog](qa/README.md).
+`./mf` sets up state and reads durable state. It doesn't test the app: it is a
+separate client over the same API, so a result through `./mf` says nothing about
+what the writer sees. Verify behavior in a real browser (`agent-browser`), judged
+by the screen with the durable transcript as truth. Repeatable verification
+recipes live in the [runtime probe catalog](qa/README.md).
 
 `./mf` (repo root) is a thin wrapper over this worktree's own API: every command
 maps to an existing HTTP route or thread-socket message, authenticated exactly
 like the browser through dev login. Run `./mf` for the command tree with the
 route each command wraps, and `./mf <noun> <verb> --help` for flags and examples.
 Use it for setup and durable reads; check send/tail outcomes against the durable
-transcript or in the browser.
+transcript, and check app behavior in the browser. A send that cannot start for lack of usage
+returns `status: "blocked", reason: "credits_exhausted"` with exit code 1,
+not a deadline timeout. This proves that this send's accepted writer turn is
+still in the durable blocked inbox; it does not discard the message. Adding
+usage lets the existing server wake retry it. `--no-wait` still reports only
+admission. Other reply-following limits under #768 are unchanged.
 
 ```bash
 ./mf seed tools/dev/cli/fixtures/basic.json        # docs + thread + an opening message
@@ -88,10 +99,9 @@ prove your message was answered or the thread is idle.
   1 failed, 5 cancelled, 8 waiting on an interrupt (answer with
   `./mf thread respond`), 124 timeout. 2 is usage, 3 not found, 4 the stack is
   not running or dev login failed. Every wait is bounded by `--timeout`.
-  When a run splits across a compaction (for example overflow recovery), the
-  result can name the run's first turn with a null `finalText` instead of the
-  reply that answered: inspect the durable transcript with `./mf thread view`
-  ([#617](https://github.com/haowjy/meridian-flow/issues/617)).
+  The result is the reply that answers the sent message: a steer or a
+  compaction split follows the successor whose start names the reply it
+  continues, and a queued message waits for the start that names it.
 - `thread view` prints a failed compaction's typed outcome as
   `compaction failure: <reason> during <phase>`. With `--json`, compaction
   turns carry `compactionMetadata` (trigger, control IDs, failure reason and
@@ -212,9 +222,21 @@ instead of `console.log`.
   128 MiB (`LOG_MAX_BYTES` overrides the byte cap). Allocation, append, and
   pruning share a worktree lock so overlapping server generations keep both
   ceilings hard. This is not an audit log.
-- The dev Vite and Nitro watchers exclude the repository `logs/` tree. Log
-  writes must not reload either process; a reload during a long-running turn is
-  a bug, not expected dev behavior.
+- Nitro's active dev watcher is Rolldown's module-graph watcher
+  (`rolldownConfig.watch` in `apps/server/nitro.config.ts`); it excludes
+  `logs/` and `**/node_modules/**`. App Vite has its own ignore predicate for
+  `logs/`. A reload during a long-running turn is a bug, not expected dev
+  behavior. A rebuild can also come from inside the checkout (a source edit).
+  These are written by the dev stack and are not watched inputs:
+  `logs/portless.log`, `logs/events/**`, `.meridian/dev-session.json`, and
+  Nitro output under `apps/server/node_modules/.nitro/dev/**`.
+  `logs/portless.log` shows a rebuild (`[nitro] Server built` followed by a
+  fresh `startup.complete`) but not what triggered it. Before blaming product
+  code, confirm the running Nitro process belongs to this checkout and config,
+  then capture the triggering path with a recursive `inotifywait` over the
+  checkout (excluding `.git` only). Keep `node_modules`: a sibling worktree's
+  `pnpm install` hardlinks shared store files and fires `IN_ATTRIB` there, which
+  hid #817 when it was excluded.
 - Each event is at most 8 KiB. The local output sink holds at most 5,000 pending
   events or 16 MiB. Output backpressure drops oldest first; the next successful
   write reports lost record and byte counts. The recent ring uses the same dual

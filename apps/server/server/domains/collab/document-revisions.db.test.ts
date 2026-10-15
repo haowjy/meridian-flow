@@ -1,3 +1,8 @@
+import {
+  createDrizzleDraftStore,
+  createDrizzleDraftWriteBoundary,
+} from "./adapters/drizzle-drafts.js";
+import { createDrafts } from "./domain/drafts.js";
 /** Revision identity across live rooms, Work peers, response settlement and rebinding. */
 
 import { renderAgentEditResult, toDocHandle } from "@meridian/agent-edit/integration";
@@ -17,7 +22,7 @@ import { createTestWorkProjectionMutation } from "../../test-support/work-projec
 import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
 import { createDrizzleProjectContextAvailability } from "../context/adapters/project-context-availability.js";
 import { createDocumentRevisions } from "../context/index.js";
-import { createLocalFileAccessChanges } from "../file-policy/index.js";
+import { createLocalFileAccessChanges, type FileDestination } from "../file-policy/index.js";
 import { createDrizzleProjectWorkRepository } from "../projects/index.js";
 import { createDrizzleThreadLock } from "../runtime/adapters/drizzle-thread-lock.js";
 import { createDrizzleThreadRepository } from "../threads/adapters/drizzle/thread-repository.js";
@@ -26,6 +31,7 @@ import { createBranchCoordinator } from "./domain/branch-coordinator.js";
 import { createBranchPullService } from "./domain/branch-pulls.js";
 import { scopeBranchPeer } from "./domain/document-link-scope-doors.js";
 import { createEffectiveDocumentReader } from "./domain/effective-document-reader.js";
+import { createPeerRetirement } from "./domain/peer-retirement.js";
 import type { DocumentLinkScopes } from "./domain/ports/document-link-scope.js";
 import { runResponseTransaction } from "./domain/response-transaction.js";
 import {
@@ -42,10 +48,7 @@ import {
   USER_ID,
   WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
-import {
-  createTestDocumentLinkScopes,
-  lateBoundManifestMembership,
-} from "./test-support/document-link-scopes.js";
+import { createTestDocumentLinkScopes } from "./test-support/document-link-scopes.js";
 
 /** The grant names this project and its owner, as the file policy would: the read's scope key. */
 function inProject<T extends ReturnType<typeof testFileGrant>>(grant: T): T {
@@ -56,6 +59,11 @@ function inProject<T extends ReturnType<typeof testFileGrant>>(grant: T): T {
   };
 }
 
+const identity = (responseId: string) => ({
+  providerResponseId: responseId,
+  editScopeId: responseId,
+});
+
 async function fixture(
   db: Database,
   harnesses: Array<ReturnType<typeof createHarness>>,
@@ -65,7 +73,10 @@ async function fixture(
   const harness = createHarness(db, options.links ? { links: options.links } : {});
   harnesses.push(harness);
   const f = harness.crossWorkProbeFixture();
-  await db.update(schema.works).set({ aiWriteMode: mode }).where(eq(schema.works.id, WORK_ID));
+  await db
+    .update(schema.threads)
+    .set({ aiWriteMode: mode })
+    .where(eq(schema.threads.id, THREAD_ID));
   await f.persistence.lifecycle.ensureDocument(ALPHA_ID);
   await f.liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
     const before = Y.encodeStateVector(doc);
@@ -79,9 +90,12 @@ async function fixture(
       seq: 0,
     });
   });
-  await f.branchStore.reconcileProjectManifest(PROJECT_ID);
   // The reads spell from the harness's scope, so their revisions compare with these.
   const links = f.links;
+  const drafts = createDrafts({
+    store: createDrizzleDraftStore(db),
+    boundary: createDrizzleDraftWriteBoundary(db),
+  });
   const effective = scopeBranchPeer(
     createEffectiveDocumentReader({
       branches: f.branchStore,
@@ -93,6 +107,12 @@ async function fixture(
       model: f.runtime.model,
       codec: f.runtime.codec,
       links,
+      retirePeers: createPeerRetirement({
+        closeBranchRoom: () => {},
+        agentEdit: f.collab.agentEdit(),
+      }),
+      deferUntilCommit: () => false,
+      drafts,
     }),
     links,
   );
@@ -103,6 +123,7 @@ async function fixture(
     }),
     availability: createDrizzleProjectContextAvailability(db),
     documents: effective,
+    drafts,
     works: createDrizzleProjectWorkRepository({
       lineageScratch: createDrizzleLineageScratchLifecycle(db),
       db,
@@ -124,8 +145,15 @@ async function fixture(
       ),
     ),
   };
-  const read = (responseId?: string) =>
-    core.read({ file: "alpha.md", documentId: ALPHA_ID }, { ...context, responseId });
+  const read = (responseId?: string, destination?: FileDestination) =>
+    core.read(
+      { file: "alpha.md", documentId: ALPHA_ID },
+      {
+        ...context,
+        ...(responseId ? { responseIdentity: identity(responseId) } : {}),
+        ...(destination ? { grant: inProject(testFileGrant(destination)) } : {}),
+      },
+    );
   const current = async () =>
     (await revisions.current({ threadId: THREAD_ID, documentIds: [ALPHA_ID] })).get(ALPHA_ID);
   async function writerDelete() {
@@ -161,12 +189,12 @@ async function fixture(
         overwrite: true,
         content: "Agent revision.",
       },
-      { ...context, responseId, createdDocument: false },
+      { ...context, responseIdentity: identity(responseId), createdDocument: false },
     );
     expect(outcome.isError, renderAgentEditResult(outcome.result)).toBe(false);
     return outcome;
   }
-  return { ...f, core, read, current, stage, writerDelete, revisions, effective };
+  return { ...f, drafts, core, read, current, stage, writerDelete, revisions, effective };
 }
 
 describe("document revisions (postgres and collab)", () => {
@@ -200,12 +228,9 @@ describe("document revisions (postgres and collab)", () => {
   });
 
   it("a tree-only move changes the view revision, so compaction does not elide the stale read", async () => {
-    // The real manifest authority, so a Work view's own membership counts.
-    const manifest = lateBoundManifestMembership();
     const f = await fixture(db, harnesses, "direct", {
-      links: createTestDocumentLinkScopes(db, { membership: manifest.membership }),
+      links: createTestDocumentLinkScopes(db, {}),
     });
-    manifest.bind(f.effective);
     const doc = f.hocuspocus.documents.get(ALPHA_ID);
     if (!doc) throw new Error("Fixture live room missing");
     const before = Y.encodeStateVector(doc);
@@ -234,13 +259,7 @@ describe("document revisions (postgres and collab)", () => {
     expect(moved).not.toBe(shown);
     expect((await f.read()).revision).toBe(moved);
 
-    // Alpha stays untouched in its Work, whose manifest drops the link's target:
-    // every effective door renders that view from the live content, none live.
-    await f.effective.recordManifestDocumentDeleted(BETA_ID, {
-      projectId: PROJECT_ID,
-      workId: WORK_ID,
-      threadId: THREAD_ID,
-    });
+    // A drafted view follows live locations for documents it did not create.
     const view = {
       documentId: ALPHA_ID,
       threadId: THREAD_ID,
@@ -251,8 +270,8 @@ describe("document revisions (postgres and collab)", () => {
     const hashlines = await f.effective.readEffectiveHashlines(view);
     const revision = await f.effective.readEffectiveRevision(view);
     if (!markdown.ok || !hashlines.ok) throw new Error(JSON.stringify({ markdown, hashlines }));
-    expect.soft(hashlines.value.content.join("\n"), "hashlines").toContain("[Beta](beta.md)");
-    expect.soft(markdown.value.content, "Markdown").toContain("[Beta](beta.md)");
+    expect.soft(hashlines.value.content.join("\n"), "hashlines").toContain("[Beta](gamma)");
+    expect.soft(markdown.value.content, "Markdown").toContain("[Beta](gamma)");
     expect
       .soft([markdown.value.revision, revision], "one view")
       .toEqual([hashlines.value.revision, hashlines.value.revision]);
@@ -290,11 +309,12 @@ describe("document revisions (postgres and collab)", () => {
       createdByUserId: USER_ID,
       name: "Other draft",
       slug: "other-draft",
-      aiWriteMode: "draft",
     });
     await createDrizzleThreadWorksRepository(db).rebindPrimary(THREAD_ID, workB);
     expect(await f.current()).not.toBe(before.revision);
-    expect((await f.read()).revision).toBe(await f.current());
+    // The thread's grants now name Work B, which has no draft yet: the read is live (S1).
+    const rebound = { kind: "draft", workId: workB, workSlug: "other-draft" } as const;
+    expect((await f.read(undefined, rebound)).revision).toBe(await f.current());
   });
 
   it("does not treat a deleted document's still-loaded room as a readable source", async () => {
@@ -320,7 +340,7 @@ describe("document revisions (postgres and collab)", () => {
     const contending = deferred();
     let scheduled = false;
     f.branchCoordinator.pullFromDoc = async (...args) => {
-      if (scheduled && args[0] === workBranchId) contending.resolve();
+      if (scheduled && args[1] === workBranchId) contending.resolve();
       return originalPull(...args);
     };
     f.branchCoordinator.readBranch = async (id, callback) => {
@@ -349,23 +369,12 @@ describe("document revisions (postgres and collab)", () => {
     await f.branchPulls.flushLivePull(ALPHA_ID);
   }, 10000);
 
-  it("current under the thread lock handles a cold manifest", async () => {
-    const f = await fixture(db, harnesses, "draft");
-    const manifest = await f.branchStore.ensureProjectManifest({ projectId: PROJECT_ID });
-    manifest.doc.destroy();
-    await db
-      .update(schema.documents)
-      .set({ deletedAt: new Date() })
-      .where(eq(schema.documents.id, manifest.documentId));
-    await createDrizzleThreadLock(db).withThreadLock(THREAD_ID, async () => {
-      expect(await bounded(() => f.current())).toBeNull();
-    });
-  });
-
   it("a flush joining an older snapshot waits for a fresh committed pull", async () => {
     const f = await fixture(db, harnesses, "draft");
     await f.liveCoordinator.withDocument(ALPHA_ID, async (liveDoc) => {
-      await f.branchStore.ensureWorkDraftBranch({ documentId: ALPHA_ID, workId: WORK_ID, liveDoc });
+      const draft = await f.drafts.activeForWork(WORK_ID);
+      if (!draft) throw new Error("the harness seeds the Work's draft");
+      await f.branchStore.ensureDraftBranch({ documentId: ALPHA_ID, draftId: draft.id, liveDoc });
     });
     const before = await f.current();
     const captured = deferred();
@@ -442,7 +451,13 @@ describe("document revisions (postgres and collab)", () => {
       runResponseTransaction(
         (operation) => runInDrizzleTransaction(db, operation),
         async () => {
-          await pulls.pullThreadPeer({ documentId: ALPHA_ID, threadId: THREAD_ID });
+          const draft = await f.drafts.activeForWork(WORK_ID);
+          if (!draft) throw new Error("the harness seeds the Work's draft");
+          await pulls.pullThreadPeer({
+            documentId: ALPHA_ID,
+            threadId: THREAD_ID,
+            draftId: draft.id,
+          });
           throw new Error("response aborted");
         },
       ),
@@ -453,34 +468,6 @@ describe("document revisions (postgres and collab)", () => {
     expect(broadcasts).toEqual(expect.arrayContaining([peer.branchId, draft.branchId]));
     peer.doc.destroy();
     draft.doc.destroy();
-  });
-
-  it("a live manifest re-read observes its caller's uncommitted membership edit", async () => {
-    const f = await fixture(db, harnesses, "draft");
-    await runInDrizzleTransaction(db, async () => {
-      await f.branchStore.recordManifestDocumentDeleted(ALPHA_ID);
-      const membership = await bounded(() =>
-        f.effective.resolveManifestMembership({ projectId: PROJECT_ID }),
-      );
-      expect(membership.members).not.toContain(ALPHA_ID);
-    });
-  });
-
-  it("returns null when a document is removed from the Work manifest", async () => {
-    const f = await fixture(db, harnesses, "draft");
-    const before = await f.read();
-    await f.effective.recordManifestDocumentDeleted(ALPHA_ID, {
-      projectId: PROJECT_ID,
-      threadId: THREAD_ID,
-      workId: WORK_ID,
-    });
-    const membership = await f.effective.resolveManifestMembership({
-      projectId: PROJECT_ID,
-      threadId: THREAD_ID,
-    });
-    expect(membership.members).not.toContain(ALPHA_ID);
-    expect(before.revision).toMatch(/^y2:/);
-    expect(await f.current()).toBeNull();
   });
 });
 

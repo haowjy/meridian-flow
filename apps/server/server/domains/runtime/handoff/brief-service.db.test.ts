@@ -29,7 +29,7 @@ else
     const { createDrizzleInbox } = await import("../adapters/drizzle-inbox.js");
     const { createDetachedWorkTracker } = await import("../detached-work.js");
     const { createDrizzleCreditLedger } = await import("../../billing/index.js");
-    const { createTestDrizzleDelivery } = await import(
+    const { createTestDrizzleDelivery, createTestOrphanRepair } = await import(
       "../loop/__tests__/test-drizzle-delivery.js"
     );
     const { createRuntimeHarness } = await import("../loop/__tests__/runtime-harness.js");
@@ -37,7 +37,6 @@ else
     const { scriptedGateway } = await import("../loop/__tests__/test-gateway.js");
     const { createRunStarter } = await import("../loop/run-starter.js");
     const { createWakeIfRunnable } = await import("../loop/wake-if-runnable.js");
-    const { createOrphanReportRepair } = await import("../spawn/orphan-report-repair.js");
     const { createDrizzleEventJournalWriter } = await import("../../threads/index.js");
     const { handoffSeedMetadata } = await import("../../threads/index.js");
     const databaseUrl = required(url);
@@ -51,6 +50,7 @@ else
       const source = required(await repos.threads.findById(ids.caller));
       const cutoff = required(await repos.turns.findById(ids.callerTurn));
       const { thread: destination } = await repos.threads.createDerivedPrimary({
+        aiWriteMode: "direct",
         id: crypto.randomUUID() as never,
         userId: ids.user,
         projectId: ids.project,
@@ -174,6 +174,7 @@ else
       const source = required(await repos.threads.findById(ids.caller));
       const cutoff = required(await repos.turns.findById(ids.callerTurn));
       const destination = await repos.threads.create({
+        aiWriteMode: "direct",
         userId: ids.user,
         projectId: ids.project,
         title: "Handoff destination",
@@ -200,7 +201,11 @@ else
         idempotencyKey: "queued-during-brief",
       });
       expect(await inbox.pendingMessageThreads(10)).toEqual([destination.id]);
-      const sourceLease = await runClaim.startExecution(source.id, "source-running");
+      const sourceLease = await runClaim.startExecution(
+        source.id,
+        "source-running",
+        async () => {},
+      );
       const heldSourceLease = required(sourceLease);
       const sourceTurnsBefore = await repos.turns.listByThread(source.id);
       const sourceInboxBefore = await db
@@ -350,7 +355,9 @@ else
       const launchPostCommit = required(postCommit.shift());
       await launchPostCommit();
       await providerStarted;
-      expect(await runClaim.startExecution(fixture.destination.id, "racing-run")).toBeNull();
+      expect(
+        await runClaim.startExecution(fixture.destination.id, "racing-run", async () => {}),
+      ).toBeNull();
       const queued = await delivery.enqueue({
         threadId: fixture.destination.id,
         intent: "message",
@@ -365,7 +372,9 @@ else
         body: { kind: "compact" },
         idempotencyKey: "compact-during-brief",
       });
-      expect(await runClaim.startExecution(fixture.destination.id, "racing-wake")).toBeNull();
+      expect(
+        await runClaim.startExecution(fixture.destination.id, "racing-wake", async () => {}),
+      ).toBeNull();
       releaseProvider();
 
       const expectedSeedStatus = ending === "failed" ? "error" : "cancelled";
@@ -409,6 +418,7 @@ else
           const lease = await runClaim.startExecution(
             threadId as never,
             `shutdown-wake-${startAttempts}`,
+            async () => {},
           );
           if (!lease) return;
           startedRuns += 1;
@@ -558,7 +568,11 @@ else
       });
       await heldBrief.release();
       expect(await service.stop(fixture.destination.id, fixture.seed.id)).toBe(true);
-      const liveReply = await runClaim.startExecution(fixture.destination.id, "destination-reply");
+      const liveReply = await runClaim.startExecution(
+        fixture.destination.id,
+        "destination-reply",
+        async () => {},
+      );
       const heldLiveReply = required(liveReply);
       await expect(
         service.retry({ threadId: fixture.destination.id, seedId: retryId }),
@@ -750,12 +764,15 @@ else
       const fixture = await handoffSeed();
       const authority = createDrizzleRunClaim(db, { holderId: "handoff-placeholder-sweep" });
       let statusPublishes = 0;
-      const repair = createOrphanReportRepair({
+      const repair = createTestOrphanRepair(db, {
         repos: fixture.repos,
         inbox: createDrizzleInbox(db),
         eventWriter: createDrizzleEventJournalWriter(db),
         authority,
-        threadLock: createDrizzleThreadLock(db),
+        async publishStatus(threadId) {
+          expect(threadId).toBe(fixture.destination.id);
+          statusPublishes += 1;
+        },
         publisher: {
           async publish() {
             return "already" as const;
@@ -766,10 +783,6 @@ else
           getRegistration(name: string) {
             return name === "thread_history" ? ({} as never) : undefined;
           },
-        },
-        async publishStatus(threadId: string) {
-          expect(threadId).toBe(fixture.destination.id);
-          statusPublishes += 1;
         },
       });
       const liveClaim = required(await authority.hold(fixture.destination.id));

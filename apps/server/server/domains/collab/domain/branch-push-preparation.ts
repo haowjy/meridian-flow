@@ -8,11 +8,7 @@ import {
 import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { BranchSnapshot } from "./branch-coordinator.js";
-import type {
-  BranchJournalRow,
-  PreparedPush,
-  PreparedPushCommit,
-} from "./branch-push-contracts.js";
+import type { BranchJournalRow, PreparedPush } from "./branch-push-contracts.js";
 import { publicationBlockChanges } from "./branch-push-plan.js";
 import {
   journalAttributionByChangedBlock,
@@ -79,10 +75,24 @@ export async function preparePushUnderLiveLock(
           ] as const,
       ),
     );
+    const beforeBodies = new Map(
+      before.map((block) => [`${block.clientID}:${block.clock}`, block.serialized]),
+    );
+    const afterBodies = new Map(
+      after.map((block) => [`${block.clientID}:${block.clock}`, block.serialized]),
+    );
     const changedBlocks = publicationBlockChanges({
       model: input.model,
       beforeDoc: lockCutDoc,
       afterDoc,
+      renderBlock(doc, block) {
+        const identity = input.model.getCanonicalBlockIdentity(block);
+        const body = (doc === lockCutDoc ? beforeBodies : afterBodies).get(
+          `${identity.clientID}:${identity.clock}`,
+        );
+        if (body === undefined) throw new Error("Publication block is missing its rich snapshot");
+        return body;
+      },
     });
     const changes: RawTrailChange[] = preparedTrailChanges({
       documentId: phase.branch.documentId,
@@ -111,7 +121,7 @@ export async function preparePushUnderLiveLock(
         pushUpdate: phase.pushUpdate,
         idempotencyKey: phase.idempotencyKey,
         receiptId,
-      } satisfies Omit<PreparedPushCommit, "pushedByUserId" | "trail" | "pendingLiveSettlement">,
+      } satisfies PreparedPush["prepared"],
     };
   } finally {
     afterDoc.destroy();

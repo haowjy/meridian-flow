@@ -64,6 +64,28 @@ describe("exact thread creation", () => {
     await expect(deps.threadWorks.findPrimary(omitted.id)).resolves.toEqual({ workId: noWork.id });
   });
 
+  it("starts a chat in its Work's default, and an explicit mode wins and becomes the default", async () => {
+    const { deps, args } = await fixture();
+    const work = await deps.workRepo.create({ projectId: args.projectId, name: "Rewrite" });
+    await deps.workRepo.setDefaultAiWriteMode(work.id, "draft");
+    const create = (aiWriteMode?: "direct" | "draft") =>
+      createThreadForProject(deps, {
+        ...args,
+        id: crypto.randomUUID(),
+        workId: work.id,
+        aiWriteMode,
+      });
+
+    const copied = await create();
+    expect(copied.aiWriteMode).toBe("draft");
+    const explicit = await create("direct");
+    expect(explicit.aiWriteMode).toBe("direct");
+    expect((await deps.workRepo.findById(work.id))?.defaultAiWriteMode).toBe("direct");
+    // The Work's earlier chat keeps the mode it started with.
+    expect((await deps.threads.findById(copied.id))?.aiWriteMode).toBe("draft");
+    expect((await create()).aiWriteMode).toBe("direct");
+  });
+
   it("binds the reserved revision and recovers it before prospective catalog eligibility", async () => {
     const { app, deps, args } = await fixture();
     const created = await createThreadForProject(deps, args);

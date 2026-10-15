@@ -10,6 +10,20 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+const PRESERVABLE_EXECUTABLES = new Set([
+  "bash",
+  "sh",
+  "dash",
+  "zsh",
+  "fish",
+  "ksh",
+  "ksh93",
+  "csh",
+  "tcsh",
+  "nu",
+  "tmux",
+]);
+
 interface WorkItemWithTaskDir {
   readonly id: string;
   readonly taskDir?: string;
@@ -18,6 +32,7 @@ interface WorkItemWithTaskDir {
 interface ProcessCwd {
   readonly pid: number;
   readonly cwd: string;
+  readonly preservable: boolean;
 }
 
 interface ProcessWithHiddenCwd {
@@ -27,6 +42,7 @@ interface ProcessWithHiddenCwd {
 
 interface TmuxPane {
   readonly sessionName: string;
+  readonly paneId: string;
   readonly cwd: string;
 }
 
@@ -82,7 +98,11 @@ export interface AutoCleanupReadinessCollection {
 
 export interface AutoCleanupReadiness {
   readonly worktreePath: string;
+  readonly warnings?: readonly string[];
 }
+
+/** Force permits managed shutdown first, then only shells/tmux may remain. */
+export type CleanupReadinessPolicy = "idle" | "stop-managed" | "preserve-shells";
 
 export type AutoCleanupReadinessDecision =
   | { readonly ready: true; readonly evidence: AutoCleanupReadiness }
@@ -96,6 +116,8 @@ export interface AutoCleanupReadinessInput {
   readonly liveProcessIds: readonly number[];
   readonly liveProcessCommandLineIds: readonly number[];
   readonly inspectionFailures: readonly string[];
+  readonly preservableProcessIds?: readonly number[];
+  readonly preservedPaneDescriptions?: readonly string[];
 }
 
 function normalizePath(value: string): string {
@@ -117,17 +139,20 @@ export function autoCleanupReadinessKey(worktreePath: string): string {
 
 export function decideAutoCleanupReadiness(
   input: AutoCleanupReadinessInput,
+  policy: CleanupReadinessPolicy = "idle",
 ): AutoCleanupReadinessDecision {
   const reasons: string[] = [];
   if (!input.clean) reasons.push("worktree has uncommitted changes");
   if (input.activeWorkItemIds.length > 0) {
     reasons.push(`active Meridian work items: ${input.activeWorkItemIds.join(", ")}`);
   }
-  if (input.liveDevSessionNames.length > 0) {
+  if (policy === "idle" && input.liveDevSessionNames.length > 0) {
     reasons.push(`live dev sessions: ${input.liveDevSessionNames.join(", ")}`);
   }
-  if (input.liveProcessIds.length > 0) {
-    reasons.push(`live processes have cwd under worktree: ${input.liveProcessIds.join(", ")}`);
+  const preserved = new Set(policy === "preserve-shells" ? input.preservableProcessIds : []);
+  const blockingPids = input.liveProcessIds.filter((pid) => !preserved.has(pid));
+  if (policy !== "stop-managed" && blockingPids.length > 0) {
+    reasons.push(`live processes have cwd under worktree: ${blockingPids.join(", ")}`);
   }
   if (input.liveProcessCommandLineIds.length > 0) {
     reasons.push(
@@ -136,10 +161,28 @@ export function decideAutoCleanupReadiness(
   }
   reasons.push(...input.inspectionFailures);
 
+  const warnings =
+    policy === "preserve-shells"
+      ? [
+          ...input.liveProcessIds
+            .filter((pid) => preserved.has(pid))
+            .map(
+              (pid) =>
+                `shell/tmux PID ${pid} remains in ${input.worktreePath}; cd out after removal`,
+            ),
+          ...(input.preservedPaneDescriptions ?? []).map(
+            (pane) => `tmux ${pane} remains in ${input.worktreePath}; cd out after removal`,
+          ),
+        ]
+      : [];
+
   return reasons.length === 0
     ? {
         ready: true,
-        evidence: { worktreePath: autoCleanupReadinessKey(input.worktreePath) },
+        evidence: {
+          worktreePath: autoCleanupReadinessKey(input.worktreePath),
+          ...(warnings.length ? { warnings } : {}),
+        },
       }
     : { ready: false, reasons };
 }
@@ -183,7 +226,15 @@ function currentUserProcessCwds(): {
     }
 
     try {
-      entries.push({ pid, cwd: fs.readlinkSync(`/proc/${entry}/cwd`) });
+      const cwd = fs.readlinkSync(`/proc/${entry}/cwd`);
+      let preservable = false;
+      try {
+        const executable = path.basename(fs.readlinkSync(`/proc/${entry}/exe`));
+        preservable = PRESERVABLE_EXECUTABLES.has(executable);
+      } catch {
+        // Unknown executables remain blockers even with --force.
+      }
+      entries.push({ pid, cwd, preservable });
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
       if (code === "ENOENT") continue;
@@ -213,7 +264,7 @@ function tmuxPanes(cwd: string): {
 } {
   const result = spawnSync(
     "tmux",
-    ["list-panes", "-a", "-F", "#{session_name}\t#{pane_current_path}"],
+    ["list-panes", "-a", "-F", "#{session_name}\t#{pane_id}\t#{pane_current_path}"],
     {
       cwd,
       encoding: "utf8",
@@ -246,8 +297,8 @@ function tmuxPanes(cwd: string): {
     .split(/\r?\n/)
     .filter(Boolean)
     .map((line) => {
-      const [sessionName, paneCwd] = line.split("\t", 2);
-      return sessionName && paneCwd ? { sessionName, cwd: paneCwd } : undefined;
+      const [sessionName, paneId, paneCwd] = line.split("\t", 3);
+      return sessionName && paneId && paneCwd ? { sessionName, paneId, cwd: paneCwd } : undefined;
     })
     .filter((entry): entry is TmuxPane => entry !== undefined);
   return { entries, failures: [] };
@@ -344,6 +395,7 @@ function decideForWorktree(
   worktreePath: string,
   workItems: readonly WorkItemWithTaskDir[],
   liveness: LivenessSnapshot,
+  policy: CleanupReadinessPolicy = "idle",
 ): AutoCleanupReadinessDecision {
   const normalizedPath = autoCleanupReadinessKey(worktreePath);
   const status = worktreeIsClean(worktreePath);
@@ -377,22 +429,32 @@ function decideForWorktree(
     ...(metadata.failure ? [metadata.failure] : []),
   ];
 
-  return decideAutoCleanupReadiness({
-    worktreePath: normalizedPath,
-    clean: status.clean,
-    activeWorkItemIds,
-    liveDevSessionNames,
-    liveProcessIds,
-    liveProcessCommandLineIds,
-    inspectionFailures,
-  });
+  return decideAutoCleanupReadiness(
+    {
+      worktreePath: normalizedPath,
+      clean: status.clean,
+      activeWorkItemIds,
+      liveDevSessionNames,
+      liveProcessIds,
+      liveProcessCommandLineIds,
+      inspectionFailures,
+      preservableProcessIds: liveness.processCwds
+        .filter((entry) => entry.preservable)
+        .map((entry) => entry.pid),
+      preservedPaneDescriptions: liveness.tmuxPanes
+        .filter((pane) => isWithinPath(pane.cwd, normalizedPath))
+        .map((pane) => `${pane.sessionName} pane ${pane.paneId}`),
+    },
+    policy,
+  );
 }
 
 export function inspectAutoCleanupReadiness(
   worktreePath: string,
   workItems: readonly WorkItemWithTaskDir[],
+  policy: CleanupReadinessPolicy = "idle",
 ): AutoCleanupReadinessDecision {
-  return decideForWorktree(worktreePath, workItems, collectLivenessSnapshot(worktreePath));
+  return decideForWorktree(worktreePath, workItems, collectLivenessSnapshot(worktreePath), policy);
 }
 
 export function collectAutoCleanupReadiness(

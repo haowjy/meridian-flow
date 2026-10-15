@@ -50,7 +50,6 @@ export type PersistenceAuthority =
       transitionId: string;
       lineageHandle: string;
       exactDatabaseName: string;
-      targetGeneration: AvailabilityGeneration | null;
     }
   | {
       phase: "terminal-local";
@@ -59,6 +58,8 @@ export type PersistenceAuthority =
       exactDatabaseName: string;
       terminalGeneration: AvailabilityGeneration;
       commandId: AvailabilityCommandId;
+      /** Namespace version of the exact-ID deletion; absent on records that never carried one. */
+      deletionVersion?: string;
     }
   | null;
 export type RoomOrderRecord = {
@@ -105,7 +106,26 @@ export type TerminalLineageReceipt = Readonly<{
   lineageHandle: string;
   exactDatabaseName: string;
   persistenceGeneration: AvailabilityGeneration | null;
+  /** Namespace version that proved the deletion; null leaves the resource terminal versionless. */
+  deletionVersion: string | null;
 }>;
+
+/** The terminal lineage a room's stored `terminal-local` authority still owes. */
+export function storedTerminalLineage(room: RoomOrderRecord): TerminalLineageReceipt | null {
+  const authority = room.persistence;
+  if (authority?.phase !== "terminal-local") return null;
+  return {
+    kind: "lineage-transition-required",
+    documentId: room.documentId,
+    generation: authority.terminalGeneration,
+    commandId: authority.commandId,
+    transitionId: authority.transitionId,
+    lineageHandle: authority.lineageHandle,
+    exactDatabaseName: authority.exactDatabaseName,
+    persistenceGeneration: room.pendingDrain?.incarnation?.generation ?? null,
+    deletionVersion: authority.deletionVersion ?? null,
+  };
+}
 
 export type TerminalLineageProgress = "pending" | "complete" | "superseded";
 
@@ -137,8 +157,19 @@ export type LocalAdoptionPendingReceipt = Readonly<{
   transitionId: string;
   lineageHandle: string;
   exactDatabaseName: string;
-  targetGeneration: AvailabilityGeneration | null;
 }>;
+
+/** The durable state `beginLocalAdoption` found, the next pass's only input. */
+export type LocalAdoptionState =
+  | { kind: "reserved"; receipt: LocalAdoptionPendingReceipt }
+  | { kind: "committed" }
+  | { kind: "terminal" | "mismatch" };
+
+/** The fenced commit: the reservation it consumes, and the synchronous hook that runs inside it. */
+export type LocalAdoptionCommit = LocalAdoptionPendingReceipt & {
+  /** Runs inside the commit's IndexedDB transaction, so it must not await. */
+  beforeWrite(persistenceGeneration: AvailabilityGeneration): undefined;
+};
 
 function encodeKeyPart(value: string): string {
   return encodeURIComponent(value);
@@ -170,6 +201,18 @@ function sameAdoption(
     authority.transitionId === receipt.transitionId &&
     authority.lineageHandle === receipt.lineageHandle &&
     authority.exactDatabaseName === receipt.exactDatabaseName
+  );
+}
+
+/** A bindable incarnation is the lineage's own when it names its database and no other origin. */
+function sameLineage(
+  authority: Extract<PersistenceAuthority, { phase: "bindable" }>,
+  receipt: LocalAdoptionPendingReceipt,
+): boolean {
+  return (
+    authority.exactDatabaseName === receipt.exactDatabaseName &&
+    (authority.originLineageHandle === undefined ||
+      authority.originLineageHandle === receipt.lineageHandle)
   );
 }
 
@@ -393,20 +436,8 @@ export class DocumentSessionAuthorityStore {
     )) as RoomOrderRecord[];
     await transactionDone(transaction);
     return rooms.flatMap((room) => {
-      const authority = room.persistence;
-      if (authority?.phase !== "terminal-local") return [];
-      return [
-        {
-          kind: "lineage-transition-required" as const,
-          documentId: room.documentId,
-          generation: authority.terminalGeneration,
-          commandId: authority.commandId,
-          transitionId: authority.transitionId,
-          lineageHandle: authority.lineageHandle,
-          exactDatabaseName: authority.exactDatabaseName,
-          persistenceGeneration: room.pendingDrain?.incarnation?.generation ?? null,
-        },
-      ];
+      const receipt = storedTerminalLineage(room);
+      return receipt ? [receipt] : [];
     });
   }
 
@@ -437,6 +468,8 @@ export class DocumentSessionAuthorityStore {
     projectId: ProjectId;
     generation: AvailabilityGeneration;
     originLineageHandle?: string;
+    /** Commits this reservation's local copy at `generation`; without it a reservation refuses opens. */
+    adoption?: LocalAdoptionCommit;
   }): Promise<AdmissionDecision> {
     assertAvailabilityGeneration(input.generation);
     const database = await this.databasePromise;
@@ -470,12 +503,27 @@ export class DocumentSessionAuthorityStore {
       transaction.abort();
       return { kind: "pending", pending: room.pendingDrain };
     }
+    const adoption = input.adoption;
+    const reserved =
+      adoption && sameAdoption(room.persistence, adoption) ? room.persistence : undefined;
+    if (adoption && !room.persistence) {
+      transaction.abort();
+      return { kind: "generation-revoked" };
+    }
     if (
-      room.persistence?.phase === "adopting-local" ||
+      (room.persistence?.phase === "adopting-local" && !reserved) ||
       room.persistence?.phase === "terminal-local"
     ) {
       transaction.abort();
       return { kind: "pending-local-adoption", phase: room.persistence.phase };
+    }
+    if (
+      adoption &&
+      room.persistence?.phase === "bindable" &&
+      !sameLineage(room.persistence, adoption)
+    ) {
+      transaction.abort();
+      throw new Error("Local adoption authority changed before session transfer");
     }
     const reusable =
       room.persistence?.phase === "bindable" &&
@@ -494,21 +542,31 @@ export class DocumentSessionAuthorityStore {
     const persistenceGeneration = reusable?.generation ?? input.generation;
     const exactDatabaseName =
       reusable?.exactDatabaseName ??
+      reserved?.exactDatabaseName ??
       documentSessionPersistenceKey(this.accountId, input.documentId, input.generation);
+    try {
+      if (adoption && exactDatabaseName !== adoption.exactDatabaseName)
+        throw new Error("Local adoption authority changed before session transfer");
+      adoption?.beforeWrite(persistenceGeneration);
+    } catch (error) {
+      transaction.abort();
+      throw error;
+    }
     // The originating resource lineage is the authority's identity for local
     // adoption; a server-phase admission that knows it must record it or a later
     // cached open reads this record as a foreign lineage and refuses to adopt.
+    const origin = input.originLineageHandle ?? adoption?.lineageHandle;
     if (reusable) {
       room.persistence =
-        input.originLineageHandle && !reusable.originLineageHandle
-          ? { ...reusable, originLineageHandle: input.originLineageHandle }
+        origin && !reusable.originLineageHandle
+          ? { ...reusable, originLineageHandle: origin }
           : reusable;
     } else {
       room.persistence = {
         phase: "bindable",
         generation: persistenceGeneration,
         exactDatabaseName,
-        ...(input.originLineageHandle ? { originLineageHandle: input.originLineageHandle } : {}),
+        ...(origin ? { originLineageHandle: origin } : {}),
       };
     }
     room.documentAdmittedThrough = maximumGeneration(
@@ -529,9 +587,8 @@ export class DocumentSessionAuthorityStore {
     return { kind: "admitted", persistenceGeneration, exactDatabaseName };
   }
 
-  async beginLocalAdoption(
-    input: LocalAdoptionPendingReceipt,
-  ): Promise<LocalAdoptionPendingReceipt> {
+  /** Reserves the document's local copy, or reports the durable state that already owns it. */
+  async beginLocalAdoption(input: LocalAdoptionPendingReceipt): Promise<LocalAdoptionState> {
     const database = await this.databasePromise;
     const transaction = database.transaction(ROOMS, "readwrite");
     const rooms = transaction.objectStore(ROOMS);
@@ -539,24 +596,17 @@ export class DocumentSessionAuthorityStore {
       ((await requestResult(rooms.get(input.documentId))) as RoomOrderRecord | undefined) ??
       emptyRoom(input.documentId);
     const current = room.persistence;
-    if (current?.phase === "adopting-local") {
-      if (
-        current.lineageHandle === input.lineageHandle &&
-        current.exactDatabaseName === input.exactDatabaseName
-      ) {
-        transaction.abort();
-        return {
-          documentId: input.documentId,
-          transitionId: current.transitionId,
-          lineageHandle: current.lineageHandle,
-          exactDatabaseName: current.exactDatabaseName,
-          targetGeneration: current.targetGeneration,
-        };
-      }
+    if (current) {
       transaction.abort();
-      throw new Error("A different local adoption owns this document");
+      if (current.exactDatabaseName !== input.exactDatabaseName) return { kind: "mismatch" };
+      if (current.phase === "bindable")
+        return sameLineage(current, input) ? { kind: "committed" } : { kind: "mismatch" };
+      if (current.lineageHandle !== input.lineageHandle) return { kind: "mismatch" };
+      return current.phase === "terminal-local"
+        ? { kind: "terminal" }
+        : { kind: "reserved", receipt: { ...input, transitionId: current.transitionId } };
     }
-    if (current || room.pendingDrain) {
+    if (room.pendingDrain) {
       transaction.abort();
       throw new Error("Document persistence authority is unavailable for local adoption");
     }
@@ -565,34 +615,10 @@ export class DocumentSessionAuthorityStore {
       transitionId: input.transitionId,
       lineageHandle: input.lineageHandle,
       exactDatabaseName: input.exactDatabaseName,
-      targetGeneration: input.targetGeneration,
     };
     rooms.put(room);
     await transactionDone(transaction);
-    return input;
-  }
-
-  async bindLocalAdoptionGeneration(
-    input: LocalAdoptionPendingReceipt & {
-      targetGeneration: AvailabilityGeneration;
-    },
-  ): Promise<LocalAdoptionPendingReceipt> {
-    assertAvailabilityGeneration(input.targetGeneration);
-    return this.updateLocalAdoption(input, "bind");
-  }
-
-  async finalizeLocalAdoption(
-    input: LocalAdoptionPendingReceipt & {
-      targetGeneration: AvailabilityGeneration;
-    },
-  ): Promise<Extract<AdmissionDecision, { kind: "admitted" }>> {
-    assertAvailabilityGeneration(input.targetGeneration);
-    const pending = await this.updateLocalAdoption(input, "finalize");
-    return {
-      kind: "admitted",
-      persistenceGeneration: pending.targetGeneration as AvailabilityGeneration,
-      exactDatabaseName: pending.exactDatabaseName,
-    };
+    return { kind: "reserved", receipt: input };
   }
 
   async abortLocalAdoption(input: LocalAdoptionPendingReceipt): Promise<"aborted" | "stale"> {
@@ -610,45 +636,11 @@ export class DocumentSessionAuthorityStore {
     return "aborted";
   }
 
-  private async updateLocalAdoption(
-    input: LocalAdoptionPendingReceipt & { targetGeneration: AvailabilityGeneration },
-    action: "bind" | "finalize",
-  ): Promise<LocalAdoptionPendingReceipt> {
-    const database = await this.databasePromise;
-    const transaction = database.transaction(ROOMS, "readwrite");
-    const rooms = transaction.objectStore(ROOMS);
-    const room = (await requestResult(rooms.get(input.documentId))) as RoomOrderRecord | undefined;
-    if (!room || !sameAdoption(room.persistence, input)) {
-      transaction.abort();
-      throw new Error("Local adoption transition is stale");
-    }
-    const current = room.persistence as Extract<PersistenceAuthority, { phase: "adopting-local" }>;
-    if (current.targetGeneration && current.targetGeneration !== input.targetGeneration) {
-      transaction.abort();
-      throw new Error("Local adoption generation is stale");
-    }
-    room.persistence =
-      action === "finalize"
-        ? {
-            phase: "bindable",
-            generation: input.targetGeneration,
-            exactDatabaseName: input.exactDatabaseName,
-            originLineageHandle: input.lineageHandle,
-          }
-        : { ...current, targetGeneration: input.targetGeneration };
-    room.documentAdmittedThrough = maximumGeneration(
-      room.documentAdmittedThrough,
-      input.targetGeneration,
-    );
-    rooms.put(room);
-    await transactionDone(transaction);
-    return { ...input, targetGeneration: input.targetGeneration };
-  }
-
   async startDocumentDrain(input: {
     documentId: DocumentId;
     generation: AvailabilityGeneration;
     commandId: AvailabilityCommandId;
+    deletionVersion: string | null;
   }): Promise<DrainStart> {
     return this.startDrain({ kind: "document", ...input });
   }
@@ -702,6 +694,7 @@ export class DocumentSessionAuthorityStore {
           documentId: DocumentId;
           generation: AvailabilityGeneration;
           commandId: AvailabilityCommandId;
+          deletionVersion: string | null;
         }
       | {
           kind: "access";
@@ -800,10 +793,7 @@ export class DocumentSessionAuthorityStore {
     const incarnation: DrainPersistenceAuthority | null = lineageAuthority
       ? {
           phase: "bindable",
-          generation:
-            lineageAuthority.phase === "bindable"
-              ? lineageAuthority.generation
-              : lineageAuthority.targetGeneration,
+          generation: lineageAuthority.phase === "bindable" ? lineageAuthority.generation : null,
           exactDatabaseName: lineageAuthority.exactDatabaseName,
           originLineageHandle:
             lineageAuthority.phase === "bindable"
@@ -813,7 +803,9 @@ export class DocumentSessionAuthorityStore {
       : room.persistence?.phase === "bindable"
         ? room.persistence
         : null;
-    const pending: PendingDrain = { ...input, incarnation };
+    const { deletionVersion, ...drain } =
+      input.kind === "document" ? input : { ...input, deletionVersion: null };
+    const pending: PendingDrain = { ...drain, incarnation };
     room.pendingDrain = pending;
     let lineageReceipt: TerminalLineageReceipt | null = null;
     if (lineageAuthority) {
@@ -830,6 +822,7 @@ export class DocumentSessionAuthorityStore {
         lineageHandle,
         exactDatabaseName: lineageAuthority.exactDatabaseName,
         persistenceGeneration: incarnation?.generation ?? null,
+        deletionVersion,
       };
       room.persistence = {
         phase: "terminal-local",
@@ -838,6 +831,7 @@ export class DocumentSessionAuthorityStore {
         exactDatabaseName: lineageAuthority.exactDatabaseName,
         terminalGeneration: input.generation,
         commandId: input.commandId,
+        ...(deletionVersion === null ? {} : { deletionVersion }),
       };
     } else if (
       input.kind === "document" &&

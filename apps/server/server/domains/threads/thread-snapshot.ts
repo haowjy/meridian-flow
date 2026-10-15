@@ -62,7 +62,7 @@ function groupBy<T, K>(items: T[], keyFor: (item: T) => K): Map<K, T[]> {
 
 export async function buildThreadSnapshot(
   repos: ThreadSnapshotRepositories,
-  hub: ThreadEventHub,
+  hub: Pick<ThreadEventHub, "headSeq" | "readModelProjectionWatermark">,
   statusReader: ThreadStatusReader & ThreadPendingInboxReader,
   threadId: ThreadId,
 ): Promise<ThreadSnapshotResponse> {
@@ -90,6 +90,9 @@ export async function buildThreadSnapshot(
     const headSeq = await hub.headSeq(threadId);
 
     const turns = orderTurnsByPosition(await repos.turns.listByThread(threadId));
+    const deliveries = await repos.turns.listMessageDeliveries(threadId);
+    // Same transaction as the turns, so an execution here that is not open has ended.
+    const openExecutionId = await statusReader.readOpenExecutionId(threadId);
     const blocksByTurn = groupBy(
       (await repos.blocks.listByThread(threadId)).map(toClientSafeBlock),
       (block) => block.turnId,
@@ -108,6 +111,7 @@ export async function buildThreadSnapshot(
         blocks: blocksByTurn.get(turn.id) ?? [],
         responses: responsesByTurn.get(turn.id) ?? [],
         siblingIds: siblingIds.get(turn.prevTurnId) as string[],
+        delivery: turn.role === "user" ? (deliveries.get(turn.id) ?? null) : null,
       }),
     );
 
@@ -136,6 +140,7 @@ export async function buildThreadSnapshot(
         // projection, so resume from the projection cursor and replay only the
         // unmaterialized delta window the snapshot could not include.
         resumeAfterSeq,
+        openExecutionId,
       },
       actionRequired: snapshotActionRequired(thread.activeLeafTurnId, threadTurns),
       nextSeq,

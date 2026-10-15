@@ -11,10 +11,26 @@ export type AgentEditResultCommand = DocumentCommandName | "unknown";
 export type WriteErrorStatus =
   | "not_found"
   | "ambiguous_match"
+  | "ambiguous_path"
   | "invalid_write"
   | "document_not_found"
   | "partial_failure"
   | "cant_undo_dependent"
+  | "cant_undo_applied"
+  | "cant_undo_discarded"
+  | "cant_undo_changed"
+  | "cant_undo_held"
+  | "cant_undo_elsewhere"
+  | "cant_redo_applied"
+  | "cant_redo_discarded"
+  | "cant_redo_changed"
+  | "cant_redo_held"
+  | "cant_redo_elsewhere"
+  | "cant_redo_users_undo"
+  | "insufficient_undo"
+  | "insufficient_redo"
+  | "nothing_to_revert"
+  | "work_archived"
   | "read_required"
   | "binary_file"
   | "permission_denied"
@@ -58,6 +74,14 @@ export interface AgentEditConcurrentRun {
   tombstones: Array<{ hash: string; body: string }>;
 }
 
+/** A staged write the host refused: the writer discarded what it edited, or it could not integrate. */
+export type WriteRejection =
+  | "discarded_draft"
+  | "discarded_document"
+  | "discarded_edit"
+  | "inverse"
+  | "integration";
+
 export interface AgentEditModelPayload {
   /** The document path the command read or changed, as the caller named it. */
   path?: string;
@@ -66,6 +90,8 @@ export interface AgentEditModelPayload {
   /** The drafted Work's slug, `/` for No Work; present only when `destination` is `draft`. */
   draftWork?: string;
   message?: string;
+  /** Why an `invalid_write` write was rejected after it was staged, when the host knows. */
+  rejected?: WriteRejection;
   /** Why a `permission_denied` result was refused (file-access §9). */
   reason?: PermissionDeniedReason;
   write?: {
@@ -80,13 +106,8 @@ export interface AgentEditModelPayload {
     from: string;
     blocks?: number;
   };
-  reversal?: {
-    direction: "undo" | "redo";
-    /** Write handles actually reversed, oldest first; group atomicity can add to the selection. */
-    writes: string[];
-  };
   read?: {
-    format: "full" | "outline";
+    format: "full" | "outline" | "edits";
     /** The whole document's block count; the text names it when the read returned fewer. */
     documentBlocks?: number;
     /** The version actually read; the host fills it in, since only it knows drafts. */
@@ -177,10 +198,24 @@ export function isWriteStatus(status: unknown): status is WriteStatus {
     case "success":
     case "not_found":
     case "ambiguous_match":
+    case "ambiguous_path":
     case "invalid_write":
     case "document_not_found":
     case "partial_failure":
     case "cant_undo_dependent":
+    case "cant_undo_applied":
+    case "cant_undo_discarded":
+    case "cant_undo_changed":
+    case "cant_undo_held":
+    case "cant_undo_elsewhere":
+    case "cant_redo_applied":
+    case "cant_redo_discarded":
+    case "cant_redo_changed":
+    case "cant_redo_held":
+    case "cant_redo_elsewhere":
+    case "cant_redo_users_undo":
+    case "nothing_to_revert":
+    case "work_archived":
     case "read_required":
     case "binary_file":
     case "internal_error":
@@ -189,6 +224,8 @@ export function isWriteStatus(status: unknown): status is WriteStatus {
     case "partial":
     case "nothing_to_undo":
     case "nothing_to_redo":
+    case "insufficient_undo":
+    case "insufficient_redo":
     case "expired":
       return true;
     default:

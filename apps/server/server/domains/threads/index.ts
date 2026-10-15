@@ -133,6 +133,7 @@ export {
   isConversationTurn,
   isPromptEpochMetadata,
   isSystemUpdateMetadata,
+  isWriteModeSwitchTurn,
   noticesMetadata,
   PromptEpochMetadataCodec,
   promptEpochMetadata,
@@ -143,7 +144,9 @@ export {
   savedSubagentReportMetadata,
   skillBodyMetadata,
   steerMetadata,
+  WriteModeSwitchMetadataCodec,
   workUpdateMetadata,
+  writeModeSwitchMetadata,
   writerSendMetadata,
 } from "./domain/turn-metadata.js";
 export {
@@ -163,6 +166,7 @@ export {
 } from "./thread-access.js";
 export {
   createThreadEventHub,
+  cursorSeqForJournalHead,
   type SequencedEventInternal,
   type ThreadEventHub,
 } from "./thread-event-hub.js";

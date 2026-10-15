@@ -4,16 +4,20 @@
  * refused move, a review). The Editor shows it as a band above the page; a
  * document beside the chat shows it in the dock header (`variant="header"`).
  */
+import "./document-identity-row.css";
 import { t } from "@lingui/core/macro";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { projectResourceNeedsRepair } from "@meridian/resource-replica";
-import { useEffect, useState } from "react";
-
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { refusedMoveDestination } from "@/client/query/context-catalog-projection";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import type { ContextTab } from "@/client/stores";
+import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
+import { DraftReviewBand, DraftReviewFailureNotices } from "@/features/editor/DraftReviewBand";
 import { DraftReviewChip } from "@/features/editor/DraftReviewChip";
 import { escapeCssIdent } from "@/lib/css-selector";
 import { cn } from "@/lib/utils";
+import { useAiDraftLauncher } from "../dock/useAiDraftLauncher";
 import { useAccountResourceProjection } from "./account-feature-context";
 import { schemeLabel } from "./context-schemes";
 import { DocumentPath } from "./DocumentPath";
@@ -38,6 +42,13 @@ export type DocumentIdentityBarProps = {
   readOnly?: boolean;
   /** A band above the page (the Editor), or the content of the dock's header row. */
   variant?: "band" | "header";
+  /** Header only: commands at the row's left edge (the dock's Close and Open in Editor). */
+  leading?: ReactNode;
+  /** Header only: pinned to the first line's right edge, whether or not the controls wrap (the dock's Collapse). */
+  trailing?: ReactNode;
+  /** Header only: a persistent line under the row (the dock's failed Open in Editor). */
+  notice?: ReactNode;
+  onCloseDraftOnly?: () => void;
   onCommitted: (
     documentId: string,
     next: IdentityCommitted,
@@ -52,9 +63,15 @@ export function DocumentIdentityBar({
   tab,
   readOnly = false,
   variant = "band",
+  leading,
+  trailing,
+  notice,
   onCommitted,
   onOpenExisting,
+  onCloseDraftOnly,
 }: DocumentIdentityBarProps) {
+  const rowRef = useRef<HTMLDivElement>(null);
+  useIdentityRowFit(rowRef);
   const location = tabLocation(tab);
   const [fieldOpen, setFieldOpen] = useState(false);
   const [dismissedRepairId, setDismissedRepairId] = useState<string | null>(null);
@@ -108,87 +125,145 @@ export function DocumentIdentityBar({
     setFieldOpen(true),
   );
 
+  const { controller } = useDraftReview();
+  const { openReviewFile } = useAiDraftLauncher();
+  const review = controller.inlineReview;
+  const reviewItemKey =
+    review?.documentId === tab.documentId && review.shown ? review.itemKey : null;
+  // A review that has been entered but not yet painted is a review destination in flight:
+  // it must not read as the live document's chip until its preview answers.
+  const reviewPending = review?.documentId === tab.documentId && !review.shown;
+  const openDraft = (row: ReviewFileTarget) => openReviewFile(row, controller.workId);
   // A document in Unfiled, untitled or named, is invited to choose a home. Once it
   // has one, renaming and moving belong to the lists. Uploads aren't writing material.
-  const showChip = !readOnly && location.provisional && location.scheme !== "uploads";
+  const showChip =
+    !reviewItemKey && !readOnly && location.provisional && location.scheme !== "uploads";
   const placementOpen = fieldOpen && showChip;
 
-  return (
-    <div className={cn("@container min-w-0", variant === "header" ? "flex-1" : "shrink-0")}>
-      {/* Fixed-height band, full pane width. The bar is navigation chrome
-          like the tab strip above it — it spans edge to edge, NOT the prose
-          column. Geometry contract lives in identity-bar-geometry.ts: same
-          height at rest and in edit mode, so the toolbar and prose below
-          never shift when the bar transforms. Crumb text is text-sm to match
-          the suggestion-popover rows it sits beside. */}
+  const renderRow = (version: ReactNode, controls: ReactNode) => (
+    <div
+      className={cn(
+        "min-w-0",
+        variant === "header" ? "flex-1" : "shrink-0",
+        reviewItemKey &&
+          variant === "band" &&
+          "bg-dock-surface shadow-[inset_0_-1px_0_var(--color-border)]",
+      )}
+    >
+      {/* Navigation chrome like the tab strip above it: it spans edge to edge,
+          NOT the prose column. Geometry contract lives in identity-bar-geometry.ts.
+          One line when the path and the review controls fit together; otherwise
+          the controls wrap to a line of their own (flex-wrap, no breakpoint), so
+          the path keeps its room. The trailing command is pinned to the first
+          line. Crumb text is text-sm to match the suggestion-popover rows. */}
       <div
+        ref={rowRef}
+        data-document-identity-row
         className={cn(
-          "flex items-center gap-1 font-mono text-ink-subtle text-sm",
-          variant === "header" ? "h-10" : ["px-4", IDENTITY_BAR_BAND_CLASS],
+          "relative flex flex-wrap items-center gap-x-1 font-mono text-ink-subtle text-sm",
+          variant === "header"
+            ? "min-h-10 gap-y-0.5 py-1 pl-2"
+            : ["gap-y-0.5 px-4 py-[3px]", IDENTITY_BAR_BAND_CLASS],
+          trailing && "pr-12 [@media(pointer:coarse)]:pr-14",
+          // The row grows so every control can own a 44px target (document-identity-row.css).
+          "[@media(pointer:coarse)]:min-h-11",
         )}
       >
-        {placementOpen ? (
-          <IdentityPlacementField
-            projectId={projectId}
-            editorWorkId={editorWorkId}
-            tab={tab}
-            location={location}
-            failure={identityFailure}
-            commit={commit}
-            onExit={(reason) => {
-              // Leaving the field acknowledges any failure receipt — it must
-              // not reopen the editor it just closed.
-              setFieldOpen(false);
-              if (repair?.kind === "set-location") setDismissedRepairId(repair.intentId);
-              if (reason === "escape") focusEditorProse(tab.documentId);
-            }}
-            onOpenExisting={onOpenExisting}
-          />
-        ) : (
-          <DocumentPath
-            projectId={projectId}
-            tab={tab}
-            location={location}
-            trailing={
-              <LinkUpdateNote
+        {/* One unit for wrapping: the commands never part from the path. */}
+        <div className="flex min-w-0 flex-auto items-center gap-1">
+          {leading ? <div className="flex shrink-0 items-center gap-0.5">{leading}</div> : null}
+          <div data-identity-main className="flex min-w-0 flex-auto items-center gap-1">
+            {placementOpen ? (
+              <IdentityPlacementField
                 projectId={projectId}
-                subject={{ kind: "file", id: tab.documentId }}
-                operationId={noteOperationId}
-                className="ml-3 font-sans text-ink-muted"
+                editorWorkId={editorWorkId}
+                tab={tab}
+                location={location}
+                failure={identityFailure}
+                commit={commit}
+                onExit={(reason) => {
+                  // Leaving the field acknowledges any failure receipt — it must
+                  // not reopen the editor it just closed.
+                  setFieldOpen(false);
+                  if (repair?.kind === "set-location") setDismissedRepairId(repair.intentId);
+                  if (reason === "escape") focusEditorProse(tab.documentId);
+                }}
+                onOpenExisting={onOpenExisting}
               />
-            }
-          />
-        )}
-        {/* The path fills the row; the placement field needs the same push. */}
-        {placementOpen ? <span className="min-w-1 flex-1" /> : null}
-        {/* Only a provisional placement refusal offers repair here; list failures are passive. */}
-        {repair?.kind === "set-location" && !placementOpen ? (
-          location.provisional && !readOnly ? (
-            <button
-              type="button"
-              className="focus-ring flex min-w-0 items-center rounded-md"
-              onClick={() => {
-                setDismissedRepairId(null);
+            ) : (
+              <DocumentPath
+                projectId={projectId}
+                tab={tab}
+                location={location}
+                trailing={
+                  <LinkUpdateNote
+                    projectId={projectId}
+                    subject={{ kind: "file", id: tab.documentId }}
+                    operationId={noteOperationId}
+                    className="ml-3 font-sans text-ink-muted"
+                  />
+                }
+              />
+            )}
+            {version}
+            {!reviewItemKey && !reviewPending ? (
+              <DraftReviewChip documentId={tab.documentId} />
+            ) : null}
+            <span className="min-w-0 flex-1" />
+            {/* Only a provisional placement refusal offers repair here; list failures are passive. */}
+            {repair?.kind === "set-location" && !placementOpen ? (
+              location.provisional && !readOnly ? (
+                <button
+                  type="button"
+                  className="focus-ring flex min-w-0 items-center rounded-md"
+                  onClick={() => {
+                    setDismissedRepairId(null);
+                    setFieldOpen(true);
+                  }}
+                >
+                  <NamespaceFailureMark failure="set-location" labelled />
+                </button>
+              ) : (
+                <NamespaceFailureMark failure="set-location" message={passiveFailure} />
+              )
+            ) : null}
+            <IdentityChipSlot
+              projectId={projectId}
+              tab={tab}
+              show={showChip && !placementOpen}
+              onChooseHome={() => {
                 setFieldOpen(true);
               }}
-            >
-              <NamespaceFailureMark failure="set-location" labelled />
-            </button>
-          ) : (
-            <NamespaceFailureMark failure="set-location" message={passiveFailure} />
-          )
+            />
+          </div>
+        </div>
+        {/* Before the controls in DOM order: Tab follows the first line, then the second. */}
+        {trailing ? (
+          <div className="absolute top-0 right-2 flex h-10 items-center gap-0.5 [@media(pointer:coarse)]:h-11">
+            {trailing}
+          </div>
         ) : null}
-        <DraftReviewChip documentId={tab.documentId} />
-        <IdentityChipSlot
-          projectId={projectId}
-          tab={tab}
-          show={showChip && !placementOpen}
-          onChooseHome={() => {
-            setFieldOpen(true);
-          }}
-        />
+        {controls}
       </div>
+      {notice}
+      {reviewItemKey ? (
+        <DraftReviewFailureNotices
+          documentId={tab.documentId}
+          itemKey={reviewItemKey}
+          onOpenDraft={openDraft}
+        />
+      ) : null}
     </div>
+  );
+  return (
+    <DraftReviewBand
+      documentId={tab.documentId}
+      itemKey={reviewItemKey ?? ""}
+      onOpenDraft={openDraft}
+      onCloseDraftOnly={onCloseDraftOnly}
+    >
+      {({ version, controls }) => renderRow(version, controls)}
+    </DraftReviewBand>
   );
 }
 
@@ -218,7 +293,7 @@ const DEVICE_ONLY_GRACE_MS = 2_000;
 
 /** Device-only with a 2s sustained grace: the warning only claims the slot once unsynced words have persisted for 2 seconds, so a normal quick materialization never flashes warning.... */
 function useDeviceOnly(projectId: string, tab: ContextTab): boolean {
-  const { records, placement } = useAccountResourceProjection(projectId);
+  const { records } = useAccountResourceProjection(projectId);
   const resource = records.find(({ resource }) =>
     tab.kind === "new"
       ? resource.handle === tab.resourceHandle
@@ -253,3 +328,40 @@ function focusEditorProse(documentId: string) {
     )
     ?.focus();
 }
+
+/**
+ * Content-measured fit, after wrapping has done its work. The review controls
+ * wrap to their own line before anything shortens; only a line too narrow for
+ * them even alone gives up labels, in order (document-identity-row.css), and
+ * the path drops its parent crumbs when the leaf would otherwise be cut.
+ */
+function useIdentityRowFit(ref: React.RefObject<HTMLDivElement | null>) {
+  useLayoutEffect(() => {
+    const row = ref.current;
+    if (!row) return;
+    const fit = () => {
+      const controls = row.querySelector<HTMLElement>("[data-draft-review-controls]");
+      const style = getComputedStyle(row);
+      const available =
+        row.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+      for (let level = 0; level <= COLLAPSE_LEVELS; level++) {
+        row.dataset.collapse = String(level);
+        if (!controls || controls.getBoundingClientRect().width <= available) break;
+      }
+      row.removeAttribute("data-path-short");
+      const leaf = row.querySelector<HTMLElement>("[data-path-leaf]");
+      if (leaf && leaf.scrollWidth > leaf.clientWidth) row.setAttribute("data-path-short", "");
+    };
+    fit();
+    const resize = new ResizeObserver(fit);
+    resize.observe(row);
+    const mutations = new MutationObserver(fit);
+    mutations.observe(row, { childList: true, subtree: true, characterData: true });
+    return () => {
+      resize.disconnect();
+      mutations.disconnect();
+    };
+  }, [ref]);
+}
+
+const COLLAPSE_LEVELS = 4;

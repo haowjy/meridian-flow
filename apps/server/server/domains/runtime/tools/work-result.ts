@@ -4,17 +4,18 @@
  * decides from; `verbose` adds dates. Ids never reach the text, and
  * `historySummary` reads the typed value.
  */
+
+import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 import { formatUtc } from "./ls-result.js";
 
-/** A Work as the handler returns it. Write mode and pending changes use the writer's words. */
+/** A Work as the handler returns it. Pending changes use the writer's words. */
 export interface ModelWork {
   slug: string | null;
   name: string;
   goal: string | null;
   status: string | null;
   archivedAt: string | null;
-  writes: "draft mode" | "auto-apply";
   createdAt: string;
   updatedAt: string;
   lastActivityAt: string | null;
@@ -25,7 +26,11 @@ export interface ModelWork {
 export interface WorkShowResult {
   work: ModelWork;
   recentThreads: { title: string | null; updatedAt: string | Date; status: string }[];
-  drafts: { documentName: string | null; contextPath: string | null; createdDocument?: boolean }[];
+  drafts: {
+    documentName: string | null;
+    contextLocation: ThreadDraftListItem["contextLocation"];
+    createdDocument?: boolean;
+  }[];
 }
 
 /** How far a listed goal runs before it is cut. `show` prints it in full. */
@@ -84,8 +89,8 @@ function renderShow(result: WorkShowResult, verbose: boolean): string {
       [
         "Drafts:",
         ...result.drafts.map((draft) => {
-          const name = draft.contextPath
-            ? `manuscript:/${draft.contextPath}`
+          const name = draft.contextLocation
+            ? `${draft.contextLocation.scheme}://${draft.contextLocation.path.replace(/^\/+/, "")}`
             : (draft.documentName ?? "Untitled");
           return `  ${name}${draft.createdDocument ? " (new document)" : ""}`;
         }),
@@ -97,8 +102,7 @@ function renderShow(result: WorkShowResult, verbose: boolean): string {
 
 /**
  * One Work: slug, name, status, then the goal cut to `goalLength` (0 omits it),
- * write mode only when it's draft mode, pending changes only when there are
- * some, and archived. `verbose` adds a line of dates.
+ * pending changes only when there are some, and archived. `verbose` adds a line of dates.
  */
 function workLines(work: ModelWork, verbose: boolean, goalLength: number): string {
   const name = work.status ? `${work.name} (${work.status})` : work.name;
@@ -106,7 +110,6 @@ function workLines(work: ModelWork, verbose: boolean, goalLength: number): strin
     workRef(work),
     name,
     goalLength > 0 && work.goal ? clip(work.goal, goalLength) : undefined,
-    work.writes === "draft mode" ? "draft mode" : undefined,
     work.pendingChangeCount ? pending(work.pendingChangeCount) : undefined,
     work.archivedAt ? "(archived)" : undefined,
   ].filter((fact) => fact !== undefined);

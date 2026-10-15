@@ -24,7 +24,7 @@ import { PassageDoor } from "./PassageDoor";
 import { type OutlineHeading, readPayloadMarkup, readPayloadOutline } from "./read-payload";
 import { THREAD_MESSAGE_RENDERER } from "./thread-message-renderer";
 import { THREAD_REPORT_RENDERER } from "./thread-report-renderer";
-import { copySourcePath, stringInput, toolInputObject, type WriteMode } from "./tool-command";
+import { copySourcePath, documentToolFailed, stringInput, toolInputObject } from "./tool-command";
 import {
   boundLabel,
   type CappedList,
@@ -41,16 +41,12 @@ import {
   type ToolResultRows,
 } from "./tool-result-preview";
 
-export type ToolRenderContext = {
-  writeMode?: WriteMode;
-};
-
 /** Builds an expand's contents on demand. */
 export type ToolExpand = () => ReactNode;
 
 export type ToolRenderer = {
   /** Single-line summary of the tool action. Already i18n'd. */
-  title: (tool: ToolView, context?: ToolRenderContext) => ReactNode;
+  title: (tool: ToolView) => ReactNode;
   /** Deferred inline expansion. `null` = no expand affordance on this row. */
   expand?: (tool: ToolView) => ToolExpand | null;
 };
@@ -247,13 +243,15 @@ function documentFailureDocumentName(tool: ToolView): string | null {
  */
 function isRereadPause(tool: ToolView): boolean {
   return (
-    tool.isError && tool.toolName === "write" && documentFailureStatus(tool) === "read_required"
+    documentToolFailed(tool) &&
+    tool.toolName === "write" &&
+    documentFailureStatus(tool) === "read_required"
   );
 }
 
 /** Whether the row reports a failure to the writer. */
 export function toolRowFailed(tool: ToolView): boolean {
-  return tool.isError && !isRereadPause(tool);
+  return documentToolFailed(tool) && !isRereadPause(tool);
 }
 
 /** Writer copy is derived from failure shape; machine messages remain diagnostics only. */
@@ -274,6 +272,10 @@ export function documentToolFailureCopy(tool: ToolView): string {
       if (source) return copyNotFoundCopy(tool, source, name);
       return name ? t`Couldn't find ${name}.` : t`That document couldn't be found.`;
     }
+    case "ambiguous_path":
+      return name
+        ? t`Two files in the draft share the path ${name}. Review the draft to keep one.`
+        : t`Two files in the draft share this path. Review the draft to keep one.`;
     case "ambiguous_match":
       return name
         ? t`The requested passage in ${name} wasn't specific enough.`
@@ -288,12 +290,47 @@ export function documentToolFailureCopy(tool: ToolView): string {
   switch (status) {
     case "cant_undo_dependent":
       return t`That change can't be undone because later edits depend on it.`;
+    case "cant_undo_applied":
+      return t`That change can't be undone here because it was already applied to your manuscript.`;
+    case "cant_undo_discarded":
+      return t`That change can't be undone because you discarded it.`;
+    case "cant_undo_changed":
+      return t`That change can't be undone because the text changed afterwards.`;
+    case "cant_undo_held":
+      return t`That change can't be undone because it is held for review.`;
+    case "cant_undo_elsewhere":
+      return t`That change can't be undone here because the chat now writes somewhere else.`;
+    case "cant_redo_applied":
+      return t`That change can't be redone here because it was already applied to your manuscript.`;
+    case "cant_redo_discarded":
+      return t`That change can't be redone because you discarded it.`;
+    case "cant_redo_changed":
+      return t`That change can't be redone because the text changed afterwards.`;
+    case "cant_redo_held":
+      return t`That change can't be redone because it is held for review.`;
+    case "cant_redo_elsewhere":
+      return t`That change can't be redone here because the chat now writes somewhere else.`;
+    case "cant_redo_users_undo":
+      return t`That change can't be redone because you undid it.`;
+    case "insufficient_undo":
+      return t`There isn't enough left to undo.`;
+    case "insufficient_redo":
+      return t`There isn't enough left to redo.`;
+    case "nothing_to_revert":
+      return t`There was nothing to revert.`;
+    case "work_archived":
+      return t`That change can't be made because the draft is archived.`;
+    case "permission_denied":
+      return name ? t`${name} can't be changed.` : t`That document can't be changed.`;
     case "partial_failure":
       return name
         ? t`Some changes to ${name} couldn't be completed.`
         : t`Some changes couldn't be completed.`;
-    case "invalid_write":
+    case "invalid_write": {
+      const reason = rejectionCopy(documentFailureRejected(tool));
+      if (reason) return reason;
       return name ? t`That change couldn't be made in ${name}.` : t`That change couldn't be made.`;
+    }
     default:
       return name
         ? t`Something went wrong while changing ${name}.`
@@ -301,8 +338,31 @@ export function documentToolFailureCopy(tool: ToolView): string {
   }
 }
 
-function DocumentToolTitle({ tool, context }: { tool: ToolView; context?: ToolRenderContext }) {
-  const writeMode = context?.writeMode ?? "direct";
+/** The host's structured reason a staged write was rejected, when it gave one. */
+function documentFailureRejected(tool: ToolView): string | null {
+  const result = tool.result;
+  if (result === null || typeof result !== "object" || Array.isArray(result)) return null;
+  return asString(result.rejected) ?? null;
+}
+
+function rejectionCopy(rejected: string | null): string | null {
+  switch (rejected) {
+    case "discarded_draft":
+      return t`You discarded this draft, so the change wasn't kept. The AI will read it again.`;
+    case "discarded_document":
+      return t`You discarded this new document, so the change wasn't kept. The AI will read it again.`;
+    case "discarded_edit":
+      return t`You discarded the text it edited, so the change wasn't kept. The AI will read it again.`;
+    case "inverse":
+      return t`The text it edited was undone, so the change wasn't kept. The AI will read it again.`;
+    case "integration":
+      return t`The change didn't fit the current draft. The AI will read it again.`;
+    default:
+      return null;
+  }
+}
+
+function DocumentToolTitle({ tool }: { tool: ToolView }) {
   const path = asString(inputObject(tool).path);
   const descriptor = descriptorFor(tool);
 
@@ -310,16 +370,16 @@ function DocumentToolTitle({ tool, context }: { tool: ToolView; context?: ToolRe
     const verb = t`Paused to reread`;
     return path ? <CommandTitle verb={verb} parameter={<DocumentName path={path} />} /> : verb;
   }
-  if (tool.isError) {
-    const verb = descriptor.failureVerb(writeMode);
+  if (documentToolFailed(tool)) {
+    const verb = descriptor.failureVerb();
     return path ? <CommandTitle verb={verb} parameter={<DocumentName path={path} />} /> : verb;
   }
 
-  const phrase = toolActivityPhrase(tool, writeMode);
+  const phrase = toolActivityPhrase(tool);
   // A partial call has no settled path yet, so the row names no document —
   // and therefore offers no door onto one.
   if (tool.status !== "complete") return <PhraseTitle phrase={phrase} />;
-  if (!path) return descriptor.pathlessTitle?.(writeMode) ?? <PhraseTitle phrase={phrase} />;
+  if (!path) return descriptor.pathlessTitle?.() ?? <PhraseTitle phrase={phrase} />;
   return <CommandTitle verb={phrase.verb} parameter={<DocumentName path={path} />} />;
 }
 
@@ -334,7 +394,7 @@ const COMMAND_EXPANDS: Record<CommandExpand, (tool: ToolView) => ToolExpand | nu
 function documentExpand(tool: ToolView): ToolExpand | null {
   // The next rows (the read, then the retried write) say what happened.
   if (isRereadPause(tool)) return null;
-  if (tool.isError) {
+  if (documentToolFailed(tool)) {
     return () => (
       <div className="text-compact text-destructive">{documentToolFailureCopy(tool)}</div>
     );
@@ -434,7 +494,7 @@ function OutlineRows({ outline }: { outline: CappedList<OutlineHeading> }) {
 }
 
 function WorkToolTitle({ tool }: { tool: ToolView }) {
-  if (tool.isError) return descriptorFor(tool).failureVerb("direct");
+  if (tool.isError) return descriptorFor(tool).failureVerb();
   // `block` so truncate applies: the title slot is a flexified span, and an
   // inline child cannot clip its own overflow.
   return <span className="block truncate">{toolActivityPhrase(tool).verb}</span>;
@@ -453,7 +513,7 @@ function workExpand(tool: ToolView): ToolExpand | null {
 function phraseTitle(tool: ToolView): ReactNode {
   // A failure is its own claim: `Searched "Elara"` over an error row says the
   // search happened.
-  if (tool.isError) return descriptorFor(tool).failureVerb("direct");
+  if (tool.isError) return descriptorFor(tool).failureVerb();
   return <PhraseTitle phrase={toolActivityPhrase(tool)} />;
 }
 
@@ -463,7 +523,7 @@ const DEFAULT_RENDERER: ToolRenderer = {
 };
 
 const DOCUMENT_TOOL_RENDERER: ToolRenderer = {
-  title: (tool, context) => <DocumentToolTitle tool={tool} context={context} />,
+  title: (tool) => <DocumentToolTitle tool={tool} />,
   expand: documentExpand,
 };
 

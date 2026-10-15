@@ -6,6 +6,7 @@ import {
   contextSources,
   documentDerivations,
   documentLinks,
+  documentMarkdownProjections,
   documents,
   documentYjsCheckpoints,
   folders,
@@ -19,12 +20,11 @@ import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
-import { recordDocumentMove } from "../../context/adapters/context-fs/document-locations.js";
-import { createDrizzleLinkAheadRegistry } from "../../context/adapters/drizzle-link-ahead-registry.js";
 import {
   createDocumentLastAddress,
   createDocumentUriResolver,
 } from "../../context/document-uri-resolver.js";
+import { bumpLocationVersions, recordLocationHistory } from "../../context/tree/node-locations.js";
 import { createCheckpointService } from "../checkpoints.js";
 import { createDocumentDerivationService } from "../domain/document-derivations.js";
 import {
@@ -33,13 +33,14 @@ import {
   RetiredDocumentHandleError,
 } from "../domain/document-handle.js";
 import { createHocuspocusPersistenceService } from "../hocuspocus-persistence.js";
+import { createTestLinkAheadRegistry } from "../test-support/document-link-scopes.js";
 import { createDrizzleAuthorityGenerationReplacement } from "./drizzle-authority-generation-replacement.js";
 import {
   ensureAndReadDocumentAuthorityHead,
   replaceDocumentAuthorityHeadGeneration,
 } from "./drizzle-document-authority-head.js";
 import { createDrizzleDocumentDerivationStore } from "./drizzle-document-derivations.js";
-import { createDrizzleCollabPersistence } from "./drizzle-journal.js";
+import { createDrizzleCollabPersistence, createDrizzleJournal } from "./drizzle-journal.js";
 import { createHocuspocusCoordinatorForTest } from "./hocuspocus-coordinator.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -85,8 +86,10 @@ describe("durable document derivations", () => {
       id: documentId,
       contextSourceId: sourceId,
       name: "chapter",
-      markdownProjection: "last good",
     });
+    await db
+      .insert(documentMarkdownProjections)
+      .values({ documentId: documentId, markdown: "last good" });
     await persistence.lifecycle.ensureDocument(documentId);
   });
   afterAll(async () => {
@@ -101,23 +104,285 @@ describe("durable document derivations", () => {
       seq: 0,
     });
   }
-  async function projection() {
-    const [row] = await db.select().from(documents).where(eq(documents.id, documentId));
-    return row?.markdownProjection;
+  async function checkpointCut() {
+    const cut = await persistence.journal.captureCheckpoint(
+      documentId,
+      await ensureAndReadDocumentAuthorityHead(db, documentId),
+    );
+    if (!cut) throw new Error("Current authority did not produce a checkpoint cut");
+    return cut;
   }
+  async function projection() {
+    const [row] = await db
+      .select()
+      .from(documentMarkdownProjections)
+      .where(eq(documentMarkdownProjections.documentId, documentId));
+    return row?.markdown;
+  }
+
+  it.each([
+    "room",
+    "explicit",
+  ] as const)("%s checkpoints preserve an admitted writer row before the room applies it", async (path) => {
+    const room = new Y.Doc({ gc: false });
+    bindDocumentAuthority(room, await ensureAndReadDocumentAuthorityHead(db, documentId));
+    const transport = createHocuspocusPersistenceService({
+      journal: persistence.journal,
+      hocuspocus: () => ({ documents: new Map([[documentId, room]]) }) as never,
+      metaForOrigin: () => ({ origin: `human:${userId}`, seq: 0 }),
+      emitAgentEditInvariantViolation: () => {},
+    });
+    const client = new Y.Doc({ gc: false });
+    client.getText("prose").insert(0, "Words typed just before reload");
+    const update = Y.encodeStateAsUpdate(client);
+    let apply!: () => void;
+    const held = new Promise<void>((resolve) => {
+      apply = resolve;
+    });
+    // The awaited beforeSync admission has committed, but Hocuspocus has
+    // not yet run readUpdate. Hold that exact window without timing sleeps.
+    await transport.admitLiveWriterUpdate({
+      documentId: documentId as never,
+      document: room,
+      expectedGeneration: documentAuthority(room).generation,
+      update,
+      origin: { type: "user", userId: userId as never },
+    });
+    const admittedSeq = await persistence.store.latestUpdateSeq(documentId);
+    const before = await db
+      .select({ id: documentYjsCheckpoints.id })
+      .from(documentYjsCheckpoints)
+      .where(eq(documentYjsCheckpoints.documentId, documentId));
+    const writer = held.then(() => Y.applyUpdate(room, update));
+    try {
+      expect(room.getText("prose").toString()).toBe("");
+      if (path === "room") {
+        await transport.storeHocuspocusDocument(documentId, room);
+        await transport.drainHocuspocusPersistence();
+      } else {
+        const checkpoints = createCheckpointService({
+          coordinator: {
+            withDocument: async (_id, operation) => operation(room),
+            recover: async () => {},
+          },
+          store: persistence.store,
+          journal: persistence.journal,
+          markdownDocuments: {
+            restoreFromYDoc: async () => {
+              throw new Error("Not used");
+            },
+          },
+        });
+        const result = await runInDrizzleTransaction(db, () =>
+          checkpoints.checkpoint(documentId, "reload"),
+        );
+        expect(result.ok).toBe(true);
+      }
+      const checkpoints = await db
+        .select()
+        .from(documentYjsCheckpoints)
+        .where(eq(documentYjsCheckpoints.documentId, documentId));
+      expect(
+        checkpoints.some(
+          (checkpoint) =>
+            !before.some((previous) => previous.id === checkpoint.id) &&
+            checkpoint.upToSeq >= admittedSeq,
+        ),
+      ).toBe(true);
+      const cold = new Y.Doc({ gc: false });
+      try {
+        const state = await transport.loadHocuspocusDocument(documentId, cold);
+        if (state) Y.applyUpdate(cold, state);
+        expect(cold.getText("prose").toString()).toBe("Words typed just before reload");
+      } finally {
+        cold.destroy();
+      }
+    } finally {
+      apply();
+      await writer;
+      room.destroy();
+      client.destroy();
+    }
+  });
+
+  it("capture releases its own mutation lock inside an ambient transaction before replay", async () => {
+    const client = new Y.Doc({ gc: false });
+    try {
+      await append(client, "Before");
+      const cut = await runInDrizzleTransaction(db, async () => {
+        const captured = await checkpointCut();
+        const locks = await currentDrizzleDb(db).execute(sql`
+          select count(*)::int as count from pg_locks
+          where pid = pg_backend_pid() and locktype = 'advisory'
+        `);
+        expect(locks[0]?.count).toBe(0);
+        await lockDocumentMutation(currentDrizzleDb(db), documentId);
+        await checkpointCut();
+        const retained = await currentDrizzleDb(db).execute(sql`
+          select count(*)::int as count from pg_locks
+          where pid = pg_backend_pid() and locktype = 'advisory'
+        `);
+        expect(retained[0]?.count).toBe(1);
+        // A later admission is outside the captured sequence range.
+        await append(client, " After");
+        return captured;
+      });
+      const cold = new Y.Doc({ gc: false });
+      try {
+        Y.applyUpdate(cold, await cut.materializeState());
+        expect(cold.getText("prose").toString()).toBe("Before");
+      } finally {
+        cold.destroy();
+      }
+    } finally {
+      client.destroy();
+    }
+  });
+
+  it("parallel captures cannot roll back sibling work in an ambient transaction", async () => {
+    const client = new Y.Doc({ gc: false });
+    try {
+      await append(client, "Before");
+      const cuts = await runInDrizzleTransaction(db, async () => {
+        const captures = await Promise.all(Array.from({ length: 4 }, () => checkpointCut()));
+        await append(client, " After");
+        return captures;
+      });
+      for (const cut of cuts) {
+        const cold = new Y.Doc({ gc: false });
+        try {
+          Y.applyUpdate(cold, await cut.materializeState());
+          expect(cold.getText("prose").toString()).toBe("Before");
+        } finally {
+          cold.destroy();
+        }
+      }
+    } finally {
+      client.destroy();
+    }
+  });
+
+  it("refuses a captured range whose suffix was compacted before materialization", async () => {
+    const client = new Y.Doc({ gc: false });
+    try {
+      await append(client, "Before");
+      const cut = await checkpointCut();
+      await persistence.journal.compact(documentId, new Date(Date.now() + 60_000));
+      await expect(cut.materializeState()).rejects.toThrow("Checkpoint inputs retired");
+    } finally {
+      client.destroy();
+    }
+  });
+
+  it.each([
+    "routine",
+    "explicit",
+  ])("rejects a lazy cut after zero-fold %s checkpoint compaction", async (kind) => {
+    const client = new Y.Doc({ gc: false });
+    const offline = new Y.Doc({ gc: false });
+    try {
+      await append(client, "Base");
+      await persistence.journal.storeCheckpoint(await checkpointCut());
+      Y.applyUpdate(offline, Y.encodeStateAsUpdate(client));
+      await append(client, " WriterOne");
+      const first = await checkpointCut();
+      if (kind === "routine") await append(offline, " WriterTwo");
+      else await append(client, " After");
+      const delayed = await checkpointCut();
+      if (kind === "routine") await persistence.journal.storeCheckpoint(first);
+      else await persistence.store.createCheckpoint(await checkpointCut(), "saved");
+      const result = await persistence.journal.compact(documentId, new Date(0));
+      expect(result.updatesFolded).toBe(0);
+      await expect(delayed.materializeState()).rejects.toThrow("Checkpoint inputs retired");
+      await expect(persistence.journal.storeCheckpoint(delayed)).rejects.toThrow(
+        "Checkpoint inputs retired",
+      );
+      await persistence.journal.storeCheckpoint(await checkpointCut());
+      const snapshot = await persistence.journal.read(documentId);
+      const cold = new Y.Doc({ gc: false });
+      try {
+        if (snapshot.checkpoint) Y.applyUpdate(cold, snapshot.checkpoint);
+        for (const row of snapshot.updates) Y.applyUpdate(cold, row.update);
+        expect(cold.getText("prose").toString()).toContain("WriterOne");
+        expect(cold.getText("prose").toString()).toContain(
+          kind === "routine" ? "WriterTwo" : " After",
+        );
+      } finally {
+        cold.destroy();
+      }
+    } finally {
+      client.destroy();
+      offline.destroy();
+    }
+  });
+
+  it.each([
+    "routine",
+    "explicit",
+  ])("revalidates an already materialized cut before %s persistence", async (kind) => {
+    const client = new Y.Doc({ gc: false });
+    try {
+      await append(client, "Before");
+      const delayed = await checkpointCut();
+      await delayed.materializeState();
+      await persistence.journal.storeCheckpoint(await checkpointCut());
+      await persistence.journal.compact(documentId, new Date(0));
+      const persist =
+        kind === "routine"
+          ? persistence.journal.storeCheckpoint(delayed)
+          : persistence.store.createCheckpoint(delayed, "saved");
+      await expect(persist).rejects.toThrow("Checkpoint inputs retired");
+      await expect(delayed.materializeState()).rejects.toThrow("Checkpoint inputs retired");
+    } finally {
+      client.destroy();
+    }
+  });
+
+  it.each([
+    "routine",
+    "explicit",
+  ])("rejects %s persistence when compaction commits while it waits for the lock", async (kind) => {
+    const client = new Y.Doc({ gc: false });
+    try {
+      await append(client, "Before");
+      const delayed = await checkpointCut();
+      await delayed.materializeState();
+      await persistence.journal.storeCheckpoint(await checkpointCut());
+      let outcome: Promise<unknown> | undefined;
+      await db.transaction(async (tx) => {
+        await lockDocumentMutation(tx, documentId);
+        const persist =
+          kind === "routine"
+            ? persistence.journal.storeCheckpoint(delayed)
+            : persistence.store.createCheckpoint(delayed, "saved");
+        outcome = persist.catch((error: unknown) => error);
+        const deadline = Date.now() + 5_000;
+        for (;;) {
+          const waiting = await db.execute(sql`
+              select count(*)::int as count from pg_locks
+              where locktype = 'advisory' and not granted
+                and database = (select oid from pg_database where datname = current_database())
+            `);
+          if (Number(waiting[0]?.count) > 0) break;
+          if (Date.now() > deadline) throw new Error("Persistence did not queue for the lock");
+          await new Promise((resolve) => setTimeout(resolve, 5));
+        }
+        await createDrizzleJournal(tx).compact(documentId, new Date(0));
+      });
+      expect(await outcome).toEqual(
+        expect.objectContaining({ message: "Checkpoint inputs retired during materialization" }),
+      );
+    } finally {
+      client.destroy();
+    }
+  });
 
   it("refuses writer and agent bytes checked before a restore while queued on the mutation lock", async () => {
     const room = new Y.Doc({ gc: false });
-    const beforeSeq = await append(room, "Before");
-    await persistence.journal.checkpoint(documentId, Y.encodeStateAsUpdate(room), beforeSeq);
+    await append(room, "Before");
+    await persistence.journal.storeCheckpoint(await checkpointCut());
     const authority = await ensureAndReadDocumentAuthorityHead(db, documentId);
-    const checkpointId = await persistence.store.createCheckpoint(
-      documentId,
-      Y.encodeStateAsUpdate(room),
-      "saved",
-      beforeSeq,
-      authority,
-    );
+    const checkpointId = await persistence.store.createCheckpoint(await checkpointCut(), "saved");
     if (!checkpointId) throw new Error("Missing checkpoint");
     await append(room, "After");
     bindDocumentAuthority(room, authority);
@@ -125,7 +390,6 @@ describe("durable document derivations", () => {
     const transport = createHocuspocusPersistenceService({
       journal: persistence.journal,
       hocuspocus: () => hp as never,
-      latestUpdateSeq: persistence.store.latestUpdateSeq,
       metaForOrigin: () => ({ origin: `human:${userId}`, seq: 0 }),
       emitAgentEditInvariantViolation: () => {},
     });
@@ -201,10 +465,7 @@ describe("durable document derivations", () => {
       expect.soft(await writer).toBeInstanceOf(RetiredDocumentHandleError);
       expect.soft(await agent).toBeInstanceOf(RetiredDocumentHandleError);
       await transport.drainHocuspocusPersistence();
-      for (const snapshot of [
-        await persistence.journal.read(documentId),
-        await persistence.journal.readForReconstruction(documentId),
-      ]) {
+      for (const snapshot of [await persistence.journal.read(documentId)]) {
         const restored = new Y.Doc();
         if (snapshot.checkpoint) Y.applyUpdate(restored, snapshot.checkpoint);
         for (const row of snapshot.updates) Y.applyUpdate(restored, row.update);
@@ -232,14 +493,11 @@ describe("durable document derivations", () => {
     const preMove = await store.capture(documentId);
     if (!preMove) throw new Error("Missing location cut");
     await runInDrizzleTransaction(db, async () => {
-      await recordDocumentMove(
-        db,
-        sourceId,
-        sourceId,
-        [{ id: documentId, path: "/chapter", kind: "file" }],
-        "/chapter",
-        "/renamed",
-      );
+      await recordLocationHistory(db, {
+        vacated: [{ contextSourceId: sourceId, path: "/chapter", documentId }],
+        claimed: [{ contextSourceId: sourceId, path: "/renamed" }],
+      });
+      await bumpLocationVersions(db, { documentIds: [documentId] });
     });
     expect(await store.certify(preMove, { markdown: "wrong folder", links: [] }, new Date())).toBe(
       false,
@@ -301,14 +559,11 @@ describe("durable document derivations", () => {
         .update(documents)
         .set({ folderId })
         .where(eq(documents.id, documentId));
-      await recordDocumentMove(
-        db,
-        sourceId,
-        sourceId,
-        [{ id: documentId, path: "/chapter", kind: "file" }],
-        "/chapter",
-        "/moved/chapter",
-      );
+      await recordLocationHistory(db, {
+        vacated: [{ contextSourceId: sourceId, path: "/chapter", documentId }],
+        claimed: [{ contextSourceId: sourceId, path: "/moved/chapter" }],
+      });
+      await bumpLocationVersions(db, { documentIds: [documentId] });
     });
     expect(await store.certify(preMove, { markdown: "wrong folder", links: [] }, new Date())).toBe(
       false,
@@ -341,12 +596,12 @@ describe("durable document derivations", () => {
 
   it("reconstructs only the restored generation, even with retained retired updates and a later retired checkpoint", async () => {
     const doc = new Y.Doc({ gc: false });
-    const original = await append(doc, "Original ");
-    await persistence.journal.checkpoint(documentId, Y.encodeStateAsUpdate(doc), original);
+    await append(doc, "Original ");
+    await persistence.journal.storeCheckpoint(await checkpointCut());
     await persistence.journal.compact(documentId, new Date(Date.now() + 1000));
     doc.getText("prose").delete(0, doc.getText("prose").length);
     const admission = await append(doc, "Before typing.");
-    await persistence.journal.checkpoint(documentId, Y.encodeStateAsUpdate(doc), admission);
+    await persistence.journal.storeCheckpoint(await checkpointCut());
     const [checkpoint] = await db
       .select()
       .from(documentYjsCheckpoints)
@@ -375,7 +630,7 @@ describe("durable document derivations", () => {
     await service.derive(documentId);
     expect(await projection()).toBe("Before typing.");
     for (const snapshot of [
-      await persistence.journal.readForReconstruction(documentId),
+      await persistence.journal.read(documentId),
       await persistence.journal.read(documentId, { until: retiredSeq }),
     ]) {
       const reconstructed = new Y.Doc({ gc: false });
@@ -390,7 +645,7 @@ describe("durable document derivations", () => {
   it("drops room and explicit checkpoints queued behind a generation replacement", async () => {
     const room = new Y.Doc({ gc: false });
     const beforeSeq = await append(room, "Before");
-    await persistence.journal.checkpoint(documentId, Y.encodeStateAsUpdate(room), beforeSeq);
+    await persistence.journal.storeCheckpoint(await checkpointCut());
     const [saved] = await db
       .select()
       .from(documentYjsCheckpoints)
@@ -401,7 +656,6 @@ describe("durable document derivations", () => {
     const hp = createHocuspocusPersistenceService({
       journal: persistence.journal,
       hocuspocus: () => null,
-      latestUpdateSeq: persistence.store.latestUpdateSeq,
       metaForOrigin: () => ({ origin: `human:${userId}`, seq: 0 }),
       emitAgentEditInvariantViolation: () => undefined,
     });
@@ -411,7 +665,7 @@ describe("durable document derivations", () => {
         recover: async () => {},
       },
       store: persistence.store,
-      latestUpdateSeq: persistence.store.latestUpdateSeq,
+      journal: persistence.journal,
       markdownDocuments: {
         restoreFromYDoc: async () => {
           throw new Error("Not used");
@@ -477,8 +731,8 @@ describe("durable document derivations", () => {
 
   it("never stamps an acquired old handle with the generation restored before capture", async () => {
     const room = new Y.Doc({ gc: false });
-    const beforeSeq = await append(room, "Before");
-    await persistence.journal.checkpoint(documentId, Y.encodeStateAsUpdate(room), beforeSeq);
+    await append(room, "Before");
+    await persistence.journal.storeCheckpoint(await checkpointCut());
     const [saved] = await persistence.store.listCheckpoints(documentId);
     if (!saved) throw new Error("Missing checkpoint");
     await append(room, " After");
@@ -506,7 +760,7 @@ describe("durable document derivations", () => {
           }),
       },
       store: persistence.store,
-      latestUpdateSeq: persistence.store.latestUpdateSeq,
+      journal: persistence.journal,
       markdownDocuments: {
         restoreFromYDoc: async () => {
           throw new Error("Not used");
@@ -538,7 +792,7 @@ describe("durable document derivations", () => {
   });
 
   it("the sweep registers a client-minted ahead ref whose registration failed after certification", async () => {
-    const real = createDrizzleLinkAheadRegistry(db, async () => ({ members: [] }));
+    const real = createTestLinkAheadRegistry(db);
     let failRegistration = true;
     const aheadStore = createDrizzleDocumentDerivationStore(db, createDocumentLastAddress(db), {
       registry: {

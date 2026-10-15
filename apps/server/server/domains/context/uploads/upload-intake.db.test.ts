@@ -128,7 +128,7 @@ if (!RUN) {
             links: createTestDocumentLinkScopes(db),
             db,
             documentSync: collab,
-            manifestMembership: collab,
+            drafts: collab.drafts,
             catalogMutations: catalog,
           });
           return createUploadIntake({
@@ -305,11 +305,13 @@ if (!RUN) {
           name: "Manuscript",
           adapterType: "local",
         });
+        const catalog = createDrizzleContextCatalog(db);
         const collab = createCollabDomain({
           ...testLinkDeps(db),
           db: db,
           fileAccess: createAllowAllFileAccess(),
           workProjectionMutation: createTestWorkProjectionMutation(db),
+          catalogMutations: catalog,
         });
         collab.bindHocuspocus(
           new Hocuspocus({
@@ -318,12 +320,11 @@ if (!RUN) {
               collab.storeHocuspocusDocument(documentName, document),
           }),
         );
-        const catalog = createDrizzleContextCatalog(db);
         const contextPorts = createProductionUnifiedContextPortFactory({
           links: createTestDocumentLinkScopes(db),
           db: db,
           documentSync: collab,
-          manifestMembership: collab,
+          drafts: collab.drafts,
           catalogMutations: catalog,
         });
         const service = createUploadIntake({
@@ -393,7 +394,7 @@ if (!RUN) {
         links: createTestDocumentLinkScopes(database.current),
         db: database.current,
         documentSync: collab,
-        manifestMembership: collab,
+        drafts: collab.drafts,
         catalogMutations: catalog,
       });
       const service = createUploadIntake({

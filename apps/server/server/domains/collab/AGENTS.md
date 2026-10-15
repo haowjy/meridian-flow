@@ -1,60 +1,50 @@
 # domains/collab — server-side branch collaboration
 
-This domain composes `@meridian/agent-edit` with Meridian persistence and
-Hocuspocus transport. It owns durable live and branch Yjs infrastructure, not
-editor UI or transport-shell policy.
+This domain owns durable live and Work-draft Yjs coordination, persistence,
+review settlement, and Hocuspocus admission. It composes
+`@meridian/agent-edit`; it does not own editor UI or transport-shell policy.
 
 ## Mental model
 
-- Live documents, per-thread peers, and per-Work review drafts are real Y.Docs.
-  Sync propagates between them; journals are durable and runtime state is
-  reconstructible.
-- A Work draft is shared by every thread editing the same document in that Work.
-  Apply publishes its whole current branch; Discard operates on server-vended
-  review classes rather than client-reconstructed turns.
-- Each live document has a durable authority head whose identity, generation,
-  and admission sequence fence every connection and mutation.
-- `@meridian/agent-edit` owns schema-safe mutation and reversal planning. This
-  domain owns authorization, persistence, coordination, settlement, and trail
-  projection around that core.
+- Live documents, Work drafts, and thread peers are real Y.Docs. Journals and
+  durable authority heads are the source from which runtime state is rebuilt.
+- A Work draft is shared by every thread editing that document in that Work.
+  Review classes and writer attribution are server-derived, dependency-closed,
+  and never reconstructed by a client.
+- Authority identity and generation fence every live connection and mutation.
+  The domain owns authorization, persistence, coordination, settlement, and
+  trail projection around the agent-edit core.
 
-## Decision-changing rules
+## Rules that change behavior
 
-- Keep dependencies one-way: collab adapters import `@meridian/agent-edit`; the
-  package must not import server code.
-- Admit novel writer content durably before Yjs apply, broadcast, or ack. Route
-  live and branch writes through their coordinator-owned admission seams.
-- Reject writer updates with reserved client IDs or mutations in the reserved
-  provenance namespace before durable append or Yjs apply.
-- Yjs merge is trusted. Destructive effects inform marks and receipts but never
-  veto an otherwise valid merge; receipt Undo/Redo remains reversal authority.
-- Branch Y.Docs use `gc: false`; reversal dependency checks require their full
-  struct history.
-- Any content apply after an `await` must obey the documented WebSocket
-  concurrency fence. Do not assume a coordinator lock excludes socket writes.
-- Model reads and writes go through the thread-peer pool with a caller-computed
-  destination; nothing in collab decides live versus draft from a thread's
-  mode. Scratch and uploads are never drafted, and `ensureWorkDraftBranch`
-  throws if asked to.
-- A reply saves once: every document it wrote, live or drafted, in one
-  transaction. Live text reaches open editors only after commit.
-- Derive live read models from a journal-locked durable cut, never a warm room
-  paired with a database watermark. The recovery sweep owns freshness; triggers
-  only reduce latency. Push derivation joins its completion transaction.
-- Route schema-aware content reads, seeds, and writes through
-  `domain/markdown-document.ts`.
-- Build the markup codec once, in `domain/agent-edit-runtime.ts`, where the
-  composition root injects `DocumentLinkScopes`. Links and image sources spell
-  from the document tree per operation (`domain/document-link-scope-doors.ts`
-  opens the scope, the operation prepares it before its synchronous
-  serialize), never cached; a new door that hands Markdown to a reader joins
-  that scope and prepares. Spelling outside every scope, or from a scope no
-  door prepared, throws under test and logs `serialize.link_unscoped` /
-  `serialize.link_snapshot_miss` in production. Parse is pure syntax: writes
-  assign written image paths' `asset:` srcs in agent-edit's ref assignment
-  (`assignLinkRefs`) after it.
+- Keep the dependency one-way: collab may import agent-edit; agent-edit never
+  imports server code. `composition.ts` wires required ports and providers;
+  behavior belongs in domain services.
+- Admit novel writer content durably before Yjs apply, broadcast, or ack.
+  Treat Yjs merge as trusted: destructive evidence informs receipts and marks,
+  never a veto. Undo and redo are the reversal authority.
+- Branch Y.Docs use `gc: false`. Any apply after an `await` must use the
+  documented durable authority/concurrency fence; a coordinator lock alone is
+  not enough.
+- A reply saves every document it wrote in one transaction. Live publication
+  reaches open editors only after commit; failed response replay drops only the
+  rejected logical write and its dependent closure.
+- Derive read models from a journal-locked durable cut, not a warm room paired
+  with a database watermark. Schema-aware document reads, seeds, and writes
+  go through `domain/markdown-document.ts` and the single scoped link codec.
+  A new door that hands Markdown to a reader joins that scope and prepares it;
+  spelling outside a prepared scope throws under test.
+- Scratch and uploads are never drafted. Destination selection is explicit;
+  collab must not infer live versus draft from a thread mode.
 
 Deep contracts and verification guidance live in [`.context/CONTEXT.md`](.context/CONTEXT.md).
-For an end-to-end visual tour of the domain, read [`.context/collab-domain.html`](.context/collab-domain.html).
-Related boundaries: [`domains/notices`](../notices/AGENTS.md) and
-[`@meridian/agent-edit`](../../../../../packages/agent-edit/AGENTS.md).
+The focused references are [branch records](.context/branch-model-and-records.md),
+[document authority](.context/document-authority-and-schema.md),
+[reversal](.context/reversal.md),
+[settlement](.context/settlement-and-trail.md), and
+[WebSocket concurrency](.context/websocket-concurrency.md).
+The visual references are [collab-domain.html](.context/collab-domain.html)
+and [draft-live-model.html](.context/draft-live-model.html).
+Deferred work is in [FUTURE.md](.context/FUTURE.md), [TODO.md](.context/TODO.md),
+and [TODO](.context/TODO). Related boundaries are [`domains/notices`](../notices/AGENTS.md)
+and [`@meridian/agent-edit`](../../../../../packages/agent-edit/AGENTS.md).

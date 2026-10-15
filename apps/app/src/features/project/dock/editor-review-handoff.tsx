@@ -1,4 +1,4 @@
-/** Latest-wins command handoff from any project surface to the Editor review scope. */
+/** Latest-wins command handoff from any project surface to a review launched in the Editor. */
 
 import type { EventRecord } from "@meridian/contracts/observability";
 import {
@@ -11,22 +11,31 @@ import {
   useState,
 } from "react";
 import {
-  clearDraftCommandFailure,
+  clearDraftReviewLaunchFailure,
   failDraftReviewLaunch,
 } from "@/client/query/draft-command-record";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
-import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { appendTraceEvent } from "@/features/debug/trace/trace-store";
+import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
+import type { ContextUri } from "@/lib/context-uri";
 import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
+import { type PresentedDocument, usePresentedDocument } from "../presented-document";
 import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
+import { FocusOpenedReview, type ReviewFocusRequest } from "./FocusOpenedReview";
 
 export type AiDraftLaunchTarget = {
   workId: string;
   documentId: string;
-  draftId: string;
-  contextPath: string;
+  itemKey: string;
+  contextLocation: Pick<ContextUri, "scheme" | "path">;
   documentName?: string;
-  isNewDocument?: boolean;
+  isNew?: boolean;
+  /**
+   * Operations of the change to focus once this review has painted (the
+   * strip's Review, a Work page change row). When none is in the review any
+   * more, it opens at the top.
+   */
+  focusOperationIds?: readonly string[];
 };
 
 type EditorReviewIntent = AiDraftLaunchTarget & { sequence: number };
@@ -52,7 +61,7 @@ function reportRouteSettlement(
       attempt,
       workId: target.workId,
       documentId: target.documentId,
-      draftId: target.draftId,
+      itemKey: target.itemKey,
     },
   };
   appendTraceEvent(event);
@@ -61,7 +70,7 @@ function reportRouteSettlement(
 const EditorReviewCommandContext = createContext<EditorReviewCommand | null>(null);
 const EditorReviewIntentContext = createContext<{
   intent: EditorReviewIntent | null;
-  routingDraftId: string | null;
+  routingItemKey: string | null;
   claim: (sequence: number) => void;
 } | null>(null);
 
@@ -75,7 +84,7 @@ export function EditorReviewHandoffProvider({
   children: ReactNode;
 }) {
   const [intent, setIntent] = useState<EditorReviewIntent | null>(null);
-  const [routingDraftId, setRoutingDraftId] = useState<string | null>(null);
+  const [routingItemKey, setRoutingItemKey] = useState<string | null>(null);
   const sequence = useRef(0);
   const latest = useRef<EditorReviewIntent | null>(null);
   const claimed = useRef<number | null>(null);
@@ -86,14 +95,14 @@ export function EditorReviewHandoffProvider({
         projectId,
         workId: target.workId,
         documentId: target.documentId,
-        draftId: target.draftId,
+        itemKey: target.itemKey,
       };
       // A new attempt retires the previous attempt's message.
-      clearDraftCommandFailure(draft);
+      clearDraftReviewLaunchFailure(draft);
       const staged = { ...target, sequence: ++sequence.current };
       latest.current = staged;
       claimed.current = null;
-      setRoutingDraftId(target.draftId);
+      setRoutingItemKey(target.itemKey);
       // A matching mounted Editor may claim immediately. This avoids making a
       // same-route review command depend on an unrelated navigation settlement.
       setIntent(staged);
@@ -104,15 +113,14 @@ export function EditorReviewHandoffProvider({
         for (let attempt = 0; attempt < 2; attempt += 1) {
           const result = await openContextRoute(
             {
-              scheme: "manuscript",
-              path: target.contextPath,
+              ...target.contextLocation,
               workId: target.workId,
               documentId: target.documentId,
             },
             {
               replaceIfSameDocument: true,
               tab: tab ?? undefined,
-              draftId: target.draftId,
+              itemKey: target.itemKey,
               canCommit: () => latest.current?.sequence === staged.sequence,
             },
           );
@@ -147,7 +155,7 @@ export function EditorReviewHandoffProvider({
         throw error;
       } finally {
         if (latest.current?.sequence === staged.sequence || claimed.current === staged.sequence) {
-          setRoutingDraftId(null);
+          setRoutingItemKey(null);
         }
       }
     },
@@ -161,7 +169,7 @@ export function EditorReviewHandoffProvider({
 
   return (
     <EditorReviewCommandContext.Provider value={openEditorReview}>
-      <EditorReviewIntentContext.Provider value={{ intent, routingDraftId, claim }}>
+      <EditorReviewIntentContext.Provider value={{ intent, routingItemKey, claim }}>
         {children}
       </EditorReviewIntentContext.Provider>
     </EditorReviewCommandContext.Provider>
@@ -174,13 +182,25 @@ export function useOpenEditorReview(): EditorReviewCommand {
   return command;
 }
 
-/** Draft currently crossing the route-to-Editor handoff, if any. */
-export function usePendingEditorReviewDraftId(): string | null {
-  return useContext(EditorReviewIntentContext)?.routingDraftId ?? null;
+/** For a surface that only sometimes launches a review (a link to a draft), and may mount without an owner. */
+export function useOptionalOpenEditorReview(): EditorReviewCommand | null {
+  return useContext(EditorReviewCommandContext);
 }
 
 /**
- * Mount inside the Editor review boundary, beside the active viewer/editor. The
+ * Draft currently crossing the route-to-Editor handoff, if any: its route
+ * command is running, or its launch is waiting for the Editor to claim it (the
+ * route can settle before the Editor mounts the document). The address owner
+ * restores no review for it meanwhile; a restore is a second launch, and the
+ * latest one decides which change the review opens on.
+ */
+export function usePendingEditorReviewItemKey(): string | null {
+  const handoff = useContext(EditorReviewIntentContext);
+  return handoff?.routingItemKey ?? handoff?.intent?.itemKey ?? null;
+}
+
+/**
+ * Mount inside the Editor host’s draft-review boundary, beside the active viewer/editor. The
  * Work, document and draft decide the claim; the address path is only a label
  * that a rename can change between the launch and the claim.
  */
@@ -194,17 +214,78 @@ export function EditorReviewIntentClaimant({
   const handoff = useContext(EditorReviewIntentContext);
   const intent = handoff?.intent ?? null;
   const review = useDraftReview();
+  const [focus, setFocus] = useState<ReviewFocusRequest | null>(null);
+  const focusDone = useCallback(() => setFocus(null), []);
 
   useEffect(() => {
-    if (!intent) return;
-    if (editorWorkId !== intent.workId) return;
-    if (activeScheme !== "manuscript") return;
-    if (review.activeEditorDocumentId !== intent.documentId) return;
-    const group = review.groupForDocument(intent.documentId);
-    if (group?.draft.draftId !== intent.draftId) return;
-    review.controller.enterInlineReview(intent.documentId, intent.draftId);
+    if (
+      !intent ||
+      !admissible(intent, { editorWorkId, activeScheme, documentId: review.activeEditorDocumentId })
+    )
+      return;
+    review.controller.enterInlineReview(intent.documentId, intent.itemKey);
+    // The latest launch decides the focus: one without it clears an older request.
+    setFocus(
+      intent.focusOperationIds?.length
+        ? {
+            sequence: intent.sequence,
+            documentId: intent.documentId,
+            itemKey: intent.itemKey,
+            operationIds: intent.focusOperationIds,
+          }
+        : null,
+    );
     handoff?.claim(intent.sequence);
   }, [activeScheme, editorWorkId, handoff, intent, review]);
 
-  return null;
+  return focus ? (
+    <FocusOpenedReview key={focus.sequence} request={focus} onDone={focusDone} />
+  ) : null;
+}
+
+/** The launch and its host agree on the destination before passive admission. */
+export function admissible(
+  intent: EditorReviewIntent,
+  host: { editorWorkId: string | null; activeScheme: string | null; documentId: string | null },
+) {
+  return intent.workId === host.editorWorkId && intent.documentId === host.documentId;
+}
+export function useRequestedReview(host: {
+  container: PresentedDocument["container"];
+  editorWorkId: string | null;
+  activeScheme: string | null;
+  documentId: string | null;
+}) {
+  const { controller } = useDraftReview();
+  const intent = useContext(EditorReviewIntentContext)?.intent;
+  const presented = usePresentedDocument();
+  return requestedReviewItemKey(host, { inlineReview: controller.inlineReview, intent, presented });
+}
+
+/** Pending intent hides warm live paint; an admitted review survives route failure. */
+export function requestedReviewItemKey(
+  host: {
+    container: PresentedDocument["container"];
+    editorWorkId: string | null;
+    activeScheme: string | null;
+    documentId: string | null;
+  },
+  state: {
+    inlineReview: { documentId: string; itemKey: string } | null;
+    intent: EditorReviewIntent | null | undefined;
+    presented: PresentedDocument | null;
+  },
+): string | null {
+  const { inlineReview, intent, presented } = state;
+  const presenting =
+    presented?.container === host.container &&
+    (presented.documentId === host.documentId ||
+      (!presented.documentId && host.container === "editor"));
+  return presenting && inlineReview?.documentId === host.documentId
+    ? inlineReview.itemKey
+    : host.container === "editor" && intent && admissible(intent, host)
+      ? intent.itemKey
+      : presenting && presented?.documentId === host.documentId
+        ? (presented.review?.itemKey ?? null)
+        : null;
 }

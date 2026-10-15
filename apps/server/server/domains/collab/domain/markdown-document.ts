@@ -32,6 +32,9 @@ import type {
   DocumentSeedOrigin,
   DocumentWriteOrigin,
   DocumentWriteResult,
+  HeldLiveDocument,
+  HeldWriteExpectation,
+  HeldWriteStaged,
   PersistedUpdate,
   SyncError,
   UpdateOrigin,
@@ -102,6 +105,9 @@ type MarkdownDocumentEngineDeps = {
   observeSerializationAnomaly?: MarkdownSerializationAnomalyObserver;
 };
 
+/** When the live document takes an admitted change (see `replaceLiveDocumentMarkdown`). */
+type WarmApply = { kind: "now" } | { kind: "after-commit"; threadId?: ThreadId };
+
 /** Stages a change on a copy of the live document, under its lock. */
 type DraftMutation = (
   draft: Y.Doc,
@@ -151,6 +157,17 @@ export type MarkdownDocumentEngine = {
     origin: DocumentWriteOrigin;
     threadId?: ThreadId;
   }): Promise<DocumentWriteResult>;
+  withLiveDocument<T>(
+    documentId: string,
+    operation: (held: HeldLiveDocument) => Promise<T>,
+  ): Promise<T>;
+  writeDocumentHeld(input: {
+    held: HeldLiveDocument;
+    content: BoundWrite;
+    expected: HeldWriteExpectation;
+    origin: DocumentWriteOrigin | DocumentSeedOrigin;
+    threadId?: ThreadId;
+  }): Promise<Result<HeldWriteStaged, SyncError>>;
 };
 
 export function createMarkdownDocumentEngine(
@@ -241,7 +258,7 @@ export function createMarkdownDocumentEngine(
     documentId: DocumentId,
     content: BoundWrite,
     format: { schemaType: YjsTrackedSchemaType },
-    use: "seed" | "write",
+    use: HolderUse,
   ): Result<BoundWrite, SyncError> {
     assertHolder(documentId, content, use);
     if (content.schemaType !== format.schemaType) {
@@ -289,12 +306,20 @@ export function createMarkdownDocumentEngine(
     return Ok(undefined);
   }
 
+  /**
+   * Stage `mutate` on a copy of the live document, serialize, then admit it to the
+   * journal. `warm` says when the live document itself takes the update: `now` (the
+   * caller then runs `afterWrite`), or `after-commit` for a held write inside its caller's
+   * transaction, where an abort must leave the warm room untouched and `afterWrite` runs
+   * with the warm apply.
+   */
   async function replaceLiveDocumentMarkdown(
     documentId: DocumentId,
     liveDoc: Y.Doc,
     mutate: DraftMutation,
     origin: RuntimeOrigin,
     schemaType: YjsTrackedSchemaType,
+    warm: WarmApply = { kind: "now" },
   ): Promise<Result<MarkdownSetResult, SyncError>> {
     // This copy stages the change so serialization and journal admission
     // both complete before the live document is mutated.
@@ -328,7 +353,15 @@ export function createMarkdownDocumentEngine(
             meta,
             documentAuthority(liveDoc),
           );
-          Y.applyUpdate(liveDoc, admittedUpdate, yjsOrigin);
+          if (warm.kind === "now") {
+            Y.applyUpdate(liveDoc, admittedUpdate, yjsOrigin);
+          } else {
+            const applyWarm = async () => {
+              Y.applyUpdate(liveDoc, admittedUpdate, yjsOrigin);
+              await deps.afterWrite?.({ documentId, threadId: warm.threadId, markdown });
+            };
+            if (!deps.deferUntilCommit?.(applyWarm)) await applyWarm();
+          }
           return { sequence: BigInt(seq), joined: 0 };
         },
       },
@@ -495,8 +528,49 @@ export function createMarkdownDocumentEngine(
       if (!result.ok) throwSyncError(result.error);
       return documentWriteResult(result.value, input.origin);
     },
+
+    async withLiveDocument(documentId, operation) {
+      await deps.lifecycle.ensureDocument(documentId);
+      return deps.coordinator.withDocument(documentId, (doc) =>
+        operation({ documentId: documentId as DocumentId, doc }),
+      );
+    },
+
+    writeDocumentHeld,
   };
   return engine;
+
+  /**
+   * A revealed document's first content (§6.3 B3): the ordinary whole-document overwrite,
+   * applied under the caller's held lease, accepting only creation-bound content for the
+   * expected address, journaled in the caller's transaction and applied warm after commit.
+   */
+  async function writeDocumentHeld(input: {
+    held: HeldLiveDocument;
+    content: BoundWrite;
+    expected: HeldWriteExpectation;
+    origin: DocumentWriteOrigin | DocumentSeedOrigin;
+    threadId?: ThreadId;
+  }): Promise<Result<HeldWriteStaged, SyncError>> {
+    const { held } = input;
+    const format = await documentFormat(held.documentId);
+    if (!format.ok) return format;
+    const content = checkBound(held.documentId, input.content, format.value, {
+      reveal: input.expected,
+    });
+    if (!content.ok) return content;
+    const written = await replaceLiveDocumentMarkdown(
+      held.documentId,
+      held.doc,
+      (draft, yjsOrigin) => overwriteDraft(held.documentId, draft, content.value, yjsOrigin),
+      input.origin,
+      format.value.schemaType,
+      { kind: "after-commit", threadId: input.threadId },
+    );
+    return written.ok
+      ? Ok({ markdown: written.value.markdown, updateSeq: written.value.updateSeq })
+      : written;
+  }
 
   async function identityPreservingSet(input: {
     documentId: DocumentId;
@@ -627,13 +701,26 @@ function authorshipSource(origin: RuntimeOrigin): AuthorshipSource {
 }
 
 /**
- * A bound write certifies one holder; applying it to another document is a
- * bug. A write needs the document it was bound for; a seed may also take
- * content bound for the document being created (its creator checks the
- * address) or fixed static content.
+ * How a bound write may be applied: `write` to the document it was bound for; `seed` to
+ * that document, to the document being created (its creator checks the address) or as
+ * fixed static content; `reveal` only creation-bound content for exactly the expected
+ * address, onto exactly the expected (revealed) document (contract §6.3 B3).
  */
-function assertHolder(documentId: DocumentId, content: BoundWrite, use: "seed" | "write"): void {
+type HolderUse = "seed" | "write" | { reveal: HeldWriteExpectation };
+
+/** A bound write certifies one holder; applying it to another document is a bug. */
+function assertHolder(documentId: DocumentId, content: BoundWrite, use: HolderUse): void {
   const { holder } = content;
+  if (typeof use === "object") {
+    if (
+      documentId !== use.reveal.documentId ||
+      holder.kind !== "new" ||
+      holder.uri !== use.reveal.uri
+    ) {
+      throw new Error(`Content bound for another holder cannot become ${use.reveal.uri}`);
+    }
+    return;
+  }
   if (holder.kind === "document" ? holder.documentId !== documentId : use === "write") {
     throw new Error(
       `Content bound for ${holder.kind === "document" ? holder.documentId : holder.kind} cannot be applied to ${documentId}`,
