@@ -690,19 +690,20 @@ else
     it("row 35: Cancel queue committed during a stale preparation leaves the wake nothing to reserve", async () => {
       let rig: Rig;
       let armed = false;
+      let m2 = "";
       let m3 = "";
       const notices = {
         async peek() {
           if (!armed) return [];
           armed = false;
           m3 = (await rig.send(rig.threadId, "M3")).userTurnId;
-          await handBack(rig, crypto.randomUUID(), [m3]);
+          await handBack(rig, crypto.randomUUID(), [m2, m3]);
           return [];
         },
         async consume() {},
       };
       rig = await rigWith({ notices: notices as never });
-      const m2 = (await rig.send(rig.threadId, "M2")).userTurnId;
+      m2 = (await rig.send(rig.threadId, "M2")).userTurnId;
       armed = true;
 
       await expect(
