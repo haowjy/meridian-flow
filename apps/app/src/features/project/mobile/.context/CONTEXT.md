@@ -1,305 +1,97 @@
-# project/mobile — Phone project shell
+# project/mobile — phone project shell
 
-The phone project is a **sibling shell** of the desktop project, not a
-responsive branch inside `ProjectShell`. `ProjectView` selects it through
-`usePhoneShell()` only for coarse-pointer phone-class viewports:
+This reference covers the phone sibling shell, route ownership, document
+registry, review chrome, and phone-only navigation. Read [`AGENTS.md`](../AGENTS.md)
+first; shared project contracts remain in [`../.context/CONTEXT.md`](../.context/CONTEXT.md).
 
-```text
-(pointer: coarse) and (max-width: 767px), (pointer: coarse) and (max-height: 500px)
-```
+## Shell and routes
 
-A narrow desktop window still renders the desktop shell. A landscape phone still
-renders the phone shell because the height clause catches short coarse-pointer
-viewports. Tablets with phone-sized width at the boundary (`768px`) and iPad-like
-landscape heights stay on desktop.
+`ProjectView` selects `MobileProject` only for coarse-pointer phone-class
+viewports: `(pointer: coarse) and (max-width: 767px)` or
+`(pointer: coarse) and (max-height: 500px)`. A narrow desktop window remains
+desktop; a short landscape phone remains mobile.
 
-The shell reuses the same route-owned `ProjectViewProps`, data hooks, chat,
-context tree, document editor/viewers, and thread drawer content.
-Only the chrome changes: top bar, drawer, and one active destination. A local
-chat Sheet can open over Work or Editor without navigating or unmounting the
-underlying destination. The shell registers it as the dock reveal, so chat
-selection outside Chat opens it; its toolbar entry opens it without selecting a
-thread. Pending first-send recovery reopens that Sheet after reload. The Sheet
-mounts the chat only while open: closing it ends that chat surface.
+Mobile consumes typed `ProjectViewProps`. Leaves never parse or construct URLs.
+The route parent owns push/replace and invalid-address rendering. Primary
+screens are the `SCREENS` registry: Chats, Works, and Editor; settings is an
+auxiliary query surface. Context browsing and documents live under Editor.
+Only the recognized Work/settings/view selectors are accepted, and legacy
+screen/thread/scheme/folder/path query keys are not compatibility inputs.
 
-Same-Work pending document navigation retains the prior document presentation
-and breadcrumb until address resolution settles. The shared review-scope owner
-supplies that same document identity to both the recovery executor and phone
-host; navigation commands always come from the current route. Errors, Work
-changes and screen changes do not reuse that pending projection.
+User navigation pushes so OS/browser Back traverses screens and drill-in.
+Canonical repair or an explicitly guarded controller may replace. A malformed
+or unavailable selection remains in place rather than silently defaulting.
+Breadcrumbs derive from the parsed route path; leaves do not duplicate path or
+filename parsing.
 
-Deferred implementation work is tracked in [TODO](TODO).
+The top bar has hamburger, project identity, screen/breadcrumb content, and a
+per-screen trailing action. It has no back button. Chat outside the Chat screen
+opens a local Sheet and leaves the current Work/Editor destination mounted;
+chat navigation on Chat changes the destination instead. The phone shell may
+mount only its active main screen, unlike desktop persistent surfaces.
 
-## Contracts
+## Document registry and review
 
-### Route ownership is the navigation model
+Mobile documents are read-only for the writer but live for AI edits (a review's
+draft body too). Every editable phone document (the ordinary route, the local
+pointer and a draft-only document) renders `ContextDocumentHost` directly, inside
+a `relative min-h-0 flex-1` frame that is a direct child of a flex column, with
+`PHONE_DOCUMENT_PRESENTATION` (`context/document-presentation.ts`). It does not
+use `ContextEditorMountHost`, the desktop's warm-set LRU.
 
-Phone consumes the same UUID project address as desktop. The route parent owns
-navigation; mobile leaves call the typed handlers passed through `ProjectViewProps`
-and never construct paths or query strings. The first segment beneath
-`/p/<project-id>` is always a screen (`/chats[/<chat-uuid>]`,
-`/works[/<work-uuid>]`, `/editor[/…]`); context browse and document paths live
-under `/editor` and carry scheme and location in path segments. Scratch and
-Uploads name their Work with the required `?work` query, never in the path.
-`work`, `settings`, and `view` are the only recognized query keys.
-An invalid address shows "This destination is unavailable." in place. The removed `screen`, `thread`, `scheme`, `folder`, and
-`path` query parameters are not compatibility inputs.
+The presentation value is the whole phone difference: it never types (no
+toolbar; the host's `readOnly` stays the Work's archived scope, which the
+room-scope check compares with the room's access), shows no remote carets, names
+the body "Read-only live document", suspends presence from the click that
+requests a review, and sets the binding owner id `mobile-project-document-host`.
+Everything else is the shared host.
 
-User navigation normally pushes so browser/OS Back walks destinations
-and context drill-in; canonicalization and an explicitly guarded controller
-repair replace. Explicit unavailable or malformed selections
-remain inert and must not be rewritten to remembered/default content.
+The phone must stay on the shared session boundary. Only
+`ContextTabSessionBoundary` probes local content and holds the adoption-eligible
+lease that completes a stranded adoption; a phone that binds the live room itself
+is refused with `adoption-pending` while the local copy is reserved.
 
-When a file is open, its breadcrumb derives from its parsed path. Mobile leaf
-components do not duplicate filename/path parsing or URL mutation.
+The same document identity feeds `useActiveReviewBinding`, which leases live
+presence. Phone hosts pass requested draft identity; the adapter resolves the
+canonical room and Work. A review body is read-only and has no editing toolbar.
 
-### Primary screens derive from `SCREENS`
+`MobileDocumentReview` keeps one wrapper in the tree for live/review
+presentation. `MobileReviewHeader` owns the draft switcher, stepper, and list
+button; `MobileChangeBar` sits in page flow at the bottom of the manuscript;
+`MobileChangeSheet` lists this document's changes and links to Work changes.
+All controls use 44px targets. Apply/Discard, refusal holds, toast, and next
+change behavior come from shared draft-review state; phone owns only sheet and
+phone-layout state. No Apply-all/Discard-all lives in the sheet.
 
-`features/project/shell/screens.ts` has one primary destination registry:
-`SCREENS`. It supplies shell destination vocabulary, not browser query parsing.
-Settings is an auxiliary routed surface (`?settings=`), not a drawer/sidebar destination.
+A pending live draft exposes a Draft chip. A draft-only entry can show the
+terminal Close state. The read-only body selects changes instead of opening the
+keyboard; mobile review never becomes an editable Editor.
 
-### Document sessions: mobile is a registry owner
+## Files browser and phone chrome
 
-Mobile documents are read-only for users but live for AI edits (a review's draft
-body too). Every editable phone document (the ordinary route, the local pointer
-and a draft-only document) renders `ContextDocumentHost` directly, inside a
-`relative min-h-0 flex-1` frame that is a direct child of a flex column
-(`MobileDocumentReview`'s, or the local pointer's own, since no review wraps
-it), with `presentation={PHONE_DOCUMENT_PRESENTATION}`. It does not use
-`ContextEditorMountHost`, the desktop's warm-set LRU with a frame of its own.
+`MobileContextBrowser` is one level per screen: Files root → scheme → folder →
+file. `?scheme`, `?folder`, and `?path` are route-owned. Missing folders are
+honest dead ends. Upload rows omit generic Delete, and draft-owned removal
+remains identity/revision-bound.
 
-`PHONE_DOCUMENT_PRESENTATION` (`context/document-presentation.ts`) is the whole
-phone difference: it never types (`editable: false`, no toolbar; the host's
-`readOnly` stays the Work's archived scope, which the room-scope check compares
-with the room's access), no remote carets or selections, the accessible name "Read-only
-live document", presence suspended from the click that requests a review (desktop
-waits for the resolved room), and the binding owner id
-`mobile-project-document-host`. Everything else is the shared host: paint scope,
-the failure card with Retry, `useActiveReviewBinding` and the room-scope check.
+The `+` action creates in the current scheme/folder through shared
+`ContextCreateKind`, `useCreateContextEntry`, and validation. Enter/Done or
+blur with content commits; Escape or empty commit cancels. Navigation abandons
+an uncommitted row. Creation stays in the listing: it does not auto-drill or
+open a file. The route's current location is the target.
 
-The phone must stay on the shared session boundary. Only `ContextTabSessionBoundary`
-probes local content and holds the adoption-eligible lease that completes a
-stranded adoption; a phone that binds the live room itself is refused with
-`adoption-pending` for as long as the local copy is reserved.
+Mobile top chrome names a document once. `MobileDocumentHost` renders the shared
+document host without toolbar; non-tracked viewers use a bare host. Breadcrumb ancestors are 44px
+controls, the last segment is current, and deep trails keep the first plus the
+last two segments.
 
-### Draft review on the phone
+Do not add a `<meta name="theme-color">` to the root: with the locked `100svh`
+shell, tinting Safari's status and URL bars made the notch read washed-out
+white on real iPhones. The manifest `theme_color` still applies to installed
+PWAs. Phone review stays read-only (a tap selects a change and never raises the
+keyboard); making a draft editable is a deliberate change, not a prop flip.
 
-`MobileDocumentReview` wraps the editor of both document hosts (a live document
-and a pending new document) and adds the review's chrome while that document is
-under inline review. The column keeps one place in the tree whether or not a
-review is open, so entering and leaving never remounts the warm live editor;
-the review editor mounts beside it and swaps in, as on desktop (`EditorView`). Nothing here owns
-review state: the stable wrapper obtains one `useReviewHeader` model and passes
-it to the header, bar and sheet. Sheet state and its toast stay phone-owned. Optimistic Apply and
-Discard, refusals held on the change, toasts (no Undo), the entry hold (`inlineReview.shown`) and "No changes
-left" with Next draft are therefore the desktop's behaviour, not a copy of it.
-
-- **Header** (`MobileReviewHeader`): the Draft chip (`DraftSwitcher`), the
-  stepper and the list button (with the change count when there are changes),
-  in a 48px row under the top bar. The list button stays whatever the count,
-  because the sheet holds the state lines and the way to the Work's other
-  changes. Apply draft, Discard draft and Show changes live in the chip's menu
-  (with this document's Live and Draft versions and Close review for a new
-  document), so the row stays short. Refusals, "No changes left" and
-  "Formatting changes remain" take a line under it.
-- **Bar** (`MobileChangeBar`): a tap on a change selects it (the inline-review
-  plugin's mousedown handler, reached by the compatibility mousedown a tap fires;
-  verified in Chromium touch emulation, not on an iPhone) and its bar sits at the bottom of the
-  manuscript column, in the page's flow so nothing is hidden behind it. It clears
-  `env(safe-area-inset-bottom)` or the on-screen keyboard
-  (`--mobile-keyboard-height`, from `MobileKeyboardAware`, which the review column
-  uses). The desktop's margin bar steps aside on the phone shell.
-- **Sheet** (`MobileChangeSheet`): the list button opens THIS document's changes
-  as a bottom sheet over the dimmed manuscript, with the same body the desktop
-  identity row's popover shows (`draft-review/DocumentChanges`: changes, Applying,
-  No changes left with Next draft, formatting-only) in its `touch` form, and
-  "All changes in <Work>" at its foot (`WorkChangesLink`, one transition to the
-  Work's Files tab; absent in No Work). It lists no other file and has no Apply
-  all or Discard all: those are the Work page's. It opens and stays open at zero
-  changes. A row tap closes the sheet and focuses the change; Apply and Discard
-  act and leave it open. The toast sits in the sheet's flow below its title, since the scrim
-  covers the manuscript's own.
-- Every control is a 44px target (`touch` on `ReviewChangeRow`, `ReviewChangeBar`,
-  `ReviewStepper` and `DraftSwitcher`).
-- The review body is read-only on the phone, like the live document. A tap must
-  select a change, not raise the keyboard over its bar, and the phone has none of
-  the editing chrome (the desktop's block grip shows once a caret is placed).
-  Making the draft editable is one prop (`editable` on `EditorView`) plus those two
-  pieces of work. The desktop's struck-removal click (caret beside the removal)
-  does nothing on this read-only body.
-- A live document with a pending draft shows the version chip (`DraftReviewChip`,
-  `touch`) under the top bar; its Draft item opens the review. The composer
-  strip and Work files are the other entries.
-
-## Architecture
-
-```text
-ProjectView
-  └─ HydratedProject
-       ├─ usePhoneShell() === true  → MobileProject
-       └─ usePhoneShell() === false → DesktopProject
-
-MobileProject
-  ├─ MobileTopBar
-  │   ├─ hamburger on every screen
-  │   ├─ breadcrumb for context screens and `Chats › <chat switcher>` on Chat
-  │   ├─ Open chat action outside Chat
-  │   └─ trailing slot: `+` create menu in Files
-  ├─ one active main view
-  │   ├─ ChatIndex or WorkScreen → one screen scroll owner
-  │   ├─ MobileChatHost → ChatScreen + MobileKeyboardAware
-  │   └─ MobileContextBrowser or MobileDocumentHost
-  ├─ local chat Sheet → ChatSurface above the retained Work/Editor view
-  └─ NavigationDrawer → Sheet + WorkspaceNavBody + ContextTreePanel + account menu
-```
-
-Phone shell views mount/unmount as the active screen changes. Persistent desktop
-view-lift rules do not apply to the phone chrome. The state that must survive is
-kept in lifted models: thread store/transport, route state, React Query data, and
-the document session registry.
-
-### Top-bar model
-
-`MobileTopBar` owns only phone navigation chrome.
-
-- The hamburger is unconditional on every screen. There is **no back button**.
-  Up-navigation happens through breadcrumb ancestors; level-pop navigation
-  happens through OS/browser back because drill-in pushes route states.
-- Every destination shows a truncated project title above its screen identity.
-  Context screens keep a left-aligned breadcrumb on the second line; the
-  breadcrumb remains Files-rooted: `Files › scheme › folders › file`.
-- Chat uses the same breadcrumb grammar (`ChatBreadcrumb`): `Chats` is a
-  never-truncating ancestor that opens the index, and the current segment is
-  the chat switcher. The index shows a lone `Chats`, so its body hides the
-  duplicate heading (`namedByChrome`). Work keeps a centered title;
-  the leading side reserves as many 44px slots as the trailing side. Crumb
-  targets stay 44px with negative margin so the trail fits the 56px band. The drawer edits the
-  project title inline without closing, and offers an explicit View projects link.
-- Outside Chat, a separate Open chat action opens a local Sheet without
-  changing the destination. The registered dock reveal and pending first-send
-  reload recovery open the same Sheet on the chat. The Sheet renders
-  `ChatSurface` with `renderHeader` supplying `MobileChatSheetHeader`: a 56px
-  status-bar-aware header carrying the chat switcher and a 44px close, built
-  from `MobileTopBar`'s chrome primitives rather than the desktop `DockHeader`.
-  Like the desktop dock it has no index, so no `Chats` trail. The Sheet opens
-  only over Work or Editor: on the Chat screen commands navigate instead of
-  revealing.
-- The trailing slot is a per-screen dispatcher (`trailingAction()` in
-  `MobileProject`): the Files browser inside a scheme (scheme root or folder,
-  no file open) carries the `+` create menu (`MobileCreateEntryMenu`). The
-  Files root and all other screens leave it empty.
-- The bar is solid `bg-background`, not `backdrop-filter`. On iOS Safari,
-  backdrop-filter layers flash gray when the view below remounts; the content
-  below this bar is flat, so blur bought nothing.
-
-### Breadcrumb behavior
-
-`MobileBreadcrumb` is a location trail, not a screen title.
-
-- The last segment is current and non-interactive.
-- Ancestor segments are 44px-tall tap targets.
-- Deep trails with more than four segments keep the first segment and last two,
-  eliding the middle: `Files › … › parent › current`.
-- Width priority is asymmetric. The current segment wins; ancestors shrink first.
-  This protects the file or folder the user is looking at on a phone-width bar.
-
-### Drill-in Files browser
-
-`MobileContextBrowser` replaces the desktop expand/collapse tree with
-one-folder-per-screen navigation.
-
-- Files root lists context **schemes as sources**, not folders.
-- Scheme rows use `schemeIcon()` identity icons. Generic folder icons are
-  reserved for real directories inside a scheme.
-- Entering a scheme clears folder/path and starts at scheme root.
-- Entering a folder clears any open file and pushes the new `folder`.
-- Opening a file pushes `path` and pins `folder` to the parent directory.
-- A missing folder from a stale URL is rendered as an honest dead-end, not
-  silently rewritten by the browser component.
-- Upload rows omit generic Delete on phone as well as desktop. Draft-owned
-  removal remains the identity/revision-bound intake operation.
-
-### Create file / folder
-
-Creation is "where you are": the top bar's `+` (`MobileCreateEntryMenu`, a
-phone sibling of the desktop `CreateContextEntryMenu` — same
-`ContextCreateKind` vocabulary, 44px chrome) opens an inline naming row
-pinned above the folder listing, targeting the route's current scheme +
-folder. The pending kind lives in `MobileProject` because the entry point
-is top-bar chrome while the row renders in the browser; any navigation
-abandons an uncommitted row.
-
-- `MobileCreateRow` mirrors the desktop CreateRow's submit semantics: Enter
-  (keyboard Done) commits, Escape or empty commit cancels, blur with content
-  commits. Shared logic stays canonical: `useCreateContextEntry` mutation and
-  the `context-entry-name` join/validation helpers — no extension handling on
-  either shell; names are created exactly as typed.
-- After create the user stays in the listing; the new row appears via the
-  mutation's tree invalidation. Folders don't auto-drill and files don't
-  auto-open — a new file is empty and the phone editor is read-only (the
-  agent fills it). This deliberately diverges from desktop, which opens new
-  files as tabs.
-- The `+` shows for all four schemes: every scheme is writable server-side
-  (fs1 falls back to its offline ContextFS mirror when the project workspace is down),
-  matching the desktop tree's per-scheme `+`.
-- The row's input is 16px (`text-base`) — smaller fonts make iOS Safari zoom
-  the page on focus, which fights the locked phone shell.
-
-### Filename chrome ownership
-
-The top bar names the current screen/location once. Inner views suppress their
-own duplicate headers on phone by composing body-only shared modules with phone
-chrome:
-
-- `MobileDocumentHost` renders the shared document host without toolbar/header chrome
-  and disables collaboration cursor/selection decorations through the phone
-  presentation value.
-- Non-tracked mobile documents use `ContextViewerBareHost`, which composes the
-  read-only viewer frame without a name/path header because the breadcrumb
-  already names the file.
-
-If adding a new phone content view, decide whether the top bar or the view owns
-that name. Do not render both.
-
-## iOS Safari decisions
-
-These are deliberate browser decisions, not incidental styling:
-
-- **No `<meta name="theme-color">` in `__root.tsx`.** With the locked `100svh`
-  shell, tinting Safari's status/URL bar to the app background made the notch
-  and address bar read washed-out white on real iPhones. Safari's default system
-  gray looked correct. The manifest `theme_color` still applies to installed
-  PWAs.
-- **Global tap-highlight reset.** `globals.css` sets
-  `-webkit-tap-highlight-color: transparent`; pressed feedback comes from
-  explicit `active:` states instead of Safari's translucent gray overlay.
-- **Solid top bar.** The top bar avoids `backdrop-filter` to prevent gray flashes
-  during view remount/repaint on iOS Safari.
-- **Sheet scrim duration matches panel duration.** The shadcn/Radix Sheet overlay
-  uses 500ms open / 300ms close, matching `SheetContent`. The default 150ms
-  scrim fade un-dimmed the page while the drawer was still moving.
-- **NavigationDrawer transform-clipping wrapper.** The animated `SheetContent`
-  stays transparent and unclipped. Rounded corner, clipping, background, and
-  shadow live on an inner wrapper because WebKit can blank child content when a
-  transform-animated element also has `overflow:hidden` and `border-radius`.
-- **Radix `onOpenAutoFocus` is explicit.** The drawer prevents Radix's default
-  focus on the first nav item, then focuses the sheet container. This avoids an
-  unwanted programmatic focus ring on iOS while keeping the focus trap engaged.
-- **Keyboard clearance uses `visualViewport`.** `MobileKeyboardAware` exposes
-  `--mobile-keyboard-height` for the chat composer and the review's change bar
-  because standalone/PWA modes have not always honored
-  `interactive-widget=resizes-content` consistently.
-
-## Patterns
-
-- Add phone-specific chrome in `mobile/`; keep shared content components shared
-  as bodies or model hooks.
-- Add primary drawer/sidebar destinations to `SCREENS`. Use auxiliary route
-  params for surfaces that are not destinations.
-- Prefer route pushes for user navigation. Use replace only for normalization or
-  for an explicit route-controller reason.
-- Preserve the desktop/phone sibling-shell boundary. Do not add phone branches
-  to `ProjectShell` or desktop slot layout.
-- Keep source-level browser quirks commented at the decision point; future
-  agents should not have to rediscover iOS Safari behavior.
+Keep phone-only chrome in `mobile/` and shared bodies/models outside it. Do not
+add phone branches to `ProjectShell` or desktop slot layout. Preserve source
+comments for browser-specific behavior such as solid top bars, safe-area
+keyboard clearance, and visualViewport sizing.

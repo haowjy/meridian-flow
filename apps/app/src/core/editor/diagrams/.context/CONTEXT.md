@@ -1,20 +1,20 @@
-# diagrams — mermaid theming
+# Diagram rendering contracts
 
-Mermaid diagrams are themed by reading the **computed `rgb()` values** of the
-application's design tokens at render time (`mermaid-theme.ts`). Do not pass
-CSS custom properties or oklch strings to mermaid's theming API.
+Diagram rendering is token-time and provider-keyed. A node view presents a
+rendered face or source face from the same state; it does not own a second
+provider lifecycle.
 
-Meridian tokens are authored in oklch. Mermaid's color parser (khroma) cannot
-parse oklch; it expects hex, named colors, rgb/rgba, or hsl/hsla. CSS custom
-properties also fail because mermaid computes derived colors in JavaScript,
-outside the browser CSS engine.
+Mermaid measurement must use the SVG's intrinsic dimensions from its `viewBox`
+when emitted width is `100%`; the caller sizes the wrapper before the viewer
+fits it. Rendering must resolve design tokens at render time so a palette change
+repaints existing markup. Out-of-order async results are ignored when the
+provider or render request is no longer current.
 
-A measured token is the resolved `rgb()` string from `getComputedStyle` on a
-mounted element whose styles reflect the current theme. Configuration is built
-at render time, not import time. `useDiagramRender` redraws on the palette.
+Mermaid is themed from the computed `rgb()` values of the design tokens, read
+at render time. Rejected: oklch strings (mermaid's color parser throws), authored
+hex equivalents (a parallel color table), and CSS custom properties (opaque to
+its JavaScript color derivation). No stock mermaid colors or fonts.
 
-No stock mermaid colors (`#ECECFF`, `#9370DB`), no stock fonts (`trebuchet ms`),
-and no literal hex values outside `packages/design-tokens`.
-
-Rejected: oklch strings (khroma throws), authored hex equivalents (a parallel
-color table), CSS custom properties (opaque strings, NaN derivatives).
+Errors remain writer-readable state and expose only the node view's supplied
+action. Sanitization occurs before state publication and returns branded SVG;
+providers and node views must not bypass that boundary.
