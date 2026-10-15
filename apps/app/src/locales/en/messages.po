@@ -111,6 +111,16 @@ msgstr "{0, plural, one {# part stayed} other {# parts stayed}}"
 msgid "{0, plural, one {Changes in # more document did not apply} other {Changes in # more documents did not apply}}"
 msgstr "{0, plural, one {Changes in # more document did not apply} other {Changes in # more documents did not apply}}"
 
+#. placeholder {0}: card.count
+#: src/features/chat/HandBackCards.tsx
+msgid "{0, plural, one {Couldn't move your queued message to the message box.} other {Couldn't move your queued messages to the message box.}}"
+msgstr "{0, plural, one {Couldn't move your queued message to the message box.} other {Couldn't move your queued messages to the message box.}}"
+
+#. placeholder {0}: card.count
+#: src/features/chat/HandBackCards.tsx
+msgid "{0, plural, one {Couldn't move your queued message.} other {Couldn't move your queued messages.}}"
+msgstr "{0, plural, one {Couldn't move your queued message.} other {Couldn't move your queued messages.}}"
+
 #. placeholder {0}: digest.readDocuments
 #: src/features/chat/thinking-digest.ts
 msgid "{0, plural, one {read # document} other {read # documents}}"
@@ -770,6 +780,10 @@ msgstr "Cancel"
 msgid "Cancel editing"
 msgstr "Cancel editing"
 
+#: src/features/chat/UserTurn.tsx
+msgid "Cancel queue"
+msgstr "Cancel queue"
+
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Caption"
 msgstr "Caption"
@@ -1396,6 +1410,10 @@ msgstr "Couldn't move to {failedFolder}. Try again or pick another folder."
 msgid "Couldn't move to {failedFolder}. Use Move… in the file list to try again."
 msgstr "Couldn't move to {failedFolder}. Use Move… in the file list to try again."
 
+#: src/features/chat/useQueueControls.ts
+msgid "Couldn't move your queued message to the message box."
+msgstr "Couldn't move your queued message to the message box."
+
 #: src/features/editor/EditorView.tsx
 msgid "Couldn't open review mode."
 msgstr "Couldn't open review mode."
@@ -1503,6 +1521,11 @@ msgstr "Couldn't search"
 msgid "Couldn't send a message to {line}"
 msgstr "Couldn't send a message to {line}"
 
+#: src/features/chat/HandBackCards.tsx
+#: src/features/chat/useSendNow.ts
+msgid "Couldn't send now."
+msgstr "Couldn't send now."
+
 #: src/features/chat/InterruptResponseFeedback.tsx
 msgid "Couldn't send your answer."
 msgstr "Couldn't send your answer."
@@ -1538,15 +1561,20 @@ msgstr "Couldn't start this handoff."
 msgid "Couldn't stop the brief. Try again."
 msgstr "Couldn't stop the brief. Try again."
 
-#: src/components/app/composer/Composer.tsx
+#: src/features/chat/thread-controls/control-copy.ts
+msgid "Couldn't stop the compaction."
+msgstr "Couldn't stop the compaction."
+
+#: src/features/chat/HandBackCards.tsx
+#: src/features/chat/useChatStop.ts
 msgid "Couldn't stop the reply."
 msgstr "Couldn't stop the reply."
 
+#: src/features/chat/thread-controls/control-copy.ts
+msgid "Couldn't stop the switch."
+msgstr "Couldn't stop the switch."
+
 #: src/components/app/composer/Composer.tsx
-#: src/features/chat/thread-controls/QueuedControlRows.tsx
-#: src/features/chat/thread-controls/useSwitchView.ts
-#: src/features/chat/thread-controls/useThreadControls.ts
-#: src/features/chat/useChatStop.ts
 msgid "Couldn't stop. Try again."
 msgstr "Couldn't stop. Try again."
 
@@ -2635,6 +2663,10 @@ msgstr "Move row up"
 msgid "Move to {0}"
 msgstr "Move to {0}"
 
+#: src/features/chat/UserTurn.tsx
+msgid "Move to the message box"
+msgstr "Move to the message box"
+
 #: src/features/editor/surfaces/blocks/block-copy.ts
 msgid "Move up"
 msgstr "Move up"
@@ -2647,6 +2679,10 @@ msgstr "Move…"
 #: src/features/project/context/LinkUpdateNote.tsx
 msgid "Moved to {0}"
 msgstr "Moved to {0}"
+
+#: src/features/chat/useQueueControls.ts
+msgid "Moved to the message box"
+msgstr "Moved to the message box"
 
 #: src/features/chat/UserTurn.tsx
 msgid "Moved to the message box."
@@ -3621,8 +3657,16 @@ msgid "Send message"
 msgstr "Send message"
 
 #: src/features/chat/UserTurn.tsx
+msgid "Send now"
+msgstr "Send now"
+
+#: src/features/chat/UserTurn.tsx
 msgid "Sending"
 msgstr "Sending"
+
+#: src/features/chat/useSendNow.ts
+msgid "Sending now"
+msgstr "Sending now"
 
 #: src/features/chat/InterruptResponseFeedback.tsx
 msgid "Sending your answer…"
@@ -3813,6 +3857,10 @@ msgstr "Stop switch to draft mode"
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "Stop the handoff brief"
 msgstr "Stop the handoff brief"
+
+#: src/features/chat/UserTurn.tsx
+msgid "Stop the reply and send now"
+msgstr "Stop the reply and send now"
 
 #: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "stopped"
@@ -4559,7 +4607,8 @@ msgstr "Tokens before"
 msgid "Top up any time. Extra usage carries over month to month."
 msgstr "Top up any time. Extra usage carries over month to month."
 
-#: src/components/app/composer/Composer.tsx
+#: src/features/chat/HandBackCards.tsx
+#: src/features/chat/thread-controls/QueuedControlRows.tsx
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "Try again"
