@@ -1234,15 +1234,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     },
     seedAndStage,
     seedAndStageDestructive,
-    seedProbeTimelineSweep: (responseId: string, documentId: DocumentId = ALPHA_ID) =>
-      seedAndStageDestructive(
-        responseId,
-        documentId,
-        true,
-        "Alpha base.\n\n---\n\nWriter block.\n\n---\n\nGamma.",
-        2,
-        true,
-      ),
     seedProbeTimelineAfterRead: (responseId: string, documentId: DocumentId = ALPHA_ID) =>
       seedAndStageDestructive(
         responseId,

@@ -42,11 +42,30 @@ mechanism and response order. If no suitable seam is available, mark the step bl
 passed. Never tamper with the shared dev DB or another run's mock queues.
 
 The recipes below replace presentation test matrices. They are instructions, not executed
-passes. Run them on the merge candidate at desktop (1440x1000) and phone (390x844, touch)
-before calling those substitutions verified. Evidence includes commit, viewport, run-owned
+passes. Run them on the merge candidate before calling those substitutions verified, each at
+the viewport it names: desktop (1440x1000) owns typing, Ctrl+Z, the keyboard and the right-side
+dock; phone (390x844, touch) owns the version menu, the sheet's Discard and the row's Undo. The
+phone's review is read-only: nothing is typed there and Ctrl+Z does not exist, so a phone Discard
+is checked by its own Undo row, never by Ctrl+Z. A probe that names no viewport runs at both. Evidence includes commit, viewport, run-owned
 identities, request scope and order, screenshots, clean console and fresh manuscript and
 draft readback. Read-only API success does not prove writer interaction. Never cite
 `./mf thread send` or `thread tail` output as evidence of what the writer saw.
+
+### Setup: a reply held mid-write
+
+Probes G and H.8 and "Reply commands against a replying model" need a reply that is still writing
+when the writer acts. Build it once here. Use a draft-mode chat in a Work (`aiWriteMode: "draft"`
+at thread creation) and an earlier turn that already saved a draft edit to the document, so it
+is listed. Send one response with 150 chained `replace` calls on one document (each `find` is the
+previous `content`) with `./mf thread send --no-wait`. A reply saves once per response, after all
+its tools have run, so the mock's `delayMs` (which delays the model, not the tools) cannot hold it.
+
+The boundary is an observation, never a delay. Poll `/api/threads/<T>/snapshot` and act only after
+a read shows the turn still streaming with successful replace results at `phase: staged`; record
+that read (time and body) next to the action. To time a command against the server's own save,
+hold the exact request at the browser (Controlled failures above) and record the order. If no
+read shows `phase: staged` while the turn streams, or the request cannot be held, mark the step
+blocked. Do not pass it on a "click about a second later" timing.
 
 ### Identities and endpoints
 
@@ -141,8 +160,8 @@ follows it. Use a Work with two changes in Chapter A and one in Chapter B.
    once, the state line reads No changes left, live is unchanged (`./mf doc read`), and the durable
    draft fragment (an independent Postgres or Yjs read once the socket has synced, as K2 did)
    equals the base.
-   Ctrl+Z restores the whole proposal as one step. Repeat with one change's own Discard: one
-   Ctrl+Z restores that change.
+   On desktop, Ctrl+Z restores the whole proposal as one step. Repeat with one change's own
+   Discard: one Ctrl+Z restores that change.
 2. On the Work page, expand Chapter A and click one change's Discard. PASS: the row reads
    "Discarded" with Undo only after the draft already holds the discarded text; Undo restores
    the change. Repeat from the draft dock's expanded row.
@@ -159,6 +178,9 @@ follows it. Use a Work with two changes in Chapter A and one in Chapter B.
    the group disappears when the answer settles, and no navigation occurs. Live is unchanged.
 6. A new document's Discard (row, draft dock or Work page) is an item Discard: the server closes the
    item and its tab. Verify the draft list no longer has it and the file never reaches the tree.
+
+7. Phone (no typing, no Ctrl+Z). Discard happens in place and offers its own Undo; see
+   [Probe I.9](#probe-i-the-change-list-on-both-shells).
 
 ## Probe C: moves, Ctrl+Z and view handoff
 
@@ -288,12 +310,9 @@ rather than a refusal.
 
 1. A normal reply inserts a standalone "A hidden raven perched here." paragraph into Chapter B's
    draft.
-2. Start one model response with 150 chained `replace` tool calls on `raven` (each `find` is the
-   previous `content`), sent with `./mf thread send --no-wait`. A reply saves once per response,
-   after all its tools have run, so the mock's `delayMs` (which delays the model, not the tools)
-   cannot hold it. Read `/api/threads/<T>/snapshot` while it runs: it shows the turn streaming
-   with successful replace results at `phase: staged`.
-3. In the browser, Discard the whole added raven paragraph before the response commits.
+2. Hold a reply mid-write on `raven` as in [Setup: a reply held mid-write](#setup-a-reply-held-mid-write).
+3. Once the snapshot shows staged results, Discard the whole added raven paragraph in the browser
+   before the response commits.
 4. Let the response finish and expand "Edited 1 document". PASS: the staged writes commit
    (`phase: committed`) without any Discard refusal, the paragraph stays absent, the live-lineage
    result for the turn has `invisibleWrites: true`, the receipt says "Some of this reply's words
@@ -364,7 +383,7 @@ then use the browser only to exercise and inspect the surfaces.
    last change is handled, its draft dock also disappears, even while Lore pass's other changes remain.
 7. No draft dock or change list offers a Work-page footer. Ordinary Work navigation reaches Files and
    its Work-wide commands.
-8. While a scripted mock turn is actively generating (use the 150-call recipe in Probe G), the
+8. While a scripted mock turn is held mid-write ([setup](#setup-a-reply-held-mid-write)), the
    draft dock's Apply and Discard are disabled and click sends no request; the page states no reason.
    After the reply finishes they enable. Hold one preview or list read for a new-document-only
    chat: commands stay unavailable until the list arrives.
@@ -395,8 +414,8 @@ Use Probe H's two-document, two-chat fixture. This is a visual probe: desktop 12
 2. Open its review, then hide marks. PASS: the list stays reachable by keyboard (Tab and Enter);
    focusing a row closes it and focuses that change. Step Previous and Next change both ways,
    including wrap. On desktop shrink the pane until the bar moves below the text, then widen;
-   commands stay keyboard reachable and do not cover prose. On the phone open the keyboard: the
-   bar clears it and the home indicator. Measure 44px command and stepper touch targets. Check
+   commands stay keyboard reachable and do not cover prose. On the phone the review is read-only, so
+   no keyboard opens: check that the bar clears the home indicator. Measure 44px command and stepper touch targets. Check
    chat-name width and untitled chats still have a usable link. A one-change review has a list
    button but no stepper.
 3. Apply one row, recreate and Discard one row. PASS: the list stays open, the chosen change
@@ -430,16 +449,21 @@ Use Probe H's two-document, two-chat fixture. This is a visual probe: desktop 12
    field. On a draft-only review no Live version exists and Close review does not open a live
    room. On the phone, enter and leave review and another document while watching editor
    identity, scroll and selection: no unrelated document header and no remount-induced loss.
-   Discard with the sheet open: the row leaves immediately without a success toast; the sheet
-   closes when no changes remain. The version menu's Discard draft acts without an approval
-   dialog and moves on; the manuscript editor survives both and the keyboard does not
-   intercept controls.
+   Phone Discard (read-only review; no typing or Ctrl+Z). From the sheet, Discard one change: the
+   row leaves immediately without a success toast and the draft is already edited in place. From the
+   version menu, Discard draft acts without an approval dialog. Either way a "Discarded" row with
+   its own Undo appears under the editor; Undo restores the text, and it still works after the sheet
+   closes (it closes when no changes remain). The manuscript editor survives both.
 10. Bar placement and tones. At desktop wide, narrow and scrolled pane sizes, resize repeatedly:
     the bar moves between margin and block, never covers or clips prose, and keyboard activation
     reaches the commands. Inspect a shared change, a writer-only edit and an unattributed removal:
     only red and green appear, a writer's edit is an ordinary green change with no chat name, and
     a neutral removal stays visible without an invented author. Use a screenshot plus a fresh
     list read, not guessed geometry.
+
+11. Phone last change and hints. Review the **last** change in the sheet: the sheet closes and does
+    not repeat the attribution line. With two drafts on the phone, one live and one under review,
+    the hint names **the other draft**, never the one being reviewed.
 
 ## Probe J: Work page commands and held failures
 
@@ -451,8 +475,11 @@ Continue with Probe H's fixture (recreate proposals between actions).
    message.
 2. Filter search so one file is hidden. The All changes menu still says Apply all changes and
    Discard all changes (no counts) and handles EVERY document of that Work, new documents
-   included. Recreate and Discard all changes: the inline question appears; Keep cancels without
-   a request; confirming handles all with no navigation.
+   included. Apply all changes applies every listed draft, including the hidden file. Recreate and
+   Discard all changes: the inline question ("Discard all changes?") appears; Keep cancels without
+   a request; confirming discards nothing before **Discard**, then closes the Work's draft with one
+   command (a reply still running opens a new draft), with no navigation. A filter alone applies
+   nothing. A new document's row closes on the server through its own Discard (Probe B.6).
 3. For a Work owned by neither the current chat nor the Editor, commands act in that Work with no
    cross-Work request. Inspect fresh live and draft reads through `./mf`; cached DOM cannot
    certify persistence.
@@ -476,6 +503,10 @@ Continue with Probe H's fixture (recreate proposals between actions).
    without navigating and recheck after 30 s. The Work's draft is closed, so record what A shows
    (its room is superseded and the tab asks the server again). PASS: live is unchanged, the
    console is clean, and nothing stays pending. Control with no held writing: record the same.
+
+8. A refused row. Press **Apply** on a row and, while it is in flight, have a peer undo that change so
+   the Apply is refused. PASS: the file **stays listed with an alert saying why**, even after the
+   list stops returning it.
 
 ## Probe K: chat links from change rows
 
@@ -542,10 +573,9 @@ Work page's Apply all and Discard all keep working. Use a draft-mode chat in a W
 (desktop 1440x900). `./mf` sets up the Work, the thread and the scripted turns, and reads durable
 state (`doc read`, the drafts list, `thread view`) after each click.
 
-**Holding a reply mid-write.** Send one response with 120 to 300 chained `replace` calls on one
-document (each `find` is the previous `content`) with `./mf thread send --no-wait`, and click
-about one second later. An earlier turn must already have saved a draft edit to the document so
-it is listed.
+**Holding a reply mid-write.** Build it with [Setup: a reply held mid-write](#setup-a-reply-held-mid-write)
+and start each step below only after the recorded `phase: staged` read. Without that boundary the
+steps are blocked, not passed.
 
 1. **Draft dock disabled during the reply.** Open the Work's chat. While the reply runs, the draft dock's
    Apply and Discard are disabled. PASS: clicking sends no request. After the reply finishes

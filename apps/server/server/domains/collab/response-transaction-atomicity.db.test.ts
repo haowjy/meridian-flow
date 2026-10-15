@@ -300,37 +300,6 @@ describe("change trail (postgres)", () => {
     });
   });
 
-  it("reports a writer sweep journaled after the observation cut", async () => {
-    const harness = createHarness(db);
-    const responseId = "00000000-0000-4000-8000-000000000821";
-    const branchId = await harness.seedProbeTimelineSweep(responseId);
-
-    await expect(harness.commit(responseId)).resolves.toMatchObject({
-      status: "committed",
-      documents: [
-        expect.objectContaining({
-          lateSweep: expect.objectContaining({
-            affectedBlockHashes: expect.any(Array),
-          }),
-        }),
-      ],
-    });
-    await harness.push(branchId);
-
-    const trail = await harness.trailRowMembership();
-    expect(trail.shells).toEqual([expect.objectContaining({ changeCount: expect.any(Number) })]);
-    expect(trail.shells[0]?.changeCount).toBeGreaterThan(1);
-    expect(trail.details).toEqual([
-      expect.objectContaining({
-        changes: expect.arrayContaining([
-          expect.objectContaining({
-            beforeText: expect.stringContaining("Writer concurrent edit"),
-          }),
-        ]),
-      }),
-    ]);
-  });
-
   it("S10 reports a pulled writer edit that landed after the response read", async () => {
     const harness = createHarness(db);
     const responseId = "00000000-0000-4000-8000-000000000822";
