@@ -1,5 +1,9 @@
-<!-- Describe the PR's final state, not its history. Give reviewers enough
-     context to understand the change.
+<!-- Write for a reader who knows nothing about this area: not the project's
+     history, not the names of its parts, not the earlier PRs. Catch them up
+     quickly. Explain each term in a few words the first time it appears, and
+     link what you refer to (issues, PRs, KB decisions, code, screenshots)
+     instead of assuming the reader remembers it. Describe the PR's final
+     state, not its history.
 
      Every ## section below is required, and the PR-body check fails when one
      is missing. When a section doesn't apply, keep its heading and write
@@ -81,13 +85,17 @@
 
 ## How the code changed
 
-<!-- Explain briefly how the code works now and what changed in its structure:
-     which models, boundaries, data flow or ownership moved, and why this shape.
-     A reader who hasn't opened the diff should come away understanding how it
-     works. Use short bullets or sentences, one idea each. Keep it short: no
-     file-by-file lists, and name a file only where it helps the explanation.
-     Say what was deleted or simplified. Track temporary code with its removal
+<!-- Explain how the code's structure changed, not which lines changed. Say
+     which module owns which decision now, what concept, boundary or seam is
+     new, how data and control flow through it, and what was merged or deleted.
+     Give the shape before and after, and why this shape beat the obvious
+     alternative. A reader who hasn't opened the diff should be able to sketch
+     the new structure. Use short bullets, one idea each. Don't list edits
+     ("added a prop", "added a check") or files; name a module or symbol only
+     where it anchors the structure. Track temporary code with its removal
      trigger. -->
+
+- **<structural change>.** Before: <who owned what>. Now: <who owns it, and why this shape>.
 
 ## DB Changes
 
