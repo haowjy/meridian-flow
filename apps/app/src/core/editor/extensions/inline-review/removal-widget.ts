@@ -19,12 +19,6 @@ export const REMOVAL_TOGGLE_CLASS = "meridian-review-removal-toggle";
 /** The removal sits before punctuation or a line end, so it keeps no air after it. */
 export const REMOVAL_TIGHT_CLASS = "meridian-review-removal-tight";
 export const REMOVAL_TEXT_CLASS = "meridian-review-removal-text";
-/**
- * On a block removal: how many top-level blocks of the document it stands for.
- * Said by the widget, not counted from its children (a fold has none, an open one
- * also holds a button), so what reads a captured page counts its blocks right.
- */
-export const REMOVED_BLOCKS_ATTR = "data-review-removed-blocks";
 /** A long removal shown as its label only: its text is in the widget, hidden. */
 export const REMOVAL_FOLDED_CLASS = "meridian-review-removal-folded";
 
@@ -157,7 +151,6 @@ export function createRemovalElement(
     .join(" ");
   root.setAttribute("contenteditable", "false");
   root.setAttribute(options.changeAttr, plan.changeId);
-  if (plan.block) root.setAttribute(REMOVED_BLOCKS_ATTR, String(plan.paragraphs.length));
 
   if (collapsible) {
     const toggle = doc.createElement("button");

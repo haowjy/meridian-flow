@@ -15,4 +15,4 @@ export {
   removedParagraphs,
   sameContent,
 } from "./model";
-export { BAR_SLOT_ATTR, REMOVED_BLOCKS_ATTR } from "./removal-widget";
+export { BAR_SLOT_ATTR } from "./removal-widget";

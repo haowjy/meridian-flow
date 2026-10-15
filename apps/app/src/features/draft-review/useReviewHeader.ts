@@ -1,7 +1,6 @@
 /**
  * useReviewHeader — everything a review header needs that is not layout: the
- * open review's changes, the next draft file, and the whole-draft commands that
- * move on to it.
+ * open review's changes, the next draft file, and the whole-draft commands.
  *
  * The identity row's controls and the phone header are two layouts over this one
  * model, so Apply draft, Discard draft, "No changes left" and the refusal line
@@ -58,8 +57,8 @@ export type ReviewHeaderModel = {
   dismissAppliedOver: () => void;
   /**
    * The Work's other listed drafts that hold a refusal or a lost answer: Apply
-   * draft and Apply all move on (or finish) while the command runs, so the
-   * review the writer is in must still say which drafts did not apply.
+   * all acts on every draft, so the review the writer is in must still say which
+   * drafts did not apply.
    */
   failedElsewhere: { row: ReviewFileTarget; failure: DraftCommandFailure }[];
   showLive: () => void;
@@ -70,7 +69,7 @@ export type ReviewHeaderModel = {
 /**
  * What the Work's drafts hold as refused or lost, as the review of
  * (`documentId`, `itemKey`) reads it: its own draft's failure, every listed
- * draft's (a draft the review moved on from still says it was refused), and
+ * draft's (a draft the writer left still says it was refused), and
  * the other drafts' separately. Pure reads of the command records, so the
  * identity row's notices can read them beside the header model.
  */

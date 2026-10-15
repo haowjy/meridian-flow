@@ -1,13 +1,12 @@
 /**
  * MobileDocumentReview — wraps a phone document's editor with the review's
  * chrome while that document is under inline review: the header above it, the
- * selected change's bar below it, this document's change-list sheet over it,
- * the toast.
+ * selected change's bar below it, and this document's change-list sheet over it.
  * With no review of this document it is only the column the editor sits in.
  *
  * Every command goes through the same controller the desktop uses
  * (`useReviewHeader`, `useReviewChanges`), so optimistic Apply and Discard,
- * refusals, toasts, the entry hold and "No changes left" behave alike on both.
+ * refusals and "No changes left" behave alike on both.
  * The header and bar appear with the painted review (`inlineReview.shown`),
  * never over the live text that is held until then.
  *
