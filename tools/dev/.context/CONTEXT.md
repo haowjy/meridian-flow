@@ -48,6 +48,17 @@ executable command may contain secrets and is sent only to tmux; display output
 and `.meridian/dev-session.json` contain the redacted command. The internal SSR
 API origin is the paired worktree server origin, not the public app URL.
 
+`resolveCheckoutPortlessPrefix` owns hostname derivation for startup, `./mf`,
+and browser tests. Only the primary checkout gets bare names. Linked detached
+checkouts include their session slug and path hash, so equal commits cannot
+alias each other. Commands use Portless named mode, not its branch inference;
+session metadata retains the prefix used by a running stack across Git changes.
+`dev-session-state.ts` validates the checkout-bound launch record and discovers
+its live tmux session. Startup, `./mf`, and browser discovery use that active
+identity, not current HEAD; Git derives only the next launch's identity. A
+single resolved `DevSessionPlan` supplies commands, ports and verification
+expectations. New/reused sessions share one readiness-and-publication pipeline.
+
 Portless is the URL source of truth. `pnpm dev` reports `started` only after
 expected routes, real HTTP readiness probes, and (when enabled) verified
 Tailscale bindings pass. Startup failures identify the repository-relative
@@ -56,6 +67,12 @@ stale routes; it never calls a global reset or removes a live route. `--restart`
 owns its configured ports: after tmux teardown it SIGTERMs every discovered
 holder, waits briefly, then SIGKILLs stragglers, with discovery never gated on
 tmux, cwd, or ancestry; a bound port it cannot inspect aborts startup loudly.
+`--force` requests restart semantics too. Both explicitly take over expected
+Portless hostnames with warnings identifying the old PID, cwd when inspectable,
+and backend port; ordinary startup refuses occupied names. Takeover uses
+Portless's route-locked `--force` registration, not a global proxy reset.
+Readiness requires positive route PIDs with cwd evidence inside this checkout,
+and exact configured backend ports, before HTTP probes may pass.
 
 App boot smokes trust only a live spawned child and the exact shared route
 contract. A foreign listener or generic non-5xx response is not evidence of a
@@ -69,6 +86,14 @@ revalidates ownership, liveness, and the planned ref OID before destructive
 steps; and performs targeted stop, database removal, worktree removal, work-item
 completion, and ref deletion in that order. Batch cleanup needs explicit risk
 acknowledgement and exact merged-PR evidence (ancestry alone is not enough).
+Target-only `--force` permits managed dev-stack and Nx shutdown despite cwd
+occupants, then rechecks that only known shell/tmux executables remain before
+dropping the database and removing the checkout. It never signals those user
+shells/panes and prints their PIDs and tmux pane IDs so owners can `cd` out of
+the deleted directory. Unknown processes, unreadable attributed processes,
+inspection failures, active work items and dirty state still block. Force does
+not bypass merge evidence, branch/HEAD revalidation or structural protections,
+and is rejected with `--auto`. Git worktree removal itself never uses `--force`.
 Never infer staleness from branch ancestry or a branch name, and add no cleanup
 script that bypasses the shared resolver in `lib/worktree-cleanup.ts`. Prune a side-lane
 branch when it merges into its integration branch: once that branch is

@@ -49,6 +49,7 @@ export interface CleanupTarget {
 
 export type CleanupActionKind =
   | "stop-dev"
+  | "stop-nx"
   | "drop-database"
   | "remove-worktree"
   | "delete-branch"
@@ -92,6 +93,7 @@ export type CleanupEligibilityValidator = (
 
 export type CleanupReadinessValidator = (
   target: CleanupTargetPlan,
+  action: CleanupAction,
 ) => AutoCleanupReadinessDecision | Promise<AutoCleanupReadinessDecision>;
 
 export interface CleanupExecutionHooks {
@@ -375,6 +377,11 @@ export function resolveAutoTargets(context: CleanupContext): CleanupTarget[] {
 function actionsForTarget(primaryWorktreePath: string, target: CleanupTarget): CleanupAction[] {
   const actions: CleanupAction[] = [
     { kind: "stop-dev", cwd: target.worktree.path, command: ["pnpm", "dev", "--stop"] },
+    {
+      kind: "stop-nx",
+      cwd: target.worktree.path,
+      command: ["pnpm", "exec", "nx", "daemon", "--stop"],
+    },
     { kind: "drop-database", cwd: target.worktree.path, command: ["pnpm", "dev:db:drop", "--yes"] },
     {
       kind: "remove-worktree",
@@ -438,8 +445,8 @@ export async function executeCleanupPlan(
   for (const target of plan.targets) {
     hooks.onTargetStart?.(target);
     for (const action of target.actions) {
-      if (action.kind === "stop-dev" || action.kind === "drop-database") {
-        const readiness = await validateReadiness(target);
+      if (["stop-dev", "stop-nx", "drop-database", "remove-worktree"].includes(action.kind)) {
+        const readiness = await validateReadiness(target, action);
         if (!readiness.ready) {
           return {
             ok: false,
