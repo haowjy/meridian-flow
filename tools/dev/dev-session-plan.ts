@@ -1,20 +1,21 @@
 import { resolveAppEnvPassthroughKeys } from "./dev-app-env-passthrough";
 import type { DevMode } from "./dev-mode";
+import type { DevSessionMetadata } from "./dev-session-state";
 import { resolveDevRuntimeEnvPassthroughKeys } from "./lib/dev-env";
-import type { SharedDevServiceName, SharedDevServicePorts } from "./lib/dev-share-ports";
-import type { ExpectedServiceName, ExternalDevRoute } from "./portless-routes";
+import {
+  resolveSharedDevServicePorts,
+  type SharedDevServiceName,
+  type SharedDevServicePorts,
+} from "./lib/dev-share-ports";
+import type { ExpectedServiceName } from "./portless-routes";
 
 const logPath = "logs/portless.log";
 
-export interface DevSessionMetadata {
-  sessionName: string;
-  mode: DevMode;
-  branch: string;
-  worktreePrefix?: string;
-  /** Redacted display command only. The executable command may contain secrets and is never persisted. */
-  command: string;
-  createdAt: string;
-  externalRoutes?: ExternalDevRoute[];
+export interface DevSessionPlan {
+  readonly session: Omit<DevSessionMetadata, "command" | "externalRoutes">;
+  readonly command: DevSessionCommand;
+  readonly sharedPorts: readonly SharedDevServicePorts[];
+  readonly expectedPorts: Partial<Record<ExpectedServiceName, number>>;
 }
 
 interface DevServiceSpec {
@@ -269,28 +270,31 @@ export function sharedServiceNamesForMode(mode: DevMode): SharedDevServiceName[]
   ).map((service) => service.serviceName);
 }
 
-export function buildMetadata({
-  branch,
-  sessionName,
-  mode,
-  displayCommand,
-  externalRoutes = [],
-  worktreePrefix,
+export function createDevSessionPlan({
+  repoRoot,
+  session,
+  force = false,
 }: {
-  branch: string;
-  sessionName: string;
-  mode: DevMode;
-  displayCommand: string;
-  externalRoutes?: ExternalDevRoute[];
-  worktreePrefix?: string;
-}): DevSessionMetadata {
+  repoRoot: string;
+  session: DevSessionPlan["session"];
+  force?: boolean;
+}): DevSessionPlan {
+  const sharedPorts = resolveSharedDevServicePorts({
+    mode: session.mode,
+    worktreeKey: repoRoot,
+    services: sharedServiceNamesForMode(session.mode),
+  });
   return {
-    sessionName,
-    mode,
-    branch: branch || "detached",
-    command: displayCommand,
-    createdAt: new Date().toISOString(),
-    externalRoutes,
-    worktreePrefix,
+    session,
+    sharedPorts,
+    expectedPorts: Object.fromEntries(
+      sharedPorts.map((entry) => [entry.service, entry.appBackendPort]),
+    ),
+    command: createDevSessionCommand({
+      mode: session.mode,
+      sharedPorts,
+      worktreePrefix: session.worktreePrefix,
+      force,
+    }),
   };
 }
