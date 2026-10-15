@@ -4,9 +4,9 @@
  */
 import { documentTitleFromUri } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import type { ContextTab } from "@/client/stores";
 import { sameServerContextTabLocator } from "@/client/stores";
+import { isProjectRouteMasked, type ProjectRouteMask } from "../routing/ProjectRouteBoundary";
 
 export type OptimisticContextTab = { id: string; name: string };
 
@@ -28,54 +28,47 @@ export type ContextPaneState =
   | { kind: "dead-route"; destination: MissingDestination }
   | { kind: "route-error" };
 
+/**
+ * The pane presents the route's verdict; it never re-decides whether the document exists.
+ * Admission (address, catalog, draft and tab) belongs to the route and reaches here as
+ * `mask.issue`: only a terminal issue renders missing or error content, and everything
+ * short of one is a neutral wait for the destination's tab.
+ */
 export function deriveContextPaneState({
   activeTab,
   tabs,
-  masked,
+  mask,
   destination,
-  catalog,
-  isFetching,
-  isError,
   removalFenced,
 }: {
   activeTab: ContextTab | null;
   tabs: readonly ContextTab[];
-  /** The destination's body is masked: the retained tab is not where the writer is going. */
-  masked: boolean;
+  /** The route's verdict on the Editor destination. */
+  mask: ProjectRouteMask;
   destination: {
     path: string;
     scheme: ProjectContextTreeScheme;
     workId?: string;
     rootThreadId?: string;
-    /**
-     * The review the address is bound to. An address is live or review, and only a live
-     * address can be dead: a review-bound route never consults the live catalog, which
-     * never lists a draft-only document.
-     */
-    review: { itemKey: string } | null;
     optimisticTab: OptimisticContextTab;
   } | null;
-  catalog: CatalogContextView | null;
-  isFetching: boolean;
-  isError: boolean;
   removalFenced: boolean;
 }): ContextPaneState {
-  if (activeTab && !masked) return { kind: "document", tab: activeTab };
+  if (activeTab && !isProjectRouteMasked(mask)) return { kind: "document", tab: activeTab };
   if (!destination || removalFenced) return { kind: "empty-workspace" };
 
-  const routeExists = catalog?.findPath(destination.path)?.kind === "file";
-  if (destination.review || routeExists || isFetching || (!catalog && !isError)) {
-    const settledTab =
-      tabs.find((tab) => tab.kind !== "new" && sameServerContextTabLocator(tab, destination)) ??
-      null;
-    return { kind: "optimistic-loading", tab: destination.optimisticTab, settledTab };
+  if (!mask.recovery) {
+    if (mask.issue === "unavailable")
+      return {
+        kind: "dead-route",
+        destination: {
+          name: documentTitleFromUri(destination.path) ?? destination.optimisticTab.name,
+          scheme: destination.scheme,
+        },
+      };
+    if (mask.issue === "error") return { kind: "route-error" };
   }
-  if (isError) return { kind: "route-error" };
-  return {
-    kind: "dead-route",
-    destination: {
-      name: documentTitleFromUri(destination.path) ?? destination.optimisticTab.name,
-      scheme: destination.scheme,
-    },
-  };
+  const settledTab =
+    tabs.find((tab) => tab.kind !== "new" && sameServerContextTabLocator(tab, destination)) ?? null;
+  return { kind: "optimistic-loading", tab: destination.optimisticTab, settledTab };
 }

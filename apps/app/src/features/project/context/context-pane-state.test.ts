@@ -7,28 +7,37 @@ const retained = { kind: "tracked", documentId: "old", name: "Old" } as ContextT
 const destination = {
   path: "/new.md",
   scheme: "manuscript" as const,
-  review: null,
   optimisticTab: { id: "optimistic:new", name: "New" },
 };
+const state = (
+  mask: Parameters<typeof deriveContextPaneState>[0]["mask"],
+  over: Partial<Parameters<typeof deriveContextPaneState>[0]> = {},
+) =>
+  deriveContextPaneState({
+    activeTab: null,
+    tabs: [],
+    mask,
+    destination,
+    removalFenced: false,
+    ...over,
+  });
 
-it("a masked destination shows its own pending tab, never the retained document", () => {
-  const state = (masked: boolean) =>
-    deriveContextPaneState({
-      activeTab: retained,
-      tabs: [retained],
-      masked,
-      destination,
-      catalog: null,
-      isFetching: false,
-      isError: false,
-      removalFenced: false,
-    });
-  expect(state(false)).toEqual({ kind: "document", tab: retained });
-  expect(state(true)).toEqual({
+it("a masked destination shows its own pending tab, and only a terminal verdict says missing or failed", () => {
+  const withRetained = (mask: Parameters<typeof state>[0]) =>
+    state(mask, { activeTab: retained, tabs: [retained] });
+  expect(withRetained({})).toEqual({ kind: "document", tab: retained });
+  expect(withRetained({ issue: "loading" })).toEqual({
     kind: "optimistic-loading",
     tab: destination.optimisticTab,
     settledTab: null,
   });
+  expect(state({ issue: "loading" }).kind).toBe("optimistic-loading");
+  expect(state({}).kind).toBe("optimistic-loading");
+  expect(state({ issue: "unavailable" })).toMatchObject({
+    kind: "dead-route",
+    destination: { name: "new", scheme: "manuscript" },
+  });
+  expect(state({ issue: "error" }).kind).toBe("route-error");
 });
 
 it("a settled tab for the destination is the strip's one entry while the body loads", () => {
@@ -39,34 +48,8 @@ it("a settled tab for the destination is the strip's one entry while the body lo
     path: "/new.md",
     name: "New",
   } as ContextTab;
-  const state = deriveContextPaneState({
-    activeTab: null,
-    tabs: [retained, settled],
-    masked: false,
-    destination,
-    catalog: null,
-    isFetching: true,
-    isError: false,
-    removalFenced: false,
+  expect(state({ issue: "loading" }, { tabs: [retained, settled] })).toMatchObject({
+    kind: "optimistic-loading",
+    settledTab: settled,
   });
-  expect(state).toMatchObject({ kind: "optimistic-loading", settledTab: settled });
-});
-
-it("a review-bound route never derives dead-route from the settled live catalog", () => {
-  const settledWithoutIt = { findPath: () => null } as unknown as Parameters<
-    typeof deriveContextPaneState
-  >[0]["catalog"];
-  const state = (review: { itemKey: string } | null) =>
-    deriveContextPaneState({
-      activeTab: null,
-      tabs: [],
-      masked: true,
-      destination: { ...destination, review },
-      catalog: settledWithoutIt,
-      isFetching: false,
-      isError: false,
-      removalFenced: false,
-    });
-  expect(state(null).kind).toBe("dead-route");
-  expect(state({ itemKey: "d:doc" }).kind).toBe("optimistic-loading");
 });
