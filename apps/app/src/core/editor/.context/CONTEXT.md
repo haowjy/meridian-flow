@@ -59,7 +59,7 @@ barrier that drains that open.
   and `buildDocumentSchema()` are built separately, so adding a node or
   attribute requires parity in both. Collaboration uses one
   `PROSEMIRROR_FRAGMENT_NAME` fragment and one sync path.
-- `EditorMountIdentity` distinguishes live and draft (`branch:<draftId>`) rooms
+- `EditorMountIdentity` distinguishes live and draft (per-document text branch) rooms
   and includes every construction fact. `editorMountKey()` becomes the React
   key; a reopened session adds its Y.Doc `guid` so a concrete room swap remounts
   TipTap. Draft identity includes both `itemKey` and `roomName`.
@@ -108,7 +108,7 @@ presence write path or cached client ID creates ghost carets.
 Live peer marks, session markers, and review decorations are projections, never
 manuscript content. The session marker store is ephemeral and group revisions
 fence delayed replays. Peer-mark popovers navigate to durable trail receipts;
-The writer removes an AI change by discarding it in the draft or with Ctrl+Z.
+The writer removes an AI change by discarding it in the draft; Ctrl+Z in that surface restores the Discard.
 
 ## Anchors and holds
 
@@ -128,15 +128,14 @@ identity in anchors or holds.
 
 - Disable TipTap's trailing node and local undo defaults where collaborative
   behavior supplies the contract. The Yjs UndoManager and the dedicated keymap
-  own undo, including recovery from AI writes.
+  own undo of the writer's own edits and Discards; Apply and arbitrary AI writes are not in it.
 - Undo is per surface, not per room. `UndoOwnershipExtension` gives each surface
   (the Editor, the dock) its own transaction origin, stamped on its binding's
   writes and its Discards, and its UndoManager keeps only those, so Ctrl+Z in one
   view never undoes the other's typing. The history belongs to
   `DocumentSession.historyFor(surface)`, so a presenter handoff keeps it. The
   stamp comes from an exact-version `pnpm patch` of `@tiptap/y-tiptap`; bumping
-  it fails the install until the patch is re-ported. After patching, run
-  `pnpm dev:restart`.
+  it fails the install until the patch is re-ported.
 - Slash is one spec over the shared suggestion lane. Its predicate is the whole
   trigger envelope; insertion strategy determines target, schema availability,
   and caret placement. A pick in a table cell remains in that cell. Image picks
@@ -213,7 +212,7 @@ keyboard, pointer, drop, or branch-recovery answer.
 
 - Branch retirement never replays the retired AI snapshot, and nothing is
   carried to a successor room. The transport owns the outbox; `BranchRoomPool`
-  holds one room per draft id and drains it on release.
+  holds one room per text branch id (server-returned) and drains it on release.
 - `resetDisposition` gives the reset its meaning: `superseded` and `rebuild`
   keep unacknowledged updates for retirement (the draft closed), `refused` rejects
   pending edits, and `schema` fences the room.

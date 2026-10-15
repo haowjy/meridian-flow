@@ -1,6 +1,6 @@
 # Turn edit receipts
 
-This page defines the chat contract for turn-edit records. The card has no Undo or Redo: the writer reverses an AI change by discarding it in the draft or with Ctrl+Z in the editor.
+This page defines the chat contract for turn-edit records. The card has no Undo or Redo: review actions live in draft review.
 
 The per-turn receipt is a quiet, default-collapsed record for live and pending draft
 document edits. Its header counts documents ("Edited 1 document") and never

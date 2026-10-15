@@ -60,10 +60,10 @@ A new document has server document/Yjs state without live catalog membership.
 Its draft-only tab is not persisted and is the document's one workspace tab;
 closing review does not discard the draft. Apply promotes through the existing
 live presentation only when document, Work and draft match.
-`DraftOnlySettlement` observes each represented Work independently of selection:
-after list omission a fresh live catalog read decides (membership promotes, fresh
-absence closes, a failed read preserves). A gone/404 read is not remote Discard
-evidence. The dock persists its review address and one `reviews` entry, and
+`DraftOnlySettlement` observes each represented Work independently of selection
+and promotes a draft-only tab once the replica shows its document. It never
+infers closure from a list omission or a gone/404 read; the item's own command
+outcome removes the presentation. The dock persists its review address and one `reviews` entry, and
 restore admits the address with the server.
 
 ## Durable decisions and verification

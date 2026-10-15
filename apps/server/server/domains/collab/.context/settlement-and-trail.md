@@ -57,7 +57,7 @@ The change trail is the durable publication record. It carries document-scoped
 Yjs block identities `{ clientID, clock }`, nullable before/after identities,
 and authorized evidence for receipts and navigation. Display hash prefixes and
 serialized prose are not durable identity. Before/After evidence is read-only;
-the writer reverses an AI change by discarding it in the draft or with Ctrl+Z.
+review actions live in draft review.
 
 Trail detail authorization precedes detail materialization: each occurrence
 resolves to available, deleted, or denied before any manuscript-bearing title

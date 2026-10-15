@@ -81,7 +81,7 @@ snapshot. It is optional and may fall back to an in-memory map.
 
 The facade exposes read/write, recovery, response commit/rollback, prepared
 leases, response-document discovery, and thread invalidation. The host chooses
-destination, stack policy, immutable receipt persistence, notices, and
+destination, inverse policy, immutable receipt persistence, notices, and
 publish-after-commit. `responseIdentity` separates provider authorship from
 rotated helper scope. No public method reconstructs an UndoManager from journal
 history.

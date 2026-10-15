@@ -29,7 +29,7 @@ state materialization, encodes, persistence, and thread-peer pulls before
 choosing an incremental checkpoint or captured-state design. Keep delete-only
 changes, the full-state branch CAS, and the final concurrency fence intact.
 
-## Unused columns left by the diff-based review landing
+## Unused columns
 
 `branch_write_journal.reviewed_by`, `reviewed_at` and `pushed_at` have no writer;
 retiring them needs a migration, and `push_lineage.journal_ids` (`NOT NULL`,

@@ -3,8 +3,8 @@
 Shared review state and presentation for manuscript, document-change, Work, and
 chat surfaces. A change is a group of the text diff between the draft's
 `review_base` fragment and its `prosemirror` fragment, computed in the browser;
-there is no server preview. Chat and Work can command a draft without opening a
-review or joining a room.
+there is no server preview. Chat and Work can send a draft's server commands without opening a
+review or joining a room (text Discard is local and uses a headless room).
 
 ## Ownership boundary
 

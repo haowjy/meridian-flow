@@ -14,8 +14,8 @@ review settlement, and Hocuspocus admission. It composes
   and the server stores no review operations, classes or tokens.
 - A text branch shares no Yjs lineage with live: it catches up by a three-way
   content rebase on live's certified cut, never a Yjs pull (thread peers still
-  pull). A stale peer frame is rebased onto the current text; what cannot be
-  placed exactly is recovered as written text, never silently dropped.
+  pull). A late peer's stale frame is rebased onto the current text: its
+  surviving typing is recovered as paragraphs, and its stale deletions are never replayed.
 - Apply is a content merge into live's current text and never closes the draft.
   Discard is a writer edit inside the room, undone by Ctrl+Z, with no command;
   only item Discard and Discard all are kernel commands, and they only close.
@@ -57,6 +57,5 @@ The focused references are [branch records](.context/branch-model-and-records.md
 [WebSocket concurrency](.context/websocket-concurrency.md).
 The visual references are [collab-domain.html](.context/collab-domain.html)
 and [draft-live-model.html](.context/draft-live-model.html).
-Deferred work is in [FUTURE.md](.context/FUTURE.md), [TODO.md](.context/TODO.md),
-and [TODO](.context/TODO). Related boundaries are [`domains/notices`](../notices/AGENTS.md)
+Deferred work is in [FUTURE.md](.context/FUTURE.md), and [TODO.md](.context/TODO.md). Related boundaries are [`domains/notices`](../notices/AGENTS.md)
 and [`@meridian/agent-edit`](../../../../../packages/agent-edit/AGENTS.md).

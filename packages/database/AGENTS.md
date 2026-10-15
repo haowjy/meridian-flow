@@ -26,12 +26,10 @@ domain persistence and transaction propagation live in the server.
   server version. Reset only the current checkout's own dev database when the
   baseline requires it; legacy imports are a separate ETL.
 - **Data steps.** Code that must run between two SQL migrations is a versioned
-  data step (`tools/dev/lib/migration-data-steps.ts`, implementation in
-  `src/migration-steps/`) anchored by the marker `-- data-step: <id>@<version>`
-  on the first line of the migration it must precede. `pnpm db:migrate` alone
+  data step (implementation in `src/migration-steps/`). `pnpm db:migrate` alone
   runs it; changing its semantics means a new version, marker and migration.
-  The diff-based review base conversion runs this way, and migrations
-  `0050`–`0055` are that upgrade. Details in `.context/CONTEXT.md`.
+  The review-base conversion runs this way (`0050`–`0055`). Details in
+  `.context/CONTEXT.md`.
 - Rollup columns are maintained by application repositories/projectors, not
   database triggers, except for the documented thread activity projection.
   Yjs head/checkpoint relationships and immutable edit storage are contracts;

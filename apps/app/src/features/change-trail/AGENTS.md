@@ -5,8 +5,7 @@ surface. Swept elevation is live-session marker state, while trail evidence
 retains the change's Before excerpt and navigation anchor.
 
 - Receipt rows and peer-mark popovers read the same Before/After evidence.
-  Trail evidence is read-only; the writer reverses an AI change by
-  discarding it in the draft or with Ctrl+Z.
+  Trail evidence is read-only; review actions live in draft review.
 - Keep one cache entry per `(thread, trail)`. Settled evidence does not refetch
   on reopen; a shell-version bump or lost document access invalidates it.
 - Prefetch while a mark is visible so disclosure does not fill after opening.

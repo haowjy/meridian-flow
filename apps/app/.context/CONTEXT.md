@@ -64,8 +64,7 @@ structured authoring snapshot before navigation; acceptance retires it,
 rejection stays on its row, and ambiguity retains it for replay. See the
 [submission guide](../src/client/chat-submissions/AGENTS.md).
 
-Trail evidence and peer marks are read-only; the writer reverses an AI change by
-discarding it in the draft or with Ctrl+Z. `DocumentSession` owns collaboration state only, with no parallel
+Trail evidence and peer marks are read-only; review actions live in draft review. `DocumentSession` owns collaboration state only, with no parallel
 safety-notice presentation model. Collaboration self-suppression uses internal Meridian `UserId`, not
 the WorkOS external identity.
 

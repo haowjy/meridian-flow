@@ -38,12 +38,12 @@ server-owned `review_base` (`projectReview` in `@meridian/agent-edit/diff`). The
 server stores no review operations, classes, tokens or evidence, and a review read
 needs no repeatable-read snapshot. It answers item metadata (`roomName`, `isNew`,
 `wholeItem`, `hasChanges`; a closed item is `gone`), the list (draft tree merged
-with text branches, each row carrying the location token, the one freshness token
-left: live text moving never refuses), the commands, and the chat-attribution hint.
+with text branches, each row carrying the location token; live text moving never refuses), the commands, and the chat-attribution hint.
 Apply is a content merge of the change the writer saw into live's current text.
-Discard of a change or draft is a writer edit inside the room, undone by Ctrl+Z,
-with no command. Only item Discard and Discard all are kernel commands; they close
-branches and never reset text from live.
+Discard of a change or draft is a writer edit inside the room, undone by that
+surface's Ctrl+Z, with no command. Apply is server-authored and has no Ctrl+Z. Only
+item Discard and Discard all are kernel commands; they close branches and never
+reset text from live.
 
 Closing a branch retires only the peers whose upstream is that branch, after
 commit. A fresh peer in the same thread and peers for other Works survive.
@@ -57,8 +57,8 @@ document to its first grant. The response transaction saves all live and draft
 journals, receipt records, and callbacks together. Live rooms publish only
 after commit, so rollback is invisible to open editors.
 
-A chat's write mode decides only where its new AI writes go (D62); chats in
-one Work may differ. A draft write never pushes itself live (D59): a draft
+A chat's write mode decides only where its new AI writes go; chats in
+one Work may differ. A draft write never pushes itself live: a draft
 that an auto-apply chat leaves behind, or another chat keeps writing, waits
 there like a kept change, and the dock shows it. Switching a chat to
 auto-apply touches no draft; Apply stays the writer's command. Branches carry
@@ -84,12 +84,6 @@ independent writes, and reports the typed refusal in notices and receipts.
 
 ## Work mode and branch persistence
 
-Work write mode chooses the destination for new AI writes. A draft write never
-pushes itself live, even if the Work changes to Auto-apply while the reply is
-in flight. Switching to Auto-apply with pending changes explicitly chooses
-`apply` or `keep`; branch data does not carry push policy. Applying an archived
-Work refuses under the Work lock.
-
 Live writer SET and agent writes routed to live never touch a pending Work draft:
 the next rebase merges the live edit into it by content, keeping every draft change.
 `./mf doc put --overwrite` is not that path: it deletes the document and creates a
@@ -102,9 +96,9 @@ on live's certified cut; only thread peers still pull the draft's Yjs state. Eve
 server write into a text branch (seed, rebase, Apply's base patch, late recovery)
 goes through `writeBranchState`, computed against the state it compare-and-swaps
 onto under the branch lease; a stored server-client delta replayed later is dropped
-silently by Yjs. A stale peer frame is rebased onto the current text, and what
-cannot be placed exactly is recovered as written text, never silently dropped (late
-peer recovery, see the KB's late-peer-recovery decision). Draft Apply merges
+silently by Yjs. A late peer's stale frame is rebased onto the current text: its
+surviving typing is recovered as paragraphs, and its stale deletions are never
+replayed ([late-peer recovery][late-peer]). Draft Apply merges
 content; no draft bytes reach live and the draft stays open.
 
 Attribution is based on immutable journal provenance and dependency closure,
@@ -125,8 +119,8 @@ and upstream together. A shared pull promise resolves only after commit. A
 caller joining an in-flight live pull awaits one coalesced run that starts
 after its call, since the in-flight snapshot may predate a writer edit it must
 see. Pulls run after persisted live updates, on branch review room open and
-reconnect, and at agent tool boundaries; the room trigger is fire-and-forget
-and Hocuspocus admission never waits for it.
+reconnect, and at agent tool boundaries; room open awaits one before admitting
+frames, and a failure is logged without aborting the connection.
 
 Room loads read in the caller's transaction because that transaction may
 already hold the authority head. Provisioning locks the canonical thread row
@@ -190,9 +184,7 @@ the extractor bumps its version, and no second post-write publisher exists.
 
 Chat attribution is a hint: the browser matches the AI edit parts pending in the
 branch (`…/draft/attribution`) against the room to name chats on changes. Nothing
-gates on it, and writer edits are never listed. Review hunks and publication compare
-prose (`documentProseEqual`); pending effects and terminal settlement also compare
-managed manifest membership (`documentEffectsEqual`). Manifest changes have their
+gates on it, and writer edits are never listed. A text branch's effect is base-versus-draft equality; manifest changes have their
 own operations and never become prose hunks.
 
 ## Disposition and response retirement
@@ -233,3 +225,5 @@ back unrelated documents in the reply.
 - [Collab visual explainer](collab-domain.html)
 - [Draft/live visual model](draft-live-model.html)
 - [Deferred work](FUTURE.md) and [TODO](TODO.md)
+
+[late-peer]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/late-peer-recovery.md

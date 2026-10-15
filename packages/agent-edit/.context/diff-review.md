@@ -15,7 +15,7 @@ view of the review is a function of those two block lists.
 
 | Question | Function |
 |---|---|
-| Does the draft differ from its base (`has_effect`, `hasChanges`)? | `blocksEqual(base, draft)` (`equal.ts`): whitespace and marks included |
+| Does the draft differ from its base (`has_effect`, `hasChanges`)? | `!blocksEqual(base, draft)` (`equal.ts`): whitespace and marks included |
 | What are the changes? | `diffBlocks` then `projectReview(diff)` (`hunks.ts`, `review.ts`): a `ReviewProjection` of `ReviewGroup`s |
 | What does Apply or local Discard write? | `composeGroups(schema, projection, ids, "apply" \| "discard")` giving `SpanPatch[]`, then `applySpanPatches` (`compose.ts`) |
 | How does live's newer text reach a draft? | `rebase(schema, base, live, draft)` (`merge.ts`) |
@@ -56,26 +56,18 @@ function plans a content Apply's live update, with the patch as the draft side.
 ## Late peers
 
 A peer update authored before it received a rebase can type into, or delete
-from, text the rebase already removed or re-created. Yjs merges that silently
-into dead state. `findLostEdits` detects it (typing net of the update's own
-delete set: what the peer still shows), and `invisibleInsertions` finds words a
-reply wrote into text the writer had discarded (reported, never refused).
-`recoverLatePeerEdits` writes the surviving typing, read in document order, as
-its own paragraph beside its last known neighbour; the words the rebase replaced
-are never revived around it. Deletions of rebased text are never written
-(log-only): a reconnect resends the whole delete set, and a replay looks like a
-first arrival (D33).
+from, text the rebase already removed or re-created; Yjs would merge that into
+dead state. `recoverLatePeerEdits` writes the surviving typing as its own
+paragraph beside its last known neighbour and never replays the stale deletions
+(a reconnect resends the whole delete set). `invisibleInsertions` reports words a
+reply wrote into text the writer discarded; it never refuses them. Rationale and
+rules: the [late-peer recovery decision][late-peer].
 
-A typed span is the characters the peer typed with nothing it still shows between them,
-whatever Yjs items or frames they came in; spans with surviving text between them stay
-apart. A browser reconnect can send one keystroke per frame, so `LateTyping` (opaque
-memory the host keeps per draft, in process) carries the spans already written and the
-next keystroke extends its paragraph (D35). Recovered typing is never deleted by a later
-frame: the peer's delete set echoes it once the peer has the server's state, and nothing
-tells that from a backspace, so text typed and deleted again inside a rewritten
-paragraph returns green. Ownership ends when the draft no longer shows the paragraph
-exactly as written (text, marks or attributes): it is then never touched, and new typing
-beside it starts its own. A recovered paragraph never shrinks.
+The caller's contract: `LateTyping` is opaque in-process memory the host keeps
+per draft, so a reconnect that sends one keystroke per frame extends one
+paragraph. A later *stale* frame never deletes recovered typing. Ownership ends
+when the draft no longer shows the paragraph exactly as written, after which it
+is never touched.
 
 ## Migration seam
 
@@ -83,3 +75,5 @@ beside it starts its own. A recovered paragraph never shrinks.
 give a pre-`review_base` branch its base from its `live_cut` text and an
 `UNKNOWN_BASE_REVISION`, so the first rebase merges live's edits since. The
 migration owns the CAS (`packages/database/src/migration-steps/`).
+
+[late-peer]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/late-peer-recovery.md

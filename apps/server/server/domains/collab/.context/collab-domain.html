@@ -307,8 +307,8 @@ without a refusal.
   <li><strong>Work draft to thread peer (pull).</strong> Before a thread's
     first write to a document in a reply, <code>pullThreadPeer</code> flushes
     the live catch-up, then syncs the Work draft into the peer by Yjs and
-    returns the watermarks the write is pinned to. A thread peer has no base
-    fragment.
+    returns the watermarks the write is pinned to. The pull copies the
+    draft's whole encoded doc, base included; the peer never advances that base.
     <span class="ref"><code>domain/thread-peer-core-pool.ts</code> <code>write</code>, <code>domain/branch-pulls.ts</code></span></li>
   <li><strong>Thread peer to Work draft (commit).</strong> At response commit,
     the peer's delta is committed into the Work draft as one
@@ -667,35 +667,15 @@ text item is a <em>content member</em>: the change the writer saw merges into
 live's current text, and live text it replaced comes back in <code>overrode</code>.
 Draft bytes are never copied to live.
 </p>
-<ol>
-  <li><strong>Admit.</strong> Before any lease, each ref resolves through the
-    review identity module and unfinished batches on its documents settle. Under
-    the sorted branch leases and then the live locks, the item catches up
-    (rebase on the certified live cut), freezes its input (the request's
-    snapshot, or one taken now) into <code>push_lineage.apply_payload</code>,
-    and plans against the <em>lock cut</em>, the complete Yjs state captured
-    first inside each live lock. A plan that cannot run decides the item
-    (<code>already_live</code>, <code>not_found</code>, <code>failed</code>) and
-    leaves its tree effects out.</li>
-  <li><strong>Durable commit.</strong> One transaction writes the command row
-    (<code>pending</code>), <code>push_lineage</code> (publication identity and
-    idempotency key), the <code>branch_push_settlement_outbox</code> row (lock cut,
-    live update, trail seed, claim), and the <code>draft_tree</code> payload.</li>
-  <li><strong>Settle.</strong> Drain writer admissions that started before this
-    point, reload the outbox (including writer edits joined after the cut), and
-    rebuild the final pre-push document from the lock cut plus those post-cut
-    updates. Each member is <em>replanned</em> against it, and its base patch
-    (the change moved into <code>review_base</code>) is computed against the
-    branch state read under the held lease. Staged bytes are never replayed.</li>
-  <li><strong>Complete under the fence.</strong> In one transaction under the
-    document mutation lock: persist the replanned live update, admit one
-    <code>reconcile</code> row from the merged text, write the base patch through
-    the one projection-wrapped branch write (so <code>has_effect</code> and the
-    Work page agree), run the tree step (reveal, restore, hold, drop created
-    rows), write the command result, then, still synchronously, compare the live
-    room's full-state fingerprint to the rebuilt pre-push document and apply
-    only if they match. A newer writer admission or mismatch means retry.</li>
-</ol>
+<p>
+Admission freezes each item's input and plans against the live lock cut; one
+transaction durably writes the command, push lineage and settlement outbox;
+settlement replans every member against the document as it stands (staged bytes
+are never replayed); completion persists the live update, the reconcile row and
+the base patch under the document mutation lock, and applies to the live room
+only if its fingerprint still matches.
+</p>
+
 <p class="ref"><code>domain/draft-publication.ts</code>, <code>domain/draft-apply.ts</code>, <code>domain/branch-push.ts</code>, <code>domain/branch-push-transition.ts</code> <code>settleBatch</code>, <code>adapters/drizzle-pending-settlement.ts</code> <code>completeBatch</code>, <code>adapters/drizzle-draft-tree-step.ts</code></p>
 <p>
 The base is never stored as bytes and replayed: the base patch and late-peer
@@ -906,15 +886,15 @@ The points below are the ones that change how you reason about edits here.
   <li><strong>Rebase is a three-way merge, not replication.</strong> Live
     edits reach the draft as a merge of base, live and draft, so the writer's
     and the AI's pending edits survive a live edit and the base advances to
-    live. Rebase cuts (up to 32 snapshots, capped at 1 MiB, in
-    <code>document_branches.rebase_cuts</code>) give late-peer recovery the draft's
-    state from just before a rebase.
-    <span class="ref"><code>domain/draft-rebase.ts</code>, <code>packages/agent-edit/src/diff/rebase-cuts.ts</code></span></li>
+    live. A late peer's stale frame is recovered as paragraphs of its surviving
+    typing, never by replaying its stale deletions; no rebase cuts are retained.
+    <span class="ref"><code>domain/draft-rebase.ts</code>, <code>packages/agent-edit/src/diff/late-peer-recovery.ts</code></span></li>
   <li><strong>Apply is content Apply.</strong> The writer's Apply of an item
     (<code>apply_items</code>) or of named changes (<code>apply_changes</code>)
-    carries the <code>Y.snapshot</code> of the room frame it acted on, so it
-    applies what the writer saw, not words typed since. The change merges into
-    live's current text through Yjs; live text it replaced returns in
+    carries the <code>Y.snapshot</code> of the room frame it acted on when the
+    client has one (otherwise the request freezes at staging), so it applies
+    what the writer saw, not words typed since. The change is a content merge
+    into live's current text (<code>rebase</code>), not Yjs replication; live text it replaced returns in
     <code>overrode</code> as one dismissible notice, never a gate. Live text
     moving never refuses; only a live rename, move or reveal since the list
     was read answers <code>stale</code> (the <code>locationToken</code>). A created

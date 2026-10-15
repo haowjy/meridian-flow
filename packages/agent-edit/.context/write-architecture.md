@@ -47,8 +47,8 @@ rendering runs outside mutation certification and preserves settlement identity
 when reporting degrades.
 
 The forward-inverse primitive computes a new edit from immutable target parts,
-certified restoration aliases, and the current view. Hosts persist parts under
-an action ID and choose policy and destination. Model `revert` and
+certified restoration aliases, and the current view. Hosts persist immutable edit parts
+and receipts and choose policy and destination. Model `revert` and
 failed-response rollback both use it; history rows are never
 marked reversed and no historical UndoManager is rebuilt. Forward-write
 attribution comes from explicit actor context and immutable receipts, never

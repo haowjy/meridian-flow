@@ -4,8 +4,8 @@ Two inverse paths use the forward-inverse primitive in `@meridian/agent-edit`
 over immutable edit parts: the model's `write revert` and failed-response
 rollback. An inverse is an ordinary immutable journal edit; it never rewrites a
 target row or marks it reversed. The writer's undo is not an inverse edit: a
-Discard is a local edit of the draft text, undone by Ctrl+Z in the editor or the
-row's Undo (see [branch-model-and-records.md](branch-model-and-records.md)).
+Discard is a local edit of the draft text, owned by the client (see
+[draft review](../../../../../../apps/app/src/features/draft-review/AGENTS.md)).
 There is no card Undo/Redo, no model `write undo`/`write redo`, and no reversal
 routing, table or reserved client.
 

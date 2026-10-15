@@ -111,7 +111,7 @@ whatever its Work's default or its sibling chats do.
     <line x1="140" y1="116" x2="140" y2="242" stroke="currentColor" stroke-width="2" marker-end="url(#arrA)"/>
     <text x="152" y="168" fill="currentColor" font-size="13.5" font-weight="600" font-family="sans-serif">continuous rebase, automatic</text>
     <text x="152" y="188" fill="var(--muted)" font-size="12.5" font-family="sans-serif">three-way merge into the draft,</text>
-    <text x="152" y="206" fill="var(--muted)" font-size="12.5" font-family="sans-serif">never gated, never refused</text>
+    <text x="152" y="206" fill="var(--muted)" font-size="12.5" font-family="sans-serif">no writer gate (can fail or fence, then retry)</text>
   </g>
   <!-- Apply: draft -> live -->
   <g style="color: var(--gate)">
@@ -188,12 +188,9 @@ prop that drifts. A draft's Y.Doc carries two fragments, the
   <li><strong>Discard is the writer's edit.</strong> Discarding a change, a draft
       or a Work row sets the text back to the base inside the room, under the
       editor's own origin. It sends no command and closes nothing; Ctrl+Z
-      restores it. A reply still writing into text the writer discarded merges
+      in that surface restores it. A reply still writing into text the writer discarded merges
       like any peer, and both the writer and the model are told which words
       landed in discarded text.</li>
-  <li><strong>Merging always succeeds.</strong> CRDTs never refuse a merge,
-      that is the point of them. Rejection is not a Yjs concept; the one
-      application-layer edge is below, and it reports instead of refusing.</li>
 </ul>
 
 <h2>The one consent point: Apply</h2>
@@ -213,8 +210,9 @@ The writer's protection is not a veto layer. It is two things:
 <ol>
   <li><strong>Seeing what Apply will do</strong>: the review surface shows each
       change as a diff against the base the writer's live text produced.</li>
-  <li><strong>Being told what it replaced</strong>, and Ctrl+Z, because Apply is
-      itself a live edit.</li>
+  <li><strong>Being told what it replaced.</strong> Apply is server-authored, so
+      it has no Ctrl+Z; the writer's own Undo covers only their own edits and
+      Discards in that surface.</li>
 </ol>
 <p>
 Live text moving never refuses an Apply. Only a live rename, move or reveal
@@ -239,28 +237,12 @@ stays.
       from the live journal plus branch state and journal rows.</li>
 </ul>
 
-<h2>Deliberately absent</h2>
-<ul class="rule-list">
-  <li><strong>A conflict veto.</strong> Refusing a valid Yjs merge is anti-CRDT.
-      Consent sits at the Apply edge, and the edge reports.</li>
-  <li><strong>Publish-time arbitration of meaning.</strong> The server never
-      picks between the writer's words and live's; Yjs merges and the
-      notice reports (rejected alternative in the work archive,
-      <code>archive/work/draft-simplify/design/publish-time-rebase.md</code>).</li>
-  <li><strong>Per-edit accept surfaces.</strong> Routine edits are not
-      exceptional; consent belongs at one edge, not smeared across every change.</li>
-</ul>
-<p class="muted">
-The recurring disease was two sources of truth for one fact; the recurring
-cure was one mechanism, enforced by types and keys rather than prose.
-</p>
-
 <h2>Boundaries that must hold</h2>
 <div class="scroll">
 <table>
   <tr><th>Edge</th><th>Rule</th></tr>
-  <tr><td>live → draft</td><td><strong>Never gated.</strong> Continuous, automatic, always merges.</td></tr>
-  <tr><td>draft → live</td><td><strong>Only via Apply.</strong> The single consent-bearing promotion, a merge that reports what it replaced.</td></tr>
+  <tr><td>live → draft</td><td><strong>No writer gate.</strong> Continuous and automatic; a failed or fenced rebase retries.</td></tr>
+  <tr><td>draft → live</td><td><strong>Only via Apply.</strong> The single consent-bearing promotion: a content merge, with the draft side winning conflicts, that reports what it replaced.</td></tr>
   <tr><td>AI → live</td><td><strong>Direct mode only.</strong> A draft-mode chat's AI writes to its Work's branch, always. The mode is the chat's, never the Work's.</td></tr>
   <tr><td>Discard</td><td><strong>Local Discard is a writer edit.</strong> Only whole-item items and Discard all send commands, and only they close branches.</td></tr>
   <tr><td>Presence</td><td><strong>Room-scoped.</strong> No cross-surface cursors; cross-surface provenance uses marks.</td></tr>

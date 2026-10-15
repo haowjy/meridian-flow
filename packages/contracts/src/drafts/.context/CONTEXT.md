@@ -54,7 +54,7 @@ exactly the 200 body), `blocked` (terminal; show the failure on the item), or
   never closes the draft, and never closes an edited item, even when it empties.
 - **Results** (`DraftItemOutcome`, one per item): `applied` (with `notes`,
   `overrode`, `hasChanges`, and `itemClosed` when the Apply dropped a created
-  item's row), `already_live`, `held` (5a, such as `path_taken`),
+  item's row), `already_live`, `held` (such as `path_taken`),
   `not_found`, or `failed` with a `DraftApplyFailure` reason. Item routes add
   `stale` (the item's location moved, or it is not addressable), `whole_item` (a per-change Apply of a
   whole-item item) and `gone`. `overrode` is the live text the merge replaced:
@@ -82,9 +82,9 @@ exactly the 200 body), `blocked` (terminal; show the failure on the item), or
 The server owns no review diff. The browser projects a room into changes
 (`@meridian/agent-edit/diff`, `projectReview`) and names each by `changeId`;
 `changeIds` in a request name changes of the frame the writer saw. Trail
-evidence and peer marks are read-only. Undoing a writer's own Discard or Apply
-is Ctrl+Z in the editor; undoing an AI change is the model's `revert`, never a
-review command.
+evidence and peer marks are read-only. Ctrl+Z in an editor undoes the writer's own edits and
+Discards in that surface; Apply is a server command with no Ctrl+Z, and an AI
+change is undone by the model's `revert`, never a review command.
 
 The contracts expose no durable storage identity or table name. The collab
 domain maps an `itemKey` to `document_branches` and owns

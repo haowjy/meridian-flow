@@ -51,9 +51,8 @@ intent: on text a rebase changed it contributes only its net surviving typing,
 which writer admission writes as one ordinary `writer` journal row beside its
 last known neighbour, green in review. The frame's deletions of rebased text
 never apply, so a replayed delete set cannot erase newer writing. Containment is
-checked first, so a clean reconnect is a no-op. Recovered typing is never
-deleted by a later frame; the exact placement of late offline typing is
-best-effort. Rationale: the KB's late-peer-recovery decision.
+checked first, so a clean reconnect is a no-op. A later stale frame never deletes recovered typing. Rationale: the
+[late-peer recovery decision][late-peer].
 
 ## Lifecycle and publication
 
@@ -69,7 +68,7 @@ Draft HTTP routes share one Work-access check: a deleted Work is 404 before any
 draft read or mutation, while an archived Work still permits review reads and
 freezes its drafts. Replaying a committed push returns its durable receipt.
 
-Apply and Discard are server commands, not client loops. Reusing a `commandId`
+Apply and whole-item or whole-draft Discard are server commands, not client loops. Reusing a `commandId`
 returns its recorded result. A per-change command on a whole-document-only item
 refuses `whole_item`. A durable thread peer has no unpublished authored state
 after reply finalization: its writes enter the shared text branch atomically. A
@@ -96,9 +95,7 @@ browser from pending AI edit parts.
 A certified whole-block carry validates output length and one adjacent visible
 replacement; partial or ambiguous matches fail closed. Restoration aliases come
 from certified retained identities and exact anchors, and equal text is never
-authorship evidence. Browser Undo allocates fresh writer clocks; its restoration
-claims are untrusted, and only claims that certify under the admission lock grant
-aliases. A rich restoration may lose AI attribution rather than guess.
+authorship evidence.
 
 ## Durable records and checkpoints
 
@@ -123,3 +120,5 @@ Releasing a room never waits on a database lock.
 
 A peer reconstructed from journal rows is integrable only after every row has
 applied with no pending structs and no pending delete set.
+
+[late-peer]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/late-peer-recovery.md

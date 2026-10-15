@@ -22,10 +22,8 @@ best-effort and never mutates recovery state.
   APIs. The browser-safe `./yjs-mutation` subpath is only the host's pinned
   reconstruction adapter; it does not own persistence, attribution, or inverse orchestration.
 - `./diff` is the pure review model shared by browser, server and migration:
-  `blocksEqual` decides `has_effect`, `projectReview` produces the changes,
-  `composeGroups` builds the Apply and local Discard patches, and `rebase`
-  merges live into a draft. Never reimplement any of them beside it: two
-  copies of "what changed" disagree. See [`.context/diff-review.md`](.context/diff-review.md).
+  Never reimplement any of it beside it: two copies of "what changed"
+  disagree. See [`.context/diff-review.md`](.context/diff-review.md).
 - Never bypass `ResponseCommitter` or infer durability from live projection.
   The journal boundary decides whether rollback discards or recovers.
 - Yjs merge is trusted. Destructive policy is report-only; it never blocks an
