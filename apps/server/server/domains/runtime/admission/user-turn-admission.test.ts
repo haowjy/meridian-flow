@@ -327,6 +327,16 @@ describe("UserTurnAdmission", () => {
   it("admits a New-chat upload by identity and records the address it now has", async () => {
     const h = harness(null, [availableResolution("uploads://@/c1/moved.png")]);
     await expect(h.service.admit(input())).resolves.toMatchObject({ kind: "accepted" });
+    // The stored message carries the same address as the metadata, with the label kept.
+    const moved = "[map](uploads://@/c1/moved.png)";
+    expect(h.captured()?.blocks).toEqual([
+      { type: "text", text: "see " },
+      { type: "reference", text: moved, documentId, uri: "uploads://@/c1/moved.png" },
+      { type: "image", documentId, uri: "uploads://@/c1/moved.png" },
+      { type: "reference", text: moved, documentId, uri: "uploads://@/c1/moved.png" },
+      { type: "image", documentId, uri: "uploads://@/c1/moved.png" },
+    ]);
+    expect(h.captured()?.admission.text).toBe(`see ${moved}${moved}`);
     expect(h.captured()?.references).toEqual([
       {
         documentId,

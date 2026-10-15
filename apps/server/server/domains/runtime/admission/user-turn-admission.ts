@@ -239,6 +239,11 @@ export function parseSubmittedReferences(value: unknown): SubmittedReference[] {
   });
 }
 
+function requalifyLinkText(text: string, from: string, to: string): string {
+  const at = text.lastIndexOf(`(${from})`);
+  return at < 0 ? text : `${text.slice(0, at + 1)}${to}${text.slice(at + 1 + from.length)}`;
+}
+
 function referenceIdentity(reference: { documentId: string; uri: string }): string {
   return `${reference.documentId}\0${reference.uri}`;
 }
@@ -449,7 +454,7 @@ export function createUserTurnAdmission(deps: {
           .map((item) => [item.documentId, item]),
       );
       const admittedReferences: AuthorizedReference[] = [];
-      const admittedIdentities = new Set<string>();
+      const admittedUris = new Map<string, string>();
       for (const reference of references) {
         const identity = available.get(reference.documentId);
         if (!identity) continue;
@@ -468,21 +473,40 @@ export function createUserTurnAdmission(deps: {
         ) {
           continue;
         }
-        admittedIdentities.add(referenceIdentity(reference));
+        // The one admitted occurrence: stored blocks and reference metadata both take this uri.
+        const admittedUri = draftUpload ? identity.entry.uri : reference.uri;
+        admittedUris.set(referenceIdentity(reference), admittedUri);
         admittedReferences.push({
           ...reference,
-          ...(draftUpload ? { uri: identity.entry.uri } : {}),
+          uri: admittedUri,
           relationship: draftUpload ? "created" : "reading",
         });
       }
       const admittedBlocks = blocks.flatMap((block): UserMessageBlock[] => {
         if (block.type === "text" || block.type === "skill") return [block];
-        if (admittedIdentities.has(referenceIdentity(block))) return [block];
-        return block.type === "reference" ? [{ type: "text", text: block.text }] : [];
+        const admittedUri = admittedUris.get(referenceIdentity(block));
+        if (admittedUri === undefined) {
+          return block.type === "reference" ? [{ type: "text", text: block.text }] : [];
+        }
+        if (admittedUri === block.uri) return [block];
+        // Requalify the link's href only; the label the writer saw stays.
+        return [
+          block.type === "reference"
+            ? {
+                ...block,
+                uri: admittedUri,
+                text: requalifyLinkText(block.text, block.uri, admittedUri),
+              }
+            : { ...block, uri: admittedUri },
+        ];
       });
+      const admittedText = admittedBlocks
+        .filter((block) => block.type !== "image")
+        .map((block) => block.text)
+        .join("");
       try {
         return await deps.producer.enqueue({
-          admission: { ...input, activatedSkillSlugs },
+          admission: { ...input, text: admittedText, activatedSkillSlugs },
           fingerprint,
           blocks: admittedBlocks,
           references: admittedReferences,
