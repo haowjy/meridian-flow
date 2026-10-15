@@ -279,6 +279,8 @@ function ReadableProjectDestination({
     }),
     [launchCatalogs],
   );
+  const livePathCatalog = (scheme: string) =>
+    launchCatalogs[scheme as keyof typeof launchCatalogs]?.catalog ?? null;
   const latest = useRef({
     address,
     location,
@@ -286,6 +288,7 @@ function ReadableProjectDestination({
     editorWorkId: workId,
     noWorkId,
     documentCatalog,
+    livePathCatalog,
   });
   latest.current = {
     address,
@@ -294,6 +297,7 @@ function ReadableProjectDestination({
     editorWorkId: workId,
     noWorkId,
     documentCatalog,
+    livePathCatalog,
   };
   // The document the address resolved to: a review of it stays on this address
   // through a rename, whatever path the launcher read.
@@ -564,9 +568,19 @@ function ReadableProjectDestination({
           ),
         draftOnlyItemKey: async (target) => {
           if (!target.workId || !target.path) return undefined;
-          const drafts = await queryClient
-            .fetchQuery(workDraftsQueryOptions(projectId, target.workId))
-            .catch(() => []);
+          // A live document opens plain and never waits on the draft list (navigate first).
+          const live = latest.current.livePathCatalog?.(target.scheme);
+          if (
+            target.workId === latest.current.editorWorkId &&
+            live?.findPath(`/${canonicalDocumentPath(target.path)}`)?.kind === "file"
+          )
+            return undefined;
+          // A cached list answers at once, stale or not; only a Work with none is fetched.
+          const options = workDraftsQueryOptions(projectId, target.workId);
+          const drafts =
+            queryClient.getQueryData<Awaited<ReturnType<typeof options.queryFn>>>(
+              options.queryKey,
+            ) ?? (await queryClient.fetchQuery(options).catch(() => []));
           return drafts.find(
             (item) =>
               item.isNew &&
