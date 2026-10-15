@@ -46,7 +46,11 @@ async function clickLink(chat: ChatRef) {
 
 describe("change chat link", () => {
   it("reveals the turn and tool call that wrote the change", async () => {
-    await clickLink({ chatId: "t-9", title: "Line edit", turnId: "turn-4", toolCallId: "call-2" });
+    await clickLink({
+      chatId: "t-9",
+      title: "Line edit",
+      reveal: { threadId: "t-9", turnId: "turn-4", toolCallId: "call-2" },
+    });
     expect(peekConversationReveal()).toMatchObject({
       kind: "turn",
       threadId: "t-9",

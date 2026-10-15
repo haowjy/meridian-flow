@@ -412,8 +412,9 @@ export async function handleWorkDraftItemMetaRequest(
 }
 
 /**
- * The chat-name hint for one item (Q3): the AI edits pending in its room, as item ranges the
- * browser matches. Authorized like the item's metadata; the hint never gates a change.
+ * The attribution read for one item (Q3): the AI edits pending in its room as item ranges with their
+ * owning conversations, the project's user and the Undo-restoration links, which the browser's classifier
+ * joins to the room. Authorized like the item's metadata.
  */
 export async function handleDraftAttributionRequest(
   deps: DraftRouteServices,

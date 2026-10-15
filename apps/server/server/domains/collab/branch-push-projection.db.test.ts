@@ -38,6 +38,7 @@ import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailAggregateWriter } from "./adapters/drizzle-change-trail-aggregate.js";
 import { createDrizzleDocumentProjectionEffects } from "./adapters/drizzle-document-activity.js";
 import { createDrizzleDocumentDerivationStore } from "./adapters/drizzle-document-derivations.js";
+import { createDrizzleDraftAttributionStore } from "./adapters/drizzle-document-edits.js";
 import {
   createDrizzleDraftStore,
   createDrizzleDraftWriteBoundary,
@@ -249,6 +250,7 @@ describe("branch-push durable projection", () => {
       changeEventDelivery: { deliver() {} },
       branchStore,
       journalReadStore,
+      attribution: createDrizzleDraftAttributionStore(db),
       commitStore,
       settlementStore,
       branchCoordinator,
@@ -454,6 +456,7 @@ describe("branch-push durable projection", () => {
       changeEventDelivery: { deliver() {} },
       branchStore,
       journalReadStore,
+      attribution: createDrizzleDraftAttributionStore(db),
       commitStore,
       settlementStore: createDrizzlePendingSettlementStore(
         db,

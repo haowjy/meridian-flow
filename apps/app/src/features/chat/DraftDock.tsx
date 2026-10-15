@@ -193,14 +193,13 @@ function DockFileLine({
     file: file.row,
     discards: dock.discards,
   });
-  // The draft dock shows this chat's changes: those the attribution hint names it for.
+  // The draft dock shows this chat's changes: those some of whose AI writes belong to it (its own or a
+  // subagent's it spawned), under any alignment the classifier cannot rule out.
   const items = useMemo(
     () =>
       view.wholeDocument
         ? view.items
-        : view.items.filter((item) =>
-            item.change.chats.some((chat) => chat.chatId === dock.threadId),
-          ),
+        : view.items.filter((item) => item.change.members.includes(dock.threadId)),
     [view.items, view.wholeDocument, dock.threadId],
   );
   const wholeDocument = isWholeDocumentChange({ ...view, items });

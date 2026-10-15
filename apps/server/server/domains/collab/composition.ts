@@ -356,10 +356,12 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     deps.workProjectionMutation,
   );
   const writerIngress = createWriterIngressBinding();
+  const draftAttributionStore = createDrizzleDraftAttributionStore(deps.db);
   const branchPush = createBranchPushService({
     branchStore: branches,
     criticalSections,
     journalReadStore: branchJournal,
+    attribution: draftAttributionStore,
     commitStore: pushCommits,
     settlementStore: pendingSettlements,
     branchCoordinator,
@@ -543,7 +545,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     publication,
     discard,
     commands: draftCommands,
-    attribution: createDraftAttribution(createDrizzleDraftAttributionStore(deps.db)),
+    attribution: createDraftAttribution(draftAttributionStore, branches),
     resolveThreadTitles: lookups.resolveThreadTitles,
     pending: workDraftPendingStore,
   });

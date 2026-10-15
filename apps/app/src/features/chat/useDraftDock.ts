@@ -1,7 +1,7 @@
 /**
  * The chat's pending changes and creation-bound Work commands. The draft dock lists the drafts the chat wrote
  * into (the server's SQL-only list), projects a file's changes only when it is expanded, applies only the
- * changes the attribution hint names this chat for, and never navigates on Apply. Discard in the draft dock happens
+ * changes that belong to this chat (membership), and never navigates on Apply. Discard in the draft dock happens
  * in place: the row reads "Discarded" with Undo until the writer leaves.
  */
 import { t } from "@lingui/core/macro";

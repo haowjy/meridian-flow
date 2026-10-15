@@ -3,7 +3,7 @@
  *
  * A file is in the draft dock when the server says the chat has pending AI edit parts in a draft that has
  * changes (`GET /api/threads/:t/draft-files`, SQL only). The draft dock projects a file's changes only when it
- * is expanded (`useDraftView`) and keeps the changes whose attribution hint names this chat.
+ * is expanded (`useDraftView`) and keeps the changes that belong to this chat (its membership).
  */
 
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";

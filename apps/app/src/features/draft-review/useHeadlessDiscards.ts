@@ -50,7 +50,7 @@ export type HeadlessDiscards = {
   ) => void;
   /** Discard every change of the file's draft in the room its review reads: the edit is made before this returns. */
   discardAll: (file: ReviewFileTarget, roomName: string) => void;
-  /** Discard only the changes the attribution hint names this chat for. */
+  /** Discard only the changes that belong to this chat (its membership). */
   discardFile: (file: ReviewFileTarget, threadId: string) => void;
   /** Revert a landed Discard, cancel a pending one, or dismiss a failed one. */
   undo: (entryId: string) => void;

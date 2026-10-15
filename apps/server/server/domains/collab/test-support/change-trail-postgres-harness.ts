@@ -580,6 +580,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     branchStore,
     criticalSections: branchCriticalSections,
     journalReadStore: durableBranchJournalReadStore,
+    attribution: createDrizzleDraftAttributionStore(db),
     commitStore: durablePushCommitStore,
     settlementStore,
     branchCoordinator,
@@ -775,7 +776,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       releaseObjects: async () => {},
     }),
     commands: draftCommands,
-    attribution: createDraftAttribution(createDrizzleDraftAttributionStore(db)),
+    attribution: createDraftAttribution(createDrizzleDraftAttributionStore(db), branchStore),
     resolveThreadTitles: lookups.resolveThreadTitles,
     publication: createDraftPublication({
       drafts: workDrafts,

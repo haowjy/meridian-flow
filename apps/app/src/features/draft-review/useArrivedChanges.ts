@@ -40,8 +40,8 @@ export function useArrivedChanges(
       return;
     }
     const seen = known.current.ids;
-    // The writer's own typing is a change too, but it is not an arrival: only changes that name a chat's
-    // writes pulse. Ids are content hashes, so a change the writer edited is a new id and stays quiet.
+    // The writer's own typing is a change too, but it is not an arrival: only changes whose byline names a
+    // chat pulse (a pulse says an AI wrote this; an ambiguous author arrives quietly). Ids are content hashes, so a change the writer edited is a new id and stays quiet.
     const fresh = changes.filter((change) => !seen.has(change.id) && change.chats.length > 0);
     for (const change of changes) seen.add(change.id);
     if (fresh.length === 0) return;

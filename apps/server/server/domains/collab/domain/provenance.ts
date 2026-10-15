@@ -1,6 +1,6 @@
 /** Deterministic safety-provenance facts, replay, and client namespace admission. */
 
-import { REVIEW_BASE_FRAGMENT } from "@meridian/agent-edit/diff";
+import { APPLY_RECORD_ROOT, REVIEW_BASE_FRAGMENT } from "@meridian/agent-edit/diff";
 import {
   type LineageRange,
   type SemanticEditIRV1,
@@ -18,8 +18,15 @@ export const PROVENANCE_RESERVED_TYPES = [
   PROVENANCE_TARGETS_TYPE,
   "__meridian_provenance_targets_v1",
 ] as const;
-/** Top-level types only the server writes: provenance facts and a text branch's `review_base`. */
-export const SERVER_OWNED_ROOTS = [...PROVENANCE_RESERVED_TYPES, REVIEW_BASE_FRAGMENT] as const;
+/**
+ * Top-level types only the server writes: provenance facts, a text branch's `review_base` and its Apply
+ * record (which draft items an Apply moved into the base).
+ */
+export const SERVER_OWNED_ROOTS = [
+  ...PROVENANCE_RESERVED_TYPES,
+  REVIEW_BASE_FRAGMENT,
+  APPLY_RECORD_ROOT,
+] as const;
 const RESERVED_TYPE_NAMES = new Set<string>(SERVER_OWNED_ROOTS);
 const RESERVED_CLIENT_IDS = new Set(
   Array.from({ length: RESERVED_CLIENT_ID_MAX + 1 }, (_, clientId) => clientId),

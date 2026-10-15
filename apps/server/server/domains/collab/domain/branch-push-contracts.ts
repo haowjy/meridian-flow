@@ -17,6 +17,7 @@ import type { DraftRebase } from "./draft-rebase.js";
 import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
 import type { DurableTrailRecord } from "./ports/change-trail-persistence.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
+import type { DraftAttributionStore } from "./ports/draft-attribution-store.js";
 import type { PendingSettlementStore } from "./ports/pending-settlement-store.js";
 import type {
   BaseWrite,
@@ -278,6 +279,8 @@ export type BranchPushService = {
 export type BranchPushServiceInput = {
   branchStore: BranchStore;
   journalReadStore: BranchJournalReadStore;
+  /** The branch's pending AI parts: the provenance the Apply record is classified from. */
+  attribution: Pick<DraftAttributionStore, "pendingAgentEdits">;
   commitStore: PushCommitStore;
   settlementStore: PendingSettlementStore;
   /** The catch-up rebase Apply runs first, under the leases it owns (contract §2.2 step 2.3). */

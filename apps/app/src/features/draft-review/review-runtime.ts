@@ -4,7 +4,7 @@
  * pin) inside a small state (`ReviewState`), and does the work that belongs to the room once: the base
  * blocks are read once per `review_base` change, command records are reconciled against each ready frame,
  * and every mounted editor's painter is handed the frame. The runtime is also the one place that joins
- * the frame with what is not text: the chats the attribution hint names on each change and the draft's
+ * the frame with what is not text: who wrote each change and which conversations it belongs to (the classified attribution), and the draft's
  * command records, which it turns into the visible changes and their failures (`review-visible.ts`).
  * Readers select from that state; none of them recomputes it.
  *
@@ -22,9 +22,8 @@
  * frame its row was drawn from (`ReviewChange.frame`), never "whatever the runtime holds now".
  */
 
-import { matchAttribution, REVIEW_BASE_FRAGMENT } from "@meridian/agent-edit/diff";
-import type { DraftAttributionEdit } from "@meridian/contracts/drafts";
-import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { REVIEW_BASE_FRAGMENT } from "@meridian/agent-edit/diff";
+import type { DraftAttribution } from "@meridian/contracts/drafts";
 import { type QueryClient, QueryObserver } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import type { Node as PMNode, Schema } from "@tiptap/pm/model";
@@ -41,6 +40,7 @@ import { isRemoteDocumentRebuild } from "@/core/editor/anchors";
 import type { DocumentSession } from "@/core/editor/document-session";
 import { relativePositionRuntimeFromState } from "@/core/editor/relative-position-runtime";
 import type { ReviewEditorHandle } from "./draft-discard";
+import { classifyRoom } from "./review-attribution";
 import { baseKeyOf, buildFrame, projectRoom, type ReviewFrame, readBase } from "./review-frame";
 import { type ReviewChange, reviewChanges } from "./review-model";
 import { deriveVisible, NO_VISIBLE, type ReviewVisible } from "./review-visible";
@@ -56,7 +56,7 @@ export type ReviewRoom = Pick<
 export type ReviewState = ReviewVisible & {
   /** The frame last published, or null while there is nothing to compare. */
   frame: ReviewFrame | null;
-  /** The frame's changes with the chats the attribution hint names on them, applied ones included. */
+  /** The frame's changes with their byline and membership, applied ones included. */
   changes: readonly ReviewChange[];
   /** The room has synced, so an empty frame means "No changes left", not "not loaded yet". */
   ready: boolean;
@@ -73,7 +73,7 @@ type Attachment = { editor: Editor; surface: ReviewSurface; handle: ReviewEditor
 
 type Attribution = NonNullable<Parameters<typeof reviewChanges>[1]>;
 const NO_ATTRIBUTION: Attribution = new Map();
-const NO_EDITS: readonly DraftAttributionEdit[] = [];
+const NO_EDITS: DraftAttribution | null = null;
 
 export interface ReviewRuntime {
   state(): ReviewState;
@@ -131,8 +131,8 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
   const yDoc = room.document;
   const listeners = new Set<() => void>();
   let state: ReviewState = EMPTY;
-  let edits = NO_EDITS;
-  let matched: { frame: ReviewFrame; edits: typeof NO_EDITS; value: Attribution } | null = null;
+  let edits: DraftAttribution | null = NO_EDITS;
+  let matched: { frame: ReviewFrame; edits: DraftAttribution; value: Attribution } | null = null;
   let reconciling = false;
   /** The draft's command record the state was derived from. */
   let seenRecord: unknown;
@@ -146,12 +146,11 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
   /** The base blocks, parsed once per schema (an editor's own, or the headless one) until `review_base` changes. */
   let baseBlocks = new Map<Schema | null, PMNode[]>();
 
-  const fragment = yDoc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
   const attributionOf = (frame: ReviewFrame): Attribution => {
     // Until the chats' writes have loaded, a change is not the writer's: nothing is said.
-    if (edits === NO_EDITS) return NO_ATTRIBUTION;
+    if (!edits) return NO_ATTRIBUTION;
     if (!matched || matched.frame !== frame || matched.edits !== edits)
-      matched = { frame, edits, value: matchAttribution(fragment, frame, edits) };
+      matched = { frame, edits, value: classifyRoom(yDoc, frame, edits) };
     return matched.value;
   };
 
@@ -258,12 +257,12 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
       })
     : () => {};
   const unwatchAttribution = attributionQuery?.subscribe((result) => {
-    const next = result.data?.edits ?? NO_EDITS;
+    const next = result.data ?? NO_EDITS;
     if (next === edits) return;
     edits = next;
     if (latest() && !destroyed) publish(latest());
   });
-  if (attributionQuery) edits = attributionQuery.getCurrentResult().data?.edits ?? NO_EDITS;
+  if (attributionQuery) edits = attributionQuery.getCurrentResult().data ?? NO_EDITS;
 
   const baseFor = (schema: Schema | null): PMNode[] => {
     let blocks = baseBlocks.get(schema);

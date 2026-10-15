@@ -23,6 +23,7 @@ const expectedSuites = [
   "apps/server/server/domains/collab/draft-rebase.db.test.ts",
   "apps/server/server/domains/collab/branch-state.db.test.ts",
   "apps/server/server/domains/collab/draft-commands.db.test.ts",
+  "apps/server/server/domains/collab/draft-attribution-owner.db.test.ts",
   "apps/server/server/domains/collab/draft-items.db.test.ts",
   "apps/server/server/domains/collab/branch-peer-pool.db.test.ts",
   "apps/server/server/domains/collab/adapters/branch-journal-reads.db.test.ts",

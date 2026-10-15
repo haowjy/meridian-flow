@@ -1,4 +1,4 @@
-/** GET /api/projects/:projectId/works/:workId/documents/:documentId/draft/attribution?itemKey=: the chat-name hint's edit parts. */
+/** GET /api/projects/:projectId/works/:workId/documents/:documentId/draft/attribution?itemKey=: the classifier's payload. */
 import type { DocumentId, ProjectId, WorkId } from "@meridian/contracts/runtime";
 import { createError, defineEventHandler, getQuery, getRouterParam } from "nitro/h3";
 import { requireAppUser } from "../../../../../../../../../../lib/auth-gate.js";

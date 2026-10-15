@@ -15,14 +15,19 @@
  */
 
 import {
+  type ApplyEntry,
+  type AttributionPart,
+  applyRecordOf,
   applySpanPatches,
   blocksEqual,
+  classifyChanges,
   composeGroups,
   diffBlocks,
   projectReview,
   REVIEW_BASE_FRAGMENT,
   readBlocks,
   rebase,
+  restorationLinks,
   type Tok,
   writeBlocks,
 } from "@meridian/agent-edit/diff";
@@ -84,27 +89,67 @@ export type ContentApplyPlanResult =
   | { status: "not_found" };
 
 /**
- * What the writer saw: the draft room as of the snapshot. Null when the server lacks something the
- * snapshot names (a lost sync) or the snapshot is malformed.
+ * What the writer saw: the draft room as of the snapshot, as a full-history doc the caller destroys. Null
+ * when the server lacks something the snapshot names (a lost sync) or the snapshot is malformed.
  */
-export function rebuildSeen(
-  branch: Y.Doc,
-  snapshot: string,
-): { base: PMNode[]; draft: PMNode[] } | null {
-  let seen: Y.Doc | null = null;
+function rebuildSeenDoc(branch: Y.Doc, snapshot: string): Y.Doc | null {
   try {
     const decoded = Y.decodeSnapshot(Buffer.from(snapshot, "base64"));
     const have = Y.decodeStateVector(Y.encodeStateVector(branch));
     for (const [client, clock] of decoded.sv) if ((have.get(client) ?? 0) < clock) return null;
-    seen = Y.createDocFromSnapshot(branch, decoded, createCollabYDoc({ gc: false }));
-    return {
-      base: readBlocks(seen.getXmlFragment(REVIEW_BASE_FRAGMENT), schema),
-      draft: readBlocks(seen.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema),
-    };
+    return Y.createDocFromSnapshot(branch, decoded, createCollabYDoc({ gc: false }));
   } catch {
     return null;
+  }
+}
+
+const blocksOf = (seen: Y.Doc) => ({
+  base: readBlocks(seen.getXmlFragment(REVIEW_BASE_FRAGMENT), schema),
+  draft: readBlocks(seen.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema),
+});
+
+export function rebuildSeen(
+  branch: Y.Doc,
+  snapshot: string,
+): { base: PMNode[]; draft: PMNode[] } | null {
+  const seen = rebuildSeenDoc(branch, snapshot);
+  try {
+    return seen ? blocksOf(seen) : null;
   } finally {
     seen?.destroy();
+  }
+}
+
+/**
+ * The Apply record of a content member: what moving the chosen changes into the base moves out of the
+ * draft's item identity. The classifier runs on the snapshot the writer saw, with the branch's pending AI
+ * parts, so the record names exactly the items of the changes he applied (attribution design, "The Apply
+ * record"). Null when the snapshot can no longer be rebuilt.
+ */
+export function appliedRecord(input: {
+  input: ContentMemberInput;
+  branchState: Uint8Array;
+  parts: readonly AttributionPart[];
+}): ApplyEntry | null {
+  const branch = createCollabYDoc({ gc: false });
+  Y.applyUpdate(branch, input.branchState);
+  const seen = rebuildSeenDoc(branch, input.input.snapshot);
+  try {
+    if (!seen) return null;
+    const { base, draft } = blocksOf(seen);
+    const classified = classifyChanges(
+      seen,
+      projectReview(diffBlocks(base, draft)),
+      { userId: "", parts: input.parts, restorations: restorationLinks(seen) },
+      { record: true },
+    );
+    return applyRecordOf(
+      classified,
+      input.input.scope === "item" ? classified.keys() : input.input.changeIds,
+    );
+  } finally {
+    seen?.destroy();
+    branch.destroy();
   }
 }
 

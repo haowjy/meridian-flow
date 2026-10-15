@@ -79,7 +79,7 @@ export const projectQueryKeys = {
     ["projects", projectId, "document-draft-hints", documentId] as const,
   documentDraftHintsOf: (projectId: string) =>
     ["projects", projectId, "document-draft-hints"] as const,
-  /** An item's chat-name hint; a hint only, never read for a decision. */
+  /** An item's attribution payload, which the review runtime classifies against the room. */
   workDraftAttribution: (projectId: string, workId: string, documentId: string, itemKey: string) =>
     [
       "projects",

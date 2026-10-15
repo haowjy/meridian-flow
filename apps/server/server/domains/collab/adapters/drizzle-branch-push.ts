@@ -38,6 +38,7 @@ import type {
   WorkDraftPendingStore,
 } from "../domain/ports/work-draft-pending-store.js";
 import { attachBatchWithinTx, claimCommandWithinTx } from "./drizzle-draft-commands.js";
+import { resolveEditOwners } from "./drizzle-edit-owners.js";
 import {
   assertRootOwnedSettlement,
   type StageSettlementBatchWithinTx,
@@ -448,6 +449,11 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
         .groupBy(documentBranches.id, writer)
         .orderBy(asc(documentBranches.id), sql`max(${branchWriteJournal.id}) desc nulls last`);
 
+      // A subagent's writes belong to the conversation that spawned it.
+      const owners = await resolveEditOwners(
+        currentDrizzleDb(db),
+        rows.flatMap((row) => (row.writer ? [row.writer] : [])),
+      );
       const evidence = new Map<string, WorkDraftPendingEvidence>();
       for (const row of rows) {
         const branch = evidence.get(row.branchId) ?? {
@@ -461,7 +467,8 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
           },
           agentThreadIds: [],
         };
-        if (row.writer) branch.agentThreadIds.push(row.writer);
+        const owner = row.writer ? (owners.get(row.writer)?.threadId ?? row.writer) : null;
+        if (owner && !branch.agentThreadIds.includes(owner)) branch.agentThreadIds.push(owner);
         evidence.set(row.branchId, branch);
       }
       return [...evidence.values()];

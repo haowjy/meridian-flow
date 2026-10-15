@@ -326,7 +326,7 @@ export type DraftReviewApi = {
     workId: WorkId;
     itemKey: string;
   }): Promise<DraftItemMeta | { status: "gone"; itemKey: string }>;
-  /** The chat-name hint for one item (Q3): null when the item isn't addressable. */
+  /** The attribution read for one item (Q3): null when the item isn't addressable. */
   attribution(input: { workId: WorkId; itemKey: string }): Promise<DraftAttribution | null>;
   lookupCommand(key: CommandLookupKey): Promise<CommandLookup>;
   /**

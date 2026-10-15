@@ -11,6 +11,8 @@
  */
 import { randomUUID } from "node:crypto";
 import {
+  type ApplyEntry,
+  appendApplyRecord,
   blocksEqual,
   DRAFT_SERVER_CLIENT_ID,
   REVIEW_BASE_FRAGMENT,
@@ -40,7 +42,12 @@ import {
 } from "./branch-push-transition.js";
 import { buildDurablePushTrail } from "./branch-trail-projection.js";
 import { collabHook } from "./collab-test-hooks.js";
-import { type ContentMemberInput, freezeContentInput, planContentApply } from "./draft-apply.js";
+import {
+  appliedRecord,
+  type ContentMemberInput,
+  freezeContentInput,
+  planContentApply,
+} from "./draft-apply.js";
 import { draftDiffersFromBase, draftSchema } from "./draft-rebase.js";
 import type { DurableTrailRecord } from "./ports/change-trail-persistence.js";
 import type { BaseWrite, PublicationRefusal } from "./ports/settlement-publication.js";
@@ -102,11 +109,14 @@ export function createBranchPushService(inputDeps: BranchPushServiceInput): Bran
   /**
    * The text branch's base patch for a merged base, against the state read under the held lease.
    * Written as the reserved server client over the state it will CAS onto: nothing stored is replayed.
+   * The Apply record joins the base in the one Yjs transaction, so a base that moved always carries the
+   * record of what moved into it.
    */
   function baseWriteFor(
     branch: BranchSnapshot,
     baseBlocks: readonly PMNode[],
     advanceRevision: boolean,
+    record: ApplyEntry | null,
   ): BaseWrite {
     if (branch.status !== "active") return { kind: "none" };
     const doc = createCollabYDoc({ gc: false });
@@ -116,7 +126,10 @@ export function createBranchPushService(inputDeps: BranchPushServiceInput): Bran
       if (blocksEqual(readBlocks(fragment, draftSchema), baseBlocks)) return { kind: "none" };
       const before = Y.encodeStateVector(doc);
       doc.clientID = DRAFT_SERVER_CLIENT_ID;
-      doc.transact(() => writeBlocks(fragment, draftSchema, baseBlocks), "apply-base");
+      doc.transact(() => {
+        writeBlocks(fragment, draftSchema, baseBlocks);
+        if (record) appendApplyRecord(doc, record);
+      }, "apply-base");
       return {
         kind: "patch",
         expectedState: branch.state,
@@ -144,6 +157,11 @@ export function createBranchPushService(inputDeps: BranchPushServiceInput): Bran
     const branch = await input.branchStore.getBranch(push.branchId);
     if (!branch) throw new Error(`Staged push ${push.id} lost its text branch`);
     const liveState = Y.encodeStateAsUpdate(finalPrePush);
+    const record = appliedRecord({
+      input: push.input,
+      branchState: branch.state,
+      parts: await input.attribution.pendingAgentEdits(branch.branchId),
+    });
     const planned = planContentApply({
       input: push.input,
       branchState: branch.state,
@@ -157,7 +175,7 @@ export function createBranchPushService(inputDeps: BranchPushServiceInput): Bran
       return {
         pushId: push.id,
         outcome: { status: "already_live" },
-        base: baseWriteFor(branch, planned.baseBlocks, planned.baseIsLive),
+        base: baseWriteFor(branch, planned.baseBlocks, planned.baseIsLive, record),
       };
     }
     const { plan } = planned;
@@ -175,7 +193,7 @@ export function createBranchPushService(inputDeps: BranchPushServiceInput): Bran
     return {
       pushId: push.id,
       outcome: { status: "applied", pushUpdate: plan.pushUpdate, trail, overrode: plan.overrode },
-      base: baseWriteFor(branch, plan.baseBlocks, plan.baseIsLive),
+      base: baseWriteFor(branch, plan.baseBlocks, plan.baseIsLive, record),
     };
   }
 

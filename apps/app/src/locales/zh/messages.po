@@ -2969,6 +2969,12 @@ msgstr ""
 msgid "Open {0} at this passage. {1}"
 msgstr ""
 
+#. placeholder {0}: displayThreadTitle(chat.subagentTitle)
+#. placeholder {1}: chatName(chat)
+#: src/features/draft-review/ReviewChangeParts.tsx
+msgid "Open {0} in {1}"
+msgstr ""
+
 #: src/features/chat/DocumentName.tsx
 #: src/features/home/ProjectLibrary.tsx
 #: src/features/project/chat-list/ProjectChatRow.tsx

@@ -38,9 +38,11 @@ export function ChangeDot({ change, className }: { change: ReviewChange; classNa
 }
 
 /**
- * Who made the change: "You" when the writer did (plain text, first), then a link to each chat whose writes
- * made it, side by side. Nothing when the draft holds no evidence either way. A link opens its chat beside
- * the change and never also acts on the change. Names stay whole; the focused bar menus names that do not fit.
+ * Who made the change: the byline. "You" when the writer did (plain text, first), then a link to each chat
+ * whose writes made it, side by side. Nothing when the draft cannot say. A link opens its chat beside the
+ * change and never also acts on the change; a subagent's link opens the spawn row in the chat that
+ * launched it. Names stay whole; the focused bar menus names that do not fit, and the row hides them
+ * all but never "You".
  */
 export function ChangeAuthor({
   writer,
@@ -56,30 +58,41 @@ export function ChangeAuthor({
   touch?: boolean;
 }) {
   const openThread = useOpenChatThread();
-  if (chats.length === 0 || !openThread) {
-    if (!writer) return null;
-    return (
-      <span
-        className={cn("shrink-0 whitespace-nowrap text-caption text-muted-foreground", className)}
-      >
-        <You />
-      </span>
-    );
-  }
+  const links = openThread ? chats : [];
+  if (!writer && links.length === 0) return null;
   return (
-    <OverflowChats
-      mode={overflow}
-      writer={writer}
-      chats={chats}
-      openThread={openThread}
-      touch={touch}
-      className={className}
-    />
+    <span
+      className={cn(
+        "flex min-w-0 items-center gap-1.5 text-caption text-muted-foreground",
+        overflow === "menu" && "w-full",
+        className,
+      )}
+    >
+      {writer ? (
+        <span className="shrink-0 whitespace-nowrap">
+          <Trans>You</Trans>
+        </span>
+      ) : null}
+      {openThread && links.length > 0 ? (
+        <OverflowChats
+          mode={overflow}
+          writer={writer}
+          chats={links}
+          openThread={openThread}
+          touch={touch}
+        />
+      ) : null}
+    </span>
   );
 }
 
-/** The writer's own byline: plain text, never a link. */
-const You = () => <Trans>You</Trans>;
+const chatName = (chat: ChatRef) => displayThreadTitle(chat.title);
+
+/** The link's accessible label: a subagent's change names its task beside the conversation it opens. */
+const chatLabel = (chat: ChatRef) =>
+  chat.subagentTitle
+    ? t`Open ${displayThreadTitle(chat.subagentTitle)} in ${chatName(chat)}`
+    : t`Open the chat that wrote this change`;
 
 /** Measure whole names, never partial names. Overflow retains exact chat/turn links. */
 function OverflowChats({
@@ -88,14 +101,12 @@ function OverflowChats({
   chats,
   openThread,
   touch,
-  className,
 }: {
   mode: "menu" | "hide";
   writer: boolean;
   chats: readonly ChatRef[];
   openThread: (threadId: string) => void;
   touch: boolean;
-  className?: string;
 }) {
   const container = useRef<HTMLSpanElement>(null);
   const measurements = useRef<HTMLSpanElement>(null);
@@ -104,20 +115,24 @@ function OverflowChats({
     const host = container.current;
     const sizes = measurements.current;
     if (!host || !sizes) return;
+    // "You" sits outside the names: hide mode collapses only these links, and the menu measures after it.
+    const row = host.parentElement;
     const measure = () => {
-      const all = Array.from(sizes.children, (child) => child.getBoundingClientRect().width);
-      // "You" is the first child and never overflows: it is the lead the names are measured after.
-      const lead = writer ? all[0] : 0;
-      const widths = writer ? all.slice(1) : all;
+      const widths = Array.from(sizes.children, (child) => child.getBoundingClientRect().width);
       if (mode === "hide") {
-        const width = all.reduce((sum, width) => sum + width, 0) + Math.max(0, all.length - 1) * 6;
-        setVisible(width <= (host.parentElement?.clientWidth ?? 0) * 0.45 ? chats.length : 0);
+        const lead = row
+          ? row.getBoundingClientRect().width - host.getBoundingClientRect().width
+          : 0;
+        const names =
+          widths.reduce((sum, width) => sum + width, 0) + Math.max(0, widths.length - 1) * 6;
+        const room = (row?.parentElement?.clientWidth ?? 0) * 0.45;
+        setVisible(lead + names + (writer ? 6 : 0) <= room ? chats.length : 0);
         return;
       }
-      let used = lead;
+      let used = 0;
       let count = 0;
       for (const width of widths) {
-        const next = used + width + (writer || count ? 6 : 0);
+        const next = used + width + (count ? 6 : 0);
         // Reserve the compact overflow trigger unless this is the last name.
         if (next + (count < chats.length - 1 ? (touch ? 50 : 38) : 0) > host.clientWidth) break;
         used = next;
@@ -127,7 +142,7 @@ function OverflowChats({
     };
     measure();
     const observer = new ResizeObserver(measure);
-    observer.observe(mode === "hide" && host.parentElement ? host.parentElement : host);
+    observer.observe(mode === "hide" && row?.parentElement ? row.parentElement : host);
     observer.observe(sizes);
     return () => observer.disconnect();
   }, [chats, writer, touch, mode]);
@@ -135,9 +150,8 @@ function OverflowChats({
     <span
       ref={container}
       className={cn(
-        "relative flex min-w-0 overflow-hidden items-center gap-1.5 text-caption text-muted-foreground",
-        mode === "menu" ? "w-full" : visible ? "w-auto shrink-0" : "w-0",
-        className,
+        "relative flex min-w-0 items-center gap-1.5 overflow-hidden",
+        mode === "menu" ? "flex-1" : visible ? "w-auto shrink-0" : "w-0",
       )}
     >
       <span
@@ -145,37 +159,21 @@ function OverflowChats({
         aria-hidden
         className="pointer-events-none invisible absolute flex w-max gap-1.5"
       >
-        {writer ? (
-          <span className="whitespace-nowrap">
-            <You />
-          </span>
-        ) : null}
         {chats.map((chat) => (
           <span
-            key={chat.chatId}
+            key={chatKey(chat)}
             className={cn(
               "inline-flex items-center gap-0.5 whitespace-nowrap",
               touch && "min-w-11",
             )}
           >
-            <span>{displayThreadTitle(chat.title)}</span>
+            <span>{chatName(chat)}</span>
             <ArrowUpRight className="size-3" />
           </span>
         ))}
       </span>
-      {writer ? (
-        <span className="shrink-0 whitespace-nowrap">
-          <You />
-        </span>
-      ) : null}
       {chats.slice(0, visible).map((chat) => (
-        <ChatLink
-          key={chat.chatId}
-          chat={chat}
-          name={displayThreadTitle(chat.title)}
-          onOpenThread={openThread}
-          touch={touch}
-        />
+        <ChatLink key={chatKey(chat)} chat={chat} onOpenThread={openThread} touch={touch} />
       ))}
       {mode === "menu" && visible < chats.length ? (
         <DropdownMenu>
@@ -193,8 +191,12 @@ function OverflowChats({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
             {chats.slice(visible).map((chat) => (
-              <DropdownMenuItem key={chat.chatId} onSelect={() => openChat(chat, openThread)}>
-                {displayThreadTitle(chat.title)}
+              <DropdownMenuItem
+                key={chatKey(chat)}
+                title={chat.subagentTitle}
+                onSelect={() => openChat(chat, openThread)}
+              >
+                {chatName(chat)}
                 <ArrowUpRight aria-hidden className="size-3" />
               </DropdownMenuItem>
             ))}
@@ -205,21 +207,22 @@ function OverflowChats({
   );
 }
 
+const chatKey = (chat: ChatRef) => `${chat.chatId}:${chat.reveal?.subagentThreadId ?? ""}`;
+
 function ChatLink({
   chat,
-  name,
   onOpenThread,
   touch,
 }: {
   chat: ChatRef;
-  name: string;
   onOpenThread: (threadId: string) => void;
   touch: boolean;
 }) {
   return (
     <button
       type="button"
-      title={t`Open the chat that wrote this change`}
+      title={chat.subagentTitle ? displayThreadTitle(chat.subagentTitle) : chatLabel(chat)}
+      aria-label={chat.subagentTitle ? chatLabel(chat) : undefined}
       onClick={(event) => {
         event.stopPropagation();
         openChat(chat, onOpenThread);
@@ -229,24 +232,28 @@ function ChatLink({
         touch && "min-h-11 min-w-11",
       )}
     >
-      <span>{name}</span>
+      <span>{chatName(chat)}</span>
       <ArrowUpRight aria-hidden className="size-3 shrink-0" />
     </button>
   );
 }
 
-/** Opens the chat at the write that made the change; with no turn known, at the chat. */
+/**
+ * Opens the chat at the write that made the change (KF14); a subagent's change opens the spawn row in the
+ * conversation that launched it. With no write known (a list row), the chat.
+ */
 function openChat(chat: ChatRef, openThread: (threadId: string) => void) {
-  if (chat.turnId) {
-    requestConversationReveal({
-      kind: "turn",
-      threadId: chat.chatId,
-      turnId: chat.turnId,
-      ...(chat.toolCallId ? { toolCallId: chat.toolCallId } : {}),
-    });
-  } else {
-    openThread(chat.chatId);
-  }
+  const reveal = chat.reveal;
+  if (!reveal) return openThread(chat.chatId);
+  requestConversationReveal({
+    kind: "turn",
+    threadId: reveal.threadId,
+    turnId: reveal.turnId,
+    ...(reveal.toolCallId ? { toolCallId: reveal.toolCallId } : {}),
+    ...(reveal.subagentThreadId
+      ? { subagentThreadId: reveal.subagentThreadId, subagentBlock: "card" as const }
+      : {}),
+  });
 }
 
 /** Why an Apply of a change did not land, in the writer's words. */

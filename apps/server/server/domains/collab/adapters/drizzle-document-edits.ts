@@ -6,20 +6,24 @@ import {
   type EditTarget,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts";
-import type { DraftAttributionEdit } from "@meridian/contracts/drafts";
+import type { DraftAttributionEdit, DraftEditReveal } from "@meridian/contracts/drafts";
 import {
   branchWriteJournal,
   type Database,
+  documentBranches,
   documentEditParts,
   documentEdits,
   documentYjsUpdates,
+  drafts,
   type EditOrigin,
+  projects,
   threads,
 } from "@meridian/database";
 import { and, desc, eq, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { DraftAttributionStore } from "../domain/ports/draft-attribution-store.js";
+import { resolveEditOwners } from "./drizzle-edit-owners.js";
 
 type Db = Pick<Database, "select" | "insert" | "update">;
 export interface ReceiptWrite {
@@ -153,23 +157,52 @@ async function listPendingAgentEdits(
     .orderBy(desc(documentEdits.createdAt), desc(documentEditParts.id));
   const tuple = (r: { client: number; clock: number; len: number }) =>
     [r.client, r.clock, r.len] as [number, number, number];
-  return rows.flatMap((row) =>
-    row.threadId && row.turnId
-      ? [
-          {
-            threadId: row.threadId,
-            title: row.title ?? "",
-            turnId: row.turnId,
-            ...(row.toolCallId ? { toolCallId: row.toolCallId } : {}),
-            at: row.at.toISOString(),
-            inserted: row.effect.inserted.map(tuple),
-            deleted: row.effect.deleted.map(tuple),
-          },
-        ]
-      : [],
+  const owners = await resolveEditOwners(
+    db,
+    rows.flatMap((row) => (row.threadId ? [row.threadId] : [])),
   );
+  return rows.flatMap((row) => {
+    if (!row.threadId || !row.turnId) return [];
+    const owner = owners.get(row.threadId);
+    const reveal: DraftEditReveal = owner?.spawn ?? {
+      threadId: row.threadId,
+      turnId: row.turnId,
+      ...(row.toolCallId ? { toolCallId: row.toolCallId } : {}),
+    };
+    return [
+      {
+        threadId: row.threadId,
+        title: row.title ?? "",
+        turnId: row.turnId,
+        ...(row.toolCallId ? { toolCallId: row.toolCallId } : {}),
+        owner: {
+          threadId: owner?.threadId ?? row.threadId,
+          title: owner?.title ?? row.title ?? "",
+          reveal,
+        },
+        at: row.at.toISOString(),
+        inserted: row.effect.inserted.map(tuple),
+        deleted: row.effect.deleted.map(tuple),
+      },
+    ];
+  });
+}
+
+/** The user who owns the project a text branch's draft belongs to: the author of its browser clients. */
+async function projectUserOfBranch(db: Pick<Database, "select">, branchId: string) {
+  const [row] = await db
+    .select({ userId: projects.userId })
+    .from(documentBranches)
+    .innerJoin(drafts, eq(drafts.id, documentBranches.draftId))
+    .innerJoin(projects, eq(projects.id, drafts.projectId))
+    .where(eq(documentBranches.id, branchId))
+    .limit(1);
+  return row?.userId ?? null;
 }
 
 export function createDrizzleDraftAttributionStore(db: Database): DraftAttributionStore {
-  return { pendingAgentEdits: (branchId) => listPendingAgentEdits(currentDrizzleDb(db), branchId) };
+  return {
+    pendingAgentEdits: (branchId) => listPendingAgentEdits(currentDrizzleDb(db), branchId),
+    projectUserId: (branchId) => projectUserOfBranch(currentDrizzleDb(db), branchId),
+  };
 }

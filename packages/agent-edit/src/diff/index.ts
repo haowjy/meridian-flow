@@ -1,4 +1,21 @@
 /** `@meridian/agent-edit/diff`: the pure text model shared by review, Apply, Discard and the rebase. */
+
+export {
+  APPLY_RECORD_ROOT,
+  type ApplyEntry,
+  appendApplyRecord,
+  readApplyRecord,
+} from "./apply-record.js";
+export {
+  type AttributionPart,
+  type Author,
+  applyRecordOf,
+  type ChangeClassification,
+  type ClassifyOptions,
+  classifyChanges,
+  type ItemRange,
+  type Provenance,
+} from "./attribution.js";
 export { applySpanPatches } from "./compose.js";
 export {
   convertLegacyDraft,
@@ -17,6 +34,7 @@ export {
   recoverLatePeerEdits,
 } from "./late-peer-recovery.js";
 export { type Conflict, type RebaseResult, rebase } from "./merge.js";
+export { type RestorationLink, restorationLinks } from "./restorations.js";
 export {
   composeGroups,
   type ProseMirrorJSON,
@@ -28,11 +46,3 @@ export {
 } from "./review.js";
 export type { Tok } from "./tokens.js";
 export { pmToY, type WriteStats, writeBlocks } from "./writer.js";
-export {
-  type AttributionEdit,
-  type ChangeAttribution,
-  type ChatHint,
-  editsInChanges,
-  type ItemRange,
-  matchAttribution,
-} from "./yjs-attribution.js";

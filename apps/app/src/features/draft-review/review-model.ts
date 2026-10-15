@@ -1,18 +1,33 @@
 /**
  * The review as cards, rows, the stepper, the chip and counts read it: one `ReviewChange` per group of
  * the browser-computed projection. Pure. The projection decides what the changes are; attribution only
- * adds which chats' writes overlap a change (the attribution hint; nothing gates on it).
+ * adds who wrote each change (the byline: the writer, then the chats whose writes made it) and which
+ * conversations the change belongs to (`members`, which the dock and chat-scoped Apply and Discard read).
  */
-import type { ChangeAttribution, ReviewGroup, ReviewSpan } from "@meridian/agent-edit/diff";
+import type { ReviewGroup, ReviewSpan } from "@meridian/agent-edit/diff";
+import type { DraftEditReveal } from "@meridian/contracts/drafts";
 import * as Y from "yjs";
 import { groupAnchor, type ReviewFrame } from "./review-frame";
 
+/** A conversation the byline links to. */
 export interface ChatRef {
+  /** The conversation the writer knows: for a subagent's write, the primary conversation that spawned it. */
   chatId: string;
   title: string;
-  /** Where the latest write that made the change happened, when the hint knows. */
-  turnId?: string;
-  toolCallId?: string;
+  /** A subagent's own task title, for the link's accessible label and tooltip. */
+  subagentTitle?: string;
+  /** Where the latest write that made the change happened (a subagent's: its spawn row); absent for a list row. */
+  reveal?: DraftEditReveal;
+}
+
+/** What the classifier says of one change, in the terms the surfaces read. */
+export interface ChangeAttribution {
+  /** The writer typed, restored or discarded some of the change. */
+  writer: boolean;
+  /** The chats whose writes made it, each once. */
+  chats: ChatRef[];
+  /** The conversations (`owner.threadId`) any of whose AI writes may be in the change: the dock's filter. */
+  members: string[];
 }
 
 export interface ReviewChange {
@@ -20,9 +35,12 @@ export interface ReviewChange {
   id: string;
   kind: ReviewGroup["kind"];
   excerpt: ReviewGroup["excerpt"];
-  /** Whether the writer made some of the change (their typing, a recovery, a Discard or its Undo). */
+  /** Byline: whether the writer made some of the change (their typing, a recovery, a Discard or its Undo). */
   writer: boolean;
+  /** Byline: the chats whose writes made it. */
   chats: ChatRef[];
+  /** Membership: the conversations whose AI writes are in the change under any alignment. */
+  members: string[];
   /** Draft position of the change's first mark in `frame`, where the stepper scrolls to. */
   anchor: number;
   spans: ReviewSpan[];
@@ -44,12 +62,8 @@ export function reviewChanges(
     kind: group.kind,
     excerpt: group.excerpt,
     writer: attribution.get(group.id)?.writer ?? false,
-    chats: (attribution.get(group.id)?.chats ?? []).map((chat) => ({
-      chatId: chat.threadId,
-      title: chat.title,
-      turnId: chat.turnId,
-      ...(chat.toolCallId ? { toolCallId: chat.toolCallId } : {}),
-    })),
+    chats: attribution.get(group.id)?.chats ?? [],
+    members: attribution.get(group.id)?.members ?? [],
     anchor: groupAnchor(group),
     spans: group.spans,
     pin: frame.pins.get(group.id) as Y.RelativePosition,
@@ -95,6 +109,7 @@ export function itemChange(item: {
       chatId: chat.threadId,
       title: chat.title?.trim() ?? "",
     })),
+    members: item.actorThreads.map((chat) => chat.threadId),
     anchor: 0,
     spans: [],
     pin: NO_PLACE,

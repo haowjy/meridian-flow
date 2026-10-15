@@ -3,7 +3,7 @@
  * content member of one batch, crash recovery, and the command record (resend, conflict, blocked).
  */
 import { randomUUID } from "node:crypto";
-import { REVIEW_BASE_FRAGMENT, readBlocks } from "@meridian/agent-edit/diff";
+import { REVIEW_BASE_FRAGMENT, readApplyRecord, readBlocks } from "@meridian/agent-edit/diff";
 import { meridianErrorFromSystem } from "@meridian/contracts/protocol";
 import { branchPushSettlementBatches } from "@meridian/database/schema";
 import { allocateDocumentClient, buildDocumentSchema } from "@meridian/prosemirror-schema";
@@ -199,6 +199,8 @@ describeDraftTreeDb("review commands (postgres)", (start, db) => {
       base: ["Opening, drafted.", "Centre.", "End."],
       remaining: 1,
     });
+    // The recovered Apply moved the base and wrote its record in the same state write.
+    expect(readApplyRecord(settled)).toHaveLength(1);
     expect(await c.s.recover()).toBe(0);
     expect(await c.s.view("live").text("chapter.md")).toBe(snapshot.live);
     expect(paragraphs(await load(), REVIEW_BASE_FRAGMENT)).toEqual(snapshot.base);

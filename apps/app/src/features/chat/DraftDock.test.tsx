@@ -108,11 +108,18 @@ it("an expanded file lists its room's changes; Apply sends the id with the snaps
   // Every item this room's peer wrote is this chat's edit.
   fixture.network.getDraftAttribution.mockImplementation(async () => ({
     itemKey: "draft-a",
+    userId: "user-1",
+    restorations: [],
     edits: [
       {
         threadId: "thread-a",
         title: "Chat A",
         turnId: "turn-1",
+        owner: {
+          threadId: "thread-a",
+          title: "Chat A",
+          reveal: { threadId: "thread-a", turnId: "turn-1" },
+        },
         at: "2026-10-13T10:00:00Z",
         inserted: [[fixture.rooms.get("room-chapter")?.document.clientID ?? 0, 0, 100_000]],
         deleted: [],
