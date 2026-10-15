@@ -1,14 +1,16 @@
 /** Compaction's two commits exercise real inbox, lease, epoch, and journal transactions. */
+
 import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
 import type { JsonObject } from "@meridian/contracts/threads";
 import { eq, inArray } from "drizzle-orm";
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import {
   CompactionMetadataCodec,
   encodeImageInclusionMetadata,
   loadThreadConversationContext,
 } from "../../threads/index.js";
+import { turnGraph } from "../../threads/ports/turn-graph.js";
 import { processDetachedWork } from "../detached-work.js";
 import { ImageAssetResolutionError } from "../ports/image-asset.js";
 import { createConversationSummarizer } from "../summary/conversation-summarizer.js";
@@ -47,7 +49,6 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? ""))
   describe.skip("compaction protocol", () => {});
 else
   describe("compaction protocol", async () => {
-    const { createDb } = await import("@meridian/database");
     const schema = await import("@meridian/database/schema");
     const { assertThrowawayDatabaseForRunDbTests } = await import(
       "@meridian/database/__test-support__/db-fixtures"
@@ -58,9 +59,16 @@ else
     );
     const { createDrizzleRunClaim } = await import("../adapters/drizzle-run-claim.js");
     assertThrowawayDatabaseForRunDbTests(url);
-    const db = createDb(url, { max: 8 });
+    const { assertPublicationHooks, openAuditedDatabase } = await import(
+      "../../../test-support/run-state-publication.js"
+    );
+    // Publication pins run in a database this suite owns and drops.
+    const audited = await openAuditedDatabase(url, { max: 8 });
+    const db = audited.db;
     beforeEach(() => deleteDrizzleRows(db, [schema.users]));
-    afterAll(() => db.close());
+    afterAll(() => audited.close());
+    // Publication pins: no input write without a record, and the last record equals the rows.
+    afterEach(() => assertPublicationHooks(db));
 
     const fixture = createCompactionFixture(db);
 
@@ -1131,7 +1139,7 @@ else
       });
       expect((await original.execute()).status).toBe("error");
       await processDetachedWork.drain();
-      const failedReply = await rig.repos.turns.getLatestByThread(rig.threadId);
+      const failedReply = await turnGraph(rig.repos.turns).latest(rig.threadId);
       expect(failedReply).toMatchObject({ role: "assistant", status: "error" });
       if (!failedReply) throw new Error("Failed automatic compaction reply was not persisted");
 
@@ -1305,15 +1313,6 @@ else
         .from(schema.threadInboxMessages)
         .where(eq(schema.threadInboxMessages.id, tail[1]?.id as never));
       expect(delivered?.byTurnId).toBe(tail[3]?.id);
-      const ends = await db
-        .select({ payload: schema.eventJournal.payload })
-        .from(schema.eventJournal)
-        .where(eq(schema.eventJournal.eventType, "execution.ended"));
-      expect(
-        ends.filter(
-          ({ payload }) => (payload as { executionId: string }).executionId === run.executionId,
-        ),
-      ).toHaveLength(1);
     });
 
     it("ends the execution in the commit that lands a failed compaction successor", async () => {
@@ -1323,17 +1322,8 @@ else
         tools: [],
         userText: "Continue.",
       });
-      const endsOf = async (executionId: string) =>
-        (
-          await db
-            .select({ payload: schema.eventJournal.payload })
-            .from(schema.eventJournal)
-            .where(eq(schema.eventJournal.eventType, "execution.ended"))
-        ).filter(({ payload }) => (payload as { executionId: string }).executionId === executionId)
-          .length;
       const split = rig.delivery.splitAndContinue;
-      let landed: { open: string | null; ended: number; successor: string | undefined } | null =
-        null;
+      let landed: { open: string | null; successor: string | undefined } | null = null;
       rig.delivery.splitAndContinue = async (input) => {
         if (input.current.kind !== "placeholder") return split(input);
         const result = await split({
@@ -1345,20 +1335,17 @@ else
         // Read as soon as the landing commit returns, before the run's cleanup.
         landed = {
           open: await rig.runClaim.readOpenExecutionId(rig.threadId),
-          ended: await endsOf(run.executionId),
           successor: (await rig.repos.turns.findById(result.next.id as never))?.status,
         };
         return result;
       };
       expect(await run.execute()).toMatchObject({ status: "error" });
-      expect(landed).toEqual({ open: null, ended: 1, successor: "error" });
+      expect(landed).toEqual({ open: null, successor: "error" });
       const tail = (await rig.repos.turns.listByThread(rig.threadId)).slice(-2);
       expect(tail.map((turn) => [turn.role, turn.status, turn.executionId])).toEqual([
         ["compaction", "complete", run.executionId],
         ["assistant", "error", run.executionId],
       ]);
-      // Cleanup after the terminal landing ends nothing twice.
-      expect(await endsOf(run.executionId)).toBe(1);
       await expect(processDetachedWork.drain(1_000)).resolves.toBe(true);
     });
 
@@ -1406,7 +1393,6 @@ else
           kind: "compaction",
         });
         const admission = await rig.send(rig.threadId, "Run after cancellation.");
-        expect(admission.steersTurnId).toBeNull();
         lateId = admission.userTurnId;
         rig.setThreshold(undefined);
         await rig.orchestrator.cancel(rig.threadId, turnId);

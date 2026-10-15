@@ -28,7 +28,7 @@ waiting behind a queued write-mode switch (`S, M2`), the successor commit
 yields instead: C completes with its own outcome through its placeholder
 callbacks, nothing is adopted, no notice is consumed, no B is reserved, and
 the claim is released. C's receipt stays unacknowledged, so its messages and
-M2 wait for the next run, which starts after the release wake applies S. See
+M2 wait for the next run, which starts after the release wake; that run applies S at its start. See
 [controls](controls.md#the-yield) for the ordering and receipt rules.
 
 The summary block is immutable. Its fit limit comes from the decision; its token

@@ -111,7 +111,7 @@ msgstr "{0, plural, one {# part stayed} other {# parts stayed}}"
 msgid "{0, plural, one {Changes in # more document did not apply} other {Changes in # more documents did not apply}}"
 msgstr "{0, plural, one {Changes in # more document did not apply} other {Changes in # more documents did not apply}}"
 
-#. placeholder {0}: readDocuments.size
+#. placeholder {0}: digest.readDocuments
 #: src/features/chat/thinking-digest.ts
 msgid "{0, plural, one {read # document} other {read # documents}}"
 msgstr "{0, plural, one {read # document} other {read # documents}}"
@@ -1465,11 +1465,14 @@ msgstr "Couldn't rename. Use Rename in the file list to try again."
 msgid "Couldn’t restore this Work"
 msgstr "Couldn’t restore this Work"
 
-#: src/features/chat/derivation/HandoffBriefCard.tsx
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/useRetryStandIns.ts
 msgid "Couldn't retry."
 msgstr "Couldn't retry."
+
+#: src/features/chat/ErrorBlock.tsx
+msgid "Couldn't retry. Another reply started first."
+msgstr "Couldn't retry. Another reply started first."
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't run that skill"
@@ -1518,8 +1521,8 @@ msgid "Couldn't start a new brief. Try again."
 msgstr "Couldn't start a new brief. Try again."
 
 #: src/features/chat/ErrorBlock.tsx
-msgid "Couldn't start the retry."
-msgstr "Couldn't start the retry."
+#~ msgid "Couldn't start the retry."
+#~ msgstr "Couldn't start the retry."
 
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/useReplyRetry.ts
@@ -1535,13 +1538,15 @@ msgstr "Couldn't start this handoff."
 msgid "Couldn't stop the brief. Try again."
 msgstr "Couldn't stop the brief. Try again."
 
-#: src/features/chat/thread-controls/useThreadControls.ts
-msgid "Couldn't stop the compaction. Try again."
-msgstr "Couldn't stop the compaction. Try again."
+#: src/components/app/composer/Composer.tsx
+msgid "Couldn't stop the reply."
+msgstr "Couldn't stop the reply."
 
+#: src/components/app/composer/Composer.tsx
 #: src/features/chat/thread-controls/QueuedControlRows.tsx
 #: src/features/chat/thread-controls/useSwitchView.ts
 #: src/features/chat/thread-controls/useThreadControls.ts
+#: src/features/chat/useChatStop.ts
 msgid "Couldn't stop. Try again."
 msgstr "Couldn't stop. Try again."
 
@@ -3818,12 +3823,13 @@ msgstr "stopped"
 msgid "Stopped"
 msgstr "Stopped"
 
+#: src/components/app/composer/Composer.tsx
 #: src/features/chat/compaction/CompactionDivider.tsx
+#: src/features/chat/useChatStop.ts
 msgid "Stopping"
 msgstr "Stopping"
 
 #: src/features/chat/compaction/CompactionDivider.tsx
-#: src/features/chat/thread-controls/useThreadControls.ts
 msgid "Stopping compaction"
 msgstr "Stopping compaction"
 
@@ -4553,6 +4559,7 @@ msgstr "Tokens before"
 msgid "Top up any time. Extra usage carries over month to month."
 msgstr "Top up any time. Extra usage carries over month to month."
 
+#: src/components/app/composer/Composer.tsx
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "Try again"
@@ -4766,8 +4773,8 @@ msgid "Wait for this response to finish, then try again."
 msgstr "Wait for this response to finish, then try again."
 
 #: src/features/chat/UserTurn.tsx
-msgid "Waiting for usage"
-msgstr "Waiting for usage"
+#~ msgid "Waiting for usage"
+#~ msgstr "Waiting for usage"
 
 #: src/features/draft-review/DraftImagePreview.tsx
 msgid "Waiting for your review"

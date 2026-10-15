@@ -1,6 +1,7 @@
 packages:
   - 'apps/*'
   - 'packages/*'
+  - 'tools/mf'
   # Throwaway demo playground for @meridian/agent-edit (see demo/README.md).
   - 'packages/agent-edit/demo/playground'
 allowBuilds:

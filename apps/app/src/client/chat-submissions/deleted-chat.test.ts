@@ -123,7 +123,7 @@ it("moves the shown failed row and box ahead of New chat with a reload-safe note
   const f = fixture();
   await cleanDeletedChat("owner", "chat", "project", "deleted", f.ports);
   expect(serializeComposerDraft(f.target.initialDraft?.doc ?? plainComposerDoc("")).text).toBe(
-    "Make the elder colder\nAnd quieter\nExisting writing",
+    "Make the elder colder\n\nAnd quieter\n\nExisting writing",
   );
   expect(f.target.notices).toEqual([{ threadId: "chat", title: "Arc 2 notes", count: 2 }]);
   expect(f.records()).toEqual([]);
@@ -218,7 +218,7 @@ it("the accepted two-tab rough edge still moves the other tab's own box", async 
   for (const row of f.records()) f.ports.retire(row.recordId);
   await cleanDeletedChat("owner", "chat", "project", "deleted", f.ports);
   expect(serializeComposerDraft(f.target.initialDraft?.doc ?? plainComposerDoc("")).text).toBe(
-    "And quieter\nExisting writing",
+    "And quieter\n\nExisting writing",
   );
   expect(f.target.notices[0]?.count).toBe(1);
 });

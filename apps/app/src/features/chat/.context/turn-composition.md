@@ -2,6 +2,9 @@
 
 This reference defines how an ordered assistant `Block[]` becomes one render list.
 The partition is deterministic from block order/type, not stream or terminal state.
+`partitionTurn`, `classifyTurn` and tool visibility live in the view model
+(`viewTranscript` in `@meridian/thread-client`), which `./mf thread view` prints
+too; this app draws the items it is handed and never filters raw turns.
 
 ## Tiers and partition
 
@@ -49,8 +52,8 @@ actions expand or reveal in the current transcript.
 Historical `meridian.block.upserted` replaces an already-loaded turn in place.
 If its target is absent, invalidate/refetch the durable snapshot rather than
 creating a synthetic streaming turn; an equal replacement is a
-reference-preserving no-op. `queuedWriterTurnIds` projects writer rows still
-waiting; `awaiting_run` has no duplicate queue label.
+reference-preserving no-op. `waitingWriterMessages` (`@meridian/thread-client`)
+projects writer rows still waiting; `awaiting_run` has no duplicate queue label.
 
 Interrupt responses are fire-and-forget and use local state keyed by
 `(threadId, turnId, interruptId)`. Pending controls remain disabled across

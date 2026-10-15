@@ -11,6 +11,7 @@ import type {
   PrefixCachePredictionReason,
   PrefixCachePredictionState,
 } from "./prefix-cache-prediction.js";
+import type { RunState } from "./run-state.js";
 import type { TurnStatus } from "./status.js";
 
 export type {
@@ -166,37 +167,19 @@ export {
 } from "./control-body.js";
 export type EnqueueThreadControlRequest = { id: string; control: ControlBody };
 /**
- * The answer to a control request, read in one transaction under the thread
- * lock. `seq` is the thread's journal head (the last frame seq the socket
- * carries, the same space as the snapshot's `nextSeq - 1`) at that read; the
- * switch state it reports is exactly the state after every frame at or below
- * it. Only switch transitions need that lock, so later frames at higher
- * seqs can change the switch state only by being later switch transitions.
- *
- * `queued` answers for this request alone; `pending` describes the chat.
+ * The answer to a control request: the run-state record read in one transaction under the
+ * thread lock, so its `version` is the journal head the answer reflects.
  */
 export type EnqueueThreadControlResponse = {
   id: string;
-  /** This control is still waiting in the inbox (not started, cancelled out or withdrawn). */
-  queued: boolean;
-  /** The thread's queued write-mode switch (not necessarily this request's row), or null. */
-  pending: PendingInboxItem | null;
+  /** The turn the command already produced, or null while it waits. */
   turnId: string | null;
-  /** Decimal string of the journal head at the read. */
-  seq: string;
-  /** The thread's applied write mode at the same read. */
-  mode: AiWriteMode;
+  runState: RunState;
 };
 export type WithdrawThreadControlResponse = {
   outcome: "withdrawn" | "already_started";
-  /** The withdrawn control is still waiting in the inbox: false after either outcome. */
-  queued: boolean;
-  /** The thread's queued write-mode switch after the withdrawal, or null. */
-  pending: PendingInboxItem | null;
-  /** The thread's applied write mode at the same read. */
-  mode: AiWriteMode;
-  /** Decimal string of the journal head at the read; same clock as the enqueue answer. */
-  seq: string;
+  /** The record the withdrawal's own transaction published, from `answerRunState`. */
+  runState: RunState;
 };
 
 /** Who authored a durable inbox message. JSON-natural; ids are plain strings at the wire. */
@@ -237,16 +220,6 @@ export type PendingInboxItem = {
   enqueuedAt: string;
 };
 
-/** A thread's unacknowledged inbox, ordered by `seq`; snapshots replace state wholesale. */
-export type ThreadPendingInbox = {
-  /**
-   * A saved start refusal. Present only while a message or control is pending;
-   * cleared at run start.
-   */
-  blocked?: { reason: "credits_exhausted" };
-  items: PendingInboxItem[];
-};
-
 /**
  * Canonical event-name registry for the thread journal and live event hub.
  *
@@ -260,8 +233,6 @@ export type JournalEventType =
   | "turn.completed"
   | "turn.cancelled"
   | "turn.error"
-  | "messages.delivered" // PRODUCED NOW — inbox ack of message rows, with the delivering turn
-  | "execution.ended" // PRODUCED NOW — one run-lease hold ended after its turns went terminal
   | "interrupt.created"
   | "interrupt.resolved"
   | "interrupt.expired"
@@ -292,7 +263,8 @@ export type JournalEventType =
   | "agent.spawn" // PRODUCED NOW — ChildRunCoordinator
   | "agent.run_completed" // PRODUCED NOW — ReportPublisher B, body-free metadata
   | "subagent.activity" // PRODUCED NOW — ChildRunCoordinator/Driver (direct-parent journal, direct children)
-  | "inbox.changed" // PRODUCED NOW — enqueue, bind/adoption/release, and ack (full classified inbox)
+  | "messages.handed_back" // PRODUCED NOW — waiting writer messages left the chat (Stop, the queue's x, Cancel queue)
+  | "run_state.changed" // PRODUCED NOW — the chat's run-state record, before every commit that changed its inputs
   | "thread.status" // PRODUCED NOW — non-lease work status refresh
   | "context.assembled"
   | "context.compacted"
@@ -479,9 +451,19 @@ export { blockContentRecord } from "./block-content-record.js";
 export { blockPlainText } from "./block-plain-text.js";
 export { interruptIdForBlock } from "./interrupt-id-for-block.js";
 export { type ProviderErrorResponse, replyProviderError } from "./provider-error.js";
+export type {
+  HandBackRequest,
+  HandBackResponse,
+  HandBackResult,
+  HandBackScope,
+  RunState,
+  StopRequest,
+  StopResponse,
+} from "./run-state.js";
 export type { TurnStatus } from "./status.js";
 export { isTerminalTurnStatus } from "./status.js";
 export { formatThreadRef, parseThreadRef } from "./thread-ref.js";
+export * from "./turn-readers.js";
 
 export interface ModelResponse {
   id: string;

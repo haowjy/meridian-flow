@@ -37,7 +37,7 @@ export async function authorizeThreadMessage(input: {
   targetRef: string;
   mode: ThreadMessageMode;
   threads: Pick<ThreadRepository, "findLiveByProjectRef" | "findById">;
-  turns: Pick<TurnRepository, "findById">;
+  turns: Parameters<typeof areThreadsConnected>[2];
 }): Promise<ThreadMessageTargetOutcome> {
   // Reject a malformed ref before the DB, so an unknown value stays a uniform
   // not-found rather than a low-level lookup error.

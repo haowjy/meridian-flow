@@ -3,11 +3,12 @@
  *
  * A pending write-mode switch is the write-mode notice at the transcript tail:
  * "Switched to auto-apply" while the next reply will apply it, "Switch to
- * auto-apply queued" while a reply that held the chat first has to finish. A queued `/compact` sits there as a dashed rule, the divider it will
- * become, with the writer's instructions under it verbatim. Stop is right after
- * the words on every pending row, a failed enqueue's too (beside its Retry), and
- * removes the row at once; it cancels the command the way a switch back does. An
- * applied switch whose turn has not rendered yet shows the notice with no Stop.
+ * auto-apply queued" while a reply that held the chat first has to finish. A
+ * queued `/compact` sits there as a dashed rule, the divider it will become,
+ * with the writer's instructions under it verbatim. Stop is right after the
+ * words on every pending row from its first frame (disabled while the switch's
+ * post is unanswered), and removes the row at once; it cancels the command the
+ * way a switch back does. A failed enqueue the server may hold has Retry alone.
  * The rows carry no live region: `useThreadControls` and `useSwitchView` announce
  * each change through the global polite announcer, which also reaches a row
  * scrolled out of the virtualized list.
@@ -75,7 +76,7 @@ function QueuedControlRow({
           <Trans>Retry</Trans>
         </Button>
       ) : null}
-      {onStop && status !== "applied" && !(failed && control.awaitingServer) ? (
+      {onStop && !(failed && control.awaitingServer) ? (
         <Button
           type="button"
           variant="quiet"

@@ -1,8 +1,7 @@
 /** A failed write tells the writer why, and every undo/redo refusal has its own plain copy. */
 import { i18n } from "@lingui/core";
+import type { ToolView } from "@meridian/thread-client";
 import { beforeEach, expect, it } from "vitest";
-import type { ToolView } from "./group-delivery-segments";
-import { block } from "./report-test-fixtures";
 import { documentToolFailureCopy } from "./tool-renderers";
 
 beforeEach(() => i18n.loadAndActivate({ locale: "en", messages: {} }));
@@ -19,7 +18,17 @@ function failed(result: Record<string, unknown>): ToolView {
     message: null,
     streamedOutput: null,
     metadata: null,
-    keyBlock: block("call-1", 1, "tool_use", input),
+    keyBlock: {
+      id: "call-1",
+      turnId: "turn",
+      responseId: null,
+      blockType: "tool_use",
+      sequence: 1,
+      content: input,
+      status: "complete",
+      textContent: null,
+      createdAt: "2026-09-23T00:00:00.000Z",
+    },
   };
 }
 

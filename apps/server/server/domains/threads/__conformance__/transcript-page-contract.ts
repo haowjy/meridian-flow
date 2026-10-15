@@ -10,6 +10,7 @@ import {
   readTranscriptPage,
 } from "../domain/transcript-page.js";
 import type { InternalThreadRepositories } from "../ports/repositories.js";
+import { turnGraph } from "../ports/turn-graph.js";
 
 export interface TranscriptPageContractHarness {
   repos: InternalThreadRepositories;
@@ -58,7 +59,7 @@ export function defineTranscriptPageContract(
       role: Turn["role"] = "user",
       extra: Partial<Parameters<typeof repos.turns.create>[0]> = {},
     ) {
-      const prior = await repos.turns.getLatestByThread(threadId);
+      const prior = await turnGraph(repos.turns).latest(threadId);
       return repos.turns.create({
         id: id(label) as TurnId,
         threadId,

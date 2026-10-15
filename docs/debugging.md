@@ -10,7 +10,7 @@ Start from your symptom in [Strategies](#strategies), or scan the
 | --- | --- | --- |
 | Temporary console probes | You need a one-off signal from a live bug, now | [Temporary Probes](#temporary-probes) |
 | `EventSink` / `emitEvent` | The signal would help another agent tomorrow | [Durable Logs](#durable-logs) |
-| `./mf` | An agent needs setup, durable reads, or mock-model scripts. It doesn't test the app: verify behavior in the browser | [Set Up and Read with the CLI](#set-up-and-read-with-the-cli) |
+| `./mf` | An agent needs setup, durable reads, mock-model scripts, or evidence for the code `./mf` shares with the app. What the writer sees is checked in the browser | [Set Up and Verify with the CLI](#set-up-and-verify-with-the-cli) |
 | `./mf log` | An agent needs bounded JSON for one known event/trace/domain id | [Consume Server Events](#consume-server-events) |
 | `./mf thread context` | An agent needs the model's canonical request, digest, or tool-loop prefix | [Inspect Model Context](#inspect-model-context) |
 | `GET /api/debug/events` | Query recent server events by correlation/source/level | [Consume Server Events](#consume-server-events) |
@@ -33,12 +33,13 @@ Start from your symptom in [Strategies](#strategies), or scan the
 - **Something is slow or chatty.** LLM Calls panel first (latency, retries,
   token counts per call). For per-chunk granularity, opt into
   `OBS_VERBOSE=gateway.chunks` (dev/test only) and re-run.
-- **An LLM is debugging.** Reproduce the writer's steps in the browser
-  (`agent-browser`), with `MODEL_PROVIDER=mock` and `./mf mock script` for
-  deterministic tool paths. `./mf thread send` can drive a server-only
-  reproduction, but it doesn't exercise the app, so confirm the bug and its fix
-  in the browser. Read the durable transcript with `./mf thread view` to check
-  which reply answered (send/tail outcomes are not proof until [#768](https://github.com/haowjy/meridian-flow/issues/768) lands),
+- **An LLM is debugging.** Reproduce with `./mf thread send` (pair
+  `MODEL_PROVIDER=mock` with `./mf mock script` for deterministic tool paths).
+  A `./mf` run is evidence for the code it shares with the app, and for the
+  server. Confirm what the writer sees in the browser (`agent-browser`), at least
+  once at the end. Read the durable transcript with `./mf thread view` to check
+  which reply answered your message (a send's exit 0 does not prove that until
+  [#768](https://github.com/haowjy/meridian-flow/issues/768)'s second phase lands),
   then `./mf log --thread <id>` or
   `./mf log --trace <id>`. Add `--full` only when compact metadata is
   insufficient. Use `./mf thread context` when the question is what the model
@@ -48,31 +49,41 @@ Start from your symptom in [Strategies](#strategies), or scan the
 - **Polling from a script or agent.** Use `sinceEventId` cursors — event IDs
   are stable at emit time, so incremental polls never re-read history.
 
-## Set Up and Read with the CLI
+## Set Up and Verify with the CLI
 
-`./mf` sets up state and reads durable state. It doesn't test the app: it is a
-separate client over the same API, so a result through `./mf` says nothing about
-what the writer sees. Verify behavior in a real browser (`agent-browser`), judged
-by the screen with the durable transcript as truth. Repeatable verification
+While working, `./mf` is the verification tool for the code it shares with the
+app. It also sets up state (Works, threads, seeded documents, mock-model scripts,
+queued controls) and reads durable state. The browser is judged by what the
+screen shows, with the durable transcript as truth. Repeatable verification
 recipes live in the [runtime probe catalog](qa/README.md).
 
-`./mf` (repo root) is a thin wrapper over this worktree's own API: every command
-maps to an existing HTTP route or thread-socket message, authenticated exactly
-like the browser through dev login. Run `./mf` for the command tree with the
-route each command wraps, and `./mf <noun> <verb> --help` for flags and examples.
-Use it for setup and durable reads; check send/tail outcomes against the durable
-transcript, and check app behavior in the browser. A send that cannot start for lack of usage
-returns `status: "blocked", reason: "credits_exhausted"` with exit code 1,
-not a deadline timeout. This proves that this send's accepted writer turn is
-still in the durable blocked inbox; it does not discard the message. Adding
-usage lets the existing server wake retry it. `--no-wait` still reports only
-admission. Other reply-following limits under #768 are unchanged.
+`./mf` (repo root) drives this worktree's own API: every command maps to an
+existing HTTP route or thread-socket message, authenticated exactly like the
+browser through dev login. Run `./mf` for the command tree with the route each
+command wraps, and `./mf <noun> <verb> --help` for flags and examples.
+
+What a `./mf` run proves depends on the code behind the command. Its thread
+socket, message body, chat event processing and transcript view model come from
+`@meridian/thread-client`, the same code the app runs, so a run is evidence of
+that shared code against the real server (`thread view` prints the rows the app
+draws). A command with no shared client code
+behind it is evidence of the server only. What the writer sees is checked in the
+browser (`agent-browser`): rendering, card wording, the app's thread store, the TipTap
+composer, the submission journal, optimistic UI, and navigation. A PR that
+changes app behavior confirms it in the browser at least once, at the end.
+`liveView` is not a certificate of any browser screen.
+
+A send that cannot start for lack of usage returns `status: "blocked"`,
+`outcome: "failed"`, `reason: "credits_exhausted"` and exit code 1, not a
+deadline timeout. This proves that this send's accepted writer turn is still in
+the durable blocked inbox; it does not discard the message. Adding usage lets
+the existing server wake retry it.
 
 ```bash
-./mf seed tools/dev/cli/fixtures/basic.json        # docs + thread + an opening message
+./mf seed tools/mf/fixtures/basic.json        # docs + thread + an opening message
 ./mf thread send <id> "Tighten the opening" --ref manuscript://mf-chapter-1.md
-./mf thread send <id> "go" --mock @tools/dev/cli/fixtures/mock-write.json --json | tail -1
-./mf thread view c3                                # transcript (ref, id, or id prefix)
+./mf thread send <id> "go" --mock @tools/mf/fixtures/mock-write.json --json | tail -1
+./mf thread view c3                                # chat rows as the app draws them (ref, id, or id prefix)
 ./mf thread tail <id> --until-idle                 # follow a run started elsewhere
 ./mf thread events <id> --child p2                 # one direct child's status, phase, tool, and target per activity frame
 ./mf thread view <id> --blocks                     # persisted blocks with created time, gaps, tool name, size
@@ -82,37 +93,156 @@ admission. Other reply-following limits under #768 are unchanged.
 
 Contract:
 
-Until [#768](https://github.com/haowjy/meridian-flow/issues/768) lands,
-`./mf thread send` and `thread tail --until-idle` can report another message's
-reply or stop before the reply that answers yours. Check run outcomes against
-`./mf thread view` (the durable transcript) or in the browser; exit 0 does not
-prove your message was answered or the thread is idle.
+Until [#768](https://github.com/haowjy/meridian-flow/issues/768)'s second phase lands,
+`./mf thread send` cannot prove which reply answered its message. It no longer
+reports complete while its own message remains pending, but absence from pending
+alone is not reply binding. Check the reported reply against `./mf thread view`
+(the durable transcript) or in the browser. `tail --until-idle` now confirms idle
+at its final snapshot; it does not attribute replies to messages. A `send` whose
+message a Stop handed back, or whose reply a Stop cancelled, can report `timeout`
+(exit 124) rather than `cancelled`; read `thread view` instead. Plain `tail` and
+`send`'s live output don't draw queued rows.
 
-- Compact text by default; `--json` prints exactly one object, or NDJSON for
-  streams (`send`, `tail`, `events`, `log --follow`) whose last `send` line is
-  the terminal `{type: "result" | "error", status, finalText, ...}` envelope.
-  `--fields a,b` trims JSON (each stream line keeps `type` plus the requested
-  keys it has). Errors go to stderr (`{error, code, hint}` under
-  `--json`).
-- `send` waits by default and its exit code reports the observed outcome,
-  not necessarily the reply answering your message: 0 complete,
-  1 failed, 5 cancelled, 8 waiting on an interrupt (answer with
-  `./mf thread respond`), 124 timeout. 2 is usage, 3 not found, 4 the stack is
-  not running or dev login failed. Every wait is bounded by `--timeout`.
-  The result is the reply that answers the sent message: a steer or a
-  compaction split follows the successor whose start names the reply it
-  continues, and a queued message waits for the start that names it.
-- `thread view` prints a failed compaction's typed outcome as
-  `compaction failure: <reason> during <phase>`. With `--json`, compaction
-  turns carry `compactionMetadata` (trigger, control IDs, failure reason and
-  phase, fit tokens, `tokensBefore`/`tokensAfter`);
-  `error` remains writer-facing copy.
+- Content comes from the app's own event processing. `thread view` hydrates the
+  snapshot into the shared `@meridian/thread-client` turn store, runs the shared
+  `viewTranscript` over it, and prints that view model's rows (`you:`,
+  `reply: 3 steps, read 2 docs`, `compaction:`, `queued:`), or `--json` as the
+  versioned `chatView: 2` envelope with row identity, kind and items (`--full --json` adds
+  tool inputs, results and metadata, Work receipts, raw card content, report payloads, the
+  handoff brief, delivery bodies and writer occurrences; text mode summarizes and omits
+  them). Its `inputs` field says what the view was computed from: the snapshot only, with
+  no local records, stand-ins, opening seed or live activity, inherited history omitted,
+  and background report bodies and change trails not fetched. Card wording and failure
+  copy are drawn by React, so compare cards as raw props only. The app draws
+  the same function's output, so compare a chat in the browser by row identity, row
+  kind, item kinds and visible text with [the chat-session recipe](qa/chat-session.md). `send` and `tail --until-idle` reduce every followed event through the
+  same shared reducer, then compare this CLI follower's reduced status and final
+  text for the followed turns with the confirming snapshot. The result gains
+  `liveView`: `matches`, `differs` with a compact `liveDiff` of `{ turnId, field,
+  live, server }` rows (text mode prints one line), or `not_observed` when the
+  follow had a replay gap or a compared turn's events were not seen from its
+  start. It is absent when nothing was followed.
+  - It compares only the status and final text of the followed turns, so it
+    can't catch a missing write-mode divider, a misplaced row or a missing
+    queued row. Read those from `thread view` (the snapshot) and in the browser.
+    The follow does guarantee that a divider whose anchor turn the stream never
+    carried is recovered from a bounded snapshot, as the app recovers it.
+  - It is not a certificate of any browser screen. It leaves out tools,
+    reasoning, interrupts, the optimistic UI and the visible-turn policy, and the
+    app reconciles to the server at turn end.
+  - `differs` is a lead to investigate, and `matches` does not prove the screen
+    was right. Neither changes the outcome or exit code (the claim is the
+    server's stored state).
+  - The owner has ruled that once the chat session's sync is shared, a live
+    disagreement will fail with exit 6 (`live_disagrees`). That is not true
+    yet ([`./mf`'s claims][mf-claims]).
+
+  `thread events` stays an event log and prints both `tool.completed` and
+  `tool.settled`.
+- Compact text by default. `--json` prints one object, or NDJSON for streams.
+  Every live claim (`send`, `tail --until-idle`, `respond`, `cancel`, and each seed send)
+  and `events` ends in a `result` envelope. Seed embeds its sends' envelopes in
+  `messages` and reports the worst exit among all sends in its final result.
+  `--fields a,b` keeps `type` on every stream line and always keeps `type`,
+  `command`, `outcome`, and `reason` on terminal results. CLI errors (usage,
+  not found, unavailable) remain on stderr (`{error, code, hint}` under `--json`).
+- Outcomes map to exits: **0 accepted** (`send --no-wait`, admission only) and
+  **0 complete**, **1 failed**, **5 cancelled**,
+  **6 unproven**, **8 interrupt**, **124 timeout**. Other exits: **2 usage**,
+  **3 not found**, **4 unavailable** (stack, login, terminal socket close).
+  `reason` is null for a proven outcome. A timeout's reason names the first
+  thing its last snapshot still showed: `running` (a running turn), `owed` (a
+  pending writer message), `lease_awake` (the chat still awake with neither,
+  as when a restart orphans a reply and the server keeps its run lease until
+  expiry, [#799](https://github.com/haowjy/meridian-flow/issues/799)), else
+  `unconfirmed` (no snapshot, or one that looked idle but proved nothing).
+  `send` and `tail --until-idle` share this rule.
+  Unproven reasons today are `admission_unknown`, `replay_truncated`,
+  `unconfirmed`, and `owed`. A complete send still does not prove which reply
+  answered, as explained above.
+- In text mode, a final answer goes to stdout only for complete or failed.
+  Stderr reports `<outcome> <turn> [reason]` and any follow-up commands.
+  A failed or cancelled run is a `result`, never a terminal `error` record.
+- A send deadline reads one final snapshot. Its result
+  reports `stillRunning` (turn id and status, or null), `owed` (pending writer
+  messages), and `next` commands. The run-state record (`liveState.runState`) is
+  a mandatory live-state field. Text says when the server is
+  still running and how to stop it. **Timeout never cancels a run.** Plain
+  `tail` remains a bounded live view and exits 0 when its wait expires.
+- `tail --until-idle` returns immediately if the initial snapshot is idle.
+  Otherwise it follows from the last sequence and checks a snapshot after each
+  turn finish/failure, a journaled `meridian.run_state` record or idle subscription state. Idle means
+  the shared run-state module's `isBusy` is false for the snapshot's `liveState.runState` (no open
+  `execution`, no writer-provenance message in `items`) and `liveState.status.kind` is `asleep`
+  (no awake lease). A successor run or owed writer message keeps it
+  following until a snapshot confirms idle or the deadline exits 124 with the
+  timeout report. Durable `thread.status` alone is not evidence of idle.
+  One subscription and event mapper stay alive through checkpoints, including
+  frames queued during HTTP confirmation. Its `turns` list covers the initially
+  running turn and every stream-named turn with their snapshot statuses.
+  Any observed failure or covered turn error produces failed; otherwise any
+  cancellation produces cancelled, missing or non-terminal turns produce 6
+  `unconfirmed`, and all complete produces complete.
+  A replay gap without a proven failure or cancellation produces 6
+  `replay_truncated`, preserving the idle evidence and covered turns. An initially idle chat returns complete with an empty list.
+  Snapshot requests use only the time remaining. At timeout, the last snapshot's
+  activity is labeled `snapshotStale: true` (not a new current-state claim),
+  or `snapshotUnavailable: true` if no snapshot succeeded. Without a snapshot
+  the result carries no `stillRunning` or `owed`: absent means unknown, never
+  none. No post-deadline snapshot request extends the wait.
+- `cancel`'s complete envelope proves the server acknowledged cancellation
+  or reported the target already finished, not that a particular reply was
+  answered. Its `status` carries that acknowledgement. A missing target keeps
+  exit 3; the target-selection logic is unchanged.
+- `respond` exits 0 only after the journal records `meridian.interrupt`
+  resolved for that interrupt id. A rejecting error frame exits 1; its
+  confirmation deadline (`--timeout`, default 15s) exits 6 `unconfirmed`.
+  It does not prove the reply that follows.
+- `events` prints the replay, then exits 6 `replay_truncated` if a gap arrived.
+  Otherwise its complete result proves only that the printed replay had no gap.
+- If a message POST loses its HTTP answer, send looks up its `submissionId`
+  once through the app's admission route. Accepted resumes following; rejected
+  or not seen exits 1; a failed lookup or still-pending admission exits 6
+  `admission_unknown`. `send --no-wait` proves admission only and reports `outcome: "accepted"`, never `complete`.
+- Before reporting complete, `send` reads a snapshot. If its admitted user turn
+  id is still in `liveState.runState.items`, it exits 6 `unproven` with reason
+  `owed`, `stillRunning`, the pending writer messages, and
+  `./mf thread tail <thread> --until-idle` as the next command. It prints no
+  answer for this unproven result. Absence from the record's items does not yet prove
+  which reply answered the message; that binding remains phase 2.
+- Write tools emit `tool.completed` for the staged result, then `tool.settled`
+  for the committed receipt, in both JSON and text. There is no `settled` flag.
+  The staged result alone does not prove a committed write.
+- `send` currently follows a steer or a compaction split with an interim rule:
+  reservation hints on a reply's start (the user turns it was reserved for) and
+  successor following within one execution, plus ancestry in recovery. It does
+  not bind to `Turn.delivery`, so the result is the
+  reply the follower selected, not proof that this reply answered your message.
+  The binding is #768's second phase. A `send` that joined a running reply and
+  sees the record show no open execution while its message is still waiting
+  follows for a short grace for the reply that takes it, then exits 6 `unproven`
+  with reason `owed`; it never reports that message answered.
+- `thread view` (`chatView: 2`) prints a compaction row as its trigger, control
+  ID, summary and model, and token counts before and after; `--json` carries the
+  same facts under `compaction`. It does not print a failed compaction's reason
+  or phase, or fit tokens (`error` remains writer-facing copy). Those live on the
+  compaction turn's durable `metadata` (`reason`, `phase`, `estimatedTokens`,
+  `fitLimitTokens`), in the thread snapshot's turns. Neither `thread events` nor
+  `./mf log` carries them today. The view model should carry them if a CLI
+  reader needs them; that is not built yet.
 - `<thread>` accepts a `cN`/`pN` ref, a full id, an app URL containing one, or
   a unique id prefix. Refs are per project: they resolve through
   `GET /api/projects/:projectId/threads/by-ref/:ref` in the default project,
   or in `--project <id>`.
 - `MF_SERVER_URL` plus `MF_COOKIE` (or `MF_APP_URL` for dev login) target a
   stack other than this worktree's Portless routes.
+
+Terminal record example (command-specific fields follow the reserved keys):
+
+```json
+{"type":"result","command":"thread.send","threadId":"…","outcome":"timeout","reason":"running","stillRunning":{"turnId":"B","status":"streaming"},"owed":[],"next":["./mf thread cancel … --turn B","./mf thread tail … --until-idle"]}
+```
+
 
 Scripting the model: with `MODEL_PROVIDER=mock` (or no provider keys) and the
 debug gate open, the in-process mock model accepts queued replies through the
@@ -433,3 +563,5 @@ not removing and inspect the plan before confirming it:
 pnpm dev:prune-worktrees -- --target <work-id|path|branch|pr> --dry-run
 pnpm dev:prune-worktrees -- --target <work-id|path|branch|pr>
 ```
+
+[mf-claims]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/dev-cli/mf-claims-are-proofs.md

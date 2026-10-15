@@ -1,6 +1,6 @@
 /**
- * useTurnStop — Stop for a turn that has no reply stream: a pending
- * compaction divider or a handoff brief being written.
+ * useTurnStop — Stop for a handoff brief being written, through the turn cancel
+ * route. (A compaction divider's Stop is the chat's Stop, `useChatStop`.)
  *
  * The turn reads Stopping at once; the turn cancel route catches up and the
  * snapshot revalidates so the settled turn arrives. A failed cancel clears

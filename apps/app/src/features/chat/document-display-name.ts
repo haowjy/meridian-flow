@@ -8,9 +8,8 @@ import { t } from "@lingui/core/macro";
 import { splitDocumentHrefSuffix } from "@meridian/contracts";
 import { documentTitleFromUri, parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-
+import { humanizeSkillSlug, skillFile } from "@meridian/thread-client";
 import { schemeLabel } from "@/features/project/context/context-schemes";
-import { humanizeSkillSlug, skillFile } from "./tool-command";
 
 type ParsedContextLocation = {
   scheme: ProjectContextTreeScheme | null;
