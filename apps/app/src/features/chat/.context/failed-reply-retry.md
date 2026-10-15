@@ -9,13 +9,16 @@ reply itself.
 | Failed reply | Row |
 |---|---|
 | Latest turn | Tinted block: "This response failed." with **Retry** beside it |
-| Not the latest turn, never retried | The quiet line "This response failed.", with no action (the writer never acted on it) |
+| Not the latest turn, never retried | No failure line. With no text or items it has no row at all (no grey line, no empty icons row); with partial text it keeps the text and items |
 | Retried (accepted or pending) | Not drawn: the Retry's row takes its place |
 | A retry that failed too | One failure, the newest, in that same place |
-| Its Retry was refused | A red error card "Couldn't retry." on that reply ("Couldn't retry. Another reply started first." for a 409), latest or not (the quiet marker stays above it in history). Temporary: it clears when the next reply completes, or at the writer's next Retry or send; a reply that fails or is cancelled leaves it |
+| Its Retry was refused | Only a red error card "Couldn't retry." on that reply ("Couldn't retry. Another reply started first." for a 409), with no "This response failed." above it once the chat moved past it (a failure still latest keeps its card with the refusal as a note inside). The reply's row stays showing just the card, with no action icons if it has no content. Temporary: it clears when the next reply completes, or at the writer's next Retry or send; a reply that fails or is cancelled leaves it |
 | The provider declined it | "The AI provider turned this request down." with **Retry** when latest and a retry handler is present |
 
-"Latest" is `endsTranscript` in `TurnList`: no visible row follows, and a
+A failure shows only while the writer can act on it. Whether a failed reply that is
+not the latest has a row is decided in `viewTranscript` (no row without items or
+deliveries, unless the `refused` input names it); `ErrorBlock` then draws nothing
+for it but a refusal card. "Latest" is `endsTranscript` in `TurnList`: no visible row follows, and a
 divider counts as a row. The client does not gate Retry on the chat being
 busy: a failed reply is followed at once by whatever runs next, which takes
 its Retry away, and the server refuses a Retry that races a run (409), which

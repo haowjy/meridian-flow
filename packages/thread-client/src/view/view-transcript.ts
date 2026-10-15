@@ -52,6 +52,11 @@ export type TranscriptViewInput = {
    */
   retried?: ReadonlySet<string>;
   /**
+   * Failed replies whose Retry the server refused: the caller shows that refusal on them, so
+   * their row stays even with nothing else to draw. Local to the caller; `./mf` passes none.
+   */
+  refused?: ReadonlySet<string>;
+  /**
    * A queued switch applies when the next run starts (`awaiting_run` in the record). Its notice
    * then sits before that run's reply stand-in (`controlSlot`), where its turn will land.
    */
@@ -143,11 +148,25 @@ export function viewTranscript(input: TranscriptViewInput): TranscriptView {
     input.inherited ?? null,
     input.onContractFailure,
   );
+  // A failure shows only while the writer can act on it: the latest reply (a write-mode line
+  // after it does not close it). A failed reply the chat moved past has no failure line, and
+  // with nothing to read it has no row, unless a refused Retry shows its card there.
+  let latest = model.rows.length - 1;
+  while (latest > 0 && model.rows[latest]?.kind === "write-mode") latest -= 1;
+  const leavesNoTrace = (row: TranscriptRow, index: number) =>
+    row.kind === "turn" &&
+    row.turn.role === "assistant" &&
+    row.turn.status === "error" &&
+    index !== latest &&
+    !input.refused?.has(row.turn.id) &&
+    viewAssistantTurn(row.turn).items.length === 0 &&
+    !model.deliveryEventsByAssistantTurnId.get(row.turn.id)?.length;
   const occurrences = new Map<string, number>();
   const writer = new Map<string, WriterText>();
   const items = new Map<string, AssistantView>();
-  const rows = model.rows.map((row, index): ViewRow => {
+  const rows = model.rows.flatMap((row, index): ViewRow[] => {
     const { turn } = row;
+    if (leavesNoTrace(row, index)) return [];
     const slot = `${turn.id}\0${row.kind}`;
     const occurrence = occurrences.get(slot) ?? 0;
     occurrences.set(slot, occurrence + 1);
@@ -157,19 +176,21 @@ export function viewTranscript(input: TranscriptViewInput): TranscriptView {
       if (turn.role === "user") writer.set(turn.id, projectWriterText(turn));
       else items.set(turn.id, viewAssistantTurn(turn));
     }
-    return {
-      ...row,
-      identity: {
-        turnId: isOptimisticTurnId(turn.id) || unconfirmed.has(turn.id) ? null : turn.id,
-        kind: row.kind,
-        occurrence,
+    return [
+      {
+        ...row,
+        identity: {
+          turnId: isOptimisticTurnId(turn.id) || unconfirmed.has(turn.id) ? null : turn.id,
+          kind: row.kind,
+          occurrence,
+        },
+        renderKey: turn.id,
+        deliveries: groupsOf(model.deliveryEventsByAssistantTurnId.get(turn.id)),
+        continuing: model.continuing[index] ?? false,
+        response: row.kind === "turn" && turn.role !== "user" ? responseOf(parts ?? [turn]) : null,
+        queued: row.kind === "turn" && !row.inherited && (input.queued?.has(turn.id) ?? false),
       },
-      renderKey: turn.id,
-      deliveries: groupsOf(model.deliveryEventsByAssistantTurnId.get(turn.id)),
-      continuing: model.continuing[index] ?? false,
-      response: row.kind === "turn" && turn.role !== "user" ? responseOf(parts ?? [turn]) : null,
-      queued: row.kind === "turn" && !row.inherited && (input.queued?.has(turn.id) ?? false),
-    };
+    ];
   });
   // The chat's next run is the Retry whose failed reply is still the last reply: a stand-in
   // that newer replies have overtaken (a lost Retry from earlier history) never qualifies, so

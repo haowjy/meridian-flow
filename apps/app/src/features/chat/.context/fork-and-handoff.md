@@ -126,7 +126,7 @@ the prefix ahead of the fork's own turns and marks those rows `inherited`:
 - a failed read with nothing standing in shows an alert with Retry where the
   inherited rows would start, never a fork whose history silently vanished;
 - inherited rows never end the transcript or count as the latest reply, so a
-  cutoff at a failed reply stays the quiet historical marker;
+  cutoff at a failed reply shows no failure line;
 - inherited dividers are read-only (no Stop or withdrawal); inherited replies render as their owner's (lineage and receipts)
   with no interrupt answers; they keep Copy, Fork, and Hand off.
 
