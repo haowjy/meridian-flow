@@ -1,729 +1,166 @@
-# features/project — Desktop project shell
+# features/project — desktop project shell
 
-The authenticated project workspace: one persistent multi-panel desktop surface
-that swaps primary *destinations* (Chat / Work / Editor) without tearing down
-its stateful surfaces. This file is the colocated contract for the shell — read
-it before touching layout, the rails/headers, or the prefs store.
-Settings is an auxiliary routed surface, not a primary destination.
-
-Design intent lives in [`DESIGN.md` § Project shell](../../../../../../DESIGN.md).
-This page is the *implementation* contract.
-
-Mobile now lives beside this desktop shell as a sibling implementation. The
-shared `ProjectView` selects `mobile/MobileProject` only through the phone
-capability predicate in `usePhoneShell()`; desktop `ProjectShell` remains the
-persistent multi-panel grid. Phone-specific contracts live in
+This reference covers the persistent desktop workspace, route ownership, Work
+and chat navigation, hydration, and document admission. Read [`AGENTS.md`](../AGENTS.md)
+first. Phone is a sibling implementation; its details live in
 [`mobile/.context/CONTEXT.md`](../mobile/.context/CONTEXT.md).
 
-## Layout: one flat grid, stable surfaces
+## Desktop shell
 
-`layout/SlotGrid.tsx` renders the whole project as a **single flat CSS grid**.
-Every stateful surface is a permanent direct child of one grid container for the
-entire session. A placement change only mutates the surface wrapper's
-`grid-area` (or parks it offscreen via `PARKED_SURFACE_STYLE` when inactive).
-**Surfaces are never portaled, reparented, or conditionally removed by a screen
-change** — that is what preserves chat scroll/draft and live document sessions
-across navigation.
+`ProjectView` selects `DesktopProject` or the phone sibling. Desktop renders a
+single flat grid with stable direct-child slots:
 
-Slot topology (`layout/desktop-layout.ts`), one grid row across every screen:
-
-```
-"rail-l  left-resize  center  dock-resize  dock"
+```text
+rail-l | left-resize | center | dock-resize | dock
 ```
 
-- **`rail-l`** — the left sidebar (destinations + project file tree).
-- **`center`** — the destination's main pane (Chat index/Work route pane, or the
-  Chat/Editor center surface).
-- **`dock`** — the shared right dock. The context-rail occupies it on Chat; Chat
-  occupies it on Work/Editor. It reads as **one persistent
-  sidebar** whose inner content swaps — a single shared width/collapse pref
-  (`slotPrefs.dock`), not a per-surface one.
+The left rail owns project identity, Chat/Work/Editor navigation, the project
+file tree, Scratch, and account controls. The center is the current
+ destination. The dock swaps Chat and the context/document rail by destination.
+A screen change changes `grid-area` or parks a surface; it does not portal,
+reparent, or conditionally unmount stateful surfaces. The dock and all
+stateful bodies therefore retain drafts, scroll, and sessions across navigation.
 
-There is **no `files` grid track**. The file explorer is the persistent body of
-the left sidebar; `ContextViewer` owns only the Editor tab strip and document.
+Slot wrappers paint their material. Document shells stay transparent and do not
+stack duplicate border classes. Layout preferences are device-local; slot
+placement is derived from the active screen, not persisted. Preferences hydrate
+before the desktop component mounts, and `ProjectView` gates the mount rather
+than placing a conditional between hooks. One merged layout subscription is
+the only whole-preferences subscription.
 
-`LeftSidebar` is one column with a truncating project-title control,
-Chat/Work/Editor navigation, the persistent project tree, an explicit View
-projects link to the library, and account controls. The title replaces the
-whole Meridian wordmark and compass mark; it identifies this project rather
-than acting as a library link. The navigation rows are shared with mobile
-through `WorkspaceNavBody`; project identity and the recursive tree are
-desktop shell grammar.
+The shell has one toggle inset (`px-2`) so a surface's collapse button and the
+expand control that replaces it sit at the same x (click without moving the
+mouse), and semantic design-token colors, never raw ones. Region separation is
+tonal (no seam borders or shadows) and no band paints its own background. Repeated
+header, rail-header, and toggle primitives are shared, but the shell is not a
+universal rail wrapper: Chat's dock is not a resizable panel.
 
-Work is the dedicated collection/detail management destination. The collection reads
-active, archived and restorable deleted Work and owns creation and lifecycle entry
-points; it never selects a project-wide Work or rebinds a chat. Its response contains only named catalog
-  Works and never lists No Work as a row. Route-owned detail and inline metadata consume
-the typed catalog, PATCH mutation, and filtered chat-feed query seams.
-A Work has one free text, its `goal`, which the page labels "Description" and
-the model reads as the goal. Work detail's route Work is the sole source for
-its name and goal. The
-works query cache holds only server snapshots, ordered by `authorityRevision`.
-Work commands (create, update, Archive, Unarchive, Delete, Restore) never write
-guesses into it. One table in `client/query/work-commands` says, per operation,
-what it sends, how it projects before and after the server answers, which
-fields it owns, when the snapshot already shows it, whether it runs serially,
-and whether a surface shows its refusal. `work-command-store` runs commands
-and keeps each one's record in a per-project store (QueryClient query data,
-cleared on account switch; a command the account left while queued is never
-sent): pending until a snapshot read started after its commit lands (bounded;
-if the read fails, the Work as that command left it is installed, owned fields
-only), then gone, except a failure a surface shows (until Retry, Dismiss, a
-newer command on that Work, or a repair read showing the server kept it) and a
-delete (its Undo window). A rename reports its refusal from its own promise and
-leaves no record. `work-command-projection` lays pending records over the
-snapshot for `useWorks`, so every reader sees one projection and a rejection
-simply stops projecting. `useWorks` checks Work ids once (`AddressableWork`), so
-readers put a Work's id into an address without re-parsing it. A create shows in
-`useWorks().creations` (pending or refused, a `WorkDraft`) until the POST
-commits, then in `works` until the snapshot has it; the creation registry
-serves Projects only. `work-command-selectors` derive failures (each with
-`retry()` and `dismiss()`), Undo windows and restoring ids from the records; a
-failure goes quiet once the snapshot already shows its target. The page-scoped
-metadata controller owns only
-the goal draft, field-local failure, and the route leave decision. A dirty
-goal offers Save, Discard, or Keep editing; hard unload uses the router's
-native before-unload integration rather than a second draft owner. The collection
-focuses its heading after the catalog resolves. It shows one list at a time
-under Active, Archived, and Deleted tabs (lifecycle states never overlap, so
-tabs replace stacked disclosures). `useArchiveFocusFollow` moves focus to the
-destination tab when Archive or Unarchive moves a row out of the visible list,
-right after the click, or after its Retry. A rejected Archive, Unarchive, Delete
-or Restore leaves `WorkCommandFailureRow` (Retry, Dismiss) under the Work's row;
-the Work band shows the same row as its `notice`: one element that `PaneHeader`
-flows beside the title when wide and wraps onto its own line when narrow (so a
-resize neither re-announces it nor drops focus), and a full-width line under the
-phone top bar. Each deleted Work has its own Undo row, in the tab it left; a
-rejected Undo reopens the row with its restore failure. `workListEntries`
-(`work-list-model`) turns the projection, Undo windows and failures into each
-tab's entries, so `WorkCollection` only maps entries to rows. Work lists, the
-Deleted tab, the Files groups and the recency lists share one row grammar
-(`RuledList`, `RowIcon`, `GroupLabel`).
-Work Files Scratch rows declare Rename, Move… and Delete explicitly while their
-Work is editable. Move uses the shared `EntryMovePicker`; move refusals retain
-the destination (including its name), while only rename refusals offer the
-inline name repair. Archived Work rows remain navigable without actions.
+## Route and identity ownership
 
-Detail composes identity and lifecycle, Goal, pending drafts, Scratch,
-and associated chats. `WorkDetailScreen` keeps the titles, the
-goal and the sticky tab switch; `WorkChatsTab` and `WorkFilesTab` each
-own their search, actions and queries, and render their tools into the toolbar
-through `WorkToolbarTools`, so switching tabs never remounts the switch. A new
-note on its way into a Work is `useWorkNoteIntake`'s, kept per Work so a
-refusal outlives a tab switch. Associated chats use bounded cursor pages and the
-same virtualized, borderless project chat row as the Chat index without adding a nested
-scroll owner. The external-scroll hook measures the list in that owner's
-coordinates and owns stable keys plus focused/menu row pinning. Their membership
-is historical while the displayed Work is the
-chat's current primary Work. Resource sections fail independently. Archive and
-unarchive preserve the detail route; delete is optimistic from the band menu or a
-list row, lands on the collection, and shows an inline Undo row there. Delete
-never blocks: the Work's chats, drafts, Scratch and Uploads go with it, and it
-stays restorable for `WORK_DELETE_RETENTION_DAYS` (30) under the collection's
-Deleted tab (`DeletedWorkList`) until the server's purge job removes it. Restore
-returns a Work to the status it had before deletion; while pending, it shows in
-that tab (Active or Archived) at once, marked Restoring.
-The Work band copies the Chat pane's grammar (`useWorkChrome`): an All Work
-`IndexTabChip` door, the open Work's name as the active tab the page rises into
-and renamed inside it (`WorkTitleTab` over `TabTitleField`, no dropdown), and the
-Work's `…` menu at the far right. The phone top bar shows the same pieces as a
-`Work › <name>` trail. `useWorkDeletion` lives above the screen so the band's
-menu and the collection's Undo rows share it; it holds no state of its own
-(closing a window, even while its delete is pending, is a store write). Opening
-another Work or starting a new one closes the Undo windows. The page body starts with
-the Work's heading (`WorkHeading`), renamed in place like the tab; both titles
-read the same route Work, so the update command's projection publishes a
-rename in both places at once. Every title slot (`TitleEditSlot`, keyed by
-`titleKey`) reopens only for the latest rename of its title, and never takes
-focus from where the writer has moved on. Then
-the goal (labeled Description): clicking a clamped goal shows all of it, Show less folds
-it, and a right-aligned Edit edits it in place without moving (see DESIGN.md),
-with Cancel and Save right-aligned below. The last opened Work is remembered
-per device (`client/current-work`): the sidebar's Work reopens it while it
-exists, and the collection band offers it as a `ReturnTabChip`, like the
-current chat beside the chat index.
-New Work and New project are `CreationDialog` (features/creation) over their
-collection, addressed as `works/new` and `/projects/new`. Create closes the
-dialog, replaces that address with the new destination (navigate first), and
-the destination shows pending or failed state (Retry, Discard) until the server
-confirms; a lost POST response is recovered by the Work's own id.
-The collection, the Chats tab and the Files tab share the app's list grammar
-(Chat index, Editor recents): recency-rank `SectionLabel` groups, hairline
-`row-rule` rows with hover pills, a trailing age or state, and one `…` menu
-(`WorkActionsMenu` for Work, the tree's `ContextEntryActions` for files). The
-route dispatcher is `WorkScreen`; `WorkCollection` and
-`WorkCreationDestination` own their page bodies. `WorkCollection` receives the
-shared deletion controller as a required prop. The collection and band each
-call `useWorkArchiveToggle` and read the same command failures;
-`useArchiveFocusFollow` owns only the collection's focus intent.
-The Work toolbar is one sticky row: view switch, full-width search, then the view's
-jade action. Both shells share this route-owned module. At phone geometry, text
-must wrap without horizontal overflow and product controls retain coarse-pointer touch
-targets.
+The authenticated project route loads a UUID project parent and keeps
+`ProjectView` mounted across same-project child paths. Typed route controllers
+own push/replace and parse no URLs in leaves. The path names the primary screen
+and document; query carries Work, view, settings, and draft overlays:
 
-The dock holds one transient document for Work and Chat (see
-[`dock/.context/CONTEXT.md`](../dock/.context/CONTEXT.md)): a Work's Files row opens
-a Scratch note there in the standard editor, editable, with the Editor's saving,
-offline and archived-Work behaviour. The Files tab shows Changes to review and Scratch only;
-Work Uploads have no Files tab surface (composer attachments still land there, see
-[TODO](TODO)). A "Changes to review" row launches review through the same
-`useAiDraftLauncher` handoff as the other review launchers, not a plain
-document open. Rows expand to their change lists and Work-wide Apply/Discard
-use creation-bound `useWorkDraftCommands`, independently of the presented review.
-No Work has no Work page or Work-wide list. Files search uses one name matcher across drafts and Scratch;
-rename collisions use direct catalog siblings, and a failed New note remains as
-a retryable, dismissible attempt row. Scratch lists in the sidebar tree's order
-(`compareTreePlaces`), a new note sorted by the path it will land at, so a
-landing note keeps its row.
-`ProjectView` clears the slot when its Work changes or the Work destination
-leaves. It reconciles against the route screen and Work identity, including
-unresolved client-addressed creation routes, so the collection and other screens
-cannot inherit a prior Work's note. On the phone, and on the Editor screen, a
-Files row opens the document in the Editor instead.
-
-The left rail ends in a **Scratch** section above the account (`chat/ChatScratch.tsx`,
-`RailScratchSection`, passed to `WorkspaceNavBody`'s `scratch` slot by `LeftSidebar` and
-`NavigationDrawer`). It is a tree section in the tree's own style: the head is the tree's
-`RailPaneHeader` (chevron, Scratch icon, "SCRATCH"), clicking it expands upwards or collapses, and the
-body is the chat's Scratch as shared Files rows (`ContextTreeEntry` over
-`contextTreeFileRowClassName`), with folders opening in place and the open note highlighted. The
-wording "Scratch for this chat" (a chat's own notes) or "Scratch for <Work>" is the head's tooltip and
-accessible name, not a line of text. The section is content-sized up to 40% of the rail and scrolls
-itself; the project tree keeps the rest. On desktop the writer can resize between the two: the shell's
-`ResizeHandle` (vertical orientation, `measure` and `onReset`) sits on the divider above the expanded
-section ("Resize Scratch", Up/Down keys, double-click resets), each pane keeps at least 120px, and the
-height is remembered with the expanded flag. Collapsed has no handle, and the phone drawer has none. Expanded or collapsed (and the chosen height) is a device layout preference
-in `layout/surface-prefs-store.ts` (collapsed by default), alongside Recent disclosure.
-Tree section and folder expansion is tab-local, account/project/tree scoped, owned
-by `context/use-tree-expansion.ts`; new tabs start collapsed, and resolved catalogs
-prune missing folder identities. Active document reveal is a one-shot expansion.
-It always means the chat on screen, `displayedChatThreadId(chatDisplay)`: the center
-chat on the Chat screen, the dock's chat on the Editor and Work screens, and no
-section (it hides, with its divider) when no chat is on screen, such as the chat index. A collapsed
-rail hides with its section. The chat's thread comes from `useDisplayedThread`
-(`client/query`: the primary list, then the thread's snapshot), never the primary
-list alone, which holds no subagents. Its owner is `chatScratchOwner` (`features/chat`): the
-chat's lineage (the first chat's id, shared by its forks and subagents) while the chat
-is on No Work, else its Work. A chat rebound onto a Work lists the Work's notes with
-its lineage's under an "Earlier notes" folder, so a rebind never hides them, and the
-section follows `thread.workId` as soon as the rebind confirms. The section shows for
-every chat, so the rail never shifts when the first note lands; before it the body
-says "No notes yet" and the list fills live with the AI's writes (the AI makes the
-notes; there is no New note). A pick opens beside the chat by the existing rule
-(`dock/use-open-scratch-note.ts`) and the section stays open. On a phone it sits at the
-foot of the drawer: a pick closes the drawer and opens the note full screen. Wherever else a lineage is named (a missing-link
-dialog, a document path's drill-in menu) it is by its first chat's title (`useLineageTitle`), never its handle.
-Actual note and folder rows have the Files right-click and ellipsis menu:
-inline Rename and Move… through the shared folder picker, never Delete or creation. They retain
-Scratch's explicit owner; archived Work notes stay navigable without mutation actions. The "Earlier notes"
-group stays a navigation-only heading.
-
-On the Chat screen every chat door opens its document in the dock instead of leaving for the Editor
-(see `dock/.context/CONTEXT.md`); the Editor and Work screens and the phone are unchanged.
-
-The Chat screen's right context rail (`shell/ContextSidebar.tsx`) is drawn with the left tree's
-parts: section heads are `RailPaneHeader` (uppercase, collapsible, no counts), rows are
-`RailFileRow` over `contextTreeFileRowClassName` and the tree's `RowIcon`, and a row shows its
-file name only (no size). The rail is Recent only: without a chat or recent documents it shows
-only the Recent header, with no empty section heading or hint and no browse menu (the left tree
-is the explorer). The path's crumb menus have no root heading; drilled areas and folders keep
-their back row.
-A Recent row opens in the dock's document slot
-(an id-keyed door, see `dock/.context/CONTEXT.md`); the rail stays mounted under the slot, so no "current
-row" mark is shown. The phone has no such rail, and no Results surface (the app has none; the
-server still records `project_results`).
-
-The chat index is `/p/<project>/chats`; the bare project URL replaces itself there. It reads a flat,
-cursor-paginated primary-chat feed ordered by last activity. Favorites is a
-server-side filter, applied before pagination, and so is title search. The
-shared row also serves Work detail. The index leads with the centered
-`CreationComposer` (`hero` variant, autofocused on fine pointers): on the Chat
-screen the index is New chat. The dock's empty chat owns the pinned variant,
-with the same prospective Work and Agent choices, in the `ChatSurface` frame a
-live chat uses so the first Send never moves the composer. Only an explicit New
-chat focuses the pinned composer (a one-shot focus-request id in
-`chat-navigation`, consumed by whichever composer renders it), never a page
-load. A Work detail New chat request also carries that Work's id into the
-composer's prospective choices; it does not rebind an existing chat.
-
-The index door sits in each pane's 40px band after the sidebar toggle, on the
-same x as the Editor's Recently opened chip (`chat-index/ChatIndexButton.tsx`).
-Center wears the tab-chip grammar: on the index the door is the active chip and
-the current chat waits beside it as an inactive chip that reopens it. The dock has no index: its always-present header
-carries the chat switcher, which lists the chats and New chat. Phone reaches the
-index through the `Chats` breadcrumb ancestor instead of a door.
-
-`routing/chat-navigation.tsx` owns one current chat per browser tab, account, and
-project (`client/current-chat.ts`, never synced). The chat and remembered Work
-use `client/tab-first-remembered-id.ts`: sessionStorage wins on reload, localStorage
-seeds only the first read in a new tab, and writes update both (including an empty
-chat selection): a thread identity (primary or
-subagent) or none. It publishes one `ChatDisplay` variant, derived at render
-from the URL (never the reverse): the index with the current chat's id (for its
-reopen chip), a URL-addressed thread, or the dock's thread-or-none. Consumers
-switch on the variant instead of ANDing a thread id with an index flag; there is
-no separate "current thread id" prop. The Chat screen's center is the index or
-a chat path; the dock shows the current chat, or an empty New chat when there
-is none. A chat path becomes the current chat, persisted only in an effect so
-the URL always wins the same render. Chat nav reopens the current chat, or the
-index when there is none. Commands keep the writer's screen: on the Chat screen
-they navigate through the route's coordinator; elsewhere they point the dock at
-the chat and call the shell's registered dock reveal (`useConversationRevealRouting`
-lives inside `useProjectChatNavigation`, so every shell shares one reveal path).
-Dock selection does not write the URL. Behind the index the chat surface keeps
-the current chat mounted and hidden — its persistent thread id always tracks
-the display's underlying chat, warm or not. **What is displayed, though, goes
-to nothing on the index**: the context rail (`ContextSidebar`) and the draft
-command scope both key off the *displayed* chat, which is null while the index
-is showing, even though the surface stays warm behind it. Only the index's
-reopen chip (`ChatIndexController`'s `CurrentChatChip`) reads the remembered
-current chat directly. A confirmed snapshot 404 clears the current chat; a chat
-path is replaced (never pushed) with the index so Back cannot land on it again.
-Reload recovery (`recoveringFirstSend`) is decided once at mount; the phone
-opens its chat sheet for it over Work or Editor.
-
-First Send writes the durable account-stamped intent before selecting the new
-thread. From the index it pushes `/p/<project>/chats/<id>`, so Back returns to
-the index; dock selection remembers the chat and leaves the destination
-untouched. Reload recovery
-uses current chat identity, not a URL-only selector. The submitted Work, Agent,
-and project are immutable reconciliation facts; no admission or visibility
-handoff may run until the canonical thread matches them.
-
-The QueryClient owns normalized Favorite intent per project/thread, fenced
-against stale page arrival. A Favorite projects onto every cached row of that
-chat at once; the Favorites filter hides an unfavorited row locally, but no feed
-guesses membership. Favorite completion refetches only Favorites feeds. Work
-membership is unchanged. No feed owns read/unread state. Lifecycle projection updates
-`actionRequired` in cached rows when a subscribed thread emits; unsubscribed
-threads are only refreshed by ordinary query reads, not a background signal.
-
-Draft review follows the persistent-shell rule. The hydrated project owns one
-review value (no thread authority) above desktop/phone selection, fed by the
-presented document (`presented-document.ts`): the Editor address on Context,
-the dock document on desktop Chat/Work, regardless of collapse. Its Work is the
-presented review's Work, falling back to the Editor route Work.
-`PresentedReviewScope` provides it to Editor and dock hosts and offers its
-presentation to outside lists. `ReviewAddressOwner` writes and restores the
-address through the presenting container's port: the Editor route, or dock
-admission without navigation. The port belongs to the screen's container even
-when its document slot is empty; an empty dock never selects the Editor port.
-The route boundary retains the Editor's own URL address while Chat/Work presents.
-Returning to an existing tab reuses its addressed draft only in the same Work
-and document. A rail return from that document's live dock copy resumes the
-Editor address; an explicit dock jump or another reviewed document still hands
-over its own address. Local Close and Back to live cannot erase the warm
-Editor's review. Chat and Work lists compose the existing Work
-drafts query with creation-bound `useWorkDraftCommands`, without review state
-or executor arbitration. Commands publish addressed records for the open
-review to observe. `DraftOnlySettlement` is the project lifecycle owner
-for remote settlement across the Works represented by draft-only Editor tabs
-and the dock document.
-An explicit latest-wins route handoff carries review launches into
-the matching Editor. A matching committed Editor may claim immediately; other
-destinations claim after navigation. Claims require Work, document identity,
-mounted document, and draft membership to agree. Review addresses bind the
-Work and item immediately, with server admission supplying document identity.
-The draft list loads in parallel for labels and whole-item classification, never admission; a colliding live catalog entry never substitutes for that identity. The document address persists
-the item identity. Dock reload asks the selector before any list or catalog restoration,
-keeps failed/unavailable selectors on their destination, and never infers Live from an omitted row. Unknown or refused
-selectors stay on their unavailable/error destination; only owned Exit or deliberate
-navigation out of review consumes them. Route admission also gates owner restoration. The owner survives phone view
-unmounts. Exit consumes only the owned container, Work and item: known document identity
-decides, with the last confirmed scheme/path as fallback while identity is
-unresolved. Pending rename guesses never replace that confirmed locator. Missing draft
-metadata stays unresolved without claiming or repairing ownership; an explicit Work or item
-switch still yields immediately. Selector-hosted reviews do not acquire a live room while
-metadata is unresolved. Leaving review reacquires live through normal session admission.
-
-A chat has one current Work binding. The new-chat Work choice is prospective creation
-state only; it never invokes the rebind command. The Chat composer may explicitly
-rebind an idle existing chat through the canonical durable transition; the
-model's `work switch` never rebinds
-([rule](../../../../../server/server/domains/runtime/.context/tools.md#permissions)).
-Work management and navigation never rebind a chat implicitly.
-
-The desktop rail contains Manuscript, Knowledge Base, User and Unfiled. Chat
-resources have no Editor sections or resource tabs. Editor Work remains a route
-context for draft review, independent of later Chat changes. Ready Editor scopes
-use a Work row id, including No Work; null means the Editor is unresolved, or
-a resource has project scope with no Work owner. Invalid optional query selectors
-are cleared without blocking documents; required path identities remain errors.
-Archived Work identity remains manageable but cannot authorize content mutation.
-`isWorkArchived` (`@meridian/contracts/works`) is the one archived test. An
-archived Work's own content is view-only: the Work page shows its titles, goal
-and files as plain text, and its files open read-only in the Editor under
-`ArchivedWorkNotice`. Its chats stay live: the composer keeps working, with the
-notice as a strip on the composer's top edge (`ChatView`'s `composerStrip`),
-and sending does not unarchive. The Work picker never offers an archived Work,
-since binding a chat to one is refused.
-The Editor shows a tab by one rule, `isEditorTab(tab, workId)` in
-`client/stores/context-tabs-store/editor-workspace-model.ts`: every scheme but
-Uploads (`isEditorScheme`), a Work's Scratch only in that Work's Editor, and a
-chat's Scratch (a tab with `rootThreadId`) in every Editor: a lineage belongs to
-no Work.
-A local-resource history pointer pins document identity, not its namespace.
-Once placed, its removal/viewer locator uses the tracked tab's scheme and path;
-only an unplaced local document publishes `unfiled` with an empty path.
-
-### Slot paints the material; surfaces must not
-
-Slot chrome is owned **entirely by the slot's `className`**
-(`DESKTOP_PROJECT_SLOTS`). Region separation is purely **tonal** — no seam
-borders, no shadows (slice-7 locked shape):
-
-| Slot     | Material |
-|----------|----------|
-| `rail-l` | `shelf-surface` — the flat grey-gold shelf (chrome one shade darker) + scoped role remaps (globals.css) |
-| `dock`   | `dock-surface` — the chrome material (≡ the tab band) + airlight atmosphere |
-| `center` | `bg-background` |
-
-A surface that hardcodes its **own** background overrides the slot it sits in and
-produces the classic white-band / green-flash bugs (e.g. an old `bg-background`
-on `ChatSurface` painting a brighter band under the dock header). **Let the slot
-paint.** `SlotGrid` never branches on slot kind — chrome is pure data.
-
-**Three large-surface tones (slice-7):** the shell's primary regions use three materials —
-the shelf (`--color-shelf`, the chrome's grey-gold one shade darker; the
-app's standard black ink, with only
-contrast-failing roles remapped via `shelf-surface`'s scoped shelf-* tokens),
-ONE continuous L-shaped chrome field (`--color-sidebar`: the
-center cell — `chrome-field`, whose top-left rounds against the shelf on the
-shared `--radius-md` — plus the entire dock, identical where they meet; the
-dock alone adds the `dock-airlight` floor gradient, transparent in the band's
-reach), and the lit page (`--color-background`, the brightest surface, rising
-as each pane's `page-sheet`: top-right rounded on `--radius-md`, square and
-flush on the rail side). **Bands never paint**: `PaneHeader`, `ContextTabBar`,
-`DockHeader`, and the project-title header are transparent h-10 rows on their
-cell's material. The project-title header inherits the shelf slot's surface in
-both themes; the outer grid's `bg-muted` is a backdrop for the main-pane notch,
-not the project-title header.
-Only `--color-background`, `--color-sidebar`, and `--color-sidebar-accent` may meet
-at the main pane/dock band seam — arbitrary surface tokens there re-expose the
-notch wedge on palette change.
-The dock's Chat|File switch (Work only, while a file is open) is a CONTAINED
-segmented track (a recessed ink-mix well whose active segment surfaces paper
-inside the track's own boundary), deliberately not tab chips: only the page
-rises out of a band. Two chips wear the tab grammar — the document tabs and
-the centered chat header's title chip — both surfacing `--color-background`.
-
-## One sidebar grammar (the reconciliation)
-
-The shell once had four bespoke "sidebar + header + collapse + resize" surfaces
-that had each drifted (different header heights, borders, toggle positions, label
-weights, raw colors). They are now reconciled to **one reference: the left
-sidebar (`shell/LeftSidebar.tsx`).** New surfaces follow it. The load-bearing
-conventions:
-
-- **Header row = `h-10` (40px), `px-2`.** Every
-  header reads at the same height: project identity, dock/rail header, files
-  header, editor header. Bordered rows use `border-b border-border-subtle`,
-  not `border-border`. The project-title row has no bottom rule.
-  **The two chrome strips** — the context tab strip
-  (`ContextTabBar`, the band) and the dock header (`DockHeader`, transparent
-  on the dock's own chrome) are the same `h-10` with tonal separation and
-  **no bottom border** (see the shell tones above, and the tab-chip
-  grammar in `globals.css`). Do not reintroduce a rule under either strip.
-- **One collapse/expand control: `shell/PanelToggleButton.tsx` (`size-8`),
-  inset `px-2`.** This is the canonical toggle column. **Invariant — "click
-  without moving the mouse":** a surface's collapse button and the matching
-  expand control that appears after it collapses MUST sit at the same screen-x.
-  That only holds if every surface uses the *same* `px-2` inset; mixing insets
-  breaks it. (This `px-2` deliberately supersedes the earlier `px-1` alignment
-  from commit `30fa8a0`; `px-2` matches the LeftSidebar/PaneHeader reference.)
-- **Status color via tokens** — `text-status-streaming`, `text-destructive` —
-  never raw `emerald-*` / `rose-*`.
-
-The repeating chrome is extracted only where it actually repeats
-(`PaneHeader`, `RailPaneHeader`, `PanelToggleButton`) — not as
-a god "RailShell" wrapper, because the chat dock is a `motion.div`, not a
-`ResizablePanel`, and cannot be wrapped in a panel-baking shell.
-
-## Surfaces & preferences
-
-Stable surface ids (`layout/types.ts`): `threads`, `chat`, `context-viewer`,
-`context-rail`.
-
-`layout/surface-prefs-store.ts` is the **device-local** chrome-prefs store
-(Zustand `persist`, localStorage key `meridian:project-surface-layout`,
-`version: 4`). It stores width + collapsed per surface, the
-shared `slotPrefs.dock`, and `railPrefs` (Scratch disclosure and height, Recent
-disclosure). It is the sole owner of device rail layout. Browser storage failure
-leaves its actions working in memory. **Slot placement is NOT stored** — it is a pure function
-of the active screen, merged into a render-time `SurfaceLayoutMap` by the
-placement module. `DEFAULT_*`/`*_WIDTH_BOUNDS` are the clamps.
-
-Browser-storage keys use `meridian:` + kebab-case. The layout store is device-wide. Tab-local selection and tree codecs use
-versioned, account/project-scoped keys; tree payloads also validate their scope.
-
-## Reload stability — the hydration gate (load-bearing)
-
-The shell previously hit an intermittent **"Maximum update depth exceeded"** loop
-on reload. Root cause: non-atomic prefs hydration racing with a redundant
-whole-prefs subscription and a double-firing tab effect. The fix is structural
-and must not be regressed:
-
-1. The prefs store persists with **`skipHydration: true`**.
-2. `routes/_authenticated.tsx` calls `useProjectSurfacePrefsStore.persist
-   .rehydrate()` (synchronous — localStorage) then `setHydrated()` immediately.
-3. **`ProjectView` gates the whole `DesktopProject` mount on `_hydrated`** so it
-   mounts exactly once against final persisted prefs (at most one frame, no
-   visible flash).
-
-Two rules keep this stable:
-
-- **Gate at the parent (`ProjectView`), never inside `DesktopProject`.** A
-  conditional `return null` placed *between* hook calls is a Rules-of-Hooks
-  violation ("Rendered more hooks than during the previous render"). Hoist the
-  gate above the component that runs the hooks.
-- **`DesktopProject` takes a single merged layout subscription**
-  (`useProjectLayout`). Do not add a second whole-prefs subscription — that
-  redundant subscription was part of the original cascade.
-
-Related: the project removal coordinator publishes a revisioned auto-open block.
-`ContextPaneController` consumes that external-store snapshot, so a removal blocks
-same-render and delayed cached-tree resurrection. A registered route host stays
-live while the writer visits another project screen; only host release or Work
-readiness suspension disables activation. A parked desktop Editor retains its
-private document and review state but is inactive: `ContextPaneController` must
-not admit its retained document or repair the address until its host is active
-again. Writer close and Work pruning are reversible, while acknowledged deletion
-and confirmed draft discard keep exact re-entry guards against stale
-resurrection. A draft-only Discard closes its tab at once and is never
-reopened; a refusal shows on the pending draft instead
-([draft review](../../draft-review/.context/draft-review.md)).
-
-## Project routing, identity, and controllers
-
-`routes/_authenticated/p/$projectId` is the persistent project parent and its
-catch-all child is the only workspace route adapter. It loads the full project
-by UUID, keeps `ProjectView` mounted for same-project child paths, and passes
-resolved address state and typed navigation commands to controlled controllers.
-Controllers never parse or mutate browser URLs themselves. Project title edits
-do not change the UUID address. Desktop rail and phone drawer edit their own
-project title inline: click/tap to focus and select, Enter or blur saves,
-Escape cancels. Like the Work titles, it renames through `TitleEditSlot`: the
-field closes at once and a refusal reopens it with the writer's text and the
-error, while `ProjectView` owns one optimistic title mutation and cache
-rollback. It fences overlapping list reads before confirming a successful
-rename so a late stale response cannot overwrite the title. The phone top bar
-shows project identity without becoming a second edit surface.
-`routing/project-address.ts` owns the
-project UUID/browser grammar; `routing/project-navigation.ts` owns guarded
-push/replace behavior. The legacy slug project routes and `?screen`/`?thread`
-grammar are gone. `project-route.ts` retains stable-ID command types and the
-context-removal CAS snapshot only; it is not a second address grammar.
-
-### Address grammar
-
-The path names the screen and what is open on it; the query holds context and
-overlays. The first segment after `/p/<project>` is always a screen.
-
-```
-/p/<id>                                  replaced by /p/<id>/chats (no history entry)
-/p/<id>/chats[/<chatId>]                 chat index, a chat
-/p/<id>/works[?view=archived|deleted]    Work list
-/p/<id>/works/new                        create dialog
-/p/<id>/works/<workId>[?view=files]      Work page
-/p/<id>/editor[?work=<workId>]           Editor, nothing open
-/p/<id>/editor/<scheme>/<path>[?work=…&item=<itemKey>]  document, optionally in review
-/p/<id>/editor/browse[/<scheme>/<path>]  folder
-?settings=<section> on any screen
+```text
+/p/<id>/chats[/<chat>]
+/p/<id>/works[?view=archived|deleted]
+/p/<id>/works/new
+/p/<id>/works/<work>[?view=files]
+/p/<id>/editor[?work=<work>]
+/p/<id>/editor/<scheme>/<path>[?work=…&item=…]
+/p/<id>/editor/browse[/<scheme>/<path>]
+?settings=<section>
 ```
 
-A context `ProjectDestination` never carries a Work; the address's `work` is the one Work
-selection for every scheme. For project schemes (manuscript, kb, user,
-unfiled) `?work` is the editing context: absent, empty (no Work) or an id. For
-Uploads (`workIsIdentity`) `?work` is the resource's identity:
-`?work=<id>` names the Work, `?work=` is No Work, and absent or malformed is an
-invalid address. A Scratch resource has exactly one owner: `?work=<id>` for a
-named Work, or `?chat=<rootThreadId>` for a No Work chat's lineage (the first
-chat's id; `ProjectAddress.lineage`). No Work has no Scratch, so `?work=` on a
-Scratch address is invalid, and so is giving both. A lineage address leaves the
-Editor's own Work implicit, as a project document does. The query guard never
-repairs an identity `?work`. Slugs and
-`@` never appear. Older shapes (`/<scheme>/…`, `/browse/…`, `/works/<id>/<scheme>/…`)
-are invalid, with no alias. An invalid address keeps its URL and shows the
-unavailable state over the center column on desktop and phone.
-`repairAddress` rewrites the current entry in place to its canonical path.
-`?item=` belongs only to a document destination. It names a pending draft in
-the addressed Work and document, never a separate document. A review address
-is self-describing: the draft belongs to exactly one Work, so a No Work review
-states `?work=` (empty) instead of leaving it to history state or to whichever
-Work this browser last selected. A copied No Work review link therefore opens the
-same draft after any Work selection. A live No Work document keeps its clean URL. A cross-document
-review launch pushes history; a launch on the current document replaces the
-entry (`replaceIfSameDocument`). Same document means the same scheme, path, and
-Work: the same path under another Work is a different destination. The review address owner replaces the current
-entry when it adds or removes `?item=`, so Back does not toggle review.
+Legacy slug, screen/thread query, and old context path shapes are invalid rather
+than compatibility aliases. Invalid required identity stays in place and shows
+an unavailable destination. `repairAddress` is reserved for canonical,
+entry-guarded replacement. A document path is a location, not identity:
+resource handle, live catalog membership, and draft admission resolve identity.
+Rename/move replaces the path while preserving a review item.
 
-A route finds its document in one order on desktop and phone
-(`context/route-document-owner.ts`, with `resolveWorkspaceRoute`): the bound
-identity across the live catalog and then the draft-only review tab, and only
-with no bound identity the path's occupant. A bound identity no source resolves
-is pending, never the occupant that holds its old path. A review launch places
-its document the same way (`routing/launch-locator.ts`: tab, address, draft-only
-admission, live catalog, then the server's identity lookup) and fails rather than
-navigating to a cached path. `gateLiveView` reports `pending`, `failed` or
-`ready`; a failed catalog or draft-list read ends the wait with the route
-boundary's error and Retry (address and `?item=` kept), and the phone host
-treats a failed address as neither pending nor settled, so it never rejects the route.
-A launch that fails records `review-failed` on the draft's command record, so the
-row or chip the writer clicked shows it ([draft review](../../draft-review/.context/draft-review.md)).
+Project content uses absent, no-Work, or explicit Work selection distinctly.
+Scratch has either a named Work or a No Work chat lineage; Uploads use Work
+identity. No Work Scratch is addressed by lineage, not an empty Work selector.
+Slugs, `@`, and internal IDs never enter context URI authority. Required
+selectors are never silently defaulted. Only genuinely absent Editor selection
+may use local continuity.
 
-A path never refutes identity. Renaming or moving a document with its review
-open keeps the review: once the address has resolved, identity decides whether
-it still names the reviewed document, and while it resolves a different path is
-`pending`, not a different document (`ReviewAddressOwner`). A committed
-rename or move through the identity bar or the tree replaces the current entry
-with the new path in the same history entry, and `?item=` is never dropped on
-the way. The removal coordinator's route repair carries the address's review, a
-review launch on the current document never moves the address, and replacing an
-entry with its own URL writes no history. Draft rows (composer strip, the Work
-page's Changes to review) take the name from the live catalog entry, so a rename shows there in the same
-frame; a draft-only document keeps its recorded label.
+`?work` has one meaning per scheme. Project schemes (manuscript, KB, user,
+unfiled) read it as the editing context: absent, empty (No Work), or an id.
+Uploads read it as the resource's identity (`?work=` is No Work; absent or
+malformed is invalid). Scratch has exactly one owner, `?work=<id>` or
+`?chat=<first chat id>`; No Work owns no Scratch, so a Scratch address with
+neither or both is invalid. The Editor's Work seeds once from the selected chat
+and is independent after; with no chat it is explicit No Work, and the catalog
+never picks a first Work for it. An empty (No Work) selection lives in
+href-scoped history state so Back/Forward and reload keep it; a copied URL
+without the parameter may take local defaults.
 
-Work details use `/p/<project>/works/<work-id>` from the moment of creation.
-The same id-addressed destination renders pending, failed, and confirmed Works;
-confirmation never replaces the browser path. Browser paths never contain
-Work slugs or `@`; those remain in the model's context-URI address space.
-`routing/work-route.ts`'s `resolveRouteWork` is the one resolver from an
-address selection to a `RouteWorkResolution` (present, creating, unresolved or
-absent) for both the route and the Editor; `routeWorkId()` is the one route-Work
-identity. The account-scoped `client/creation/creation-registry` owns Project
-creation records (`pending`, `failed`, or `confirmed`); the create mutation drops
-its confirmed record once the route has reloaded. Project route loading
-short-circuits only while its creation record is pending or failed; meanwhile
-`ProjectRouteBootstrap` mounts the shell with no route data and seeds it when it
-arrives rather than remounting. Browser history state is not creation
-recovery, and an in-flight create may be lost on reload. Project-scoped Works,
-threads, context catalogs, and Agent catalog reads pause through
-selectors over that same registry until the create is confirmed.
-`routing/work-route.ts` also owns the read/write projection for remembered
-Work, stored by id. Work detail's `?view=files` and the
-Work list's `?view=archived|deleted` belong to the project address, each only on
-its own destination; the defaults (Chats, Active) carry no URL parameter, so
-Back from an opened Work returns to the tab it was opened from.
+A review address names its draft's Work and item (`?work=` empty for No Work),
+so a copied No Work review link opens the same draft whatever Work this
+browser last chose. Launching review on another document pushes history;
+on the current document, or adding/removing `?item=`, replaces the entry, so
+Back never toggles review. A path never refutes identity: rename or move keeps
+the review and the item.
 
-Empty Editor Work selections are stored in href-scoped browser history state.
-Only Editor-related destinations carry this marker; other screens must not
-write state their address parser discards. Actual Work selections remain
-readable query parameters. Current chat selection belongs to the working set.
-A fresh copied URL without these parameters may use local defaults; Back/Forward
-and reload preserve the entry's explicit no-selection intent.
-Resolving those defaults does not itself replace the route. The departure
-snapshot path freezes displayed choices before the destination push. Native
-history is flushed before matching workspace settlement, so immediate reload
-uses the accepted URL and browser-local layout. Document
-admission still canonicalizes document paths and scope independently.
-Locally created documents also retain their stable resource handle in that
-entry's history state when the URL is readable. Their exact local tab, not a
-server path lookup, owns selection until departure: an unacknowledged address
-may still be missing or occupied by another document. Background namespace
-rejection therefore stays on the acted-on document's existing identity field.
-Work-scoped tab ownership and the ready Editor Work use the Work row id, including
-the locked No Work row. Only `workSelectionFor` spells that row as `none` for
-project-content addresses; Uploads and a Work's Scratch addresses carry the row id, and a chat's Scratch address carries its lineage in `?chat=`.
-A chat's Scratch route target carries `rootThreadId` and keeps `workId` as the
-Editor's own Work (`ContextRouteTarget`); `targetInEditorOf` and
-`sameContextTarget` are the shared rules, so a Work change never prunes a
-lineage tab. An omitted open-document Work keeps the current Editor Work. Unresolved Editor
-Work never creates a locator or an empty selection-map key.
+The Editor shows a tab by one rule, `isEditorTab`: every scheme except Uploads,
+a Work's Scratch only in that Work's Editor, a chat's Scratch in every Editor
+(a lineage belongs to no Work).
 
-A project address has explicit selections, not defaults: absent, no-Work,
-Work id, malformed, and unavailable remain distinct. Only genuinely absent Editor selections may use local continuity.
-The navigation coordinator matches rendered entries by history key, because
-router and native URLs can spell the same query differently. Async tickets
-still retain and validate the native URL, entry key, and navigation revision.
-The shared query guard clears malformed or confirmed-missing optional Work
-selectors using synchronous, entry-guarded history replacement, pinning no selection
-without empty URL parameters. This same-destination repair bypasses blockers;
-it never queues a competing navigation behind a pending dirty-edit decision.
-Pending catalog refreshes and catalog errors never prove absence. Valid and omitted selectors are not rewritten. Duplicate query keys,
-invalid percent encoding, and an Uploads or Work Scratch address without its Work
-(or a Scratch address with neither `?work=` nor `?chat=`) remain parser errors, not recoverable selector values. Required path identities never fall
-back. Work and document path misses stay unavailable. Path and remembered chat IDs are identity, not primary-list lookups. A confirmed
-snapshot miss falls back to the index.
-Editor can seed its initially absent Work
-from the selected Chat once; afterwards Editor Work is independent from Chat Work.
-With no selected Chat it is explicit no-Work. The Work catalog never selects a
-first Work for Editor.
+An archived Work's own content (goal, files) is view-only, and its files open
+read-only in the Editor under `ArchivedWorkNotice`. Its chats stay live and
+sending does not unarchive; the Work picker never offers an archived Work.
 
-A cold different-project transition replaces the old shell with an inert
-boundary. Same-Work pending Editor navigation retains the usable document and
-its identity chrome; recovery and unavailable/error destinations mask it.
-The route publishes authorized tab metadata, while the document host owns
-live-session binding. A server live-address admission proves live membership
-without waiting for the browser catalog. Review-view admissions carry separate
-provenance and still need live-membership or pending-create evidence. See [Editor document lifecycle](editor-document-lifecycle.md)
-for entry paths, publication ordering, retention, and failure behavior.
-Writer Close commits through accepted navigation; forced availability repair
-remains an identity and revision guarded CAS over the current address projection.
+Work detail is id-addressed from creation and can render pending, failed, or
+confirmed states without replacing the URL. The account-scoped creation record
+is recovery state, not authority. Work catalog snapshots are server-owned;
+command projection is the single optimistic read model and account switches
+clear queued commands. Work creation, archive, restore, delete, rename, and
+Goal editing keep their own failure/undo evidence on the destination or row.
+Navigation never chooses a project-wide Work and never rebinds a chat.
 
-The **Editor** destination retains `ContextPaneController` as its implementation
-name. It owns address-admitted opens, temporary-tab projection, scroll
-restoration. Screen entry resolves a still-open identity before navigation;
-bare Editor routes remain empty. The empty Editor surface offers the
-project's recently opened documents as a chooser, scoped to the project it
-renders inside because that pane is one project's surface;
-selecting one navigates, and the list never seeds a tab. Project-entry
-workspace validation checks only
-persisted browser-local members and never seeds them from server recents. It is
-hydration-scoped and never re-runs on a Work change. The removal coordinator
-owns close fallback, atomic old/new Work continuity, remembered destination,
-and guarded route repair. A cold address can project loading until the
-authoritative address resolver publishes its durable tab. Session binding and
-content startup belong to the document host. An explicitly unavailable address
-stays unavailable rather than selecting a fallback. Context paths are reusable
-locations, never document identity.
+## Navigation and chat
 
-The Chat navigation item reopens the current chat. New chat and chat selection
-stay in the center on Chat, and in the dock on Work or Editor.
+Navigate first: a create or open pushes the destination immediately, then
+background persistence/admission connects it. New chat, chat selection, and
+first Send stay in their current pane. `routing/chat-navigation.tsx` is the
+single command seam; on Chat it changes the route, elsewhere it reveals the
+local dock or phone Sheet. Dock selection does not write the URL.
 
-Chat switching lives in `features/chat/ThreadSwitcherPopover`; it filters by
-chat title, groups chats by Work when meaningful, and delegates actual
-navigation to the route owner. The switcher is the resting state of
-`ChatThreadTitle`, which renames through `TitleEditSlot` like the Work and
-project titles. It renders no wrapper: the host header (`PaneHeader`,
-`DockHeader`, the phone chat sheet header, the phone top bar) is the refusal's
-positioned ancestor and places it with `failureClassName`. A chat's title
-changing is not navigation; only a new thread id focuses the composer. The route resolves current chat by exact identity,
-including subagents. `ProjectView` uses a primary-list lookup only for the Work
-projection passed to context hydration, Draft Review, and headers; that lookup
-never chooses or rejects the chat body identity. Descendants must not re-derive
-these projections. Subagents absent from the primary list do not receive that
-Work projection.
+Current chat and remembered Work are tab-local with sessionStorage precedence
+and device-local seed for a new tab. The current chat can be a primary or
+subagent identity or none. The displayed-chat variant is derived from the URL;
+a warm chat may remain mounted behind the index but is not the displayed chat.
+Primary-list lookups may supply Work/header projections but never decide the
+body identity or reject a subagent.
 
-## Don't
+Chat index is a paginated, server-filtered, virtualized page. The dock has a
+switcher, not the index. Work detail reuses the project chat row and its list
+owner; it does not create a second scroll owner.
 
-- Don't hardcode a surface background — let the slot paint the material.
-- Don't introduce a second toggle inset value — `px-2` is the column.
-- Don't reparent/unmount stateful surfaces on screen change — move the grid-area.
-- Don't gate a mount between hook calls — gate at the parent.
-- Don't add raw hex/rgba or `emerald`/`rose` — use semantic tokens.
+## Document admission and lifetime
 
-## Project entry and route lifetime
+The Editor destination is owned by `ContextPaneController` and the context
+route/document owners. A bare Editor route shows the recent-document chooser;
+selecting a row navigates and never seeds a tab. The document host owns live
+session binding. The registry owns browser-local warm tabs and the removal
+coordinator owns close fallback, route repair, and continuity.
 
-Persistent root/account/project loaders acquire shell identity on entry. Child
-navigation and same-href history-state writes do not reload them; explicit router
-invalidation and re-entry still do. This permits warm local editing offline,
-not cold offline app boot or bypassing server authorization. Entry reads project
-identity and shell data together (`loadProjectEntry`); a rejected identity read
-fails the whole entry. New project creation writes an account-scoped creation
-record before navigating to its UUID route; the record stands in for loader data
-while pending or failed but never grants authority, and once confirmed the
-ordinary owner-gated reads load the route. `ProjectRouteBootstrap` seeds the
-query cache and working set in a layout commit before the shell mounts, never
-during render.
+Admission resolves a bound identity before a path occupant. A bound document
+with no source is pending, never a cached occupant. Catalog errors and pending
+refreshes do not prove absence. Review launch locates tab, addressed draft,
+live catalog, and authoritative identity in one order; a failed launch stays
+on its draft/route with retry evidence.
 
-The basic `EditorView` is a static dependency of the project hosts, not a lazy
-chunk fetched on first New/open. This makes a loaded empty workspace capable of
-starting local writing offline; it deliberately costs earlier editor-code loading
-for Chat-only project visits. It does not provide cold offline application boot.
-Library intent and the project-creation form may warm workspace code, but must not
-preload the project route loader: entering a successful preloaded match would
-otherwise repeat owner and shell-data reads in the background.
+The opening record is taken from the active editor tab, not an intent or create
+path. It updates locally before a server POST, and the POST waits for
+`whenOnServer`. A parked restored tab is not an open. See
+[`editor-document-lifecycle.md`](editor-document-lifecycle.md) for the
+publication and retention contract.
 
-## Document system map
+Dock documents use the shared context host and one presented-review binding.
+A dock peek creates no tab and is not a URL destination. Background review
+launch, paint hold, and focus handoff stay owned by the presenting container;
+the document host never invents a second review controller.
 
-[Current project document architecture](resource-lifecycle-architecture.md) connects browser-local views, local creation, session persistence, catalog acquisition and backend synchronization. It separates resource durability, browser-local views, backend namespace acknowledgement, and Yjs synchronization.
+## Entry and offline
+
+Child navigation and same-href history-state writes never reload the
+persistent root/account/project loaders; that permits warm offline editing, not
+cold offline boot or bypassing server authorization. Project creation writes
+an account-scoped creation record before navigating to its UUID route: it
+stands in for loader data while pending or failed and never grants authority.
+The basic `EditorView` is a static dependency of the project hosts so a loaded
+empty workspace can start local writing offline. Library intent and the
+creation form may warm workspace code but must not preload the project route
+loader, which would repeat owner and shell-data reads.
+
+## Related context
+
+- [`resource-lifecycle-architecture.md`](resource-lifecycle-architecture.md)
+- [`../dock/.context/CONTEXT.md`](../dock/.context/CONTEXT.md)
+- [`../context/.context/CONTEXT.md`](../context/.context/CONTEXT.md)
+- [`../context/AGENTS.md`](../context/AGENTS.md)
+- [`../chat-index/.context/CONTEXT.md`](../chat-index/.context/CONTEXT.md)

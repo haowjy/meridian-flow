@@ -48,13 +48,21 @@ every unit and DB run and compares the **expanded case count per test file**
   check what changed, not as a gate.
 - It also samples RSS across the whole process tree (descendants included, so a
   `forks` pool's children count) and enforces `TEST_MEMORY_CEILING_MB` (default
-  4096) **on every run**. Memory blocks everywhere because it is a property of
-  the suite, not of the machine's load. Known peaks: unit 3.0 GB at 8 workers,
+  4096) **on every run except a refresh**: a `TEST_BUDGET_UPDATE=1` run writes
+  the baseline and returns before both the growth and memory checks. Memory
+  blocks everywhere else because it is a property of the suite, not of the
+  machine's load. Known peaks: unit 3.0 GB at 8 workers,
   DB 3.5 GB at 4 fork workers; the DB suite reaches 6.0 GB at 8 workers, so an
   eight-worker local DB run will trip the ceiling — that is the intended signal.
 - The DB suite is not sharded, but it uses the same baseline file so one number
   covers both suites. A unit-only or DB-only refresh merges rather than replaces,
   and drops entries whose file no longer exists.
+- When two branches conflict on the baseline, merge it per file key, three-way
+  against the merge base (take whichever side changed a key; if both changed
+  it, the refresh decides). Then refresh on the merged tree
+  (`TEST_BUDGET_UPDATE=1 pnpm test:all`) and check that the refresh diff
+  touches only test files the incoming branch changed; any other line is growth
+  no one declared. A plain run, or CI, then enforces the memory ceiling.
 
 ## Runtime verification
 
