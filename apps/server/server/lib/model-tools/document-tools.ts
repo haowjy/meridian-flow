@@ -48,7 +48,6 @@ import {
   inContainer,
   keptDraftReader,
 } from "./file-access.js";
-import { qualifyWriteUploads } from "./qualify-uploads.js";
 import { readDocument } from "./read-document.js";
 import { retractCreatedTrackedDocument } from "./response-write-lifecycle.js";
 import { showingOf, threadShownLinks } from "./shown-link-capture.js";
@@ -198,6 +197,7 @@ async function writeUnderGrant(
   address: ResolvedDocumentAddress,
   copied: CopiedSource | undefined,
   ctx: ToolHandlerContext,
+  uploadsChat: string | null | undefined,
 ): Promise<
   | (WriteOutcome & { isError: false; shown: ShownLinkShowing[] })
   | (WriteToolErrorOutput & { shown?: ShownLinkShowing[] })
@@ -215,6 +215,7 @@ async function writeUnderGrant(
         responseIdentity: ctx.responseIdentity,
         tool_use_id: ctx.toolCallId,
         createdDocument: address.created === true,
+        ...(uploadsChat ? { uploadsChat } : {}),
         grant,
         shownLinks: threadShownLinks(deps, ctx.threadId),
         ...(copied ? { copiedNodes: copied.nodes } : {}),
@@ -268,14 +269,12 @@ export function createReadHandler(deps: ToolWiringDeps) {
 
 export function createWriteHandler(deps: ToolWiringDeps) {
   return async (input: unknown, ctx: ToolHandlerContext) => {
-    const requested = input as WriteToolInput;
-    const skillRefusal = refuseSkillWrite(requested);
+    const parsed = input as WriteToolInput;
+    const skillRefusal = refuseSkillWrite(parsed);
     if (skillRefusal) return skillRefusal;
     const call = await resolveToolCall(deps, ctx);
-    if (isToolError(call)) return writeToolError(requested.command, call.output.message);
+    if (isToolError(call)) return writeToolError(parsed.command, call.output.message);
     const { context, principal } = call;
-    // A bare `uploads://` embed would name whichever chat later reads the document.
-    const parsed = qualifyWriteUploads(requested, context.resolution.uploadsOwner?.chatRef);
     const creates = parsed.command === "create" || parsed.command === "copy";
     // A create or copy needs edit on the folder it makes the file in, at the
     // destination the file lands in; the namespace transaction confirms that
@@ -348,7 +347,15 @@ export function createWriteHandler(deps: ToolWiringDeps) {
     );
     if (isToolError(address)) return address;
 
-    const outcome = await writeUnderGrant(deps, principal, parsed, address, copied, ctx);
+    const outcome = await writeUnderGrant(
+      deps,
+      principal,
+      parsed,
+      address,
+      copied,
+      ctx,
+      context.resolution.uploadsOwner?.chatRef,
+    );
     const stagedCreate =
       creates && ctx.responseIdentity?.editScopeId !== undefined && address.created === true;
     if (outcome.isError) {
