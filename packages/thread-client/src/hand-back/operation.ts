@@ -24,6 +24,7 @@ import {
   addIntent,
   answerIntent,
   dropIntent,
+  failIntent,
   type RunStateView,
 } from "../run-state/run-state-view";
 import {
@@ -64,8 +65,6 @@ export type RunStatePort = {
 export type HandBackStore = {
   pending(): readonly HandBackCommand[];
   record(command: HandBackCommand): boolean;
-  /** The content already arrived for this command, so a resume must not post it again. */
-  received(requestId: string): boolean;
   /** The content, the receipt and the command's retirement in one checked write. */
   accept(requestId: string, handedBack: HandBackResult["handedBack"]): boolean;
   drop(requestId: string): boolean;
@@ -124,7 +123,7 @@ export type StopFacts = {
 
 export type HandBackOperation = {
   press(input: HandBackPressInput): Promise<HandBackOutcome>;
-  /** Re-post every stored command, dropping one whose content already arrived. */
+  /** Re-post every stored command. */
   resume(): Promise<HandBackOutcome[]>;
   /** Replay one unresolved command that is held (not `refused`): the card's Try again. */
   retry(requestId: string): Promise<HandBackOutcome | null>;
@@ -132,12 +131,15 @@ export type HandBackOperation = {
   dismiss(requestId: string): void;
   /**
    * Called by the host when the store may have changed under the operation (another tab, a
-   * reload): entries whose command left the store, or whose content arrived, stop owing a card.
+   * reload): entries whose command left the store stop owing a card.
    */
   reconcile(): void;
   unresolved(): readonly UnresolvedHandBack[];
   stopFacts(): StopFacts;
-  /** Called after any change to `unresolved()` or `stopFacts()`; returns the unsubscribe. */
+  /**
+   * Called after every change to `unresolved()` or `stopFacts()`, from every operation call; returns
+   * the unsubscribe. A caller never refreshes the operation itself.
+   */
   subscribe(listener: () => void): () => void;
 };
 
@@ -198,8 +200,6 @@ export function createHandBackOperation(options: {
     string,
     { kind: HandBackCommand["kind"]; done: Promise<HandBackOutcome> }
   >();
-  /** Requests whose answer confirmed: a straggling failure must not resurrect their card. */
-  const confirmed = new Set<string>();
   let cancelledByStop: string | null = null;
   const listeners = new Set<() => void>();
   const changed = () => {
@@ -207,7 +207,6 @@ export function createHandBackOperation(options: {
   };
 
   const fail = (held: Held, status: UnresolvedStatus): void => {
-    if (confirmed.has(held.command.requestId)) return;
     entries.set(held.command.requestId, { ...held, status });
   };
 
@@ -264,7 +263,6 @@ export function createHandBackOperation(options: {
     }
     runState.answerIntent(requestId, record.version);
     entries.delete(requestId);
-    confirmed.add(requestId);
     if (command.kind === "stop") cancelledByStop = cancelledExecutionId;
     return { kind: "confirmed", command, result, cancelledExecutionId };
   }
@@ -296,11 +294,7 @@ export function createHandBackOperation(options: {
         const body = stopRequest(input.view, requestId);
         held = {
           command: { kind: "stop", requestId, body },
-          candidates: handBackCandidates(input.view, {
-            kind: "seen",
-            seenThrough: body.seenThrough,
-            mine: body.mine,
-          }),
+          candidates: handBackCandidates(input.view, body),
         };
       } else {
         held = {
@@ -327,11 +321,9 @@ export function createHandBackOperation(options: {
     async resume() {
       const outcomes: HandBackOutcome[] = [];
       for (const command of store.pending()) {
-        if (store.received(command.requestId)) {
-          store.drop(command.requestId);
-          entries.delete(command.requestId);
-          continue;
-        }
+        // The list is a snapshot: a command another path confirmed while an earlier one posted
+        // has left the store, and must not be posted (and possibly failed) again.
+        if (!store.pending().some((held) => held.requestId === command.requestId)) continue;
         outcomes.push(await attempt({ command, candidates: idsOf(command) }));
       }
       return outcomes;
@@ -355,10 +347,6 @@ export function createHandBackOperation(options: {
       for (const [id, entry] of entries) {
         if (entry.status !== "ambiguous" && entry.status !== "unwritten") continue;
         if (!stored.has(id)) {
-          entries.delete(id);
-          moved = true;
-        } else if (store.received(id)) {
-          store.drop(id);
           entries.delete(id);
           moved = true;
         }
@@ -414,15 +402,7 @@ export function viewRunStatePort(
       ),
     answerIntent: (requestId, version) =>
       update((view) => answerIntent(view, "handBack", requestId, version)),
-    failIntent: (requestId) =>
-      update((view) => ({
-        ...view,
-        intents: view.intents.map((intent) =>
-          intent.kind === "handBack" && intent.id === requestId
-            ? { ...intent, failed: true }
-            : intent,
-        ),
-      })),
+    failIntent: (requestId) => update((view) => failIntent(view, requestId)),
     dropIntent: (requestId) => update((view) => dropIntent(view, "handBack", requestId)),
   };
 }

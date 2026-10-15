@@ -113,7 +113,6 @@ export async function runHandBack(options: {
           printFrozenRequest(out, label, bodyOf(command), replayCommand);
           return true;
         },
-        received: () => false,
         accept: () => true,
         drop: () => true,
       },

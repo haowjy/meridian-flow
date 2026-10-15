@@ -21,7 +21,7 @@ export type ChatStop = {
 
 export function useChatStop(input: { threadId: string; handBack: ChatHandBack }): ChatStop {
   const { threadId, handBack } = input;
-  const { operation, stopFacts, settle } = handBack;
+  const { operation, stopFacts } = handBack;
   const view = useRunState(threadId);
   const latest = useRef(view);
   latest.current = view;
@@ -34,10 +34,10 @@ export function useChatStop(input: { threadId: string; handBack: ChatHandBack })
     // Ignored while Stopping: the request is out, or the cancel is landing.
     if (pressed.current === "pending" || pressed.current === "stopping") return;
     announce(t`Stopping`);
-    void settle(operation.press({ kind: "stop", view: latest.current })).then((outcome) => {
+    void operation.press({ kind: "stop", view: latest.current }).then((outcome) => {
       if (outcome.kind !== "confirmed") announceError(t`Couldn't stop the reply.`);
     });
-  }, [operation, settle]);
+  }, [operation]);
 
   return { status, stop };
 }

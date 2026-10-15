@@ -164,9 +164,12 @@ One framework-free operation runs Stop, the queue's x and Cancel queue for the a
 
 - **Ports.** `http(path, body)` returns `{ status, body }` or `{ status: null }`, never a typed
   error. `runState` is the narrow `RunStatePort` (receive a record; add, answer, fail or drop a
-  hand-back intent); `viewRunStatePort` builds one over a held `RunStateView`. `removeTurns(ids,
+  hand-back intent); `viewRunStatePort` builds one over a held `RunStateView`. Failing an intent is
+  `failIntent(view, id)` in `run-state-view.ts`, the one transition: the local-view port calls it and
+  the app store dispatches `failHandBack` to it (an absent intent stays absent). `removeTurns(ids,
   version)` carries the record's version. `store` is the pending-command store (`pending`,
-  `record`, `received`, `accept`, `drop`; each write says whether it took).
+  `record`, `accept`, `drop`; each write says whether it took). `accept` retires the command and
+  stores the receipt in one write, so a command never outlives its receipt.
 - **Order.** Save the command (a refusal sends nothing: `unsaved`), add the intent so rows hide,
   post, classify, and only then change state. Confirmed: receive the record, remove `handedBack`
   and `gone` turns at its version, `accept` the content once (or `drop` on a lost race, writing
@@ -179,8 +182,9 @@ One framework-free operation runs Stop, the queue's x and Cancel queue for the a
   before any state-changing port is called.
 - **Unresolved and cards.** `unresolved()` lists commands that still owe the writer something
   (`ambiguous`, `unwritten`, `unsaved`, `refused`); the first two stay in the store, the last two
-  live in page memory. `reconcile()` (host-called) drops entries whose command left the store or
-  whose content arrived. `handBackCards(unresolved, view)` projects the notice-stack cards (copy,
+  live in page memory. `reconcile()` (host-called) drops entries whose command left the store.
+  `subscribe` fires after every change to `unresolved()` or `stopFacts()` from any call, so hosts
+  never wrap calls to redraw. `handBackCards(unresolved, view)` projects the notice-stack cards (copy,
   count, retry or dismiss) from them plus a failed Send now, with no dependence on rows.
 - **Send now** is not a hand-back command: `postSendNow(ports, threadId, body)` shares the
   classifier and returns confirmed (`cancelledExecutionId`; null means this attempt requested no

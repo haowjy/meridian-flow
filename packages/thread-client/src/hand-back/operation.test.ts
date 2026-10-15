@@ -78,7 +78,6 @@ function rig(options: { saveFails?: boolean; acceptFails?: boolean } = {}) {
         stored.set(c.requestId, c);
         return true;
       },
-      received: () => false,
       accept: (id, content) => {
         calls.push("accept");
         if (state.acceptFails) return false;
@@ -115,30 +114,40 @@ const answerBody = (ids: string[], version = "1001") => ({
 describe("hand-back operation", () => {
   it.each([
     {
-      row: "a validated 2xx applies record, turns, content, then the intent, in that order",
+      row: "a validated 2xx hands the content back, removes the turns at the record's version, and retires the intent",
       reply: async () => answerBody([M1, M2]),
       outcome: "confirmed",
-      calls: ["record", "intent", "post", "receive", `remove:${M1},${M2}@1001`, "accept", "intent"],
     },
     {
       row: "a 409 drops the command and the intent",
       reply: async () => ({ status: 409, body: {} }),
       outcome: "refused",
-      calls: ["record", "intent", "post", "drop", "intent"],
     },
     {
       row: "no answer keeps the command and fails the intent",
       reply: async () => ({ status: null }),
       outcome: "ambiguous",
-      calls: ["record", "intent", "post", "intent"],
     },
-  ])("$row", async ({ reply, outcome, calls }) => {
-    // Risk: the shared lifecycle diverging between clients (#861 D1, L2): order, retirement, replay.
+  ])("$row", async ({ reply, outcome }) => {
+    // Risk: the shared lifecycle diverging between clients (#861 D1, L2): retirement, replay, and
+    // the one order that prevents loss (the command is saved before it is posted).
     const r = rig();
     r.answer(reply);
     const result = await r.op.press({ kind: "queue", ids: [M1, M2] });
     expect(result.kind).toBe(outcome);
-    expect(r.calls).toEqual(calls);
+    expect(r.calls.indexOf("record")).toBeLessThan(r.calls.indexOf("post"));
+    const intents = r.view().intents.filter((i) => i.kind === "handBack");
+    if (result.kind === "confirmed") {
+      expect(r.written).toEqual([M1, M2]);
+      expect(r.calls).toContain(`remove:${M1},${M2}@1001`);
+      expect(intents).toEqual([]);
+    } else {
+      expect(r.written).toEqual([]);
+      expect(r.calls.filter((c) => MUTATING.includes(c) || c.startsWith("remove"))).toEqual(
+        outcome === "refused" ? ["drop"] : [],
+      );
+      expect(intents.map((i) => i.failed)).toEqual(outcome === "ambiguous" ? [true] : []);
+    }
     if (result.kind === "ambiguous")
       expect(result.request).toEqual({
         path: "/api/threads/t1/hand-back",
@@ -176,11 +185,14 @@ describe("hand-back operation", () => {
     expect((await r.op.press({ kind: "queue", ids: [M1] })).kind).toBe("unwritten");
     expect(r.stored.has(REQ)).toBe(true);
     r.state.acceptFails = false;
+    let heardResume = 0;
+    r.op.subscribe(() => heardResume++);
     const [resumed] = await r.op.resume();
     expect(resumed?.kind).toBe("confirmed");
     expect(r.written).toEqual([M1]);
     expect(r.stored.size).toBe(0);
     expect(r.op.unresolved()).toEqual([]);
+    expect(heardResume).toBeGreaterThan(0);
 
     // Every change to what is unresolved notifies, so no caller redraws for the operation.
     const gone = rig({ acceptFails: true });
@@ -225,7 +237,7 @@ describe("hand-back operation", () => {
     ]);
   });
 
-  it("one attempt per request: a retry in flight is joined, and a late failure never undoes a delivery", async () => {
+  it("one attempt per request: a retry or resume in flight is joined and delivers once", async () => {
     // Risk (QB2): two Try again presses posting twice, the second's lost answer resurrecting a
     // card after the first confirmed.
     const r = rig();
