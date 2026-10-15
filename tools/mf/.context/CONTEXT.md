@@ -95,11 +95,14 @@ contains. It carries no run identity: `turn.started` has only the turn id.
   handed back, unproven) plus the admission's `runStateVersion`; `send` decides
   nothing itself. The result is the chain's last reply (`turnId`), the reply that took
   the message (`answeredBy`) and `userTurnId`. A settled claim gives the stream a bounded
-  1.5 s to reach the snapshot's position so the printed log is whole; it never changes the
-  claim. A lost HTTP admission answer is recovered with one app-route lookup
+  1.5 s (one deadline for stream reads, anchor recovery and snapshot reads) to reach the
+  snapshot's position; the printed log is best-effort. A timeout, transport or protocol
+  error in catch-up never changes the claim and marks `liveView` `not_observed`. A lost HTTP admission answer is recovered with one app-route lookup
   (`submissionId`); a failed lookup or pending admission is 6 `admission_unknown`.
 - **`stop`** posts the app's Stop body (`stopRequest` over a snapshot's record, `mine: []`)
-  to the Stop route; **`cancel --turn`** serves a handoff brief's Stop only.
+  to the Stop route, printing the request first. A lost answer exits 4; only
+  `--replay <request>` (same id and body, no new snapshot) recovers it, since a plain re-run is
+  a new press; **`cancel --turn`** serves a handoff brief's Stop only.
 - **`tail --until-idle`** hydrates a snapshot, follows from its `resumeAfterSeq`
   (`nextSeq` is freshness only and never filters events) and returns at once if
   idle. When a record or the subscribed state shows no open execution and no writer
