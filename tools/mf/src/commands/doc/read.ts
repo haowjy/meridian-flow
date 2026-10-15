@@ -2,7 +2,7 @@ import { apiProjectContextReadPath, type ContextReadResponse } from "@meridian/c
 import { type CommandSpec, flag, requirePositional, stringOption } from "../../core/command";
 import { truncate } from "../../core/output";
 import { resolveProjectId } from "../project/resolve";
-import { PROJECT_OPTION, resolveUri } from "./uri";
+import { ownerOf, PROJECT_OPTION, resolveUri } from "./uri";
 
 export const docReadCommand: CommandSpec = {
   path: ["doc", "read"],
@@ -26,7 +26,7 @@ export const docReadCommand: CommandSpec = {
     );
     const response = await session.request<ContextReadResponse>(
       "GET",
-      apiProjectContextReadPath(projectId, target.scheme, target.path, { workId: target.workId }),
+      apiProjectContextReadPath(projectId, target.scheme, target.path, ownerOf(target)),
     );
     const full = flag(ctx, "full");
     ctx.out.result({ uri: target.uri, ...response }, (value) =>

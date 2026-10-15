@@ -2,6 +2,7 @@
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import {
   apiProjectDocumentAddressPath,
+  type ContextOwner,
   type DocumentAddressResult,
   type ProjectContextTreeScheme,
   parseDocumentFilename,
@@ -11,6 +12,7 @@ import { CliError, usageError } from "../../core/cli-error";
 
 import type { Session } from "../../core/session";
 import { resolveWorkId } from "../project/resolve";
+import { resolveThreadId } from "../thread/resolve";
 
 export type ResolvedUri = {
   scheme: ProjectContextTreeScheme;
@@ -20,7 +22,14 @@ export type ResolvedUri = {
   workId: string | null;
   /** The chat whose uploads an `uploads://` URI names; null for every other scheme. */
   chatRef: string | null;
+  /** The chat's thread id, which the server's `chatId` query takes; null unless `chatRef` is set. */
+  chatId: string | null;
 };
+
+/** The owner the context route helpers send: the chat for uploads, else the Work. */
+export function ownerOf(target: ResolvedUri): ContextOwner {
+  return target.chatId ? { chatThreadId: target.chatId } : { workId: target.workId };
+}
 
 export async function resolveUri(
   session: Session,
@@ -67,14 +76,15 @@ export async function resolveUri(
     chatRef !== null
       ? `uploads://@/${chatRef}/`
       : normalized.slice(0, normalized.length - path.length);
-  return { scheme, path: canonicalPath, uri: prefix + canonicalPath, workId, chatRef };
+  const chatId = chatRef === null ? null : await resolveThreadId(session, chatRef, projectId);
+  return { scheme, path: canonicalPath, uri: prefix + canonicalPath, workId, chatRef, chatId };
 }
 
 /** Live documentId for a URI, or a not_found CliError. */
 export async function resolveDocument(session: Session, projectId: string, target: ResolvedUri) {
   const address = await session.request<DocumentAddressResult>(
     "GET",
-    apiProjectDocumentAddressPath(projectId, target.scheme, target.path, { workId: target.workId }),
+    apiProjectDocumentAddressPath(projectId, target.scheme, target.path, ownerOf(target)),
   );
   if (address.kind === "unavailable") {
     throw new CliError("not_found", `No live document at ${target.uri}`, {
