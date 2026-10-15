@@ -69,7 +69,7 @@ export function mapAuthoritativeFile(input: {
   ownerThreadRef?: string | null;
   chatOwned?: boolean;
   /** A chat upload's intake facts; absent for every other file. */
-  upload?: { attachedAt: Date; consumed: boolean };
+  upload?: { attachedAt: Date; consumed: boolean; intakeId: string; locationRevision: string };
 }): CatalogFileEntry {
   const { document, scope, scheme } = input;
   const filename = document.extension ? `${document.name}.${document.extension}` : document.name;
@@ -133,6 +133,8 @@ export function mapAuthoritativeFile(input: {
           upload: {
             attachedAt: input.upload.attachedAt.toISOString(),
             used: input.upload.consumed,
+            intakeId: input.upload.intakeId,
+            locationRevision: input.upload.locationRevision,
           },
         }
       : {}),
