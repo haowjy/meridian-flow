@@ -19,6 +19,10 @@ never into `apps/app`; the chat session moves the rest.
   functions. The app draws its output and `./mf thread view` prints it. It emits
   counts, kinds and numbers; Lingui and `Intl` strings stay in the app. Memoized
   by input identity (`WeakMap`) so unchanged turns keep their items.
+- `partitionTurn` (`view/partition-turn.ts`) reads only the turn's ordered
+  blocks, never transient stream state. Hidden tool protocol is not rendered
+  twice: a call whose card is in the turn shows as that card alone
+  (`hiddenToolCallIds`).
 - Run state is selectors over one whole `RunState` record and this device's
   intents (`run-state/`). No store: hosts hold the view, and the newest record
   wins by `version`. Never derive a run fact from execution ids, stream order or
