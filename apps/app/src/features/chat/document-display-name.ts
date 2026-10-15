@@ -26,8 +26,7 @@ function parseContextLocation(uriOrPath: string): ParsedContextLocation {
  * The document's name as stored, and nothing else: `Chapter 13`, `outline.json`.
  * Where it lives is not part of what a timeline row claims: the row says what
  * the agent did to a document, and the name's door already goes wherever that
- * document is. The one place location still earns its keep is the dead-route
- * pane, which exists to say a document is missing from a particular section.
+ * document is.
  */
 export function documentDisplayName(uriOrPath: string): string {
   const skillFileName = skillFileDisplayName(uriOrPath);
