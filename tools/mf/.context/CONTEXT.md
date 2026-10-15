@@ -26,6 +26,10 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
   checks that request and how the answer was read. Stop's scope, adoption and
   settlement are proven by the server's protocol tests and real-stack probes, not
   here. `src/main.test.ts` boots the real shim.
+- **What `./mf`'s tests cover.** Shared rules are tested once, in their package. `./mf`'s
+  tests cover only exit codes, replay safety, the deadline and never claiming more than it
+  proved; everything else is a live probe or recipe
+  ([decision](https://github.com/haowjy/meridian-flow-docs/blob/f3da199a87/kb/decisions/engineering/dev-cli/mf-tests-script-the-wire.md)).
 - **Imports.** Workspace libraries are `@meridian/contracts` and
   `@meridian/thread-client` only. Portless discovery uses the route contract
   `pnpm dev` registers (`../dev/portless-prefix.ts`, `portless-routes.ts`,

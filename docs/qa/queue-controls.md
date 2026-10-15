@@ -129,8 +129,9 @@ Each is an error `NoticeCard` above the box, except the last row. None announces
   release. Rows gone and the card shows. Free storage, Try again: the words arrive once.
 - **Unsaved:** fill `sessionStorage` first, press the x. Nothing is sent, the row stays queued and
   the card shows. Free storage, Try again: the row leaves and the words arrive.
-- **Refused:** answer `hand-back` with 409. The rows come back and the card ("Couldn't move your
-  queued message.") has Dismiss only; Dismiss clears it.
+- **Refused:** answer `hand-back` with 409. The rows come back and the card has Dismiss only;
+  Dismiss clears it. The copy follows the row count: "Couldn't move your queued message." for one
+  row, "Couldn't move your queued messages." for more.
 - **Send now:** drop the `send-now` request. "Couldn't send now." with Try again, which re-sends the
   same body once `fetch` is restored. A 409 offers Dismiss.
 - **Stop:** drop the `stop` request. "Couldn't stop the reply." with Try again, which replays the
