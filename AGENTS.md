@@ -89,13 +89,6 @@ architecture.
 Update the relevant `AGENTS.md`, `.context/`, or KB material when a change
 shifts the mental model, contracts, or decisions.
 
-## Command output
-
-Use `rtk` for noisy human-readable commands: `rtk git diff`, `rtk git status`,
-`rtk rg "<pattern>"`, and `rtk pnpm test`. Use raw commands for exact or
-machine-readable output. If `rtk` is unavailable, run the raw command and say
-so.
-
 ## Dev environment
 
 Dev uses Portless HTTPS routes. Never assume raw ports, bind ports manually, or
