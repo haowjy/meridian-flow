@@ -21,53 +21,32 @@ remain late-bound globals, preserving existing reconnect timing.
 ## Transcript view model
 
 `viewTranscript(input)` (`view/view-transcript.ts`) is the one pure function that
-decides which rows a chat shows. The app builds the input from its store and hooks;
-`./mf thread view` builds it from a snapshot and says what it left out. The decision
-and its rejected alternatives are in the
+decides which rows a chat shows and what each reply's items are. The app builds
+the input from its store and hooks; `./mf thread view` builds it from a snapshot
+and says what it left out. The decision and its rejected alternatives are in the
 [transcript view model ruling](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/platform/client/transcript-view-model.md).
 
-- **Input:** `turns` (local writer turns included), `opening` (a handoff's optimistic
-  seed card, placed first before stand-ins; today's stand-in producers never anchor to
-  it, which is what keeps that order equal to placing stand-ins first), `inherited` (a fork's frozen
-  prefix) or omitted, `activity.awaitingSubagents`, `standIns` to place after their
-  `prevTurnId`, `queued` writer turn ids (the record's waiting writer messages),
-  `hidden` (`hiddenWriterTurns`: rows a hand-back in flight hides), `retried`
-  (failed replies a Retry replaces), `switchAwaitsRun`, and an `onContractFailure`
-  callback for persisted records that miss a contract (the caller decides where it
-  is reported).
-- **The transcript is not a log.** A failed reply a Retry names (`metadata.retryOf`
-  on a stand-in or stored turn, or the `retried` set) is not drawn: the Retry takes
-  its place, and a chain of failed retries draws only the newest failure.
-- **`controlSlot`:** the row index before which a queued switch's notice sits. When
-  the record says the switch waits for the next run (`awaiting_run`), it is the
-  stand-in for that run's reply (a stand-in no later assistant turn has passed);
-  otherwise, or with no such stand-in, the tail. A `waiting` switch, or one only
-  this device holds, stays at the tail.
-- **Rows:** `turn`, `compaction`, `handoff-seed` and `thread-reference` rows in causal
-  order, plumbing and overflow shells dropped. Each carries `identity` (the server turn
-  id, null for any row the server hasn't stated: a local writer turn, the opening seed, a
-  stand-in with no stored turn behind it; the seed's and stand-ins' provenance comes from
-  the input they arrived in, never an id's shape, while local writer turns, which arrive
-  mixed into `turns`, are still recognized by the `turn_local_` prefix; the row kind; the
-  occurrence within the turn, always 0 today), a
-  `renderKey` (today's React key, the turn id; nothing compares render keys), inherited
-  marks, `deliveries` (the reply's delivery events grouped as drawn: contiguous
-  completions merge into one group), `continuing` (a later row continues this reply)
-  and, on every reply-shaped row, `response` (its parts and usage numbers; a row outside a
-  response group is its own single part).
-- **`writer`:** each writer message's text with reference and skill ranges.
-- **`items`:** per non-writer turn row, `AssistantView`: ordered items (process fold, text,
-  report, artifact), each fold's visible tools and `FoldDigest` counts, `finalFrom` (where
-  the answer after the last fold starts), the hidden protocol halves and the turn's Work
-  receipts. A fold with nothing visible is kept with `visible: false`. Visible text that a
-  component once computed lives here: a reasoning run's `texts` and an artifact's `text`
-  (plain row body). A custom card carries only its `cardKind`: each card words its own
-  title and outcome from `block.content` in React.
-- **Not here:** composer, row actions, control rows, interrupts and announcements, card
-  display text and failure copy; and strings. The package never formats; callers do. Do
-  not add a card-text or failure-copy rule here for one client: a CLI-only card summary
-  printed a choice's value (`north`) where the app shows its label, and was deleted.
-  Card display moves here as one projection both clients draw (PR E).
+- **The transcript is not a log.** A failed reply a Retry names
+  (`metadata.retryOf` on a stand-in or stored turn, or the `retried` input) is
+  not drawn: the Retry takes its place, and a chain of failed retries draws only
+  the newest failure.
+- **Stand-ins and the opening seed** are placed after their `prevTurnId`; the
+  opening seed goes first, which equals placing stand-ins first because no
+  producer anchors a stand-in to it. A row's `identity` is the server turn id,
+  or null for any row the server hasn't stated, judged by the input it arrived
+  in, never an id's shape (local writer turns are recognized by `turn_local_`).
+- **`controlSlot`** places a queued switch's notice before the stand-in for the
+  run that will apply it when the record says it waits for the next run
+  (`awaiting_run`), otherwise at the tail. A `waiting` switch, or one only this
+  device holds, stays at the tail.
+- **Counts, kinds and numbers, never strings.** Lingui and `Intl` stay in the
+  app. Not here: composer, row actions, control rows, interrupts, announcements,
+  card display text and failure copy. Do not add a card-text or failure-copy
+  rule for one client; card display would move here as one projection both
+  clients draw.
+- `hidden` (from `hiddenWriterTurns`) keeps rows out while a hand-back is in
+  flight; `onContractFailure` lets the caller report a persisted record that
+  misses a contract.
 
 Turn-metadata readers (compaction, handoff seed, thread references) live in
 `@meridian/contracts/threads` because they mirror the server's metadata codecs.
@@ -101,11 +80,9 @@ and its fix are in [FUTURE](FUTURE).
 ## Turn reduction (`src/turns/`)
 
 `createTurnReducer({ store, now })` turns accepted AG-UI events into `Turn` and
-`Block` changes on a `TurnStore`: `turns`, `ensureAssistantTurn`,
-`upsertAssistantBlock`, `patchTurnStatus`, `bumpEventsApplied`, and
-`settleInterruptResponse`, plus an optional `invalidateThreadSnapshot` that an
-adapter may use to refetch (reduction never depends on it). The app and `./mf`
-reduce chat the same way; neither keeps its own interpretation of events.
+`Block` changes on a `TurnStore` port. The app and `./mf` reduce chat the same
+way; neither keeps its own interpretation of events. Reduction never depends on
+the optional `invalidateThreadSnapshot` an adapter may supply.
 
 - **Instance state.** Buffered interrupt resolutions (a resolution can arrive
   before its component block) live in the reducer instance, with
@@ -143,9 +120,9 @@ reduce chat the same way; neither keeps its own interpretation of events.
   the store (another client's message: user turns aren't streamed) is held out of
   the transcript. `dividersAwaitingAnchorIn` lists those, and both hosts ask it:
   the app's subscriber refreshes the snapshot, and `./mf`'s `followThread`
-  hydrates one within its deadline. Sharing the reducer alone wasn't enough: `./mf`
-  held such a divider forever until the waiting list and the recovery were shared
-  too.
+  hydrates one within its deadline. Sharing the reducer alone is not enough:
+  `./mf` would hold such a divider forever unless the waiting list and the
+  recovery are shared too.
 
 ## Run state (`src/run-state/`)
 
@@ -154,23 +131,16 @@ The chat's `RunState` record and this device's intents, as a store-free value.
 keeps the record with the greatest `version` (`compareSeq`), and an intent
 (message, switch, withdraw, hand-back request) retires once the held record is at
 or past its answer version. Answers are kept beside the intents for the view's
-lifetime (no cap), so an answer that beats its intent, or an intent a journal
-rebuild re-adds, still meets it. The bound is distinct answered intents per
-store lifetime, reset by a reload.
+lifetime, so an answer that beats its intent, or an intent a journal rebuild
+re-adds, still meets it. The bound is distinct answered intents per store
+lifetime, reset by a reload.
 
-Everything else is a pure selector over the view, so hosts hold the view and
-call selectors; nothing here holds state:
-
-- `fold-messages.ts`: `isBusy`, `isOwed`, `waitingWriterMessages`,
-  `usageBlockedMessages`, `isAwaitingExecution`, `hiddenWriterTurns`,
-  `unheldWriterMessages` (record messages the transcript lacks: the passive-tab
-  refresh signal), `stopRequest`, `stopStatus`, `cancelQueueScope`.
-- `fold-switches.ts`: `switchState`, the queued switch rows and their
-  `awaitsRun` placement fact. A switch never counts as a writer message.
-- `retry.ts`: `reconcileRetries`, Retry's one retirement rule (entries, stored
-  turns and the view in; remaining entries, stand-ins and hidden failed replies
-  out). A stand-in whose reservation ended without its reply retires once the
-  record at or past its answer shows another execution or none.
+Everything else (`fold-messages.ts`, `fold-switches.ts`, `retry.ts`) is a pure
+selector over the view; hosts hold the view and call selectors.
+`unheldWriterMessages` (record messages the transcript lacks) is the passive-tab
+refresh signal. A switch never counts as a writer message. `reconcileRetries` is
+Retry's one retirement rule: a stand-in whose reservation ended without its reply
+retires once the record at or past its answer shows another execution or none.
 
 The record arrives whole on every carrier (snapshot, `subscribed`,
 `meridian.run_state`, every command answer), so no host composes one from parts.

@@ -38,9 +38,9 @@ adapter only.
 
 ## Interaction rules
 
-- Thinking is default-collapsed; never auto-open it during streaming.
-- Document names are the only navigation doors in the timeline. Rows expand;
-  names navigate. Do not nest a name button inside a row button.
+- Thinking is default-collapsed, never auto-opened while streaming.
+- Document names are the only navigation doors; rows expand, names navigate. Never
+  nest a name button inside a row button.
 - Only a finished turn ends a reply. Continuations, server steers, and active
   background work keep the reply open and suppress settled action spacing.
 - First and later sends use the account-stamped submission journal. Failure stays
@@ -57,10 +57,9 @@ adapter only.
   classes per file; only new documents are one whole-draft item. Each document
   name opens its own review and there is no summary-wide Review command. Work-wide
   lists and Apply all stay on the Work page. Coarse-pointer targets stay 44px.
-- The composer has one button: Stop while a reply runs and the box is empty,
-  Send once there is text ([composer rule](../../components/app/composer/AGENTS.md)).
-  Stop hands the waiting messages back as one editable message, in send order
-  with blank lines between them, above typed text. A handed-back message never
+- Stop (the [composer's one button](../../components/app/composer/AGENTS.md))
+  hands the waiting messages back as one editable message, in send order with
+  blank lines between them, above typed text. A handed-back message never
   reaches the model, a conversation page, a fork, a summary or a snapshot.
   Retry replaces the failed reply in place. An idle queued switch reads
   "Switched to …"; "Switch to … queued" is only for a switch waiting behind a

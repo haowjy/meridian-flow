@@ -97,7 +97,7 @@
 - A sticky 402 failure shows the full non-retryable explanation live, but only
   "The AI provider turned this request down." after reload: live-versus-stored
   drift in failure copy. It moves into the shared chat session's row-failure
-  output in PR E (design-chat-session, "later outputs"); remove this entry then.
+  output; remove this entry then.
 
 - A merged delivery group (two child completions landing on one reply) could not
   be produced live on the mock, because the server wakes the parent on each
@@ -114,7 +114,7 @@
   reply or the reconnect. Screen-reader only and older than run state. Clear
   each one with its keyed owner (`clearAnnouncement`) when its state ends, and
   word the stream failure for the writer instead of passing the close code
-  through. Found in the run-state browser re-check (p12381).
+  through.
 
 - A row below a reply that finishes hops by the reply's height change (27 px
   measured: 84.8 px while streaming, 57.8 px settled) for one frame. `TurnList.tsx`
@@ -125,8 +125,8 @@
   wholly above the viewport. It hits any tail row, not only queued commands. No unit
   seam measures it: take it with a browser recipe that samples row tops per frame.
 
-## Stop the reply and send this message now, from the queue (lane Q)
+## Stop the reply and send this message now, from the queue
 
-The owner, on removing Stop from beside Send (TL-MF-80): "why would u want to prepare something but stop it...?
-unless u want to stop and send it... which there should be a way to do that in the queue". Lane Q owns the queue's
-controls: add a per-message "stop the reply and send this now" there. The composer no longer offers it.
+The owner, on removing Stop from beside Send: "why would u want to prepare something but stop it...?
+unless u want to stop and send it... which there should be a way to do that in the queue". Add a per-message
+"stop the reply and send this now" to the queue's controls. The composer no longer offers it.
