@@ -69,15 +69,15 @@ holder's projected resource location `workId` for Scratch/Uploads, and the
 project's No Work row for manuscript/kb/user/unfiled. Editor route or remembered
 Work never supplies link scope; `baseUri` is not parsed to infer it. Chat
 continues to use the thread's Work. Unresolved surfaces have
-no scope. Contextual `uploads://` links use that Work, and so does
-`scratch://` unless the scope also names a `rootThreadId`.
-`@/` names the locked No Work row and canonical `@<slug>` names a Work
-through Project Work authority.
+no scope. `scratch://` uses that Work unless the scope also names a
+`rootThreadId`. A bare `uploads://` uses the scope's `chatId` (the chat's top
+primary), and a holder with no chat has none, so only a qualified
+`uploads://@/c15/x` resolves there. Canonical `@<slug>` names a Work through
+Project Work authority.
 
 `rootThreadId` is the lineage (the first chat's id) a bare `scratch://` means:
 a No Work chat's own, or the lineage a note in a chat's Scratch belongs to
-(its replica location's `rootThreadId`, with `workId` the No Work row for
-`uploads://`). The resolver sends it in place of `workId`, which the server
+(its replica location's `rootThreadId`). The resolver sends it in place of `workId`, which the server
 refuses beside it. A canonical `scratch://@/c12/x` resolves by its own handle in
 any scope, from the local index when the scope's lineage holds it, else the
 server. The follow dialog names a lineage by its first chat's title
@@ -224,12 +224,12 @@ document is at an address the index holds, and whether the Editor's `@`
 link-ahead address is already taken.
 
 `linkableCatalogScopes` names the catalogs: the project catalog (manuscript,
-kb, and Unfiled, whatever the Work), the user catalog, the current Work's
-Uploads by row id (including No Work) and its Scratch, which is the scope's
+kb, and Unfiled, whatever the Work), the user catalog, the current chat's
+Uploads by `chatId` and the Work's Scratch, which is the scope's
 lineage's instead when it names one.
 These are the catalogs a contextual address resolves in on the server.
 A lineage scope has two owners in one index: Scratch reads with the lineage and
-Uploads with the Work row (`aggregateCatalogScope`, `uploadsWorkId`). Never
+Uploads with the chat (`aggregateCatalogScope`). Never
 narrow the index to one exclusive `ContextOwner`: Uploads then has no catalog,
 the index never completes, and the resolver refuses every local answer.
 An unresolved surface has no catalog scope; the follower waits for its Work

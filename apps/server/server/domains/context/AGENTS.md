@@ -7,8 +7,10 @@ the storage seam; file access remains the responsibility of [file policy](../fil
 ## Mental model
 
 - `manuscript://`, `kb://`, and `unfiled://` are project content; `user://` is
-  personal content. A named Work owns `scratch://@slug/`; a chat owns
-  `uploads://@/c12/`.
+  personal content. A named Work owns `scratch://@slug/`. A chat owns its
+  uploads at `uploads://@/c12/`, where bare `uploads://name` is the asking
+  chat's and a subagent uses its top chat's. A fork or handoff owns its own;
+  the Work and No Work own none.
 - A No Work chat lineage owns `scratch://@/c12/`. The locked No Work row owns no
   Scratch source. `scratchOwnerFor(thread, work)` is the single owner rule for
   bare Scratch and file policy.
@@ -22,9 +24,9 @@ the storage seam; file access remains the responsibility of [file policy](../fil
 - Routes and tools ask file policy before calling this domain. Storage
   transactions begin with `lockSeamWorks`, then namespace/source locks; lifecycle
   loss is reported as `context_unavailable`.
-- Capabilities are declared in `ports/context-adapter.ts`. Uploads authority and
-  provisioning stay separate from `UploadIntake`; uploads are flat while Scratch
-  accepts nested intake paths.
+- Capabilities are declared in `ports/context-adapter.ts`. Uploads authority stays
+  separate from `UploadIntake`; uploads are flat while Scratch accepts nested
+  intake paths.
 - Text creation and writes resolve filetype and use the collab document engine;
   never seed a Y.Doc with an assumed Markdown schema.
 - A move writes no document content. Stable links re-spell on read, and every
