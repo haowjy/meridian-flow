@@ -57,10 +57,71 @@ interface Case {
   /** Apply: the review base takes the AI's text, so only the writer's edit afterwards is a change. */
   applied?: boolean;
   writer?: (doc: Y.Doc) => void;
+  /** The writer Discards the AI's change in place and then Undoes it, `rounds` times over. */
+  discard?: { run: (doc: Y.Doc) => void; rounds: number };
   expect: { writer: boolean | undefined; chats: string[]; pending?: boolean[] };
 }
 
 const aiAt = (n: number) => `2026-10-13T1${n}:00:00Z`;
+
+const paragraphOf = (text: string) => {
+  const p = new Y.XmlElement("paragraph");
+  const t = new Y.XmlText();
+  t.insert(0, text);
+  p.insert(0, [t]);
+  return p;
+};
+
+/** Discard writes the base back with new items and Undo deletes them again: Yjs re-creates what the AI wrote. */
+function discardUndoCases(): Case[] {
+  const kinds: Array<Omit<Case, "name" | "discard"> & { kind: string; run: Case["discard"] }> = [
+    {
+      kind: "an insertion",
+      paragraphs: ["alpha beta gamma delta"],
+      ai: [{ chat: "A", at: aiAt(0), run: (d) => textOf(d, 0).insert(0, "zeta ") }],
+      run: { rounds: 1, run: (d) => textOf(d, 0).delete(0, 5) },
+      expect: { writer: false, chats: ["A"], pending: [true] },
+    },
+    {
+      kind: "a replacement",
+      paragraphs: ["alpha beta gamma delta"],
+      ai: [
+        {
+          chat: "A",
+          at: aiAt(0),
+          run: (d) => {
+            textOf(d, 0).delete(6, 4);
+            textOf(d, 0).insert(6, "BETA");
+          },
+        },
+      ],
+      run: {
+        rounds: 1,
+        run: (d) => {
+          const at = textOf(d, 0).toString().indexOf("BETA");
+          textOf(d, 0).delete(at, 4);
+          textOf(d, 0).insert(at, "beta");
+        },
+      },
+      expect: { writer: false, chats: ["A"], pending: [true] },
+    },
+    {
+      kind: "a block deletion",
+      paragraphs: ["first block gone", "second block stays", "third block stays"],
+      ai: [{ chat: "A", at: aiAt(0), run: (d) => fragmentOf(d).delete(0, 1) }],
+      run: { rounds: 1, run: (d) => fragmentOf(d).insert(0, [paragraphOf("first block gone")]) },
+      expect: { writer: false, chats: ["A"], pending: [true] },
+    },
+  ];
+  return kinds.flatMap(({ kind, run, ...rest }) => [
+    { ...rest, name: `${kind} keeps its chat after Discard and Undo`, discard: run },
+    {
+      ...rest,
+      name: `${kind} keeps its chat after a second Discard and Undo`,
+      discard: run && { ...run, rounds: 2 },
+    },
+  ]);
+}
 
 const CASES: Case[] = [
   {
@@ -130,10 +191,11 @@ const CASES: Case[] = [
     writer: (d) => textOf(d, 0).delete(5, 5),
     expect: { writer: undefined, chats: [] },
   },
+  ...discardUndoCases(),
 ];
 
 describe("attribution", () => {
-  it.each(CASES)("$name", ({ paragraphs, ai, applied, writer, expect: want }) => {
+  it.each(CASES)("$name", ({ paragraphs, ai, applied, writer, discard, expect: want }) => {
     const seed = new Y.Doc();
     seed.clientID = 1;
     prosemirrorToYXmlFragment(
@@ -151,6 +213,20 @@ describe("attribution", () => {
       edits.push({ threadId: w.chat, title: w.chat, turnId: `t${i}`, at: w.at, inserted, deleted });
       Y.applyUpdate(draft, Y.encodeStateAsUpdate(doc));
     });
+    if (discard) {
+      const doc = peer(draft, 20);
+      const origin = Symbol("discard");
+      for (let round = 0; round < discard.rounds; round++) {
+        const history = new Y.UndoManager(fragmentOf(doc), {
+          trackedOrigins: new Set([origin]),
+          captureTimeout: 0,
+        });
+        doc.transact(() => discard.run(doc), origin);
+        history.undo();
+        history.destroy();
+      }
+      Y.applyUpdate(draft, Y.encodeStateAsUpdate(doc));
+    }
     const base = readBlocks(fragmentOf(applied ? draft : seed), schema);
     if (writer) {
       const doc = peer(draft, 5);

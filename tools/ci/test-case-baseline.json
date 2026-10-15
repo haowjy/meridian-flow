@@ -463,7 +463,7 @@
     "packages/agent-edit/src/diff/merge.test.ts": 43,
     "packages/agent-edit/src/diff/review.test.ts": 11,
     "packages/agent-edit/src/diff/writer.test.ts": 3,
-    "packages/agent-edit/src/diff/yjs-attribution.test.ts": 9,
+    "packages/agent-edit/src/diff/yjs-attribution.test.ts": 15,
     "packages/agent-edit/src/lineage/range-set.test.ts": 3,
     "packages/agent-edit/src/links/assign-refs.test.ts": 2,
     "packages/agent-edit/src/links/correspondence.test.ts": 3,

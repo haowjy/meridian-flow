@@ -10,8 +10,12 @@
  * that edit's chat. Any evidence item no edit accounts for is the writer's: in a draft, everything
  * else is their typing, late-peer recovery, or Discard and its Undo.
  *
- * Yjs records no deleter, so a deletion point holding more tombstones than the hunk removed is
- * ambiguous: its tombstones name no chat (they can still show the writer). A hunk whose text could
+ * Undo of a Discard re-creates what the AI wrote as new writer-client items whose `rightOrigin` is the
+ * original: a visible item that restores a deleted one of identical content inherits its attribution.
+ * Yjs records no deleter, so at a deletion point the AI-deleted tombstones that spell the removed text
+ * are the AI's, and the point's churn (AI insertions a Discard removed, what the Discard wrote back) is
+ * not a deletion of base text. When they do not settle it, the point's tombstones name no chat (they
+ * can still show the writer). A hunk whose text could
  * slide onto an identical neighbour (repeated words) has no evidence at all. A missing name is better
  * than a wrong one. This is a hint for a card's byline: nothing gates on it.
  */
@@ -89,12 +93,40 @@ interface IdSpan {
   client: number;
   lo: number;
   hi: number;
+  /** The item this span was cut from. */
+  item: Y.Item;
 }
 const spanOf = (item: Y.Item, lo = 0, hi = item.length): IdSpan => ({
   client: item.id.client,
   lo: item.id.clock + lo,
   hi: item.id.clock + hi,
+  item,
 });
+
+const stringOf = (item: Y.Item) =>
+  item.content instanceof Y.ContentString ? item.content.str : null;
+
+/**
+ * The deleted item a visible item restores, if it is one. Yjs never undeletes: Undo of a Discard
+ * re-creates each deleted item as a new item (a writer-client id) whose `rightOrigin` is the original's
+ * id, which updates carry across reloads. Writer text that merely sits before a tombstone has that
+ * `rightOrigin` too; identical content (the same length, the same characters where they are kept) is what
+ * separates the two. Returns the span in the original item, or undefined.
+ */
+function restoredFrom(span: IdSpan, store: Y.Doc["store"]): IdSpan | undefined {
+  const { item } = span;
+  const ro = item.rightOrigin;
+  if (!ro) return undefined;
+  const orig = Y.getItem(store, ro);
+  if (!(orig instanceof Y.Item) || !orig.deleted) return undefined;
+  const at = ro.clock - orig.id.clock;
+  if (item.length !== orig.length - at) return undefined;
+  const was = stringOf(orig);
+  const now = stringOf(item);
+  if (was !== null && now !== null && was.slice(at) !== now) return undefined;
+  const shift = ro.clock - item.id.clock;
+  return { client: ro.client, lo: span.lo + shift, hi: span.hi + shift, item: orig };
+}
 
 function* children(item: Y.Item): Generator<Y.Item> {
   if (!(item.content instanceof Y.ContentType)) return;
@@ -186,6 +218,10 @@ class DraftView {
   constructor(
     readonly side: Side,
     readonly blocks: DraftBlocks,
+    /** Every item range an AI part deleted. */
+    readonly deleted: RangeSet,
+    /** Every item range an AI part inserted. */
+    readonly inserted: RangeSet,
   ) {}
 
   /** Content offset where token `p` begins in its block. */
@@ -245,15 +281,79 @@ class DraftView {
   }
 }
 
-/** `chars` removed characters whose deletion point offers `items`: more than that and the point is shared. */
-function pushTombs(items: Y.Item[], chars: number, out: Evidence[]) {
-  const spans: IdSpan[] = [];
-  let total = 0;
-  for (const item of items) {
-    total += item.length;
+/**
+ * The tombstones at a deletion point, for a hunk that removed `weight` (characters, or blocks) spelling
+ * `text` (null for blocks). When the AI-deleted tombstones alone spell what was removed, the AI removed
+ * it: they are the evidence, and the point's other tombstones (a Discard's churn, a stale deletion) are
+ * not. Otherwise the point is shared: its tombstones can show the writer but never name a chat.
+ */
+function pushTombs(
+  items: Y.Item[],
+  weight: number,
+  text: string | null,
+  view: DraftView,
+  out: Evidence[],
+) {
+  const pieces = items.map((item) => {
+    const spans: IdSpan[] = [];
     tombstones(item, spans);
+    return {
+      item,
+      spans,
+      byAi: spans.every((s) => view.deleted.covers(s.client, s.lo, s.hi)),
+    };
+  });
+  const ai = pieces.filter((p) => p.byAi);
+  const windows: Array<typeof ai> = [];
+  for (let i = 0; i < ai.length; i++) {
+    let size = 0;
+    let spelled: string | null = "";
+    for (let j = i; j < ai.length && size < weight; j++) {
+      size += ai[j].item.length;
+      const str = stringOf(ai[j].item);
+      spelled = spelled !== null && str !== null ? spelled + str : null;
+      if (size === weight && (text === null || spelled === null || spelled === text))
+        windows.push(ai.slice(i, j + 1));
+    }
   }
-  for (const span of spans) out.push({ span, dead: true, blur: total > chars });
+  // The rest of the point is churn when it was written since the base and deleted again: an AI insertion
+  // a Discard removed, or what a Discard wrote there (it sits right before an accounted tombstone).
+  const accounted = new Set(windows.length === 1 ? windows[0] : []);
+  for (const p of pieces)
+    if (p.spans.every((s) => view.inserted.covers(s.client, s.lo, s.hi)) && !accounted.has(p))
+      accounted.add(p);
+  for (let grew = accounted.size > 0; grew; ) {
+    grew = false;
+    for (const p of pieces) {
+      const ro = p.item.rightOrigin;
+      if (accounted.has(p) || !ro) continue;
+      for (const q of accounted)
+        if (
+          q.item.id.client === ro.client &&
+          q.item.id.clock <= ro.clock &&
+          ro.clock < q.item.id.clock + q.item.length
+        ) {
+          accounted.add(p);
+          grew = true;
+          break;
+        }
+    }
+  }
+  // What a Discard wrote back for text is a copy of the removed text, also deleted by its Undo.
+  const rest = pieces.filter((p) => !accounted.has(p));
+  const restSize = rest.reduce((n, p) => n + p.item.length, 0);
+  const restText = rest.map((p) => stringOf(p.item));
+  const copies =
+    text !== null &&
+    restSize % weight === 0 &&
+    (restText.includes(null) || restText.join("") === text.repeat(restSize / weight));
+  if (windows.length === 1 && (accounted.size === pieces.length || copies)) {
+    for (const p of windows[0])
+      for (const span of p.spans) out.push({ span, dead: true, blur: false });
+    return;
+  }
+  const blur = pieces.reduce((n, p) => n + p.item.length, 0) > weight;
+  for (const p of pieces) for (const span of p.spans) out.push({ span, dead: true, blur });
 }
 
 /** The change's evidence from one hunk. */
@@ -344,7 +444,7 @@ function hunkEvidence(h: Hunk, base: Side, view: DraftView, out: Evidence[]) {
             const [b, off] = locate(point);
             items.push(...view.tombs(b, off, off));
           }
-          pushTombs(items, n, out);
+          pushTombs(items, n, text, view, out);
         }
         from += n;
       } else {
@@ -360,11 +460,13 @@ function hunkEvidence(h: Hunk, base: Side, view: DraftView, out: Evidence[]) {
       pushTombs(
         view.tombs(D.blockOf[q], off, off + (next.kind === "text" ? next.ws.length : 0)),
         remText.length,
+        remText,
+        view,
         out,
       );
     } else if (q > 0 && D.toks[q - 1].kind !== "atom") {
       const b = D.blockOf[q - 1];
-      pushTombs(view.tombs(b, view.size(b), view.size(b)), remText.length, out);
+      pushTombs(view.tombs(b, view.size(b), view.size(b)), remText.length, remText, view, out);
     }
   }
 
@@ -377,9 +479,7 @@ function hunkEvidence(h: Hunk, base: Side, view: DraftView, out: Evidence[]) {
         : isBlockTok(D.toks[q])
           ? D.blockOf[q]
           : D.blockOf[q] + 1;
-    const gone = view.blocks.gaps[gap] ?? [];
-    for (const t of gone)
-      out.push({ span: spanOf(t), dead: true, blur: gone.length > removedBlocks });
+    pushTombs(view.blocks.gaps[gap] ?? [], removedBlocks, null, view, out);
   }
 }
 
@@ -413,13 +513,27 @@ function attribute(
   const prepared = edits.map(prepare);
   const insAll = new RangeSet(edits.flatMap((e) => e.inserted));
   const delAll = new RangeSet(edits.flatMap((e) => e.deleted));
-  const view = new DraftView(projection.diff.draft, blocks);
+  const view = new DraftView(projection.diff.draft, blocks, delAll, insAll);
+  const store = fragment.doc?.store;
   for (const group of projection.groups) {
     const evidence: Evidence[] = [];
     for (const h of group.hunks)
       hunkEvidence(projection.diff.hunks[h.index], projection.diff.base, view, evidence);
     if (!evidence.length) continue;
     const verdict: Verdict = { writer: false, hits: [], named: [] };
+    for (const ev of evidence) {
+      // Text the writer's Undo restored is the original's: it carries that item's attribution.
+      if (!ev.dead && store && !insAll.covers(ev.span.client, ev.span.lo, ev.span.hi)) {
+        let span: IdSpan | undefined = ev.span;
+        for (let hops = 0; span && hops < 32; hops++) {
+          span = restoredFrom(span, store);
+          if (span && insAll.covers(span.client, span.lo, span.hi)) {
+            ev.span = span;
+            break;
+          }
+        }
+      }
+    }
     for (const { span: s, dead } of evidence)
       if (!(dead ? delAll : insAll).covers(s.client, s.lo, s.hi)) verdict.writer = true;
     prepared.forEach((e, i) => {

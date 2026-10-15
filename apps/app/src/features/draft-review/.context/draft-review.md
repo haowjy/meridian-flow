@@ -36,6 +36,9 @@ change can show both, and a change with no evidence shows neither. Where the tex
 items (repeated words that could slide, a deletion point holding more tombstones than the hunk
 removed) no chat is named. Chat-keyed lists, such as the draft dock and the arrival pulse, read
 `chats`, so a writer-only change is in none.
+Undo of a Discard keeps the chat: Yjs re-creates the restored text as writer-client items whose
+`rightOrigin` is the original, so identical restored text inherits the original's attribution, and
+a deletion point's AI-deleted tombstones that spell the removed text outrank its Discard churn.
 
 Every `ReviewChange` carries the frame it was listed from. A click acts on that
 frame: Apply sends its snapshot, Discard finds its pin and content hash in the
