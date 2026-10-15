@@ -28,9 +28,8 @@ adapter only.
   component selects, filters or classifies raw turns for rows, groups, tool
   pairing, visibility or Retry stand-ins. The app words copy; `./mf thread view`
   prints the same view model.
-- The server writes one versioned `RunState` per chat. The thread store holds it
-  (`useRunState`) from the one mounted subscriber, and the app and `./mf` read it
-  only through `@meridian/thread-client` selectors (`isBusy`,
+- The server writes one versioned `RunState` per chat. The app and `./mf` follow
+  it only through the same `@meridian/thread-client` selectors (`isBusy`,
   `waitingWriterMessages`, `usageBlockedMessages`, `switchState`), never from
   execution identity, stream order or timers.
 - Chat consumes draft review through the chat's changes, not the Work's entire
