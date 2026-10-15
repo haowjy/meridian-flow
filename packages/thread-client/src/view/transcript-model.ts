@@ -3,6 +3,7 @@ import { parseInvocationCard } from "@meridian/contracts/components";
 import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
 import { parseSubagentUpdateMetadata } from "@meridian/contracts/spawn";
 import {
+  isClosingRow,
   isHandoffSeed,
   isOverflowShell,
   readCompactionFacts,
@@ -93,6 +94,37 @@ export function classifyTurn(turn: Turn): TurnClass {
   return turn.blocks.some((block) => block.blockType === "custom") ? "bubble" : "plumbing";
 }
 
+/**
+ * The delivery turns (a `subagent_update`) the view groups under an assistant reply: those that follow it
+ * until `endsAt` names the next row. The view passes its drawn rows; the server's forgetting decision passes
+ * `isRowTurn`, so both walk the chain the same way.
+ */
+export function deliveriesUnder(
+  reply: Turn,
+  nextByPrev: ReadonlyMap<string, Turn>,
+  endsAt: (next: Turn) => boolean,
+): Turn[] {
+  const delivered: Turn[] = [];
+  const seen = new Set<string>();
+  let next = nextByPrev.get(reply.id);
+  while (next && !seen.has(next.id)) {
+    seen.add(next.id);
+    // Delivery events belong to the reply until the next row (a writer turn, another reply, a divider,
+    // or a brief card).
+    if (endsAt(next)) break;
+    if (classifyTurn(next) === "delivery" && next.role === "system") delivered.push(next);
+    next = nextByPrev.get(next.id);
+  }
+  return delivered;
+}
+
+/** Whether the view draws this turn as a row of its own (a message, a reply, a compaction, a switch, a seed). */
+export function isRowTurn(turn: Turn): boolean {
+  if (turn.role === "compaction" || isHandoffSeed(turn)) return true;
+  const kind = classifyTurn(turn);
+  return kind === "bubble" || kind === "write-mode";
+}
+
 export function buildTranscriptModel(
   localTurns: Turn[],
   awaitingSubagents: boolean,
@@ -104,6 +136,7 @@ export function buildTranscriptModel(
   for (const turn of turns) if (turn.prevTurnId) nextByPrev.set(turn.prevTurnId, turn);
   const rows: TranscriptRow[] = [];
   let latestSeedIndex = -1;
+  let latestSeedTurnIndex = -1;
   turns.forEach((turn, index) => {
     const owner = inherited?.ownerByTurnId.get(turn.id) ?? null;
     const mark: InheritedMark | null = owner
@@ -115,7 +148,10 @@ export function buildTranscriptModel(
     }
     // A fork of a handoff destination inherits its brief, read-only.
     if (isHandoffSeed(turn)) {
-      if (!mark) latestSeedIndex = rows.length;
+      if (!mark) {
+        latestSeedIndex = rows.length;
+        latestSeedTurnIndex = index;
+      }
       rows.push({ kind: "handoff-seed", turn, latest: false, inherited: mark });
       return;
     }
@@ -132,12 +168,11 @@ export function buildTranscriptModel(
     if (references.length)
       rows.push({ kind: "thread-reference", turn, references, inherited: mark });
   });
-  // A seed is `latest` while it is the newest local seed and no closing row (a writer message, a reply or a
-  // compaction) follows it: once the chat moves on, its failure and Retry end.
+  // A seed is `latest` while it is the newest local seed and no closing turn follows it: once the chat moves
+  // on, its failure and Retry end. Read from the turns, not the rows: an agent's message closes on the server
+  // but draws no row here.
   const latestSeed = rows[latestSeedIndex];
-  const closedAfter = rows
-    .slice(latestSeedIndex + 1)
-    .some((row) => row.kind === "turn" || row.kind === "compaction");
+  const closedAfter = turns.slice(latestSeedTurnIndex + 1).some(isClosingRow);
   if (latestSeed?.kind === "handoff-seed" && !closedAfter)
     rows[latestSeedIndex] = { ...latestSeed, latest: true };
   markInheritedRuns(rows);
@@ -192,37 +227,28 @@ export function buildTranscriptModel(
   for (const turn of visibleTurns) {
     if (turn.role !== "assistant") continue;
     const events: DeliveryEvent[] = [];
-    let cursor = turn.id;
-    const seen = new Set<string>();
-    while (true) {
-      const next = nextByPrev.get(cursor);
-      if (!next || seen.has(next.id)) break;
-      seen.add(next.id);
-      // Delivery events belong to the reply until the next rendered row
-      // (a writer turn, another reply, a divider, or a brief card).
-      if (rowTurnIds.has(next.id)) break;
-      if (classifyTurn(next) === "delivery" && next.role === "system") {
-        const update = subagentUpdateByTurnId.get(next.id) ?? null;
-        const invocation = update?.execution
-          ? invocationByExecution.get(update.execution)
-          : undefined;
-        const childThreadId = update?.childThreadId ?? invocation?.threadId;
-        events.push({
-          turn: next,
-          message: next.blocks
-            .filter((block) => block.blockType === "text")
-            .map((block) => block.textContent ?? "")
-            .join(""),
-          subagentUpdate: update,
-          ...(childThreadId ? { childThreadId } : {}),
-          ...(update?.agentName || invocation?.agentName
-            ? { agentName: update?.agentName ?? invocation?.agentName }
-            : {}),
-          ...(invocation?.title ? { title: invocation.title } : {}),
-        });
-        if (childThreadId) latestRevealTurnByChildThreadId.set(childThreadId, turn.id);
-      }
-      cursor = next.id;
+    for (const next of deliveriesUnder(turn, nextByPrev, (candidate) =>
+      rowTurnIds.has(candidate.id),
+    )) {
+      const update = subagentUpdateByTurnId.get(next.id) ?? null;
+      const invocation = update?.execution
+        ? invocationByExecution.get(update.execution)
+        : undefined;
+      const childThreadId = update?.childThreadId ?? invocation?.threadId;
+      events.push({
+        turn: next,
+        message: next.blocks
+          .filter((block) => block.blockType === "text")
+          .map((block) => block.textContent ?? "")
+          .join(""),
+        subagentUpdate: update,
+        ...(childThreadId ? { childThreadId } : {}),
+        ...(update?.agentName || invocation?.agentName
+          ? { agentName: update?.agentName ?? invocation?.agentName }
+          : {}),
+        ...(invocation?.title ? { title: invocation.title } : {}),
+      });
+      if (childThreadId) latestRevealTurnByChildThreadId.set(childThreadId, turn.id);
     }
     if (events.length) deliveryEventsByAssistantTurnId.set(turn.id, events);
   }

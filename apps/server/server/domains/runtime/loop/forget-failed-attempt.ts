@@ -7,8 +7,8 @@
  * steps are in design-fx.md (F1); a step number in a comment below names one of them.
  */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import { retryTargetOf, type Turn } from "@meridian/contracts/threads";
-import { replyDrawsNothing } from "@meridian/thread-client/view";
+import { isClosingRow, retryTargetOf, type Turn } from "@meridian/contracts/threads";
+import { deliveriesUnder, isRowTurn, replyDrawsNothing } from "@meridian/thread-client/view";
 import {
   type BlockRepository,
   CompactionMetadataCodec,
@@ -16,7 +16,7 @@ import {
   toClientSafeBlock,
 } from "../../threads/index.js";
 import { turnGraph } from "../../threads/ports/turn-graph.js";
-import { isClosingRow, latestRowAt } from "./latest-row.js";
+import { latestRowAt } from "./latest-row.js";
 
 /** What the appended turns say about the boundary, derived the same way at run start and in the primitive. */
 export interface AppendedTurns {
@@ -195,7 +195,10 @@ export async function loadForgettingFacts(
       turn.forgottenBy == null
         ? (await deps.blocks.listByTurn(turn.id as TurnId)).map(toClientSafeBlock)
         : [];
-    members.push({ turn: { ...turn, blocks }, delivered: deliveredUnder(turn, nextByPrev) });
+    members.push({
+      turn: { ...turn, blocks },
+      delivered: turn.role === "assistant" ? deliveriesUnder(turn, nextByPrev, isRowTurn) : [],
+    });
   }
 
   const memberIds = new Set(chain.map((turn) => turn.id));
@@ -214,27 +217,6 @@ export async function loadForgettingFacts(
     answered,
     summaryProtectedWriterIds: summaryProtected(graph, byId, answered),
   };
-}
-
-/** The `subagent_update` turns after `member` until the next row, as the view groups them under an assistant reply. */
-function deliveredUnder(member: Turn, nextByPrev: ReadonlyMap<string, Turn>): Turn[] {
-  if (member.role !== "assistant") return [];
-  const delivered: Turn[] = [];
-  const seen = new Set<string>();
-  let next = nextByPrev.get(member.id);
-  while (next && !seen.has(next.id)) {
-    seen.add(next.id);
-    const metadata = next.metadata;
-    const kind =
-      metadata && typeof metadata === "object" && !Array.isArray(metadata)
-        ? metadata.kind
-        : undefined;
-    // The view's next row: a conversation turn, a compaction, a switch divider or a seed.
-    if (isClosingRow(next) || kind === "write_mode_switch" || kind === "derivation_seed") break;
-    if (kind === "subagent_update" && next.role === "system") delivered.push(next);
-    next = nextByPrev.get(next.id);
-  }
-  return delivered;
 }
 
 function summaryProtected(

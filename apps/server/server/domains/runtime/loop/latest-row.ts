@@ -6,14 +6,8 @@
  * refuses. It reads the graph because the turns it walks over may have left the conversation.
  */
 import type { TurnId } from "@meridian/contracts/runtime";
-import type { Turn } from "@meridian/contracts/threads";
-import { isConversationTurn } from "../../threads/index.js";
+import { isClosingRow, type Turn } from "@meridian/contracts/threads";
 import { turnGraph } from "../../threads/ports/turn-graph.js";
-
-/** A turn that ends the previous reply's turn as the latest row: a conversation turn or a compaction. */
-export function isClosingRow(turn: Pick<Turn, "role" | "origin" | "metadata">): boolean {
-  return turn.role === "compaction" || isConversationTurn(turn);
-}
 
 /** The closing row reached by walking back from `leaf`, and the non-closing turns walked over (leaf first). */
 export async function latestRowAt(

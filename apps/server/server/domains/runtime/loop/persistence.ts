@@ -28,7 +28,7 @@
  * in the threads domain because it must know about all repository types.
  */
 import type { ThreadId } from "@meridian/contracts/runtime";
-import type { OrchestratorEvent, Turn } from "@meridian/contracts/threads";
+import { isClosingRow, type OrchestratorEvent, type Turn } from "@meridian/contracts/threads";
 import {
   type EventJournalWriter,
   projectReadModelEvent,
@@ -40,7 +40,6 @@ import {
   type ForgettingDecision,
   loadForgettingFacts,
 } from "./forget-failed-attempt.js";
-import { isClosingRow } from "./latest-row.js";
 
 export type PersistenceDeps = {
   repos: Pick<

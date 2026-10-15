@@ -1,9 +1,9 @@
 /** Indexed keyset reads for effective transcript spans. */
 
 import type { Turn } from "@meridian/contracts/threads";
+import { SYSTEM_TURN_KINDS } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
 import { asc, eq, inArray, sql } from "drizzle-orm";
-import { SYSTEM_TURN_KINDS } from "../../domain/turn-metadata.js";
 import type {
   ReadTranscriptItemsInput,
   TranscriptItemRow,

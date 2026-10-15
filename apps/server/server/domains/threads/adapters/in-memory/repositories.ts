@@ -14,7 +14,11 @@ import type {
   Turn,
   TurnUsage,
 } from "@meridian/contracts/threads";
-import { formatThreadRef, isPendingPlaceholder } from "@meridian/contracts/threads";
+import {
+  formatThreadRef,
+  isConversationTurn,
+  isPendingPlaceholder,
+} from "@meridian/contracts/threads";
 import { workLifecycleState } from "@meridian/contracts/works";
 import { InMemoryTransactionOwner } from "../../../../shared/in-memory-transaction.js";
 import { WorkLifecycleUnavailableError } from "../../../projects/domain/work-lifecycle.js";
@@ -23,7 +27,6 @@ import { normalizeThreadCreate } from "../../domain/thread-create.js";
 import { buildDerivedPrimaryThreadRow } from "../../domain/thread-create-derived-primary.js";
 import { buildSubagentThreadRow } from "../../domain/thread-create-subagent.js";
 import { toThreadListItem } from "../../domain/thread-list-projection.js";
-import { isConversationTurn } from "../../domain/turn-metadata.js";
 import { TurnStartConflictError } from "../../domain/turn-start-transition.js";
 import { isVisibleConversationalTurn } from "../../domain/visible-conversation-policy.js";
 import { orderTurnsByPosition } from "../../order-turns.js";
