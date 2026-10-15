@@ -10,7 +10,7 @@ import {
 import type { Session } from "../../core/session";
 import { resolveProjectId } from "../project/resolve";
 import { deleteDocument } from "./rm";
-import { PROJECT_OPTION, resolveUri } from "./uri";
+import { ownerOf, PROJECT_OPTION, resolveUri } from "./uri";
 
 /**
  * Creates a tracked markdown document; returns its id. With overwrite, a conflict deletes the
@@ -36,7 +36,7 @@ export async function putDocument(
   const create = () =>
     session.request<{ status: "created"; documentId: string; uri: string }>(
       "POST",
-      apiProjectContextCreatePath(input.projectId, target.scheme, { workId: target.workId }),
+      apiProjectContextCreatePath(input.projectId, target.scheme, ownerOf(target)),
       { type: "file", path: target.path, content: input.content },
     );
   try {
