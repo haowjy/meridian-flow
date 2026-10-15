@@ -320,7 +320,7 @@
     "apps/server/server/domains/context/corpus-import/corpus-import.db.test.ts": 2,
     "apps/server/server/domains/context/create-join.db.test.ts": 3,
     "apps/server/server/domains/context/document-address.review.db.test.ts": 1,
-    "apps/server/server/domains/context/document-link-resolution.db.test.ts": 7,
+    "apps/server/server/domains/context/document-link-resolution.db.test.ts": 8,
     "apps/server/server/domains/context/figures/figure-assets.db.test.ts": 1,
     "apps/server/server/domains/context/link-ahead-arrivals.db.test.ts": 1,
     "apps/server/server/domains/context/promotion/__tests__/promotion-and-flush.test.ts": 2,

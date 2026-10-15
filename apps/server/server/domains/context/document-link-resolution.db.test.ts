@@ -3,6 +3,8 @@ import { conformanceUserValues } from "@meridian/database/__test-support__/db-fi
 import {
   contextSources,
   documents,
+  drafts,
+  draftTreeChanges,
   linkAheadRefs,
   projects,
   threads,
@@ -366,6 +368,79 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
     });
 
+    it("answers an address-only link from the request's own Work draft, live first", async () => {
+      const db = database.current;
+      const live = await add("manuscript", "live");
+      const [{ contextSourceId } = { contextSourceId: "" }] = await db
+        .select({ contextSourceId: documents.contextSourceId })
+        .from(documents)
+        .where(eq(documents.id, live));
+      const hidden = async (name: string, draftId: string) => {
+        const id = crypto.randomUUID();
+        await db
+          .insert(documents)
+          .values({ id, contextSourceId, name, extension: "", hidden: true });
+        await db
+          .insert(draftTreeChanges)
+          .values({ draftId, nodeId: id, nodeKind: "document", created: true });
+        return id;
+      };
+      const draftA = crypto.randomUUID();
+      const draftB = crypto.randomUUID();
+      await db.insert(drafts).values([
+        { id: draftA, projectId: p, originWorkId: a, createdBy: u },
+        { id: draftB, projectId: p, originWorkId: b, createdBy: u },
+      ]);
+      const created = await hidden("created", draftA);
+      await hidden("live", draftA);
+      await hidden("elsewhere", draftB);
+      const fileAccess: DocumentLinkRouteDeps["fileAccess"] = {
+        listAccess: async (_principal, ids) => new Map(ids.map((id) => [id, {} as never])),
+      };
+      const deps: DocumentLinkRouteDeps = {
+        projectRepo: { findById: async () => ({ userId: u, deletedAt: null }) } as never,
+        documentLinks: resolver(),
+        fileAccess,
+        workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
+        linkScopes: createDrizzleDocumentLinkScopes({
+          db,
+          fileAccess,
+          observer: createLinkScopeObserver(createNoopEventSink()),
+        }),
+        drafts: {
+          viewForWork: async (workId) =>
+            workId === a
+              ? { kind: "draft", draftId: draftA }
+              : workId === b
+                ? { kind: "draft", draftId: draftB }
+                : { kind: "live" },
+        },
+      };
+      const resolveIn = (workId: string) =>
+        handleDocumentLinkResolveRequest(deps, {
+          projectId: p,
+          userId: u as never,
+          request: {
+            workId,
+            baseUri: null,
+            links: ["created", "live", "elsewhere"].map((name) => ({
+              ref: null,
+              href: `manuscript://${name}`,
+            })),
+          },
+        });
+      expect((await resolveIn(a)).answers).toMatchObject([
+        { state: "document", inDraft: true, draft: { draftId: draftA }, document: { id: created } },
+        { state: "document", inDraft: false, document: { id: live } },
+        { state: "missing" },
+      ]);
+      // Work B's draft created only "elsewhere"; A's creates stay hidden from it.
+      expect((await resolveIn(b)).answers).toMatchObject([
+        { state: "missing" },
+        { state: "document", inDraft: false, document: { id: live } },
+        { state: "document", inDraft: true, draft: { draftId: draftB } },
+      ]);
+    });
     it("answers ref links through the route core: gone never carries a location", async () => {
       const db = database.current;
       const live = await add("manuscript", "live");
