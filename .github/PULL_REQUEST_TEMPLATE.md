@@ -1,15 +1,22 @@
 <!-- Describe the PR's final state, not its history. Give reviewers enough
-     context to understand the change. -->
+     context to understand the change.
+
+     Every ## section below is required, and the PR-body check fails when one
+     is missing. When a section doesn't apply, keep its heading and write
+     "None." with a short reason. Use ### for your own subheadings inside a
+     section; the check reads only ## headings. -->
 
 ## Why
 
 <!-- State the problem or opportunity and why it matters. For UI changes, show
-     the current experience when useful. Then name the core design decisions
-     behind the change: the underlying problems, not just their symptoms. For
-     each, say what was wrong, what this PR decides, and what it rules out.
-     Quote the owner's rulings where they set a decision. -->
+     the current experience when useful. -->
 
-### Core design decisions
+## Core design decisions
+
+<!-- Name the core design decisions behind the change: the underlying
+     problems, not just their symptoms. For each, say what was wrong, what this
+     PR decides, and what it rules out. Quote the owner's rulings where they
+     set a decision. -->
 
 1. **<decision>.** <the problem>. <what this PR decides>. Ruled out: <alternative and why>.
 
@@ -86,7 +93,8 @@
 
 ## DB Changes
 
-<!-- Remove if no schema changes. Otherwise name migrations; diagram changed
+<!-- Write "None." when the PR changes no schema. Otherwise name migrations;
+     diagram changed
      tables/relationships in Mermaid, mark added/dropped/renamed columns, and
      list new constraints/indexes. -->
 

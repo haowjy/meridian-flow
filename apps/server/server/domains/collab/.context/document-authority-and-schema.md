@@ -1,225 +1,81 @@
-# Collab — document authority, schema, and connection admission
+# Collab — document authority and schema admission
 
-## Current shape
+This page defines the durable authority vocabulary and the one schema-aware
+content path. Authority is the durable head and its identity/generation, not a
+warm Y.Doc or an operation-specific mutation policy.
 
-| Concept | Canonical name | Code surface |
-|---|---|---|
-| Durable `document_yjs_heads` row and its fenced journal prefix | **document authority head** | `DocumentAuthorityHead`, `DocumentAuthorityId`, `document_yjs_heads` |
-| Operation-specific capabilities that validate and admit content-bearing mutations | **document mutation policy** | `admitFreshAuthorship`, `admitCertifiedMutation`, `replicateFrozenIdentity`, `replaceAuthorityGeneration` |
-| Mutable `Y.Doc` held by a loaded Hocuspocus room | **live document** | `liveDocument` / `liveDoc` in room and Hocuspocus surfaces |
+## Authority vocabulary
 
-“Document authority” is reserved for the durable head and its identity/generation.
-Do not use it for the mutation policy or an in-memory `Y.Doc`. The policy uses
-the neutral `MutationTarget` for branch, scratch, and live inputs; only room-owned
-state is a live document.
+- The **document authority head** is the durable `document_yjs_heads` row and
+  its fenced journal prefix.
+- A **document mutation policy** admits fresh, certified, replicated, or
+  generation-replacement content against a neutral `MutationTarget`.
+- A **live document** is the mutable Y.Doc held by a loaded Hocuspocus room.
 
-## Write codec and schema coherence
+Every loaded handle, room, checkpoint, writer frame, Markdown replacement, and
+agent journal batch carries the authority identity and generation that loaded
+it. Persistence revalidates both under the document mutation lock and drops
+stale bytes instead of relabeling them. Restore retires warm handles and
+rooms; late load and connection completion revalidate before use.
 
-`domain/markdown-document.ts` is the single content write/read and Y.Doc
-projection engine. It resolves each document's filetype (composition-root
-resolver injected in `composition.ts`) before every parse or serialization:
-`document` → markdown codec; `code` → one `code_block` holding the raw text
-verbatim (`language` = filetype), read back without fences. Checkpoint restore,
-and branch/effective reads use this document-aware surface;
-schema-blind serialization is private to the engine.
-Checkpoint restore (`restoreFromYDoc`) installs the snapshot's projected nodes
-directly, never a serialize/parse round trip, so attributes the codec does not
-spell survive; a `code` snapshot is rebuilt from its text with the current
-filetype as `language`. Every whole-document replacement serializes its staged
-copy before journal admission, so a snapshot the codec can't spell fails with
-the journal and live document untouched. Restore matches the old round trip
-only for Markdown-generated content. Native snapshots keep structure it used to
-normalize: a whitespace-only paragraph followed by an empty one stays two
-paragraphs (the old path collapsed them to one empty paragraph; both serialize
-to the same empty Markdown), and a non-string code-block `language` such as
-`42` stays numeric instead of reparsing to a string.
-Schema projection always runs on a private `gc: false` clone (with the source
-client identity restored after state copy): normalization can repair that clone,
-but serialization cannot mutate its input Y.Doc. Any clone update during
-projection is an `collab.schema` / `serialize.anomaly_observed` smoke alarm,
-including insert-only normalization; its best-effort EventSink delivery never
-fails the projection. The event carries schema version, node types, and clock
-counts, never prose.
+## Schema-aware document engine
 
-`domain/agent-edit-runtime.ts` is the one place a `mdxCodec` is built. The
-composition root passes a required `DocumentLinkScopes` port
-(`domain/ports/document-link-scope.ts`, adapter in context's
-`adapters/document-link-scope.ts`); compositions with no project tree
-(in-memory, tests) pass `createStaticDocumentLinkScopes()`. Every serialize call
-takes a holder-bound scope that spells stored links and sources: a ref-bearing
-link as its target's current path in the holder's view, an `asset:<documentId>`
-source as its manuscript-relative path (else its last full address, else an
-empty destination: an id never reaches a reader), anything else as stored. Parse is pure
-syntax; ref assignment (agent-edit `assignLinkRefs`, which also turns a known
-manuscript image path into `asset:<id>`) gives what was written its stored refs.
+`domain/markdown-document.ts` is the sole read/write and Y.Doc projection
+engine. It resolves persisted filetype before parse or serialization. Markdown
+uses the document codec; code uses the constrained code representation and
+returns raw text without fences. Checkpoint restore installs projected nodes
+directly rather than serializing and reparsing a snapshot.
 
-**Whole-document writes bind outside, apply inside** (`domain/link-binding.ts`,
-contract §6.2). The engine's writes (`setMarkdown`, `writeDocument`,
-`seedFromMarkdown`) take a `BoundWrite`, never a Markdown string, and never
-parse. A `LinkBinder` makes it, before the caller opens any transaction:
-`bindMarkdown` opens the holder's scope (the document, or the project and the
-address a document about to be created will have), parses, prepares the scope, assigns
-fresh or against the holder's current document (`against: "current"`: every
-link that stays corresponds to itself and keeps its ref, so an overwrite
-keeps refs verbatim), and registers the ahead refs it minted.
+All whole-document writes enter as a `BoundWrite`, not an unscoped Markdown
+string. The link binder parses, prepares the holder's link scope, assigns or
+preserves refs, registers ahead refs, and certifies the target before the
+caller opens a transaction. A fresh bind is initialize-only: admission refuses
+a non-empty target with `stale_generation`. Context checks the canonical path
+under namespace lock and returns `stale_target` when its occupant changed.
 
-A bound write is desired state: its assigned blocks, plus the holder it was
-bound for and whether it was bound fresh. It is applied as agent-edit's
-ordinary whole-document overwrite (the correspondence a `create` with
-overwrite resolves), so unchanged blocks keep their items and so does
-unchanged prose in a changed block.
-`writeDocument` routes an actor's write in a thread (and every agent write)
-through the edit core's `create` with the nodes as `WriteContext.boundNodes`:
-the core aligns them against its runtime copy of the document, computes the
-overwrite's semantic IR and certified provenance there, and records the write
-as that actor's mutation (L21's kept-paragraph authorship holds by
-construction). Alignment and admission are separate acquisitions, so an edit
-admitted between them merges like any concurrent edit to a `create`. A writer's
-save outside a thread applies the same correspondence to the engine's
-staged copy (`overwriteWithAssigned`) and carries no certified facts, since
-fresh-authorship admission refuses the reserved provenance namespace. Do not
-lower whole-document writes with a whole-fragment `updateYFragment` diff: it
-keeps only a common prefix and suffix, so a paragraph inserted above kept
-prose re-attributes that prose to the saver (A2-1's certified-save row).
-Like any whole-document save, applying replaces whatever was admitted before
-it: anchoring the write to the state it was bound against would only protect
-the moment between bind and apply. An edit made against the old state and
-admitted after the save merges into the blocks it kept.
-A write bound fresh (seed, import, create, upload) lands only in a document
-with no blocks: the core's `create` without overwrite refuses one that has
-content, checked again at the admission that journals it
-(`PreparedMutation.refuseUnlessEmpty`), and the engine answers
-`stale_generation`.
-A bound write also certifies its holder (`document`
-by id, `new` by the canonical address it will have, or `static`): the engine
-refuses to apply it to any other document, and ContextFS checks the path's
-occupant under its namespace lock and answers `stale_target` when it changed.
-Registration opens a root transaction that takes namespace keys; inside a
-command transaction that already holds them it would wait on itself forever,
-invisibly to PostgreSQL. So `bindMarkdown` throws
-`LinkBindingInsideTransactionError` inside any transaction, and a door that
-forgot to hoist fails at once. `bindStatic` is for link-free text fixed in code
-(a project's first chapter, seeded inside the bootstrap transaction); it throws
-if the text names anything. There is no string-transform or append write. Seed, import and create bind fresh (pass 3 only).
+`agent-edit-runtime.ts` builds the codec once. Every serialization door gets a
+holder-bound `DocumentLinkScopes` snapshot and prepares the refs it will spell
+before synchronous serialization. Scope snapshots are operation-local and
+never cached across reads, accounts, threads, or moves. Parse is pure syntax;
+agent-edit assigns refs after parsing. Spelling outside a prepared scope throws
+under test and emits a diagnostic in production.
 
-The codec asks synchronously, so the tree is read per operation, never cached.
-`within(key, op)` opens a snapshot keyed by project and reader (the account a
-door names, else its thread's account, else the project owner; and the thread
-it reads in) and binds it with `AsyncLocalStorage`; nothing loads yet. Each operation then calls
-`prepare({ holders, docs, stored, refs, addresses, written })` with what its next
-synchronous block names: refs and `asset:` ids are extracted from the Yjs docs
-(markup `storedLinkKeys`), and one batch loads settlements, rows by
-id and rows at exact or extension-omitted addresses. Readability comes from the
-file policy's list path; presence comes from the selected SQL tree view. A draft's
-hidden creates are visible only in drafts using them.
-`holder({ documentId, view })` returns the synchronous scope only from an open
-snapshot; it keeps that snapshot, so work deferred past the operation spells
-from it.
+A whole-document write aligns assigned nodes against the runtime copy through
+agent-edit, so unchanged items retain identity and concurrent admissions merge
+as peers. Do not lower it with a whole-fragment state-vector diff: that loses
+provenance and can reattribute kept prose. Durable projection and trail actions
+serialize a private scratch document from the committed update, never a warm
+live room that a WebSocket may mutate during serialization. Push completion
+derives its projection from the durable journal at completion time; a prepared
+push commit never carries a Markdown projection or live snapshot.
 
-`domain/document-link-scope-doors.ts` wraps every door that serializes: the
-markdown engine (each method prepares after loading its doc), the edit core
-(`read`/`write` by grant project and principal; agent-edit binds its codec
-per command through `DocumentLinksPort`),
-the branch peer (effective Markdown, hashlines and revision, in the reader's
-thread), the reply's save (by thread),
-and offline reconciliation. Draft preview owns one
-enclosing scope for both sides and prepares the draft holder in its Work's
-view for the `y2:` revision; it does not serialize whole-document Markdown.
-Selective Apply/Discard recompute that scoped revision with their selection. ContextFS
-search owns one for all matching documents in its source. Branch push opens
-its scope before branch locks and prepares its trail docs under them; its
-settlement keeps its own scope. Wrappers name every method, so a new method
-does not compile until its scope is decided. A nested `within` for the same
-project and reader reuses the enclosing snapshot only while that operation is
-still running, and never one read as another account or in another (or no)
-thread; a timer that inherited a settled snapshot opens a fresh one. A move
-that lands after a prepare shows only in the next snapshot.
+## Checkpoints and ingress
 
-The view is explicit everywhere. The engine's `serializeDocument` and
-`serializeVersionedDocument` take it, and an effective read names its version
-(`EffectiveReadVersion`: live, or draft with its Work). The thread pool routes
-each model call's view on `WriteContext.linkView`: the destination it chose
-for a read or write, and for an undo or redo the side whose history it
-reverses (a draft side in the Work whose draft holds that history). At a
-reply's save each document spells in the destination it was pinned to. A
-thread core asked to spell without a routed view throws.
+Checkpoints are host-minted `CapturedCheckpointCut` values. They cover every
+journal row through their cut; a free state-vector/watermark pair and warm-room
+bytes are not checkpoint authority. Materialize outside the persistence lock,
+then revalidate authority identity, generation, and retention under lock.
+Stale checkpoint requests return `stale_generation`.
 
-A picture never fails its document. The `asset:` rule reads the snapshot's
-rows but, as the shipped image rule always has, not readability or
-membership. A deleted image keeps its last path only while that path reads
-back to it alone (no live image and no other deleted image there), so a chapter
-saved while the image is gone reconnects on restore. An upload with no path to
-spell (deleted with its path taken, or outside the project's own manuscript)
-spells its own row's last address in full, as a gone link spells its stored
-address, and the read records that showing, so a rewrite continues it. One with
-no address in this project (no row, another project's id, a snapshot miss)
-spells an empty destination, which names nothing; the read records that
-showing at the empty address, and ref assignment keeps the stored picture when
-that empty destination is written back over it, even once it became addressable. Spelling outside every scope uses stored bytes and is reported
-(`serialize.link_unscoped`); a ref or address the snapshot never loaded is
-`serialize.link_snapshot_miss`, a throw under test only when no door prepared
-the snapshot.
+Seed and compaction snapshots use the same mutation lock. A first seed is
+initialize-only, becomes the generation's base checkpoint, and reconciles an
+already open room before success. Writer admission rejects reserved client IDs
+and reserved provenance namespace mutations before append or Yjs apply.
 
-**Durable whole-document projections route through this engine.** Push
-completion and trail forward actions inject `DurableProjectionSerializer`
-(`Pick<MarkdownDocumentEngine, "serializeDocument">` in
-`domain/ports/durable-projection.ts`). They never accept a schema-blind
-`{model, codec}` bag. `PreparedPushCommit` must not carry a prepared markdown
-projection or live snapshot; settlement derives the projection from the durable
-journal at completion time. This keeps serialization inside the fenced
-settlement cut and preserves verbatim code-document output.
+WebSocket admission checks the declared schema major/minor against the specific
+live or Work-draft head for each connection. Patch differences do not gate;
+major incompatibility and a client behind the head use the typed transport
+closures. Head and branch schema stamps are monotonic, so a rolled-back server
+never lowers the durable version. Transport close mechanics belong to the
+server transport boundary, not this document engine.
 
-Trail forward actions serialize from a **scratch** `Y.Doc` they apply the
-committed update to, before mutating the shared live document — never from the
-live doc, which a WebSocket mutation may change mid-serialize (LOCK-WS).
+A missing or unregistered persisted filetype deliberately uses the document
+schema; a registered binary or custom filetype on a tracked journal returns
+`corrupt_state` from Result-returning surfaces rather than escaping as a
+rejected promise.
 
-`isCorruptDurableProjectionError` is the single narrowing predicate:
-`DocumentSyncError` with `code: "corrupt_state"` (a registered non-tracked
-filetype on a tracked journal) permanently blocks live settlement via
-`PendingSettlementStore.block`. Any other throw is transient: the settlement
-stays pending and retryable. Do not block on every projection throw.
+## Downlinks
 
-**Projection effects preserve caller-specific ordering.** Ordinary durable
-writes start document activity and markdown projection together and settle both
-before reporting the first failure. Push completion instead runs projection,
-all-thread activity, explicit Work activity, active-document project lookup, and
-project activity in that order. The Drizzle adapter resolves the ambient
-transaction for every port operation so a completion retry rolls these
-read-model writes back with journal, lineage, mutation, and outbox writes.
-
-Filetype resolution uses the contracts disposition registry. Missing or
-unregistered persisted values deliberately use the document schema; a registered
-binary/custom value on a tracked journal returns `corrupt_state` from
-Result-returning surfaces instead of escaping as a rejected promise.
-
-Invariant: a document's journal state must always be valid under the schema the
-client mounts for its filetype. All seed and write paths go through the
-schema-aware engine rather than hand-building fragment content. A new
-document's first seed is installed as its
-generation-1 checkpoint with no admitted journal mutations. Seeding is strictly initialize-only: any
-existing admission or checkpoint makes later attempts successful no-ops. A seed
-is reconciled into an already-open live room before success returns, and a later
-checkpoint at the same journal cut cannot replace it. The context caller contract is documented in
-[the context domain](../../context/.context/CONTEXT.md).
-
-Writer admission rejects reserved client IDs and insertion or deletion in the
-reserved provenance namespace before durable append and Yjs apply. The
-reserved namespace is server-owned certification state, not a client write
-surface.
-
-WebSocket admission compares the bundle's declared schema version with the
-specific live or Work-draft branch head before sync. The check runs per
-connection because Hocuspocus deduplicates document loads. An unstamped live
-head passes. A server/head major mismatch in either direction closes first with
-`4407 document-schema-stale`; otherwise a client whose `(major, minor)` is
-behind the head closes with `4406 client-schema-superseded`. Patch differences
-never gate. Load-time `DocumentSchemaMajorMismatchError` handling retains the
-typed 4407 close as a race backstop.
-
-Domain and port contracts carry `CollabSchemaVersion` triples. Drizzle adapters
-alone encode them as order-preserving packed integers and decode them on read.
-Head and branch persistence use monotonic `greatest()` stamps so a rolled-back
-server cannot lower the durable version.
-
-Physical close delivery, request parsing, and Hocuspocus hook termination
-belong to the [server transport boundary](../../../lib/.context/CONTEXT.md).
+- [ContextFS contracts](../../context/.context/CONTEXT.md)
+- [Collab shared contracts](CONTEXT.md)
+- [WebSocket concurrency](websocket-concurrency.md)
