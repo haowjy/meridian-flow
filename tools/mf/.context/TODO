@@ -13,17 +13,6 @@
   carries raw card props only. Until they move into the view model, `docs/qa/chat-session.md` says not to compare
   them with the screen. Removal trigger: card display moves into the view model.
 
-- #768 phase 2 (`send` on the run state) owns these known gaps in
-  `src/commands/thread/send.ts`, `stream.ts` and `reduced-thread.ts`:
-  - `send` reports `timeout` (exit 124) after a Stop that handed its message back
-    or cancelled its reply, not `cancelled`. Phase 2 reports the message's own
-    disposition: answered, handed back (a `meridian.messages.handed_back` frame
-    names it) or still waiting.
-  - `ReducedThread` and plain `tail` don't draw queued rows. The package's
-    `unheldWriterMessages` and the record's items are ready for when they do;
-    `thread view` (the snapshot) already shows them.
-  - `RUN_STARTED`'s `executionId`, `reservedForUserTurnIds` and `position` stay
-    only because `send`'s interim follow reads them. Phase 2 deletes them, their parser defaults in
-    `packages/contracts/src/protocol/run-boundary.ts` and the golden fixture's
-    copies together with the interim follow.
-  Removal trigger: #768 phase 2 lands.
+- `ReducedThread` and plain `tail` don't draw queued rows. The package's
+  `unheldWriterMessages` and the record's items are ready for when they do;
+  `thread view` (the snapshot) already shows them. Removal trigger: the shared chat session lands.

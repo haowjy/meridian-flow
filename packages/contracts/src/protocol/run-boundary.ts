@@ -5,12 +5,11 @@
  * version); nothing is inferred from stream order or transcript ancestry.
  *
  * - An **execution** is one hold of the run lease. Every turn it reserves carries
- *   its id (`Turn.executionId`); `RUN_STARTED.rawEvent.executionId` repeats it.
+ *   its id (`Turn.executionId`), and `Turn.position` is the thread's write-once insertion
+ *   order. They live on the snapshot's turns, not on `RUN_STARTED`: a client that needs a
+ *   reply's identity reads a snapshot (`messageFate`).
  * - `reservedForUserTurnIds` names the messages a reply was reserved to handle.
  *   It is a hint, never proof that they were answered.
- * - `position` (`Turn.position`) is the thread's write-once insertion order.
- *
- * Old journal payloads lack these fields and read as unknown (null / empty).
  */
 import { z } from "zod";
 import { type AiWriteMode, aiWriteModeSchema } from "../works/ai-write-mode.js";
@@ -23,12 +22,6 @@ export const RUN_STATE_EVENT = "meridian.run_state" as const;
 
 export type RunStartedMeta = {
   writeMode: AiWriteMode | null;
-  /** The execution that reserved this reply; null on replies reserved before run identity. */
-  executionId: string | null;
-  /** Message ids (= user turn ids) the reply was reserved for; a Retry carries its failed reply's. */
-  reservedForUserTurnIds: string[];
-  /** The reply's `Turn.position`; null on journal payloads written before it was recorded. */
-  position: number | null;
 };
 
 /**
@@ -70,9 +63,6 @@ export function readWriteModeSwitched(
 
 const runStartedMetaSchema = z.object({
   writeMode: aiWriteModeSchema.nullable().optional(),
-  executionId: z.string().nullable().optional(),
-  reservedForUserTurnIds: z.array(z.string()).optional(),
-  position: z.number().int().nullable().optional(),
 });
 
 const messagesHandedBackSchema = z.object({ userTurnIds: z.array(z.string()) });
@@ -80,19 +70,9 @@ const messagesHandedBackSchema = z.object({ userTurnIds: z.array(z.string()) });
 /** Reads a `RUN_STARTED.rawEvent`; missing or malformed fields read as unknown/empty. */
 export function readRunStartedMeta(rawEvent: unknown): {
   writeMode: AiWriteMode | null | undefined;
-  executionId: string | null;
-  reservedForUserTurnIds: readonly string[];
-  position: number | null;
 } {
   const parsed = runStartedMetaSchema.safeParse(rawEvent);
-  if (!parsed.success)
-    return { writeMode: undefined, executionId: null, reservedForUserTurnIds: [], position: null };
-  return {
-    writeMode: parsed.data.writeMode,
-    executionId: parsed.data.executionId ?? null,
-    reservedForUserTurnIds: parsed.data.reservedForUserTurnIds ?? [],
-    position: parsed.data.position ?? null,
-  };
+  return { writeMode: parsed.success ? parsed.data.writeMode : undefined };
 }
 
 /** `meridian.messages.handed_back`: the user turns that left the conversation. */

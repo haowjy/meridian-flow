@@ -207,7 +207,7 @@ for (const terminal of [EventType.RUN_FINISHED, EventType.RUN_ERROR]) {
             type: EventType.RUN_STARTED,
             threadId: "thread-1",
             runId: "turn-1",
-            rawEvent: { executionId: "exec-1", reservedForUserTurnIds: [] },
+            rawEvent: { writeMode: null },
           } as AGUIEvent,
           "1000",
         );
@@ -248,7 +248,7 @@ describe("current stream ordering", () => {
           type: EventType.RUN_STARTED,
           threadId: "thread-1",
           runId: "turn-1",
-          rawEvent: { executionId: "exec-1", reservedForUserTurnIds: [] },
+          rawEvent: { writeMode: null },
         } as AGUIEvent,
         "1000",
       );
@@ -705,7 +705,7 @@ describe("projection lifetime fencing", () => {
           type: EventType.RUN_STARTED,
           threadId: "thread-1",
           runId: "turn-1",
-          rawEvent: { executionId: "exec-1", reservedForUserTurnIds: [] },
+          rawEvent: { writeMode: null },
         } as AGUIEvent,
         "1000",
       ),
