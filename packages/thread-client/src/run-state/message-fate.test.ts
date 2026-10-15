@@ -41,6 +41,19 @@ const reply = (
     delivery: null,
     metadata: retryOf ? { retryOf } : null,
   }) as unknown as Turn;
+const compaction = (id: string, position: number, executionId: string, status: Turn["status"]) =>
+  ({ ...reply(id, position, executionId, status), role: "compaction" }) as unknown as Turn;
+// A write-mode switch turn carries no execution, so it can never be a reply's last turn.
+const switchTurn = (id: string, position: number) =>
+  ({
+    id,
+    role: "system",
+    position,
+    executionId: null,
+    status: "complete",
+    delivery: null,
+    metadata: null,
+  }) as unknown as Turn;
 const fate = (
   turns: Turn[],
   rec: RunState,
@@ -76,11 +89,13 @@ describe("messageFate", () => {
   });
 
   it("ends on a cancelled compaction after a continuation", () => {
-    // Risk: defect 3, waiting forever or reporting complete after the compaction was cancelled.
+    // Risk: defect 3, waiting forever or reporting complete after the compaction was cancelled;
+    // a trailing switch turn must not become the last turn either.
     const turns = [
       user("m", 1, "a"),
       reply("a", 2, "e1", "complete"),
-      reply("c", 3, "e1", "cancelled"),
+      compaction("c", 3, "e1", "cancelled"),
+      switchTurn("sw", 4),
     ];
     expect(fate(turns, record("20", null))).toMatchObject({
       kind: "answered",
