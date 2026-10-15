@@ -14,8 +14,9 @@ The request body is strict and the ID is minted by the client:
 `replyRetryRequestSchema` validates the body and
 `apiThreadTurnRetryPath(threadId, turnId)` builds the canonical route path. The
 answer is `ReplyRetryResponse`, `{ executionId, turn }`: the execution the
-client follows until `meridian.execution.ended`, and the new reply when it can
-be named. A new retry returns **201**; repeating the same request ID returns
+client follows (it ends when a `meridian.run_state` record shows no open
+execution), the record after the reservation as `runState`, and the new reply
+when it can be named. A new retry returns **201**; repeating the same request ID returns
 **200** with the same execution.
 
 Retry is available only when `turnId` is the latest assistant turn with status

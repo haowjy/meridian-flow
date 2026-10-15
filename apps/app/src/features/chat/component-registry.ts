@@ -28,7 +28,7 @@ export type ComponentBlockProps = {
   responseState: InterruptResponseState | null;
   /** Re-send the stored answer with the same correlation tuple. */
   retry: () => void;
-  invocationResult?: import("./invocation-direct-result").DirectInvocationResult | null;
+  invocationResult?: import("@meridian/thread-client").DirectInvocationResult | null;
   threadId?: string;
 };
 

@@ -9,6 +9,7 @@ import type {
   TranscriptSpan,
   TurnRepository,
 } from "../ports/index.js";
+import { type TURN_GRAPH, turnGraph } from "../ports/turn-graph.js";
 import {
   ThreadConversationContextError,
   type ThreadConversationContextErrorCode,
@@ -71,7 +72,7 @@ type TranscriptReadDeps = {
   threads: Pick<ThreadRepository, "findByIdIncludingDeleted">;
   turns: Pick<
     TurnRepository,
-    | "findById"
+    | typeof TURN_GRAPH
     | "readTranscriptItems"
     | "findFirstUnsettledTranscriptTurn"
     | "listTranscriptBoundaries"
@@ -145,7 +146,7 @@ export async function resolveTranscriptSpans(
 
   const originTurnId = thread.originTurnId;
   if (!originTurnId) throw threadContextError("missing_cutoff_turn", thread, null);
-  const cutoff = await deps.turns.findById(originTurnId as TurnId);
+  const cutoff = await turnGraph(deps.turns).findById(originTurnId as TurnId);
   if (!cutoff) throw threadContextError("missing_cutoff_turn", thread, originTurnId);
   const source = await deps.threads.findByIdIncludingDeleted(cutoff.threadId as ThreadId);
   if (!source) throw threadContextError("missing_cutoff_owner", thread, originTurnId);

@@ -1,8 +1,10 @@
 /** Bounded connected-conversation listing over spawn and cutoff-owner edges. */
+
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
 import { z } from "zod";
 import type { ThreadRepositories, ThreadStatusReader } from "../../threads/ports/repositories.js";
+import { turnGraph } from "../../threads/ports/turn-graph.js";
 import { resolveReadableThread, threadReadError } from "./resolve-readable-thread.js";
 
 export const ThreadLsInputSchema = z
@@ -82,7 +84,7 @@ export async function listReadableThreads({
         node.kind === "subagent"
           ? node.parentThreadId
           : node.originTurnId
-            ? (await repos.turns.findById(node.originTurnId as TurnId))?.threadId
+            ? (await turnGraph(repos.turns).findById(node.originTurnId as TurnId))?.threadId
             : null;
       if (!up) break;
       const parent = await repos.threads.findByIdIncludingDeleted(up as ThreadId);

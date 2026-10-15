@@ -1,25 +1,16 @@
 /** Quiet inline rows for child completion and delivery events. */
 import { i18n } from "@lingui/core";
 import { Trans } from "@lingui/react/macro";
-import type { Block, Turn } from "@meridian/contracts/protocol";
+import type { DeliveryEvent } from "@meridian/thread-client";
 import { MessageSquareText } from "lucide-react";
 import { ActivityRow } from "../ActivityRow";
 import { useSubagentDisclosure } from "./DisclosureStore";
 import { subagentStatus } from "./display";
 import type { SubagentRun } from "./run-model";
 import { SubagentIdentity, SubagentRow } from "./SubagentRow";
-import type { SubagentUpdateMetadata } from "./update";
-import { groupAdjacentSubagentUpdates } from "./update";
 
-export type DeliveryEvent = {
-  turn: Turn;
-  childThreadId?: string;
-  title?: string;
-  subagentUpdate: SubagentUpdateMetadata | null;
-};
-
-export function DeliveryEventRows({ events }: { events: DeliveryEvent[] }) {
-  const groups = groupAdjacentSubagentUpdates(events);
+/** Draws the view model's delivery groups: a group of several is one merged row. */
+export function DeliveryEventRows({ groups }: { groups: readonly (readonly DeliveryEvent[])[] }) {
   return (
     <>
       {groups.map((group) =>
@@ -33,7 +24,7 @@ export function DeliveryEventRows({ events }: { events: DeliveryEvent[] }) {
   );
 }
 
-function MergedCompletionRow({ events }: { events: DeliveryEvent[] }) {
+function MergedCompletionRow({ events }: { events: readonly DeliveryEvent[] }) {
   const entries = events.map((event) => {
     const update = event.subagentUpdate;
     const run = deliveryRun(event);
@@ -109,14 +100,10 @@ function MergedCompletionRow({ events }: { events: DeliveryEvent[] }) {
 
 function DeliveryEventRow(event: DeliveryEvent) {
   if (!event.subagentUpdate) {
-    const body = event.turn.blocks
-      .filter((block: Block) => block.blockType === "text")
-      .map((block) => block.textContent ?? "")
-      .join("");
     return (
       <ActivityRow Icon={MessageSquareText}>
         <span className="whitespace-pre-wrap text-foreground">
-          {body || <Trans>Shared an attachment</Trans>}
+          {event.message || <Trans>Shared an attachment</Trans>}
         </span>
       </ActivityRow>
     );

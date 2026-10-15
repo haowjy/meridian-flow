@@ -1,65 +1,10 @@
 /**
- * Pure reads of a handoff seed S: a system turn on the destination that the
- * brief completes with its summary (or the unavailable card). The first seed
- * opens the chat; a Retry appends another at the leaf.
- *
- * The server's `HandoffSeedMetadataCodec` owns the shape; the client picks the
- * fields the writer sees and reads them defensively.
+ * The handoff seed S on the destination: the brief card's state and the
+ * stand-in seed the writer sees before the server has one. The seed's metadata
+ * readers live in `@meridian/contracts/threads`.
  */
 import type { Turn } from "@meridian/contracts/protocol";
-
-export type HandoffSeedFacts = {
-  sourceThreadId: string;
-  sourceRef: string | null;
-  /**
-   * The source's title when S was created, for display only: it names a
-   * source the writer can no longer read (in the trash). Null when the
-   * source was untitled.
-   */
-  sourceTitle: string | null;
-  cutoffTurnId: string | null;
-};
-
-function record(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-function text(value: unknown): string | null {
-  return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-/** The seed's facts, or null when the turn is not a handoff seed. */
-export function readHandoffSeed(turn: Turn): HandoffSeedFacts | null {
-  if (turn.role !== "system") return null;
-  const metadata = record(turn.metadata);
-  if (metadata?.kind !== "derivation_seed" || metadata.derivation !== "handoff") return null;
-  const sourceThreadId = text(metadata.sourceThreadId);
-  if (!sourceThreadId) return null;
-  return {
-    sourceThreadId,
-    sourceRef: text(metadata.sourceRef),
-    sourceTitle: text(metadata.sourceTitle),
-    cutoffTurnId: text(metadata.cutoffTurnId),
-  };
-}
-
-export function isHandoffSeed(turn: Turn): boolean {
-  return readHandoffSeed(turn) !== null;
-}
-
-/** The brief text from the completed seed's `handoff-brief` block. */
-export function readHandoffBrief(turn: Turn): string | null {
-  for (const block of turn.blocks ?? []) {
-    if (block.blockType !== "custom") continue;
-    const content = record(block.content);
-    if (content?.kind !== "handoff-brief") continue;
-    const props = record(content.props);
-    return props?.state === "available" ? text(props.brief) : null;
-  }
-  return null;
-}
+import { readHandoffBrief } from "@meridian/contracts/threads";
 
 export type BriefCardState = "generating" | "ready" | "failed" | "stopped";
 

@@ -145,7 +145,7 @@ reply with a long `delayMs` step (`./mf thread send <id> go --mock @script.json`
 
 1. Idle chat: choose the other mode in the composer. The control changes at once and a
    quiet "Switched to…" notice (a mode icon, no rule, no compaction mark) with Stop sits at the
-   tail. Reload, and a second tab shows it too. The snapshot's pending inbox lists the switch and
+   tail. Reload, and a second tab shows it too. The snapshot's run-state record (`liveState.runState.items`) lists the switch and
    no switch turn exists yet (`./mf thread view`).
    Switch back before anything else: the notice goes, nothing replaces it, and the model's next
    request (`./mf thread context` after a message) contains no switch notice.
@@ -155,7 +155,7 @@ reply with a long `delayMs` step (`./mf thread send <id> go --mock @script.json`
    sits at the tail; the same notice, reading "Switched to …", replaces it after the reply ends
    only when a message or Retry starts the next reply, and stays pending otherwise. Stop removes it.
 3. During the reply: switch and switch back. Both notices disappear, no turn is
-   written, and `GET /api/threads/<id>/snapshot` shows an empty pending inbox.
+   written, and `GET /api/threads/<id>/snapshot` shows no item in `liveState.runState.items`.
 4. Abort `**/controls` in the browser (`agent-browser network route "**/controls" --abort`),
    switch, then send a message: the row says "Couldn't switch…" with Retry and no Stop (the
    request left, so the server may hold it), and the message stays "Sending". Remove the route and

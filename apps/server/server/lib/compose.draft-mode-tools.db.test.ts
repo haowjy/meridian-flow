@@ -11,6 +11,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
 import { processDetachedWork } from "../domains/runtime/detached-work.js";
 import type { ToolCall } from "../test-support/composed-runtime.js";
+import { releaseLeaseUnderLock } from "../test-support/release-lease.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -267,7 +268,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
         const queued = await switchTo(runtime, "direct");
         expect(queued.response).toMatchObject({
-          pending: { control: { kind: "write_mode", mode: "direct" } },
+          runState: { items: [{ control: { kind: "write_mode", mode: "direct" } }] },
           turnId: null,
         });
         expect((await create(reply.call, "after")).result).toMatchObject({
@@ -277,7 +278,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(await switchTurns()).toEqual([]);
 
         // The release wake has nothing to run, so the switch stays pending and the chat keeps its mode.
-        await runtime.ports.runClaim.release(lease);
+        await releaseLeaseUnderLock(runtime.ports.db, runtime.ports.runClaim, lease);
         await runtime.app.runStarter.start(THREAD.threadId as never);
         await processDetachedWork.drain();
         expect(await switchTurns()).toEqual([]);
@@ -323,9 +324,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
         const switched = await switchTo(runtime, "direct");
         expect(switched.response).toMatchObject({
-          pending: { control: { kind: "write_mode", mode: "direct" } },
+          runState: { items: [{ control: { kind: "write_mode", mode: "direct" } }], mode: "draft" },
           turnId: null,
-          mode: "draft",
         });
         expect(await switchTurns()).toEqual([]);
         expect(await modeOf(THREAD.threadId)).toBe("draft");

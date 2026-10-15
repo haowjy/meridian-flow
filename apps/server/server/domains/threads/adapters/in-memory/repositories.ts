@@ -57,6 +57,7 @@ import {
   ThreadMembershipUnavailableError,
   ThreadWorkProjectMismatchError,
 } from "../../ports/repositories.js";
+import { TURN_GRAPH, type TurnGraph } from "../../ports/turn-graph.js";
 import { createInMemoryExecutionReportRepository } from "./execution-report-repository.js";
 import { createInMemoryProjectChatAdapter } from "./project-chat-adapter.js";
 
@@ -599,7 +600,20 @@ export function createInMemoryRepositories(
     },
   };
 
+  // The in-memory inbox never hands a message back, so the graph and the conversation are one list.
+  const turnGraph: TurnGraph = {
+    async listByThread(threadId) {
+      return orderTurnsByPosition([...turns.values()].filter((t) => t.threadId === threadId));
+    },
+    async findById(id) {
+      return turns.get(id) ?? null;
+    },
+    async latest(threadId) {
+      return (await turnGraph.listByThread(threadId)).at(-1) ?? null;
+    },
+  };
   const turnRepo: TurnRepository = {
+    [TURN_GRAPH]: turnGraph,
     async create(input) {
       const turnDraft = defaultTurn(input);
       const existing = turns.get(turnDraft.id);
@@ -833,6 +847,10 @@ export function createInMemoryRepositories(
         )[0] ?? null
       );
     },
+    // The in-memory inbox lives in the runtime adapter, which does not hand messages back.
+    async listHandedBackIds() {
+      return new Set<string>();
+    },
     // The in-memory inbox lives in the runtime adapter; deliveries read as unknown.
     async listMessageDeliveries() {
       return new Map();
@@ -888,10 +906,6 @@ export function createInMemoryRepositories(
           role,
           status,
         }));
-    },
-    async getLatestByThread(threadId) {
-      const threadTurns = await this.listByThread(threadId);
-      return threadTurns.at(-1) ?? null;
     },
     async findRunningAssistantId(threadId, options) {
       const createdAfter = options?.createdAfter?.toISOString();

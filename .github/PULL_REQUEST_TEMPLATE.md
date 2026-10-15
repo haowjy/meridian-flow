@@ -52,8 +52,8 @@
 
 ## Before / After
 
-<!-- List each concrete change as its own item; do not collapse the PR into one
-     paragraph. Label a bug fix explicitly ("Bug fix: ...") so it doesn't blend
+<!-- List each concrete change as its own item; don't collapse the PR into one
+     block of text. Label a bug fix explicitly ("Bug fix: ...") so it doesn't blend
      into feature description. For a bug fix or changed behavior, give Before
      and After; keep Before brief or omit it when no meaningful prior state
      exists. For a new capability, describe After only. Show changed UI states
@@ -79,17 +79,15 @@
 2. ...
 3. Expect: main ... This branch ...
 
-## Code Changes
+## How the code changed
 
-<!-- Group production-code additions, refactors, and deletions by area; include
-     key paths and rationale. Aim to lower net-new code over time by simplifying,
-     refactoring, and removing duplication/dead paths—not by shrinking this diff.
-     Explain substantial additions. Track temporary code or cleanup deferred for
-     delivery speed/product clarity, with its reason and removal trigger. -->
-
-- Added:
-- Refactored:
-- Deleted:
+<!-- Explain briefly how the code works now and what changed in its structure:
+     which models, boundaries, data flow or ownership moved, and why this shape.
+     A reader who hasn't opened the diff should come away understanding how it
+     works. Use short bullets or sentences, one idea each. Keep it short: no
+     file-by-file lists, and name a file only where it helps the explanation.
+     Say what was deleted or simplified. Track temporary code with its removal
+     trigger. -->
 
 ## DB Changes
 

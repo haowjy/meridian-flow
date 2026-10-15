@@ -1,85 +1,10 @@
 /**
- * Pure reads of compaction dividers.
- *
- * A compaction turn is a transcript row that shows where the model's context
- * was summarized. Metadata is read defensively: the server's codecs own the
- * shape, the client only picks the fields the writer sees.
+ * Presentation reads of compaction dividers. The metadata readers live in
+ * `@meridian/contracts/threads`.
  */
 import { t } from "@lingui/core/macro";
 import type { Turn } from "@meridian/contracts/protocol";
-
-export type CompactionTrigger = "auto" | "manual";
-
-export type CompactionFacts = {
-  trigger: CompactionTrigger;
-  /** The writer command this divider ran (`controlMessageId`); null for an automatic one. */
-  controlId: string | null;
-  /** The writer's `/compact <instructions>`, verbatim; null for a plain `/compact`. */
-  instructions: string | null;
-  summary: string | null;
-  /** The model that wrote the summary: the summary block's, else the turn's. */
-  model: string | null;
-  tokensBefore: number | null;
-  tokensAfter: number | null;
-};
-
-function record(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-function text(value: unknown): string | null {
-  return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function count(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
-}
-
-/** Writer instructions are shown verbatim; only whitespace-only text counts as none. */
-export function instructionsText(value: unknown): string | null {
-  return typeof value === "string" && value.trim().length > 0 ? value : null;
-}
-
-export function isCompactionTurn(turn: Turn): boolean {
-  return turn.role === "compaction";
-}
-
-export function readCompactionFacts(turn: Turn): CompactionFacts {
-  const metadata = record(turn.metadata);
-  const controlMessageId = text(metadata?.controlMessageId);
-  const trigger: CompactionTrigger =
-    metadata?.trigger === "manual" || (metadata?.trigger === undefined && controlMessageId)
-      ? "manual"
-      : "auto";
-  const summaryBlock = (turn.blocks ?? []).find(
-    (block) => block.blockType === "custom" && record(block.content)?.kind === "compaction",
-  );
-  const props = record(record(summaryBlock?.content)?.props);
-  return {
-    trigger,
-    controlId: controlMessageId,
-    instructions: instructionsText(metadata?.instructions),
-    summary: text(props?.summary),
-    model: text(props?.model) ?? text(turn.model),
-    tokensBefore: count(props?.tokensBefore),
-    tokensAfter: count(props?.tokensAfter),
-  };
-}
-
-/**
- * R4: a context-window overflow completes the running assistant turn empty
- * before the compaction that recovers it. It says nothing to the writer.
- */
-export function isOverflowShell(turn: Turn, next: Turn | undefined): boolean {
-  return (
-    next?.role === "compaction" &&
-    turn.role === "assistant" &&
-    turn.status === "complete" &&
-    (turn.blocks ?? []).length === 0
-  );
-}
+import { type CompactionTrigger, readCompactionFacts } from "@meridian/contracts/threads";
 
 export type DividerState = "pending" | "complete" | "failed" | "cancelled";
 
@@ -129,15 +54,4 @@ export function dividerView(turn: Turn): DividerView {
     tokens,
     failureCopy,
   };
-}
-
-/** Every `/compact` a compaction divider already answers: a queued item for one is no longer queued. */
-export function answeredCompactionIds(turns: readonly Turn[]): ReadonlySet<string> {
-  const ids = new Set<string>();
-  for (const turn of turns) {
-    if (turn.role !== "compaction") continue;
-    const id = readCompactionFacts(turn).controlId;
-    if (id) ids.add(id);
-  }
-  return ids;
 }

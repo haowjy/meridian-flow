@@ -421,7 +421,7 @@ if (!RUN) {
         threadId: THREAD,
         submissionId: "submission",
         userTurnId: "00000000-0000-4000-8000-000000000f54" as never,
-        steersTurnId: "00000000-0000-4000-8000-000000000f55" as never,
+        runStateVersion: null,
         resumeAfterSeq: "0",
         snapshotFloorNextSeq: "4",
       };
@@ -466,7 +466,7 @@ if (!RUN) {
             threadId: THREAD,
             submissionId: "late",
             userTurnId: "00000000-0000-4000-8000-000000000f56" as never,
-            steersTurnId: "00000000-0000-4000-8000-000000000f57" as never,
+            runStateVersion: null,
             resumeAfterSeq: "0",
             snapshotFloorNextSeq: "4",
           },

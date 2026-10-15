@@ -1,3 +1,5 @@
+import { releaseLeaseUnderLock } from "../../../../test-support/release-lease.js";
+import { EMPTY_RUN_STATE } from "../../../../test-support/run-state.js";
 import { createDrizzleLineageScratchLifecycle } from "../../../context/adapters/lineage-scratch-lifecycle.js";
 import { createTestDrizzleDelivery } from "../../../runtime/loop/__tests__/test-drizzle-delivery.js";
 /**
@@ -97,7 +99,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         readRunningTurnId: async () => null,
         readOpenExecutionId: async () => null,
         readMany: async () => new Map(),
-        readPending: async () => ({ items: [] }),
+        readRunState: async () => EMPTY_RUN_STATE,
       };
       const snapshot = await buildThreadSnapshot(
         {
@@ -135,7 +137,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(fresh.liveState.resumeAfterSeq).toBe("2999");
     });
 
-    it("reads the running turn from the lease in both the list and live state", async () => {
+    it("reads the running turn from the lease in the list and the status from it in live state", async () => {
       const authority = createDrizzleRunClaim(db);
       const repo = createDrizzleThreadRepository(db, {
         statusReader: authority,
@@ -147,7 +149,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         statusReader: authority,
         threads: repo,
         executionReports: repos.executionReports,
-        readPending: async () => ({ items: [] }),
+        readRunState: async () => EMPTY_RUN_STATE,
       });
 
       const lease = await authority.startExecution(THREAD_ID, "run-1", async () => {});
@@ -162,17 +164,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const listed = (await repo.listByProject(PROJECT_ID)).find((row) => row.id === THREAD_ID);
       const live = await runtime.liveState(THREAD_ID, USER_ID);
       expect(listed?.runningTurnId).toBe(TURN_ID);
-      expect(live.runningTurnId).toBe(TURN_ID);
       expect(live.status).toEqual({ kind: "awake", phase: "generating", cancelRequested: false });
 
-      await authority.release(lease);
+      await releaseLeaseUnderLock(db, authority, lease);
 
       const afterRelease = (await repo.listByProject(PROJECT_ID)).find(
         (row) => row.id === THREAD_ID,
       );
       const liveAfterRelease = await runtime.liveState(THREAD_ID, USER_ID);
       expect(afterRelease?.runningTurnId).toBeNull();
-      expect(liveAfterRelease.runningTurnId).toBeNull();
       expect(liveAfterRelease.status).toEqual({ kind: "asleep" });
     });
   });

@@ -6,7 +6,7 @@ import type {
   TraceStreamRef,
 } from "@meridian/contracts/observability";
 import type { ModelResponse } from "@meridian/contracts/threads";
-import { cacheHitPercent } from "@/features/chat/turn-stats";
+import { cacheHitPercent } from "@meridian/thread-client";
 
 export type LlmCallOutcome = "in-flight" | "ok" | "cancelled" | "error";
 

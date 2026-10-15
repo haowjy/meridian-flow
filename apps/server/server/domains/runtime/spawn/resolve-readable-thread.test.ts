@@ -1,6 +1,8 @@
 /** Connected history authority is shared by every inspection tool. */
+
 import type { Thread, Turn } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
+import { TURN_GRAPH } from "../../threads/ports/turn-graph.js";
 import { resolveReadableThread } from "./resolve-readable-thread.js";
 
 const rows = [
@@ -39,9 +41,11 @@ const threads = {
   },
 };
 const turns = {
-  async findById(id: string) {
-    return id === "source-turn" ? ({ threadId: "root" } as Turn) : null;
-  },
+  [TURN_GRAPH]: {
+    async findById(id: string) {
+      return id === "source-turn" ? ({ threadId: "root" } as Turn) : null;
+    },
+  } as never,
 };
 describe("resolveReadableThread", () => {
   it.each([
