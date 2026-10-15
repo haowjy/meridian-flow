@@ -45,6 +45,7 @@ function turn(id: string, position: number, role: Turn["role"], extra: Partial<T
     executionId: null,
     reservedForUserTurnIds: [],
     delivery: null,
+    forgottenBy: null,
     siblingIds: [],
     responses: [],
     ...extra,

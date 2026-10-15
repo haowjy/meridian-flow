@@ -176,3 +176,9 @@ export function readWriteModeSwitch(turn: Turn): WriteModeSwitchFacts | null {
   if (metadata.mode !== "draft" && metadata.mode !== "direct") return null;
   return { mode: metadata.mode, controlId: text(metadata.controlMessageId) };
 }
+
+/** The failed reply a turn is the Retry of, from its `metadata.retryOf` (a stored turn's or a stand-in's). */
+export function retryTargetOf(turn: Turn): string | null {
+  const target = record(turn.metadata)?.retryOf;
+  return typeof target === "string" ? target : null;
+}

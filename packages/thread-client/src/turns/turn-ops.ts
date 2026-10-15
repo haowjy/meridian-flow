@@ -61,6 +61,7 @@ export function createAssistantTurn(
     executionId: null,
     reservedForUserTurnIds: [],
     delivery: null,
+    forgottenBy: null,
     siblingIds: [],
     responses: [],
   };
@@ -170,6 +171,7 @@ export function ensureSwitchTurnIn(
     executionId: null,
     reservedForUserTurnIds: [],
     delivery: null,
+    forgottenBy: null,
     siblingIds: [],
     responses: [],
   };
