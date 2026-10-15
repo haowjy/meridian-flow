@@ -97,6 +97,18 @@ export function createRunSessions(deps: {
     }
   }
 
+  /**
+   * The local consequence of a command whose durable answer cancelled an execution (Stop, Send now):
+   * abort this session's run and its children when it is that execution. A replayed answer names an
+   * execution that may be long over, so it never aborts a newer one.
+   */
+  function abortConfirmedExecution(threadId: ThreadId, cancelledExecutionId: string | null) {
+    const active = running.get(threadId);
+    if (!active || cancelledExecutionId !== active.executionId) return;
+    abortChildrenOf(threadId, true);
+    active.controller.abort();
+  }
+
   async function prepare(input: RunTurnInput): Promise<PreparedRun> {
     const { threadId } = input;
     if (shutdown.started) throw new RuntimeShuttingDownError(threadId);
@@ -413,11 +425,7 @@ export function createRunSessions(deps: {
      */
     async stop(threadId: ThreadId, request: StopRequest): Promise<StopResponse> {
       const response = await deps.delivery.stop(threadId, request);
-      const active = running.get(threadId);
-      if (active && response.cancelledExecutionId === active.executionId) {
-        abortChildrenOf(threadId, true);
-        active.controller.abort();
-      }
+      abortConfirmedExecution(threadId, response.cancelledExecutionId);
       return response;
     },
     /** The queue's x and Cancel queue: decided under the thread lock; never cancels a reply. */
@@ -426,11 +434,7 @@ export function createRunSessions(deps: {
     /** Send now: as Stop aborts the run it flagged, and nothing is handed back. */
     async sendNow(threadId: ThreadId, request: SendNowRequest): Promise<SendNowResponse> {
       const response = await deps.delivery.sendNow(threadId, request);
-      const active = running.get(threadId);
-      if (active && response.cancelledExecutionId === active.executionId) {
-        abortChildrenOf(threadId, true);
-        active.controller.abort();
-      }
+      abortConfirmedExecution(threadId, response.cancelledExecutionId);
       return response;
     },
     async cancel(
