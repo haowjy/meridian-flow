@@ -262,8 +262,9 @@ export function isWorkScopedProjectContextScheme(
 export type WorkAuthorityScheme = WorkScopedContextUriScheme;
 
 /**
- * A recent document and its owner. Scratch and Uploads name a Work; a No Work
- * chat's Scratch names its lineage by the first chat's id (`rootThreadId`).
+ * A recent document and its owner. Scratch names a Work, or for a No Work chat its
+ * lineage by the first chat's id (`rootThreadId`). An upload names the chat it was
+ * attached in (`chatId`).
  */
 export type WorkingSetRoute =
   | {
@@ -272,6 +273,7 @@ export type WorkingSetRoute =
       path: string;
       workId?: never;
       rootThreadId?: never;
+      chatId?: never;
     }
   | {
       documentId: DocumentId;
@@ -279,6 +281,7 @@ export type WorkingSetRoute =
       path: string;
       workId: WorkId | null;
       rootThreadId?: never;
+      chatId?: never;
     }
   | {
       documentId: DocumentId;
@@ -286,6 +289,15 @@ export type WorkingSetRoute =
       path: string;
       workId?: never;
       rootThreadId: string;
+      chatId?: never;
+    }
+  | {
+      documentId: DocumentId;
+      scheme: "uploads";
+      path: string;
+      workId?: never;
+      rootThreadId?: never;
+      chatId: string;
     };
 
 export type WorkingSetRouteParseResult =
@@ -336,6 +348,22 @@ export function parseWorkingSetRoute(input: unknown): WorkingSetRouteParseResult
   }
   if (typeof route.path !== "string" || route.path.length === 0 || route.path.length > 1024) {
     return { ok: false, message: "Working-set route path must contain 1 to 1024 characters" };
+  }
+
+  if (route.chatId !== undefined) {
+    const chatId = parseRequestId(route.chatId);
+    if (route.scheme !== "uploads" || route.workId !== undefined || !chatId) {
+      return { ok: false, message: "Only upload routes name a chat, and without a workId" };
+    }
+    return {
+      ok: true,
+      value: {
+        documentId: documentId as DocumentId,
+        scheme: route.scheme,
+        path: route.path,
+        chatId,
+      },
+    };
   }
 
   if (route.rootThreadId !== undefined) {

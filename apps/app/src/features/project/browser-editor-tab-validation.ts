@@ -60,17 +60,23 @@ function availableTab(
   if (
     isWorkScopedProjectContextScheme(scheme) &&
     resolution.authority.kind !== "work" &&
-    resolution.authority.kind !== "lineage"
+    resolution.authority.kind !== "lineage" &&
+    resolution.authority.kind !== "chat"
   ) {
     throw new TypeError("Invalid available route authority");
   }
   const owner: ContextOwner =
-    resolution.authority.kind === "lineage"
-      ? { rootThreadId: resolution.authority.rootThreadId }
-      : {
-          workId:
-            resolution.authority.kind === "work" ? editorTabWorkId(resolution.authority) : null,
-        };
+    resolution.authority.kind === "chat"
+      ? {
+          chatThreadId: resolution.authority.chatId,
+          chatRef: resolution.authority.chatRef ?? undefined,
+        }
+      : resolution.authority.kind === "lineage"
+        ? { rootThreadId: resolution.authority.rootThreadId }
+        : {
+            workId:
+              resolution.authority.kind === "work" ? editorTabWorkId(resolution.authority) : null,
+          };
   return contextTabFromFile(scheme, projectCatalogFile(resolution.entry), owner);
 }
 
