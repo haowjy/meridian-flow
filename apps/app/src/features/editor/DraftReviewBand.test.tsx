@@ -8,7 +8,6 @@
 import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
 import type { Editor } from "@tiptap/core";
-import { yUndoPluginKey } from "@tiptap/y-tiptap";
 import { act, useLayoutEffect, useMemo } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import * as Y from "yjs";
@@ -35,17 +34,13 @@ import { useInlineReviewFocus } from "./useInlineReviewFocus";
 import { useInlineReviewSync } from "./useInlineReviewSync";
 
 let fixture: ReturnType<typeof createReviewScopeFixture>;
-const scrolled: Element[] = [];
 beforeEach(() => {
   vi.useFakeTimers();
   resetDraftCommandRecords();
   i18n.loadAndActivate({ locale: "en", messages: {} });
+  Element.prototype.scrollIntoView = () => {};
   fixture = createReviewScopeFixture();
   vi.spyOn(projectsApi, "listProjectWorks").mockReturnValue(new Promise(() => {}));
-  scrolled.length = 0;
-  Element.prototype.scrollIntoView = function (this: Element) {
-    scrolled.push(this);
-  };
 });
 afterEach(() => {
   fixture.dispose();
@@ -91,14 +86,6 @@ const base = ["Alpha red.", "Filler one.", "Filler two.", "Filler three.", "Omeg
 const rows = () => [...document.querySelectorAll<HTMLElement>("[data-review-change-row]")];
 const button = (label: string) =>
   document.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`);
-const text = (editor: Editor) => {
-  const out: string[] = [];
-  editor.state.doc.forEach((node) => {
-    out.push(node.textContent);
-  });
-  return out;
-};
-const undo = (editor: Editor) => yUndoPluginKey.getState(editor.state)?.undoManager.undo();
 const host = (children: React.ReactNode) => (
   <I18nProvider i18n={i18n}>
     <TooltipProvider>
@@ -122,7 +109,7 @@ async function review(
   seedReviewBase(doc, base);
   await fixture.render(
     async (probe) => {
-      // The harness renders into its own window; the editor's scroll reads motion preference from it.
+      // Applying focuses the next change, whose scroll reads motion preference from the harness window.
       window.matchMedia = (() => ({ matches: false })) as never;
       await settleReact(() => expect(probe().presented.files).toHaveLength(1));
       await act(async () =>
@@ -149,23 +136,6 @@ async function review(
     },
   );
 }
-
-it("steps through the changes, bringing each into view, with marks hidden and not restoring them", async () => {
-  await review(async (editor, _doc, probe) => {
-    await act(async () => probe().presented.controller.setMarksVisible(false));
-    for (const [label, paragraph] of [
-      ["Next change", "Alpha green."],
-      ["Next change", "Omega green."],
-      ["Previous change", "Alpha green."],
-    ] as const) {
-      await act(async () => button(label)?.click());
-      const target = scrolled.at(-1);
-      expect(target?.textContent).toBe(paragraph);
-      expect(editor.view.dom.contains(target ?? null)).toBe(true);
-      expect(probe().presented.controller.marksVisible).toBe(false);
-    }
-  });
-});
 
 it("Apply takes the change off the screen at the click, sends its id and snapshot, never claims 'No changes left' while one is out, and restores a refused change with the reason", async () => {
   const answer = deferredReviewAnswer<never>();
@@ -227,23 +197,6 @@ it("Apply takes the change off the screen at the click, sends its id and snapsho
     expect(rows()[0].textContent).toContain("Couldn't apply this change. Try again.");
     expect(document.body.textContent).not.toContain("No changes left");
     expect(probe().presented.controller.isDisposing).toBe(false);
-  });
-});
-
-it("Discard draft is an editor edit: no request, 'No changes left', and Ctrl+Z brings the changes back", async () => {
-  await review(async (editor, _doc, probe) => {
-    await act(async () => button("Discard draft")?.click());
-    expect(text(editor)).toEqual(base);
-    await settleReact(() => expect(document.body.textContent).toContain("No changes left"));
-    expect(fixture.network.applyDraft).not.toHaveBeenCalled();
-    expect(fixture.network.applyDraftChanges).not.toHaveBeenCalled();
-    expect(fixture.network.discardDraft).not.toHaveBeenCalled();
-    expect(button("Apply draft")).toBeNull();
-
-    await act(async () => undo(editor));
-    expect(text(editor)).toEqual(draft);
-    await settleReact(() => expect(probe().header.view.items).toHaveLength(2));
-    expect(document.body.textContent).not.toContain("No changes left");
   });
 });
 

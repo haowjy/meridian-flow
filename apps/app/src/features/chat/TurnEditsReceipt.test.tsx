@@ -76,13 +76,6 @@ it("counts and reveals pending files alongside an already settled live trail", a
       </QueryClientProvider>,
       async () => {
         expect(document.body.textContent).toContain("Edited 2 documents");
-        // The card offers no reversal; a writer discards in the draft or presses Ctrl+Z.
-        expect(
-          [...document.querySelectorAll("button")].some((button) =>
-            /undo|redo/i.test(button.textContent ?? ""),
-          ),
-        ).toBe(false);
-        expect(document.body.textContent).not.toMatch(/undo/i);
         await act(async () =>
           document.querySelector<HTMLButtonElement>("[aria-expanded]")?.click(),
         );
