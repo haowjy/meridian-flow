@@ -106,8 +106,8 @@ validate under the same lock and refuse a flagged lease.
 
 The repository ports return the **conversation**: `TurnRepository.findById` and
 `listByThread`, and every `BlockRepository` read, drop a handed-back writer
-message and its blocks. The adapters own the one SQL predicate
-(`notHandedBackSql`), which also guards transcript page keys, counts and ordinals,
+message and its blocks. The adapters own the SQL predicate
+(`inConversationSql`, which also applies the forgetting stamp; `notHandedBackSql` stays for identity reads), which also guards transcript page keys, counts and ordinals,
 `listMessageDeliveries`, `listLatestLocalRequesterText` and the chat-activity
 projection. A reader that knows nothing about hand-back gets the safe read.
 
@@ -119,6 +119,31 @@ modules, adapters, tests and contract suites import it. Add a module to that lis
 only when it walks `prevTurnId` or positions and filters its output. The
 compaction projection drops a pin to a handed-back turn and resolves a cut at one
 by position.
+
+### Forgetting a failed attempt
+
+Hand-back removes a message the writer took back. Forgetting removes an attempt
+the writer abandoned or retried. It is one durable fact,
+`turns.forgotten_by_turn_id`, written in the transaction that appends the turn
+that retries the failure or moves the chat past it. Every transcript reader
+filters it (`inConversationSql`), and a reader applies a stamp only if the
+forgetting turn is inside the span it reads: a local read applies every stamp, a
+fork or a paged cutoff only those at or before its last position. So a fork cut
+before the move-on still sees the attempt, and one cut after inherits the
+forgetting.
+
+`decideForgetting` (`loop/forget-failed-attempt.ts`) is pure. It acts only when
+the latest closing row (`loop/latest-row.ts`) is a settled failed reply or a
+compaction, and never on a continuation (same execution id). A tool call in any
+live member keeps the whole attempt. Retry forgets the failed reply and keeps
+the writer's messages. Moving on also forgets the delivered writer messages when
+every live member draws nothing (`replyDrawsNothing`, shared from
+`@meridian/thread-client/view`), except messages a summary already protects. A
+carried reply is never forgotten, and there is no backfill. Run start decides
+first, hands the result to the append primitive as `expectedForgetting`, and the
+primitive throws `ForgettingMismatchError` if the transaction would decide
+differently. The journal gets `turns.forgotten` (`turnIds`, `byTurnId`, reason
+`retried` or `forgotten`), which the client stamps on held turns.
 
 A compaction that starts before it reaches the loop's cancel read still holds the
 adopted message in its captured history, so `executeCompaction` reads the lease's
