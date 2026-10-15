@@ -277,13 +277,6 @@ export function failChangeApply(claim: ChangeClaim, failure: ChangeFailure): voi
   }));
 }
 
-export function clearChangeFailure(draft: DraftRef, change: ChangeTarget): void {
-  update(draft, (record) => {
-    const failures = record.failures.filter((held) => !namesAny([change], held));
-    return failures.length === record.failures.length ? record : { ...record, failures };
-  });
-}
-
 /**
  * Forget what the review has moved past: a confirmed Apply once the review's base is not the one it was
  * clicked against (the base patch arrived: the change is base text now). `baseKey` is read only when
@@ -409,14 +402,6 @@ export function pendingDraftCommand(
 }
 
 // ---- account ----
-
-export function accountEpochIs(epoch: number): boolean {
-  return epoch === accountEpoch;
-}
-
-export function currentAccountEpoch(): number {
-  return accountEpoch;
-}
 
 /** Empty the store when a different account signs in; a no-op for the same one. */
 export function bindDraftCommandAccount(accountId: string): void {

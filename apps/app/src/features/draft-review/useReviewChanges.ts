@@ -9,7 +9,7 @@
 import { useCallback, useMemo } from "react";
 
 import type { AppliedChange } from "@/client/query/draft-command-record";
-import type { ReviewFileTarget } from "@/client/query/work-draft-files";
+import type { DiscardSubject } from "@/client/query/work-draft-files";
 import { isSameChange } from "@/core/editor/extensions/inline-review";
 import type { DraftChangesView } from "./draft-changes";
 import type { ReviewFrame } from "./review-frame";
@@ -25,7 +25,7 @@ import { useOpenReviewChanges } from "./useOpenReviewChanges";
  */
 export type HeadlessReview = {
   discards: HeadlessDiscards;
-  file: ReviewFileTarget;
+  subject: DiscardSubject;
   roomName: string;
 };
 
@@ -114,7 +114,7 @@ export function useReviewChanges(
       if (headless) {
         if (controller.changesLocked) return;
         headless.discards.discardChange(
-          headless.file,
+          headless.subject,
           change,
           items.findIndex((item) => isSameChange(change, item.change.id, item.change.pin)),
           headless.roomName,
@@ -156,7 +156,7 @@ export function useReviewChanges(
     ...(headless
       ? {
           discarded: headless.discards.entries.filter(
-            (entry) => entry.file.draft.itemKey === itemKey && entry.change,
+            (entry) => entry.subject.itemKey === itemKey && entry.change,
           ),
           undoDiscard: headless.discards.undo,
         }

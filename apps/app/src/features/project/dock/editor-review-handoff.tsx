@@ -31,7 +31,7 @@ export type AiDraftLaunchTarget = {
   documentName?: string;
   isNew?: boolean;
   /**
-   * Operations of the change to focus once this review has painted (the
+   * Ids of the changes to focus once this review has painted (the
    * strip's Review, a Work page change row). When none is in the review any
    * more, it opens at the top.
    */

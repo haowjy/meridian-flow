@@ -9,13 +9,11 @@ import type * as Y from "yjs";
 import type { ChatApplyPlan } from "@/client/query/draft-command-executor";
 import { draftAttributionQueryOptions } from "@/client/query/useDraftAttribution";
 import { draftMetaQueryOptions } from "@/client/query/useDraftMeta";
-import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import { type BranchRoomRegistry, readBranchRoom } from "@/core/editor/branch-room-read";
 import { classifyRoom } from "./review-attribution";
 import { projectRoom } from "./review-frame";
 import { whenAcknowledged } from "./review-runtime";
 import { encodeSnapshot } from "./useDraftApply";
-
-let readerSequence = 0;
 
 /** The room's changes that belong to this chat: those some of whose AI writes are the chat's (or a subagent's it spawned). */
 export async function chatChangeTargets(
@@ -38,22 +36,17 @@ export async function chatChangeTargets(
 
 /** Null when the chat has no change in the draft (nothing to apply); otherwise `prepared.release` ends the room read. */
 export async function acquireChatChanges(
-  registry: Pick<
-    LiveDocumentSessionRegistry,
-    "retainBranchRooms" | "releaseBranchRooms" | "getBranchRoom"
-  >,
+  registry: BranchRoomRegistry,
   queryClient: QueryClient,
   draft: { projectId: string; workId: string; documentId: string; itemKey: string },
   threadId: string,
 ): Promise<ChatApplyPlan | null> {
   const meta = await queryClient.fetchQuery({ ...draftMetaQueryOptions(draft), staleTime: 0 });
   if (meta.kind !== "text") return null;
-  const owner = `chat-changes:${++readerSequence}`;
-  registry.retainBranchRooms(owner, [meta.roomName]);
-  const release = () => registry.releaseBranchRooms(owner);
+  const read = readBranchRoom(registry, meta.roomName);
+  const release = read.dispose;
   try {
-    const session = registry.getBranchRoom(meta.roomName);
-    await session.whenSynced();
+    const session = await read.synced();
     const { frame, targets } = await chatChangeTargets(
       queryClient,
       draft,

@@ -38,6 +38,7 @@ import {
 import { draftAttributionQueryOptions } from "@/client/query/useDraftAttribution";
 import { isRemoteDocumentRebuild } from "@/core/editor/anchors";
 import type { DocumentSession } from "@/core/editor/document-session";
+import { sameContent } from "@/core/editor/extensions/inline-review";
 import { relativePositionRuntimeFromState } from "@/core/editor/relative-position-runtime";
 import type { ReviewEditorHandle } from "./draft-discard";
 import { classifyRoom } from "./review-attribution";
@@ -178,6 +179,21 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
   let settleFrame: ReviewFrame | null = null;
   let settledEdits = edits;
 
+  /**
+   * Hand one editor the room's frame, bound to that editor's own document: the frame's positions address
+   * text, and two editors over one room hold equal text in different `PMNode` objects. An editor whose
+   * text has not caught up with the frame is skipped; its next transaction schedules the projection it gets.
+   */
+  const paintAttachment = (editor: Editor, frame: ReviewFrame | null) => {
+    if (editor.isDestroyed) return;
+    if (!frame || frame.doc === editor.state.doc) {
+      editor.commands.setReviewProjection(frame);
+      return;
+    }
+    if (sameContent(frame.doc, editor.state.doc))
+      editor.commands.setReviewProjection({ ...frame, doc: editor.state.doc });
+  };
+
   /** Bookkeeping: join the frame with attribution and command records, derive what is visible, tell readers. */
   const settle = (frame: ReviewFrame | null) => {
     const changes =
@@ -230,8 +246,7 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
   const publish = (frame: ReviewFrame | null, deferred = false) => {
     if (frame !== painted) {
       painted = frame;
-      for (const { editor } of attachments)
-        if (!editor.isDestroyed) editor.commands.setReviewProjection(frame);
+      for (const attachment of attachments) paintAttachment(attachment.editor, frame);
     }
     settleFrame = frame;
     if (!deferred) {
@@ -373,7 +388,7 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
       attachments.push(attachment);
       attached.on("transaction", onTransaction);
       // A second editor joins a frame already published: it is painted now, not at the next change.
-      if (painted && !attached.isDestroyed) attached.commands.setReviewProjection(painted);
+      paintAttachment(attached, painted);
       flushSoon();
       return () => {
         attached.off("transaction", onTransaction);

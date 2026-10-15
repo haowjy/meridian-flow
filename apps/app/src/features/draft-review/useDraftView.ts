@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import type { DraftRef } from "@/client/query/draft-command-record";
-import type { ReviewFileTarget } from "@/client/query/work-draft-files";
+import { discardSubjectOf, type ReviewFileTarget } from "@/client/query/work-draft-files";
 import { isSameChange } from "@/core/editor/extensions/inline-review";
 import { type DraftChangesView, useChangeItems } from "./draft-changes";
 import { baseKeyOf } from "./review-frame";
@@ -48,7 +48,7 @@ export function useDraftView(
   // A shared runtime can be ready before this reader holds the room: no row is drawn without its capability.
   const ready = room.branchless ? room.status === "ready" : read.ready && room.status === "ready";
   const discarded = discards.entries.filter(
-    (entry) => entry.file.draft.itemKey === draft.itemKey && entry.change,
+    (entry) => entry.subject.itemKey === draft.itemKey && entry.change,
   );
   const ref = { documentId: draft.documentId, itemKey: draft.itemKey };
   const send = async (change: ReviewChange) => {
@@ -86,7 +86,7 @@ export function useDraftView(
       if (room.status !== "ready" || room.roomName === null)
         throw new Error("A change row is drawn only from a ready room");
       discards.discardChange(
-        file,
+        discardSubjectOf(file),
         change,
         items.findIndex((item) => isSameChange(change, item.change.id, item.change.pin)),
         room.roomName,

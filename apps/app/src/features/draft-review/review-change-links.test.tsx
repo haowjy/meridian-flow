@@ -13,7 +13,7 @@ import {
 } from "@/test-support/conversation-reveal";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { ChangeAuthor } from "./ReviewChangeParts";
-import type { ChatRef } from "./review-model";
+import type { BylineSource } from "./review-model";
 
 beforeAll(() => {
   vi.stubGlobal(
@@ -26,14 +26,22 @@ beforeAll(() => {
 });
 afterEach(abandonConversationReveal);
 
-async function clickLink(chat: ChatRef) {
+async function clickLink(edit: BylineSource) {
+  const byline = [
+    {
+      kind: "thread" as const,
+      threadId: edit.threadId,
+      turnId: edit.turnId,
+      ...(edit.toolCallId ? { toolCallId: edit.toolCallId } : {}),
+    },
+  ];
   const openThread = vi.fn();
   i18n.loadAndActivate({ locale: "en", messages: {} });
   await withReactRoot(
     <I18nProvider i18n={i18n}>
       <TooltipProvider>
         <ChatThreadNavigationProvider onOpenThread={openThread}>
-          <ChangeAuthor writer={false} chats={[chat]} overflow="hide" />
+          <ChangeAuthor change={{ byline, edits: [edit] }} overflow="hide" />
         </ChatThreadNavigationProvider>
       </TooltipProvider>
     </I18nProvider>,
@@ -47,9 +55,15 @@ async function clickLink(chat: ChatRef) {
 describe("change chat link", () => {
   it("reveals the turn and tool call that wrote the change", async () => {
     await clickLink({
-      chatId: "t-9",
+      threadId: "t-9",
+      turnId: "turn-4",
+      toolCallId: "call-2",
       title: "Line edit",
-      reveal: { threadId: "t-9", turnId: "turn-4", toolCallId: "call-2" },
+      owner: {
+        threadId: "t-9",
+        title: "Line edit",
+        reveal: { threadId: "t-9", turnId: "turn-4", toolCallId: "call-2" },
+      },
     });
     expect(peekConversationReveal()).toMatchObject({
       kind: "turn",

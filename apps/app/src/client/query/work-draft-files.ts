@@ -16,6 +16,25 @@ export type ReviewFileTarget = {
   isNew: boolean;
 };
 
+/**
+ * What a Discard needs to name its draft, and what the list that owns the Discard's row needs to label it:
+ * the draft's identity, the document's name, where it lives and whether it is new. A list row and an open review both supply it.
+ */
+export type DiscardSubject = Pick<
+  ReviewFileTarget,
+  "documentId" | "documentName" | "contextLocation" | "isNew"
+> & {
+  itemKey: string;
+};
+
+export const discardSubjectOf = (file: ReviewFileTarget): DiscardSubject => ({
+  documentId: file.documentId,
+  itemKey: file.draft.itemKey,
+  documentName: file.documentName,
+  contextLocation: file.contextLocation,
+  isNew: file.isNew,
+});
+
 /** The DB guarantees one active draft per document/Work; raw rows remain untouched. */
 export function projectWorkDraftFiles(
   drafts: readonly ThreadDraftListItem[],

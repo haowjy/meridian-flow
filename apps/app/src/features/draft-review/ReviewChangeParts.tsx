@@ -6,7 +6,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ArrowUpRight } from "lucide-react";
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChangeFailureCode, ServerRefusal } from "@/client/query/draft-command-record";
 import {
   DropdownMenu,
@@ -19,6 +19,7 @@ import { requestConversationReveal } from "@/features/chat/conversation-reveal";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { cn } from "@/lib/utils";
 import { RefusalReason } from "./ReviewMessageText";
+import { bylineView } from "./review-attribution";
 import { type ChatRef, changeTone, type ReviewChange } from "./review-model";
 
 /** A dot in the change's colour: green for text it wrote, red for text it only removed. */
@@ -45,19 +46,18 @@ export function ChangeDot({ change, className }: { change: ReviewChange; classNa
  * all but never "You".
  */
 export function ChangeAuthor({
-  writer,
-  chats,
+  change,
   className,
   touch = false,
   overflow,
 }: {
   overflow: "menu" | "hide";
-  writer: boolean;
-  chats: readonly ChatRef[];
+  change: Pick<ReviewChange, "byline" | "edits">;
   className?: string;
   touch?: boolean;
 }) {
   const openThread = useOpenChatThread();
+  const { you: writer, chats } = useMemo(() => bylineView(change), [change.byline, change.edits]);
   const links = openThread ? chats : [];
   if (!writer && links.length === 0) return null;
   return (

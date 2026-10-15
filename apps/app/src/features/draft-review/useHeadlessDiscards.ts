@@ -16,7 +16,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type * as Y from "yjs";
 import type { DraftRef } from "@/client/query/draft-command-record";
 import { draftMetaQueryOptions } from "@/client/query/useDraftMeta";
-import type { ReviewFileTarget } from "@/client/query/work-draft-files";
+import type { DiscardSubject } from "@/client/query/work-draft-files";
+import { type BranchRoomRead, readBranchRoom } from "@/core/editor/branch-room-read";
 import { isSameChange } from "@/core/editor/extensions/inline-review";
 import { useLiveDocumentSessionRegistry } from "@/features/project/context/account-feature-context";
 import { chatChangeTargets } from "./chat-changes";
@@ -26,11 +27,14 @@ import { discardClickedChange, discardInRoom, type RoomDiscard } from "./room-di
 /** Where a Discard stands: `pending` while its room is acquired, `discarded` once the edit exists. */
 export type DiscardPhase = "pending" | "discarded" | "failed";
 
+/** What an Undo row keeps of a discarded change: its identity (id and pin) and what it said, never its frame. */
+export type DiscardedChange = Pick<ReviewChange, "id" | "pin" | "excerpt">;
+
 /** One Discard the row still offers to undo: a single change, or (change null) a chat's changes in the file. */
 export type DiscardedEntry = {
   id: string;
-  file: ReviewFileTarget;
-  change: ReviewChange | null;
+  subject: DiscardSubject;
+  change: DiscardedChange | null;
   /** Where the change sat among its file's changes, so its row comes back in place. */
   index: number;
   phase: DiscardPhase;
@@ -43,15 +47,15 @@ export type HeadlessDiscards = {
   entries: readonly DiscardedEntry[];
   /** Discard the change its row drew, in the room that row reads: the edit is made before this returns. */
   discardChange: (
-    file: ReviewFileTarget,
+    subject: DiscardSubject,
     change: ReviewChange,
     index: number,
     roomName: string,
   ) => void;
   /** Discard every change of the file's draft in the room its review reads: the edit is made before this returns. */
-  discardAll: (file: ReviewFileTarget, roomName: string) => void;
+  discardAll: (subject: DiscardSubject, roomName: string) => void;
   /** Discard only the changes that belong to this chat (its membership). */
-  discardFile: (file: ReviewFileTarget, threadId: string) => void;
+  discardFile: (subject: DiscardSubject, threadId: string) => void;
   /** Revert a landed Discard, cancel a pending one, or dismiss a failed one. */
   undo: (entryId: string) => void;
 };
@@ -86,17 +90,15 @@ export function useHeadlessDiscards(
       })),
     [scope],
   );
-  const owner = useRef(`headless-discard:${++sequence}`);
   const histories = useRef(new Map<string, Held>());
   /** The room each entry's history writes into, held for as long as the entry is. */
-  const leases = useRef(new Map<string, string>());
+  const reads = useRef(new Map<string, BranchRoomRead>());
   /** Bumps whenever the scope ends; work begun under an earlier epoch must not publish. */
   const epoch = useRef(0);
 
   useEffect(() => {
-    const ownerId = owner.current;
     const held = histories.current;
-    const leased = leases.current;
+    const leased = reads.current;
     return () => {
       epoch.current += 1;
       for (const done of held.values()) {
@@ -104,71 +106,74 @@ export function useHeadlessDiscards(
         else done.release();
       }
       held.clear();
+      for (const read of leased.values()) read.dispose();
       leased.clear();
-      registry.releaseBranchRooms(ownerId);
     };
-  }, [registry, scope]);
+  }, [scope]);
 
-  /** Hold `roomName` for this entry, or (null) let it go, keeping every other entry's room. */
-  const lease = useCallback(
-    (entryId: string, roomName: string | null) => {
-      if (roomName) leases.current.set(entryId, roomName);
-      else leases.current.delete(entryId);
-      const held = [...new Set(leases.current.values())];
-      if (held.length > 0) registry.retainBranchRooms(owner.current, held);
-      else registry.releaseBranchRooms(owner.current);
-    },
-    [registry],
-  );
+  /** Let go of the room this entry holds, keeping every other entry's room. */
+  const release = useCallback((entryId: string) => {
+    reads.current.get(entryId)?.dispose();
+    reads.current.delete(entryId);
+  }, []);
 
   const write = useCallback(
     (
-      file: ReviewFileTarget,
+      subject: DiscardSubject,
       change: ReviewChange | null,
       index: number,
       roomName: string,
       edit: (doc: Y.Doc) => RoomDiscard | null,
     ) => {
-      const id = `${file.draft.itemKey}:${++sequence}`;
+      const id = `${subject.itemKey}:${++sequence}`;
       let result: RoomDiscard | null = null;
+      let read: BranchRoomRead | null = null;
       try {
-        // The expanded row's reader holds this room, so it is live now; the lease keeps it so for Undo.
-        result = edit(registry.getBranchRoom(roomName).document);
+        // The expanded row's reader holds this room, so it is live now; this entry's read keeps it so for Undo.
+        read = readBranchRoom(registry, roomName);
+        const session = read.session();
+        if (session) result = edit(session.document);
       } catch {
         // A failed write leaves the failed entry below.
       }
-      if (result) {
+      if (result && read) {
         histories.current.set(id, result);
-        lease(id, roomName);
-      }
+        reads.current.set(id, read);
+      } else read?.dispose();
       setEntries((held) => [
         ...held,
-        { id, file, change, index, phase: result ? "discarded" : "failed" },
+        {
+          id,
+          subject,
+          change: change && { id: change.id, pin: change.pin, excerpt: change.excerpt },
+          index,
+          phase: result ? "discarded" : "failed",
+        },
       ]);
     },
-    [registry, lease, setEntries],
+    [registry, setEntries],
   );
 
   const discardFile = useCallback(
-    (file: ReviewFileTarget, threadId: string) => {
-      const id = `${file.draft.itemKey}:${++sequence}`;
+    (subject: DiscardSubject, threadId: string) => {
+      const id = `${subject.itemKey}:${++sequence}`;
       const draft: DraftRef = {
         projectId,
         workId,
-        documentId: file.documentId,
-        itemKey: file.draft.itemKey,
+        documentId: subject.documentId,
+        itemKey: subject.itemKey,
       };
       const born = epoch.current;
       const current = () => epoch.current === born;
-      setEntries((held) => [...held, { id, file, change: null, index: 0, phase: "pending" }]);
+      setEntries((held) => [...held, { id, subject, change: null, index: 0, phase: "pending" }]);
       const done = (async () => {
         const meta = await queryClient.fetchQuery(draftMetaQueryOptions(draft));
         if (meta.kind !== "text" || !current()) return null;
         // Cancelled while the room was looked up: nothing is leased or written.
         if (!histories.current.has(id)) return NOTHING;
-        lease(id, meta.roomName);
-        const room = registry.getBranchRoom(meta.roomName);
-        await room.whenSynced();
+        const read = readBranchRoom(registry, meta.roomName);
+        reads.current.set(id, read);
+        const room = await read.synced();
         const { targets } = await chatChangeTargets(queryClient, draft, room.document, threadId);
         // Cancelled while preparing: nothing is written.
         if (!histories.current.has(id)) return NOTHING;
@@ -184,7 +189,7 @@ export function useHeadlessDiscards(
         if (!current() || !histories.current.has(id)) return;
         if (result === NOTHING) {
           histories.current.delete(id);
-          lease(id, null);
+          release(id);
           setEntries((held) => held.filter((entry) => entry.id !== id));
           return;
         }
@@ -193,35 +198,35 @@ export function useHeadlessDiscards(
         setEntries((held) => held.map((entry) => (entry.id === id ? { ...entry, phase } : entry)));
       });
     },
-    [projectId, workId, queryClient, registry, lease, setEntries],
+    [projectId, workId, queryClient, registry, release, setEntries],
   );
 
   const undo = useCallback(
     (entryId: string) => {
       const done = histories.current.get(entryId);
       histories.current.delete(entryId);
-      lease(entryId, null);
+      release(entryId);
       setEntries((held) => held.filter((entry) => entry.id !== entryId));
       if (done instanceof Promise) void done.then((result) => result?.undo());
       else done?.undo();
     },
-    [lease, setEntries],
+    [release, setEntries],
   );
 
   return {
     entries,
-    discardChange: (file, change, index, roomName) => {
+    discardChange: (subject, change, index, roomName) => {
       // Ids are occurrence ranks, so two clicks on one row are told apart by the pinned place, not the id.
       const again = entries.some(
         (entry) => entry.change && isSameChange(entry.change, change.id, change.pin),
       );
       if (!again)
-        write(file, change, index, roomName, (doc) =>
+        write(subject, change, index, roomName, (doc) =>
           discardClickedChange(doc, { id: change.id, pin: change.pin }),
         );
     },
-    discardAll: (file, roomName) =>
-      write(file, null, 0, roomName, (doc) => discardInRoom(doc, "all")),
+    discardAll: (subject, roomName) =>
+      write(subject, null, 0, roomName, (doc) => discardInRoom(doc, "all")),
     discardFile,
     undo,
   };

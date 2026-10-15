@@ -11,7 +11,7 @@ import * as Y from "yjs";
 import type { PreparedApply } from "@/client/query/draft-command-executor";
 import type { DraftRef } from "@/client/query/draft-command-record";
 import { draftMetaQueryOptions } from "@/client/query/useDraftMeta";
-import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import { type BranchRoomRegistry, readBranchRoom } from "@/core/editor/branch-room-read";
 import type { ReviewFrame } from "./review-frame";
 import { reviewRuntimeOf, whenAcknowledged } from "./review-runtime";
 
@@ -36,33 +36,25 @@ export function prepareFromFrame(
   };
 }
 
-let readerSequence = 0;
-
 /** Read an unopened draft's room for the length of one command: retained, synced, snapshotted, then released. */
 export async function acquireItemSnapshot(
-  registry: Pick<
-    LiveDocumentSessionRegistry,
-    "retainBranchRooms" | "releaseBranchRooms" | "getBranchRoom"
-  >,
+  registry: BranchRoomRegistry,
   queryClient: QueryClient,
   draft: DraftRef,
 ): Promise<PreparedApply> {
   const meta = await queryClient.fetchQuery({ ...draftMetaQueryOptions(draft), staleTime: 0 });
   // A branchless item has no text to snapshot; a closed one answers `gone` at the send.
   if (meta.kind !== "text") return { snapshot: null, synced: () => Promise.resolve() };
-  const owner = `apply-reader:${++readerSequence}`;
-  registry.retainBranchRooms(owner, [meta.roomName]);
-  const release = () => registry.releaseBranchRooms(owner);
+  const read = readBranchRoom(registry, meta.roomName);
   try {
-    const session = registry.getBranchRoom(meta.roomName);
-    await session.whenSynced();
+    const session = await read.synced();
     return {
       snapshot: encodeSnapshot(Y.snapshot(session.document)),
       synced: () => whenAcknowledged(session),
-      release,
+      release: read.dispose,
     };
   } catch (error) {
-    release();
+    read.dispose();
     throw error;
   }
 }

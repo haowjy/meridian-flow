@@ -1,20 +1,17 @@
 /**
- * The open review's room: resolves where the draft lives (its metadata), retains that branch room for as
- * long as the review is open, and tells the review when the draft is gone. The review's text is the room's;
+ * The open review's room: resolves where the draft lives (its metadata), holds that branch room for as
+ * long as the review is open (`useBranchRoom`), and tells the review when the draft is gone. The review's text is the room's;
  * nothing here interprets it.
  */
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type Dispatch, useEffect, useRef, useState } from "react";
+import { type Dispatch, useEffect, useRef } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { draftMetaQueryOptions, metaRoomName, useDraftMeta } from "@/client/query/useDraftMeta";
 import { workDraftsQueryOptions } from "@/client/query/useWorkDrafts";
-import type { DocumentSession } from "@/core/editor/document-session";
-import { useLiveDocumentSessionRegistry } from "@/features/project/context/account-feature-context";
 import type { PresentedDocument } from "@/features/project/presented-document";
 import type { DraftReviewAction, InlineDraftReview } from "./draft-review-session";
-
-let ownerSequence = 0;
+import { useBranchRoom } from "./useBranchRoom";
 
 export function useReviewRoomOwner({
   projectId,
@@ -31,17 +28,12 @@ export function useReviewRoomOwner({
 }) {
   const draftOnly = presented?.draftOnly ?? false;
   const queryClient = useQueryClient();
-  const registry = useLiveDocumentSessionRegistry();
-  const owner = useRef(`review-room:${++ownerSequence}`);
   const documentId = review?.documentId ?? "";
   const itemKey = review?.itemKey ?? "";
   const draft = { projectId, workId, documentId, itemKey };
   const retry = review?.roomError ?? false;
   const { meta, failed } = useDraftMeta(draft, { enabled: review !== null });
   const roomName = metaRoomName(meta);
-  const key = JSON.stringify([projectId, workId, documentId, itemKey, roomName]);
-  const horizon = useRef({ key, queryClient, registry });
-  horizon.current = { key, queryClient, registry };
 
   // A draft-only destination keeps its presentation until the lifecycle settles it (`DraftOnlySettlement`).
   const kind = useRef({ target: "", draftOnly });
@@ -85,94 +77,11 @@ export function useReviewRoomOwner({
     itemKey,
   ]);
 
-  const [binding, setBinding] = useState<{ session: DocumentSession | null; key: string }>({
-    session: null,
-    key: "",
-  });
-  useEffect(() => {
-    if (!roomName || !documentId || !itemKey) {
-      setBinding((prior) =>
-        prior.session === null && prior.key === key ? prior : { session: null, key },
-      );
-      return;
-    }
-    let owned = true;
-    const current = () =>
-      owned &&
-      horizon.current.key === key &&
-      horizon.current.queryClient === queryClient &&
-      horizon.current.registry === registry;
-    // The room is unusable: the draft may have a new room or be closed, so ask again.
-    const unavailable = () => {
-      if (!current()) return;
-      void queryClient.invalidateQueries({
-        queryKey: draftMetaQueryOptions(draft).queryKey,
-      });
-    };
-    let rebuilding = false;
-    let unsubscribe: (() => void) | undefined;
-    registry.retainBranchRooms(owner.current, [roomName]);
-    const bind = (session: DocumentSession) => {
-      if (!current()) return;
-      setBinding((prior) =>
-        prior.session === session && prior.key === key ? prior : { session, key },
-      );
-      unsubscribe = session.subscribe((snapshot) => {
-        if (!current() || rebuilding) return;
-        const connection = snapshot.connectionState;
-        if (connection?.kind === "reset") {
-          switch (connection.disposition) {
-            case "schema":
-              // Keep the terminal session so its schema notice can paint.
-              return;
-            case "superseded":
-              // The draft closed (Apply or Discard of the whole draft): ask what it is now.
-              rebuilding = true;
-              setBinding({ session: null, key });
-              unavailable();
-              return;
-            case "refused":
-              rebuilding = true;
-              setBinding({ session: null, key });
-              void registry.rebuildBranchRoom(roomName).then(
-                (replacement) => {
-                  if (!current()) return;
-                  unsubscribe?.();
-                  rebuilding = false;
-                  bind(replacement);
-                },
-                () => unavailable(),
-              );
-              return;
-          }
-        }
-        if (
-          snapshot.status === "destroyed" ||
-          connection?.kind === "terminal" ||
-          connection?.kind === "unauthorized"
-        ) {
-          setBinding((prior) =>
-            prior.session === null && prior.key === key ? prior : { session: null, key },
-          );
-          unavailable();
-        }
-      });
-    };
-    try {
-      bind(registry.getBranchRoom(roomName));
-    } catch (error) {
-      registry.releaseBranchRooms(owner.current);
-      throw error;
-    }
-    return () => {
-      owned = false;
-      unsubscribe?.();
-      registry.releaseBranchRooms(owner.current);
-    };
-  }, [key, registry, queryClient]);
-
-  const session =
-    binding.key === key && binding.session?.roomKey === roomName ? binding.session : null;
+  // Closed or replaced rooms ask for the draft's metadata again; a schema reset keeps its session for the notice.
+  const session = useBranchRoom(
+    roomName && documentId && itemKey ? roomName : null,
+    () => void queryClient.invalidateQueries({ queryKey: draftMetaQueryOptions(draft).queryKey }),
+  );
   return {
     session,
     roomName,

@@ -1,13 +1,12 @@
 /**
  * MobileDocumentReview — wraps a phone document's editor with the review's
  * chrome while that document is under inline review: the header above it, the
- * selected change's bar below it, this document's change-list sheet over it,
- * the toast.
+ * selected change's bar below it, and this document's change-list sheet over it.
  * With no review of this document it is only the column the editor sits in.
  *
  * Every command goes through the same controller the desktop uses
  * (`useReviewHeader`, `useReviewChanges`), so optimistic Apply and Discard,
- * refusals, toasts, the entry hold and "No changes left" behave alike on both.
+ * refusals and "No changes left" behave alike on both.
  * The header and bar appear with the painted review (`inlineReview.shown`),
  * never over the live text that is held until then.
  *
@@ -15,8 +14,8 @@
  * entering and leaving review never remounts it.
  */
 
-import { type ReactNode, useEffect, useRef, useState } from "react";
-import type { ReviewFileTarget } from "@/client/query/work-draft-files";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
+import type { DiscardSubject, ReviewFileTarget } from "@/client/query/work-draft-files";
 import type { ContextTab } from "@/client/stores";
 import { PaintCapture } from "@/components/app/PaintHold";
 import { DiscardedRow } from "@/features/draft-review/DiscardedRow";
@@ -53,28 +52,26 @@ export function MobileDocumentReview({
   const { openReviewFile } = useAiDraftLauncher();
   // The phone's review is read-only: a Discard is a headless edit of the draft's room with its own Undo,
   // scoped to this document's open review so its rows end with it.
-  const { fileForDocument, reviewRoomNameForDraft } = useDraftReview();
+  const { reviewRoomNameForDraft } = useDraftReview();
   const discards = useHeadlessDiscards(
     projectId,
     controller.workId,
     `${documentId}:${itemKey ?? ""}`,
   );
   const roomName = itemKey ? reviewRoomNameForDraft(documentId, itemKey) : null;
-  // The open review names what a Discard acts on. The Work list only supplies presentation: a draft that
-  // lists no changes any more (its last one was just discarded) leaves it, and its Undo still holds.
-  const listed = fileForDocument(documentId);
-  const kept = useRef<ReviewFileTarget | null>(null);
-  if (listed && listed.draft.itemKey === itemKey) kept.current = listed;
-  const file =
-    itemKey && kept.current?.draft.itemKey === itemKey
-      ? kept.current
-      : itemKey
-        ? reviewedFile(documentId, itemKey, tab.name)
-        : null;
+  // The open review names what a Discard acts on, so a draft the Work list no longer carries (its last
+  // change was just discarded) still has its Undo.
+  const subject = useMemo<DiscardSubject | null>(
+    () =>
+      itemKey
+        ? { documentId, itemKey, documentName: tab.name, contextLocation: null, isNew: false }
+        : null,
+    [documentId, itemKey, tab.name],
+  );
   const header = useReviewHeader({
     documentId,
     itemKey: itemKey ?? "",
-    headless: file && roomName ? { discards, file, roomName } : undefined,
+    headless: subject && roomName ? { discards, subject, roomName } : undefined,
     onCloseDraftOnly,
     onOpenDraft: (row: ReviewFileTarget) => openReviewFile(row, controller.workId),
   });
@@ -105,18 +102,6 @@ export function MobileDocumentReview({
       </div>
     </MobileKeyboardAware>
   );
-}
-
-/** The open review's own identity as a Discard's subject, for a review the Work list does not (or no longer) carry. */
-function reviewedFile(documentId: string, itemKey: string, name: string): ReviewFileTarget {
-  return {
-    documentId,
-    documentName: name,
-    contextLocation: null,
-    isNew: false,
-    // A Discard reads only the item key; the rest of a list row is presentation the review never needed.
-    draft: { documentId, itemKey } as ReviewFileTarget["draft"],
-  };
 }
 
 /**
@@ -166,7 +151,7 @@ function ReviewBottom({
   itemKey: string;
 }) {
   const { view } = header;
-  const rows = discards.entries.filter((entry) => entry.file.draft.itemKey === itemKey);
+  const rows = discards.entries.filter((entry) => entry.subject.itemKey === itemKey);
   return (
     <>
       {rows.length > 0 ? (
@@ -176,7 +161,7 @@ function ReviewBottom({
               key={entry.id}
               touch
               entry={entry}
-              name={entry.file.documentName ?? ""}
+              name={entry.subject.documentName ?? ""}
               onUndo={() => discards.undo(entry.id)}
             />
           ))}

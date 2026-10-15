@@ -54,36 +54,27 @@ export function WorkChanges({
   const touch = usePhoneShell() === true;
   const listed = drafts.files ?? [];
   const records = useDraftCommandRecords();
-  // A file the server stops listing stays while it holds a failure or an overwrite notice, until that is
-  // dismissed or resolved: the writer must not see a refused Apply vanish as if it had succeeded.
   const seen = useRef<{ workId: string; files: Map<string, ReviewFileTarget> }>({
     workId,
     files: new Map(),
   });
   if (seen.current.workId !== workId) seen.current = { workId, files: new Map() };
   for (const file of listed) seen.current.files.set(file.draft.itemKey, file);
+  const heldByUndo = (file: ReviewFileTarget) =>
+    discards.entries.some((entry) => entry.subject.itemKey === file.draft.itemKey);
+  // A file the server stops listing stays while it holds a failure or an overwrite notice, until that is
+  // dismissed or resolved (the writer must not see a refused Apply vanish as if it had succeeded), and while
+  // one of its Discards can still be undone. The row is the list's own last view of it.
   const noticed = [...seen.current.files.values()].filter((file) => {
     const draft = { projectId, workId, documentId: file.documentId, itemKey: file.draft.itemKey };
     return (
       !listed.some((other) => other.draft.itemKey === file.draft.itemKey) &&
-      (draftCommandFailure(records, draft) !== null || draftOverrode(records, draft).length > 0)
+      (draftCommandFailure(records, draft) !== null ||
+        draftOverrode(records, draft).length > 0 ||
+        heldByUndo(file))
     );
   });
-  // A file stays on the page while one of its Discards can still be undone, even once the server stops listing it.
-  const files = [
-    ...listed,
-    ...noticed,
-    ...discards.entries
-      .filter(
-        (entry) =>
-          ![...listed, ...noticed].some((file) => file.draft.itemKey === entry.file.draft.itemKey),
-      )
-      .map((entry) => entry.file)
-      .filter(
-        (file, at, all) =>
-          all.findIndex((other) => other.draft.itemKey === file.draft.itemKey) === at,
-      ),
-  ];
+  const files = [...listed, ...noticed];
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const hasFiles = files.length > 0;
   useEffect(() => {

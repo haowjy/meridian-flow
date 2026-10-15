@@ -154,7 +154,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
               <DiscardedRow
                 key={entry.id}
                 entry={entry}
-                name={reviewFileTargetName(entry.file, t`Document`)}
+                name={reviewFileTargetName(entry.subject, t`Document`)}
                 touch={touch}
                 onUndo={() => dock.discards.undo(entry.id)}
               />
