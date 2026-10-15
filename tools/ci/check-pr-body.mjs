@@ -11,6 +11,12 @@
  * checked ("not applicable, because…" is a legitimate answer the template
  * invites).
  *
+ * A section is optional when the first comment under its heading in the
+ * template starts with "Optional." A missing or scaffold-only optional section
+ * never fails. One reminder is specific to DB Changes: when the PR touches
+ * schema or migration files and that section is missing or scaffold-only, the
+ * check prints a `::warning::` annotation and still exits 0.
+ *
  * Usage: node tools/ci/check-pr-body.mjs <changed-files.txt> [body.md]
  *   PR_BODY — the body in CI (env, so attacker-controlled markdown never
  *             reaches the shell); the body.md argument is for checking a
@@ -23,6 +29,9 @@ const TEMPLATE_PATH = ".github/PULL_REQUEST_TEMPLATE.md";
 // Sources whose change obligates visual evidence: app/site UI and the design
 // tokens every surface renders through. Tests change without changing pixels.
 const UI_FILE = /^(apps\/(app|www)\/src\/.+\.(tsx|css)|packages\/design-tokens\/src\/.+)$/;
+// Sources whose change calls for a DB Changes section (reminder, not a gate).
+const DB_FILE = /^packages\/database\/src\/(migrations|schema)\//;
+const DB_HEADING = "## DB Changes";
 const TEST_FILE = /\.test\./;
 
 // The escape hatch for UI-file diffs that change no pixels (pure refactors,
@@ -35,6 +44,16 @@ const headings = template
   .split("\n")
   .filter((line) => line.startsWith("## "))
   .map((line) => line.trim());
+
+/** Optional when the first comment after the heading starts with "Optional." */
+function isOptional(heading) {
+  const lines = template.split("\n");
+  const start = lines.findIndex((line) => line.trim() === heading);
+  const rest = lines.slice(start + 1);
+  const end = rest.findIndex((line) => line.startsWith("## "));
+  const section = rest.slice(0, end === -1 ? rest.length : end).join("\n");
+  return /^\s*<!--\s*Optional\./.test(section);
+}
 
 // Every non-empty template line, comments stripped: the scaffold an author
 // starts from. A body line only counts as authored if it isn't one of these.
@@ -79,9 +98,13 @@ const changedFiles = readFileSync(process.argv[2], "utf8")
   .filter(Boolean);
 
 const failures = [];
+const optional = new Set(headings.filter(isOptional));
+const unfilled = new Set();
 
 for (const heading of headings) {
   const content = sectionContent(body, heading);
+  if (content === null || !hasAuthoredLine(content)) unfilled.add(heading);
+  if (optional.has(heading)) continue;
   if (content === null) {
     failures.push(`missing section: ${heading}`);
   } else if (!hasAuthoredLine(content)) {
@@ -97,6 +120,13 @@ if (touchesUi && !IMAGE.test(body) && !NO_VISUAL_CLAIM.test(body)) {
   );
 }
 
+if (unfilled.has(DB_HEADING) && changedFiles.some((file) => DB_FILE.test(file))) {
+  console.log(
+    "::warning::This PR changes the database schema or migrations but has no DB Changes " +
+      "section. Add one that names the migrations and the changed tables.",
+  );
+}
+
 if (failures.length > 0) {
   console.error(`PR body does not follow ${TEMPLATE_PATH}:`);
   for (const failure of failures) console.error(`  - ${failure}`);
@@ -107,4 +137,5 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-console.log(`PR body carries all ${headings.length} template sections.`);
+const requiredCount = headings.length - optional.size;
+console.log(`PR body carries all ${requiredCount} required sections.`);

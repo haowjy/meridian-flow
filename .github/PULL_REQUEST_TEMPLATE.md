@@ -86,10 +86,10 @@
 
 ## DB Changes
 
-<!-- Write "None." if no schema changes; the PR-body check needs every
-     section. Otherwise name migrations; diagram changed
-     tables/relationships in Mermaid, mark added/dropped/renamed columns, and
-     list new constraints/indexes. -->
+<!-- Optional. Fill it when the PR changes the database schema or migrations,
+     and delete the section when it changes no schema. Name the migrations;
+     diagram changed tables/relationships in Mermaid, mark added/dropped/renamed
+     columns, and list new constraints/indexes. -->
 
 ## Work Item
 
