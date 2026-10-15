@@ -36,8 +36,8 @@ export function ProjectContextRemovalController({
       transition: (projectId, target, prepared) =>
         latestRouteRef.current.transition(projectId, target, prepared),
       readSearch: (registeredProjectId) => latestRouteRef.current.readSearch(registeredProjectId),
-      updateSearch: (registeredProjectId, update) =>
-        latestRouteRef.current.updateSearch(registeredProjectId, update),
+      updateSearch: (registeredProjectId, update, relocated) =>
+        latestRouteRef.current.updateSearch(registeredProjectId, update, relocated),
     }),
     [],
   );

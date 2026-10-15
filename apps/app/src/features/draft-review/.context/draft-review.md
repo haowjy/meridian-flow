@@ -146,8 +146,11 @@ maps that hint to the current review address. New-document Discard also removes
 its Work-manifest entry, and a later Apply publishes that manifest as well as
 content. Promotion happens once per document whichever Work's observer saw it.
 Draft-only Editor tabs are never persisted and are skipped by durable route
-continuity; the dock persists its review address and rebuilds its tab from the
-Work's draft list. The dock keeps only the selected review's entry, so it lists
+continuity (Editor persistence strips `reviews`). The dock persists its review
+address and its one `reviews` entry, the only record that a restored tab is
+draft-only rather than a live document under review; restore admits the address
+with the server, not from the draft list, and settlement removes a stale entry
+once a fresh catalog cut shows the draft gone or the document live. The dock keeps only the selected review's entry, so it lists
 one presentation and Discard is that address alone, while becoming live is
 document-wide. See the parent [draft-review guide](../AGENTS.md) for surface
 ownership.
