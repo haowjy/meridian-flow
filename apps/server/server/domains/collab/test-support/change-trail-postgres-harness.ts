@@ -378,10 +378,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   }
   const branchStore = {
     ...realBranchStore,
-    async appendJournal(input: Parameters<NonNullable<typeof realBranchStore.appendJournal>>[0]) {
-      injectSecondJournalFailure();
-      return realBranchStore.appendJournal?.(input);
-    },
     async commitBranchMutation(
       input: Parameters<NonNullable<typeof realBranchStore.commitBranchMutation>>[0],
     ) {

@@ -452,11 +452,22 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         drafts: createDrizzleDraftStore(db),
       });
       for (const branchId of [BRANCH_ID, OTHER_BRANCH_ID, SECOND_BRANCH_ID]) {
-        await branches.appendJournal?.({
+        const current = await branches.getBranch(branchId);
+        if (!current) throw new Error("expected branch");
+        await branches.commitBranchMutation?.({
           branchId,
-          updateData: new Uint8Array([1]),
-          source: "agent",
-          updateMeta: { kind: "edit" },
+          expectedState: current.state,
+          state: current.state,
+          stateVector: current.stateVector,
+          effect: { kind: "text", hasEffect: true },
+          journals: [
+            {
+              branchId,
+              updateData: new Uint8Array([0, 0]),
+              source: "agent",
+              updateMeta: { kind: "edit" },
+            },
+          ],
         });
       }
       wakes.length = 0;

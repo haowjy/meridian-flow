@@ -2,6 +2,7 @@
 import type { Database } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import * as schema from "@meridian/database/schema";
+import * as Y from "yjs";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 
 export const THREAD_WORK_RACE = {
@@ -78,12 +79,13 @@ export async function resetThreadWorkRaceFixture(db: Database): Promise<void> {
     originWorkId: ids.workId,
     createdBy: ids.userId,
   });
+  const emptyDoc = new Y.Doc();
   await db.insert(schema.documentBranches).values({
     id: ids.branchId,
     documentId: ids.documentId,
     kind: "work_draft",
     draftId: ids.draftId,
-    state: Buffer.alloc(0),
-    stateVector: Buffer.alloc(0),
+    state: Buffer.from(Y.encodeStateAsUpdate(emptyDoc)),
+    stateVector: Buffer.from(Y.encodeStateVector(emptyDoc)),
   });
 }

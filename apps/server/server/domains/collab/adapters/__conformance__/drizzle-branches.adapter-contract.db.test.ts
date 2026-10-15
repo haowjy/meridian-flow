@@ -516,6 +516,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         persistence.loadHocuspocusBranchState("missing-review-branch"),
       ).resolves.toBeUndefined();
     });
+    async function seedJournalRow(branchId: string) {
+      const current = await store.getBranch(branchId);
+      if (!current) throw new Error("expected branch");
+      await store.commitBranchMutation?.({
+        branchId,
+        expectedState: current.state,
+        state: current.state,
+        stateVector: current.stateVector,
+        effect: { kind: "peer" },
+        journals: [{ branchId, updateData: new Uint8Array([0, 0]), source: "agent" }],
+      });
+    }
     it("captures an immutable live journal draftBase for each new draft row", async () => {
       const live = docWithText("base");
       const firstSeq = await livePersistence.journal.append(DOC_ID, Y.encodeStateAsUpdate(live), {
@@ -527,11 +539,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         draftId: DRAFT_ID as never,
         liveDoc: live,
       });
-      await store.appendJournal?.({
-        branchId: branch.branchId,
-        updateData: new Uint8Array(),
-        source: "agent",
-      });
+      await seedJournalRow(branch.branchId);
 
       const beforeSecond = Y.encodeStateVector(live);
       live.getText("content").insert(live.getText("content").length, " later");
@@ -540,11 +548,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         Y.encodeStateAsUpdate(live, beforeSecond),
         { origin: `human:${USER_ID}`, seq: 0 },
       );
-      await store.appendJournal?.({
-        branchId: branch.branchId,
-        updateData: new Uint8Array(),
-        source: "agent",
-      });
+      await seedJournalRow(branch.branchId);
 
       const rows = await db
         .select({ draftBaseUpdateSeq: branchWriteJournal.draftBaseUpdateSeq })
@@ -552,54 +556,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .where(eq(branchWriteJournal.branchId, branch.branchId))
         .orderBy(branchWriteJournal.id);
       expect(rows).toEqual([{ draftBaseUpdateSeq: firstSeq }, { draftBaseUpdateSeq: secondSeq }]);
-    });
-    it("rejects a staged reversal after Apply changes the planned row status", async () => {
-      const branch = await store.ensureDraftBranch({
-        documentId: DOC_ID as never,
-        draftId: DRAFT_ID as never,
-        liveDoc: docWithText("seed"),
-      });
-      await store.appendJournal?.({
-        branchId: branch.branchId,
-        updateData: new Uint8Array(),
-        source: "agent",
-      });
-      const [planned] = await db
-        .select({ id: branchWriteJournal.id })
-        .from(branchWriteJournal)
-        .where(eq(branchWriteJournal.branchId, branch.branchId));
-      if (!planned) throw new Error("expected planned branch row");
-      await db
-        .update(branchWriteJournal)
-        .set({ status: "pushed" })
-        .where(eq(branchWriteJournal.id, planned.id));
-
-      const changed = docWithText("changed");
-      const committed = await store.commitBranchMutation?.({
-        branchId: branch.branchId,
-        expectedState: branch.state,
-        effect: { kind: "text", hasEffect: false },
-        state: Y.encodeStateAsUpdate(changed),
-        stateVector: Y.encodeStateVector(changed),
-        journals: [
-          {
-            branchId: branch.branchId,
-            expectedJournalWatermark: planned.id,
-            expectedJournalRevision: `${planned.id}:active`,
-            updateData: Y.encodeStateAsUpdate(changed),
-            source: "agent",
-          },
-        ],
-      });
-      const reloaded = await store.getBranch(branch.branchId);
-      const rows = await db
-        .select({ id: branchWriteJournal.id, status: branchWriteJournal.status })
-        .from(branchWriteJournal)
-        .where(eq(branchWriteJournal.branchId, branch.branchId));
-
-      expect(committed).toBe(false);
-      expect(reloaded?.state).toEqual(branch.state);
-      expect(rows).toEqual([{ id: planned.id, status: "pushed" }]);
     });
   });
 }

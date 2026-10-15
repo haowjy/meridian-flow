@@ -59,7 +59,6 @@ import {
   type CommitBranchMutationInput,
   type PersistBranchInput,
 } from "../domain/branch-coordinator.js";
-import { branchJournalRevision } from "../domain/branch-push-contracts.js";
 import {
   BranchCorruptError,
   BranchNotFoundError,
@@ -477,8 +476,7 @@ export function createDrizzleBranchStore(
    * Every runtime write of a branch's state: the Work projection encloses the raw CAS (pending count
    * before, the CAS, pending count after, the projection change published in the same transaction), so a
    * write that moves `has_effect` is seen by the Work page and the catalog, not only by the count query.
-   * With `journals`, the rows are checked against their preconditions first and written after the CAS
-   * wins, so a lost write leaves nothing behind. Returns false when the CAS lost.
+   * With `journals`, the rows are written after the CAS wins, so a lost write leaves nothing behind. Returns false when the CAS lost.
    */
   async function writeBranchState(
     tx: DrizzleDb,
@@ -487,24 +485,6 @@ export function createDrizzleBranchStore(
     const journals = input.journals ?? [];
     if (journals.some((row) => row.branchId !== input.branchId)) return false;
     return mutatePending([input.branchId], async () => {
-      for (const journal of journals) {
-        if (journal.expectedJournalWatermark !== undefined) {
-          const [head] = await tx
-            .select({ id: sql<number>`coalesce(max(${branchWriteJournal.id}), 0)::bigint` })
-            .from(branchWriteJournal)
-            .where(and(eq(branchWriteJournal.branchId, journal.branchId)));
-          if ((head?.id ?? 0) > journal.expectedJournalWatermark) return false;
-        }
-        if (journal.expectedJournalRevision !== undefined) {
-          const rows = await tx
-            .select({ id: branchWriteJournal.id, status: branchWriteJournal.status })
-            .from(branchWriteJournal)
-            .where(and(eq(branchWriteJournal.branchId, journal.branchId)))
-            .orderBy(branchWriteJournal.id)
-            .for("update");
-          if (branchJournalRevision(rows) !== journal.expectedJournalRevision) return false;
-        }
-      }
       if (!(await casBranchState(tx, input))) return false;
       if (journals.length) {
         const rows = await tx
@@ -560,28 +540,6 @@ export function createDrizzleBranchStore(
         const editBranch = await getBranchSnapshot(input.branchId);
         await lockDocumentMutation(currentDrizzleDb(db), editBranch.documentId);
         return writeBranchState(currentDrizzleDb(db), input);
-      });
-    },
-
-    async appendJournal(input: AppendBranchJournalInput) {
-      await runWithActiveWorkDrafts(db, { branchIds: [input.branchId] }, async () => {
-        await mutatePending([input.branchId], () =>
-          currentDrizzleDb(db)
-            .insert(branchWriteJournal)
-            .values({
-              branchId: input.branchId,
-              updateData: Buffer.from(input.updateData),
-              draftBaseUpdateSeq: draftBaseForBranch(input.branchId),
-              source: input.source,
-              wId: input.wId ?? null,
-              toolCallId: input.toolCallId ?? null,
-              threadId: input.threadId ?? null,
-              turnId: input.turnId ?? null,
-              actorUserId: input.actorUserId ?? null,
-              updateMeta: input.updateMeta ?? null,
-            })
-            .then(() => undefined),
-        );
       });
     },
 

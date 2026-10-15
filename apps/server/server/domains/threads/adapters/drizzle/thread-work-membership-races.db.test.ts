@@ -56,6 +56,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       projectionMutation: createTestWorkProjectionMutation(db),
     });
     const branches = createDrizzleBranchStore(db, { drafts: createDrizzleDraftStore(db) });
+    async function appendJournalRow() {
+      const current = await branches.getBranch(BRANCH_ID);
+      if (!current) throw new Error("expected branch");
+      await branches.commitBranchMutation?.({
+        branchId: BRANCH_ID,
+        expectedState: current.state,
+        state: current.state,
+        stateVector: current.stateVector,
+        effect: { kind: "text", hasEffect: false },
+        journals: [{ branchId: BRANCH_ID, updateData: new Uint8Array([0, 0]), source: "agent" }],
+      });
+    }
 
     beforeEach(async () => {
       await resetThreadWorkRaceFixture(db);
@@ -197,12 +209,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await control`SELECT pg_advisory_lock(${ADVISORY_KEY})`;
       let advisoryLockHeld = true;
       try {
-        const draft = branches.appendJournal?.({
-          branchId: BRANCH_ID,
-          updateData: new Uint8Array([1]),
-          source: "agent",
-        });
-        if (!draft) throw new Error("Branch journal append is unavailable");
+        const draft = appendJournalRow();
         await waitForLock("advisory");
         const deletion = works.softDelete(WORK_ID).then(
           () => ({ status: "fulfilled" as const }),
@@ -245,12 +252,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       try {
         const deletion = works.softDelete(WORK_ID);
         await waitForLock("advisory");
-        const draft = branches.appendJournal?.({
-          branchId: BRANCH_ID,
-          updateData: new Uint8Array([1]),
-          source: "agent",
-        });
-        if (!draft) throw new Error("Branch journal append is unavailable");
+        const draft = appendJournalRow();
         // The append can reject while `deletion` is still being awaited, before
         // the assertion below attaches; mark it handled so load can't surface it
         // as an unhandled rejection.
