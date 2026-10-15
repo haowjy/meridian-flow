@@ -134,6 +134,16 @@
 
 - [ ] Tracking home for each deferral; removal/cleanup trigger when applicable, or none
 
+## Follow-ups
+
+<!-- What to do right after this merges, in order: the next PR in a sequence,
+     stacked or sibling branches that must take main, issues to start, probes to
+     rerun on main. Link each issue or PR. Deferred is scope this PR leaves out;
+     Follow-ups is what someone does next. Skip routine cleanup that AGENTS.md
+     already requires. Write "None." when nothing follows. -->
+
+- [ ] #N: <what to do right after merge>
+
 ## Knowledge Updates
 
 <!-- List durable guidance updated, or say why none was needed. -->
