@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** The record's usage block renders as a quiet note and waiting writer rows, not a failure. */
+/** The record's usage block renders as an error card with Add usage, and the waiting row reads Queued. */
 import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
 import { parseWsServerMessage } from "@meridian/contracts/protocol";
@@ -20,7 +20,7 @@ import { UserTurn } from "./UserTurn";
 const open = vi.fn();
 vi.mock("@/features/account/SettingsDialog", () => ({ useSettingsNavigation: () => ({ open }) }));
 
-it("shows a nondismissible usage note and replaces Queued from the run-state record", async () => {
+it("shows a nondismissible usage error card with Add usage and a Queued row from the run-state record", async () => {
   const host = document.createElement("div");
   const root = createRoot(host);
   i18n.loadAndActivate({ locale: "en", messages: {} });
@@ -82,7 +82,6 @@ it("shows a nondismissible usage note and replaces Queued from the run-state rec
             turn,
             writer: projectWriterText(turn),
             queued: blocked && waitingWriterMessages(view).some((item) => item.id === turn.id),
-            waitingForUsage: blocked,
           }),
         ),
       ),
@@ -92,16 +91,17 @@ it("shows a nondismissible usage note and replaces Queued from the run-state rec
     expect(host.textContent).toContain(
       "You're out of usage. Your messages will send when you add more.",
     );
-    expect(host.textContent).toContain("Waiting for usage");
+    expect(host.textContent).toContain("Queued");
+    expect(host.querySelector('[data-slot="alert"]')?.getAttribute("role")).toBe("alert");
     expect(host.querySelector('[aria-label="Dismiss"]')).toBeNull();
-    const link = host.querySelector("a");
-    expect(link?.getAttribute("href")).toBe("?settings=usage");
+    const link = host.querySelector("button");
+    expect(link?.textContent).toBe("Add usage");
     await act(() =>
       link?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true })),
     );
     expect(open).toHaveBeenCalledWith("usage");
     await render(false);
-    expect(host.textContent).not.toContain("Waiting for usage");
+    expect(host.textContent).not.toContain("Queued");
     expect(host.querySelector('[data-slot="alert"]')).toBeNull();
   } finally {
     await act(() => root.unmount());

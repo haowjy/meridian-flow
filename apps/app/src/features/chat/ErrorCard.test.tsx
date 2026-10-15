@@ -139,11 +139,11 @@ describe("reply ErrorBlock", () => {
         providerError: { status: 404, message: "retired model" },
       },
     };
-    const replyRetry = { onRetry, refused: false, requestLost: false };
+    const replyRetry = { onRetry, refused: null, requestLost: false };
     const host = await render(
       replyRow(turn, {
         endsTranscript: true,
-        replyRetry: { ...replyRetry, refused: true },
+        replyRetry: { ...replyRetry, refused: "other" as const },
       }),
     );
 

@@ -23,6 +23,8 @@ import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
 import { ClippedProse } from "../ClippedExpand";
 import { useFocusWithinRow } from "../compaction/useFocusWithinRow";
+import { retryRefusedCopy } from "../ErrorBlock";
+import type { RetryRefusal } from "../useRetryStandIns";
 import { type BriefCardView, briefCardView } from "./handoff-seed";
 import { SourceChatLink, useSourceThread } from "./SourceChatLink";
 
@@ -34,7 +36,7 @@ export type HandoffBriefCardProps = {
   /** The writer's last Stop on this seed failed. */
   stopFailed?: boolean;
   /** The server refused this card's Retry; the cause stays in diagnostics. Drawn as an error card until the next action or the next completed reply. */
-  retryRefused?: boolean;
+  retryRefused?: RetryRefusal | null;
   /** A reply (or anything else) holds the chat: Retry waits until it ends. */
   destinationBusy?: boolean;
   /** Absent in a read-only view (a fork's inherited brief) or before the server has the seed. */
@@ -61,7 +63,7 @@ export function HandoffBriefCard({
   latest,
   stopping,
   stopFailed = false,
-  retryRefused = false,
+  retryRefused = null,
   destinationBusy = false,
   onStop,
   onRetry,
@@ -174,9 +176,7 @@ export function HandoffBriefCard({
           ) : null}
           {retryRefused ? (
             <NoticeCard tone="error">
-              <p>
-                <Trans>Couldn't retry.</Trans>
-              </p>
+              <p>{retryRefusedCopy(retryRefused)}</p>
             </NoticeCard>
           ) : null}
           {view.state === "stopped" && !view.superseded ? (

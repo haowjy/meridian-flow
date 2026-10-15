@@ -538,7 +538,6 @@ export function ChatView({
                     onRespondToInterrupt={handleRespondToInterrupt}
                     changeTrails={changeTrails.byId}
                     submissionRecoveryByTurnId={submissions.presentation}
-                    waitingForUsage={usageBlocked}
                     controls={controls}
                     chatStop={chatStop}
                     brief={brief}

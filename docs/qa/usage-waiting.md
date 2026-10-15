@@ -30,9 +30,9 @@ idempotency key on each drain, as above; replaying a key does not drain again.
 
 1. Send in the existing chat and from New chat. Both keep the writer's words;
    New chat navigates to its created chat immediately.
-2. Above the message box, expect the grey note "You're out of usage. Your
-   messages will send when you add more." and an Add usage link. Under every
-   pending writer message, expect "Waiting for usage", not "Queued".
+2. Above the message box, expect a red error card "You're out of usage. Your
+   messages will send when you add more." with an Add usage button. Under every
+   pending writer message, expect "Queued"; the card says why.
 3. Add usage opens Settings → Usage. The note has no Dismiss X. The message
    box remains editable. Notes stay above DraftDock, not between it and the box.
 4. Reload both chats. The note and row statuses survive. Inspect

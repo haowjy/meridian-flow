@@ -1465,10 +1465,13 @@ msgstr ""
 msgid "Couldn’t restore this Work"
 msgstr ""
 
-#: src/features/chat/derivation/HandoffBriefCard.tsx
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/useRetryStandIns.ts
 msgid "Couldn't retry."
+msgstr ""
+
+#: src/features/chat/ErrorBlock.tsx
+msgid "Couldn't retry. Another reply started first."
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -1533,6 +1536,10 @@ msgstr ""
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 #: src/features/chat/derivation/useHandoffBrief.ts
 msgid "Couldn't stop the brief. Try again."
+msgstr ""
+
+#: src/components/app/composer/Composer.tsx
+msgid "Couldn't stop the reply."
 msgstr ""
 
 #: src/components/app/composer/Composer.tsx
@@ -4552,6 +4559,7 @@ msgstr ""
 msgid "Top up any time. Extra usage carries over month to month."
 msgstr ""
 
+#: src/components/app/composer/Composer.tsx
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "Try again"
@@ -4765,8 +4773,8 @@ msgid "Wait for this response to finish, then try again."
 msgstr ""
 
 #: src/features/chat/UserTurn.tsx
-msgid "Waiting for usage"
-msgstr ""
+#~ msgid "Waiting for usage"
+#~ msgstr ""
 
 #: src/features/draft-review/DraftImagePreview.tsx
 msgid "Waiting for your review"

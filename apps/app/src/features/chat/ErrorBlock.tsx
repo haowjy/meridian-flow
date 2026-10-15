@@ -3,6 +3,7 @@ import { Trans } from "@lingui/react/macro";
 import type { ReactNode } from "react";
 import { NoticeCard } from "@/components/app/NoticeCard";
 import { Button } from "@/components/ui/button";
+import type { RetryRefusal } from "./useRetryStandIns";
 
 /**
  * - `generation` → the message was admitted and the reply failed, with or
@@ -31,7 +32,7 @@ export type ErrorBlockProps = {
    * Temporary: it clears at the writer's next action (another Retry, or a send) or when the
    * next reply completes (`useRetryStandIns` owns that rule).
    */
-  retryRefused?: boolean;
+  retryRefused?: RetryRefusal | null;
 };
 
 /** One quiet sentence per kind; reads on its own in history, no status prefix. */
@@ -58,39 +59,44 @@ export function ErrorBlock({
   isLatest,
   kind = "generation",
   onRetry,
-  retryRefused = false,
+  retryRefused = null,
 }: ErrorBlockProps) {
   if (!isLatest) {
     return (
       <div className="flex flex-col gap-1">
         <p className="text-caption text-muted-foreground">{copy(kind, false)}</p>
-        {retryRefused ? <RefusedCard /> : null}
+        {retryRefused ? <RefusedCard refusal={retryRefused} /> : null}
       </div>
     );
   }
   return (
     <ActiveError kind={kind} onRetry={onRetry}>
-      {retryRefused ? <RefusedNote /> : null}
+      {retryRefused ? <RefusedNote refusal={retryRefused} /> : null}
     </ActiveError>
   );
 }
 
+/** The refusal in words: the cause is named only when the server's answer says it (409). */
+export function retryRefusedCopy(refusal: RetryRefusal): string {
+  return refusal === "another-reply"
+    ? t`Couldn't retry. Another reply started first.`
+    : t`Couldn't retry.`;
+}
+
 /** The refusal on its own, for a failed reply that is history: its marker stays quiet above. */
-function RefusedCard() {
+function RefusedCard({ refusal }: { refusal: RetryRefusal }) {
   return (
     <NoticeCard tone="error">
-      <p data-retry-refused>
-        <Trans>Couldn't retry.</Trans>
-      </p>
+      <p data-retry-refused>{retryRefusedCopy(refusal)}</p>
     </NoticeCard>
   );
 }
 
 /** The refusal inside the latest failure's own card. */
-function RefusedNote() {
+function RefusedNote({ refusal }: { refusal: RetryRefusal }) {
   return (
     <p className="text-caption" data-retry-refused>
-      <Trans>Couldn't retry.</Trans>
+      {retryRefusedCopy(refusal)}
     </p>
   );
 }
