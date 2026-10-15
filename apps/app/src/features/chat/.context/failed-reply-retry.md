@@ -93,3 +93,12 @@ newer writer message still comes after it),
 the refused set and the lost-request re-send. Each caller supplies the POST and
 the stand-in's shape. A
 handoff brief holds no execution; its seed's id is its only identity.
+
+A failed reply that a Retry or a later message follows is **forgotten**, one stored
+fact (`turns.forgotten_by_turn_id`) the server writes in the transaction that appends
+the following turn. Retry forgets the failure and keeps the writer's message; moving
+on from a failure that drew nothing forgets the attempt and its messages too. The
+snapshot keeps forgotten turns, stamped `forgottenBy`; `viewTranscript` hides them
+(a reply in `refused` stays), and `markForgotten` stamps held turns from the
+`meridian.turns.forgotten` frame. Reconcile and snapshots never clear a stamp. A
+failure with a tool call, or one carried into a continuation, stays.
