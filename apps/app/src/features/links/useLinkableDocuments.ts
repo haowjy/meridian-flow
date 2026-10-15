@@ -22,11 +22,14 @@
  * already pays for, so the index costs no request.
  */
 
+import { isProjectScopedScheme } from "@meridian/contracts";
 import { contextOwner } from "@meridian/contracts/protocol";
 import { useMemo, useRef } from "react";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { useDraftLinkEpoch } from "@/client/query/draft-link-epoch";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
+import { useWorkDrafts } from "@/client/query/useWorkDrafts";
+import { documentBasename, type ReviewFileTarget } from "@/client/query/work-draft-files";
 
 import { LINKABLE_SCHEMES, linkableCatalogScopes } from "./linkable-catalog-scopes";
 
@@ -40,6 +43,8 @@ export type LinkableDocument = {
   workId: string | null;
   /** A chat's Scratch note is held by its lineage instead of a Work. */
   rootThreadId?: string;
+  /** Present iff the document is hidden: it exists only in this draft, and only its review opens it. */
+  draft?: { draftId: string; workId: string };
 };
 
 export type LinkableDocumentIndex = {
@@ -59,10 +64,17 @@ export function useLinkableDocuments({
   projectId,
   workId,
   rootThreadId,
+  withDraftDocuments = false,
 }: {
   projectId: string | null;
   workId: string | null;
   rootThreadId?: string | null;
+  /**
+   * Also hold the documents only the scope Work's draft has created (hidden from every
+   * catalog), so an address names them as "in a draft". A chat's links and doors read
+   * the Work's draft; an editor's links keep resolving against the live tree.
+   */
+  withDraftDocuments?: boolean;
 }): LinkableDocumentIndex {
   const draftEpoch = useDraftLinkEpoch(projectId);
   const prior = useRef<LinkableDocumentIndex | null>(null);
@@ -83,6 +95,18 @@ export function useLinkableDocuments({
     uploadsWorkId: catalogWorkId,
   });
 
+  // The projected Work list (not the raw rows): a change settled on this device is already out of it.
+  const drafts = useWorkDrafts(
+    withDraftDocuments ? projectId : null,
+    withDraftDocuments ? catalogWorkId : null,
+  );
+  const draftDocuments = useMemo(
+    () => (drafts.files && catalogWorkId ? draftOnlyDocuments(drafts.files, catalogWorkId) : []),
+    [drafts.files, catalogWorkId],
+  );
+  const draftsSettled =
+    !withDraftDocuments || drafts.status === "ready" || drafts.status === "empty";
+
   return useMemo(() => {
     const documents = [
       ...(manuscript ? linkableDocuments(manuscript, null) : []),
@@ -97,6 +121,8 @@ export function useLinkableDocuments({
           )
         : []),
       ...(uploads ? linkableDocuments(uploads, catalogWorkId) : []),
+      // After every live entry: a live document at the same address answers a plain address.
+      ...draftDocuments,
     ];
     const next = {
       documents,
@@ -107,7 +133,8 @@ export function useLinkableDocuments({
         userComplete &&
         unfiledComplete &&
         scratchComplete &&
-        uploadsComplete,
+        uploadsComplete &&
+        draftsSettled,
     };
     if (prior.current?.revision === next.revision && prior.current.complete === next.complete)
       return prior.current;
@@ -129,6 +156,8 @@ export function useLinkableDocuments({
     catalogWorkId,
     catalogRootThreadId,
     draftEpoch,
+    draftDocuments,
+    draftsSettled,
   ]);
 }
 
@@ -139,7 +168,31 @@ export function useLinkableDocuments({
  * link is re-asked when this changes and left alone when it does not.
  */
 function catalogRevision(documents: readonly LinkableDocument[]): string {
-  return documents.map((entry) => `${entry.documentId} ${entry.uri}`).join("\n");
+  return documents
+    .map(
+      (entry) => `${entry.documentId} ${entry.uri}${entry.draft ? ` ${entry.draft.draftId}` : ""}`,
+    )
+    .join("\n");
+}
+
+/** The Work's created-and-still-hidden documents in the schemes a project shares. */
+function draftOnlyDocuments(
+  files: readonly ReviewFileTarget[],
+  workId: string,
+): LinkableDocument[] {
+  return files.flatMap((file) => {
+    const location = file.contextLocation;
+    if (!file.isNew || !location || !isProjectScopedScheme(location.scheme)) return [];
+    return [
+      {
+        documentId: file.documentId,
+        title: file.documentName ?? documentBasename(location.path) ?? file.documentId,
+        uri: `${location.scheme}://${location.path.replace(/^\/+/, "")}`,
+        workId: null,
+        draft: { draftId: file.draft.draftId, workId },
+      },
+    ];
+  });
 }
 
 function linkableDocuments(

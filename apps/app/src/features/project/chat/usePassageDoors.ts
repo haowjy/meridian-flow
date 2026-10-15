@@ -19,8 +19,12 @@ export type PassageDoorTarget = {
 };
 
 /** Tell passage navigation that a door was opened. The passage is optional. */
-/** What the door already resolved, so passage handling does not look the same URI up again. */
-export type PassageDoorResolved = { documentId: string; editable: boolean; claim?: number };
+/**
+ * What the door already resolved, so passage handling does not look the same URI up again.
+ * A door that resolved only the document (`editable` absent) has not opened it: the
+ * passage owns the open, landing on the anchor when the file is editable and plainly otherwise.
+ */
+export type PassageDoorResolved = { documentId: string; editable?: boolean; claim?: number };
 
 export type PassageDoorOpened = (
   target: PassageDoorTarget,
@@ -50,17 +54,27 @@ export function usePassageDoors(projectId: string, activeWorkId: string | null):
         if (!passage) return;
 
         const file =
-          resolved ??
-          (await lookupContextCatalogFile(
-            projectId,
-            target.scheme,
-            contextOwner(target.workId, target.rootThreadId),
-            { uri: target.uri },
-          ));
+          resolved?.editable !== undefined
+            ? { documentId: resolved.documentId, editable: resolved.editable }
+            : await lookupContextCatalogFile(
+                projectId,
+                target.scheme,
+                contextOwner(target.workId, target.rootThreadId),
+                { uri: target.uri },
+              );
         if (signal.aborted) return;
         // A binary or missing file has no Yjs document to land in; the door's
-        // own destination already explains both.
-        if (!file?.editable) return;
+        // own destination already explains both, unless the door left the open to us.
+        if (!file?.editable) {
+          if (resolved)
+            await openDocument({
+              documentId: resolved.documentId,
+              workId: target.workId ?? undefined,
+              signal,
+              claim: resolved.claim,
+            });
+          return;
+        }
 
         const result = await navigateToPassage({
           documentId: file.documentId,

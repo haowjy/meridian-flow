@@ -7,7 +7,12 @@
  */
 
 export { FollowOutcomeContent, followOutcomeTitle } from "./FollowOutcomeContent";
-export type { FollowReporter, LinkDestination, LinkDocumentRef } from "./follow-link";
+export {
+  CHECKING_DELAY_MS,
+  type FollowReporter,
+  type LinkDestination,
+  type LinkDocumentRef,
+} from "./follow-link";
 export { LinkFollowDialog, useFollowOutcomeState } from "./LinkFollowDialog";
 export type { LinkResolutionScope } from "./project-link-resolver";
 export { type LinkFollower, useLinkFollower } from "./use-link-follower";

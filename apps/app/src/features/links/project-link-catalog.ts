@@ -35,7 +35,8 @@ export function createProjectLinkCatalog(
     owner: contextOwner(document.workId, document.rootThreadId),
     projectId,
     uri: document.uri,
-    presence: "live",
+    presence: document.draft ? "draft" : "live",
+    ...(document.draft ? { draft: document.draft } : {}),
     readable: true,
     nameable: true,
   });
