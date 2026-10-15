@@ -7,7 +7,7 @@
  * they own the DB-level context-source lifecycle, separate from adapter assembly.
  */
 
-import type { DocumentId, ProjectId, ThreadId } from "@meridian/contracts";
+import type { ProjectId, ThreadId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { contextSources, projects, works } from "@meridian/database/schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
@@ -31,12 +31,15 @@ import type {
 } from "./ports/context-document-store.js";
 import type { ProjectContextFsScheme, WorkScopedContextFsScheme } from "./ports/context-port.js";
 import type { DocumentArrivals } from "./ports/document-arrivals.js";
-import { findForward, recordForward } from "./tree/forwards.js";
+import { findForward } from "./tree/forwards.js";
 import type { HiddenNodeRepair } from "./tree/hidden-node-repair.js";
 import type { LiveClaim } from "./tree/hidden-node-types.js";
 import type { TreeView } from "./tree/tree-view.js";
 
-const CONTEXT_SOURCE_NAMES: Record<ProjectContextFsScheme | WorkScopedContextFsScheme, string> = {
+const CONTEXT_SOURCE_NAMES: Record<
+  ProjectContextFsScheme | WorkScopedContextFsScheme | "uploads",
+  string
+> = {
   manuscript: "Manuscript",
   kb: "Knowledge Base",
   user: "User Files",
@@ -430,34 +433,6 @@ export function createWorkContextDocumentStore(
     () => ensureWorkContextSource(db, workId, scheme),
     () => findWorkContextSource(db, workId, scheme),
     workId,
-    catalogMutations,
-    undefined,
-    arrivals,
-    repair,
-  );
-}
-
-export function createNoWorkContextDocumentStore(
-  db: Database,
-  projectId: string,
-  scheme: "uploads",
-  catalogMutations?: ContextCatalogMutationPort,
-  arrivals?: DocumentArrivals,
-  repair?: HiddenNodeRepair,
-): ContextDocumentStore {
-  const resolveWorkId = async () => {
-    const workId = await findNoWorkId(db, projectId);
-    if (!workId) throw new Error(`No Work missing for project ${projectId}`);
-    return workId;
-  };
-  return new SourceResolvedContextDocumentStore(
-    db,
-    async () => ensureWorkContextSource(db, await resolveWorkId(), scheme),
-    async () => {
-      const workId = await findNoWorkId(db, projectId);
-      return workId ? findWorkContextSource(db, workId, scheme) : null;
-    },
-    resolveWorkId,
     catalogMutations,
     undefined,
     arrivals,

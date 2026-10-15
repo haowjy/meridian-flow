@@ -217,18 +217,8 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
       expect(chapter.value).toContain(
         "[Unfiled note](<unfiled://Scratch (2)/nested/deep/jade-map>)",
       );
-      expect(
-        await target`SELECT context_source_id, work_id, final_path, canonical_uri, object_key, fingerprint FROM upload_intakes`,
-      ).toEqual([
-        {
-          context_source_id: id(8),
-          work_id: id(4),
-          final_path: "Scratch (2)/map.png",
-          canonical_uri: "unfiled://Scratch (2)/map.png",
-          object_key: `uploads/${id(2)}/${id(21)}`,
-          fingerprint: "retained-fingerprint",
-        },
-      ]);
+      // 0052 resets Work-owned upload intakes (#875); the document they were filed under stays.
+      expect(await target`SELECT 1 FROM upload_intakes`).toEqual([]);
       const catalog = createDrizzleContextCatalog(db);
       const snapshot = await catalog.snapshot({ kind: "project", projectId: id(2) as never });
       expect(snapshot.entries).toEqual(

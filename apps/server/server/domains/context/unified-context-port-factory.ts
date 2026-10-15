@@ -48,7 +48,6 @@ import { UNIFIED_CONTEXT_SCHEMES } from "./context/uri.js";
 import {
   createChatContextDocumentStore,
   createLineageContextDocumentStore,
-  createNoWorkContextDocumentStore,
   createProjectContextDocumentStore,
   createWorkContextDocumentStore,
   findNoWorkId,
@@ -85,7 +84,9 @@ const PROJECT_CONTEXTFS_SCHEMES: readonly ProjectContextFsScheme[] =
   PROJECT_SCOPED_CONTEXT_URI_SCHEMES;
 /** Uploads belong to a chat, so a Work provisions Scratch only. */
 const WORK_SCOPED_CONTEXTFS_SCHEMES: readonly WorkScopedContextFsScheme[] =
-  WORK_SCOPED_CONTEXT_URI_SCHEMES.filter((scheme) => scheme !== "uploads");
+  WORK_SCOPED_CONTEXT_URI_SCHEMES.filter(
+    (scheme): scheme is WorkScopedContextFsScheme => scheme !== "uploads",
+  );
 
 export interface UnifiedContextPortFactory {
   lineages: ScratchLineages;
@@ -121,7 +122,6 @@ interface ContextStoreResolvers {
     scheme: ProjectContextFsScheme,
   ): ContextDocumentStore;
   resolveWorkStore(workId: string, scheme: WorkScopedContextFsScheme): ContextDocumentStore;
-  resolveNoWorkStore(projectId: string, scheme: "uploads", userId?: string): ContextDocumentStore;
   resolveNoWorkId(projectId: string): Promise<string>;
   resolveMutationStore(): import("./ports/context-tree-mutation-store.js").ContextTreeMutationStore;
 }
@@ -233,33 +233,6 @@ function buildWorkScopedContextFsAdapters(
         },
         scheme,
         holder: { projectId, authority },
-      }),
-    );
-  }
-  return adapters;
-}
-
-function buildNoWorkContextFsAdapters(
-  assembly: AdapterAssembly,
-  projectId: string,
-): Map<ContextScheme, ContextSchemeAdapter> {
-  const { storeResolvers, commandTransaction } = assembly;
-  const mutationStore = storeResolvers.resolveMutationStore();
-  const adapters = new Map<ContextScheme, ContextSchemeAdapter>();
-  for (const scheme of ["uploads"] as const) {
-    adapters.set(
-      scheme,
-      contextFsAdapter(assembly, {
-        store: storeResolvers.resolveNoWorkStore(projectId, scheme),
-        mutationStore,
-        commandTransaction: commandTransaction && {
-          run: async (operation, _scopes, options) => {
-            const workId = await storeResolvers.resolveNoWorkId(projectId);
-            return commandTransaction.run(operation, [{ scheme, workId }], options);
-          },
-        },
-        scheme,
-        holder: { projectId, authority: { kind: "none" } },
       }),
     );
   }
@@ -407,16 +380,10 @@ function buildUnifiedContextPort(input: {
         scope.projectId,
         targetAuthority,
       ),
-    resolveNoWork: async () => {
-      const workId =
-        scope.kind === "work" && scope.authority.workSlug === null
-          ? scope.authority.workId
-          : await storeResolvers.resolveNoWorkId(scope.projectId);
-      return {
-        adapters: buildNoWorkContextFsAdapters(assembly, scope.projectId),
-        workId,
-      };
-    },
+    resolveNoWorkId: async () =>
+      scope.kind === "work" && scope.authority.workSlug === null
+        ? scope.authority.workId
+        : await storeResolvers.resolveNoWorkId(scope.projectId),
     parseOptions: { barePathDefault: "manuscript", schemes: UNIFIED_CONTEXT_SCHEMES },
     commandTransaction: input.commandTransaction,
     resolveDestinationFolder: input.resolveDestinationFolder,
@@ -449,9 +416,6 @@ function createInMemoryStoreResolvers(
     },
     resolveWorkStore(workId, scheme) {
       return getInMemoryWorkContextStore(registry, workId, scheme);
-    },
-    resolveNoWorkStore(projectId, scheme) {
-      return getInMemoryWorkContextStore(registry, inMemoryNoWorkId(projectId), scheme);
     },
     async resolveNoWorkId(projectId) {
       return inMemoryNoWorkId(projectId);
@@ -505,16 +469,6 @@ function createProductionStoreResolvers(
     },
     resolveWorkStore(workId, scheme) {
       return createWorkContextDocumentStore(db, workId, scheme, catalogMutations, arrivals, repair);
-    },
-    resolveNoWorkStore(projectId, scheme) {
-      return createNoWorkContextDocumentStore(
-        db,
-        projectId,
-        scheme,
-        catalogMutations,
-        arrivals,
-        repair,
-      );
     },
     async resolveNoWorkId(projectId) {
       const workId = await findNoWorkId(db, projectId);

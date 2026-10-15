@@ -32,7 +32,7 @@ async function readIntakeOwner(
     .from(uploadIntakes)
     .where(where)
     .limit(1);
-  return row?.chatId ? { projectId: row.projectId, chatId: row.chatId } : null;
+  return row ? { projectId: row.projectId, chatId: row.chatId } : null;
 }
 
 /**
@@ -58,7 +58,6 @@ function uploadUri(chatRef: string | null, path: string): string {
 }
 
 function mapRow(row: IntakeRow, chatRef: string | null): UploadReservation {
-  if (!row.ownerThreadId) throw new Error(`Upload ${row.intakeId} is missing its chat`);
   return {
     projectId: row.projectId,
     intakeId: row.intakeId,
@@ -120,8 +119,7 @@ async function resolveOwner(db: Database, owner: UploadOwner, actorUserId: strin
 }
 
 export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeRepository {
-  async function chatRefOf(chatId: string | null): Promise<string | null> {
-    if (!chatId) return null;
+  async function chatRefOf(chatId: string): Promise<string | null> {
     const [thread] = await currentDrizzleDb(db)
       .select({ ref: threads.ref })
       .from(threads)
@@ -177,7 +175,6 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
           used.has(path.toLowerCase()),
         );
         const documentId = crypto.randomUUID();
-        const canonicalUri = uploadUri(owner.chatRef, finalPath);
         const [created] = await activeDb
           .insert(uploadIntakes)
           .values({
@@ -194,7 +191,6 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
             finalPath,
             objectKey: `uploads/${input.owner.projectId}/${documentId}`,
             fileType: input.fileType,
-            canonicalUri,
             locationRevision: crypto.randomUUID(),
           })
           .onConflictDoNothing({

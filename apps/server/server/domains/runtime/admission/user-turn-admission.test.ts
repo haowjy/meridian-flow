@@ -18,8 +18,8 @@ const actor = "11111111-1111-4111-8111-111111111111" as never;
 const threadId = "22222222-2222-4222-8222-222222222222" as never;
 const documentId = "33333333-3333-4333-8333-333333333333" as never;
 const projectId = "44444444-4444-4444-8444-444444444444" as never;
-const uri = "uploads://@/map.png";
-const occurrenceText = "[map](uploads://@/map.png)";
+const uri = "uploads://@/c1/map.png";
+const occurrenceText = "[map](uploads://@/c1/map.png)";
 
 function input(overrides: Partial<UserTurnAdmissionInput> = {}): UserTurnAdmissionInput {
   return {
@@ -160,7 +160,7 @@ describe("UserTurnAdmission", () => {
     for (const invalid of [
       { type: "reference", text: "", documentId, uri },
       { type: "reference", text: occurrenceText, documentId: "invalid", uri },
-      { type: "reference", text: occurrenceText, documentId, uri: "uploads://@//map.png" },
+      { type: "reference", text: occurrenceText, documentId, uri: "uploads://@/c1//map.png" },
       { type: "reference", text: occurrenceText, documentId },
       { type: "reference", text: occurrenceText, documentId, uri, extra: true },
     ]) {
@@ -183,10 +183,10 @@ describe("UserTurnAdmission", () => {
     const fingerprint = canonicalAdmissionFingerprint({ ...base, blocks: parsed });
     const variants: UserTurnAdmissionInput[] = [
       input({
-        text: `see [Map](uploads://@/map.png)${occurrenceText}`,
+        text: `see [Map](uploads://@/c1/map.png)${occurrenceText}`,
         blocks: [
           { type: "text", text: "see " },
-          { type: "reference", text: "[Map](uploads://@/map.png)", documentId, uri },
+          { type: "reference", text: "[Map](uploads://@/c1/map.png)", documentId, uri },
           { type: "image", documentId, uri },
           { type: "reference", text: occurrenceText, documentId, uri },
           { type: "image", documentId, uri },
@@ -230,16 +230,16 @@ describe("UserTurnAdmission", () => {
       { type: "reference" as const, text: occurrenceText, documentId, uri },
       {
         type: "reference" as const,
-        text: "[map](uploads://@/alternate.png)",
+        text: "[map](uploads://@/c1/alternate.png)",
         documentId: alternateId,
-        uri: "uploads://@/alternate.png",
+        uri: "uploads://@/c1/alternate.png",
       },
     ];
     const orderedReferences = [
       { documentId, uri, purpose: "reference" as const },
       {
         documentId: alternateId,
-        uri: "uploads://@/alternate.png",
+        uri: "uploads://@/c1/alternate.png",
         purpose: "reference" as const,
       },
     ];
@@ -247,7 +247,7 @@ describe("UserTurnAdmission", () => {
       canonicalAdmissionFingerprint({
         actorUserId: actor,
         threadId,
-        text: `${occurrenceText}[map](uploads://@/alternate.png)`,
+        text: `${occurrenceText}[map](uploads://@/c1/alternate.png)`,
         blocks: orderedBlocks,
         references: orderedReferences,
       }),
@@ -255,7 +255,7 @@ describe("UserTurnAdmission", () => {
       canonicalAdmissionFingerprint({
         actorUserId: actor,
         threadId,
-        text: `${occurrenceText}[map](uploads://@/alternate.png)`,
+        text: `${occurrenceText}[map](uploads://@/c1/alternate.png)`,
         blocks: [...orderedBlocks].reverse(),
         references: orderedReferences,
       }),
@@ -363,7 +363,7 @@ describe("UserTurnAdmission", () => {
     ).rejects.toBeInstanceOf(InvalidAdmissionError);
     const references = Array.from({ length: 129 }, (_, index) => ({
       documentId: `33333333-3333-4333-8333-${index.toString().padStart(12, "0")}` as never,
-      uri: `uploads://@/map-${index}.png`,
+      uri: `uploads://@/c1/map-${index}.png`,
       purpose: "reference" as const,
     }));
     await expect(

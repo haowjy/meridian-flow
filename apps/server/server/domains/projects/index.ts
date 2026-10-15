@@ -11,7 +11,6 @@ import { projects, works } from "@meridian/database";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import type { DocumentCreationAggregate, MarkdownDocumentStore } from "../collab/index.js";
-import { ensureWorkContextSource } from "../context/context-source-provisioning.js";
 import { DrizzleContextDocumentStore } from "../context/index.js";
 import { MANUSCRIPT_URI } from "../context/manuscript-uri.js";
 import { LIVE_TREE, visibleDocuments } from "../context/tree/tree-view.js";
@@ -239,7 +238,6 @@ export function createDrizzleProjectBootstrapRepository(deps: {
       const projectId = await ensureProject(tx, userId);
       const noWorkId = await ensureLockedNoWork(tx, projectId, userId);
       const manuscriptSourceId = await ensureManuscriptSource(db, projectId);
-      await ensureWorkContextSource(db, noWorkId, "uploads");
       const documentId = await ensureDocument(tx, manuscriptSourceId);
 
       const result = {
