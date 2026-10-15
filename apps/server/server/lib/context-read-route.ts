@@ -3,6 +3,7 @@ import {
   parseUnifiedContextUri,
 } from "@meridian/contracts/context-uri";
 import type { ContextReadResponse, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import type { ThreadId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
 import {
   isWorkScopedBrowseScheme,
@@ -41,6 +42,8 @@ export interface ContextReadRouteInput {
   rawPath: unknown;
   workId?: string | null;
   rootThreadId?: string | null;
+  /** The chat whose uploads the path names, when the route scopes to one. */
+  chatId?: string | null;
 }
 interface ResolvedReadPath {
   uri: string;
@@ -90,7 +93,10 @@ export function resolveContextReadPath(
             : "kind" in authority && authority.kind === "lineage"
               ? parsed.value.authority.kind === "lineage" &&
                 parsed.value.authority.rootThreadRef === authority.rootThreadRef
-              : parsed.value.authority.kind === "none";
+              : "kind" in authority && authority.kind === "chat"
+                ? parsed.value.authority.kind === "chat" &&
+                  parsed.value.authority.chatRef === authority.chatRef
+                : parsed.value.authority.kind === "none";
         if (!sameAuthority) {
           throw createError({ statusCode: 400, message: "Context authority does not match route" });
         }
@@ -127,6 +133,14 @@ export async function handleContextReadRequest(
     const lineage = await deps.contextPorts.lineages.byId(input.projectId, input.rootThreadId);
     if (!lineage) throw createError({ statusCode: 404, message: "Chat not found" });
     authority = { kind: "lineage", rootThreadRef: lineage.rootThreadRef };
+  } else if (input.chatId) {
+    if (input.workId || input.scheme !== "uploads")
+      throw createError({ statusCode: 400, message: "Choose one uploads owner" });
+    const chat = await deps.contextPorts.topPrimaryChats.resolveTopPrimaryChat(
+      input.chatId as ThreadId,
+    );
+    if (!chat) throw createError({ statusCode: 404, message: "Chat not found" });
+    authority = { kind: "chat", chatRef: chat.chatRef };
   } else if (isWorkScopedBrowseScheme(input.scheme)) {
     if (!input.workId) authority = { kind: "none" };
     else {
@@ -159,6 +173,7 @@ export async function handleContextReadRequest(
     userId: input.userId,
     workId: input.workId,
     rootThreadId: input.rootThreadId,
+    chatId: input.chatId,
   });
   if (!port) throwContextWorkUnavailableHttpError("work_missing");
   const ref = await port.stat(path.uri);

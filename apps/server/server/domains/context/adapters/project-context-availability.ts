@@ -80,7 +80,7 @@ type AvailabilityRow = {
   source: typeof contextSources.$inferSelect | null;
   sourceProject: typeof projects.$inferSelect | null;
   work: typeof works.$inferSelect | null;
-  rootThreadRef?: string | null;
+  ownerThreadRef?: string | null;
 };
 type AvailabilityIdentity = {
   scope: CatalogScope;
@@ -152,15 +152,27 @@ function classifySourceIdentity(input: {
     source.projectId !== null &&
     source.workId === null &&
     scheme === "scratch" &&
-    !!input.row.rootThreadRef;
+    !!input.row.ownerThreadRef;
+  const hasChatOwnership =
+    source.scope === "chat" &&
+    source.chatThreadId !== null &&
+    source.projectId !== null &&
+    source.workId === null &&
+    scheme === "uploads";
   const hasWorkOwnership = source.scope === "work" && source.workId !== null;
   const hasProjectOwnership = source.scope === "project" && source.projectId !== null;
+  const ownershipKinds = [
+    hasLineageOwnership,
+    hasChatOwnership,
+    hasWorkOwnership,
+    hasProjectOwnership,
+  ].filter(Boolean).length;
   if (
-    (!hasLineageOwnership && hasWorkOwnership === hasProjectOwnership) ||
+    ownershipKinds !== 1 ||
     (hasWorkOwnership && !isWorkScheme) ||
-    (!hasWorkOwnership && !hasProjectOwnership && !hasLineageOwnership) ||
     (source.workId !== null) !== hasWorkOwnership ||
-    (source.projectId !== null) !== (hasProjectOwnership || hasLineageOwnership) ||
+    (source.projectId !== null) !==
+      (hasProjectOwnership || hasLineageOwnership || hasChatOwnership) ||
     (hasWorkOwnership && (!work || work.id !== source.workId)) ||
     (hasProjectOwnership && (!sourceProject || sourceProject.id !== source.projectId)) ||
     (scheme === "user" &&
@@ -172,13 +184,21 @@ function classifySourceIdentity(input: {
   let scope: CatalogScope;
   let authority: ProjectContextAuthority;
   let generation = input.projectGeneration;
-  if (hasLineageOwnership && source.projectId && source.rootThreadId && input.row.rootThreadRef) {
+  if (hasLineageOwnership && source.projectId && source.rootThreadId && input.row.ownerThreadRef) {
     scope = { kind: "lineage", projectId: source.projectId, rootThreadId: source.rootThreadId };
     authority = {
       kind: "lineage",
       projectId: source.projectId,
       rootThreadId: source.rootThreadId,
-      rootThreadRef: input.row.rootThreadRef,
+      rootThreadRef: input.row.ownerThreadRef,
+    };
+  } else if (hasChatOwnership && source.projectId && source.chatThreadId) {
+    scope = { kind: "chat", projectId: source.projectId, chatId: source.chatThreadId };
+    authority = {
+      kind: "chat",
+      projectId: source.projectId,
+      chatId: source.chatThreadId,
+      chatRef: input.row.ownerThreadRef ?? null,
     };
   } else if (hasWorkOwnership) {
     if (!work || work.projectId !== input.requestProjectId) {
@@ -395,13 +415,19 @@ export function createDrizzleProjectContextAvailability(
               source: contextSources,
               sourceProject: projects,
               work: works,
-              rootThreadRef: threads.ref,
+              ownerThreadRef: threads.ref,
             })
             .from(documents)
             .leftJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
             .leftJoin(projects, eq(contextSources.projectId, projects.id))
             .leftJoin(works, eq(contextSources.workId, works.id))
-            .leftJoin(threads, eq(threads.id, contextSources.rootThreadId))
+            .leftJoin(
+              threads,
+              eq(
+                threads.id,
+                sql`coalesce(${contextSources.rootThreadId}, ${contextSources.chatThreadId})`,
+              ),
+            )
             .where(inArray(documents.id, ids as never));
           const requestedFolders = folderIds.length
             ? await tx
@@ -410,13 +436,19 @@ export function createDrizzleProjectContextAvailability(
                   source: contextSources,
                   sourceProject: projects,
                   work: works,
-                  rootThreadRef: threads.ref,
+                  ownerThreadRef: threads.ref,
                 })
                 .from(folders)
                 .leftJoin(contextSources, eq(folders.contextSourceId, contextSources.id))
                 .leftJoin(projects, eq(contextSources.projectId, projects.id))
                 .leftJoin(works, eq(contextSources.workId, works.id))
-                .leftJoin(threads, eq(threads.id, contextSources.rootThreadId))
+                .leftJoin(
+                  threads,
+                  eq(
+                    threads.id,
+                    sql`coalesce(${contextSources.rootThreadId}, ${contextSources.chatThreadId})`,
+                  ),
+                )
                 .where(inArray(folders.id, folderIds as never))
             : [];
           const byId = new Map(rows.map((row) => [row.document.id, row]));
@@ -508,6 +540,16 @@ export function createDrizzleProjectContextAvailability(
                 reason: "lineage_hidden",
               };
             }
+            // A trashed chat hides its uploads the same way, and its restore reopens them.
+            if (source?.scope === "chat" && source.deletedAt) {
+              return {
+                kind: "authority-unavailable",
+                documentId,
+                generation,
+                authority,
+                reason: "chat_hidden",
+              };
+            }
             if (document.deletedAt || source?.deletedAt) {
               return {
                 kind: "deleted",
@@ -531,7 +573,8 @@ export function createDrizzleProjectContextAvailability(
                   workId: work?.id ?? null,
                   workSlug: work && !work.isNoWork ? work.slug : null,
                   parentPath,
-                  rootThreadRef: row.rootThreadRef,
+                  ownerThreadRef: row.ownerThreadRef,
+                  chatOwned: source?.scope === "chat",
                 }),
               } as never;
             } catch {
@@ -596,7 +639,8 @@ export function createDrizzleProjectContextAvailability(
                     scheme,
                     row.work?.id ?? null,
                     row.work && !row.work.isNoWork ? row.work.slug : null,
-                    row.rootThreadRef,
+                    row.ownerThreadRef,
+                    row.source?.scope === "chat",
                   ),
                 ),
                 hasChildren: true,
@@ -634,13 +678,16 @@ export async function resolveActiveFolderUri(
       source: contextSources,
       sourceProject: projects,
       work: works,
-      rootThreadRef: threads.ref,
+      ownerThreadRef: threads.ref,
     })
     .from(folders)
     .leftJoin(contextSources, eq(folders.contextSourceId, contextSources.id))
     .leftJoin(projects, eq(contextSources.projectId, projects.id))
     .leftJoin(works, eq(contextSources.workId, works.id))
-    .leftJoin(threads, eq(threads.id, contextSources.rootThreadId))
+    .leftJoin(
+      threads,
+      eq(threads.id, sql`coalesce(${contextSources.rootThreadId}, ${contextSources.chatThreadId})`),
+    )
     .where(eq(folders.id, folderId));
   if (
     !row?.source ||
@@ -671,7 +718,8 @@ export async function resolveActiveFolderUri(
       classification.identity.scheme,
       row.work?.id ?? null,
       row.work && !row.work.isNoWork ? row.work.slug : null,
-      row.rootThreadRef,
+      row.ownerThreadRef,
+      row.source.scope === "chat",
     ),
   );
 }

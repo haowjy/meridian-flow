@@ -15,9 +15,20 @@ export interface ResolveDocumentLinkInput {
   userId: string;
   workId?: string | null;
   rootThreadId?: string | null;
+  /** The chat holding the link, when it is a chat's own; a document holder has none. */
+  chatId?: string | null;
   target: DocumentLinkTarget;
   /** Chat only: a link with no holder may follow a vacated path to the document that left it. */
   previousLocations?: boolean;
+}
+
+/**
+ * Which chat received the upload a bare `uploads://name` names, for a holder with no chat of
+ * its own (a manuscript or KB document that embeds an upload without a handle).
+ */
+export interface UploadOwnerLookup {
+  /** The chat that received the oldest live upload at `path`, or null when none did. */
+  chatOf(projectId: string, path: string): Promise<string | null>;
 }
 
 export interface DocumentLinkResolver {

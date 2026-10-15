@@ -223,7 +223,7 @@ describe("context router scheme creation capabilities", () => {
       port: createContextPortRouter({
         sources: new Map([
           ["scratch", { adapter: scratch, authority: authority(workId, "current") }],
-          ["uploads", { adapter: uploads, authority: authority(workId, "current") }],
+          ["uploads", { adapter: uploads, authority: { kind: "chat", chatRef: "c12" } }],
         ]),
         workAuthorities: new Map([[testWorkSlug("current"), authority(workId, "current")]]),
         primaryWorkAuthority: authority(workId, "current"),
@@ -238,10 +238,11 @@ describe("context router scheme creation capabilities", () => {
       message: expect.stringMatching(/scratch:\/\/.+authoring space/),
     };
 
-    await expect(
-      port.createTrackedDocument(`uploads://@current/notes.md`, "notes"),
-    ).resolves.toMatchObject({ ok: false, error: expectedError });
-    await expect(port.mkdir(`uploads://@current/notes`)).resolves.toMatchObject({
+    await expect(port.createTrackedDocument(`uploads://notes.md`, "notes")).resolves.toMatchObject({
+      ok: false,
+      error: expectedError,
+    });
+    await expect(port.mkdir(`uploads://notes`)).resolves.toMatchObject({
       ok: false,
       error: expectedError,
     });
@@ -252,12 +253,12 @@ describe("context router scheme creation capabilities", () => {
   it("admits only reserved tracked upload identity through the intake seam", async () => {
     const { port, uploads } = createPort();
     await expect(
-      port.createTrackedDocument("uploads://@current/notes.md", "notes", {
+      port.createTrackedDocument("uploads://notes.md", "notes", {
         documentId: "00000000-0000-4000-8000-000000000001",
       }),
     ).resolves.toEqual({
       ok: true,
-      value: { documentId: "document-new", uri: "uploads://@current/notes" },
+      value: { documentId: "document-new", uri: "uploads://@/c12/notes" },
     });
     expect(uploads.createTrackedDocument).toHaveBeenCalledWith("notes", "notes", {
       documentId: "00000000-0000-4000-8000-000000000001",
@@ -267,25 +268,23 @@ describe("context router scheme creation capabilities", () => {
   it("rejects cross-scheme moves into uploads but allows renames within uploads", async () => {
     const { port, uploads } = createPort();
 
-    await expect(
-      port.move(`scratch://@current/old.md`, `uploads://@current/old.md`),
-    ).resolves.toMatchObject({
-      ok: false,
-      error: {
-        code: "invalid_operation",
-        uri: "uploads://@current/old.md",
-        message: expect.stringContaining("scratch://"),
+    await expect(port.move(`scratch://@current/old.md`, `uploads://old.md`)).resolves.toMatchObject(
+      {
+        ok: false,
+        error: {
+          code: "invalid_operation",
+          uri: "uploads://@/c12/old.md",
+          message: expect.stringContaining("scratch://"),
+        },
       },
-    });
+    );
     await expect(
-      port.commitWriterLocation(`scratch://@current/old.md`, `uploads://@current/old.md`),
+      port.commitWriterLocation(`scratch://@current/old.md`, `uploads://old.md`),
     ).resolves.toMatchObject({
       ok: false,
-      error: { code: "invalid_operation", uri: "uploads://@current/old.md" },
+      error: { code: "invalid_operation", uri: "uploads://@/c12/old.md" },
     });
-    await expect(
-      port.move(`uploads://@current/old.md`, `uploads://@current/renamed.md`),
-    ).resolves.toEqual({
+    await expect(port.move(`uploads://old.md`, `uploads://renamed.md`)).resolves.toEqual({
       ok: true,
       value: { movedNodeId: "document-old", destinationPath: "renamed" },
     });
