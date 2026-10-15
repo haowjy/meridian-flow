@@ -7,8 +7,8 @@ the storage seam; file access remains the responsibility of [file policy](../fil
 ## Mental model
 
 - `manuscript://`, `kb://`, and `unfiled://` are project content; `user://` is
-  personal content. A named Work owns `scratch://@slug/` and `uploads://@slug/`;
-  No Work owns `uploads://@/`.
+  personal content. A named Work owns `scratch://@slug/`; a chat owns
+  `uploads://@/c12/`.
 - A No Work chat lineage owns `scratch://@/c12/`. The locked No Work row owns no
   Scratch source. `scratchOwnerFor(thread, work)` is the single owner rule for
   bare Scratch and file policy.
