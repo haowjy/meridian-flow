@@ -7,7 +7,11 @@ import {
   type SharedDevServiceName,
   type SharedDevServicePorts,
 } from "./lib/dev-share-ports";
-import type { ExpectedServiceName } from "./portless-routes";
+import {
+  type ExpectedServiceName,
+  expectedPortlessName,
+  expectedServiceHost,
+} from "./portless-routes";
 
 const logPath = "logs/portless.log";
 
@@ -20,7 +24,6 @@ export interface DevSessionPlan {
 
 interface DevServiceSpec {
   serviceName: ExpectedServiceName;
-  portlessName: string;
   pkg: string;
   shared: boolean;
   sharedModeOnly?: boolean;
@@ -33,16 +36,14 @@ export interface DevSessionCommand {
 }
 
 const DEV_SERVICES: ReadonlyArray<DevServiceSpec> = [
-  { serviceName: "app", portlessName: "app.meridian", pkg: "@meridian/app", shared: true },
+  { serviceName: "app", pkg: "@meridian/app", shared: true },
   {
     serviceName: "server",
-    portlessName: "server.meridian",
     pkg: "@meridian/server",
     shared: false,
   },
   {
     serviceName: "www",
-    portlessName: "web.meridian",
     pkg: "@meridian/www",
     shared: true,
     sharedModeOnly: true,
@@ -175,11 +176,11 @@ function portlessCommandBody({
   const portsByService = sharedPortsByService(sharedPorts);
   const commands = DEV_SERVICES.filter(
     (service) => mode !== "local" || !service.sharedModeOnly,
-  ).map(({ serviceName, portlessName, pkg }) => {
+  ).map(({ serviceName, pkg }) => {
     const servicePorts =
       serviceName === "app" || serviceName === "www" ? portsByService.get(serviceName) : undefined;
     const appPortFlag = servicePorts ? ` --app-port ${servicePorts.appBackendPort}` : "";
-    const name = worktreePrefix ? `${worktreePrefix}.${portlessName}` : portlessName;
+    const name = expectedPortlessName(serviceName, worktreePrefix);
     return `${portlessEnvPrefix(env, redacted)}pnpm exec portless --name ${shellQuote(name)}${force ? " --force" : ""}${appPortFlag} pnpm --filter ${pkg} dev`;
   });
 
@@ -218,10 +219,7 @@ function renderPortlessCommand({
 }
 
 export function resolveInternalApiOrigin(worktreePrefix?: string): string {
-  const host = worktreePrefix
-    ? `${worktreePrefix}.server.meridian.localhost`
-    : "server.meridian.localhost";
-  return `https://${host}`;
+  return `https://${expectedServiceHost("server", worktreePrefix)}`;
 }
 
 export function createDevSessionCommand({

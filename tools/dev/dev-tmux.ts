@@ -6,11 +6,7 @@ import { applyModeEnv, parseDevCliOptions } from "./dev-mode";
 import { printFailure, printSessionInfo } from "./dev-output";
 import { waitForDevReadiness } from "./dev-readiness";
 import { createDevSessionPlan, type DevSessionPlan } from "./dev-session-plan";
-import {
-  readActiveDevSession,
-  readDevSessionMetadata,
-  writeDevSessionMetadata,
-} from "./dev-session-state";
+import { readDevSessionState, writeDevSessionMetadata } from "./dev-session-state";
 import { applyDevEnvToProcess, resolveCheckoutSessionIdentity, runGit } from "./lib/dev-env";
 import { assertDevInfraReady } from "./lib/dev-infra";
 import { releaseFixedPorts } from "./lib/port-lifecycle";
@@ -206,8 +202,9 @@ async function main(): Promise<void> {
   const tailscale = new TailscaleDevLifecycle();
   const options = parseDevCliOptions({ argv: process.argv.slice(2) });
   const identity = resolveCheckoutSessionIdentity(repoRoot);
-  const previous = readDevSessionMetadata(repoRoot);
-  const active = options.restart ? null : readActiveDevSession(repoRoot);
+  const state = readDevSessionState(repoRoot);
+  const previous = state.recorded;
+  const active = options.restart ? null : state.active;
   const mode =
     active?.mode ??
     (options.restart && options.preserveModeOnRestart && !options.explicitModeFlag && previous

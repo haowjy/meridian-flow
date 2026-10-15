@@ -91,11 +91,13 @@ export function writeDevSessionMetadata(repoRoot: string, metadata: DevSessionMe
   }
 }
 
-export function readActiveDevSession(repoRoot: string): DevSessionMetadata | null {
-  const metadata = readDevSessionMetadata(repoRoot);
-  return metadata && new TmuxSessionStore(repoRoot).sessionExists(metadata.sessionName)
-    ? metadata
-    : null;
+export function readDevSessionState(repoRoot: string) {
+  const recorded = readDevSessionMetadata(repoRoot);
+  const active =
+    recorded && new TmuxSessionStore(repoRoot).sessionExists(recorded.sessionName)
+      ? recorded
+      : null;
+  return { recorded, active };
 }
 
 /** Current Git identity plans new launches; active metadata locates an existing launch. */
@@ -103,7 +105,7 @@ export function resolveCheckoutRouteUrls(
   repoRoot: string,
   output: string,
 ): { app: string; server: string } {
-  const active = readActiveDevSession(repoRoot);
+  const { active } = readDevSessionState(repoRoot);
   const worktreePrefix = active ? active.worktreePrefix : resolveCheckoutPortlessPrefix(repoRoot);
   const input = { output, mode: "local" as const, worktreePrefix };
   const validation = validateExpectedRoutes({

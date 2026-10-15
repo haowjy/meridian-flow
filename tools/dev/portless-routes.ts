@@ -1,19 +1,13 @@
 import type { DevMode } from "./dev-mode";
 
-/** Host suffixes; tools/dev supplies complete names to Portless named mode. */
-const SERVICE_HOST_SUFFIXES = {
-  server: "server.meridian.localhost",
-  app: "app.meridian.localhost",
-  www: "web.meridian.localhost",
+/** Canonical names used by command rendering, route checks and internal origins. */
+const SERVICE_PORTLESS_NAMES = {
+  server: "server.meridian",
+  app: "app.meridian",
+  www: "web.meridian",
 } as const;
 
-const DEFAULT_EXPECTED_SERVICE_HOSTS = {
-  server: SERVICE_HOST_SUFFIXES.server,
-  app: SERVICE_HOST_SUFFIXES.app,
-  www: SERVICE_HOST_SUFFIXES.www,
-} as const;
-
-export type ExpectedServiceName = keyof typeof DEFAULT_EXPECTED_SERVICE_HOSTS;
+export type ExpectedServiceName = keyof typeof SERVICE_PORTLESS_NAMES;
 
 export interface ExternalDevRoute {
   service: ExpectedServiceName;
@@ -34,13 +28,13 @@ export type ExpectedServiceDescriptor = {
 };
 
 export const DEFAULT_EXPECTED_SERVICES: ReadonlyArray<ExpectedServiceDescriptor> = [
-  { name: "server", host: DEFAULT_EXPECTED_SERVICE_HOSTS.server, shared: false },
-  { name: "app", host: DEFAULT_EXPECTED_SERVICE_HOSTS.app, shared: true },
+  { name: "server", host: expectedServiceHost("server"), shared: false },
+  { name: "app", host: expectedServiceHost("app"), shared: true },
 ];
 
 const WWW_EXPECTED_SERVICE: ExpectedServiceDescriptor = {
   name: "www",
-  host: DEFAULT_EXPECTED_SERVICE_HOSTS.www,
+  host: expectedServiceHost("www"),
   shared: true,
 };
 
@@ -121,7 +115,6 @@ export function parsePortlessListOutput(output: string): ParsedPortlessList {
 export interface RouteValidation {
   ok: boolean;
   errors: string[];
-  servicePids: Record<string, number>;
 }
 
 /** app/www first — matches how people scan startup output. */
@@ -138,9 +131,16 @@ function pushRouteLine(
   lines.push(`${service}  ${kind.padEnd(ROUTE_KIND_WIDTH)} ${url}`);
 }
 
+export function expectedPortlessName(
+  service: ExpectedServiceName,
+  worktreePrefix?: string,
+): string {
+  const name = SERVICE_PORTLESS_NAMES[service];
+  return worktreePrefix ? `${worktreePrefix}.${name}` : name;
+}
+
 export function expectedServiceHost(service: ExpectedServiceName, worktreePrefix?: string): string {
-  const suffix = SERVICE_HOST_SUFFIXES[service];
-  return worktreePrefix ? `${worktreePrefix}.${suffix}` : suffix;
+  return `${expectedPortlessName(service, worktreePrefix)}.localhost`;
 }
 
 function readPortlessRoutes(output: string): PortlessRoute[] {
@@ -210,7 +210,7 @@ export function formatDevRouteLines(
 
     const route = findRouteForService(
       routes,
-      { name, host: SERVICE_HOST_SUFFIXES[name] },
+      { name, host: expectedServiceHost(name) },
       worktreePrefix,
     );
     if (!route) {
@@ -253,7 +253,6 @@ export function validateExpectedRoutes({
   ownsPid?: (pid: number) => boolean;
 }): RouteValidation {
   const errors: string[] = [];
-  const servicePids: Record<string, number> = {};
   const routes = readPortlessRoutes(output);
 
   for (const service of expectedServices) {
@@ -279,15 +278,11 @@ export function validateExpectedRoutes({
     const expectedPort = expectedPorts[service.name];
     if (expectedPort !== undefined && route.port !== expectedPort) {
       errors.push(`wrong backend for ${route.host}: port ${route.port}, expected ${expectedPort}`);
-      continue;
     }
-
-    servicePids[service.name] = route.pid;
   }
 
   return {
     ok: errors.length === 0,
     errors,
-    servicePids,
   };
 }
