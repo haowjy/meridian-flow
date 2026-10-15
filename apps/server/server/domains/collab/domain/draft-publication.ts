@@ -18,7 +18,6 @@ import type {
   DraftDecidedOutcome,
 } from "@meridian/contracts/drafts";
 import type { BranchPushService } from "./branch-push-contracts.js";
-import { PublicationLeasesChangedError } from "./branch-push-transition.js";
 import { collabHook } from "./collab-test-hooks.js";
 import type { ContentApplyRequest } from "./draft-apply.js";
 import type { DraftCommandEnvelope, DraftCommands } from "./draft-commands.js";
@@ -65,17 +64,6 @@ export class DuplicateApplyItemError extends Error {
   constructor(readonly itemKeys: readonly DraftItemKey[]) {
     super(`Each item can be applied once per request: ${itemKeys.join(", ")}`);
     this.name = "DuplicateApplyItemError";
-  }
-}
-
-/** The staged Apply belongs to recovery; the transport must acknowledge acceptance (F27). */
-export class DraftApplyPendingError extends Error {
-  constructor(
-    readonly draftId: DraftId,
-    cause: PublicationLeasesChangedError,
-  ) {
-    super("The draft is finishing in the background.", { cause });
-    this.name = "DraftApplyPendingError";
   }
 }
 
@@ -224,23 +212,16 @@ export function createDraftPublication(deps: {
           };
         };
         await collabHook("applyItems.beforeStaging");
-        const pushed = await deps.push
-          .pushBranchesToLive({
-            members: plan.members,
-            payloads: { [DRAFT_TREE_STEP]: encodeDraftTreePayload(payload([])) },
-            finalizePayloads: (decided) => ({
-              [DRAFT_TREE_STEP]: encodeDraftTreePayload(payload(decided)),
-            }),
-            command: command.envelope,
-            pushedByUserId: input.userId,
-            ...(input.signal ? { signal: input.signal } : {}),
-          })
-          .catch((cause: unknown) => {
-            if (cause instanceof PublicationLeasesChangedError) {
-              throw new DraftApplyPendingError(draftId, cause);
-            }
-            throw cause;
-          });
+        const pushed = await deps.push.pushBranchesToLive({
+          members: plan.members,
+          payloads: { [DRAFT_TREE_STEP]: encodeDraftTreePayload(payload([])) },
+          finalizePayloads: (decided) => ({
+            [DRAFT_TREE_STEP]: encodeDraftTreePayload(payload(decided)),
+          }),
+          command: command.envelope,
+          pushedByUserId: input.userId,
+          ...(input.signal ? { signal: input.signal } : {}),
+        });
         if (pushed.commandExists) return { status: "command_exists" };
         if (pushed.refused) {
           const refusal = readDraftTreeRefusal(pushed.refused);

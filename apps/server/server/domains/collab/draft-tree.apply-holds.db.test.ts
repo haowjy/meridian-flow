@@ -224,7 +224,7 @@ describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
     const beacon = await s.work("Beacon", "draft");
     const second = await s.thread(beacon);
     const live = s.view("live");
-    /** At staging, a second chat of the Work adds a document to the draft (F22). */
+    /** At staging, a second chat of the Work adds a document to the draft: not in the payload, so not in this Apply. */
     const growAtStaging = (path: string) => {
       const remove = setCollabHook("applyItems.afterStaging", async () => {
         remove();

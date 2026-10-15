@@ -74,7 +74,7 @@ const DIAGNOSTIC_CODE_ENUMS: Readonly<Record<string, ReadonlySet<string>>> = {
     "stale_update",
   ]),
   refusal: new Set(["integration"]),
-  stage: new Set(["claim", "execute", "handoff"]),
+  stage: new Set(["claim", "execute"]),
   trigger: new Set(["create", "read"]),
 };
 const SAFE_PAYLOAD_ENUM_VALUES: Readonly<Record<string, ReadonlySet<string>>> = {

@@ -49,7 +49,7 @@ import { type FileGrant, type FileNeed, isFileAccessDenied } from "../domains/fi
 import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
 import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
 import type { AppServices } from "./app.js";
-import { draftPublicationHttpAnswer } from "./draft-publication-http.js";
+import { throwKnownPublicationFailure } from "./draft-publication-http.js";
 import {
   documentTarget,
   isFileAccessRefusal,
@@ -795,9 +795,7 @@ async function callDraftReview<T>(promise: Promise<T>): Promise<T> {
   try {
     return await promise;
   } catch (cause) {
-    // Throws the HTTP error of a known publication failure; the service already answered a
-    // staged Apply as pending, so a value here is nothing to return.
-    draftPublicationHttpAnswer(cause);
+    throwKnownPublicationFailure(cause);
     if (cause instanceof Error && cause.message.startsWith("read_failed:")) {
       throwReadFailure(cause.message.slice("read_failed:".length));
     }

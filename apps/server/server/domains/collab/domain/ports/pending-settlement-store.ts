@@ -57,8 +57,8 @@ export type BatchCompletion = PublicationInputs & {
   members: readonly BatchCompletionMember[];
   /**
    * The branch critical-section leases the caller holds. Completion asks every
-   * step's `prepare` again under its locks; a branch outside this set answers
-   * `rediscover`.
+   * step's `prepare` again under its locks; a branch outside this set is an
+   * invariant failure (the set derives from the immutable staged payloads).
    */
   leasedBranchIds: readonly string[];
   /** The lease over `leasedBranchIds`. */
@@ -96,8 +96,6 @@ export type BatchCompletionResult =
     }
   /** A step refused: the staged batch is abandoned and its members are withdrawn. */
   | { status: "refused"; reason: PublicationRefusal }
-  /** A step needs a branch lease the caller doesn't hold: release and discover again. */
-  | { status: "rediscover"; branchIds: readonly string[] }
   | { status: "retry" };
 
 /** The pre-staging check: members before any push or batch row exists. */
@@ -123,7 +121,7 @@ export type RecoveryScope = {
 };
 
 /** Where a batch's failure was recorded; finite, so the event can carry it. */
-export type SettlementFailureStage = "claim" | "execute" | "handoff";
+export type SettlementFailureStage = "claim" | "execute";
 
 export type PendingSettlementStore = {
   joinAdmission(input: SettlementAdmission): Promise<void>;

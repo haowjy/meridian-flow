@@ -12,7 +12,6 @@ const COLLAB_HOOK_POINTS = [
   "applyItems.beforeStaging",
   "applyItems.afterCatchUp",
   "applyItems.afterStaging",
-  "applyItems.beforeContinue",
   "applyItems.planning",
 ] as const;
 export type CollabHookPoint = (typeof COLLAB_HOOK_POINTS)[number];

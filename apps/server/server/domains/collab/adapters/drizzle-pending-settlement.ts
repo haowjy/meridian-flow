@@ -92,12 +92,6 @@ class CompletionRefusal extends Error {
   }
 }
 
-class CompletionRediscover extends Error {
-  constructor(readonly branchIds: readonly string[]) {
-    super("Publication needs branch leases its caller doesn't hold");
-  }
-}
-
 export class AmbientSettlementTransactionError extends Error {
   constructor(operation: string) {
     super(
@@ -426,12 +420,17 @@ export function createDrizzlePendingSettlementStore(
             .for("update")
             .limit(1);
           if (!owned) throw new CompletionRetry();
-          // The outer leases, asked again under the locks: a set that grew means discovery again.
+          // The outer leases, asked again under the locks. The set derives from the immutable
+          // staged payloads, so a branch outside it is a broken invariant, not a state to recover.
           const leased = new Set(input.leasedBranchIds);
           const unleased = (await requiredBranchLeases(publication, input.payloads)).filter(
             (branchId) => !leased.has(branchId),
           );
-          if (unleased.length > 0) throw new CompletionRediscover(unleased);
+          if (unleased.length > 0) {
+            throw new Error(
+              `Settlement batch ${input.batchId} needs unleased branches: ${unleased.join(", ")}`,
+            );
+          }
           // What settlement replanned replaces the staged bytes first, so every later read in this
           // transaction (the cuts, the reconcile row, the recheck) sees the replanned merge. A
           // mismatch rolls the write back with everything else.
@@ -619,9 +618,6 @@ export function createDrizzlePendingSettlementStore(
         });
       } catch (cause) {
         if (cause instanceof CompletionRetry) return { status: "retry" as const };
-        if (cause instanceof CompletionRediscover) {
-          return { status: "rediscover" as const, branchIds: cause.branchIds };
-        }
         throw cause;
       }
       if (outcome.kind === "refused") return { status: "refused" as const, reason: outcome.reason };

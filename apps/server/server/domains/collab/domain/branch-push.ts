@@ -36,10 +36,7 @@ import {
   type ReplannedMember,
 } from "./branch-push-contracts.js";
 import { preparePushUnderLiveLock } from "./branch-push-preparation.js";
-import {
-  createBranchPushTransition,
-  PublicationLeasesChangedError,
-} from "./branch-push-transition.js";
+import { createBranchPushTransition } from "./branch-push-transition.js";
 import { buildDurablePushTrail } from "./branch-trail-projection.js";
 import { collabHook } from "./collab-test-hooks.js";
 import {
@@ -53,8 +50,6 @@ import type { DurableTrailRecord } from "./ports/change-trail-persistence.js";
 import type { BaseWrite, PublicationRefusal } from "./ports/settlement-publication.js";
 
 const maxCasRetries = 3;
-/** How many times one call leases a grown set before handing its batch to recovery. */
-const MAX_LEASE_REDISCOVERIES = 3;
 
 /** A member's text branch closed (item or Discard all) between the plan and its lease. */
 class MemberBranchClosedError extends Error {}
@@ -322,157 +317,106 @@ export function createBranchPushService(inputDeps: BranchPushServiceInput): Bran
   ): Promise<StageResult> {
     const { planned, decided } = await prepareMembers(pushInput, branches, lease);
     const receiptId = randomUUID();
-    return transition
-      .execute<StageResult>({
-        documentIds: planned.map((member) => member.branch.documentId),
-        ...(pushInput.signal ? { signal: pushInput.signal } : {}),
-        prepare: async ({ lockCuts }) => {
-          const pushes: PreparedPushCommit[] = [];
-          for (const member of planned) {
-            const { branch } = member;
-            const lockCutUpdate = lockCuts.get(branch.documentId) as Uint8Array;
-            let result: ReturnType<typeof planContentApply>;
-            try {
-              await collabHook("applyItems.planning");
-              result = planContentApply({
-                input: member.input,
-                branchState: branch.state,
-                liveState: lockCutUpdate,
-              });
-            } catch {
-              // The catch-up rebase stays committed; nothing of this Apply does.
-              input.mergeFailed?.({ branchId: branch.branchId, documentId: branch.documentId });
-              decided.push({ itemKey: member.itemKey, status: "failed", reason: "merge_failed" });
-              continue;
-            }
-            if (result.status === "not_found") {
-              decided.push({ itemKey: member.itemKey, status: result.status });
-              continue;
-            }
-            // A change live already reads still owes its branch a base write: it stages as an
-            // ordinary member whose live write is empty, and settlement's replan carries the
-            // base through the leased, projection-wrapped CAS (or publishes, if live moved on).
-            const pushUpdate = result.status === "plan" ? result.plan.pushUpdate : emptyUpdate();
-            const idempotencyKey = contentIdempotencyKey(
-              pushInput.command.commandId,
-              branch.branchId,
-            );
-            const documentTitle = await resolveDocumentTitle(branch.documentId);
-            const trail = await contentTrail({
-              branch,
-              lockCutUpdate,
-              pushUpdate,
-              idempotencyKey,
-              receiptId,
-              documentTitle,
-            });
-            pushes.push({
-              branch,
+    return transition.execute<StageResult>({
+      documentIds: planned.map((member) => member.branch.documentId),
+      ...(pushInput.signal ? { signal: pushInput.signal } : {}),
+      prepare: async ({ lockCuts }) => {
+        const pushes: PreparedPushCommit[] = [];
+        for (const member of planned) {
+          const { branch } = member;
+          const lockCutUpdate = lockCuts.get(branch.documentId) as Uint8Array;
+          let result: ReturnType<typeof planContentApply>;
+          try {
+            await collabHook("applyItems.planning");
+            result = planContentApply({
               input: member.input,
-              pushUpdate,
-              idempotencyKey,
-              receiptId,
-              ...(pushInput.pushedByUserId ? { pushedByUserId: pushInput.pushedByUserId } : {}),
-              trail,
-              documentTitle,
-              lockCutUpdate,
+              branchState: branch.state,
+              liveState: lockCutUpdate,
             });
+          } catch {
+            // The catch-up rebase stays committed; nothing of this Apply does.
+            input.mergeFailed?.({ branchId: branch.branchId, documentId: branch.documentId });
+            decided.push({ itemKey: member.itemKey, status: "failed", reason: "merge_failed" });
+            continue;
           }
-          return {
-            kind: "push" as const,
-            pushes,
-            payloads: pushInput.finalizePayloads(decided),
-            leasedBranchIds,
-            lease,
-            command: pushInput.command,
-            afterDurableCommit: input.hooks?.afterDurableCommit,
-            // A lineage that already exists is this command's: the stored row answers.
-            onConflict: () => ({ commandExists: true as const }),
-            onCommandExists: () => ({ commandExists: true as const }),
-            finish: ({ outcome }): StageResult =>
-              outcome.kind === "refused"
-                ? { refused: outcome.reason }
-                : outcome.kind === "command_exists"
-                  ? { commandExists: true }
-                  : {},
-          };
-        },
-      })
-      .catch((cause: unknown) => {
-        if (cause instanceof PublicationLeasesChangedError) {
-          throw new StagedBatchResume(cause);
+          if (result.status === "not_found") {
+            decided.push({ itemKey: member.itemKey, status: result.status });
+            continue;
+          }
+          // A change live already reads still owes its branch a base write: it stages as an
+          // ordinary member whose live write is empty, and settlement's replan carries the
+          // base through the leased, projection-wrapped CAS (or publishes, if live moved on).
+          const pushUpdate = result.status === "plan" ? result.plan.pushUpdate : emptyUpdate();
+          const idempotencyKey = contentIdempotencyKey(
+            pushInput.command.commandId,
+            branch.branchId,
+          );
+          const documentTitle = await resolveDocumentTitle(branch.documentId);
+          const trail = await contentTrail({
+            branch,
+            lockCutUpdate,
+            pushUpdate,
+            idempotencyKey,
+            receiptId,
+            documentTitle,
+          });
+          pushes.push({
+            branch,
+            input: member.input,
+            pushUpdate,
+            idempotencyKey,
+            receiptId,
+            ...(pushInput.pushedByUserId ? { pushedByUserId: pushInput.pushedByUserId } : {}),
+            trail,
+            documentTitle,
+            lockCutUpdate,
+          });
         }
-        throw cause;
-      });
-  }
-
-  /** Settles the batch this call staged and still owns, under the grown lease set (F22). */
-  async function continueStaged(
-    resume: StagedBatchResume,
-    lease: BranchLockLease,
-    leasedBranchIds: readonly string[],
-    signal: AbortSignal | undefined,
-  ): Promise<StageResult> {
-    // The grown set is leased, the batch not yet continued: where a test grows it again.
-    await collabHook("applyItems.beforeContinue");
-    return transition
-      .continueStaged<StageResult>({
-        staged: resume.handoff.staged,
-        leasedBranchIds,
-        lease,
-        ...(signal ? { signal } : {}),
-        finish: ({ outcome }): StageResult =>
-          outcome.kind === "refused" ? { refused: outcome.reason } : {},
-      })
-      .catch((cause: unknown) => {
-        if (cause instanceof PublicationLeasesChangedError) resume.handoff = cause;
-        throw cause instanceof PublicationLeasesChangedError ? resume : cause;
-      });
+        return {
+          kind: "push" as const,
+          pushes,
+          payloads: pushInput.finalizePayloads(decided),
+          leasedBranchIds,
+          lease,
+          command: pushInput.command,
+          afterDurableCommit: input.hooks?.afterDurableCommit,
+          // A lineage that already exists is this command's: the stored row answers.
+          onConflict: () => ({ commandExists: true as const }),
+          onCommandExists: () => ({ commandExists: true as const }),
+          finish: ({ outcome }): StageResult =>
+            outcome.kind === "refused"
+              ? { refused: outcome.reason }
+              : outcome.kind === "command_exists"
+                ? { commandExists: true }
+                : {},
+        };
+      },
+    });
   }
 
   /**
-   * Publishes an Apply as one batch. When completion needs leases this call doesn't hold (a
-   * model write grew the draft it may close), the call keeps the batch it staged, releases its
-   * leases, leases the grown set in global order and continues that batch: the writer gets the
-   * real result, and the late item stays in the draft (F22).
+   * Publishes an Apply as one batch. The lease set is derived once, from the selected members and
+   * the branches the immutable tree payload names; completion asserts it still covers what the
+   * steps ask for. A finalized payload only drops items, so it never needs more.
    */
   const pushBranchesToLive: BranchPushService["pushBranchesToLive"] = async (pushInput) => {
-    // The outer preparation: branches the publication steps declare from their payloads.
-    let extraBranchIds = await input.settlementStore.prepareBranchLeases(
+    const branchIds = pushInput.members.map((member) => member.branchId);
+    const payloadBranchIds = await input.settlementStore.prepareBranchLeases(
       new Map(Object.entries(pushInput.payloads)),
     );
-    const branchIds = pushInput.members.map((member) => member.branchId);
-    let resume: StagedBatchResume | null = null;
-    for (let rediscovered = 0; ; rediscovered += 1) {
-      try {
-        const staged = resume;
-        return await withActiveWorkDraftBranchLock(
-          branchIds,
-          (branches, lease, leasedBranchIds) =>
-            staged
-              ? continueStaged(staged, lease, leasedBranchIds, pushInput.signal)
-              : stageAndSettle(pushInput, branches, lease, leasedBranchIds),
-          extraBranchIds,
-        );
-      } catch (cause) {
-        // A text branch closed under the plan (item Discard): the writer's view was stale.
-        if (cause instanceof MemberBranchClosedError) {
-          return { refused: { code: "stale", detail: { itemKeys: [] } } };
-        }
-        if (!(cause instanceof StagedBatchResume)) throw cause;
-        if (rediscovered >= MAX_LEASE_REDISCOVERIES) {
-          // Hand it to recovery, which discovers its leases on its own.
-          await input.settlementStore.recordFailure({
-            batchId: cause.handoff.staged.batchId,
-            claim: cause.handoff.staged.claim,
-            stage: "handoff",
-            error: "publication branch leases kept changing",
-          });
-          throw cause.handoff;
-        }
-        resume = cause;
-        extraBranchIds = [...new Set([...extraBranchIds, ...cause.handoff.branchIds])].sort();
+    try {
+      return await withActiveWorkDraftBranchLock(
+        branchIds,
+        (branches, lease, leasedBranchIds) =>
+          stageAndSettle(pushInput, branches, lease, leasedBranchIds),
+        payloadBranchIds,
+      );
+    } catch (cause) {
+      // A text branch closed under the plan (item Discard): the writer's view was stale.
+      if (cause instanceof MemberBranchClosedError) {
+        return { refused: { code: "stale", detail: { itemKeys: [] } } };
       }
+      throw cause;
     }
   };
 
@@ -481,17 +425,6 @@ export function createBranchPushService(inputDeps: BranchPushServiceInput): Bran
     recoverPendingLiveSettlements: transition.recover,
     settleUnfinished: transition.settleUnfinished,
   };
-}
-
-/**
- * A staged batch the call still owns, carried out of its leases so it can lease the grown
- * set and continue: the transition's handoff.
- */
-class StagedBatchResume extends Error {
-  constructor(public handoff: PublicationLeasesChangedError) {
-    super(handoff.message);
-    this.name = "StagedBatchResume";
-  }
 }
 
 function assertActiveWorkDraftBranch(

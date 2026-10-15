@@ -23,11 +23,7 @@ import {
   type DraftCommands,
 } from "./draft-commands.js";
 import type { DraftDiscard } from "./draft-discard.js";
-import {
-  type ApplyItemRef,
-  DraftApplyPendingError,
-  type DraftPublication,
-} from "./draft-publication.js";
+import type { ApplyItemRef, DraftPublication } from "./draft-publication.js";
 import type { DraftReviewIdentity } from "./draft-review-identity.js";
 import type { DraftReviewItem, DraftReviewItems } from "./draft-review-items.js";
 import type { Drafts } from "./drafts.js";
@@ -107,7 +103,7 @@ export function createWorkDraftReviewService(input: {
         ? await refuse(envelope, result)
         : await answer(envelope, result);
     } catch (cause) {
-      if (cause instanceof DraftApplyPendingError || cause instanceof DraftCommandExistsError) {
+      if (cause instanceof DraftCommandExistsError) {
         return (await known(envelope)) ?? { kind: "pending" };
       }
       throw cause;
@@ -155,7 +151,7 @@ export function createWorkDraftReviewService(input: {
       // whose row is still pending (a staged batch) is the handoff: the client observes it.
       return (await known(envelope)) ?? { kind: "pending" };
     } catch (cause) {
-      if (cause instanceof DraftApplyPendingError || cause instanceof DraftCommandExistsError) {
+      if (cause instanceof DraftCommandExistsError) {
         return (await known(envelope)) ?? { kind: "pending" };
       }
       throw cause;
