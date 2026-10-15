@@ -112,8 +112,6 @@ export function TurnList({
   const { rows } = view;
   const visibleTurns = useMemo(() => rows.map((row) => row.turn), [rows]);
   const lastAssistantIdx = findLastLocalAssistantIndex(rows);
-  let lastReplyRowIdx = rows.length - 1;
-  while (lastReplyRowIdx > 0 && rows[lastReplyRowIdx]?.kind === "write-mode") lastReplyRowIdx -= 1;
   // A command runs only when no message waits, so queued commands sit at the
   // tail, after every queued message: they take no position until they run. A switch the
   // record says applies at the next run's start is the exception: its turn lands before that
@@ -287,12 +285,10 @@ export function TurnList({
       }
       const items = view.items.get(turn.id);
       if (!items || !row.response) return null;
-      // A divider is a row: once one follows a failed reply, that failure is
-      // history. The queued-controls tail is not a row and never counts. An
+      // Once a closing turn follows a failed reply, that failure is history,
+      // whether or not the turn draws a row (an agent's message does not). An
       // inherited reply is the source's history, even with nothing below it.
-      // A write-mode line after the reply does not close it: the server's Retry
-      // looks past switches.
-      const endsTranscript = local && idx === lastReplyRowIdx;
+      const endsTranscript = local && !row.movedPast;
 
       const standIn = local ? (replyRetry?.requestOf(turn.id) ?? null) : null;
       const retry =
@@ -343,7 +339,6 @@ export function TurnList({
       controls,
       chatStop,
       lastAssistantIdx,
-      lastReplyRowIdx,
       navigateToChange,
       onRespondToInterrupt,
       submissionRecoveryByTurnId,

@@ -256,4 +256,52 @@ describe("loadForgettingFacts", () => {
     expect(loaded.latest?.id).toBe("f");
     expect(decideForgetting(loaded, writerNext).forget).toEqual(["f", "u"]);
   });
+
+  // Risk: the delivery walk stopping at a different turn than the view groups reports under, so the loader
+  // forgets a reply whose report the writer sees (or keeps one they cannot). Graph rows carry no blocks;
+  // the loader loads them for the turns it walks, because a thread reference or an empty shell decides a row.
+  const agentMessage = turn("m", "user", { origin: "system", metadata: { kind: "inbox_message" } });
+  const report = turn("r", "system", { metadata: { kind: "subagent_update" } });
+  const handoffSeed = turn("s", "system", {
+    metadata: {
+      kind: "derivation_seed",
+      derivation: "handoff",
+      sourceThreadId: "x",
+      cutoffTurnId: "y",
+    },
+  });
+  const childSeed = turn("c", "user", { origin: "system", metadata: { kind: "inbox_message" } });
+  const reference = block("c", "custom", {
+    content: { kind: "thread-reference", props: { threadId: "x" } },
+  });
+  const walks: Array<[string, Turn[], string[], boolean]> = [
+    [
+      "an agent message draws no row, so the report is still under the reply",
+      [agentMessage, report],
+      ["r"],
+      true,
+    ],
+    ["a handoff seed is a row, so the walk stops at it", [handoffSeed, report], [], true],
+    [
+      "a child seed with thread references is a row, so the walk stops at it",
+      [childSeed, report],
+      [],
+      true,
+    ],
+    ["a child seed without references is not a row", [childSeed, report], ["r"], false],
+  ];
+  it.each(
+    walks,
+  )("walks deliveries to the view's next row: %s", async (_name, after, expected, refs) => {
+    const graph = chain([turn("u", "user"), failed("f"), ...after]);
+    const loaded = await loadForgettingFacts(
+      {
+        turns: graph as never,
+        blocks: { listByTurn: async (id) => (refs && id === "c" ? [reference] : []) },
+      },
+      "t" as never,
+      "f" as never,
+    );
+    expect(loaded.members[0]?.delivered.map((held) => held.id)).toEqual(expected);
+  });
 });

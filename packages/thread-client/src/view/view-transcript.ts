@@ -83,6 +83,8 @@ export type ViewRow = TranscriptRow & {
    * drawn: contiguous completions are one group (one merged row), anything else stands alone.
    */
   deliveries: readonly (readonly DeliveryEvent[])[];
+  /** A closing turn follows this one (drawn or not): the chat moved on, so a failure here has ended and has no Retry. */
+  movedPast: boolean;
   /** The reply continues in a later row, so this one has no settled action row. */
   continuing: boolean;
   /**
@@ -157,15 +159,13 @@ export function viewTranscript(input: TranscriptViewInput): TranscriptView {
     input.inherited ?? null,
     input.onContractFailure,
   );
-  // A failure shows only while the writer can act on it: the latest reply (a write-mode line
-  // after it does not close it). A failed reply the chat moved past has no failure line, and
-  // with nothing to read it has no row, unless a refused Retry shows its card there.
-  let latest = model.rows.length - 1;
-  while (latest > 0 && model.rows[latest]?.kind === "write-mode") latest -= 1;
-  const leavesNoTrace = (row: TranscriptRow, index: number) =>
+  // A failure shows only while the writer can act on it: until the chat moves past the reply (a closing
+  // turn follows it, drawn or not; a write-mode line does not close it). A failed reply the chat moved past
+  // has no failure line, and with nothing to read it has no row, unless a refused Retry shows its card there.
+  const leavesNoTrace = (row: TranscriptRow) =>
     (row.kind === "compaction" || (row.kind === "turn" && row.turn.role === "assistant")) &&
     row.turn.status === "error" &&
-    index !== latest &&
+    model.movedPast(row.turn) &&
     !input.refused?.has(row.turn.id) &&
     replyDrawsNothing(
       row.turn,
@@ -176,7 +176,7 @@ export function viewTranscript(input: TranscriptViewInput): TranscriptView {
   const items = new Map<string, AssistantView>();
   const rows = model.rows.flatMap((row, index): ViewRow[] => {
     const { turn } = row;
-    if (leavesNoTrace(row, index)) return [];
+    if (leavesNoTrace(row)) return [];
     const slot = `${turn.id}\0${row.kind}`;
     const occurrence = occurrences.get(slot) ?? 0;
     occurrences.set(slot, occurrence + 1);
@@ -197,6 +197,7 @@ export function viewTranscript(input: TranscriptViewInput): TranscriptView {
         renderKey: turn.id,
         deliveries: groupsOf(model.deliveryEventsByAssistantTurnId.get(turn.id)),
         continuing: model.continuing[index] ?? false,
+        movedPast: model.movedPast(turn),
         response: row.kind === "turn" && turn.role !== "user" ? responseOf(parts ?? [turn]) : null,
         queued: row.kind === "turn" && !row.inherited && (input.queued?.has(turn.id) ?? false),
       },
