@@ -150,8 +150,9 @@ retires once the record at or past its answer shows another execution or none.
 message, from a single snapshot's record and turns: waiting, handed back (a user turn
 absent from the snapshot; a snapshot that hides turns another way must expose
 `handedBackIds`), answering or answered by the chain's last reply (the deliverer's
-execution, then Retries by `metadata.retryOf`), or unproven. It is server-only (the app
-follows no run since #849; `./mf thread send` is its caller) and stream frames are never inputs.
+execution, then Retries by `metadata.retryOf`), or unproven. It is a pure selector over one
+snapshot that any client can use; its only caller today is `./mf thread send` (the app does not
+call it yet), and stream frames are never inputs.
 
 The record arrives whole on every carrier (snapshot, `subscribed`,
 `meridian.run_state`, every command answer), so no host composes one from parts.
