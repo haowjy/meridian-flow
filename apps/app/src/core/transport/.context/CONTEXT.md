@@ -1,5 +1,9 @@
 # Client transport seams
 
+This page records the transport contracts consumed by document sessions and
+debug observers. Transport owns wire evidence and lifecycle, not editor policy
+or debug-event interpretation.
+
 ## Document status
 
 Every `DocumentSessionTransportProvider.subscribeStatus` implementation emits
@@ -43,15 +47,9 @@ it must be visible to every observer before anything can act on its absence.
   yields one pending snapshot and one clearing snapshot. A per-update emission
   re-rendered every subscribed editor on each keystroke.
 
-The order used to be reversed: the provider sent and the tracker published
-`false` before the outbox listener stored anything, and the outbox write
-published nothing. In a live two-tab whole Discard, the empty successor read
-then arrived while the writer's words were held, saw no pending writing, and
-ended the review. The test fake stored bytes before publishing, so two fixes
-passed their witness and failed live. A witness for this ordering must run the
-real transport over `test-support/DocumentSocketHarness`, as
-`hocuspocus-document-transport.acknowledgement.test.ts` and the remote whole
-Discard case in `features/editor/EditorView.writer-handoff.test.tsx` do.
+The ordering is a live transport contract, not a test-double detail. A witness
+for it must exercise `test-support/DocumentSocketHarness`, as the transport
+acknowledgement and remote whole-discard probes do.
 
 ## Access scope and 4409
 
