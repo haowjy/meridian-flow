@@ -86,7 +86,7 @@ the existing server wake retry it.
 ./mf thread tail <id> --until-idle                 # follow a run started elsewhere
 ./mf thread stop <id>                              # the chat's Stop (hands waiting messages back)
 ./mf thread queue hand-back <id> --all             # take every queued message back (never cancels the reply)
-./mf thread queue send-now <id>                    # cancel the reply the snapshot shows so the queue runs next
+./mf thread queue send-now <id>                    # ask the server to cancel the reply the snapshot shows (the queue can then run)
 ./mf thread events <id> --child p2                 # one direct child's status, phase, tool, and target per activity frame
 ./mf thread view <id> --blocks                     # persisted blocks with created time, gaps, tool name, size
 ./mf doc read manuscript://mf-scene.md

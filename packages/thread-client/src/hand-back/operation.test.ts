@@ -186,7 +186,12 @@ describe("hand-back operation", () => {
   it("keeps a card for each unresolved command after the hand-back removed its rows", () => {
     // Risk (Q1): the card vanishing with the rows a messages.handed_back frame removed.
     const rowsGone = receiveRecord(INITIAL_RUN_STATE_VIEW, record("2000"));
-    const base = { requestId: REQ, commandKind: "queue" as const, count: 2 };
+    const base = {
+      requestId: REQ,
+      commandKind: "queue" as const,
+      count: 2,
+      targetExecutionId: null,
+    };
     expect(handBackCards([{ ...base, status: "ambiguous" }], rowsGone)).toMatchObject([
       { copy: "hand-back-failed", action: "retry", count: 2 },
     ]);
@@ -196,5 +201,65 @@ describe("hand-back operation", () => {
     expect(handBackCards([{ ...base, status: "refused" }], rowsGone)).toMatchObject([
       { copy: "hand-back-refused", action: "dismiss" },
     ]);
+  });
+
+  it("one attempt per request: a retry in flight is joined, and a late failure never undoes a delivery", async () => {
+    // Risk (QB2): two Try again presses posting twice, the second's lost answer resurrecting a
+    // card after the first confirmed.
+    const r = rig();
+    r.answer(async () => ({ status: null }));
+    await r.op.press({ kind: "queue", ids: [M1] });
+    const answers: ((value: unknown) => void)[] = [];
+    r.answer(() => new Promise((resolve) => answers.push(resolve)));
+    const a = r.op.retry(REQ);
+    const b = r.op.retry(REQ);
+    const resumed = r.op.resume();
+    expect(r.sent).toHaveLength(2); // the lost press, then one joined retry
+    answers[0]?.(answerBody([M1]));
+    expect((await a)?.kind).toBe("confirmed");
+    expect((await b)?.kind).toBe("confirmed");
+    await resumed;
+    expect(r.written).toEqual([M1]);
+    expect(r.op.unresolved()).toEqual([]);
+    expect(r.view().intents.some((i) => i.kind === "handBack" && i.failed)).toBe(false);
+  });
+
+  it("Stop facts read the same whichever route started the Stop, and a failed Stop's card follows its own reply", async () => {
+    // Risk (QB2, QB4): Stop recovered through retry or resume showing idle; a failed Stop's card
+    // blaming a later reply.
+    const ex = { executionId: "e1", currentTurnId: "t" };
+    const running = receiveRecord(INITIAL_RUN_STATE_VIEW, {
+      ...record("1000", [item(M1, 1)]),
+      execution: ex,
+    });
+    const r = rig();
+    r.answer(async () => ({ status: null }));
+    await r.op.press({ kind: "stop", view: running });
+    expect(r.op.stopFacts()).toEqual({ request: "failed", cancelledExecutionId: null });
+    const [card] = handBackCards(r.op.unresolved(), running);
+    expect(card?.copy).toBe("stop-failed");
+    const later = receiveRecord(running, {
+      ...record("2000"),
+      execution: { executionId: "e2", currentTurnId: "t2" },
+    });
+    expect(handBackCards(r.op.unresolved(), later)[0]?.copy).toBe("hand-back-failed");
+
+    let answer: (value: unknown) => void = () => {};
+    r.answer(() => new Promise((resolve) => (answer = resolve)));
+    const retried = r.op.retry(REQ);
+    expect(r.op.stopFacts().request).toBe("pending");
+    answer({
+      status: 200,
+      body: {
+        threadId: "t1",
+        cancelledExecutionId: "e1",
+        handedBack: handedBack([M1]),
+        answered: [],
+        gone: [],
+        runState: { ...record("1001"), execution: ex },
+      },
+    });
+    await retried;
+    expect(r.op.stopFacts()).toEqual({ request: "idle", cancelledExecutionId: "e1" });
   });
 });

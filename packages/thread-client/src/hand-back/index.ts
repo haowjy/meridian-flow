@@ -16,6 +16,7 @@ export {
   type HandBackPressInput,
   type HandBackStore,
   type RunStatePort,
+  type StopFacts,
   type UnresolvedHandBack,
   type UnresolvedStatus,
   viewRunStatePort,

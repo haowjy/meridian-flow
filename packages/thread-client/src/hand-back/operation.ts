@@ -6,6 +6,11 @@
  * (nothing changes until the whole record validated), then on a confirmed answer receive the record,
  * remove turns at its version, write the content once (`store.accept`), and answer the intent. A lost
  * race (`answered`, nothing handed back) writes nothing. It is not a general mutation framework.
+ *
+ * One request has one attempt at a time, whoever starts it (a press, the card's Try again, a
+ * reload's resume): a running attempt is joined, never duplicated, and a failure never undoes a
+ * delivery that confirmed. The operation also owns the facts a Stop control needs (`stopFacts`),
+ * so they read the same on every route into it.
  */
 import {
   apiThreadHandBackPath,
@@ -103,6 +108,18 @@ export type UnresolvedHandBack = {
   status: UnresolvedStatus;
   /** How many messages the press covered. */
   count: number;
+  /** Stop only: the execution the writer saw when pressing (the command's target); else null. */
+  targetExecutionId: string | null;
+};
+
+/**
+ * What this tab's Stop control reads from the operation: whether a Stop attempt is in flight (or a
+ * Stop still owes a card) and the execution its last confirmed answer cancelled. `stopStatus`
+ * folds these with the held record.
+ */
+export type StopFacts = {
+  request: "idle" | "pending" | "failed";
+  cancelledExecutionId: string | null;
 };
 
 export type HandBackOperation = {
@@ -119,6 +136,9 @@ export type HandBackOperation = {
    */
   reconcile(): void;
   unresolved(): readonly UnresolvedHandBack[];
+  stopFacts(): StopFacts;
+  /** Called after any change to `unresolved()` or `stopFacts()`; returns the unsubscribe. */
+  subscribe(listener: () => void): () => void;
 };
 
 type Held = { command: HandBackCommand; candidates: readonly string[] };
@@ -173,11 +193,38 @@ export function createHandBackOperation(options: {
   /** Every command that owes a card. Commands in the store are also here; page-memory ones only here. */
   const entries = new Map<string, Entry>();
 
-  const fail = (held: Held, status: UnresolvedStatus): Entry => {
-    const entry = { ...held, status };
-    entries.set(held.command.requestId, entry);
-    return entry;
+  /** The attempt now running for each request: the one authoritative per-request state. */
+  const running = new Map<
+    string,
+    { kind: HandBackCommand["kind"]; done: Promise<HandBackOutcome> }
+  >();
+  /** Requests whose answer confirmed: a straggling failure must not resurrect their card. */
+  const confirmed = new Set<string>();
+  let cancelledByStop: string | null = null;
+  const listeners = new Set<() => void>();
+  const changed = () => {
+    for (const listener of [...listeners]) listener();
   };
+
+  const fail = (held: Held, status: UnresolvedStatus): void => {
+    if (confirmed.has(held.command.requestId)) return;
+    entries.set(held.command.requestId, { ...held, status });
+  };
+
+  /** Run `held`'s attempt, or join the one already running for its request. */
+  function attempt(held: Held): Promise<HandBackOutcome> {
+    const requestId = held.command.requestId;
+    const joined = running.get(requestId);
+    if (joined) return joined.done;
+    if (held.command.kind === "stop") cancelledByStop = null;
+    const done = post(held).finally(() => {
+      running.delete(requestId);
+      changed();
+    });
+    running.set(requestId, { kind: held.command.kind, done });
+    changed();
+    return done;
+  }
 
   async function post(held: Held): Promise<HandBackOutcome> {
     const { command, candidates } = held;
@@ -217,11 +264,32 @@ export function createHandBackOperation(options: {
     }
     runState.answerIntent(requestId, record.version);
     entries.delete(requestId);
+    confirmed.add(requestId);
+    if (command.kind === "stop") cancelledByStop = cancelledExecutionId;
     return { kind: "confirmed", command, result, cancelledExecutionId };
+  }
+
+  /** Replay a held entry: join its running attempt, or re-record an unsaved command and post. */
+  async function replay(entry: Entry): Promise<HandBackOutcome> {
+    const requestId = entry.command.requestId;
+    const joined = running.get(requestId);
+    if (joined) return joined.done;
+    if (entry.status === "unsaved" && !store.record(entry.command))
+      return { kind: "unsaved", command: entry.command };
+    return attempt(entry);
   }
 
   return {
     async press(input) {
+      if (input.kind === "stop") {
+        // A Stop already in flight is the press; an unresolved one is replayed, never doubled.
+        const flying = [...running.values()].find((a) => a.kind === "stop");
+        if (flying) return flying.done;
+        const owed = [...entries.values()].find(
+          (e) => e.command.kind === "stop" && e.status !== "refused",
+        );
+        if (owed) return replay(owed);
+      }
       const requestId = mint();
       let held: Held;
       if (input.kind === "stop") {
@@ -250,9 +318,10 @@ export function createHandBackOperation(options: {
           entries.delete(id);
       if (!store.record(command)) {
         fail(held, "unsaved");
+        changed();
         return { kind: "unsaved", command };
       }
-      return post(held);
+      return attempt(held);
     },
 
     async resume() {
@@ -263,18 +332,15 @@ export function createHandBackOperation(options: {
           entries.delete(command.requestId);
           continue;
         }
-        outcomes.push(await post({ command, candidates: idsOf(command) }));
+        outcomes.push(await attempt({ command, candidates: idsOf(command) }));
       }
       return outcomes;
     },
 
     async retry(requestId) {
       const entry = entries.get(requestId);
-      if (!entry || entry.status === "refused") return null;
-      if (entry.status === "unsaved") {
-        if (!store.record(entry.command)) return { kind: "unsaved", command: entry.command };
-      }
-      return post(entry);
+      if (!entry || entry.status === "refused") return running.get(requestId)?.done ?? null;
+      return replay(entry);
     },
 
     dismiss(requestId) {
@@ -299,7 +365,22 @@ export function createHandBackOperation(options: {
         commandKind: e.command.kind,
         status: e.status,
         count: Math.max(1, e.candidates.length),
+        targetExecutionId: e.command.kind === "stop" ? e.command.body.seenExecutionId : null,
       }));
+    },
+
+    stopFacts() {
+      const pending = [...running.values()].some((a) => a.kind === "stop");
+      const owed = [...entries.values()].some((e) => e.command.kind === "stop");
+      return {
+        request: pending ? "pending" : owed ? "failed" : "idle",
+        cancelledExecutionId: cancelledByStop,
+      };
+    },
+
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
     },
   };
 }

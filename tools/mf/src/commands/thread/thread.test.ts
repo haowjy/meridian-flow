@@ -327,6 +327,24 @@ describe("thread send", () => {
     expect(empty.stdout).toContain("nothing waits");
     expect(wire.requestsOf("handBack")).toHaveLength(before);
 
+    // Missing or malformed run-state evidence is no proof: a failure, never "nothing waits" (QB1).
+    for (const runState of [undefined, { version: "7" }]) {
+      wire.snapshot = () => ({
+        ...snapshotOf(),
+        liveState: { ...snapshotOf().liveState, runState } as never,
+      });
+      for (const argv of [
+        ["queue", "hand-back", THREAD_ID, "--all"],
+        ["queue", "send-now", THREAD_ID],
+        ["stop", THREAD_ID],
+      ]) {
+        const unread = await wire.mf(["thread", ...argv]);
+        expect(unread.code).toBe(EXIT.failed);
+        expect(unread.stdout).not.toMatch(/nothing/);
+      }
+    }
+    expect(wire.requestsOf("handBack")).toHaveLength(before);
+
     // A definite refusal exits 1.
     wire.fail("handBack", { status: 409, body: { message: "other body" } });
     const refused = await wire.mf(["thread", "queue", "hand-back", THREAD_ID, "--id", a]);
@@ -352,6 +370,7 @@ describe("thread send", () => {
     const sent = await wire.mf(["thread", "queue", "send-now", THREAD_ID]);
     expect(sent.code).toBe(EXIT.ok);
     expect(sent.stdout).toContain("requested cancellation of exec-run");
+    expect(sent.stdout).not.toContain("runs next");
     expect(wire.bodiesOf("sendNow")).toEqual([body]);
     // The body and the exact replay command are printed before posting.
     expect(sent.stderr).toContain(
