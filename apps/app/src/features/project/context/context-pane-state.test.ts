@@ -22,7 +22,7 @@ const state = (
     ...over,
   });
 
-it("a masked destination shows its own pending tab, and only a terminal verdict says missing or failed", () => {
+it("a masked destination shows its own pending tab, and a terminal verdict is the boundary's", () => {
   const withRetained = (mask: Parameters<typeof state>[0]) =>
     state(mask, { activeTab: retained, tabs: [retained] });
   expect(withRetained({})).toEqual({ kind: "document", tab: retained });
@@ -33,11 +33,9 @@ it("a masked destination shows its own pending tab, and only a terminal verdict 
   });
   expect(state({ issue: "loading" }).kind).toBe("optimistic-loading");
   expect(state({}).kind).toBe("optimistic-loading");
-  expect(state({ issue: "unavailable" })).toMatchObject({
-    kind: "dead-route",
-    destination: { name: "new", scheme: "manuscript" },
-  });
-  expect(state({ issue: "error" }).kind).toBe("route-error");
+  // A terminal verdict is the boundary's to present; the pane stays a neutral wait.
+  expect(state({ issue: "unavailable" }).kind).toBe("optimistic-loading");
+  expect(state({ issue: "error" }).kind).toBe("optimistic-loading");
 });
 
 it("a settled tab for the destination is the strip's one entry while the body loads", () => {

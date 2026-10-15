@@ -175,9 +175,9 @@ caller guesses a review selector from a path or a Work's draft list.
 - **Whether the destination is admitted** is the route's alone
   (`ReadableProjectRoute`: address binding, local and remote resolution, draft
   gating, tab admission), reported as the Editor mask's `issue`.
-- **The pane presents that verdict** (`context/context-pane-state.ts`). `loading`
+- **The pane waits; the boundary presents** (`context/context-pane-state.ts`). `loading`
   and an admitted address still waiting for its tab render the destination's
-  pending tab and a neutral body; only `unavailable` or `error` render missing or
-  failed content. The pane never reads the live catalog to decide existence,
+  pending tab and a neutral body. A terminal verdict (`unavailable` or `error`) is
+  `ProjectRouteBoundary`'s alone, so one verdict never has two presentations. The pane never reads the live catalog to decide existence,
   because a draft-only document is never in it. Retained documents and the removal
   fence are separate inputs. The route installs tabs; the pane has no auto-open.
