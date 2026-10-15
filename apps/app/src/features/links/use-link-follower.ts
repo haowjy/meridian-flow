@@ -105,6 +105,7 @@ export function useLinkFollower({
   const projectId = ready?.projectId ?? null;
   const workId = ready?.workId ?? null;
   const rootThreadId = ready?.rootThreadId ?? null;
+  const chatId = ready?.chatId ?? null;
   const baseUri = ready?.baseUri ?? null;
   const holderDocumentId = ready?.holderDocumentId ?? null;
 
@@ -140,7 +141,7 @@ export function useLinkFollower({
     };
     const unregister = resolution.registerResolver(
       createProjectLinkResolver(
-        { projectId, workId, rootThreadId, baseUri, holderDocumentId },
+        { projectId, workId, rootThreadId, chatId, baseUri, holderDocumentId },
         registered,
         settlements,
       ),
@@ -163,6 +164,7 @@ export function useLinkFollower({
     resolution,
     revision,
     rootThreadId,
+    chatId,
     settlements,
     workId,
   ]);
@@ -210,7 +212,7 @@ export function useLinkFollower({
   // the follow waited for.
   const answeredScope = useRef<string | null>(null);
   const scopeKey = ready
-    ? `${ready.projectId}\u0000${ready.workId}\u0000${ready.rootThreadId ?? ""}`
+    ? `${ready.projectId}\u0000${ready.workId}\u0000${ready.rootThreadId ?? ""}\u0000${ready.chatId ?? ""}`
     : pending
       ? null
       : "";

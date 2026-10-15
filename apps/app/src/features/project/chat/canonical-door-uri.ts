@@ -1,7 +1,7 @@
 /**
  * The address a chat door's document is filed under in its catalog: the resolved
  * owner's handle spelled out (`scratch://@/c2/x`, `scratch://@arc-one/x`,
- * `uploads://@/x`), whatever shorthand the door was written with. A bare
+ * `uploads://@/c15/x`), whatever shorthand the door was written with. A bare
  * `scratch://x` in a chat means that chat's lineage or its Work, and the catalog
  * only knows the explicit spelling. Null when the owner's handle is not known yet.
  */
@@ -15,9 +15,11 @@ export function canonicalDoorUri(
     path: string;
     workId: string | null;
     rootThreadId?: string;
+    /** The chat that owns an upload. */
+    chatId?: string;
   },
   handles: {
-    /** The first chat's handle, for a chat's Scratch. */
+    /** The owner's handle: the first chat's for its Scratch, the chat's for its uploads. */
     ownerRef?: string | null;
     /** The Work's slug: null for No Work, undefined while unknown. */
     workSlug?: string | null;
@@ -27,10 +29,12 @@ export function canonicalDoorUri(
     return `${target.scheme}://${target.path.replace(/^\/+/, "")}`;
   try {
     const authority = resourceContextAuthority(target.scheme, {
-      workId: target.rootThreadId ? null : target.workId,
+      workId: target.rootThreadId || target.chatId ? null : target.workId,
       workSlug: handles.workSlug,
       rootThreadId: target.rootThreadId,
       rootThreadRef: handles.ownerRef,
+      chatId: target.chatId,
+      chatRef: handles.ownerRef,
     });
     const parsed = parseContextUri(
       `${target.scheme}://${resourceUriQualifier(authority)}${target.path.replace(/^\/+/, "")}`,

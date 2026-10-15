@@ -226,7 +226,6 @@ import {
 import { createDrizzleEventJournalReader } from "../domains/threads/adapters/drizzle/event-reader.js";
 import { createDrizzleEventJournalWriter } from "../domains/threads/adapters/drizzle/event-writer.js";
 import { createDrizzleRepositories } from "../domains/threads/adapters/drizzle/index.js";
-import { createDrizzleTopPrimaryChatResolver } from "../domains/threads/adapters/drizzle/top-primary-chat.js";
 import { createInMemoryRepositories } from "../domains/threads/adapters/in-memory/index.js";
 import { readThreadActivity } from "../domains/threads/domain/thread-activity.js";
 import {

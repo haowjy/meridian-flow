@@ -53,11 +53,11 @@ describe("contextRouteTargetFromUri", () => {
   it("resolves an explicit same-project authority from the supplied Work catalog", () => {
     expect(
       contextRouteTargetFromUri(
-        "uploads://@other-work/reference.pdf",
+        "scratch://@other-work/reference.pdf",
         ACTIVE_WORK,
         [ACTIVE_WORK, { id: "work-2", slug: "other-work" }],
         NO_WORK.id,
       ),
-    ).toEqual({ scheme: "uploads", path: "/reference.pdf", workId: "work-2" });
+    ).toEqual({ scheme: "scratch", path: "/reference.pdf", workId: "work-2" });
   });
 });

@@ -8,22 +8,57 @@ import type {
 } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 /**
- * A tab's owner, exclusive by type: a Work row id (Scratch, Uploads), or a No
- * Work chat's lineage with the handle its URI spells. Project schemes have none.
+ * A tab's owner, exclusive by type: a Work row id (Scratch), a No Work chat's
+ * lineage, or a chat (uploads), each with the handle its URI spells. Project
+ * schemes have none.
  */
 export type TabOwner =
-  | { workId?: string; rootThreadId?: undefined; rootThreadRef?: undefined }
-  | { workId?: undefined; rootThreadId: string; rootThreadRef: string };
+  | {
+      workId?: string;
+      rootThreadId?: undefined;
+      rootThreadRef?: undefined;
+      chatId?: undefined;
+      chatRef?: undefined;
+    }
+  | {
+      workId?: undefined;
+      rootThreadId: string;
+      rootThreadRef: string;
+      chatId?: undefined;
+      chatRef?: undefined;
+    }
+  | {
+      workId?: undefined;
+      rootThreadId?: undefined;
+      rootThreadRef?: undefined;
+      chatId: string;
+      chatRef: string;
+    };
 
 /** A patch's owner, with the absent arm spelled out so a spread replaces the old owner. */
 export function replaceOwner(owner: TabOwner): TabOwner {
+  const absent = { chatId: undefined, chatRef: undefined } as const;
+  if (owner.chatId !== undefined)
+    return {
+      workId: undefined,
+      rootThreadId: undefined,
+      rootThreadRef: undefined,
+      chatId: owner.chatId,
+      chatRef: owner.chatRef,
+    };
   return owner.rootThreadId !== undefined
-    ? { workId: undefined, rootThreadId: owner.rootThreadId, rootThreadRef: owner.rootThreadRef }
-    : { workId: owner.workId, rootThreadId: undefined, rootThreadRef: undefined };
+    ? {
+        workId: undefined,
+        rootThreadId: owner.rootThreadId,
+        rootThreadRef: owner.rootThreadRef,
+        ...absent,
+      }
+    : { workId: owner.workId, rootThreadId: undefined, rootThreadRef: undefined, ...absent };
 }
 
 /** The owner a tab names, for catalog and request lookups. */
 export function tabContextOwner(owner: TabOwner): ContextOwner {
+  if (owner.chatId !== undefined) return { chatThreadId: owner.chatId, chatRef: owner.chatRef };
   return owner.rootThreadId !== undefined
     ? { rootThreadId: owner.rootThreadId, rootThreadRef: owner.rootThreadRef }
     : { workId: owner.workId ?? null };

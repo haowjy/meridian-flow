@@ -2,27 +2,26 @@ import { describe, expect, it } from "vitest";
 import { aggregateCatalogScope } from "./useContextCatalog";
 
 describe("a link index's catalogs", () => {
-  it("reads a lineage's Scratch with the lineage and its Uploads with the Work row", () => {
-    const owners = { workId: "no-work", rootThreadId: "root", uploadsWorkId: "no-work" };
+  it("reads a lineage's Scratch with the lineage and its uploads with the chat", () => {
+    const owners = { workId: "no-work", rootThreadId: "root", chatId: "chat" };
     expect(aggregateCatalogScope("project", "scratch", owners)).toEqual({
       kind: "lineage",
       projectId: "project",
       rootThreadId: "root",
     });
-    // A scheme with no scope stays incomplete forever, which would refuse the whole index.
     expect(aggregateCatalogScope("project", "uploads", owners)).toEqual({
-      kind: "work",
+      kind: "chat",
       projectId: "project",
-      workId: "no-work",
+      chatId: "chat",
     });
   });
 
-  it("reads a Work's Scratch and Uploads from that Work", () => {
-    const owners = { workId: "arc", uploadsWorkId: "arc" };
-    for (const scheme of ["scratch", "uploads"] as const)
-      expect(aggregateCatalogScope("project", scheme, owners)).toMatchObject({
-        kind: "work",
-        workId: "arc",
-      });
+  it("reads a Work's Scratch from that Work, and has no uploads outside a chat", () => {
+    const owners = { workId: "arc" };
+    expect(aggregateCatalogScope("project", "scratch", owners)).toMatchObject({
+      kind: "work",
+      workId: "arc",
+    });
+    expect(aggregateCatalogScope("project", "uploads", owners)).toBeNull();
   });
 });

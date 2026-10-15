@@ -24,7 +24,8 @@ function setOwnerQuery(
   opts?: ProjectContextRequestOptions,
 ): void {
   if (!isWorkScopedProjectContextScheme(scheme)) return;
-  if (scheme === "scratch" && opts?.rootThreadId) query.set("rootThreadId", opts.rootThreadId);
+  if (scheme === "uploads" && opts?.chatThreadId) query.set("chatId", opts.chatThreadId);
+  else if (scheme === "scratch" && opts?.rootThreadId) query.set("rootThreadId", opts.rootThreadId);
   else if (opts?.workId) query.set("workId", opts.workId);
 }
 
