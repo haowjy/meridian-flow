@@ -494,9 +494,9 @@ export function ChatView({
                         {composerStrip}
                       </div>
                     ) : null}
-                    {/* The dock strip sits BEHIND (below) the composer — narrower via
+                    {/* The draft dock sits BEHIND (below) the composer — narrower via
                         mx-2, top corners rounded, jade-tinted background. The composer
-                        always keeps its own border and overlaps the strip's edge. */}
+                        always keeps its own border and overlaps the draft dock's edge. */}
                     <DraftDock dock={dock} />
                   </>
                 }

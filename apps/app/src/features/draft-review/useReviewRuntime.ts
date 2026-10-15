@@ -61,7 +61,7 @@ export type RoomReview = {
 let readerSequence = 0;
 
 /**
- * An unopened draft's room, read while `enabled` (a Work page or strip row is expanded): the room is
+ * An unopened draft's room, read while `enabled` (a Work page or draft dock row is expanded): the room is
  * retained read-only and its runtime held. What the room says is `useReviewState`'s, so a draft some
  * editor has open shares the editor's frames.
  */

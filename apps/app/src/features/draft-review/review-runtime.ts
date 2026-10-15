@@ -9,7 +9,7 @@
  * Readers select from that state; none of them recomputes it.
  *
  * Two sources, one stream. With no editor the runtime reads the room's Yjs text on a 120 ms trailing
- * debounce (the strip and the Work page). With editors attached (`attachEditor`) it projects the first
+ * debounce (the draft dock and the Work page). With editors attached (`attachEditor`) it projects the first
  * attached editor's state, whose unchanged top-level nodes hit the diff core's node caches: a recompute runs 120 ms after
  * the writer's edits, at once for a peer's write or a `review_base` change, and the previous frame stays
  * painted (mapped through the writer's edits by the painter) until the next is ready.
@@ -102,7 +102,7 @@ const EMPTY: ReviewState = { ...NO_VISIBLE, frame: null, changes: NO_CHANGES, re
  */
 const ACKNOWLEDGE_WAIT_MS = 15_000;
 
-/** The one acknowledgment path of every Apply (and of a strip's read of an unopened room). */
+/** The one acknowledgment path of every Apply (and of the draft dock's read of an unopened room). */
 export function whenAcknowledged(room: Pick<ReviewRoom, "subscribe" | "hasUnacknowledgedEdits">) {
   if (!room.hasUnacknowledgedEdits()) return Promise.resolve();
   return new Promise<void>((resolve, reject) => {

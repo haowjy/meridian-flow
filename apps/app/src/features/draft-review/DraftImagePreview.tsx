@@ -2,7 +2,7 @@
  * DraftImagePreview — opens a picture that exists only in a Work's draft.
  *
  * A draft-only image has no review room (there is no text to diff) and no
- * live path to read, so the strip and the Work page open it here, in a plain
+ * live path to read, so the draft dock and the Work page open it here, in a plain
  * preview signed through the Work that holds it.
  */
 import { t } from "@lingui/core/macro";

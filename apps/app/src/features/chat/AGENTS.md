@@ -50,12 +50,13 @@ adapter only.
   but successfully uploaded reference atoms do. `CreationComposer` sends through
   the route-owned pane-aware command and never writes a URL.
 - Inline review: Apply is a server merge; Discard of a change or draft is a local
-  edit of the draft text that the editor's Ctrl+Z restores.
+  edit of the draft text that the editor's Ctrl+Z restores (in the Editor only).
   A draft-only tab is the document's one tab and settles in place.
 - The draft dock is this chat's changes (`useDraftDock`), and a chat with none
   shows no draft dock. Which changes are this chat's is a best-effort attribution
   hint, and nothing gates on it. Apply sends this chat's changes per file; Discard
-  is instant and in place, and the writer's own Ctrl+Z restores it (no card Undo);
+  is instant and in place: the row reads "Discarded" with Undo on that row, and Ctrl+Z
+  does not reach it;
   only new documents are one whole-draft item. Each document
   name opens its own review and there is no summary-wide Review command. Work-wide
   lists and Apply all stay on the Work page. Coarse-pointer targets stay 44px.

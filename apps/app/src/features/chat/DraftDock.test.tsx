@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The chat strip lists the drafts a chat wrote into and projects a file's changes only when it is expanded,
+ * The draft dock lists the drafts a chat wrote into and projects a file's changes only when it is expanded,
  * from that draft's room. Apply sends the group ids with the snapshot of the room they came from; Discard
  * is in place: a prose draft's room is edited and the row reads "Discarded" with Undo, a new document's draft closes.
  */
@@ -197,7 +197,7 @@ it("an expanded file lists its room's changes; Apply sends the id with the snaps
         expect(document.body.textContent).toContain("Applied over a newer edit in live"),
       );
 
-      // The strip's Discard all takes this chat's changes only: another chat's change in the file stays.
+      // The draft dock's Discard all takes this chat's changes only: another chat's change in the file stays.
       const other = new Y.Doc({ gc: false });
       Y.applyUpdate(other, Y.encodeStateAsUpdate(room.document));
       other.clientID = room.document.clientID + 1;

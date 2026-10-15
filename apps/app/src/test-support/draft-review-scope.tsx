@@ -136,7 +136,7 @@ export async function renderReviewScopes(
     onOpenDraft?: (row: ReviewFileTarget) => void;
     /** A surface that reads the scopes, as the project shell offers them (the Work page's list). */
     surface?: ReactNode;
-    /** A surface that lives in the Chat's scope (the composer strip), beside the presented review's. */
+    /** A surface that lives in the Chat's scope (the draft dock), beside the presented review's. */
     chatSurface?: ReactNode;
   } = {},
 ): Promise<void> {

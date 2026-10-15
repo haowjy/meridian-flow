@@ -3,7 +3,7 @@
  * and the wait until the server holds everything in it, so the server can rebuild exactly that view.
  *
  * A frame (the open editor's, or a listed row's room) carries its own snapshot; Apply sends that one.
- * An item nobody has open (a strip row's Apply draft) is read from its room inside the command:
+ * An item nobody has open (a draft dock row's Apply draft) is read from its room inside the command:
  * the room is retained, synced, snapshotted, and released when the command ends.
  */
 import type { QueryClient } from "@tanstack/react-query";

@@ -1,4 +1,4 @@
-/** Composer-attached strip for this chat's pending changes. Summary and commands share one row; changes expand in place. Failures stay on their file. */
+/** Composer-attached draft dock for this chat's pending changes. Summary and commands share one row; changes expand in place. Failures stay on their file. */
 
 import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
@@ -29,7 +29,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
   const [expanded, setExpanded] = useState(false);
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const troubledFileCount = dock.files.filter((file) => dock.fileFailures(file).length > 0).length;
-  // A refusal opens the strip so the writer sees it.
+  // A refusal opens the draft dock so the writer sees it.
   useEffect(() => {
     if (troubledFileCount > 0) setExpanded(true);
   }, [troubledFileCount]);
@@ -193,7 +193,7 @@ function DockFileLine({
     file: file.row,
     discards: dock.discards,
   });
-  // The strip shows this chat's changes: those the attribution hint names it for.
+  // The draft dock shows this chat's changes: those the attribution hint names it for.
   const items = useMemo(
     () =>
       view.wholeDocument
@@ -254,7 +254,7 @@ function DockFileLine({
   );
 }
 
-/** What went wrong on a file, in the strip's error voice: a command or launch that did not land. */
+/** What went wrong on a file, in the draft dock's error voice: a command or launch that did not land. */
 function FileTrouble({
   file,
   failures,
@@ -307,7 +307,7 @@ function TroubleLine({
   );
 }
 
-/** One document's review door, independent of the strip's expansion toggle. */
+/** One document's review door, independent of the draft dock's expansion toggle. */
 function DockFileName({ file, onReview }: { file: DockFile; onReview: () => void }) {
   const touch = useCoarsePointer();
   return (

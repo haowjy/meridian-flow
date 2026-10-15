@@ -17,7 +17,7 @@ review settlement, and Hocuspocus admission. It composes
   pull). A late peer's stale frame is rebased onto the current text: its
   surviving typing is recovered as paragraphs, and its stale deletions are never replayed.
 - Apply is a content merge into live's current text and never closes the draft.
-  Discard is a writer edit inside the room, undone by Ctrl+Z, with no command;
+  Discard is a writer edit inside the room (undone by Ctrl+Z in the Editor, by Undo on the row elsewhere), with no command;
   only item Discard and Discard all are kernel commands, and they only close.
 - Authority identity and generation fence every live connection and mutation.
   The domain owns authorization, persistence, coordination, settlement, and

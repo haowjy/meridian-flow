@@ -10,7 +10,7 @@ dead addresses.
 Ownership and command contracts: [draft-review reference](../../apps/app/src/features/draft-review/.context/draft-review.md)
 and [ownership map](../../apps/app/src/features/draft-review/AGENTS.md). In short, a change is a group of the
 text diff between a draft's `review_base` and `prosemirror` fragments, computed in the
-browser. Discard is a local edit of the draft room and one Ctrl+Z step; Apply sends the
+browser. Discard is a local edit of the draft room (one Ctrl+Z step in the Editor and the right-side dock, Undo on the row elsewhere); Apply sends the
 snapshot of the projection the writer clicked. `client/query/draft-command-executor.ts`
 admits Apply and item Discard, and `draft-command-record.ts` owns their claims.
 `EditorView` owns paint readiness, not `useReviewRoomOwner`. `PresentedReviewScope` and

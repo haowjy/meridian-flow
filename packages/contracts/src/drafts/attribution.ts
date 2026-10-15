@@ -1,4 +1,4 @@
-/** Wire shapes for the chat attribution hint and the chat strip's draft list. */
+/** Wire shapes for the chat attribution hint and the draft dock's draft list. */
 import type { DraftItemKey } from "../ids.js";
 import type { ThreadDraftListItem } from "./review.js";
 

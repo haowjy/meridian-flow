@@ -1,7 +1,7 @@
 /**
- * The chat's pending changes and creation-bound Work commands. The strip lists the drafts the chat wrote
+ * The chat's pending changes and creation-bound Work commands. The draft dock lists the drafts the chat wrote
  * into (the server's SQL-only list), projects a file's changes only when it is expanded, applies only the
- * changes the attribution hint names this chat for, and never navigates on Apply. Discard on the strip happens
+ * changes the attribution hint names this chat for, and never navigates on Apply. Discard in the draft dock happens
  * in place: the row reads "Discarded" with Undo until the writer leaves.
  */
 import { t } from "@lingui/core/macro";
@@ -48,7 +48,7 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
     () => dockFiles(listedFiles, (row) => reviewFileTargetName(row, untitled)),
     [listedFiles, untitled],
   );
-  // A file stays on the strip while one of its Discards can still be undone, even once it lists no changes.
+  // A file stays in the draft dock while one of its Discards can still be undone, even once it lists no changes.
   const discardedFiles = discards.entries.filter((entry) => entry.change === null);
   const files = useMemo(() => {
     const whole = new Set(discardedFiles.map((entry) => entry.file.draft.itemKey));
@@ -132,7 +132,7 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
     closeImagePreview: () => setImagePreview(null),
     mounted: files.length + discardedFiles.length > 0,
     showCommands: chatFiles.length > 0,
-    /** A whole-draft command in flight on any of the chat's files, said on the strip while it is collapsed. */
+    /** A whole-draft command in flight on any of the chat's files, said on the draft dock while it is collapsed. */
     pendingMode:
       chatFiles
         .map((file) =>

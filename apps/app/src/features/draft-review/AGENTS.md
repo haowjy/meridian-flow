@@ -26,10 +26,12 @@ review or joining a room (text Discard is local and uses a headless room).
   document: a move, cut, paste or Ctrl+Z changes the text and the review follows.
 - Only red (removed) and green (added). Chat names are a best-effort hint on a
   change; nothing gates on them.
-- Discard is local, instant, and one Ctrl+Z step: it writes the draft fragment
+- Discard is local and instant. In the Editor and the right-side dock it is one
+  Ctrl+Z step, and that surface alone undoes it: it writes the draft fragment
   under the editor's own undo origin (`draft-discard.ts`). A surface with no
-  editor edits the room it holds (`useHeadlessDiscards`) and its row offers Undo.
-  There is no card Undo or Redo. Only item Discard (a created, binary or
+  editor (the chat's draft dock, Work page rows, the phone change sheet) edits the
+  room it holds (`useHeadlessDiscards`) and undoes it with Undo on its row, not
+  Ctrl+Z. Neither the review nor the turn receipt has a card Undo or Redo. Only item Discard (a created, binary or
   live-deleted document) and the Work page's Discard close on the server.
 - Every change row carries the frame it was listed from. Apply sends that
   frame's snapshot; Discard finds the change again by pinned position and

@@ -1,5 +1,5 @@
 /**
- * Discards that leave a row behind on a surface without an editor (the chat strip, the Work page's rows).
+ * Discards that leave a row behind on a surface without an editor (the chat's draft dock, the Work page's rows).
  * A change the expanded row shows is a local edit of the room that row already holds (`discardChange`,
  * synchronous): its entry exists only once the edit does, and reads "Discarded" with Undo. A chat's
  * changes in a collapsed file need a room acquired first, so that entry is `pending` (shown as

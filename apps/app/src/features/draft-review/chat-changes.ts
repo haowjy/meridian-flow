@@ -1,7 +1,7 @@
 /**
  * The changes of one chat in a draft nobody has open, read for the length of one command: the room is
  * retained and synced, projected, matched against the attribution hint, and handed to Apply with its
- * snapshot. The strip's Apply runs it inside its command (`applyChatChanges`), which releases the room on
+ * snapshot. The draft dock's Apply runs it inside its command (`applyChatChanges`), which releases the room on
  * every path out, so it acts on this chat's changes and not the whole file.
  */
 import { matchAttribution } from "@meridian/agent-edit/diff";
