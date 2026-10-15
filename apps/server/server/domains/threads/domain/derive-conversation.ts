@@ -273,10 +273,14 @@ export async function forkThreadAgent(
       await deps.eventWriter.appendEvent(target.id as ThreadId, event);
     }
     await inheritEditingDocuments(deps, lockedSource, target);
+    // The files of the inherited turns sit with the chat that owns the cutoff turn, which is
+    // the source's ancestor when the fork was cut inside inherited history.
+    const owner =
+      (await deps.threads.findByIdIncludingDeleted(cutoff.turn.threadId)) ?? lockedSource;
     await seedSystemTurn(
       deps,
       target,
-      `Forked conversation through turn ${cutoff.turn.id}.\n${continuesFromLine(lockedSource.ref ?? lockedSource.id)}`,
+      `Forked conversation through turn ${cutoff.turn.id}.\n${continuesFromLine(owner.ref ?? owner.id)}`,
     );
     await deps.eventWriter.appendEvent(source.id as ThreadId, {
       type: "agent.fork",
