@@ -2,19 +2,11 @@
  * Folds the thread socket's AG-UI stream into compact, dotted CLI events
  * (codex-exec style) and renders each as one text line.
  */
-import { readRunStartedMeta, type SequencedEvent } from "@meridian/contracts/protocol";
+import type { SequencedEvent } from "@meridian/contracts/protocol";
 import { oneLine, truncate } from "../../core/output";
 
 export type CliEvent =
-  | {
-      type: "turn.started";
-      seq: string;
-      turnId: string;
-      /** The execution that reserved this reply; a split successor shares it. */
-      executionId: string | null;
-      /** User turns this reply was reserved for; how a send recognizes its own reply. */
-      reservedForUserTurnIds: readonly string[];
-    }
+  | { type: "turn.started"; seq: string; turnId: string }
   | { type: "message.delta"; seq: string; messageId: string; text: string }
   | {
       type: "message.completed";
@@ -65,18 +57,8 @@ export class RunEventMapper {
     const { seq, event } = sequenced;
     const e = event as unknown as Record<string, unknown> & { type: string };
     switch (e.type) {
-      case "RUN_STARTED": {
-        const { executionId, reservedForUserTurnIds } = readRunStartedMeta(e.rawEvent);
-        return [
-          {
-            type: "turn.started",
-            seq,
-            turnId: String(e.runId),
-            executionId,
-            reservedForUserTurnIds,
-          },
-        ];
-      }
+      case "RUN_STARTED":
+        return [{ type: "turn.started", seq, turnId: String(e.runId) }];
       case "RUN_FINISHED":
         return [{ type: "turn.finished", seq, turnId: String(e.runId) }];
       case "RUN_ERROR": {

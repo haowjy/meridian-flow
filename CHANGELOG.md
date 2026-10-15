@@ -11,6 +11,11 @@
 - The usage notice shows only while a writer message is actually blocked, not for an empty record.
 - A failed-send Edit puts the returned text above the existing draft with a blank line, like Stop's hand-back.
 - `./mf` follows run state through the same `@meridian/thread-client` module as the app, including recovering a held switch divider. `./mf thread view` shows the mode and handed-back messages.
+- `./mf thread send` proves what happened to its own message from one snapshot. Its result is the last reply in the message's chain (continuations and Retries included), so a failed or cancelled successor is never reported as an earlier success, and a case it can't prove exits 6 with a reason.
+- `./mf thread send` reports a message a Stop handed back as `handed_back` (exit 5) instead of timing out.
+- New `./mf thread stop <thread>` stops the chat the way the app does. It prints its request, and a lost answer exits 4 with a `--replay` command that resends the same request instead of pressing Stop again. `--full` prints the handed-back text. `./mf thread cancel` now needs `--turn`.
+- `./mf thread stop` keeps its `--replay` request when the answer is a 5xx or unreadable, including under `--json`. A `thread send` that times out reports its last completed snapshot as `snapshotStale` (or `snapshotUnavailable`) instead of reading again, and `liveView` is `not_observed` for turns a snapshot recovery overwrote.
+- API: the stream's `RUN_STARTED` no longer carries `executionId`, `reservedForUserTurnIds` or `position`; the `runState` record and the snapshot's turns carry run identity.
 - API: a chat's run state is one whole `runState` record (waiting messages, open execution, write mode, sent watermark, usage block) on the snapshot, the stream (`meridian.run_state`) and the control, Retry, Stop and send answers. It replaces `inbox.changed`, the delivered-message events and `execution.ended`, which are removed.
 - New `POST /api/threads/:id/stop` cancels the reply the writer saw and hands back the waiting writer messages. It is decided once under the thread lock and stored by request id, so a resend returns the same answer. See `docs/api/thread-stop.md`.
 

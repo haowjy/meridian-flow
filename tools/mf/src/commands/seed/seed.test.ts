@@ -4,11 +4,18 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, it } from "vitest";
 import { EXIT } from "../../core/cli-error";
-import { startFakeStack } from "../../test-support/fake-stack";
+import { startWire } from "../../test-support/wire";
+import { replyScenario } from "../../test-support/wire-fixtures";
 
 it("does not let a later complete send hide an earlier failed send", async () => {
-  const stack = await startFakeStack();
-  stack.replyPolicy.holdUntilSubscribed = true;
+  const wire = await startWire();
+  // The first message's reply fails; the second's completes.
+  replyScenario(wire, [
+    { status: "error" },
+    { status: "complete" },
+    { status: "error" },
+    { status: "complete" },
+  ]);
   const dir = mkdtempSync(path.join(tmpdir(), "mf-seed-"));
   const fixture = path.join(dir, "scenario.json");
   writeFileSync(
@@ -16,7 +23,7 @@ it("does not let a later complete send hide an earlier failed send", async () =>
     JSON.stringify({ thread: {}, messages: [{ text: "fail" }, { text: "hi" }] }),
   );
   try {
-    const result = await stack.mf(["seed", fixture, "--json"]);
+    const result = await wire.mf(["seed", fixture, "--json"]);
     expect(result.code).toBe(EXIT.failed);
     const record = JSON.parse(result.stdout);
     expect(record).toMatchObject({
@@ -25,7 +32,7 @@ it("does not let a later complete send hide an earlier failed send", async () =>
       outcome: "failed",
       reason: null,
     });
-    const projected = await stack.mf(["seed", fixture, "--json", "--fields", "finalText"]);
+    const projected = await wire.mf(["seed", fixture, "--json", "--fields", "finalText"]);
     expect(projected.code).toBe(EXIT.failed);
     expect(JSON.parse(projected.stdout)).toEqual({
       type: "result",
@@ -38,7 +45,7 @@ it("does not let a later complete send hide an earlier failed send", async () =>
       { type: "result", command: "thread.send", outcome: "complete", reason: null },
     ]);
   } finally {
-    await stack.close();
+    await wire.close();
     rmSync(dir, { recursive: true });
   }
 });

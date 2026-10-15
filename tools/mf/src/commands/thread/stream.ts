@@ -11,7 +11,7 @@ import type { Output } from "../../core/output";
 import type { Session } from "../../core/session";
 import { type CliEvent, RunEventMapper, renderEventLine } from "./events-map";
 import type { ReducedThread } from "./reduced-thread";
-import { currentTurnId, runStateOfEvent } from "./run-state";
+import { runStateOfEvent } from "./run-state";
 import { createThreadClient, subscribeThread } from "./transport";
 
 export type FollowResult = {
@@ -32,6 +32,8 @@ export type FollowOptions = {
   full: boolean;
   /** Where text-mode event lines go (`send` keeps stdout for the final answer). */
   textStream: "out" | "err";
+  /** Request a checkpoint when the stream reports a gap (its frames are missing, so the caller should look). */
+  wakeOnGap?: boolean;
   /** Stop after the subscription catch-up instead of following live frames. */
   catchupOnly?: boolean;
   /** Replaces the default record and line per event; null drops the event from output. */
@@ -41,7 +43,9 @@ export type FollowOptions = {
   /** Idle lease/pending updates can arrive after the final turn event. */
   shouldStopState?: (state: ThreadLiveState) => boolean;
   /** Confirm a requested checkpoint without disposing subscription/presentation state. */
-  confirmStop?: (turnIds: readonly string[]) => Promise<boolean>;
+  confirmStop?: (turnIds: readonly string[], lastSeq: string) => Promise<boolean>;
+  /** The deadline now in force, when it can move earlier than `deadlineAt` (a bounded catch-up after a settled claim). */
+  currentDeadline?: () => number;
   transport?: ThreadTransport;
   /** Reduces every sequenced event into turn state, beside the log output. */
   reduced?: ReducedThread;
@@ -66,10 +70,14 @@ export async function followThread(options: FollowOptions): Promise<FollowResult
    * follower did not hydrate, or another client's). Ask for a snapshot, bounded by the deadline,
    * at most once per interval; there is no tail-insertion fallback.
    */
+  // One deadline for everything this follow does: stream reads, anchor recovery, snapshot reads.
+  const effectiveDeadline = () =>
+    Math.min(options.deadlineAt, options.currentDeadline?.() ?? options.deadlineAt);
+
   const recoverAnchor = async () => {
     const reduced = options.reduced;
     if (!reduced?.awaitsAnchor()) return;
-    const remaining = options.deadlineAt - Date.now();
+    const remaining = effectiveDeadline() - Date.now();
     if (remaining <= 0 || Date.now() - anchorAskedAt < ANCHOR_RETRY_MS) return;
     anchorAskedAt = Date.now();
     const snapshot = await options.session.request<ThreadSnapshotResponse>(
@@ -78,7 +86,7 @@ export async function followThread(options: FollowOptions): Promise<FollowResult
       undefined,
       { timeoutMs: remaining },
     );
-    reduced.hydrate(snapshot, { observed: false });
+    reduced.recover(snapshot);
   };
 
   const emit = (event: CliEvent): boolean => {
@@ -110,11 +118,11 @@ export async function followThread(options: FollowOptions): Promise<FollowResult
 
   try {
     for (;;) {
-      const message = await subscription.next(options.deadlineAt);
+      const message = await subscription.next(effectiveDeadline());
       switch (message.type) {
         case "live": {
           state = message.state;
-          const turn = currentTurnId(state.runState);
+          const turn = state.runState.execution?.currentTurnId;
           if (turn) turnIds.add(turn);
           if (options.catchupOnly || options.shouldStopState?.(state)) stopRequested = true;
           break;
@@ -144,13 +152,14 @@ export async function followThread(options: FollowOptions): Promise<FollowResult
             options.textStream,
           );
           if (gap.toSeq && BigInt(gap.toSeq) > BigInt(lastSeq)) lastSeq = gap.toSeq;
+          if (options.wakeOnGap) stopRequested = true;
           break;
         }
       }
       if (stopRequested) {
         if (options.confirmStop) {
           if (subscription.hasQueued()) continue;
-          stopRequested = await options.confirmStop([...turnIds]);
+          stopRequested = await options.confirmStop([...turnIds], lastSeq);
           // Frames queued during HTTP confirmation must be presented and their
           // named turns reconciled before the command may finish.
           if (subscription.hasQueued()) continue;
