@@ -47,14 +47,14 @@ import {
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
 import {
   accessibleResourceCatalogView,
-  contextCatalogScope,
+  aggregateCatalogScope,
   projectCatalogFile,
   projectCatalogView,
 } from "@/client/query/useContextCatalog";
 import { isEditorScheme, type ServerContextTab, useContextTabsActions } from "@/client/stores";
 import { type OpenContextRoute, useOpenContextRoute } from "../routing/ProjectNavigationContext";
 import { useOptionalAccountResourceReplica } from "./account-feature-context";
-import { contextOwnerOf, contextTabFromFile, serverTabFromFile } from "./context-tab-from-file";
+import { contextTabFromFile, serverTabFromFile } from "./context-tab-from-file";
 import { useProjectDocumentLiveOpener } from "./project-document-live-opener-context";
 
 export interface LiveDocumentBinding {
@@ -266,7 +266,7 @@ function localFileForRecord(
   if (record.resource.content.kind !== "exact") return null;
   const location = placement.resourceLocation(record);
   if (!location) return null;
-  const scope = contextCatalogScope(projectId, location.scheme, contextOwnerOf(location));
+  const scope = aggregateCatalogScope(projectId, location.scheme, location);
   if (!scope) return null;
   const projected = accessibleResourceCatalogView(projectId, scope, record, placement);
   const file = projectCatalogView(projectId, location.scheme, projected, placement, [

@@ -236,6 +236,14 @@ msgstr ""
 msgid "{count} changes"
 msgstr ""
 
+#: src/features/chat/ChatUploadsMenu.tsx
+msgid "{count} files"
+msgstr ""
+
+#: src/features/chat/chat-upload-display.ts
+msgid "{days, plural, one {# day ago} other {# days ago}}"
+msgstr ""
+
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "{days, plural, one {# day left} other {# days left}}"
 msgstr ""
@@ -260,6 +268,10 @@ msgstr ""
 msgid "{full}, summary"
 msgstr ""
 
+#: src/features/chat/chat-upload-display.ts
+msgid "{hours, plural, one {# hour ago} other {# hours ago}}"
+msgstr ""
+
 #: src/lib/date-groups.ts
 msgid "{hours}h"
 msgstr "{hours}小时"
@@ -282,6 +294,10 @@ msgstr ""
 
 #: src/features/chat/tool-result-preview.ts
 msgid "{matches} results in {inDocuments}"
+msgstr ""
+
+#: src/features/chat/chat-upload-display.ts
+msgid "{minutes} min ago"
 msgstr ""
 
 #: src/lib/date-groups.ts
@@ -417,6 +433,10 @@ msgstr ""
 msgid "A picture cannot go there."
 msgstr ""
 
+#: src/features/chat/ChatUploadsMenu.tsx
+msgid "A sent message used this file, so it can’t be deleted."
+msgstr ""
+
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "A table keeps at least one column."
 msgstr ""
@@ -470,6 +490,10 @@ msgstr ""
 #: src/components/app/composer/placeholders.ts
 msgid "Actually…"
 msgstr "其实…"
+
+#: src/features/chat/ChatUploadsMenu.tsx
+msgid "Add {name} to your message"
+msgstr ""
 
 #: src/features/project/chat-list/ProjectChatRow.tsx
 msgid "Add {title} to favorites"
@@ -978,6 +1002,7 @@ msgstr ""
 msgid "Closed"
 msgstr ""
 
+#: src/features/chat/chat-upload-display.ts
 #: src/features/draft-review/operation-change-text.ts
 msgid "Code"
 msgstr ""
@@ -1094,6 +1119,10 @@ msgstr ""
 #. placeholder {0}: state.attempt
 #: src/components/app/ConnectionBanner.tsx
 msgid "Connection lost. Retrying… attempt {0}"
+msgstr ""
+
+#: src/features/chat/ChatUploadsMenu.tsx
+msgid "Continues from <0/>"
 msgstr ""
 
 #: src/features/chat/compaction/CompactionDivider.tsx
@@ -1281,6 +1310,10 @@ msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Couldn't delete this entry. Try again."
+msgstr ""
+
+#: src/features/chat/ChatUploadsMenu.tsx
+msgid "Couldn’t delete this file. Try again."
 msgstr ""
 
 #: src/features/project/context/NamespaceFailureMark.tsx
@@ -1665,6 +1698,10 @@ msgstr ""
 msgid "Delete"
 msgstr ""
 
+#: src/features/chat/ChatUploadsMenu.tsx
+msgid "Delete {name}"
+msgstr ""
+
 #: src/features/project/chat-list/ProjectChatRow.tsx
 msgid "Delete chat"
 msgstr ""
@@ -2031,6 +2068,10 @@ msgstr ""
 msgid "Figure could not be loaded."
 msgstr ""
 
+#: src/features/chat/chat-upload-display.ts
+msgid "File"
+msgstr ""
+
 #: src/features/project/context/IdentityChips.tsx
 msgid "File it"
 msgstr ""
@@ -2048,10 +2089,19 @@ msgstr ""
 msgid "File this document"
 msgstr ""
 
+#: src/features/chat/ChatUploadsMenu.tsx
 #: src/features/project/context/PendingDocumentPath.tsx
 #: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Files"
+msgstr ""
+
+#: src/features/chat/ChatUploadsMenu.tsx
+msgid "Files attached in this chat, {count}"
+msgstr ""
+
+#: src/features/chat/ChatUploadsMenu.tsx
+msgid "Files in this chat"
 msgstr ""
 
 #: src/features/chat/SubagentHeader.tsx
@@ -2231,6 +2281,7 @@ msgstr "ID"
 msgid "Identity"
 msgstr ""
 
+#: src/features/chat/chat-upload-display.ts
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "Image"
@@ -2344,6 +2395,10 @@ msgstr ""
 #: src/features/chat/thread-report-renderer.tsx
 msgid "Jump to in chat"
 msgstr "跳转到聊天中的位置"
+
+#: src/features/chat/chat-upload-display.ts
+msgid "Just now"
+msgstr ""
 
 #: src/features/chat/DraftDock.tsx
 #: src/features/project/work/WorkChanges.tsx
@@ -2531,6 +2586,10 @@ msgstr ""
 
 #: src/features/project/context/context-schemes.ts
 msgid "Manuscript"
+msgstr ""
+
+#: src/features/chat/chat-upload-display.ts
+msgid "Markdown"
 msgstr ""
 
 #. placeholder {0}: formatPreset(amountOptions.maxUsd)
@@ -2797,6 +2856,10 @@ msgstr ""
 msgid "No fields required; confirm to continue."
 msgstr ""
 
+#: src/features/chat/ChatUploadsMenu.tsx
+msgid "No files attached in this chat yet."
+msgstr ""
+
 #: src/features/editor/surfaces/link/AtReferenceMenu.tsx
 msgid "No files in {containerLabel}."
 msgstr ""
@@ -2889,6 +2952,10 @@ msgstr "未找到"
 msgid "Not reported"
 msgstr "未报告"
 
+#: src/features/chat/chat-upload-display.ts
+msgid "Notebook"
+msgstr ""
+
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Nothing here yet"
 msgstr ""
@@ -2955,6 +3022,10 @@ msgstr ""
 #. placeholder {1}: excerptText(excerpt)
 #: src/features/chat/PassageDoor.tsx
 msgid "Open {0} at this passage. {1}"
+msgstr ""
+
+#: src/features/chat/ChatUploadsMenu.tsx
+msgid "Open {name}"
 msgstr ""
 
 #: src/features/chat/DocumentName.tsx
@@ -3080,6 +3151,10 @@ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Paused to reread"
+msgstr ""
+
+#: src/features/chat/chat-upload-display.ts
+msgid "PDF"
 msgstr ""
 
 #: src/features/project/work/WorkChanges.tsx
@@ -3762,6 +3837,10 @@ msgstr ""
 msgid "Split cell"
 msgstr ""
 
+#: src/features/chat/chat-upload-display.ts
+msgid "Spreadsheet data"
+msgstr ""
+
 #: src/features/project/work/WorkCollection.tsx
 msgid "Start a Work"
 msgstr ""
@@ -3950,6 +4029,7 @@ msgstr "说出来理一理"
 msgid "Tap a change to go to it in the manuscript."
 msgstr ""
 
+#: src/features/chat/chat-upload-display.ts
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "Text"
 msgstr ""
@@ -4155,6 +4235,7 @@ msgstr ""
 msgid "The server couldn't do that. Try again."
 msgstr ""
 
+#: src/features/chat/ChatUploadsMenu.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "the source chat"
 msgstr ""
@@ -4389,6 +4470,10 @@ msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "This draft is no longer here. It may have been applied or discarded elsewhere."
+msgstr ""
+
+#: src/features/chat/ChatUploadsMenu.tsx
+msgid "This file changed, so it wasn’t deleted. Try again."
 msgstr ""
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
@@ -4820,6 +4905,10 @@ msgstr "你在想什么？"
 msgid "Where were we?"
 msgstr "我们说到哪儿了？"
 
+#: src/features/chat/chat-upload-display.ts
+msgid "Word document"
+msgstr ""
+
 #: src/features/chat/ComposerWorkControl.tsx
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
 #: src/features/project/mobile/MobileProject.tsx
@@ -4886,6 +4975,7 @@ msgstr "写作中"
 msgid "Writing the handoff brief"
 msgstr ""
 
+#: src/features/chat/chat-upload-display.ts
 #: src/features/project/RecencyGroupedList.tsx
 msgid "Yesterday"
 msgstr "昨天"
