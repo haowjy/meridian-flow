@@ -715,6 +715,78 @@ else
       expect(rig.gateway.requests).toHaveLength(0);
     });
 
+    const toolUseResult = {
+      content: [
+        {
+          type: "tool_use" as const,
+          toolCallId: "boundary",
+          toolName: "unavailable_probe_tool",
+          input: {},
+        },
+      ],
+      toolCalls: [],
+      finishReason: "tool_use" as const,
+      usage: lowUsage,
+      model: "gpt-4.1-mini",
+      provider: "openai",
+    };
+    /** A reply that reaches tool boundaries at calls 1 and 2, then holds at the given call. */
+    const boundaryGateway = (holdAt: number) =>
+      scriptedGateway({
+        usage: lowUsage,
+        pauseAt: [1, holdAt],
+        results: [toolUseResult, toolUseResult],
+      });
+
+    it("row 41: Send now with a frozen queue does not cancel the reply that adopted a later message after an x took M2 back", async () => {
+      // Risk: reading only the ids scope misses M3, which E adopted, and cancels the reply that answers it.
+      const gateway = boundaryGateway(2);
+      const rig = await rigWith({ gateway });
+      const { run, done } = await heldReply(rig, "M1");
+      const m2 = (await rig.send(rig.threadId, "M2")).userTurnId;
+      const frozen = {
+        seenThrough: await seqOf(rig, m2),
+        seenExecutionId: run.executionId as string,
+        waiting: [m2],
+      };
+      await handBack(rig, crypto.randomUUID(), [m2]);
+      const m3 = (await rig.send(rig.threadId, "M3")).userTurnId;
+      gateway.release(1);
+      await gateway.untilGatewayBoundary(2);
+      expect((await leaseRow(rig))?.adoptedMessageIds).toContain(m3);
+
+      const response = await rig.orchestrator.sendNow(rig.threadId as never, frozen);
+      expect(response.cancelledExecutionId).toBeNull();
+      expect((await leaseRow(rig))?.cancelRequested).toBe(false);
+      gateway.release(2);
+      expect(await done).toMatchObject({ status: "complete" });
+      await processDetachedWork.drain();
+    });
+
+    it("row 42: Send now is refused once the reply adopted a waiting message and its acknowledgement cleared the receipt", async () => {
+      // Risk: with the receipt empty, only the delivering turn's row proves the execution took W on.
+      const gateway = boundaryGateway(3);
+      const rig = await rigWith({ gateway });
+      const { run, done } = await heldReply(rig, "M1");
+      const m2 = (await rig.send(rig.threadId, "M2")).userTurnId;
+      const frozen = {
+        seenThrough: await seqOf(rig, m2),
+        seenExecutionId: run.executionId as string,
+        waiting: [m2],
+      };
+      gateway.release(1);
+      await gateway.untilGatewayBoundary(3);
+      expect((await rowOf(rig, m2)).by).not.toBeNull();
+      expect((await leaseRow(rig))?.adoptedMessageIds ?? []).not.toContain(m2);
+
+      const response = await rig.orchestrator.sendNow(rig.threadId as never, frozen);
+      expect(response.cancelledExecutionId).toBeNull();
+      expect((await leaseRow(rig))?.cancelRequested).toBe(false);
+      gateway.release(3);
+      expect(await done).toMatchObject({ status: "complete" });
+      await processDetachedWork.drain();
+    });
+
     it("row 36: a replay answers the stored decision, a later request cannot resurrect, and another body is refused", async () => {
       const rig = await rigWith();
       const m2 = (await rig.send(rig.threadId, "M2 words")).userTurnId;

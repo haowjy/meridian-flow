@@ -120,6 +120,34 @@ export function decideStop(facts: StopFacts, press: StopPress): StopDecision {
   };
 }
 
+export type SendNowPress = {
+  seenThrough: number;
+  seenExecutionId: string;
+  /** Every writer message the record showed waiting, frozen at the press. */
+  waiting: readonly string[];
+};
+
+/**
+ * Send now: with W the `waiting` rows and L the rows above `seenThrough` that are not in W, cancel the
+ * open execution iff it is the one seen and has taken on no row in W (it would answer the queue with a
+ * cancelled reply: too late) and none in L. Both sets come from the frozen press, never a newer record.
+ * Hands nothing back: the queue runs in the next reply.
+ */
+export function decideSendNow(
+  facts: StopFacts,
+  press: SendNowPress,
+): { cancelExecutionId: string | null } {
+  const waiting = new Set(press.waiting);
+  const execution = facts.execution;
+  const cancels =
+    execution !== null &&
+    execution.id === press.seenExecutionId &&
+    !facts.rows.some(
+      (row) => (waiting.has(row.id) || row.seq > press.seenThrough) && takesOn(facts, row),
+    );
+  return { cancelExecutionId: cancels ? execution.id : null };
+}
+
 /** Canonical body hash: the same request id with another body is a different request. */
 export function handBackFingerprint(body: {
   kind: "hand_back" | "stop";

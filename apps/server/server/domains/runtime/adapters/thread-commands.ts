@@ -9,12 +9,15 @@ import type { ThreadId } from "@meridian/contracts/runtime";
 import type {
   HandBackRequest,
   HandBackResponse,
+  SendNowRequest,
+  SendNowResponse,
   StopRequest,
   StopResponse,
 } from "@meridian/contracts/threads";
 import { HandBackConflictError } from "../loop/runtime-delivery.js";
 import {
   decideHandBack,
+  decideSendNow,
   decideStop,
   type HandBackScopeFacts,
   handBackFingerprint,
@@ -154,6 +157,29 @@ export function createThreadCommands(ports: ThreadCommandPorts) {
           }),
       });
       return { threadId, ...result };
+    },
+    /**
+     * Send now: cancels the reply the writer saw so the waiting queue runs next, unless that reply has
+     * already taken on a waiting message. Reads the `seen` scope with `mine: waiting`, never the ids-only
+     * scope: that reads only W and would miss a later message the reply adopted after an x took one back.
+     * No stored decision: `seenExecutionId` makes a repeat of the same body safe.
+     */
+    async sendNow(threadId: ThreadId, request: SendNowRequest): Promise<SendNowResponse> {
+      return threadLock.withThreadLock(threadId, async () => {
+        const store = requireHandBacks();
+        const facts = await store.readFacts(threadId, {
+          kind: "seen",
+          seenThrough: request.seenThrough,
+          mine: request.waiting,
+        });
+        const { cancelExecutionId } = decideSendNow(facts, request);
+        if (cancelExecutionId) await store.cancelExecution(threadId, cancelExecutionId);
+        return {
+          threadId,
+          cancelledExecutionId: cancelExecutionId,
+          runState: await inbox.answerRunState(threadId),
+        };
+      });
     },
   };
 }
