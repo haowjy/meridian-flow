@@ -1521,8 +1521,8 @@ msgid "Couldn't start a new brief. Try again."
 msgstr ""
 
 #: src/features/chat/ErrorBlock.tsx
-msgid "Couldn't start the retry."
-msgstr ""
+#~ msgid "Couldn't start the retry."
+#~ msgstr ""
 
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/useReplyRetry.ts

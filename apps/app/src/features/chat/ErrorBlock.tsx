@@ -17,29 +17,27 @@ export type ErrorBlockKind = "generation" | "retry" | "provider-declined";
 
 export type ErrorBlockProps = {
   /**
-   * Whether this error is current: no visible turn follows the errored one. A failed reply
-   * the writer retried is not drawn at all, so the quiet line is only for one never retried.
-   * - `true` → full tinted block with icon + message.
-   * - `false` → quiet historical marker: single muted line, no background.
+   * Whether this error is current: no visible turn follows the errored one. A failure shows
+   * only while the writer can act on it, so a failed reply the chat moved past draws nothing
+   * (but a refused Retry's card).
    */
   isLatest: boolean;
   kind?: ErrorBlockKind;
   /** Retry this turn. Omit to hide the control. */
   onRetry?: () => void;
   /**
-   * The server refused this turn's last Retry; the cause stays in diagnostics. A red error
-   * card in both modes, on the turn the writer pressed, whether or not it is still the latest.
-   * Temporary: it clears at the writer's next action (another Retry, or a send) or when the
-   * next reply completes (`useRetryStandIns` owns that rule).
+   * The server refused this turn's last Retry; the cause stays in diagnostics. Temporary: it
+   * clears at the writer's next action (another Retry, or a send) or when the next reply
+   * completes (`useRetryStandIns` owns that rule). On the latest failure it is a note inside
+   * its card; past it, the red card alone, with no failure line above.
    */
   retryRefused?: RetryRefusal | null;
 };
 
-/** One quiet sentence per kind; reads on its own in history, no status prefix. */
-function copy(kind: ErrorBlockKind, current: boolean): string {
+function copy(kind: ErrorBlockKind): string {
   switch (kind) {
     case "retry":
-      return current ? t`Couldn't start the retry. Try again.` : t`Couldn't start the retry.`;
+      return t`Couldn't start the retry. Try again.`;
     case "provider-declined":
       return t`The AI provider turned this request down.`;
     default:
@@ -48,12 +46,8 @@ function copy(kind: ErrorBlockKind, current: boolean): string {
 }
 
 /**
- * In-flow error block for a turn that ended in an error state.
- *
- * Two visual modes:
- * - **Active** (isLatest): destructive-tinted soft block with icon, plain
- *   sentence, and Retry beside it when this turn can be tried again.
- * - **Historical** (!isLatest): quiet inline muted marker.
+ * In-flow error block for a turn that ended in an error state: a destructive-tinted soft block
+ * with icon, plain sentence, and Retry beside it when this turn can be tried again.
  */
 export function ErrorBlock({
   isLatest,
@@ -61,14 +55,7 @@ export function ErrorBlock({
   onRetry,
   retryRefused = null,
 }: ErrorBlockProps) {
-  if (!isLatest) {
-    return (
-      <div className="flex flex-col gap-1">
-        <p className="text-caption text-muted-foreground">{copy(kind, false)}</p>
-        {retryRefused ? <RefusedCard refusal={retryRefused} /> : null}
-      </div>
-    );
-  }
+  if (!isLatest) return retryRefused ? <RefusedCard refusal={retryRefused} /> : null;
   return (
     <ActiveError kind={kind} onRetry={onRetry}>
       {retryRefused ? <RefusedNote refusal={retryRefused} /> : null}
@@ -83,7 +70,7 @@ export function retryRefusedCopy(refusal: RetryRefusal): string {
     : t`Couldn't retry.`;
 }
 
-/** The refusal on its own, for a failed reply that is history: its marker stays quiet above. */
+/** The refusal on its own, for a failed reply the chat moved past. */
 function RefusedCard({ refusal }: { refusal: RetryRefusal }) {
   return (
     <NoticeCard tone="error">
@@ -112,7 +99,7 @@ function ActiveError({
 }) {
   return (
     <NoticeCard tone="error" note={children}>
-      <p>{copy(kind, true)}</p>
+      <p>{copy(kind)}</p>
       {onRetry ? (
         <Button type="button" variant="outline" size="xs" data-reply-retry onClick={onRetry}>
           <Trans>Retry</Trans>

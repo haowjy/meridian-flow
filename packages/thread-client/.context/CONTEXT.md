@@ -30,6 +30,10 @@ and says what it left out. The decision and its rejected alternatives are in the
   (`metadata.retryOf` on a stand-in or stored turn, or the `retried` input) is
   not drawn: the Retry takes its place, and a chain of failed retries draws only
   the newest failure.
+- **A failure shows only while it can be acted on.** A failed reply that is not
+  the latest row (a write-mode line after it does not close it), with no items
+  and no deliveries, has no row. The app passes `refused` (ids whose Retry the
+  server refused) to keep that row for the refusal card; `./mf` passes none.
 - **Stand-ins and the opening seed** are placed after their `prevTurnId`; the
   opening seed goes first, which equals placing stand-ins first because no
   producer anchors a stand-in to it. A row's `identity` is the server turn id,
