@@ -17,6 +17,7 @@ import type { Turn } from "@meridian/contracts/protocol";
 import { readHandoffSeed } from "@meridian/contracts/threads";
 import { CircleAlert, Forward } from "lucide-react";
 import { useId, useRef, useState } from "react";
+import { NoticeCard } from "@/components/app/NoticeCard";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
@@ -32,7 +33,7 @@ export type HandoffBriefCardProps = {
   stopping: boolean;
   /** The writer's last Stop on this seed failed. */
   stopFailed?: boolean;
-  /** The server refused this card's Retry; the cause stays in diagnostics. */
+  /** The server refused this card's Retry; the cause stays in diagnostics. Drawn as an error card until the next action or the next completed reply. */
   retryRefused?: boolean;
   /** A reply (or anything else) holds the chat: Retry waits until it ends. */
   destinationBusy?: boolean;
@@ -172,9 +173,11 @@ export function HandoffBriefCard({
             </p>
           ) : null}
           {retryRefused ? (
-            <p className="text-caption text-muted-foreground">
-              <Trans>Couldn't retry.</Trans>
-            </p>
+            <NoticeCard tone="error">
+              <p>
+                <Trans>Couldn't retry.</Trans>
+              </p>
+            </NoticeCard>
           ) : null}
           {view.state === "stopped" && !view.superseded ? (
             <p className="text-caption text-muted-foreground">

@@ -12,14 +12,14 @@ reply itself.
 | Not the latest turn, never retried | The quiet line "This response failed.", with no action (the writer never acted on it) |
 | Retried (accepted or pending) | Not drawn: the Retry's row takes its place |
 | A retry that failed too | One failure, the newest, in that same place |
-| Its Retry was refused | Adds the muted note "Couldn't retry." on that reply, even if another reply landed below it, until the writer's next action (Retry again, or send) |
+| Its Retry was refused | A red error card "Couldn't retry." on that reply, latest or not (the quiet marker stays above it in history). Temporary: it clears when the next reply completes, or at the writer's next Retry or send; a reply that fails or is cancelled leaves it |
 | The provider declined it | "The AI provider turned this request down." with **Retry** when latest and a retry handler is present |
 
 "Latest" is `endsTranscript` in `TurnList`: no visible row follows, and a
 divider counts as a row. The client does not gate Retry on the chat being
 busy: a failed reply is followed at once by whatever runs next, which takes
 its Retry away, and the server refuses a Retry that races a run (409), which
-shows the refused note below. An unadmitted message keeps its "Couldn't send."
+shows the refused card below. An unadmitted message keeps its "Couldn't send."
 Retry on the writer row, not here, drawn in the same `ErrorCard` shell as an
 inline, one-line card that is not itself an alert (the chat announces it once
 through its own region). An inherited failed reply stays read-only.
@@ -50,11 +50,13 @@ snapshot) replaces that.
 
 - **Refused (409 `reply_retry_unavailable`, or `runtime_shutting_down`).**
   Nothing was written. The stand-in goes, the snapshot refreshes, and the
-  failed reply carries the generic refused note. The cause never reaches the
+  failed reply carries the generic refused error card. The cause never reaches the
   writer; `reportRetryRefused` (`error-telemetry.ts`) logs it for diagnostics.
-  Any Retry or send clears every note (`clearRefused`), so a note never
-  outlives the writer's next action. A row landing below the failed reply (the other tab's reply
-  that caused the 409) does not: the note says what became of the press.
+  Any Retry or send clears every card (`clearRefused`). A reply that completes
+  after the refusal clears it too: `useRetryStandIns` records, per refusal, the
+  replies already complete, and the card ends when a stored reply completes that
+  wasn't among them (durable turn status, no timers). A row landing below the
+  failed reply, or a reply that fails or is cancelled, does not clear it.
 - **Lost request.** The stand-in stays, failed, and reads "Couldn't start the
   retry. Try again." with its own Retry, which re-sends the same id for the same
   failed reply. If the lost request landed, the server answers the replay with
