@@ -59,7 +59,9 @@ adapter only.
 - A temporary problem the writer can act on (a failed Stop, a refused Retry, out of
   usage) is a `NoticeCard`, the card every chat failure uses, never a text line under
   or beside a control. A failed Stop and out of usage carry a button (Try again, Add
-  usage); a held row reads only "Queued", and the usage card says why.
+  usage); a held row reads only "Queued", and the usage card says why. A failure shows
+  only while it can be acted on: once a turn follows a failed reply, it leaves no line,
+  and with no content no row (`viewTranscript` decides; a refused Retry's card keeps it).
 - Stop (the [composer's one button](../../components/app/composer/AGENTS.md))
   hands the waiting messages back as one editable message, in send order with
   blank lines between them, above typed text. A handed-back message never

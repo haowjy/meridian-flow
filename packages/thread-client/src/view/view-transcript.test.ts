@@ -146,7 +146,7 @@ it("draws a pending Retry in the failed reply's place, even with a message sent 
   ).toEqual(["u1", "u2", "r1"]);
 });
 
-it("draws one failure for a chain of failed retries, the newest", () => {
+it("draws one failure for a chain of failed retries, the newest, and none for a past failure", () => {
   // Risk: every failed attempt stacking up as "This response failed." lines.
   const view = viewTranscript({
     turns: [
@@ -163,6 +163,26 @@ it("draws one failure for a chain of failed retries, the newest", () => {
     "r2",
   ]);
   expect(ids(view)).toEqual(["u1", "c1", "r2"]);
+  // Also: a failed reply the chat moved past leaves no row (`./mf thread view` prints what the app draws),
+  // unless its refused Retry shows a card there, or it has text.
+  const emptyFailed = turn("f", "assistant", "u1", { status: "error", blocks: [] });
+  const partial = turn("p", "assistant", "u2", { status: "error" });
+  const turns = [
+    turn("u1", "user", null),
+    emptyFailed,
+    turn("u2", "user", "f"),
+    partial,
+    turn("u3", "user", "p"),
+    turn("a3", "assistant", "u3"),
+  ];
+  const rowsOf = (refused?: ReadonlySet<string>) =>
+    ids(viewTranscript({ turns, refused, activity: { awaitingSubagents: false } }));
+  expect(rowsOf()).toEqual(["u1", "u2", "p", "u3", "a3"]);
+  expect(rowsOf(new Set(["f"]))).toEqual(["u1", "f", "u2", "p", "u3", "a3"]);
+  // Still the latest reply: it stays, empty or not, for its Retry.
+  expect(
+    ids(viewTranscript({ turns: turns.slice(0, 2), activity: { awaitingSubagents: false } })),
+  ).toEqual(["u1", "f"]);
 });
 
 it("leaves a handed-back message out and keeps history and later sends", () => {
