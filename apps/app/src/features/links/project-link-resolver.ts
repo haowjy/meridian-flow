@@ -172,9 +172,7 @@ function settlementOf(answer: DocumentLinkAnswer): string | null | undefined {
 
 function documentAnswer(document: LinkableDocument): DocumentAnswer | null {
   const link = resolvedLink(document);
-  return link
-    ? { state: "document", document: link, ...(document.draft ? { draft: document.draft } : {}) }
-    : null;
+  return link ? { state: "document", document: link } : null;
 }
 
 function resolvedLink(document: LinkableDocument): ResolvedDocumentLink | null {

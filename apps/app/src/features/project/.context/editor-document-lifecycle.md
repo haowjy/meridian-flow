@@ -167,10 +167,10 @@ caller guesses a review selector from a path or a Work's draft list.
   `chat/ProjectChatContextNavigationProvider.tsx`) is asked of the scoped link
   follower a transcript link uses (`features/links`). A live answer opens where the
   door opens documents (the Editor route, or the dock beside the chat). A hidden
-  document answers with its Work and item key (chat's link index holds the Work's
-  draft-created documents, because the server resolves an address from the live
-  tree only) and goes through the review handoff by identity. A missing answer routes the plain address so the route says so in
-  place. The Editor command only navigates explicit destinations and keeps the
+  document answers with its Work and item key (the server resolves an address the
+  live tree leaves empty in the request Work's draft view, as it does a ref) and
+  goes through the review handoff by identity. A missing answer routes the plain
+  address so the route says so in place. The Editor command only navigates explicit destinations and keeps the
   review identity it already holds (caller, addressed tab, current address).
 - **Whether the destination is admitted** is the route's alone
   (`ReadableProjectRoute`: address binding, local and remote resolution, draft
