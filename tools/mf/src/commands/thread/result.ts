@@ -22,12 +22,16 @@ export type Reason =
   | "replay_truncated"
   | "unconfirmed"
   | "deliverer_unknown"
-  | "credits_exhausted";
+  | "credits_exhausted"
+  | "not_a_message";
 /** `accepted` is admission only and is built solely by `thread send --no-wait`; no wait produces it. */
 export type Claim =
   | { outcome: "accepted" | "complete" | "cancelled" | "handed_back" | "interrupt"; reason: null }
-  | { outcome: "failed"; reason: null | "credits_exhausted" }
-  | { outcome: "unproven" | "timeout"; reason: Exclude<Reason, "credits_exhausted"> };
+  | { outcome: "failed"; reason: null | "credits_exhausted" | "not_a_message" }
+  | {
+      outcome: "unproven" | "timeout";
+      reason: Exclude<Reason, "credits_exhausted" | "not_a_message">;
+    };
 export type Result = Claim & {
   type: "result";
   command: string;

@@ -72,6 +72,14 @@ export class Output {
     if (!this.mode.json) this.io.stdout.write(text.endsWith("\n") ? text : `${text}\n`);
   }
 
+  /**
+   * A line that always reaches stderr, even under --json (as one JSON record there). For a
+   * request a command is about to post: it must survive whatever the answer does.
+   */
+  always(text: string, record: Record<string, unknown>): void {
+    this.io.stderr.write(this.mode.json ? `${JSON.stringify(record)}\n` : `${text}\n`);
+  }
+
   /** Human-only progress or notes; never mixed into machine output. */
   note(text: string): void {
     if (!this.mode.json) this.io.stderr.write(`${text}\n`);
