@@ -86,7 +86,8 @@
 
 ## DB Changes
 
-<!-- Remove if no schema changes. Otherwise name migrations; diagram changed
+<!-- Write "None." if no schema changes; the PR-body check needs every
+     section. Otherwise name migrations; diagram changed
      tables/relationships in Mermaid, mark added/dropped/renamed columns, and
      list new constraints/indexes. -->
 
