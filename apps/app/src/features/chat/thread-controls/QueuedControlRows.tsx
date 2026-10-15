@@ -8,7 +8,8 @@
  * with the writer's instructions under it verbatim. Stop is right after the
  * words on every pending row from its first frame (disabled while the switch's
  * post is unanswered), and removes the row at once; it cancels the command the
- * way a switch back does. A failed enqueue the server may hold has Retry alone.
+ * way a switch back does. A Stop that failed on the server is a card in the row with Try
+ * again where Stop was. A failed enqueue the server may hold has Retry alone.
  * The rows carry no live region: `useThreadControls` and `useSwitchView` announce
  * each change through the global polite announcer, which also reaches a row
  * scrolled out of the virtualized list.
@@ -17,11 +18,17 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { CircleAlert, FoldVertical } from "lucide-react";
 import { useRef } from "react";
+import { NoticeCard } from "@/components/app/NoticeCard";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { CompactionInstructions } from "../compaction/CompactionInstructions";
 import { useFocusWithinRow } from "../compaction/useFocusWithinRow";
-import { controlRetryLabel, controlStatusCopy, controlStopLabel } from "./control-copy";
+import {
+  controlRetryLabel,
+  controlStatusCopy,
+  controlStopLabel,
+  controlWithdrawFailedCopy,
+} from "./control-copy";
 import type { QueuedControl } from "./thread-controls";
 import { WriteModeNotice } from "./WriteModeNotice";
 
@@ -76,7 +83,21 @@ function QueuedControlRow({
           <Trans>Retry</Trans>
         </Button>
       ) : null}
-      {onStop && !(failed && control.awaitingServer) ? (
+      {status === "withdraw_failed" && onStop ? (
+        // The row stays, so the failure is a card here with the Stop's retry in its place.
+        <NoticeCard tone="error" inline announce={false}>
+          <p data-queued-control-card>{controlWithdrawFailedCopy(control.control)}</p>
+          <Button
+            type="button"
+            variant="outline"
+            size="xs"
+            aria-label={controlStopLabel(control.control)}
+            onClick={() => onStop(control)}
+          >
+            <Trans>Try again</Trans>
+          </Button>
+        </NoticeCard>
+      ) : onStop && !(failed && control.awaitingServer) ? (
         <Button
           type="button"
           variant="quiet"
@@ -89,9 +110,6 @@ function QueuedControlRow({
         >
           <Trans>Stop</Trans>
         </Button>
-      ) : null}
-      {status === "withdraw_failed" ? (
-        <span className="text-meta text-destructive">{t`Couldn't stop. Try again.`}</span>
       ) : null}
     </>
   );

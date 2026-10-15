@@ -1,7 +1,7 @@
 import { t } from "@lingui/core/macro";
 import type { Turn } from "@meridian/contracts/protocol";
 import type { WriterText } from "@meridian/thread-client";
-import { Loader2 } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 import { memo, useMemo } from "react";
 import type { UserTurnRecovery } from "@/client/chat-submissions/presentation";
 import { NoticeCard } from "@/components/app/NoticeCard";
@@ -11,6 +11,7 @@ import { useProjectDocumentNavigationProjectId } from "@/features/project/contex
 import { Markdown } from "@/rich-content/Markdown";
 import { HandoffTurnAction, useTurnDerivation } from "./derivation/DeriveTurnActions";
 import { useReferenceAvailability } from "./reference-availability";
+import type { TurnQueueControls } from "./TurnList";
 
 export type UserTurnProps = {
   turn: Turn;
@@ -18,6 +19,11 @@ export type UserTurnProps = {
   writer: WriterText;
   /** True while the accepted writer turn has not yet been read by the model. */
   queued?: boolean;
+  /** The x, and on the last queued row Cancel queue and Send now. Null on rows that aren't the writer's queue. */
+  queueControls?: TurnQueueControls | null;
+  /** This is the last queued row, which carries Cancel queue and Send now. */
+  lastQueued?: boolean;
+  queuedCount?: number;
   /** Retry and, after a durable server refusal, Edit on the unadmitted writer row. */
   submissionRecovery?: UserTurnRecovery | null;
 };
@@ -27,6 +33,9 @@ function UserTurnComponent({
   writer: projected,
   submissionRecovery = null,
   queued = false,
+  queueControls = null,
+  lastQueued = false,
+  queuedCount = 0,
 }: UserTurnProps) {
   // Hand off from a message the model has. A queued one sits beyond the
   // cutoff the server would use, so it offers none.
@@ -46,6 +55,7 @@ function UserTurnComponent({
       data-turn-id={turn.id}
       data-turn-role="user"
       aria-label={t`Your message`}
+      data-queued={queued && turn.status !== "pending" && turn.status !== "error" ? "" : undefined}
     >
       <div className="user-message-bubble">
         <Markdown
@@ -71,13 +81,58 @@ function UserTurnComponent({
         </p>
       ) : null}
       {queued && turn.status !== "pending" && turn.status !== "error" ? (
-        <p
+        <div
           data-user-turn-status="queued"
-          role="status"
-          className="mt-[var(--chat-space-inline)] text-right text-xs text-muted-foreground"
+          className="mt-[var(--chat-space-inline)] flex flex-wrap items-center justify-end gap-x-[var(--chat-space-block)] text-xs text-muted-foreground"
         >
-          {t`Queued`}
-        </p>
+          <p role="status">{t`Queued`}</p>
+          {queueControls && lastQueued && queuedCount >= 2 ? (
+            <Button
+              type="button"
+              variant="quiet"
+              size="meta"
+              data-queue-control="cancel-queue"
+              className="[@media(pointer:coarse)]:min-h-11"
+              onClick={queueControls.cancelQueue}
+            >
+              {t`Cancel queue`}
+            </Button>
+          ) : null}
+          {queueControls && lastQueued && queueControls.sendNow.available ? (
+            <Button
+              type="button"
+              variant="quiet"
+              size="meta"
+              data-queue-control="send-now"
+              data-busy={queueControls.sendNow.busy ? "" : undefined}
+              disabled={queueControls.sendNow.busy}
+              aria-label={t`Stop the reply and send now`}
+              className="relative [@media(pointer:coarse)]:min-h-11"
+              onClick={queueControls.sendNow.send}
+            >
+              {t`Send now`}
+              {queueControls.sendNow.busy ? (
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 rounded-md border-2 border-primary/30 border-t-primary motion-safe:animate-spin"
+                />
+              ) : null}
+            </Button>
+          ) : null}
+          {queueControls ? (
+            <Button
+              type="button"
+              variant="quiet"
+              size="icon-xs"
+              data-queue-control="move-to-box"
+              aria-label={t`Move to the message box`}
+              className="[@media(pointer:coarse)]:size-11"
+              onClick={() => queueControls.remove(turn.id)}
+            >
+              <X aria-hidden />
+            </Button>
+          ) : null}
+        </div>
       ) : null}
       {turn.status === "error" && submissionRecovery?.moving ? (
         <p
@@ -142,6 +197,9 @@ export const UserTurn = memo(
     prev.turn === next.turn &&
     prev.writer === next.writer &&
     prev.submissionRecovery === next.submissionRecovery &&
-    prev.queued === next.queued,
+    prev.queued === next.queued &&
+    prev.queueControls === next.queueControls &&
+    prev.lastQueued === next.lastQueued &&
+    prev.queuedCount === next.queuedCount,
 );
 UserTurn.displayName = "UserTurn";
