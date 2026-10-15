@@ -1,6 +1,6 @@
 import type { DevMode } from "./dev-mode";
 
-/** Host suffixes (`portless run --name …` applies worktree prefix in linked worktrees). */
+/** Host suffixes; tools/dev supplies complete names to Portless named mode. */
 const SERVICE_HOST_SUFFIXES = {
   server: "server.meridian.localhost",
   app: "app.meridian.localhost",
@@ -60,6 +60,7 @@ export interface PortlessRoute {
   url: string;
   raw: string;
   pid: number | null;
+  port: number;
   tailscale: string[];
   funnel: string[];
 }
@@ -69,7 +70,8 @@ export interface ParsedPortlessList {
   rawLines: string[];
 }
 
-const ROUTE_LINE_RE = /^https:\/\/(\S+)\s+->\s+.+?(?:\(pid\s+(\d+)\))?(?:\s*\(alias\))?\s*$/i;
+const ROUTE_LINE_RE =
+  /^https:\/\/(\S+)\s+->\s+(?:http:\/\/)?[^\s:]+:(\d+)(?:\s+\(pid\s+(\d+)\))?(?:\s*\(alias\))?\s*$/i;
 const SHARE_LINE_RE = /^(tailscale|funnel):\s*(.+)$/i;
 
 export function parsePortlessListOutput(output: string): ParsedPortlessList {
@@ -86,12 +88,13 @@ export function parsePortlessListOutput(output: string): ParsedPortlessList {
     const routeMatch = ROUTE_LINE_RE.exec(line);
     if (routeMatch) {
       rawLines.push(line);
-      const [, host, pidString] = routeMatch;
+      const [, host, portString, pidString] = routeMatch;
       const route: PortlessRoute = {
         host,
         url: `https://${host}`,
         raw: line,
         pid: pidString ? Number.parseInt(pidString, 10) : null,
+        port: Number(portString),
         tailscale: [],
         funnel: [],
       };
@@ -135,7 +138,7 @@ function pushRouteLine(
   lines.push(`${service}  ${kind.padEnd(ROUTE_KIND_WIDTH)} ${url}`);
 }
 
-function expectedServiceHost(service: ExpectedServiceName, worktreePrefix?: string): string {
+export function expectedServiceHost(service: ExpectedServiceName, worktreePrefix?: string): string {
   const suffix = SERVICE_HOST_SUFFIXES[service];
   return worktreePrefix ? `${worktreePrefix}.${suffix}` : suffix;
 }
@@ -239,11 +242,15 @@ export function validateExpectedRoutes({
   mode,
   expectedServices = getExpectedServicesForMode(mode),
   worktreePrefix,
+  expectedPorts = {},
+  ownsPid,
 }: {
   output: string;
   mode: DevMode;
   expectedServices?: ReadonlyArray<ExpectedServiceDescriptor>;
   worktreePrefix?: string;
+  expectedPorts?: Partial<Record<ExpectedServiceName, number>>;
+  ownsPid?: (pid: number) => boolean;
 }): RouteValidation {
   const errors: string[] = [];
   const servicePids: Record<string, number> = {};
@@ -260,8 +267,18 @@ export function validateExpectedRoutes({
       continue;
     }
 
-    if (route.pid == null) {
+    if (route.pid == null || route.pid <= 0) {
       errors.push(`missing route pid for ${service.name} (${route.host})`);
+      continue;
+    }
+
+    if (ownsPid && !ownsPid(route.pid)) {
+      errors.push(`foreign or uninspectable route owner for ${route.host} (PID ${route.pid})`);
+      continue;
+    }
+    const expectedPort = expectedPorts[service.name];
+    if (expectedPort !== undefined && route.port !== expectedPort) {
+      errors.push(`wrong backend for ${route.host}: port ${route.port}, expected ${expectedPort}`);
       continue;
     }
 

@@ -10,6 +10,7 @@ export interface DevSessionMetadata {
   sessionName: string;
   mode: DevMode;
   branch: string;
+  worktreePrefix?: string;
   /** Redacted display command only. The executable command may contain secrets and is never persisted. */
   command: string;
   createdAt: string;
@@ -160,11 +161,15 @@ function portlessCommandBody({
   sharedPorts,
   env,
   redacted,
+  worktreePrefix,
+  force,
 }: {
   mode: DevMode;
   sharedPorts: ReadonlyArray<SharedDevServicePorts>;
   env: NodeJS.ProcessEnv;
   redacted: boolean;
+  worktreePrefix?: string;
+  force: boolean;
 }): string {
   const portsByService = sharedPortsByService(sharedPorts);
   const commands = DEV_SERVICES.filter(
@@ -173,7 +178,8 @@ function portlessCommandBody({
     const servicePorts =
       serviceName === "app" || serviceName === "www" ? portsByService.get(serviceName) : undefined;
     const appPortFlag = servicePorts ? ` --app-port ${servicePorts.appBackendPort}` : "";
-    return `${portlessEnvPrefix(env, redacted)}pnpm exec portless run --name ${portlessName}${appPortFlag} pnpm --filter ${pkg} dev`;
+    const name = worktreePrefix ? `${worktreePrefix}.${portlessName}` : portlessName;
+    return `${portlessEnvPrefix(env, redacted)}pnpm exec portless --name ${shellQuote(name)}${force ? " --force" : ""}${appPortFlag} pnpm --filter ${pkg} dev`;
   });
 
   return `(${commands.map((command) => `${command} & sleep 2`).join("; ")}; wait)`;
@@ -185,12 +191,16 @@ function renderPortlessCommand({
   env,
   internalApiOrigin,
   redacted,
+  worktreePrefix,
+  force,
 }: {
   mode: DevMode;
   sharedPorts: ReadonlyArray<SharedDevServicePorts>;
   env: NodeJS.ProcessEnv;
   internalApiOrigin: string;
   redacted: boolean;
+  worktreePrefix?: string;
+  force: boolean;
 }): string {
   return `mkdir -p logs logs/events && ${envSourcePreamble(
     env,
@@ -201,6 +211,8 @@ function renderPortlessCommand({
     sharedPorts,
     env,
     redacted,
+    worktreePrefix,
+    force,
   })} 2>&1 | tee ${logPath}`;
 }
 
@@ -216,11 +228,13 @@ export function createDevSessionCommand({
   sharedPorts,
   env = process.env,
   worktreePrefix,
+  force = false,
 }: {
   mode: DevMode;
   sharedPorts: ReadonlyArray<SharedDevServicePorts>;
   env?: NodeJS.ProcessEnv;
   worktreePrefix?: string;
+  force?: boolean;
 }): DevSessionCommand {
   const internalApiOrigin = resolveInternalApiOrigin(worktreePrefix);
   return {
@@ -230,6 +244,8 @@ export function createDevSessionCommand({
       env,
       internalApiOrigin,
       redacted: false,
+      worktreePrefix,
+      force,
     }),
     display: renderPortlessCommand({
       mode,
@@ -237,6 +253,8 @@ export function createDevSessionCommand({
       env,
       internalApiOrigin,
       redacted: true,
+      worktreePrefix,
+      force,
     }),
     internalApiOrigin,
   };
@@ -257,12 +275,14 @@ export function buildMetadata({
   mode,
   displayCommand,
   externalRoutes = [],
+  worktreePrefix,
 }: {
   branch: string;
   sessionName: string;
   mode: DevMode;
   displayCommand: string;
   externalRoutes?: ExternalDevRoute[];
+  worktreePrefix?: string;
 }): DevSessionMetadata {
   return {
     sessionName,
@@ -271,5 +291,6 @@ export function buildMetadata({
     command: displayCommand,
     createdAt: new Date().toISOString(),
     externalRoutes,
+    worktreePrefix,
   };
 }
