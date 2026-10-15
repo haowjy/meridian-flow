@@ -29,6 +29,10 @@ never into `apps/app`; the chat session moves the rest.
   intents (`run-state/`). No store: hosts hold the view, and the newest record
   wins by `version`. Never derive a run fact from execution ids, stream order or
   timers, and never compose a record from parts.
+- Hand-back commands (Stop, the x, Cancel queue) run through one operation in `hand-back/`
+  over explicit ports; Send now shares its answer classifier (`postSendNow`). Clients adapt
+  storage, editor and printing, and never re-implement the lifecycle. `handBackCards` decides
+  which failures show a card; React and `./mf` decide nothing about them.
 - Share a decision's inputs and recovery, not only its reducer. A rule that
   needs a snapshot to finish (a divider waiting for its anchor, a waiting
   message the stream didn't carry) exposes what waits, and both hosts refresh
