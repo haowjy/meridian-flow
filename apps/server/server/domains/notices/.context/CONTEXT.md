@@ -1,42 +1,33 @@
 # notices — durable model-context delivery
 
-Notices are a durable Postgres queue (`pending_notices`) that `NoticePort`
-peeks into model context. A queue row itself is never conversation history,
-but delivery into a thread's history is durable turn history, not a
-request-only splice — see below.
+Notices are typed, thread-scoped rows in the durable `pending_notices` queue.
+A queue row is not conversation history until runtime materializes it into the
+thread's durable turn history.
 
-## Port contract
+## Port and delivery contract
 
-`NoticePort` records typed, thread-scoped `NoticeInput`, peeks pending notices
-for a thread, and consumes selected rows by ID during commit.
+`NoticePort` records `NoticeInput`, peeks a thread's pending rows, and consumes
+selected IDs during commit. Results are ordered by creation time and notice ID.
+Runtime peeks at each model-call boundary and mid-run inbox adoption; commit
+consumes exactly the selected IDs and appends one trailing `system` turn with
+`{ kind: "system_update", section: "notices" }` metadata at that boundary.
+Notice bytes must be identical on later requests so the frozen prompt prefix
+remains stable.
 
-Results are ordered by creation time and notice ID. Runtime delivery peeks a
-thread's notices at each boundary before a `gateway.stream()` call and at each
-mid-run inbox adoption. The commit consumes exactly the selected notice IDs
-and folds them into the same durable-turn materialization as an inbox batch
-(`drainInbox`/`noticesTurnFor`, `runtime/loop/inbox-context.ts`): one trailing
-`system`-role turn with `{ kind: "system_update", section: "notices" }`
-metadata, positioned at that boundary (after the writer message pre-turn or
-the preceding tool result mid-run). Preparation failure or cancellation leaves
-the rows pending. The durable turn keeps notice bytes identical on every later
-request, which the frozen prefix's Anthropic cache breakpoints require (thread
-AGENTS.md / runtime CONTEXT.md).
-
-The domain contains only notices that affect a later model call:
-`awareness_degraded`, `draft_write_invisible` (a reply's words went into draft text
-the writer had already discarded locally), and writer-origin `work_switched`. A Work-switch notice is
-one-shot causal context; it does not replace the persistent hidden Work-context
-update. The model can't switch Works
-([rule](../../runtime/.context/tools.md#permissions)).
+Preparation failure or cancellation leaves rows pending. A Work-switch notice
+is one-shot causal context and never replaces persistent hidden Work context;
+the model cannot rebind a Work. Current notice kinds are
+`awareness_degraded`, `draft_write_invisible` (a reply's words went into draft
+text the writer had already discarded locally), and writer-origin `work_switched`.
 
 ## Failure boundary
 
-Failure policy belongs to the producer's mutation boundary. Collaboration
-notices remain best-effort after the underlying edit is durable: their
-composition layer catches and structured-logs failures and may attempt an
-`awareness_degraded` fallback. Writer Work rebinds instead record
-`work_switched` in the same ambient transaction as the binding transition, so a
-Notice failure rolls the transition back rather than committing a silent
-switch. A writer reverses a switch by selecting the previous Work normally;
-there is no switch-specific Undo/Redo path. Notices never become mutation
-authority or a read-required fence.
+Failure policy belongs to the producer. Collaboration notices are best-effort
+after the underlying edit commits; the composition layer catches and logs
+failures and may enqueue `awareness_degraded`. A writer Work rebind records
+`work_switched` in the same transaction as the binding transition, so notice
+failure rolls the transition back rather than committing a silent switch.
+
+Notices never become mutation authority or a `read_required` fence. A writer
+reverses a switch by selecting the previous Work normally; no switch-specific
+Undo/Redo path exists.

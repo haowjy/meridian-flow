@@ -1,5 +1,8 @@
 # TODO
 
+This file tracks unresolved schema-repair and draft-write performance work;
+each entry names its owner, evidence, and safe follow-up.
+
 - `yjs-ws-handler.ts` (`classifyYjsConnectionAdmission`, `refuseConnection`,
   and the `onLoadDocument` backstop): these are the only places the server
   refuses a document connection. The

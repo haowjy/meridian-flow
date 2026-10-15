@@ -19,6 +19,9 @@ Hocuspocus durability acknowledgements are classified as `sync.status` with an
 `applied` boolean. Close, ping, and pong controls expose only their class and
 payload byte count; close reasons never leave the inspector.
 
+See [`.context/CONTEXT.md`](.context/CONTEXT.md) for observer-boundary and
+correlation rationale.
+
 ## Content egress invariant
 
 No export may return, emit, store, log, or export manuscript text, attribute

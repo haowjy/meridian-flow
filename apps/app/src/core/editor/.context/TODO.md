@@ -1,86 +1,47 @@
 # Editor — TODO
 
-## Make collaboration restart and detached status honest
+These are verified open contracts, not implementation notes. Remove an entry
+when the behavior and its probe land; do not turn completed work into history.
 
-`DocumentSession.restartTransport()` destroys the old Hocuspocus provider and
-then gives the replacement provider the same session-owned `Awareness` object.
-Hocuspocus 4.3 destroys caller-supplied Awareness in `provider.destroy()`, so a
-terminal authorization recovery can reuse an object whose state, listeners, and
-stale-peer timer are already gone. Keep the provider/Awareness stable while
-replacing or pausing only the room socket, or make provider ownership explicit;
-then probe remote caret disappearance and restoration across terminal recovery.
+## Collaboration restart and detached status
 
-Also surface an authorized editable session that remains `detached` with no
-adoption failure to report. `SyncStatus.tsx` shows only `adoptionStalled` (a
-reported failure), because a timer would flash a false offline label during a
-healthy cold load; a session stuck `detached` silently is still
-indistinguishable from a healthy one.
+`DocumentSession.restartTransport()` currently reuses the session-owned
+Awareness after destroying a Hocuspocus provider. Provider destruction may also
+destroy caller-supplied Awareness, so terminal recovery must either keep
+provider/Awareness stable while replacing the socket or make ownership explicit.
+Probe remote caret disappearance and restoration across terminal recovery.
 
-Affected paths: `apps/app/src/core/editor/document-session.ts` and
-`apps/app/src/features/editor/SyncStatus.tsx`.
+An authorized editable session that remains `detached` without adoption failure
+is not surfaced by `SyncStatus.tsx`. Add an honest signal without flashing
+offline during a healthy cold load.
+
+Affected paths: `document-session.ts` and `features/editor/SyncStatus.tsx`.
 
 ## Draft review
 
-- **Cursor preservation across live ↔ draft remount.** Scroll uses best-effort
-  layout restoration, but selection/cursor restoration is still not deliberate.
-- **Review ownership consolidation.** Review entry/exit, preview fetching and
-  fallback routing are still spread across provider/hooks/components. Per-change
-  commands, focus and the change list now go through the one controller and
-  `features/draft-review`; the rest remains to collapse.
+- Preserve cursor/selection deliberately across live and review remounts; scroll
+  restoration is currently best effort.
+- Consolidate remaining review entry/exit, preview, and fallback routing around
+  the draft-review controller. Per-change commands, focus, and the change list
+  already use the controller.
 
-Design reference: [inline-diff-decoration-architecture.md].
+## Block identity probe
 
-[inline-diff-decoration-architecture.md]: https://github.com/haowjy/meridian-flow-docs/blob/main/archive/work/human-undo-affordance/design/inline-diff-decoration-architecture.md
+Add a probe that moves a figure and verifies every other block retains its hash
+while the moved figure receives a fresh Yjs item identity. Keep schema changes
+mirrored between this app schema and `packages/prosemirror-schema`.
 
-## Prove a block move leaves every other block's hash alone — [#111]
+## Task-list authoring
 
-[#111]: https://github.com/haowjy/meridian-flow/issues/111
-
-Dragging a figure into place ships: the registry marks a figure `drag: "block"`,
-so the figure itself is a drag handle, and every move goes through
-`moveBlockToSeamTransaction` — a delete of the source followed by an insert at
-the seam. ProseMirror's own HTML5 drag is refused wherever it would carry a
-block object, because it moves a node by serializing and re-parsing it.
-
-What is still missing is the assertion that this is true: a test that moves a
-figure and shows every OTHER block keeping its hash while the moved figure
-gets a fresh Yjs item id. That contract is agent-edit's ("block hash = stable
-block identity", `packages/agent-edit/.context/write-invariants.md`), and
-y-prosemirror would break it silently by reconciling a reorder slot-wise.
-
-Keep any schema-spec change mirrored between `apps/app/src/core/editor` and
-`packages/prosemirror-schema`; the two schemas are built separately and parity
-is currently unenforced.
-
-## Task lists have a schema and a codec but no writer surface
-
-`list_item.checked` is in the shared schema and `packages/markup` reads and
-writes GFM `- [ ] ` / `- [x] ` items, so an AI write or a paste can put a task
-list into a manuscript the writer then cannot author or toggle. TipTap's
-TaskList/TaskItem are deliberately not registered: they add `taskList` and
-`taskItem` node types the shared schema does not have. A writer surface means
-an input rule and a keymap over the existing `list_item` + `checked`, plus a
-checkbox in the list item's DOM, not the upstream nodes.
-
-Found while pinning the markdown autoformat truth table
-(`extensions/MarkdownAutoformatExtension.test.ts`); ruling 18 did not name it.
+The shared schema and Markdown codec support `list_item.checked`, but no writer
+surface can author or toggle it. A future surface should use existing
+`list_item` plus `checked`, with an input rule, keymap, and checkbox DOM; do not
+introduce upstream `taskList` or `taskItem` nodes.
 
 ## Two views of one session
 
-Two editors can bind one session (a warm Editor tab and the dock's document).
-The caret is arbitrated (`local-presence.ts` `gateCaretPresence`); two things
-are not:
-
-- **Uploads from two views at once.** `images/image-upload-presence.ts`
-  publishes each editor's whole `imageUploads` array, so when both views upload
-  at once, one view's update overwrites the other's announcement and peers see
-  the first upload as abandoned. If it matters, combine each view's
-  contribution at the session boundary instead of letting each view replace the
-  array.
-- **Undo covers both views' edits.** Each editor has its own undo stack, but
-  both track y-prosemirror's shared sync origin, so Ctrl+Z in one view undoes
-  text typed in the other, and one Ctrl+Z can be a no-op after the other view
-  already undid it. Whether a view's undo should cover only its own edits is
-  an open product question
-  ([KB](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/editor/collab-mapping/one-session-several-views.md));
-  do not change it without a ruling.
+- Image upload presence is currently published per editor. Concurrent uploads
+  from two views can overwrite each other's token list; combine contributions at
+  the session boundary if the product requires concurrent view uploads.
+- Undo stacks are per editor but share the collaborative origin, so one view can
+  undo the other. Change this only with an explicit product ruling.

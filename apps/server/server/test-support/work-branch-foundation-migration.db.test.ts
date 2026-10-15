@@ -25,11 +25,11 @@ import {
   seedObservationEvidence,
 } from "./foundation-upgrade-fixture.js";
 import {
-  isolateSchemas,
+  createScratchDatabase,
   journalIndex,
   MIGRATIONS,
   readJournal,
-  restoreSchemas,
+  type ScratchDatabase,
   stageThrough,
 } from "./staged-migrations.js";
 
@@ -52,9 +52,9 @@ const FUNCTIONS_DIRECTORY = fileURLToPath(
 );
 
 /** pg_dump's session guard is random; all schema and data statements remain comparable. */
-function dump(mode: "--schema-only" | "--data-only") {
+function dump(mode: "--schema-only" | "--data-only", targetUrl = databaseUrl ?? "") {
   // libpq URIs reject the runner's session parameters (`synchronous_commit`).
-  const url = new URL(databaseUrl ?? "");
+  const url = new URL(targetUrl);
   url.search = "";
   return execFileSync(
     "pg_dump",
@@ -83,8 +83,9 @@ async function foundationJournal() {
 
 describe.skipIf(!enabled)("Work-branch foundation migration (postgres)", () => {
   it("moves every row it reshapes and survives a retry from any statement of the online half", async () => {
-    const target = postgres(databaseUrl ?? "", { max: 1, onnotice: () => {} });
-    const writer = postgres(databaseUrl ?? "", { max: 1, onnotice: () => {} });
+    const scratch = await createScratchDatabase(databaseUrl ?? "", "foundation_upgrade");
+    const target = scratch.sql;
+    const writer = postgres(scratch.url, { max: 1, onnotice: () => {} });
     const directory = await mkdtemp(path.join(tmpdir(), "meridian-foundation-upgrade-"));
     const migrations = MIGRATIONS;
     const { journal, names, foundation } = await foundationJournal();
@@ -93,12 +94,9 @@ describe.skipIf(!enabled)("Work-branch foundation migration (postgres)", () => {
       MAIN_BETWEEN,
     );
     const freshSchema = dump("--schema-only");
-    let isolated = false;
     try {
-      await isolateSchemas(target);
-      isolated = true;
       await stageThrough(migrations, directory, journal, names);
-      await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
+      await runMigrations({ databaseUrl: scratch.url, migrationsDirectory: directory });
       await seedMainShape(target);
       const projections = await target`
         SELECT id AS document_id, markdown_projection AS markdown, updated_at
@@ -109,18 +107,18 @@ describe.skipIf(!enabled)("Work-branch foundation migration (postgres)", () => {
       // ledger over its own rows, then the foundation's transactional half.
       await rm(directory, { recursive: true, force: true });
       await stageThrough(migrations, directory, journal, names + 1);
-      await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
+      await runMigrations({ databaseUrl: scratch.url, migrationsDirectory: directory });
       await seedObservationEvidence(target);
       await rm(directory, { recursive: true, force: true });
       await stageThrough(migrations, directory, journal, foundation);
-      await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
+      await runMigrations({ databaseUrl: scratch.url, migrationsDirectory: directory });
       await seedEditLedger(target);
       const dirtyBefore =
         await target`SELECT thread_id, turn_id FROM change_trail_dirty_log ORDER BY seq`;
       expect(dirtyBefore.length).toBeGreaterThan(0);
       await rm(directory, { recursive: true, force: true });
       await stageThrough(migrations, directory, journal, foundation + 1);
-      await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
+      await runMigrations({ databaseUrl: scratch.url, migrationsDirectory: directory });
 
       await rm(directory, { recursive: true, force: true });
       await stageThrough(migrations, directory, journal, foundation + 2);
@@ -142,13 +140,13 @@ describe.skipIf(!enabled)("Work-branch foundation migration (postgres)", () => {
           [...online.slice(0, cut), "\nSELECT 1 / 0;\n"].join("--> statement-breakpoint"),
         );
         await expect(
-          runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory }),
+          runMigrations({ databaseUrl: scratch.url, migrationsDirectory: directory }),
         ).rejects.toThrow(ONLINE);
         // Some live-path guard holds at every cut: the old one until the new one is valid.
         expect(await duplicateLive(), `cut ${cut}`).toEqual([]);
       }
       await writeFile(onlinePath, online.join("--> statement-breakpoint"));
-      await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
+      await runMigrations({ databaseUrl: scratch.url, migrationsDirectory: directory });
       expect(await duplicateLive()).toEqual([]);
       expect(
         await target`SELECT hash FROM drizzle.__drizzle_migrations ORDER BY created_at DESC LIMIT 1`,
@@ -301,7 +299,7 @@ describe.skipIf(!enabled)("Work-branch foundation migration (postgres)", () => {
       // refuses before any of its migrations applies, then succeeds once recovery has drained them.
       const applied = await target`SELECT count(*)::int AS n FROM drizzle.__drizzle_migrations`;
       await expect(
-        runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory }),
+        runMigrations({ databaseUrl: scratch.url, migrationsDirectory: directory }),
       ).rejects.toThrow(/unfinished settlement batches/);
       expect(await target`SELECT count(*)::int AS n FROM drizzle.__drizzle_migrations`).toEqual(
         applied,
@@ -309,7 +307,7 @@ describe.skipIf(!enabled)("Work-branch foundation migration (postgres)", () => {
       await target`UPDATE branch_push_settlement_batches SET state = 'completed', completed_at = now(),
         blocked_at = NULL, claim_token = NULL, claim_kind = NULL, claimed_at = NULL, lease_expires_at = NULL
         WHERE state IN ('pending', 'blocked')`;
-      await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
+      await runMigrations({ databaseUrl: scratch.url, migrationsDirectory: directory });
       expect(
         await target`SELECT table_name, column_name FROM information_schema.columns
           WHERE table_schema = 'public' AND column_name IN ('ai_write_mode', 'default_ai_write_mode')
@@ -329,15 +327,14 @@ describe.skipIf(!enabled)("Work-branch foundation migration (postgres)", () => {
         .sort()) {
         await target.unsafe(await readFile(path.join(FUNCTIONS_DIRECTORY, file), "utf8"));
       }
-      expect(dump("--schema-only")).toBe(freshSchema);
-      const beforeRerun = dump("--data-only");
-      await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
-      expect(dump("--data-only")).toBe(beforeRerun);
-      expect(dump("--schema-only")).toBe(freshSchema);
+      expect(dump("--schema-only", scratch.url)).toBe(freshSchema);
+      const beforeRerun = dump("--data-only", scratch.url);
+      await runMigrations({ databaseUrl: scratch.url, migrationsDirectory: directory });
+      expect(dump("--data-only", scratch.url)).toBe(beforeRerun);
+      expect(dump("--schema-only", scratch.url)).toBe(freshSchema);
     } finally {
       await writer.end();
-      if (isolated) await restoreSchemas(target);
-      await target.end();
+      await scratch.close();
       await rm(directory, { recursive: true, force: true });
     }
   }, 120_000);
@@ -416,15 +413,13 @@ async function seedPendingCreates(sql: postgres.Sql) {
 }
 
 describe.skipIf(!enabled)("Pending draft creates across the foundation upgrade (postgres)", () => {
-  const target = postgres(databaseUrl ?? "", { max: 1, onnotice: () => {} });
+  let scratch: ScratchDatabase | undefined;
   let db: Database | undefined;
-  let isolated = false;
   // Registered before the runtimes' cleanup, so it runs after it: rooms flush and the
-  // app shuts down against the upgraded schema before the saved one comes back.
+  // app shuts down against the upgraded schema before the scratch database is dropped.
   afterEach(async () => {
     await db?.close();
-    if (isolated) await restoreSchemas(target);
-    await target.end();
+    await scratch?.close();
   });
   const runtimes = useComposedRuntimes(() => {
     if (!db) throw new Error("The upgraded database is not open yet");
@@ -432,28 +427,28 @@ describe.skipIf(!enabled)("Pending draft creates across the foundation upgrade (
   });
 
   it("stay hidden, listed new in each draft that uses them, revealed and tombstoned by id", async () => {
+    scratch = await createScratchDatabase(databaseUrl ?? "", "pending_create_upgrade");
+    const target = scratch.sql;
     const directory = await mkdtemp(path.join(tmpdir(), "meridian-pending-create-upgrade-"));
     try {
       const { journal, names } = await foundationJournal();
-      await isolateSchemas(target);
-      isolated = true;
       await stageThrough(MIGRATIONS, directory, journal, names);
-      await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
+      await runMigrations({ databaseUrl: scratch.url, migrationsDirectory: directory });
       await seedPendingCreates(target);
       // 0040 added live_cut; a branch the train wrote to has the cut its first write set, which is
       // the baseline the review-base conversion reads.
       await rm(directory, { recursive: true, force: true });
       await stageThrough(MIGRATIONS, directory, journal, journalIndex(journal, FOUNDATION));
-      await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
+      await runMigrations({ databaseUrl: scratch.url, migrationsDirectory: directory });
       await target`UPDATE document_branches SET live_cut = ${Buffer.from([0, 0])}`;
       await rm(directory, { recursive: true, force: true });
       await stageThrough(MIGRATIONS, directory, journal, journal.entries.length);
-      await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
+      await runMigrations({ databaseUrl: scratch.url, migrationsDirectory: directory });
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
 
-    db = createDb(databaseUrl ?? "", { max: 4 });
+    db = createDb(scratch.url, { max: 4 });
     const runtime = await runtimes.compose();
     const personal = await personalUserSource(db, id(1) as UserId);
     const project = {

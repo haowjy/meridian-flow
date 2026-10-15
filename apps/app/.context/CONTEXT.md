@@ -1,502 +1,213 @@
-# @meridian/app — Architecture & Conventions
+# @meridian/app — architecture and conventions
 
-How the frontend is structured and why its seams exist. Visual implementation
-conventions live in [visual-conventions.md](visual-conventions.md).
+This reference records cross-module contracts for the frontend shell. Directory-local
+guides carry feature rules; visual details live in [visual-conventions.md](visual-conventions.md).
 
 ## Browser records
 
-`src/client/storage/browser-record.ts` owns best-effort JSON storage and the
-`{ version, accountId, scope?, payload }` envelope for workspace tabs, dock,
-reading places, composer drafts, remembered selections, and tree expansion.
-Domain parsers accept unknown payloads; `undefined` means absent/invalid on read
-and deletion on write, while `null` can mean explicitly empty. Scope stamps bind
-selections to project/kind and drafts to destination; features still own their
-state transitions and LRU. Old formats are absent, never migrated. The settings
-first-paint cache and raw boot-script preferences remain separate.
+`src/client/storage/browser-record.ts` owns best-effort JSON records with a
+version/account/scope/payload envelope. Domain parsers treat malformed or
+wrong-account records as absent; `undefined` means absent/invalid and
+`null` may mean explicitly empty. Features own transitions and LRU. Old
+formats are absent rather than migrated. Settings first-paint cache and raw
+boot-script preferences are separate from this envelope.
 
-## Frontend performance
+## Server config, auth, and watcher boundaries
 
-Recurring traps (layout `shouldReload`, relative-time clocks, editor vendor
-chunks, streaming memo/coalesce) live in [frontend-perf.md](frontend-perf.md).
-`EditorView` is a static host dependency; do not lazy-load it.
+`src/server/config.ts` is server-only. It parses `APP_ENV`, `LOG_LEVEL`,
+WorkOS settings, and `MERIDIAN_API_ORIGIN`; isomorphic helpers keep guarded
+environment reads local instead of importing server config. Auth is WorkOS
+AuthKit: hosted callback and dev login mint the sealed `wos-session` cookie,
+and logout clears it. Dev autologin is production-disabled and requires its
+explicit credentials.
 
-## Project Chat index
+The generated repository `logs/` tree is ignored by Vite's watcher, including
+descendants but not similarly prefixed siblings. Do not weaken that boundary.
 
-The Chat index feed/row contract and interaction ownership live with the feature in
-[`src/features/project/chat-index/.context/CONTEXT.md`](../src/features/project/chat-index/.context/CONTEXT.md).
+The dev API proxy (`apiHttpDevProxyPlugin`) skips WebSocket upgrades, which go
+through Vite `server.proxy`. Its explicit route-owner inventory keeps
+`/api/auth/callback` and `/api/auth/dev-login` in TanStack Start and forwards the
+rest of the server-owned auth family, including `/api/auth/me`, to `apps/server`.
 
-## Server config and auth surface
+## State and transport seams
 
-`src/server/config.ts` is the app server's config seam. It parses the
-upstream-shaped runtime variables `APP_ENV` and `LOG_LEVEL` through
-`src/server/runtime-config.ts`, then adds Meridian/WorkOS settings:
-`WORKOS_CLIENT_ID`, `WORKOS_REDIRECT_URI`, `WORKOS_DEV_LOGIN_*`,
-`WORKOS_DEV_AUTOLOGIN`, and `MERIDIAN_API_ORIGIN`. The parsed config is
-server-only; isomorphic client-path helpers such as `src/client/api/ssr-api-request.ts`
-must keep their guarded env reads local instead of importing `getAppServerConfig()`.
+The visual layer reaches the substrate through public store/query/transport
+ports, not adapter internals:
 
-Auth is WorkOS AuthKit: the sealed `wos-session` cookie is minted by
-`/api/auth/callback` (hosted AuthKit) or `/api/auth/dev-login` (dev-only password
-auth). `/logout` clears the session via `signOut()`.
+- `ThreadStoreState`/`ThreadStoreActions` own per-thread turns and actions;
+  features import through `@/client/stores`. `ThreadCachePort` keeps list and
+  snapshot projections in React Query while per-thread turns stay in the store.
+- `useRenameThread` is the title command: project immediately, fence overlap
+  and stale completion, revert a 4xx with row Retry, and retain an unknown
+  outcome while invalidating for reconciliation.
+- `useRebindThreadWork` is the one explicit composer-only Work rebind adapter.
+  Work management and navigation never invoke it. Its cache convergence and
+  durable transport owners remain separate.
+- React Query owns project/thread/Work lists and HTTP snapshots. Passive readers
+  share the host query options with `enabled: false`; never replace a live
+  query function with `skipToken`. Any transition that affects Chat index
+  invalidates its feed through the project/work projection seams. Favorite
+  commands share one normalized project/thread authority across index and Work
+  rows. The project store keeps the account clock and inserts confirmed creations
+  into the project-list cache; it owns no second project list.
+- `useWorks` exposes named catalog Works plus `noWork`. The new-chat composer's
+  initial prospective choice is the first active (then first available) named
+  Work, or No Work. The Work catalog never contains No Work, and Work management
+  has no project-wide selection state and never resolves, repairs, or changes a
+  chat binding.
+- `ThreadTransport` (from `@meridian/thread-client`) is the subscribe/cancel
+  port; runtime uses its `ThreadSocketClient`, composed in `TransportProvider`. The server event journal supplies replay across restarts.
 
-`isDevAutologinEnabled()` (`src/server/dev-auth.ts`) gates dev autologin; it is
-false in production and requires `WORKOS_DEV_AUTOLOGIN=1` plus
-`WORKOS_DEV_LOGIN_EMAIL` / `WORKOS_DEV_LOGIN_PASSWORD`.
+Account-stamped chat submissions are acknowledged-submission witnesses, not
+thread replicas or offline AI runtime. The first-send journal records the exact
+structured authoring snapshot before navigation; acceptance retires it,
+rejection stays on its row, and ambiguity retains it for replay. See the
+[submission guide](../src/client/chat-submissions/AGENTS.md).
 
-## Dev watcher boundary
+Trail evidence and peer marks are read-only; the writer reverses an AI change by
+discarding it in the draft or with Ctrl+Z. `DocumentSession` owns collaboration state only, with no parallel
+safety-notice presentation model. Collaboration self-suppression uses internal Meridian `UserId`, not
+the WorkOS external identity.
 
-The repository `logs/` tree is generated server observability output. Vite's
-`server.watch.ignored` predicate excludes that directory and its descendants so
-log mirrors do not cause app reloads; it must remain boundary-aware and must
-not ignore sibling paths merely sharing a prefix such as `logs-other`.
+## Live turns and transcript references
 
-## State + transport seams
+The turn reducer in `@meridian/thread-client` (shared with `./mf`) maps sequenced
+AG-UI events into ThreadStore actions through its `TurnStore` port. Live and settled assistant turns share the same `Turn`
+rows; partial blocks are an in-flight status, not a second view model.
+`partitionTurn` (`@meridian/thread-client`) renders ordered Process/Text/Artifact items,
+with Process collapsed in place and Text/Artifact visible. See the
+[chat guide](../src/features/chat/AGENTS.md) and
+[composition reference](../src/features/chat/.context/turn-composition.md).
 
-Writer-facing AI change reporting uses durable Trail evidence and session change marks. Trail evidence and peer marks are
-read-only; `DocumentSession` owns collaboration state only and does not retain
-a parallel safety-notice presentation model.
+Transcript syntax and attachment authority are separate. `@meridian/markup`
+parses wikilinks, but only an exact submitted `(documentId, uri)` grants
+attachment occurrence navigation. Other follows go through the host link
+follower and its resolution cache; a shown link registers with the surface's
+single batched requester, and a relative chat link without a base is plain text,
+not a link role or tab stop. Occurrence offsets refer to the original serialized
+message, not decoded mdast; code/raw HTML remain inert. Keep authorized content
+in one source block and map entity/backslash-decoded text with CommonMark's own
+decoder; a regex scanner or second wikilink tokenizer will drift from the wire
+grammar. Streamdown caches processors by plugin identity, so keep the occurrence
+plugin a stable named option-taking plugin, key the renderer by occurrence
+metadata, and pass live resolution through React context; dropping any one reuses
+stale authority or resolution.
 
-Session change-mark self-suppression uses the canonical internal Meridian
-`UserId` from `/api/auth/me`, matching `change_event.admittedByUserId`. WorkOS
-external ids authenticate the shell but never identify collaboration records.
-Two interfaces are the only paths between the visual layer and the substrate:
+Removing a composer reference changes the draft, not Uploads. Upload deletion
+is explicit; duplicate references and Undo/Redo must not revive a deleted file.
+Same-identity Change retains intake provenance, while a new destination does not
+inherit the former upload. The composer exposes intake but no file-deletion port;
+removal is one history unit, and cleanup never lives in a reference menu,
+transaction observer, or timer.
 
-- **`ThreadStoreState` / `ThreadStoreActions`** (`src/client/stores/thread-store/types.ts`) —
-  read vs write contracts. **Implementation:** `src/client/stores/thread-store/thread-store.tsx`
-  (Zustand vanilla store, one instance per `ThreadStoreProvider`, SSR-safe).
-  **Public imports:** `@/client/stores` only — do not reach into store internals from features.
-  UI reads via `useThreadStore(selector)`, `useThreadTurns(threadId)`; writes via
-  `useThreadActions()` only. Before navigation or dispatch, the project new-chat composer and
-  existing-thread sends write an unresolved intent to the account-stamped chat
-  submission journal. Destination Chat owns persistence, idempotent replay,
-  acknowledgement, and recovery. Ambiguous sends retain their journal witness;
-  accepted, proved rejected, retired, or writer-abandoned sends retire it.
-  `markPendingCreation`, `clearPendingCreation`, and
-  `removeOptimisticUserTurn` fence deferred creation and local display only.
-  The journal is an acknowledged-submission record, not a thread replica or
-  offline AI runtime.
-- **`ThreadCachePort`** (`src/client/stores/thread-store/thread-cache.ts`) —
-  thin seam between thread-store lifecycle transitions and the React Query cache.
-  The store depends on this port, not `QueryClient` directly — list/snapshot
-  projections stay in Query; per-thread turn state stays in the store. Its
-  lifecycle projector converges `actionRequired` across project thread lists,
-  the Chat index, and every matching Work feed while Favorite remains normalized separately.
-- **`useRenameThread`** (`src/client/query/useRenameThread.ts`) — P1 thread-title
-  command. It projects the requested title into the project thread list
-  immediately, fences per-thread overlap and stale completions through
-  `thread-rename-command`, persists with `PATCH /api/threads/:id/title`, and
-  announces success only after the server confirms. A 4xx refusal reverts the
-  title and shows inline Retry on the title control; an unknown outcome retains
-  the projection and invalidates the thread list to reconcile.
-- **Thread Work binding:** `useRebindThreadWork` returns discriminated confirmed,
-  reconciled, and superseded outcomes to the composer-only `ComposerWorkControl`.
-  `convergeThreadWorkBinding` is the one cache-effect boundary, while
-  `useThreadDurableProjections` is the one persistent transport owner. Work
-  management and navigation must not call this explicit rebind path. See
-  [`features/chat/.context/composer-write-mode.md`](../src/features/chat/.context/composer-write-mode.md)
-  for placement, interaction ownership, and mid-thread rebind behavior.
-- **Server project/thread lists + HTTP snapshots:** React Query (`client/query/` —
-  `useProjectList`, `useProjectThreads`, `useWorks`, `useThreadSnapshotSync`).
-  A passive reader of a key another hook fetches (`useMissingChatFallback`,
-  `useDisplayedThread` over the thread snapshot) spreads that hook's shared
-  options with `enabled: false`. Never pass `skipToken` there: observer options
-  land on the shared query, so the sentinel replaces the live host's fetch
-  function and its invalidations fail with "Missing queryFn".
-  `project-invalidation` supplies project-level invalidators;
-  `work-projection-cache` is the one Work-entity/binding convergence policy. Any
-  thread or Work transition that can change the Chat index also invalidates `chatFeed`.
-  Terminal turns and Work rebinds enter through
-  `invalidateThreadProjectionDependencies`. Snapshot synchronization applies
-  history and action-required lifecycle state. Favorite commands share one
-  normalized project/thread authority across index and Work rows. The flat
-  project feed projects Favorite flags and filtered membership optimistically,
-  fences pre-command page arrival, then invalidates both filter keys. A
-  failed favorite keeps the last confirmed star, exposes the exact failed
-  intent through an inline row-scoped Retry on the shared row, and still
-  announces the error.
-  `useWorks` exposes named catalog Works plus `noWork`. The new-chat composer derives its
-  initial prospective choice from the first active (then first available) named
-  catalog Work, or No Work. Omitted or explicit-null root creation binds the
-  locked No Work row as primary.
-  Direct `/p/*` authenticated routes mount the project
-  provider stack and seed the project list + `now`; the project route loader
-  seeds per-project threads and works before the workspace renders, and carries
-  the working-set read as an explicit `row` / `absent` / `unavailable` result.
-- **Zustand (thread-store):** per-thread `turnsByThread`,
-  `streamingThreadId`, pending stream metadata, snapshot reconciliation
-  watermark (`snapshotNextSeqFloorByThread`). The project-store retains the
-  account clock and inserts confirmed creations into the project-list cache;
-  it does not own a second project list. See "Thread
-  snapshot reconciliation" below.
-- **`ThreadTransport`** (from `@meridian/thread-client`) — the
-  subscribe/cancel contract for live agent events. Runtime chat uses the
-  package's `ThreadSocketClient`, composed in
-  `src/client/providers/TransportProvider.tsx`, which connects to
-  `/api/threads/ws`.
+## Wire and snapshot contracts
 
-The server's [durable event journal](../../server/server/domains/threads/.context/CONTEXT.md)
-backs replay across restarts; [live-update guidance](../src/features/chat/.context/thread-live-updates.md)
-covers app catch-up.
+`@meridian/contracts/protocol` owns AG-UI payloads and sequenced wrappers;
+thread entities use string IDs and ISO timestamps. Both transports emit the same
+shape and the reducer consumes it.
 
-These exist so adapter swaps (in-memory → Dexie, Mock → WS), protocol changes,
-and reducer evolution stay contained.
+Snapshot application is data-sync/transport recovery work, never a view effect.
+`applyThreadSnapshot` reconciles server history with local optimistic rows.
+HTTP sync runs on route activation, new run, and gap; WebSocket recovery applies
+snapshots on reconnect/gap. A mounted snapshot hook owns addressed block-upsert
+projection and refetches missing targets instead of creating synthetic turns.
 
-## Unified live block reducer
+A local user turn starts as `turn_local_*`. The message response is the identity
+bridge to the canonical server ID and supplies a server-computed
+`snapshotFloorNextSeq`; acknowledgement raises the thread floor so stale
+snapshots cannot remove the row. Snapshot `nextSeq` and WebSocket sequences
+share wire space. Stale snapshots are rejected before cache/lifecycle effects;
+durable-only addressed frames advance their own floor. Run resume cursors remain
+independent.
 
-The turn reducer lives in `@meridian/thread-client` (`src/turns/`) and is shared
-with `./mf`. It maps the live sequenced `AGUIEvent` stream into ThreadStore
-actions (`ensureAssistantTurn`, `upsertAssistantBlock`, `patchTurnStatus`)
-through the `TurnStore` port; the thread store is its adapter and owns one
-reducer instance (`applyTurnEvent`, `applyDurableBlockEvent` actions). Optimistic
-reconciliation, cache invalidation, thread-list patches, `liveMeta`, seq floors,
-and the interrupt response UI stay here. There is no separate live-turn view model; live and
-settled assistant turns are the same `Turn` rows in `turnsByThread`, with
-in-flight blocks marked `status: "partial"`.
+First-send creation stays pending through admission, then activates the mounted
+projection before attaching the run controller. Cached turns render first.
+Activity, inbox, and Work/trail listeners join only after pending creation
+clears; none subscribe or fetch a missing thread.
+Distinct active runs resume once, including server-initiated child continuations.
+Account replacement fences the old lifetime and stale Query responses.
 
-Rendering flows through `AssistantTurn` →
-`partitionTurn` (`@meridian/thread-client`, `src/view/partition-turn.ts`, reached through `viewTranscript`): ordered turn blocks become
-one ordered list of process, text, and artifact items. Process items collapse
-into a default-collapsed `Thinking` fold in place; text and artifacts stay
-visible and close the open process run. `groupDeliverySegments` normalizes tool
-delivery into ToolViews. For the full process/text/artifact contract, see
-[`features/chat/.context/CONTEXT.md`](../src/features/chat/.context/CONTEXT.md).
+## Client-led creation and navigation
 
-### Transcript reference rendering
+Project creation mints its public UUID, journals creation inputs, and navigates to
+`/p/<uuid>/works` before POST settles. The destination owns pending, failure,
+same-identity Retry, and Discard; it never bounces to the library.
 
-`src/rich-content/Markdown.tsx` uses the public `@meridian/markup` wikilink
-grammar for presentation and `reference-occurrences.ts` for submitted-reference
-authority. Those are separate decisions: grammar may make syntax readable, but
-only an exact submitted `(documentId, uri)` match grants occurrence navigation.
-Syntax-only navigation goes through the hosting surface's link follower
-(`TranscriptLinkNavigationContext`: `{ follow, canFollow, resolution, watch }`,
-built by `features/chat/useChatLinkFollowing.ts` over
-[`features/links`](../src/features/links/AGENTS.md)) and must
-never inherit attachment authority. `resolution` is the cache those follows
-use; a syntax link draws its chip state from it, so what it shows and what a
-click finds agree. `watch` is the surface's single requester
-(`createLinkRequester`): a shown link registers its href, and the requester
-asks about every shown link in one batched request per pass. A link never
-asks for itself. A syntax reference `canFollow` rejects (a relative path in
-chat, which has no base URI) renders as plain text with its href as a tooltip:
-no link role, no tab stop, no context menu.
+New-chat Send journals the message, mints local turns, selects the destination in
+place, and lets the handoff persist create-or-get, admission, and run. Failure
+stays on that chat. Retry reuses thread/message IDs; first-send ambiguity must
+replay or reconcile in place rather than show lost-message recovery copy.
 
-Every other reference is a link chip
-([`components/app/link-chip`](../src/components/app/link-chip/AGENTS.md)). An
-exact reference draws in its URI's family from the host's
-`TranscriptReferenceResolution` map. In chat that is the chat's
-`ReferenceAvailability` store (`features/chat/reference-availability.ts`):
-user turns watch their document ids, the store looks every new id up in one
-batched availability request, and the catalog revision change that
-re-registers the link resolver asks again about everything watched. Dashed
-and unfollowable once its document is gone for this writer; filled while the
-answer is out, indeterminate, or for a document that has moved since.
+The authenticated root renders the project library, not a remembered project.
+`/projects/new` is an overlay over that library. Every chat belongs to a
+project; there is no project-less account composer. The account-home API and
+last-active-project preference are gone; zero-project onboarding for a new
+account is not decided here.
 
-Occurrence coordinates are offsets in the original serialized message, not in
-decoded mdast text. Keep authorized content in one source block, use
-CommonMark's string decoder when mapping entity/backslash-decoded text
-boundaries, and leave code and raw HTML inert. A regex scanner or a second
-wikilink tokenizer will drift from the wire grammar.
-
-Streamdown caches processors by plugin function identity/name and does not
-rebuild them merely because React props changed. Keep the occurrence plugin a
-stable named option-taking plugin, key the renderer by occurrence metadata, and
-pass live resolution through React context. Removing any one of those seams can
-reuse stale authority or stale resolution while rendering unchanged text.
-
-### Composer reference actions and uploaded material
-
-Reference removal changes the draft, not the uploaded file. Uploaded material
-remains in Uploads until explicit file deletion, so duplicate occurrences and
-Undo/Redo cannot revive references to files deleted by an atom observer.
-Same-identity Change retains intake provenance; a different destination does
-not acquire ownership of the former upload. Composer exposes intake but no
-file-deletion port. Keep removal one history unit and never put cleanup into a
-reference menu, transaction observer, or timer.
-
-## Wire types as protocol contract
-
-`@meridian/contracts/protocol` defines the canonical `AGUIEvent` payload and
-`SequencedAGUIEvent` transport wrapper; session entities (`Thread`, `Turn`, `Block`)
-are JSON-natural string IDs and ISO timestamps from `@meridian/contracts/threads`.
-
-Both transports emit this shape; the reducer consumes this shape.
-
-## Client-led creation patterns
-
-`/projects/new` mints a UUID, writes its creation record, and navigates to
-`/p/<uuid>/works` before the POST settles. That destination renders the shell
-from the record at once and owns pending, failure, same-identity Retry, and
-Discard; once confirmed, ordinary owner-gated reads authorize its shell. See
-[`features/project/.context/CONTEXT.md`](../src/features/project/.context/CONTEXT.md#project-entry-and-route-lifetime).
-
-New-chat Send journals its intent, mints local turns, selects its current chat
-in place (center replaces the URL; dock leaves the destination unchanged), then
-`useThreadHandoff` persists create-or-get + admit + run on those ids. Failure
-stays on that chat. An empty working turn shows "Couldn't send" with Retry on
-the turn, which resubmits the same thread and message ids. `useThreadHandoff`
-clears that chrome once persist and run succeed. It also resumes each distinct
-active run once, including a server-initiated run that wakes the parent, so a
-background child's continuation streams live; see
-[`features/chat/.context/thread-live-updates.md`](../src/features/chat/.context/thread-live-updates.md).
-First-send creation must replay or reconcile its durable intent in place; never
-replace it with lost-message recovery copy or bounce to the project library.
-Later ambiguous sends use the separate acknowledged-submission recovery
-contract in `features/chat/.context/CONTEXT.md`.
-
-### Thread snapshot reconciliation
-
-Authoritative turn history enters the store through `applyThreadSnapshot`,
-which reconciles server turns against local optimistic state via
-`reconcileSnapshotTurns`. Two callers:
-
-| Source | When | Code |
-|--------|------|------|
-| **HTTP** | Chat route activation (mount/remount), a new run (`RUN_STARTED`), or gap | `useThreadSnapshotSync` (Query fetch) |
-| **WebSocket** | Reconnect/gap recovery | `ThreadRunController.applySnapshot` |
-
-`useThreadSnapshotSync` is always stale and refetches on activation. Its one
-mounted-thread transport handler also owns addressed `meridian.block.upserted`
-reduction after a run terminates; the run controller
-owns deltas, commands and terminals, and flushes buffered deltas before a
-thread-owned block mutation. The handler refetches on `RUN_STARTED` and gap.
-A thread that advanced while the writer was elsewhere — a background child's
-report waking the parent — therefore appears on return without a
-reload, and the handoff learns of a server-initiated run it did not start.
-Cached turns render first, so navigate-first is preserved. The handoff resumes
-each distinct active run once; see
-[`features/chat/.context/thread-live-updates.md`](../src/features/chat/.context/thread-live-updates.md).
-
-Do not call `applyThreadSnapshot` from `ChatView` or other view effects.
-Snapshot application stays in data-sync hooks and transport recovery.
-
-**Identity bridge.** When the user submits a message, the client creates an
-optimistic turn with a `turn_local_*` ID. The POST /messages response is the
-identity bridge: `acknowledgeUserTurn` rewrites the local row to the
-canonical server ID. The response also carries `snapshotFloorNextSeq` — the
-minimum snapshot `nextSeq` that reflects the append (the server computes
-head+1; the client stores it directly, no arithmetic). Acknowledgement raises
-the thread's stored snapshot floor to it, so a stale snapshot cannot remove
-the rewritten row while the projector catches up.
-
-**Wire-sequence freshness.** `applyThreadSnapshot` requires `nextSeq` in the
-same decimal wire-sequence space as WebSocket frames (the server computes it
-from the encoded journal head). The store rejects a snapshot below
-`snapshotNextSeqFloorByThread` before cache or lifecycle effects. A validated
-addressed block frame at sequence `s` advances a separate durable-only cursor
-and raises that floor to at least `s + 1`; a deliberate transport rewind cannot
-restore an older card. Only a snapshot whose history actually reconciled
-advances that cursor through `nextSeq - 1`. The run's resume cursor remains
-independent. Both HTTP acquisition paths pass `nextSeq` and keep stale successful
-responses outstanding at a bounded cadence until fresh history arrives or their
-owner ends; actual request failures keep ordinary error behavior. Missing
-addressed targets invalidate the exact snapshot query without cancelling an
-already-running fetch. The provider activates controller transport listeners in
-its layout effect and releases them on cleanup, so StrictMode replay reopens the
-same controller without admitting callbacks from its prior effect lifetime.
-
-First-send creation stays pending through message admission. Once accepted,
-the handoff activates the mounted projection synchronously at the returned
-replay cursor, before the run controller attaches. Activity, inbox, and
-Work/trail listeners join that subscription only after pending creation clears;
-none subscribe or fetch a missing thread. Ordinary existing-thread mounts
-auto-activate. The shared Query client outlives an account epoch, so account close removes only canonical
-three-part snapshot queries and abort fences reject old responses. The exact
-Work-binding snapshot writer keeps that key and checks its captured epoch.
-
-## Authenticated layout shell
-
-`src/routes/__root.tsx` owns AuthKit and renders the route outlet directly.
-The authenticated route's `AccountFeatureComposition` constructs its account
-feature lifetime synchronously, so its providers and descendants render on the
-first pass. An actual A-to-B account replacement synchronously fences the old
-lifetime and finishes its staged teardown before constructing B; only that
-replacement interval withholds descendants. The authenticated browser effect
-rehydrates the browser-local Editor workspace after the shell is visible. Local persistence
-reconciliation never projects an account-preparation screen or gates initial
-rendering.
-
-`src/routes/_authenticated.tsx` mounts one unconditional route composition for
-every authenticated route (`AppQueryProvider` → `AccountFeatureComposition` →
-`AccountSettingsProvider` →
-`ProjectStoreProvider` → `ThreadStoreProvider` → `TransportProvider` →
-`MeridianCopilotProvider`). No
-pathname-based provider gating — conditional light↔workspace branches previously
-dropped `ThreadStoreProvider` during transitions.
-
-The account-lifetime `AccountSettingsProvider` owns language, theme, Stats for
-nerds and working-set sync. Serialized partial PATCH commands keep per-setting
-revisions, pending state and retryable errors. Pending or failed intents own
-the displayed choice; confirmed values drive `configureWorkingSetSync` and
-are the only values relayed or cached. Newer ordered reads may replace settled
-choices. Account epoch changes remount the owner and fence abandoned writes.
-
-`meridian:account-settings:v1:<accountId>` is an account-stamped first-paint
-cache using the shared browser-record versioned envelope, not a pending-write journal. The active-account pointer lets the theme
-boot script read it before hydration; SSR supplies the current account and a
-server theme seed that wins over cached appearance. The cache is used only
-when that seed is unavailable and contains confirmed snapshots only. Pending
-and failed choices are this tab's overlay, never relayed as saved values. Server
-reads carry a browser request-start generation; command settlements fence older
-reads, while newer reads can replace settled edits. Storage relays confirmed
-snapshots and reconciles unowned fields through a server read, without duplicate
-PATCHes. `?locale=` seeds a local language override; an
-explicit language command takes over for this account session. Settings controls
-show the account record, not that URL override.
-Text size alone stays device-local at `meridian:text-size:v1`. Settings uses
-shared section bodies for desktop and phone, grouped by these two scopes.
-
-**Settings overlay:** `?settings=<section>` is layout-owned (`validateSearch` on
-`/_authenticated`) so the settings dialog is URL-addressable from any authenticated
-route without changing path. See `features/account/SettingsDialog.tsx`.
-
-## Account entry
-
-Authenticated `/` renders the project library from the project-list query,
-never the last-active project. Each cover links directly to `/p/<project-uuid>/chats`;
-its selectable title and edit recency below are not links. The account-home API
-and last-active-project preference are removed; selection comes from the library,
-not a remembered destination.
-
-`/projects/new` is the library with the New project `CreationDialog` over it.
-Create enters the new project at once (see Client-led creation patterns).
-No account-level composer or project-less quick-chat entry is exposed; every chat is created and opened from
-its owning project workspace. The existing personal-project
-bootstrap may still place a starter project in the library for a new account;
-this UI change does not decide zero-project onboarding.
-
-## Project addresses and route lifetime
-
-The authenticated project workspace uses the project's existing UUID in
-`/p/<project-id>`; title and slug edits do not change browser identity.
-Slug-shaped project routes are not aliases. The parent loads the owner-gated
-project by ID, mounts `ProjectView` once keyed by that ID, and its `$` catch-all
-selects child destinations.
-There is no `/project/<UUID>` or `/projects/<UUID>` project route and no
-`screen`/`thread`/`scheme`/`folder`/`path` query grammar. Chat details stay
-inside the owning project's address space.
-
-The path names the screen and what is open on it; the query holds context and
-overlays. The first segment after `/p/<project>` is always a screen: `chats`,
-`works`, or `editor` (the bare project URL replaces itself with `/chats`). Chats,
-Works and projects are addressed by UUID; a new Work keeps its UUID address
-from creation on. `@` and Work slugs never appear in browser URLs: writers read
-`@` as a document reference, and slugs remain the model's address space for
-context URIs (`scratch://@slug/…`) and `work.switch`. `/works/new` is the Work
-creation dialog, distinct from every UUID-addressed Work. Documents and folders
-live under `/editor/…`; the Editor's `?work=<work-UUID>` is the Work context,
-and for Scratch and Uploads it is required because the Work is the file's
-identity. Inside the client, No Work is the locked row's id, including the
-Editor's Work. Work-scoped tabs always carry their Work id.
-Only `workSelectionFor` spells No Work as `none` for project-content
-addresses; Scratch and Uploads addresses carry the row id.
-Work-scoped resource locations carry their Work id and slug; the No Work
-row's slug is null (`ResourceWorkAuthority`). The recognized query keys are
-`work`, `settings`, `results`, and `view`. Selectors distinguish omitted, explicit no-Work (empty),
-a Work ID, and malformed input; duplicate recognized keys and malformed
-encodings are invalid rather than normalized into another destination. Older
-shapes have no alias and render the unavailable state. Case and trailing-slash
-canonical replacement use the address serializer. Settings remains the
-layout-owned overlay; Results remains auxiliary state. The full grammar is in
+The project address is `/p/<project-id>`, where the UUID is stable across title
+and slug edits. The first child segment is `chats`, `works`, or `editor`;
+the bare project route canonicalizes to chats. Chat, Work, and project identities
+are UUID-addressed. Work slugs belong to context URIs, not browser URLs.
+Editor documents/folders live under `/editor/…`; `?work=` supplies explicit
+Work context, required for Scratch and Uploads because the Work is the file's
+identity. Recognized query keys are `work`, `settings`, `results`, and `view`;
+omitted, explicit No Work, valid Work, and malformed values remain distinct, and
+duplicate keys or malformed encodings are invalid rather than normalized.
+Slug-shaped project routes and older shapes (`/project/<UUID>`, `screen`/`thread`/
+`scheme`/`folder`/`path` queries) have no alias and render the unavailable state.
+Inside the client, No Work is the locked row's id and Work-scoped tabs always
+carry their Work id; only `workSelectionFor` spells it `none`, for
+project-content addresses. The full grammar is in
 [`features/project/.context/CONTEXT.md`](../src/features/project/.context/CONTEXT.md).
 
-`ReadableProjectRoute` is the sole browser-address parser/resolver and
-`createProjectNavigation` owns history admission. Project and Work identities
-resolve through successful owner/project catalogs. Chat UUIDs resolve by
-snapshot identity, including subagents absent from the primary list. An unavailable or
-malformed explicit target parks/disables its requested host; it never falls
-through to a remembered or catalog-default target. Main-destination navigation
-pushes a concrete selection. Dock chat selection updates browser-local current
-chat without writing history. Canonicalization and repair replace only when
-their captured entry is still current. Keep route parsing and
-browser history behavior out of `routing/project-route.ts`: that module now
-contains stable-ID navigation command types plus `ProjectSearch`, the
-compare-and-swap snapshot used only by context-removal repair, not URL grammar.
+`ReadableProjectRoute` is the browser address parser and
+`createProjectNavigation` owns history admission; keep route parsing and browser
+history out of `routing/project-route.ts`. Chat UUIDs resolve by snapshot
+identity, including subagents absent from the primary list. Main-destination
+navigation pushes; dock chat selection updates browser-local current chat without
+writing history; canonicalization and repair replace only while their captured
+entry is still current. An unavailable explicit
+target parks the requested host rather than falling through to a remembered
+default. Desktop retains inactive child surfaces; phone may mount/unmount its
+active leaf. Cross-project pending/error replaces the old project subtree, while
+same-project failure parks the requested host. Chat index and Work each own one
+screen-level `app-scroll`; neither adds a nested scroll owner. The Work screen
+shows one list at a time under Active, Archived, and Deleted tabs.
 
-The desktop parent retains its stateful children across readable child paths and
-parks inactive surfaces. Phone is a sibling shell and may mount/unmount its
-active leaf; the account/provider fence is above both. Replacing an account
-fences the prior account lifetime immediately. A cross-project pending or error
-replaces the old project subtree with an inert boundary, while a same-project
-child failure parks only the requested host.
+## Authenticated shell and settings
 
-The dedicated Work screen shows one list at a time under Active, Archived and
-Deleted tabs. Work management has no project-wide selection
-state and never resolves, repairs, or changes a chat binding. The catalog is
-catalog-only and omits No Work. Omitted or null root creation binds locked
-No Work; the catalog never does. The Chat index and Work each own one
-screen-level `app-scroll`; neither adds a nested scroll owner.
+`/_authenticated` mounts one unconditional composition:
+Query → account lifetime → settings → project → thread → transport → copilot.
+Never gate providers by pathname; conditional light and workspace branches once
+dropped `ThreadStoreProvider` during transitions.
+Account replacement synchronously fences the old lifetime before constructing the
+new one; local rehydration does not gate initial render.
 
-## Visual conventions
+`AccountSettingsProvider` owns language, theme, Stats for nerds, and working-set
+sync. Pending/failed setting commands own displayed intent; only confirmed
+values are relayed, cached, or used to configure sync. Its account-stamped
+first-paint cache contains confirmed snapshots only, and is used only when the
+SSR server theme seed is unavailable (the seed wins). Text size is device-local.
+`?locale=` is a local seed; explicit language commands take over. Settings is
+the URL-addressable `?settings=<section>` overlay.
 
-The visual implementation contract lives in
-[visual-conventions.md](visual-conventions.md).
+## Shared presentation rules
 
-## i18n
+Every user-facing string flows through Lingui; locale resolution is centralized
+in `src/lib/i18n.ts`. Use semantic tokens and the shared focus-ring,
+visually-hidden, live-region, and keyboard conventions described in
+[visual-conventions.md](visual-conventions.md). Announcements route through the
+one shared live region fed by `useAnnouncement()`, and shortcuts belong in one
+registry, not scattered `onKeyDown` handlers. The app's pointer cursor rule
+is a human ruling (a dense app of quiet controls should not make the writer click
+to learn what is clickable): one base-layer rule in `src/styles/globals.css`
+covers buttons, links, and summaries minus disabled and `aria-disabled`, and
+components add no cursor utility. Manuscript links remain text under the caret.
+A shadcn refresh will try to take this back; it is a divergence we keep.
 
-Every user-facing string flows through Lingui macros. Use `<Trans>` for static
-text, `` t`...` `` for dynamic text, and ICU `plural`/`select` for
-plurals/branching. Locale resolution is centralized in `src/lib/i18n.ts`. To add
-a locale: drop a `.po` file in `src/locales/<code>/`, add the code to
-`lingui.config.ts` + the `CATALOGS` map.
+E2E fixtures may seed relational project/Work/thread/context shells through the
+authenticated API or SQL, but never write Yjs content or
+`documents.markdown_projection`; Yjs is authoritative and projection is a
+derived cache. Teardown removes context sources and relies on cascades.
 
-## Accessibility (vocabulary to follow as it lands)
-
-A11y primitives should be centralized the same way visual tokens are:
-
-- **Focus rings:** one `focus-ring` utility (consuming `--border-focus`) that
-  every interactive component uses.
-- **Visually hidden text:** a `visually-hidden` utility (or shadcn's
-  `<VisuallyHidden>`) for screen-reader-only content.
-- **Live regions:** one shared `aria-live="polite"` region near `<body>`, fed
-  by a `useAnnouncement()` hook. Streaming text, tool progress, status
-  changes route through it.
-- **Semantic HTML first:** `<nav>` / `<main>` / `<aside>` / heading hierarchy.
-  ARIA augments, doesn't replace.
-- **Keyboard contracts:** centralize shortcuts in one registry; don't sprinkle
-  `onKeyDown` handlers across components.
-- **Pointer cursor on anything actionable**, which shadcn and Tailwind v4 do
-  not do — their reset leaves buttons on the arrow. Human ruling: this app is
-  dense with quiet controls, and a writer should not have to click to learn
-  what was clickable. One base-layer rule in `src/styles/globals.css` covers
-  buttons, `[role="button"]`, `a[href]` and `summary`, minus anything disabled
-  by attribute or by `aria-disabled`; components add no cursor utility of their
-  own. Manuscript links are the deliberate exception — inside `.ProseMirror` a
-  link is text under the caret. **A shadcn refresh will try to take this back;
-  it is a divergence we keep.**
-
-## Motion (forward-looking)
-
-When motion vocabulary is needed, follow the same pattern: define
-`--motion-fast` / `--motion-normal` / `--motion-deliberate` durations and a
-small easing scale in `globals.css`, consume via tokens in TSX.
-
-## Dev limitations (pilot)
-
-- Dev API proxy (`apiHttpDevProxyPlugin`) skips WebSocket upgrades (those go via Vite `server.proxy`). Its explicit route-owner inventory keeps `/api/auth/callback` and `/api/auth/dev-login` in TanStack Start while forwarding the server-owned auth family, including `/api/auth/me`, to `apps/server`.
-
-## E2E document fixtures
-
-E2E fixtures create document content through the authenticated context HTTP API.
-They may seed the relational project, Work, thread, and context-source shell in
-SQL, but never write `documents.markdown_projection` or collaboration tables.
-Yjs is the content authority, while `markdown_projection` is only a derived
-cache; a document row without canonical Yjs state is treated by
-`ensureDocument` as an empty checkpoint. Teardown deletes the owning context
-sources and relies on their document and collaboration cascades.
-
-## Seeded from
-
-The official TanStack Start example (originally seeded from
-`TanStack/router/examples/react/start-supabase`, Supabase removed), adapted to
-monorepo conventions: `@meridian/app` name, workspace deps for domain packages,
-biome toolchain (prettier config removed), `tsconfig.base.json` extension.
-
-## Cross-module links
-
-→ [../../../.context/CONTEXT.md](../../../.context/CONTEXT.md) — harness composition, app layer architecture, DI wiring pattern
-→ [../../server/AGENTS.md](../../server/AGENTS.md) — the Nitro API service (`apps/server`) this app proxies
-
-## KB links
-
-- [API and frontend surface](https://github.com/meridian-flow-bio/docs/blob/main/kb/decisions/api-and-frontend-surface.md)
-- [WorkOS auth](https://github.com/meridian-flow-bio/docs/blob/main/kb/decisions/auth-workos.md) (archived: [Supabase auth](https://github.com/meridian-flow-bio/docs/blob/main/kb/decisions/supabase-auth.md))
+Related server contracts live in [the server context](../../server/server/domains/threads/.context/CONTEXT.md).

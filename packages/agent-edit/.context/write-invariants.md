@@ -1,180 +1,71 @@
 # Write invariants
 
-## Key invariants
+These invariants protect targeting, provenance, and runtime/canonical
+convergence. “Live” and “canonical” mean the document supplied by the host
+coordinator; the runtime replica is a disposable model-side Y.Doc.
 
-“Live” and “canonical” below mean the document supplied by this core's
-coordinator. A host may supply a branch rather than the live document.
-The memory-only runtime replica is distinct from that host-owned branch.
+## Identity and targeting
 
-- **Block identity and display address are different.** Canonical identity is the
-  Yjs item tuple `{ clientID, clock }`, assigned when the `Y.XmlElement` is
-  created. It survives supported content edits and neighbor insert/delete shifts;
-  type replacement or deletion loses that element identity. Full hash material
-  is derived deterministically from the tuple. The agent-visible hash is its
-  shortest currently sibling-unique prefix (minimum four characters), so a
-  colliding sibling can lengthen it and removal can shorten it. A held prefix
-  works only while lookup remains unique. Durable Trail/navigation records use
-  the item tuple with document identity, not the display prefix; content is
-  separate evidence.
+- A block's durable identity is its Yjs item `{ clientID, clock }`. The
+  displayed hash is the shortest currently sibling-unique prefix and may
+  change width. Trail and navigation store the item tuple, not the prefix.
+- In-place block reorder is unsupported. A future move must delete the old
+  item and insert a new one; position-based drag would silently rebind content
+  to another block identity. Never wire a node's `draggable` or default DnD to
+  reposition blocks. Figures move by cut and paste; drag-to-place is wanted and
+  must be built as delete plus insert
+  ([#111](https://github.com/haowjy/meridian-flow/issues/111)).
+- Written links are assigned before alignment and never round-trip through
+  Markdown. Unchanged refs keep their attributes; ahead refs are registered
+  before apply or lock. Fresh creates recheck empty-document admission at the
+  journal boundary.
+- `remove` structurally removes blocks and takes exactly one scope selector;
+  empty-string `replace` remains text-span deletion. Scope addresses are
+  view-scoped while CRDT identity stays document-scoped. When canonical state
+advances, the runtime rebuilds and resolves the writer's command against the
+current document instead of requiring a reread; a missing target is ordinary
+`not_found`. A wrong-target residual shows in the result receipt and is
+recoverable through durable inverse lineage. Target uncertainty never becomes an approval
+or refusal gate on the writer's instruction.
+- Equal serialized content does not preserve Yjs identity, tombstones, or
+  authorship. Never rebuild an existing replica from Markdown as a merge path.
 
-- **In-place block reorder is NOT a supported operation — by policy.** y-prosemirror
-  reconciles a same-order-breaking change (a drag/move) by *position*: it keeps each
-  item id pinned to its slot and **rewrites content in place**, so a "moved" block
-  would land on a different item id and its hash would silently re-bind to whatever
-  content shifted into that slot. We therefore do **not** expose drag-to-reorder for
-  text blocks (paragraph/heading carry no `draggable`). **Any future move feature
-  MUST be implemented as delete-old + insert-new (copy-paste semantics)** — the
-  moved block gets a fresh identity, and the hash model stays "item id = stable block
-  identity" for every supported edit. Do not wire a node's `draggable`/default DnD to
-  reposition blocks; that reintroduces the in-place rebind.
-  - `MeridianFigure`'s `draggable` was removed (here + `packages/prosemirror-schema`)
-    for this reason; figures move via cut/paste. Drag-to-place is a wanted feature,
-    to be built as delete+insert — see issue #111 / `apps/app/src/core/editor/.context/TODO.md`.
+## Runtime and canonical state
 
-- **Written links are assigned before alignment and never round-trip.** Every door that
-  turns written Markdown into nodes runs ref assignment over the replaced span
-  before block alignment and no-op detection, and applies the assigned nodes as
-  they are. An unchanged link keeps its old attrs verbatim and emits no format
-  item; copies, revert and reply save never assign. Ahead refs a write
-  mints are registered before it applies or locks anything
-  ([link identity](link-correspondence.md)). A host whose door runs inside its
-  own transaction binds the whole document first, outside it, and hands the
-  core the bound nodes as a `create`'s content (`WriteContext.boundNodes`);
-  the core applies them as an ordinary overwrite (or, bound fresh, a create
-  into an empty document) and never assigns again. A create without overwrite
-  checks emptiness again at the admission that journals it, before
-  journaling: a writer admitted after the first check refuses it.
+The model edits a memory-only runtime Y.Doc. Canonical host state is the
+source of truth and Yjs merge, not last-writer-wins, is reconciliation. A write
+may cold-rebuild a stale runtime automatically; only an actually missing
+coordinator document is an error. Runtime membership is a set of initialized
+documents, not a persisted snapshot or attribution baseline.
 
-### Destructive scope targeting and recovery
+Every `read` rebuilds runtime from canonical and replays pending response
+updates. `find` reads that same rebuilt document. The write lifecycle is local
+mutation, canonical merge, local resync, sync marking, and one echo. Deferred
+commit collapses only merge/resync to one operation; it does not reuse the
+runtime doc as the commit source.
 
-`remove` is the structural block-removal command and takes exactly one of `in`
-or a `#fragment` in the path; it never deletes the document. `replace({ find, content: "" })` remains exact text-span deletion, while
-an empty scope-only `replace` is rejected so an empty-string sentinel cannot be
-confused with structural deletion.
+Commit re-sync applies durable updates one at a time with persisted origin so
+human/agent attribution survives restart. A session snapshot cannot substitute
+for that baseline. Host tool dispatch is sequential; parallel self-writes could
+resolve against one stale runtime and self-mangle.
 
-Scope addresses are view-scoped; durable identity is the CRDT item tuple within
-its document, with content recorded separately as evidence. When canonical state advances, the runtime rebuilds and resolves the
-writer-requested command against the current document instead of requiring a
-reread. A missing target returns ordinary `not_found`. Any wrong-target residual
-is visible in the result receipt and recoverable through durable inverse lineage;
-target uncertainty never becomes an approval or refusal gate on the writer's
-instruction.
+Yjs convergence is not intent preservation. Concurrent character edits may
+produce mangled prose. Echoes inform the model, but the kernel never gates a
+valid writer instruction on destructive evidence.
 
-- **Markup round-trip stability.** Arbitrary markdown/MDX normalizes on first
-  parse. Repeated serialize → parse cycles produce identical canonical output
-  for supported content. This preserves document semantics, not Yjs item IDs,
-  tombstones, state vectors, or history; never reconstruct an existing replica
-  from Markdown as a merge strategy.
-- **Public mutations stay at turn/tool seams.** Low-level mutators
-  (`applyTextEdit`, `insertBlocks`, etc.) are not exported from the package
-  root; callers mutate through `write()` or the write-level `revert` seam.
-- **Coordinator/runtime failures → `internal_error`**, not
-  `document_not_found`. Only document-missing from the coordinator is
-  `document_not_found`.
-- **Turn identity is durable.** Reversal groups rows by journal mutation
-  metadata, so restart/recovery does not depend on live in-memory inverse state.
+## Content and result boundaries
 
-### Sync engine — the write loop
+Resolved edits carry ProseMirror nodes into apply; apply never reparses or
+serializes. Same-block plain-text find uses exact serialized spans; formatted,
+escaped, entity, and cross-block cases use splice/reparse structural lowering.
 
-How the runtime doc, the live doc, and the response buffer stay reconciled. Each
-rule below blocks a specific failure: silent document corruption, or the agent
-going blind to a concurrent human edit.
+Low-level mutators are not package-root API. Runtime/coordinator failures map
+to `internal_error` except an actual missing coordinator document. Turn identity
+and immutable receipts are durable inputs to reversal, not in-memory inverse state.
 
-- **Offline-peer model.** The model never edits the live doc. It edits a
-  per-session **runtime Y.Doc**; the live doc is canonical (source of truth). All
-  reconciliation is Yjs CRDT merge — never last-writer-wins or conflict resolution.
-- **Session membership is the write gate.** `markSynced` adds the document ID to
-  `session.documents` (a set) on read / create / write / commit. A mutating write
-  calls `requireSynced`; when the document is absent from the set or the live doc
-  is stale, `requireSynced` transparently cold-rebuilds
-  from canonical rather than forcing the model to `read` — a read is never
-  *required* to edit. Only a genuinely missing document errors. Staleness of the
-  shared live doc (journal updates not yet replayed) is tracked by `staleLiveDocs`
-  in `runtime-store.ts`; it is doc-scoped, not thread-scoped, and is not a hot
-  cache.
-- **Runtime sync state is memory-only and not an attribution source.**
-  `session.documents` holds initialized-document membership, not vectors or
-  snapshots, while a process/session is live; nothing in that set is persisted. Attribution/echo
-  baselines are cold-derived per interaction from durable pull-time primitives
-  (thread-peer branch state plus journal floor) and passed through the write
-  context. If a standalone package caller lacks that host baseline, detection
-  falls back only to the current write's request-local pre-own snapshot;
-  session-lifetime memory is never a concurrent-attribution baseline.
-- **One attribution path for warm and cold processes.** A live process and a
-  restarted process use the same interaction baseline inputs. Response-aware attribution may
-  integrate earlier same-response buffered updates into that baseline, and may
-  degrade to the current write's request-local `preOwnSnapshot` when Yjs cannot
-  integrate the staged delete-set shape into the colder baseline. It must not read
-  any session-lifetime full-document snapshot as a next-interaction baseline.
-- **`read` is a self-healing reconstruction, not a merge.** Every `read` discards
-  the runtime, rebuilds from canonical (live), and replays pending buffered updates:
-  `runtime = canonical ⊕ replay(pending)`. It never trusts accumulated local state,
-  so `read` can never carry runtime drift forward or corrupt the doc. At turn start
-  (no pending) it is exactly canonical. Forward inverse application uses the delta merge
-  `syncLocalFromLive`; `read` does not.
-- **`read` and `find` read the same doc.** Both resolve against the runtime, so the
-  model can always `find` what `read` showed it. This is *why* `read` replays
-  pending: otherwise a write after a mid-response `read` could re-match
-  already-edited text and self-mangle at commit.
-- **Write lifecycle.** `mutate local → merge local→live → re-sync live→local →
-  mark session document synced → emit echo`; the echo's concurrent set = blocks the re-sync
-  touched. Deferred commit collapses **only** the merge+re-sync to once per turn
-  (N writes → 1); each buffered write already emitted its per-write echo before
-  commit.
-- **Echoes are one per-write function.** `computeEcho(before, after, touched,
-  deleted)` expands a ±1 window around the agent-touched/deleted hashes and tiers
-  each surviving post-write block independently: inserted or serialized-content
-  changed from `v_pre` to `v_post` → full body; identical context → an exact
-  first-~8-word prefix; outside the window → omitted. Concurrent overlap and
-  structural changes are not separate modes. The model result labels the former
-  `extent: "full"` and the latter `extent: "prefix"`.
-- **Echoed text is verbatim, because the model targets it.** Every character an
-  echo shows must resolve through the exact matcher, so the echo path normalizes
-  nothing — no whitespace collapsing, no tab/NBSP folding. Truncation may drop a
-  suffix but never rewrites the prefix it keeps. The tempting `\s+ → " "` cleanup
-  reads as cosmetic and is not: find-all deletion legitimately leaves double
-  spaces, and an agent retrying with what it was just shown then fails
-  deterministically (#383). The typed result's groups carry
-  `{ extent, relation, items: [{ hash, body }] }`, so each logical block remains
-  distinct without repeating shared semantics; `renderAgentEditResult` renders
-  them to the text the model reads. Only full document/changed/swept groups and
-  prefix context/copied groups exist. Concurrent
-  blocks and tombstones sit in `concurrent.runs`; placement, not another block
-  relation, conveys their concurrent semantics.
-- **Tool results have one typed form and one rendering.** Read, mutation, revert,
-  and write errors return a `meridian.agent-edit.v1` result.
-  `renderAgentEditResult` (`tool/result-text.ts`) is the only path from it to
-  the model's text: a status line, notes, then `hash|text` blocks. Hosts keep
-  the typed result beside the text and never parse the text back (D43).
-- **Convergence is not intent preservation.** Two edits to the same span can CRDT-merge at character level
-  into garbled prose. Convergence does not guarantee intent preservation or that
-  every concurrent word remains visible. The model is **told** via the echo,
-  never prevented.
-  Whole-document overwrite preserves this behavior for positional same-type
-  counterparts, including complex blocks. Shrinking deletes unmatched parents,
-  and shrink plus a block-type change can still lose all concurrent text nested
-  under those parents; canonical-advancement reject/replan owns that residual
-  window.
-- **Commit re-sync is a delta+origin apply, not a rebuild.** It applies concurrent
-  updates one at a time, attributing each touched block to human vs agent by
-  persisted origin (the update bytes don't carry it). `read`'s rebuild can't
-  attribute, so it is not used for the commit re-sync.
-- **Sequential tool dispatch is load-bearing.** The host dispatches tool calls one
-  at a time; writes apply to the runtime sequentially, so overlapping *self*-writes
-  compose or `no_match` rather than self-mangle. Parallelizing the dispatch
-  (`Promise.all`) would let two writes resolve against the same snapshot and
-  self-mangle at commit.
-- **The response buffer is the commit source, not the runtime doc.** The
-  runtime is a scratchpad (find resolution + rendering). Commit applies the buffer
-  to live exactly once; `read`'s replay touches only the runtime and never
-  double-commits.
-- **`find` matching happens in serialized markdown space.** When a matched block
-  body is identical to flat editable text and the payload is plain text, same-block
-  matches (one or more) lower to one `textRanges` edit of exact spans.
-  All formatted, escaped, entity, and cross-block cases splice and parse the
-  affected serialized range before `replaceScope(...)`; they must not use
-  serialized-body→flat offset mapping.
-- **No serialize/reparse between resolution and application.** Resolved edits
-  carry ProseMirror nodes; apply and the model adapter mutate from those nodes
-  and never call the codec. Parse failures surface in the resolver, before any
-  transaction.
+Echo text is verbatim and exact-matchable: truncation may drop a suffix but
+never normalizes what it keeps, because a whitespace-collapsing cleanup breaks
+the model's retry on text it was just shown (find-all deletion legitimately
+leaves double spaces, #383). Result groups carry shared metadata
+and item `{ hash, body }` values; hosts keep the typed v1 result beside its
+rendered text and never parse rendered text back into protocol data.

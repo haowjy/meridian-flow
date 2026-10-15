@@ -1,25 +1,24 @@
 # collab FUTURE
 
-## Recovery at large history sizes
+These are deferred improvements, not current contracts. Preserve the existing
+pending-review authority and settlement fences while pursuing them.
 
-- Measure idle recovery query cost with large settled history in
-  `adapters/drizzle-change-trail-aggregate.ts`; actionable predicates avoid
-  history-induced settlement delay but may still scan much of that history.
-  Consider a partial state index after measuring the plan.
+## Intent-aware manifest command
 
-## Reply save and room admission statement counts
+Unify manifest reconciliation and mutation behind one intent-aware command in
+`composition.ts` and `adapters/drizzle-branches.ts`. The command must
+distinguish a legacy raw row from a not-yet-recorded draft create without
+using caller ordering as domain semantics. `domain/work-draft-pending.ts`
+remains the independent pending-review authority.
 
-Measured on PR 2 ([file-policy performance](../../file-policy/.context/performance.md)),
-before the project manifest read left the path, so re-measure first:
-a reply save costs about 53 statements per written document (60, 268 and
-1,048 for 1, 5 and 20 documents), almost none of it permissions. Room
-admission costs 14 statements per connection; most aren't permissions:
-`document_yjs_heads.schema_version` read 4 times, and
-the checkpoint plus journal loaded twice for the live generation. Trim
-these when saves or reconnects show up as slow.
+## Large-history recovery
 
-**Affected paths:** the reply save (`finalizeResponseCommit` in
-`apps/server/server/lib/model-tools/response-write-lifecycle.ts`, then the
-pool's save in `domain/thread-peer-core-pool.ts`), room admission
-(`admitLiveSync` in `apps/server/server/lib/yjs-ws-handler.ts`), and the
-journal and head adapters.
+Measure idle recovery query plans with settled history before adding a partial
+state index. Keep actionable predicates from turning settlement delay into a
+full history scan.
+
+## Reply-save and room-admission statements
+
+Measure current statement counts for reply save and room admission before
+narrowing confirmation or head/checkpoint reads. Optimize only after identifying
+which persistence or lock boundary dominates.

@@ -1,71 +1,38 @@
 # @meridian/database
 
-Drizzle schema, migrations, functions, and Postgres connection helpers for the Meridian Postgres database (plain `postgres:16` Docker container in dev).
+This package owns the Drizzle schema, migrations, SQL functions, and Postgres
+connection factory. It has no business logic or ambient transaction context;
+domain persistence and transaction propagation live in the server.
 
-- PL/pgSQL functions live in `src/functions/`. `pnpm db:migrate` applies them after migrations; `pnpm db:apply-functions` is the guarded standalone sync command.
-- Keep provider-specific auth assumptions at the adapter/composition boundary; schema should remain ordinary Postgres where possible.
-- Thread-domain usage/cost rollups are persisted columns maintained by
-  application repositories/projectors, not database triggers or functions.
-- Run `pnpm db:migration-lint` when changing generated SQL. Pre-commit lints
-  staged migration SQL; CI runs `drizzle-kit check` plus scoped migration-lint
-  (`--strict` only for PRs targeting `main`/`staging`).
-- Keep Drizzle `src/migrations/meta/*_snapshot.json` tracked. They are generated
-  artifacts and diff-collapsed by `.gitattributes`, but `db:generate` diffs
-  against them; a missing snapshot silently corrupts the next migration.
-- Schema-representable DDL belongs in migrations produced by `db:generate`.
-  Handwritten follow-on migrations contain only database behavior Drizzle cannot
-  model, such as trigger functions and triggers; create them with
-  `drizzle-kit generate --custom` so the journal remains coherent.
-- Migrations: fresh-install baseline `0000_baseline.sql` (no
-  `auth.users` references) plus additive migrations listed in
-  `src/migrations/meta/_journal.json`. `pnpm db:generate` appends the next
-  migration.
-- Migrations merged to `main` or `staging` are frozen: never edit, remove,
-  renumber, or retimestamp them. After merging the base branch, regenerate this
-  branch's unmerged generated migrations from the merged schema so they append
-  after the base tip; never renumber or rename them by hand (see
-  `.context/CONTEXT.md`). CI enforces this with `pnpm db:migration-history`;
-  journal indexes must be contiguous, timestamps strictly increasing, and tags
-  and timestamps unique. `db:migrate` refuses divergent applied history rather
-  than skipping it.
-- **Write migrations as if production data exists.** A migration must be
-  correct on populated tables and lose no writer data: move it, never delete
-  it. No `migration-lint: skip` may rely on empty tables. Use online-safe DDL:
-  CHECKs and FKs `NOT VALID`, then `VALIDATE CONSTRAINT`; indexes built and
-  dropped `CONCURRENTLY` in a `-- migration: no-transaction` file whose
-  statements are all re-runnable. Authoring rules and runner semantics are in
-  `.context/CONTEXT.md`. Regenerating after a base merge drops these hand
-  edits; reapply them.
-- **Data steps.** Code that must run between two SQL migrations (a row
-  transform SQL cannot express) is a versioned data step in
-  `tools/dev/lib/migration-data-steps.ts`, with its implementation in
-  `src/migration-steps/`. Its identity is the marker
-  `-- data-step: <id>@<version>` on the first line of the migration it must
-  precede (the anchor), so renumbering the migration needs no registry edit.
-  `pnpm db:migrate` alone runs it: the step's read-only preflight before the
-  run's first pending migration, its `run` immediately before the anchor.
-  Changing a step's semantics means a new version, a new marker and a new
-  migration. Details in `.context/CONTEXT.md`.
-- Column retirement requires auditing the removed values and removing readers
-  in the same release. Transfer valid pins to canonical Favorites before
-  retirement. Bound the lock acquisition wait with transactional
-  `SET LOCAL lock_timeout` of 1–5 seconds; migration lint enforces that bound.
-- **Until launch, a migration need not keep the previous server version
-  working.** Do not split a change into expand/contract releases or add
-  old-binary tolerance code; a broken deploy is reset instead, with explicit
-  owner authorization.
-- Existing dev databases from the old chain must be reset with `pnpm db:reset`
-  (destroys local data); the new baseline is not an incremental upgrade. Reset
-  only the current checkout's own dev database. Never reset another
-  developer's database. Legacy imports are a separate ETL.
-- `document_yjs_heads.latest_checkpoint_id` is a Drizzle-declared FK, not custom
-  SQL. Compaction retires update prefixes through the generation-local head
-  `retired_through_seq`. Checkpoints persist until document cascade except for
-  the initial zero-sequence seed, which routine persistence may replace.
+## Rules
 
-- Forward-turn inverses use immutable `document_edits` and `document_edit_parts`.
-  Legacy reconstruction reversal tables and the unused mutation provenance sink
-  are retired; immutable edits own write provenance and inverse state.
-
-→ [`.context/CONTEXT.md`](.context/CONTEXT.md) for migration workflow and the
-Yjs head FK contract.
+- Keep provider-specific auth assumptions at the adapter and composition
+  boundary; the schema stays ordinary Postgres (identity is the app-owned
+  `public.users`, keyed by WorkOS `external_id`).
+- Schema-shaped DDL comes from `db:generate`; handwritten migrations are only
+  for behavior Drizzle cannot model. Keep journals and snapshots tracked.
+- Migrations merged to `main` or `staging` are frozen. Append contiguous,
+  strictly timestamped history and regenerate an unmerged lane after a merge;
+  never edit, renumber, retimestamp, or remove an applied identity.
+- Write migrations for populated tables. Preserve writer data, use `NOT VALID`
+  then validation for constraints, and build or drop indexes concurrently in
+  re-runnable no-transaction files. Retire columns only after removing readers
+  and auditing values; bound ACCESS EXCLUSIVE lock acquisition with a short
+  transactional `lock_timeout`.
+- `db:migrate` owns migration application and function synchronization. Use the
+  guarded standalone function command only when function sync is the explicit
+  operation. Divergent applied history is a refusal, not a skip.
+- Until launch, do not add expand/contract compatibility shims for the previous
+  server version. Reset only the current checkout's own dev database when the
+  baseline requires it; legacy imports are a separate ETL.
+- **Data steps.** Code that must run between two SQL migrations is a versioned
+  data step (`tools/dev/lib/migration-data-steps.ts`, implementation in
+  `src/migration-steps/`) anchored by the marker `-- data-step: <id>@<version>`
+  on the first line of the migration it must precede. `pnpm db:migrate` alone
+  runs it; changing its semantics means a new version, marker and migration.
+  The diff-based review base conversion runs this way, and migrations
+  `0050`–`0055` are that upgrade. Details in `.context/CONTEXT.md`.
+- Rollup columns are maintained by application repositories/projectors, not
+  database triggers, except for the documented thread activity projection.
+  Yjs head/checkpoint relationships and immutable edit storage are contracts;
+  see [`.context/CONTEXT.md`](.context/CONTEXT.md).
