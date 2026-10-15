@@ -33,7 +33,6 @@ const expectedSuites = [
   "apps/server/server/domains/threads/adapters/drizzle/chat-feed-activity.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/chat-feed.adapter-contract.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/failed-reply-projection.db.test.ts",
-  "apps/server/server/domains/threads/adapters/drizzle/model-response-repository.db.test.ts",
   "apps/server/server/domains/billing/adapters/__conformance__/drizzle-credit-ledger.db.test.ts",
   "apps/server/server/domains/collab/adapters/__conformance__/drizzle-branches.adapter-contract.db.test.ts",
   "apps/server/server/domains/collab/adapters/drizzle-change-trail-aggregate.db.test.ts",

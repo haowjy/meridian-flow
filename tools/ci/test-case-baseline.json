@@ -392,7 +392,6 @@
     "apps/server/server/domains/threads/adapters/drizzle/execution-report-repository.db.test.ts": 14,
     "apps/server/server/domains/threads/adapters/drizzle/failed-reply-projection.db.test.ts": 1,
     "apps/server/server/domains/threads/adapters/drizzle/model-response-cache-prediction.db.test.ts": 2,
-    "apps/server/server/domains/threads/adapters/drizzle/model-response-repository.db.test.ts": 1,
     "apps/server/server/domains/threads/adapters/drizzle/thread-activity.db.test.ts": 2,
     "apps/server/server/domains/threads/adapters/drizzle/thread-liveness.db.test.ts": 2,
     "apps/server/server/domains/threads/adapters/drizzle/thread-ls-requester-plan.db.test.ts": 1,
