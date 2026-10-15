@@ -41,10 +41,16 @@ export function catalogSourceAuthority(
   scheme: ContextUriScheme,
   workId: string | null,
   workSlug: string | null,
-  rootThreadRef?: string | null,
+  /** The ref of the thread that owns a lineage Scratch or chat uploads source. */
+  ownerThreadRef?: string | null,
+  /** A chat-owned source: its address is the chat's, or bare until the chat row exists. */
+  chatOwned = false,
 ): CanonicalContextAuthority {
   if (scheme !== "scratch" && scheme !== "uploads") return { kind: "contextual" };
-  if (scheme === "scratch" && rootThreadRef) return { kind: "lineage", rootThreadRef };
+  if (chatOwned)
+    return ownerThreadRef ? { kind: "chat", chatRef: ownerThreadRef } : { kind: "contextual" };
+  if (scheme === "scratch" && ownerThreadRef)
+    return { kind: "lineage", rootThreadRef: ownerThreadRef };
   if (!workId) throw new Error("Work-scoped catalog row is missing Work id");
   if (workSlug === null) return { workId, workSlug: null } as ResolvedWorkAuthority;
   const decoded = decodeWorkSlug(workSlug);
@@ -60,7 +66,8 @@ export function mapAuthoritativeFile(input: {
   workId: string | null;
   workSlug: string | null;
   parentPath: readonly string[];
-  rootThreadRef?: string | null;
+  ownerThreadRef?: string | null;
+  chatOwned?: boolean;
 }): CatalogFileEntry {
   const { document, scope, scheme } = input;
   const filename = document.extension ? `${document.name}.${document.extension}` : document.name;
@@ -109,7 +116,13 @@ export function mapAuthoritativeFile(input: {
     uri: canonicalContextUri(
       scheme,
       path.join("/"),
-      catalogSourceAuthority(scheme, input.workId, input.workSlug, input.rootThreadRef),
+      catalogSourceAuthority(
+        scheme,
+        input.workId,
+        input.workSlug,
+        input.ownerThreadRef,
+        input.chatOwned,
+      ),
     ),
     ...persistedClassification,
     provisionalName: document.provisionalName,

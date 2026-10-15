@@ -42,12 +42,23 @@ export type ContextScheme = ContextUriScheme;
  */
 export interface ThreadContextView {
   scratchOwner?: import("../scratch-owner.js").ScratchOwner;
+  /** The chat whose uploads bare `uploads://` names: this thread's top primary (a subagent's parent). */
+  uploadsOwner?: UploadsOwner;
   threadId: string;
   /** The reply in progress, whose own staged writes reads still see. */
   responseId?: string | null;
   /** The Work whose draft this thread's drafted writes land in; null outside draft mode (D40). */
   draftWork: WorkRef | null;
   version?: "draft" | "live";
+}
+
+/**
+ * A chat as the owner of uploads. `chatRef` is null while the chat's row does not exist yet
+ * (a New chat's first uploads), so its files have no handle to spell.
+ */
+export interface UploadsOwner {
+  chatId: string;
+  chatRef: string | null;
 }
 
 /** Schemes provisioned at project scope in the unified context port. */

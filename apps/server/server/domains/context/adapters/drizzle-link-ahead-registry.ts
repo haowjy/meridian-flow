@@ -51,6 +51,14 @@ import {
 type Address = DocumentCoordinates;
 export type LinkAheadRegistryDeps = { eventSink?: EventSink };
 
+/**
+ * `root_thread_id` is the owning thread for either scheme that has one: a lineage Scratch's
+ * first chat, or a chat's uploads' chat. The scheme in the key keeps them apart.
+ */
+function aheadOwnerThreadId(address: Address): string | null {
+  return address.chatThreadId ?? address.rootThreadId ?? null;
+}
+
 /** Registry rows at exactly this address. */
 function atAddress(address: Address) {
   return and(
@@ -59,8 +67,8 @@ function atAddress(address: Address) {
     address.workId === null
       ? isNull(linkAheadRefs.workId)
       : eq(linkAheadRefs.workId, address.workId),
-    address.rootThreadId
-      ? eq(linkAheadRefs.rootThreadId, address.rootThreadId)
+    aheadOwnerThreadId(address)
+      ? eq(linkAheadRefs.rootThreadId, aheadOwnerThreadId(address) ?? "")
       : isNull(linkAheadRefs.rootThreadId),
     // The index keys the path's md5 (unbounded paths overflow a B-tree tuple); exact recheck.
     sql`md5(${linkAheadRefs.path}) = md5(${address.path})`,
@@ -123,7 +131,7 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
               projectId: address.projectId,
               scheme: address.scheme,
               workId: address.workId,
-              rootThreadId: address.rootThreadId ?? null,
+              rootThreadId: aheadOwnerThreadId(address),
               path: address.path,
             })),
           )
