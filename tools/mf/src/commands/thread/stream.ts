@@ -86,7 +86,7 @@ export async function followThread(options: FollowOptions): Promise<FollowResult
       undefined,
       { timeoutMs: remaining },
     );
-    reduced.hydrate(snapshot, { observed: false });
+    reduced.recover(snapshot);
   };
 
   const emit = (event: CliEvent): boolean => {
