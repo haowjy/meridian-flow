@@ -53,8 +53,8 @@ adapter only.
   edit of the draft text that the editor's Ctrl+Z restores (in the Editor only).
   A draft-only tab is the document's one tab and settles in place.
 - The draft dock is this chat's changes (`useDraftDock`), and a chat with none
-  shows no draft dock. Which changes are this chat's is a best-effort attribution
-  hint, and nothing gates on it. Apply sends this chat's changes per file; Discard
+  shows no draft dock. Which changes are this chat's is the classifier's
+  membership (inclusive under doubt; a subagent's changes belong to the chat that spawned it). Apply sends this chat's changes per file; Discard
   is instant and in place: the row reads "Discarded" with Undo on that row, and Ctrl+Z
   does not reach it;
   only new documents are one whole-draft item. Each document

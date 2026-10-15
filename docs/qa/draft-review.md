@@ -61,10 +61,10 @@ draft readback. Read-only API success does not prove writer interaction. Never c
   more changes, `changeIds`), `documents/<d>/draft/apply` (the item), `documents/<d>/draft/discard`
   (item Discard: a created, binary or live-deleted item), `drafts/apply` (Apply all, one
   batch over the Work's items), `drafts/discard` (Discard all, closes the draft),
-  `documents/<d>/draft/attribution` (the chat-name hint) and `drafts/commands/<commandId>`.
+  `documents/<d>/draft/attribution` (the classifier's payload: parts with owners, `userId`, `restorations`) and `drafts/commands/<commandId>`.
   There is no per-change Discard route: a change's Discard is a local edit.
-- Only red and green exist. Chat names on a change are a best-effort hint; nothing gates on
-  them. Surfaces show no numeric per-file badges: agreement between the draft dock, the Work page
+- Only red and green exist. A change's byline ("You", then a link per writing chat) is the classifier's answer and is silent under doubt;
+  its membership decides which chat's draft dock lists it. Surfaces show no numeric per-file badges: agreement between the draft dock, the Work page
   and the Editor is checked by named rows and excerpts.
 
 ### What the surfaces say
@@ -492,8 +492,16 @@ Use a change two chats wrote. Run both shells.
    and the first call is not the target.
 4. Edit a paragraph the AI already changed and applied (type a word elsewhere in it, or a letter
    inside an AI word). PASS: the card says "You" with no chat link, and the draft dock does not
-   list it under the chat. Type next to a pending AI change: PASS: one card with "You" first, then
-   the chat link.
+   list it under the chat.
+5. Mixed card: type next to a pending AI change. PASS: one card whose byline reads "You" first, then a
+   link to the chat.
+6. Hide-mode overflow: narrow the document change list until the chat names do not fit. PASS: the
+   names hide whole and "You" stays visible; "You" is never the part that hides.
+7. Subagent: have a chat spawn a subagent that writes the same document, and open the parent chat's
+   draft dock. PASS: the subagent's change is listed under the parent chat (and Apply or Discard from
+   that dock acts on it). Its card link is labelled with the parent chat's title, with the subagent's
+   task title in its tooltip; clicking it opens the parent chat at the spawn row (the subagent's launch
+   card), not at a turn of the subagent.
 
 ## Review across document schemes
 

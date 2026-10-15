@@ -15,30 +15,42 @@ once the room has synced.
 
 One runtime per draft room (`review-runtime.ts`) publishes an immutable frame
 (`review-frame.ts`: diff and groups, `Y.Snapshot`, each change's pin) in a
-`ReviewState`, joined with the chat-attribution hint and the draft's command
+`ReviewState`, joined with the classified attribution and the draft's command
 records. Mounted editors attach and paint it (`useInlineReviewSync`); with no
 editor `useRoomReview` retains the room headlessly (Work page, strip) and the
 runtime reads its Yjs text. Surfaces read the state with `useReviewState`;
 nothing copies it into the controller.
 
-The attribution hint also names where each chat wrote: every edit part carries its turn and the
-tool call from its `branch_write_journal` row. A change's chat link reveals the chat's latest
-overlapping write (turn and tool call), so it opens the chat at the write that made the change;
-with no turn known it just opens the chat. Best effort: nothing gates on it.
+Who wrote a change is one classifier (`classifyChanges`, `@meridian/agent-edit/diff`, `attribution.ts`)
+over the room's Yjs items and the attribution payload (`review-attribution.ts` joins its answer to
+conversations). Three rules, each one sentence:
 
-A change's byline is `{ writer, chats }` from one evidence pass (`yjs-attribution.ts`). Evidence is what
-the change itself altered: the items its hunks made new (a character diff inside each hunk drops the
-unchanged characters around a typed letter) and the tombstones at its deletion points, not the block's
-others. A green item in an AI part's `inserted` or a red tombstone in its `deleted` names that chat;
-evidence no AI part accounts for is the writer's (typing, late-peer recovery, Discard and its Undo).
-A card shows "You" (plain text, first) for the writer and a link per chat, side by side; a merged
-change can show both, and a change with no evidence shows neither. Where the text cannot be tied to
-items (repeated words that could slide, a deletion point holding more tombstones than the hunk
-removed) no chat is named. Chat-keyed lists, such as the draft dock and the arrival pulse, read
-`chats`, so a writer-only change is in none.
-Undo of a Discard keeps the chat: Yjs re-creates the restored text as writer-client items whose
-`rightOrigin` is the original, so identical restored text inherits the original's attribution, and
-a deletion point's AI-deleted tombstones that spell the removed text outrank its Discard churn.
+- **Byline.** A change names an author when, for one of its edits, every alignment the draft's items can
+  account for gives that author part of the edit. Under doubt it names fewer, down to none.
+- **Membership.** A change belongs to a conversation when any alignment of any of its edits puts one of that
+  conversation's AI writes (its own or a subagent's) in it. Under doubt it includes.
+- **Status.** An AI part reads applied only when no alignment of any change puts it in a change. Under doubt
+  it reads pending.
+
+An alignment is one place the text allows an edit to sit (a repeated word or a boundary space can slide).
+Byline is the intersection over an edit's alignments; membership and status are the union. The classifier
+works on the character edit of each hunk, never its word tokens, and reads only lengths, ids and
+restoration links, so the browser (gc on) and the server (gc off) agree. Authors are identities:
+`user(userId)` (the card says "You" while a project has one user) and `thread(threadId, turnId, toolCallId?)`.
+
+Consumers read one answer. The card renders the byline: "You" first (outside the collapsible names, so
+hide-mode overflow keeps it), then a link per writing thread. A primary thread's link reveals the write's
+turn and tool call; a subagent's write belongs to its nearest primary ancestor conversation (`owner`), the
+link carries the parent conversation's title (the subagent's task title is in its label and tooltip), and
+it reveals the outermost spawn row. The draft dock, chat-scoped Apply and Discard and the thread
+draft-files list read `members` through `owner.threadId`. The arrival pulse reads the byline: a pulse says
+an AI wrote this, so an ambiguous author arrives quietly.
+
+Undo of a Discard keeps the chat through restoration links (`restorations.ts`): an item Undo re-created from
+a deleted one, proven by equal text over the whole run, the server computing them where tombstone text
+exists and the browser adding its own undo stacks'. An Apply appends an Apply record to a server-owned root
+of the draft doc in the same write that moves `review_base`, naming the items Apply moved into the base, so
+applied AI text reads as base and a stale AI deletion no longer blurs a later point.
 
 Every `ReviewChange` carries the frame it was listed from. A click acts on that
 frame: Apply sends its snapshot, Discard finds its pin and content hash in the

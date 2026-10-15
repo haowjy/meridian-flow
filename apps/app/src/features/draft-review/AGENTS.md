@@ -24,8 +24,9 @@ review or joining a room (text Discard is local and uses a headless room).
 
 - Review is a pure function of the text. Never store review state beside the
   document: a move, cut, paste or Ctrl+Z changes the text and the review follows.
-- Only red (removed) and green (added). Chat names are a best-effort hint on a
-  change; nothing gates on them.
+- Only red (removed) and green (added). Who wrote a change is the classifier's
+  byline (best-effort, silent under doubt); which conversation it belongs to is its
+  membership, which the draft dock and chat-scoped Apply and Discard read.
 - Discard is local and instant. In the Editor and the right-side dock it is one
   Ctrl+Z step, and that surface alone undoes it: it writes the draft fragment
   under the editor's own undo origin (`draft-discard.ts`). A surface with no
