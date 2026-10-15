@@ -33,7 +33,7 @@ export type LiveDiff = {
 
 /**
  * Absent when nothing was followed. `not_observed`: the follow had a replay gap,
- * or a compared turn's events were not seen from its start, so there is nothing
+ * a compared turn's events were not seen from its start, or snapshot recovery overwrote them, so there is nothing
  * fair to compare. A difference never changes the exit code.
  */
 export type LiveViewReport =
@@ -47,6 +47,8 @@ export class ReducedThread {
   private readonly reducer: TurnReducer;
   /** Turns whose beginning this follower holds: in a hydrated snapshot, or their RUN_STARTED was applied. */
   private readonly observedFromStart = new Set<string>();
+  /** Turns a recovery snapshot overwrote. Permanent for this follow: no later frame makes them evidence again. */
+  private readonly overwritten = new Set<string>();
 
   constructor(private readonly threadId: string) {
     const now = () => new Date().toISOString();
@@ -55,14 +57,27 @@ export class ReducedThread {
   }
 
   /** False when the snapshot is older than what the store already covers. */
-  hydrate(
-    snapshot: Pick<ThreadSnapshotResponse, "turns" | "nextSeq">,
-    { observed = true }: { observed?: boolean } = {},
-  ): boolean {
+  hydrate(snapshot: Pick<ThreadSnapshotResponse, "turns" | "nextSeq">): boolean {
     const accepted = this.store.hydrate(this.threadId, snapshot.turns, snapshot.nextSeq);
-    if (accepted && observed)
-      for (const turn of snapshot.turns) this.observedFromStart.add(turn.id);
+    if (accepted) for (const turn of snapshot.turns) this.markObserved(turn.id);
     return accepted;
+  }
+
+  /**
+   * Anchor recovery: hydrates a snapshot mid-follow. It overwrites the store's text and status
+   * for every turn it holds, so those turns stop being stream evidence: `compare` reports
+   * `not_observed` for them rather than comparing the server with itself.
+   */
+  recover(snapshot: Pick<ThreadSnapshotResponse, "turns" | "nextSeq">): void {
+    if (!this.store.hydrate(this.threadId, snapshot.turns, snapshot.nextSeq)) return;
+    for (const turn of snapshot.turns) {
+      this.overwritten.add(turn.id);
+      this.observedFromStart.delete(turn.id);
+    }
+  }
+
+  private markObserved(turnId: string): void {
+    if (!this.overwritten.has(turnId)) this.observedFromStart.add(turnId);
   }
 
   /**
@@ -82,7 +97,7 @@ export class ReducedThread {
    * before it can't bring them back.
    */
   apply(event: AGUIEvent, seq: string): void {
-    if (event.type === "RUN_STARTED") this.observedFromStart.add(event.runId);
+    if (event.type === "RUN_STARTED") this.markObserved(event.runId);
     this.reducer.applyEvent(this.threadId, event, seq);
   }
 

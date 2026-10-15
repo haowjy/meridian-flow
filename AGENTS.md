@@ -128,10 +128,7 @@ with no shared client code behind it is evidence of the server only. What the
 writer sees (rendering, card wording, the composer, optimistic UI, client state)
 is checked in the browser (`agent-browser`), and a PR that changes app behavior
 confirms it there at least once, at the end. `./mf` also sets up state (Works,
-threads, seeded documents, mock-model scripts, queued controls). Until
-[#768](https://github.com/haowjy/meridian-flow/issues/768)'s second phase lands, a
-`send` exit 0 doesn't prove which reply answered your message: check it against
-`./mf thread view`. Exit codes are in
+threads, seeded documents, mock-model scripts, queued controls). Exit codes are in
 [docs/debugging.md](docs/debugging.md#set-up-and-verify-with-the-cli). See
 [`./mf` drives shared client cores][mf-shared-cores].
 

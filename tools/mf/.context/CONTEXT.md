@@ -16,8 +16,16 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
   Portless discovery, the in-memory dev-login cookie and bounded requests) and
   imports no group. `src/commands/<group>/` holds one group each; a new group is
   listed in `GROUPS` in `src/main.ts`. A group may import another group's helper,
-  never `main.ts`. Tests share `src/test-support/fake-stack.ts` (fake API and
-  thread socket on the real contracts); `src/main.test.ts` boots the real shim.
+  never `main.ts`. Command tests run the real CLI against `src/test-support/wire.ts`,
+  a thin HTTP and WebSocket harness. It is not a simulator and follows no server
+  rules: each test states the contract facts it needs (admission answer, the
+  snapshot each read returns, Stop's answer, ordered journal frames and when they
+  go out), typed with `@meridian/contracts` through `wire-fixtures.ts`. The harness
+  records what `./mf` posted and can fail a transport (drop a connection, answer
+  with a body that is not JSON, delay a read, close the socket). A command test
+  checks that request and how the answer was read. Stop's scope, adoption and
+  settlement are proven by the server's protocol tests and real-stack probes, not
+  here. `src/main.test.ts` boots the real shim.
 - **Imports.** Workspace libraries are `@meridian/contracts` and
   `@meridian/thread-client` only. Portless discovery uses the route contract
   `pnpm dev` registers (`../dev/portless-prefix.ts`, `portless-routes.ts`,
@@ -41,7 +49,7 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
 - **`liveView` is a lead, not proof.** `send` and `tail --until-idle` compare each
   followed turn's reduced `status` and `finalText` with the confirming snapshot's:
   `matches`, `differs` (with a compact `liveDiff`) or `not_observed` (a replay gap,
-  or a turn not seen from its start). It leaves out tools, reasoning, interrupts,
+  a turn not seen from its start, or one anchor recovery overwrote with a snapshot). It leaves out tools, reasoning, interrupts,
   the optimistic UI, the visible-turn policy, dividers, queued rows and row
   placement, so `matches` does not prove the screen was right, and it never
   changes the claim or exit code. The claims themselves come from the confirming
@@ -55,7 +63,9 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
   then command fields), built only by `terminalResult`, which maps outcome to exit:
   proven outcomes carry a null reason, unproven (exit 6) and timeout (124)
   require one. Reasons: `owed`, `running`, `lease_awake`, `admission_unknown`,
-  `replay_truncated`, `unconfirmed`, `deliverer_unknown`, `snapshot_disagrees`.
+  `replay_truncated`, `unconfirmed`, `deliverer_unknown`. Outcomes: `accepted`,
+  `complete`, `failed`, `cancelled`, `handed_back` (exit 5, shared with cancelled),
+  `interrupt`, `timeout`, `unproven`.
   `accepted` (exit 0) is admission only, returned just by `send --no-wait`. Run
   failures are results; `--fields` always keeps `type`, `command`, `outcome` and
   `reason`. Set `process.exitCode`; never call `process.exit()`.
@@ -65,8 +75,8 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
   `previousDocumentId`, and says the old document was already deleted if the
   create then fails. Seed scenario names use writer spelling.
 - **Usage refusals** are current pending state, not terminal run events. Send
-  reconciles a replayed refusal with the durable snapshot before exiting 1
-  (`failed`, reason `credits_exhausted`); an already recovered reply wins.
+  exits 1 (`failed`, reason `credits_exhausted`) only when its confirming snapshot's
+  `messageFate` is waiting and blocked; an already recovered reply wins.
 
 ## Following a run
 
@@ -79,24 +89,39 @@ deadlines to `--timeout` (see the
 and auth closes are exit 4. `stream.ts` maps events, prints them and runs the
 follow predicates; `events-map.ts` (`RunEventMapper`) folds events into the dotted
 lines `events`, `send` and `tail` print and decides when to look, never what a turn
-contains.
+contains. It carries no run identity: `turn.started` has only the turn id.
 
 - **Busy, owed and blocked** come from the run-state record
   (`liveState.runState`, `subscribed`, `meridian.run_state`) through the package's
   selectors (`isBusy`, `isOwed`, `usageBlockedMessages`, `writerMessages`), the same
   the app uses; `commands/thread/run-state.ts` only holds the view.
-- **`send`** follows from the admission's `resumeAfterSeq` and builds its turn from
-  its own events, reading no snapshot before its deadline. Before reporting
-  complete it checks that its admitted user turn is no longer owed in a record at or
-  past its admission (`runStateVersion`; none when the admission has none). If still
-  owed it returns 6 `owed` with `stillRunning` and a next until-idle tail. This does
-  not prove which reply answered: that binding waits for #768 phase 2. A lost HTTP
-  admission answer is recovered with one app-route lookup (`submissionId`); a failed
-  lookup or pending admission is 6 `admission_unknown`.
+- **`send`** follows from the admission's `resumeAfterSeq` and uses the stream only to
+  decide when to look: the subscribed state, a `meridian.run_state` or
+  `meridian.messages.handed_back` frame, `interrupt.requested` or a gap wakes one
+  confirming snapshot (read with the remaining time). Every claim is the shared
+  `messageFate` over that snapshot's record and turns (waiting, answering, answered,
+  handed back, unproven) plus the admission's `runStateVersion`; `send` decides
+  nothing itself: one projection turns the fate into a final result frozen with its snapshot, and
+  `liveView` attaches after the catch-up. At the deadline it classifies the last completed
+  snapshot (`snapshotStale`, or `snapshotUnavailable`) and reads no new one. The result is the chain's last reply (`turnId`), the reply that took
+  the message (`answeredBy`) and `userTurnId`. A settled claim gives the stream a bounded
+  1.5 s (one deadline for stream reads, anchor recovery and snapshot reads) to reach the
+  snapshot's position; the printed log is best-effort. A timeout, transport or protocol
+  error in catch-up never changes the claim and marks `liveView` `not_observed`. A lost HTTP admission answer is recovered with one app-route lookup
+  (`submissionId`); a failed lookup or pending admission is 6 `admission_unknown`.
+- **`stop`** posts the app's Stop body (`stopRequest` over a snapshot's record, `mine: []`)
+  to the Stop route, printing the request first. The request is frozen, then posted, then the
+  answer is validated against the contract's `stopResponseSchema` (blocks and id arrays
+  included) before anything is confirmed. Every failure to read or validate it (no answer, a 5xx,
+  a response over the session's size limit, a non-JSON or malformed body) exits 4 with the
+  request in `details` (so `--json` keeps it); only a 4xx status stays a refusal. `--replay` input is
+  the contract's `stopRequestSchema`. A lost answer exits 4; only
+  `--replay <request>` (same id and body, no new snapshot) recovers it, since a plain re-run is
+  a new press; **`cancel --turn`** serves a handoff brief's Stop only.
 - **`tail --until-idle`** hydrates a snapshot, follows from its `resumeAfterSeq`
   (`nextSeq` is freshness only and never filters events) and returns at once if
-  idle. After a finish, failure, lease or record change or idle state it confirms a
-  snapshot: `isBusy` false and `status.kind: "asleep"`. One subscription and mapper
+  idle. When a record or the subscribed state shows no open execution and no writer
+  message, or a status frame arrives, it confirms a snapshot: `isBusy` false and `status.kind: "asleep"`. One subscription and mapper
   stay alive through every confirmation. Any observed failure or covered turn error
   is failed; otherwise any cancellation is cancelled; missing or non-terminal turns
   are 6 `unconfirmed`; all complete is complete. A replay gap without a proven
@@ -113,7 +138,9 @@ contains.
   `meridian.write_mode.switched` divider installs after its anchor turn. When the
   anchor is a user turn the stream never carried, the store holds the divider out
   (`ReducedThread.awaitsAnchor()`) and `followThread` hydrates one snapshot within
-  the remaining deadline, at most once per 250 ms, with `observed: false`. It never
+  the remaining deadline, at most once per 250 ms (`ReducedThread.recover`, which ends those
+  turns' standing as stream evidence, permanently for the follow: a later `RUN_STARTED` for
+  them does not restore it, so `liveView` stays `not_observed` for them). It never
   inserts the divider at the tail. Sharing the reducer without this recovery left
   `./mf` holding the divider forever.
 - `respond` uses the shared interrupt sender and confirms its interrupt's
