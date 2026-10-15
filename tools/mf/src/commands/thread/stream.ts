@@ -11,7 +11,7 @@ import type { Output } from "../../core/output";
 import type { Session } from "../../core/session";
 import { type CliEvent, RunEventMapper, renderEventLine } from "./events-map";
 import type { ReducedThread } from "./reduced-thread";
-import { currentTurnId, runStateOfEvent } from "./run-state";
+import { runStateOfEvent } from "./run-state";
 import { createThreadClient, subscribeThread } from "./transport";
 
 export type FollowResult = {
@@ -122,7 +122,7 @@ export async function followThread(options: FollowOptions): Promise<FollowResult
       switch (message.type) {
         case "live": {
           state = message.state;
-          const turn = currentTurnId(state.runState);
+          const turn = state.runState.execution?.currentTurnId;
           if (turn) turnIds.add(turn);
           if (options.catchupOnly || options.shouldStopState?.(state)) stopRequested = true;
           break;

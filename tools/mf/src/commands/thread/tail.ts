@@ -14,7 +14,7 @@ import {
 import { type LiveViewReport, ReducedThread } from "./reduced-thread";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
 import { type Claim, classifyDeadline, finishResult, terminalResult } from "./result";
-import { currentTurnId, recordIsIdle, runStateOfEvent } from "./run-state";
+import { recordIsIdle, runStateOfEvent } from "./run-state";
 import { followThread } from "./stream";
 
 const STATUS_EVENT = "meridian.thread.status";
@@ -67,7 +67,7 @@ export const threadTailCommand: CommandSpec = {
       const initial = since === undefined || untilIdle ? await readSnapshot() : null;
       if (initial) reduced.hydrate(initial);
       since ??= initial?.liveState.resumeAfterSeq ?? "0";
-      const initialTurn = initial ? currentTurnId(initial.liveState.runState) : null;
+      const initialTurn = initial?.liveState.runState.execution?.currentTurnId;
       if (initialTurn) turnIds.add(initialTurn);
       if (untilIdle && initial && isIdle(initial.liveState))
         return finishResult(ctx.out, tailResult(threadId, initial, new Set()));
@@ -93,7 +93,7 @@ export const threadTailCommand: CommandSpec = {
         ...(untilIdle
           ? {
               shouldStopState(state) {
-                const turn = currentTurnId(state.runState);
+                const turn = state.runState.execution?.currentTurnId;
                 if (turn) turnIds.add(turn);
                 return recordIsIdle(state);
               },

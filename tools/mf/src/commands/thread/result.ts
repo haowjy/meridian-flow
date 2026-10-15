@@ -1,9 +1,9 @@
 /** Terminal claims and deadline reports, independent of the interim follow predicates. */
 import type { ThreadSnapshotResponse } from "@meridian/contracts/protocol";
+import { writerMessages } from "@meridian/thread-client";
 import { EXIT, type ExitCode } from "../../core/cli-error";
 import type { Output } from "../../core/output";
 import { type LiveDiff, renderLiveDiff } from "./reduced-thread";
-import { currentTurnId, owedWriterMessages } from "./run-state";
 
 export type Outcome =
   | "accepted"
@@ -35,7 +35,7 @@ export type Result = Claim & {
   turnId?: string | null;
   finalText?: string | null;
   next?: string[];
-  liveView?: "matches" | "differs";
+  liveView?: "matches" | "differs" | "not_observed";
   liveDiff?: LiveDiff[];
 };
 export type TerminalResult<T extends Record<string, unknown> = Record<string, unknown>> = {
@@ -146,10 +146,10 @@ export function classifyDeadline(
 /** Obligations from the mandatory live-state projection, never durable thread.status. */
 export function snapshotActivity(snapshot: ThreadSnapshotResponse) {
   const { runState } = snapshot.liveState;
-  const turnId = currentTurnId(runState);
+  const turnId = runState.execution?.currentTurnId ?? null;
   const turn = snapshot.turns.find((candidate) => candidate.id === turnId);
   return {
     stillRunning: turnId ? { turnId, status: turn?.status ?? "unknown" } : null,
-    owed: owedWriterMessages(runState),
+    owed: writerMessages(runState),
   };
 }
