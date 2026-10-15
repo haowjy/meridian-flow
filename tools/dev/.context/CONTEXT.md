@@ -67,6 +67,9 @@ stale routes; it never calls a global reset or removes a live route. `--restart`
 owns its configured ports: after tmux teardown it SIGTERMs every discovered
 holder, waits briefly, then SIGKILLs stragglers, with discovery never gated on
 tmux, cwd, or ancestry; a bound port it cannot inspect aborts startup loudly.
+Fixed app backend ports sit in 20000-27999, below Linux's ephemeral range, so
+an outgoing connection's source port can never hold one; a port busy with no
+listener is reported as such.
 `--force` requests restart semantics too. Both explicitly take over expected
 Portless hostnames with warnings identifying the old PID, cwd when inspectable,
 and backend port; ordinary startup refuses occupied names. Takeover uses
