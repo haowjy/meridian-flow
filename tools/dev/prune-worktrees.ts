@@ -1,5 +1,6 @@
 #!/usr/bin/env tsx
 import { execFile, execFileSync, spawnSync } from "node:child_process";
+import path from "node:path";
 import { stdin as input, stdout as output } from "node:process";
 import readline from "node:readline/promises";
 import {
@@ -587,8 +588,13 @@ async function buildPlan(
 
 function runAction(action: CleanupAction): { ok: boolean; output: string } {
   const [command, ...args] = action.command;
+  const fallbackNodeModules = path.resolve(process.cwd(), "node_modules");
+  const nodePath = process.env.NODE_PATH
+    ? `${process.env.NODE_PATH}${path.delimiter}${fallbackNodeModules}`
+    : fallbackNodeModules;
   const result = spawnSync(command, args, {
     cwd: action.cwd,
+    env: { ...process.env, NODE_PATH: nodePath },
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   });
