@@ -1,65 +1,40 @@
 # Composer document model
 
-This directory owns authored text, reference atoms, skill atoms, and pending/failed uploads.
+This directory owns authored text, reference and skill atoms, and pending or
+failed uploads. It is the authoring boundary; admission and server authority
+remain outside it.
 
-- Message serialization and occurrence spelling live in `@meridian/thread-client`.
-  This directory keeps the TipTap schema, clipboard, selection, and upload ownership.
-- A reference reads in text as a standard Markdown link to its canonical URI,
-  `[label](uri)` (`referenceSpelling`): the occurrence a sent message carries,
-  which is what the model reads, and the plain clipboard form. The destination
-  is `spellDocumentHref(null, uri)`, never the raw URI, so a `#` or `%` in a
-  name stays part of the address. Rich clipboard
-  HTML preserves selected reference identity. HTML metadata is untrusted; turn
-  admission authorizes identity and clipboard cannot grant access.
-- A copied occurrence never owns the source draft's upload lifecycle.
-- Manuscript marks carry targets, not admitted attachment identity. Preserve their
-  Markdown on paste without inventing a Composer attachment, spelled with the
-  link's recorded full address (`data-meridian-address`) when the Editor copied
-  one: chat has no folder for a relative href to mean anything in.
-- Submission keys belong at document scope in the editor kernel, below suggestion
-  keys. A React capture handler must not submit before a suggestion can choose.
-- Chat `/` is a command lane (`command/`) on the same suggestion kernel as `@`.
-  Skills appear as `/<slug>` atoms in the document. Send copies that spelling
-  into the message text as a skill occurrence block and reads unique slugs from
-  the atoms; typed `/slug` prose is not an activation. Session verbs (`compact`,
-  `handoff`, `clear`) are reserved slugs a skill can never take. A surface that
-  owns a thread registers the verbs it can run through `commands`; choosing one
-  deletes the trigger text and runs it, never inserting message content.
-  Sending a draft that is a registered verb (`/compact`, optionally followed by
-  whitespace and text) runs it with the trimmed rest as `instructions` and
-  clears the draft; an unregistered verb sends as a message. Only `/compact` is
-  registered today, on every chat: it is always the command, and the server's
-  refusal (nothing to summarize yet) lands on its row. Manuscript
-  slash insertion is a different catalog.
-
-- One button, as on `main` (the owner's ruling, TL-MF-80, reversing TL-MF-49):
-  `showStop` is a reply running or this tab's Stop pending, stopping or failed,
-  and an empty box. With text the button is Send, carrying the spinning ring
-  while a reply runs, and it queues a steer. Stopping and "Couldn't stop. Try
-  again." live on the Stop button, so they show only while the box is empty; a
-  failed Stop comes back when the box empties. Escape presses Stop only while
-  Stop shows. Stopping a reply to send now belongs to the queue's controls.
-- The host owns session persistence through `initialDraft` / `onDraftChange`.
-  An initial snapshot is never applied again to a live draft. Successful catalog
-  acquisition removes restored reference atoms whose resources are gone;
-  unavailable/offline catalogs leave them alone. Session decoding omits upload
-  atoms whose bytes existed only in memory, but preserves completed upload
-  reference ownership.
-- Send transfers the exact structured fingerprint to the journal before clearing
-  unchanged editor words. `onSubmit` returns whether local recording succeeded;
-  network admission does not quarantine or lock authoring. A local storage refusal
-  keeps the live draft and reports the failure above the box as the shared
-  `NoticeCard` (`components/app/NoticeCard.tsx`, error tone), a live alert whose
-  only control is an X (`onDismiss`) that dismisses it and returns to the editor.
-  Pressing Send again is the retry, and the next recorded send clears it.
-- Every note above the box is a `NoticeCard` in one stack the Composer draws:
-  the host's own (`notices`, such as the dismissible deleted-chat note and the
-  nondismissible usage note) and then the Composer's failure. The stack sits
-  above the strips joined to the box's top edge (`attached`, the draft dock),
-  never between a strip and the box.
-- Usage waiting is the server inbox projection (`blocked.reason:
-  credits_exhausted`), not an account-balance guess. ChatView supplies its
-  info-tone note through `notices`; waiting writer rows say "Waiting for usage".
-  The server clears the fact through the ordinary inbox event (at run start, or
-  when no message or control remains pending). The box stays editable, and the
-  client never polls.
+- A reference is a standard Markdown link with a canonical URI for model input and
+  plain clipboard (`[label](uri)`; the destination is `spellDocumentHref(null, uri)`,
+  never the raw URI, so `#` or `%` in a name stays part of the address). Rich HTML preserves identity but is untrusted; admission,
+  not clipboard metadata, authorizes access. A copied occurrence never owns the
+  source draft's upload lifecycle.
+- Manuscript marks carry targets, not attachment identity. Preserve their full
+  recorded address when copying into chat, where a relative href has no holder.
+- Submission keys belong to the editor kernel below suggestion keys. Chat `/`
+  commands share the suggestion kernel with `@`; only registered command atoms
+  execute, while typed `/slug` prose does not activate a skill. Send copies a
+  skill atom's `/<slug>` into the message as a skill occurrence block and reads
+  unique slugs from the atoms. `compact`, `handoff`, and `clear` are reserved
+  slugs a skill can never take. Choosing a registered verb deletes its trigger
+  text and runs it, never inserting message content; sending a draft that is a
+  registered verb (`/compact`, optionally with trailing text as `instructions`)
+  runs it and clears the draft, while an unregistered verb sends as a message.
+  `/compact` is the only registered command, on every chat, and server refusal
+  stays on its row. Manuscript slash insertion uses a different catalog.
+- One button. Stop shows while the box is empty and a reply runs (or this tab's
+  Stop is pending, stopping or failed); once the writer types it is Send, with
+  the running ring while a reply runs, and it queues a steer. "Couldn't stop.
+  Try again." lives on the Stop button, so it shows only with an empty box.
+  Escape stops only while Stop shows. Stopping and sending at once belongs to
+  the queue's controls.
+- Hosts own session persistence through `initialDraft`/`onDraftChange`; apply an
+  initial snapshot once. A successful catalog acquisition removes restored
+  reference atoms whose resources are gone; offline or unavailable catalogs do
+  not. Confirmed uploads retain ownership, while in-memory bytes do not persist.
+- Send records the exact structured fingerprint before clearing unchanged words.
+  If local recording fails, retain the live draft and show the shared
+  `NoticeCard`; Send again is retry. Host notices and composer failure form one
+  stack above attached strips, never between a strip and the box.
+- Usage waiting comes from the chat's `RunState` (`blocked: credits_exhausted`),
+  not a client balance guess. The box remains editable and the client does not poll.

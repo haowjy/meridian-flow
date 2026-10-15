@@ -1,60 +1,26 @@
 # extensions/auto-pair — closers the editor writes
 
-Typing `[` gives `[]` with the caret between them; typing `]` walks back out
-of the closer rather than doubling it; Backspace between the halves takes
-both. A registry says which characters do this and where.
+This extension inserts, steps over, and removes registered character pairs. A
+declarative table owns the pair set and contexts; no rendering or document
+metadata records the gesture.
 
-## Mental model
+## Rules
 
-**One table, three gestures.** [`auto-pairs.ts`](auto-pairs.ts) is a
-declarative list of `{ open, close, contexts }` rows, and
-[`AutoPairExtension.ts`](AutoPairExtension.ts) is the single mechanism that
-opens, steps over, and unpairs by reading it. A new pair is one row and
-nothing else. This is the same seam shape as
-[`../../objects/object-types.ts`](../../objects/object-types.ts).
-
-The gesture tests use explicit representative rows, not a matrix derived from
-the registry. A new row or context with distinct behavior needs an explicit
-test choice; changing the table does not extend coverage automatically.
-
-**Openers are one character and pairs compose.** `[[` is the `[` row firing
-twice: `[` gives `[]`, a second `[` gives `[[]]`, and `]]` steps out of both
-in order. `[[name]]` is plain text; nothing opens on it. A multi-character
-row would need its own matching logic and would race the single-character
-rows it overlaps.
-
-**A step is only ever over a closer this plugin wrote.** The plugin state
-holds the positions of its own closers, mapped forward through every
-transaction and confirmed against the document character before any keystroke
-is consumed. A writer's own `]` is their text, and typing `]` in front of it
-writes a second one. Every path fails toward plain insertion, because a
-keystroke that lands as itself costs far less than one that disappears.
-
-## Key rules
-
-- **Never eat a keystroke.** Remote collab edits replace the whole document
-  (see [`../../anchors.ts`](../../anchors.ts)), so every tracked position is
-  reported deleted and the table empties. That is the designed outcome, not a
-  bug: the writer gets the literal character.
-- **The markdown autoformat owns its own delimiters.** `*`, `_` and `~` are
-  absent from the registry on purpose, and so is the backtick outside a code
-  fence — their completion path is an input rule that fires when the writer
-  types the closing run, and putting that run in the document early means the
-  rule never fires. The registry comment carries the reasoning; do not "fix"
-  the omission.
-- **A pair is a text-input concern only.** Nothing here binds Esc, Tab, or
-  Enter, and the Backspace binding refuses whenever it has no pair to take, so
-  the rest of the chain is untouched.
-- **One transaction per gesture**, so one undo takes the whole thing back.
-
-## Anti-patterns
-
-- Matching a closer by character alone. That is how `]` typed before a `]` the
-  writer typed themselves silently disappears.
-- Special-casing a pair inside the plugin. If a pair needs behavior the table
-  cannot express, the table is the wrong shape.
-- Dispatching during composition. An IME is mid-word and a transaction
-  underneath it corrupts the composition.
+- `auto-pairs.ts` is the sole registry. `AutoPairExtension.ts` is the sole
+  mechanism. A new pair is one row.
+- A pair opener is one character. Pairs compose (`[[` produces nested pairs),
+  while `[[name]]` remains plain text. Multi-character rows need a different
+  mechanism and must not be smuggled into this one.
+- The plugin tracks only closers it wrote, maps their positions, and verifies
+  the document character before consuming a key. A writer's own closer is
+  literal text. Remote replacement invalidates tracked positions, so failure
+  always falls back to inserting the character.
+- Markdown delimiters (`*`, `_`, `~`, and prose backtick) belong to input rules,
+  not this registry. Do not pre-insert them or the autoformat path will not
+  fire.
+- Backspace is consumed only when a tracked pair is present. No Esc, Tab, or
+  Enter binding belongs here. Each gesture is one transaction and composition
+  input is left alone.
 
 → [`../MarkdownAutoformatExtension.ts`](../MarkdownAutoformatExtension.ts) —
-  the rules this stays out of the way of
+  Markdown delimiter rules

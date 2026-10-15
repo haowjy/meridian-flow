@@ -1,50 +1,32 @@
 # domains/context/uploads — authoritative upload intake
 
-One project-scoped intake aggregate owns upload identity before bytes become
-visible. It accepts a Work owner (named or No Work). Public omitted/null
-`workId` and `@/` resolve to the locked No Work row. It returns only
-server-issued document identity, canonical URI, and persisted file
-classification.
+`UploadIntake` owns upload identity from idempotency reservation through
+finalization or deletion. It accepts a named Work or the locked No Work row and
+returns server-issued identity, canonical URI, and persisted file classification.
 
-## What it owns
+## Contract
 
-- `(projectId, intakeId)` fingerprint binding and the durable
-  `reserved -> object_stored -> finalized -> deleted` lifecycle.
-- Stable document ID, collision-safe flat filename, object key, Work/no-Work URI,
-  and location revision allocated once at reservation.
-- Server classification, ContextFS/Yjs seeding for tracked text, object-backed
-  binary persistence, definite-failure compensation, and ambiguous recovery.
-- Identity/revision-bound draft deletion plus the singular `consume()` seam that
-  turn admission uses to defeat delete-after-send races.
-- Upload identity lookup used by download, recent-document, and future runtime
-  adapters. Thread provenance is `thread_documents`; it is never upload storage
-  ownership.
+The `(projectId, intakeId)` key binds a normalized fingerprint and the lifecycle
+`reserved → object_stored → finalized → deleted`. Reservation allocates stable
+document ID, flat collision-safe filename, object key, Work/no-Work URI, and
+location revision once. Tracked text seeds through ContextFS and collab; binary
+content remains object-backed. Definite failure compensates storage, while an
+unknown outcome retains the key for recovery.
 
-## Filename admission
+Filename validation runs after upload normalization and before reservation or
+storage. It uses the shared Context entry-name validator and returns typed
+client errors; intake does not relax ContextFS naming rules.
 
-Intake applies the shared Context entry-name validator after upload normalization
-and before reservation or storage. Invalid names return a typed client error,
-not a storage outage. This boundary does not relax ContextFS filename policy.
-The HTTP adapter returns 400 with the validation reason and offending character
-when present.
+Named Work authorities serialize as `uploads://@slug/name`; No Work as
+`uploads://@/name`. Uploads are flat and cannot be created through general
+ContextFS operations. A same-key retry returns the original result only when
+the complete normalized owner/name/MIME/digest fingerprint matches.
 
-## Invariants
+Catalog visibility and finalized intake state commit in the ambient ContextFS
+transaction. `consume()` is the singular admission seam for defeating
+delete-after-send races. Intake never writes `thread_documents`, and explicit
+delete is identity-bound so it cannot target a replacement at the same path.
 
-- Named Work authority serializes as `uploads://@slug/name`; No Work serializes as
-  `uploads://@/name`. Internal Work IDs and contextual shorthand never persist.
-- General ContextFS creation remains disabled for Uploads. Named Work and No Work
-  Uploads sources are flat and provisioned by intake.
-- A same-key retry either returns the original trio or conflicts on the complete
-  normalized actor/owner/name/MIME/byte-digest fingerprint.
-- The intake key serializes before owner/path allocation. Source serialization
-  remains only the collision-safe flat-name boundary.
-- Catalog visibility and finalized intake state share the ContextFS ambient SQL
-  transaction. Object compensation runs only for definite non-commit; unknown
-  outcomes retain the stable key for recovery.
-- Intake never writes `thread_documents`. Explicit deletion cannot target a
-  replacement at the same path.
-- A Work deletion hides its Uploads source and all of its documents immediately
-  but retains finalized intake metadata and blobs for the 30-day Work restore
-  window. The projects `work-purge` job hard-deletes expired Work rows and
-  removes each retained intake object's storage key; a missing object is an
-  idempotent success.
+Work deletion hides its Uploads source and documents immediately but retains
+finalized metadata and blobs for the restore window. Work purge removes expired
+rows and storage keys idempotently.

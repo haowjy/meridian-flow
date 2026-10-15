@@ -1,108 +1,58 @@
 # features/draft-review — changes under review
 
-Shared review state and presentation for the manuscript, document change list,
-Work page and chat strip. One change is one server closure class, or one whole-draft item for a new
-document. Chat and Work
-lists can command drafts without opening a review or joining a room.
+Shared review state and presentation for manuscript, document-change, Work, and
+chat surfaces. One change is one server closure class, except a new document's
+whole-draft item. Chat and Work can command a draft without opening a review or
+joining a room.
+
+## Ownership boundary
+
+- Provider/session/controller own presented scope, selection, generation,
+  retained completion, navigation, and focus.
+- Command records/executor own per-draft claims, intent ordering, failures,
+  read fences, typed admission, and refresh ordering.
+- Room/editor adapters own eligibility, room acquisition, paint readiness, and
+  live presence; they do not own command delivery or review settlement.
+- Draft-only lifecycle owns cross-container settlement/removal. Catalog file
+  projection and change attribution remain separate query concerns.
+
+## Rules
+
+- Navigation consumes the row's `contextLocation`; never infer closure from an
+  empty change list or omitted row. Use generation-addressed observations.
+- No surface-local locks, optimistic hides, or completion stores. Keep command
+  Work/thread authority creation-bound (sharing Editor presentation does not
+  borrow Editor command authority), and retain completion in the open review.
+  A slow or refused chapter never locks another chapter. Archived Works stay
+  read-only, and chat generation gates chat batch controls.
+- Navigation consumes executor admission: offline clicks do not remove tabs,
+  move to another draft, or replay on reconnect. Room ownership is not editor
+  paint or writer-delivery ownership; session-layer delivery survives leaving
+  review.
+- A draft-only Editor tab is visible only in its review Work.
+- Formatting-only edits are real server-vended classes, drawn as one localized
+  line without a fake text replacement. A ready sole whole-draft item is its
+  document row (`isWholeDocumentChange`), not a file header plus a repeated
+  change. Change-row excerpts read complete ordered hunk runs, truncated only by
+  CSS, never the operations' first-hunk summaries.
+- Focus readers are pure and reconcile once per scope. Address focus requests to
+  their intended review, not the last rendered selection.
+- Accepted per-change commands keep an immutable member set and revision tokens.
+  Identical actionable stale answers get one fresh-cut retry; ambiguity and
+  permission failures do not retry. Whole-draft commands settle the current
+  server branch, and synthetic class keys never reach the server.
+- A draft-only tab is the document's one workspace tab and Editor persistence
+  strips it. The dock persists its one `reviews` entry, the only record that a
+  restored tab is draft-only; settlement removes a stale entry.
+  Apply settles it in place; gone/404 is not remote Discard evidence. Close and
+  Discard target the exact document, Work, and draft identity.
+- Review chrome and rows stay one line; only the header shows completion and
+  success has no toast. Components receive props/callbacks, while layout stays
+  in components and pane continuity stays in `PaintHold`.
 
 Read [the lifecycle reference][reference] before changing state or settlement.
-It is the single local contract reference; this file maps ownership.
-
-## Ownership map
-
-| Concern | Owner |
-|---|---|
-| Presented-document review scope | `DraftReviewProvider.tsx`, composed by `ProjectView.tsx` |
-| Presented document and per-container review address | `features/project/presented-document.ts`, `features/project/ReviewAddressOwner.tsx` |
-| Selected review, shown generation, retained completion, focus | `draft-review-session.ts` reducer |
-| View transitions and explicit navigation effects | `useDraftReviewController.ts` |
-| Per-draft claims, intent queue, failures and read fences | `client/query/draft-command-record.ts` |
-| Admission, typed requests, answer publication and refresh ordering | `client/query/draft-command-executor.ts` |
-| Creation-bound Work command capability | `useWorkDraftCommands.tsx` |
-| Generation observations, room acquisition and eligibility | `useReviewRoomOwner.ts` |
-| Review composition, construction receipt and paint readiness | `features/editor/EditorView.tsx` |
-| Common editor construction | `features/editor/SessionEditor.tsx` |
-| Active editor projection and live presence lease | `useActiveReviewBinding.ts` |
-| Remote draft-only settlement, and a draft-only tab settled in place the moment the replica shows its document live (a join; never a drafts refetch) | `DraftOnlySettlement.tsx` |
-| Cross-container settlement/removal | `draft-only-lifecycle.ts` (Editor route repair delegates to the context removal coordinator) |
-| Catalog-labelled files and stable order | `client/query/work-draft-files.ts`, exposed by `useWorkDrafts.ts` |
-| Domain change/action index and attribution | `review-changes.ts`, `change-attribution.ts` |
-| Claim-to-review completion projection | `useReviewCommandCompletion.ts` |
-| Shared focus reconciliation | `useReconcileReviewFocus.ts` |
-| Retained projected presentation data | `useOpenReviewChanges.ts`, `draft-changes.ts` |
-| Open-review and unopened-file interaction bindings | `useReviewChanges.ts`, `useDraftView.ts` |
-| Layout-independent header model | `useReviewHeader.ts` |
-| Listed-file launch adapter | `features/project/dock/useAiDraftLauncher.ts` (`openReviewFile`) |
-| Refusal/failure wording | `ReviewMessageText.tsx` |
-
-Paths outside this directory are relative to `apps/app/src`.
-
-## Load-bearing rules
-
-- Review navigation consumes the row’s own `contextLocation`; file policy alone
-  decides which schemes can have drafts. A draft-only Editor tab is the
-  document's one tab (review metadata on it, never a second tab), visible only in its
-  review Work.
-
-- A slow or refused chapter never locks another chapter. Archived Works remain
-  globally read-only; chat generation explicitly gates chat batch controls.
-- Never add a surface-local command lock, optimistic hide or completion store.
-  Records own command lifetime; the reducer retains completion for the open review.
-- Never infer closure from empty changes or list omission. Use generation-addressed
-  observations and the transition table in the reference.
-- Commands keep their creation-bound Work and thread invalidation authority.
-  Sharing Editor presentation does not borrow Editor command authority.
-- Navigation consumes executor admission. Offline clicks do not remove tabs,
-  move to another draft or replay on reconnect.
-- Room ownership is not editor paint or writer-delivery ownership. Session-layer
-  delivery survives leaving review; the room owner has no paint receipt.
-- Focus readers are pure. Reconcile once per scope, and address focus requests to
-  their intended review rather than the last rendered selection.
-- Accepted per-change commands keep an immutable stable member set. Reforks may
-  rename rows but never enlarge or shrink that set; incomplete classes refuse.
-  Explicit stale answers get one fresh-cut retry only for identical actionable
-  members and unchanged server admission evidence. Transport ambiguity and permission failures never retry.
-- Per-change commands send every operation of the class and the viewed revision
-  tokens; Discard also sends each clicked class's `admissionToken`. Whole-draft commands settle the current server branch, not a preview.
-- Only new documents are one whole-draft
-  change. Its actions use existing whole commands; synthetic class keys never
-  reach the server. Formatting-only edits are real server-vended classes. Block formatting facts
-  render as one localized line in the usual row, without a fake text replacement.
-  An empty preview is not terminal-settlement evidence.
-- `isWholeDocumentChange` is the shared layout rule: a ready sole whole-draft
-  item is its document row, not a file header plus a repeated change. Chat and
-  expanded Work files use that row’s name as the review door and keep its
-  whole-draft commands. Work rows replace the empty expansion control with an
-  alignment spacer. Real per-change items retain their header and rows.
-- Review chrome, strip and change rows each use one line. Lists close on last
-  disposition; only the header shows completion. Success has no toast.
-- Change-row excerpts read complete ordered hunk runs, including attributed
-  insertions, never the operations’ first-hunk summaries. Only row CSS truncates
-  their display; repeated words in separate runs remain separate.
-- A draft-only Editor tab is the document's one workspace tab and is never
-  persisted (Editor persistence strips `reviews`): its address (document and item key)
-  reopens it. The dock persists its single `reviews` entry too, since nothing else
-  tells a restored tab from a live document under review; draft-only settlement
-  removes a stale entry. Apply settles the same tab in place
-  (`settle-draft` drops the review metadata); a gone/404 read is not remote-Discard evidence. Apply and
-  Discard settle every container through `draft-only-lifecycle.ts`; Close and
-  Back to live stay with the container used. A review tab is identified by
-  document, Work and draft (`ReviewItemTabIdentity`): Close and Discard remove
-  that exact tab. Settling needs a resolved live
-  presentation of the same document, Work and draft, never a flag transition.
-- Presentational components receive props and callbacks, not controllers.
-  Layout belongs to components; pane continuity belongs to shared `PaintHold`.
-
-## Links
-
-- [Lifecycle and command reference][reference]
-- [Editor adapter contracts](../editor/.context/CONTEXT.md)
-- [Session and extension contracts](../../core/editor/.context/CONTEXT.md)
-- [Runtime verification recipes](../../../../../docs/qa/draft-review.md)
-- [Pane continuity](../../components/app/PaintHold.md)
-- [Editable draft authority][editable]
-- [Server command authority][authority]
+Related decisions: [diff-based review][editable], [command outcomes][authority], and the [runtime recipes](../../../../../docs/qa/draft-review.md).
 
 [reference]: .context/draft-review.md
-[editable]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/review/draft-review-editable-branch.md
-[authority]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/review/draft-review-command-authority.md
+[editable]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/review/diff-based-review-is-the-draft-review.md
+[authority]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/apply/command-outcomes-are-recorded.md
