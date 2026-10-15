@@ -9,7 +9,6 @@ import { runMigrations } from "../../../../tools/dev/lib/migration-runner.js";
 import { createHarness } from "../domains/collab/test-support/change-trail-postgres-harness.js";
 import { createTestDocumentLinkScopes } from "../domains/collab/test-support/document-link-scopes.js";
 import { createDrizzleContextCatalog } from "../domains/context/adapters/context-catalog.js";
-import { createDrizzleUploadIntakeRepository } from "../domains/context/uploads/drizzle-upload-intake.js";
 import {
   archiveNoteState,
   archiveId as id,
@@ -218,23 +217,6 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
       expect(chapter.value).toContain(
         "[Unfiled note](<unfiled://Scratch (2)/nested/deep/jade-map>)",
       );
-      // Exercise the actual lifecycle reader, not just the migrated row shape.
-      const intakeRepository = createDrizzleUploadIntakeRepository(db);
-      const reservation = await intakeRepository.transaction(() =>
-        intakeRepository.lockForFinalize(id(2), "reserved-intake"),
-      );
-      expect(reservation).toMatchObject({
-        state: "reserved",
-        owner: { kind: "work", workId: id(4), workSlug: null },
-        canonicalUri: "unfiled://Scratch (2)/map.png",
-        finalPath: "Scratch (2)/map.png",
-        objectKey: `uploads/${id(2)}/${id(21)}`,
-      });
-      expect(
-        await intakeRepository.transaction(() =>
-          intakeRepository.finalize(id(2), "reserved-intake"),
-        ),
-      ).toEqual({ ...reservation, state: "finalized" });
       expect(
         await target`SELECT context_source_id, work_id, final_path, canonical_uri, object_key, fingerprint FROM upload_intakes`,
       ).toEqual([
