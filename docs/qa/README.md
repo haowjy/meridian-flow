@@ -14,7 +14,7 @@ Keep evidence in the active work directory, not in this repository. Record the
 commit, date, stack/provider, outcome, and evidence path after each run. A recipe
 is not a claim that it passed on the current commit.
 
-- [Runtime protocols](runtime-probes.md): RP-1 through RP-14, server protocol checks driven with `./mf`. They don't verify the app.
+- [Runtime protocols](runtime-probes.md): RP-1 through RP-15, server protocol checks driven with `./mf`. They don't verify the app.
 - [Project chrome and shell](project-chrome-manual.md): the browser checks that replaced nine slow DOM tests in `apps/app`. Their durable halves are RP-13 and RP-14.
 - [Stop and hand-back](stop-and-hand-back.md): written steps for the pure Stop rows with no unit case, each naming the DB row or browser item that pins it.
 - [Browser state envelopes](browser-state-envelopes.md): reload all browser-persisted surfaces and reject transplanted ownership.
