@@ -1,5 +1,9 @@
 <!-- Describe the PR's final state, not its history. Give reviewers enough
-     context to understand the change. -->
+     context to understand the change.
+
+     Every ## section below is required, and the PR-body check fails when one
+     is missing. When a section doesn't apply, keep its heading and write
+     "None." with a short reason. -->
 
 ## Why
 
@@ -86,8 +90,8 @@
 
 ## DB Changes
 
-<!-- Write "None." if no schema changes; the PR-body check needs every
-     section. Otherwise name migrations; diagram changed
+<!-- Write "None." when the PR changes no schema. Otherwise name migrations;
+     diagram changed
      tables/relationships in Mermaid, mark added/dropped/renamed columns, and
      list new constraints/indexes. -->
 
