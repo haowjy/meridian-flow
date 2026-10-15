@@ -26,8 +26,6 @@ authority for the exact current surface.
   `meridian.collab.{major}.{minor}.{patch}` subprotocol grammar: the client
   offers exactly one token, and header resolution accepts exactly one matching
   token (absent, zero, or multiple matches resolve to the `0.0.0` sentinel).
-- `restoration-claims.ts` carries untrusted draft Undo claims and local redone
-  links. It is evidence for server certification, never authorship authority.
 
 ## Why parity matters
 

@@ -36,8 +36,7 @@ export async function handleTurnLiveLineageRequest(
     documents,
     userId: input.userId,
   });
-  // The card Undo chip is gone; the client drops the field with the card (R3).
-  return { documents: visibleDocuments.map(serializeLiveLineageDocument), receipt: null };
+  return { documents: visibleDocuments.map(serializeLiveLineageDocument) };
 }
 
 /** The lineage's documents the writer can still read (file-access §6). */

@@ -39,26 +39,6 @@ export interface TurnLiveLineageDocumentItem {
   invisibleWrites?: true;
 }
 
-export type TurnReceiptState =
-  | "live-active"
-  | "live-reversed"
-  | "branch-active"
-  | "branch-reversed"
-  | "work-active"
-  | "work-reversed"
-  | "rollback-pending"
-  | "cant_undo_dependent"
-  | "expired";
-
-export type TurnReceiptControl = "undo" | "redo" | "view_change";
-
-export interface TurnReceiptChip {
-  skips?: import("./write-reversal.js").TurnInverseSkip[];
-  state: TurnReceiptState;
-  control: TurnReceiptControl;
-}
-
 export interface ListTurnLiveLineageResponse {
   documents: TurnLiveLineageDocumentItem[];
-  receipt: TurnReceiptChip | null;
 }

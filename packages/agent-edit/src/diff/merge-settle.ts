@@ -3,38 +3,27 @@
  * before each merged word. Both work on `MergedTok`s and know nothing about hunks or blocks.
  */
 import type { Mark } from "prosemirror-model";
+import { equalOrderedMatches } from "../ordered-matching.js";
 import { BASE, DRAFT, isSubsequence, LIVE, type MergedTok, type Origin } from "./merge-hunks.js";
 import { coreKey, isBlockTok, isWordTok, type Tok } from "./tokens.js";
 
 /** Share of the larger word set two inserted paragraphs must have in common to be one paragraph. */
 const SAME_PARAGRAPH_SHARE = 0.5;
 
-/** Longest-common-subsequence table over two key lists, built from the ends. */
-function lcsTable(a: string[], b: string[]): Int32Array[] {
-  const best = Array.from({ length: a.length + 1 }, () => new Int32Array(b.length + 1));
-  for (let i = a.length - 1; i >= 0; i--)
-    for (let j = b.length - 1; j >= 0; j--)
-      best[i][j] =
-        a[i] === b[j] ? best[i + 1][j + 1] + 1 : Math.max(best[i + 1][j], best[i][j + 1]);
-  return best;
-}
-
 /** Word-by-word union of two token runs; a shared word is kept once, in the draft's form. */
 function unionWords(live: MergedTok[], draft: MergedTok[]): MergedTok[] {
-  const liveKeys = live.map((o) => coreKey(o.tok));
-  const draftKeys = draft.map((o) => coreKey(o.tok));
-  const best = lcsTable(liveKeys, draftKeys);
+  const matches = equalOrderedMatches(
+    live.map((o) => coreKey(o.tok)),
+    draft.map((o) => coreKey(o.tok)),
+  );
   const out: MergedTok[] = [];
   let i = 0;
   let j = 0;
-  while (i < live.length || j < draft.length) {
-    if (i < live.length && j < draft.length && liveKeys[i] === draftKeys[j]) {
-      out.push(draft[j]);
-      i++;
-      j++;
-    } else if (j >= draft.length || (i < live.length && best[i + 1][j] >= best[i][j + 1]))
-      out.push(live[i++]);
-    else out.push(draft[j++]);
+  for (const [mi, mj] of [...matches, [live.length, draft.length] as const]) {
+    out.push(...live.slice(i, mi), ...draft.slice(j, mj));
+    if (mi < live.length) out.push(draft[mj]);
+    i = mi + 1;
+    j = mj + 1;
   }
   return out;
 }
@@ -86,7 +75,6 @@ export function unionInsertions(
   };
   const liveKeys = liveParagraphs.map(paragraphKey);
   const draftKeys = draftParagraphs.map(paragraphKey);
-  const best = lcsTable(liveKeys, draftKeys);
 
   const out: MergedTok[] = [...inline];
   let chose = false;
@@ -107,24 +95,13 @@ export function unionInsertions(
   };
   let i = 0;
   let j = 0;
-  let liveRun: MergedTok[][] = [];
-  let draftRun: MergedTok[][] = [];
-  while (i < liveParagraphs.length || j < draftParagraphs.length) {
-    if (i < liveParagraphs.length && j < draftParagraphs.length && liveKeys[i] === draftKeys[j]) {
-      flush(liveRun, draftRun);
-      liveRun = [];
-      draftRun = [];
-      out.push(...draftParagraphs[j]);
-      i++;
-      j++;
-    } else if (
-      j >= draftParagraphs.length ||
-      (i < liveParagraphs.length && best[i + 1][j] >= best[i][j + 1])
-    )
-      liveRun.push(liveParagraphs[i++]);
-    else draftRun.push(draftParagraphs[j++]);
+  for (const [mi, mj] of equalOrderedMatches(liveKeys, draftKeys)) {
+    flush(liveParagraphs.slice(i, mi), draftParagraphs.slice(j, mj));
+    out.push(...draftParagraphs[mj]);
+    i = mi + 1;
+    j = mj + 1;
   }
-  flush(liveRun, draftRun);
+  flush(liveParagraphs.slice(i), draftParagraphs.slice(j));
   return { out, chose };
 }
 

@@ -27,7 +27,7 @@ vi.mock("@/rich-content/Markdown", () => ({
 }));
 
 vi.mock("@/client/query/useTurnLiveLineage", () => ({
-  useTurnLiveLineage: () => ({ documents: [], receipt: null }),
+  useTurnLiveLineage: () => ({ documents: [] }),
 }));
 vi.mock("./AssistantTurnActions", () => ({ AssistantTurnActions: () => null }));
 

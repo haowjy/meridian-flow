@@ -137,8 +137,7 @@ export type DraftCommandObservation =
 
 // --- The content-Apply contract (re-landing contract §1.2) -----------------------------------
 //
-// Beside the types above under names they don't use. The server's producers and routes switch to
-// these, then the client, and the lane that removes the last consumer of a type above deletes it.
+// What a content Apply sends and how it can fail.
 
 export type DraftOverride = { live: string; applied: string };
 
