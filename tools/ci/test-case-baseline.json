@@ -603,7 +603,7 @@
     "tools/mf/src/commands/thread/reduced-thread.test.ts": 1,
     "tools/mf/src/commands/thread/result.test.ts": 7,
     "tools/mf/src/commands/thread/tail.test.ts": 11,
-    "tools/mf/src/commands/thread/thread.test.ts": 39,
+    "tools/mf/src/commands/thread/thread.test.ts": 41,
     "tools/mf/src/core/output.test.ts": 3,
     "tools/mf/src/main.test.ts": 4
   }
