@@ -13,7 +13,6 @@ import {
   documentTitleFromUri,
   type LinkResolution,
   type LinkView,
-  mintAheadRef,
   parseContextUri,
   parseLinkRef,
   type ResolveDocumentLinksRequest,
@@ -177,10 +176,10 @@ export async function handleDocumentLinkResolveRequest(
 }
 
 /**
- * Reads an address the live tree leaves empty as an unsettled ahead ref in the Work's draft
- * view, which names what that draft created there. A live occupant keeps winning (these
- * never reached it), and the scope drops what the reader may not read. Only a document
- * answers: a draft that created nothing there leaves the answer missing.
+ * Names the document a Work's draft created at an address the live tree leaves empty (the
+ * scope's `draftCreatedAt`: exact, then the one extension-omitted match). A live occupant
+ * keeps winning, since these never reached one; another draft's creation and what the
+ * reader may not read stay missing.
  */
 async function answerFromDraftView(
   deps: DocumentLinkRouteDeps,
@@ -194,23 +193,16 @@ async function answerFromDraftView(
 ): Promise<void> {
   const { projectId, userId, view, unanswered, answers } = input;
   if (view.kind !== "draft") return;
-  const links = unanswered.map(({ index, uri }) => ({
-    index,
-    link: { ref: mintAheadRef(), href: uri },
-  }));
   await deps.linkScopes.within({ projectId, viewer: { accountId: userId } }, async () => {
     await deps.linkScopes.prepare({
       holders: [],
       views: [view],
-      refs: links.map(({ link }) => link.ref),
       addresses: unanswered.map(({ uri }) => uri),
     });
-    const reader = deps.linkScopes.reader({ uri: null, view });
-    for (const { index, link } of links) {
-      const resolution = reader.resolve(link);
-      // An ahead ref may show another draft's hidden document; an address names only this one's.
-      if (resolution.kind === "document" && resolution.document.draft?.draftId === view.draftId)
-        answers[index] = answerOf(resolution);
+    for (const { index, uri } of unanswered) {
+      const document = deps.linkScopes.draftCreatedAt({ view, uri });
+      if (!document) continue;
+      answers[index] = answerOf({ kind: "document", document, inDraft: true });
     }
   });
 }

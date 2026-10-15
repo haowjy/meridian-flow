@@ -379,7 +379,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const id = crypto.randomUUID();
         await db
           .insert(documents)
-          .values({ id, contextSourceId, name, extension: "", hidden: true });
+          .values({ id, contextSourceId, name, extension: "md", hidden: true });
         await db
           .insert(draftTreeChanges)
           .values({ draftId, nodeId: id, nodeKind: "document", created: true });
