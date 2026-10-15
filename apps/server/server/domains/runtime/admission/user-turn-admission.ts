@@ -355,7 +355,11 @@ export function createUserTurnAdmission(deps: {
   runClaim: Pick<RunClaim, "withExclusiveThread">;
   availability: ProjectContextAvailabilityPort;
   threadProject(threadId: string): Promise<string | null>;
-  verifyDraftUpload?(reference: SubmittedReference & { intakeId: string }): Promise<boolean>;
+  /** Identity, not spelling: the intake, its document, and that the thread's top chat owns it. */
+  verifyDraftUpload?(
+    reference: SubmittedReference & { intakeId: string },
+    threadId: string,
+  ): Promise<boolean>;
   authorizeActivatedSkills?(input: { threadId: string; slugs: readonly string[] }): Promise<void>;
   producer: AdmissionWriterProducer;
   now?: () => Date;
@@ -448,18 +452,27 @@ export function createUserTurnAdmission(deps: {
       const admittedIdentities = new Set<string>();
       for (const reference of references) {
         const identity = available.get(reference.documentId);
-        if (!identity || identity.entry.uri !== reference.uri) continue;
+        if (!identity) continue;
+        // A New-chat upload was attached before the chat had a handle, so its atom holds the
+        // chat-relative spelling while the catalog now answers the handle one. A draft upload is
+        // admitted by its verified intake and owner, and records the address it now has.
+        const draftUpload = reference.purpose === "draft-upload";
+        if (!draftUpload && identity.entry.uri !== reference.uri) continue;
         if (
-          reference.purpose === "draft-upload" &&
+          draftUpload &&
           deps.verifyDraftUpload &&
-          !(await deps.verifyDraftUpload(reference as SubmittedReference & { intakeId: string }))
+          !(await deps.verifyDraftUpload(
+            reference as SubmittedReference & { intakeId: string },
+            input.threadId,
+          ))
         ) {
           continue;
         }
         admittedIdentities.add(referenceIdentity(reference));
         admittedReferences.push({
           ...reference,
-          relationship: reference.purpose === "draft-upload" ? "created" : "reading",
+          ...(draftUpload ? { uri: identity.entry.uri } : {}),
+          relationship: draftUpload ? "created" : "reading",
         });
       }
       const admittedBlocks = blocks.flatMap((block): UserMessageBlock[] => {

@@ -1,11 +1,12 @@
 /** Drizzle lifecycle adapter for authoritative upload intake reservations. */
+import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import { type Filetype, renderFilename, type UploadOwner } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import { contextSources, projects, uploadIntakes, works } from "@meridian/database/schema";
+import { projects, threads, uploadIntakes } from "@meridian/database/schema";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
-import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
 import { allocateFilename } from "../context/paths.js";
+import { createChatContextDocumentStore } from "../context-source-provisioning.js";
 import { LIVE_TREE, visibleDocuments } from "../tree/tree-view.js";
 import type {
   ReserveUploadResult,
@@ -21,21 +22,43 @@ async function lockIntakeKey(db: Database, projectId: string, intakeId: string):
   );
 }
 
-/** An intake's Work never changes, so it is safe to read before any lock. */
-async function readIntakeWorkId(
+/** An intake's owning chat never changes, so it is safe to read before any lock. */
+async function readIntakeOwner(
   db: Database,
   where: ReturnType<typeof and>,
-): Promise<string | null> {
+): Promise<{ projectId: string; chatId: string } | null> {
   const [row] = await currentDrizzleDb(db)
-    .select({ workId: uploadIntakes.workId })
+    .select({ projectId: uploadIntakes.projectId, chatId: uploadIntakes.ownerThreadId })
     .from(uploadIntakes)
     .where(where)
     .limit(1);
-  return row?.workId ?? null;
+  return row?.chatId ? { projectId: row.projectId, chatId: row.chatId } : null;
 }
 
-function mapRow(row: IntakeRow, workSlug: string | null): UploadReservation {
-  if (!row.workId) throw new Error(`Upload ${row.intakeId} is missing Work id`);
+/**
+ * The chat's row may not exist yet (a New-chat upload), so the chat id is locked as a key, not a
+ * row. It comes first, before the intake key and the source (the lock order of file-access §5).
+ */
+async function lockChat(db: Database, projectId: string, chatId: string): Promise<void> {
+  await currentDrizzleDb(db).execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${`upload-chat:${projectId}:${chatId}`}, 0))`,
+  );
+}
+
+/**
+ * An upload's address is derived from its chat's current handle, never frozen: a chat that has no
+ * row yet has no handle, so its uploads read as the chat-relative `uploads://name` until it does.
+ */
+function uploadUri(chatRef: string | null, path: string): string {
+  return canonicalContextUri(
+    "uploads",
+    path,
+    chatRef ? { kind: "chat", chatRef } : { kind: "contextual" },
+  );
+}
+
+function mapRow(row: IntakeRow, chatRef: string | null): UploadReservation {
+  if (!row.ownerThreadId) throw new Error(`Upload ${row.intakeId} is missing its chat`);
   return {
     projectId: row.projectId,
     intakeId: row.intakeId,
@@ -44,34 +67,31 @@ function mapRow(row: IntakeRow, workSlug: string | null): UploadReservation {
     filename: row.filename,
     finalPath: row.finalPath,
     objectKey: row.objectKey,
-    canonicalUri: row.canonicalUri,
+    canonicalUri: uploadUri(chatRef, row.finalPath),
     locationRevision: row.locationRevision,
     fileType: row.fileType as Filetype,
     state: row.state as UploadReservation["state"],
     storageUrl: row.storageUrl,
     consumed: row.consumedAt !== null,
-    owner: { kind: "work", workId: row.workId, workSlug },
+    owner: { kind: "chat", chatId: row.ownerThreadId, chatRef },
   };
 }
 
+const chatRefJoin = (id: typeof uploadIntakes.ownerThreadId) => eq(threads.id, id);
+
 async function readReservation(db: Database, projectId: string, intakeId: string) {
   const [row] = await currentDrizzleDb(db)
-    .select({ intake: uploadIntakes, workSlug: works.slug })
+    .select({ intake: uploadIntakes, chatRef: threads.ref })
     .from(uploadIntakes)
-    .leftJoin(works, eq(works.id, uploadIntakes.workId))
+    .leftJoin(threads, chatRefJoin(uploadIntakes.ownerThreadId))
     .where(
       and(eq(uploadIntakes.projectId, projectId as never), eq(uploadIntakes.intakeId, intakeId)),
     )
     .limit(1);
-  return row ? mapRow(row.intake, row.workSlug) : null;
+  return row ? mapRow(row.intake, row.chatRef) : null;
 }
 
-// TODO(#875 P3): intake for a chat owner.
-function chatOwnerNotBuilt(): Error {
-  return new Error("Chat-owned upload intake is not built yet (#875 P3)");
-}
-
-/** Runs in `reserve`, which already holds the owning Work's row lock. */
+/** Runs in `reserve`, which already holds the owning chat's lock. */
 async function resolveOwner(db: Database, owner: UploadOwner, actorUserId: string) {
   const activeDb = currentDrizzleDb(db);
   const [project] = await activeDb
@@ -86,69 +106,28 @@ async function resolveOwner(db: Database, owner: UploadOwner, actorUserId: strin
     )
     .limit(1);
   if (!project) return null;
-  if (owner.kind === "chat") throw chatOwnerNotBuilt();
-  const workId = owner.workId;
-  if (!workId) return null;
-  const [lockedRow] = await activeDb
-    .select({ slug: works.slug, isNoWork: works.isNoWork })
-    .from(works)
-    .where(
-      and(
-        eq(works.id, workId as never),
-        eq(works.projectId, owner.projectId as never),
-        isNull(works.deletedAt),
-        isNull(works.archivedAt),
-      ),
-    )
+  // No row yet is a New-chat upload. A row must be a primary thread of this project: a fork or
+  // handoff is its own chat, and a subagent's uploads belong to its top chat, never to itself.
+  const [chat] = await activeDb
+    .select({ ref: threads.ref, kind: threads.kind, projectId: threads.projectId })
+    .from(threads)
+    .where(eq(threads.id, owner.chatId as never))
     .limit(1);
-  if (!lockedRow) return null;
-  const workSlug = lockedRow.isNoWork ? null : lockedRow.slug;
-  if (!lockedRow.isNoWork && !workSlug) return null;
-  const scopePredicate = eq(contextSources.workId, workId as never);
-  const [existing] = await activeDb
-    .select({ id: contextSources.id })
-    .from(contextSources)
-    .where(
-      and(scopePredicate, eq(contextSources.slug, "uploads"), isNull(contextSources.deletedAt)),
-    )
-    .limit(1);
-  let sourceId = existing?.id;
-  if (!sourceId) {
-    const [created] = await activeDb
-      .insert(contextSources)
-      .values({
-        workId: workId as never,
-        scope: "work",
-        name: "Uploads",
-        slug: "uploads",
-        adapterType: "local",
-      })
-      .onConflictDoNothing()
-      .returning({ id: contextSources.id });
-    sourceId = created?.id;
-    if (!sourceId) {
-      const [raced] = await activeDb
-        .select({ id: contextSources.id })
-        .from(contextSources)
-        .where(
-          and(scopePredicate, eq(contextSources.slug, "uploads"), isNull(contextSources.deletedAt)),
-        )
-        .limit(1);
-      sourceId = raced?.id;
-    }
-  }
-  return sourceId ? { sourceId, workSlug, workId } : null;
+  if (chat && (chat.kind !== "primary" || chat.projectId !== owner.projectId)) return null;
+  const store = createChatContextDocumentStore(db, owner.projectId, owner.chatId, "uploads");
+  const sourceId = await store.contextSourceId();
+  return { sourceId, chatRef: chat?.ref ?? null };
 }
 
 export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeRepository {
-  async function workSlugOf(workId: string | null): Promise<string | null> {
-    if (!workId) return null;
-    const [work] = await currentDrizzleDb(db)
-      .select({ slug: works.slug })
-      .from(works)
-      .where(eq(works.id, workId as never))
+  async function chatRefOf(chatId: string | null): Promise<string | null> {
+    if (!chatId) return null;
+    const [thread] = await currentDrizzleDb(db)
+      .select({ ref: threads.ref })
+      .from(threads)
+      .where(eq(threads.id, chatId as never))
       .limit(1);
-    return work?.slug ?? null;
+    return thread?.ref ?? null;
   }
 
   return {
@@ -156,10 +135,7 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
     async reserve(input): Promise<ReserveUploadResult> {
       return runInDrizzleTransaction(db, async () => {
         const activeDb = currentDrizzleDb(db);
-        // The owning Work's row and the grants' confirmation come before any
-        // advisory lock (file-access §5).
-        if (input.owner.kind === "chat") throw chatOwnerNotBuilt();
-        await lockSeamWorks(db, input.owner.workId ? [input.owner.workId] : []);
+        await lockChat(db, input.owner.projectId, input.owner.chatId);
         await lockIntakeKey(db, input.owner.projectId, input.intakeId);
         const existing = await readReservation(db, input.owner.projectId, input.intakeId);
         if (existing) {
@@ -201,15 +177,14 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
           used.has(path.toLowerCase()),
         );
         const documentId = crypto.randomUUID();
-        const workAuthority = owner.workSlug ? `@${owner.workSlug}` : "@";
-        const canonicalUri = `uploads://${workAuthority}/${finalPath}`;
+        const canonicalUri = uploadUri(owner.chatRef, finalPath);
         const [created] = await activeDb
           .insert(uploadIntakes)
           .values({
             projectId: input.owner.projectId as never,
             intakeId: input.intakeId,
             actorUserId: input.actorUserId as never,
-            workId: owner.workId as never,
+            ownerThreadId: input.owner.chatId as never,
             contextSourceId: owner.sourceId,
             documentId,
             fingerprint: input.fingerprint,
@@ -233,7 +208,7 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
             ? { kind: "existing", reservation: winner }
             : { kind: "conflict" };
         }
-        return { kind: "reserved", reservation: mapRow(created, owner.workSlug) };
+        return { kind: "reserved", reservation: mapRow(created, owner.chatRef) };
       });
     },
     async markObjectStored(projectId, intakeId, storageUrl) {
@@ -260,12 +235,11 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
         );
     },
     async lockForFinalize(projectId, intakeId) {
-      const workId = await readIntakeWorkId(
+      const owner = await readIntakeOwner(
         db,
         and(eq(uploadIntakes.projectId, projectId as never), eq(uploadIntakes.intakeId, intakeId)),
       );
-      // Work row and grant confirmation before the intake lock (file-access §5).
-      await lockSeamWorks(db, workId ? [workId] : []);
+      if (owner) await lockChat(db, owner.projectId, owner.chatId);
       await lockIntakeKey(db, projectId, intakeId);
       const reservation = await readReservation(db, projectId, intakeId);
       if (!reservation) throw new Error("Upload reservation unavailable during finalize");
@@ -284,7 +258,7 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
         )
         .returning();
       if (!row) throw new Error("Upload reservation unavailable during finalize");
-      return mapRow(row, await workSlugOf(row.workId));
+      return mapRow(row, await chatRefOf(row.ownerThreadId));
     },
     async lockForDelete(input, actorUserId) {
       const identity = and(
@@ -297,9 +271,8 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
             and projects.deleted_at is null
         )`,
       );
-      // Work row and grant confirmation before the intake row (file-access §5).
-      const workId = await readIntakeWorkId(db, identity);
-      await lockSeamWorks(db, workId ? [workId] : []);
+      const owner = await readIntakeOwner(db, identity);
+      if (owner) await lockChat(db, owner.projectId, owner.chatId);
       const [row] = await currentDrizzleDb(db)
         .select()
         .from(uploadIntakes)
@@ -315,13 +288,11 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
         };
       }
       if (row.consumedAt) return { kind: "refused", result: { kind: "already_used" } };
-      if (
-        row.documentId !== input.documentId ||
-        row.canonicalUri !== input.uri ||
-        row.locationRevision !== input.expectedRevision
-      )
+      // The address spelling is not identity: a New-chat atom still holds the chat-relative
+      // spelling after the chat row (and its handle) exists. The document and revision pin it.
+      if (row.documentId !== input.documentId || row.locationRevision !== input.expectedRevision)
         return { kind: "refused", result: { kind: "identity_mismatch" } };
-      return { kind: "claimed", reservation: mapRow(row, await workSlugOf(row.workId)) };
+      return { kind: "claimed", reservation: mapRow(row, await chatRefOf(row.ownerThreadId)) };
     },
     async markDeleted(projectId, intakeId) {
       await currentDrizzleDb(db)

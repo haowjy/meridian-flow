@@ -364,14 +364,14 @@ else
         projectId = crypto.randomUUID(),
         sourceId = crypto.randomUUID(),
         documentId = crypto.randomUUID(),
-        workId = crypto.randomUUID();
+        chatId = crypto.randomUUID();
       const bytes = new TextEncoder().encode("# Pending upload\n");
       const digest = createHash("sha256").update(bytes).digest("hex");
       const fingerprint = createHash("sha256")
         .update(
           JSON.stringify([
             userId,
-            `work:${projectId}:${workId}`,
+            `chat:${projectId}:${chatId}`,
             "upload.md",
             "text/markdown",
             digest,
@@ -380,17 +380,14 @@ else
         .digest("hex");
       await db.insert(users).values(conformanceUserValues(userId, `pending-${scenario}`));
       await db.insert(projects).values({ id: projectId, userId, name: "Pending", slug: "pending" });
-      await db.insert(works).values({
-        id: workId,
+      await db.insert(contextSources).values({
+        id: sourceId,
         projectId,
-        createdByUserId: userId,
-        name: "No Work",
-        slug: null,
-        isNoWork: true,
+        chatThreadId: chatId,
+        name: "Uploads",
+        slug: "uploads",
+        scope: "chat",
       });
-      await db
-        .insert(contextSources)
-        .values({ id: sourceId, workId, name: "Uploads", slug: "uploads", scope: "work" });
       if (scenario !== "no-clash")
         await db.insert(documents).values({
           contextSourceId: sourceId,
@@ -405,7 +402,7 @@ else
         actorUserId: userId,
         contextSourceId: sourceId,
         documentId,
-        workId,
+        ownerThreadId: chatId,
         fingerprint,
         byteDigest: digest,
         filename: "upload.md",
@@ -413,7 +410,7 @@ else
         finalPath: oldPath,
         objectKey: documentId,
         fileType: "markdown",
-        canonicalUri: `uploads://@/${oldPath}`,
+        canonicalUri: `uploads://${oldPath}`,
         locationRevision: crypto.randomUUID(),
         state: "reserved",
       });
@@ -423,7 +420,7 @@ else
         .from(uploadIntakes)
         .where(eq(uploadIntakes.documentId, documentId));
       expect(reservation?.finalPath).toBe(scenario === "clash" ? "upload (2)" : "upload");
-      expect(reservation?.canonicalUri).toBe(`uploads://@/${reservation?.finalPath}`);
+      expect(reservation?.canonicalUri).toBe(`uploads://${reservation?.finalPath}`);
       expect(reservation?.filename).toBe("upload.md");
       expect(reservation?.state).toBe("reserved");
       const collab = createInMemoryCollabDomain();
@@ -443,7 +440,7 @@ else
       const request = {
         intakeId: "pending",
         actorUserId: userId,
-        owner: { kind: "work" as const, projectId, workId },
+        owner: { kind: "chat" as const, projectId, chatId },
         filename: "upload.md",
         mimeType: "text/markdown",
         byteDigest: digest,

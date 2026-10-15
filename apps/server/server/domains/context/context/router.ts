@@ -88,7 +88,7 @@ export interface ContextPortRouterDeps {
   resolveNoWork?: () => Promise<{
     adapters: ReadonlyMap<ContextScheme, ContextSchemeAdapter>;
     workId: string;
-  }>;
+  } | null>;
   /** URI parse options — unified port passes manuscript default + extended schemes. */
   parseOptions?: ParseContextUriOptions;
   commandTransaction?: ContextCommandTransaction;
