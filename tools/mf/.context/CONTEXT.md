@@ -52,7 +52,9 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
   then command fields), built only by `terminalResult`, which maps outcome to exit:
   proven outcomes carry a null reason, unproven (exit 6) and timeout (124)
   require one. Reasons: `owed`, `running`, `lease_awake`, `admission_unknown`,
-  `replay_truncated`, `unconfirmed`, `deliverer_unknown`, `snapshot_disagrees`.
+  `replay_truncated`, `unconfirmed`, `deliverer_unknown`. Outcomes: `accepted`,
+  `complete`, `failed`, `cancelled`, `handed_back` (exit 5, shared with cancelled),
+  `interrupt`, `timeout`, `unproven`.
   `accepted` (exit 0) is admission only, returned just by `send --no-wait`. Run
   failures are results; `--fields` always keeps `type`, `command`, `outcome` and
   `reason`. Set `process.exitCode`; never call `process.exit()`.
@@ -62,8 +64,8 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
   `previousDocumentId`, and says the old document was already deleted if the
   create then fails. Seed scenario names use writer spelling.
 - **Usage refusals** are current pending state, not terminal run events. Send
-  reconciles a replayed refusal with the durable snapshot before exiting 1
-  (`failed`, reason `credits_exhausted`); an already recovered reply wins.
+  exits 1 (`failed`, reason `credits_exhausted`) only when its confirming snapshot's
+  `messageFate` is waiting and blocked; an already recovered reply wins.
 
 ## Following a run
 
@@ -76,24 +78,29 @@ deadlines to `--timeout` (see the
 and auth closes are exit 4. `stream.ts` maps events, prints them and runs the
 follow predicates; `events-map.ts` (`RunEventMapper`) folds events into the dotted
 lines `events`, `send` and `tail` print and decides when to look, never what a turn
-contains.
+contains. It carries no run identity: `turn.started` has only the turn id.
 
 - **Busy, owed and blocked** come from the run-state record
   (`liveState.runState`, `subscribed`, `meridian.run_state`) through the package's
   selectors (`isBusy`, `isOwed`, `usageBlockedMessages`, `writerMessages`), the same
   the app uses; `commands/thread/run-state.ts` only holds the view.
-- **`send`** follows from the admission's `resumeAfterSeq` and builds its turn from
-  its own events, reading no snapshot before its deadline. Before reporting
-  complete it checks that its admitted user turn is no longer owed in a record at or
-  past its admission (`runStateVersion`; none when the admission has none). If still
-  owed it returns 6 `owed` with `stillRunning` and a next until-idle tail. This does
-  not prove which reply answered: that binding waits for #768 phase 2. A lost HTTP
-  admission answer is recovered with one app-route lookup (`submissionId`); a failed
-  lookup or pending admission is 6 `admission_unknown`.
+- **`send`** follows from the admission's `resumeAfterSeq` and uses the stream only to
+  decide when to look: the subscribed state, a `meridian.run_state` or
+  `meridian.messages.handed_back` frame, `interrupt.requested` or a gap wakes one
+  confirming snapshot (read with the remaining time). Every claim is the shared
+  `messageFate` over that snapshot's record and turns (waiting, answering, answered,
+  handed back, unproven) plus the admission's `runStateVersion`; `send` decides
+  nothing itself. The result is the chain's last reply (`turnId`), the reply that took
+  the message (`answeredBy`) and `userTurnId`. A settled claim gives the stream a bounded
+  1.5 s to reach the snapshot's position so the printed log is whole; it never changes the
+  claim. A lost HTTP admission answer is recovered with one app-route lookup
+  (`submissionId`); a failed lookup or pending admission is 6 `admission_unknown`.
+- **`stop`** posts the app's Stop body (`stopRequest` over a snapshot's record, `mine: []`)
+  to the Stop route; **`cancel --turn`** serves a handoff brief's Stop only.
 - **`tail --until-idle`** hydrates a snapshot, follows from its `resumeAfterSeq`
   (`nextSeq` is freshness only and never filters events) and returns at once if
-  idle. After a finish, failure, lease or record change or idle state it confirms a
-  snapshot: `isBusy` false and `status.kind: "asleep"`. One subscription and mapper
+  idle. When a record or the subscribed state shows no open execution and no writer
+  message, or a status frame arrives, it confirms a snapshot: `isBusy` false and `status.kind: "asleep"`. One subscription and mapper
   stay alive through every confirmation. Any observed failure or covered turn error
   is failed; otherwise any cancellation is cancelled; missing or non-terminal turns
   are 6 `unconfirmed`; all complete is complete. A replay gap without a proven
