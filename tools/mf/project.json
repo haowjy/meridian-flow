@@ -1,0 +1,26 @@
+{
+  "name": "@meridian/mf",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "tools/mf/src",
+  "projectType": "library",
+  "targets": {
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "tools/mf",
+        "command": "tsc --noEmit -p tsconfig.json"
+      },
+      "inputs": ["default", "^default", "{workspaceRoot}/mf", "{workspaceRoot}/tools/dev/**/*.ts"],
+      "cache": true
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "tools/mf",
+        "command": "vitest run --passWithNoTests"
+      },
+      "inputs": ["default", "^default", "{workspaceRoot}/mf", "{workspaceRoot}/tools/dev/**/*.ts"],
+      "cache": true
+    }
+  }
+}

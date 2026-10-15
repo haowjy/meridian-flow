@@ -128,7 +128,6 @@ function ChatScreenLoaded({
   visible: boolean;
 }) {
   const {
-    activateProjection,
     thread: snapshotThread,
     liveState: snapshotLiveState,
     nextSeq: snapshotNextSeq,
@@ -195,13 +194,11 @@ function ChatScreenLoaded({
             projectId={projectId}
             activeThread={thread}
             snapshotWriteMode={snapshotThread?.aiWriteMode}
-            snapshot={snapshot}
             activeWork={activeWork}
             snapshotLiveState={snapshotLiveState}
             snapshotNextSeq={snapshotNextSeq}
             snapshotThreadUsage={snapshot?.threadUsage}
             historySettled={historySettled}
-            activateProjection={activateProjection}
             active={visible}
             composerStrip={
               activeWork && isWorkArchived(activeWork) ? (

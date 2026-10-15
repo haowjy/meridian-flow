@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+- Stop hands the messages still waiting behind the reply back to the composer, above any draft, in send order with a blank line between them. They never reach the model, a fork or a summary, and a lost Stop answer can be retried without duplicating the returned text.
+- The composer's one button is Stop while a reply runs and the box is empty, and Send (with the running ring, queuing a steer) once you type. Stop shows a spinning ring and disables at once, and a failed one is a red `Couldn't stop the reply.` card above the box with Try again, which retries the same request and goes when the Stop succeeds or the reply ends. A compaction divider's Stop does the same and ends on `Compaction stopped`.
+- Retry replaces a failed reply in place, and a chain of failed retries shows only the latest failure. A failed reply shows its failure only while it can be retried: once the chat moves on, the grey `This response failed.` line goes, and a failed reply with nothing to read leaves no row (one with partial text keeps its text). A refused Retry shows a red `Couldn't retry.` card (`Couldn't retry. Another reply started first.` when another reply took the chat) on that reply, with no failure line above it, until Retry or Send clears it, or the next reply completes.
+- Messages another tab or `./mf` leaves waiting show as `Queued` in an open tab without a reload.
+- A mode switch applies at its own turn, and its notice stays anchored there, before the Retry stand-in when one is showing, with no blink or duplicate. A queued row stays until its turn shows.
+- The usage notice shows only while a writer message is actually blocked, not for an empty record.
+- A failed-send Edit puts the returned text above the existing draft with a blank line, like Stop's hand-back.
+- `./mf` follows run state through the same `@meridian/thread-client` module as the app, including recovering a held switch divider. `./mf thread view` shows the mode and handed-back messages.
+- API: a chat's run state is one whole `runState` record (waiting messages, open execution, write mode, sent watermark, usage block) on the snapshot, the stream (`meridian.run_state`) and the control, Retry, Stop and send answers. It replaces `inbox.changed`, the delivered-message events and `execution.ended`, which are removed.
+- New `POST /api/threads/:id/stop` cancels the reply the writer saw and hands back the waiting writer messages. It is decided once under the thread lock and stored by request id, so a resend returns the same answer. See `docs/api/thread-stop.md`.
+
 - A document the AI drafted keeps the name the writer gives it after revealing it. Apply publishes it where it now lives, and draft links spell the new name.
 - Apply and Discard, for an item, a change or the whole draft, are server commands that carry a command id, so a lost response can be resent without applying twice. Apply never closes the draft; only Discard all does. Work Files' Apply all and Discard all are one command each.
 - Discarding one document's draft while the AI is still replying fails that reply's writes to it ("the user discarded the text it edited"), saves its other documents, and lets a later write start a fresh draft.
@@ -10,6 +21,25 @@
 - The review list reads live document fingerprints from a cache keyed by the document's authority head, and one Apply refreshes only its own project's chats.
 
 - Deleted Works no longer serve pending drafts. Restoring a Work keeps its drafts available, without a draft-loading error after deletion.
+- `./mf thread view` prints the shared transcript view model (`chatView: 2`, `inputs`).
+
+- `./mf thread send` `finalText` is the visible text.
+
+- A reply you stopped now shows as stopped in every open tab the moment the run ends, instead of "complete" until a refetch. The server's finish event now says the run was cancelled.
+
+- A reply that started elsewhere (another tab, `./mf`, a server wake) no longer begins mid-sentence while the page catches up, and no longer repeats text after a socket catch-up. Each socket listener gets every event after its own cursor, exactly once.
+
+- `./mf thread view`, `send` and `tail --until-idle` build turns with the app's own event reducer, shared through `@meridian/thread-client`. `tail --until-idle` applies every replayed event, and `send` reads no snapshot before its deadline starts. `send` and `tail --until-idle` results add `liveView`: `matches`, `differs` (with a compact `liveDiff`) or `not_observed`. It is a diagnostic comparing reduced status and final text with the stored reply; it never changes the outcome or exit code.
+
+- `./mf thread send --no-wait` reports `outcome: "accepted"` (admission only) instead of `complete`.
+
+- `./mf doc put --overwrite` says it deletes and recreates the document (new id), reports the deleted id, and says so when the create fails after the delete.
+
+- `./mf` deadline reports leave running turns and owed messages unknown when no snapshot was read, and tell an awake run lease from pending writer messages and unconfirmed idle state, without claiming success.
+
+- Thread socket deadline and recovery contracts now live with the shared client package.
+
+- The development CLI `./mf` now lives in its own workspace package at `tools/mf`, with unchanged commands and exit codes.
 
 - Separate Apply and selective Discard admission types while sharing review-cut consistency and row selection.
 
@@ -194,6 +224,7 @@
 
 ### Fixed
 
+- Development: `pnpm dev --restart` failed with "port … could not be inspected" when an open connection happened to use a backend port as its source port. Backend ports now come from 20000-27999, below Linux's ephemeral range, and a port busy with no listener says so.
 - Exiting review while its address is resolving no longer reopens that review. Switching to another Work or draft keeps the new destination.
 
 - A successful live document open no longer waits for or fails on an older browser catalog.
@@ -204,7 +235,7 @@
 
 - Words typed just before a document reloads are never lost, and saving a document's checkpoint no longer holds up other writers' edits.
 
-- Chats explain when your saved messages are waiting for usage, with an Add usage link. Waiting messages send automatically once usage is added.
+- Chats explain when your saved messages are waiting for usage with a red card and an Add usage button, and the waiting messages read `Queued`. Waiting messages send automatically once usage is added.
 
 - After a server restart interrupts a reply, the chat returns to idle when recovery finishes and accepts your next message without waiting.
 

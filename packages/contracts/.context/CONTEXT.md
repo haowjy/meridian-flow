@@ -15,14 +15,16 @@ contract owns a rule and where it is consumed.
   write-mode values (`direct`, `draft`). Database partial indexes and checks
   (inbox body and the `ai_write_mode` columns in `schema/agent-threads.ts` and
   `schema/content.ts`), websocket schemas, route schemas, and projections that
-  pick kinds by name (runtime `pending-inbox.ts`, the app's
+  pick kinds by name (runtime `run-state.ts`, the app's
   `features/chat/thread-controls/thread-controls.ts`) must change with those
   unions; a missing kind or mode fails its enqueue or drops the queued item.
-- `protocol/run-boundary.ts` is the single reader for write-once run identity
-  facts (`Turn.executionId`/`reservedForUserTurnIds`/`delivery`/`position`,
-  `liveState.openExecutionId`, and `meridian.messages.delivered` /
-  `meridian.execution.ended` customs). Consumers merge stream and snapshot by
-  union and order an execution's turns by `position`.
+- `threads/run-state.ts` owns the `RunState` record, carried whole on
+  `liveState.runState`, the socket's `subscribed` state, `meridian.run_state`
+  frames and every command answer (`runState`); only admission carries a bare
+  `runStateVersion`. `protocol/run-boundary.ts` is the single reader for the
+  frames and the write-once run identity a turn carries
+  (`Turn.executionId`/`reservedForUserTurnIds`/`delivery`/`position`).
+  Consumers order an execution's turns by `position`.
 - Durable trail contracts stay lifecycle-neutral. Receiving-writer attention is
   computed per connection as `ChangeEventProjection.swept`, a best-effort
   live-session hint that never enters `TrailChangeV1` or persisted projections.

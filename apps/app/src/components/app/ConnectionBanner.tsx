@@ -8,12 +8,11 @@
  * connection lifecycle is owned by the transport.
  */
 import { Trans } from "@lingui/react/macro";
+import type { ConnectionState } from "@meridian/thread-client";
 import { useEffect, useRef, useState } from "react";
-
 import { useThreadTransport } from "@/client/providers/TransportProvider";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import type { ConnectionState } from "@/core/transport";
 import { cn } from "@/lib/utils";
 
 const RECONNECTED_VISIBLE_MS = 3_000;

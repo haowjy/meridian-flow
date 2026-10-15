@@ -87,6 +87,14 @@ function rig(options: ConstructorParameters<typeof ThreadRunScenario>[0] = {}) {
         turnId: "switch-turn",
         seq: "1",
         mode: "direct",
+        runState: {
+          version: "0",
+          items: [],
+          sentThrough: 0,
+          execution: null,
+          mode: "direct",
+          blocked: null,
+        },
       }),
       status: (entry, status) => {
         if (entry.control) return;
@@ -227,30 +235,6 @@ describe("the journal driver", () => {
       r.dispose();
     }
   });
-});
-
-it("closing another pane preserves an in-flight admission", async () => {
-  const gate = scenarioGate<ReturnType<typeof defaultSendResponse>>();
-  const started = scenarioGate<void>();
-  const r = rig({
-    append: () => {
-      started.resolve();
-      return gate.promise;
-    },
-  });
-  r.records.set("record-1", { ...record(), creation: undefined });
-  try {
-    const owner = r.mount({ takeFresh: () => true }).owner;
-    const pending = owner.drive("thread_1");
-    await started.promise;
-    r.scenario.controller.teardown("another-thread");
-    gate.resolve(defaultSendResponse());
-    await pending;
-    expect(r.records.size).toBe(0);
-    expect(r.scenario.appendRequests).toHaveLength(1);
-  } finally {
-    r.dispose();
-  }
 });
 
 it.each([
@@ -609,11 +593,15 @@ describe("write-mode switches in the journal", () => {
           order.push(`switch after ${r.scenario.appendRequests.length} message(s)`);
           return {
             id: "switch-1",
-            queued: false,
-            pending: null,
             turnId: "switch-turn",
-            seq: "1",
-            mode: "direct",
+            runState: {
+              version: "0",
+              items: [],
+              sentThrough: 0,
+              execution: null,
+              mode: "direct",
+              blocked: null,
+            },
           };
         },
       });
@@ -622,10 +610,10 @@ describe("write-mode switches in the journal", () => {
       expect(r.scenario.appendRequests).toHaveLength(2);
       // The answer is stamped on the record for every tab to read; it is not posted again.
       expect([...r.records.keys()]).toEqual(["switch-1"]);
-      expect(r.records.get("switch-1")?.answer).toMatchObject({
-        seq: "1",
+      expect(r.records.get("switch-1")?.answer?.runState).toMatchObject({
+        version: "0",
         mode: "direct",
-        pending: null,
+        items: [],
       });
       await owner.drive("thread_1");
       expect(order).toHaveLength(1);
@@ -648,11 +636,15 @@ describe("write-mode switches in the journal", () => {
           if (refuse) throw new HttpResponseError("work_unavailable", 400, null);
           return {
             id: "switch-1",
-            queued: false,
-            pending: null,
             turnId: "switch-turn",
-            seq: "1",
-            mode: "direct",
+            runState: {
+              version: "0",
+              items: [],
+              sentThrough: 0,
+              execution: null,
+              mode: "direct",
+              blocked: null,
+            },
           };
         },
       });

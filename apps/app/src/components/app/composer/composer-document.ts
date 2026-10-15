@@ -1,9 +1,6 @@
-/** Pure Composer document schema, serialization, and exact selection snapshots. */
+/** TipTap Composer schema, clipboard, draft ownership, and exact selection snapshots. */
 
-import { spellDocumentHref } from "@meridian/contracts";
 import type {
-  ReferenceOccurrence,
-  SkillOccurrence,
   SubmittedReference,
   UploadIntakeResult,
   UserMessageBlock,
@@ -11,7 +8,14 @@ import type {
 import { classifyFiletype } from "@meridian/contracts/protocol";
 import { parseRequestId } from "@meridian/contracts/request-id";
 import { decodeWorkSlug } from "@meridian/contracts/works";
-import { formatMarkdownLink } from "@meridian/markup";
+import { formatMarkdownLink } from "@meridian/markup/links";
+import {
+  imageCapable,
+  type MessageSkill,
+  type RestorableReference,
+  referenceSpelling,
+  serializeMessageDoc,
+} from "@meridian/thread-client";
 import type { Editor, JSONContent } from "@tiptap/core";
 import { getSchema, mergeAttributes, Node } from "@tiptap/core";
 import type { Selection } from "@tiptap/pm/state";
@@ -55,33 +59,17 @@ export type ComposerSubmitEnvelope = Readonly<{
   activatedSkillSlugs: readonly string[];
 }>;
 
-export type ComposerReferenceAttrs = AuthoritativeReference & {
-  /** Per-occurrence prose, independent of the catalog title and stable identity. */
-  displayText?: string;
-  imageCapable: boolean;
-  upload: ComposerOwnedUpload | null;
-};
+export type ComposerReferenceAttrs = AuthoritativeReference &
+  RestorableReference & {
+    upload: ComposerOwnedUpload | null;
+  };
 export type ComposerPendingUploadAttrs = {
   intakeId: string;
   name: string;
   state: "pending" | "failed";
   error: string | null;
 };
-export type ComposerSkillAttrs = {
-  slug: string;
-  name: string;
-  description: string;
-};
-
-/**
- * What a reference reads as in text: the occurrence a sent message carries
- * (what the model reads) and the plain clipboard form. A standard Markdown
- * link to the canonical URI, spelled by the href module so a `#` or `%` in a
- * name stays part of the address the model and a paste read back.
- */
-function referenceSpelling(value: ComposerReferenceAttrs): string {
-  return formatMarkdownLink(value.displayText ?? value.label, spellDocumentHref(null, value.uri));
-}
+export type ComposerSkillAttrs = MessageSkill;
 
 /** HTML clipboard metadata is untrusted input; turn admission still authorizes identity. */
 function parseClipboardReference(raw: string | null): ComposerReferenceAttrs | null {
@@ -153,7 +141,7 @@ function parseClipboardReference(raw: string | null): ComposerReferenceAttrs | n
     label: value.label,
     ...(value.displayText !== undefined ? { displayText: value.displayText } : {}),
     upload: null,
-    imageCapable: classification.kind === "binary" && classification.fileType === "image",
+    imageCapable: imageCapable(value.fileType),
   };
 }
 
@@ -333,89 +321,23 @@ export function serializeComposerDraft(
   revision = 0,
   selection: ComposerSelection = { anchor: 1, head: 1 },
 ): ComposerSubmitEnvelope {
-  const blocks: UserMessageBlock[] = [];
-  const references = new Map<string, SubmittedReference>();
   const ownedUploads: ComposerOwnedUpload[] = [];
-  const activatedSkillSlugs: string[] = [];
-  const seenSkillSlugs = new Set<string>();
-  let text = "";
-  const emitText = (value: string) => {
-    if (!value) return;
-    text += value;
-    const last = blocks.at(-1);
-    if (last?.type === "text") last.text += value;
-    else blocks.push({ type: "text", text: value });
-  };
-  const walk = (node: JSONContent, top = false) => {
-    if (node.type === "text") return emitText(node.text ?? "");
-    if (node.type === "hardBreak") return emitText("\n");
-    if (node.type === "composerSkill") {
-      const slug = node.attrs?.slug;
-      if (typeof slug === "string" && slug) {
-        if (!seenSkillSlugs.has(slug)) {
-          seenSkillSlugs.add(slug);
-          activatedSkillSlugs.push(slug);
-        }
-        const occurrence: SkillOccurrence = {
-          type: "skill",
-          text: `/${slug}`,
-          slug,
-          name: typeof node.attrs?.name === "string" ? node.attrs.name : "",
-          description: typeof node.attrs?.description === "string" ? node.attrs.description : "",
-        };
-        blocks.push(occurrence);
-        text += occurrence.text;
+  const seenIntakes = new Set<string>();
+  const message = serializeMessageDoc(doc, {
+    onReference(reference) {
+      const upload = (reference as ComposerReferenceAttrs).upload;
+      if (upload && !seenIntakes.has(upload.intakeId)) {
+        seenIntakes.add(upload.intakeId);
+        ownedUploads.push(upload);
       }
-      return;
-    }
-    if (node.type === "composerReference") {
-      const value = node.attrs?.reference as ComposerReferenceAttrs;
-      const spelling = referenceSpelling(value);
-      const occurrence: ReferenceOccurrence = {
-        type: "reference",
-        text: spelling,
-        documentId: value.documentId,
-        uri: value.uri,
-      };
-      blocks.push(occurrence);
-      text += spelling;
-      if (value.imageCapable)
-        blocks.push({ type: "image", documentId: value.documentId, uri: value.uri });
-      const key = `${value.documentId}\0${value.uri}`;
-      const proposed: SubmittedReference = value.upload
-        ? {
-            documentId: value.documentId,
-            uri: value.uri,
-            purpose: "draft-upload",
-            intakeId: value.upload.intakeId,
-          }
-        : { documentId: value.documentId, uri: value.uri, purpose: "reference" };
-      if (!references.has(key) || proposed.purpose === "draft-upload")
-        references.set(key, proposed);
-      if (
-        value.upload &&
-        !ownedUploads.some((upload) => upload.intakeId === value.upload?.intakeId)
-      )
-        ownedUploads.push(value.upload);
-      return;
-    }
-    const children = node.content ?? [];
-    children.forEach((child, index) => {
-      walk(child);
-      if (top && node.type === "doc" && child.type === "paragraph" && index < children.length - 1)
-        emitText("\n");
-    });
-  };
-  walk(doc, true);
+    },
+  });
   const draft = { revision, doc, selection, ownedUploads } as const;
   return {
     submissionId: crypto.randomUUID(),
     acceptedRevision: revision,
-    text,
-    blocks,
-    references: [...references.values()],
+    ...message,
     draft,
-    activatedSkillSlugs,
   };
 }
 

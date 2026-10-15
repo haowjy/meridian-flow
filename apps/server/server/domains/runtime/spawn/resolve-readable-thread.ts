@@ -1,8 +1,10 @@
 /** Shared connection authority for conversation reads and background messages. */
+
 import { type MeridianError, meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import { parseThreadRef, type Thread } from "@meridian/contracts/threads";
 import { sameLineage } from "../../threads/domain/lineage.js";
 import type { ThreadRepository, TurnRepository } from "../../threads/index.js";
+import { type TURN_GRAPH, turnGraph } from "../../threads/ports/turn-graph.js";
 
 export type ReadableThreadOutcome =
   | { ok: true; target: Thread }
@@ -17,7 +19,7 @@ export async function resolveReadableThread(input: {
   caller: Thread;
   ref?: string;
   threads: Pick<ThreadRepository, "findLiveByProjectRef">;
-  turns: Pick<TurnRepository, "findById">;
+  turns: Parameters<typeof areThreadsConnected>[2];
 }): Promise<ReadableThreadOutcome> {
   const ref = input.ref === undefined || input.ref === "current" ? input.caller.ref : input.ref;
   if (!ref || !parseThreadRef(ref)) return threadReadError("thread_not_found", "Thread not found");
@@ -37,16 +39,16 @@ export async function resolveReadableThread(input: {
 export async function areThreadsConnected(
   caller: Thread,
   target: Thread,
-  turns: Pick<TurnRepository, "findById">,
+  turns: Pick<TurnRepository, typeof TURN_GRAPH>,
 ): Promise<boolean> {
   if (caller.projectId !== target.projectId || caller.userId !== target.userId) return false;
   if (sameLineage(caller, target)) return true;
   if (caller.originType === "handoff" && caller.originTurnId) {
-    const origin = await turns.findById(caller.originTurnId);
+    const origin = await turnGraph(turns).findById(caller.originTurnId);
     if (origin?.threadId === target.id) return true;
   }
   if (target.originType === "handoff" && target.originTurnId) {
-    const origin = await turns.findById(target.originTurnId);
+    const origin = await turnGraph(turns).findById(target.originTurnId);
     if (origin?.threadId === caller.id) return true;
   }
   return false;

@@ -400,9 +400,12 @@ export class ChatSubmissionDriver {
     }
     if (!this.current()) return;
     // The creation inputs are spent: the thread exists once the server answers a control.
-    const { seq, mode, pending } = response;
     if (
-      !this.write({ ...entry, creation: undefined, answer: { seq, mode, pending, at: Date.now() } })
+      !this.write({
+        ...entry,
+        creation: undefined,
+        answer: { runState: response.runState, at: Date.now() },
+      })
     )
       return;
   }

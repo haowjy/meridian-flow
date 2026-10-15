@@ -40,6 +40,7 @@ export default defineEventHandler(async (event) => {
     return serializeTransport({
       executionId: result.executionId,
       turn: result.turn,
+      runState: result.runState,
     } satisfies ReplyRetryResponse);
   } catch (error) {
     // A thrown error builds its own response: headers set on the event are dropped.

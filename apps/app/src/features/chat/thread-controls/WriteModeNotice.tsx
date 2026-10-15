@@ -8,11 +8,11 @@
  * where it carries Stop, Retry and the failure words as `children`.
  */
 import type { Turn } from "@meridian/contracts/protocol";
+import { readWriteModeSwitch } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { FilePen, Zap } from "lucide-react";
 import type { ReactNode } from "react";
 import { writeModeSwitchedCopy } from "./control-copy";
-import { readWriteModeSwitch } from "./write-mode-model";
 
 export function WriteModeNotice({
   mode,

@@ -5,11 +5,7 @@ import * as schema from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../../shared/drizzle-transaction.js";
 import { createDrizzleRepositoriesForTest } from "../../../threads/adapters/drizzle/repositories.js";
-import {
-  createDrizzleEventJournalReader,
-  createDrizzleEventJournalWriter,
-  cursorSeqForJournalHead,
-} from "../../../threads/index.js";
+import { createDrizzleEventJournalWriter } from "../../../threads/index.js";
 import { createDrizzleRuntimeDelivery } from "../../adapters/drizzle/runtime-delivery.js";
 import { createDrizzleRunClaim } from "../../adapters/drizzle-run-claim.js";
 import { processDetachedWork } from "../../detached-work.js";
@@ -29,8 +25,6 @@ export function createTestDrizzleDelivery(
     },
     repos: createDrizzleRepositoriesForTest(db),
     eventWriter: createDrizzleEventJournalWriter(db),
-    headSeq: async (id) =>
-      cursorSeqForJournalHead(await createDrizzleEventJournalReader(db).headSeq(id)),
     notices: createTestNoticePort(),
     runClaim: createDrizzleRunClaim(db),
     runStarter: { async start() {} },

@@ -1,17 +1,24 @@
 # Runtime probes
 
 Use these recipes to check the running product, in addition to `pnpm check`.
-Run each one in a real browser (`agent-browser`) and judge it by what the screen
-shows, with the durable transcript as truth. `./mf` only sets up state (Works,
-threads, documents, mock-model scripts) and reads durable state; its output is
-never evidence that the app works. Write new recipes as browser steps.
+While working, `./mf` is the verification tool for the code it shares with the
+app (the socket client, message serializer and chat event processing), and a
+`./mf` run is evidence for that code against the real server. A command with no
+shared client code behind it is evidence of the server only. What the writer
+sees (rendering, the composer, optimistic UI, client state) is checked in the
+browser (`agent-browser`), judged by the screen with the durable transcript as
+truth. A PR that changes app behavior confirms it in the browser at least once,
+at the end. A new recipe uses `./mf` steps where the code is shared, and ends
+with a browser confirmation.
 Keep evidence in the active work directory, not in this repository. Record the
 commit, date, stack/provider, outcome, and evidence path after each run. A recipe
 is not a claim that it passed on the current commit.
 
 - [Runtime protocols](runtime-probes.md): RP-1 through RP-14, server protocol checks driven with `./mf`. They don't verify the app.
 - [Project chrome and shell](project-chrome-manual.md): the browser checks that replaced nine slow DOM tests in `apps/app`. Their durable halves are RP-13 and RP-14.
+- [Stop and hand-back](stop-and-hand-back.md): written steps for the pure Stop rows with no unit case, each naming the DB row or browser item that pins it.
 - [Browser state envelopes](browser-state-envelopes.md): reload all browser-persisted surfaces and reject transplanted ownership.
+- [Chat session](chat-session.md): compare a chat in the browser with `./mf thread view --json` by row identity, kind, item kinds and text.
 - [Chat submissions](chat-submissions.md): first-send and existing-send failure, FIFO ownership and tab takeover.
 - [Composer drafts](composer-drafts.md): per-tab reload, submission hand-off and missing-reference recovery.
 - [Journal checkpoint coverage](checkpoint-coverage.md): durable admission, compaction, generation replacement and opaque cuts.
@@ -29,6 +36,7 @@ browser scenarios in the configured-case inventory and list standalone
 workloads separately. A missing prerequisite or skipped check is not a pass.
 
 - `pnpm smoke:app-dev-transform`: [dev startup and public routes](../../tools/dev/smoke-app-dev-transform.ts).
+- [Dev route ownership](dev-route-ownership.md): detached-checkout names, conflict refusal and explicit takeover without disturbing sibling stacks.
 - `pnpm smoke:prod-boot`: [production build, startup and public routes](../../tools/dev/smoke-app-prod-boot.ts). Both boot checks also run in CI; neither verifies authenticated writing.
 - `bash tools/deploy/smoke-check.sh`: [staging health](../../tools/deploy/smoke-check.sh). Requires `STAGING_URL`; without it the script exits successfully without probing.
 - `CHAT_SMOKE_TURNS=200 pnpm exec playwright test --config apps/app/e2e/playwright.chat-smoke.config.ts`: [chat virtualization](../../apps/app/e2e/chat-performance-smoke.pw.ts). Supply the owned app URL and database URL; a missing database skips the scenario. Capture the runner report and trace.
@@ -40,8 +48,15 @@ The recipes below and in linked pages do not certify those workflows today.
 Script automation and catalog repairs are tracked in [#726](https://github.com/haowjy/meridian-flow/issues/726).
 
 Run on an owned worktree and database. Discover HTTPS routes with
-`pnpm portless:list`; never target another worktree's process or clear its mock
-queue. Stop only your stack with `pnpm dev --stop` when finished.
+`pnpm portless:list` and confirm they carry your worktree's prefix before any
+`./mf seed` or send, then pass `MF_APP_URL` and `MF_SERVER_URL` explicitly. A
+detached-HEAD checkout has no prefix: when another checkout holds the unprefixed
+routes, `pnpm dev` still reports `started` with that checkout's URLs, and `./mf`
+writes into its database ([#615](https://github.com/haowjy/meridian-flow/issues/615)).
+Put a comparison base on a throwaway branch instead. Never target another
+worktree's process or clear its mock queue. Stop only your stack with
+`pnpm dev --stop` when finished; never `pkill` or `killall` by pattern, which
+matches every worktree's stack.
 
 Leave a shared checkout as you found it. To compare against an older revision,
 extract its modules with `git show` into a scratch directory outside the

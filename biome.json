@@ -44,7 +44,50 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "preset": "recommended"
+      "preset": "recommended",
+      "style": {
+        "noRestrictedImports": {
+          "level": "error",
+          "options": {
+            "patterns": [
+              {
+                "group": ["**/turn-graph.js"],
+                "message": "The turn graph includes writer messages a hand-back took out of the chat. Read turns and blocks through TurnRepository and BlockRepository, which return the conversation. Only the graph modules listed in biome.json may import turn-graph."
+              }
+            ]
+          }
+        }
+      }
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": [
+        "apps/server/server/domains/threads/ports/**",
+        "apps/server/server/domains/threads/adapters/drizzle/turn-repository.ts",
+        "apps/server/server/domains/threads/adapters/in-memory/repositories.ts",
+        "apps/server/server/domains/threads/domain/thread-conversation-context.ts",
+        "apps/server/server/domains/threads/domain/transcript-page.ts",
+        "apps/server/server/domains/threads/thread-snapshot.ts",
+        "apps/server/server/domains/runtime/loop/orchestrator.ts",
+        "apps/server/server/domains/runtime/loop/run-session.ts",
+        "apps/server/server/domains/runtime/loop/inbox-context.ts",
+        "apps/server/server/domains/runtime/handoff/brief-service.ts",
+        "apps/server/server/domains/runtime/adapters/runtime-delivery.ts",
+        "apps/server/server/domains/runtime/spawn/thread-ls.ts",
+        "apps/server/server/domains/runtime/spawn/resolve-readable-thread.ts",
+        "**/*.test.ts",
+        "**/*-contract.ts",
+        "**/__tests__/**",
+        "**/__conformance__/**"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": "off"
+          }
+        }
+      }
+    }
+  ]
 }

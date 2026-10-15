@@ -3,6 +3,7 @@
 import { t } from "@lingui/core/macro";
 import { parseContextUri } from "@meridian/contracts";
 import type { UploadIntakeResult } from "@meridian/contracts/protocol";
+import { imageCapable } from "@meridian/thread-client";
 import { EditorContent, ReactNodeViewRenderer, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { ArrowUp, Paperclip } from "lucide-react";
@@ -96,10 +97,16 @@ export type ComposerProps = {
   onStop?: () => void;
   /**
    * A run is active on this thread (a reply streaming, a compaction, a brief).
-   * Stop replaces an empty Send, Escape in the empty composer presses it, and a
-   * send queues behind the run.
+   * With the box empty the one button is Stop, and Escape presses it. With text it is Send
+   * (spinning ring), and a send queues behind the run.
    */
   running?: boolean;
+  /**
+   * This tab's Stop request. Pending and stopping read Stopping and do nothing on a press;
+   * failed says so beside the control and keeps it, even after the chat goes idle, so the
+   * retry stays reachable. All of it shows only while the box is empty; text shows Send.
+   */
+  stopStatus?: "idle" | "pending" | "stopping" | "failed";
   placeholder?: string;
   autoFocus?: boolean;
   variant?: "hero" | "pinned";
@@ -137,6 +144,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     onDraftChange,
     onStop,
     running = false,
+    stopStatus = "idle",
     placeholder,
     autoFocus,
     variant = "hero",
@@ -220,7 +228,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                   range,
                   composerReferenceContent({
                     ...reference,
-                    imageCapable: row.fileKind === "asset" && reference.fileType === "image",
+                    imageCapable: row.fileKind === "asset" && imageCapable(reference.fileType),
                     upload: null,
                   }),
                 )
@@ -449,7 +457,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               ...ready,
               authority: authorityForUpload(scope, ready.uri),
               label: file.name,
-              imageCapable: ready.fileType === "image",
+              imageCapable: imageCapable(ready.fileType),
               upload: {
                 intakeId,
                 documentId: ready.documentId,
@@ -500,9 +508,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     });
   }, [editor]);
 
-  // Escape is the Stop button: it stops only while Stop shows. With a draft it
-  // leaves the run and the draft alone for other Escape owners.
-  const showStop = running && !hasContent;
+  // One button, as on main: Stop while the box is empty and a reply runs or this tab's Stop is
+  // pending, stopping or failed; Send (with the running ring while a reply runs) once there is text.
+  // Escape is the Stop button: it stops only while Stop shows, so a draft is never a side effect.
+  const showStop = (running || stopStatus !== "idle") && !hasContent;
+  const stopInProgress = stopStatus === "pending" || stopStatus === "stopping";
   const keyDown = (event: React.KeyboardEvent) => {
     if (
       event.target instanceof Element &&
@@ -511,7 +521,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       )
     )
       return;
-    if (event.key === "Escape" && showStop) {
+    if (event.key === "Escape" && showStop && !stopInProgress) {
       event.preventDefault();
       onStop?.();
     }
@@ -527,13 +537,31 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       <p className="min-w-0 flex-1">{t`Couldn't send.`}</p>
     </NoticeCard>
   ) : null;
+  // A failed Stop is a card while the reply it failed to stop still runs; typing doesn't hide it,
+  // and Try again is the Stop button's own press (the same request id).
+  const stopFailureCard =
+    stopStatus === "failed" && running ? (
+      <NoticeCard tone="error" announce={false}>
+        <p className="min-w-0 flex-1">{t`Couldn't stop the reply.`}</p>
+        <Button
+          type="button"
+          variant="outline"
+          size="xs"
+          data-composer-stop-retry
+          onClick={() => onStop?.()}
+        >
+          {t`Try again`}
+        </Button>
+      </NoticeCard>
+    ) : null;
   return (
     <>
-      {notices || failureCard ? (
+      {notices || failureCard || stopFailureCard ? (
         // Above the box and its strips, as wide as the box: every note above the box is the
         // same card in the same place, whoever raised it. Send is the failure's retry.
         <div className="mb-[var(--chat-space-inline)] flex flex-col gap-[var(--chat-space-inline)]">
           {notices}
+          {stopFailureCard}
           {failureCard}
         </div>
       ) : null}
@@ -579,27 +607,50 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             </>
           ) : null}
 
-          <Button
-            type="button"
-            size="icon-sm"
-            onClick={() => (showStop ? onStop?.() : void submit())}
-            disabled={!showStop && (!hasContent || submitDisabled || pending > 0)}
-            aria-label={showStop ? t`Stop` : t`Send message`}
-            aria-describedby={!showStop && submitDisabledReason ? disabledReasonId : undefined}
-            className={running ? "relative rounded-full" : "rounded-field"}
-          >
-            {showStop ? (
+          {showStop ? (
+            <Button
+              type="button"
+              size="icon-sm"
+              data-composer-stop=""
+              onClick={() => onStop?.()}
+              disabled={stopInProgress}
+              aria-label={
+                stopInProgress
+                  ? t`Stopping`
+                  : stopStatus === "failed"
+                    ? t`Couldn't stop. Try again.`
+                    : t`Stop`
+              }
+              className="relative rounded-full"
+            >
               <span className="size-2.5 rounded-[3px] bg-primary-foreground" />
-            ) : (
+              {stopInProgress ? (
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute -inset-1 rounded-full border-2 border-primary/30 border-t-primary motion-safe:animate-spin"
+                />
+              ) : null}
+            </Button>
+          ) : null}
+          {!showStop ? (
+            <Button
+              type="button"
+              size="icon-sm"
+              onClick={() => void submit()}
+              disabled={!hasContent || submitDisabled || pending > 0}
+              aria-label={t`Send message`}
+              aria-describedby={submitDisabledReason ? disabledReasonId : undefined}
+              className={running ? "relative rounded-full" : "rounded-field"}
+            >
               <ArrowUp className="size-4" />
-            )}
-            {running && hasContent ? (
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute -inset-1 rounded-full border-2 border-primary/30 border-t-primary motion-safe:animate-spin"
-              />
-            ) : null}
-          </Button>
+              {running ? (
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute -inset-1 rounded-full border-2 border-primary/30 border-t-primary motion-safe:animate-spin"
+                />
+              ) : null}
+            </Button>
+          ) : null}
           {submitDisabledReason ? (
             <span id={disabledReasonId} className="sr-only">
               {submitDisabledReason}

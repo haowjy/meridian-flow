@@ -57,6 +57,8 @@ export {
 export {
   ThreadStoreProvider,
   useIsThreadPendingCreation,
+  useRunState,
+  useRunStateSlice,
   useThreadActions,
   useThreadStore,
 } from "./thread-store/thread-store";

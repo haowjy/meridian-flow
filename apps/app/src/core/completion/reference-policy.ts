@@ -1,12 +1,5 @@
 /** Canonical reference identity and deterministic lexical ranking over catalog metadata. */
-import {
-  type CanonicalContextUri,
-  type DocumentId,
-  type ProjectId,
-  parseContextUri,
-  type UserId,
-  type WorkId,
-} from "@meridian/contracts";
+import { type CanonicalContextUri, type DocumentId, parseContextUri } from "@meridian/contracts";
 import type {
   CatalogAuthorityEntry,
   CatalogFileEntry,
@@ -14,17 +7,12 @@ import type {
   DocumentFileType,
   Filetype,
 } from "@meridian/contracts/protocol";
-import type { WorkSlug } from "@meridian/contracts/works";
+import type { StableReferenceAuthority } from "@meridian/thread-client";
 
 export const REFERENCE_ROW_LIMIT = 20;
 export const MAX_REFERENCE_QUERY_LENGTH = 80;
 
-export type StableReferenceAuthority =
-  | { kind: "project"; projectId: ProjectId }
-  | { kind: "user"; userId: UserId }
-  | { kind: "work"; projectId: ProjectId; workId: WorkId; workSlug: WorkSlug | null }
-  /** A No Work chat's Scratch: the lineage by its first chat's id, and the handle its URI spells. */
-  | { kind: "lineage"; projectId: ProjectId; rootThreadId: string; rootThreadRef: string };
+export type { StableReferenceAuthority };
 
 export type AuthoritativeReference = {
   documentId: DocumentId;
