@@ -2,30 +2,28 @@
 
 - `src/commands/thread/reduced-thread.ts` and `InMemoryTurnStore`
   (`packages/thread-client/src/turns/in-memory-turn-store.ts`) as `./mf`'s
-  turn store go when PR D gives `./mf` the shared chat session (design-chat-session
-  §6; one turn store in the package, the app's Zustand store as a binding).
+  turn store go when `./mf` gets the shared chat session (one turn store in the package, the
+  app's Zustand store as a binding).
   Until then `liveView` compares only reduced status and final text, and the
   "turn not seen from its start" `not_observed` path in `reduced-thread.ts` has
-  no test (it is deleted with the file). Removal trigger: PR D merges.
+  no test (it is deleted with the file). Removal trigger: the shared chat session lands.
 
 - Card display text, failure copy and interrupt presentation are not in the
   view model yet (`packages/thread-client/src/view/`), so `./mf thread view`
-  carries raw card props only. They move into the view model in PR E (design-chat-session,
-  "the later outputs"). Until then `docs/qa/chat-session.md` says not to compare
-  them with the screen. Removal trigger: PR E merges.
+  carries raw card props only. Until they move into the view model, `docs/qa/chat-session.md` says not to compare
+  them with the screen. Removal trigger: card display moves into the view model.
 
-- B (#768 phase 2, `send` on the run state) owns these known gaps in
+- #768 phase 2 (`send` on the run state) owns these known gaps in
   `src/commands/thread/send.ts`, `stream.ts` and `reduced-thread.ts`:
   - `send` reports `timeout` (exit 124) after a Stop that handed its message back
-    or cancelled its reply, not `cancelled`. B reports the message's own
+    or cancelled its reply, not `cancelled`. Phase 2 reports the message's own
     disposition: answered, handed back (a `meridian.messages.handed_back` frame
     names it) or still waiting.
   - `ReducedThread` and plain `tail` don't draw queued rows. The package's
     `unheldWriterMessages` and the record's items are ready for when they do;
     `thread view` (the snapshot) already shows them.
   - `RUN_STARTED`'s `executionId`, `reservedForUserTurnIds` and `position` stay
-    only because `send`'s interim follow reads them (work divergence
-    `run-started-meta-kept-until-b`). B deletes them, their parser defaults in
+    only because `send`'s interim follow reads them. Phase 2 deletes them, their parser defaults in
     `packages/contracts/src/protocol/run-boundary.ts` and the golden fixture's
     copies together with the interim follow.
-  Removal trigger: B merges.
+  Removal trigger: #768 phase 2 lands.

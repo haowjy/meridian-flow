@@ -94,7 +94,7 @@ chips only when the chat proves their owner (`chatReferenceResolver`): a
 `@slug` for this chat's own Work, or a project or user reference. Anything else,
 another named Work included, comes back as its link text, so no content is lost.
 An image takes its type from the message's image block, not the extension.
-Send-time chip metadata would make this exact.
+Send-time chip metadata would make this exact (see the shared client's FUTURE).
 
 `StopStatus` belongs to the tab that pressed Stop; other tabs see the record.
 `pending` is the press. An answer naming a cancelled execution reads `stopping`
