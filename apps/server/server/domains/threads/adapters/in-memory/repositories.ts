@@ -609,11 +609,6 @@ export function createInMemoryRepositories(
     async findById(id) {
       return turns.get(id) ?? null;
     },
-    async next(id) {
-      return (
-        orderTurnsByPosition([...turns.values()].filter((t) => t.prevTurnId === id))[0] ?? null
-      );
-    },
     async latest(threadId) {
       return (await turnGraph.listByThread(threadId)).at(-1) ?? null;
     },

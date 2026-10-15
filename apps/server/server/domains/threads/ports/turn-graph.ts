@@ -19,8 +19,6 @@ export interface TurnGraph {
   listByThread(threadId: ThreadId): Promise<Turn[]>;
   /** A turn by id, handed back or not. */
   findById(id: TurnId): Promise<Turn | null>;
-  /** The turn chained directly after `id` (`prevTurnId`), or null at the leaf. */
-  next(id: TurnId): Promise<Turn | null>;
   /** The last turn by position: the leaf positions are allocated from. */
   latest(threadId: ThreadId): Promise<Turn | null>;
 }
