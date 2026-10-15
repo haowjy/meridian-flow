@@ -21,8 +21,11 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
 - **Imports.** Workspace libraries are `@meridian/contracts` and
   `@meridian/thread-client` only. Portless discovery uses the route contract
   `pnpm dev` registers (`../dev/portless-prefix.ts`, `portless-routes.ts`,
-  `portlessCa` in `dev-readiness.ts`), so the strict tsconfig resolves those
-  helpers without including `tools/dev`. Never import `apps/`.
+  `portlessCa` in `dev-readiness.ts`, and `resolveCheckoutRouteUrls` in
+  `dev-session-state.ts`, which finds an active session's routes by its recorded
+  identity rather than the current branch). Duplicating that discovery here would
+  drift from `pnpm dev`, so the allowed list was widened deliberately; its
+  transitive `tools/dev` imports are Node-only. Never import `apps/`.
 - **Views derive from the shared reducer.** `reduced-thread.ts` hydrates a
   snapshot into `InMemoryTurnStore` and applies each sequenced event through the
   app's `createTurnReducer`, with the stream seq (`ReducedThread.apply(event, seq)`).
