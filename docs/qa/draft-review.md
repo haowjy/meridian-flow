@@ -198,6 +198,10 @@ follows it. Use a Work with two changes in Chapter A and one in Chapter B.
    twice. PASS: each view undoes only its own typing and Discards. Exclude the retained
    `[inert]` and `aria-hidden` editor DOM from the typing target. Control: type " CONTROL",
    Ctrl+Z (it disappears); type " SURVIVE_SWAP", switch hosts and Ctrl+Z (it must also undo).
+4. Both hosts paint at once. Open the same draft in the Editor tab and in the chat's document
+   dock, side by side. PASS: both show the same red and green marks. Type in the dock: both
+   repaint within the review debounce. Close the dock: the Editor still paints, and typing there
+   still repaints it. The sweep found the second attached editor painting no marks at all.
 
 K2 failed step 3: after the transfer neither view undid anything and the toolbar Undo was
 disabled, with no console error. Re-run before certifying.
