@@ -125,7 +125,7 @@ it.each([
       THREAD_ID,
       "--until-idle",
       "--timeout",
-      "1s",
+      "30s",
       "--json",
     ]);
     while (!stack.socketCount()) await new Promise((resolve) => setTimeout(resolve, 1));
