@@ -57,9 +57,12 @@ export function handBackCards(
     const refused = entry.status === "refused";
     cards.push({
       key: entry.requestId,
-      // While the reply runs, a Stop's failure reads as Stop's; once it ended, as the x's.
+      // While the reply the Stop targeted still runs, its failure reads as Stop's; once that
+      // reply ended (even if another runs), as the x's.
       copy:
-        entry.commandKind === "stop" && running !== null
+        entry.commandKind === "stop" &&
+        entry.targetExecutionId !== null &&
+        running === entry.targetExecutionId
           ? "stop-failed"
           : refused
             ? "hand-back-refused"

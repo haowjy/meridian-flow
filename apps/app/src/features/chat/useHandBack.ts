@@ -17,6 +17,7 @@ import {
   type HandBackOperation,
   type HandBackPorts,
   type RunStatePort,
+  type StopFacts,
   type UnresolvedHandBack,
 } from "@meridian/thread-client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -28,6 +29,8 @@ export type ChatHandBack = {
   operation: HandBackOperation;
   /** Commands that still owe the writer a card, newest state. */
   unresolved: readonly UnresolvedHandBack[];
+  /** What the Stop control reads from the operation, the same on every route into it. */
+  stopFacts: StopFacts;
   /** Run an operation call and redraw from what it leaves unresolved. */
   settle: <T>(call: Promise<T>) => Promise<T>;
 };
@@ -119,13 +122,19 @@ export function useHandBack(input: {
   );
 
   useEffect(() => {
+    const stopListening = operation.subscribe(redraw);
     void settle(operation.resume());
-    return draft.subscribe(() => {
+    const stopWatching = draft.subscribe(() => {
       operation.reconcile();
       redraw();
     });
+    return () => {
+      stopListening();
+      stopWatching();
+    };
   }, [draft, operation, redraw, settle]);
 
   const unresolved = useMemo(() => operation.unresolved(), [operation, revision]);
-  return { operation, unresolved, settle };
+  const stopFacts = useMemo(() => operation.stopFacts(), [operation, revision]);
+  return { operation, unresolved, stopFacts, settle };
 }

@@ -155,7 +155,7 @@ export const threadQueueHandBackCommand: CommandSpec = {
 
 export const threadQueueSendNowCommand: CommandSpec = {
   path: ["thread", "queue", "send-now"],
-  summary: "Send now: cancel the running reply so the waiting queue runs next",
+  summary: "Send now: ask the server to cancel the running reply so the waiting queue can run",
   args: "<thread>",
   route: "POST /api/threads/:threadId/send-now",
   options: {
@@ -225,7 +225,7 @@ export const threadQueueSendNowCommand: CommandSpec = {
     ctx.out.result(terminal.result, (value) =>
       value.cancelledExecutionId === null
         ? "this attempt requested no cancellation"
-        : `requested cancellation of ${value.cancelledExecutionId}; the queue runs next`,
+        : `requested cancellation of ${value.cancelledExecutionId} (follow it: ./mf thread tail ${threadId} --until-idle)`,
     );
     return terminal.exitCode;
   },
