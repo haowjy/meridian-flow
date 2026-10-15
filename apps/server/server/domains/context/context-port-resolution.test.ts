@@ -70,6 +70,8 @@ describe("thread context-port resolution", () => {
 
     const calls: Array<{ workId: string; projectId: string; threadId?: string }> = [];
     const contextPorts: UnifiedContextPortFactory = {
+      topPrimaryChats: { resolveTopPrimaryChat: async () => null },
+      chats: { byRef: async () => null },
       lineages: {
         async byId() {
           return null;

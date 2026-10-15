@@ -259,9 +259,19 @@ export interface TreeReader {
 
 /** The key `occupantsAt` answers under. */
 export function coordinatesKey(
-  at: Pick<DocumentCoordinates, "projectId" | "scheme" | "workId" | "rootThreadId" | "path">,
+  at: Pick<
+    DocumentCoordinates,
+    "projectId" | "scheme" | "workId" | "rootThreadId" | "chatThreadId" | "path"
+  >,
 ): string {
-  return JSON.stringify([at.projectId, at.scheme, at.workId, at.rootThreadId ?? null, at.path]);
+  return JSON.stringify([
+    at.projectId,
+    at.scheme,
+    at.workId,
+    at.rootThreadId ?? null,
+    at.chatThreadId ?? null,
+    at.path,
+  ]);
 }
 
 type VisibleDocumentRow = Omit<VisibleDocument, "path"> & {
@@ -709,13 +719,20 @@ export function createTreeReader(
   ): Promise<ReadonlyMap<string, DocumentId[]>> {
     const sources = new Map<string, Promise<ContextSourceId | null>>();
     const sourceOf = (at: DocumentCoordinates) => {
-      const key = JSON.stringify([at.projectId, at.scheme, at.workId, at.rootThreadId ?? null]);
+      const key = JSON.stringify([
+        at.projectId,
+        at.scheme,
+        at.workId,
+        at.rootThreadId ?? null,
+        at.chatThreadId ?? null,
+      ]);
       const known =
         sources.get(key) ??
         presentSourceId(tx(), {
           scheme: at.scheme,
           workId: at.workId,
           rootThreadId: at.rootThreadId ?? null,
+          chatThreadId: at.chatThreadId ?? null,
           project: { id: at.projectId },
         });
       sources.set(key, known);

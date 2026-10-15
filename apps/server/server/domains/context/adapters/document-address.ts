@@ -25,14 +25,19 @@ import {
 } from "../tree/tree-addresses.js";
 import { DrizzleContextTreeMutationStore } from "./context-fs/drizzle-tree-mutation-store.js";
 
-export const sameCoordinates = (
-  a: Pick<DocumentCoordinates, "projectId" | "scheme" | "workId" | "rootThreadId" | "path">,
-  b: Pick<DocumentCoordinates, "projectId" | "scheme" | "workId" | "rootThreadId" | "path">,
-) =>
+type CoordinateKey = Pick<
+  DocumentCoordinates,
+  "projectId" | "scheme" | "workId" | "rootThreadId" | "chatThreadId" | "path"
+>;
+
+/** The scheme tells the owners apart, so one thread slot compares a lineage and a chat alike. */
+const ownerThread = (at: CoordinateKey) => at.chatThreadId ?? at.rootThreadId ?? null;
+
+export const sameCoordinates = (a: CoordinateKey, b: CoordinateKey) =>
   a.projectId === b.projectId &&
   a.scheme === b.scheme &&
   a.workId === b.workId &&
-  (a.rootThreadId ?? null) === (b.rootThreadId ?? null) &&
+  ownerThread(a) === ownerThread(b) &&
   a.path === b.path;
 
 /** The address a content document holds now, or null when it is deleted there or unspellable. */
@@ -56,6 +61,7 @@ export async function documentAt(
     scheme: at.scheme,
     workId: at.workId,
     rootThreadId: at.rootThreadId,
+    chatThreadId: at.chatThreadId,
     project: { id: at.projectId },
   });
   if (!sourceId) return null;
@@ -137,6 +143,7 @@ export async function resolveCanonicalAddress(
   let workId: string | null = null;
   let lockWorkId: string | null = null;
   let rootThreadId: string | null = null;
+  let chatThreadId: string | null = null;
   if (scheme === "scratch" && authority.kind === "none")
     throw new RangeError("Scratch needs a chat handle or named Work authority");
   if (authority.kind === "none") {
@@ -165,6 +172,21 @@ export async function resolveCanonicalAddress(
       );
     if (!root) throw new Error(`Chat ${authority.rootThreadRef} does not exist`);
     rootThreadId = root.id;
+  } else if (authority.kind === "chat") {
+    const [chat] = await tx
+      .select({ id: threads.id })
+      .from(threads)
+      .where(
+        and(
+          eq(threads.projectId, input.holderProjectId),
+          eq(threads.ref, authority.chatRef),
+          eq(threads.kind, "primary"),
+        ),
+      );
+    if (!chat) {
+      throw new UnresolvableAddressError(input.address, `Chat ${authority.chatRef} does not exist`);
+    }
+    chatThreadId = chat.id;
   } else if (authority.kind === "work") {
     // Slugs stay reserved across soft deletion, so a deleted Work keeps its identity: an
     // address resolves against it and is occupied only once a restore makes it live again.
@@ -180,7 +202,16 @@ export async function resolveCanonicalAddress(
     }
     workId = lockWorkId = work.id;
   }
-  return { projectId, userId: holder.userId, scheme, workId, lockWorkId, rootThreadId, path };
+  return {
+    projectId,
+    userId: holder.userId,
+    scheme,
+    workId,
+    lockWorkId,
+    rootThreadId,
+    chatThreadId,
+    path,
+  };
 }
 
 export function createDrizzleDocumentAddressStore(db: Database): DocumentAddressStore {
@@ -202,11 +233,17 @@ export function createDrizzleDocumentAddressStore(db: Database): DocumentAddress
         if (!project) return null;
         const workScoped = isWorkScopedProjectContextScheme(input.scheme);
         if (input.rootThreadId && (input.workId || input.scheme !== "scratch")) return null;
+        if (
+          input.chatThreadId &&
+          (input.workId || input.rootThreadId || input.scheme !== "uploads")
+        )
+          return null;
         if (!workScoped && input.workId !== null) return null;
         const sourceId = await presentSourceId(db, {
           scheme: input.scheme,
           workId: input.workId,
           rootThreadId: input.rootThreadId,
+          chatThreadId: input.chatThreadId,
           project: input.scheme === "user" ? { personalOf: input.userId } : { id: input.projectId },
         });
         if (!sourceId) return null;
