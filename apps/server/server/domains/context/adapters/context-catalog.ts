@@ -25,9 +25,10 @@ import {
   contextSources,
   projects,
   threads,
+  uploadIntakes,
   works,
 } from "@meridian/database/schema";
-import { and, asc, eq, gt, inArray, isNull, lt, lte, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, lt, lte, ne, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   runAfterDrizzleCommit,
@@ -274,6 +275,33 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
     db as Database,
     documentRows.map((document) => document.id as DocumentId),
   );
+  const chatSourceIds = new Set(sourceRows.filter((r) => r.chatThreadId !== null).map((r) => r.id));
+  const chatDocumentIds = documentRows
+    .filter((document) => chatSourceIds.has(document.contextSourceId))
+    .map((document) => document.id);
+  // `used` is the intake's `already_used` rule: a sent message consumed the upload.
+  const uploadFacts = new Map(
+    chatDocumentIds.length === 0
+      ? []
+      : (
+          await db
+            .select({
+              documentId: uploadIntakes.documentId,
+              createdAt: uploadIntakes.createdAt,
+              consumedAt: uploadIntakes.consumedAt,
+            })
+            .from(uploadIntakes)
+            .where(
+              and(
+                inArray(uploadIntakes.documentId, chatDocumentIds as DocumentId[]),
+                ne(uploadIntakes.state, "deleted"),
+              ),
+            )
+        ).map((row) => [
+          row.documentId as string,
+          { attachedAt: row.createdAt, consumed: row.consumedAt !== null },
+        ]),
+  );
   const foldersById = new Map(folderRows.map((folder) => [folder.id, folder]));
   const childCounts = new Map<string, number>();
   for (const folder of folderRows) {
@@ -345,6 +373,7 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
           workSlug: source.workSlug,
           ownerThreadRef: source.ownerThreadRef,
           chatOwned: source.chatThreadId !== null,
+          upload: uploadFacts.get(document.id),
           parentPath,
         }),
       );

@@ -8,6 +8,7 @@ import {
   projects,
   threads,
   threadWorks,
+  uploadIntakes,
   users,
   works,
 } from "@meridian/database/schema";
@@ -69,6 +70,26 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
     await db
       .insert(documents)
       .values({ id: upload, contextSourceId: uploadsSource, name: "pic", extension: "png" });
+    await db.insert(uploadIntakes).values({
+      projectId: p,
+      intakeId: "intake",
+      actorUserId: u,
+      ownerThreadId: root,
+      contextSourceId: uploadsSource,
+      documentId: upload,
+      fingerprint: "f",
+      byteDigest: "0".repeat(64),
+      filename: "pic.png",
+      mimeType: "image/png",
+      finalPath: "pic.png",
+      objectKey: "k",
+      fileType: "image",
+      canonicalUri: "uploads://pic.png",
+      locationRevision: crypto.randomUUID(),
+      state: "finalized",
+      consumedAt: new Date("2026-01-02T00:00:00Z"),
+      createdAt: new Date("2026-01-01T00:00:00Z"),
+    } as never);
   });
   for (const door of ["chat", "Work"] as const)
     it(`settles only live content through ${door} restore`, async () => {
@@ -153,7 +174,12 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
       await expect(
         catalog.snapshot({ kind: "chat", projectId: p, chatId: root } as never),
       ).resolves.toMatchObject({
-        entries: expect.arrayContaining([expect.objectContaining({ entryId: upload })]),
+        entries: expect.arrayContaining([
+          expect.objectContaining({
+            entryId: upload,
+            upload: { attachedAt: "2026-01-01T00:00:00.000Z", used: true },
+          }),
+        ]),
       });
       await expect(
         catalog.snapshot({ kind: "lineage", projectId: p, rootThreadId: root } as never),

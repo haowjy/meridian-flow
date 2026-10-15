@@ -68,6 +68,8 @@ export function mapAuthoritativeFile(input: {
   parentPath: readonly string[];
   ownerThreadRef?: string | null;
   chatOwned?: boolean;
+  /** A chat upload's intake facts; absent for every other file. */
+  upload?: { attachedAt: Date; consumed: boolean };
 }): CatalogFileEntry {
   const { document, scope, scheme } = input;
   const filename = document.extension ? `${document.name}.${document.extension}` : document.name;
@@ -126,6 +128,14 @@ export function mapAuthoritativeFile(input: {
     ),
     ...persistedClassification,
     provisionalName: document.provisionalName,
+    ...(input.upload
+      ? {
+          upload: {
+            attachedAt: input.upload.attachedAt.toISOString(),
+            used: input.upload.consumed,
+          },
+        }
+      : {}),
     ...(document.joinedFrom?.length ? { joinedFrom: document.joinedFrom as DocumentId[] } : {}),
   };
 }
