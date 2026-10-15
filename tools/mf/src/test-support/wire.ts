@@ -19,7 +19,14 @@ import {
   type ThreadSnapshotResponse,
   type WsServerMessage,
 } from "@meridian/contracts/protocol";
-import type { StopRequest, StopResponse } from "@meridian/contracts/threads";
+import type {
+  HandBackRequest,
+  HandBackResponse,
+  SendNowRequest,
+  SendNowResponse,
+  StopRequest,
+  StopResponse,
+} from "@meridian/contracts/threads";
 import { type WebSocket, WebSocketServer } from "ws";
 import { runCli } from "../main";
 import {
@@ -43,7 +50,16 @@ export type Reply = {
   delayMs?: number;
 };
 
-export type RouteKind = "admit" | "lookup" | "snapshot" | "stop" | "cancel" | "mock" | "other";
+export type RouteKind =
+  | "admit"
+  | "lookup"
+  | "snapshot"
+  | "stop"
+  | "handBack"
+  | "sendNow"
+  | "cancel"
+  | "mock"
+  | "other";
 type Recorded = { kind: RouteKind; method: string; path: string; body: unknown };
 type Cursor = { threadId: string; lastSeq: string };
 
@@ -67,6 +83,17 @@ export class Wire {
     handedBack: [],
     answered: [],
     gone: [],
+    cancelledExecutionId: null,
+    runState: recordOf(),
+  });
+  handBack: (body: HandBackRequest) => HandBackResponse = () => ({
+    handedBack: [],
+    answered: [],
+    gone: [],
+    runState: recordOf(),
+  });
+  sendNow: (body: SendNowRequest) => SendNowResponse = () => ({
+    threadId: THREAD_ID,
     cancelledExecutionId: null,
     runState: recordOf(),
   });
@@ -274,6 +301,10 @@ export class Wire {
       }
       case "stop":
         return reply(200, this.stop(body as StopRequest), true);
+      case "handBack":
+        return reply(200, this.handBack(body as HandBackRequest), true);
+      case "sendNow":
+        return reply(200, this.sendNow(body as SendNowRequest), true);
       case "cancel":
         return reply(200, this.cancel(path.split("/").at(-2) ?? ""));
       case "mock":
@@ -306,6 +337,8 @@ function classify(method: string, path: string): RouteKind {
   if (method === "POST" && path === `/api/threads/${THREAD_ID}/messages`) return "admit";
   if (method === "GET" && path === `/api/threads/${THREAD_ID}/snapshot`) return "snapshot";
   if (method === "POST" && path === `/api/threads/${THREAD_ID}/stop`) return "stop";
+  if (method === "POST" && path === `/api/threads/${THREAD_ID}/hand-back`) return "handBack";
+  if (method === "POST" && path === `/api/threads/${THREAD_ID}/send-now`) return "sendNow";
   if (method === "POST" && /^\/api\/threads\/[^/]+\/turns\/[^/]+\/cancel$/.test(path))
     return "cancel";
   if (path === "/api/debug/mock-model/script") return "mock";

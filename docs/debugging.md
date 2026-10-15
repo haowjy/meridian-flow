@@ -85,6 +85,8 @@ the existing server wake retry it.
 ./mf thread view c3                                # chat rows as the app draws them (ref, id, or id prefix)
 ./mf thread tail <id> --until-idle                 # follow a run started elsewhere
 ./mf thread stop <id>                              # the chat's Stop (hands waiting messages back)
+./mf thread queue hand-back <id> --all             # take every queued message back (never cancels the reply)
+./mf thread queue send-now <id>                    # ask the server to cancel the reply the snapshot shows (the queue can then run)
 ./mf thread events <id> --child p2                 # one direct child's status, phase, tool, and target per activity frame
 ./mf thread view <id> --blocks                     # persisted blocks with created time, gaps, tool name, size
 ./mf doc read manuscript://mf-scene.md
@@ -92,6 +94,22 @@ the existing server wake retry it.
 ```
 
 Contract:
+
+`./mf thread stop`, `thread queue hand-back` and `thread queue send-now` run the same operation the
+app runs (`@meridian/thread-client`'s hand-back operation and `postSendNow`), each over a fresh
+snapshot. They print the frozen request and its exact `--replay` command to stderr before posting,
+even under `--json`. A 2xx counts only when the whole answer validates; a lost or malformed answer
+exits 4 with the request in the error, and `--replay` re-sends it unchanged (a plain re-run is a new
+press built from a newer record). A 400, 404 or 409 exits 1.
+- `queue hand-back --id <turn>... | --all` proves what the *server* did with each id: `handedBack`,
+  `answered` (the reply took it first) or `gone` (another request took it). An id in none of them is
+  `ignored` (exit 1, reason `not_a_message`). `--all` sends every message the snapshot shows queued,
+  browser messages included; with none it posts nothing and says only that the snapshot showed none.
+- `queue send-now` exit 0 means the server confirmed its control answer, not that the queue was
+  answered: follow with `thread tail --until-idle` or `thread view`. A null `cancelledExecutionId`
+  prints "this attempt requested no cancellation". It says nothing about the reply's fate (a replay
+  of a Send now that already cancelled also answers null), so never read null as "the reply kept
+  running". These commands read state; the browser is where the queue's behavior is checked.
 
 `./mf thread send` proves, from one snapshot read through the shared `messageFate`,
 whether its own message is waiting, was handed back, or was answered, and by which reply.

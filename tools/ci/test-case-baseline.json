@@ -398,8 +398,8 @@
     "apps/server/server/domains/runtime/loop/permissions/agent-chain.test.ts": 1,
     "apps/server/server/domains/runtime/loop/permissions/tool-policy.test.ts": 5,
     "apps/server/server/domains/runtime/loop/run-session.test.ts": 10,
-    "apps/server/server/domains/runtime/loop/stop-protocol.db.test.ts": 21,
-    "apps/server/server/domains/runtime/loop/stop-rule.test.ts": 12,
+    "apps/server/server/domains/runtime/loop/stop-protocol.db.test.ts": 23,
+    "apps/server/server/domains/runtime/loop/stop-rule.test.ts": 14,
     "apps/server/server/domains/runtime/loop/sweep-wakes.test.ts": 1,
     "apps/server/server/domains/runtime/loop/thread-control-request.test.ts": 5,
     "apps/server/server/domains/runtime/loop/turn-context-assembly.test.ts": 2,
@@ -568,6 +568,7 @@
     "packages/resource-replica/src/resource-records-policy.test.ts": 3,
     "packages/resource-replica/src/resource-state.test.ts": 11,
     "packages/resource-replica/src/resource-work-authority.test.ts": 1,
+    "packages/thread-client/src/hand-back/operation.test.ts": 8,
     "packages/thread-client/src/message/hand-back.test.ts": 2,
     "packages/thread-client/src/message/serialize.test.ts": 6,
     "packages/thread-client/src/run-state/fold-messages.test.ts": 5,
@@ -602,7 +603,7 @@
     "tools/mf/src/commands/thread/reduced-thread.test.ts": 1,
     "tools/mf/src/commands/thread/result.test.ts": 7,
     "tools/mf/src/commands/thread/tail.test.ts": 11,
-    "tools/mf/src/commands/thread/thread.test.ts": 39,
+    "tools/mf/src/commands/thread/thread.test.ts": 41,
     "tools/mf/src/core/output.test.ts": 3,
     "tools/mf/src/main.test.ts": 4
   }

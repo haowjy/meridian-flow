@@ -67,6 +67,13 @@ export function controlStoppedCopy(control: ControlBody): string {
   return control.kind === "write_mode" ? t`Switch stopped` : t`Compaction stopped`;
 }
 
+/** The card in a queued command's row when its Stop didn't reach the server (also announced). */
+export function controlWithdrawFailedCopy(control: ControlBody): string {
+  return control.kind === "write_mode"
+    ? t`Couldn't stop the switch.`
+    : t`Couldn't stop the compaction.`;
+}
+
 /** The Stop button's accessible name, specific so it differs from the composer's Stop. */
 export function controlStopLabel(control: ControlBody): string {
   if (control.kind === "compact") return t`Stop compaction`;

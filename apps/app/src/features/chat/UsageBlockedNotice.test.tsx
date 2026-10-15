@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** The record's usage block renders as an error card with Add usage, and the waiting row reads Queued. */
+/** The record's usage block renders as an error card with Add usage, and the waiting row is the queued bubble. */
 import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
 import { parseWsServerMessage } from "@meridian/contracts/protocol";
@@ -91,7 +91,9 @@ it("shows a nondismissible usage error card with Add usage and a Queued row from
     expect(host.textContent).toContain(
       "You're out of usage. Your messages will send when you add more.",
     );
-    expect(host.textContent).toContain("Queued");
+    expect(host.querySelector("[data-queued]")?.getAttribute("aria-label")).toBe(
+      "Your message, queued",
+    );
     expect(host.querySelector('[data-slot="alert"]')?.getAttribute("role")).toBe("alert");
     expect(host.querySelector('[aria-label="Dismiss"]')).toBeNull();
     const link = host.querySelector("button");
@@ -101,7 +103,7 @@ it("shows a nondismissible usage error card with Add usage and a Queued row from
     );
     expect(open).toHaveBeenCalledWith("usage");
     await render(false);
-    expect(host.textContent).not.toContain("Queued");
+    expect(host.querySelector("[data-queued]")).toBeNull();
     expect(host.querySelector('[data-slot="alert"]')).toBeNull();
   } finally {
     await act(() => root.unmount());

@@ -49,7 +49,8 @@ Substitute the thread id for `<T>`. `DATABASE_URL` is the one in the dev server'
 (`/proc/<pid>/environ` of the `run-state.server` owner), not necessarily the shell's. A handed-back row has
 `delivered` true (it left the queue), `delivered_by_turn_id` null and `handed_back_by` set; a message a
 run answered has `delivered_by_turn_id` set. Join every background `send` with `wait`, but do not use its
-exit code or result as evidence: after a Stop it can report `timeout` (exit 124). Read the `turns` rows.
+exit code or result as evidence: it runs unattended and a Stop races it. After a Stop a queued `send`
+reports `handed_back` or `cancelled` (exit 5), not `timeout`. Read the `turns` rows.
 
 For each step, confirm in the browser last: open the thread, repeat the action with the Stop button, and
 check that the composer and the rows match `thread view --json`.
