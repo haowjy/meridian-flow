@@ -5,7 +5,7 @@
  * with the caller.
  */
 import type { Turn } from "@meridian/contracts/protocol";
-import { retryTargetOf } from "@meridian/contracts/threads";
+import { inConversation, retryTargetOf } from "@meridian/contracts/threads";
 import { type AssistantView, viewAssistantTurn } from "./assistant-view";
 import { groupDeliveryEvents } from "./delivery-groups";
 import { isOptimisticTurnId } from "./optimistic-turn-id";
@@ -138,14 +138,14 @@ export function viewTranscript(input: TranscriptViewInput): TranscriptView {
     const target = retryTargetOf(turn);
     if (target !== null) retried.add(target);
   }
-  // A forgotten local turn has left the conversation: no row. Only a refused Retry's card still needs its
-  // reply's row. Inherited rows are never filtered by stamp: page membership is authoritative, and the server
-  // already applied the stamps inside the fork's span.
+  // A forgotten local turn has left the conversation: no row. A refused Retry's card still needs its reply's
+  // row, so that anchor outranks both Retry suppression and forgetting (the competing Retry that won stamps
+  // the reply it retried). Inherited rows are never filtered by stamp: page membership is authoritative,
+  // and the server already applied the stamps inside the fork's span.
   const turns = placed.filter(
     (turn) =>
-      !retried.has(turn.id) &&
       !input.hidden?.has(turn.id) &&
-      (turn.forgottenBy == null || input.refused?.has(turn.id)),
+      (input.refused?.has(turn.id) || (!retried.has(turn.id) && inConversation(turn))),
   );
   // Provenance is stated, never read from an id's shape: only the server's own turns are named.
   const stored = new Set(input.turns.map((turn) => turn.id));
