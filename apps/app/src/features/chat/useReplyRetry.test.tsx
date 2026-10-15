@@ -167,14 +167,30 @@ describe("useReplyRetry", () => {
     }
   });
 
-  it("drops the new reply on a refusal (409), notes the failed reply, and refreshes", async () => {
+  it("drops the new reply on a refusal (409), cards the failed reply until the next reply completes, and refreshes", async () => {
     api.retryReply.mockRejectedValue(new HttpResponseError("reply_retry_unavailable", 409, null));
     await act(async () => latest.retry(failed));
     expect(latest.standIns).toEqual([]);
     expect(latest.refused.has("f")).toBe(true);
     expect(invalidateQueries).toHaveBeenCalled();
     expect(announcements.announce).toHaveBeenCalledWith("Couldn't retry.");
-    // The next Retry, on any failed reply, clears the note while its request runs.
+    // The other reply is still running: the card stays. A reply that fails doesn't clear it.
+    await act(async () =>
+      root.render(<Probe turns={[message, failed, turn("o", "assistant", "streaming", 3)]} />),
+    );
+    expect(latest.refused.has("f")).toBe(true);
+    await act(async () =>
+      root.render(<Probe turns={[message, failed, turn("o", "assistant", "error", 3)]} />),
+    );
+    expect(latest.refused.has("f")).toBe(true);
+    // A reply that completes after the refusal clears it, with no action from the writer.
+    await act(async () =>
+      root.render(<Probe turns={[message, failed, turn("o", "assistant", "complete", 3)]} />),
+    );
+    expect(latest.refused.has("f")).toBe(false);
+    // Refused again, the writer's next Retry clears it while its request runs.
+    await act(async () => latest.retry(failed));
+    expect(latest.refused.has("f")).toBe(true);
     api.retryReply.mockReturnValueOnce(new Promise(() => undefined));
     await act(async () => latest.retry(turn("g", "assistant", "error", 4)));
     expect(latest.refused.has("f")).toBe(false);

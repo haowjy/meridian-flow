@@ -42,7 +42,7 @@ leaves the other bound, and the dock passes its visibility as the host's
 `active`, so the two views are never both active.
 
 The dock's review launch adapter keeps the chip, Next draft and auto-advance
-inside the dock while the composer strip and Work list still launch into the
+inside the dock while the draft dock and Work list still launch into the
 Editor. Both are writer-unconfirmed defaults; flipping one changes only that
 adapter.
 

@@ -31,8 +31,9 @@ bootstrap. The `./mf` CLI lives in [`tools/mf`](../mf/AGENTS.md).
   worktree's stack. Cleanup must preserve
   live listeners and use surgical Tailscale `off`; never reset all routes or
   infer staleness from a branch name.
-- `tools/mf` consumes `portless-prefix.ts`, `portless-routes.ts` and
-  `portlessCa` in `dev-readiness.ts`, and `apps/app/e2e` consumes
+- `tools/mf` consumes `portless-prefix.ts`, `portless-routes.ts`,
+  `portlessCa` in `dev-readiness.ts` and `resolveCheckoutRouteUrls` in
+  `dev-session-state.ts`, and `apps/app/e2e` consumes
   `portless-prefix.ts`. Keep them free of import-time side effects, with
   Node built-ins as their only runtime dependencies.
 - Keep TypeScript inside the directory's strict Nx boundary and do not import
