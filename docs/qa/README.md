@@ -21,6 +21,7 @@ is not a claim that it passed on the current commit.
 - [Chat session](chat-session.md): compare a chat in the browser with `./mf thread view --json` by row identity, kind, item kinds and text.
 - [Chat submissions](chat-submissions.md): first-send and existing-send failure, FIFO ownership and tab takeover.
 - [Composer drafts](composer-drafts.md): per-tab reload, submission hand-off and missing-reference recovery.
+- [Chat uploads menu](chat-uploads-menu.md): the top-bar list of a chat's files: add, open, delete, fork source and dock restore.
 - [Journal checkpoint coverage](checkpoint-coverage.md): durable admission, compaction, generation replacement and opaque cuts.
 - [Document adoption across a reload](document-adoption-reload.md): New file reloaded inside the adoption commit window, desktop and the phone's three document branches.
 - [Draft review](draft-review.md): visual editor and review workflows.

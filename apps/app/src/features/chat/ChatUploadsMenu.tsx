@@ -108,7 +108,6 @@ function UploadsDropdown({
     const { deletion } = upload;
     if (!deletion) return;
     setDeleted((current) => new Set(current).add(upload.documentId));
-    removeFromChatComposer(threadId, upload.documentId);
     const bringBack = (reason: string) => {
       setDeleted((current) => {
         const next = new Set(current);
@@ -127,7 +126,11 @@ function UploadsDropdown({
       },
     ).then(
       (result) => {
-        if (result.kind === "deleted" || result.kind === "already_deleted") return;
+        if (result.kind === "deleted" || result.kind === "already_deleted") {
+          // A gone file must not ride along on the message being written.
+          removeFromChatComposer(threadId, upload.documentId);
+          return;
+        }
         if (result.kind === "already_used") {
           void refetch();
           bringBack(t`A sent message used this file, so it can’t be deleted.`);

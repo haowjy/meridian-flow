@@ -34,15 +34,6 @@ export function tabOwnerOf(location: ResourceOwner): TabOwner {
       : {};
 }
 
-/** The owner a location names, for catalog and request lookups. */
-export function contextOwnerOf(location: ResourceOwner): ContextOwner {
-  if (location.chatId !== undefined)
-    return { chatThreadId: location.chatId, chatRef: location.chatRef };
-  return location.rootThreadId !== undefined
-    ? { rootThreadId: location.rootThreadId, rootThreadRef: location.rootThreadRef }
-    : { workId: location.workId };
-}
-
 /** The handle (`c15`) a chat's upload's URI spells. */
 function chatRefOf(file: CatalogFile): string {
   const parsed = parseContextUri(file.uri);
