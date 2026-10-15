@@ -56,6 +56,10 @@ adapter only.
   classes per file; only new documents are one whole-draft item. Each document
   name opens its own review and there is no summary-wide Review command. Work-wide
   lists and Apply all stay on the Work page. Coarse-pointer targets stay 44px.
+- A temporary problem the writer can act on (a failed Stop, a refused Retry, out of
+  usage) is a `NoticeCard`, the card every chat failure uses, never a text line under
+  or beside a control. A failed Stop and out of usage carry a button (Try again, Add
+  usage); a held row reads only "Queued", and the usage card says why.
 - Stop (the [composer's one button](../../components/app/composer/AGENTS.md))
   hands the waiting messages back as one editable message, in send order with
   blank lines between them, above typed text. A handed-back message never

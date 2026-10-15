@@ -86,8 +86,8 @@ copy, and a stopped one drops "This chat continues without a brief."
 - **A refused Retry** (409 `handoff_retry_unavailable`: something holds the
   chat, or the pressed brief is no longer the latest failed one) wrote
   nothing. The stand-in goes, the snapshot refreshes to show the true state,
-  and the pressed card says "Couldn't retry." (the cause goes to
-  diagnostics, never the writer). A lost request instead keeps the stand-in, failed; its Retry
+  and the pressed card says "Couldn't retry." or, for a 409, "Couldn't retry.
+  Another reply started first." (the cause goes to diagnostics). A lost request instead keeps the stand-in, failed; its Retry
   re-sends under the same id, so a request that did land replays.
 - **Retry waits while the chat is busy** (a live status, which covers a
   reply or a compaction, or a streaming reply). It stays focusable

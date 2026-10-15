@@ -12,7 +12,7 @@ reply itself.
 | Not the latest turn, never retried | The quiet line "This response failed.", with no action (the writer never acted on it) |
 | Retried (accepted or pending) | Not drawn: the Retry's row takes its place |
 | A retry that failed too | One failure, the newest, in that same place |
-| Its Retry was refused | A red error card "Couldn't retry." on that reply, latest or not (the quiet marker stays above it in history). Temporary: it clears when the next reply completes, or at the writer's next Retry or send; a reply that fails or is cancelled leaves it |
+| Its Retry was refused | A red error card "Couldn't retry." on that reply ("Couldn't retry. Another reply started first." for a 409), latest or not (the quiet marker stays above it in history). Temporary: it clears when the next reply completes, or at the writer's next Retry or send; a reply that fails or is cancelled leaves it |
 | The provider declined it | "The AI provider turned this request down." with **Retry** when latest and a retry handler is present |
 
 "Latest" is `endsTranscript` in `TurnList`: no visible row follows, and a

@@ -3,8 +3,8 @@
 ## [Unreleased]
 
 - Stop hands the messages still waiting behind the reply back to the composer, above any draft, in send order with a blank line between them. They never reach the model, a fork or a summary, and a lost Stop answer can be retried without duplicating the returned text.
-- The composer's one button is Stop while a reply runs and the box is empty, and Send (with the running ring, queuing a steer) once you type. Stop reads `Stopping` and disables at once, and a failed one reads `Couldn't stop. Try again.` on the button, comes back when the box empties and retries the same request. A compaction divider's Stop does the same and ends on `Compaction stopped`.
-- Retry replaces a failed reply in place, and a chain of failed retries shows only the latest failure. A refused Retry shows a red `Couldn't retry.` card on that reply until Retry or Send clears it, or the next reply completes.
+- The composer's one button is Stop while a reply runs and the box is empty, and Send (with the running ring, queuing a steer) once you type. Stop shows a spinning ring and disables at once, and a failed one is a red `Couldn't stop the reply.` card above the box with Try again, which retries the same request and goes when the Stop succeeds or the reply ends. A compaction divider's Stop does the same and ends on `Compaction stopped`.
+- Retry replaces a failed reply in place, and a chain of failed retries shows only the latest failure. A refused Retry shows a red `Couldn't retry.` card (`Couldn't retry. Another reply started first.` when another reply took the chat) on that reply until Retry or Send clears it, or the next reply completes.
 - Messages another tab or `./mf` leaves waiting show as `Queued` in an open tab without a reload.
 - A mode switch applies at its own turn, and its notice stays anchored there, before the Retry stand-in when one is showing, with no blink or duplicate. A queued row stays until its turn shows.
 - The usage notice shows only while a writer message is actually blocked, not for an empty record.
@@ -234,7 +234,7 @@
 
 - Words typed just before a document reloads are never lost, and saving a document's checkpoint no longer holds up other writers' edits.
 
-- Chats explain when your saved messages are waiting for usage, with an Add usage link. Waiting messages send automatically once usage is added.
+- Chats explain when your saved messages are waiting for usage with a red card and an Add usage button, and the waiting messages read `Queued`. Waiting messages send automatically once usage is added.
 
 - After a server restart interrupts a reply, the chat returns to idle when recovery finishes and accepts your next message without waiting.
 

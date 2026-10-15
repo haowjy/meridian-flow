@@ -61,7 +61,7 @@ export type RetryStandIns = {
   /** Where a stand-in's request is; null once the store has it, or for any other turn. */
   requestOf: (turnId: string) => StandInRequest | null;
   /** Turns whose Retry the server refused and no reply has completed since; nothing was written. */
-  refused: ReadonlySet<string>;
+  refused: ReadonlyMap<string, RetryRefusal>;
   /**
    * Failed replies whose Retry is pending or accepted but no stored turn names it yet
    * (`metadata.retryOf`): `viewTranscript` leaves them out, so the Retry stands in their place.
@@ -76,7 +76,12 @@ export type RetryStandIns = {
   retry: (from: Turn, build: (input: { id: string; leaf: Turn | null }) => Turn | null) => void;
 };
 
-const NO_REFUSALS: ReadonlyMap<string, ReadonlySet<string>> = new Map();
+/** Why the server refused a Retry, when it said: another reply took the chat first (409), or no cause worth naming. */
+export type RetryRefusal = "another-reply" | "other";
+
+type Refusal = { before: ReadonlySet<string>; cause: RetryRefusal };
+
+const NO_REFUSALS: ReadonlyMap<string, Refusal> = new Map();
 
 /** Ids of the replies already complete: a refusal is answered by one that isn't in this set. */
 function completedReplies(turns: readonly Turn[]): ReadonlySet<string> {
@@ -130,13 +135,13 @@ export function useRetryStandIns(input: {
   // Refused turn → the replies complete when it was refused. The refusal is temporary: it ends
   // when a reply completes that is not in that set (durable turn status, not timers).
   const [refusals, setRefusals] = useState(NO_REFUSALS);
-  const refused = useMemo<ReadonlySet<string>>(() => {
-    const open = new Set<string>();
-    for (const [from, before] of refusals) {
+  const refused = useMemo<ReadonlyMap<string, RetryRefusal>>(() => {
+    const open = new Map<string, RetryRefusal>();
+    for (const [from, { before, cause }] of refusals) {
       const answered = storedTurns.some(
         (turn) => turn.role === "assistant" && turn.status === "complete" && !before.has(turn.id),
       );
-      if (!answered) open.add(from);
+      if (!answered) open.set(from, cause);
     }
     return open;
   }, [refusals, storedTurns]);
@@ -207,7 +212,10 @@ export function useRetryStandIns(input: {
             reportRetryRefused({ threadId, from, status: httpErrorStatus(error), error });
             setLocal((current) => current.filter((entry) => entry.turn.id !== id));
             setRefusals((current) =>
-              new Map(current).set(from, completedReplies(storedRef.current)),
+              new Map(current).set(from, {
+                before: completedReplies(storedRef.current),
+                cause: httpErrorStatus(error) === 409 ? "another-reply" : "other",
+              }),
             );
             announce(t`Couldn't retry.`);
             refresh();
