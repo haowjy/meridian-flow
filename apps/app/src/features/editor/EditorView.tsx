@@ -261,7 +261,6 @@ export function EditorView(props: EditorViewProps) {
       ),
     );
   }, []);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the intents moving is what rebuilds a cover.
   useLayoutEffect(
     () =>
       projectCover({ annotate: annotateCoverBlocks, project: projectIntents, read: readCoverView }),
