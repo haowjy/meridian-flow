@@ -107,16 +107,13 @@ function UserTurnComponent({
               data-busy={queueControls.sendNow.busy ? "" : undefined}
               disabled={queueControls.sendNow.busy}
               aria-label={t`Stop the reply and send now`}
-              className="relative [@media(pointer:coarse)]:min-h-11"
+              className="[@media(pointer:coarse)]:min-h-11"
               onClick={queueControls.sendNow.send}
             >
-              {t`Send now`}
               {queueControls.sendNow.busy ? (
-                <span
-                  aria-hidden="true"
-                  className="pointer-events-none absolute inset-0 rounded-md border-2 border-primary/30 border-t-primary motion-safe:animate-spin"
-                />
+                <Loader2 className="size-3 motion-safe:animate-spin" aria-hidden />
               ) : null}
+              {t`Send now`}
             </Button>
           ) : null}
           {queueControls ? (

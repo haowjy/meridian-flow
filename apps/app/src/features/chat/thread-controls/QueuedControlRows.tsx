@@ -87,13 +87,7 @@ function QueuedControlRow({
         // The row stays, so the failure is a card here with the Stop's retry in its place.
         <NoticeCard tone="error" inline announce={false}>
           <p data-queued-control-card>{controlWithdrawFailedCopy(control.control)}</p>
-          <Button
-            type="button"
-            variant="outline"
-            size="xs"
-            aria-label={controlStopLabel(control.control)}
-            onClick={() => onStop(control)}
-          >
+          <Button type="button" variant="outline" size="xs" onClick={() => onStop(control)}>
             <Trans>Try again</Trans>
           </Button>
         </NoticeCard>
