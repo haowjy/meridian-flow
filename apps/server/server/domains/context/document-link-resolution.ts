@@ -16,7 +16,6 @@ import type {
   DocumentLinkResolver,
   ResolveDocumentLinkInput,
   ResolvedDocumentLink,
-  UploadOwnerLookup,
 } from "./ports/document-link-resolver.js";
 
 type Location = { scope: CatalogScope; scheme: ContextUriScheme; path: string };
@@ -27,12 +26,10 @@ export function createDocumentLinkResolver({
   history,
   lineages,
   chats,
-  uploadOwners,
 }: {
   catalog: ContextCatalog;
   lineages?: import("./scratch-owner.js").ScratchLineages;
   chats?: ChatUploadsOwners;
-  uploadOwners?: UploadOwnerLookup;
   history?: DocumentLinkHistory;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
 }): DocumentLinkResolver {
@@ -68,8 +65,9 @@ export function createDocumentLinkResolver({
         authority.kind === "chat"
           ? (await chats?.byRef(input.projectId, authority.chatRef))?.chatId
           : authority.kind === "contextual"
-            ? // A bare name in a holder with no chat resolves by who received the upload.
-              (input.chatId ?? (await uploadOwners?.chatOf(input.projectId, path)))
+            ? // A bare name means the holder chat's file. A document holder has no chat: the
+              // write path qualifies model-written embeds, so a stored bare one stays unresolved.
+              input.chatId
             : null;
       scope = chatId ? { kind: "chat", projectId: input.projectId, chatId } : null;
     } else if (authority.kind === "none") scope = await noWorkScope(input.projectId);

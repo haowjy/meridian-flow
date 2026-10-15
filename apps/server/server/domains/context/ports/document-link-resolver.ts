@@ -22,15 +22,6 @@ export interface ResolveDocumentLinkInput {
   previousLocations?: boolean;
 }
 
-/**
- * Which chat received the upload a bare `uploads://name` names, for a holder with no chat of
- * its own (a manuscript or KB document that embeds an upload without a handle).
- */
-export interface UploadOwnerLookup {
-  /** The chat that received the oldest live upload at `path`, or null when none did. */
-  chatOf(projectId: string, path: string): Promise<string | null>;
-}
-
 export interface DocumentLinkResolver {
   resolve(input: ResolveDocumentLinkInput): Promise<ResolvedDocumentLink | null>;
 }

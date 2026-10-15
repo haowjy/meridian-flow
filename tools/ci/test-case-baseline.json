@@ -456,6 +456,7 @@
     "apps/server/server/lib/document-address-route.test.ts": 6,
     "apps/server/server/lib/document-download.test.ts": 1,
     "apps/server/server/lib/env.test.ts": 5,
+    "apps/server/server/lib/model-tools/qualify-uploads.test.ts": 1,
     "apps/server/server/lib/model-tools/shown-link-capture.test.ts": 1,
     "apps/server/server/lib/model-tools/skills.db.test.ts": 1,
     "apps/server/server/lib/model-tools/skills.test.ts": 3,
