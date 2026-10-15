@@ -80,7 +80,7 @@ const INVERSE_COUNT = z
 export const DocumentVersionSchema = z
   .enum(["draft", "live"])
   .describe(
-    "Omit for the version your writes change (your Work's draft in draft mode; scratch and other Works are live). `live` reads the text as the user sees it, without draft changes.",
+    "Omit for the version your writes change (the document's draft in draft mode; scratch and other Works are live). `live` reads the text as the user sees it, without draft changes.",
   );
 export type DocumentVersion = z.output<typeof DocumentVersionSchema>;
 
