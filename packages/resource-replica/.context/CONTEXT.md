@@ -1,5 +1,7 @@
 # Resource policy and transaction port
 
+This page covers the resource replica's transaction boundary, freshness, placement, and recovery rules. Identity and canonical observation are authoritative; paths and optimistic projections are not.
+
 Resource identity is account-global. A stable resource handle and current
 Document ID name one resource across every project that may expose it, including
 account-owned `user://` files. Project access belongs to catalog checkpoints and
@@ -211,6 +213,38 @@ exact content database. Refused or superseded filing history ends provisional
 naming at the accepted location; it never authorizes automatic deletion. An
 explicit delete command can still retire an accepted document. Never-submitted
 reservations can still be deleted locally.
+
+Canonical freshness: every server file/folder entry and operation receipt carries
+a decimal `observationVersion` from one global namespace sequence, allocated
+under the publisher commit fence. Only namespace changes stamp (each advances the
+affected authority watermarks, several per transaction included); availability
+generations group a transaction and authority-only availability changes do not
+stamp. Snapshot and exact-ID entries read that watermark with their rows, and
+historical commits keep their original stamps. A record replaces canonical
+location, parent and classification only for a strictly newer version; equal or
+older entries advance replay checkpoints without replacing evidence. Equal held
+evidence may discharge a matching move refresh only at or above its receipt
+version. Deletion receipts use the same comparison. Local CAS revisions protect
+concurrent commands but are not server freshness.
+
+Typed non-retryable HTTP 4xx refusals settle a namespace attempt when route intake
+rejects before any server receipt exists: persist the refusal against the
+submitted operation id and never invent a receipt. Bare HTTP or network failures
+still need receipt evidence and stay replayable.
+
+Folder deletion shares the folder namespace journal. Only a delete receipt's exact
+document IDs authorize atomic descendant terminalization with the folder
+settlement; catalog absence, folder availability or a tombstone never does. Delete
+requests bind stable folder identity as well as path, so offline replay refuses a
+replacement folder. Pending deletes hide descendants; refusal restores the rows
+and keeps repair evidence. A successful move fences later dispatch until catalog
+or exact-ID availability installs the canonical location; scoped absence alone
+never clears it, and authoritative unavailability releases queued commands into
+visible repair. A catalog row missing for a known identity is rebuilt from its
+journal identity and last placement solely as a recovery row, never as deletion
+proof. File intents retain `typedName` apart from the canonical optimistic
+destination, and dispatch sends it so an explicit prose suffix is not read as
+source-extension inheritance.
 
 Catalog `invalidate-subtree` is atomic replacement, not a persistent freshness
 flag: discard the root and its cached descendants, then apply the same commit’s

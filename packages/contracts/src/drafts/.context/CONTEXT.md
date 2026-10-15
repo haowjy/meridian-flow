@@ -1,5 +1,8 @@
 # drafts contracts — the review wire
 
+This page defines the review wire's identities and command fences. Keep draft,
+item, branch, command, and presented address distinct at every boundary.
+
 The contracts name five things; never let one stand in for another.
 
 | Name | Is | On the wire as |
