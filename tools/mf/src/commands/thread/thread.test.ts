@@ -74,15 +74,23 @@ describe("thread send", () => {
   });
 
   it("uses the snapshot's outcome rather than an obsolete usage block in the replay", async () => {
-    // The journal still carries a blocked record from before the usage returned.
-    publishRecord(wire, {
-      items: [inboxItem("u1", 1)],
-      sentThrough: 1,
-      blocked: { reason: "credits_exhausted" },
-    });
-    publishRecord(wire, { sentThrough: 1 });
     replyScenario(wire, { stored: "Recovered reply" });
+    // The journal carries a blocked record from before the usage returned. It lands after the
+    // admission's cursor is taken, so the client really replays it.
+    const admit = wire.admit;
+    wire.admit = (body) => {
+      const resumeAfterSeq = String(wire.head);
+      publishRecord(wire, {
+        items: [inboxItem("u1", 1)],
+        sentThrough: 1,
+        blocked: { reason: "credits_exhausted" },
+      });
+      publishRecord(wire, { sentThrough: 1 });
+      return { ...admit(body), resumeAfterSeq };
+    };
     const result = await send("recovered before admission returns", "--timeout", "2s", "--json");
+    // The obsolete blocked record did reach the CLI, and the newer snapshot still decides.
+    expect(result.stdout).toContain('"blocked":{"reason":"credits_exhausted"}');
     expect(result.code).toBe(EXIT.ok);
     expect(lastRecord(result.stdout)).toMatchObject({
       type: "result",
