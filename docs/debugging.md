@@ -118,8 +118,9 @@ messages. Plain `tail` and `send`'s live output don't draw queued rows.
   text for the followed turns with the confirming snapshot. The result gains
   `liveView`: `matches`, `differs` with a compact `liveDiff` of `{ turnId, field,
   live, server }` rows (text mode prints one line), or `not_observed` when the
-  follow had a replay gap or a compared turn's events were not seen from its
-  start. It is absent when nothing was followed.
+  follow had a replay gap, a compared turn's events were not seen from its
+  start, or anchor recovery overwrote them with a snapshot (a recovered turn is the
+  server's data, so comparing it would measure the server against itself). It is absent when nothing was followed.
   - It compares only the status and final text of the followed turns, so it
     can't catch a missing write-mode divider, a misplaced row or a missing
     queued row. Read those from `thread view` (the snapshot) and in the browser.
@@ -164,7 +165,9 @@ messages. Plain `tail` and `send`'s live output don't draw queued rows.
   `handed_back` send prints nothing on stdout and
   `handed_back <userTurnId> (a Stop returned this message before any reply took it)` on stderr.
   A failed or cancelled run is a `result`, never a terminal `error` record.
-- A send deadline reads one final snapshot. Its result
+- A send deadline classifies the last snapshot that completed and starts no new read, as
+  `tail --until-idle` does: the result says `snapshotStale: true`, or
+  `snapshotUnavailable: true` (reason `unconfirmed`) when no snapshot had completed. It
   reports `stillRunning` (turn id and status, or null), `owed` (pending writer
   messages), and `next` commands. The run-state record (`liveState.runState`) is
   a mandatory live-state field. Text says when the server is
@@ -199,8 +202,9 @@ messages. Plain `tail` and `send`'s live output don't draw queued rows.
   envelope carries it as `request`. The envelope proves the server's answer:
   `cancelledExecutionId`, `handedBack` (user turn ids; the blocks with `--full`), `answered`,
   `gone`. `--full` text mode also prints each handed-back message's text in send order, blank
-  lines between. If the answer is lost (timeout, connection failure, unreadable reply) the Stop
-  may have landed: it exits 4, and the error says how to replay. **Never re-run it plain**: that
+  lines between. If the answer is lost (timeout, connection failure, a 5xx, or a reply that is
+  not a Stop answer) the Stop may have landed: it exits 4, and the error says how to replay and
+  carries the request (`details.request` under `--json`). A 4xx refusal is reported as one. **Never re-run it plain**: that
   is a new press, takes a new snapshot and request id, and can cancel the next reply while the
   first press's handed-back text is lost. `--replay <request.json|@file|->` posts exactly the
   printed request, no new snapshot; the server returns its stored decision with the

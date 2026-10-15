@@ -49,7 +49,7 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
 - **`liveView` is a lead, not proof.** `send` and `tail --until-idle` compare each
   followed turn's reduced `status` and `finalText` with the confirming snapshot's:
   `matches`, `differs` (with a compact `liveDiff`) or `not_observed` (a replay gap,
-  or a turn not seen from its start). It leaves out tools, reasoning, interrupts,
+  a turn not seen from its start, or one anchor recovery overwrote with a snapshot). It leaves out tools, reasoning, interrupts,
   the optimistic UI, the visible-turn policy, dividers, queued rows and row
   placement, so `matches` does not prove the screen was right, and it never
   changes the claim or exit code. The claims themselves come from the confirming
@@ -101,14 +101,19 @@ contains. It carries no run identity: `turn.started` has only the turn id.
   confirming snapshot (read with the remaining time). Every claim is the shared
   `messageFate` over that snapshot's record and turns (waiting, answering, answered,
   handed back, unproven) plus the admission's `runStateVersion`; `send` decides
-  nothing itself. The result is the chain's last reply (`turnId`), the reply that took
+  nothing itself: one projection turns the fate into a final result frozen with its snapshot, and
+  `liveView` attaches after the catch-up. At the deadline it classifies the last completed
+  snapshot (`snapshotStale`, or `snapshotUnavailable`) and reads no new one. The result is the chain's last reply (`turnId`), the reply that took
   the message (`answeredBy`) and `userTurnId`. A settled claim gives the stream a bounded
   1.5 s (one deadline for stream reads, anchor recovery and snapshot reads) to reach the
   snapshot's position; the printed log is best-effort. A timeout, transport or protocol
   error in catch-up never changes the claim and marks `liveView` `not_observed`. A lost HTTP admission answer is recovered with one app-route lookup
   (`submissionId`); a failed lookup or pending admission is 6 `admission_unknown`.
 - **`stop`** posts the app's Stop body (`stopRequest` over a snapshot's record, `mine: []`)
-  to the Stop route, printing the request first. A lost answer exits 4; only
+  to the Stop route, printing the request first. The request is frozen, then posted, then the
+  answer is validated; no answer, a 5xx or a body that is not a Stop answer exits 4 with the
+  request in `details` (so `--json` keeps it), while a 4xx stays a refusal. `--replay` input is
+  the contract's `stopRequestSchema`. A lost answer exits 4; only
   `--replay <request>` (same id and body, no new snapshot) recovers it, since a plain re-run is
   a new press; **`cancel --turn`** serves a handoff brief's Stop only.
 - **`tail --until-idle`** hydrates a snapshot, follows from its `resumeAfterSeq`
@@ -131,7 +136,8 @@ contains. It carries no run identity: `turn.started` has only the turn id.
   `meridian.write_mode.switched` divider installs after its anchor turn. When the
   anchor is a user turn the stream never carried, the store holds the divider out
   (`ReducedThread.awaitsAnchor()`) and `followThread` hydrates one snapshot within
-  the remaining deadline, at most once per 250 ms, with `observed: false`. It never
+  the remaining deadline, at most once per 250 ms (`ReducedThread.recover`, which ends those
+  turns' standing as stream evidence, so `liveView` is `not_observed` for them). It never
   inserts the divider at the tail. Sharing the reducer without this recovery left
   `./mf` holding the divider forever.
 - `respond` uses the shared interrupt sender and confirms its interrupt's
