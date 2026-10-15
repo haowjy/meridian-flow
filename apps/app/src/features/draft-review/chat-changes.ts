@@ -32,7 +32,7 @@ export async function chatChangeTargets(
   const frame = projectRoom(doc);
   const hints = matchAttribution(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), frame, edits);
   const targets = frame.groups
-    .filter((group) => hints.get(group.id)?.some((chat) => chat.threadId === threadId))
+    .filter((group) => hints.get(group.id)?.chats.some((chat) => chat.threadId === threadId))
     .map((group) => ({ id: group.id, pin: frame.pins.get(group.id) as Y.RelativePosition }));
   return { frame, targets };
 }

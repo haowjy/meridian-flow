@@ -148,7 +148,8 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
 
   const fragment = yDoc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
   const attributionOf = (frame: ReviewFrame): Attribution => {
-    if (edits.length === 0) return NO_ATTRIBUTION;
+    // Until the chats' writes have loaded, a change is not the writer's: nothing is said.
+    if (edits === NO_EDITS) return NO_ATTRIBUTION;
     if (!matched || matched.frame !== frame || matched.edits !== edits)
       matched = { frame, edits, value: matchAttribution(fragment, frame, edits) };
     return matched.value;

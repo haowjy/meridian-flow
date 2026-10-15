@@ -184,7 +184,7 @@ the extractor bumps its version, and no second post-write publisher exists.
 
 Chat attribution is a hint: the browser matches the AI edit parts pending in the
 branch (`…/draft/attribution`) against the room to name chats on changes. Nothing
-gates on it, and writer edits are never listed. A text branch's effect is base-versus-draft equality; manifest changes have their
+gates on it, and writer edits are never listed as edit parts (a review change names them as "You"). A text branch's effect is base-versus-draft equality; manifest changes have their
 own operations and never become prose hunks.
 
 ## Disposition and response retirement

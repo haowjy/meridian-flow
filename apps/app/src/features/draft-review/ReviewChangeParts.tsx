@@ -38,26 +38,38 @@ export function ChangeDot({ change, className }: { change: ReviewChange; classNa
 }
 
 /**
- * A link to each chat whose writes overlap the change ("Pacing pass and Lore pass"). Nothing when no chat's
- * writes are known to overlap: the writer's own edits are never named. A link opens its chat beside the
- * change and never also acts on the change. Names stay whole; the focused bar menus names that do not fit.
+ * Who made the change: "You" when the writer did (plain text, first), then a link to each chat whose writes
+ * made it, side by side. Nothing when the draft holds no evidence either way. A link opens its chat beside
+ * the change and never also acts on the change. Names stay whole; the focused bar menus names that do not fit.
  */
 export function ChangeAuthor({
+  writer,
   chats,
   className,
   touch = false,
   overflow,
 }: {
   overflow: "menu" | "hide";
+  writer: boolean;
   chats: readonly ChatRef[];
   className?: string;
   touch?: boolean;
 }) {
   const openThread = useOpenChatThread();
-  if (chats.length === 0 || !openThread) return null;
+  if (chats.length === 0 || !openThread) {
+    if (!writer) return null;
+    return (
+      <span
+        className={cn("shrink-0 whitespace-nowrap text-caption text-muted-foreground", className)}
+      >
+        <You />
+      </span>
+    );
+  }
   return (
     <OverflowChats
       mode={overflow}
+      writer={writer}
       chats={chats}
       openThread={openThread}
       touch={touch}
@@ -66,15 +78,20 @@ export function ChangeAuthor({
   );
 }
 
+/** The writer's own byline: plain text, never a link. */
+const You = () => <Trans>You</Trans>;
+
 /** Measure whole names, never partial names. Overflow retains exact chat/turn links. */
 function OverflowChats({
   mode,
+  writer,
   chats,
   openThread,
   touch,
   className,
 }: {
   mode: "menu" | "hide";
+  writer: boolean;
   chats: readonly ChatRef[];
   openThread: (threadId: string) => void;
   touch: boolean;
@@ -88,17 +105,19 @@ function OverflowChats({
     const sizes = measurements.current;
     if (!host || !sizes) return;
     const measure = () => {
-      const widths = Array.from(sizes.children, (child) => child.getBoundingClientRect().width);
+      const all = Array.from(sizes.children, (child) => child.getBoundingClientRect().width);
+      // "You" is the first child and never overflows: it is the lead the names are measured after.
+      const lead = writer ? all[0] : 0;
+      const widths = writer ? all.slice(1) : all;
       if (mode === "hide") {
-        const width =
-          widths.reduce((sum, width) => sum + width, 0) + Math.max(0, widths.length - 1) * 6;
+        const width = all.reduce((sum, width) => sum + width, 0) + Math.max(0, all.length - 1) * 6;
         setVisible(width <= (host.parentElement?.clientWidth ?? 0) * 0.45 ? chats.length : 0);
         return;
       }
-      let used = 0;
+      let used = lead;
       let count = 0;
       for (const width of widths) {
-        const next = used + width + (count ? 6 : 0);
+        const next = used + width + (writer || count ? 6 : 0);
         // Reserve the compact overflow trigger unless this is the last name.
         if (next + (count < chats.length - 1 ? (touch ? 50 : 38) : 0) > host.clientWidth) break;
         used = next;
@@ -111,7 +130,7 @@ function OverflowChats({
     observer.observe(mode === "hide" && host.parentElement ? host.parentElement : host);
     observer.observe(sizes);
     return () => observer.disconnect();
-  }, [chats, touch, mode]);
+  }, [chats, writer, touch, mode]);
   return (
     <span
       ref={container}
@@ -126,6 +145,11 @@ function OverflowChats({
         aria-hidden
         className="pointer-events-none invisible absolute flex w-max gap-1.5"
       >
+        {writer ? (
+          <span className="whitespace-nowrap">
+            <You />
+          </span>
+        ) : null}
         {chats.map((chat) => (
           <span
             key={chat.chatId}
@@ -139,6 +163,11 @@ function OverflowChats({
           </span>
         ))}
       </span>
+      {writer ? (
+        <span className="shrink-0 whitespace-nowrap">
+          <You />
+        </span>
+      ) : null}
       {chats.slice(0, visible).map((chat) => (
         <ChatLink
           key={chat.chatId}

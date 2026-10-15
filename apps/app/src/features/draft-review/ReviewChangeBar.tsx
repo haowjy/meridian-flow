@@ -49,6 +49,7 @@ export function ReviewChangeBar({
           <ChangeAuthor
             touch={touch}
             overflow="menu"
+            writer={change.writer}
             chats={change.chats}
             className={touch ? "min-h-11" : undefined}
           />

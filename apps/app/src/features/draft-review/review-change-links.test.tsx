@@ -33,7 +33,7 @@ async function clickLink(chat: ChatRef) {
     <I18nProvider i18n={i18n}>
       <TooltipProvider>
         <ChatThreadNavigationProvider onOpenThread={openThread}>
-          <ChangeAuthor chats={[chat]} overflow="hide" />
+          <ChangeAuthor writer={false} chats={[chat]} overflow="hide" />
         </ChatThreadNavigationProvider>
       </TooltipProvider>
     </I18nProvider>,

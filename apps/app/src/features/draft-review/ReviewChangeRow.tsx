@@ -115,6 +115,7 @@ export function ReviewChangeRow({
           {showAttribution ? (
             <ChangeAuthor
               overflow="hide"
+              writer={change.writer}
               chats={change.chats}
               className="hidden shrink-0 @min-[28rem]/changes:inline-flex"
             />

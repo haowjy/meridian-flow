@@ -485,11 +485,15 @@ Use a change two chats wrote. Run both shells.
    each chat name. PASS: that chat opens beside the screen (the phone's chat sheet), no review
    opens and no change command runs.
 2. Rename one writing chat and refresh. PASS: shared changes name each current chat and each name
-   opens its own chat; an untitled chat still has a usable link; writer-only edits name no chat.
+   opens its own chat; an untitled chat still has a usable link; writer-only edits name no chat (they say "You").
    Inspect `GET …/draft/attribution` and the transcript with `./mf` for the attribution.
 3. With a chat that made two `write` calls, click its link on the change the second call made.
    PASS: the chat opens scrolled to that second `write` tool call (not the chat's usual position),
    and the first call is not the target.
+4. Edit a paragraph the AI already changed and applied (type a word elsewhere in it, or a letter
+   inside an AI word). PASS: the card says "You" with no chat link, and the draft dock does not
+   list it under the chat. Type next to a pending AI change: PASS: one card with "You" first, then
+   the chat link.
 
 ## Review across document schemes
 

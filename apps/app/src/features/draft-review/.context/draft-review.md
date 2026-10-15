@@ -26,6 +26,17 @@ tool call from its `branch_write_journal` row. A change's chat link reveals the 
 overlapping write (turn and tool call), so it opens the chat at the write that made the change;
 with no turn known it just opens the chat. Best effort: nothing gates on it.
 
+A change's byline is `{ writer, chats }` from one evidence pass (`yjs-attribution.ts`). Evidence is what
+the change itself altered: the items its hunks made new (a character diff inside each hunk drops the
+unchanged characters around a typed letter) and the tombstones at its deletion points, not the block's
+others. A green item in an AI part's `inserted` or a red tombstone in its `deleted` names that chat;
+evidence no AI part accounts for is the writer's (typing, late-peer recovery, Discard and its Undo).
+A card shows "You" (plain text, first) for the writer and a link per chat, side by side; a merged
+change can show both, and a change with no evidence shows neither. Where the text cannot be tied to
+items (repeated words that could slide, a deletion point holding more tombstones than the hunk
+removed) no chat is named. Chat-keyed lists, such as the draft dock and the arrival pulse, read
+`chats`, so a writer-only change is in none.
+
 Every `ReviewChange` carries the frame it was listed from. A click acts on that
 frame: Apply sends its snapshot, Discard finds its pin and content hash in the
 current text and refuses when it cannot. Painting may be newer than chrome; that

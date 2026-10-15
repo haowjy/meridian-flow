@@ -3,7 +3,7 @@
  * the browser-computed projection. Pure. The projection decides what the changes are; attribution only
  * adds which chats' writes overlap a change (the attribution hint; nothing gates on it).
  */
-import type { ChatHint, ReviewGroup, ReviewSpan } from "@meridian/agent-edit/diff";
+import type { ChangeAttribution, ReviewGroup, ReviewSpan } from "@meridian/agent-edit/diff";
 import * as Y from "yjs";
 import { groupAnchor, type ReviewFrame } from "./review-frame";
 
@@ -20,6 +20,8 @@ export interface ReviewChange {
   id: string;
   kind: ReviewGroup["kind"];
   excerpt: ReviewGroup["excerpt"];
+  /** Whether the writer made some of the change (their typing, a recovery, a Discard or its Undo). */
+  writer: boolean;
   chats: ChatRef[];
   /** Draft position of the change's first mark in `frame`, where the stepper scrolls to. */
   anchor: number;
@@ -35,13 +37,14 @@ export interface ReviewChange {
 
 export function reviewChanges(
   frame: ReviewFrame,
-  attribution: ReadonlyMap<string, readonly ChatHint[]> = new Map(),
+  attribution: ReadonlyMap<string, ChangeAttribution> = new Map(),
 ): ReviewChange[] {
   return frame.groups.map((group) => ({
     id: group.id,
     kind: group.kind,
     excerpt: group.excerpt,
-    chats: (attribution.get(group.id) ?? []).map((chat) => ({
+    writer: attribution.get(group.id)?.writer ?? false,
+    chats: (attribution.get(group.id)?.chats ?? []).map((chat) => ({
       chatId: chat.threadId,
       title: chat.title,
       turnId: chat.turnId,
@@ -86,6 +89,7 @@ export function itemChange(item: {
   return {
     id: `item:${item.itemKey}`,
     kind: "change",
+    writer: false,
     excerpt: { removed: "", inserted: item.documentName ?? "" },
     chats: item.actorThreads.map((chat) => ({
       chatId: chat.threadId,

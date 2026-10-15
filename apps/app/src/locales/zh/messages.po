@@ -4908,8 +4908,8 @@ msgid "Yesterday"
 msgstr "昨天"
 
 #: src/features/draft-review/ReviewChangeParts.tsx
-#~ msgid "You"
-#~ msgstr ""
+msgid "You"
+msgstr "你"
 
 #: src/features/chat/ChoiceBlock.tsx
 #: src/features/chat/FormBlock.tsx

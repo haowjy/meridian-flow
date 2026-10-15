@@ -30,6 +30,7 @@ export type { Tok } from "./tokens.js";
 export { pmToY, type WriteStats, writeBlocks } from "./writer.js";
 export {
   type AttributionEdit,
+  type ChangeAttribution,
   type ChatHint,
   editsInChanges,
   type ItemRange,
