@@ -73,10 +73,28 @@ BEGIN
 END;
 $$;
 --> statement-breakpoint
-DROP TRIGGER IF EXISTS recompute_thread_chat_activity_on_forget ON turns;
---> statement-breakpoint
-CREATE TRIGGER recompute_thread_chat_activity_on_forget
-AFTER UPDATE OF forgotten_by_turn_id ON turns
-FOR EACH ROW
-WHEN (NEW.forgotten_by_turn_id IS NOT NULL AND OLD.forgotten_by_turn_id IS NULL)
-EXECUTE FUNCTION recompute_thread_chat_activity_from_forget();
+-- CREATE OR REPLACE TRIGGER swaps the trigger in one statement, so a rerun never leaves a window where a
+-- stamp gets no recomputation. It takes SHARE ROW EXCLUSIVE on turns, which a long writer transaction can hold
+-- off while every later writer queues behind the waiting DDL. So it waits at most 2s per attempt (the lock
+-- timeout is local to this one statement) and retries, rather than blocking writes indefinitely. After the last
+-- attempt the migration fails with lock_not_available and can simply be rerun.
+DO $$
+DECLARE
+  attempts constant int := 10;
+BEGIN
+  FOR attempt IN 1..attempts LOOP
+    BEGIN
+      SET LOCAL lock_timeout = '2s';
+      CREATE OR REPLACE TRIGGER recompute_thread_chat_activity_on_forget
+      AFTER UPDATE OF forgotten_by_turn_id ON turns
+      FOR EACH ROW
+      WHEN (NEW.forgotten_by_turn_id IS NOT NULL AND OLD.forgotten_by_turn_id IS NULL)
+      EXECUTE FUNCTION recompute_thread_chat_activity_from_forget();
+      RETURN;
+    EXCEPTION WHEN lock_not_available THEN
+      IF attempt = attempts THEN RAISE; END IF;
+      PERFORM pg_sleep(1);
+    END;
+  END LOOP;
+END;
+$$;
