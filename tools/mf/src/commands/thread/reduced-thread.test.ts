@@ -118,6 +118,8 @@ it("applies journal-only deltas between the replay cursor and nextSeq, and rejec
     });
     expect(followed.turns().map((turn) => turn.id)).toEqual(["u1", "sys-2"]);
     expect(followed.awaitsAnchor()).toBe(false);
+    // Recovery overwrote the stream's evidence: comparing now would measure the server against itself.
+    expect(followed.compare(wire.snapshot, ["sys-2"], false)).toEqual({ liveView: "not_observed" });
   } finally {
     await wire.close();
   }
