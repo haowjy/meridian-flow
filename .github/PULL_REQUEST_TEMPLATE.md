@@ -1,5 +1,9 @@
-<!-- Describe the PR's final state, not its history. Give reviewers enough
-     context to understand the change.
+<!-- Write for a reader who knows nothing about this area: not the project's
+     history, not the names of its parts, not the earlier PRs. Catch them up
+     quickly. Explain each term in a few words the first time it appears, and
+     link what you refer to (issues, PRs, KB decisions, code, screenshots)
+     instead of assuming the reader remembers it. Describe the PR's final
+     state, not its history.
 
      Every ## section below is required, and the PR-body check fails when one
      is missing. When a section doesn't apply, keep its heading and write
