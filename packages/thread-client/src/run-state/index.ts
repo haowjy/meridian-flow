@@ -1,6 +1,5 @@
 /** The run-state module: the chat's newest record, this device's unanswered intents, and the folds over them. */
 export {
-  type HandBackPress,
   handBackCandidates,
   hiddenWriterTurns,
   isAwaitingExecution,
@@ -29,6 +28,7 @@ export {
   addIntent,
   answerIntent,
   dropIntent,
+  failIntent,
   INITIAL_RUN_STATE_VIEW,
   type RunStateIntent,
   type RunStateView,

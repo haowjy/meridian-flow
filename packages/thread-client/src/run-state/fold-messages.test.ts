@@ -2,7 +2,6 @@
 import type { PendingInboxItem, RunState } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import {
-  type HandBackPress,
   handBackCandidates,
   hiddenWriterTurns,
   isBlockedForUsage,
@@ -144,7 +143,7 @@ describe("message folds", () => {
     const before = viewOf(
       record("1999", { sentThrough: 3, items: [message("m2", 2), message("m3", 3)] }),
     );
-    const scope: HandBackPress = { kind: "seen", seenThrough: 2, mine: ["m1"] };
+    const scope = { seenThrough: 2, mine: ["m1"] };
     const candidates = handBackCandidates(before, scope);
     expect(candidates).toEqual(["m2", "m1"]);
     const pressed = addIntent(before, {

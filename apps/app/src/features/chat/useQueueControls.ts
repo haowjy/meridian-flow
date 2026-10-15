@@ -19,7 +19,7 @@ export type QueueControls = {
 
 export function useQueueControls(input: { threadId: string; handBack: ChatHandBack }) {
   const { threadId, handBack } = input;
-  const { operation, settle } = handBack;
+  const { operation } = handBack;
   const view = useRunState(threadId);
   const latest = useRef(view);
   latest.current = view;
@@ -27,13 +27,13 @@ export function useQueueControls(input: { threadId: string; handBack: ChatHandBa
   const press = useCallback(
     (ids: readonly string[]) => {
       if (ids.length === 0) return;
-      void settle(operation.press({ kind: "queue", ids })).then((outcome) => {
+      void operation.press({ kind: "queue", ids }).then((outcome) => {
         if (outcome.kind === "confirmed") {
           if (outcome.result.handedBack.length > 0) announce(t`Moved to the message box`);
         } else announceError(t`Couldn't move your queued message to the message box.`);
       });
     },
-    [operation, settle],
+    [operation],
   );
 
   const remove = useCallback((turnId: string) => press([turnId]), [press]);

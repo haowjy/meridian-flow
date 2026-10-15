@@ -478,7 +478,7 @@ export function ChatView({
   );
   const retryCard = (card: HandBackCard) => {
     if (card.source.kind === "send-now") sendNow.retry();
-    else void handBack.settle(handBack.operation.retry(card.source.requestId));
+    else void handBack.operation.retry(card.source.requestId);
   };
   const dismissCard = (card: HandBackCard) => {
     if (card.source.kind === "send-now") return sendNow.dismiss();

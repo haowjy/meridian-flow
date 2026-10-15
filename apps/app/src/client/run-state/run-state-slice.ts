@@ -24,6 +24,7 @@ import {
   addIntent,
   answerIntent,
   dropIntent,
+  failIntent,
   INITIAL_RUN_STATE_VIEW,
   type RunStateIntent,
   type RunStateView,
@@ -123,6 +124,8 @@ export type RunStateAction =
   | { type: "intent"; intent: RunStateIntent }
   | { type: "answer"; kind: RunStateIntent["kind"]; id: string; version: string }
   | { type: "drop"; kind: RunStateIntent["kind"]; id: string }
+  /** The last attempt at a hand-back request did not succeed: its rows show again. */
+  | { type: "failHandBack"; id: string }
   | { type: "journal"; switches: readonly JournalSwitch[] }
   /** The view told the writer of the news through these counts. */
   | { type: "spoken"; queued: number; applied: number }
@@ -203,6 +206,8 @@ function reduceView(view: RunStateView, action: RunStateAction): RunStateView {
       return answerIntent(view, action.kind, action.id, action.version);
     case "drop":
       return dropIntent(view, action.kind, action.id);
+    case "failHandBack":
+      return failIntent(view, action.id);
     case "snapshot":
     case "history":
     case "record":

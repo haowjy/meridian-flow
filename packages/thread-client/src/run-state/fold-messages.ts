@@ -126,18 +126,16 @@ export function sendNowRequest(view: RunStateView): SendNowRequest | null {
   return { seenThrough: record.sentThrough, seenExecutionId: executionId, waiting };
 }
 
-/** What a hand-back hides while in flight: the queue's ids, or Stop's press set (`seen`). */
-export type HandBackPress =
-  | { kind: "ids"; ids: string[] }
-  | { kind: "seen"; seenThrough: number; mine: string[] };
-
 /**
- * The messages a request hides while it is in flight, frozen at the press: the x's ids; for a
- * `seen` scope, the waiting writer messages at or below `seenThrough` plus `mine`. Delivered
- * history under the watermark and a message sent after the press are never in it.
+ * The messages Stop hides while its request is in flight, frozen at the press: the waiting writer
+ * messages at or below `seenThrough` plus `mine`. Delivered history under the watermark and a
+ * message sent after the press are never in it. (The queue's x and Cancel queue hide the ids
+ * they were pressed over.)
  */
-export function handBackCandidates(view: RunStateView, scope: HandBackPress): string[] {
-  if (scope.kind === "ids") return [...scope.ids];
+export function handBackCandidates(
+  view: RunStateView,
+  scope: { seenThrough: number; mine: readonly string[] },
+): string[] {
   const ids = waitingWriterMessages(view)
     .filter((item) => item.seq <= scope.seenThrough)
     .map((item) => item.id);

@@ -23,7 +23,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { postCommand } from "@/client/api/threads-api";
 import { composerSessionDraft } from "@/client/composer-drafts";
-import { useRunState, useThreadActions } from "@/client/stores";
+import { useThreadActions } from "@/client/stores";
 
 export type ChatHandBack = {
   operation: HandBackOperation;
@@ -31,8 +31,6 @@ export type ChatHandBack = {
   unresolved: readonly UnresolvedHandBack[];
   /** What the Stop control reads from the operation, the same on every route into it. */
   stopFacts: StopFacts;
-  /** Run an operation call and redraw from what it leaves unresolved. */
-  settle: <T>(call: Promise<T>) => Promise<T>;
 };
 
 export function useHandBack(input: {
@@ -42,10 +40,9 @@ export function useHandBack(input: {
   scope: ChatReferenceScope | null;
 }): ChatHandBack {
   const { threadId, accountId, scope } = input;
-  const view = useRunState(threadId);
   const actions = useThreadActions();
-  const latest = useRef({ view, actions, scope });
-  latest.current = { view, actions, scope };
+  const latest = useRef({ actions, scope });
+  latest.current = { actions, scope };
   const [revision, setRevision] = useState(0);
   const redraw = useCallback(() => setRevision((n) => n + 1), []);
 
@@ -69,28 +66,14 @@ export function useHandBack(input: {
           id,
           version,
         }),
-      failIntent: (id) => {
-        const known = latest.current.view.intents.find(
-          (intent) => intent.kind === "handBack" && intent.id === id,
-        );
-        latest.current.actions.dispatchRunState(threadId, {
-          type: "intent",
-          intent: {
-            kind: "handBack",
-            id,
-            candidates: known?.kind === "handBack" ? known.candidates : [],
-            failed: true,
-            answer: null,
-          },
-        });
-      },
+      failIntent: (id) =>
+        latest.current.actions.dispatchRunState(threadId, { type: "failHandBack", id }),
       dropIntent: (id) =>
         latest.current.actions.dispatchRunState(threadId, { type: "drop", kind: "handBack", id }),
     };
     const store: HandBackPorts["store"] = {
       pending: () => draft.handBacks,
       record: (command) => draft.recordHandBack(command),
-      received: (requestId) => draft.hasReceivedHandBack(requestId),
       accept: (requestId, handedBack) => {
         const where = latest.current.scope;
         // Without the chat's facts a reference comes back as its link text.
@@ -110,28 +93,17 @@ export function useHandBack(input: {
     });
   }, [draft, threadId]);
 
-  const settle = useCallback(
-    async <T>(call: Promise<T>): Promise<T> => {
-      try {
-        return await call;
-      } finally {
-        redraw();
-      }
-    },
-    [redraw],
-  );
-
   useEffect(() => {
     const stopListening = operation.subscribe(redraw);
-    void settle(operation.resume());
+    void operation.resume();
     const stopWatching = draft.subscribe(() => operation.reconcile());
     return () => {
       stopListening();
       stopWatching();
     };
-  }, [draft, operation, redraw, settle]);
+  }, [draft, operation, redraw]);
 
   const unresolved = useMemo(() => operation.unresolved(), [operation, revision]);
   const stopFacts = useMemo(() => operation.stopFacts(), [operation, revision]);
-  return { operation, unresolved, stopFacts, settle };
+  return { operation, unresolved, stopFacts };
 }
