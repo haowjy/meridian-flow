@@ -122,6 +122,7 @@ describe("worktree cleanup resolver", () => {
 
     expect(plan.targets[0].actions.map((action) => action.kind)).toEqual([
       "stop-dev",
+      "stop-nx",
       "drop-database",
       "remove-worktree",
       "delete-branch",
@@ -336,7 +337,6 @@ describe("worktree cleanup resolver", () => {
       resolveTarget(context, { kind: "direct", value: "feature" }),
     ]);
     const actionsRun: string[] = [];
-    let readinessChecks = 0;
 
     const result = await executeCleanupPlan(
       plan,
@@ -344,9 +344,8 @@ describe("worktree cleanup resolver", () => {
         eligible: true,
         evidence: plan.targets[0].eligibility,
       }),
-      () => {
-        readinessChecks += 1;
-        return readinessChecks === 1
+      (_target, action) => {
+        return action.kind !== "drop-database"
           ? { ready: true, evidence: { worktreePath: "/repo/wt/feature" } }
           : { ready: false, reasons: ["worktree is locked"] };
       },
@@ -361,6 +360,6 @@ describe("worktree cleanup resolver", () => {
       failedAction: { kind: "drop-database" },
       readinessFailure: "worktree is locked",
     });
-    expect(actionsRun).toEqual(["stop-dev"]);
+    expect(actionsRun).toEqual(["stop-dev", "stop-nx"]);
   });
 });
