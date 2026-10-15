@@ -286,8 +286,13 @@ async function followToOutcome(
       },
     });
   } catch (error) {
-    if (settled && error instanceof CliError && error.code === "timeout") {
-      // The claim stands; only the stream's catch-up ran out of time.
+    if (
+      settled &&
+      error instanceof CliError &&
+      (error.code === "timeout" || error.code === "unavailable" || error.code === "protocol")
+    ) {
+      // The claim stands. The catch-up only feeds the printed log and `liveView`: an incomplete
+      // log, so `liveView` is `not_observed`; a failure here never replaces a proven claim.
       return fateResult(threadId, admitted.userTurnId, settled, reduced, true);
     }
     if (error instanceof CliError && error.code === "timeout") {
