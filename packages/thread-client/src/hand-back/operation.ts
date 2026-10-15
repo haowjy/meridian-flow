@@ -344,19 +344,26 @@ export function createHandBackOperation(options: {
     },
 
     dismiss(requestId) {
-      if (entries.get(requestId)?.status === "refused") entries.delete(requestId);
+      if (entries.get(requestId)?.status !== "refused") return;
+      entries.delete(requestId);
+      changed();
     },
 
     reconcile() {
       const stored = new Set(store.pending().map((c) => c.requestId));
+      let moved = false;
       for (const [id, entry] of entries) {
         if (entry.status !== "ambiguous" && entry.status !== "unwritten") continue;
-        if (!stored.has(id)) entries.delete(id);
-        else if (store.received(id)) {
+        if (!stored.has(id)) {
+          entries.delete(id);
+          moved = true;
+        } else if (store.received(id)) {
           store.drop(id);
           entries.delete(id);
+          moved = true;
         }
       }
+      if (moved) changed();
     },
 
     unresolved() {

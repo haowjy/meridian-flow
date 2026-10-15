@@ -181,6 +181,28 @@ describe("hand-back operation", () => {
     expect(r.written).toEqual([M1]);
     expect(r.stored.size).toBe(0);
     expect(r.op.unresolved()).toEqual([]);
+
+    // Every change to what is unresolved notifies, so no caller redraws for the operation.
+    const gone = rig({ acceptFails: true });
+    gone.answer(async () => answerBody([M1]));
+    await gone.op.press({ kind: "queue", ids: [M1] });
+    let heard = 0;
+    gone.op.subscribe(() => heard++);
+    gone.stored.delete(REQ);
+    gone.op.reconcile();
+    expect(gone.op.unresolved()).toEqual([]);
+    expect(heard).toBe(1);
+    gone.op.reconcile();
+    expect(heard).toBe(1);
+
+    const refused = rig();
+    refused.answer(async () => ({ status: 409, body: {} }));
+    expect((await refused.op.press({ kind: "queue", ids: [M1] })).kind).toBe("refused");
+    heard = 0;
+    refused.op.subscribe(() => heard++);
+    refused.op.dismiss(REQ);
+    expect(refused.op.unresolved()).toEqual([]);
+    expect(heard).toBe(1);
   });
 
   it("keeps a card for each unresolved command after the hand-back removed its rows", () => {

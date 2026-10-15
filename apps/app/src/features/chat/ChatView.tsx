@@ -483,7 +483,6 @@ export function ChatView({
   const dismissCard = (card: HandBackCard) => {
     if (card.source.kind === "send-now") return sendNow.dismiss();
     handBack.operation.dismiss(card.source.requestId);
-    void handBack.settle(Promise.resolve());
   };
   function handleStop() {
     // A brief being written holds the chat with no run: its own Stop. Everything else, a reply,

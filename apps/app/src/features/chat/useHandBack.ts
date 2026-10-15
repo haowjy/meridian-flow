@@ -124,10 +124,7 @@ export function useHandBack(input: {
   useEffect(() => {
     const stopListening = operation.subscribe(redraw);
     void settle(operation.resume());
-    const stopWatching = draft.subscribe(() => {
-      operation.reconcile();
-      redraw();
-    });
+    const stopWatching = draft.subscribe(() => operation.reconcile());
     return () => {
       stopListening();
       stopWatching();
