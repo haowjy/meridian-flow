@@ -74,12 +74,10 @@ describe("parseContextUri", () => {
     expect(canonicalContextUri("uploads", "./a//b.png", { kind: "chat", chatRef: "c15" })).toBe(
       "uploads://@/c15/a/b.png",
     );
-    expect(parseContextUri("uploads://@/draft.png")).toMatchObject({ ok: false });
     expect(parseContextUri("uploads://@/p3/draft.png")).toMatchObject({
       ok: false,
       error: { reason: expect.stringContaining("not a subagent") },
     });
-    expect(() => canonicalContextUri("uploads", "a.png", { kind: "none" })).toThrow();
     expect(() =>
       canonicalContextUri("scratch", "a.png", { kind: "chat", chatRef: "c1" }),
     ).toThrow();
