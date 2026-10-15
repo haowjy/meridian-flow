@@ -270,20 +270,62 @@ export function removeTurnsIn(
   return { turns, tombstones: tombstones ?? state.tombstones };
 }
 
+/** Turns a `meridian.turns.forgotten` frame named, by id, with the turn that forgot each. Never pruned. */
+export type ForgottenStamps = ReadonlyMap<string, string>;
+
+/** A thread's turns with the stamps remembered for them, held or not. */
+export type TurnsWithForgotten = { turns: Turn[]; forgotten: ForgottenStamps };
+
+/**
+ * Stamps the named turns `forgottenBy` and remembers every id, held or not: a user turn's creation
+ * doesn't give the client a row, so a stamp can arrive before the turn is hydrated, and the snapshot that
+ * hydrates it applies the remembered stamp. The fact is write-once, so an id already stamped keeps its
+ * first forgetting turn. Applying it again changes nothing.
+ */
+export function markForgottenIn(
+  state: TurnsWithForgotten,
+  ids: readonly string[],
+  byTurnId: string,
+): TurnsWithForgotten {
+  let forgotten: Map<string, string> | null = null;
+  for (const id of ids) {
+    if (state.forgotten.has(id)) continue;
+    forgotten ??= new Map(state.forgotten);
+    forgotten.set(id, byTurnId);
+  }
+  const turns = state.turns.map((turn) => {
+    const by = (forgotten ?? state.forgotten).get(turn.id);
+    return by !== undefined && ids.includes(turn.id) && turn.forgottenBy == null
+      ? { ...turn, forgottenBy: by }
+      : turn;
+  });
+  const changed = turns.some((turn, index) => turn !== state.turns[index]);
+  if (!changed && !forgotten) return state;
+  return { turns: changed ? turns : state.turns, forgotten: forgotten ?? state.forgotten };
+}
+
 /**
  * A server snapshot's turns, less those a removal the snapshot does not cover has taken out, and
  * plus the dividers a frame the snapshot does not cover has added; both fences are the same
- * (`seq < nextSeq` is covered), because a covering snapshot lists the stored turns itself.
+ * (`seq < nextSeq` is covered), because a covering snapshot lists the stored turns itself. An older
+ * snapshot that lacks a stamp gets the remembered one: forgetting never reverses.
  */
 export function applySnapshotTo(
-  fences: { tombstones: Tombstones; dividers: HeldDividers },
+  fences: { tombstones: Tombstones; dividers: HeldDividers; forgotten?: ForgottenStamps },
   serverTurns: readonly Turn[],
   nextSeq: string,
 ): { turns: Turn[]; tombstones: Tombstones; dividers: HeldDividers } {
-  const { tombstones, dividers } = fences;
+  const { tombstones, dividers, forgotten } = fences;
   const live = new Map([...tombstones].filter(([, seq]) => compareSeq(seq, nextSeq) >= 0));
   const held = new Map([...dividers].filter(([, { seq }]) => compareSeq(seq, nextSeq) >= 0));
-  const kept = live.size ? serverTurns.filter((turn) => !live.has(turn.id)) : [...serverTurns];
+  const stamped = forgotten?.size
+    ? serverTurns.map((turn) =>
+        turn.forgottenBy == null && forgotten.has(turn.id)
+          ? { ...turn, forgottenBy: forgotten.get(turn.id) ?? null }
+          : turn,
+      )
+    : serverTurns;
+  const kept = live.size ? stamped.filter((turn) => !live.has(turn.id)) : [...stamped];
   const present = new Set(kept.map((turn) => turn.id));
   // In frame order, so a divider that follows another is placed after it.
   let turns = kept;

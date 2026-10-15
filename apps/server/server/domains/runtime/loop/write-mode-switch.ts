@@ -13,12 +13,7 @@ import {
   workLifecycleState,
 } from "@meridian/contracts/works";
 import type { WorkRepository } from "../../projects/index.js";
-import {
-  isWriteModeSwitchTurn,
-  type ThreadWorksRepository,
-  type TurnRepository,
-  writeModeSwitchMetadata,
-} from "../../threads/index.js";
+import { type ThreadWorksRepository, writeModeSwitchMetadata } from "../../threads/index.js";
 import { contentForBlockInput } from "./block-helpers.js";
 import { createLocalTurn } from "./local-turn.js";
 import { mayChangeWorks } from "./permissions/action-policy.js";
@@ -103,15 +98,4 @@ export function writeModeSwitchTurn(input: {
     status: "complete",
   });
   return { turn, block };
-}
-
-/** The turn behind any trailing switch turns: a switch applied after a failed reply must not take Retry away. */
-export async function pastTrailingSwitches(
-  turns: Pick<TurnRepository, "findById">,
-  turn: Turn,
-): Promise<Turn | null> {
-  let current: Turn | null = turn;
-  while (current && isWriteModeSwitchTurn(current) && current.prevTurnId)
-    current = await turns.findById(current.prevTurnId as TurnId);
-  return current;
 }

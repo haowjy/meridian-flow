@@ -17,6 +17,8 @@ import { type AiWriteMode, aiWriteModeSchema } from "../works/ai-write-mode.js";
 
 /** `meridian.messages.handed_back`: waiting writer messages that left the chat. */
 export const MESSAGES_HANDED_BACK_EVENT = "meridian.messages.handed_back" as const;
+/** `meridian.turns.forgotten`: failed turns that left the conversation. */
+export const TURNS_FORGOTTEN_EVENT = "meridian.turns.forgotten" as const;
 export const WRITE_MODE_SWITCHED_EVENT = "meridian.write_mode.switched" as const;
 /** `meridian.run_state`: the chat's whole `RunState`, stamped with its stream version. */
 export const RUN_STATE_EVENT = "meridian.run_state" as const;
@@ -75,6 +77,12 @@ const runStartedMetaSchema = z.object({
   position: z.number().int().nullable().optional(),
 });
 
+const turnsForgottenSchema = z.object({
+  turnIds: z.array(z.string()),
+  byTurnId: z.string(),
+  reason: z.enum(["retried", "forgotten"]),
+});
+
 const messagesHandedBackSchema = z.object({ userTurnIds: z.array(z.string()) });
 
 /** Reads a `RUN_STARTED.rawEvent`; missing or malformed fields read as unknown/empty. */
@@ -101,5 +109,14 @@ export type MessagesHandedBackValue = { userTurnIds: string[] };
 /** Reads a `meridian.messages.handed_back` CUSTOM value; null when malformed. */
 export function readMessagesHandedBack(value: unknown): MessagesHandedBackValue | null {
   const parsed = messagesHandedBackSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
+/** `meridian.turns.forgotten`: the failed turns that left the conversation, and the turn that forgot them. */
+export type TurnsForgottenValue = z.infer<typeof turnsForgottenSchema>;
+
+/** Reads a `meridian.turns.forgotten` CUSTOM value; null when malformed. */
+export function readTurnsForgotten(value: unknown): TurnsForgottenValue | null {
+  const parsed = turnsForgottenSchema.safeParse(value);
   return parsed.success ? parsed.data : null;
 }

@@ -171,7 +171,8 @@ function activeCompactionCut(turns: readonly ClassifiedTurn[]): CompactionCut | 
     },
   );
   if (!cut) throw new Error(`Complete compaction ${active.turn.id} has an invalid cut turn`);
-  return cut;
+  // An empty cut covers nothing that is left, so every candidate is after it.
+  return cut.turnId === null ? null : cut;
 }
 
 function candidatesAfterCut(

@@ -17,8 +17,10 @@ import {
   dividersAwaitingAnchorIn,
   ensureAssistantTurnIn,
   ensureSwitchTurnIn,
+  type ForgottenStamps,
   type HeldDividers,
   isOptimisticTurnId,
+  markForgottenIn,
   OPTIMISTIC_TURN_ID_PREFIX,
   patchTurnStatusIn,
   type RunStateView,
@@ -74,6 +76,8 @@ type ThreadStoreSliceState = ThreadStoreState & {
   tombstonesByThread: Record<string, Tombstones>;
   /** Dividers a `switched` frame added that no accepted snapshot covers yet. */
   dividersByThread: Record<string, HeldDividers>;
+  /** Failed turns that left the conversation, by id; remembered so late hydration and old snapshots keep the stamp. */
+  forgottenByThread: Record<string, ForgottenStamps>;
   durableBlockCursorByThread: Record<string, string>;
   pendingCreation: PendingCreationState;
   interruptResponses: Record<string, InterruptResponseEntry>;
@@ -209,6 +213,7 @@ function selectThreadActions(state: ThreadStoreSlice): ThreadStoreActions {
     bumpEventsApplied: state.bumpEventsApplied,
     applyTurnEvent: state.applyTurnEvent,
     removeTurns: state.removeTurns,
+    markForgotten: state.markForgotten,
     dispatchRunState: state.dispatchRunState,
     applyDurableBlockEvent: state.applyDurableBlockEvent,
     acceptDurableBlockSeq: state.acceptDurableBlockSeq,
@@ -242,6 +247,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
             invalidateThreadSnapshot: (threadId) => get().invalidateThreadSnapshot(threadId),
             patchTurnStatus: (...args) => get().patchTurnStatus(...args),
             removeTurns: (...args) => get().removeTurns(...args),
+            markForgotten: (...args) => get().markForgotten(...args),
             bumpEventsApplied: (threadId) => get().bumpEventsApplied(threadId),
             settleInterruptResponse: (identity) => get().settleInterruptResponse(identity),
           },
@@ -253,6 +259,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
           snapshotNextSeqFloorByThread: {},
           tombstonesByThread: {},
           dividersByThread: {},
+          forgottenByThread: {},
           durableBlockCursorByThread: {},
           liveMeta: {},
           pendingCreation: { threadIds: {} },
@@ -564,6 +571,23 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
             });
           },
 
+          markForgotten(threadId, ids, byTurnId) {
+            set((state) => {
+              const next = markForgottenIn(
+                {
+                  turns: state.turnsByThread[threadId] ?? [],
+                  forgotten: state.forgottenByThread[threadId] ?? new Map(),
+                },
+                ids,
+                byTurnId,
+              );
+              return {
+                turnsByThread: { ...state.turnsByThread, [threadId]: next.turns },
+                forgottenByThread: { ...state.forgottenByThread, [threadId]: next.forgotten },
+              };
+            });
+          },
+
           applyDurableBlockEvent(threadId, event) {
             return reducer.applyDurableBlockEvent(threadId, event);
           },
@@ -607,6 +631,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
                 {
                   tombstones: state.tombstonesByThread[threadId] ?? new Map(),
                   dividers: state.dividersByThread[threadId] ?? new Map(),
+                  forgotten: state.forgottenByThread[threadId],
                 },
                 serverTurns,
                 nextSeq,
