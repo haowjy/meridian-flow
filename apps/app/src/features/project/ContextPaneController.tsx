@@ -27,7 +27,7 @@ import {
 } from "./context/account-feature-context";
 import { ContextViewer } from "./context/ContextViewer";
 import { deriveContextPaneState } from "./context/context-pane-state";
-import { contextTabFromFile, projectResourceTab } from "./context/context-tab-from-file";
+import { projectResourceTab } from "./context/context-tab-from-file";
 import { contextTabRouteKey } from "./context/context-tab-identity";
 import type { resolveVisibleEditorTab } from "./context/resolve-visible-editor-tab";
 import { useContextRemovalProject } from "./context/use-context-removal-project";
@@ -36,7 +36,7 @@ import {
   type OpenContextRoute,
   useCaptureProjectNavigation,
 } from "./routing/ProjectNavigationContext";
-import { isProjectRouteMasked, type ProjectRouteMask } from "./routing/ProjectRouteBoundary";
+import type { ProjectRouteMask } from "./routing/ProjectRouteBoundary";
 import type { NavigationOptions } from "./routing/project-route";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 
@@ -50,9 +50,6 @@ export type ContextViewerSurfaceControllerProps = {
   /** The Editor's Work; its archived state makes its files read-only. */
   editorWork: Work | null;
   localDocumentId?: string;
-  addressOwnsDocumentAdmission?: boolean;
-  /** The review item the route address is bound to; its admission, not the live catalog, decides. */
-  reviewItemKey?: string;
   activeContextScheme: ProjectContextTreeScheme | null;
   activeContextPath: string | null;
   /** A chat's Scratch route names its lineage here, in place of a Work. */
@@ -81,8 +78,6 @@ export function ContextViewerSurfaceController({
   editorWorkId,
   mask,
   editorWork,
-  addressOwnsDocumentAdmission = false,
-  reviewItemKey,
   activeContextScheme,
   activeContextPath,
   activeContextChat,
@@ -108,7 +103,6 @@ export function ContextViewerSurfaceController({
   const removalState = useContextRemovalProject(projectId);
   const { selectedDocumentId, workspaceRoute, tab: activeTab } = resolvedEditor;
 
-  const needsRouteTab = activeContextScheme !== null && activeContextPath !== null && !activeTab;
   const {
     catalog: routeCatalog,
     isError: routeTreeIsError,
@@ -187,10 +181,7 @@ export function ContextViewerSurfaceController({
     tabs,
   ]);
 
-  // Guard: openTab fires at most once per (projectId, scheme, path)
-  // tuple within one need-window. The ref is cleared as soon as the route
-  // no longer needs an auto-open, so closing a tab and revisiting the same
-  // file later re-opens it instead of being permanently blocked.
+  // Names the destination's pending tab; the route installs the real one.
   const openTabKey =
     routeWorkId !== undefined && activeContextScheme !== null && activeContextPath !== null
       ? contextTabRouteKey(projectId, {
@@ -238,7 +229,7 @@ export function ContextViewerSurfaceController({
   const paneState = deriveContextPaneState({
     activeTab,
     tabs: visibleTabs,
-    masked: isProjectRouteMasked(mask),
+    mask,
     destination:
       activeContextScheme !== null && activeContextPath && openTabKey
         ? {
@@ -246,7 +237,6 @@ export function ContextViewerSurfaceController({
             scheme: activeContextScheme,
             workId: routeWorkId,
             rootThreadId: activeContextChat ?? undefined,
-            review: reviewItemKey ? { itemKey: reviewItemKey } : null,
             optimisticTab: {
               id: `optimistic:${openTabKey}`,
               // Full basename, not the extension-stripped resume label — the chip
@@ -255,39 +245,10 @@ export function ContextViewerSurfaceController({
             },
           }
         : null,
-    catalog: routeCatalog,
-    isFetching: routeTreeIsFetching,
-    isError: routeTreeIsError,
     // Closing stamps this fence before removing the tab. Sharing it prevents
     // the loading projection from resurrecting the removed route.
     removalFenced: routeMaterializationFenced,
   });
-
-  useEffect(() => {
-    if (!active || addressOwnsDocumentAdmission || !needsRouteTab || routeMaterializationFenced)
-      return;
-    if (activeContextScheme === null || activeContextPath === null || !routeCatalog) return;
-    const found = routeCatalog.findPath(activeContextPath);
-    const file = found?.kind === "file" ? found : null;
-    if (!file) return;
-    openTab(
-      projectId,
-      contextTabFromFile(activeContextScheme, file, contextOwner(routeWorkId, activeContextChat)),
-    );
-  }, [
-    active,
-    addressOwnsDocumentAdmission,
-    activeContextChat,
-    activeContextPath,
-    activeContextScheme,
-    needsRouteTab,
-    openTab,
-    openTabKey,
-    projectId,
-    routeCatalog,
-    routeMaterializationFenced,
-    routeWorkId,
-  ]);
 
   function handleSelectTab(tab: ContextTab) {
     if (!getContextTabs(projectId).tabs.some((candidate) => matchesTabInstance(candidate, tab)))
