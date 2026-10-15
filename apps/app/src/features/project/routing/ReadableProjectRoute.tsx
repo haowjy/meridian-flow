@@ -4,7 +4,7 @@ import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import { contextOwner, type ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useBlocker, useRouter, useRouterState } from "@tanstack/react-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
@@ -14,7 +14,7 @@ import {
 import type { ContextOwner } from "@/client/query/context-request-options";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
-import { useWorkDrafts } from "@/client/query/useWorkDrafts";
+import { useWorkDrafts, workDraftsQueryOptions } from "@/client/query/useWorkDrafts";
 import {
   type ContextTab,
   getContextTabs,
@@ -53,6 +53,7 @@ import {
 import { editorDefaultWorkPending } from "./editor-default-work";
 import { createEditorDocumentCommand, prepareEditorDestination } from "./editor-document-command";
 import {
+  canonicalDocumentPath,
   gateLiveView,
   projectAddressMatchesContextTarget,
   reconcileDocumentAddress,
@@ -132,6 +133,7 @@ function ReadableProjectDestination({
 }) {
   const projectId = project.id;
   const contextRemoval = useContextRemovalCoordinator();
+  const queryClient = useQueryClient();
   const router = useRouter();
   const location = useRouterState({ select: (state) => state.location });
   const parsed = parseProjectAddress(
@@ -560,10 +562,23 @@ function ReadableProjectDestination({
             (result) => result.resolutions[0] ?? { kind: "failed" as const },
             () => ({ kind: "failed" as const }),
           ),
+        draftOnlyItemKey: async (target) => {
+          if (!target.workId || !target.path) return undefined;
+          const drafts = await queryClient
+            .fetchQuery(workDraftsQueryOptions(projectId, target.workId))
+            .catch(() => []);
+          return drafts.find(
+            (item) =>
+              item.isNew &&
+              item.contextLocation?.scheme === target.scheme &&
+              canonicalDocumentPath(item.contextLocation.path) ===
+                canonicalDocumentPath(target.path),
+          )?.itemKey;
+        },
         admitDraftReview: (installed, reviewWorkId) =>
           contextRemoval.admitDraftReview(projectId, installed, reviewWorkId),
       }),
-    [contextRemoval, projectId, user.userId],
+    [contextRemoval, projectId, queryClient, user.userId],
   );
   const setEditorReviewItemKey = useCallback((itemKey: string | null, changeId?: string) => {
     const current = latest.current;

@@ -769,6 +769,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
                   : (mountedEditor?.editorWork ?? null)
               }
               addressOwnsDocumentAdmission={props.addressOwnsDocumentAdmission}
+              reviewItemKey={props.reviewItemKey}
               active={editorActive}
               sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
               dockToggle={surfaceToggle("chat", t`Expand chat`)}
