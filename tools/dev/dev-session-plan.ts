@@ -1,24 +1,29 @@
 import { resolveAppEnvPassthroughKeys } from "./dev-app-env-passthrough";
 import type { DevMode } from "./dev-mode";
+import type { DevSessionMetadata } from "./dev-session-state";
 import { resolveDevRuntimeEnvPassthroughKeys } from "./lib/dev-env";
-import type { SharedDevServiceName, SharedDevServicePorts } from "./lib/dev-share-ports";
-import type { ExpectedServiceName, ExternalDevRoute } from "./portless-routes";
+import {
+  resolveSharedDevServicePorts,
+  type SharedDevServiceName,
+  type SharedDevServicePorts,
+} from "./lib/dev-share-ports";
+import {
+  type ExpectedServiceName,
+  expectedPortlessName,
+  expectedServiceHost,
+} from "./portless-routes";
 
 const logPath = "logs/portless.log";
 
-export interface DevSessionMetadata {
-  sessionName: string;
-  mode: DevMode;
-  branch: string;
-  /** Redacted display command only. The executable command may contain secrets and is never persisted. */
-  command: string;
-  createdAt: string;
-  externalRoutes?: ExternalDevRoute[];
+export interface DevSessionPlan {
+  readonly session: Omit<DevSessionMetadata, "command" | "externalRoutes">;
+  readonly command: DevSessionCommand;
+  readonly sharedPorts: readonly SharedDevServicePorts[];
+  readonly expectedPorts: Partial<Record<ExpectedServiceName, number>>;
 }
 
 interface DevServiceSpec {
   serviceName: ExpectedServiceName;
-  portlessName: string;
   pkg: string;
   shared: boolean;
   sharedModeOnly?: boolean;
@@ -31,16 +36,14 @@ export interface DevSessionCommand {
 }
 
 const DEV_SERVICES: ReadonlyArray<DevServiceSpec> = [
-  { serviceName: "app", portlessName: "app.meridian", pkg: "@meridian/app", shared: true },
+  { serviceName: "app", pkg: "@meridian/app", shared: true },
   {
     serviceName: "server",
-    portlessName: "server.meridian",
     pkg: "@meridian/server",
     shared: false,
   },
   {
     serviceName: "www",
-    portlessName: "web.meridian",
     pkg: "@meridian/www",
     shared: true,
     sharedModeOnly: true,
@@ -160,20 +163,25 @@ function portlessCommandBody({
   sharedPorts,
   env,
   redacted,
+  worktreePrefix,
+  force,
 }: {
   mode: DevMode;
   sharedPorts: ReadonlyArray<SharedDevServicePorts>;
   env: NodeJS.ProcessEnv;
   redacted: boolean;
+  worktreePrefix?: string;
+  force: boolean;
 }): string {
   const portsByService = sharedPortsByService(sharedPorts);
   const commands = DEV_SERVICES.filter(
     (service) => mode !== "local" || !service.sharedModeOnly,
-  ).map(({ serviceName, portlessName, pkg }) => {
+  ).map(({ serviceName, pkg }) => {
     const servicePorts =
       serviceName === "app" || serviceName === "www" ? portsByService.get(serviceName) : undefined;
     const appPortFlag = servicePorts ? ` --app-port ${servicePorts.appBackendPort}` : "";
-    return `${portlessEnvPrefix(env, redacted)}pnpm exec portless run --name ${portlessName}${appPortFlag} pnpm --filter ${pkg} dev`;
+    const name = expectedPortlessName(serviceName, worktreePrefix);
+    return `${portlessEnvPrefix(env, redacted)}pnpm exec portless --name ${shellQuote(name)}${force ? " --force" : ""}${appPortFlag} pnpm --filter ${pkg} dev`;
   });
 
   return `(${commands.map((command) => `${command} & sleep 2`).join("; ")}; wait)`;
@@ -185,12 +193,16 @@ function renderPortlessCommand({
   env,
   internalApiOrigin,
   redacted,
+  worktreePrefix,
+  force,
 }: {
   mode: DevMode;
   sharedPorts: ReadonlyArray<SharedDevServicePorts>;
   env: NodeJS.ProcessEnv;
   internalApiOrigin: string;
   redacted: boolean;
+  worktreePrefix?: string;
+  force: boolean;
 }): string {
   return `mkdir -p logs logs/events && ${envSourcePreamble(
     env,
@@ -201,14 +213,13 @@ function renderPortlessCommand({
     sharedPorts,
     env,
     redacted,
+    worktreePrefix,
+    force,
   })} 2>&1 | tee ${logPath}`;
 }
 
 export function resolveInternalApiOrigin(worktreePrefix?: string): string {
-  const host = worktreePrefix
-    ? `${worktreePrefix}.server.meridian.localhost`
-    : "server.meridian.localhost";
-  return `https://${host}`;
+  return `https://${expectedServiceHost("server", worktreePrefix)}`;
 }
 
 export function createDevSessionCommand({
@@ -216,11 +227,13 @@ export function createDevSessionCommand({
   sharedPorts,
   env = process.env,
   worktreePrefix,
+  force = false,
 }: {
   mode: DevMode;
   sharedPorts: ReadonlyArray<SharedDevServicePorts>;
   env?: NodeJS.ProcessEnv;
   worktreePrefix?: string;
+  force?: boolean;
 }): DevSessionCommand {
   const internalApiOrigin = resolveInternalApiOrigin(worktreePrefix);
   return {
@@ -230,6 +243,8 @@ export function createDevSessionCommand({
       env,
       internalApiOrigin,
       redacted: false,
+      worktreePrefix,
+      force,
     }),
     display: renderPortlessCommand({
       mode,
@@ -237,6 +252,8 @@ export function createDevSessionCommand({
       env,
       internalApiOrigin,
       redacted: true,
+      worktreePrefix,
+      force,
     }),
     internalApiOrigin,
   };
@@ -251,25 +268,31 @@ export function sharedServiceNamesForMode(mode: DevMode): SharedDevServiceName[]
   ).map((service) => service.serviceName);
 }
 
-export function buildMetadata({
-  branch,
-  sessionName,
-  mode,
-  displayCommand,
-  externalRoutes = [],
+export function createDevSessionPlan({
+  repoRoot,
+  session,
+  force = false,
 }: {
-  branch: string;
-  sessionName: string;
-  mode: DevMode;
-  displayCommand: string;
-  externalRoutes?: ExternalDevRoute[];
-}): DevSessionMetadata {
+  repoRoot: string;
+  session: DevSessionPlan["session"];
+  force?: boolean;
+}): DevSessionPlan {
+  const sharedPorts = resolveSharedDevServicePorts({
+    mode: session.mode,
+    worktreeKey: repoRoot,
+    services: sharedServiceNamesForMode(session.mode),
+  });
   return {
-    sessionName,
-    mode,
-    branch: branch || "detached",
-    command: displayCommand,
-    createdAt: new Date().toISOString(),
-    externalRoutes,
+    session,
+    sharedPorts,
+    expectedPorts: Object.fromEntries(
+      sharedPorts.map((entry) => [entry.service, entry.appBackendPort]),
+    ),
+    command: createDevSessionCommand({
+      mode: session.mode,
+      sharedPorts,
+      worktreePrefix: session.worktreePrefix,
+      force,
+    }),
   };
 }

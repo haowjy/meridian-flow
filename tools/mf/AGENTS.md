@@ -15,8 +15,10 @@ Read [`.context/CONTEXT.md`](.context/CONTEXT.md) first.
   or none, diverges from the browser without failing any check.
 - **Imports:** only `@meridian/contracts` and `@meridian/thread-client` from
   workspace packages. From `tools/dev`, only the Portless route contract:
-  `portless-prefix.ts`, `portless-routes.ts` and `portlessCa` in
-  `dev-readiness.ts`, so `./mf` finds the stack the way `pnpm dev` registers it.
+  `portless-prefix.ts`, `portless-routes.ts`, `portlessCa` in
+  `dev-readiness.ts` and `resolveCheckoutRouteUrls` in `dev-session-state.ts`, so
+  `./mf` finds the stack the way `pnpm dev` registers it and discovers an active
+  session's identity the way `pnpm dev` does. Import nothing else from there.
   Never import `apps/`.
 - Declare runtime and development dependencies in this package's `package.json`.
 - Keep `src/core/` domain-free. Command groups can import another group's

@@ -312,8 +312,8 @@ export function TurnList({
                     replyRetry.retry(turn);
                   }
                 : undefined,
-              // The refused note is the state of what the writer did, so it stays on the reply
-              // even when another tab's reply landed below it; the next action clears it.
+              // The refused card is the state of what the writer did, so it stays on the reply
+              // even when another tab's reply landed below it; the next action or completed reply clears it.
               refused: replyRetry.refused.has(turn.id),
               requestLost: standIn === "failed",
             }

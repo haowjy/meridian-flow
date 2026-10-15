@@ -4,7 +4,7 @@
 
 - Stop hands the messages still waiting behind the reply back to the composer, above any draft, in send order with a blank line between them. They never reach the model, a fork or a summary, and a lost Stop answer can be retried without duplicating the returned text.
 - The composer's one button is Stop while a reply runs and the box is empty, and Send (with the running ring, queuing a steer) once you type. Stop reads `Stopping` and disables at once, and a failed one reads `Couldn't stop. Try again.` on the button, comes back when the box empties and retries the same request. A compaction divider's Stop does the same and ends on `Compaction stopped`.
-- Retry replaces a failed reply in place, and a chain of failed retries shows only the latest failure. A refused Retry keeps `Couldn't retry.` under that reply until Retry or Send clears it.
+- Retry replaces a failed reply in place, and a chain of failed retries shows only the latest failure. A refused Retry shows a red `Couldn't retry.` card on that reply until Retry or Send clears it, or the next reply completes.
 - Messages another tab or `./mf` leaves waiting show as `Queued` in an open tab without a reload.
 - A mode switch applies at its own turn, and its notice stays anchored there, before the Retry stand-in when one is showing, with no blink or duplicate. A queued row stays until its turn shows.
 - The usage notice shows only while a writer message is actually blocked, not for an empty record.
