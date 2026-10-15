@@ -82,10 +82,7 @@ describe("classifyDeadline", () => {
       reason: "running",
       stillRunning: { turnId: "running-turn", status: "unknown" },
       owed: [message],
-      next: [
-        `./mf thread cancel ${THREAD_ID} --turn running-turn`,
-        `./mf thread tail ${THREAD_ID} --until-idle`,
-      ],
+      next: [`./mf thread stop ${THREAD_ID}`, `./mf thread tail ${THREAD_ID} --until-idle`],
     });
   });
 
