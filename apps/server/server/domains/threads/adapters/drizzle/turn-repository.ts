@@ -138,15 +138,6 @@ export function createDrizzleTurnRepository(
       const [row] = await active().select().from(schema.turns).where(eq(schema.turns.id, id));
       return row ? mapTurn(row) : null;
     },
-    async next(id) {
-      const [row] = await active()
-        .select()
-        .from(schema.turns)
-        .where(eq(schema.turns.parentTurnId, id))
-        .orderBy(asc(schema.turns.position))
-        .limit(1);
-      return row ? mapTurn(row) : null;
-    },
     async latest(threadId) {
       const [row] = await active()
         .select()
