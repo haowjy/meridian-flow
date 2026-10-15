@@ -84,6 +84,8 @@ export function describeWriteMode(input: {
   mode: AiWriteMode;
   archived: boolean;
   mayUnarchive: boolean;
+  /** The chat has no Work, so its drafts are shared with the project's other chats that have none. */
+  noWork: boolean;
 }): { label: string; instructions: string[] } {
   if (input.archived) {
     if (!input.mayUnarchive) {
@@ -117,8 +119,11 @@ export function describeWriteMode(input: {
   return {
     label: "draft mode",
     instructions: [
-      "Your changes wait in this Work's draft for the writer to review, except scratch:// changes, which are written straight away.",
-      "The writer reviews and applies the draft; nothing outside this Work sees it before then. When you draft a change, tell the user it is waiting for their review.",
+      "Your changes to a document wait in its draft for the writer to review, except scratch:// changes, which are written straight away. " +
+        (input.noWork
+          ? "The project's other chats that have no Work share these drafts."
+          : "This Work's chats share these drafts."),
+      "The writer reviews and applies each draft; until then only chats that share the drafts see their changes. When you draft a change, tell the user it is waiting for their review.",
     ],
   };
 }
@@ -149,6 +154,7 @@ export function renderWorkContext(input: {
     mode: input.aiWriteMode,
     archived: isWorkArchived(input.current),
     mayUnarchive: input.mayUnarchive,
+    noWork: input.current.isNoWork,
   });
   return [
     "<work_context>",

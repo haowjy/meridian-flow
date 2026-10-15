@@ -192,7 +192,7 @@ export function createRuntimeHarness(
         async publishFinalizedReports() {},
         writeModeSwitch: {
           async renderNotice(_threadId, mode) {
-            return writeModeSwitchNotice({ archivedAt: null }, mode, false);
+            return writeModeSwitchNotice({ archivedAt: null, isNoWork: false }, mode, false);
           },
           async setWorkDefault() {},
         },
