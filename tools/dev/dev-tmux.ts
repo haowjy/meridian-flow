@@ -14,13 +14,16 @@ import { applyDevEnvToProcess, resolveCheckoutSessionIdentity, runGit } from "./
 import { assertDevInfraReady } from "./lib/dev-infra";
 import { resolveSharedDevServicePorts, type SharedDevServicePorts } from "./lib/dev-share-ports";
 import { releaseFixedPorts } from "./lib/port-lifecycle";
+import { pidBelongsToCheckout, processWorkingDirectory } from "./lib/route-ownership";
 import { TailscaleDevLifecycle } from "./lib/tailscale-lifecycle";
-import { branchToPortlessPrefix } from "./portless-prefix";
+import { resolveCheckoutPortlessPrefix } from "./portless-prefix";
 import {
   type ExpectedServiceName,
   type ExternalDevRoute,
+  expectedServiceHost,
   formatDevRouteLines,
   getExpectedServicesForMode,
+  parsePortlessListOutput,
   resolveExpectedRouteUrls,
   validateExpectedRoutes,
 } from "./portless-routes";
@@ -37,21 +40,6 @@ interface PortlessState {
   serviceOrigins: Partial<Record<ExpectedServiceName, string>>;
   healthy: boolean;
   errors: string[];
-}
-
-function isLinkedWorktree(): boolean {
-  const gitDir = runGit(repoRoot, ["rev-parse", "--git-dir"]);
-  const commonDir = runGit(repoRoot, ["rev-parse", "--git-common-dir"]);
-  if (!gitDir || !commonDir) return false;
-
-  const resolvedGitDir = path.resolve(repoRoot, gitDir);
-  const resolvedCommonDir = path.resolve(repoRoot, commonDir);
-  return resolvedGitDir !== resolvedCommonDir;
-}
-
-function detectWorktreePrefix(branchName: string): string | undefined {
-  if (!isLinkedWorktree()) return undefined;
-  return branchToPortlessPrefix(branchName);
 }
 
 function isDevMode(value: string | null | undefined): value is DevMode {
@@ -79,7 +67,18 @@ function readPortlessState(
     };
   }
 
-  const validation = validateExpectedRoutes({ output: result.stdout, mode, worktreePrefix });
+  const ports = resolveSharedDevServicePorts({
+    mode,
+    worktreeKey: repoRootRealpath,
+    services: sharedServiceNamesForMode(mode),
+  });
+  const validation = validateExpectedRoutes({
+    output: result.stdout,
+    mode,
+    worktreePrefix,
+    expectedPorts: Object.fromEntries(ports.map((entry) => [entry.service, entry.appBackendPort])),
+    ownsPid: (pid) => pidBelongsToCheckout(pid, repoRootRealpath),
+  });
   return {
     lines: formatDevRouteLines(result.stdout, mode, worktreePrefix, externalRoutes),
     servicePids: validation.servicePids,
@@ -121,18 +120,50 @@ function writeJsonMetadata(metadata: DevSessionMetadata): void {
   fs.writeFileSync(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
 }
 
+function checkRouteConflicts(
+  tmuxStore: TmuxSessionStore,
+  mode: DevMode,
+  worktreePrefix: string | undefined,
+  force: boolean,
+): void {
+  const result = tmuxStore.run("pnpm", ["portless:list"]);
+  if (result.status !== 0)
+    throw new Error(result.stderr.trim() || "cannot inspect Portless routes");
+  const expected = new Set(
+    getExpectedServicesForMode(mode).map((service) =>
+      expectedServiceHost(service.name, worktreePrefix),
+    ),
+  );
+  const conflicts = parsePortlessListOutput(result.stdout).routes.filter((route) =>
+    expected.has(route.host),
+  );
+  for (const route of conflicts) {
+    const cwd = route.pid ? processWorkingDirectory(route.pid) : undefined;
+    console.warn(
+      `${force ? "taking over" : "route conflict:"} ${route.host} from PID ${route.pid ?? "unknown"} (${cwd ?? "checkout unknown"}, backend ${route.port})`,
+    );
+  }
+  if (conflicts.length && !force) {
+    throw new Error(
+      "expected routes are already registered; use pnpm dev --restart or pnpm dev --force to take over",
+    );
+  }
+}
+
 function writeMetadataWithoutExternalRoutes({
   branch,
   sessionName,
   mode,
   displayCommand,
   createdAt,
+  worktreePrefix,
 }: {
   branch: string;
   sessionName: string;
   mode: DevMode;
   displayCommand: string;
   createdAt?: string;
+  worktreePrefix?: string;
 }): void {
   writeJsonMetadata({
     branch: branch || "detached",
@@ -141,6 +172,7 @@ function writeMetadataWithoutExternalRoutes({
     command: displayCommand,
     createdAt: createdAt ?? new Date().toISOString(),
     externalRoutes: [],
+    worktreePrefix,
   });
 }
 
@@ -279,6 +311,7 @@ async function printExistingSessionInfo({
       mode,
       displayCommand,
       createdAt,
+      worktreePrefix,
     });
     failAndExit(
       `dev session exists but Tailscale route verification failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -289,6 +322,14 @@ async function printExistingSessionInfo({
   }
 
   const verifiedRouteState = readPortlessState(tmuxStore, mode, worktreePrefix, externalRoutes);
+  if (!verifiedRouteState.healthy) {
+    failAndExit(
+      `route ownership changed during readiness: ${verifiedRouteState.errors.join("; ")}`,
+      "inspect logs/routes and restart with pnpm dev --restart",
+      sessionName,
+      verifiedRouteState.lines,
+    );
+  }
 
   writeJsonMetadata({
     branch: branch || "detached",
@@ -297,6 +338,7 @@ async function printExistingSessionInfo({
     command: displayCommand,
     createdAt: createdAt ?? new Date().toISOString(),
     externalRoutes,
+    worktreePrefix,
   });
 
   printSessionInfo({
@@ -378,8 +420,8 @@ async function main(): Promise<void> {
   applyModeEnv(mode);
 
   const previous = readJsonMetadata();
-  const worktreePrefix = detectWorktreePrefix(branchName);
-  const previousWorktreePrefix = previous ? detectWorktreePrefix(previous.branch) : undefined;
+  const worktreePrefix = resolveCheckoutPortlessPrefix(repoRoot);
+  const previousWorktreePrefix = previous?.worktreePrefix;
   const sharedPorts = resolveSharedDevServicePorts({
     mode,
     worktreeKey: repoRootRealpath,
@@ -392,6 +434,7 @@ async function main(): Promise<void> {
       mode,
       sharedPorts,
       worktreePrefix,
+      force: cliOptions.restart,
     });
     printDryRun({
       sessionName: identity.sessionName,
@@ -421,6 +464,7 @@ async function main(): Promise<void> {
     mode,
     sharedPorts,
     worktreePrefix,
+    force: cliOptions.restart,
   });
 
   // Fail fast if the dev database is unset or unreachable: the app servers boot
@@ -432,6 +476,7 @@ async function main(): Promise<void> {
   const nodeDnsName = mode === "local" ? undefined : tailscale.resolveNodeDnsName();
 
   if (cliOptions.restart) {
+    checkRouteConflicts(tmuxStore, mode, worktreePrefix, true);
     tailscale.cleanupExternalRoutes({ previousRoutes: previous?.externalRoutes, sharedPorts });
     teardownExistingSessions(tmuxStore, [identity.sessionName, previous?.sessionName ?? ""]);
     await releaseFixedBackendPorts(sharedPorts);
@@ -487,6 +532,7 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (!cliOptions.restart) checkRouteConflicts(tmuxStore, mode, worktreePrefix, false);
   await tailscale.pruneStaleRoutes();
 
   const createResult = tmuxStore.createSession(identity.sessionName);
@@ -535,6 +581,7 @@ async function main(): Promise<void> {
       sessionName: identity.sessionName,
       mode,
       displayCommand: devCommand.display,
+      worktreePrefix,
     });
     failAndExit(
       `dev session started but Tailscale route verification failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -545,6 +592,14 @@ async function main(): Promise<void> {
   }
 
   const verifiedRouteState = readPortlessState(tmuxStore, mode, worktreePrefix, externalRoutes);
+  if (!verifiedRouteState.healthy) {
+    failAndExit(
+      `route ownership changed during readiness: ${verifiedRouteState.errors.join("; ")}`,
+      "inspect logs/routes and restart with pnpm dev --restart",
+      identity.sessionName,
+      verifiedRouteState.lines,
+    );
+  }
 
   writeJsonMetadata(
     buildMetadata({
@@ -553,6 +608,7 @@ async function main(): Promise<void> {
       mode,
       displayCommand: devCommand.display,
       externalRoutes,
+      worktreePrefix,
     }),
   );
 

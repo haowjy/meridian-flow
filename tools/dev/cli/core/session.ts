@@ -8,7 +8,7 @@ import https from "node:https";
 import path from "node:path";
 import { deserializeTransport } from "@meridian/contracts/protocol";
 import { portlessCa } from "../../dev-readiness";
-import { branchToPortlessPrefix } from "../../portless-prefix";
+import { resolveCheckoutPortlessPrefix } from "../../portless-prefix";
 import { resolveExpectedRouteUrls } from "../../portless-routes";
 import { CliError } from "./cli-error";
 
@@ -226,16 +226,10 @@ function resolvePortlessOrigins(repoRoot: string): { app: string; server: string
   } catch {
     throw new CliError("unavailable", "Portless is not running", { hint: STACK_HINT });
   }
-  const branch = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
-    cwd: repoRoot,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-    timeout: 5_000,
-  }).trim();
   const urls = resolveExpectedRouteUrls({
     output,
     mode: "local",
-    worktreePrefix: branchToPortlessPrefix(branch),
+    worktreePrefix: resolveCheckoutPortlessPrefix(repoRoot),
   });
   if (!urls.app || !urls.server) {
     throw new CliError("unavailable", "This worktree's app/server routes are not running", {
