@@ -4,11 +4,13 @@ import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { testFileGrant } from "../../test-support/file-grants.js";
+import { releaseDocumentStorage, tombstoneDocuments } from "../context/tree/node-rows.js";
 import {
   ALPHA_ID,
+  BETA_ID,
   closeDatabase,
   createTestDatabase,
-  PROJECT_ID,
   resetDatabase,
   schema,
   THREAD_ID,
@@ -198,6 +200,47 @@ it("Discard of the mixed document's Undo change reactivates its applied part", a
       }),
     ).toMatchObject({ status: "partial", acceptedParts: 1 });
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
+  } finally {
+    harness.cancelScheduledPulls();
+    harness.destroyWarmState();
+  }
+});
+
+it("a tombstoned draft document with released storage does not stop another document's receipt from offering Undo", async () => {
+  const { harness, view, responseId, context } = await fixture();
+  try {
+    const betaContext = {
+      ...context,
+      grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" }, BETA_ID),
+    };
+    await view.collab.agentEdit().read(
+      { file: "beta.md", documentId: BETA_ID },
+      {
+        ...betaContext,
+        responseIdentity: undefined,
+      },
+    );
+    for (const [documentId, file, ctx] of [
+      [ALPHA_ID, "alpha.md", context],
+      [BETA_ID, "beta.md", betaContext],
+    ] as const)
+      expect(
+        await view.collab
+          .agentEdit()
+          .write(
+            { command: "insert", documentId, file, content: "Agent.", tool_use_id: file },
+            ctx,
+          ),
+      ).toMatchObject({ status: "success" });
+    await harness.commit(responseId);
+    // What Discard of a draft-created document leaves: tombstoned row, released storage, edit rows kept.
+    await db.transaction(async (tx) => {
+      await tombstoneDocuments(tx as never, [BETA_ID]);
+      await releaseDocumentStorage(tx as never, [BETA_ID]);
+    });
+    expect(await view.collab.getTurnReceiptChip(THREAD_ID, TURN_ID)).toMatchObject({
+      control: "undo",
+    });
   } finally {
     harness.cancelScheduledPulls();
     harness.destroyWarmState();
