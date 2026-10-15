@@ -156,6 +156,39 @@ follows no run since #849; `./mf thread send` is its caller) and stream frames a
 The record arrives whole on every carrier (snapshot, `subscribed`,
 `meridian.run_state`, every command answer), so no host composes one from parts.
 
+## Hand-back operation (`src/hand-back/`)
+
+One framework-free operation runs Stop, the queue's x and Cancel queue for the app and `./mf`
+(`createHandBackOperation({ threadId, ports })`: `press`, `resume`, `retry`, `dismiss`,
+`reconcile`, `unresolved`). Clients contribute only ports and printing.
+
+- **Ports.** `http(path, body)` returns `{ status, body }` or `{ status: null }`, never a typed
+  error. `runState` is the narrow `RunStatePort` (receive a record; add, answer, fail or drop a
+  hand-back intent); `viewRunStatePort` builds one over a held `RunStateView`. `removeTurns(ids,
+  version)` carries the record's version. `store` is the pending-command store (`pending`,
+  `record`, `received`, `accept`, `drop`; each write says whether it took).
+- **Order.** Save the command (a refusal sends nothing: `unsaved`), add the intent so rows hide,
+  post, classify, and only then change state. Confirmed: receive the record, remove `handedBack`
+  and `gone` turns at its version, `accept` the content once (or `drop` on a lost race, writing
+  nothing), answer the intent. A failed `accept` is `unwritten`: the command stays and a replay
+  brings the same content.
+- **Classifier** (`classify.ts`). Confirmed is a 2xx whose body the contract response schema
+  (`stopResponseSchema`, `handBackResponseSchema`, `sendNowResponseSchema`) accepts in full, the
+  whole `runState` included. Refused is a definite 400, 404 or 409. Anything else (no answer, 5xx,
+  a body that fails validation) is ambiguous and carries the frozen request. Validation finishes
+  before any state-changing port is called.
+- **Unresolved and cards.** `unresolved()` lists commands that still owe the writer something
+  (`ambiguous`, `unwritten`, `unsaved`, `refused`); the first two stay in the store, the last two
+  live in page memory. `reconcile()` (host-called) drops entries whose command left the store or
+  whose content arrived. `handBackCards(unresolved, view)` projects the notice-stack cards (copy,
+  count, retry or dismiss) from them plus a failed Send now, with no dependence on rows.
+- **Send now** is not a hand-back command: `postSendNow(ports, threadId, body)` shares the
+  classifier and returns confirmed (`cancelledExecutionId`; null means this attempt requested no
+  cancellation), refused, or ambiguous with the frozen body. `sendNowRequest(view)` builds the body.
+- **L1 seams.** The builders (`stopRequest`, `waitingWriterMessages`, `sendNowRequest`) read only a
+  `RunStateView`; a shared session would implement `RunStatePort` so command records pass its one
+  version check.
+
 ## Thread wire protocol and recovery
 
 The thread socket's client wire vocabulary is `subscribe`, `unsubscribe`,
