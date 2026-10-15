@@ -14,7 +14,7 @@ import type { ContextSourceId, DocumentId, DraftId, FolderId, WorkId } from "@me
 import { folderDocumentName, renderFilename } from "@meridian/contracts/protocol";
 import type { JsonObject } from "@meridian/contracts/threads";
 import { documents, folders } from "@meridian/database/schema";
-import { getTableColumns, type SQL, Subquery, sql } from "drizzle-orm";
+import { type AnyColumn, getTableColumns, type SQL, Subquery, sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
@@ -422,6 +422,14 @@ export async function loadWorkRestoreNamespaceRows(
 
 export function documentHiddenSql(alias: string): SQL {
   return sql.raw(`${alias}.hidden`);
+}
+
+/**
+ * Predicate on a document-id expression: the document exists and is not tombstoned.
+ * For readers that hold ids from another table and compose one query, not a second round trip.
+ */
+export function documentNotDeletedSql(documentId: SQL | AnyColumn): SQL {
+  return sql`exists (select 1 from documents d where d.id = ${documentId} and d.deleted_at is null)`;
 }
 
 function uuidList(ids: readonly string[]): SQL {
