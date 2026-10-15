@@ -881,3 +881,29 @@ const doors: DoorCase[] = [
 it("A1-5: no write door loses or churns refs", async () => {
   for (const door of doors) await door.run();
 });
+
+it("qualifies a freshly written bare uploads link or picture to the writing chat and leaves code and prose alone", async () => {
+  const ctx = linkHarness({
+    holder: { id: H, uri: HOLDER },
+    documents: [],
+    blocks: [paragraph("Plain prose.")],
+  });
+  const content = [
+    "Use `uploads://name` for this chat.",
+    "",
+    "```text",
+    "uploads://sample.png",
+    "```",
+    "",
+    "![](uploads://my%20pic.png) and [file](uploads://name.md#top)",
+  ].join("\n");
+  const outcome = await ctx.core.write(
+    { file: "holder", documentId: H, command: "replace", in: [1, 1], content } as never,
+    { sessionId: "session-a", threadId: "thread-a", uploadsChat: "c3" },
+  );
+  expect(outcome.status).toBe("success");
+  const stored = await ctx.markdown();
+  expect(stored).toContain("`uploads://name`");
+  expect(stored).toContain("uploads://sample.png\n```");
+  expect(stored).toContain("![](<uploads://@/c3/my pic.png>) and [file](uploads://@/c3/name#top)");
+});
