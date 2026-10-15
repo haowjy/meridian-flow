@@ -123,10 +123,9 @@ export function useChatLinkFollowing({
       }),
     [activeWork, projectId, threadKnown, threadWorkId, noWorkId, lineageId, worksStatus],
   );
-  const index = useLinkableDocuments({
-    ...(scope === "pending" ? { projectId: null, workId: null } : scope),
-    withDraftDocuments: true,
-  });
+  const index = useLinkableDocuments(
+    scope === "pending" ? { projectId: null, workId: null } : scope,
+  );
 
   const openReferenceDocument = useOpenChatDocument(projectId);
   const openLive = useCallback<LinkDestination>(

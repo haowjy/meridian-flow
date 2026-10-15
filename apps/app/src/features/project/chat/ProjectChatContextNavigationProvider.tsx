@@ -5,7 +5,7 @@
  * A door asks the question a transcript link asks, through the same follower
  * (`features/links`): what document is at this address, and is it live or only in a
  * draft? A live answer opens where the door always opened it; a hidden document goes
- * to its Work's review by item identity (a plain address of it is refused by design);
+ * to its Work's review by item identity (the server names a draft-created document at its address);
  * a missing one routes anyway, so the route says so in place. A cold answer rides the
  * follower's own checking and failure states. This file keeps only the door's own
  * policy: placement (the Editor route, or the dock beside the chat) and its dock claim.
@@ -16,7 +16,7 @@
  * resolving. It never gates the route change, so a search row whose passage has moved
  * still opens its document.
  */
-import { type ReactNode, useCallback, useContext, useEffect, useMemo, useRef } from "react";
+import { type ReactNode, useCallback, useContext, useMemo, useRef } from "react";
 import { useLineage } from "@/client/query/useLineageTitle";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorks } from "@/client/query/useWorks";
@@ -26,7 +26,6 @@ import {
   type ContextPassageAnchor,
 } from "@/features/chat/ChatContextNavigation";
 import {
-  CHECKING_DELAY_MS,
   type FollowReporter,
   type LinkDestination,
   LinkFollowDialog,
@@ -49,9 +48,6 @@ import { canonicalDoorUri } from "./canonical-door-uri";
 import { usePassageDoors } from "./usePassageDoors";
 
 type OpenContextTarget = (target: ContextRouteRequest) => void;
-
-/** How long a "missing" answer waits for the Work's draft list before the route says so. */
-const MISSING_HOLD_MS = 4000;
 
 /** The door being followed: what the follower's destination needs besides the answer. */
 type DoorIntent = {
@@ -177,71 +173,24 @@ export function ProjectChatContextNavigationProvider({
         : null,
     [activeWork, noWorkId, projectId, rootThreadId],
   );
-  const index = useLinkableDocuments({
-    ...(scope ?? { projectId: null, workId: null }),
-    withDraftDocuments: true,
-  });
+  const index = useLinkableDocuments(scope ?? { projectId: null, workId: null });
   const { outcome, reporter: outcomeReporter } = useFollowOutcomeState();
-  // Nothing at the address is not this door's to announce: the route says so in place. But the
-  // server cannot see a document that exists only in the Work's draft, so while the index is
-  // still loading that list, "missing" is held for one more look: shown as checking after the
-  // follower's usual delay, and routed anyway if the list never arrives.
-  const held = useRef<{ door: DoorIntent; timers: ReturnType<typeof setTimeout>[] } | null>(null);
-  const releaseHeld = useCallback(() => {
-    for (const timer of held.current?.timers ?? []) clearTimeout(timer);
-    held.current = null;
-  }, []);
-  const indexComplete = useRef(index.complete);
-  indexComplete.current = index.complete;
-  const routeMissing = useCallback(
-    (door: DoorIntent) => {
-      outcomeReporter.clear();
-      const dock = useDockDocumentStore.getState();
-      if (door.claim !== null && !dock.isCurrent(door.claim)) return;
-      route(door);
-      doorOpened({ ...door.target, uri: door.uri }, door.passage);
-    },
-    [doorOpened, outcomeReporter, route],
-  );
+  // Nothing at the address is not this door's to announce: the route says so in place.
   const reporter = useMemo<FollowReporter>(
     () => ({
       clear: outcomeReporter.clear,
       report(result) {
-        if (result.state !== "missing") return outcomeReporter.report(result);
         const door = intent.current;
-        if (!door) return;
-        if (indexComplete.current) return routeMissing(door);
+        if (result.state !== "missing" || !door) return outcomeReporter.report(result);
         outcomeReporter.clear();
-        releaseHeld();
-        held.current = {
-          door,
-          timers: [
-            setTimeout(
-              () => outcomeReporter.report({ ...result, state: "checking" }),
-              CHECKING_DELAY_MS,
-            ),
-            setTimeout(() => {
-              held.current = null;
-              if (intent.current === door) routeMissing(door);
-            }, MISSING_HOLD_MS),
-          ],
-        };
+        if (door.claim !== null && !useDockDocumentStore.getState().isCurrent(door.claim)) return;
+        route(door);
+        doorOpened({ ...door.target, uri: door.uri }, door.passage);
       },
     }),
-    [outcomeReporter, releaseHeld, routeMissing],
+    [doorOpened, outcomeReporter, route],
   );
   const follower = useLinkFollower({ scope, index, open, reporter });
-  useEffect(() => {
-    const waiting = held.current;
-    if (!index.complete || !waiting) return;
-    releaseHeld();
-    if (intent.current === waiting.door) follower.follow(waiting.door.link);
-  }, [follower, index.complete, releaseHeld]);
-  useEffect(() => releaseHeld, [releaseHeld]);
-  const dismiss = useCallback(() => {
-    releaseHeld();
-    follower.dismiss();
-  }, [follower, releaseHeld]);
 
   const openContextUri = useCallback(
     (uri: string, passage?: ContextPassageAnchor) => {
@@ -262,7 +211,6 @@ export function ProjectChatContextNavigationProvider({
       const catalogUri = canonicalDoorUri(target, { ownerRef, workSlug }) ?? uri;
       // The dock is claimed now, so whatever answers later is inside the claim.
       const claim = besideChat ? useDockDocumentStore.getState().claim() : null;
-      releaseHeld();
       const link = classifyLinkTarget(catalogUri);
       if (!link) return route({ target });
       const door = { target, uri: catalogUri, passage, claim, link };
@@ -277,7 +225,6 @@ export function ProjectChatContextNavigationProvider({
       onOpenContextTarget,
       besideChat,
       follower,
-      releaseHeld,
       route,
       rootThreadId,
       ownHandle,
@@ -302,7 +249,7 @@ export function ProjectChatContextNavigationProvider({
         outcome={outcome}
         projectId={projectId}
         scratchRootThreadId={scope?.rootThreadId ?? null}
-        onClose={dismiss}
+        onClose={follower.dismiss}
         onRetry={follower.retry}
         onOpen={(document) => open(document, "current")}
       />

@@ -18,12 +18,6 @@ Markdown link to an address; `[[name]]` is text and never reaches here.
 - Register a resolver on every scope change. Registration is the sole cache
   invalidation; creates, moves, and deletes are catalog changes. Local answers
   paint immediately, while remote answers replace provisional ones.
-- The server answers a ref-less address from the live tree, so it never names a
-  document only a draft created. Chat scope (`withDraftDocuments`) therefore also
-  indexes the Work's created-and-hidden documents from the projected draft list,
-  after every live entry (a live document at the same address wins), and the
-  index is not complete until that list settles. Editors do not: their links
-  resolve against the live tree.
 - Surfaces call only the single follow procedure and injected `open`; they do
   not inspect resolution to decide navigation. Aborts stop before opening;
   newer current follows replace older ones, while new-tab follows are retained.
