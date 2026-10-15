@@ -13,7 +13,7 @@
  * snapshot answers for the operation that opened it and nested doors join it;
  * work that only inherited a settled snapshot, such as a timer, opens its own.
  */
-import type { LinkView } from "@meridian/contracts";
+import type { CatalogDocument, LinkView } from "@meridian/contracts";
 import type { PMNode } from "@meridian/markup";
 import type { HolderLinkScope } from "@meridian/markup/links";
 import type * as Y from "yjs";
@@ -73,6 +73,13 @@ export interface DocumentLinkScopes {
    * `uri` null). Resolution never reads the holder; only spelling would.
    */
   reader(input: { uri: string | null; view: LinkView }): HolderLinkScope;
+  /**
+   * The document a draft view created at an address (exact, else the one extension-omitted
+   * match), once `prepare` has loaded that address. Typed links never bind to a draft's
+   * hidden document; this is how an address names one. Null for the live view, another
+   * draft's creation, or what the reader may not read.
+   */
+  draftCreatedAt(input: { view: LinkView; uri: string }): CatalogDocument | null;
   /**
    * Pins the holder a reader door reads bindings for, in `view`: an explicit id when that
    * document is visible there (wherever it now sits), else the one document at `uri`.
