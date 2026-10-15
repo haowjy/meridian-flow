@@ -120,6 +120,12 @@ it("applies journal-only deltas between the replay cursor and nextSeq, and rejec
     expect(followed.awaitsAnchor()).toBe(false);
     // Recovery overwrote the stream's evidence: comparing now would measure the server against itself.
     expect(followed.compare(wire.snapshot, ["sys-2"], false)).toEqual({ liveView: "not_observed" });
+    // A start frame queued behind the recovery must not make the snapshot's text stream evidence again.
+    followed.apply(
+      event({ type: EventType.RUN_STARTED, threadId: THREAD_ID, runId: "sys-2" }),
+      "2",
+    );
+    expect(followed.compare(wire.snapshot, ["sys-2"], false)).toEqual({ liveView: "not_observed" });
   } finally {
     await wire.close();
   }
