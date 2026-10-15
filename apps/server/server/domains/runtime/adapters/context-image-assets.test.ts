@@ -18,7 +18,7 @@ const reference = {
 };
 
 function assetPort(input: {
-  availability: { kind: string; entry?: { uri: string } };
+  availability: { kind: string; entry?: { uri: string; scope?: { kind: string } } };
   failure?: "availability" | "identity" | "object";
   identity?: {
     mimeType: string | null;
@@ -85,6 +85,15 @@ describe("context image resolution", () => {
         availability: { kind: "available", entry: { uri: "uploads://@/renamed.png" } },
       }).resolve(context, reference, { maxBytes: 1024 }),
     ).resolves.toBeNull();
+    // A chat's upload matches by document identity, not by how its address was spelled.
+    await expect(
+      assetPort({
+        availability: {
+          kind: "available",
+          entry: { uri: "uploads://@/c15/image.png", scope: { kind: "chat" } },
+        },
+      }).resolve(context, reference, { maxBytes: 1024 }),
+    ).resolves.toMatchObject({ mediaType: "image/png" });
   });
 
   it("throws only when availability is indeterminate", async () => {
