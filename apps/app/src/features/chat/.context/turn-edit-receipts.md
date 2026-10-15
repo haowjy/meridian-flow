@@ -26,6 +26,14 @@ reply created in a draft has none until Apply reveals it. A reply that only
 creates draft documents shows no card until Apply makes one appear. Settled live trails
 add retained Before/After excerpts; pending draft rows name the edited files.
 
+The word totals diverge as well. The card reads them from the mutable change
+trail (`changeTrail.wordsAdded` and `wordsRemoved`), and Apply's settlement
+writes those, so a finished reply's totals appear or change after Apply. The
+merge Apply can also count the writer's own draft typing that was published with
+it. The planned fix renders the receipt from a snapshot of the reply's targets
+and word deltas taken when the reply finishes ([#843][issue-843], with
+[#844][issue-844]'s split of historical from reversible targets).
+
 The receipt reads server lineage, never tool results. A binary copy (an upload
 such as a PDF, copied at once with no write handle) leaves no journal row, so it
 is not counted as an edit. Captured Before/After excerpts remain visible after
@@ -72,3 +80,4 @@ everything that could complete it. A stage deadline in the controller is only a
 backstop for the case no surface can report: a stage whose surface never mounts.
 
 [issue-843]: https://github.com/haowjy/meridian-flow/issues/843
+[issue-844]: https://github.com/haowjy/meridian-flow/issues/844
