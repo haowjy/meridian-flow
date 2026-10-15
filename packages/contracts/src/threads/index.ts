@@ -392,6 +392,12 @@ export interface Turn {
    * Null while undelivered and on every other turn.
    */
   delivery: TurnDelivery | null;
+  /**
+   * The turn that retried this failed attempt or moved the chat past it; write-once. A forgotten turn
+   * stays in the graph but has left the conversation. Null on every turn the chat still holds, and on
+   * local and optimistic turns. A reader applies it only when the forgetting turn is inside the span it reads.
+   */
+  forgottenBy: string | null;
   /** Set once on a completed prompt-epoch boundary. */
   promptBakeId: PromptBakeId | null;
   compactionModel?: string | null;

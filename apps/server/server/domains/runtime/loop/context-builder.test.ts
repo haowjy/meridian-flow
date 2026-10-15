@@ -71,6 +71,7 @@ function turn(role: Turn["role"], id = TURN_ID): Turn {
     executionId: null,
     reservedForUserTurnIds: [],
     delivery: null,
+    forgottenBy: null,
     siblingIds: [],
     responses: [],
   };

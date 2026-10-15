@@ -88,6 +88,7 @@ export function mapTurn(row: typeof schema.turns.$inferSelect): Turn {
     reservedForUserTurnIds: row.reservedForUserTurnIds ?? [],
     // Delivery is joined from the inbox by the reads that expose it (the snapshot).
     delivery: null,
+    forgottenBy: row.forgottenByTurnId,
     promptBakeId: row.promptBakeId,
     compactionModel: row.compactionModel,
     finishReason: row.finishReason as Turn["finishReason"],

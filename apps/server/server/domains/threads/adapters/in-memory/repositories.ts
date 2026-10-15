@@ -149,6 +149,7 @@ function defaultTurn(input: CreateTurnInput): Omit<Turn, "position"> {
     executionId: input.executionId ?? null,
     reservedForUserTurnIds: [...(input.reservedForUserTurnIds ?? [])],
     delivery: null,
+    forgottenBy: null,
     promptBakeId: input.promptBakeId ?? null,
     compactionModel: input.compactionModel ?? null,
     parentTurnId: input.prevTurnId ?? null,
