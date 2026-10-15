@@ -18,7 +18,6 @@ export type UserTurnProps = {
   writer: WriterText;
   /** True while the accepted writer turn has not yet been read by the model. */
   queued?: boolean;
-  waitingForUsage?: boolean;
   /** Retry and, after a durable server refusal, Edit on the unadmitted writer row. */
   submissionRecovery?: UserTurnRecovery | null;
 };
@@ -28,7 +27,6 @@ function UserTurnComponent({
   writer: projected,
   submissionRecovery = null,
   queued = false,
-  waitingForUsage = false,
 }: UserTurnProps) {
   // Hand off from a message the model has. A queued one sits beyond the
   // cutoff the server would use, so it offers none.
@@ -78,7 +76,7 @@ function UserTurnComponent({
           role="status"
           className="mt-[var(--chat-space-inline)] text-right text-xs text-muted-foreground"
         >
-          {waitingForUsage ? t`Waiting for usage` : t`Queued`}
+          {t`Queued`}
         </p>
       ) : null}
       {turn.status === "error" && submissionRecovery?.moving ? (
@@ -144,7 +142,6 @@ export const UserTurn = memo(
     prev.turn === next.turn &&
     prev.writer === next.writer &&
     prev.submissionRecovery === next.submissionRecovery &&
-    prev.queued === next.queued &&
-    prev.waitingForUsage === next.waitingForUsage,
+    prev.queued === next.queued,
 );
 UserTurn.displayName = "UserTurn";
