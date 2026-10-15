@@ -5,10 +5,11 @@
  * with the caller.
  */
 import type { Turn } from "@meridian/contracts/protocol";
-import { retryTargetOf } from "../run-state/retry";
+import { retryTargetOf } from "@meridian/contracts/threads";
 import { type AssistantView, viewAssistantTurn } from "./assistant-view";
 import { groupDeliveryEvents } from "./delivery-groups";
 import { isOptimisticTurnId } from "./optimistic-turn-id";
+import { replyDrawsNothing } from "./reply-draws-nothing";
 import { placeStandIns } from "./retry-stand-ins";
 import {
   buildTranscriptModel,
@@ -137,7 +138,15 @@ export function viewTranscript(input: TranscriptViewInput): TranscriptView {
     const target = retryTargetOf(turn);
     if (target !== null) retried.add(target);
   }
-  const turns = placed.filter((turn) => !retried.has(turn.id) && !input.hidden?.has(turn.id));
+  // A forgotten local turn has left the conversation: no row. Only a refused Retry's card still needs its
+  // reply's row. Inherited rows are never filtered by stamp: page membership is authoritative, and the server
+  // already applied the stamps inside the fork's span.
+  const turns = placed.filter(
+    (turn) =>
+      !retried.has(turn.id) &&
+      !input.hidden?.has(turn.id) &&
+      (turn.forgottenBy == null || input.refused?.has(turn.id)),
+  );
   // Provenance is stated, never read from an id's shape: only the server's own turns are named.
   const stored = new Set(input.turns.map((turn) => turn.id));
   const unconfirmed = new Set(standIns.map((turn) => turn.id).filter((id) => !stored.has(id)));
@@ -154,13 +163,14 @@ export function viewTranscript(input: TranscriptViewInput): TranscriptView {
   let latest = model.rows.length - 1;
   while (latest > 0 && model.rows[latest]?.kind === "write-mode") latest -= 1;
   const leavesNoTrace = (row: TranscriptRow, index: number) =>
-    row.kind === "turn" &&
-    row.turn.role === "assistant" &&
+    (row.kind === "compaction" || (row.kind === "turn" && row.turn.role === "assistant")) &&
     row.turn.status === "error" &&
     index !== latest &&
     !input.refused?.has(row.turn.id) &&
-    viewAssistantTurn(row.turn).items.length === 0 &&
-    !model.deliveryEventsByAssistantTurnId.get(row.turn.id)?.length;
+    replyDrawsNothing(
+      row.turn,
+      (model.deliveryEventsByAssistantTurnId.get(row.turn.id) ?? []).map((event) => event.turn),
+    );
   const occurrences = new Map<string, number>();
   const writer = new Map<string, WriterText>();
   const items = new Map<string, AssistantView>();
