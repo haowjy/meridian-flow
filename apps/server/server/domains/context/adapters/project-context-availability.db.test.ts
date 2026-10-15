@@ -93,8 +93,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { id: PROJECT_SOURCE, projectId: PROJECT, name: "Manuscript", slug: "manuscript" },
         {
           id: NONE_SOURCE,
-          workId: NO_WORK,
-          scope: "work",
+          projectId: PROJECT,
+          chatThreadId: "00000000-0000-4000-8000-000000000939",
+          scope: "chat",
           name: "Uploads",
           slug: "uploads",
         },
@@ -138,7 +139,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         result.resolutions
           .slice(0, 4)
           .map((item) => (item.kind === "available" ? item.authority.kind : "wrong")),
-      ).toEqual(["project", "work", "work", "user"]);
+      ).toEqual(["project", "chat", "work", "user"]);
       const unknown = await availability.lookup(
         {
           projectId: PROJECT as never,
