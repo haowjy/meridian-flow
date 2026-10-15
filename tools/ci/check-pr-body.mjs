@@ -45,16 +45,6 @@ const headings = template
   .filter((line) => line.startsWith("## "))
   .map((line) => line.trim());
 
-/** Optional when the first comment after the heading starts with "Optional." */
-function isOptional(heading) {
-  const lines = template.split("\n");
-  const start = lines.findIndex((line) => line.trim() === heading);
-  const rest = lines.slice(start + 1);
-  const end = rest.findIndex((line) => line.startsWith("## "));
-  const section = rest.slice(0, end === -1 ? rest.length : end).join("\n");
-  return /^\s*<!--\s*Optional\./.test(section);
-}
-
 // Every non-empty template line, comments stripped: the scaffold an author
 // starts from. A body line only counts as authored if it isn't one of these.
 const scaffoldLines = new Set(
@@ -98,13 +88,13 @@ const changedFiles = readFileSync(process.argv[2], "utf8")
   .filter(Boolean);
 
 const failures = [];
-const optional = new Set(headings.filter(isOptional));
-const unfilled = new Set();
+// The template marks a section optional with a comment opening "Optional.".
+const required = headings.filter(
+  (heading) => !/^\s*<!--\s*Optional\./.test(sectionContent(template, heading)),
+);
 
-for (const heading of headings) {
+for (const heading of required) {
   const content = sectionContent(body, heading);
-  if (content === null || !hasAuthoredLine(content)) unfilled.add(heading);
-  if (optional.has(heading)) continue;
   if (content === null) {
     failures.push(`missing section: ${heading}`);
   } else if (!hasAuthoredLine(content)) {
@@ -120,7 +110,9 @@ if (touchesUi && !IMAGE.test(body) && !NO_VISUAL_CLAIM.test(body)) {
   );
 }
 
-if (unfilled.has(DB_HEADING) && changedFiles.some((file) => DB_FILE.test(file))) {
+const dbSection = sectionContent(body, DB_HEADING);
+const dbUnfilled = dbSection === null || !hasAuthoredLine(dbSection);
+if (dbUnfilled && changedFiles.some((file) => DB_FILE.test(file))) {
   console.log(
     "::warning::This PR changes the database schema or migrations but has no DB Changes " +
       "section. Add one that names the migrations and the changed tables.",
@@ -137,5 +129,4 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-const requiredCount = headings.length - optional.size;
-console.log(`PR body carries all ${requiredCount} required sections.`);
+console.log(`PR body carries all ${required.length} required sections.`);
