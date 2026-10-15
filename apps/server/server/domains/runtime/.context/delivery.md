@@ -87,11 +87,16 @@ validate under the same lock and refuse a flagged lease.
   when the writer saw it or it took on a message in P, unless it took on one in
   L. `decideHandBack` classifies each covered message as `gone` (another request
   handed it back), handed back, or `answered`.
-- **`handBack`** is the same operation for the queue's x and Cancel queue: scope
-  `ids` or `seen`, never cancels. Both write one `thread_hand_backs` row per
-  request id in the request's transaction. **A replay returns that stored
-  decision** with a fresh `runState` and flags nothing; the same id with another
-  body is `HandBackConflictError` (409).
+- **`handBack`** is the same operation for the queue's x and Cancel queue
+  (`POST /api/threads/:id/hand-back`, `HandBackRequest { requestId, ids }`,
+  `handBackRequestSchema`): the named ids only, never cancels. One queue per chat,
+  so any queued message can be named from any tab. The x sends its one id;
+  Cancel queue sends every id the client drew as queued, frozen at the press. Both
+  write one `thread_hand_backs` row per request id in the request's transaction.
+  **A replay returns that stored decision** with a fresh `runState` and flags
+  nothing; the same id with another body is `HandBackConflictError` (409).
+  `handBackFingerprint` keeps its canonical `ids` form, so decisions stored before
+  the `seen` scope left still replay.
 - **Applying a decision.** The hand-back row first (inbox rows reference it),
   then `inbox.ack` with `{ handedBackBy }`, the cancelled compaction's receipt
   strip, one `messages.handed_back` journal event, the usage-block clear, and
@@ -100,6 +105,43 @@ validate under the same lock and refuse a flagged lease.
   execution; a replay never aborts a newer one.
 - **Nothing is deleted.** The handed-back message's inbox row, turn and blocks
   stay for diagnostics.
+
+### The command module and Send now
+
+`adapters/thread-commands.ts` (`createThreadCommands(ports)`) owns the command
+lifecycle: `handBackRequest` (find the stored decision, read facts, decide, apply),
+`handBack`, `stop` and `sendNow`. Its ports are the thread lock, the optional
+`HandBackStore` (absent in the in-memory harness, where the commands throw), the
+inbox `ack` and `answerRunState`, the lease store's `lockThreadReceipt` and
+`setAdoptedMessageIds`, `appendEvent` and `clearBlockWhenIdle`. The delivery
+adapter spreads it into `RuntimeDelivery`; adoption and settlement stay there.
+The pure rules stay in `loop/stop-rule.ts`. `runner.handBack` passes through;
+`runner.stop` and `runner.sendNow` abort the local run when it holds the flagged
+execution.
+
+`POST /api/threads/:id/send-now` (`SendNowRequest { seenThrough, seenExecutionId,
+waiting }`) cancels the reply the writer saw so the whole queue runs in the next
+reply (inbox delivery adopts all waiting messages as one batch). It hands nothing
+back and stores no decision: `seenExecutionId` makes a repeat of the same body
+safe, and a lost answer is re-sent with the same body, never one rebuilt from a
+newer record.
+
+- **The rule** (`decideSendNow`, beside `decideStop`, sharing `takesOn`). W is the
+  `waiting` ids, L the writer rows above `seenThrough` that are not in W.
+  Cancel iff the open execution is `seenExecutionId` and has taken on no row in W
+  (too late: cancelling would answer the queue with a cancelled reply) and none
+  in L.
+- **The fact read** is Stop's `seen` scope: `readFacts(threadId, { kind: "seen",
+  seenThrough, mine: waiting })`, under the thread lock. It returns every
+  undelivered row, every row the open execution delivered, the W ids and earlier
+  hand-backs, with the receipt: every row for which `takesOn` can hold for the
+  open execution. **Never the ids-only scope**: it reads only W, so if an x took M2
+  back and the reply then adopted a later M3, it would miss M3 and cancel the
+  reply that is answering it. After a reply's acknowledgement clears the receipt,
+  the delivering turn's row (`byExecution`) is the evidence.
+- `cancelledExecutionId: null` means this attempt requested no cancellation; it
+  says nothing about the reply's fate. A 200 confirms the control answer, never
+  that the queue was answered.
 
 ### Leaving the chat: the graph and the conversation
 
