@@ -418,7 +418,10 @@ it.each([
       },
     },
   } as unknown as DocumentAddressResult);
-  const restored = await restoreDockDocument(candidate, replica);
+  // The saved candidate goes through persistence first: only the dock's own entry survives it.
+  const saved = reload(candidate).getState().restoring;
+  expect(saved).not.toBeNull();
+  const restored = await restoreDockDocument(saved as DockDocument, replica);
   expect(replica.admitReview).toHaveBeenCalledWith("project", review, {
     scheme: "manuscript",
     path: "/Old.md",

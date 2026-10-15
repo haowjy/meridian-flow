@@ -41,7 +41,9 @@ joining a room.
   Identical actionable stale answers get one fresh-cut retry; ambiguity and
   permission failures do not retry. Whole-draft commands settle the current
   server branch, and synthetic class keys never reach the server.
-- A draft-only tab is the document's one workspace tab and is not persisted.
+- A draft-only tab is the document's one workspace tab and Editor persistence
+  strips it. The dock persists its one `reviews` entry, the only record that a
+  restored tab is draft-only; settlement removes a stale entry.
   Apply settles it in place; gone/404 is not remote Discard evidence. Close and
   Discard target the exact document, Work, and draft identity.
 - Review chrome and rows stay one line; only the header shows completion and
