@@ -58,7 +58,7 @@ it("reads a chat's image with the chat, not the selected Work", async () => {
         await new Promise((resolve) => setTimeout(resolve, 20));
       });
       expect(getProjectContextRead).toHaveBeenCalledWith("project", "uploads", "/Map.png", {
-        chatId: "chat-1",
+        chatThreadId: "chat-1",
       });
       expect(document.querySelector('img[alt="Map.png"]')?.getAttribute("src")).toBe(
         "/signed-map.png",
