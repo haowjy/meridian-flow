@@ -31,7 +31,7 @@ import type { ChatStop } from "./useChatStop";
 import type { ReplyRetry } from "./useReplyRetry";
 import { useTurnRevealLanding } from "./useTurnRevealLanding";
 
-/** What the queued rows' status lines can do; the hooks behind them are `useQueueControls` and `useSendNow`. */
+/** What the queued rows can do; the hooks behind them are `useQueueControls` and `useSendNow`. */
 export type TurnQueueControls = {
   /** The x on a queued row. */
   remove: (turnId: string) => void;

@@ -3188,8 +3188,8 @@ msgid "Put the caret in a table first."
 msgstr "Put the caret in a table first."
 
 #: src/features/chat/UserTurn.tsx
-msgid "Queued"
-msgstr "Queued"
+#~ msgid "Queued"
+#~ msgstr "Queued"
 
 #: src/features/chat/thread-controls/QueuedControlRows.tsx
 msgid "Queued commands"
@@ -4984,6 +4984,10 @@ msgstr "Your message"
 #: src/features/chat/DeletedChatNotice.tsx
 msgid "Your message is below."
 msgstr "Your message is below."
+
+#: src/features/chat/UserTurn.tsx
+msgid "Your message, queued"
+msgstr "Your message, queued"
 
 #: src/features/chat/DeletedChatNotice.tsx
 msgid "Your messages are below."

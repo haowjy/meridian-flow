@@ -71,7 +71,7 @@ only the target thread's POST, and leave the WebSocket alone. `$R` is the route 
 ## QC-01: the look
 
 Queue three messages. Each row has a dotted border, no fill and muted text, and its chips and links
-stay legible (add a reference to one). The status line reads `Queued` and the x. When the reply
+stay legible (add a reference to one). No line sits under a row: the x is beside each bubble, centred on it, and the article's accessible name is "Your message, queued". A long message wraps with the x still beside it, no overflow at 390 px. When the reply
 ends (or Send now), the rows return to the normal bubble: no `data-queued`.
 
 ## QC-02: the x
@@ -81,7 +81,7 @@ above the typed text as one editable block. `./mf thread view` no longer lists i
 
 ## QC-03: Cancel queue
 
-With three queued and words typed, Cancel queue (on the last row, two or more queued). The three
+With three queued and words typed, Cancel queue (under the last row, right-aligned with the bubbles, two or more queued). The three
 messages come back in send order, blank lines between them, above the typed text. No `[data-queued]`
 rows remain.
 
