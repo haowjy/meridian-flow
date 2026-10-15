@@ -5,6 +5,7 @@ import { threadContextCommand } from "./context";
 import { threadCreateCommand } from "./create";
 import { threadEventsCommand } from "./events";
 import { threadListCommand } from "./list";
+import { threadQueueHandBackCommand, threadQueueSendNowCommand } from "./queue";
 import { threadRespondCommand } from "./respond";
 import { threadSendCommand } from "./send";
 import { threadStopCommand } from "./stop";
@@ -23,6 +24,8 @@ export const threadGroup: CommandGroup = {
     threadSendCommand,
     threadTailCommand,
     threadStopCommand,
+    threadQueueHandBackCommand,
+    threadQueueSendNowCommand,
     threadCancelCommand,
     threadRespondCommand,
   ],

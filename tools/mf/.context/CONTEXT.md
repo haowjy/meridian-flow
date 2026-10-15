@@ -26,6 +26,10 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
   checks that request and how the answer was read. Stop's scope, adoption and
   settlement are proven by the server's protocol tests and real-stack probes, not
   here. `src/main.test.ts` boots the real shim.
+- **What `./mf`'s tests cover.** Shared rules are tested once, in their package. `./mf`'s
+  tests cover only exit codes, replay safety, the deadline and never claiming more than it
+  proved; everything else is a live probe or recipe
+  ([decision](https://github.com/haowjy/meridian-flow-docs/blob/f3da199a87/kb/decisions/engineering/dev-cli/mf-tests-script-the-wire.md)).
 - **Imports.** Workspace libraries are `@meridian/contracts` and
   `@meridian/thread-client` only. Portless discovery uses the route contract
   `pnpm dev` registers (`../dev/portless-prefix.ts`, `portless-routes.ts`,
@@ -109,15 +113,21 @@ contains. It carries no run identity: `turn.started` has only the turn id.
   snapshot's position; the printed log is best-effort. A timeout, transport or protocol
   error in catch-up never changes the claim and marks `liveView` `not_observed`. A lost HTTP admission answer is recovered with one app-route lookup
   (`submissionId`); a failed lookup or pending admission is 6 `admission_unknown`.
-- **`stop`** posts the app's Stop body (`stopRequest` over a snapshot's record, `mine: []`)
-  to the Stop route, printing the request first. The request is frozen, then posted, then the
-  answer is validated against the contract's `stopResponseSchema` (blocks and id arrays
-  included) before anything is confirmed. Every failure to read or validate it (no answer, a 5xx,
-  a response over the session's size limit, a non-JSON or malformed body) exits 4 with the
-  request in `details` (so `--json` keeps it); only a 4xx status stays a refusal. `--replay` input is
-  the contract's `stopRequestSchema`. A lost answer exits 4; only
-  `--replay <request>` (same id and body, no new snapshot) recovers it, since a plain re-run is
-  a new press; **`cancel --turn`** serves a handoff brief's Stop only.
+- **`stop`, `queue hand-back`, `queue send-now`** run the shared `@meridian/thread-client`
+  hand-back operation and `postSendNow`; `./mf` contributes only
+  `commands/thread/hand-back-adapter.ts` (one command in memory, the HTTP port over the session,
+  a local `RunStateView`, no-op `removeTurns`, printing and exit codes). The frozen request and the exact
+  `--replay` command go to stderr before every post, even under `--json`. The operation classifies
+  the answer: a 2xx validated in full by the contract's response schema (blocks, id arrays, the
+  whole run-state record) is confirmed (0); a 400, 404 or 409 is refused (1); no answer, a 5xx, an
+  oversized, non-JSON or malformed body is ambiguous (4, request in `details` and the hint). Only
+  `--replay <request>` (same body, no new snapshot) recovers it; a plain re-run is a new press.
+  `stop` uses `stopRequest` over a snapshot (`mine: []`); `queue hand-back --id/--all` posts
+  `{requestId, ids}` (`--all` = `waitingWriterMessages`, browser messages included) and reports ids
+  the server covered in no list as `ignored` (exit 1, `not_a_message`); `queue send-now` posts
+  `sendNowRequest`, and a null `cancelledExecutionId` means "this attempt requested no
+  cancellation", never that the reply kept running. **`cancel --turn`** serves a handoff brief's
+  Stop only.
 - **`tail --until-idle`** hydrates a snapshot, follows from its `resumeAfterSeq`
   (`nextSeq` is freshness only and never filters events) and returns at once if
   idle. When a record or the subscribed state shows no open execution and no writer

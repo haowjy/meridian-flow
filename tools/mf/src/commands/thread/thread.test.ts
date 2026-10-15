@@ -251,6 +251,172 @@ describe("thread send", () => {
       expect((await send("go")).stderr).toContain("./mf thread respond");
   });
 
+  it("queue hand-back --all posts every queued id and maps the scripted lists to output and an exit code", async () => {
+    const [a, b, c] = [
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    ];
+    // Three queued messages behind a running reply; one of them was sent from a browser.
+    wire.snapshot = snapshotOf({
+      turns: [replyTurn("run", 1, { status: "streaming" })],
+      record: {
+        items: [inboxItem(a, 1, "first"), inboxItem(b, 2, "second"), inboxItem(c, 3, "third")],
+        execution: { executionId: "exec-run", currentTurnId: "run" },
+      },
+    });
+    wire.handBack = () => ({
+      handedBack: [{ userTurnId: a, blocks: [{ type: "text", text: "first" }] }],
+      answered: [b],
+      gone: [],
+      runState: recordOf(),
+    });
+    // A malformed answer is a lost one: the server may have acted, so the request is kept.
+    wire.fail("handBack", { body: { handedBack: [{ userTurnId: a, blocks: [null] }] } });
+    const lost = await wire.mf(["thread", "queue", "hand-back", THREAD_ID, "--all", "--json"]);
+    expect(lost.code).toBe(EXIT.unavailable);
+    const failure = JSON.parse(lost.stderr.trim().split("\n").at(-1) ?? "");
+    expect(failure.hint).toContain("--replay");
+    expect(failure.details.request).toEqual({ requestId: expect.any(String), ids: [a, b, c] });
+    // Printed before posting, even under --json.
+    expect(JSON.parse(lost.stderr.split("\n")[0] ?? "")).toMatchObject({
+      type: "request",
+      request: failure.details.request,
+    });
+
+    const replayed = await wire.mf([
+      "thread",
+      "queue",
+      "hand-back",
+      THREAD_ID,
+      "--replay",
+      JSON.stringify(failure.details.request),
+      "--full",
+      "--json",
+    ]);
+    // c was covered by none of the server's lists.
+    expect(replayed.code).toBe(EXIT.failed);
+    expect(lastRecord(replayed.stdout)).toMatchObject({
+      command: "thread.queue.hand-back",
+      outcome: "failed",
+      reason: "not_a_message",
+      handedBack: [{ userTurnId: a }],
+      answered: [b],
+      ignored: [c],
+    });
+    const posted = wire.bodiesOf("handBack");
+    expect(posted).toHaveLength(2);
+    expect(posted[1]).toEqual(failure.details.request);
+
+    wire.handBack = () => ({
+      handedBack: [{ userTurnId: a, blocks: [{ type: "text", text: "first" }] }],
+      answered: [],
+      gone: [b, c],
+      runState: recordOf(),
+    });
+    const accounted = await wire.mf(["thread", "queue", "hand-back", THREAD_ID, "--all", "--full"]);
+    expect(accounted.code).toBe(EXIT.ok);
+    expect(accounted.stdout).toContain("first");
+    expect(accounted.stderr).toContain("replay: ./mf thread queue hand-back");
+
+    // Nothing queued: no request at all, and the claim is the snapshot's.
+    wire.snapshot = snapshotOf();
+    const before = wire.requestsOf("handBack").length;
+    const empty = await wire.mf(["thread", "queue", "hand-back", THREAD_ID, "--all"]);
+    expect(empty.code).toBe(EXIT.ok);
+    expect(empty.stdout).toContain("nothing waits");
+    expect(wire.requestsOf("handBack")).toHaveLength(before);
+
+    // Missing or malformed run-state evidence is no proof: a failure, never "nothing waits" (QB1).
+    for (const runState of [undefined, { version: "7" }]) {
+      wire.snapshot = () => ({
+        ...snapshotOf(),
+        liveState: { ...snapshotOf().liveState, runState } as never,
+      });
+      for (const argv of [
+        ["queue", "hand-back", THREAD_ID, "--all"],
+        ["queue", "send-now", THREAD_ID],
+        ["stop", THREAD_ID],
+      ]) {
+        const unread = await wire.mf(["thread", ...argv]);
+        expect(unread.code).toBe(EXIT.failed);
+        expect(unread.stdout).not.toMatch(/nothing/);
+      }
+    }
+    expect(wire.requestsOf("handBack")).toHaveLength(before);
+
+    // A definite refusal exits 1.
+    wire.fail("handBack", { status: 409, body: { message: "other body" } });
+    const refused = await wire.mf(["thread", "queue", "hand-back", THREAD_ID, "--id", a]);
+    expect(refused.code).toBe(EXIT.failed);
+  });
+
+  it("queue send-now posts the body it built, words a null or a cancel, and prints the replay", async () => {
+    const queued = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    wire.snapshot = snapshotOf({
+      turns: [replyTurn("run", 1, { status: "streaming" })],
+      record: {
+        items: [inboxItem(queued, 1, "next")],
+        sentThrough: 0,
+        execution: { executionId: "exec-run", currentTurnId: "run" },
+      },
+    });
+    const body = { seenThrough: 0, seenExecutionId: "exec-run", waiting: [queued] };
+    wire.sendNow = () => ({
+      threadId: THREAD_ID,
+      cancelledExecutionId: "exec-run",
+      runState: recordOf(),
+    });
+    const sent = await wire.mf(["thread", "queue", "send-now", THREAD_ID]);
+    expect(sent.code).toBe(EXIT.ok);
+    expect(sent.stdout).toContain("requested cancellation of exec-run");
+    expect(sent.stdout).not.toContain("runs next");
+    expect(wire.bodiesOf("sendNow")).toEqual([body]);
+    // The body and the exact replay command are printed before posting.
+    expect(sent.stderr).toContain(
+      `replay: ./mf thread queue send-now ${THREAD_ID} --replay '${JSON.stringify(body)}'`,
+    );
+
+    // Null: this attempt requested no cancellation. It never claims the reply kept running.
+    wire.sendNow = () => ({
+      threadId: THREAD_ID,
+      cancelledExecutionId: null,
+      runState: recordOf(),
+    });
+    const none = await wire.mf(["thread", "queue", "send-now", THREAD_ID]);
+    expect(none.code).toBe(EXIT.ok);
+    expect(none.stdout).toContain("this attempt requested no cancellation");
+    expect(none.stdout).not.toMatch(/kept running|still running/);
+
+    // Not JSON, an answer missing its record, and an oversized answer are lost: exit 4 with the replay.
+    wire.fail("sendNow", { text: "not JSON" });
+    wire.fail("sendNow", { body: { threadId: THREAD_ID, cancelledExecutionId: null } });
+    wire.fail("sendNow", { text: " ".repeat(20 * 1024 * 1024 + 1) });
+    for (let lostAnswer = 0; lostAnswer < 3; lostAnswer++) {
+      const lost = await wire.mf(["thread", "queue", "send-now", THREAD_ID, "--json"]);
+      expect(lost.code).toBe(EXIT.unavailable);
+      const failure = JSON.parse(lost.stderr.trim().split("\n").at(-1) ?? "");
+      expect(failure.details.request).toEqual(body);
+      expect(failure.hint).toContain(`--replay '${JSON.stringify(body)}'`);
+    }
+    // The replay re-sends the identical body with no new snapshot read.
+    const readsBefore = wire.reads;
+    const replayed = await wire.mf([
+      "thread",
+      "queue",
+      "send-now",
+      THREAD_ID,
+      "--replay",
+      JSON.stringify(body),
+    ]);
+    expect(replayed.code).toBe(EXIT.ok);
+    expect(wire.reads).toBe(readsBefore);
+    expect(wire.bodiesOf("sendNow").at(-1)).toEqual(body);
+
+    wire.fail("sendNow", { status: 409, body: { message: "no" } });
+    expect((await wire.mf(["thread", "queue", "send-now", THREAD_ID])).code).toBe(EXIT.failed);
+  });
+
   it("ends on its message's hand-back with exit 5 and names the message", async () => {
     const queued = "queued for stop";
     wire.snapshot = snapshotOf({
@@ -297,7 +463,9 @@ describe("thread send", () => {
       const lost = await wire.mf(["thread", "stop", THREAD_ID, "--full", "--json"]);
       expect(lost.code).toBe(EXIT.unavailable);
       // Under --json the error itself carries the frozen request and the replay command.
-      const failure = JSON.parse(lost.stderr);
+      // (the request is also printed to stderr before posting, as the first line)
+      const failure = JSON.parse(lost.stderr.trim().split("\n").at(-1) ?? "");
+      expect(lost.stderr.split("\n")[0]).toContain(failure.details.request.requestId);
       expect(failure.hint).toContain("--replay");
       printed = JSON.stringify(failure.details.request);
       expect(failure.hint).toContain(printed);
