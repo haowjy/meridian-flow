@@ -8,37 +8,37 @@
  * transcript. Withdraw removes the row at once and, once any in-flight enqueue
  * settles, always asks the server: an enqueue that looked failed may still
  * have landed. A 404 means the server did not have it yet: the local send
- * goes, and the row shows again if the inbox lists it later. Also stops a
- * running compaction divider through the turn cancel route, and announces each
- * state change the writer caused.
+ * goes, and the row shows again if the inbox lists it later. Announces each
+ * state change the writer caused. A running compaction divider's Stop is the
+ * chat's Stop (`useChatStop`), not a command of its own.
  *
  * A write-mode switch is the switch view's (`useSwitchView`): its rows,
  * Retry, Withdraw and the chat's mode come from there and are listed after the
  * compaction rows.
  */
 import { t } from "@lingui/core/macro";
-import type { ThreadPendingInbox } from "@meridian/contracts/threads";
+import type { PendingInboxItem } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import { httpErrorStatus } from "@/client/api/http-client";
 import { enqueueThreadControl, withdrawThreadControl } from "@/client/api/threads-api";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
-import { announce, announceError } from "@/client/stores";
-import { useTurnStop } from "../useTurnStop";
+import { announce, announceError, useThreadActions } from "@/client/stores";
 import { controlAlreadyStartedCopy, controlStatusCopy, controlStoppedCopy } from "./control-copy";
 import {
   type CompactControl,
   controlsReducer,
+  type HeldControls,
   mergeQueuedControls,
   NO_LOCAL_CONTROLS,
   type QueuedControl,
+  retainControls,
 } from "./thread-controls";
 import type { SwitchView } from "./useSwitchView";
 
 export type ThreadControls = {
   queued: readonly QueuedControl[];
-  stoppingTurnIds: ReadonlySet<string>;
   /** The chat's mode as the writer should see it: the switch view's fold over the server's record. */
   writeMode: AiWriteMode;
   enqueue: (control: CompactControl) => string;
@@ -46,38 +46,52 @@ export type ThreadControls = {
   switchWriteMode: (mode: AiWriteMode) => void;
   retry: (controlId: string) => void;
   withdraw: (control: QueuedControl) => void;
-  /** Stop a running compaction divider. */
-  stop: (turnId: string) => void;
 };
 
 export function useThreadControls(input: {
   threadId: string;
-  pending: ThreadPendingInbox;
-  answeredCompactionIds: ReadonlySet<string>;
+  /** The run-state record's items. */
+  items: readonly PendingInboxItem[];
+  /** The record's version, and the newest accepted snapshot's: what a dropped row waits on. */
+  version: string | null;
+  history: string | null;
+  /** Every command a transcript divider names. */
+  answeredControlIds: ReadonlySet<string>;
   switches: SwitchView;
 }): ThreadControls {
-  const { threadId, pending, answeredCompactionIds, switches } = input;
+  const { threadId, items, version, history, answeredControlIds, switches } = input;
+  const held = useRef<{ threadId: string; controls: HeldControls }>({
+    threadId,
+    controls: new Map(),
+  });
+  if (held.current.threadId !== threadId) held.current = { threadId, controls: new Map() };
+  const { dispatchRunState } = useThreadActions();
   const [local, dispatch] = useReducer(controlsReducer, NO_LOCAL_CONTROLS);
   const localRef = useRef(local);
   localRef.current = local;
   /** In-flight enqueues; a withdrawal waits for its enqueue to settle first. */
   const inflight = useRef(new Map<string, Promise<void>>());
   const queryClient = useQueryClient();
-  const turnStop = useTurnStop(threadId);
 
   const revalidate = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
   }, [queryClient, threadId]);
 
   useEffect(() => {
-    dispatch({ type: "listed", pendingIds: new Set(pending.items.map((item) => item.id)) });
-  }, [pending]);
+    dispatch({ type: "listed", pendingIds: new Set(items.map((item) => item.id)) });
+  }, [items]);
 
   const send = useCallback(
     (id: string, control: CompactControl) => {
       const request = enqueueThreadControl(threadId, { id, control }).then(
         (response) => {
-          dispatch({ type: "enqueued", id, queued: response.queued });
+          // The answer's record is a fact like any other; the command is sent if it lists it.
+          dispatchRunState(threadId, { type: "snapshot", runState: response.runState });
+          dispatch({
+            type: "enqueued",
+            id,
+            sent: response.runState.items.some((item) => item.id === id),
+          });
           revalidate();
         },
         () => {
@@ -92,7 +106,7 @@ export function useThreadControls(input: {
         if (inflight.current.get(id) === request) inflight.current.delete(id);
       });
     },
-    [revalidate, threadId],
+    [dispatchRunState, revalidate, threadId],
   );
 
   const enqueue = useCallback(
@@ -122,12 +136,15 @@ export function useThreadControls(input: {
 
   const withdraw = useCallback(
     (queued: QueuedControl) => {
+      // The writer's own Stop is the server being told it won't run: the row goes at once.
+      held.current.controls.delete(queued.id);
       if (queued.control.kind === "write_mode") return withdrawSwitch(queued);
       dispatch({ type: "withdraw", id: queued.id });
       announce(controlStoppedCopy(queued.control));
       const withdrawOnServer = async () => {
         try {
-          const { outcome } = await withdrawThreadControl(threadId, queued.id);
+          const { outcome, runState } = await withdrawThreadControl(threadId, queued.id);
+          dispatchRunState(threadId, { type: "snapshot", runState });
           dispatch({ type: "withdrawn", id: queued.id });
           // The row goes either way; the divider shows a started one.
           if (outcome === "already_started") announce(controlAlreadyStartedCopy(queued.control));
@@ -144,33 +161,33 @@ export function useThreadControls(input: {
       };
       void (inflight.current.get(queued.id) ?? Promise.resolve()).then(withdrawOnServer);
     },
-    [revalidate, threadId, withdrawSwitch],
+    [dispatchRunState, revalidate, threadId, withdrawSwitch],
   );
 
-  const { stop: stopTurn } = turnStop;
-  const stop = useCallback(
-    (turnId: string) =>
-      stopTurn(turnId, {
-        stopping: t`Stopping compaction`,
-        failed: t`Couldn't stop the compaction. Try again.`,
+  const compactRows = useMemo(() => mergeQueuedControls({ local, items }), [local, items]);
+  const queued = useMemo(
+    () =>
+      retainControls(held.current.controls, {
+        rows: [...compactRows, ...switches.rows],
+        answered: answeredControlIds,
+        version,
+        history,
       }),
-    [stopTurn],
+    [compactRows, switches.rows, answeredControlIds, version, history],
   );
-
-  const compactRows = useMemo(
-    () => mergeQueuedControls({ local, pending, executedControlIds: answeredCompactionIds }),
-    [answeredCompactionIds, local, pending],
-  );
-  const queued = useMemo(() => [...compactRows, ...switches.rows], [compactRows, switches.rows]);
+  // A row the record dropped waits for its turn or for proof it won't run: ask for that proof.
+  const droppedRows = queued.filter((row) => held.current.controls.get(row.id)?.droppedAt != null);
+  const droppedKey = droppedRows.map((row) => row.id).join(",");
+  useEffect(() => {
+    if (droppedKey) revalidate();
+  }, [droppedKey, revalidate]);
 
   return {
     queued,
-    stoppingTurnIds: turnStop.stopping,
     writeMode: switches.writeMode,
     enqueue,
     switchWriteMode: switches.switchWriteMode,
     retry,
     withdraw,
-    stop,
   };
 }

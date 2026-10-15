@@ -1,6 +1,8 @@
 /** Thread snapshots aggregate every billed call without borrowing child usage. */
+
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
+import { EMPTY_RUN_STATE } from "../../test-support/run-state.js";
 import { createInMemoryRepositories } from "./adapters/in-memory/repositories.js";
 import type { ThreadEventHub } from "./thread-event-hub.js";
 import { buildThreadSnapshot } from "./thread-snapshot.js";
@@ -53,9 +55,8 @@ describe("buildThreadSnapshot ancestors", () => {
         {
           read: async () => ({ kind: "asleep" as const }),
           readRunningTurnId: async () => null,
-          readOpenExecutionId: async () => null,
           readMany: async () => new Map(),
-          readPending: async () => ({ items: [] }),
+          readRunState: async () => EMPTY_RUN_STATE,
         },
         thread.id as ThreadId,
       );

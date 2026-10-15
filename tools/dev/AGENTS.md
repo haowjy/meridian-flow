@@ -8,8 +8,8 @@ module. Reusable contracts and command semantics live in
 
 This directory owns environment and per-worktree database setup, migrations and
 SQL-function sync, `pnpm dev` orchestration, readiness and Tailscale lifecycle,
-managed DB tests, worktree cleanup, migration lint/history checks, bootstrap,
-and the `./mf` API wrapper.
+managed DB tests, worktree cleanup, migration lint/history checks, and
+bootstrap. The `./mf` CLI lives in [`tools/mf`](../mf/AGENTS.md).
 
 ## Rules
 
@@ -26,13 +26,18 @@ and the `./mf` API wrapper.
   executable sent to tmux but only its redacted display form may reach stdout or
   `.meridian/dev-session.json`. Readiness and verified external routes precede
   reporting `started` or printing URLs.
-- `pnpm dev --stop` and worktree pruning are targeted. Cleanup must preserve
+- `pnpm dev --stop` and worktree pruning are targeted. Never stop dev servers
+  by pattern (`pkill -f "pnpm dev"`, `killall node`): it matches every
+  worktree's stack. Cleanup must preserve
   live listeners and use surgical Tailscale `off`; never reset all routes or
   infer staleness from a branch name.
-- `./mf` wraps debug-gated API routes and owns no business logic or Postgres
-  reads. If it needs data, add a server debug route rather than a CLI query.
+- `tools/mf` consumes `portless-prefix.ts`, `portless-routes.ts`,
+  `portlessCa` in `dev-readiness.ts` and `resolveCheckoutRouteUrls` in
+  `dev-session-state.ts`, and `apps/app/e2e` consumes
+  `portless-prefix.ts`. Keep them free of import-time side effects, with
+  Node built-ins as their only runtime dependencies.
 - Keep TypeScript inside the directory's strict Nx boundary and do not import
-  application packages, except `@meridian/contracts` from `cli/`.
+  application packages.
 - DB tests use owned databases and rollback/FK-ordered reset; never add per-case
   truncation or share a managed database between workers.
 

@@ -1,7 +1,16 @@
 /** Atomic inbox transitions; journal publication is part of every committed mutation. */
 
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import type { Block, OrchestratorEvent, Turn } from "@meridian/contracts/threads";
+import type {
+  Block,
+  HandBackRequest,
+  HandBackResponse,
+  OrchestratorEvent,
+  RunState,
+  StopRequest,
+  StopResponse,
+  Turn,
+} from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import type { Notice } from "../../notices/index.js";
 import type { WorkContextNotices } from "../../projects/index.js";
@@ -12,10 +21,24 @@ import type { drainInbox, InboxDrain } from "./inbox-context.js";
 import type { InboxWorkSelection } from "./next-inbox-work.js";
 import type { InboxMessage, InboxReader, Lease, MessageDraft } from "./ports.js";
 
+/** The same request id arrived with a different body: refused, as an admission is. */
+export class HandBackConflictError extends Error {
+  readonly code = "hand_back_conflict" as const;
+  constructor(readonly requestId: string) {
+    super(`Hand-back request ${requestId} was already used with another body`);
+    this.name = "HandBackConflictError";
+  }
+}
+
 export type DeliveryTransaction = {
   enqueue(draft: MessageDraft): Promise<InboxMessage>;
   acknowledge(ids: readonly string[]): Promise<void>;
   materializePrefix(): Promise<void>;
+  /**
+   * Appends the chat's run-state record now and returns its stream version, so an admission can store
+   * it. Null where no record is published.
+   */
+  publishRunState(): Promise<string | null>;
 };
 export type DeliveryProducer = Pick<RuntimeDelivery, "enqueue" | "withThreadLock">;
 export type ThreadControls = Pick<
@@ -127,12 +150,10 @@ export interface RuntimeDelivery
   effectiveWriteMode(threadId: ThreadId): Promise<AiWriteMode>;
   /** Whether a message waits behind the queued switch, so the next request boundary ends the reply. */
   yieldsAtBoundary(threadId: ThreadId): Promise<boolean>;
-  /** Reclassify expired leases after recovery or a backstop release. */
-  refreshPending(threadId: ThreadId): Promise<void>;
   /**
    * Under a newly acquired claim, before anything else the holder does: repair
    * every orphaned turn (primary and child-report paths), then end the stale
-   * lease row's execution (journal `execution.ended` when a turn carries it) and
+   * lease row's execution and
    * delete the row in one transaction. A no-op on a settled thread.
    */
   settleStaleExecution<T = void>(
@@ -155,6 +176,18 @@ export interface RuntimeDelivery
   /** Clear a crash-finalized non-reply selector without acknowledging its messages. */
   clearOrphanedTurn(threadId: ThreadId, turnId: TurnId): Promise<void>;
   enqueue(draft: MessageDraft): Promise<InboxMessage>;
+  /** The run-state record a command answers with, read under the chat's thread lock. */
+  answerRunState(threadId: ThreadId): Promise<RunState>;
+  /**
+   * Takes waiting writer messages out of the chat and returns their content (the queue's x and Cancel
+   * queue). Decided once under the thread lock and stored by request id; a replay answers the same.
+   */
+  handBack(threadId: ThreadId, request: HandBackRequest): Promise<HandBackResponse>;
+  /**
+   * Stop: hands back every writer message in the press set that no execution has taken on, and flags
+   * the open execution for cancellation when the rule says so. Only flags; the run session aborts.
+   */
+  stop(threadId: ThreadId, request: StopRequest): Promise<StopResponse>;
   /** Parent-first business transaction; the producer does not reacquire the lock. */
   withThreadLock<T>(
     threadId: ThreadId,

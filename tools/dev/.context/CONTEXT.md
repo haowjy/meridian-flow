@@ -1,7 +1,7 @@
 # tools/dev — development contracts
 
 This page records the safety boundaries for local databases, dev sessions,
-cleanup, migrations, and the `./mf` wrapper. The scripts are implementation;
+cleanup, and migrations. The scripts are implementation;
 this page keeps only contracts that cross them.
 
 ## Environment and database
@@ -106,24 +106,8 @@ targeted `--manually-verified <reason>` path. That path replaces only automatic
 eligibility discovery; every structural, readiness, and commit-movement guard
 still applies.
 
-The `./mf` shim wraps the app API and thread WebSocket. CLI output is compact
-text by default, exactly one JSON object for `--json`, and NDJSON for streams;
-errors go to stderr and commands set `process.exitCode` rather than calling
-`process.exit()` (it truncates piped output). CLI imports only `@meridian/contracts`
-and asks the debug-gated server for missing data (`resolveDebugPathsEnabled`,
-`APP_DEBUG=1`, never production). A group that needs more, such as a live Yjs
-editor peer, is the trigger to move `./mf` into its own workspace package, not to
-widen this import rule.
-
-`cli/core/` is the domain-free framework (command parsing, output, the exit-code
-contract, session) and imports no group. Each `cli/commands/<group>/` owns its
-commands and helpers; a group may import another group's helper module but never
-`main.ts`. A new group is listed in `GROUPS` in `cli/main.ts`. Document commands
-parse the final path segment with the contracts name codec and report the
-canonical URI creation returns; seed scenario names use writer spelling. A usage
-refusal is current pending state, not a terminal run event: `send` reconciles a
-replayed block with the durable snapshot before exiting 1, and an already
-recovered reply wins over the obsolete refusal.
+The `./mf` CLI is [`tools/mf`](../../mf/.context/CONTEXT.md). It reads this
+directory's Portless route contract (see [`AGENTS.md`](../AGENTS.md)).
 
 ## Migration and observability helpers
 

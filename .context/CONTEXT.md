@@ -77,6 +77,7 @@ composition root (`apps/server/server/lib/app.ts`).
 | Package | Role | Constraints |
 |---|---|---|
 | `@meridian/contracts` | Shared JSON-natural types, IDs, protocol DTOs | Types only; no server logic |
+| `@meridian/thread-client` | Thread client core shared by the app and `./mf`: the thread socket client and the message serializer | Platform-neutral behavior through injected ports; no app/server imports |
 | `@meridian/database` | Drizzle schema, migrations, Postgres functions | Persistence shape only; repos live in `apps/server` |
 | `@meridian/design-tokens` | Ink & Jade design tokens (`ink-jade.css`) | CSS/token primitives only; semantic `@theme`, no raw hex outside package |
 | `@meridian/prosemirror-schema` | Shared ProseMirror node/mark specs | Server and frontend schemas stay structurally identical |
@@ -88,6 +89,13 @@ composition root (`apps/server/server/lib/app.ts`).
 | `apps/server` | Nitro HTTP + WebSocket server | One `AppServices` singleton; domains wired through ports |
 | `apps/app` | TanStack Start authenticated project | Business logic lives in packages/server domains |
 | `apps/www` | Public marketing site | Presentation shell for Meridian Flow |
+
+## Dev tools
+
+| Tool | Role | Key constraint |
+|---|---|---|
+| `tools/dev` | `pnpm dev`, worktree databases, migrations, worktree cleanup | Not a workspace package; imports no `apps/` or `packages/` code |
+| `tools/mf` | `@meridian/mf`, the `./mf` CLI over the app's own API | Workspace package; imports `@meridian/contracts`, `@meridian/thread-client` and only the Portless route contract from `tools/dev`; never `apps/` |
 
 ## Documentation tier model
 

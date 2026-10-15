@@ -107,6 +107,8 @@ logs.
   the runtime session claim; `threads.status` remains lifecycle-only. Run
   liveness is read from the lease alone: the project list and
   `ThreadLiveState.runningTurnId` both surface its bound turn.
+  The snapshot's `liveState.runState` is the chat's whole `RunState` record
+  ([run state](../../runtime/.context/delivery.md#run-state)).
 - Direct-child subagent activity (delivery mode and times from the execution
   report, current tool from the live lease) is `ThreadLiveState.activity` in the
   snapshot and WS `subscribed`, live-updated by `subagent.activity`
@@ -129,8 +131,8 @@ logs.
   allocations are legal.
 - The orchestrator projector is stateful for open text/reasoning messages and
   tool calls. Every custom event name it emits needs an explicit client decision
-  in `reduce-turn-event.ts` (apply, refetch, or ignore); otherwise the app
-  renders an opaque unknown component.
+  in `@meridian/thread-client`'s `src/turns/reduce-turn-event.ts` (apply,
+  refetch, or ignore); otherwise the app renders an opaque unknown component.
 
 Execution reports are one row per admitted child run, keyed by its first
 reserved `executionTurnId`; steering may add assistant turns, and
@@ -180,8 +182,8 @@ thread FK's `KEY SHARE` does not conflict with `NO KEY UPDATE`.
 | `ThreadRepository` | Lifecycle plus bounded writer-facing project lists and model summaries; get-by-id also returns subagents. |
 | `ProjectChatFeedRepository` | Keyset pages of primary chats, filtering Work, Favorite, title, and archived state before pagination. |
 | `ThreadUserStateRepository` | Per-writer Favorite authority. |
-| `TurnRepository` | Turn creation, lookup, pending placeholders, status, and rollups. |
-| `BlockRepository` | Create, upsert, replacement, and reads; compaction elisions live in turn metadata, not block rows. |
+| `TurnRepository` | Turn creation, lookup, pending placeholders, status, and rollups. `findById` and `listByThread` return the conversation, without handed-back writer messages; the graph (`prevTurnId`, positions, leaf) is `turnGraph(turns)` from `ports/turn-graph.ts` ([hand-back](../../runtime/.context/delivery.md#leaving-the-chat-the-graph-and-the-conversation)). |
+| `BlockRepository` | Create, upsert, replacement, and reads, all without handed-back writer messages' blocks; compaction elisions live in turn metadata, not block rows. |
 | `ModelResponseRepository` | Response reads/writes, usage totals, cache-reset context. |
 | `ThreadRepositories` | Repository aggregate plus atomic transactions and serialized turn-start transition. |
 | `ThreadWorksRepository` | Membership history and primary reads; primary rebind demotes the old membership and preserves exactly one primary. |
@@ -232,12 +234,15 @@ ports rather than adapter details.
   preceding assistant activity. Visibility keys on `metadata.kind`, not
   `origin`. `inbox_message` marks machine deliveries only; a writer send never
   carries it and stays a visible bubble. Keep the domain predicate, both SQL
-  copies, and the app mirror in sync. `last_activity_at` and
+  copies, and the view model's `classifyTurn` (`@meridian/thread-client`) in sync. `last_activity_at` and
   `conversational_leaf_turn_id` are written only by the database projection
   triggers; no repository recomputes them. This deliberately diverges from the
   database package's no-triggers rule, which protects columns with exactly one
   writer: this projection's risk is a future writer (branch switching) bypassing
-  recompute, which only a trigger closes.
+  recompute, which only a trigger closes. A handed-back writer message
+  (`thread_inbox_messages.handed_back_by`) never anchors the head or its preview:
+  the function carries that predicate, and an `AFTER UPDATE OF handed_back_by`
+  trigger recomputes the chat.
 - `actionRequired` is derived from the nearest assistant turn in the active
   lineage. A visible writer turn may be the head while an ancestor assistant is
   still parked on `waiting_interrupt`; that still needs the writer's answer.

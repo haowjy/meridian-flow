@@ -120,15 +120,20 @@ only when you ask: a stack belongs to whichever session started it.
 Setup: [DEVELOPMENT.md](DEVELOPMENT.md). Dev tooling rules:
 [tools/dev/AGENTS.md](tools/dev/AGENTS.md).
 
-**Verify app behavior in the browser.** A runtime check, a probe, or a PR's
-walkthrough or Before/After drives a real browser (`agent-browser`) and judges what
-the screen shows, with the durable transcript as truth. `./mf` doesn't test the app:
-it is a separate client over the API. Use it only to set up state (Works, threads,
-seeded documents, mock-model scripts, queued controls) and to read durable state
-(`thread view`, `thread events`, `thread context`, `log`, `doc read`). Never cite
-`./mf thread send` or `thread tail` output as evidence. Until
-[#768](https://github.com/haowjy/meridian-flow/issues/768) lands, they can also report
-another message's reply. See [docs/debugging.md](docs/debugging.md#set-up-and-read-with-the-cli).
+**Verify with `./mf` while working, and in the browser at the end.** `./mf` runs the
+app's socket client, message serializer, chat event processing (the turn reducer)
+and transcript view model (`thread view` prints the rows the app draws), so a
+`./mf` run is evidence for that shared code against the real server. A command
+with no shared client code behind it is evidence of the server only. What the
+writer sees (rendering, card wording, the composer, optimistic UI, client state)
+is checked in the browser (`agent-browser`), and a PR that changes app behavior
+confirms it there at least once, at the end. `./mf` also sets up state (Works,
+threads, seeded documents, mock-model scripts, queued controls). Until
+[#768](https://github.com/haowjy/meridian-flow/issues/768)'s second phase lands, a
+`send` exit 0 doesn't prove which reply answered your message: check it against
+`./mf thread view`. Exit codes are in
+[docs/debugging.md](docs/debugging.md#set-up-and-verify-with-the-cli). See
+[`./mf` drives shared client cores][mf-shared-cores].
 
 ## Build and test
 
@@ -222,4 +227,5 @@ git worktree add ../meridian-flow.worktrees/<name> -b <branch> <base>
 - Prefer reference-style links.
 
 [meridian-flow-docs]: https://github.com/haowjy/meridian-flow-docs
+[mf-shared-cores]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/dev-cli/mf-drives-shared-client-cores.md
 [model-work-switch]: apps/server/server/domains/runtime/.context/tools.md#permissions

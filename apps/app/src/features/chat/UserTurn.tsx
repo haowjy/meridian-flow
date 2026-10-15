@@ -1,9 +1,6 @@
 import { t } from "@lingui/core/macro";
-import {
-  referenceOccurrenceContent,
-  skillOccurrenceContent,
-  type Turn,
-} from "@meridian/contracts/protocol";
+import type { Turn } from "@meridian/contracts/protocol";
+import type { WriterText } from "@meridian/thread-client";
 import { Loader2 } from "lucide-react";
 import { memo, useMemo } from "react";
 import type { UserTurnRecovery } from "@/client/chat-submissions/presentation";
@@ -12,68 +9,30 @@ import { Button } from "@/components/ui/button";
 import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
 import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
 import { Markdown } from "@/rich-content/Markdown";
-import type {
-  MarkdownReferenceOccurrence,
-  MarkdownSkillOccurrence,
-} from "@/rich-content/reference-occurrences";
 import { HandoffTurnAction, useTurnDerivation } from "./derivation/DeriveTurnActions";
 import { useReferenceAvailability } from "./reference-availability";
 
 export type UserTurnProps = {
   turn: Turn;
+  /** The message's text with its reference and skill occurrences, from the view model. */
+  writer: WriterText;
   /** True while the accepted writer turn has not yet been read by the model. */
   queued?: boolean;
-  waitingForUsage?: boolean;
   /** Retry and, after a durable server refusal, Edit on the unadmitted writer row. */
   submissionRecovery?: UserTurnRecovery | null;
 };
 
-export function projectUserTurn(turn: Turn): {
-  text: string;
-  references: MarkdownReferenceOccurrence[];
-  skills: MarkdownSkillOccurrence[];
-} {
-  let text = "";
-  const references: MarkdownReferenceOccurrence[] = [];
-  const skills: MarkdownSkillOccurrence[] = [];
-  for (const block of [...turn.blocks].sort((a, b) => a.sequence - b.sequence)) {
-    if (block.blockType !== "text") continue;
-    const skill = skillOccurrenceContent(block);
-    const occurrence = referenceOccurrenceContent(block);
-    const chunk = skill?.text ?? occurrence?.text ?? block.textContent ?? "";
-    const from = text.length;
-    text += chunk;
-    if (skill)
-      skills.push({
-        from,
-        to: text.length,
-        slug: skill.slug,
-        name: skill.name,
-        description: skill.description,
-      });
-    if (occurrence)
-      references.push({
-        from,
-        to: text.length,
-        documentId: occurrence.documentId,
-        uri: occurrence.uri,
-      });
-  }
-  return { text, references, skills };
-}
-
 function UserTurnComponent({
   turn,
+  writer: projected,
   submissionRecovery = null,
   queued = false,
-  waitingForUsage = false,
 }: UserTurnProps) {
   // Hand off from a message the model has. A queued one sits beyond the
   // cutoff the server would use, so it offers none.
   const handoff = useTurnDerivation() !== null && !queued && turn.status === "complete";
   const projectId = useProjectDocumentNavigationProjectId();
   const openDocument = useOpenChatDocument(projectId ?? undefined);
-  const projected = useMemo(() => projectUserTurn(turn), [turn]);
   const resolutions = useReferenceAvailability(
     useMemo(
       () => [...new Set(projected.references.map(({ documentId }) => documentId))],
@@ -117,7 +76,7 @@ function UserTurnComponent({
           role="status"
           className="mt-[var(--chat-space-inline)] text-right text-xs text-muted-foreground"
         >
-          {waitingForUsage ? t`Waiting for usage` : t`Queued`}
+          {t`Queued`}
         </p>
       ) : null}
       {turn.status === "error" && submissionRecovery?.moving ? (
@@ -181,8 +140,8 @@ export const UserTurn = memo(
   UserTurnComponent,
   (prev, next) =>
     prev.turn === next.turn &&
+    prev.writer === next.writer &&
     prev.submissionRecovery === next.submissionRecovery &&
-    prev.queued === next.queued &&
-    prev.waitingForUsage === next.waitingForUsage,
+    prev.queued === next.queued,
 );
 UserTurn.displayName = "UserTurn";

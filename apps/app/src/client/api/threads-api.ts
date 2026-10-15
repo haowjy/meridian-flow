@@ -23,6 +23,7 @@ import {
   apiThreadRecentDocumentsPath,
   apiThreadSkillsPath,
   apiThreadSnapshotPath,
+  apiThreadStopPath,
   apiThreadTitlePath,
   apiThreadTranscriptPath,
   apiThreadTurnContextPreviewDebugPath,
@@ -56,6 +57,8 @@ import {
 import type {
   EnqueueThreadControlRequest,
   EnqueueThreadControlResponse,
+  StopRequest,
+  StopResponse,
   WithdrawThreadControlResponse,
 } from "@meridian/contracts/threads";
 import type { RebindThreadWorkRequest, RebindThreadWorkResponse } from "@meridian/contracts/works";
@@ -187,6 +190,14 @@ export function cancelTurn({ data }: { data: CancelTurnInput }): Promise<CancelT
 }
 
 /**
+ * Chat Stop. The server decides it once under the thread lock and stores the decision by request
+ * id, so a repeat of the same request answers the same result.
+ */
+export function stopThread(threadId: string, request: StopRequest): Promise<StopResponse> {
+  return postJson(apiThreadStopPath(threadId), request);
+}
+
+/**
  * Queue a writer control. The id is client-minted, so a retry with the same id
  * is a no-op on the server (201 new, 200 existing).
  */
@@ -266,7 +277,7 @@ export function toThreadSnapshotApplyOptions(snapshot: ThreadSnapshotResponse) {
   return {
     lifecycle: {
       actionRequired: snapshot.actionRequired,
-      runningTurnId: snapshot.liveState.runningTurnId,
+      runningTurnId: snapshot.liveState.runState.execution?.currentTurnId ?? null,
     },
     nextSeq: snapshot.nextSeq,
   };

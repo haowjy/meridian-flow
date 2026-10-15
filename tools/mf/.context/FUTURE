@@ -1,0 +1,6 @@
+# FUTURE — nice-to-have follow-ups (`./mf`)
+
+- `thread view` does not fetch background report bodies, change trails or live
+  child activity; its `inputs` block says `"not fetched"` for them
+  (`src/commands/thread/`). Fetch them through the shared chat session once it
+  owns those surfaces, so the CLI draws what the app draws.
