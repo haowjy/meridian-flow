@@ -1,8 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveCheckoutPortlessPrefix } from "../../../tools/dev/portless-prefix";
-import { resolveExpectedRouteUrls } from "../../../tools/dev/portless-routes";
+import { resolveCheckoutRouteUrls } from "../../../tools/dev/dev-session-state";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, "../../..");
@@ -19,14 +18,5 @@ export function resolveServerUrl(): string {
 
 function discoverPortlessUrl(route: PortlessRoute): string {
   const output = execFileSync("pnpm", ["portless:list"], { cwd: REPO_ROOT, encoding: "utf8" });
-  const urls = resolveExpectedRouteUrls({
-    output,
-    mode: "local",
-    worktreePrefix: resolveCheckoutPortlessPrefix(REPO_ROOT),
-  });
-  if (urls[route]) return urls[route];
-  const overrideName = route === "app" ? "APP_URL" : "SERVER_URL";
-  throw new Error(
-    `This checkout's ${route} Portless route is not running. Run pnpm dev or set ${overrideName}.`,
-  );
+  return resolveCheckoutRouteUrls(REPO_ROOT, output)[route];
 }

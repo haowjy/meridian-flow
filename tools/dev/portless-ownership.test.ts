@@ -4,6 +4,8 @@ import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, it } from "vitest";
+import { readDevSessionMetadata, writeDevSessionMetadata } from "./dev-session-state";
+import { resolveCheckoutSessionIdentity } from "./lib/dev-env";
 import { pidBelongsToCheckout } from "./lib/route-ownership";
 import { resolveCheckoutPortlessPrefix } from "./portless-prefix";
 import { validateExpectedRoutes } from "./portless-routes";
@@ -34,6 +36,29 @@ it("separates main and two detached worktrees at the same commit", () => {
     const prefix = resolveCheckoutPortlessPrefix(first);
     expect(prefix).toMatch(/^detached-[a-f0-9]+-first-[a-f0-9]+$/);
     expect(resolveCheckoutPortlessPrefix(second)).not.toBe(prefix);
+    const session = resolveCheckoutSessionIdentity(first);
+    writeDevSessionMetadata(first, {
+      sessionName: session.sessionName,
+      mode: "local",
+      branch: "HEAD",
+      worktreePrefix: prefix,
+      command: "redacted launch command",
+      createdAt: new Date().toISOString(),
+      externalRoutes: [],
+    });
+    git(
+      first,
+      "-c",
+      "user.name=Test",
+      "-c",
+      "user.email=test@example.com",
+      "commit",
+      "--allow-empty",
+      "-qm",
+      "move HEAD",
+    );
+    expect(resolveCheckoutPortlessPrefix(first)).not.toBe(prefix);
+    expect(readDevSessionMetadata(first)?.worktreePrefix).toBe(prefix);
     git(first, "switch", "-c", "fix/named");
     expect(resolveCheckoutPortlessPrefix(first)).toBe("named");
   } finally {

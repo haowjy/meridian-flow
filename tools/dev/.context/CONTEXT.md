@@ -53,6 +53,11 @@ and browser tests. Only the primary checkout gets bare names. Linked detached
 checkouts include their session slug and path hash, so equal commits cannot
 alias each other. Commands use Portless named mode, not its branch inference;
 session metadata retains the prefix used by a running stack across Git changes.
+`dev-session-state.ts` validates the checkout-bound launch record and discovers
+its live tmux session. Startup, `./mf`, and browser discovery use that active
+identity, not current HEAD; Git derives only the next launch's identity. A
+single resolved `DevSessionPlan` supplies commands, ports and verification
+expectations. New/reused sessions share one readiness-and-publication pipeline.
 
 Portless is the URL source of truth. `pnpm dev` reports `started` only after
 expected routes, real HTTP readiness probes, and (when enabled) verified
