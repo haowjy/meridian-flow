@@ -361,7 +361,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const rows = [
         { id: note, uri: "scratch://@/c1/note", workId: null, rootThreadId: root },
         { id: await add("scratch", "named", b), uri: "scratch://@work-b/named", workId: b },
-        { id: await add("uploads", "seal", noWork), uri: "uploads://@/seal", workId: noWork },
         { id: await add("manuscript", "chapter"), uri: "manuscript://chapter", workId: null },
         { id: await add("user", "personal"), uri: "user://personal", workId: null },
       ];

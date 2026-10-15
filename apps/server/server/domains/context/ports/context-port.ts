@@ -65,7 +65,7 @@ export interface UploadsOwner {
 export type ProjectContextFsScheme = ProjectScopedContextUriScheme;
 
 /** Schemes provisioned per Work in the unified context port. */
-export type WorkScopedContextFsScheme = WorkScopedContextUriScheme;
+export type WorkScopedContextFsScheme = Exclude<WorkScopedContextUriScheme, "uploads">;
 
 export interface ContextReadResult {
   /** Stable identity resolved by the router for this successful operation. */

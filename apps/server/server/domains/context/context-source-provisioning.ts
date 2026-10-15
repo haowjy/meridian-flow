@@ -36,7 +36,10 @@ import type { HiddenNodeRepair } from "./tree/hidden-node-repair.js";
 import type { LiveClaim } from "./tree/hidden-node-types.js";
 import type { TreeView } from "./tree/tree-view.js";
 
-const CONTEXT_SOURCE_NAMES: Record<ProjectContextFsScheme | WorkScopedContextFsScheme, string> = {
+const CONTEXT_SOURCE_NAMES: Record<
+  ProjectContextFsScheme | WorkScopedContextFsScheme | "uploads",
+  string
+> = {
   manuscript: "Manuscript",
   kb: "Knowledge Base",
   user: "User Files",

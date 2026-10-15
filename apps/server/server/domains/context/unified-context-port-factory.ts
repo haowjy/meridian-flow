@@ -84,7 +84,9 @@ const PROJECT_CONTEXTFS_SCHEMES: readonly ProjectContextFsScheme[] =
   PROJECT_SCOPED_CONTEXT_URI_SCHEMES;
 /** Uploads belong to a chat, so a Work provisions Scratch only. */
 const WORK_SCOPED_CONTEXTFS_SCHEMES: readonly WorkScopedContextFsScheme[] =
-  WORK_SCOPED_CONTEXT_URI_SCHEMES.filter((scheme) => scheme !== "uploads");
+  WORK_SCOPED_CONTEXT_URI_SCHEMES.filter(
+    (scheme): scheme is WorkScopedContextFsScheme => scheme !== "uploads",
+  );
 
 export interface UnifiedContextPortFactory {
   lineages: ScratchLineages;

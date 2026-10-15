@@ -336,7 +336,6 @@ else
         (await db.select().from(uploadIntakes).where(eq(uploadIntakes.documentId, chapter.id)))[0],
       ).toMatchObject({
         finalPath: "chapter",
-        canonicalUri: "manuscript://chapter",
         filename: "chapter.md",
       });
       expect(

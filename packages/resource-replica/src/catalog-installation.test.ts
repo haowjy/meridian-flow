@@ -218,7 +218,7 @@ describe("planCatalogInstallation", () => {
     {
       scope: { kind: "work", projectId, workId: "no-work-id" } as const,
       scheme: "uploads" as const,
-      uri: "uploads://@/notes.md",
+      uri: "uploads://@/c1/notes.md",
       expected: { scheme: "uploads", workId: "no-work-id" },
     },
     {
