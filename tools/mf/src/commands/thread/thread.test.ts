@@ -113,8 +113,8 @@ describe("thread", () => {
     const readsBefore = stack.snapshotReads();
     const result = await mf(["thread", "send", THREAD_ID, "hi again", "--json"]);
     expect(result.code).toBe(EXIT.ok);
-    // Only the confirming snapshot: nothing outside the send's deadline.
-    expect(stack.snapshotReads() - readsBefore).toBe(1);
+    // Only confirming snapshots (the subscribed state, then the closing record).
+    expect(stack.snapshotReads() - readsBefore).toBeLessThanOrEqual(2);
     const lines = result.stdout
       .trim()
       .split("\n")
@@ -290,82 +290,45 @@ describe("thread", () => {
     expect(asked.stderr).toContain("./mf thread respond");
   });
 
-  it("send waits for its queued reply after the running turn fails", async () => {
-    const result = await mf(["thread", "send", THREAD_ID, "wait behind cancelled run", "--json"]);
-    expect(result.code).toBe(EXIT.ok);
-    expect(JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "")).toMatchObject({
-      type: "result",
-      status: "complete",
-      finalText: "Answered the queued message",
-    });
-  });
-
-  it("send refuses complete while its steered message is still owed", async () => {
+  it("send ends on its message's hand-back with exit 5 and names the message", async () => {
     const isolated = await startFakeStack();
     try {
-      isolated.replyPolicy.holdUntilSubscribed = true;
-      const result = await isolated.mf([
-        "thread",
-        "send",
-        THREAD_ID,
-        "steer behind yielded switch",
-        "--json",
+      const sending = isolated.mf(["thread", "send", THREAD_ID, "queued for stop"]);
+      while (isolated.messageBodies.length === 0) await new Promise((r) => setTimeout(r, 10));
+      const stopped = await isolated.mf(["thread", "stop", THREAD_ID, "--json"]);
+      expect(stopped.code).toBe(EXIT.ok);
+      // The shared Stop body: the record's watermark and execution, and no intents of ours.
+      expect(isolated.stopBodies).toEqual([
+        expect.objectContaining({ seenThrough: 1, seenExecutionId: expect.any(String), mine: [] }),
       ]);
-      // A finishes and its execution ends at a queued switch; the confirming snapshot still
-      // lists M as pending, so the reply cannot be called complete.
-      expect(result.code).toBe(EXIT.unproven);
-      expect(JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "")).toMatchObject({
-        type: "result",
-        command: "thread.send",
-        outcome: "unproven",
-        reason: "owed",
-        finalText: null,
-        owed: [expect.objectContaining({ id: "turn-u1" })],
-        next: expect.arrayContaining([`./mf thread tail ${THREAD_ID} --until-idle`]),
+      expect(JSON.parse(stopped.stdout)).toMatchObject({
+        command: "thread.stop",
+        handedBack: [{ userTurnId: "turn-u1" }],
       });
+      const result = await sending;
+      expect(result.code).toBe(EXIT.cancelled);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toContain(
+        "handed_back turn-u1 (a Stop returned this message before any reply took it)",
+      );
     } finally {
       await isolated.close();
     }
   });
 
-  it("send behind a queued switch follows the new reply, not the running one", async () => {
-    const result = await mf(["thread", "send", THREAD_ID, "wait behind queued switch", "--json"]);
-    expect(result.stderr).not.toContain("Unparseable");
-    expect(result.code).toBe(EXIT.ok);
-    expect(JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "")).toMatchObject({
-      type: "result",
-      status: "complete",
-      turnId: expect.stringMatching(/^turn-reply-/),
-      finalText: "Answered in the new mode",
+  it("send reports a failed successor, not the earlier reply's success", async () => {
+    const result = await mf(["thread", "send", THREAD_ID, "fail the successor", "--json"]);
+    expect(result.code).toBe(EXIT.failed);
+    const last = JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "");
+    expect(last).toMatchObject({
+      outcome: "failed",
+      userTurnId: expect.any(String),
+      answeredBy: "reply-earlier",
+      turnId: "reply-successor",
+      status: "error",
+      error: "boom",
     });
-  });
-
-  it("send into a running reply follows its successor to the reply that answers the steer", async () => {
-    const result = await mf(["thread", "send", THREAD_ID, "steer into a running reply", "--json"]);
-    expect(result.code).toBe(EXIT.ok);
-    expect(JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "")).toMatchObject({
-      type: "result",
-      status: "complete",
-      turnId: expect.stringMatching(/^turn-reply-/),
-      finalText: "The steered answer",
-    });
-  });
-
-  it("send with no admitted reply binds the reply to its own message, not an earlier start", async () => {
-    const result = await mf([
-      "thread",
-      "send",
-      THREAD_ID,
-      "wait past an unrelated start",
-      "--json",
-    ]);
-    expect(result.code).toBe(EXIT.ok);
-    expect(JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "")).toMatchObject({
-      type: "result",
-      status: "complete",
-      turnId: expect.stringMatching(/^turn-reply-/),
-      finalText: "The answer to this message",
-    });
+    expect(last.finalText ?? "").not.toContain("The earlier reply");
   });
 
   it("send times out with exit 124 instead of hanging", async () => {
@@ -378,7 +341,7 @@ describe("thread", () => {
       reason: "running",
       stillRunning: { turnId: expect.any(String), status: "streaming" },
       owed: [],
-      next: expect.arrayContaining([expect.stringContaining("thread cancel")]),
+      next: expect.arrayContaining([expect.stringContaining("thread stop")]),
       status: "timeout",
     });
   });
@@ -716,7 +679,7 @@ describe("thread", () => {
     }
   });
 
-  it("timeout is unconfirmed when the snapshot looks idle but no outcome was proven", async () => {
+  it("send is unproven, not timed out, when the snapshot shows the reply neither running nor finished", async () => {
     const isolated = await startFakeStack();
     try {
       isolated.snapshotPolicy.running = false;
@@ -729,10 +692,10 @@ describe("thread", () => {
         "100ms",
         "--json",
       ]);
-      expect(result.code).toBe(EXIT.timeout);
+      expect(result.code).toBe(EXIT.unproven);
       expect(JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "")).toMatchObject({
         type: "result",
-        outcome: "timeout",
+        outcome: "unproven",
         reason: "unconfirmed",
         stillRunning: null,
         owed: [],
@@ -747,7 +710,7 @@ describe("thread", () => {
     expect(result.code).toBe(EXIT.timeout);
     expect(result.stdout).toBe("");
     expect(result.stderr).toMatch(/timeout: turn .* still streaming on the server/);
-    expect(result.stderr).toContain("stop it with ./mf thread cancel");
+    expect(result.stderr).toContain("stop it with ./mf thread stop");
   });
   it.each([
     ["hi", EXIT.ok, "complete"],

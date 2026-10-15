@@ -11,6 +11,7 @@ export type Outcome =
   | "complete"
   | "failed"
   | "cancelled"
+  | "handed_back"
   | "interrupt"
   | "timeout"
   | "unproven";
@@ -22,11 +23,10 @@ export type Reason =
   | "replay_truncated"
   | "unconfirmed"
   | "deliverer_unknown"
-  | "snapshot_disagrees"
   | "credits_exhausted";
 /** `accepted` is admission only and is built solely by `thread send --no-wait`; no wait produces it. */
 export type Claim =
-  | { outcome: "accepted" | "complete" | "cancelled" | "interrupt"; reason: null }
+  | { outcome: "accepted" | "complete" | "cancelled" | "handed_back" | "interrupt"; reason: null }
   | { outcome: "failed"; reason: null | "credits_exhausted" }
   | { outcome: "unproven" | "timeout"; reason: Exclude<Reason, "credits_exhausted"> };
 export type Result = Claim & {
@@ -48,6 +48,7 @@ const EXITS: Record<Outcome, ExitCode> = {
   complete: EXIT.ok,
   failed: EXIT.failed,
   cancelled: EXIT.cancelled,
+  handed_back: EXIT.cancelled,
   interrupt: EXIT.interrupt,
   timeout: EXIT.timeout,
   unproven: EXIT.unproven,
@@ -90,13 +91,15 @@ export function finishResult(
   out.note(
     emptyIdleTail
       ? "complete: chat idle, no turn ran during the wait"
-      : running && result.outcome === "timeout"
-        ? result.snapshotStale
-          ? `timeout: last snapshot showed turn ${running.turnId} ${running.status}; current state is unconfirmed`
-          : `timeout: turn ${running.turnId} still ${running.status} on the server (stop it with ./mf thread cancel ${result.threadId} --turn ${running.turnId})`
-        : result.outcome === "timeout" && result.reason === "lease_awake"
-          ? "timeout: last snapshot showed no running turn or owed message, but the chat was awake; idle is unconfirmed"
-          : `${result.outcome} ${result.turnId ?? "?"}${result.reason ? ` ${result.reason}` : ""}`,
+      : result.outcome === "handed_back"
+        ? `handed_back ${result.userTurnId} (a Stop returned this message before any reply took it)`
+        : running && result.outcome === "timeout"
+          ? result.snapshotStale
+            ? `timeout: last snapshot showed turn ${running.turnId} ${running.status}; current state is unconfirmed`
+            : `timeout: turn ${running.turnId} still ${running.status} on the server (stop it with ./mf thread stop ${result.threadId})`
+          : result.outcome === "timeout" && result.reason === "lease_awake"
+            ? "timeout: last snapshot showed no running turn or owed message, but the chat was awake; idle is unconfirmed"
+            : `${result.outcome} ${result.turnId ?? "?"}${result.reason ? ` ${result.reason}` : ""}`,
   );
   if (result.liveView === "differs" && result.liveDiff)
     out.note(renderLiveDiff(result.liveDiff, options.full ?? false));
@@ -143,9 +146,7 @@ export function classifyDeadline(
     reason,
     ...activity,
     next: [
-      ...(activity.stillRunning
-        ? [`./mf thread cancel ${threadId} --turn ${activity.stillRunning.turnId}`]
-        : []),
+      ...(activity.stillRunning ? [`./mf thread stop ${threadId}`] : []),
       `./mf thread tail ${threadId} --until-idle`,
     ],
   };
