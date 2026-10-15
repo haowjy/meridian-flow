@@ -156,6 +156,8 @@ export function resolveLocalDocumentAddress(
       rootThreadRef: uri.value.authority.rootThreadRef,
     };
   } else {
+    // TODO(#875 P5): chat-scope documents.
+    if (entry.scope.kind === "chat") return undefined;
     if (!workId || workId !== entry.scope.workId) return undefined;
     const uri = parseUnifiedContextUri(file.uri);
     if (!uri.ok || uri.value.authority.kind === "contextual") return undefined;

@@ -187,7 +187,10 @@ function fingerprint(input: {
   mimeType: string;
   byteDigest: string;
 }): string {
-  const owner = `work:${input.owner.projectId}:${input.owner.workId}`;
+  const owner =
+    input.owner.kind === "chat"
+      ? `chat:${input.owner.projectId}:${input.owner.chatId}`
+      : `work:${input.owner.projectId}:${input.owner.workId}`;
   return createHash("sha256")
     .update(
       JSON.stringify([input.actorUserId, owner, input.filename, input.mimeType, input.byteDigest]),

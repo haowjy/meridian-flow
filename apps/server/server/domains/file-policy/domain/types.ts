@@ -95,7 +95,8 @@ export interface SkillFacts {
 export type FileOwnerRef =
   | { scope: "project"; projectId: ProjectId }
   | { scope: "work"; workId: WorkId }
-  | { scope: "lineage"; projectId: ProjectId; rootThreadId: ThreadId };
+  | { scope: "lineage"; projectId: ProjectId; rootThreadId: ThreadId }
+  | { scope: "chat"; projectId: ProjectId; threadId: ThreadId };
 
 /**
  * What a request is about. AI calls pass `document` and the policy picks live
