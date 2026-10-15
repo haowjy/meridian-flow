@@ -26,7 +26,7 @@ export type StopFacts = {
   execution: { id: string; holder: "assistant" | "compaction" | null } | null;
   /** The lease's adopted message ids. Empty with no lease row. */
   receipt: readonly string[];
-  /** The chat's relevant writer messages: see `readStopFacts`. */
+  /** The chat's relevant writer messages: see `readFacts`. */
   rows: readonly WriterRow[];
 };
 
