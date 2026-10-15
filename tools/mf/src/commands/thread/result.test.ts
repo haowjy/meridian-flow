@@ -3,65 +3,10 @@ import type { ThreadSnapshotResponse } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 import { EXIT } from "../../core/cli-error";
 import { Output } from "../../core/output";
-import { PROJECT_ID, THREAD_ID } from "../../test-support/fake-stack";
+import { snapshotOf, THREAD_ID } from "../../test-support/wire-fixtures";
 import { classifyDeadline, finishResult, terminalResult } from "./result";
 
-const snapshot = (): ThreadSnapshotResponse => ({
-  threadId: THREAD_ID,
-  thread: {
-    id: THREAD_ID,
-    projectId: PROJECT_ID,
-    workId: null,
-    aiWriteMode: "direct",
-    effectiveAiWriteMode: "direct",
-    userId: "u1",
-    kind: "primary",
-    status: "idle",
-    title: "Fake thread",
-    ref: "c1",
-    initialPromptBakeId: null,
-    agentDefinitionRevisionId: null,
-    agentName: "General",
-    activeLeafTurnId: null,
-    parentThreadId: null,
-    rootThreadId: THREAD_ID,
-    spawnDepth: 0,
-    spawnStatus: null,
-    totalCostUsd: "0",
-    turnCount: 0,
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-02T00:00:00.000Z",
-    lastActivityAt: "2026-01-02T00:00:00.000Z",
-    deletedAt: null,
-  },
-  turns: [],
-  threadUsage: {
-    inputTokens: 0,
-    cacheReadTokens: 0,
-    cacheReportedInputTokens: 0,
-    cacheReportedCalls: 0,
-    cacheWriteTokens: 0,
-    outputTokens: 0,
-    cacheResets: 0,
-  },
-  liveState: {
-    threadId: THREAD_ID,
-    status: { kind: "asleep" },
-    activity: { children: [] },
-    runState: {
-      version: "0",
-      items: [],
-      sentThrough: 0,
-      execution: null,
-      mode: "direct",
-      blocked: null,
-    },
-    resumeAfterSeq: "0",
-  },
-  actionRequired: false,
-  nextSeq: "1",
-  ancestors: [],
-});
+const snapshot = () => snapshotOf();
 const message: ThreadSnapshotResponse["liveState"]["runState"]["items"][number] = {
   id: "writer-message",
   seq: 1,

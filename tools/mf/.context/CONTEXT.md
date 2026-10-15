@@ -16,8 +16,16 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
   Portless discovery, the in-memory dev-login cookie and bounded requests) and
   imports no group. `src/commands/<group>/` holds one group each; a new group is
   listed in `GROUPS` in `src/main.ts`. A group may import another group's helper,
-  never `main.ts`. Tests share `src/test-support/fake-stack.ts` (fake API and
-  thread socket on the real contracts); `src/main.test.ts` boots the real shim.
+  never `main.ts`. Command tests run the real CLI against `src/test-support/wire.ts`,
+  a thin HTTP and WebSocket harness. It is not a simulator and follows no server
+  rules: each test states the contract facts it needs (admission answer, the
+  snapshot each read returns, Stop's answer, ordered journal frames and when they
+  go out), typed with `@meridian/contracts` through `wire-fixtures.ts`. The harness
+  records what `./mf` posted and can fail a transport (drop a connection, answer
+  with a body that is not JSON, delay a read, close the socket). A command test
+  checks that request and how the answer was read. Stop's scope, adoption and
+  settlement are proven by the server's protocol tests and real-stack probes, not
+  here. `src/main.test.ts` boots the real shim.
 - **Imports.** Workspace libraries are `@meridian/contracts` and
   `@meridian/thread-client` only. Portless discovery uses the route contract
   `pnpm dev` registers (`../dev/portless-prefix.ts`, `portless-routes.ts`,
