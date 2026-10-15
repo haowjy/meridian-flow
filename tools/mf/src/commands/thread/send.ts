@@ -232,7 +232,7 @@ async function followToOutcome(
   let lastAnswering: string | null = null;
   // The newest snapshot that completed; the deadline classifies it and never reads another.
   let lastSnapshot: ThreadSnapshotResponse | null = null;
-  let settled: { fate: Settled; snapshot: ThreadSnapshotResponse } | null = null;
+  let proven: Proven | null = null;
   // Once a snapshot settles the claim, the stream gets a short bounded time to reach that
   // snapshot's position, so the printed log and the live view are whole. It never changes the claim.
   let catchUpUntil = Infinity;
@@ -255,7 +255,7 @@ async function followToOutcome(
       wakeOnGap: true,
       currentDeadline: () => catchUpUntil,
       shouldStop: (event: CliEvent) =>
-        settled !== null ||
+        proven !== null ||
         event.type === "interrupt.requested" ||
         (event.type === "event" &&
           (event.name === RUN_STATE_EVENT || event.name === MESSAGES_HANDED_BACK_EVENT)),
@@ -263,7 +263,7 @@ async function followToOutcome(
       async confirmStop(_turnIds, seenSeq) {
         const behind = (snapshot: ThreadSnapshotResponse) =>
           BigInt(seenSeq) < BigInt(snapshot.liveState.resumeAfterSeq);
-        if (settled) return !behind(settled.snapshot);
+        if (proven) return !behind(proven.snapshot);
         const remaining = deadlineAt - Date.now();
         if (remaining <= 0) throw new CliError("timeout", "Send deadline reached");
         const snapshot = await session.request<ThreadSnapshotResponse>(
@@ -280,9 +280,8 @@ async function followToOutcome(
           turns: snapshot.turns,
         });
         if (fate.kind === "answering") lastAnswering = fate.last.id;
-        const stop = settle(fate);
-        if (!stop) return false;
-        settled = { fate: stop, snapshot };
+        proven = finalResult(fate, snapshot, threadId, admitted.userTurnId);
+        if (!proven) return false;
         if (!behind(snapshot)) return true;
         catchUpUntil = Math.min(deadlineAt, Date.now() + CATCH_UP_MS);
         return false;
@@ -290,13 +289,13 @@ async function followToOutcome(
     });
   } catch (error) {
     if (
-      settled &&
+      proven &&
       error instanceof CliError &&
       (error.code === "timeout" || error.code === "unavailable" || error.code === "protocol")
     ) {
       // The claim stands. The catch-up only feeds the printed log and `liveView`: an incomplete
       // log, so `liveView` is `not_observed`; a failure here never replaces a proven claim.
-      return fateResult(threadId, admitted.userTurnId, settled, reduced, true);
+      return withLiveView(proven, reduced, true);
     }
     if (error instanceof CliError && error.code === "timeout") {
       const { reason, ...report } = classifyDeadline(lastSnapshot, threadId);
@@ -319,97 +318,87 @@ async function followToOutcome(
   } finally {
     transport.disconnect();
   }
-  if (!settled) throw new Error("Send stopped without a confirming snapshot");
-  return fateResult(threadId, admitted.userTurnId, settled, reduced, followed.truncated);
+  if (!proven) throw new Error("Send stopped without a confirming snapshot");
+  return withLiveView(proven, reduced, followed.truncated);
 }
 
-/** What ends the follow; `null` keeps following. */
-type Settled =
-  | { kind: "waitingBlocked" }
-  | { kind: "handedBack" }
-  | { kind: "unproven"; reason: "deliverer_unknown" | "unconfirmed" }
-  | { kind: "interrupt"; answeredBy: string; last: Turn; interruptId: string }
-  | { kind: "answered"; answeredBy: string; last: Turn };
+/** A result frozen with the snapshot that proved it; `compared` is the turn `liveView` checks. */
+type Proven = { outcome: SendOutcome; snapshot: ThreadSnapshotResponse; compared: string | null };
 
-function settle(fate: MessageFate): Settled | null {
+/** The CLI's final result for what `messageFate` proved, or null to keep following. */
+function finalResult(
+  fate: MessageFate,
+  snapshot: ThreadSnapshotResponse,
+  threadId: string,
+  userTurnId: string,
+): Proven | null {
+  const base = { threadId, userTurnId };
+  const none = { turnId: null, finalText: null, error: null };
+  const done = (outcome: SendOutcome, compared: string | null = null): Proven => ({
+    outcome,
+    snapshot,
+    compared,
+  });
   switch (fate.kind) {
     case "waiting":
-      return fate.blocked ? { kind: "waitingBlocked" } : null;
+      return fate.blocked
+        ? done(
+            terminalResult(
+              "thread.send",
+              { outcome: "failed", reason: "credits_exhausted" },
+              { ...base, ...none, status: "blocked", error: "Your message is waiting for usage" },
+            ),
+          )
+        : null;
     case "handedBack":
+      return done(
+        terminalResult(
+          "thread.send",
+          { outcome: "handed_back", reason: null },
+          { ...base, ...none, status: "handed_back" },
+        ),
+      );
     case "unproven":
-      return fate;
+      return done(
+        terminalResult(
+          "thread.send",
+          { outcome: "unproven", reason: fate.reason },
+          {
+            ...base,
+            ...none,
+            status: "unknown",
+            ...snapshotActivity(snapshot),
+            next: [`./mf thread tail ${threadId} --until-idle`],
+          },
+        ),
+      );
     case "answering": {
-      if (fate.last.status !== "waiting_interrupt") return null;
-      const interruptId = fate.last.blocks
+      const { last } = fate;
+      const interruptId = last.blocks
         .map(interruptIdForBlock)
         .filter((id): id is string => id !== null)
         .at(-1);
-      return interruptId
-        ? { kind: "interrupt", answeredBy: fate.answeredBy, last: fate.last, interruptId }
-        : null;
+      if (last.status !== "waiting_interrupt" || !interruptId) return null;
+      return done(
+        terminalResult(
+          "thread.send",
+          { outcome: "interrupt", reason: null },
+          {
+            ...base,
+            answeredBy: fate.answeredBy,
+            turnId: last.id,
+            status: "waiting_interrupt",
+            finalText: null,
+            error: null,
+            interrupt: { turnId: last.id, interruptId },
+            next: [
+              `./mf thread respond ${threadId} --turn ${last.id} --interrupt ${interruptId} --value '<json>'`,
+            ],
+          },
+        ),
+        last.id,
+      );
     }
-    case "answered":
-      return { kind: "answered", answeredBy: fate.answeredBy, last: fate.last };
-  }
-}
-
-function fateResult(
-  threadId: string,
-  userTurnId: string,
-  { fate, snapshot }: { fate: Settled; snapshot: ThreadSnapshotResponse },
-  reduced: ReducedThread,
-  truncated: boolean,
-): SendOutcome {
-  const base = { threadId, userTurnId };
-  const none = { turnId: null, finalText: null, error: null };
-  switch (fate.kind) {
-    case "waitingBlocked":
-      return terminalResult(
-        "thread.send",
-        { outcome: "failed", reason: "credits_exhausted" },
-        {
-          ...base,
-          ...none,
-          status: "blocked",
-          error: "Your message is waiting for usage",
-        },
-      );
-    case "handedBack":
-      return terminalResult(
-        "thread.send",
-        { outcome: "handed_back", reason: null },
-        { ...base, ...none, status: "handed_back" },
-      );
-    case "unproven":
-      return terminalResult(
-        "thread.send",
-        { outcome: "unproven", reason: fate.reason },
-        {
-          ...base,
-          ...none,
-          status: "unknown",
-          ...snapshotActivity(snapshot),
-          next: [`./mf thread tail ${threadId} --until-idle`],
-        },
-      );
-    case "interrupt":
-      return terminalResult(
-        "thread.send",
-        { outcome: "interrupt", reason: null },
-        {
-          ...base,
-          answeredBy: fate.answeredBy,
-          turnId: fate.last.id,
-          status: "waiting_interrupt",
-          finalText: null,
-          error: null,
-          interrupt: { turnId: fate.last.id, interruptId: fate.interruptId },
-          ...reduced.compare(snapshot, [fate.last.id], truncated),
-          next: [
-            `./mf thread respond ${threadId} --turn ${fate.last.id} --interrupt ${fate.interruptId} --value '<json>'`,
-          ],
-        },
-      );
     case "answered": {
       const { last } = fate;
       const claim: Claim =
@@ -420,17 +409,32 @@ function fateResult(
             : last.status === "error"
               ? { outcome: "failed", reason: null }
               : { outcome: "unproven", reason: "unconfirmed" };
-      return terminalResult("thread.send", claim, {
-        ...base,
-        answeredBy: fate.answeredBy,
-        turnId: last.id,
-        status: last.status,
-        finalText: replyText(snapshot.turns, last.id),
-        error: last.error,
-        ...reduced.compare(snapshot, [last.id], truncated),
-      });
+      return done(
+        terminalResult("thread.send", claim, {
+          ...base,
+          answeredBy: fate.answeredBy,
+          turnId: last.id,
+          status: last.status,
+          finalText: replyText(snapshot.turns, last.id),
+          error: last.error,
+        }),
+        last.id,
+      );
     }
   }
+}
+
+/** The frozen result plus this follower's `liveView`, read after the bounded catch-up. */
+function withLiveView(
+  { outcome, snapshot, compared }: Proven,
+  reduced: ReducedThread,
+  truncated: boolean,
+): SendOutcome {
+  if (!compared) return outcome;
+  return {
+    ...outcome,
+    result: { ...outcome.result, ...reduced.compare(snapshot, [compared], truncated) },
+  };
 }
 
 /** Writes the terminal envelope (always the last NDJSON line) and returns the exit code. */
