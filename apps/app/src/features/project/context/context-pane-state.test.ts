@@ -7,6 +7,7 @@ const retained = { kind: "tracked", documentId: "old", name: "Old" } as ContextT
 const destination = {
   path: "/new.md",
   scheme: "manuscript" as const,
+  review: null,
   optimisticTab: { id: "optimistic:new", name: "New" },
 };
 
@@ -49,4 +50,23 @@ it("a settled tab for the destination is the strip's one entry while the body lo
     removalFenced: false,
   });
   expect(state).toMatchObject({ kind: "optimistic-loading", settledTab: settled });
+});
+
+it("a review-bound route never derives dead-route from the settled live catalog", () => {
+  const settledWithoutIt = { findPath: () => null } as unknown as Parameters<
+    typeof deriveContextPaneState
+  >[0]["catalog"];
+  const state = (review: { itemKey: string } | null) =>
+    deriveContextPaneState({
+      activeTab: null,
+      tabs: [],
+      masked: true,
+      destination: { ...destination, review },
+      catalog: settledWithoutIt,
+      isFetching: false,
+      isError: false,
+      removalFenced: false,
+    });
+  expect(state(null).kind).toBe("dead-route");
+  expect(state({ itemKey: "d:doc" }).kind).toBe("optimistic-loading");
 });

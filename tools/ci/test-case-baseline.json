@@ -155,7 +155,7 @@
     "apps/app/src/features/project/context/LinkUpdateNote.test.tsx": 1,
     "apps/app/src/features/project/context/account-feature-context.test.tsx": 4,
     "apps/app/src/features/project/context/context-entry-name.test.ts": 13,
-    "apps/app/src/features/project/context/context-pane-state.test.ts": 2,
+    "apps/app/src/features/project/context/context-pane-state.test.ts": 3,
     "apps/app/src/features/project/context/context-route-workspace-owner.test.ts": 2,
     "apps/app/src/features/project/context/context-tab-session.test.tsx": 4,
     "apps/app/src/features/project/context/draft-tab-settlement.test.ts": 6,

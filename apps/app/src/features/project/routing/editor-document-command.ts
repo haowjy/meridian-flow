@@ -40,12 +40,18 @@ export function createEditorDocumentCommand({
   accountId,
   read,
   lookup,
+  draftOnlyItemKey,
   admitDraftReview,
 }: {
   projectId: string;
   accountId: string;
   read: () => EditorCommandSnapshot;
   lookup: Parameters<typeof resolveLaunchLocator>[0]["lookup"];
+  /**
+   * The review item of a draft-only document the Work lists at this target, if any. A plain
+   * address of one is refused by design, so the open carries its review address up front.
+   */
+  draftOnlyItemKey: (target: ContextRouteRequest) => Promise<string | undefined>;
   admitDraftReview: (tab: Extract<ContextTab, { kind: "tracked" }>, workId: string) => void;
 }): OpenContextRoute {
   return async (request, options) => {
@@ -94,7 +100,8 @@ export function createEditorDocumentCommand({
       const itemKey =
         options?.itemKey ??
         (addressedTab ? reviewItemKeyOf(addressedTab, requested.workId) : undefined) ??
-        (sameDocument ? current.address.itemKey : undefined);
+        (sameDocument ? current.address.itemKey : undefined) ??
+        (await draftOnlyItemKey(requested));
       const next = prepareEditorDestination(
         { projectId, accountId, address: current.address, noWorkId: current.noWorkId },
         target,

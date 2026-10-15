@@ -47,6 +47,12 @@ export function deriveContextPaneState({
     scheme: ProjectContextTreeScheme;
     workId?: string;
     rootThreadId?: string;
+    /**
+     * The review the address is bound to. An address is live or review, and only a live
+     * address can be dead: a review-bound route never consults the live catalog, which
+     * never lists a draft-only document.
+     */
+    review: { itemKey: string } | null;
     optimisticTab: OptimisticContextTab;
   } | null;
   catalog: CatalogContextView | null;
@@ -58,7 +64,7 @@ export function deriveContextPaneState({
   if (!destination || removalFenced) return { kind: "empty-workspace" };
 
   const routeExists = catalog?.findPath(destination.path)?.kind === "file";
-  if (routeExists || isFetching || (!catalog && !isError)) {
+  if (destination.review || routeExists || isFetching || (!catalog && !isError)) {
     const settledTab =
       tabs.find((tab) => tab.kind !== "new" && sameServerContextTabLocator(tab, destination)) ??
       null;

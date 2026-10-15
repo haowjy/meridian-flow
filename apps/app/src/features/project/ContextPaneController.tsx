@@ -51,6 +51,8 @@ export type ContextViewerSurfaceControllerProps = {
   editorWork: Work | null;
   localDocumentId?: string;
   addressOwnsDocumentAdmission?: boolean;
+  /** The review item the route address is bound to; its admission, not the live catalog, decides. */
+  reviewItemKey?: string;
   activeContextScheme: ProjectContextTreeScheme | null;
   activeContextPath: string | null;
   /** A chat's Scratch route names its lineage here, in place of a Work. */
@@ -80,6 +82,7 @@ export function ContextViewerSurfaceController({
   mask,
   editorWork,
   addressOwnsDocumentAdmission = false,
+  reviewItemKey,
   activeContextScheme,
   activeContextPath,
   activeContextChat,
@@ -243,6 +246,7 @@ export function ContextViewerSurfaceController({
             scheme: activeContextScheme,
             workId: routeWorkId,
             rootThreadId: activeContextChat ?? undefined,
+            review: reviewItemKey ? { itemKey: reviewItemKey } : null,
             optimisticTab: {
               id: `optimistic:${openTabKey}`,
               // Full basename, not the extension-stripped resume label — the chip
