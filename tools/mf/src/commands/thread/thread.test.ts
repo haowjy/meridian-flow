@@ -334,7 +334,7 @@ describe("thread send", () => {
     expect(last?.finalText ?? "").not.toContain("The earlier reply");
   });
 
-  it("times out with exit 124 instead of hanging, and says the server is still running", async () => {
+  it("times out with exit 124 on the last snapshot, labelled stale, and starts no read at the deadline", async () => {
     runningReply();
     const result = await send("hang", "--timeout", "300ms", "--json");
     expect(result.code).toBe(EXIT.timeout);
@@ -347,14 +347,32 @@ describe("thread send", () => {
       owed: [],
       next: expect.arrayContaining([expect.stringContaining("thread stop")]),
       status: "timeout",
+      snapshotStale: true,
     });
     const text = await send("hang", "--timeout", "100ms");
     expect(text.stdout).toBe("");
-    expect(text.stderr).toMatch(/timeout: turn .* still streaming on the server/);
-    expect(text.stderr).toContain("stop it with ./mf thread stop");
+    expect(text.stderr).toMatch(
+      /timeout: last snapshot showed turn a1 streaming; current state is unconfirmed/,
+    );
+    expect(text.stderr).toContain("./mf thread stop");
     // Running out of time never presses Stop or Cancel.
     expect(wire.requestsOf("stop")).toHaveLength(0);
     expect(wire.requestsOf("cancel")).toHaveLength(0);
+
+    // A snapshot still pending at the deadline: the timeout envelope reports it unavailable and
+    // the deadline starts no further read.
+    wire.fail("snapshot", { delayMs: 600 }, Number.POSITIVE_INFINITY);
+    const readsBefore = wire.requestsOf("snapshot").length;
+    const started = Date.now();
+    const pending = await send("hang", "--timeout", "100ms", "--json");
+    expect(pending.code).toBe(EXIT.timeout);
+    expect(lastRecord(pending.stdout)).toMatchObject({
+      outcome: "timeout",
+      reason: "unconfirmed",
+      snapshotUnavailable: true,
+    });
+    expect(wire.requestsOf("snapshot").length - readsBefore).toBe(1);
+    expect(Date.now() - started).toBeLessThan(500);
   });
 
   it("is unproven, not timed out, when the snapshot shows the reply neither open nor finished", async () => {

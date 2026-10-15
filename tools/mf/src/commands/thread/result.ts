@@ -1,8 +1,7 @@
 /** Terminal claims and deadline reports, independent of the interim follow predicates. */
-import { apiThreadSnapshotPath, type ThreadSnapshotResponse } from "@meridian/contracts/protocol";
+import type { ThreadSnapshotResponse } from "@meridian/contracts/protocol";
 import { EXIT, type ExitCode } from "../../core/cli-error";
 import type { Output } from "../../core/output";
-import type { Session } from "../../core/session";
 import { type LiveDiff, renderLiveDiff } from "./reduced-thread";
 import { currentTurnId, owedWriterMessages } from "./run-state";
 
@@ -105,14 +104,6 @@ export function finishResult(
     out.note(renderLiveDiff(result.liveDiff, options.full ?? false));
   for (const next of result.next ?? []) out.note(next);
   return terminal.exitCode;
-}
-
-export async function timeoutReport(session: Session, threadId: string) {
-  const snapshot = await session.request<ThreadSnapshotResponse>(
-    "GET",
-    apiThreadSnapshotPath(threadId),
-  );
-  return classifyDeadline(snapshot, threadId);
 }
 
 type UnavailableDeadlineReport = { reason: "unconfirmed"; next: string[] };
