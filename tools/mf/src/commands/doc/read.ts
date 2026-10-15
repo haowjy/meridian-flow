@@ -22,6 +22,7 @@ export const docReadCommand: CommandSpec = {
       projectId,
       requirePositional(ctx, 0, "<uri>"),
       stringOption(ctx, "work"),
+      stringOption(ctx, "chat"),
     );
     const response = await session.request<ContextReadResponse>(
       "GET",

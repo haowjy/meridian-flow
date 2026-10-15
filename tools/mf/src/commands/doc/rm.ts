@@ -39,6 +39,7 @@ export const docRmCommand: CommandSpec = {
       projectId,
       requirePositional(ctx, 0, "<uri>"),
       stringOption(ctx, "work"),
+      stringOption(ctx, "chat"),
     );
     const documentId = await deleteDocument(session, projectId, target);
     ctx.out.result(
