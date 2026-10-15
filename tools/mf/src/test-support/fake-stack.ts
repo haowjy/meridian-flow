@@ -75,7 +75,8 @@ function turnDto(turn: FakeTurn, index: number) {
     position: index + 1,
     executionId: turn.role === "assistant" ? (turn.executionId ?? `exec-${turn.id}`) : null,
     reservedForUserTurnIds: [],
-    delivery: turn.role === "user" ? { byTurnId: turn.deliveredBy ?? null } : null,
+    // Production: a user turn nobody has taken has no delivery at all, not a null deliverer.
+    delivery: turn.role === "user" && turn.deliveredBy ? { byTurnId: turn.deliveredBy } : null,
     metadata: turn.retryOf ? { retryOf: turn.retryOf } : null,
     ...(turn.prevTurnId ? { prevTurnId: turn.prevTurnId } : {}),
     role: turn.role,
@@ -169,6 +170,8 @@ function createFake() {
     loseAnswer: false,
     lookup: "accepted" as "accepted" | "rejected" | "not-seen" | "pending" | "failed",
   };
+  const stopPolicy = { loseAnswer: false };
+  const stopAnswers = new Map<string, { fingerprint: string; response: unknown }>();
   const interruptPolicy = {
     response: "resolved" as "resolved" | "unconfirmed" | "rejected" | "other",
   };
@@ -695,6 +698,14 @@ function createFake() {
       if (body.text === "wait for usage") {
         runCounter += 1;
         const userTurnId = `turn-u${runCounter}`;
+        // Admission creates the user turn; nothing has delivered it, so it has no delivery.
+        turns.push({
+          id: userTurnId,
+          role: "user",
+          status: "complete",
+          error: null,
+          text: body.text,
+        });
         pendingItems.push({
           id: userTurnId,
           seq: runCounter,
@@ -718,8 +729,13 @@ function createFake() {
         });
       }
       blockedForUsage = false;
-      pendingItems.splice(0, pendingItems.length);
+      const taken = pendingItems.splice(0, pendingItems.length);
       runScenario(body.text);
+      // The new reply takes every message that was waiting; none disappears unrecorded.
+      for (const item of taken) {
+        const waiting = turns.find((turn) => turn.id === item.id);
+        if (waiting) waiting.deliveredBy = `turn-a${runCounter}`;
+      }
       const accepted = {
         threadId: THREAD_ID,
         submissionId: body.submissionId,
@@ -751,11 +767,32 @@ function createFake() {
       return;
     }
     if (route === `POST /api/threads/${THREAD_ID}/stop`) {
-      const body = (await readBody(req)) as { seenExecutionId: string | null };
+      const body = (await readBody(req)) as {
+        requestId: string;
+        seenThrough: number;
+        seenExecutionId: string | null;
+        mine: string[];
+      };
       stopBodies.push(body);
+      // Like the server: the same id and body replays the stored decision; nothing is pressed twice.
+      const fingerprint = JSON.stringify(body);
+      const stored = stopAnswers.get(body.requestId);
+      if (stored) {
+        if (stored.fingerprint !== fingerprint)
+          return send(409, { message: "Stop request id reused" });
+        return sendEnveloped(200, stored.response);
+      }
       const running = runningFakeTurn();
-      if (running) running.status = "cancelled";
-      const handed = pendingItems.splice(0);
+      const cancelledExecutionId =
+        running && (running.executionId ?? `exec-${running.id}`) === body.seenExecutionId
+          ? body.seenExecutionId
+          : null;
+      if (running && cancelledExecutionId) running.status = "cancelled";
+      // Scope: waiting messages at or below the watermark, plus the request's own.
+      const handed = pendingItems.filter(
+        (item) => item.seq <= body.seenThrough || body.mine.includes(item.id),
+      );
+      for (const item of handed) pendingItems.splice(pendingItems.indexOf(item), 1);
       const handedBack = handed.map((item) => {
         const turn = turns.find((candidate) => candidate.id === item.id);
         if (turn) turn.handedBack = true;
@@ -769,14 +806,21 @@ function createFake() {
           value: { userTurnIds: handedBack.map((message) => message.userTurnId) },
         } as AGUIEvent);
       publishRunState([], false, true);
-      return sendEnveloped(200, {
+      const response = {
         threadId: THREAD_ID,
         handedBack,
         answered: [],
         gone: [],
-        cancelledExecutionId: body.seenExecutionId,
+        cancelledExecutionId,
         runState,
-      });
+      };
+      stopAnswers.set(body.requestId, { fingerprint, response });
+      if (stopPolicy.loseAnswer) {
+        stopPolicy.loseAnswer = false;
+        req.socket.destroy();
+        return;
+      }
+      return sendEnveloped(200, response);
     }
     const cancel = url.pathname.match(/^\/api\/threads\/[^/]+\/turns\/([^/]+)\/cancel$/);
     if (req.method === "POST" && cancel) {
@@ -905,6 +949,7 @@ function createFake() {
     removedMockScripts,
     messageBodies,
     stopBodies,
+    stopPolicy,
     resumeCursors,
     socketPolicy,
     admissionPolicy,
