@@ -26,7 +26,7 @@ import type {
   UpdateTurnStatusInput,
 } from "../../ports/repositories.js";
 import { TURN_GRAPH, type TurnGraph } from "../../ports/turn-graph.js";
-import { notHandedBackSql } from "./handed-back.js";
+import { inConversationSql, notHandedBackSql } from "./handed-back.js";
 import { mapTurn } from "./mappers.js";
 import { currentDrizzleDb, type DrizzleDatabase, type DrizzleDb } from "./repositories.js";
 import { createDrizzleTranscriptReader } from "./transcript-reader.js";
@@ -44,7 +44,7 @@ export function latestLocalRequesterTextSql(threadIds: readonly ThreadId[]) {
           FROM ${schema.turns} AS candidate
          WHERE candidate.thread_id = listed.id
            AND candidate.role = 'user'
-           AND ${notHandedBackSql("candidate.id")}
+           AND ${inConversationSql("candidate")}
            AND CASE
                  WHEN listed.kind = 'subagent'
                    THEN candidate.origin = 'system'
@@ -136,6 +136,15 @@ export function createDrizzleTurnRepository(
     },
     async findById(id) {
       const [row] = await active().select().from(schema.turns).where(eq(schema.turns.id, id));
+      return row ? mapTurn(row) : null;
+    },
+    async next(id) {
+      const [row] = await active()
+        .select()
+        .from(schema.turns)
+        .where(eq(schema.turns.parentTurnId, id))
+        .orderBy(asc(schema.turns.position))
+        .limit(1);
       return row ? mapTurn(row) : null;
     },
     async latest(threadId) {
@@ -320,6 +329,21 @@ export function createDrizzleTurnRepository(
         );
       return new Set(rows.map((row) => row.id as string));
     },
+    async forgetTurns(turnIds, byTurnId) {
+      if (turnIds.length === 0) return [];
+      const rows = await currentDrizzleDb(db)
+        .update(schema.turns)
+        .set({ forgottenByTurnId: byTurnId })
+        .where(
+          and(
+            sql`${schema.turns.threadId} = (SELECT thread_id FROM turns WHERE id = ${byTurnId})`,
+            inArray(schema.turns.id, [...turnIds]),
+            sql`${schema.turns.forgottenByTurnId} IS NULL`,
+          ),
+        )
+        .returning({ id: schema.turns.id });
+      return rows.map((row) => row.id as TurnId);
+    },
     async listMessageDeliveries(threadId: ThreadId) {
       const rows = await currentDrizzleDb(db)
         .select({
@@ -379,7 +403,7 @@ export function createDrizzleTurnRepository(
       const rows = await active()
         .select()
         .from(schema.turns)
-        .where(and(eq(schema.turns.threadId, threadId), notHandedBackSql("turns.id")))
+        .where(and(eq(schema.turns.threadId, threadId), inConversationSql("turns")))
         .orderBy(asc(schema.turns.position));
       return rows.map(mapTurn);
     },

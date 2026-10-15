@@ -5,7 +5,7 @@
  */
 
 import type { ThreadDocumentRelationship } from "@meridian/contracts/protocol";
-import type { PromptBakeId, ThreadId, WorkId } from "@meridian/contracts/runtime";
+import type { PromptBakeId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type {
   Block,
   ModelResponse,
@@ -609,9 +609,20 @@ export function createInMemoryRepositories(
     async findById(id) {
       return turns.get(id) ?? null;
     },
+    async next(id) {
+      return (
+        orderTurnsByPosition([...turns.values()].filter((t) => t.prevTurnId === id))[0] ?? null
+      );
+    },
     async latest(threadId) {
       return (await turnGraph.listByThread(threadId)).at(-1) ?? null;
     },
+  };
+  /** Whether the turn left the conversation by a stamp whose forgetting turn is inside the span (null: always). */
+  const forgottenInSpan = (turn: Turn, throughPosition: number | null) => {
+    if (!turn.forgottenBy) return false;
+    const forgetter = turns.get(turn.forgottenBy);
+    return !!forgetter && (throughPosition === null || forgetter.position <= throughPosition);
   };
   const turnRepo: TurnRepository = {
     [TURN_GRAPH]: turnGraph,
@@ -682,13 +693,27 @@ export function createInMemoryRepositories(
       );
     },
     async listByThread(threadId) {
-      return orderTurnsByPosition([...turns.values()].filter((t) => t.threadId === threadId));
+      return orderTurnsByPosition(
+        [...turns.values()].filter((t) => t.threadId === threadId && !forgottenInSpan(t, null)),
+      );
+    },
+    async forgetTurns(turnIds, byTurnId) {
+      const threadId = turns.get(byTurnId)?.threadId;
+      const stamped: TurnId[] = [];
+      for (const id of turnIds) {
+        const turn = turns.get(id);
+        if (!turn || turn.threadId !== threadId || turn.forgottenBy) continue;
+        turns.set(id, { ...turn, forgottenBy: byTurnId });
+        stamped.push(id);
+      }
+      return stamped;
     },
     async listLatestLocalRequesterText(threadIds) {
       const requested = new Set(threadIds);
       const latest = new Map<ThreadId, Turn>();
       for (const turn of turns.values()) {
         if (!requested.has(turn.threadId as ThreadId) || turn.role !== "user") continue;
+        if (forgottenInSpan(turn, null)) continue;
         const thread = threads.get(turn.threadId);
         const metadata = turn.metadata as import("@meridian/contracts/threads").JsonObject | null;
         const requester =
@@ -734,7 +759,8 @@ export function createInMemoryRepositories(
           (turn) =>
             turn.threadId === span.threadId &&
             turn.position > span.afterPosition &&
-            (span.throughPosition === null || turn.position <= span.throughPosition),
+            (span.throughPosition === null || turn.position <= span.throughPosition) &&
+            !forgottenInSpan(turn, span.throughPosition),
         );
         for (const turn of localTurns) {
           const ownedBlocks = [...blocks.values()].filter((block) => block.turnId === turn.id);
@@ -795,7 +821,8 @@ export function createInMemoryRepositories(
             (span) =>
               turn.threadId === span.threadId &&
               turn.position > span.afterPosition &&
-              (span.throughPosition === null || turn.position <= span.throughPosition),
+              (span.throughPosition === null || turn.position <= span.throughPosition) &&
+              !forgottenInSpan(turn, span.throughPosition),
           ),
       ).length;
     },
@@ -808,7 +835,8 @@ export function createInMemoryRepositories(
             (span) =>
               turn.threadId === span.threadId &&
               turn.position > span.afterPosition &&
-              (span.throughPosition === null || turn.position <= span.throughPosition),
+              (span.throughPosition === null || turn.position <= span.throughPosition) &&
+              !forgottenInSpan(turn, span.throughPosition),
           ),
       );
       return orderTurnsByPosition(matches)[ordinal - 1] ?? null;

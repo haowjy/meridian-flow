@@ -264,6 +264,7 @@ export type JournalEventType =
   | "agent.run_completed" // PRODUCED NOW — ReportPublisher B, body-free metadata
   | "subagent.activity" // PRODUCED NOW — ChildRunCoordinator/Driver (direct-parent journal, direct children)
   | "messages.handed_back" // PRODUCED NOW — waiting writer messages left the chat (Stop, the queue's x, Cancel queue)
+  | "turns.forgotten" // PRODUCED NOW — a failed attempt left the conversation (the writer retried it, or the chat moved past it)
   | "run_state.changed" // PRODUCED NOW — the chat's run-state record, before every commit that changed its inputs
   | "thread.status" // PRODUCED NOW — non-lease work status refresh
   | "context.assembled"

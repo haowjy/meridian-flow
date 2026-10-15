@@ -1,11 +1,12 @@
 /**
- * The turn graph: every turn of a chat, including the writer messages a hand-back took out of it.
+ * The turn graph: every turn of a chat, including the writer messages a hand-back took out of it and the
+ * turns a retry or a move-on forgot.
  * Positions, `prevTurnId`, the leaf and fork cutoffs live here, so a graph consumer reads it and
  * filters what it shows. `TurnRepository` and `BlockRepository` themselves return the conversation.
  *
  * The graph hangs off the repository under a symbol that only this module exports, and Biome's
  * `noRestrictedImports` (biome.json) lets only the modules that own graph logic import this file.
- * A reader of content that never imports it cannot reach a handed-back turn.
+ * A reader of content that never imports it cannot reach a turn that left the conversation.
  */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Turn } from "@meridian/contracts/threads";
@@ -18,6 +19,8 @@ export interface TurnGraph {
   listByThread(threadId: ThreadId): Promise<Turn[]>;
   /** A turn by id, handed back or not. */
   findById(id: TurnId): Promise<Turn | null>;
+  /** The turn chained directly after `id` (`prevTurnId`), or null at the leaf. */
+  next(id: TurnId): Promise<Turn | null>;
   /** The last turn by position: the leaf positions are allocated from. */
   latest(threadId: ThreadId): Promise<Turn | null>;
 }

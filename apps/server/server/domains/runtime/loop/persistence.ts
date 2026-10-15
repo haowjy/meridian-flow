@@ -34,6 +34,13 @@ import {
   projectReadModelEvent,
   type ThreadRepositories,
 } from "../../threads/index.js";
+import {
+  appendedTurns,
+  decideForgetting,
+  type ForgettingDecision,
+  loadForgettingFacts,
+} from "./forget-failed-attempt.js";
+import { isClosingRow } from "./latest-row.js";
 
 export type PersistenceDeps = {
   repos: Pick<
@@ -64,16 +71,69 @@ export async function persistAndAppendEvents<T>(
   return deps.repos.transaction(() => projectAndAppendEvents(deps, threadId, operation, options));
 }
 
+/**
+ * The one append primitive for turns at a boundary. When the appended turns hold a closing row it decides
+ * what the boundary forgets (`decideForgetting`, design-fx.md) and records it in the same commit: a
+ * `turns.forgotten` event right after the first closing `turn.created`, which the projector stamps.
+ * Run start decided first, so its request already left those turns out; `expectedForgetting` is that
+ * decision, and the two must agree or the request was built on the wrong history.
+ */
 export async function persistAndAppendTurnStartEvents<T>(
   deps: PersistenceDeps,
   threadId: ThreadId,
   expectedActiveLeafTurnId: import("@meridian/contracts/runtime").TurnId | null,
   operation: () => Promise<{ result: T; events: OrchestratorEvent[] }>,
-  options?: { afterEvents?: (result: T) => Promise<void> },
+  options?: { afterEvents?: (result: T) => Promise<void>; expectedForgetting?: ForgettingDecision },
 ): Promise<{ result: T; events: OrchestratorEvent[]; createdTurns: Turn[] }> {
+  const forgetting = async () => {
+    const persisted = await operation();
+    const created = persisted.events.flatMap((event) =>
+      event.type === "turn.created" ? [event.turn] : [],
+    );
+    const appended = appendedTurns(created);
+    if (!appended.closes) {
+      if (options?.expectedForgetting && options.expectedForgetting.forget.length > 0)
+        throw new ForgettingMismatchError(threadId);
+      return persisted;
+    }
+    const decision = decideForgetting(
+      await loadForgettingFacts(deps.repos, threadId, expectedActiveLeafTurnId),
+      appended,
+    );
+    if (options?.expectedForgetting && !sameForgotten(options.expectedForgetting, decision))
+      throw new ForgettingMismatchError(threadId);
+    if (decision.forget.length === 0 || decision.reason === null) return persisted;
+    const first = persisted.events.findIndex(
+      (event) => event.type === "turn.created" && isClosingRow(event.turn),
+    );
+    const closing = persisted.events[first];
+    if (closing?.type !== "turn.created") return persisted;
+    const events = [...persisted.events];
+    events.splice(first + 1, 0, {
+      type: "turns.forgotten",
+      turnIds: [...decision.forget],
+      byTurnId: closing.turn.id,
+      reason: decision.reason,
+    });
+    return { ...persisted, events };
+  };
   return deps.repos.runTurnStartTransition(threadId, expectedActiveLeafTurnId, () =>
-    projectAndAppendEvents(deps, threadId, operation, options),
+    projectAndAppendEvents(deps, threadId, forgetting, options),
   );
+}
+
+/** Run start's decision and the commit's differ: the request was built over the wrong history. */
+export class ForgettingMismatchError extends Error {
+  constructor(readonly threadId: ThreadId) {
+    super(`The forgetting decided at run start differs from the commit's: ${threadId}`);
+    this.name = "ForgettingMismatchError";
+  }
+}
+
+function sameForgotten(left: ForgettingDecision, right: ForgettingDecision): boolean {
+  const a = [...left.forget].sort();
+  const b = [...right.forget].sort();
+  return a.length === b.length && a.every((id, index) => id === b[index]);
 }
 
 async function projectAndAppendEvents<T>(

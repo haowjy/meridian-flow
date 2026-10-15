@@ -70,6 +70,12 @@ describe("turn store parity", () => {
     expect(turn?.completedAt).toBe(TURN_FIXTURE_NOW);
     expect(turn?.blocks.every((block) => block.createdAt === TURN_FIXTURE_NOW)).toBe(true);
 
+    // Forgetting is stamped on both stores alike (by id, held or not) and never cleared by a rewrite.
+    app.getState().markForgotten(THREAD, ["turn-2", "not-held"], "turn-3");
+    memory.markForgotten(THREAD, ["turn-2", "not-held"], "turn-3");
+    expect(app.getState().turns(THREAD)).toEqual(memory.turns(THREAD));
+    expect(memory.turns(THREAD)?.map((held) => held.forgottenBy)).toEqual([null, "turn-3"]);
+
     const memoryBefore = memory.turns(THREAD);
     const appBefore = app.getState().turns(THREAD);
     apply(TURN_FIXTURE_REWRITE_EVENT);

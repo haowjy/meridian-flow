@@ -470,7 +470,9 @@ export interface ReadTranscriptItemsInput {
 
 /**
  * Reads return the conversation: a writer message a hand-back took out of the chat is not returned by
- * `findById` or `listByThread`, and its blocks are not in `BlockRepository`. Positions, `prevTurnId`,
+ * `findById` or `listByThread`, and its blocks are not in `BlockRepository`. A forgotten turn (a failed
+ * attempt the writer retried or the chat moved past) is not in `listByThread` or the transcript spans, but
+ * `findById` still returns it with its `forgottenBy`: it is an identity read. Positions, `prevTurnId`,
  * the leaf and fork cutoffs read the graph, `turnGraph(turns)` from `./turn-graph.js`, which only the
  * modules that own that logic may import.
  */
@@ -514,6 +516,11 @@ export interface TurnRepository {
   findRetryReservation(threadId: ThreadId, replyTurnId: TurnId): Promise<Turn | null>;
   /** User turns of writer messages a hand-back took out of the chat. Their rows and blocks stay for diagnostics. */
   listHandedBackIds(threadId: ThreadId): Promise<ReadonlySet<string>>;
+  /**
+   * Stamps `forgotten_by_turn_id` on the named turns of the forgetting turn's thread (write-once: a turn
+   * already forgotten keeps its stamp). Returns the ids it stamped.
+   */
+  forgetTurns(turnIds: readonly TurnId[], byTurnId: TurnId): Promise<TurnId[]>;
   /** Each delivered inbox message of the thread with its deliverer (null when unknown). */
   listMessageDeliveries(threadId: ThreadId): Promise<Map<string, TurnDelivery>>;
   /** Complete epoch boundaries in the supplied transcript spans. */
