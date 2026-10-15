@@ -33,7 +33,7 @@ export interface WriteModeSwitchPort {
 
 /** One sentence, then the same instructions the Work context gives for that mode. */
 export function writeModeSwitchNotice(
-  work: Pick<Work, "archivedAt">,
+  work: Pick<Work, "archivedAt" | "isNoWork">,
   mode: AiWriteMode,
   mayUnarchive: boolean,
 ): string {
@@ -41,9 +41,10 @@ export function writeModeSwitchNotice(
     mode,
     archived: isWorkArchived(work),
     mayUnarchive,
+    noWork: work.isNoWork,
   }).instructions.join(" ");
   return mode === "direct"
-    ? `The writer switched this chat to auto-apply. ${modeText} Changes already in this Work's draft stay there for the writer to review.`
+    ? `The writer switched this chat to auto-apply. ${modeText} Changes already in the draft stay there for the writer to review.`
     : `The writer switched this chat to draft mode. ${modeText}`;
 }
 

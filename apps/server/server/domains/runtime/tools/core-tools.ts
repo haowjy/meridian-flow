@@ -247,7 +247,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         description:
           DOCUMENT_NAMES_DESCRIPTION +
           "\n" +
-          "Change documents. In draft mode your changes go to this Work's draft, except `scratch://`, which is always edited directly.",
+          "Change documents. In draft mode your changes go to the draft, except `scratch://`, which is always edited directly.",
         inputSchema: modelToolSchema(WriteToolInputSchema),
       },
       input: WriteToolInputSchema,
