@@ -81,13 +81,17 @@
 
 ## How the code changed
 
-<!-- Explain briefly how the code works now and what changed in its structure:
-     which models, boundaries, data flow or ownership moved, and why this shape.
-     A reader who hasn't opened the diff should come away understanding how it
-     works. Use short bullets or sentences, one idea each. Keep it short: no
-     file-by-file lists, and name a file only where it helps the explanation.
-     Say what was deleted or simplified. Track temporary code with its removal
+<!-- Explain how the code's structure changed, not which lines changed. Say
+     which module owns which decision now, what concept, boundary or seam is
+     new, how data and control flow through it, and what was merged or deleted.
+     Give the shape before and after, and why this shape beat the obvious
+     alternative. A reader who hasn't opened the diff should be able to sketch
+     the new structure. Use short bullets, one idea each. Don't list edits
+     ("added a prop", "added a check") or files; name a module or symbol only
+     where it anchors the structure. Track temporary code with its removal
      trigger. -->
+
+- **<structural change>.** Before: <who owned what>. Now: <who owns it, and why this shape>.
 
 ## DB Changes
 
