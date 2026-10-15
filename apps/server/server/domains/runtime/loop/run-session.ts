@@ -2,7 +2,10 @@
 
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import {
+  type HandBackRequest,
   isTerminalTurnStatus,
+  type SendNowRequest,
+  type SendNowResponse,
   type StopRequest,
   type StopResponse,
   type Turn,
@@ -56,7 +59,13 @@ export function createRunSessions(deps: {
   runClaim: RunClaim;
   delivery: Pick<
     RuntimeDelivery,
-    "settleStaleExecution" | "releaseExecution" | "selectPending" | "answerRunState" | "stop"
+    | "settleStaleExecution"
+    | "releaseExecution"
+    | "selectPending"
+    | "answerRunState"
+    | "stop"
+    | "handBack"
+    | "sendNow"
   >;
   handoffBriefs: import("../ports/handoff-briefs.js").HandoffBriefStopper;
   repos: { turns: TurnRepository; threads: Pick<ThreadRepository, "findById"> };
@@ -404,6 +413,19 @@ export function createRunSessions(deps: {
      */
     async stop(threadId: ThreadId, request: StopRequest): Promise<StopResponse> {
       const response = await deps.delivery.stop(threadId, request);
+      const active = running.get(threadId);
+      if (active && response.cancelledExecutionId === active.executionId) {
+        abortChildrenOf(threadId, true);
+        active.controller.abort();
+      }
+      return response;
+    },
+    /** The queue's x and Cancel queue: decided under the thread lock; never cancels a reply. */
+    handBack: (threadId: ThreadId, request: HandBackRequest) =>
+      deps.delivery.handBack(threadId, request),
+    /** Send now: as Stop aborts the run it flagged, and nothing is handed back. */
+    async sendNow(threadId: ThreadId, request: SendNowRequest): Promise<SendNowResponse> {
+      const response = await deps.delivery.sendNow(threadId, request);
       const active = running.get(threadId);
       if (active && response.cancelledExecutionId === active.executionId) {
         abortChildrenOf(threadId, true);
