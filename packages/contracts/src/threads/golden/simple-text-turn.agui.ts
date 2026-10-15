@@ -9,9 +9,7 @@ import {
   GOLDEN_RECORD_IDLE,
   GOLDEN_RECORD_RUNNING,
   GOLDEN_THREAD_ID,
-  GOLDEN_USER_TURN_ID,
 } from "./simple-text-turn.js";
-import { GOLDEN_EXECUTION_ID } from "./turn-fixture.js";
 
 /** Golden AG-UI stream for {@link SIMPLE_TEXT_TURN_ORCHESTRATOR} (server projector output). */
 export const SIMPLE_TEXT_TURN_AGUI: AGUIEvent[] = [
@@ -19,12 +17,7 @@ export const SIMPLE_TEXT_TURN_AGUI: AGUIEvent[] = [
     type: EventType.RUN_STARTED,
     threadId: GOLDEN_THREAD_ID,
     runId: GOLDEN_ASSISTANT_TURN_ID,
-    rawEvent: {
-      writeMode: null,
-      executionId: GOLDEN_EXECUTION_ID,
-      reservedForUserTurnIds: [GOLDEN_USER_TURN_ID],
-      position: 1,
-    },
+    rawEvent: { writeMode: null },
   },
   {
     type: EventType.TEXT_MESSAGE_START,
