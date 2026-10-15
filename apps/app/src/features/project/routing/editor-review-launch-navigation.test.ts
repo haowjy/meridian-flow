@@ -71,6 +71,32 @@ describe("review launch navigation", () => {
     expect(history.location.href).toContain("draft-1");
   });
 
+  it("a live answer opened with its prepared tab never carries a parked hidden sibling's item key", async () => {
+    const hidden = {
+      kind: "tracked" as const,
+      documentId: "doc-hidden",
+      scheme: "manuscript" as const,
+      path: "/Scene.md",
+      name: "Scene.md",
+      editable: true,
+      filetype: "markdown" as const,
+      schemaType: "document" as const,
+      reviews: { [workId]: { itemKey: "draft-hidden:doc-hidden", tabInstanceToken: "token" } },
+    } as never;
+    useContextTabsStore.getState().openTab(projectId, hidden, undefined, workId);
+    const { open, history } = setup(
+      vi.fn(async () => ({ kind: "failed" as const })),
+      `/p/${projectId}/editor/manuscript/Scene.md?work=${workId}&item=draft-hidden:doc-hidden`,
+      "doc-hidden",
+    );
+    const live = { ...(hidden as object), documentId: "doc-live", reviews: undefined } as never;
+    await open(
+      { scheme: "manuscript", path: "/Scene.md", documentId: "doc-live", workId },
+      { tab: live },
+    );
+    expect(history.location.href).not.toContain("item=");
+  });
+
   it("re-selecting a draft-only tab keeps its review identity (item=), since no live document exists", async () => {
     const { open, history } = setup(vi.fn(async () => ({ kind: "failed" as const })));
     const tab = {

@@ -1,39 +1,31 @@
 /**
- * ProjectChatContextNavigationProvider — adapts chat-local document URI opens
- * to the project route's context-file selection contract.
+ * ProjectChatContextNavigationProvider — the project shell's side of the chat's URI doors:
+ * placement policy, and nothing else.
  *
- * A door asks the question a transcript link asks, through the same follower
- * (`features/links`): what document is at this address, and is it live or only in a
- * draft? A live answer opens where the door always opened it; a hidden document goes
- * to its Work's review by item identity (the server names a draft-created document at its address);
- * a missing one routes anyway, so the route says so in place. A cold answer rides the
- * follower's own checking and failure states. This file keeps only the door's own
- * policy: placement (the Editor route, or the dock beside the chat) and its dock claim.
+ * A door asks the question a transcript link asks: what document is at this address, and is
+ * it live or only in a draft? The chat owns the one follower that asks (`useChatLinkFollowing`),
+ * so a door and a transcript link share one latest click, one dialog, and the chat's
+ * visibility and thread lifetime. This file prepares each door as a question plus a policy:
+ * a live answer opens by the document id the resolver named, where this door opens documents
+ * (the Editor, or the dock beside the chat); a hidden document goes to its Work's review by
+ * item identity; a missing one routes by address, so the route says so in place.
  *
- * Every door tells passage navigation it happened — carrying an anchor when the row had
- * one. That second call is not an extra for passage rows: it is where navigation
- * ownership changes hands, so an ordinary door retires whatever a search row was still
- * resolving. It never gates the route change, so a search row whose passage has moved
- * still opens its document.
+ * Every door tells passage navigation it began, which retires whatever an earlier search row
+ * was still resolving. A passage door's answer then carries the resolved id to passage
+ * navigation, which opens the document itself and lands on the anchor. Passage handling never
+ * gates the open, and never re-reads the address.
  */
-import { type ReactNode, useCallback, useContext, useMemo, useRef } from "react";
+import { type ReactNode, useCallback, useContext, useMemo } from "react";
 import { useLineage } from "@/client/query/useLineageTitle";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorks } from "@/client/query/useWorks";
-import { classifyLinkTarget, type LinkTarget } from "@/core/editor/links";
+import { classifyLinkTarget } from "@/core/editor/links";
 import {
-  ChatContextNavigationProvider,
+  ChatDoorsProvider,
   type ContextPassageAnchor,
+  type PreparedDoor,
 } from "@/features/chat/ChatContextNavigation";
-import {
-  type FollowReporter,
-  type LinkDestination,
-  LinkFollowDialog,
-  type LinkResolutionScope,
-  useFollowOutcomeState,
-  useLinkableDocuments,
-  useLinkFollower,
-} from "@/features/links";
+import type { LinkDestination, LinkDocumentRef } from "@/features/links";
 import {
   type ChatLineages,
   contextRouteTargetFromUri,
@@ -47,6 +39,9 @@ import type { ContextRouteRequest } from "../routing/project-route";
 import { canonicalDoorUri } from "./canonical-door-uri";
 import { usePassageDoors } from "./usePassageDoors";
 
+/** The review handoff never consults its live destination for a hidden document. */
+const reviewOnly: LinkDestination = async () => undefined;
+
 type OpenContextTarget = (target: ContextRouteRequest) => void;
 
 /** The door being followed: what the follower's destination needs besides the answer. */
@@ -56,7 +51,6 @@ type DoorIntent = {
   passage?: ContextPassageAnchor;
   /** The dock claim a beside-chat door took when it was clicked. */
   claim: number | null;
-  link: LinkTarget;
 };
 
 export function ProjectChatContextNavigationProvider({
@@ -96,27 +90,20 @@ export function ProjectChatContextNavigationProvider({
   const doorOpened = usePassageDoors(projectId, activeWork?.id ?? null);
   const besideChat = useContext(BesideChatContext);
   const openChatDocument = useOpenChatDocument(projectId);
-  const intent = useRef<DoorIntent | null>(null);
   const route = useCallback(
     ({ target }: Pick<DoorIntent, "target">) =>
       onOpenContextTarget?.({ ...target, workId: target.workId ?? undefined }),
     [onOpenContextTarget],
   );
 
-  // A document that exists is opened where this door opens documents.
-  const openFound = useCallback<LinkDestination>(
-    async (document) => {
-      const door = intent.current;
-      if (!door) return;
-      const dock = useDockDocumentStore.getState();
-      if (door.claim !== null && !dock.isCurrent(door.claim)) return;
-      const opened = { ...door.target, uri: door.uri };
-      if (!besideChat) {
-        route(door);
-        doorOpened(opened, door.passage);
-      } else if (door.passage) {
+  // A live answer opens the document the resolver named, by identity: never by address, which
+  // could be held by a hidden sibling's review.
+  const openLive = useCallback(
+    (door: DoorIntent, document: LinkDocumentRef) => {
+      if (door.claim !== null && !useDockDocumentStore.getState().isCurrent(door.claim)) return;
+      if (door.passage) {
         // The passage door opens the document itself, once, and lands on the passage.
-        doorOpened(opened, door.passage, {
+        doorOpened({ ...door.target, uri: door.uri }, door.passage, {
           documentId: document.documentId,
           claim: door.claim ?? undefined,
         });
@@ -126,22 +113,20 @@ export function ProjectChatContextNavigationProvider({
           workId: door.target.workId ?? undefined,
           claim: door.claim ?? undefined,
         });
-        doorOpened(opened);
       }
     },
-    [besideChat, doorOpened, openChatDocument, route],
+    [doorOpened, openChatDocument],
   );
-  const openReviewing = useReviewingLinkDestination(openFound);
+  // Only a hidden document reaches the review handoff, so its live fallback is never used.
+  const openReviewing = useReviewingLinkDestination(reviewOnly);
   // A hidden document is a review. Beside the chat it opens in the dock, as everything
   // beside the chat does; elsewhere the review handoff opens it in the Editor.
-  const open = useCallback<LinkDestination>(
-    async (document, gesture) => {
-      const door = intent.current;
+  const openFound = useCallback(
+    (door: DoorIntent, document: LinkDocumentRef, gesture: Parameters<LinkDestination>[1]) => {
       const { review } = document;
-      if (!door || !review) return openReviewing(document, gesture);
-      const dock = useDockDocumentStore.getState();
-      if (door.claim !== null && !dock.isCurrent(door.claim)) return;
-      doorOpened({ ...door.target, uri: door.uri });
+      if (!review) return Promise.resolve(openLive(door, document));
+      if (door.claim !== null && !useDockDocumentStore.getState().isCurrent(door.claim))
+        return Promise.resolve();
       if (besideChat && door.claim !== null) {
         const tab = contextTabFromDraftGroup({
           documentId: document.documentId,
@@ -153,50 +138,26 @@ export function ProjectChatContextNavigationProvider({
             workId: review.workId,
             itemKey: review.itemKey,
           });
-        return;
+        return Promise.resolve();
       }
       return openReviewing(document, gesture);
     },
-    [besideChat, doorOpened, openReviewing],
+    [besideChat, openLive, openReviewing],
   );
-
-  const scope = useMemo<LinkResolutionScope | null>(
-    () =>
-      activeWork && noWorkId
-        ? {
-            projectId,
-            workId: activeWork.id,
-            // Only a No Work chat's bare `scratch://` is its lineage's.
-            rootThreadId: activeWork.id === noWorkId ? rootThreadId : null,
-            baseUri: null,
-          }
-        : null,
-    [activeWork, noWorkId, projectId, rootThreadId],
-  );
-  const index = useLinkableDocuments(scope ?? { projectId: null, workId: null });
-  const { outcome, reporter: outcomeReporter } = useFollowOutcomeState();
   // Nothing at the address is not this door's to announce: the route says so in place.
-  const reporter = useMemo<FollowReporter>(
-    () => ({
-      clear: outcomeReporter.clear,
-      report(result) {
-        const door = intent.current;
-        if (result.state !== "missing" || !door) return outcomeReporter.report(result);
-        outcomeReporter.clear();
-        if (door.claim !== null && !useDockDocumentStore.getState().isCurrent(door.claim)) return;
-        route(door);
-        doorOpened({ ...door.target, uri: door.uri }, door.passage);
-      },
-    }),
-    [doorOpened, outcomeReporter, route],
+  const openMissing = useCallback(
+    (door: DoorIntent) => {
+      if (door.claim !== null && !useDockDocumentStore.getState().isCurrent(door.claim)) return;
+      route(door);
+    },
+    [route],
   );
-  const follower = useLinkFollower({ scope, index, open, reporter });
 
-  const openContextUri = useCallback(
-    (uri: string, passage?: ContextPassageAnchor) => {
-      if (!onOpenContextTarget || !activeWork || !noWorkId) return;
+  const prepare = useCallback(
+    (uri: string, passage?: ContextPassageAnchor): PreparedDoor | null => {
+      if (!onOpenContextTarget || !activeWork || !noWorkId) return null;
       const target = contextRouteTargetFromUri(uri, activeWork, availableWorks, noWorkId, lineages);
-      if (!target) return;
+      if (!target) return null;
       // The catalog knows a document only by its canonical spelling, whoever owns it: a bare
       // `scratch://x` is the chat's lineage or the active Work, so name that owner's handle.
       const ownerRef = target.rootThreadId
@@ -209,13 +170,23 @@ export function ProjectChatContextNavigationProvider({
           ? null
           : (availableWorks.find(({ id }) => id === target.workId)?.slug ?? undefined);
       const catalogUri = canonicalDoorUri(target, { ownerRef, workSlug }) ?? uri;
+      // A new intent retires an earlier search row's passage work now, not when this answer lands.
+      doorOpened({ ...target, uri: catalogUri });
+      const link = classifyLinkTarget(catalogUri);
+      if (!link) {
+        route({ target });
+        return null;
+      }
       // The dock is claimed now, so whatever answers later is inside the claim.
       const claim = besideChat ? useDockDocumentStore.getState().claim() : null;
-      const link = classifyLinkTarget(catalogUri);
-      if (!link) return route({ target });
-      const door = { target, uri: catalogUri, passage, claim, link };
-      intent.current = door;
-      follower.follow(link);
+      const door: DoorIntent = { target, uri: catalogUri, passage, claim };
+      return {
+        link,
+        policy: {
+          open: (document, gesture) => openFound(door, document, gesture),
+          missing: () => openMissing(door),
+        },
+      };
     },
     [
       activeWork,
@@ -224,35 +195,26 @@ export function ProjectChatContextNavigationProvider({
       lineages,
       onOpenContextTarget,
       besideChat,
-      follower,
+      doorOpened,
+      openFound,
+      openMissing,
       route,
       rootThreadId,
       ownHandle,
       threads,
     ],
   );
-  const canOpenContextUri = useCallback(
+  const canOpen = useCallback(
     (uri: string) =>
       !!activeWork &&
       !!noWorkId &&
       isContextUriRoutable(uri, activeWork, availableWorks, noWorkId, lineages),
     [activeWork, availableWorks, noWorkId, lineages],
   );
-
-  return (
-    <ChatContextNavigationProvider
-      onOpenContextUri={onOpenContextTarget ? openContextUri : null}
-      canOpenContextUri={onOpenContextTarget ? canOpenContextUri : null}
-    >
-      {children}
-      <LinkFollowDialog
-        outcome={outcome}
-        projectId={projectId}
-        scratchRootThreadId={scope?.rootThreadId ?? null}
-        onClose={follower.dismiss}
-        onRetry={follower.retry}
-        onOpen={(document) => open(document, "current")}
-      />
-    </ChatContextNavigationProvider>
+  const doors = useMemo(
+    () => (onOpenContextTarget ? { prepare, canOpen } : null),
+    [canOpen, onOpenContextTarget, prepare],
   );
+
+  return <ChatDoorsProvider doors={doors}>{children}</ChatDoorsProvider>;
 }

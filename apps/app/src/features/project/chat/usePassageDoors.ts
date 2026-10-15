@@ -18,14 +18,14 @@ export type PassageDoorTarget = {
   uri: string;
 };
 
-/** Tell passage navigation that a door was opened. The passage is optional. */
 /**
- * What the door already resolved, so passage handling does not look the same URI up again.
- * A door that resolved only the document (`editable` absent) has not opened it: the
- * passage owns the open, landing on the anchor when the file is editable and plainly otherwise.
+ * What the door already resolved: the document the resolver named. Its identity is the
+ * only one this door may open. The door has not opened it: the passage owns the open,
+ * landing on the anchor when the file is editable and plainly otherwise.
  */
-export type PassageDoorResolved = { documentId: string; editable?: boolean; claim?: number };
+export type PassageDoorResolved = { documentId: string; claim?: number };
 
+/** Tell passage navigation that a door began (retiring any earlier one) or was resolved. The passage is optional. */
 export type PassageDoorOpened = (
   target: PassageDoorTarget,
   passage?: ContextPassageAnchor,
@@ -53,15 +53,15 @@ export function usePassageDoors(projectId: string, activeWorkId: string | null):
         dismissPassageNotice();
         if (!passage) return;
 
-        const file =
-          resolved?.editable !== undefined
-            ? { documentId: resolved.documentId, editable: resolved.editable }
-            : await lookupContextCatalogFile(
-                projectId,
-                target.scheme,
-                contextOwner(target.workId, target.rootThreadId),
-                { uri: target.uri },
-              );
+        // The lookup only learns whether the named document is editable. Its failure, or an
+        // answer naming another occupant of the address, leaves the document to open plainly.
+        const found = await lookupContextCatalogFile(
+          projectId,
+          target.scheme,
+          contextOwner(target.workId, target.rootThreadId),
+          { uri: target.uri },
+        ).catch(() => null);
+        const file = !resolved || found?.documentId === resolved.documentId ? found : null;
         if (signal.aborted) return;
         // A binary or missing file has no Yjs document to land in; the door's
         // own destination already explains both, unless the door left the open to us.
@@ -93,8 +93,8 @@ export function usePassageDoors(projectId: string, activeWorkId: string | null):
         if (signal.aborted) return;
         if (result.kind === "stale") reportPassageChanged(file.documentId);
       });
-      // A lookup that fails leaves an open document, which is the door's real
-      // promise; nothing here is worth interrupting the writer for.
+      // Passage landing is best effort: the document is the door's real promise, and
+      // nothing here is worth interrupting the writer for.
       void resolving.catch(() => {});
     },
     [openDocument, projectId],

@@ -54,6 +54,15 @@ export type LinkDestination = (
   gesture: LinkFollowDisposition,
 ) => Promise<unknown>;
 
+/**
+ * What one follow does differently from its surface's default: a destination of
+ * its own, and what to do when nothing is at the address (instead of reporting it).
+ */
+export type FollowPolicy = {
+  open?: LinkDestination;
+  missing?: () => void;
+};
+
 /** Where an outcome worth interrupting the writer about is said. */
 export type FollowReporter = {
   report(outcome: LinkFollowOutcome): void;
