@@ -9,7 +9,8 @@ export type CatalogScope =
   | { kind: "project"; projectId: ProjectId }
   | { kind: "user"; userId: UserId }
   | { kind: "work"; projectId: ProjectId; workId: WorkId }
-  | { kind: "lineage"; projectId: ProjectId; rootThreadId: string };
+  | { kind: "lineage"; projectId: ProjectId; rootThreadId: string }
+  | { kind: "chat"; projectId: ProjectId; chatId: string };
 
 export type CatalogAuthorityEntry = {
   kind: "authority";
@@ -170,6 +171,8 @@ export function catalogScopeKey(scope: CatalogScope): string {
       return `user:${scope.userId}`;
     case "lineage":
       return `lineage:${scope.projectId}:${scope.rootThreadId}`;
+    case "chat":
+      return `chat:${scope.projectId}:${scope.chatId}`;
     case "work":
       return `work:${scope.projectId}:${scope.workId}`;
   }

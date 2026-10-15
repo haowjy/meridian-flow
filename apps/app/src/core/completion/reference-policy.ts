@@ -209,6 +209,8 @@ function stableAuthority(
       return { kind: "project", projectId: scope.projectId };
     case "user":
       return { kind: "user", userId: scope.userId };
+    case "chat":
+      return null; // TODO(#875 P5): a chat's uploads are a stable reference authority.
     case "work": {
       const entry = authorities.get(`work:${scope.workId}`);
       if (!entry) return null;

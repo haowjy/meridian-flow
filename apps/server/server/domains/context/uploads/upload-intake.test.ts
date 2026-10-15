@@ -30,7 +30,11 @@ function harness() {
         state: "reserved",
         storageUrl: null,
         consumed: false,
-        owner: { kind: "work", workId: input.owner.workId, workSlug: null },
+        owner: {
+          kind: "work",
+          workId: input.owner.kind === "work" ? input.owner.workId : "",
+          workSlug: null,
+        },
       };
       return { kind: "reserved", reservation: row };
     },

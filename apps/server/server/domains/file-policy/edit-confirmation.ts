@@ -93,6 +93,8 @@ function holds(container: Extract<FileTarget, { kind: "container" }>, facts: Fil
       facts.projectId === container.owner.projectId &&
       facts.ownerRootThreadId === container.owner.rootThreadId
     );
+  // TODO(#875 P2): a chat container's facts.
+  if (container.owner.scope === "chat") return false;
   return container.owner.scope === "project"
     ? facts.ownerWork === null &&
         !facts.ownerRootThreadId &&

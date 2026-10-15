@@ -66,6 +66,11 @@ async function readReservation(db: Database, projectId: string, intakeId: string
   return row ? mapRow(row.intake, row.workSlug) : null;
 }
 
+// TODO(#875 P3): intake for a chat owner.
+function chatOwnerNotBuilt(): Error {
+  return new Error("Chat-owned upload intake is not built yet (#875 P3)");
+}
+
 /** Runs in `reserve`, which already holds the owning Work's row lock. */
 async function resolveOwner(db: Database, owner: UploadOwner, actorUserId: string) {
   const activeDb = currentDrizzleDb(db);
@@ -81,6 +86,7 @@ async function resolveOwner(db: Database, owner: UploadOwner, actorUserId: strin
     )
     .limit(1);
   if (!project) return null;
+  if (owner.kind === "chat") throw chatOwnerNotBuilt();
   const workId = owner.workId;
   if (!workId) return null;
   const [lockedRow] = await activeDb
@@ -152,6 +158,7 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
         const activeDb = currentDrizzleDb(db);
         // The owning Work's row and the grants' confirmation come before any
         // advisory lock (file-access §5).
+        if (input.owner.kind === "chat") throw chatOwnerNotBuilt();
         await lockSeamWorks(db, input.owner.workId ? [input.owner.workId] : []);
         await lockIntakeKey(db, input.owner.projectId, input.intakeId);
         const existing = await readReservation(db, input.owner.projectId, input.intakeId);

@@ -97,6 +97,9 @@ export function catalogEntryLocation(
       ...resourceLineageOwner(view.scope, authority.rootThreadRef),
     };
   }
+  // TODO(#875 P5): a chat-scope catalog's location owner.
+  if (view.scope.kind === "chat")
+    throw new Error("Chat catalog scopes are not built yet (#875 P5)");
   if (authority.kind === "none") {
     return {
       scheme,

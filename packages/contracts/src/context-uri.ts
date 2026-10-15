@@ -44,6 +44,8 @@ export type ParsedContextAuthority =
   | { kind: "contextual" }
   | { kind: "none" }
   | { kind: "lineage"; rootThreadRef: string }
+  /** The chat (a primary thread) that received the files; only `uploads://` takes it. */
+  | { kind: "chat"; chatRef: string }
   | { kind: "work"; workSlug: WorkSlug };
 
 /** The owners a holder's authority supplies, independently for each owned scheme. */
@@ -52,11 +54,13 @@ export function holderAuthorities(
 ): Record<WorkScopedContextUriScheme, ParsedContextAuthority | null> {
   switch (authority.kind) {
     case "work":
-      return { scratch: authority, uploads: authority };
+      return { scratch: authority, uploads: null };
     case "lineage":
-      return { scratch: authority, uploads: { kind: "none" } };
-    case "none":
+      return { scratch: authority, uploads: null };
+    case "chat":
       return { scratch: null, uploads: authority };
+    case "none":
+      return { scratch: null, uploads: null };
     case "contextual":
       return { scratch: null, uploads: null };
   }
@@ -79,6 +83,7 @@ export type CanonicalContextAuthority =
   | { kind: "contextual" }
   | { kind: "none" }
   | { kind: "lineage"; rootThreadRef: string }
+  | { kind: "chat"; chatRef: string }
   | ResolvedWorkAuthority;
 
 export interface ParsedContextUri {
@@ -138,10 +143,16 @@ export function canonicalContextUri(
   }
   const normalizedPath = segments.join("/");
   if (scheme !== "scratch" && "kind" in authority && authority.kind === "lineage") {
-    throw new RangeError("Only Scratch supports a chat qualifier");
+    throw new RangeError("Only Scratch supports a first-chat qualifier");
+  }
+  if (scheme !== "uploads" && "kind" in authority && authority.kind === "chat") {
+    throw new RangeError("Only uploads support a chat qualifier");
   }
   if (scheme === "scratch" && normalizedPath && authorityQualifier(authority) === "@") {
     throw new RangeError(missingScratchHandle);
+  }
+  if (scheme === "uploads" && normalizedPath && authorityQualifier(authority) === "@") {
+    throw new RangeError(missingUploadsHandle);
   }
   const qualifier = authorityQualifier(authority);
   if (qualifier)
@@ -156,6 +167,10 @@ function authorityQualifier(authority: CanonicalContextAuthority): string | null
     if (!/^c[1-9][0-9]*$/.test(authority.rootThreadRef))
       throw new RangeError("Invalid first-chat handle");
     return `@/${authority.rootThreadRef}`;
+  }
+  if ("kind" in authority && authority.kind === "chat") {
+    if (!/^c[1-9][0-9]*$/.test(authority.chatRef)) throw new RangeError("Invalid chat handle");
+    return `@/${authority.chatRef}`;
   }
   if ("workSlug" in authority) return authority.workSlug ? `@${authority.workSlug}` : "@";
   return authority.kind === "none" ? "@" : null;
@@ -278,6 +293,17 @@ function parseAuthorityPrefix(
       value: { authority: { kind: "lineage", rootThreadRef }, rawPath: segments.join("/") },
     };
   }
+  if (qualifier === "@" && scheme === "uploads" && segments.length) {
+    const chatRef = segments.shift() ?? "";
+    if (/^p[1-9][0-9]*$/.test(chatRef)) {
+      return invalidContextUri(rawUri, "Use the chat's handle (c…), not a subagent's (p…).");
+    }
+    if (!/^c[1-9][0-9]*$/.test(chatRef)) return invalidContextUri(rawUri, missingUploadsHandle);
+    return {
+      ok: true,
+      value: { authority: { kind: "chat", chatRef }, rawPath: segments.join("/") },
+    };
+  }
   if (qualifier === "@") {
     return { ok: true, value: { authority: { kind: "none" }, rawPath: segments.join("/") } };
   }
@@ -307,11 +333,13 @@ export function formatParsedContextUri(
   const qualifier =
     authority.kind === "lineage"
       ? `@/${authority.rootThreadRef}`
-      : authority.kind === "work"
-        ? `@${authority.workSlug}`
-        : authority.kind === "none"
-          ? "@"
-          : null;
+      : authority.kind === "chat"
+        ? `@/${authority.chatRef}`
+        : authority.kind === "work"
+          ? `@${authority.workSlug}`
+          : authority.kind === "none"
+            ? "@"
+            : null;
   if (qualifier) return path ? `${scheme}://${qualifier}/${path}` : `${scheme}://${qualifier}/`;
   return path ? `${scheme}://${path}` : `${scheme}://`;
 }
@@ -353,3 +381,6 @@ export function documentTitleFromUri(uri: string | null | undefined): string | n
 
 const missingScratchHandle =
   "Scratch under @/ requires the first chat handle. Use scratch://x for this chat’s notes, or scratch://@/c12/x for a specific chat. List chats with ls scratch://@/.";
+
+const missingUploadsHandle =
+  "Uploads under @/ require the chat handle. Use uploads://x for this chat’s files, or uploads://@/c12/x for a specific chat.";

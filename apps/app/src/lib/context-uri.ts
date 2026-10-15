@@ -82,6 +82,8 @@ export function contextRouteTargetFromUri(
   if (parsed.authority.kind === "contextual") {
     return { scheme: parsed.scheme, path: parsed.path, workId: activeWork.id };
   }
+  // TODO(#875 P5): a chat-qualified uploads address opens the chat's uploads.
+  if (parsed.authority.kind === "chat") return null;
   const requestedSlug = parsed.authority.workSlug;
   const qualified = availableWorks.find(({ slug }) => slug === requestedSlug);
   return qualified ? { scheme: parsed.scheme, path: parsed.path, workId: qualified.id } : null;
