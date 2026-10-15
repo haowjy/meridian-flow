@@ -59,7 +59,7 @@ adapter only.
 - A temporary problem the writer can act on (a failed Stop, a refused Retry, out of
   usage) is a `NoticeCard`, the card every chat failure uses, never a text line under
   or beside a control. A failed Stop and out of usage carry a button (Try again, Add
-  usage); a held row reads only "Queued", and the usage card says why. A failure shows
+  usage); a held row is only the queued bubble, and the usage card says why. A failure shows
   only while it can be acted on: once a turn follows a failed reply, it leaves no line,
   and with no content no row (`viewTranscript` decides; a refused Retry's card keeps it).
 - Stop (the [composer's one button](../../components/app/composer/AGENTS.md))
@@ -72,9 +72,11 @@ adapter only.
 - **The queue.** One queue per chat: any tab's press takes any queued message into its
   own box, above typed text. A queued row is drawn from `ViewRow.queued` with
   `data-queued` on the article: a dotted `--color-muted-foreground` border, no fill and
-  `--color-ink-muted` text (`globals.css`), never opacity. Its status line reads
-  "Queued" and the x ("Move to the message box", 44px on coarse pointers). The last queued
-  row also has Cancel queue (two or more queued) and Send now (a reply runs). Send now
+  `--color-ink-muted` text (`globals.css`), never opacity. No status line:
+  the dotted bubble is the mark, and the article's accessible name reads "Your message,
+  queued". The x ("Move to the message box", 44px on coarse pointers) sits beside the
+  bubble, centred on it. Under the last queued row, right-aligned, sit Cancel queue (two
+  or more queued) and Send now (a reply runs). Send now
   stops the reply so the whole queue runs next, hands nothing back, and rings (a spinner)
   while pending or stopping. A lost race (the reply took the message first) shows nothing.
   `useHandBack` adapts the package's hand-back operation (draft store, run-state port,

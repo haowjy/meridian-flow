@@ -49,27 +49,46 @@ function UserTurnComponent({
     ),
   );
 
+  const queuedRow = queued && turn.status !== "pending" && turn.status !== "error";
+  const content = (
+    <Markdown
+      breaks
+      references={projected.references}
+      skills={projected.skills}
+      referenceResolutions={resolutions}
+      onOpenReference={(documentId) => void openDocument({ documentId, disposition: "current" })}
+    >
+      {projected.text}
+    </Markdown>
+  );
+
   return (
     <article
       className="user-turn"
       data-turn-id={turn.id}
       data-turn-role="user"
-      aria-label={t`Your message`}
-      data-queued={queued && turn.status !== "pending" && turn.status !== "error" ? "" : undefined}
+      aria-label={queuedRow ? t`Your message, queued` : t`Your message`}
+      data-queued={queuedRow ? "" : undefined}
     >
-      <div className="user-message-bubble">
-        <Markdown
-          breaks
-          references={projected.references}
-          skills={projected.skills}
-          referenceResolutions={resolutions}
-          onOpenReference={(documentId) =>
-            void openDocument({ documentId, disposition: "current" })
-          }
-        >
-          {projected.text}
-        </Markdown>
-      </div>
+      {queuedRow && queueControls ? (
+        // The x sits beside the bubble, centred on it; the bubble gives up width for it.
+        <div className="flex items-center justify-end gap-[var(--chat-space-inline)]">
+          <div className="user-message-bubble min-w-0">{content}</div>
+          <Button
+            type="button"
+            variant="quiet"
+            size="icon-xs"
+            data-queue-control="move-to-box"
+            aria-label={t`Move to the message box`}
+            className="shrink-0 [@media(pointer:coarse)]:size-11"
+            onClick={() => queueControls.remove(turn.id)}
+          >
+            <X aria-hidden />
+          </Button>
+        </div>
+      ) : (
+        <div className="user-message-bubble">{content}</div>
+      )}
       {turn.status === "pending" ? (
         <p
           data-user-turn-status="pending"
@@ -80,13 +99,12 @@ function UserTurnComponent({
           {t`Sending`}
         </p>
       ) : null}
-      {queued && turn.status !== "pending" && turn.status !== "error" ? (
-        <div
-          data-user-turn-status="queued"
-          className="mt-[var(--chat-space-inline)] flex flex-wrap items-center justify-end gap-x-[var(--chat-space-block)] text-xs text-muted-foreground"
-        >
-          <p role="status">{t`Queued`}</p>
-          {queueControls && lastQueued && queuedCount >= 2 ? (
+      {queuedRow &&
+      queueControls &&
+      lastQueued &&
+      (queuedCount >= 2 || queueControls.sendNow.available) ? (
+        <div className="mt-[var(--chat-space-inline)] flex flex-wrap items-center justify-end gap-x-[var(--chat-space-block)] text-xs text-muted-foreground">
+          {queuedCount >= 2 ? (
             <Button
               type="button"
               variant="quiet"
@@ -98,7 +116,7 @@ function UserTurnComponent({
               {t`Cancel queue`}
             </Button>
           ) : null}
-          {queueControls && lastQueued && queueControls.sendNow.available ? (
+          {queueControls.sendNow.available ? (
             <Button
               type="button"
               variant="quiet"
@@ -114,19 +132,6 @@ function UserTurnComponent({
                 <Loader2 className="size-3 motion-safe:animate-spin" aria-hidden />
               ) : null}
               {t`Send now`}
-            </Button>
-          ) : null}
-          {queueControls ? (
-            <Button
-              type="button"
-              variant="quiet"
-              size="icon-xs"
-              data-queue-control="move-to-box"
-              aria-label={t`Move to the message box`}
-              className="[@media(pointer:coarse)]:size-11"
-              onClick={() => queueControls.remove(turn.id)}
-            >
-              <X aria-hidden />
             </Button>
           ) : null}
         </div>
