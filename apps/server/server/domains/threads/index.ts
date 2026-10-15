@@ -3,6 +3,7 @@
 export type { DrizzleDatabase } from "../../shared/drizzle-transaction.js";
 export { createDrizzleEventJournalReader } from "./adapters/drizzle/event-reader.js";
 export { createDrizzleEventJournalWriter } from "./adapters/drizzle/event-writer.js";
+export { createDrizzleTopPrimaryChatResolver } from "./adapters/drizzle/top-primary-chat.js";
 export {
   createInMemoryEventJournalReader,
   createInMemoryEventJournalWriter,
