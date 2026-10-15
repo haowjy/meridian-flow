@@ -42,6 +42,7 @@ import { ContextOperationReceipts } from "./context/context-operation-receipts.j
 import { type ContextSourceBinding, createContextPortRouter } from "./context/router.js";
 import { UNIFIED_CONTEXT_SCHEMES } from "./context/uri.js";
 import {
+  createChatContextDocumentStore,
   createLineageContextDocumentStore,
   createNoWorkContextDocumentStore,
   createProjectContextDocumentStore,
@@ -100,6 +101,8 @@ export interface UnifiedContextPortFactory {
 interface ContextStoreResolvers {
   lineages: ScratchLineages;
   resolveLineageStore(projectId: string, rootThreadId: string): ContextDocumentStore;
+  /** The chat's uploads; `chatId` is a top primary thread id (`resolveTopPrimaryChat`). */
+  resolveChatStore(projectId: string, chatId: string, scheme: "uploads"): ContextDocumentStore;
   resolveProjectStore(
     projectId: string,
     userId: string,
@@ -397,6 +400,9 @@ function createInMemoryStoreResolvers(
     resolveLineageStore(_projectId, rootThreadId) {
       return getInMemoryWorkContextStore(registry, rootThreadId, "scratch");
     },
+    resolveChatStore(_projectId, chatId, scheme) {
+      return getInMemoryWorkContextStore(registry, `chat:${chatId}`, scheme);
+    },
     resolveProjectStore(projectId, userId, scheme) {
       return getInMemoryProjectContextStore(registry, projectId, userId, scheme);
     },
@@ -428,6 +434,17 @@ function createProductionStoreResolvers(
         db,
         projectId,
         rootThreadId,
+        catalogMutations,
+        arrivals,
+        repair,
+      );
+    },
+    resolveChatStore(projectId, chatId, scheme) {
+      return createChatContextDocumentStore(
+        db,
+        projectId,
+        chatId,
+        scheme,
         catalogMutations,
         arrivals,
         repair,

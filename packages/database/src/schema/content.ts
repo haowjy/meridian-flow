@@ -138,6 +138,8 @@ export const contextSources = pgTable(
       .references(() => works.id, { onDelete: "cascade" }),
     // Lineage identity is not a thread-row FK: trashing/purging the first chat must not cascade.
     rootThreadId: uuid("root_thread_id").$type<ThreadId>(),
+    // A chat (primary thread) owns its uploads source; same no-FK rule as `root_thread_id`.
+    chatThreadId: uuid("chat_thread_id").$type<ThreadId>(),
     name: text("name").notNull(),
     slug: text("slug").notNull(),
     scope: text("scope").notNull().default("project"),
@@ -161,7 +163,7 @@ export const contextSources = pgTable(
     uniqueIndex("context_sources_project_scope_slug")
       .on(table.projectId, table.slug)
       .where(
-        sql`${table.workId} IS NULL AND ${table.rootThreadId} IS NULL AND ${table.deletedAt} IS NULL`,
+        sql`${table.workId} IS NULL AND ${table.rootThreadId} IS NULL AND ${table.chatThreadId} IS NULL AND ${table.deletedAt} IS NULL`,
       ),
     uniqueIndex("context_sources_work_slug")
       .on(table.workId, table.slug)
@@ -169,14 +171,20 @@ export const contextSources = pgTable(
     uniqueIndex("context_sources_lineage_slug")
       .on(table.rootThreadId, table.slug)
       .where(sql`${table.rootThreadId} IS NOT NULL`),
+    uniqueIndex("context_sources_chat_slug")
+      .on(table.chatThreadId, table.slug)
+      .where(sql`${table.chatThreadId} IS NOT NULL`),
     index("context_sources_project_sort")
       .on(table.projectId, table.sortOrder)
       .where(sql`${table.deletedAt} IS NULL`),
     check(
       "context_sources_exactly_one_scope",
-      sql`(${table.scope} = 'project' AND ${table.projectId} IS NOT NULL AND ${table.workId} IS NULL AND ${table.rootThreadId} IS NULL) OR (${table.scope} = 'work' AND ${table.projectId} IS NULL AND ${table.workId} IS NOT NULL AND ${table.rootThreadId} IS NULL) OR (${table.scope} = 'lineage' AND ${table.projectId} IS NOT NULL AND ${table.workId} IS NULL AND ${table.rootThreadId} IS NOT NULL AND ${table.slug} = 'scratch')`,
+      sql`(${table.scope} = 'project' AND ${table.projectId} IS NOT NULL AND ${table.workId} IS NULL AND ${table.rootThreadId} IS NULL AND ${table.chatThreadId} IS NULL) OR (${table.scope} = 'work' AND ${table.projectId} IS NULL AND ${table.workId} IS NOT NULL AND ${table.rootThreadId} IS NULL AND ${table.chatThreadId} IS NULL) OR (${table.scope} = 'lineage' AND ${table.projectId} IS NOT NULL AND ${table.workId} IS NULL AND ${table.rootThreadId} IS NOT NULL AND ${table.chatThreadId} IS NULL AND ${table.slug} = 'scratch') OR (${table.scope} = 'chat' AND ${table.projectId} IS NOT NULL AND ${table.workId} IS NULL AND ${table.rootThreadId} IS NULL AND ${table.chatThreadId} IS NOT NULL AND ${table.slug} = 'uploads')`,
     ),
-    check("context_sources_scope_valid", sql`${table.scope} IN ('project', 'work', 'lineage')`),
+    check(
+      "context_sources_scope_valid",
+      sql`${table.scope} IN ('project', 'work', 'lineage', 'chat')`,
+    ),
     check(
       "context_sources_scope_work_fk",
       sql`${table.scope} <> 'work' OR ${table.workId} IS NOT NULL`,
@@ -363,6 +371,9 @@ export const uploadIntakes = pgTable(
     workId: uuid("work_id")
       .$type<WorkId>()
       .references(() => works.id, { onDelete: "cascade" }),
+    // The owning chat's thread id. No FK: the chat's row may not exist yet at attach time, and
+    // trashing or purging it must not cascade (the same as lineage Scratch's root id).
+    ownerThreadId: uuid("owner_thread_id").$type<ThreadId>(),
     contextSourceId: uuid("context_source_id")
       .$type<ContextSourceId>()
       .notNull()
@@ -393,6 +404,9 @@ export const uploadIntakes = pgTable(
       "upload_intakes_state_valid",
       sql`${table.state} IN ('reserved', 'object_stored', 'finalized', 'deleted')`,
     ),
+    index("upload_intakes_owner_thread")
+      .on(table.ownerThreadId)
+      .where(sql`${table.ownerThreadId} IS NOT NULL`),
     check("upload_intakes_digest_valid", sql`${table.byteDigest} ~ '^[0-9a-f]{64}$'`),
   ],
 );
