@@ -21,6 +21,11 @@ editor `useRoomReview` retains the room headlessly (Work page, strip) and the
 runtime reads its Yjs text. Surfaces read the state with `useReviewState`;
 nothing copies it into the controller.
 
+The attribution hint also names where each chat wrote: every edit part carries its turn and the
+tool call from its `branch_write_journal` row. A change's chat link reveals the chat's latest
+overlapping write (turn and tool call), so it opens the chat at the write that made the change;
+with no turn known it just opens the chat. Best effort: nothing gates on it.
+
 Every `ReviewChange` carries the frame it was listed from. A click acts on that
 frame: Apply sends its snapshot, Discard finds its pin and content hash in the
 current text and refuses when it cannot. Painting may be newer than chrome; that

@@ -487,6 +487,9 @@ Use a change two chats wrote. Run both shells.
 2. Rename one writing chat and refresh. PASS: shared changes name each current chat and each name
    opens its own chat; an untitled chat still has a usable link; writer-only edits name no chat.
    Inspect `GET …/draft/attribution` and the transcript with `./mf` for the attribution.
+3. With a chat that made two `write` calls, click its link on the change the second call made.
+   PASS: the chat opens scrolled to that second `write` tool call (not the chat's usual position),
+   and the first call is not the target.
 
 ## Review across document schemes
 

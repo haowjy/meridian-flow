@@ -10,6 +10,8 @@ export interface DraftAttributionEdit {
   threadId: string;
   title: string;
   turnId: string;
+  /** The tool call that wrote the part, when its journal row recorded one. */
+  toolCallId?: string;
   /** ISO time of the edit; the list is latest first. */
   at: string;
   inserted: AttributionItemRange[];

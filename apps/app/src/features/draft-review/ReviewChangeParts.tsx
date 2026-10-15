@@ -15,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useOpenChatThread } from "@/features/chat/ChatThreadNavigation";
+import { requestConversationReveal } from "@/features/chat/conversation-reveal";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { cn } from "@/lib/utils";
 import { RefusalReason } from "./ReviewMessageText";
@@ -205,8 +206,18 @@ function ChatLink({
   );
 }
 
+/** Opens the chat at the write that made the change; with no turn known, at the chat. */
 function openChat(chat: ChatRef, openThread: (threadId: string) => void) {
-  openThread(chat.chatId);
+  if (chat.turnId) {
+    requestConversationReveal({
+      kind: "turn",
+      threadId: chat.chatId,
+      turnId: chat.turnId,
+      ...(chat.toolCallId ? { toolCallId: chat.toolCallId } : {}),
+    });
+  } else {
+    openThread(chat.chatId);
+  }
 }
 
 /** Why an Apply of a change did not land, in the writer's words. */

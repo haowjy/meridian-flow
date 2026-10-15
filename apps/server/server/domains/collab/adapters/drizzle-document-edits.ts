@@ -130,6 +130,7 @@ async function listPendingAgentEdits(
     .select({
       threadId: documentEdits.threadId,
       turnId: documentEdits.turnId,
+      toolCallId: branchWriteJournal.toolCallId,
       title: threads.title,
       at: documentEdits.createdAt,
       effect: documentEditParts.effect,
@@ -137,6 +138,11 @@ async function listPendingAgentEdits(
     .from(documentEditParts)
     .innerJoin(documentEdits, eq(documentEdits.id, documentEditParts.editId))
     .innerJoin(threads, eq(threads.id, documentEdits.threadId))
+    // A pending part's placement names the journal row that holds the tool call that wrote it.
+    .leftJoin(
+      branchWriteJournal,
+      sql`${branchWriteJournal.id} = (${documentEditParts.placement}->>'rowId')::bigint`,
+    )
     .where(
       and(
         sql`${documentEditParts.placement}->>'kind' = 'pending'`,
@@ -154,6 +160,7 @@ async function listPendingAgentEdits(
             threadId: row.threadId,
             title: row.title ?? "",
             turnId: row.turnId,
+            ...(row.toolCallId ? { toolCallId: row.toolCallId } : {}),
             at: row.at.toISOString(),
             inserted: row.effect.inserted.map(tuple),
             deleted: row.effect.deleted.map(tuple),

@@ -10,6 +10,9 @@ import { groupAnchor, type ReviewFrame } from "./review-frame";
 export interface ChatRef {
   chatId: string;
   title: string;
+  /** Where the latest write that made the change happened, when the hint knows. */
+  turnId?: string;
+  toolCallId?: string;
 }
 
 export interface ReviewChange {
@@ -41,6 +44,8 @@ export function reviewChanges(
     chats: (attribution.get(group.id) ?? []).map((chat) => ({
       chatId: chat.threadId,
       title: chat.title,
+      turnId: chat.turnId,
+      ...(chat.toolCallId ? { toolCallId: chat.toolCallId } : {}),
     })),
     anchor: groupAnchor(group),
     spans: group.spans,

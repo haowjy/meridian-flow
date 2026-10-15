@@ -16,11 +16,12 @@ export interface AttributionEdit {
   threadId: string;
   title: string;
   turnId: string;
+  toolCallId?: string;
   at: string;
   inserted: readonly ItemRange[];
   deleted: readonly ItemRange[];
 }
-export type ChatHint = Pick<AttributionEdit, "threadId" | "title" | "turnId" | "at">;
+export type ChatHint = Pick<AttributionEdit, "threadId" | "title" | "turnId" | "toolCallId" | "at">;
 
 /** Merged, sorted id intervals per client, answering "does any id in [lo, hi) fall in the set". */
 class RangeSet {
@@ -209,8 +210,9 @@ export function matchAttribution(
   for (const [groupId, hits] of overlaps(fragment, projection, ordered.map(prepare))) {
     const hints: ChatHint[] = [];
     for (const i of hits) {
-      const { threadId, title, turnId, at } = ordered[i];
-      if (!hints.some((h) => h.threadId === threadId)) hints.push({ threadId, title, turnId, at });
+      const { threadId, title, turnId, toolCallId, at } = ordered[i];
+      if (!hints.some((h) => h.threadId === threadId))
+        hints.push({ threadId, title, turnId, ...(toolCallId ? { toolCallId } : {}), at });
     }
     out.set(groupId, hints);
   }
