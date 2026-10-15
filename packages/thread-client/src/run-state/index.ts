@@ -17,6 +17,7 @@ export {
   writerMessages,
 } from "./fold-messages";
 export { type SwitchRow, type SwitchRowStatus, switchState } from "./fold-switches";
+export { type MessageFate, messageFate } from "./message-fate";
 export {
   type RetryEntry,
   type RetryReconciliation,

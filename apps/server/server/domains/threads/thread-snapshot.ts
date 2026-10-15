@@ -91,6 +91,9 @@ export async function buildThreadSnapshot(
     // The graph keeps every turn (the leaf, `prevTurnId`); the snapshot shows the conversation.
     const graph = await turnGraph(repos.turns).listByThread(threadId);
     const handedBack = await repos.turns.listHandedBackIds(threadId);
+    // Contract: `messageFate` (@meridian/thread-client) reads a user turn's absence from this
+    // snapshot as a hand-back. A snapshot that pages or hides turns any other way must expose
+    // `handedBackIds` instead, or `./mf thread send` would claim a hand-back that did not happen.
     const turns = graph.filter((turn) => !handedBack.has(turn.id));
     const deliveries = await repos.turns.listMessageDeliveries(threadId);
     const blocksByTurn = groupBy(
