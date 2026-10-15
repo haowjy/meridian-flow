@@ -7,8 +7,7 @@ import { errorMessageFromPayload, readResponsePayload } from "./http-client";
 import { meridianApiErrorFromPayload } from "./meridian-error";
 
 function url(scope: ComposerUploadScope) {
-  const query = scope.kind === "work" ? `?workId=${encodeURIComponent(scope.workId)}` : "";
-  return `/api/projects/${encodeURIComponent(scope.projectId)}/context/uploads/upload${query}`;
+  return `/api/projects/${encodeURIComponent(scope.projectId)}/context/uploads/upload?chatId=${encodeURIComponent(scope.chatId)}`;
 }
 async function response<T>(request: Promise<Response>): Promise<T> {
   const value = await request;

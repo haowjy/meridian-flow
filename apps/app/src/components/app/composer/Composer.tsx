@@ -65,7 +65,8 @@ export type {
 } from "./composer-document";
 export { serializeComposerDraft } from "./composer-document";
 
-export type ComposerUploadScope = { kind: "work"; projectId: string; workId: string };
+/** Uploads belong to the chat; a New chat's id is minted before its row exists. */
+export type ComposerUploadScope = { kind: "chat"; projectId: string; chatId: string };
 
 function authorityForUpload(
   scope: ComposerUploadScope,
@@ -73,11 +74,11 @@ function authorityForUpload(
 ): StableReferenceAuthority {
   const parsed = parseContextUri(uri);
   return {
-    kind: "work",
+    kind: "chat",
     projectId: scope.projectId,
-    workId: scope.workId,
-    workSlug:
-      parsed.ok && parsed.value.authority.kind === "work" ? parsed.value.authority.workSlug : null,
+    chatId: scope.chatId,
+    chatRef:
+      parsed.ok && parsed.value.authority.kind === "chat" ? parsed.value.authority.chatRef : null,
   };
 }
 export type ComposerUploadPort = Readonly<{

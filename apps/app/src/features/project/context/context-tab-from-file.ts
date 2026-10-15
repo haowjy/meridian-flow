@@ -26,6 +26,7 @@ export function editorTabWorkId(location: ResourceOwner): string | undefined {
 
 /** What a tab holds of its owner: a Work row id, or a lineage with the handle its URI spells. */
 export function tabOwnerOf(location: ResourceOwner): TabOwner {
+  if (location.chatId !== undefined) return { chatId: location.chatId, chatRef: location.chatRef };
   return location.rootThreadId !== undefined
     ? { rootThreadId: location.rootThreadId, rootThreadRef: location.rootThreadRef }
     : location.workId
@@ -35,9 +36,18 @@ export function tabOwnerOf(location: ResourceOwner): TabOwner {
 
 /** The owner a location names, for catalog and request lookups. */
 export function contextOwnerOf(location: ResourceOwner): ContextOwner {
+  if (location.chatId !== undefined) return { chatId: location.chatId, chatRef: location.chatRef };
   return location.rootThreadId !== undefined
     ? { rootThreadId: location.rootThreadId, rootThreadRef: location.rootThreadRef }
     : { workId: location.workId };
+}
+
+/** The handle (`c15`) a chat's upload's URI spells. */
+function chatRefOf(file: CatalogFile): string {
+  const parsed = parseContextUri(file.uri);
+  if (!parsed.ok || parsed.value.authority.kind !== "chat")
+    throw new Error("A chat's upload must have a chat authority");
+  return parsed.value.authority.chatRef;
 }
 
 /** The handle (`c12`) a chat's Scratch file's URI spells. */
@@ -61,14 +71,21 @@ export function contextTabFromFile(
       resourceHandle: file.resourceHandle,
     };
   }
-  if (isWorkScopedProjectContextScheme(scheme) && !owner.workId && !owner.rootThreadId)
-    throw new Error("Work-scoped tabs require a Work row id or a lineage");
+  if (
+    isWorkScopedProjectContextScheme(scheme) &&
+    !owner.workId &&
+    !owner.rootThreadId &&
+    !owner.chatId
+  )
+    throw new Error("Work-scoped tabs require a Work row id, a lineage or a chat");
   const tabOwner: TabOwner =
-    scheme === "scratch" && owner.rootThreadId
-      ? { rootThreadId: owner.rootThreadId, rootThreadRef: lineageRefOf(file) }
-      : isWorkScopedProjectContextScheme(scheme) && owner.workId
-        ? { workId: owner.workId }
-        : {};
+    scheme === "uploads" && owner.chatId
+      ? { chatId: owner.chatId, chatRef: chatRefOf(file) }
+      : scheme === "scratch" && owner.rootThreadId
+        ? { rootThreadId: owner.rootThreadId, rootThreadRef: lineageRefOf(file) }
+        : isWorkScopedProjectContextScheme(scheme) && owner.workId
+          ? { workId: owner.workId }
+          : {};
   const base = {
     documentId: file.documentId,
     scheme,
@@ -192,6 +209,8 @@ export function projectResourceTab(
       workId: _workId,
       rootThreadId: _rootThreadId,
       rootThreadRef: _rootThreadRef,
+      chatId: _chatId,
+      chatRef: _chatRef,
       ...existing
     } = tab;
     const projected = {
