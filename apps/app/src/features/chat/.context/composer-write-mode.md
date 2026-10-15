@@ -97,6 +97,9 @@ records, taking the first record as its baseline, and calls `invalidateWriteMode
 
 The composer control shows the number of documents waiting beside Draft ("Draft (3)"), from the
 Work's draft list, in the trigger (while in Draft) and the menu option (in either mode); with none it reads "Draft".
+The count matters most from Auto-apply, when the writer is about to switch into a draft, so the
+`useWorkDrafts` read carries no mode gate. It counts the Work's draft, while the `DraftDock` strip
+lists only this chat's changes, so "Draft (2)" beside a one-document strip is correct.
 
 The dock projection is tri-state while its query loads: pending count and review
 availability are `null`, distinct from loaded zero/false; loading client state

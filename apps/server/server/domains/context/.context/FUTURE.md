@@ -1,27 +1,16 @@
-# domains/context — deferred / future work
+# domains/context FUTURE
 
-Optional local improvements and future domain scope. Cross-cutting entries link
-to tracking issues. Delete an entry when it ships.
+These are deferred domain improvements. Validate the existing URI, tree, and
+catalog contracts before changing them.
 
-## Manuscript ordering & agent reorder tool
+## Manuscript ordering and agent reorder
 
-[haowjy/meridian-flow#144](https://github.com/haowjy/meridian-flow/issues/144)
+Catalog order is currently derived from the existing name-based projection.
+Design an explicit manuscript binder order, then add its persistence, route,
+ContextPort seam, and agent move/reorder behavior as one coherent change.
 
-Remaining from #144 — **manuscript ordering + drag-reorder:**
+## Batch revision availability
 
-Sibling order is derived by the catalog projection (dirs-first, then
-`name.localeCompare`); `folders.sort_order` exists in schema but is unwired,
-and `documents` has no order column. Manual order decouples order from
-filename → explicit order field on `documents`, serializer sorts by order, a
-reorder port method + route, and an **agent reorder/move tool** (the AI
-co-authors the manuscript, so create/move become order-aware). Resolve the
-design question first — Scrivener-style explicit binder order for manuscript,
-and how the agent participates — via design-lead → tech-lead.
-
-## Batch revision availability lookups
-
-`document-revisions.ts` `current` calls `availability.lookup` once per
-document, though the port accepts a `documentIds` batch. Compaction calls it
-twice (before the summary and once per successor-prepare attempt) over every
-document recorded in the history it checks. Unmeasured; batch it if those
-round trips show in compaction latency.
+`DocumentRevisions.current` and compaction have batch-capable availability
+ports but may still issue per-document lookups. Measure compaction and multi-
+document revision latency before changing the call shape.
