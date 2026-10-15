@@ -47,7 +47,7 @@ export function applyEdits(
   model: AgentEditModel,
   edits: ResolvedEdit | readonly ResolvedEdit[],
   origin: ApplyTransactionOrigin,
-  certifySegment?: (segment: readonly ResolvedEdit[]) => void,
+  certifyEdit?: (edit: ResolvedEdit) => void,
 ): ApplyResult {
   const editList = Array.isArray(edits) ? [...edits] : [edits];
   if (editList.length === 0) {
@@ -64,26 +64,18 @@ export function applyEdits(
     deletedHashes: new Set(),
   };
 
-  const segments = editList.map((edit) => [edit]);
   let committedEdits = 0;
-  for (const segment of segments) {
-    const plans: PlannedEdit[] = [];
-    for (const edit of segment) {
-      const planned = preflightEdit(doc, model, edit);
-      if (!planned.ok)
-        return applyError(planned.code, planned.message, planned.details, { committedEdits });
-      plans.push(planned.plan);
-    }
+  for (const edit of editList) {
+    const planned = preflightEdit(doc, model, edit);
+    if (!planned.ok)
+      return applyError(planned.code, planned.message, planned.details, { committedEdits });
     try {
       let failure: ApplyFailure | undefined;
       model.transact(
         doc,
         () => {
-          for (const plan of plans) {
-            failure = executePlan(doc, model, plan, accumulator);
-            if (failure) break;
-          }
-          if (!failure) certifySegment?.(segment);
+          failure = executePlan(doc, model, planned.plan, accumulator);
+          if (!failure) certifyEdit?.(edit);
         },
         origin,
       );
@@ -96,7 +88,7 @@ export function applyEdits(
         { committedEdits },
       );
     }
-    committedEdits += segment.length;
+    committedEdits += 1;
   }
 
   return {

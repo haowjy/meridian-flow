@@ -427,7 +427,7 @@ export function createWriteCommands(deps: {
             options.model,
             plan.edits,
             origin,
-            certifySegment(runtime, plan.ir, beforeVector),
+            certifyEdit(runtime, plan.ir, beforeVector),
           );
         let insertedBlocks: string[] = [];
         runtime.doc.transact(() => {
@@ -730,25 +730,16 @@ export function createWriteCommands(deps: {
     };
   }
 
-  /** Certify inside the segment's prose transaction, within the same capture. */
-  function certifySegment(
+  /** Certify inside the edit's prose transaction, within the same capture. */
+  function certifyEdit(
     runtime: { doc: Y.Doc },
     ir: SemanticEditIRV1,
     beforeStateVector: Uint8Array,
-  ): (segment: readonly ResolvedEdit[]) => void {
-    return (segment) => {
+  ): (applied: ResolvedEdit) => void {
+    return (applied) => {
       const intent = ir.intent;
       if (intent.kind === "fullScopeFreshReplacement") return;
-      const edits = intent.edits.filter(({ edit }) =>
-        segment.some(
-          (part) =>
-            part === edit ||
-            (part.kind === "textRanges" &&
-              edit.kind === "textRanges" &&
-              part.block === edit.block &&
-              part.replacements.some((replacement) => edit.replacements.includes(replacement))),
-        ),
-      );
+      const edits = intent.edits.filter(({ edit }) => edit === applied);
       options.semanticProvenance?.writeCertifiedFacts(
         toDocHandle(runtime.doc),
         { ...ir, intent: { ...intent, edits } },
