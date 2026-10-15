@@ -5,6 +5,8 @@ export const ResolveDocumentLinksRequestSchema = z
   .object({
     rootThreadId: z.string().uuid().nullable().optional(),
     workId: z.string().uuid().nullable().optional(),
+    /** The chat a bare `uploads://` means; a subagent's request names its top chat. */
+    chatId: z.string().uuid().nullable().optional(),
     /** The holder's URI; null for chat, which alone may fall back to previous locations. */
     baseUri: z.string().max(2048).nullable(),
     /**

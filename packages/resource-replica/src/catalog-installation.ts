@@ -22,7 +22,7 @@ import {
   type ResourceWrite,
   sameOwner,
 } from "./resource-records";
-import { resourceLineageOwner } from "./resource-work-authority";
+import { resourceChatOwner, resourceLineageOwner } from "./resource-work-authority";
 
 export type CatalogObservationFence = Readonly<{
   /** Folder canonical state captured before HTTP; a refresh barrier is proven only by its operation id. */
@@ -97,9 +97,16 @@ export function catalogEntryLocation(
       ...resourceLineageOwner(view.scope, authority.rootThreadRef),
     };
   }
-  // TODO(#875 P5): a chat-scope catalog's location owner.
-  if (view.scope.kind === "chat")
-    throw new Error("Chat catalog scopes are not built yet (#875 P5)");
+  if (view.scope.kind === "chat") {
+    if (scheme !== "uploads" || authority.kind !== "chat")
+      throw new Error("Catalog file URI has invalid chat uploads authority");
+    return {
+      scheme,
+      path: displayedPath(path),
+      name: entry.name,
+      ...resourceChatOwner(view.scope, authority.chatRef),
+    };
+  }
   if (authority.kind === "none") {
     return {
       scheme,

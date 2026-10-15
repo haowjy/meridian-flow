@@ -347,7 +347,9 @@ function authorityMatches(
     (authority.kind !== "work" ||
       (expected.kind === "work" && authority.workSlug === expected.workSlug)) &&
     (authority.kind !== "lineage" ||
-      (expected.kind === "lineage" && authority.rootThreadRef === expected.rootThreadRef))
+      (expected.kind === "lineage" && authority.rootThreadRef === expected.rootThreadRef)) &&
+    (authority.kind !== "chat" ||
+      (expected.kind === "chat" && authority.chatRef === expected.chatRef))
   );
 }
 
