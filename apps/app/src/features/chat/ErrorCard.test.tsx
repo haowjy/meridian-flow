@@ -163,15 +163,25 @@ describe("reply ErrorBlock", () => {
     expect(onRetry).toHaveBeenCalledTimes(1);
 
     const history = await render(replyRow(turn, { endsTranscript: false, replyRetry }));
-    expect(history.textContent).toBe("The AI provider turned this request down.");
+    // A failure shows only while it can be acted on: no trace once the chat moved past it.
+    expect(history.textContent).toBe("");
     expect(history.querySelector("[data-reply-retry]")).toBeNull();
     const readOnly = await render(replyRow(turn, { endsTranscript: true }));
     expect(readOnly.querySelector("[data-reply-retry]")).toBeNull();
   });
 
-  it("is a quiet muted line, not a card, once history has moved on", async () => {
-    const host = await render(createElement(ErrorBlock, { isLatest: false }));
-    expect(host.querySelector("[data-slot='alert']")).toBeNull();
-    expect(host.textContent).toBe("This response failed.");
+  it("draws a refused Retry's card alone once history has moved on, with no failure line or actions", async () => {
+    const turn = { ...failedTurn, role: "assistant" as const, blocks: [], responses: [] };
+    const host = await render(
+      replyRow(turn, {
+        endsTranscript: false,
+        replyRetry: { refused: "another-reply", requestLost: false },
+      }),
+    );
+    expect(host.querySelector("[data-slot='alert']")?.textContent).toBe(
+      "Couldn't retry. Another reply started first.",
+    );
+    expect(host.textContent).not.toContain("This response failed.");
+    expect(host.querySelector("[data-assistant-turn-actions]")).toBeNull();
   });
 });
