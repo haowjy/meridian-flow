@@ -95,10 +95,10 @@ describe("interrupt response settlement", () => {
   it("still settles to the server resolution after the socket closes", () => {
     const scenario = new ThreadRunScenario();
     scenario.controller.respondInterrupt(response);
-    scenario.attach({ runningTurnId: TURN });
 
     scenario.closeSocket();
-    scenario.emit(resolutionEvent(), "6");
+    // The mounted subscriber applies the stream's resolution event to the store.
+    scenario.store.getState().applyTurnEvent(THREAD, resolutionEvent(), "6");
 
     expect(pendingEntry(scenario)).toBeUndefined();
   });

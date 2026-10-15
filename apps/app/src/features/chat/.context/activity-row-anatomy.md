@@ -104,7 +104,7 @@ deferred, not rejected: 64px is 21% of a 360px docked chat.
 
 ## Verbs live in one place
 
-`tool-command.ts` classifies the writer-facing command; `command-descriptor.ts`
+`tool-command.ts` (in `@meridian/thread-client`) classifies the writer-facing command; `command-descriptor.ts`
 holds one exhaustive table of what the timeline does with it, including both
 tenses, the glyph, the failure verb, and the expand shape. Renderers consume the table; nothing derives past tense inline, and
 adding a command is one entry. The same vocabulary feeds

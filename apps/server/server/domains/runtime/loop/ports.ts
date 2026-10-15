@@ -67,7 +67,7 @@ export interface InboxReader {
 }
 
 export type InboxProjection = {
-  blocked?: import("@meridian/contracts/threads").ThreadPendingInbox["blocked"];
+  blocked?: { reason: "credits_exhausted" };
   messages: InboxMessage[];
   run: { turnId: TurnId | null; messageIds: string[] } | null;
 };
@@ -107,6 +107,12 @@ export interface RunClaim {
   /** Updates the live run's current tool; returns false when it did not change. */
   setCurrentTool(lease: Lease, currentTool: CurrentToolCall): Promise<boolean>;
   read(threadId: ThreadId): Promise<ThreadStatus>;
+  /**
+   * This execution's own lease row whatever its expiry, or null when the row is gone or another
+   * execution holds it. Stop cancels an expired lease that is still held, so a caller that must
+   * honour a cancel reads here, not through {@link read}, which reports an expired lease as asleep.
+   */
+  readOwned(lease: Lease): Promise<{ cancelRequested: boolean } | null>;
   /**
    * Batch liveness read for a page of threads, one lease query. Only threads
    * with a live lease appear; the value is the same projection `read` and

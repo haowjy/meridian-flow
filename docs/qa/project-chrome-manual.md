@@ -44,7 +44,12 @@ row list, which a document read cannot see.)
 
 ## Composer
 
-7. Type a draft and press Escape. The run and the **draft are both left alone**.
+7. While a reply runs, the composer has **one button**. With the box empty it is
+   **Stop**. Type text and it becomes **Send**, with the running ring. Clear the box
+   and **Stop** returns. Stopping is the button's **spinning ring**, with no text beside it. A failed Stop is
+   a red **"Couldn't stop the reply."** card above the box with **Try again**. Type while
+   the card shows and it stays, with the button Send. Clear the box and the button is Stop again. Press Escape with the box empty and it **stops the reply**.
+   Press Escape with text in the box and the run and the **draft are both left alone**.
 8. Send `/compact <instructions>`. It goes as a **command, never as a message**.
 9. On a surface that registers no verbs, send text starting with `/compact`. It goes
    as a **message**.

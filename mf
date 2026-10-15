@@ -1,4 +1,4 @@
 #!/bin/sh
-# Local dev CLI for this worktree's running stack. Usage: ./mf  (see tools/dev/cli)
+# Local dev CLI for this worktree's running stack. Usage: ./mf  (see tools/mf)
 root="$(cd "$(dirname "$0")" && pwd)"
-exec "$root/node_modules/.bin/tsx" "$root/tools/dev/cli/main.ts" "$@"
+exec "$root/node_modules/.bin/tsx" "$root/tools/mf/src/main.ts" "$@"

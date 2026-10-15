@@ -14,14 +14,18 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Turn } from "@meridian/contracts/protocol";
+import { readHandoffSeed } from "@meridian/contracts/threads";
 import { CircleAlert, Forward } from "lucide-react";
 import { useId, useRef, useState } from "react";
+import { NoticeCard } from "@/components/app/NoticeCard";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
 import { ClippedProse } from "../ClippedExpand";
 import { useFocusWithinRow } from "../compaction/useFocusWithinRow";
-import { type BriefCardView, briefCardView, readHandoffSeed } from "./handoff-seed";
+import { retryRefusedCopy } from "../ErrorBlock";
+import type { RetryRefusal } from "../useRetryStandIns";
+import { type BriefCardView, briefCardView } from "./handoff-seed";
 import { SourceChatLink, useSourceThread } from "./SourceChatLink";
 
 export type HandoffBriefCardProps = {
@@ -31,8 +35,8 @@ export type HandoffBriefCardProps = {
   stopping: boolean;
   /** The writer's last Stop on this seed failed. */
   stopFailed?: boolean;
-  /** The server refused this card's Retry; the cause stays in diagnostics. */
-  retryRefused?: boolean;
+  /** The server refused this card's Retry; the cause stays in diagnostics. Drawn as an error card until the next action or the next completed reply. */
+  retryRefused?: RetryRefusal | null;
   /** A reply (or anything else) holds the chat: Retry waits until it ends. */
   destinationBusy?: boolean;
   /** Absent in a read-only view (a fork's inherited brief) or before the server has the seed. */
@@ -59,7 +63,7 @@ export function HandoffBriefCard({
   latest,
   stopping,
   stopFailed = false,
-  retryRefused = false,
+  retryRefused = null,
   destinationBusy = false,
   onStop,
   onRetry,
@@ -171,9 +175,9 @@ export function HandoffBriefCard({
             </p>
           ) : null}
           {retryRefused ? (
-            <p className="text-caption text-muted-foreground">
-              <Trans>Couldn't retry.</Trans>
-            </p>
+            <NoticeCard tone="error">
+              <p>{retryRefusedCopy(retryRefused)}</p>
+            </NoticeCard>
           ) : null}
           {view.state === "stopped" && !view.superseded ? (
             <p className="text-caption text-muted-foreground">

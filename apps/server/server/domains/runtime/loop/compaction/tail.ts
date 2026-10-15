@@ -12,6 +12,30 @@ export interface CompactionCut {
   blockSequence?: number;
 }
 
+/**
+ * Finds where a complete compaction cut, among the turns the conversation still has. A compaction
+ * can cut at (or pin) a writer message that a hand-back later took out of the chat; that turn is
+ * not in `turns`. Its place is then read from the chain: the cut becomes the last turn before the
+ * cut's successor (the first turn whose `prevTurnId` is the missing turn, else the compaction
+ * itself), which is everything the cut covered. Null when no cut exists before the compaction.
+ */
+export function resolveCut(
+  turns: readonly Turn[],
+  compaction: Pick<Turn, "position">,
+  compactedThrough: CompactionCut,
+): CompactionCut | null {
+  const own = turns.find((turn) => turn.id === compactedThrough.turnId);
+  if (own) return own.position < compaction.position ? compactedThrough : null;
+  const successor = turns
+    .filter((turn) => turn.prevTurnId === compactedThrough.turnId)
+    .reduce<Pick<Turn, "position">>(
+      (first, turn) => (turn.position < first.position ? turn : first),
+      compaction,
+    );
+  const before = turns.filter((turn) => turn.position < successor.position).at(-1);
+  return before ? { turnId: before.id } : null;
+}
+
 export function retainedTail(input: {
   turns: readonly Turn[];
   blocksByTurn: ReadonlyMap<string, readonly Block[]>;

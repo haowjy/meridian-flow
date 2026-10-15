@@ -62,8 +62,8 @@ into a cancel or the shutdown failure.
   the execution ends with no successor. Its receipt stays unacknowledged:
   the messages wait for the next run.
 
-Either way the execution ends (`execution.ended`) with the waiting messages
-undelivered; the next execution is reserved for them and delivers them
+Either way the execution ends (its lease row is released) with the waiting
+messages undelivered; the next execution is reserved for them and delivers them
 ([run identity](delivery.md#run-identity)).
 
 The release wake starts a run, which applies S at its start, adopts the waiting
@@ -85,11 +85,23 @@ whose only pending row is a switch. A switch queued while setup is in flight is
 found by the selection's retry loop, and the start commit validates that
 selection.
 
-The apply is one transaction under the thread lock: set `threads.ai_write_mode`,
-append a complete `system` turn at the active leaf (`writeMode` = the new mode,
-metadata `{ kind: "write_mode_switch", mode, controlMessageId }`) whose text
-block is the model's `<system_update>` notice, acknowledge the control and
-publish the pending inbox. No model call and no lease.
+The apply commits in the thread-lock transaction that reserves the run: set
+`threads.ai_write_mode`, append a complete `system` turn at the active leaf
+(`writeMode` = the new mode, metadata `{ kind: "write_mode_switch", mode,
+controlMessageId }`) whose text block is the model's `<system_update>` notice,
+acknowledge the control and publish the run-state record (which carries the new
+mode), then the reservation. All of it commits together or none of it does, so a
+start that is aborted, cancelled or refused after it selected the switch leaves S
+pending. No model call, and no separate transaction: application runs inside the leased
+reservation transaction, under the run's claim.
+
+Preparation (references, images, skills, the compaction decision) reads storage,
+and the history it builds must include the switch turn and the new mode. A start
+that selects a due switch therefore skips the optimistic attempts and prepares in
+the locked attempt, applying S first; there is no projected switch and no
+compensating one. This holds the thread lock for that preparation, so a writer
+admission on the chat waits for it (a start with no due switch prepares outside
+the lock as before).
 
 A switch never wakes the chat and the route never applies one. Switching back,
 or Stop, cancels the queued switch with nothing recorded. The Work's
@@ -98,7 +110,11 @@ is set when the writer switches, switches back or stops the pending switch (last
 action wins), so a chat created in between starts in the mode the writer just
 chose. A fork or handoff starts in the mode the writer sees
 (`effectiveWriteMode`: the pending switch's, else the applied one); a subagent
-keeps its parent's applied mode, which is the running reply's.
+keeps its parent's applied mode, which is the running reply's. The thread read serves the same
+rule as `effectiveAiWriteMode` (a `pendingWriteMode` subquery in the thread repository's
+`threadColumns`: the oldest undelivered `write_mode` control, else the applied mode). "Undelivered"
+is exactly what the run-state record lists as pending, because a withdrawn or handed-back row is
+delivered, so the toolbar can show a pending switch from the thread row before the record arrives.
 
 **Undo seam.** The switch turn owns no document edits: no change-trail rows,
 no receipt, nothing undoable. Because the yield ends the execution, writes before
@@ -126,8 +142,8 @@ Enqueue runs under the thread lock, and every request writes its own row.
 4. **Otherwise** the switch is queued, idle chat or not, and sets the Work's default.
 5. `compact_requires_completed_reply` applies to `compact` only.
 
-An acknowledged row with no switch turn answers replays with `pending` and
-`turnId` both null, so a retried cancel never cancels a newer switch. The answer's fields are in the
+An acknowledged row with no switch turn answers replays with `turnId` null and
+no item for it in the answer's `runState`, so a retried cancel never cancels a newer switch. The answer's fields are in the
 [control API](../../../../../../docs/api/thread-controls.md#enqueue).
 
 ## Ownership and withdrawal

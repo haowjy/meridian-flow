@@ -1,6 +1,8 @@
 /** PostgreSQL contract: a failed assistant turn keeps its terminal status when the writer moves on. */
+
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { EMPTY_RUN_STATE } from "../../../../test-support/run-state.js";
 import type { ThreadEventHub } from "../../thread-event-hub.js";
 import { buildThreadSnapshot } from "../../thread-snapshot.js";
 
@@ -100,6 +102,9 @@ else
         },
         async readPending() {
           return { items: [] };
+        },
+        async readRunState() {
+          return EMPTY_RUN_STATE;
         },
       };
       const snapshot = await buildThreadSnapshot(repos, hub, statusReader, ids.thread);

@@ -100,8 +100,8 @@ runs it with the rest of the draft, trimmed, as `instructions`; choosing it
 from the `/` menu runs it with none. Commands wait at the end of the queue: a
 running reply adopts queued messages at each tool boundary, and a new run takes
 waiting messages first; a command runs only when no message waits, oldest
-first, one per run. Stop (the Stop button, or Esc in an empty composer; with a
-draft, Esc leaves the run alone) only ends the turn; the same rule picks what
+first, one per run. Stop (the composer's Stop button, shown when the box is empty, or Esc then; with a
+draft the button is Send and Esc leaves the run alone) only ends the turn; the same rule picks what
 runs next. The client special-cases none of it and just shows the server's
 state.
 
@@ -117,7 +117,7 @@ order they were sent in, oldest first; they take no transcript position until
 they run. A queued row's Stop cancels the command before it runs; it is not the Stop of a running
 compaction divider.
 
-The local state is two small pieces: sends the inbox has not listed yet
+The local state is two small pieces: sends the record has not listed yet
 (dropped once it lists the id, since the server owns it then) and withdrawals.
 Stop on a queued row removes it at once (focus stays in the transcript when it was
 the last) and, once any in-flight enqueue settles, always calls the server,
@@ -125,13 +125,20 @@ even for a row whose enqueue looked failed: only the response may have been
 lost, and a command the client hid must not run unseen. The server answers
 `withdrawn`, `already_started` once a divider carries the command's id, or 404
 when it does not have the command. A confirmed answer (`withdrawn` or
-`already_started`) keeps the id hidden against stale inbox frames. On
+`already_started`) keeps the id hidden against stale run-state records. On
 `already_started` the row still goes and the pending divider carries the
 state; the announcer says "This compaction already started." A 404 only drops
-the local send: the enqueue may still have been committing, so if the inbox
+the local send: the enqueue may still have been committing, so if the record
 lists the id later the row shows again, queued, with Stop. A failed
-withdrawal brings the row back with "Couldn't withdraw. Try again." A command
-a divider already names (`controlMessageId`) is no longer queued.
+withdrawal brings the row back with "Couldn't withdraw. Try again." A queued
+command's row, compaction or write-mode switch, leaves by one rule
+(`retainControls` in `thread-controls.ts`, applied in `useThreadControls` to both row
+sources): it stays until a transcript turn carries its control id
+(`answeredControlIds`), because the record drops the item as the command starts,
+before its divider reaches the transcript. Otherwise it leaves on proof that it
+won't run: this device's Stop, or an accepted snapshot at or after the record that
+dropped it (`history` in the run-state slice) whose turns lack the id (a Withdraw
+from another tab). A dropped row asks for that snapshot.
 
 One announcer. Rows and dividers carry no live region; `useThreadControls`
 announces each writer-caused change and `useControlTurnAnnouncements` each
@@ -141,6 +148,6 @@ Status words come from `thread-controls/control-copy.ts`, so the announcement an
 the row say the same thing.
 
 Compaction turns have no AG-UI stream, and a cancelled one ends without
-`RUN_FINISHED`. The snapshot revalidates on run end and on every inbox frame
-(the server sends one after every lease release); see
+`RUN_FINISHED`. The snapshot revalidates on run end and on every run-state
+record whose open execution changed (a lease release publishes one); see
 [thread live updates](thread-live-updates.md).

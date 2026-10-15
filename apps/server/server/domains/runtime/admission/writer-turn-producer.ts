@@ -134,7 +134,7 @@ export function createWriterTurnProducer(deps: {
           },
           settle: async ({
             userTurnId: settledUserTurnId,
-            joinedReplyId,
+            runStateVersion,
             resumeAfterSeq,
             snapshotFloorNextSeq,
           }) => {
@@ -143,7 +143,7 @@ export function createWriterTurnProducer(deps: {
               threadId,
               submissionId: input.admission.submissionId,
               userTurnId: settledUserTurnId,
-              steersTurnId: joinedReplyId,
+              runStateVersion,
               resumeAfterSeq,
               snapshotFloorNextSeq,
             };

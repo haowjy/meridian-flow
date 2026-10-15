@@ -1,8 +1,9 @@
 # core/transport — Client transport seams
 
 This directory owns browser transport primitives for collaborative documents and
-thread/agent sockets. It does not own document-session policy or debug-event
-interpretation.
+thread socket adapters. The thread socket client and its contract live in
+`@meridian/thread-client`; `TransportProvider` owns the app composition. This
+directory does not own document-session policy or debug-event interpretation.
 
 ## Mental model
 

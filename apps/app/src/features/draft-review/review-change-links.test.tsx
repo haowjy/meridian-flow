@@ -9,7 +9,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ChatThreadNavigationProvider } from "@/features/chat/ChatThreadNavigation";
 import { useConversationRevealRouting } from "@/features/chat/conversation-reveal";
 import { ProcessDisclosure } from "@/features/chat/ProcessDisclosure";
-import { block } from "@/features/chat/report-test-fixtures";
 import { ToolRow } from "@/features/chat/ToolRow";
 import { useTurnRevealLanding } from "@/features/chat/useTurnRevealLanding";
 import {
@@ -203,6 +202,16 @@ function revealTool(toolCallId: string) {
     message: null,
     streamedOutput: null,
     metadata: null,
-    keyBlock: block(toolCallId, 1, "tool_use", { toolCallId, toolName: "read" }),
+    keyBlock: {
+      id: toolCallId,
+      turnId: "parent-turn",
+      responseId: null,
+      blockType: "tool_use" as const,
+      sequence: 1,
+      content: { toolCallId, toolName: "read" },
+      status: "complete" as const,
+      textContent: null,
+      createdAt: "2026-09-23T00:00:00.000Z",
+    },
   };
 }

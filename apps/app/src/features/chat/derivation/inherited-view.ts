@@ -8,11 +8,11 @@
  * a fork) and whether that thread is in the trash.
  */
 import type { Thread, TranscriptPageResponse, Turn } from "@meridian/contracts/protocol";
+import type { InheritedTranscript } from "@meridian/thread-client";
 import { queryOptions, useQuery } from "@tanstack/react-query";
 import { useCallback } from "react";
 import { readThreadTranscript } from "@/client/api/threads-api";
 import { useIsThreadPendingCreation } from "@/client/stores";
-import type { InheritedTranscript } from "../transcript-model";
 
 export type SourceOwner = {
   threadId: string;

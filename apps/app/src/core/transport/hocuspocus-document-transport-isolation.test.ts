@@ -1,10 +1,9 @@
 // @vitest-environment jsdom
 /** Document transports keep terminal schema refusals scoped to the rejected room. */
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
+import type { ConnectionState } from "@meridian/thread-client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Awareness } from "y-protocols/awareness";
-
-import type { ConnectionState } from "./ThreadTransport";
 
 import { DocumentSocketHarness, sentSyncKinds } from "./test-support/DocumentSocketHarness";
 

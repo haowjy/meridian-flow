@@ -5,14 +5,12 @@ import type { RunStarter } from "./ports.js";
 import type { RuntimeDelivery } from "./runtime-delivery.js";
 
 export function createWakeIfRunnable(deps: {
-  delivery: Pick<RuntimeDelivery, "refreshPending" | "selectPending">;
+  delivery: Pick<RuntimeDelivery, "selectPending">;
   runStarter: RunStarter;
   shutdown?: { started: boolean };
 }): (threadId: ThreadId) => Promise<void> {
   const shutdown = deps.shutdown ?? { started: false };
   return async (threadId) => {
-    if (shutdown.started) return;
-    await deps.delivery.refreshPending(threadId);
     if (shutdown.started) return;
     const pending = await deps.delivery.selectPending(threadId);
     const selection = next(pending, "run_start");

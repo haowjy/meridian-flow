@@ -1,11 +1,11 @@
 # Thread live updates
 
-A mounted chat thread stays current when the server advances it. Its snapshot
-revalidates on activation and when a new run starts, and the handoff attaches a
-controller to each distinct active run once. So a thread that moved while the
-writer was elsewhere — or a server-initiated run that wakes the parent from a
-background child's report — renders without a reload and streams while the
-writer watches.
+A mounted chat thread stays current when the server advances it. One mounted
+subscriber owns the thread's transport subscription and its snapshot, and it
+is the chat's one run-state feed. So a thread that moved while the writer was
+elsewhere, a server-initiated run that wakes the parent from a background
+child's report, or a message another client sent renders without a reload and
+streams while the writer watches.
 
 ## Snapshot revalidation
 
@@ -17,18 +17,23 @@ the account abort signal and its identity and staleness checks as a guard.
 - The query is always stale (`staleTime: 0`) with `refetchOnMount: "always"`, so
   every activation refetches. Cached turns render first and the fetch reconciles
   behind them; navigate-first is preserved.
-- The hook owns one mounted-thread transport subscription. It refetches
-  (debounced 250 ms) on `RUN_STARTED`, `RUN_FINISHED`, `RUN_ERROR`,
-  `meridian.usage`, every `meridian.inbox.changed` frame, and gap. Compaction
-  and brief turns have no stream of their own, and a cancelled
-  autocompaction projects no `RUN_FINISHED`; the server sends an inbox frame
-  after every lease release, so that frame is when a divider reserves, settles,
-  or stops. It directly applies addressed
-  custom block upserts even after the parent run ends. Missing turns
-  request authoritative history, never a synthetic streaming turn. The store's
-  durable wire cursor and snapshot floor reject replay rewinds and old HTTP
-  responses. A server-initiated run has no local submit to learn it from, so
-  this subscription also surfaces its turn and card.
+- **Unconditional refreshes** (debounced 250 ms): `RUN_STARTED`, `RUN_FINISHED`,
+  `RUN_ERROR`, `meridian.usage`, `meridian.thread.status` (a handoff brief has
+  no lease or run), a gap, and a `meridian.run_state` record whose open
+  execution changed. A cancelled autocompaction projects no `RUN_FINISHED`, and
+  a divider reserves or settles with its execution, so the execution change is
+  when those land.
+- **Gap-only refreshes** (same timer): any other record, and the `subscribed`
+  state. When the timer fires, the hook refetches only if the record names a
+  waiting writer message the transcript lacks (`unheldWriterMessages`) or the
+  store holds a write-mode divider whose anchor turn is missing
+  (`dividersAwaitingAnchor`). The stream carries no user turns, so another
+  client's waiting message reaches a passive tab only through this snapshot.
+  Checking at fire time keeps this device's own acknowledged send from
+  refetching.
+- Missing turns request authoritative history, never a synthetic streaming
+  turn. The store's durable wire cursor and snapshot floor reject replay
+  rewinds and old HTTP responses.
 
 - `settled` means the snapshot's turns are in the transcript store (or the
   load failed), not merely fetched: the accepted snapshot is visible one commit
@@ -36,44 +41,66 @@ the account abort signal and its identity and staleness checks as a guard.
   would take that empty transcript for "no such turn".
 
 Both this fetch and the transport's gap recovery funnel through
-`applyThreadSnapshot`. The reconciliation mechanics — identity bridge, monotonic
-sequence guard — live in the app-level
+`applyThreadSnapshot`. The reconciliation mechanics (identity bridge, monotonic
+sequence guard) live in the app-level
 [`../../../../.context/CONTEXT.md`](../../../../.context/CONTEXT.md) "Thread
 snapshot reconciliation" section.
 
-## Per-run resume
+## Run state and joining a live run
 
-`useThreadHandoff` (`../useThreadHandoff.ts`) reads the snapshot's `liveState`
-and attaches the controller that applies the run's AG-UI deltas. Before a
-first-send run can subscribe, create-or-get returns the thread and message
-admission accepts. The controller then invokes the current mount's projection
-activation at the accepted replay cursor before attaching its run handler.
-Pending creation gates the other mounted projection listeners until they can
-join that same subscription. A remount joins only the shared creation promise;
-its own fenced continuation dispatches and activates. Existing-thread resume also
-activates first:
+The accepted snapshot, the `subscribed` state and every `meridian.run_state`
+frame go into the run-state slice (`../../../client/run-state/run-state-slice.ts`)
+as whole records; the shared view keeps the newest by version. The admission
+answer adds this device's message intent at its `runStateVersion`
+(`ThreadRunController`, which follows no run). A `meridian.write_mode.switched`
+frame installs the divider in the transcript and answers the switch intent in
+the slice; a `meridian.messages.handed_back` frame removes the handed-back
+turns at its seq.
 
-- The guard latches **per active run** (`resumedRunRef`, keyed by
-  `runningTurnId`/`resumeAfterSeq`), never on an idle snapshot. An idle latch
-  would consume the one-shot and leave a later run with no delta subscriber —
-  the continuation then renders as an empty live row until a reload.
-- The run the mount already started (a Home-origin or in-thread send) is
-  recorded as owned rather than hard-blocking every future run, so a later
-  server-initiated run still resumes.
-- Each distinct run resumes exactly once; a repeat snapshot of the same run is a
-  no-op.
+There is no per-run resume and no follow controller. The subscription starts
+at mount. The first accepted snapshot that shows work in progress
+re-subscribes from that snapshot's `resumeAfterSeq`, so the reply it joins
+streams from where the snapshot ends. A later snapshot never rewinds: the live
+stream has already applied what it shows. A first send keeps the subscriber
+inactive while the chat is pending creation, then activates it.
 
-Do not reintroduce a mount-scoped boolean that blocks after the first run, and
-do not move the snapshot fetch behind a cache window. Either one breaks live
-updates for a background child's report.
+Do not gate refreshes on a mount-scoped latch, and do not move the snapshot
+fetch behind a cache window. Either one breaks live updates for a background
+child's report or another client's message.
 
 ## Live CUSTOM events
 
-`core/session/reduce-turn-event.ts` reduces AG-UI `CUSTOM` frames by name.
+`@meridian/thread-client`'s turn reducer (`src/turns/reduce-turn-event.ts`) reduces AG-UI `CUSTOM` frames by name.
 Every name the server's orchestrator event projector emits has an explicit
-branch there: apply it to the store, leave it to the snapshot sync above
-(`meridian.block.upserted`, `meridian.inbox.changed`, `meridian.usage`), or
+branch there: apply it to the store (`meridian.messages.handed_back`,
+`meridian.write_mode.switched`), leave it to the snapshot sync above
+(`meridian.block.upserted`, `meridian.run_state`, `meridian.usage`), or
 ignore it (`meridian.agent.spawn`, whose source the spawn card already carries
 in its durable props). An unmatched name falls through to an opaque custom
 block on the streaming reply and renders "Unknown component". When the server
 adds a CUSTOM name, add its branch and a reducer test in the same change.
+
+## Stop and hand-back
+
+Stop (`useChatStop`) cancels the running reply and hands every waiting writer
+message back into the composer, in send order as one plain editable message with
+a blank line between them, above what is typed. The press is written to the tab's
+composer draft (`handBacks`) before it is sent, so a reload re-posts it; the
+answer's content is prepended by one checked draft write that also records its
+`received` receipt, and only then is the command retired. A document that would
+not restore after a reload never retires the command. References come back as
+chips only when the chat proves their owner (`chatReferenceResolver`): a
+`scratch://` URI on this chat's lineage handle, `@/` uploads in a No Work chat,
+`@slug` for this chat's own Work, or a project or user reference. Anything else,
+another named Work included, comes back as its link text, so no content is lost.
+An image takes its type from the message's image block, not the extension.
+Send-time chip metadata would make this exact (see the shared client's FUTURE).
+
+`StopStatus` belongs to the tab that pressed Stop; other tabs see the record.
+`pending` is the press. An answer naming a cancelled execution reads `stopping`
+while the held record still shows it; any other answer clears. `failed` says so
+on the Stop control and stays after the chat goes idle and with text in the
+composer, so the retry (same request id and body) stays reachable. A compaction
+divider's Stop is this one; only a handoff brief's own Stop (`useTurnStop`) uses
+the turn cancel route. While a hand-back is in flight `hiddenWriterTurns` keeps
+those rows out of the transcript.
