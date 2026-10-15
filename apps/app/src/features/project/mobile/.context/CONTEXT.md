@@ -32,11 +32,24 @@ mount only its active main screen, unlike desktop persistent surfaces.
 
 ## Document registry and review
 
-`MobileDocumentHost` owns the phone registry open-set under
-`mobile-project-document-host`. It retains exactly the active editable
-identity, or none, and releases on unmount. It mounts `EditorView` read-only
-for the writer while retaining live Yjs/AI updates; direct Editor mounts bypass
-the registry and are invalid.
+Mobile documents are read-only for the writer but live for AI edits (a review's
+draft body too). Every editable phone document (the ordinary route, the local
+pointer and a draft-only document) renders `ContextDocumentHost` directly, inside
+a `relative min-h-0 flex-1` frame that is a direct child of a flex column, with
+`PHONE_DOCUMENT_PRESENTATION` (`context/document-presentation.ts`). It does not
+use `ContextEditorMountHost`, the desktop's warm-set LRU.
+
+The presentation value is the whole phone difference: it never types (no
+toolbar; the host's `readOnly` stays the Work's archived scope, which the
+room-scope check compares with the room's access), shows no remote carets, names
+the body "Read-only live document", suspends presence from the click that
+requests a review, and sets the binding owner id `mobile-project-document-host`.
+Everything else is the shared host.
+
+The phone must stay on the shared session boundary. Only
+`ContextTabSessionBoundary` probes local content and holds the adoption-eligible
+lease that completes a stranded adoption; a phone that binds the live room itself
+is refused with `adoption-pending` while the local copy is reserved.
 
 The same document identity feeds `useActiveReviewBinding`, which leases live
 presence. Phone hosts pass requested draft identity; the adapter resolves the
@@ -67,8 +80,8 @@ blur with content commits; Escape or empty commit cancels. Navigation abandons
 an uncommitted row. Creation stays in the listing: it does not auto-drill or
 open a file. The route's current location is the target.
 
-Mobile top chrome names a document once. `MobileDocumentHost` hides the editor
-toolbar; non-tracked viewers use a bare host. Breadcrumb ancestors are 44px
+Mobile top chrome names a document once. `MobileDocumentHost` renders the shared
+document host without toolbar; non-tracked viewers use a bare host. Breadcrumb ancestors are 44px
 controls, the last segment is current, and deep trails keep the first plus the
 last two segments.
 
