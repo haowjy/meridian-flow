@@ -47,6 +47,12 @@ export function createDrizzleInbox(db: DrizzleDatabase): DeliveryStore {
   }
 
   return {
+    async setBlockedReason(threadId, reason) {
+      await db_()
+        .update(schema.threads)
+        .set({ inboxBlockedReason: reason })
+        .where(eq(schema.threads.id, threadId));
+    },
     async workNoticeTargets(workId) {
       const rows = await db_()
         .select({ threadId: schema.threadWorks.threadId })
@@ -142,10 +148,12 @@ export function createDrizzleInbox(db: DrizzleDatabase): DeliveryStore {
       const rows = await db_()
         .select({
           inbox: schema.threadInboxMessages,
+          blockedReason: schema.threads.inboxBlockedReason,
           turnId: schema.threadRunLeases.turnId,
           messageIds: schema.threadRunLeases.adoptedMessageIds,
         })
         .from(schema.threadInboxMessages)
+        .innerJoin(schema.threads, eq(schema.threads.id, schema.threadInboxMessages.threadId))
         .leftJoin(
           schema.threadRunLeases,
           and(
@@ -162,6 +170,7 @@ export function createDrizzleInbox(db: DrizzleDatabase): DeliveryStore {
         .orderBy(asc(schema.threadInboxMessages.seq));
       const first = rows[0];
       return {
+        ...(first?.blockedReason ? { blocked: { reason: first.blockedReason } } : {}),
         messages: rows.map((row) => toInboxMessage(row.inbox)),
         run:
           first?.turnId !== null && first?.turnId !== undefined
@@ -172,18 +181,31 @@ export function createDrizzleInbox(db: DrizzleDatabase): DeliveryStore {
       };
     },
 
-    async ack(threadId, ids) {
-      if (ids.length === 0) return;
-      await db_()
+    async ack(threadId, ids, byTurnId = null) {
+      if (ids.length === 0) return [];
+      // Only a message row records its deliverer; controls and notices keep null.
+      const rows = await db_()
         .update(schema.threadInboxMessages)
-        .set({ deliveredAt: new Date() })
+        .set({
+          deliveredAt: new Date(),
+          deliveredByTurnId: sql`CASE WHEN ${schema.threadInboxMessages.intent} = 'message' THEN ${byTurnId}::uuid ELSE NULL END`,
+        })
         .where(
           and(
             eq(schema.threadInboxMessages.threadId, threadId),
             inArray(schema.threadInboxMessages.id, ids),
             isNull(schema.threadInboxMessages.deliveredAt),
           ),
-        );
+        )
+        .returning({
+          id: schema.threadInboxMessages.id,
+          intent: schema.threadInboxMessages.intent,
+          seq: schema.threadInboxMessages.seq,
+        });
+      return rows
+        .filter((row) => row.intent === "message")
+        .sort((left, right) => left.seq - right.seq)
+        .map((row) => row.id);
     },
 
     async pendingMessageThreads(limit, afterThreadId) {
@@ -193,6 +215,8 @@ export function createDrizzleInbox(db: DrizzleDatabase): DeliveryStore {
         .where(
           and(
             inArray(schema.threadInboxMessages.intent, ["message", "control"]),
+            // A lone pending switch waits for a run, so it never wakes the chat.
+            sql`${schema.threadInboxMessages.body}->>'kind' is distinct from 'write_mode'`,
             afterThreadId ? gt(schema.threadInboxMessages.threadId, afterThreadId) : undefined,
             isNull(schema.threadInboxMessages.deliveredAt),
           ),

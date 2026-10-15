@@ -19,8 +19,7 @@ import {
   contextAvailabilityHeads,
   contextNamespaceObservationVersion,
   contextSources,
-  documents,
-  folders,
+  type folders,
   projects,
   threads,
   works,
@@ -38,7 +37,18 @@ import type {
   ProjectContextAvailabilityMutationPort,
   ProjectContextAvailabilityPort,
 } from "../ports/project-context-availability.js";
-import { catalogSourceAuthority, mapAuthoritativeFile } from "./catalog-file-mapper.js";
+import {
+  identityDocumentFields,
+  identityDocuments,
+  identityFolderFields,
+  identityFolders,
+  LIVE_TREE,
+} from "../tree/tree-view.js";
+import {
+  type CatalogFileRow,
+  catalogSourceAuthority,
+  mapAuthoritativeFile,
+} from "./catalog-file-mapper.js";
 
 const ADVANCE_STATE = {};
 type AdvanceState = { generation?: bigint; keys: Set<string>; publisherFenceHeld: boolean };
@@ -66,7 +76,7 @@ const advanceParticipant: DrizzleTransactionParticipant<AdvanceState> = {
   },
 };
 type AvailabilityRow = {
-  document: typeof documents.$inferSelect;
+  document: CatalogFileRow & { deletedAt?: Date | null };
   source: typeof contextSources.$inferSelect | null;
   sourceProject: typeof projects.$inferSelect | null;
   work: typeof works.$inferSelect | null;
@@ -86,25 +96,29 @@ type IdentityClassification =
 
 const WORK_SCHEMES = new Set<ContextUriScheme>(["scratch", "uploads"]);
 
+type IdentityFolder = Pick<
+  typeof folders.$inferSelect,
+  "id" | "name" | "parentId" | "contextSourceId"
+> & { deletedAt?: Date | null };
+
 export function classifyAuthoritativeIdentity(input: {
   row: AvailabilityRow;
   requestProjectId: string;
   actorUserId: string;
   projectGeneration: string;
   checkedGeneration: string;
-  foldersById: ReadonlyMap<string, typeof folders.$inferSelect>;
+  foldersById: ReadonlyMap<string, IdentityFolder>;
 }): IdentityClassification {
-  const classification = classifySourceIdentity({
+  return classifySourceIdentity({
     ...input,
     row: {
       ...input.row,
-      node: { parentId: input.row.document.folderId, deletedAt: input.row.document.deletedAt },
+      node: {
+        parentId: input.row.document.folderId,
+        deletedAt: input.row.document.deletedAt ?? null,
+      },
     },
   });
-  // Privacy precedes structural diagnostics, including the document's kind.
-  return classification.kind === "not-visible" || input.row.document.kind === "content"
-    ? classification
-    : { kind: "inconsistent" };
 }
 
 function classifySourceIdentity(input: {
@@ -115,7 +129,7 @@ function classifySourceIdentity(input: {
   actorUserId: string;
   projectGeneration: string;
   checkedGeneration: string;
-  foldersById: ReadonlyMap<string, typeof folders.$inferSelect>;
+  foldersById: ReadonlyMap<string, IdentityFolder>;
 }): IdentityClassification {
   const { node, source, sourceProject, work } = input.row;
   const rawProjectIsRequested = source?.projectId === input.requestProjectId;
@@ -202,7 +216,7 @@ function classifySourceIdentity(input: {
     if (
       !folder ||
       folder.contextSourceId !== source.id ||
-      (node.deletedAt === null && source.deletedAt === null && folder.deletedAt !== null)
+      (!node.deletedAt && source.deletedAt === null && !!folder.deletedAt)
     ) {
       return { kind: "inconsistent" };
     }
@@ -229,11 +243,22 @@ function userKey(userId: string) {
   return `user:${userId}`;
 }
 
-/** The publisher fence is held by reserve/advance. Each state change needs its
- * own stamp even when availability groups several changes in one transaction. */
-async function publishNamespaceVersion(tx: Database, authorityKeys: readonly string[]) {
+/** One transaction-scoped publisher fence makes sequence allocation order match commit
+ * visibility, even when later calls introduce previously unknown keys. */
+async function holdPublisherFence(tx: Database, state: AdvanceState) {
+  if (state.publisherFenceHeld) return;
+  await tx.execute(sql`select pg_advisory_xact_lock(1296387666, 1096174676)`);
+  state.publisherFenceHeld = true;
+}
+
+/** The caller holds the publisher fence. Each namespace change needs its own stamp even
+ * when availability groups several changes in one transaction. */
+async function publishNamespaceVersion(
+  tx: Database,
+  authorityKeys: readonly string[],
+): Promise<string | null> {
   const keys = [...new Set(authorityKeys)].sort();
-  if (!keys.length) return;
+  if (!keys.length) return null;
   const [row] = await tx.execute<{ version: string }>(
     sql`select nextval(${sql.raw(`'${contextNamespaceObservationVersion.seqName}'`)})::text as version`,
   );
@@ -252,6 +277,7 @@ async function publishNamespaceVersion(tx: Database, authorityKeys: readonly str
       target: contextAvailabilityHeads.authorityKey,
       set: { namespaceGeneration: version },
     });
+  return String(version);
 }
 
 export function createDrizzleProjectContextAvailability(
@@ -259,56 +285,6 @@ export function createDrizzleProjectContextAvailability(
   eventSink?: EventSink,
 ): ProjectContextAvailabilityPort & ProjectContextAvailabilityMutationPort {
   return {
-    async reserve(input) {
-      return runInDrizzleTransaction(db, async () => {
-        const tx = currentDrizzleDb(db) as Database;
-        const state = enlistDrizzleTransactionParticipant(advanceParticipant);
-        if (!state.publisherFenceHeld) {
-          await tx.execute(sql`select pg_advisory_xact_lock(1296387666, 1096174676)`);
-          state.publisherFenceHeld = true;
-        }
-        if (state.generation === undefined) {
-          const result = await tx.execute<{ generation: string }>(
-            sql`select nextval(${sql.raw(`'${contextAvailabilityGeneration.seqName}'`)})::text as generation`,
-          );
-          const value = result[0]?.generation;
-          if (!value) throw new Error("Failed to reserve availability generation");
-          state.generation = BigInt(value);
-        }
-        if (input)
-          await publishNamespaceVersion(tx, [
-            ...input.projectIds.map(projectKey),
-            ...input.userIds.map(userKey),
-          ]);
-        return String(state.generation);
-      });
-    },
-
-    async publishReserved(input) {
-      await runInDrizzleTransaction(db, async () => {
-        const tx = currentDrizzleDb(db) as Database;
-        const keys = [...input.projectIds.map(projectKey), ...input.userIds.map(userKey)].sort();
-        if (keys.length === 0) return;
-        await tx.execute(sql`select pg_advisory_xact_lock(1296387666, 1096174676)`);
-        await tx
-          .insert(contextAvailabilityHeads)
-          .values(keys.map((authorityKey) => ({ authorityKey, generation: 0n })))
-          .onConflictDoNothing({ target: contextAvailabilityHeads.authorityKey });
-        for (const authorityKey of keys) {
-          await tx.execute(
-            sql`select authority_key from context_availability_heads where authority_key = ${authorityKey} for update`,
-          );
-        }
-        await tx
-          .update(contextAvailabilityHeads)
-          .set({
-            generation: sql`greatest(${contextAvailabilityHeads.generation}, ${BigInt(input.generation)})`,
-            updatedAt: new Date(),
-          })
-          .where(inArray(contextAvailabilityHeads.authorityKey, keys));
-      });
-    },
-
     async advance(input) {
       return runInDrizzleTransaction(db, async () => {
         const tx = currentDrizzleDb(db) as Database;
@@ -318,12 +294,7 @@ export function createDrizzleProjectContextAvailability(
         ]);
         const state = enlistDrizzleTransactionParticipant(advanceParticipant);
         const missing = [...requested].filter((key) => !state.keys.has(key)).sort();
-        if (!state.publisherFenceHeld) {
-          // One transaction-scoped publisher fence makes sequence allocation order match
-          // commit visibility even when later advance calls introduce previously unknown keys.
-          await tx.execute(sql`select pg_advisory_xact_lock(1296387666, 1096174676)`);
-          state.publisherFenceHeld = true;
-        }
+        await holdPublisherFence(tx, state);
         if (missing.length > 0) {
           await tx
             .insert(contextAvailabilityHeads)
@@ -354,12 +325,26 @@ export function createDrizzleProjectContextAvailability(
             .where(inArray(contextAvailabilityHeads.authorityKey, missing));
           for (const key of missing) state.keys.add(key);
         }
-        await publishNamespaceVersion(tx, [...requested]);
         return String(state.generation);
       });
     },
 
+    async publishNamespace(input) {
+      return runInDrizzleTransaction(db, async () => {
+        const tx = currentDrizzleDb(db) as Database;
+        await holdPublisherFence(tx, enlistDrizzleTransactionParticipant(advanceParticipant));
+        const version = await publishNamespaceVersion(tx, [
+          ...input.projectIds.map(projectKey),
+          ...input.userIds.map(userKey),
+        ]);
+        if (version === null) throw new Error("publishNamespace needs at least one authority");
+        return version;
+      });
+    },
+
     async lookup(input, actor) {
+      const documents = identityDocuments(input.view ?? LIVE_TREE);
+      const folders = identityFolders(input.view ?? LIVE_TREE);
       const ids = normalizeAvailabilityDocumentIds(input.documentIds);
       const folderIds = normalizeAvailabilityDocumentIds(input.folderIds ?? []);
       if (ids.length + folderIds.length > PROJECT_CONTEXT_AVAILABILITY_MAX_IDS)
@@ -406,7 +391,7 @@ export function createDrizzleProjectContextAvailability(
           }
           const rows = await tx
             .select({
-              document: documents,
+              document: identityDocumentFields(documents),
               source: contextSources,
               sourceProject: projects,
               work: works,
@@ -421,7 +406,7 @@ export function createDrizzleProjectContextAvailability(
           const requestedFolders = folderIds.length
             ? await tx
                 .select({
-                  folder: folders,
+                  folder: identityFolderFields(folders),
                   source: contextSources,
                   sourceProject: projects,
                   work: works,
@@ -631,7 +616,10 @@ export function createDrizzleProjectContextAvailability(
   };
 }
 
-/** Resolve an active folder inside the caller's namespace transaction, without a new snapshot. */
+/**
+ * Resolve an active live folder inside the caller's namespace transaction, without a new
+ * snapshot. A hidden folder is missing: no live writer could have picked it.
+ */
 export async function resolveActiveFolderUri(
   db: Database,
   projectId: string,
@@ -639,9 +627,10 @@ export async function resolveActiveFolderUri(
   folderId: string,
 ): Promise<string | null> {
   const tx = currentDrizzleDb(db);
+  const folders = identityFolders(LIVE_TREE);
   const [row] = await tx
     .select({
-      folder: folders,
+      folder: identityFolderFields(folders),
       source: contextSources,
       sourceProject: projects,
       work: works,

@@ -15,7 +15,7 @@ import { RailScratchSection } from "../chat/ChatScratch";
 import { ContextTreePanel } from "../context/ContextTreePanel";
 import { serverTabFromFile } from "../context/context-tab-from-file";
 import { useOpenProjectDocument } from "../context/open-project-document";
-import { useDockDocument } from "../dock/dock-view-store";
+import { useDockDocument } from "../dock/dock-document-store";
 import { useDockDocumentTab } from "../dock/use-dock-document-tab";
 import { useDockPlacement } from "../dock/use-dock-placement";
 import { InlineProjectTitle, type ProjectTitleEdit } from "./InlineProjectTitle";
@@ -68,11 +68,15 @@ export function LeftSidebar({
   // and the Editor path everywhere else (see `use-dock-placement`).
   const placement = useDockPlacement();
   const openDocument = useOpenProjectDocument(projectId);
-  const handleSelectFile = (scheme: ProjectContextTreeScheme, file: ContextFile) => {
+  const handleSelectFile = (
+    scheme: ProjectContextTreeScheme,
+    file: ContextFile,
+    options?: { focus?: true },
+  ) => {
     if (placement.besideChat) {
       const tab = serverTabFromFile(scheme, file, {});
       if (tab) {
-        placement.commit(tab);
+        placement.commit(tab, undefined, options?.focus);
         return;
       }
     }
@@ -80,7 +84,11 @@ export function LeftSidebar({
       onSelectContextPath(file.path, scheme);
       return;
     }
-    void openDocument({ documentId: file.documentId, workId: editorWorkId ?? undefined });
+    void openDocument({
+      documentId: file.documentId,
+      workId: editorWorkId ?? undefined,
+      ...options,
+    });
   };
   // On the Chat screen the row to highlight is the document open in the dock.
   const dockDocument = useDockDocument(activeScreen, projectId);

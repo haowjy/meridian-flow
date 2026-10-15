@@ -1,11 +1,12 @@
 /** One lifecycle owner for lineage provisioning and trash reconciliation. */
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { contextSources, documents, threads } from "@meridian/database/schema";
+import { contextSources, threads } from "@meridian/database/schema";
 import { and, eq, inArray, isNotNull, type SQLWrapper, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
 import type { DocumentArrivals } from "../ports/document-arrivals.js";
+import { LIVE_TREE, visibleDocuments } from "../tree/tree-view.js";
 import { lockContextNamespaces } from "./context-fs/document-locations.js";
 
 export class LineageScratchUnavailableError extends Error {
@@ -119,19 +120,18 @@ export function createDrizzleLineageScratchLifecycle(
             (source) => source.deletedAt === null && hidden.some((row) => row.id === source.id),
           );
           if (arrivals && restored.length) {
+            // Arrivals are live: a draft's hidden documents in a restored source settle nothing.
+            const live = visibleDocuments(LIVE_TREE);
             const content = await currentDrizzleDb(db)
-              .select({ id: documents.id })
-              .from(documents)
+              .select({ id: live.id })
+              .from(live)
               .where(
-                and(
-                  inArray(
-                    documents.contextSourceId,
-                    restored.map((source) => source.id),
-                  ),
-                  eq(documents.kind, "content"),
+                inArray(
+                  live.contextSourceId,
+                  restored.map((source) => source.id),
                 ),
               );
-            // The registry filters deleted documents/ancestors and only settles once.
+            // The registry filters deleted ancestors and only settles once.
             // Reconciliation already holds the Scratch namespace in this transaction.
             await arrivals.settle(content.map((document) => document.id as DocumentId));
           }

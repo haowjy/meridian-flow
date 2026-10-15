@@ -1,34 +1,22 @@
-/** Discard a Work draft or one server-owned Discard class. */
-import type { DraftDiscardRequest } from "@meridian/contracts/drafts";
+/** Discard one item, or the clicked classes of one item. */
 import type { DocumentId, ProjectId, WorkId } from "@meridian/contracts/runtime";
-import { createError, defineEventHandler, getRouterParam, readBody } from "nitro/h3";
+import { defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import { requireAppUser } from "../../../../../../../../../../lib/auth-gate.js";
 import {
   handleDiscardWorkDraftRequest,
-  scheduleDraftCatalogRefresh,
+  parseDraftDiscardSelection,
   selectDraftRouteServices,
 } from "../../../../../../../../../../lib/draft-review-route.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
-  const body = (await readBody<Partial<DraftDiscardRequest>>(event)) ?? {};
-  const draftId = typeof body.draftId === "string" ? body.draftId : undefined;
-  if (!draftId) {
-    throw createError({ statusCode: 400, message: "draftId is required" });
-  }
-  const projectId = (getRouterParam(event, "projectId") ?? "") as ProjectId;
   const result = await handleDiscardWorkDraftRequest(selectDraftRouteServices(app), {
-    projectId,
+    projectId: (getRouterParam(event, "projectId") ?? "") as ProjectId,
     workId: (getRouterParam(event, "workId") ?? "") as WorkId,
     documentId: (getRouterParam(event, "documentId") ?? "") as DocumentId,
-    draftId,
     userId: user.userId,
-    operationIds: Array.isArray(body.operationIds)
-      ? body.operationIds.filter(
-          (operationId): operationId is string => typeof operationId === "string",
-        )
-      : undefined,
+    request: parseDraftDiscardSelection(await readBody(event)),
   });
-  scheduleDraftCatalogRefresh(app, projectId, event.waitUntil.bind(event));
-  return result;
+  event.res.status = result.httpStatus;
+  return result.body;
 });

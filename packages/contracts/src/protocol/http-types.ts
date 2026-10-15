@@ -63,6 +63,20 @@ export type ThreadLiveState = {
   resumeAfterSeq: string;
 };
 
+/**
+ * Live state read in the snapshot's own repeatable-read transaction, so its
+ * execution fact is coherent with the snapshot's turns. The WS `subscribed`
+ * state is assembled from separate reads and deliberately lacks it.
+ */
+export type SnapshotLiveState = ThreadLiveState & {
+  /**
+   * The open execution's id when some snapshot turn carries it, regardless of
+   * heartbeat expiry; else null. An execution on a snapshot turn that is not
+   * this id has ended.
+   */
+  openExecutionId: string | null;
+};
+
 export type CreateProjectRequest = {
   /** Client-provided ID for optimistic creation. Server generates one if omitted. */
   id?: string;
@@ -95,9 +109,30 @@ export const PROJECT_CONTEXT_TREE_SCHEMES = CONTEXT_URI_SCHEMES;
 
 export type ProjectContextTreeScheme = ContextUriScheme;
 
+/**
+ * Where the writer's create lands, the same identity-based address a move carries. The
+ * server joins a draft's hidden document waiting there; omitted, the create is nameless
+ * and lands in `folderPath` as `Untitled N`.
+ */
+export type CreateUntitledDestination = {
+  parent: ContextDestinationParent;
+  /** The leaf filename as the writer typed it. */
+  name: string;
+};
+
 export type CreateUntitledContextDocumentRequest = {
   documentId: string;
   folderPath?: string;
+  destination?: CreateUntitledDestination;
+};
+
+/** A document's current canonical address. */
+export type ContextDocumentAddress = {
+  scheme: ProjectContextTreeScheme;
+  path: string;
+  name: string;
+  /** Present only when the canonical location is Work-scoped. */
+  workId?: string | null;
 };
 
 export type CreateUntitledContextDocumentResponse = {
@@ -110,6 +145,16 @@ export type CreateUntitledContextDocumentResponse = {
   workId?: string | null;
 };
 
+/**
+ * The create became an existing document: a draft's hidden one at the destination.
+ * `documentId` is the joined document, not the submitted id, which now forwards to it.
+ */
+export type CreateUntitledContextDocumentJoined = {
+  status: "joined";
+  documentId: string;
+  address: ContextDocumentAddress;
+};
+
 /** Creation uses the same conflict payload for files and folders, including HTTP 409. */
 export type CreateContextEntryResult =
   | { status: "created"; documentId?: string; uri?: string }
@@ -118,6 +163,14 @@ export type CreateContextEntryResult =
 export type CreateUntitledContextDocumentResult =
   | CreateUntitledContextDocumentResponse
   | { status: "conflict" };
+
+/**
+ * Everything the create endpoint can answer. A client that sends a `destination` must
+ * handle `joined`; one that doesn't never receives it.
+ */
+export type CreateUntitledContextDocumentAnswer =
+  | CreateUntitledContextDocumentResult
+  | CreateUntitledContextDocumentJoined;
 
 /** Exact identities committed by one successful context-tree deletion. */
 export type DeleteContextEntryResult = {
@@ -426,6 +479,11 @@ export type CreateThreadRequest = {
   agentSelection: AgentSelection;
   /** Omission and explicit null both bind the project's locked No Work as primary. */
   workId?: WorkId | null;
+  /**
+   * The writer's explicit mode for the new chat. Omitted, the chat copies its Work's default;
+   * given, it also becomes that Work's default.
+   */
+  aiWriteMode?: AiWriteMode;
 };
 
 export type CreateThreadResponse = Thread;
@@ -452,26 +510,28 @@ export type HandoffBriefRetryRequest = z.infer<typeof handoffBriefRetryRequestSc
 export const replyRetryRequestSchema = z.strictObject({ id: z.uuid() });
 export type ReplyRetryRequest = z.infer<typeof replyRetryRequestSchema>;
 
-export type ForkThreadRequest = z.infer<typeof forkThreadRequestSchema>;
-
-/** What happens to a Work's pending changes when it switches to auto-apply. */
-export type PendingChangesChoice = "apply" | "keep";
-
-export type UpdateWorkWriteModeRequest = {
-  aiWriteMode: AiWriteMode;
-  /** Omitted until the writer has chosen; the server then answers `confirmation_required`. */
-  pending?: PendingChangesChoice;
+/**
+ * An accepted Retry: 201 when this request started it, 200 on a replay. The
+ * execution is what a client follows until `meridian.execution.ended`; it may end
+ * on a cancelled compaction without ever reserving the new reply. `turn` is the
+ * new reply when this request id names it, else null (a replay matched by the
+ * request's first reserved turn, `metadata.retryReplyId`, before the reply was
+ * reserved, or a started Retry whose answer couldn't read it). `executionId` is
+ * null only for a reply reserved before run identity.
+ */
+export type ReplyRetryResponse = {
+  executionId: string | null;
+  turn: Turn | null;
 };
 
-export type UpdateWorkWriteModeResponse =
-  | { aiWriteMode: AiWriteMode; status: "updated" }
-  | {
-      aiWriteMode: AiWriteMode;
-      status: "confirmation_required";
-      reason: "pending_branch_changes";
-      pendingChangeCount: number;
-      message: string;
-    };
+/**
+ * A Retry replay arrived while the claim was held and nothing it could match was
+ * reserved yet (HTTP 503). Not a refusal: repeat the same request id until it
+ * answers an execution or a definitive refusal.
+ */
+export const REPLY_RETRY_PENDING_CODE = "retry_pending" as const;
+
+export type ForkThreadRequest = z.infer<typeof forkThreadRequestSchema>;
 
 export type SendMessageRequest = {
   submissionId: string;
@@ -494,9 +554,13 @@ export type ThreadAvailableSkillsResponse = {
 
 export type SendMessageResponse = {
   threadId: string;
+  /** Owed until a later fact says it was delivered (`Turn.delivery`, `meridian.messages.delivered`). */
   userTurnId: string;
-  /** The live run's assistant turn on a merged send; null for a fresh run. */
-  assistantTurnId: string | null;
+  /**
+   * The live reply this message was steered into; null when it waits for a new
+   * execution. A Stop hint only: it may be cancelled, and it answers nothing.
+   */
+  steersTurnId: string | null;
   /** Pre-start event position; the client subscription replays events strictly after it. */
   resumeAfterSeq: string;
   /**
@@ -533,7 +597,7 @@ export type ThreadSnapshotResponse = {
     outputTokens: number;
     cacheResets: number;
   };
-  liveState: ThreadLiveState;
+  liveState: SnapshotLiveState;
   actionRequired: boolean;
   /** First event position after this snapshot; clients reject it below their stored floor. */
   nextSeq: string;

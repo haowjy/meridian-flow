@@ -53,7 +53,7 @@ export async function readCopySource(
   principal: Principal,
   command: "insert" | "replace" | "copy",
   source: CopySource,
-  ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "responseId">,
+  ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "responseIdentity">,
 ): Promise<CopiedSource | WriteToolErrorOutput> {
   const resolved = await resolveCopySource(deps, command, source, ctx);
   if (isToolError(resolved)) return resolved;
@@ -71,10 +71,15 @@ export async function resolveCopySource(
   deps: ToolWiringDeps,
   command: "insert" | "replace" | "copy",
   source: CopySource,
-  ctx: Pick<ToolHandlerContext, "threadId" | "responseId">,
+  ctx: Pick<ToolHandlerContext, "threadId" | "responseIdentity">,
 ): Promise<{ ref: FileRef; address: ResolvedDocumentAddress } | WriteToolErrorOutput> {
   // A live source resolves its path against live membership, as a live read does.
-  const context = await resolveContextPort(deps, ctx.threadId, ctx.responseId, source.version);
+  const context = await resolveContextPort(
+    deps,
+    ctx.threadId,
+    ctx.responseIdentity?.editScopeId,
+    source.version,
+  );
   if (isToolError(context))
     return writeToolError(command, fromMessage(source, context.output.message));
   const { filePath: basePath, fragment } = splitDocumentFile(source.path);
@@ -109,7 +114,7 @@ export async function readTrackedCopySource(
   command: "insert" | "replace" | "copy",
   source: CopySource,
   address: ResolvedDocumentAddress,
-  ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "responseId">,
+  ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "responseIdentity">,
 ): Promise<CopiedSource | WriteToolErrorOutput> {
   const grant = await documentGrant(deps, principal, command, address, "read");
   if (isToolError(grant)) {
@@ -125,7 +130,7 @@ export async function readTrackedCopySource(
       includeNodes: true,
     },
     // Never the write's tool call id: it keys the write's idempotency cache.
-    { threadId: ctx.threadId, turnId: ctx.turnId, responseId: ctx.responseId },
+    { threadId: ctx.threadId, turnId: ctx.turnId, responseIdentity: ctx.responseIdentity },
   );
   if (outcome.isError) {
     return {
@@ -139,7 +144,7 @@ export async function readTrackedCopySource(
   }
   const version = outcome.result.read?.version ?? grant.destination.kind;
   return {
-    nodes: outcome.nodes ?? [],
+    nodes: [...(outcome.nodes ?? [])],
     copiedFrom: { uri: address.uri, version, revision: outcome.revision },
   };
 }
@@ -164,8 +169,8 @@ export function fromMessage(source: CopySource, message: string): string {
 
 /**
  * A binary copy duplicates the stored object at once (D24). It isn't a Yjs
- * write, so it has no write handle, isn't part of the reply's save and is
- * never drafted.
+ * write, so it has no write handle and isn't part of the reply's save. In a
+ * draft-mode chat it lands in the draft as its own hidden row (12b-Q2).
  */
 export async function copyBinary(
   deps: ToolWiringDeps,
@@ -175,27 +180,35 @@ export async function copyBinary(
   sourceGrant: FileGrant<"read">,
   ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "agentSlug">,
 ) {
+  const destinationUri = splitDocumentFile(input.path).filePath;
   // Binary files have no drafts or revisions, so the copy always reads the live file.
   const copied = await copyBinaryDocument({
     port: context.port,
-    livePort: context.livePort(),
     objectStore: deps.objectStore,
     source,
     sourceGrant,
     origin: { type: "agent", agentSlug: ctx.agentSlug, threadId: ctx.threadId, turnId: ctx.turnId },
-    destinationUri: splitDocumentFile(input.path).filePath,
+    destinationUri,
     copiedFrom: { uri: source.uri, version: "live", revision: null },
   });
   if (!copied.ok) {
     return writeToolError(input.command, contextErrorMessage(copied.error));
   }
   if (copied.value.documentId) recordTouchInBackground(deps, copied.value.documentId, ctx);
+  // The port's placement decided where the copy landed; only the Work's slug is ours to add.
+  const destination = copied.value.placement;
+  const draftWork = context.resolution.primaryDraftWork;
   return {
     output: modelResult({
       command: "copy",
       status: "success",
       phase: "committed",
-      payload: { path: copied.value.uri, destination: "live", copied: { from: source.uri } },
+      payload: {
+        path: copied.value.uri,
+        destination,
+        ...(destination === "draft" ? { draftWork: draftWork?.slug ?? "/" } : {}),
+        copied: { from: source.uri },
+      },
     }),
   };
 }

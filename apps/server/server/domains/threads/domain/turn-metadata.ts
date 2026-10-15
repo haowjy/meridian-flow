@@ -7,6 +7,7 @@ import type {
   ProviderErrorResponse,
   Turn,
 } from "@meridian/contracts/threads";
+import { aiWriteModeSchema } from "@meridian/contracts/works";
 import { z } from "zod";
 
 export const SystemUpdateMetadataCodec = z
@@ -177,6 +178,14 @@ export const PromptEpochMetadataCodec = z.union([
 
 export const SteerMetadataCodec = z.object({ delivery: z.literal("steer") }).passthrough();
 
+/** An applied write-mode switch: a complete `system` turn whose text block is the model's notice. */
+export const WriteModeSwitchMetadataCodec = z.object({
+  kind: z.literal("write_mode_switch"),
+  mode: aiWriteModeSchema,
+  controlMessageId: z.string().min(1),
+});
+export type WriteModeSwitchMetadata = z.infer<typeof WriteModeSwitchMetadataCodec>;
+
 export type ImageContextBreak = z.infer<typeof ImageContextBreakCodec>;
 export type ImageInclusionMetadata = z.infer<typeof ImageInclusionMetadataCodec>;
 export type CompactionMetadata = z.infer<typeof CompactionMetadataCodec>;
@@ -246,6 +255,14 @@ export function childCompletionMetadata(input: {
 
 export function workUpdateMetadata(): JsonObject {
   return systemUpdateMetadata("work_context");
+}
+
+export function writeModeSwitchMetadata(input: Omit<WriteModeSwitchMetadata, "kind">): JsonObject {
+  return { kind: "write_mode_switch", mode: input.mode, controlMessageId: input.controlMessageId };
+}
+
+export function isWriteModeSwitchTurn(turn: Pick<Turn, "role" | "metadata">): boolean {
+  return turn.role === "system" && WriteModeSwitchMetadataCodec.safeParse(turn.metadata).success;
 }
 
 export function noticesMetadata(): JsonObject {

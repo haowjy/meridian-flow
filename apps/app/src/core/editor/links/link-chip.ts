@@ -29,7 +29,7 @@ import type { LinkTarget } from "./link-target";
  */
 export type LinkChipIcon = ContextUriScheme | "file";
 
-export type LinkChip = { state: "filled" | "dashed"; icon: LinkChipIcon };
+export type LinkChip = { state: "filled" | "dashed" | "draft"; icon: LinkChipIcon };
 
 /** Every icon a chip can ask for; the app supplies one image per entry. */
 export const LINK_CHIP_ICONS: readonly LinkChipIcon[] = [...CONTEXT_URI_SCHEMES, "file"];
@@ -49,7 +49,9 @@ export function linkChip(
   baseUri: string | null = null,
 ): LinkChip | null {
   if (target.kind === "external") return null;
-  if (entry?.state === "document") return { state: "filled", icon: entry.document.scheme };
+  // A document found only in a draft reads differently from live text; the answer says so, the mark never does.
+  if (entry?.state === "document")
+    return { state: entry.draft ? "draft" : "filled", icon: entry.document.scheme };
   const icon = targetFamily(target, baseUri) ?? "file";
   const reachesNothing = entry?.state === "missing" || entry?.state === "gone";
   return { state: reachesNothing ? "dashed" : "filled", icon };

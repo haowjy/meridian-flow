@@ -16,6 +16,7 @@ import {
   createTestDocumentLinkScopes,
   testLinkDeps,
 } from "../../../collab/test-support/document-link-scopes.js";
+import { createDrizzleContextCatalog } from "../context-catalog.js";
 import { ContextFS } from "./context-fs.js";
 import { DrizzleContextDocumentStore } from "./drizzle-store.js";
 import { DrizzleContextTreeMutationStore } from "./drizzle-tree-mutation-store.js";
@@ -62,6 +63,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         fileAccess: createAllowAllFileAccess(),
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
+        catalogMutations: createDrizzleContextCatalog(db),
       });
       collab.bindHocuspocus(
         new Hocuspocus({
@@ -72,6 +74,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       const store = new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID });
       const fs = new ContextFS({
+        placement: { kind: "live" },
         holder: { projectId: PROJECT_ID },
         links: createTestDocumentLinkScopes(db),
         store,

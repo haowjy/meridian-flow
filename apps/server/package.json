@@ -50,6 +50,7 @@
   },
   "devDependencies": {
     "@hocuspocus/provider": "4.3.0",
+    "@meridian/resource-replica": "workspace:*",
     "@types/proper-lockfile": "^4.1.4",
     "@types/semver": "^7.7.1",
     "@types/turndown": "^5.0.6",

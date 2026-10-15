@@ -93,6 +93,14 @@ end-to-end as one suite.
   failure rather than waiting behind failed messages.
 - **Evidence:** failed and retried snapshots, timeline of gateway and turn
   events, both response statuses, and no extra request during the idle interval.
+- **Provider-declined variant:** repeat with a sticky 404 error (`"message":
+  "RP1 retired model"`). In the chat, expect "The AI provider turned this
+  request down." and Retry on the latest failed reply. Clear that script with
+  `./mf mock clear --id <script-id>` (read the ID from `error-script.json`),
+  then click Retry. Expect a new reply without retyping; the old failure keeps
+  its sentence as history, with no Retry. Before this fix, the current
+  provider-declined reply had no Retry. An inherited read-only failure must
+  still have no Retry.
 - **Last run:** not recorded for this exact wall-clock recipe. Automated
   sweep-boundary coverage is not a substitute for running it.
 
@@ -116,10 +124,26 @@ end-to-end as one suite.
   reason and
   acknowledges every message named by its receipt. Those messages are not
   answered automatically; only never-adopted queued-behind messages remain in
-  the inbox. Retry re-answers explicitly.
+  the inbox. Recovery also deletes the stale `thread_run_leases` row and publishes
+  `meridian.thread.status` with `status.kind: asleep` after commit. A resumed
+  subscription/snapshot reads asleep, with no running turn. Send a new message
+  immediately after repair, before the old lease expiry, and confirm its reply
+  starts without waiting. Retry re-answers explicitly.
 - **Evidence:** signal and exit timestamps, process log showing signal-handler
   ordering, settled reply and response rows, ledger debit, empty pending inbox,
-  and post-restart Retry result.
+  post-restart Retry result, resumed snapshot, idle status frame, lease rows
+  before/after repair, and new-message start time relative to the old expiry.
+
+### Terminal compaction failure crash boundary
+
+The production-adapter DB regression in
+`runtime/adapters/drizzle-loop-ports.db.test.ts` captures a pending compaction
+candidate, calls `failCompactionSuccessor`, then runs orphan recovery without
+failure-close or run-session cleanup. The compaction and successor are failed,
+the adopted inbox is empty, and the thread is asleep with no lease row. The
+in-memory parity case lives in `runtime/loop/__tests__/inbox-drain.test.ts`.
+Run with `pnpm test:db`; these are adapter regressions, not a live process
+restart smoke check.
 
 ## RP-2: Commands wait for messages
 
@@ -422,6 +446,91 @@ end-to-end as one suite.
   --overwrite` is delete plus create, so it is not a writer edit.
 - **Last run:** 2026-10-09 on `7495b8d58`, mock then DeepSeek, all steps passed
   (report: `impl-729-730/evidence/729-730-V-probes.md` in the same work item).
+
+## RP-13: Apply one change row, then Discard all, moves no prose
+
+- **Protects:** applying a single change row changes exactly that row's prose, and
+  a following Discard all closes the draft without touching the document again,
+  including when the row list is filtered and the applied row was never opened.
+  This replaces the deleted `WorkChanges` unit case, which drove the same claim
+  through the client's row component.
+- **Stack:** mock, real wall clock.
+- **Precondition:** a project with one Work, a document in it, and a chat bound to
+  that Work so the model's write lands as a draft on the Work rather than live.
+- **Steps:** script one mock write of a known sentence, send it, and wait for the
+  draft to settle. Then read the Work's whole draft and keep the document before
+  and after each command:
+
+  ```bash
+  ./mf mock script '[{"text":"RP13 first draft sentence."}]' --json > "$E/script.json"
+  ./mf thread send "$T" 'RP13 write' --json > "$E/send.ndjson"
+  ./mf doc read "$DOC" --json > "$E/before.json"
+  ./mf api GET "/api/projects/$P/works/$W/drafts" --json > "$E/draft.json"
+
+  DRAFT=$(jq -r '.drafts[0].id' "$E/draft.json")
+  ITEM=$(jq -r '.drafts[0].items[0].itemKey' "$E/draft.json")
+  TOKEN=$(jq -r '.drafts[0].items[0].locationToken' "$E/draft.json")
+  APPLY=$(node -p 'crypto.randomUUID()')
+
+  ./mf api POST "/api/projects/$P/works/$W/drafts/apply" \
+    --data "{\"draftId\":\"$DRAFT\",\"commandId\":\"$APPLY\",\"items\":[{\"itemKey\":\"$ITEM\",\"locationToken\":\"$TOKEN\"}]}" \
+    --json > "$E/apply.json"
+  ./mf doc read "$DOC" --json > "$E/after-apply.json"
+
+  DISCARD=$(node -p 'crypto.randomUUID()')
+  ./mf api POST "/api/projects/$P/works/$W/drafts/discard" \
+    --data "{\"draftId\":\"$DRAFT\",\"commandId\":\"$DISCARD\"}" --json > "$E/discard.json"
+  ./mf doc read "$DOC" --json > "$E/after-discard.json"
+  ./mf api GET "/api/projects/$P/works/$W/drafts" --json > "$E/drafts-after.json"
+  ```
+
+- **Expect:** `apply` answers `completed` and moves only the applied row's text;
+  `discard` answers `{"status":"discarded"}`; `after-discard.json` is byte-identical
+  to `after-apply.json` (Discard never writes prose, whatever the row filter shows);
+  and the draft read afterwards does not report that draft as active. A `stale` or
+  `gone` apply status means the tokens from `draft.json` were already superseded, and
+  the run must be restarted rather than interpreted.
+- **Evidence:** the four document reads, `apply.json`, `discard.json`, the draft read
+  before and after, and the mock script id.
+- **Last run:** not recorded.
+
+## RP-14: Work archive and delete are durable, reversible and idempotent
+
+- **Protects:** archiving a Work stamps `archivedAt` and advances `entityRevision`
+  by one; unarchiving clears it; deleting sets `deletedAt` as a tombstone that
+  keeps the row in the catalogue, and repeating the delete changes nothing.
+  This replaces the deleted `WorkCollection` unit cases for archive and delete
+  durability. The Undo affordance itself stays a browser check, because undo is
+  client-side.
+- **Stack:** mock, real wall clock. No model call.
+- **Steps:**
+
+  ```bash
+  ./mf api GET  "/api/projects/$P/works"                > "$E/works-before.json"
+  ./mf api POST "/api/works/$W/archive"                 > "$E/archive.json"
+  ./mf api GET  "/api/projects/$P/works"                > "$E/works-archived.json"
+  ./mf api POST "/api/works/$W/unarchive"               > "$E/unarchive.json"
+  ./mf api GET  "/api/projects/$P/works"                > "$E/works-restored.json"
+  ./mf api DELETE "/api/works/$W"                       > "$E/delete.json"
+  ./mf api GET  "/api/projects/$P/works"                > "$E/works-deleted.json"
+  ./mf api DELETE "/api/works/$W"                       > "$E/delete-again.json"
+  ./mf api GET  "/api/projects/$P/works"                > "$E/works-after-twice.json"
+  ```
+
+- **Expect:** archive sets a non-null `archivedAt` on that row, leaves every other
+  row alone, and moves `entityRevision` from 1 to 2 on a fresh Work; unarchive
+  returns `archivedAt` to `null` (revision 3); `DELETE` answers with an empty body
+  and sets `deletedAt` while the row **stays in the catalogue**, so assert on
+  `deletedAt` and never on presence; the second `DELETE` leaves `deletedAt` and
+  `entityRevision` unchanged (revision 4 both times). Compare the Work row, not the
+  whole payload: the transport envelope carries a fresh `requestId` per request, so
+  two byte-identical documents are not expected. Use a Work created for this probe,
+  never one holding a document worth keeping.
+- **Evidence:** the six snapshots and every command status.
+- **Last run:** 2026-10-14 on `e0ba565c6` (worktree `test-trim`), mock, all steps
+  passed after two expectations were corrected by the run: delete is a tombstone
+  that keeps the row listed, and the envelope's `requestId` makes whole-payload
+  comparison wrong. Evidence: `/tmp/opencode/probe-rp14/`.
 
 [c6a]: https://github.com/haowjy/meridian-flow-docs/blob/683395ca9b084cee0196ec9c9070755930d38329/work/agents-milestone-4/evidence/c6a-probe/report.md
 [merge]: https://github.com/haowjy/meridian-flow-docs/blob/a4b1dddbd615bbab334dc6fa7b700245f768d288/work/agents-milestone-4/evidence/merge-gate/REPORT.md

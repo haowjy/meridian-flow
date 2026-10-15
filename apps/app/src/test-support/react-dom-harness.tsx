@@ -6,6 +6,7 @@
 import { createRequire } from "node:module";
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
+import { vi } from "vitest";
 import { installJsdomLayoutFallbacks } from "./jsdom-layout";
 
 const require = createRequire(import.meta.url);
@@ -71,5 +72,21 @@ export async function withReactRoot(
     globalThis.document = previousDocument;
     (globalThis as ActGlobal).IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
     dom.window.close();
+  }
+}
+
+/** Retry assertions while draining bounded query/React scheduling, under either clock. */
+export async function settleReact(check: () => void, timeout = 1_000): Promise<void> {
+  for (let elapsed = 0; ; elapsed += 25) {
+    await act(async () => {
+      if (vi.isFakeTimers()) await vi.advanceTimersByTimeAsync(25);
+      else await new Promise((resolve) => setTimeout(resolve, 25));
+    });
+    try {
+      check();
+      return;
+    } catch (error) {
+      if (elapsed + 25 >= timeout) throw error;
+    }
   }
 }

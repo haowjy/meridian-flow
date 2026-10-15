@@ -1,160 +1,79 @@
 # Write architecture
 
-## Architecture
+`write.ts` is a composition facade; each module owns one part of planning,
+certification, application, receipt, or inverse behavior. The resolver→apply
+currency is typed content, not Markdown strings or raw Yjs diffs.
 
-`write.ts` is the composition façade; behavior belongs in the module that owns
-its concern.
+## Codec and link pipeline
 
-### Codec pipeline
-```
-@meridian/markup: source string → unified parser → mdast → BlockCodec dispatch → MarkCodec dispatch → PM nodes
-@meridian/markup: PM nodes → BlockCodec.serialize → MarkCodec.serialize → mdast → unified stringify → source string
-```
-Block hash prefix added by `AgentEditCodec.serializeBlock()` at render time (not stored as
-attribute). In the built-in adapter the hash is derived from the adapter-internal
-Y.XmlElement CRDT item ID (`clientID`, `clock`); the displayed prefix is unique
-within the current sibling set and is not durable identity. Kernel callers see
-only the neutral `BlockRef`.
+`@meridian/markup` parses source into block/mark nodes and serializes nodes back
+to source. `AgentEditCodec` adds display hash prefixes at render time; a hash is
+a sibling-unique targeting token, never durable identity.
 
-### Ref assignment (`src/links/`)
-Parse is pure syntax: every parsed link, `image` and `figure` has `ref: null`.
-The handler prepares the host's link scope, the resolver plans the write
-(`planWrite`), the handler prepares the planned nodes, and the plan assigns
-their refs through the command's `WriteLinkAssigner` before block
-alignment, so assigned nodes are the resolver→apply currency. Serialization
-spells through the command's scoped codec (`tool/command-links.ts`). See [link identity](link-correspondence.md).
+Parse is pure syntax: links, images, and figures start with `ref: null`. The
+command opens a host link scope, plans the write, prepares planned nodes, and
+assigns refs before block alignment and no-op detection. Serialization uses the
+same scoped codec. See [link correspondence](link-correspondence.md).
 
-### Semantic certification and apply (`src/semantic-edit-ir.ts`, `src/apply/apply-edits.ts`)
-The resolver emits `SemanticEditIRV1` bound to the exact input Yjs revision. It
-declares scope and deletion ranges plus a disjoint, exhaustive partition of
-each output into preserved continuation, fresh payload, copy, or certified
-restoration. A whole-scope zero-continuation edit uses the distinct
-`fullScopeFreshReplacement` intent. Validation rejects stale revisions,
-out-of-scope sources, missing/overlapping output claims, restoration without a
-retained certificate, and UTF-16 surrogate splits before mutation.
+## Semantic IR and apply
 
-Plain same-block find (one or all matches) emits one `textRanges` edit with exact, ordered match
-spans. The adapter adds those replacements back-to-front to one ProseMirror
-`Transform` and projects each exact step inside one Yjs transaction. Unmatched
-gaps therefore keep their CRDT items; the semantic IR partitions the replacement
-window into fresh payload and `materialization: "retained"` preserved runs.
-Retained gaps keep their original roots visible, so the write façade forwards
-the whole IR and the provenance writer excludes those runs from its insertion
-stream. Any non-retained continuation or restoration run in the same IR still
-receives its provenance fact; fresh payloads remain agent-born by normal
-insertion attribution.
-Formatted and cross-block finds keep the serialized-markdown reconciliation path.
+The resolver emits `SemanticEditIRV1` bound to the input Yjs revision. Its output
+partition is disjoint and exhaustive across preserved continuation, fresh
+payload, copy, and certified restoration. Validation rejects stale revisions,
+out-of-scope sources, overlapping/missing claims, uncertified restoration, and
+invalid UTF-16 splits before mutation.
 
-A scope rewrite (`replace` over `in`, a formatted or cross-block find, and
-`create { overwrite: true }`) goes through `replaceScope`, which aligns the
-scope's blocks with the parsed replacement (`resolver/block-alignment.ts`):
-equal blocks get no edit; between them, blocks that may pair (same node type,
-same heading level) pair by shared edge text first and by position after, and
-each pair becomes a `block` edit that `updateYFragment` diffs in place,
-attributes included. Only unpaired blocks are inserted or deleted, so a new
-paragraph never takes over an edited one's element and comments. A write that resolves to no edits (a document's own export written back, or a
-find replaced with itself) returns `unchanged` before a write handle is
-reserved, so it journals nothing and leaves nothing to undo.
-`weightedOrderedMatches` (`src/ordered-matching.ts`) is shared by alignment
-and echo. Past the table limit, alignment pairs the gap by position; echo
-falls back to block-identity diffing. Scoring and gap policy stay with callers.
+Plain same-block find lowers exact spans right-to-left in one adapter transform;
+unmatched gaps retain their CRDT items. Formatted, escaped, atom-containing, or
+cross-block finds use serialized-range reconciliation and structural lowering.
+Scope replacement aligns compatible blocks, updates paired blocks in place, and
+inserts/deletes only unpaired blocks. A no-op returns `unchanged` before a write
+handle or journal row exists.
 
-Flat inline offsets exclude atoms (pictures, hard breaks), so `textRanges` edits
-apply only to blocks without atoms; anything else is a `block` edit.
+`applyEdits` mutates from typed nodes and returns ordered touched, deleted, and
+inserted identities. It never parses or serializes. The write owner snapshots,
+merges concurrent updates, and renders the echo. Preflight validates the full
+IR and each block reference before a transaction changes Yjs. Deleting the only
+remaining block clears its text while preserving the required ProseMirror
+container.
 
-### Edit application (`src/apply/apply-edits.ts`)
-`applyEdits` owns mutation and returns ordered live touched IDs, deleted IDs,
-and inserted IDs in insertion order, without rendering prose or building per-edit
-summaries. The write/commit owner takes
-its own snapshots, merges concurrent updates, and produces the final echo.
-Preflight-before-mutate discipline: the write owner validates semantic IR,
-then apply validates all block references. Each edit is preflighted (content
-and offsets) before its transaction mutates the document.
-ProseMirror nodes are the resolver→apply currency: `insert` carries its
-`blocks`, `textRanges` replacements carry an inline `content` fragment, and
-`block` carries its replacement node. The resolver parses each write once
-(formatted finds parse their spliced range once); apply never parses or
-serializes, so a node attribute the markup codec does not spell survives to
-Yjs. Edit text (`insert.newText`, `textRanges.output`) is semantic-IR
-provenance only. Every agent
-text edit lowers through ProseMirror (`applyInlineReplacements`), the single
-inline mutation seam. `applyTextEdit` remains as the
-model's plain-text verb for undo repair and trims unchanged edge text before
-touching Yjs.
+## Prepared writes and receipts
 
-| Kind | Mechanism |
-|---|---|
-| `textRanges`, or a matched block changes (`block`) | Adapter-owned exact inline ranges (`applyInlineReplacements`) or whole-block replacement + per-block updateYFragment |
-| `insert` / `delete` | Adapter-owned block insert/delete (Y.XmlElement fragment ops in the built-in adapter) |
+Create, copy, and mutation commands share one `PreparedEdit` path. It reserves
+a write identity, captures the before cut and ordered transaction parts,
+certifies each segment, then stages or submits one logical edit. The command
+submits merged `editParts`; host storage chooses journal row expansion. Receipt
+rendering runs outside mutation certification and preserves settlement identity
+when reporting degrades.
 
-Last-block edge case: deleting the only remaining block clears text instead of
-structurally deleting (the built-in adapter preserves ProseMirror `doc(block+)`
-internally). Structural replacement inserts its new blocks before deleting old
-parents, so a non-empty requested document never leaves a cleared trailing block.
+The forward-inverse primitive computes a new edit from immutable target parts,
+certified restoration aliases, and the current view. Hosts persist parts under
+an action ID and choose policy and destination. Card actions, model stack
+commands, and failed-response rollback all use it; history rows are never
+marked reversed and no historical UndoManager is rebuilt. Forward-write
+attribution comes from explicit actor context and immutable receipts, never
+transaction-origin identity. Model handles are reserved through
+`UpdateJournal.reserveWriteOrdinal` before staging, and receipts retain those
+ordinals independently of transport compaction. Certified aliases are the only
+persisted restoration correspondence, never text or length guesses.
 
-### Undo/redo (`src/undo/`)
+## CRDT and content boundaries
 
-Reversal is a single cold reconstruction path from `UpdateJournal`. It replays
-the retained durable update log (plus only a seq-0 baseline checkpoint when the
-host initialized a document that way), assigns per-reconstruction `Symbol` tokens,
-creates a fresh local `Y.UndoManager`, tags only the requested target forward
-update seqs with the tracked token, runs undo/redo, and extracts update bytes.
-The target seqs come from mutation rows: undo targets the selected `active`
-rows (write handles, a `since`/`to` range, the last N, or all; a turn only for
-the writer's turn undo); redo targets `reversed` rows whose `undoUpdateSeq`
-matches the redo target. This journal-backed model is authoritative.
+Resolver/apply code is CRDT-neutral through opaque `DocHandle` and `BlockRef`
+ports. The v1 content currency remains ProseMirror nodes through
+`AgentEditModel`; full ProseMirror removal is deferred in [TODO.md](TODO.md).
 
-Forward agent writes still use a stable transaction origin `Symbol` per
-`(docId, threadId)` pair via `ThreadOriginRegistry`. That origin is for Yjs
-transaction attribution and same-actor filtering only; write selection for
-reversal comes from durable journal metadata (`w<N>` / mutation row
-`createdSeq`; `turnId` remains context), not live undo stack items.
+The write listener captures synchronous Yjs update events for one logical write,
+including its own structs and deletes but not inherited tombstones. It detaches
+before journal submission, synchronization, recovery, or failure. A state-vector
+diff is not a per-write deletion delta. Live writes merge one update; draft
+segments use fresh clients and keep independent logical writes separate unless
+Yjs dependencies join them.
 
-Redo targets are selected from durable `ReversalRecord` rows with
-`status: "reversed"`; there is no runtime redo stack or rehydration cache. Redo
-consumption is authoritative at persist time: `persistRedo()` rechecks the
-doc+thread+turn reversal is still `status: "reversed"` inside the append
-transaction, marks it `status: "redone"`, and returns `consumed: false` without
-appending when another session already used it.
+## Draft write granularity
 
-Redo staleness is writer-specific. A later `human:*` journal row withdraws redo;
-system reversal/bookkeeping rows and later agent rows do not. The planner and
-persist-time watermark guard use that same classification. `planUndo()` and
-`planRedo()` are the shared authority for read-model availability and command
-execution, so those paths cannot disagree except across a race.
-
-Lineage has two distinct persisted authorities.
-`document_yjs_reversals.redo_update_seq` records the current active redo closure
-(state): handles that are active because of the same redo update must undo
-together. `document_yjs_reversal_ops` records durable reversal op identity
-(history): old undo/redo update seqs are exempt from dependency blocking even
-when the current state has moved on. Both authorities compact with the retained
-Yjs update log so closure and dependency checks only target retained update seqs.
-Hosts may append a `system:reconcile` update after separately attributed rows in
-the same admission to make cold replay causally complete. That row is coverage
-for those authored rows, not a later semantic edit, so lineage dependency
-evaluation ignores it; the authored rows remain the reversal targets.
-The pure lineage entry point is `selectUndoClosure(...)`; callers pass the
-journal snapshot, reversal rows, unfiltered candidate mutation rows, selected
-handles, candidate handles, and reversal-op seqs, then receive the undo closure or
-unavailable verdict. The helper steps behind that API (compatible groups, boundary
-expansion, seq ownership, dependency evaluation) are private implementation
-details.
-
-**Write-level undo:** each `write()` call is its own durable mutation row. Undoing without a selector reverses exactly the latest active write. Each write has a stable per-(document, thread) handle (`w1`, `w2`, …) stored on mutation metadata and never renumbered. `undo`/`redo` can target `{to:"w3"}`, an inclusive `{from:"w2", to:"w5"}` range, `{last:N}`, or `{all:true}`. Range reconstruction still uses Yjs UndoManager item identity: selected writes are tracked, non-selected/concurrent updates replay untracked, so same-area concurrent merge behavior is unchanged. User-facing undo notifications carry per-handle turn mappings (`writeHandleTurns`) because one closure can span multiple turns; `turnId` is only a representative fallback for grouping/reporting.
-
-Multiple handles backed by the same durable journal update are one reversal
-boundary. Selecting any member expands to every handle sharing that update, so
-content and mutation status cannot diverge after a folded branch Apply.
-
-
-### CRDT-neutral seam, ProseMirror content currency
-
-The resolver→apply kernel is neutral across the CRDT axis: Yjs documents and
-blocks are carried as opaque `DocHandle`/`BlockRef` handles, and resolver/apply
-code asks `AgentEditModel` for identity, lookup, mutation, projection, and
-serialization. That does **not** mean the package is ProseMirror-neutral.
-`codec-types.ts` still aliases `Block = PMNode`, `ParsedContent` still transits
-the kernel, and resolver code still inspects PM block shape (`type.name`,
-`isTextblock`, heading attrs, body serialization). Full PM-out-of-kernel work is
-deferred in [TODO.md](TODO.md).
+One logical draft write may contain paragraph-level segments. Each segment is
+one transaction with a fresh shared-protocol client; reply receipts and rollback
+remain per tool call while storage expands segments into rows. Recognized
+adjacent splits/merges and contiguous insertion/deletion runs stay one
+structural segment. Sharing a paragraph alone never joins independent writes.

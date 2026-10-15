@@ -1,4 +1,5 @@
 /** Project document tree. Chat resources have no ordinary Editor tabs or sidebar sections. */
+
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import {
@@ -38,7 +39,11 @@ export type ContextTreePanelProps = {
   /** Path of the currently active file inside `activeScheme`'s tree. */
   activePath: string | null;
   /** Called when the user picks a file row in any scheme section. */
-  onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
+  onSelectFile: (
+    scheme: ProjectContextTreeScheme,
+    file: ContextFile,
+    options?: { focus?: true },
+  ) => void;
   creating?: TreeCreationRequest | null;
   onRequestCreate?: (request: TreeCreationRequest) => void;
   onCreateDone?: () => void;
@@ -121,7 +126,11 @@ function SchemeSection({
   scheme: ProjectContextTreeScheme;
   activeScheme: ProjectContextTreeScheme | null;
   activePath: string | null;
-  onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
+  onSelectFile: (
+    scheme: ProjectContextTreeScheme,
+    file: ContextFile,
+    options?: { focus?: true },
+  ) => void;
   creating: { kind: ContextCreateKind; parentPath: string } | null;
   onRequestCreate: (kind: ContextCreateKind, parentPath: string) => void;
   onCreateDone: () => void;
@@ -201,7 +210,7 @@ function SchemeSection({
     const entry = catalog.findPath(pendingOpenPath);
     if (entry?.kind !== "file") return;
     const file = entry;
-    onSelectFile(scheme, file);
+    onSelectFile(scheme, file, { focus: true });
     setPendingOpenPath(null);
   }, [pendingOpenPath, catalog, onSelectFile, scheme]);
 

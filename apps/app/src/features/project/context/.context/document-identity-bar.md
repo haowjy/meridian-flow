@@ -5,14 +5,14 @@ for feature-level contracts first.
 
 ## Document identity bar
 
-`DocumentIdentityBar.tsx` is the one identity surface: a fixed-height mono
+`DocumentIdentityBar.tsx` is the one identity surface: a mono
 path (`Unfiled › Untitled 4`) and its chips, on every document — tracked,
 provisional, viewer. The Editor draws it as a band at the top of the active
 tab's canvas; a document beside the chat draws it in the dock header
 (`variant="header"`, `../dock/DockDocumentIdentity.tsx`), which replaces the
 tab strip there, so the filename shows once. Crumb/field text is `text-sm`
 to match the suggestion-popover rows; `identity-bar-geometry.ts` owns the box
-constants (26px band, 22px child boxes) and the zero-layout-shift contract
+constants (28px band, 22px child boxes) and the zero-layout-shift contract
 between rest and edit states. Provisional docs are a *state* of the bar (italic
 leaf + jade “Choose a home” chip), never separate chrome; the editor banner
 slot below the toolbar belongs to draft chrome alone, and identity chrome must
@@ -21,16 +21,18 @@ never occupy it again (structural separation, 2026-07-17).
 **The path navigates; it never edits.** `DocumentPath.tsx` makes each crumb a
 `DrillInMenu` trigger: each crumb opens the list it sits in, with itself
 highlighted. The area opens the list of areas, a folder opens its parent,
-the filename opens its folder, and `…` opens where the last hidden folder
-sits. An area not offered by the root list opens inside itself instead. The menu
+the filename opens its folder. An area not offered by the root list opens inside itself instead. The menu
 highlights everything on the document's path and the folder a back row just
 climbed out of. A pick opens through `useOpenDocumentInDock`, the way the
 screen opens documents: the dock on Chat and Work, an Editor tab on the Editor.
 Crumb menus carry no actions. Their Radix roots and triggers stay mounted at
 rest; only the open browsing body acquires catalogs, and its initial trail
-is set once that source resolves. Folders collapse into `…` only when the row is
-too narrow, measured from passive fit candidates of the same row renderer; the steps are every
-folder, the last folder, no folders, then the area as its icon. Renaming and
+is set once that source resolves. The identity row is wrapping-first, one rule for Editor and dock: the review
+controls move to a second line before anything shortens, and only a line too
+narrow for them alone collapses labels to icons, hides the stepper count, then
+collapses Apply to its icon; parent crumbs drop only when the leaf would be cut.
+Coarse pointers give each control a 44px box and grow the row to fit, and the
+filename yields its width (see [CONTEXT.md](CONTEXT.md)). Renaming and
 moving a homed document belong to the lists (Files, Scratch section, phone
 browser); see the KB's path-navigates-lists-edit decision.
 

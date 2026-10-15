@@ -1,11 +1,13 @@
 /** Structural, lease-qualified session-registry surfaces. */
 import type {
   AccountId,
+  AvailabilityGeneration,
   LiveDocumentSessionAuthority,
   LiveDocumentSessionLease,
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 
+import type { BranchRoomRef } from "./branch-room-pool";
 import type { DocumentSession, DocumentSessionSnapshot } from "./document-session";
 
 export type RetainedLiveDocumentReference = Readonly<{
@@ -42,8 +44,18 @@ export interface LiveDocumentSessionRegistry extends LiveDocumentSessionAuthorit
   ): () => void;
   /** A fresh session for a branch room whose last one reset, synced from the server alone. */
   rebuildBranchRoom(roomKey: string): Promise<DocumentSession>;
-  retainBranchRooms(ownerId: string, roomKeys: Iterable<string>): void;
+  retainBranchRooms(ownerId: string, rooms: readonly BranchRoomRef[]): void;
   releaseBranchRooms(ownerId: string): void;
+}
+
+/**
+ * Private to resource acquisition: the exact persistence incarnation behind a
+ * live registry session. A lease carries only the admission, which can be newer
+ * than the room the cache lives in.
+ */
+export interface LiveSessionIncarnationPort {
+  /** `null` when `session` is not the registry's current live room. */
+  incarnationOf(session: DocumentSession): AvailabilityGeneration | null;
 }
 
 export interface LocalDocumentSessionFactory {

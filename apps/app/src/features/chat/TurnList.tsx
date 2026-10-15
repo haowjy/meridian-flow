@@ -13,15 +13,17 @@ import { ChatColumn } from "./ChatColumn";
 import { useChatSurfaceBottomInset } from "./ChatSurface";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { CompactionDivider } from "./compaction/CompactionDivider";
-import { answeredControlIds } from "./compaction/compaction-model";
-import { QueuedControlRows } from "./compaction/QueuedControlRows";
-import type { QueuedControl } from "./compaction/thread-controls";
-import type { ThreadControls } from "./compaction/useThreadControls";
+import { answeredCompactionIds } from "./compaction/compaction-model";
+
 import { HandoffBriefCard } from "./derivation/HandoffBriefCard";
 import { ForkPointRule, InheritedSourceHeader } from "./derivation/InheritedMarks";
 import type { InheritedView } from "./derivation/inherited-view";
 import { ThreadReferenceChip } from "./derivation/ThreadReferenceChip";
 import type { HandoffBrief } from "./derivation/useHandoffBrief";
+import { QueuedControlRows } from "./thread-controls/QueuedControlRows";
+import type { QueuedControl } from "./thread-controls/thread-controls";
+import type { ThreadControls } from "./thread-controls/useThreadControls";
+import { AppliedWriteModeNotice } from "./thread-controls/WriteModeNotice";
 import { buildTranscriptModel, type InheritedMark, type TranscriptRow } from "./transcript-model";
 import type { ReplyRetry } from "./useReplyRetry";
 
@@ -49,7 +51,8 @@ export type TurnListProps = {
   /** Recovered failed submissions, keyed by the restored user turn id. */
   submissionRecoveryByTurnId?: ReadonlyMap<string, UserTurnRecovery>;
   queuedWriterTurnIds?: ReadonlySet<string>;
-  /** Writer commands: queued `/compact`, withdrawal, and Stop on a running divider. */
+  waitingForUsage?: boolean;
+  /** Writer commands: queued `/compact` and switches with their Stop, and Stop on a running divider. */
   controls?: ThreadControls | null;
   /** Retry and Stop on this handoff destination's brief cards. */
   brief?: HandoffBrief | null;
@@ -101,6 +104,7 @@ export function TurnList({
   changeTrails = {},
   submissionRecoveryByTurnId,
   queuedWriterTurnIds,
+  waitingForUsage,
   controls = null,
   brief = null,
   replyRetry = null,
@@ -119,10 +123,13 @@ export function TurnList({
   );
   const visibleTurns = transcript.visibleTurns;
   const lastAssistantIdx = findLastLocalAssistantIndex(transcript.rows);
+  let lastReplyRowIdx = transcript.rows.length - 1;
+  while (lastReplyRowIdx > 0 && transcript.rows[lastReplyRowIdx]?.kind === "write-mode")
+    lastReplyRowIdx -= 1;
   // A command runs only when no message waits, so queued commands sit at the
   // tail, after every queued message: they take no position until they run.
   const tailControls = useMemo(() => {
-    const answered = answeredControlIds(turns);
+    const answered = answeredCompactionIds(turns);
     return (controls?.queued ?? NO_CONTROLS).filter((control) => !answered.has(control.id));
   }, [controls?.queued, turns]);
   // List rows are transcript rows shifted down by the alert, when it shows.
@@ -176,6 +183,18 @@ export function TurnList({
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item: VirtualItem) =>
     item.end <= (viewportRef.current?.scrollTop ?? 0);
 
+  // Follow policy. `getTotalSize()` is the content height AND the revision: it is
+  // the height the virtualized list scrolls over, and it changes on turn append,
+  // on measured streaming-row growth, and on composer-inset change — each change
+  // re-renders this component, so the follow pin fires before paint. Passing the
+  // height (not a bare counter) lets the pin compute the bottom without reading
+  // `scrollHeight`, which would force a layout on every revision.
+  // The thread opens in `follow`, so the very first pin anchors to the newest turn.
+  const { mode, enterFollow, releaseFollow } = useChatFollowScroll({
+    scrollRef: viewportRef,
+    contentHeight: virtualizer.getTotalSize(),
+  });
+
   // Turn stage of a conversation reveal. The transcript owns the landing (and
   // the verdict when the turn isn't here); the scroll capability stays here.
   useTurnRevealLanding({
@@ -188,19 +207,12 @@ export function TurnList({
         : turnId,
     historySettled,
     viewportRef,
-    scrollToIndex: (index) => virtualizer.scrollToIndex(index + rowOffset, { align: "center" }),
-  });
-
-  // Follow policy. `getTotalSize()` is the content height AND the revision: it is
-  // the height the virtualized list scrolls over, and it changes on turn append,
-  // on measured streaming-row growth, and on composer-inset change — each change
-  // re-renders this component, so the follow pin fires before paint. Passing the
-  // height (not a bare counter) lets the pin compute the bottom without reading
-  // `scrollHeight`, which would force a layout on every revision.
-  // The thread opens in `follow`, so the very first pin anchors to the newest turn.
-  const { mode, enterFollow } = useChatFollowScroll({
-    scrollRef: viewportRef,
-    contentHeight: virtualizer.getTotalSize(),
+    scrollToIndex: (index) => {
+      // A transcript that has just mounted is still following the live edge,
+      // and would pin back to the bottom once the target's rows are measured.
+      releaseFollow();
+      virtualizer.scrollToIndex(index + rowOffset, { align: "center" });
+    },
   });
 
   // Reacquire follow when the user submits (each local message bumps the revision).
@@ -223,6 +235,7 @@ export function TurnList({
           />
         );
       }
+      if (row.kind === "write-mode") return <AppliedWriteModeNotice turn={turn} />;
       if (row.kind === "thread-reference") {
         return (
           <div data-thread-references className="flex flex-wrap gap-[var(--chat-space-inline)]">
@@ -253,13 +266,16 @@ export function TurnList({
             turn={turn}
             submissionRecovery={local ? submissionRecoveryByTurnId?.get(turn.id) : undefined}
             queued={local && queuedWriterTurnIds?.has(turn.id)}
+            waitingForUsage={waitingForUsage}
           />
         );
       }
       // A divider is a row: once one follows a failed reply, that failure is
       // history. The queued-controls tail is not a row and never counts. An
       // inherited reply is the source's history, even with nothing below it.
-      const endsTranscript = local && idx === visibleTurns.length - 1;
+      // A write-mode line after the reply does not close it: the server's Retry
+      // looks past switches.
+      const endsTranscript = local && idx === lastReplyRowIdx;
 
       const standIn = local ? (replyRetry?.requestOf(turn.id) ?? null) : null;
       const retry =
@@ -307,10 +323,12 @@ export function TurnList({
       replyRetry,
       controls,
       lastAssistantIdx,
+      lastReplyRowIdx,
       navigateToChange,
       onRespondToInterrupt,
       submissionRecoveryByTurnId,
       queuedWriterTurnIds,
+      waitingForUsage,
       threadId,
       threadUsage,
       transcript,
@@ -337,10 +355,10 @@ export function TurnList({
         return (
           <QueuedControlRows
             controls={row.controls}
-            onWithdraw={
+            onStop={
               withdraw
                 ? (control) => {
-                    // Withdraw removes the row at once. The last one takes the
+                    // Stop removes the row at once. The last one takes the
                     // whole tail with it, so keep focus in the transcript.
                     if (row.controls.length === 1)
                       viewportRef.current?.focus({ preventScroll: true });
@@ -427,15 +445,6 @@ export function TurnList({
       />
     </div>
   );
-}
-
-/** Latest transcript location for a child: its finished line, else its launch card. */
-export function resolveSubagentRevealTurnId(
-  turns: Turn[],
-  childThreadId: string,
-  originTurnId: string,
-): string {
-  return buildTranscriptModel(turns, false).resolveRevealTurnId(childThreadId, originTurnId);
 }
 
 function JumpToLatestButton({

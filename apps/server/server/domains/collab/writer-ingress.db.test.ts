@@ -12,6 +12,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDb } = await import("@meridian/database");
     const {
       branchPushOutboxUpdates,
+      branchPushSettlementBatches,
       branchPushSettlementOutbox,
       contextSources,
       documents,
@@ -36,6 +37,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     beforeEach(async () => {
       await deleteDrizzleRows(db, [
         branchPushSettlementOutbox,
+        branchPushSettlementBatches,
         documentYjsUpdates,
         pushLineage,
         documents,
@@ -91,9 +93,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .returning({ id: pushLineage.id });
       const emptyDoc = new Y.Doc();
       const emptyState = Y.encodeStateAsUpdate(emptyDoc);
+      // Two unresolved batches, each settling one push of this document.
+      const batchIds = [
+        "00000000-0000-4000-8000-000000000a01",
+        "00000000-0000-4000-8000-000000000a02",
+      ];
+      await db.insert(branchPushSettlementBatches).values(batchIds.map((id) => ({ id })));
       await db.insert(branchPushSettlementOutbox).values(
-        pushes.map((push) => ({
+        pushes.map((push, index) => ({
           pushId: push.id,
+          batchId: batchIds[index] as string,
           documentId: DOCUMENT_ID as never,
           documentTitle: "chapter",
           lockCutUpdate: Buffer.from(emptyState),

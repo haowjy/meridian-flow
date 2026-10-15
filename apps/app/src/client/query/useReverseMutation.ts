@@ -7,9 +7,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import {
-  type ReverseDocumentInput,
   type ReverseTurnInput,
-  reverseDocument,
   reverseTurn,
   successfulWorkReversals,
 } from "@/client/api/reverse-api";
@@ -17,12 +15,6 @@ import { projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
 import { convergeWorkProjection } from "./work-projection-cache";
 import { repairWorksSnapshot } from "./works-projection-acquisition";
-
-export function useReverseDocumentMutation(threadId: string) {
-  return useMutation({
-    mutationFn: (input: ReverseDocumentInput) => reverseDocument(threadId, input),
-  });
-}
 
 export function useReverseTurnMutation(threadId: string) {
   const queryClient = useQueryClient();
@@ -49,6 +41,11 @@ export function useReverseTurnMutation(threadId: string) {
           query.queryKey[0] === projectQueryKeys.all[0] &&
           query.queryKey[2] === "works" &&
           (query.queryKey[4] === "drafts" || query.queryKey[6] === "draft"),
+      });
+      void queryClient.invalidateQueries({
+        predicate: (query) =>
+          query.queryKey[0] === projectQueryKeys.all[0] &&
+          query.queryKey[2] === "document-draft-hints",
       });
       // The lineage receipt owns the Undo/Redo/View change affordance. Await
       // its refresh so an HTTP-200 refusal cannot settle against stale UI.

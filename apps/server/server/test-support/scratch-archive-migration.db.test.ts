@@ -15,37 +15,35 @@ import {
   archiveId as id,
   seedScratchArchive,
 } from "./scratch-archive-fixture.js";
+import { createScratchDatabase } from "./staged-migrations.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const enabled = process.env.RUN_DB_TESTS === "1" && Boolean(databaseUrl);
 
 describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
   it("preserves identities, bytes and trash, rebuilds catalogs, and retries every online swap cut", async () => {
-    const target = postgres(databaseUrl ?? "", { max: 1, onnotice: () => {} });
-    const db = createDb(databaseUrl ?? "", { max: 1 });
+    const scratch = await createScratchDatabase(databaseUrl ?? "", "scratch_archive_upgrade");
+    const target = scratch.sql;
+    const db = createDb(scratch.url, { max: 1 });
     const directory = await mkdtemp(path.join(tmpdir(), "meridian-scratch-archive-"));
     const migrations = path.resolve(
       import.meta.dirname,
       "../../../../packages/database/src/migrations",
     );
-    const journal = JSON.parse(await readFile(path.join(migrations, "meta/_journal.json"), "utf8"));
-    let isolated = false;
+    const currentJournal = JSON.parse(
+      await readFile(path.join(migrations, "meta/_journal.json"), "utf8"),
+    );
+    // This fixture owns the 0032-to-0035 upgrade, not later schema changes.
+    const journal = { ...currentJournal, entries: currentJournal.entries.slice(0, 36) };
     try {
-      await target.begin(async (tx) => {
-        await tx`ALTER SCHEMA public RENAME TO scratch_archive_saved_public`;
-        await tx`ALTER SCHEMA drizzle RENAME TO scratch_archive_saved_drizzle`;
-        await tx`CREATE SCHEMA public`;
-        await tx`ALTER EXTENSION pg_trgm SET SCHEMA public`;
-      });
-      isolated = true;
       await cp(migrations, directory, { recursive: true });
-      for (const entry of journal.entries.slice(33))
+      for (const entry of currentJournal.entries.slice(33))
         await rm(path.join(directory, `${entry.tag}.sql`));
       await writeFile(
         path.join(directory, "meta/_journal.json"),
         JSON.stringify({ ...journal, entries: journal.entries.slice(0, 33) }),
       );
-      await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
+      await runMigrations({ databaseUrl: scratch.url, migrationsDirectory: directory });
       await seedScratchArchive(target);
       const links = createTestDocumentLinkScopes(db);
       const readChapter = async () => {
@@ -61,6 +59,9 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
       };
       const before =
         await target`SELECT id, markdown_projection, metadata, deleted_at FROM documents ORDER BY id`;
+      const retiredManifestRows =
+        await target`SELECT id FROM documents WHERE kind = 'manifest' ORDER BY id`;
+      const retiredManifestIds = new Set(retiredManifestRows.map((row) => row.id));
       const yjs = await target`SELECT * FROM document_yjs_heads`;
       expect(yjs.every((head) => head.schema_version === 1_000_000)).toBe(true);
       const checkpoints = await target`SELECT * FROM document_yjs_checkpoints ORDER BY id`;
@@ -74,7 +75,7 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
         path.join(directory, "meta/_journal.json"),
         JSON.stringify({ ...journal, entries: journal.entries.slice(0, 35) }),
       );
-      await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
+      await runMigrations({ databaseUrl: scratch.url, migrationsDirectory: directory });
       expect(
         await target`SELECT id, markdown_projection, metadata, deleted_at FROM documents ORDER BY id`,
       ).toEqual(before);
@@ -135,15 +136,87 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
         { ahead_id: id(34), settled_document_id: null },
         { ahead_id: id(35), settled_document_id: id(18) },
       ]);
+      const online = (
+        await readFile(path.join(migrations, "0035_context_source_online_indexes.sql"), "utf8")
+      ).split("--> statement-breakpoint");
+      await cp(
+        path.join(migrations, "0035_context_source_online_indexes.sql"),
+        path.join(directory, "0035_context_source_online_indexes.sql"),
+      );
+      // The retry cuts replay 0035 as the newest applied migration; later ones apply after.
+      const throughOnline = { ...journal, entries: journal.entries.slice(0, 36) };
+      await writeFile(path.join(directory, "meta/_journal.json"), JSON.stringify(throughOnline));
+      // A failed concurrent build leaves an invalid remnant. The real runner
+      // removes that remnant without touching the still-valid old guard.
+      await expect(
+        target.unsafe(
+          "CREATE UNIQUE INDEX CONCURRENTLY context_sources_project_scope_slug ON context_sources(slug)",
+        ),
+      ).rejects.toMatchObject({ code: "23505" });
+      expect(
+        await target`SELECT indisvalid FROM pg_index WHERE indexrelid = 'context_sources_project_scope_slug'::regclass`,
+      ).toEqual([{ indisvalid: false }]);
+      await runMigrations({ databaseUrl: scratch.url, migrationsDirectory: directory });
+      const writer = postgres(scratch.url, { max: 1, onnotice: () => {} });
+      try {
+        // Each cut starts from a fresh old-index state, not the result
+        // of the previous retry. Probe duplicates from another backend.
+        for (let cut = 0; cut <= online.length; cut++) {
+          await target.unsafe(
+            "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS context_sources_project_slug ON context_sources(project_id, slug) WHERE work_id IS NULL AND deleted_at IS NULL",
+          );
+          await target.unsafe(
+            "DROP INDEX CONCURRENTLY IF EXISTS context_sources_project_scope_slug",
+          );
+          await target.unsafe("DROP INDEX CONCURRENTLY IF EXISTS context_sources_lineage_slug");
+          await target`DELETE FROM drizzle.__drizzle_migrations WHERE created_at = ${journal.entries[35].when}`;
+          for (const statement of online.slice(0, cut))
+            if (statement.trim()) await target.unsafe(statement);
+          expect(
+            await writer`INSERT INTO context_sources(project_id, name, slug, scope) VALUES (${id(2)}, 'Duplicate', 'unfiled', 'project') ON CONFLICT DO NOTHING RETURNING id`,
+          ).toEqual([]);
+          await runMigrations({ databaseUrl: scratch.url, migrationsDirectory: directory });
+          expect(
+            await writer`INSERT INTO context_sources(project_id, name, slug, scope) VALUES (${id(2)}, 'Duplicate', 'unfiled', 'project') ON CONFLICT DO NOTHING RETURNING id`,
+          ).toEqual([]);
+        }
+      } finally {
+        await writer.end();
+      }
+      expect(
+        await target`SELECT count(*)::integer AS count FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid WHERE c.relnamespace = 'public'::regnamespace AND c.relname IN ('context_sources_project_scope_slug', 'context_sources_lineage_slug') AND i.indisvalid`,
+      ).toEqual([{ count: 2 }]);
+      expect(
+        await target`SELECT conname FROM pg_constraint WHERE conrelid = 'context_sources'::regclass AND NOT convalidated`,
+      ).toEqual([]);
+      // The current app reads the migrated rows at the current schema.
+      await cp(migrations, directory, { recursive: true });
+      await runMigrations({ databaseUrl: scratch.url, migrationsDirectory: directory });
+      expect(
+        await target`SELECT document_id AS id, markdown FROM document_markdown_projections ORDER BY document_id`,
+      ).toEqual(
+        before
+          .filter((row) => !retiredManifestIds.has(row.id))
+          .map((row) => ({ id: row.id, markdown: row.markdown_projection })),
+      );
+      // Scratch archival preserves content; the later retirement removes only manifest storage.
+      expect(retiredManifestIds.size).toBe(2);
+      expect(
+        (await target`SELECT id FROM documents`).filter((row) => retiredManifestIds.has(row.id)),
+      ).toEqual([]);
+      expect(
+        await target`SELECT column_name FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'documents' AND column_name = 'kind'`,
+      ).toEqual([]);
       const chapter = await readChapter();
       expect(chapter).toMatchObject({ ok: true });
       if (!chapter.ok)
         throw new Error("Could not render the migrated chapter", { cause: chapter.error });
       expect(chapter.value).toContain(
-        "[Old Scratch](<unfiled://Scratch (2)/nested/deep/jade-map.md>)",
+        "[Old Scratch](<unfiled://Scratch (2)/nested/deep/jade-map>)",
       );
       expect(chapter.value).toContain(
-        "[Unfiled note](<unfiled://Scratch (2)/nested/deep/jade-map.md>)",
+        "[Unfiled note](<unfiled://Scratch (2)/nested/deep/jade-map>)",
       );
       // Exercise the actual lifecycle reader, not just the migrated row shape.
       const intakeRepository = createDrizzleUploadIntakeRepository(db);
@@ -174,20 +247,15 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
           fingerprint: "retained-fingerprint",
         },
       ]);
-      // This fixture freezes the archival migration chain. Supply the additive
-      // prerequisite of today's snapshot reader without changing that history.
-      await target.unsafe(
-        await readFile(path.join(migrations, "0038_namespace_observation_schema.sql"), "utf8"),
-      );
       const catalog = createDrizzleContextCatalog(db);
       const snapshot = await catalog.snapshot({ kind: "project", projectId: id(2) as never });
       expect(snapshot.entries).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             entryId: id(14),
-            uri: "unfiled://Scratch (2)/nested/deep/jade-map.md",
+            uri: "unfiled://Scratch (2)/nested/deep/jade-map",
           }),
-          expect.objectContaining({ entryId: id(15), uri: "unfiled://Scratch (2)/root-note.md" }),
+          expect.objectContaining({ entryId: id(15), uri: "unfiled://Scratch (2)/root-note" }),
         ]),
       );
       expect(snapshot.entries.some((entry) => entry.entryId === id(16))).toBe(false);
@@ -200,73 +268,9 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
           })
         ).entries,
       ).toEqual([]);
-      const online = (
-        await readFile(path.join(migrations, "0035_context_source_online_indexes.sql"), "utf8")
-      ).split("--> statement-breakpoint");
-      await cp(
-        path.join(migrations, "0035_context_source_online_indexes.sql"),
-        path.join(directory, "0035_context_source_online_indexes.sql"),
-      );
-      // This historical upgrade stops at its online-index migration. Later
-      // schema migrations are intentionally absent from this fixture directory.
-      await writeFile(
-        path.join(directory, "meta/_journal.json"),
-        JSON.stringify({ ...journal, entries: journal.entries.slice(0, 36) }),
-      );
-      // A failed concurrent build leaves an invalid remnant. The real runner
-      // removes that remnant without touching the still-valid old guard.
-      await expect(
-        target.unsafe(
-          "CREATE UNIQUE INDEX CONCURRENTLY context_sources_project_scope_slug ON context_sources(slug)",
-        ),
-      ).rejects.toMatchObject({ code: "23505" });
-      expect(
-        await target`SELECT indisvalid FROM pg_index WHERE indexrelid = 'context_sources_project_scope_slug'::regclass`,
-      ).toEqual([{ indisvalid: false }]);
-      await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
-      const writer = postgres(databaseUrl ?? "", { max: 1, onnotice: () => {} });
-      try {
-        // Each cut starts from a fresh old-index state, not the result
-        // of the previous retry. Probe duplicates from another backend.
-        for (let cut = 0; cut <= online.length; cut++) {
-          await target.unsafe(
-            "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS context_sources_project_slug ON context_sources(project_id, slug) WHERE work_id IS NULL AND deleted_at IS NULL",
-          );
-          await target.unsafe(
-            "DROP INDEX CONCURRENTLY IF EXISTS context_sources_project_scope_slug",
-          );
-          await target.unsafe("DROP INDEX CONCURRENTLY IF EXISTS context_sources_lineage_slug");
-          await target`DELETE FROM drizzle.__drizzle_migrations WHERE created_at = ${journal.entries[35].when}`;
-          for (const statement of online.slice(0, cut))
-            if (statement.trim()) await target.unsafe(statement);
-          expect(
-            await writer`INSERT INTO context_sources(project_id, name, slug, scope) VALUES (${id(2)}, 'Duplicate', 'unfiled', 'project') ON CONFLICT DO NOTHING RETURNING id`,
-          ).toEqual([]);
-          await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
-          expect(
-            await writer`INSERT INTO context_sources(project_id, name, slug, scope) VALUES (${id(2)}, 'Duplicate', 'unfiled', 'project') ON CONFLICT DO NOTHING RETURNING id`,
-          ).toEqual([]);
-        }
-      } finally {
-        await writer.end();
-      }
-      expect(
-        await target`SELECT count(*)::integer AS count FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid WHERE c.relnamespace = 'public'::regnamespace AND c.relname IN ('context_sources_project_scope_slug', 'context_sources_lineage_slug') AND i.indisvalid`,
-      ).toEqual([{ count: 2 }]);
-      expect(
-        await target`SELECT conname FROM pg_constraint WHERE conrelid = 'context_sources'::regclass AND NOT convalidated`,
-      ).toEqual([]);
     } finally {
       await db.close();
-      if (isolated)
-        await target.begin(async (tx) => {
-          await tx`ALTER EXTENSION pg_trgm SET SCHEMA scratch_archive_saved_public`;
-          await tx`DROP SCHEMA IF EXISTS public CASCADE`;
-          await tx`DROP SCHEMA IF EXISTS drizzle CASCADE`;
-          await tx`ALTER SCHEMA scratch_archive_saved_public RENAME TO public`;
-          await tx`ALTER SCHEMA scratch_archive_saved_drizzle RENAME TO drizzle`;
-        });
-      await target.end();
+      await scratch.close();
       await rm(directory, { recursive: true, force: true });
     }
   }, 60_000);

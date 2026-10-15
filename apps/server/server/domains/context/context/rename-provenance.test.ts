@@ -54,6 +54,7 @@ describe.each(["path", "identity", "identity suffix"] as const)("%s destination 
   }) => {
     const backing = createInMemoryContextDocumentStoreBacking();
     const fs = new ContextFS({
+      placement: { kind: "live" },
       holder: { projectId: "project" },
       links: { within: (_key, operation) => operation() },
       store: new InMemoryContextDocumentStore({ sourceId: "source", backing }),

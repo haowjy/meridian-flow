@@ -1,6 +1,7 @@
+import { parseRequestId } from "@meridian/contracts/request-id";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { describe, expect, it, vi } from "vitest";
-import { parseProjectAddress } from "./project-address";
+import { parseProjectAddress, projectAddressHref, workDetailAddress } from "./project-address";
 import { createProjectNavigation, type DisplayedProjectSelection } from "./project-navigation";
 
 function address(href: string) {
@@ -204,7 +205,7 @@ it("address replacement neither prompts nor supersedes a pending writer navigati
   expect(
     await navigation.replaceIfCurrent(
       navigation.capture(),
-      address("/p/550e8400-e29b-41d4-a716-446655440000/editor/manuscript/a?draft=draft-a"),
+      address("/p/550e8400-e29b-41d4-a716-446655440000/editor/manuscript/a?item=draft-a"),
     ),
   ).toEqual({ kind: "superseded" });
   expect(request).toHaveBeenCalledOnce();
@@ -295,4 +296,35 @@ it("an accepted same-entry replacement reports a failed workspace commit at that
   });
   expect(history.location.pathname).toContain("/editor");
   navigation.dispose();
+});
+
+it("opens Work Files in one history entry from any screen and Back returns there", async () => {
+  const project = "/p/550e8400-e29b-41d4-a716-446655440000";
+  const workId = parseRequestId("123e4567-e89b-42d3-a456-426614174000");
+  if (!workId) throw new Error("Invalid fixture Work");
+  for (const start of [
+    `${project}/editor`,
+    `${project}/chats`,
+    `${project}/works/${workId}`,
+    `${project}/works/${workId}?view=files`,
+  ]) {
+    const { history, navigation } = setup(start);
+    try {
+      const current = address(start);
+      const next = workDetailAddress(current, { workId, view: "files" });
+      const length = history.length;
+      await navigation.transition(next, { replace: false });
+      expect(history.location.href).toBe(`${project}/works/${workId}?view=files`);
+      expect(history.length).toBe(length + 1);
+      history.back();
+      history.flush();
+      expect(history.location.href).toBe(start);
+      expect(projectAddressHref(workDetailAddress(current, { workId }))).toBe(
+        `${project}/works/${workId}`,
+      );
+    } finally {
+      navigation.dispose();
+      history.destroy();
+    }
+  }
 });

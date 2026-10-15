@@ -9,33 +9,42 @@
  * and whether the document is frozen (`readOnly`). The host fills its
  * `relative` parent.
  */
+
 import { Trans } from "@lingui/react/macro";
+import { isWorkArchived } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-
+import { useWorksSnapshot } from "@/client/query/useWorks";
 import { refreshWorksSnapshot } from "@/client/query/works-projection-acquisition";
 import type { ContextTab } from "@/client/stores";
+import { isDraftOnly } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
+import { PaintCapture, PaintScope } from "@/components/app/PaintHold";
 import { Button } from "@/components/ui/button";
 import type {
   DocumentSession,
   DocumentSessionAccess,
   DocumentSessionSnapshot,
 } from "@/core/editor/document-session";
-import { useDraftReview } from "@/features/chat/DraftReviewProvider";
+import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
+import { useActiveReviewBinding } from "@/features/draft-review/useActiveReviewBinding";
 import { EditorView } from "@/features/editor/EditorView";
 import { cn } from "@/lib/utils";
+import { useRequestedReview } from "../dock/editor-review-handoff";
 import {
   useAccountResourceProjection,
+  useContextRemovalCoordinator,
   useLiveDocumentSessionRegistry,
 } from "./account-feature-context";
 import { ContextTabSessionBoundary, resourceAvailabilityRevision } from "./context-tab-session";
+import { DESKTOP_DOCUMENT_PRESENTATION, type DocumentPresentation } from "./document-presentation";
 import { resourceDocumentIsEmpty } from "./resource-document-eligibility";
 
 export type EditableContextTab = Extract<ContextTab, { kind: "tracked" | "new" }>;
 
 export type ContextDocumentHostProps = {
   projectId: string;
+  container: "editor" | "dock";
   tab: EditableContextTab;
   /** False binds the session but paints no editor: a warm tab evicted from the mounted set. */
   mountEditor?: boolean;
@@ -43,38 +52,50 @@ export type ContextDocumentHostProps = {
   shown?: boolean;
   /** Whether the surface is on screen; a hidden surface's chrome stands down. */
   active: boolean;
+  /** The Work's scope freezes this document (an archived Work); the room's access must agree. */
   readOnly?: boolean;
+  presentation?: DocumentPresentation;
   onUntitledBecameNonEmpty?: (documentId: string) => Promise<void>;
   /** Overrides the editor shell's own styling, e.g. to take the dock's material. */
   editorClassName?: string;
+  onCloseDraftOnly?: () => void;
 };
 
 export function ContextDocumentHost({
   projectId,
+  container,
   tab,
   mountEditor = true,
   shown = true,
   active,
   readOnly = false,
+  presentation = DESKTOP_DOCUMENT_PRESENTATION,
   onUntitledBecameNonEmpty,
   editorClassName,
+  onCloseDraftOnly,
 }: ContextDocumentHostProps) {
-  const { controller, reviewRoomNameForDraft, setActiveEditorDocumentId } = useDraftReview();
+  const removal = useContextRemovalCoordinator();
+  const { controller, reviewRoomNameForDraft } = useDraftReview();
   const { snapshot: resourceProjection } = useAccountResourceProjection(projectId);
   const bindingKeys = useRef(new WeakMap<object, string>());
   const availabilityRevision = resourceAvailabilityRevision(resourceProjection, tab.documentId);
-  const selectedReviewDraftId =
-    shown && controller.inlineReview?.documentId === tab.documentId
-      ? controller.inlineReview.draftId
-      : null;
-  const reviewRoomName = selectedReviewDraftId
-    ? reviewRoomNameForDraft(tab.documentId, selectedReviewDraftId)
+  const requestedReview = useRequestedReview({
+    container,
+    editorWorkId: controller.workId,
+    activeScheme: tab.kind === "tracked" ? tab.scheme : null,
+    documentId: shown ? tab.documentId : null,
+  });
+  const selectedReviewItemKey = shown ? requestedReview : null;
+  const reviewRoomName = selectedReviewItemKey
+    ? reviewRoomNameForDraft(tab.documentId, selectedReviewItemKey)
     : null;
-  const reviewDraftId = reviewRoomName ? selectedReviewDraftId : null;
-  const waitingForReviewRoom = Boolean(selectedReviewDraftId && !reviewRoomName);
+  const reviewItemKey = reviewRoomName ? selectedReviewItemKey : null;
   // A draft-only document has no live room until Apply promotes it, and
   // the server refuses one. Review hosts the draft branch alone.
-  const branchOnly = tab.kind === "tracked" && tab.draftOnly === true;
+  const branchOnly = isDraftOnly(tab);
+  // `readOnly` is the Work's scope (archived freezes it); the presentation decides whether
+  // this view ever types. Only the first is compared with the room's access.
+  const editable = presentation.editable && !readOnly;
   const renderEditor = (
     session: DocumentSession | null,
     failed = false,
@@ -82,7 +103,8 @@ export function ContextDocumentHost({
     retry?: () => void,
   ): ReactNode => {
     if (!mountEditor) return null;
-    const hosted = session !== null || branchOnly;
+    const hosted = session !== null || branchOnly || Boolean(selectedReviewItemKey);
+    const surface = failed ? "failed" : hosted ? "painted" : "pending";
     let bindingKey: string | undefined;
     if (session) {
       bindingKey = bindingKeys.current.get(session);
@@ -92,130 +114,98 @@ export function ContextDocumentHost({
       }
     }
     return (
-      <div
-        data-context-editor-document-id={tab.documentId}
-        className={cn(
-          // Each editor fills the host's frame; only the active one is
-          // visible. `hidden` keeps DOM/state alive without painting.
-          "absolute inset-0 flex min-h-0 flex-col",
-          shown ? "" : "hidden",
-        )}
-        // Defensive: aria-hidden hides background editors from AT.
-        aria-hidden={!shown}
-        aria-busy={!failed && !hosted}
-      >
-        {failed ? (
-          <div className="grid h-full place-items-center">
-            <div className="space-y-3 text-center">
-              <p className="text-destructive text-sm">
-                <Trans>Couldn't open this document.</Trans>
-              </p>
-              {retry ? (
-                <Button type="button" size="sm" variant="secondary" onClick={retry}>
-                  <Trans>Retry</Trans>
-                </Button>
-              ) : null}
-            </div>
-          </div>
-        ) : null}
-        {!failed && !hosted ? <DelayedContentSkeleton className="absolute inset-0" /> : null}
-        {tab.kind === "new" && session && onUntitledBecameNonEmpty ? (
-          <UntitledInputObserver
-            documentId={tab.documentId}
-            session={session}
-            onBecameNonEmpty={onUntitledBecameNonEmpty}
-          />
-        ) : null}
-        {/* Filename chrome is host-owned: the context tab strip names the
-            active file, so EditorView renders no redundant header bar. */}
-        {failed || !hosted ? null : waitingForReviewRoom && controller.reviewRoomError ? (
-          <div className="flex min-h-0 flex-1 items-center justify-center p-6">
-            <div className="surface-card max-w-sm space-y-3 rounded-lg border border-border-subtle p-4 text-center shadow-sm">
-              <p className="font-medium text-foreground text-sm">
-                <Trans>Couldn't open review mode.</Trans>
-              </p>
-              <p className="text-muted-foreground text-xs">
-                {branchOnly ? (
-                  <Trans>Try again, or close this tab. The draft stays in your list.</Trans>
-                ) : (
-                  <Trans>Try again, or return to the live document.</Trans>
-                )}
-              </p>
-              <div className="flex justify-center gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => {
-                    if (selectedReviewDraftId) {
-                      controller.enterInlineReview(tab.documentId, selectedReviewDraftId);
-                      return;
-                    }
-                    controller.exitInlineReview();
-                  }}
-                >
-                  <Trans>Retry</Trans>
-                </Button>
-                {branchOnly ? null : (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => controller.exitInlineReview()}
-                  >
-                    <Trans>Back to live</Trans>
+      <PaintScope active={shown}>
+        <PaintCapture surface={surface} state={surface} />
+        <div
+          data-context-editor-document-id={tab.documentId}
+          className={cn(
+            // Each editor fills the host's frame; only the active one is
+            // visible. `hidden` keeps DOM/state alive without painting.
+            "absolute inset-0 flex min-h-0 flex-col",
+            shown ? "" : "hidden",
+          )}
+          // Defensive: aria-hidden hides background editors from AT.
+          aria-hidden={!shown}
+          aria-busy={!failed && !hosted}
+        >
+          {failed ? (
+            <div className="grid h-full place-items-center">
+              <div className="space-y-3 text-center">
+                <p className="text-destructive text-sm">
+                  <Trans>Couldn't open this document.</Trans>
+                </p>
+                {retry ? (
+                  <Button type="button" size="sm" variant="secondary" onClick={retry}>
+                    <Trans>Retry</Trans>
                   </Button>
-                )}
+                ) : null}
               </div>
             </div>
-          </div>
-        ) : (
-          // While the review room resolves, the live editor stays on
-          // screen (a draft-only tab has none, so its shell holds the place).
-          <>
-            {active && shown ? (
-              <>
-                <ActiveEditorProjection
-                  documentId={tab.documentId}
-                  session={session}
-                  inReview={Boolean(reviewDraftId)}
-                  setProjection={setActiveEditorDocumentId}
-                />
+          ) : null}
+          {!failed && !hosted ? <DelayedContentSkeleton className="absolute inset-0" /> : null}
+          {tab.kind === "new" && session && onUntitledBecameNonEmpty ? (
+            <UntitledInputObserver
+              documentId={tab.documentId}
+              session={session}
+              onBecameNonEmpty={onUntitledBecameNonEmpty}
+            />
+          ) : null}
+          {/* Filename chrome is host-owned: the context tab strip names the
+                  active file, so EditorView renders no redundant header bar. */}
+          {failed || !hosted ? null : (
+            <>
+              {active && shown ? (
                 <RoomScopeCatalogCheck
                   projectId={projectId}
                   session={session}
                   reviewRoomName={reviewRoomName}
+                  reviewWorkId={controller.workId}
                   readOnly={readOnly}
                 />
-              </>
-            ) : null}
-            <PresenceSuspension session={session} enabled={Boolean(reviewDraftId && active)} />
-            <EditorView
-              projectId={projectId}
-              documentId={tab.documentId}
-              session={session ?? undefined}
-              bindingKey={bindingKey}
-              // A warm editor is hidden, not gone. Its chrome portals to
-              // the body, where `hidden` on an ancestor means nothing.
-              active={active && shown}
-              className={editorClassName}
-              editable={!readOnly}
-              showToolbar={!readOnly}
-              detached={tab.kind === "new"}
-              localContentReady={localContentReady}
-              schemaType={tab.kind === "tracked" ? tab.schemaType : "document"}
-              // The intent, not the resolved room: the live editor goes
-              // read-only from the click, while the room is still resolving.
-              reviewDraftId={selectedReviewDraftId}
-              reviewRoomName={reviewRoomName}
-              reviewWorkId={reviewDraftId ? controller.workId : null}
-              // Leaving review would strand a draft-only tab on an empty
-              // editor; the writer closes it from the tab bar instead.
-              onReviewSessionUnavailable={branchOnly ? undefined : controller.exitInlineReview}
-            />
-          </>
-        )}
-      </div>
+              ) : null}
+              <ActiveReviewBinding
+                documentId={tab.documentId}
+                liveSession={session}
+                active={active && shown}
+                inReview={Boolean(
+                  presentation.presenceSuspendsOn === "requested-review"
+                    ? selectedReviewItemKey
+                    : reviewItemKey,
+                )}
+              />
+              <EditorView
+                draftOnly={branchOnly}
+                onCloseDraftOnly={
+                  onCloseDraftOnly ??
+                  (() => {
+                    const closing = removal.writerClose(projectId, tab);
+                    if (closing instanceof Promise) closing.catch(reportError);
+                  })
+                }
+                className={editorClassName}
+                projectId={projectId}
+                documentId={tab.documentId}
+                focusKey={tab.tabInstanceId}
+                session={session ?? undefined}
+                bindingKey={bindingKey}
+                // A warm editor is hidden, not gone. Its chrome portals to
+                // the body, where `hidden` on an ancestor means nothing.
+                active={active && shown}
+                editable={editable}
+                showToolbar={editable}
+                detached={tab.kind === "new"}
+                localContentReady={localContentReady}
+                schemaType={tab.kind === "tracked" ? tab.schemaType : "document"}
+                ariaLabel={presentation.ariaLabel?.()}
+                showCollaborationDecorations={presentation.collaborationDecorations}
+                // The intent, not the resolved room: the live editor goes
+                // read-only from the click, while the room is still resolving.
+                reviewItemKey={selectedReviewItemKey}
+              />
+            </>
+          )}
+        </div>
+      </PaintScope>
     );
   };
   return (
@@ -225,34 +215,15 @@ export function ContextDocumentHost({
       resourceHandle={tab.resourceHandle}
       availabilityRevision={availabilityRevision}
       liveRoom={!branchOnly}
+      bindingOwner={presentation.bindingOwner}
     >
       {renderEditor}
     </ContextTabSessionBoundary>
   );
 }
 
-function ActiveEditorProjection({
-  documentId,
-  session,
-  inReview,
-  setProjection,
-}: {
-  documentId: string;
-  /** Null while a draft-only document is hosted by its branch room alone. */
-  session: DocumentSession | null;
-  inReview: boolean;
-  setProjection: (
-    documentId: string | null,
-    session?: DocumentSession | null,
-    inReview?: boolean,
-    owner?: object,
-  ) => void;
-}) {
-  const owner = useRef({});
-  useEffect(() => {
-    setProjection(documentId, session, inReview, owner.current);
-    return () => setProjection(null, null, false, owner.current);
-  }, [documentId, inReview, session, setProjection]);
+function ActiveReviewBinding(props: Parameters<typeof useActiveReviewBinding>[0]) {
+  useActiveReviewBinding(props);
   return null;
 }
 
@@ -270,19 +241,29 @@ function RoomScopeCatalogCheck({
   projectId,
   session,
   reviewRoomName,
+  reviewWorkId,
   readOnly,
 }: {
   projectId: string;
   /** Null while a draft-only document is hosted by its branch room alone. */
   session: DocumentSession | null;
   reviewRoomName: string | null;
+  /** The Work a review room belongs to; its archive state is that room's expected scope. */
+  reviewWorkId: string | null;
   readOnly: boolean;
 }) {
   const queryClient = useQueryClient();
+  const works = useWorksSnapshot(projectId).list.data?.works;
   const registry = useLiveDocumentSessionRegistry();
   const [access, setAccess] = useState<DocumentSessionAccess | null>(null);
-  const readOnlyRef = useRef(readOnly);
-  readOnlyRef.current = readOnly;
+  // A review room follows the review's Work even when the reviewed file is
+  // project-owned; a live room follows the file's own scope (`readOnly`).
+  const reviewWork = reviewRoomName ? works?.find((work) => work.id === reviewWorkId) : undefined;
+  const expectedReadOnly = reviewRoomName
+    ? Boolean(reviewWork && isWorkArchived(reviewWork))
+    : readOnly;
+  const readOnlyRef = useRef(expectedReadOnly);
+  readOnlyRef.current = expectedReadOnly;
   useEffect(() => {
     const observer = (snapshot: DocumentSessionSnapshot) => setAccess(snapshot.access);
     return reviewRoomName
@@ -293,21 +274,6 @@ function RoomScopeCatalogCheck({
     if (access === null || (access === "read") === readOnlyRef.current) return;
     void refreshWorksSnapshot(queryClient, projectId).catch(() => undefined);
   }, [access, projectId, queryClient]);
-  return null;
-}
-
-function PresenceSuspension({
-  session,
-  enabled,
-}: {
-  session: DocumentSession | null;
-  enabled: boolean;
-}) {
-  useEffect(() => {
-    if (!enabled || !session) return;
-    session.suspendPresence();
-    return () => session.resumePresence();
-  }, [enabled, session]);
   return null;
 }
 

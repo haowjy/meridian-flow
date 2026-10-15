@@ -160,7 +160,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const evidence = createInMemoryEventSink();
       const foreignInvalidSource = "00000000-0000-4000-8000-000000000935";
       const foreignInvalidDocument = "00000000-0000-4000-8000-000000000936";
-      const foreignManifest = "00000000-0000-4000-8000-000000000937";
+      const foreignHidden = "00000000-0000-4000-8000-000000000937";
       const missingDocument = "00000000-0000-4000-8000-999999999999";
       await db.insert(contextSources).values({
         id: foreignInvalidSource,
@@ -176,10 +176,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           extension: "",
         },
         {
-          id: foreignManifest,
+          id: foreignHidden,
           contextSourceId: FOREIGN_SOURCE,
-          kind: "manifest",
-          name: ".manifest",
+          hidden: true,
+          name: "draft-only",
           extension: "json",
         },
       ]);
@@ -187,7 +187,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const result = await createDrizzleProjectContextAvailability(db, evidence).lookup(
         {
           projectId: PROJECT as never,
-          documentIds: [missingDocument, DOCS[4], foreignManifest, foreignInvalidDocument] as never,
+          documentIds: [missingDocument, DOCS[4], foreignHidden, foreignInvalidDocument] as never,
         },
         { userId: USER },
       );
@@ -292,11 +292,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(BigInt(next)).toBeGreaterThan(BigInt(first));
     });
 
-    it("publishes namespace evidence before deferred availability, without letting old repair regress it", async () => {
+    it("advances availability without a namespace version and rolls back a failed namespace publication", async () => {
       const db = await seed();
       const availability = createDrizzleProjectContextAvailability(db);
-      const before = await availability.advance({ projectIds: [PROJECT], userIds: [] });
-      const reserved = await availability.reserve({ projectIds: [PROJECT], userIds: [] });
       const readHead = async () =>
         (
           await currentDrizzleDb(db)
@@ -304,32 +302,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             .from(contextAvailabilityHeads)
             .where(eq(contextAvailabilityHeads.authorityKey, PROJECT_AUTHORITY_KEY))
         )[0];
+      await availability.publishNamespace({ projectIds: [PROJECT], userIds: [] });
+      const published = await readHead();
+      expect(published?.namespaceGeneration).toBeGreaterThan(0n);
+      const advanced = await availability.advance({ projectIds: [PROJECT], userIds: [] });
       expect(await readHead()).toMatchObject({
-        generation: BigInt(before),
-        namespaceGeneration: expect.any(BigInt),
+        generation: BigInt(advanced),
+        namespaceGeneration: published?.namespaceGeneration,
       });
-      const reservedHead = await readHead();
-      expect(reservedHead?.namespaceGeneration).toBeGreaterThan(0n);
-      const newer = await availability.advance({ projectIds: [PROJECT], userIds: [] });
-      const newerHead = await readHead();
-      expect(newerHead?.namespaceGeneration).toBeGreaterThan(
-        reservedHead?.namespaceGeneration ?? 0n,
-      );
-      expect(BigInt(newer)).toBeGreaterThanOrEqual(BigInt(reserved));
-      await availability.publishReserved({
-        projectIds: [PROJECT],
-        userIds: [],
-        generation: reserved,
-      });
-      expect(await readHead()).toMatchObject({
-        generation: BigInt(newer),
-        namespaceGeneration: expect.any(BigInt),
-      });
-      expect((await readHead())?.namespaceGeneration).toBe(newerHead?.namespaceGeneration);
       const captured = await readHead();
       await expect(
         runInDrizzleSavepoint(db, async () => {
-          await availability.reserve({ projectIds: [PROJECT], userIds: [] });
+          await availability.publishNamespace({ projectIds: [PROJECT], userIds: [] });
           throw new Error("namespace rollback");
         }),
       ).rejects.toThrow("namespace rollback");
@@ -341,6 +325,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const availability = createDrizzleProjectContextAvailability(db);
       await runInDrizzleTransaction(db, async () => {
         const first = await availability.advance({ projectIds: [PROJECT], userIds: [] });
+        await availability.publishNamespace({ projectIds: [PROJECT], userIds: [] });
         const readHead = async () =>
           (
             await currentDrizzleDb(db)
@@ -351,6 +336,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const firstHead = await readHead();
         const second = await availability.advance({ projectIds: [PROJECT], userIds: [] });
         expect(second).toBe(first);
+        expect((await readHead())?.namespaceGeneration).toBe(firstHead?.namespaceGeneration);
+        await availability.publishNamespace({ projectIds: [PROJECT], userIds: [] });
         expect((await readHead())?.namespaceGeneration).toBeGreaterThan(
           firstHead?.namespaceGeneration ?? 0n,
         );
@@ -642,35 +629,26 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    it("classifies internal and inconsistent identities before any destructive outcome", async () => {
+    it("hides draft-only identities from live availability", async () => {
       const db = await seed();
       const evidence = createInMemoryEventSink();
-      const manifestId = "00000000-0000-4000-8000-000000000927";
+      const hiddenId = "00000000-0000-4000-8000-000000000927";
       await db.insert(documents).values({
-        id: manifestId,
+        id: hiddenId,
         contextSourceId: PROJECT_SOURCE,
-        kind: "manifest",
-        name: ".manifest",
+        hidden: true,
+        name: "draft-only",
         extension: "json",
       });
       const availability = createDrizzleProjectContextAvailability(db, evidence);
       const result = await availability.lookup(
-        { projectId: PROJECT as never, documentIds: [manifestId] as never },
+        { projectId: PROJECT as never, documentIds: [hiddenId] as never },
         { userId: USER },
       );
       expect(result.resolutions).toEqual([
-        expect.objectContaining({
-          kind: "indeterminate",
-          documentId: manifestId,
-          reason: "identity_inconsistent",
-        }),
+        expect.objectContaining({ kind: "not-visible", documentId: hiddenId }),
       ]);
-      expect(evidence.events).toEqual([
-        expect.objectContaining({
-          name: "ProjectContextIdentityInconsistent",
-          payload: { documentId: manifestId, projectId: PROJECT },
-        }),
-      ]);
+      expect(evidence.events).toEqual([]);
     });
 
     it("reports conflicting requested-project owners for live and tombstoned rows", async () => {

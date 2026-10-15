@@ -1,398 +1,122 @@
-# @meridian/database — Postgres Contract
+# @meridian/database — Postgres contract
 
-This package owns the Postgres contract: Drizzle schema, generated migrations,
-PL/pgSQL functions, and the `createDb(DATABASE_URL)` factory. It has **no**
-business logic and **no** ambient transaction context — domain persistence and
-transaction propagation live in `apps/server`.
+This page covers the database contracts that cross the schema, migration
+runner, and server adapters. Generated schema and SQL are authoritative for
+field shape; keep this page for invariants and migration safety.
 
 ## Migration integrity
 
-A migration merged to `main` or `staging` is frozen ([`../AGENTS.md`](../AGENTS.md)).
-When one leaves data that a later change cannot accept, a later migration
-repairs it forward, scoped to the rows the gap produced and placed before the
-statement that needs clean data. Any unrelated violation must still fail.
-The frozen file is never corrected in place, because databases that already
-ran it would never see the correction.
-
-`0014_threads_origin_turn_fk` is the example. `0009_repair_saved_subagent_contracts`
-deletes unrepairable subagent notices without updating `threads.origin_turn_id`
-or a cross-thread `turns.parent_turn_id`, so `0014`'s `lineage-repair` block
-runs before the origin foreign key, in this order:
-
-1. Snapshot forks and handoffs whose origin turn is gone, with their old
-   `spawn_depth`.
-2. Re-root each one's reachable subtree (spawn children by `parent_thread_id`,
-   derivations by the owner of their origin turn): `root_thread_id` becomes the
-   nearest broken ancestor, `spawn_depth` shifts down by its old depth, and a
-   derivation sibling's `parent_thread_id` is cleared.
-3. Null dangling `parent_turn_id`s inside the broken threads only.
-4. Demote the broken threads to organic roots.
-
-Demotion erases the dangling origin and the old depth, so it runs last.
-Re-rooting the whole subtree preserves the threads domain's one-root lineage
-contract ([threads context](../../../apps/server/server/domains/threads/.context/CONTEXT.md)).
-Never hand-patch an applied database's migration ledger. Resetting a shared
-database requires explicit owner authorization. Rationale and rejected repairs: [Drizzle Migration Integrity][kb-migration-integrity].
-
-[kb-migration-integrity]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/platform/stack/drizzle-migration-integrity.md
-
-## Contracts
-
-### Timestamp `mode` policy
-
-Timestamp columns default to Drizzle **`Date` mode**. The shared helpers in
-[`../src/schema/_shared.ts`](../src/schema/_shared.ts) (`createdAt`, `updatedAt`,
-`softDeleteAt`) omit `mode`, so reads return JS `Date` objects.
-
-The **only** `mode: "string"` exceptions (reads return ISO strings) are:
-
-| Table | Column(s) | Source |
-|---|---|---|
-| `users` | `created_at`, `updated_at` | [`../src/schema/users.ts`](../src/schema/users.ts) |
-| `thread_works` | `created_at` | [`../src/schema/agent-threads.ts`](../src/schema/agent-threads.ts) |
-
-Everything else is Date mode. Treat new `mode: "string"` columns as a red flag —
-they fork the mapping contract for adapters.
-
-### Hard invariant: never bind a JS `Date` into a raw `sql` fragment
-
-postgres-js rejects a raw `Date` embedded in a `` sql`...` `` template
-(`ERR_INVALID_ARG_TYPE`). To compare against timestamp columns, use **typed
-Drizzle comparators** or an **explicit `::timestamptz` cast** on a string param —
-never a bare `Date` in a template. Canonical patterns:
-
-- **Typed comparators** — `lt`/`eq`/`gt` encode the `Date` through the column
-  type so postgres-js receives an ISO string. Use this for timestamp comparisons
-  instead of embedding raw `Date` values in `sql` fragments.
-- **`::timestamptz` round-trip** — CAS revision tokens are read as `::text` and
-  compared with `${revision}::timestamptz`, keeping microsecond precision:
-  [`context-fs/drizzle-store.ts`](../../../apps/server/server/domains/context/adapters/context-fs/drizzle-store.ts)
-  (`documentRevisionWhere` + the `updatedAt::text` selects).
-
-### Thread inbox kinds
-
-Inbox provenance and body kinds live only in their JSON values. CHECK constraints
-use `IS TRUE` so absent, JSON-null and invalid kinds are rejected rather than
-passing SQL CHECK's three-valued logic.
-
-### Thread-domain execution reports
-
-`thread_execution_reports` stores one immutable terminal result per admitted
-child execution, not a mutable latest-result slot. `execution_turn_id` is the
-first turn the run reserved, which may be a pending compaction rather than an
-assistant turn; `terminal_turn_id` is the turn the run ended on. The composite
-child-thread/turn foreign key prevents assigning a report to a turn owned by
-another thread. Child/turn ownership cascades; nullable
-caller thread/turn/card references use `SET NULL` so deleting the invocation
-does not erase the child's output. Soft deletion is enforced by live
-repository reads, not destructive report mutation. The initial table has no
-backfill or compatibility path.
-
-The public `payload` is an exact optional `JsonValue`: omitted content is SQL
-`NULL`, while JSON `null` remains a present value. The Drizzle report adapter
-reads `payload::text` and parses that database representation once; do not use
-the driver-decoded JSONB string with Drizzle's second JSON parse, which changes
-JSON-looking scalar strings into their parsed values. The capture codec also uses
-`::text`: SQL NULL is absent, while every present JSON value must validate as a
-ReturnResultCapture object (including rejecting JSON null).
-
-### Thread-domain rollup columns
-
-The `threads`, `turns`, `model_responses`, and `turn_blocks` tables persist the
-JSON-natural thread contract fields that repository conformance reads back:
-thread total cost, turn usage rollups/latest model metadata, model-response
-reasoning/cache token counts, observed reset, predicted cache state/reason,
-successful-attempt start and latency/TTFT/generation timing, and block provider
-metadata. These values are written by TypeScript repositories and the
-read-model projector; do not add database triggers/functions for them.
-
-The one deliberate exception is `threads.last_activity_at` and
-`threads.conversational_leaf_turn_id`: unlike the rollups above, which have
-exactly one writer (the read-model projector), any future writer that moves
-`threads.active_leaf_turn_id` (branch switching, for example) must not be able
-to leave this projection stale, so Postgres triggers own it instead. See
-[`domains/threads/.context/CONTEXT.md`](../../../apps/server/server/domains/threads/.context/CONTEXT.md#chat-activity-projection-single-owner)
-and migration `0000_baseline.sql` (the `recompute_thread_chat_activity` function and its triggers).
-
-`turns.origin` (`text NOT NULL`, `turns_origin_valid` check, migration
-`0005_turn_origin.sql`) has no column default: every insert states it, so a
-caller that forgets fails loudly rather than silently defaulting. An existing
-dev database backfills it from `role` (`assistant` → `assistant`, `user` →
-`writer`, else `system`) in the same migration, before the column is locked
-to `NOT NULL`. See
-[`domains/threads/.context/CONTEXT.md`](../../../apps/server/server/domains/threads/.context/CONTEXT.md#turn-authorship-turnsorigin)
-for what it means and its current (logging-only) scope.
-
-### Yjs document heads and checkpoints
-
-`document_yjs_heads.latest_checkpoint_id` is declared in the Drizzle schema as an
-FK to `document_yjs_checkpoints.id` with `ON DELETE SET NULL`. Checkpoints are
-append-only in the production lifecycle: compaction deletes retained
-`document_yjs_updates` rows, not checkpoint rows, and checkpoints are removed by
-the `documents` cascade. Do not document this relationship as custom SQL or as an
-absent FK.
-
-`document_yjs_heads.schema_version` and `document_branches.schema_version` store
-the packed integer form of `COLLAB_SCHEMA_VERSION`
-(`major * 1_000_000 + minor * 1_000 + patch`; `0.1.0` is `1000`). Their Drizzle
-defaults call the shared packer; do not restore a second literal or
-comment-maintained copy. The server's Drizzle adapters pack on write and unpack
-on read so database integers never cross into domain or port contracts. A
-schema-version bump still requires an additive migration that advances both
-Postgres column defaults for deployed databases.
-
-### Billing storage
-
-Billing has no `user_subscriptions` table in the current schema. Stripe customer
-identity lives on nullable `users.stripe_customer_id`; subscription, free-tier,
-and extra-usage entitlements are represented by `credit_lots` rows. Extra-usage
-purchase lots do not require an active subscription. Free-tier grants are fenced
-by the partial unique index `credit_lots_free_tier_grant` on `(user_id,
-grant_reason)` for `source_type = 'grant'` and `grant_reason LIKE
-'free_tier_%'`.
-
-## Migration workflow
-
-Write migrations as if production data exists ([decision][kb-real-data]).
-
-- **Correct on populated tables.** Never delete writer data; move it. No
-  `migration-lint: skip` may rest on empty tables. A row-transform migration
-  ships with a populated upgrade fixture (below).
-- **Online-safe DDL.** Add CHECKs and FKs `NOT VALID`; `VALIDATE CONSTRAINT`
-  later, in a no-transaction file or a later migration. Build and drop indexes
-  `CONCURRENTLY`.
-- **No-transaction files.** First line `-- migration: no-transaction` (BOM and
-  CRLF tolerated). Each statement autocommits, and each `CONCURRENTLY`
-  statement sits alone in its `--> statement-breakpoint` chunk. A failed file
-  reruns from its first statement, so every statement must be re-runnable:
-  builds say `IF NOT EXISTS`, drops `IF EXISTS`. Before running the file, the
-  runner drops each INVALID index its concurrent builds name (a failed build's
-  remnant that `IF NOT EXISTS` would otherwise skip); it never drops a valid
-  one. To replace a unique guard, build the replacement under a new permanent
-  name and drop the old guard last, so a retry never leaves the table
-  unguarded.
-- **lock_timeout.** A transactional migration may `SET LOCAL` a short timeout
-  for its whole body. In a no-transaction file, bracket only ACCESS EXCLUSIVE
-  statements with it; concurrent builds, drops and `VALIDATE` legitimately wait
-  out long writers and must never run under it.
-- **Runner.** One session advisory lock covers the run. Each ordinary migration
-  commits with its history row, so a later failure leaves earlier migrations
-  applied. A no-transaction file records history only after every statement
-  succeeds.
-- **No previous-version compatibility before launch.** A migration may break
-  the server version it replaces; a broken deploy is reset with owner
-  authorization. Do not build expand/contract releases, rollout fences or
-  old-binary tolerance code.
-- **Regeneration drops hand edits.** Reapply these online-safety edits whenever
-  a branch regenerates migrations after merging the base.
-
-Migration lint enforces the marker, chunk isolation, `IF NOT EXISTS` and the
-`NOT VALID` / concurrent-drop warnings. Re-runnability beyond `IF NOT EXISTS`,
-lock_timeout scope and data preservation are review rules.
-
-[kb-real-data]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/platform/stack/real-data-migrations.md
-
-Schema edits live in [`../src/schema/`](../src/schema). To ship a change:
-
-1. `pnpm db:generate` — drizzle-kit appends the next migration to
-   [`../src/migrations/`](../src/migrations) and updates
-   [`../src/migrations/meta/`](../src/migrations/meta).
-2. **Review** the generated SQL and `meta/_journal.json`. Commit the new `.sql`,
-   `_journal.json`, and `meta/*_snapshot.json`. Snapshot JSON is generated and
-   diff-collapsed by `.gitattributes`, but it is required input to the next
-   `db:generate`; deleting one can silently make drizzle-kit re-emit old tables.
-3. `pnpm --filter @meridian/database exec drizzle-kit check` — verifies the
-   journal/snapshot chain. CI always runs this as a blocking migration check.
-4. `pnpm db:migration-lint` — runs `tools/dev/migration-lint.ts --all`.
-   Errors always block. Warnings block only under `--strict`, which CI uses for
-   PRs targeting `main`/`staging`; feature-branch PRs lint only migrations changed
-   since the base ref. The squashed `0000_` baseline is exempt from all lint rules
-   except `DELETE_WITHOUT_WHERE`.
-5. `pnpm db:migrate` — apply pending migrations, then synchronize the PL/pgSQL
-   functions in [`../src/functions/`](../src/functions). Use
-   `pnpm db:apply-functions` only when the guarded standalone function sync is
-   needed.
-
-A row-transform migration MUST ship with a populated upgrade fixture beside
-the database migration contract tests. Apply the committed prefix, seed the pre-migration
-shape, and prove the fixture fails before the transform (pre-fix red) and passes
-after the remaining chain runs. The upgrade fixture may be culled once a later
-frozen migration supersedes the transform. The original migration file itself
-stays frozen once merged, as required by [`../AGENTS.md`](../AGENTS.md).
-
-The journal starts at `0000_baseline`; future schema changes append migrations.
-Existing databases that ran the pre-relaunch chain must be reset with
-`pnpm db:reset` (local data is destroyed), not incrementally migrated.
-
-The baseline includes `pg_trgm`, all Drizzle-declared CHECKs, and the two
-change-trail lifecycle functions/triggers on `branch_write_journal`. The six
-functions in `src/functions/` remain a separate post-migration install that the
-`db:migrate` runner synchronizes. Fresh installs seed no users, Projects, or
-Works: the historical No Work and thread binding backfills had no rows to
-transform. Application project bootstrap creates locked No Work; thread
-admission establishes the primary binding. Legacy user imports belong in a
-separate ETL, not universal schema migrations.
-
-### Merging parallel migration lanes
-
-For generated migrations, when two branches add at the same ordinal, **regenerate the
-incoming branch's migration from the merged schema; never renumber, rename, or
-hand-edit its identity.** Reapply the online-safety SQL edits after regeneration.
-Never touch a migration already present on the target branch
-(or on `main`).
-
-1. Keep the target branch's migrations, snapshots, and journal entries as
-   they are.
-2. Delete the incoming branch's colliding `.sql`, its `meta/NNNN_snapshot.json`,
-   and its `_journal.json` entry.
-3. Resolve `src/schema/` so it holds both sides. A constraint or enum both
-   branches rewrote must carry the union of their values.
-4. Run `pnpm db:generate`. It emits one migration chained on the target's last
-   snapshot, with a fresh `when` timestamp. Review the SQL against the deleted
-   file, then run `pnpm db:generate` again: it must report no changes.
-   `git add` the new `.sql` and snapshot explicitly; the merged journal already
-   names them.
-5. A handwritten `--custom` migration cannot be regenerated. Recreate it with
-   `drizzle-kit generate --custom` at the new ordinal and copy its body.
-
-Why: two lanes that each recreate the same CHECK constraint can each list only
-their own value. Renumbering one by hand keeps that SQL, so whichever runs last
-silently drops the other lane's value. A renamed file also breaks the snapshot
-`prevId` chain, and ordinals without advancing
-`when` timestamps can make an incremental database skip entries that a fresh
-database applies. `fresh-migrations.db.test.ts` checks strict journal ordering
-and the installed baseline hash without preventing future additive migrations.
-
-### No Work Scratch upgrade (0033–0035)
-
-Lineage Scratch replaced the project's one No Work Scratch. Three migrations
-follow link identity `0032`:
-
-1. `0033` adds `root_thread_id` to `context_sources` and `link_ahead_refs`, and
-   installs the new scope CHECKs `NOT VALID`.
-2. `0034` moves every No Work Scratch source, trashed content included, into
-   the project's Unfiled source (provisioned when missing) under a fresh root
-   folder: `Scratch`, or `Scratch (2)`, `Scratch (3)` when any root entry,
-   trashed or not, holds the name. It never merges into an existing entry. The
-   emptied old source is then deleted.
-3. `0035` (no-transaction) builds the lineage and permanent project-scope
-   unique indexes concurrently, validates the CHECKs, and drops the old project
-   index last. A failed run retries the whole file.
-
-What the move keeps and changes:
-
-- Folder and document IDs, content, Yjs state, trash state and storage object
-  keys are unchanged. `doc:` refs follow the same documents, so reads spell
-  their Unfiled address; there is no link redirect or collaborative rewrite.
-- Upload intakes keep their No Work `work_id`, because the app has no
-  project-owned intake shape. Source, final path, canonical URI and location
-  revision change.
-- Only live, traversable destination occupants consume Unfiled
-  previous-location aliases. Old Scratch aliases cascade away with their source.
-- Still-unsettled `unfiled` ahead refs at exactly the newly occupied live paths
-  settle, under the app's namespace locks. Trashed content, live rows beneath
-  trashed folders, and existing settlements are excluded. Showing history keeps
-  its historical addresses.
-- Catalog heads for both scopes are deleted, so the next snapshot rebuilds
-  from current rows under a fresh generation.
-
-`scratch-archive-migration.db.test.ts` is the populated upgrade fixture.
-
-### Works columns that must not return
-
-`works` lives in [`../src/schema/content.ts`](../src/schema/content.ts)
-(`src/schema/works.ts` re-exports it). `visibility` and `persistence` were
-speculative columns that no code read. They are dropped. If multi-writer
-sharing or ephemeral-work GC returns, design fresh columns; do not resurrect
-those shapes. Works are archived (visibility) or soft-deleted with a
-30-day restore window; expired Works are permanently purged by the hourly
-`work-purge` recovery job. `deleted_by_work_id` markers on owned rows identify
-the exact set restored during that window. Their FKs are `ON DELETE SET NULL`,
-so deleting a Work never deletes through a stale marker; the purge deletes
-marked rows explicitly. No Work is a locked Work, not a sharing preference.
-
-## Focused DB test resets and semantic reads
-
-Focused DB test resets treat requested tables as scope anchors, derive the
-complete referencing-table closure from live `pg_catalog.pg_constraint`, lock
-the closure in deterministic schema-qualified name order, and DELETE
-child-first in one transaction. The anchor list is scope, not an exhaustive
-delete order; a newly applied FK is included automatically. Reject missing
-anchors and cross-table cycles. Self-referencing FKs do not affect ordering.
-Broad suites may still `TRUNCATE ... CASCADE`; focused suites use catalog
-DELETE so unrelated tables survive.
-
-Do not hand-maintain child lists, defer constraints, or treat Drizzle metadata
-as the live catalog.
-
-History assertions and membership assertions are different reads. Raw SELECT
-return order is never a history contract:
-
-| Helper | Semantics |
-|---|---|
-| `trailEventSequence` | Outbox events ordered by trail, version, and event kind |
-| `trailRowMembership` | Shell, detail, and outbox snapshots in deterministic identity order with no lifecycle meaning |
-
-Do not sort assertion inputs after an unordered read.
-
-## Transaction model (lives in apps/server)
-
-This package exposes no ambient transaction context. Cross-cutting transaction
-propagation is owned by
-[`apps/server/server/shared/drizzle-transaction.ts`](../../../apps/server/server/shared/drizzle-transaction.ts):
-`runInDrizzleTransaction` opens one ambient `tx` via `AsyncLocalStorage`, and
-adapters call `currentDrizzleDb(db)` on every query to join it. Adapters that
-open their own `db.transaction()` without touching that store run in an
-independent, non-nested scope.
-
-## Rationale
-
-The schema stays ordinary Postgres with no provider-specific auth coupling
-(identity is app-owned `public.users` keyed by WorkOS `external_id`). The Date
-vs string `mode` split is a known inconsistency, not a pattern to extend.
-
-### Prompt bakes
-
-`prompt_bakes` rows are insert-only: the `prompt_bakes_insert_only` trigger
-rejects updates and direct deletes (a cascade from deleting the owner thread
-is allowed). `threads.initial_prompt_bake_id` and
-`turns.prompt_bake_id` are write-once pointers. A rebake inserts a new row and
-points a completed boundary turn at it; the runtime's `beginPromptEpoch` is the
-only operation that does so, and compaction is its caller. Never update a bake
-row or repoint a thread to change what a thread's requests send.
-
-### Pending placeholders
-
-A pending placeholder is a `turns` row with status `pending` and a role in
-`PENDING_PLACEHOLDER_ROLES` from `@meridian/contracts/threads` (today only
-`compaction`). [`pending-placeholder.ts`](../src/schema/pending-placeholder.ts)
-builds the SQL twin of that predicate from the contracts set, and the
-`turns_pending_placeholders` partial index uses it. The generated index SQL
-inlines the role list, so adding a placeholder role requires `pnpm
-db:generate` to rebuild the index. A pending compaction has no
-`compaction_model`; `turns_compaction_model_required` requires one only once it
-is complete.
-
-### Retained Agent definitions
-
-`agent_package_revisions` retains complete source snapshots. Its coordinate/digest
-key deduplicates installs. `agent_definition_revisions` retains one compiled Agent
-per package revision and local slug. Catalog pointers and thread bindings use
-revision FKs with restricted deletion; hiding a catalog entry preserves bound
-content. Account deletion cascades catalog entries and threads, not source rows.
-
-`agent_catalog_entries` has account-owned and system-owned logical-key indexes.
-`agent_catalog_revisions` retains previously selected revision memberships; the
-current catalog pointer grants current membership directly. Pointer CAS and
-history insertion share one transaction. `thread_agent_bindings` has one row per thread. The server's Agent revision store
-owns insert-only content, catalog compare-and-set selection, and idempotent fixed
-binding. It joins the existing ambient transaction owner so thread admission can
-include source, catalog, and binding writes atomically.
-
-`agent_package_dependencies` retains manifest-name edges to exact package revisions with restricted dependency deletion. Source identity includes the dependency map. `thread_agent_bindings.configuration` stores the resolved model, skill-content identities and named-target revisions alongside the immutable definition reference. Idempotent binding compares both revision and configuration; it cannot change either.
-
-Agent package installations retain account/system current and upstream source heads plus owned history. Definition content stays in immutable source revisions. Legacy project Agent/skill tables, the turn Agent-definition FK and the unused slug-default preference are absent; execution identity comes from the thread binding.
-
-`project_agent_removals` is a Project/catalog-entry exclusion relation. Cascading
-FKs clean up deleted Projects and catalog entries; publication and definition
-revision changes preserve exclusions. It is not another definition owner.
+A merged migration is immutable because already-applied databases cannot see an
+in-place correction. Repair incompatible rows forward in a later migration,
+scoped to the rows the gap produced, before the statement that needs clean data.
+Never hand-patch an applied migration ledger or reset another checkout's
+database.
+
+Write every migration as if tables contain writer data: move rather than delete
+it, and never justify a lint skip with empty tables. Add CHECKs and FKs as `NOT
+VALID`, validate separately, and build or drop indexes `CONCURRENTLY`. A
+no-transaction file starts with its marker, isolates each concurrent statement
+in its own breakpoint, and makes every statement re-runnable. The runner drops
+only INVALID remnants named by concurrent builds; it never drops a valid index.
+`lock_timeout` brackets only statements that need an ACCESS EXCLUSIVE lock.
+
+The runner holds one session advisory lock for the run. Ordinary migrations
+commit their history row with the file; no-transaction files record history
+only after every statement succeeds. It validates journal identity and applied
+hashes before work. Regeneration after a base merge discards hand edits, so
+reapply online-safety changes and review the resulting SQL.
+
+When two lanes add a migration at the same ordinal, regenerate the unmerged
+lane's generated migration from the merged schema (`src/schema/` holding both
+sides); never renumber, rename, or hand-edit its identity. Two lanes that each
+recreate the same CHECK list only their own value, so a hand renumber silently
+drops the other lane's value, breaks the snapshot `prevId` chain, and can make
+an incremental database skip an entry a fresh one applies. A second
+`db:generate` must report no changes. A handwritten `--custom` migration cannot
+be regenerated: recreate it at the new ordinal and copy the body. Read the
+target's highest ordinal from its journal. A lane database that applied the
+replaced identity needs an owner-authorized reset of that checkout only.
+
+Schema workflow is `db:generate`, review SQL/journal/snapshots, `drizzle-kit
+check`, migration lint, then `db:migrate`. Function files are synchronized after
+migrations. A row-transform migration needs a populated upgrade fixture; the
+fixture can be retired only after a later frozen migration supersedes it.
+
+## Schema contracts
+
+Drizzle timestamp helpers use JS `Date` mode. The small set of string-mode
+columns is deliberate; do not extend it casually. Never bind a JS `Date` inside
+a raw `sql` fragment: use a typed comparator or an explicit timestamptz cast.
+
+Thread rollups are written by TypeScript repositories and the read-model
+projector, never triggers. The thread activity projection
+(`last_activity_at`, `conversational_leaf_turn_id`) is the deliberate
+trigger-owned exception, because any future writer that moves
+`active_leaf_turn_id` must not be able to leave it stale. JSON CHECKs use
+`IS TRUE` so absent and JSON-null values do not pass by SQL's three-valued
+logic. `turns.origin` has no column default: every insert states it.
+
+`thread_execution_reports` holds one immutable terminal result per admitted
+child execution, not a latest-result slot. A composite child-thread/turn FK
+keeps a report on its own thread's turn; caller references use `SET NULL` so
+deleting an invocation never erases the child's output. Payload presence is
+preserved (`NULL` differs from JSON `null`): read `payload::text` and parse it
+once, since the driver-decoded JSONB string plus Drizzle's second parse turns
+JSON-looking scalar strings into other values.
+
+Forward-turn inverses and write provenance live in immutable `document_edits`
+and `document_edit_parts`; the legacy reconstruction tables and the unused
+mutation provenance sink are retired.
+
+Works retire by archive or by soft delete with a 30-day restore window; the
+hourly purge job disposes of expired Works. `deleted_by_work_id` markers on
+owned rows identify exactly what a restore revives; their FKs are `ON DELETE
+SET NULL` so a stale marker never deletes, and purge deletes marked rows
+explicitly. Draft branches carry no marker: soft delete leaves drafts alone and
+purge disposes of them. The dropped `works.visibility` and `persistence` were
+speculative and must not return; if multi-writer sharing or ephemeral-Work GC
+comes back, design new columns. No Work is a locked Work, not a sharing
+preference.
+
+`document_yjs_heads.latest_checkpoint_id` is a Drizzle FK with `ON DELETE SET
+NULL`. Compaction retires update prefixes through the generation-local
+`retired_through_seq`; checkpoints survive until document cascade except for
+the initial seed. Lazy checkpoint cuts validate their captured suffix floor
+against `retired_through_seq` after fetching inputs and again under the
+persistence lock; generation replacement resets it. Schema versions are packed
+only inside Drizzle adapters and must use the shared packer (no second literal);
+a `COLLAB_SCHEMA_VERSION` bump still needs an additive migration advancing both
+Postgres column defaults. The checkpoint range capture function stays one SQL
+statement: a client-managed savepoint spanning awaits can roll back sibling
+operations queued on the same connection.
+
+Billing stores Stripe customer identity on `users.stripe_customer_id`; credit
+lots represent grants and purchases. The partial free-tier uniqueness guard
+prevents duplicate grants without requiring a subscription table.
+
+## Boundaries and tests
+
+This package exposes no ambient transaction context. Server adapters join the
+server-owned transaction store; a fresh `db.transaction()` is an independent
+scope.
+
+Focused database resets derive the complete FK closure from `pg_catalog`, lock it
+in deterministic order, and delete child-first in one transaction. History
+sequence assertions and membership assertions have different ordering
+semantics; raw SELECT order is never a lifecycle contract.
+
+Prompt bakes are insert-only and their pointers are write-once; a rebake inserts
+a new row (only the runtime's `beginPromptEpoch` does, for compaction), and a
+thread is never repointed to change what its requests send. Pending
+placeholder predicates derive from the contracts role set, so adding a role also
+requires regenerating the partial index. Agent source and definition revisions
+are immutable and held by restricted-deletion FKs, so hiding a catalog entry
+preserves bound content and account deletion cascades catalog entries and
+threads, not source rows. Catalog selection and the one-per-thread binding use
+compare-and-set and join the ambient transaction; idempotent binding compares
+revision and configuration and changes neither. The binding's configuration
+holds the resolved model, skill-content identities, and named-target revisions;
+execution identity comes from the thread binding, and the legacy project
+Agent/skill tables, the turn Agent-definition FK, and the slug-default
+preference are gone. `project_agent_removals` is only
+a Project/catalog-entry exclusion, never another definition owner.

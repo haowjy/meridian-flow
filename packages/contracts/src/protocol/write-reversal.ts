@@ -3,10 +3,26 @@
 export type WriteErrorStatus =
   | "not_found"
   | "ambiguous_match"
+  | "ambiguous_path"
   | "invalid_write"
   | "document_not_found"
   | "partial_failure"
   | "cant_undo_dependent"
+  | "cant_undo_applied"
+  | "cant_undo_discarded"
+  | "cant_undo_changed"
+  | "cant_undo_held"
+  | "cant_undo_elsewhere"
+  | "cant_redo_applied"
+  | "cant_redo_discarded"
+  | "cant_redo_changed"
+  | "cant_redo_held"
+  | "cant_redo_elsewhere"
+  | "cant_redo_users_undo"
+  | "insufficient_undo"
+  | "insufficient_redo"
+  | "nothing_to_revert"
+  | "work_archived"
   | "read_required"
   | "binary_file"
   | "permission_denied"
@@ -25,6 +41,7 @@ export type WriteStatus = "success" | WriteErrorStatus | UndoRedoOutcome;
 
 export interface DocumentReversalResult {
   uri: string;
+  destination?: { kind: "live" } | { kind: "draft"; branchId: string };
   status: WriteStatus;
   text?: string;
 }
@@ -38,7 +55,17 @@ export interface WorkReversalResult {
   message?: string;
 }
 
+export interface TurnInverseSkip {
+  documentId: string;
+  uri: string;
+  before: string;
+  after: string;
+  reason: string;
+}
+
 export interface ReversalOutcome {
+  skips?: TurnInverseSkip[];
+  acceptedParts?: number;
   status: WriteStatus;
   documents: DocumentReversalResult[];
   workReceipts?: WorkReversalResult[];

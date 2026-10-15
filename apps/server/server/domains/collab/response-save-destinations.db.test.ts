@@ -12,6 +12,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
+import { createDrizzleContextCatalog } from "../context/adapters/context-catalog.js";
 import {
   type AgentChain,
   createDrizzleFileFacts,
@@ -135,11 +136,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         fileAccess,
         workProjectionMutation: createTestWorkProjectionMutation(db),
+        catalogMutations: createDrizzleContextCatalog(db),
         threadContext: {
           requireThreadOwner: async () => ({ projectId: PROJECT_ID as never }),
-          resolveContextDocument: async () => {
-            throw new Error("Turn reversals here name no document");
-          },
         },
         ...rest,
       });
@@ -167,7 +166,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           createdByUserId: USER_ID,
           name: "Rewrite",
           slug: "rewrite",
-          aiWriteMode: "draft",
         },
       ]);
       await db.insert(schema.contextSources).values([
@@ -198,6 +196,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         title: "Thread",
         kind: "primary",
         status: "idle",
+        aiWriteMode: "draft",
       });
       await db.insert(schema.turns).values({
         id: TURN_ID as never,
@@ -255,13 +254,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         agentEdit.write(
           { command: "insert", file: "notes.md", documentId: SCRATCH_ID, content: "Agent notes." },
-          { ...scratch, responseId: RESPONSE_ID },
+          {
+            ...scratch,
+            responseIdentity: { providerResponseId: RESPONSE_ID, editScopeId: RESPONSE_ID },
+          },
         ),
       ).resolves.toMatchObject({ status: "success", phase: "staged" });
       await expect(
         agentEdit.write(
           { command: "insert", file: "lore.md", documentId: KB_ID, content: "Agent lore." },
-          { ...lore, responseId: RESPONSE_ID },
+          {
+            ...lore,
+            responseIdentity: { providerResponseId: RESPONSE_ID, editScopeId: RESPONSE_ID },
+          },
         ),
       ).resolves.toMatchObject({ status: "success", phase: "staged" });
     }
@@ -297,14 +302,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const collab = createTestCollab();
       await stageMixedReply(collab);
       // Scratch reads back inside the reply after the later kb write.
-      const read = await collab
-        .agentEdit()
-        .read(
-          { file: "notes.md", documentId: SCRATCH_ID },
-          { ...(await context(drafting(), SCRATCH_ID)), responseId: RESPONSE_ID },
-        );
+      const read = await collab.agentEdit().read(
+        { file: "notes.md", documentId: SCRATCH_ID },
+        {
+          ...(await context(drafting(), SCRATCH_ID)),
+          responseIdentity: { providerResponseId: RESPONSE_ID, editScopeId: RESPONSE_ID },
+        },
+      );
       expect(JSON.stringify(read.result)).toContain("Agent notes.");
-      await collab.finalizeResponseCommit(RESPONSE_ID, ctx);
+      await collab.finalizeResponseCommit(
+        { providerResponseId: RESPONSE_ID, editScopeId: RESPONSE_ID },
+        ctx,
+      );
       expect(await liveText(collab, SCRATCH_ID)).toContain("Agent notes.");
       expect(await draftText(collab, KB_ID)).toContain("Agent lore.");
 
@@ -330,9 +339,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await agentEdit.read({ file: "notes.md", documentId: SCRATCH_ID }, scratch);
       await agentEdit.write(
         { command: "insert", file: "notes.md", documentId: SCRATCH_ID, content: "Agent notes." },
-        { ...scratch, responseId: RESPONSE_ID },
+        {
+          ...scratch,
+          responseIdentity: { providerResponseId: RESPONSE_ID, editScopeId: RESPONSE_ID },
+        },
       );
-      await collab.finalizeResponseCommit(RESPONSE_ID, ctx);
+      await collab.finalizeResponseCommit(
+        { providerResponseId: RESPONSE_ID, editScopeId: RESPONSE_ID },
+        ctx,
+      );
       await archiveWork(WORK_ID);
 
       const undo = agentEdit.write(
@@ -348,9 +363,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("leaves out a document whose Work is archived while the reply saves, and saves the rest", async () => {
       const collab = createTestCollab();
       await db
-        .update(schema.works)
+        .update(schema.threads)
         .set({ aiWriteMode: "direct" })
-        .where(eq(schema.works.id, WORK_ID));
+        .where(eq(schema.threads.id, THREAD_ID));
       await seed(collab);
       const agentEdit = collab.agentEdit();
       for (const [file, documentId, content] of [
@@ -360,7 +375,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await expect(
           agentEdit.write(
             { command: "insert", file, documentId, content },
-            { ...(await context(direct(), documentId)), responseId: RESPONSE_ID },
+            {
+              ...(await context(direct(), documentId)),
+              responseIdentity: { providerResponseId: RESPONSE_ID, editScopeId: RESPONSE_ID },
+            },
           ),
         ).resolves.toMatchObject({ status: "success", phase: "staged" });
       }
@@ -385,9 +403,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await started;
       let saved = false;
-      const save = collab.finalizeResponseCommit(RESPONSE_ID, ctx).finally(() => {
-        saved = true;
-      });
+      const save = collab
+        .finalizeResponseCommit({ providerResponseId: RESPONSE_ID, editScopeId: RESPONSE_ID }, ctx)
+        .finally(() => {
+          saved = true;
+        });
       try {
         // Released in `finally`: a held Work row would block every later reset.
         const deadline = Date.now() + 5_000;
@@ -423,9 +443,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         links: createTestDocumentLinkScopes(db, { eventSink: sink }),
       });
       await db
-        .update(schema.works)
+        .update(schema.threads)
         .set({ aiWriteMode: "direct" })
-        .where(eq(schema.works.id, WORK_ID));
+        .where(eq(schema.threads.id, THREAD_ID));
       const MANUSCRIPT_ID = "00000000-0000-4000-8000-000000000a20";
       const ASSETS_ID = "00000000-0000-4000-8000-000000000a21";
       const ART_ID = "00000000-0000-4000-8000-000000000a22";
@@ -474,10 +494,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             find: "![Map](art/map.png)",
             content: "![Map](art/map.png) The pass.",
           },
-          { ...lore, responseId: RESPONSE_ID },
+          {
+            ...lore,
+            responseIdentity: { providerResponseId: RESPONSE_ID, editScopeId: RESPONSE_ID },
+          },
         ),
       ).resolves.toMatchObject({ status: "success", phase: "staged" });
-      const committed = await collab.finalizeResponseCommit(RESPONSE_ID, ctx);
+      const committed = await collab.finalizeResponseCommit(
+        { providerResponseId: RESPONSE_ID, editScopeId: RESPONSE_ID },
+        ctx,
+      );
 
       // What the model reads of a receipt is its result; its showing is host-only.
       const receipts = JSON.stringify(
@@ -527,10 +553,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             documentId: KB_ID,
             overwrite: true,
           },
-          { ...lore, responseId: linking, createdDocument: false, copiedNodes: [linked] },
+          {
+            ...lore,
+            responseIdentity: { providerResponseId: linking, editScopeId: linking },
+            createdDocument: false,
+            copiedNodes: [linked],
+          },
         ),
       ).resolves.toMatchObject({ status: "success", phase: "staged" });
-      await collab.finalizeResponseCommit(linking, ctx);
+      await collab.finalizeResponseCommit(
+        { providerResponseId: linking, editScopeId: linking },
+        ctx,
+      );
       await db
         .update(schema.documents)
         .set({ name: "moved" })
@@ -545,11 +579,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             overwrite: true,
             content: "Lore kept.",
           },
-          { ...lore, responseId: unlinking, createdDocument: false },
+          {
+            ...lore,
+            responseIdentity: { providerResponseId: unlinking, editScopeId: unlinking },
+            createdDocument: false,
+          },
         ),
       ).resolves.toMatchObject({ status: "success", phase: "staged" });
       sink.clear();
-      await collab.finalizeResponseCommit(unlinking, ctx);
+      await collab.finalizeResponseCommit(
+        { providerResponseId: unlinking, editScopeId: unlinking },
+        ctx,
+      );
       expect(sink.events.filter((event) => event.name === "serialize.link_snapshot_miss")).toEqual(
         [],
       );
@@ -581,7 +622,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           await expect(
             agentEdit.write(
               { command: "insert", file, documentId, content: `From ${reply.workId}.` },
-              { ...call, responseId: reply.responseId },
+              {
+                ...call,
+                responseIdentity: {
+                  providerResponseId: reply.responseId,
+                  editScopeId: reply.responseId,
+                },
+              },
             ),
           ).resolves.toMatchObject({ status: "success", phase: "staged" });
         }
@@ -589,10 +636,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const saved = await Promise.all(
         replies.map((reply) =>
-          collab.finalizeResponseCommit(reply.responseId, {
-            threadId: reply.threadId as never,
-            turnId: (reply.threadId === THREAD_ID ? TURN_ID : TURN_B_ID) as never,
-          }),
+          collab.finalizeResponseCommit(
+            { providerResponseId: reply.responseId, editScopeId: reply.responseId },
+            {
+              threadId: reply.threadId as never,
+              turnId: (reply.threadId === THREAD_ID ? TURN_ID : TURN_B_ID) as never,
+            },
+          ),
         ),
       );
 
@@ -610,9 +660,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await agentEdit.read({ file: "lore.md", documentId: KB_ID }, lore);
       await agentEdit.write(
         { command: "insert", file: "lore.md", documentId: KB_ID, content: "Agent lore." },
-        { ...lore, responseId: RESPONSE_ID },
+        {
+          ...lore,
+          responseIdentity: { providerResponseId: RESPONSE_ID, editScopeId: RESPONSE_ID },
+        },
       );
-      await collab.finalizeResponseCommit(RESPONSE_ID, ctx);
+      await collab.finalizeResponseCommit(
+        { providerResponseId: RESPONSE_ID, editScopeId: RESPONSE_ID },
+        ctx,
+      );
       // The writer owns lore.md, so their grant holds after the archive; the
       // draft it would change is what the archive froze (D30).
       const reverse = (direction: "undo" | "redo") =>
@@ -621,8 +677,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           userId: USER_ID,
           turnId: TURN_ID as never,
           direction,
-          scope: "turn",
-          selection: TURN_ID,
         });
       const refused = {
         status: "permission_denied",
@@ -638,7 +692,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(reverse("undo")).resolves.toMatchObject({ status: "reversed" });
       await archiveWork(WORK_ID);
       await expect(reverse("redo")).resolves.toMatchObject(refused);
-      expect(await journalStatuses()).toEqual(["discarded"]);
+      expect(await journalStatuses()).toEqual(["active"]);
     });
 
     async function journalStatuses() {
@@ -660,7 +714,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .where(eq(schema.works.id, workId));
     }
 
-    /** Work B in draft mode with its own scratch file, and a thread in it with a reply. */
+    /** Work B with its own scratch file, and a draft-mode thread in it with a reply. */
     async function addSecondWorkAndThread() {
       slugs.set(WORK_B_ID, "second");
       await db.insert(schema.works).values({
@@ -669,7 +723,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createdByUserId: USER_ID,
         name: "Second",
         slug: "second",
-        aiWriteMode: "draft",
       });
       await db.insert(schema.contextSources).values({
         id: SCRATCH_B_SOURCE_ID,
@@ -692,6 +745,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         title: "Thread B",
         kind: "primary",
         status: "idle",
+        aiWriteMode: "draft",
       });
       await db.insert(schema.turns).values({
         id: TURN_B_ID as never,
@@ -734,9 +788,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await agentEdit.read({ file: "lore.md", documentId: KB_ID }, live);
       await agentEdit.write(
         { command: "insert", file: "lore.md", documentId: KB_ID, content: "Live lore." },
-        { ...live, responseId: RESPONSE_ID },
+        {
+          ...live,
+          responseIdentity: { providerResponseId: RESPONSE_ID, editScopeId: RESPONSE_ID },
+        },
       );
-      await collab.finalizeResponseCommit(RESPONSE_ID, ctx);
+      await collab.finalizeResponseCommit(
+        { providerResponseId: RESPONSE_ID, editScopeId: RESPONSE_ID },
+        ctx,
+      );
       expect(await liveText(collab, KB_ID)).toContain("Live lore.");
       expect(await liveText(collab, KB_ID)).not.toContain("Pending lore.");
 
@@ -777,28 +837,24 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(drafted).toContain("Pending lore.");
     });
 
-    it("undoes each write where it landed, and refuses one in an archived Work's draft", async () => {
+    it("undoes the live top and refuses an older edit in another destination", async () => {
       const collab = createTestCollab();
       const keptDraftText = await saveLiveWriteOverKeptDraft(collab);
       const agentEdit = collab.agentEdit();
       const undoLast = async () =>
         agentEdit.write(
-          { command: "undo", file: "lore.md", documentId: KB_ID, last: 1 },
+          { command: "undo", file: "lore.md", documentId: KB_ID, count: 1 },
           await context(direct(), KB_ID),
         );
 
       // The live write came after the keep switch; the latest write is undone live.
-      await expect(undoLast()).resolves.toMatchObject({ status: "reversed" });
+      await expect(undoLast()).resolves.toMatchObject({ status: "success" });
       expect(await liveText(collab, KB_ID)).not.toContain("Live lore.");
       expect(await keptDraftText()).toContain("Pending lore.");
 
-      // Now the latest is the drafted write, in a draft the archive froze.
+      // The older top is drafted; this thread now writes live.
       await archiveWork(WORK_ID);
-      const frozen = undoLast();
-      await expect(frozen).rejects.toBeInstanceOf(FileEditRefusedError);
-      await expect(frozen).rejects.toMatchObject({
-        refused: [{ reason: "work_archived", archivedWork: { slug: "rewrite" } }],
-      });
+      await expect(undoLast()).resolves.toMatchObject({ status: "cant_undo_elsewhere" });
       expect(await keptDraftText()).toContain("Pending lore.");
     });
   });

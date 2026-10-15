@@ -3,27 +3,31 @@
 import {
   type DocumentCoordinator,
   DocumentNotFoundError,
-  type ReversalStore,
+  type UpdateJournal,
   yjsUpdateFromState,
 } from "@meridian/agent-edit/integration";
-import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
+import type { DraftId } from "@meridian/contracts";
+import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
 import type { BranchConcurrentJournalWatermarks } from "./branch-agent-edit.js";
-import type { BranchCoordinator } from "./branch-coordinator.js";
+import {
+  BranchCasConflictError,
+  type BranchCoordinator,
+  BranchMissingError,
+  type BranchSnapshot,
+  BranchStaleUpdateError,
+} from "./branch-coordinator.js";
+import type { BranchLockLease } from "./branch-critical-sections.js";
 import { runOutsideResponseTransaction } from "./response-transaction.js";
 
 export type WorkDraftLookup = {
   listActiveWorkDraftBranchIds(documentId: DocumentId): Promise<string[]>;
-  ensureWorkDraftBranch(input: {
-    documentId: DocumentId;
-    workId: WorkId;
-    liveDoc: Y.Doc;
-  }): Promise<{ branchId: string }>;
   ensureThreadPeerBranch(input: {
     documentId: DocumentId;
     threadId: ThreadId;
+    draftId?: DraftId;
     liveDoc: Y.Doc;
-  }): Promise<{ branchId: string }>;
+  }): Promise<Pick<BranchSnapshot, "branchId" | "upstreamBranchId" | "state">>;
 };
 
 export type BranchPullService = {
@@ -31,13 +35,35 @@ export type BranchPullService = {
   /** Drops debounced pulls that haven't started; in-flight pulls finish. */
   cancelScheduledPulls(): void;
   flushLivePull(documentId: DocumentId): Promise<void>;
-  pullThreadPeer(input: { documentId: DocumentId; threadId: ThreadId }): Promise<{
+  pullThreadPeer(input: {
+    documentId: DocumentId;
+    threadId: ThreadId;
+    draftId?: DraftId;
+  }): Promise<{
+    peerBranchId: string;
+    upstreamBranchId: string;
     branchGeneration: number;
     afterJournalId?: number;
     liveJournalSeq?: number;
     attributionBaseline: Uint8Array;
   }>;
 };
+
+/**
+ * A thread-peer pull whose branch work lost to a Discard (stale, CAS-lost or missing branch),
+ * carrying the peer and upstream it had captured so a caller can say which one went. Any
+ * other failure of the pull is not wrapped.
+ */
+export class ThreadPeerPullLost extends Error {
+  constructor(
+    readonly peerBranchId: string,
+    readonly upstreamBranchId: string,
+    cause: unknown,
+  ) {
+    super(`Thread peer ${peerBranchId} pull lost its branches`, { cause });
+    this.name = "ThreadPeerPullLost";
+  }
+}
 
 export type BranchPullDiagnostics = {
   backgroundFailed(input: { documentId: DocumentId; cause: unknown }): void;
@@ -52,7 +78,7 @@ export function createBranchPullService(input: {
   debounceMs?: number;
   maxDebounceMs?: number;
   concurrentJournalWatermarks?: BranchConcurrentJournalWatermarks;
-  liveJournal?: Pick<ReversalStore, "readForReconstruction">;
+  liveJournal?: Pick<UpdateJournal, "read">;
   diagnostics?: BranchPullDiagnostics;
 }): BranchPullService {
   const debounceMs = input.debounceMs ?? 2000;
@@ -93,7 +119,7 @@ export function createBranchPullService(input: {
 
   async function pullLive(documentId: DocumentId): Promise<void> {
     // Most documents have no Work draft; skip the snapshot (a room open and
-    // release) for them. The root transaction re-lists: a branch can close in
+    // release) for them. Re-list before pulling: a branch can close in
     // between, and one opened since waits for the next pull.
     if ((await input.branches.listActiveWorkDraftBranchIds(documentId)).length === 0) return;
     // Snapshot before the root transaction opens: the snapshot takes its own
@@ -101,11 +127,15 @@ export function createBranchPullService(input: {
     // hold every pooled connection and wait on each other forever.
     const liveDoc = await liveSnapshot(documentId);
     try {
-      await input.rootTransaction(async () => {
-        for (const branchId of await input.branches.listActiveWorkDraftBranchIds(documentId)) {
-          await input.branchCoordinator.pullFromDoc(branchId, liveDoc);
-        }
-      });
+      // One branch at a time: its lease, then its transaction (the save's order), and
+      // the transaction commits before the next branch's lease is taken.
+      for (const branchId of await input.branches.listActiveWorkDraftBranchIds(documentId)) {
+        await input.branchCoordinator.withLeases([branchId], (lease) =>
+          input.rootTransaction(() =>
+            input.branchCoordinator.pullFromDoc(lease, branchId, liveDoc),
+          ),
+        );
+      }
     } finally {
       liveDoc.destroy();
     }
@@ -187,70 +217,84 @@ export function createBranchPullService(input: {
 
     pullThreadPeer(inputPeer) {
       return runOutsideResponseTransaction(async () => {
-        const beforePullLive = await liveSnapshot(inputPeer.documentId);
-        const attributionBaseline = await (async () => {
+        const ensurePeer = async () => {
+          const liveDoc = await liveSnapshot(inputPeer.documentId);
           try {
-            const existingPeer = await input.branches.ensureThreadPeerBranch({
-              ...inputPeer,
-              liveDoc: beforePullLive,
-            });
-            return input.branchCoordinator.readBranch(existingPeer.branchId, (doc) =>
-              Promise.resolve(Y.encodeStateAsUpdate(doc)),
-            );
+            return await input.branches.ensureThreadPeerBranch({ ...inputPeer, liveDoc });
           } finally {
-            beforePullLive.destroy();
+            liveDoc.destroy();
           }
-        })();
-        await run(inputPeer.documentId);
-        const liveJournalSeq = input.liveJournal
-          ? (await input.liveJournal.readForReconstruction(inputPeer.documentId)).updates.reduce(
-              (latest, update) => Math.max(latest, update.seq),
-              0,
-            )
-          : undefined;
-        const liveDoc = await liveSnapshot(inputPeer.documentId);
+        };
+        const first = await ensurePeer();
+        // From here every phase fails by name: the identities the ensures returned are
+        // captured, so a Discard landing in any later phase is `ThreadPeerPullLost`.
+        let identity = { peerBranchId: first.branchId, upstreamBranchId: first.upstreamBranchId };
         try {
-          const peer = await input.branches.ensureThreadPeerBranch({ ...inputPeer, liveDoc });
-          const captured = await input.branchCoordinator.readBranch(
-            peer.branchId,
-            (_doc, snapshot) =>
-              Promise.resolve({
-                peerGeneration: snapshot?.generation,
-                upstreamBranchId: snapshot?.upstreamBranchId,
-              }),
-          );
+          const attributionBaseline = first.state;
+          await run(inputPeer.documentId);
+          const liveCut = await input.liveJournal?.read(inputPeer.documentId);
+          const liveJournalSeq = liveCut
+            ? (liveCut.persistenceWatermark ??
+              liveCut.updates.reduce((latest, update) => Math.max(latest, update.seq), 0))
+            : undefined;
+          const peer = await ensurePeer();
+          identity = { peerBranchId: peer.branchId, upstreamBranchId: peer.upstreamBranchId };
           const afterJournalId = input.concurrentJournalWatermarks?.current(
             inputPeer.threadId,
             inputPeer.documentId,
           );
-          const upstream = captured.upstreamBranchId
-            ? await input.branchCoordinator.readBranch(captured.upstreamBranchId, (doc, snapshot) =>
-                Promise.resolve({
-                  generation: snapshot.generation,
-                  state: Y.encodeStateAsUpdate(doc),
-                }),
-              )
-            : undefined;
-          await input.rootTransaction(async () => {
-            if (upstream) await pullPeerFromCapturedUpstream(peer.branchId, upstream.state);
-            else await input.branchCoordinator.pullFromBranch(peer.branchId);
-          });
-          const branchGeneration = upstream?.generation ?? captured.peerGeneration;
-          return { branchGeneration, afterJournalId, liveJournalSeq, attributionBaseline };
-        } finally {
-          liveDoc.destroy();
+          const upstreamBranchId = peer.upstreamBranchId;
+          if (!upstreamBranchId)
+            throw new Error(`Thread peer ${peer.branchId} has no upstream Work draft branch`);
+          // The peer's and its upstream's leases are held from capture through persisting
+          // the peer, so a per-change Discard cannot refork the upstream in between and a
+          // stale capture is never merged back. Leases come before the transaction.
+          const upstream = await input.branchCoordinator.withLeases(
+            [peer.branchId, upstreamBranchId],
+            (lease) =>
+              input.rootTransaction(async () => {
+                const read = await input.branchCoordinator
+                  .ownedSession(lease)
+                  .read(upstreamBranchId, (doc, snapshot) =>
+                    Promise.resolve({
+                      generation: snapshot.generation,
+                      state: Y.encodeStateAsUpdate(doc),
+                    }),
+                  );
+                await pullPeerFromCapturedUpstream(lease, peer.branchId, read.state);
+                return read;
+              }),
+          );
+          return {
+            peerBranchId: peer.branchId,
+            upstreamBranchId,
+            branchGeneration: upstream.generation,
+            afterJournalId,
+            liveJournalSeq,
+            attributionBaseline,
+          };
+        } catch (cause) {
+          if (
+            identity.upstreamBranchId &&
+            (cause instanceof BranchStaleUpdateError ||
+              cause instanceof BranchCasConflictError ||
+              cause instanceof BranchMissingError)
+          )
+            throw new ThreadPeerPullLost(identity.peerBranchId, identity.upstreamBranchId, cause);
+          throw cause;
         }
       });
     },
   };
 
   async function pullPeerFromCapturedUpstream(
+    lease: BranchLockLease,
     peerBranchId: string,
     upstreamState: Uint8Array,
   ): Promise<Uint8Array> {
     const upstreamDoc = docFromSnapshot(upstreamState);
     try {
-      return await input.branchCoordinator.pullFromDoc(peerBranchId, upstreamDoc);
+      return await input.branchCoordinator.pullFromDoc(lease, peerBranchId, upstreamDoc);
     } finally {
       upstreamDoc.destroy();
     }

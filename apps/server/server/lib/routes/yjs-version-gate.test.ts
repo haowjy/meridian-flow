@@ -46,11 +46,6 @@ function versionGateServices(
       schemaVersion: input.branchHead ?? COLLAB_SCHEMA_VERSION,
       status: "active" as const,
     })),
-    resolveManifestMembership: vi.fn(async () => ({
-      documentId: liveDocumentName,
-      members: [liveDocumentName],
-    })),
-    reconcileProjectManifest: vi.fn(async () => undefined),
     validateHocuspocusDocument: vi.fn(async () => {}),
     currentLiveGeneration: vi.fn(async () => input.liveGeneration ?? 1n),
     admitLiveWriterUpdate: vi.fn(async () => ({
@@ -60,6 +55,9 @@ function versionGateServices(
     flushBranchLivePull: vi.fn(async () => undefined),
   };
   return {
+    liveDocuments: {
+      findById: async () => ({ kind: "found" as const, document: {} as never, clashesWith: [] }),
+    },
     fileAccess: createAllowAllFileAccess(),
     fileAccessChanges: createLocalFileAccessChanges(),
     documentSync,
@@ -284,25 +282,6 @@ describe("Yjs connect-time schema version gate", () => {
       createYjsRoomAccessIndex(),
     );
     const context = connectContext(SENTINEL_SCHEMA_VERSION);
-
-    await expect(
-      hocuspocus.configuration.onConnect?.({
-        connectionConfig: connectionConfig(),
-        documentName: liveDocumentName,
-        context,
-      } as never),
-    ).rejects.toMatchObject({ code: 4407, reason: "document-schema-stale" });
-    expect(context.closeTransport).toHaveBeenCalledWith({
-      code: 4407,
-      reason: "document-schema-stale",
-    });
-  });
-
-  it("maps a stale manifest dependency to the same typed close", async () => {
-    const services = versionGateServices({ liveHead: COLLAB_SCHEMA_VERSION });
-    services.documentSync.resolveManifestMembership.mockRejectedValue(staleSchemaError());
-    const hocuspocus = createHocuspocus(services as never, createYjsRoomAccessIndex());
-    const context = connectContext(COLLAB_SCHEMA_VERSION);
 
     await expect(
       hocuspocus.configuration.onConnect?.({

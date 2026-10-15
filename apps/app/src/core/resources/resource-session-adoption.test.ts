@@ -124,25 +124,23 @@ async function fixture() {
     transitionId: "transition",
     lineageHandle: "handle",
     exactDatabaseName: databaseName,
-    targetGeneration: null,
   };
   const release = vi.fn();
   const adoption: LocalDocumentSessionAdoptionPort = {
-    begin: vi.fn(async () => pending),
+    begin: vi.fn(async () => ({ kind: "reserved" as const, receipt: pending })),
     abort: vi.fn(async () => "aborted" as const),
-    inspect: vi.fn(async () => "clear" as const),
-    bindAndAdopt: vi.fn(async (input) => {
+    adopt: vi.fn(async (input) => {
       const reserved = transfer as LocalDocumentSessionTransfer | null;
       if (!reserved) throw new Error("Missing transfer");
       reserved.prepareCommit();
-      await reserved.completeCommit({
+      reserved.completeCommit({
         lease: {
           accountId,
           projectId: input.projectId,
           documentId: input.documentId,
-          generation: input.generation,
+          generation: input.admission,
         },
-        persistenceGeneration: input.generation,
+        persistenceGeneration: input.admission,
         exactDatabaseName: databaseName,
         release,
       });
@@ -151,7 +149,9 @@ async function fixture() {
           accountId,
           projectId: input.projectId,
           documentId: input.documentId,
-          generation: input.generation,
+          generation: input.admission,
+          persistenceGeneration: input.admission,
+          exactDatabaseName: databaseName,
         },
         session: reserved.session,
       };
@@ -200,30 +200,12 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-it("pins authority and acknowledges adoption without replacing the local Y.Doc", async () => {
-  const { adoption, coordinator, created, key, metadata, release, verified } = await fixture();
-
-  await expect(coordinator.reconcile(key)).resolves.toBe("adopted");
-
-  expect(created).toHaveLength(1);
-  expect(created[0]?.document.getText("probe").toString()).toBe("preserved");
-  expect(adoption.bindAndAdopt).toHaveBeenCalledOnce();
-  expect((await metadata.readResource(key))?.resource).toMatchObject({
-    lifecycle: { kind: "acknowledged", availabilityGeneration: "7" },
-    obligations: {},
-  });
-  expect(release).not.toHaveBeenCalled();
-  verified.handle.release();
-  expect(release).toHaveBeenCalledOnce();
-  expect(created[0]?.getSnapshot().status).toBe("detached");
-});
-
 it("waits for a caller-owned lease before transferring and acknowledging the session", async () => {
   const { access, adoption, coordinator, key, metadata, release, verified } = await fixture();
   verified.handle.release();
 
   await expect(coordinator.reconcile(key)).resolves.toBe("waiting");
-  expect(adoption.bindAndAdopt).not.toHaveBeenCalled();
+  expect(adoption.adopt).not.toHaveBeenCalled();
   expect((await metadata.readResource(key))?.resource.obligations.sessionAdoption).toBeDefined();
 
   const editor = await access.open("project", key, "mounted-editor", undefined, {
@@ -231,34 +213,11 @@ it("waits for a caller-owned lease before transferring and acknowledging the ses
   });
   if (editor.kind !== "opened") throw new Error(`Editor content is ${JSON.stringify(editor)}`);
   await expect(coordinator.reconcile(key)).resolves.toBe("adopted");
-  expect(adoption.bindAndAdopt).toHaveBeenCalledOnce();
+  expect(adoption.adopt).toHaveBeenCalledOnce();
   expect(editor.handle.session.getSnapshot().status).toBe("detached");
   expect(release).not.toHaveBeenCalled();
   editor.handle.release();
   expect(release).toHaveBeenCalledOnce();
-});
-
-it("rejects an authority fence before pinning the resource generation", async () => {
-  const { adoption, availability, coordinator, key, metadata, verified } = await fixture();
-  availability.resolve.mockResolvedValue({
-    kind: "available",
-    documentId: "document",
-    generation: "8",
-  });
-  vi.mocked(adoption.inspect).mockImplementation(async (input) =>
-    input.generation === "8" ? "mismatch" : "bindable",
-  );
-
-  await expect(coordinator.reconcile(key)).rejects.toThrow(
-    "Session adoption persistence authority belongs to another lineage",
-  );
-
-  expect(adoption.inspect).toHaveBeenCalledWith(expect.objectContaining({ generation: "8" }));
-  expect(adoption.begin).not.toHaveBeenCalled();
-  expect(
-    (await metadata.readResource(key))?.resource.obligations.sessionAdoption?.generation,
-  ).toBeNull();
-  verified.handle.release();
 });
 
 it("keeps a begun handoff retryable while authority is temporarily unavailable", async () => {
@@ -271,46 +230,6 @@ it("keeps a begun handoff retryable while authority is temporarily unavailable",
   expect(created[0]?.getSnapshot()).toMatchObject({ adoptionStalled: false });
 
   expect(adoption.begin).toHaveBeenCalledTimes(1);
-  expect(adoption.bindAndAdopt).toHaveBeenCalledOnce();
+  expect(adoption.adopt).toHaveBeenCalledOnce();
   expect((await metadata.readResource(key))?.resource.obligations.sessionAdoption).toBeUndefined();
-});
-
-function failAcknowledgementOnce(metadata: IndexedDbResourceMetadata) {
-  const commit = metadata.commitResource.bind(metadata);
-  let failed = false;
-  vi.spyOn(metadata, "commitResource").mockImplementation(async (write) => {
-    if (!failed && !write.next.resource.obligations.sessionAdoption) {
-      failed = true;
-      throw new Error("transient acknowledgement failure");
-    }
-    return commit(write);
-  });
-}
-
-it("does not label a transport-owned session offline when only the acknowledgement fails", async () => {
-  const { adoption, coordinator, created, key, metadata, verified } = await fixture();
-  const bind = vi.mocked(adoption.bindAndAdopt).getMockImplementation();
-  if (!bind) throw new Error("Missing bind implementation");
-  vi.mocked(adoption.bindAndAdopt).mockImplementation(async (input) => {
-    const result = await bind(input);
-    created[0]?.attachTransport(() => ({
-      synced: true,
-      whenSynced: Promise.resolve(),
-      whenDurablySynced: Promise.resolve(),
-      subscribeStatus(listener) {
-        listener({ kind: "connected" });
-        return () => {};
-      },
-      destroy() {},
-    }));
-    return result;
-  });
-  failAcknowledgementOnce(metadata);
-
-  await expect(coordinator.reconcile(key)).rejects.toThrow("transient acknowledgement failure");
-  expect(created[0]?.getSnapshot()).toMatchObject({ status: "synced", adoptionStalled: false });
-  await expect(coordinator.reconcile(key)).resolves.toBe("adopted");
-  expect(created[0]?.getSnapshot()).toMatchObject({ status: "synced", adoptionStalled: false });
-  verified.handle.release();
-  await created[0]?.destroy();
 });

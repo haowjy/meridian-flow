@@ -16,12 +16,14 @@ import type { BlockUpsertedRow, JsonValue } from "@meridian/contracts/threads";
 import { TurnStartConflictError } from "../../threads/index.js";
 import { createLocalTurn } from "./local-turn.js";
 import { type PersistenceDeps, persistAndAppendTurnStartEvents } from "./persistence.js";
-import type { InboxReader, MessageDraft } from "./ports.js";
+import type { MessageDraft } from "./ports.js";
 import type { DeliveryProducer, DeliveryTransaction } from "./runtime-delivery.js";
 import { writerUserTurnBlocks } from "./user-turn-blocks.js";
 
 export interface WriterEnqueueSettlement {
   userTurnId: TurnId;
+  /** The live reply this message joins (a steer), or null when a new reply answers it. */
+  joinedReplyId: TurnId | null;
   resumeAfterSeq: string;
   snapshotFloorNextSeq: string;
 }
@@ -109,9 +111,15 @@ export async function persistWriterEnqueue<T>(input: {
   threadId: ThreadId;
   userTurnId: TurnId;
   userBlocks: readonly UserMessageBlock[];
-  userTurnMetadata?: JsonValue | null;
+  /**
+   * Which reply this message joins, decided under the thread lock on every
+   * attempt so it sees the inbox order the message lands in. The stamp and
+   * the settlement both derive from this one answer; absent, a new reply.
+   */
+  joinedReply?: () => Promise<TurnId | null>;
+  /** The user turn's metadata, given the reply it joins. */
+  userTurnMetadata?: (joinedReplyId: TurnId | null) => JsonValue | null;
   delivery: DeliveryProducer;
-  inbox: Pick<InboxReader, "selectPending">;
   /** Atomic admission fence; runs after the thread lock and before writer persistence. */
   beforePersist?: () => Promise<void>;
   draft: MessageDraft;
@@ -125,12 +133,13 @@ export async function persistWriterEnqueue<T>(input: {
       return await input.delivery.withThreadLock(input.threadId, async (producer) => {
         let settled: T | undefined;
         const persistAttempt = async () => {
+          const joinedReplyId = (await input.joinedReply?.()) ?? null;
           await persistWriterTurn({
             persistence: input.persistence,
             threadId: input.threadId,
             userTurnId: input.userTurnId,
             userBlocks: input.userBlocks,
-            userTurnMetadata: input.userTurnMetadata,
+            userTurnMetadata: input.userTurnMetadata?.(joinedReplyId),
             origin: "writer",
             beforePersist: input.beforePersist,
             producer,
@@ -138,6 +147,7 @@ export async function persistWriterEnqueue<T>(input: {
             afterEnqueue: async (userTurnId) => {
               settled = await input.settle({
                 userTurnId,
+                joinedReplyId,
                 resumeAfterSeq,
                 snapshotFloorNextSeq: ((await input.hub.headSeq(input.threadId)) + 1n).toString(),
               });

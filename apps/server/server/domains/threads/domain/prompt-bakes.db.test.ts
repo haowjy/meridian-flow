@@ -182,6 +182,7 @@ else {
     it("cascades account deletion through bake owners and cross-thread references", async () => {
       const source = await repos.threads.bakeInitialPrompt(ids.threadId, content("source"));
       const fork = await repos.threads.create({
+        aiWriteMode: "direct",
         userId: ids.userId,
         projectId: ids.projectId,
         title: "Reference holder",

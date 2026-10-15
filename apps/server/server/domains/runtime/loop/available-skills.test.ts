@@ -89,6 +89,7 @@ You are Writer.
     });
     const accountSkillInstalls = createInMemoryAccountSkillInstallStore();
     const thread = await repos.threads.create({
+      aiWriteMode: "direct",
       userId: "user-1",
       projectId: project.id,
       title: "Writer chat",

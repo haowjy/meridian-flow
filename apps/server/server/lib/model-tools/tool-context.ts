@@ -101,8 +101,6 @@ export type ResolvedDocumentAddress = DocumentAddress & { uri: string; created?:
 export type ResolvedModelContextPort = {
   resolution: ThreadContextResolution;
   port: ContextPort;
-  /** The same thread's port with every write live, whatever the Work's mode. */
-  livePort: () => ContextPort;
 };
 
 /** One tool call's resolved ground: the thread's Work, its context port, and who acts. */
@@ -144,15 +142,20 @@ export function isToolError(value: unknown): value is ToolErrorOutput | WriteToo
 
 /**
  * The thread's context, its port at `version` (a live read resolves paths
- * against live membership too), its Work's execution context and the
- * principal. The thread's Work membership loads once.
+ * against live membership too), its execution context (the chat's write mode
+ * over its Work) and the principal. The thread's Work membership loads once.
  */
 export async function resolveToolCall(
   deps: ToolWiringDeps,
-  ctx: { threadId: string; responseId?: string },
+  ctx: { threadId: string; responseIdentity?: import("@meridian/contracts").ModelResponseIdentity },
   version?: DocumentVersion,
 ): Promise<ToolCall | ToolErrorOutput> {
-  const context = await resolveContextPort(deps, ctx.threadId, ctx.responseId, version);
+  const context = await resolveContextPort(
+    deps,
+    ctx.threadId,
+    ctx.responseIdentity?.editScopeId,
+    version,
+  );
   if (isToolError(context)) return context;
   const { primaryWorkId } = context.resolution;
   if (!primaryWorkId) throw new Error(`Thread primary Work is missing: ${ctx.threadId}`);
@@ -160,7 +163,7 @@ export async function resolveToolCall(
   if (!primaryWork || workLifecycleState(primaryWork) === "deleted") {
     return toolError({ code: "work_unavailable", message: "The current Work is unavailable" });
   }
-  const execution = threadExecutionContext(primaryWork);
+  const execution = threadExecutionContext(primaryWork, context.resolution.thread.aiWriteMode);
   return { execution, context, principal: await agentPrincipal(deps, context, execution) };
 }
 
@@ -181,8 +184,6 @@ export async function resolveContextPort(
       responseId,
       ...(version ? { version } : {}),
     }),
-    livePort: () =>
-      contextPortForThread(deps.contextPorts, resolution, { responseId, liveWrites: true }),
   };
 }
 

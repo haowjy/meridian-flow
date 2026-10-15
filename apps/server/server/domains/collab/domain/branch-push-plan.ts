@@ -1,6 +1,7 @@
-/** Pure document materialization and effect-verification primitives for branch pushes. */
+/** Pure document materialization and integration primitives for branch pushes. */
 import { createHash } from "node:crypto";
 import {
+  type BlockRef,
   decodeUpdateForDependencies,
   deleteRanges,
   rangeCovers,
@@ -10,6 +11,8 @@ import {
 } from "@meridian/agent-edit/integration";
 import * as Y from "yjs";
 import type { BranchJournalRow, PublicationBlockChange } from "./branch-push-contracts.js";
+import { documentDifference } from "./document-difference.js";
+
 export class BranchPushEffectVerificationError extends Error {
   constructor(
     readonly operation: string,
@@ -53,18 +56,34 @@ export function publicationBlockChanges(input: {
   model: YProsemirrorDocumentModel;
   beforeDoc: Y.Doc;
   afterDoc: Y.Doc;
+  renderBlock?(doc: Y.Doc, block: BlockRef): string;
 }): PublicationBlockChange[] {
-  const before = blockTextMap(input.model, input.beforeDoc);
-  const after = blockTextMap(input.model, input.afterDoc);
-  const blockIds = new Set([...before.keys(), ...after.keys()]);
-  return [...blockIds]
-    .filter((blockId) => before.get(blockId) !== after.get(blockId))
-    .sort()
-    .map((blockId) => ({
-      blockId,
-      beforeText: before.get(blockId) ?? null,
-      afterText: after.get(blockId) ?? null,
-    }));
+  return documentDifference(input.beforeDoc, input.afterDoc, input.model)
+    .flatMap((entry) => {
+      if (entry.kind === "equal") return [];
+      return [
+        {
+          blockId: entry.kind === "delete" ? entry.live.id : entry.draft.id,
+          beforeBlockIdentity:
+            entry.kind === "insert"
+              ? null
+              : input.model.getCanonicalBlockIdentity(entry.live.block),
+          afterBlockIdentity:
+            entry.kind === "delete"
+              ? null
+              : input.model.getCanonicalBlockIdentity(entry.draft.block),
+          beforeText:
+            entry.kind === "insert"
+              ? null
+              : (input.renderBlock?.(input.beforeDoc, entry.live.block) ?? entry.live.text),
+          afterText:
+            entry.kind === "delete"
+              ? null
+              : (input.renderBlock?.(input.afterDoc, entry.draft.block) ?? entry.draft.text),
+        },
+      ];
+    })
+    .sort((a, b) => a.blockId.localeCompare(b.blockId));
 }
 
 export function blockTextMap(model: YProsemirrorDocumentModel, doc: Y.Doc): Map<string, string> {
@@ -79,14 +98,11 @@ export function stablePushIdempotencyKey(input: {
   branchId: string;
   generation: number;
   journalIds: number[];
-  publicationKind: "content" | "manifest";
 }): string {
   return createHash("sha256")
     .update(input.branchId)
     .update("\0")
     .update(String(input.generation))
-    .update("\0")
-    .update(input.publicationKind)
     .update("\0")
     .update([...input.journalIds].sort((a, b) => a - b).join(","))
     .digest("hex");

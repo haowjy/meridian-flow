@@ -12,6 +12,8 @@ const SENSITIVE_EXACT_KEYS = new Set(["body", "message", "messages", "response"]
 const SECRET_TEXT_PATTERN = /\b(sk-[A-Za-z0-9_-]{12,}|Bearer\s+[A-Za-z0-9._~+/-]+=*)\b/g;
 const MAX_STRING_LENGTH = 1_000;
 const MAX_IDENTIFIER_LENGTH = 128;
+/** `errorMessage` is the one free-text payload key, already scrubbed by `errorMessageOf`. */
+const MAX_ERROR_MESSAGE_LENGTH = 200;
 const MAX_ARRAY_ITEMS = 20;
 const MAX_OBJECT_KEYS = 50;
 export const MAX_EVENT_RECORD_BYTES = 8 * 1_024;
@@ -49,6 +51,18 @@ const SAFE_PAYLOAD_IDENTIFIER_KEYS = new Set([
   "workId",
   "yjsSpans",
 ]);
+/**
+ * Finite diagnostic codes, allowed by key and by exactly these values (the
+ * settlement, reply-pin and hidden-node repair events). Default-deny stays: any
+ * other value under these keys is redacted.
+ */
+const DIAGNOSTIC_CODE_ENUMS: Readonly<Record<string, ReadonlySet<string>>> = {
+  code: new Set(["corrupt_settlement_authority", "corrupt_state"]),
+  effect: new Set(["warm_rooms", "publication_step"]),
+  refusal: new Set(["integration"]),
+  stage: new Set(["claim", "execute", "handoff"]),
+  trigger: new Set(["create", "read"]),
+};
 const SAFE_PAYLOAD_ENUM_VALUES: Readonly<Record<string, ReadonlySet<string>>> = {
   action: new Set(["flush_then_exit", "logged_continue"]),
   command: new Set(["copy", "create", "insert", "read", "redo", "remove", "replace", "undo"]),
@@ -75,6 +89,7 @@ const SAFE_PAYLOAD_ENUM_VALUES: Readonly<Record<string, ReadonlySet<string>>> = 
   outcome: new Set(["cancelled", "error", "ok"]),
   phase: new Set(["committed", "skeleton", "staged"]),
   reason: new Set(["client-schema-superseded", "document-schema-stale", "record_byte_limit"]),
+  ...DIAGNOSTIC_CODE_ENUMS,
   source: new Set(["agent", "connection", "local", "redis", "system", "unknown", "writer"]),
   status: new Set([
     "active",
@@ -93,7 +108,6 @@ const SAFE_PAYLOAD_ENUM_VALUES: Readonly<Record<string, ReadonlySet<string>>> = 
     "redone",
     "reversed",
     "rolledBack",
-    "rolledBackDegraded",
     "success",
   ]),
   transport: new Set(["gateway", "http", "thread_ws", "yjs"]),
@@ -117,7 +131,6 @@ const SAFE_MERIDIAN_ERROR_CODES = new Set([
   "auth_failed",
   "authority_head_busy",
   "bad_request",
-  "branch_corrupt_reset",
   "checkpoint_incomplete",
   "checkpoint_not_found",
   "claimed_write_discarded",
@@ -334,6 +347,7 @@ function sanitizeValue(key: string, value: unknown, depth: number): unknown {
     return "[redacted]";
   if (value == null) return value;
   if (typeof value === "string") {
+    if (key === "errorMessage") return redactString(value.slice(0, MAX_ERROR_MESSAGE_LENGTH));
     return payloadStringIsApproved(key, value) ? redactString(value) : "[redacted]";
   }
   if (typeof value === "number" || typeof value === "boolean") return value;

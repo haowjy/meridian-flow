@@ -10,6 +10,7 @@
  */
 import type { CatalogContextView, CatalogFile } from "@/client/query/context-catalog-projection";
 import type { ContextTab, ServerContextTab } from "@/client/stores";
+import { reviewEntryOf } from "@/client/stores";
 import type { ContextRouteTarget } from "../routing/project-route";
 import { resolveWorkspaceRoute } from "./context-route-workspace-owner";
 
@@ -70,7 +71,7 @@ function draftOnlyOwner({
 }): ServerContextTab | null {
   const owner = resolveWorkspaceRoute({
     tabs: (workspaceTabs ?? []).filter(
-      (tab) => tab.kind !== "new" && tab.draftOnly === true && tab.reviewWorkId === locator.workId,
+      (tab) => tab.kind !== "new" && Boolean(locator.workId && reviewEntryOf(tab, locator.workId)),
     ),
     selectedDocumentId: undefined,
     locator,

@@ -7,7 +7,7 @@
  * Text crosses these doors: the Markdown engine (reads, the read API and
  * download, writer and import writes, projections), the model's edit core, a
  * reply's save, the draft-aware reads (Markdown, hashlines and revision), offline
- * reconciliation, and a live turn's reversal. Draft preview scopes both sides
+ * reconciliation. Draft preview scopes both sides
  * in `work-draft-review-service.ts`; ContextFS.search scopes its source's
  * chapters together. A push scopes itself before branch locks in
  * `branch-push.ts`, and its settlement in `branch-push-transition.ts`. Links
@@ -15,11 +15,7 @@
  */
 
 import type { BranchPeerShadowAccess, ResponseWriteFinalizer } from "../contracts.js";
-import {
-  asThreadPeerAgentEditCore,
-  type LiveAgentEditCore,
-  type ThreadPeerAgentEditCore,
-} from "./agent-edit-cores.js";
+import { asThreadPeerAgentEditCore, type ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
 import type { OfflineReconciliation } from "./offline-reconciliation.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
@@ -45,13 +41,17 @@ export function scopeMarkdownEngine(
       scopes.within(by(documentId), () => engine.seedFromMarkdown(documentId, content, origin)),
     writeDocument: (input) =>
       scopes.within(by(input.documentId), () => engine.writeDocument(input)),
+    // The lease spells nothing; the held write spells as the document it admits.
+    withLiveDocument: engine.withLiveDocument,
+    writeDocumentHeld: (input) =>
+      scopes.within(by(input.held.documentId), () => engine.writeDocumentHeld(input)),
   };
 }
 
 /**
  * A model call is scoped by its grant's project, which exists even for a
  * chapter the call is creating, and read as the account it acts for; a
- * reversal by the document it reverses, read in its thread.
+ * call by the thread it reads in.
  */
 export function scopeAgentEdit(
   core: ThreadPeerAgentEditCore,
@@ -74,33 +74,17 @@ export function scopeAgentEdit(
     rollbackResponse: core.rollbackResponse,
     commitResponse: core.commitResponse,
     hasResponseDocument: core.hasResponseDocument,
-    withResponseDocument: core.withResponseDocument,
-    responseDocuments: core.responseDocuments,
+    prepare: core.prepare,
+    refuseStaged: core.refuseStaged,
+    retirePeer: core.retirePeer,
     responseDestination: core.responseDestination,
-    getAvailability: core.getAvailability,
-    invalidateThread: core.invalidateThread,
+    invalidateThreadDocument: core.invalidateThreadDocument,
+    evictThread: core.evictThread,
+    retireThreadPeers: core.retireThreadPeers,
     read: (command, context) => scopes.within(byGrant(context), () => core.read(command, context)),
     write: (command, context) =>
       scopes.within(byGrant(context), () => core.write(command, context)),
-    undo: (docId, threadId) =>
-      scopes.within({ documentId: docId, viewer: { threadId } }, () => core.undo(docId, threadId)),
-    redo: (docId, threadId) =>
-      scopes.within({ documentId: docId, viewer: { threadId } }, () => core.redo(docId, threadId)),
-    reverse: (input) =>
-      scopes.within({ documentId: input.docId, viewer: { threadId: input.threadId } }, () =>
-        core.reverse(input),
-      ),
   });
-}
-
-/** A live turn's undo and redo snapshot every block of the document they reverse. */
-export function scopeLiveReversal(
-  core: LiveAgentEditCore,
-  scopes: DocumentLinkScopes,
-): Pick<LiveAgentEditCore, "reverse"> {
-  return {
-    reverse: (input) => scopes.within({ documentId: input.docId }, () => core.reverse(input)),
-  };
 }
 
 /** A reply's save renders the receipts the model reads next, in its thread's project. */
@@ -148,15 +132,11 @@ export function scopeBranchPeer(
     readEffectiveRevision: (command) =>
       scopes.within(by(command), () => access.readEffectiveRevision(command)),
     // Passed through: no Markdown of their own.
-    pullThreadPeer: access.pullThreadPeer,
     flushBranchLivePull: access.flushBranchLivePull,
     readEffectiveMarkdown: (command) =>
       scopes.within(by(command), () => access.readEffectiveMarkdown(command)),
-    resolveManifestMembership: access.resolveManifestMembership,
-    reconcileProjectManifest: access.reconcileProjectManifest,
-    transferLiveManifestMembership: access.transferLiveManifestMembership,
-    recordManifestDocumentCreated: access.recordManifestDocumentCreated,
-    recordManifestDocumentDeleted: access.recordManifestDocumentDeleted,
+    ensureCreatedDraftBranch: access.ensureCreatedDraftBranch,
+    retractCreatedDraftBranch: access.retractCreatedDraftBranch,
     readEffectiveHashlines: (command) =>
       scopes.within(by(command), () => access.readEffectiveHashlines(command)),
   };

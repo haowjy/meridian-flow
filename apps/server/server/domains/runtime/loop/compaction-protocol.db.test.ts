@@ -1,6 +1,7 @@
 /** Compaction's two commits exercise real inbox, lease, epoch, and journal transactions. */
 import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
 import type { JsonObject } from "@meridian/contracts/threads";
+import { eq, inArray } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import {
@@ -458,6 +459,7 @@ else
       const { answer, results } = await documentTail(rig);
       const source = (await rig.repos.threads.findById(rig.threadId))!;
       const { thread: forkBefore } = await rig.repos.threads.createDerivedPrimary({
+        aiWriteMode: "direct",
         id: crypto.randomUUID(),
         source,
         workId: source.workId,
@@ -486,6 +488,7 @@ else
       await run.execute();
       const c = (await rig.repos.turns.findById(run.executionTurnId))!;
       const { thread: forkAfter } = await rig.repos.threads.createDerivedPrimary({
+        aiWriteMode: "direct",
         id: crypto.randomUUID(),
         source,
         workId: source.workId,
@@ -1282,6 +1285,81 @@ else
         ["assistant", "complete"],
       ]);
       expect(rig.summarizer.calls).toHaveLength(1);
+      // A, C and B are one execution. B, reserved after C, is for the writer's
+      // message A left (not the one A delivered), and delivers it; one end.
+      const rows = await db
+        .select({
+          id: schema.turns.id,
+          executionId: schema.turns.executionId,
+          reservedFor: schema.turns.reservedForUserTurnIds,
+        })
+        .from(schema.turns)
+        .where(inArray(schema.turns.id, [tail[0]?.id, tail[2]?.id, tail[3]?.id] as never[]));
+      const byId = new Map(rows.map((row) => [row.id, row]));
+      expect(
+        [tail[0], tail[2], tail[3]].map((turn) => byId.get(turn?.id as never)?.executionId),
+      ).toEqual([run.executionId, run.executionId, run.executionId]);
+      expect(byId.get(tail[3]?.id as never)?.reservedFor).toEqual([tail[1]?.id]);
+      const [delivered] = await db
+        .select({ byTurnId: schema.threadInboxMessages.deliveredByTurnId })
+        .from(schema.threadInboxMessages)
+        .where(eq(schema.threadInboxMessages.id, tail[1]?.id as never));
+      expect(delivered?.byTurnId).toBe(tail[3]?.id);
+      const ends = await db
+        .select({ payload: schema.eventJournal.payload })
+        .from(schema.eventJournal)
+        .where(eq(schema.eventJournal.eventType, "execution.ended"));
+      expect(
+        ends.filter(
+          ({ payload }) => (payload as { executionId: string }).executionId === run.executionId,
+        ),
+      ).toHaveLength(1);
+    });
+
+    it("ends the execution in the commit that lands a failed compaction successor", async () => {
+      const rig = await fixture();
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Continue.",
+      });
+      const endsOf = async (executionId: string) =>
+        (
+          await db
+            .select({ payload: schema.eventJournal.payload })
+            .from(schema.eventJournal)
+            .where(eq(schema.eventJournal.eventType, "execution.ended"))
+        ).filter(({ payload }) => (payload as { executionId: string }).executionId === executionId)
+          .length;
+      const split = rig.delivery.splitAndContinue;
+      let landed: { open: string | null; ended: number; successor: string | undefined } | null =
+        null;
+      rig.delivery.splitAndContinue = async (input) => {
+        if (input.current.kind !== "placeholder") return split(input);
+        const result = await split({
+          ...input,
+          prepareNextContext: async () => {
+            throw new Error("successor context read unavailable");
+          },
+        });
+        // Read as soon as the landing commit returns, before the run's cleanup.
+        landed = {
+          open: await rig.runClaim.readOpenExecutionId(rig.threadId),
+          ended: await endsOf(run.executionId),
+          successor: (await rig.repos.turns.findById(result.next.id as never))?.status,
+        };
+        return result;
+      };
+      expect(await run.execute()).toMatchObject({ status: "error" });
+      expect(landed).toEqual({ open: null, ended: 1, successor: "error" });
+      const tail = (await rig.repos.turns.listByThread(rig.threadId)).slice(-2);
+      expect(tail.map((turn) => [turn.role, turn.status, turn.executionId])).toEqual([
+        ["compaction", "complete", run.executionId],
+        ["assistant", "error", run.executionId],
+      ]);
+      // Cleanup after the terminal landing ends nothing twice.
+      expect(await endsOf(run.executionId)).toBe(1);
+      await expect(processDetachedWork.drain(1_000)).resolves.toBe(true);
     });
 
     it("retries successor preparation under the lock on the third attempt without resummarizing", async () => {
@@ -1328,7 +1406,7 @@ else
           kind: "compaction",
         });
         const admission = await rig.send(rig.threadId, "Run after cancellation.");
-        expect(admission.assistantTurnId).toBeNull();
+        expect(admission.steersTurnId).toBeNull();
         lateId = admission.userTurnId;
         rig.setThreshold(undefined);
         await rig.orchestrator.cancel(rig.threadId, turnId);

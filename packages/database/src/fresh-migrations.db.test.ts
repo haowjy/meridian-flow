@@ -44,7 +44,6 @@ if (!enabled || !databaseUrl) {
         expect(rows.map((row) => row.table_name).sort()).toEqual([
           "branch_write_journal",
           "change_trail_document_occurrences",
-          "turn_trail_work",
         ]);
         const triggers = await target<{ event_object_table: string; trigger_name: string }[]>`
             SELECT event_object_table, trigger_name
@@ -53,16 +52,7 @@ if (!enabled || !databaseUrl) {
               AND trigger_name IN ('enlist_turn_trail_work', 'complete_turn_trail_work')
             ORDER BY trigger_name
           `;
-        expect(triggers).toEqual([
-          {
-            event_object_table: "branch_write_journal",
-            trigger_name: "complete_turn_trail_work",
-          },
-          {
-            event_object_table: "branch_write_journal",
-            trigger_name: "enlist_turn_trail_work",
-          },
-        ]);
+        expect(triggers).toEqual([]);
         // The chat-activity projection's trigger family (migration
         // 0000_baseline.sql; see domains/threads/.context/CONTEXT.md
         // "Chat activity projection") stays a single owner across threads,
@@ -107,12 +97,13 @@ if (!enabled || !databaseUrl) {
           ORDER BY name
         `;
         expect(functions.map((row) => row.name)).toEqual([
-          "complete_turn_trail_work",
+          "capture_change_trail_signal",
+          "capture_document_checkpoint_range",
+          "change_trail_owners",
           "consume_credit_lots_fifo",
           "enforce_prompt_bake_insert_only",
           "enforce_prompt_bake_write_once",
           "enforce_turn_position_write_once",
-          "enlist_turn_trail_work",
           "recompute_thread_chat_activity",
           "recompute_thread_chat_activity_from_block_insert",
           "recompute_thread_chat_activity_from_block_update",
@@ -131,13 +122,13 @@ if (!enabled || !databaseUrl) {
           SELECT indexname, indexdef
           FROM pg_indexes
           WHERE schemaname = 'public'
-            AND indexname = 'document_branches_active_work_draft_by_work'
+            AND indexname = 'document_branches_active_work_draft_by_draft'
         `;
         expect(indexes).toEqual([
           {
-            indexname: "document_branches_active_work_draft_by_work",
+            indexname: "document_branches_active_work_draft_by_draft",
             indexdef:
-              "CREATE INDEX document_branches_active_work_draft_by_work ON public.document_branches USING btree (work_id, id, generation) WHERE ((kind = 'work_draft'::text) AND (status = 'active'::text))",
+              "CREATE INDEX document_branches_active_work_draft_by_draft ON public.document_branches USING btree (draft_id, id, generation) WHERE ((kind = 'work_draft'::text) AND (status = 'active'::text))",
           },
         ]);
       } finally {
@@ -157,12 +148,12 @@ if (!enabled || !databaseUrl) {
           const [work] =
             await tx`INSERT INTO works (project_id, created_by_user_id, name, is_no_work)
             VALUES (${project.id}, ${user.id}, 'No Work', true)
-            RETURNING id, slug, status, archived_at, ai_write_mode`;
+            RETURNING id, slug, status, archived_at, default_ai_write_mode`;
           expect(work).toMatchObject({
             slug: null,
             status: null,
             archived_at: null,
-            ai_write_mode: "direct",
+            default_ai_write_mode: "direct",
           });
           await expect(
             tx.savepoint(

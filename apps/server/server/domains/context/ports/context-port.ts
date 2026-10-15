@@ -71,6 +71,12 @@ export interface ContextWriteResult {
   updateSeq?: number;
 }
 
+/** A binary write's outcome: where it landed, as the adapter's placement decided (§2.3). */
+export interface ContextBinaryWriteResult extends ContextWriteResult {
+  documentId: string;
+  placement: "live" | "draft";
+}
+
 export interface ContextEnsureTrackedDocumentResult {
   uri: string;
   documentId: string;
@@ -86,8 +92,19 @@ export type ContextCreateUntitledDocumentResult =
   | {
       status: "created";
       documentId: string;
+      scheme: ContextScheme;
       path: string;
       name: string;
+      workId?: string;
+    }
+  /** The create became a draft's document; `documentId` is that document, at its current address. */
+  | {
+      status: "joined";
+      documentId: string;
+      scheme: ContextScheme;
+      path: string;
+      name: string;
+      workId?: string;
     }
   | {
       status: "already-materialized";
@@ -102,6 +119,24 @@ export type ContextCreateUntitledDocumentResult =
 export interface ContextCreateUntitledDocumentOptions {
   documentId: string;
   origin: WriteProvenance;
+  /**
+   * The writer's chosen place for this document, the same identity-based address a move
+   * carries. The create joins a draft's hidden document waiting there. Without it the
+   * create is nameless: `Untitled N` in the home URI's folder.
+   */
+  destination?: { parent: NonNullable<MoveContextEntryRequest["destinationParent"]>; name: string };
+  /** Refuses a destination the caller may not edit; given the resolved destination URI. */
+  authorizeDestination?: (uri: string) => Promise<boolean>;
+}
+
+/** What the router hands an adapter: the destination resolved to a folder path and a leaf. */
+export interface AdapterCreateUntitledOptions {
+  documentId: string;
+  origin: WriteProvenance;
+  /** The typed leaf filename; absent for a nameless create. */
+  name?: string;
+  /** The folder identity the destination named: a stale one is retried, never made again. */
+  expectFolderId?: string;
 }
 
 interface BaseListEntry {
@@ -234,13 +269,11 @@ export interface ContextWriteOptions {
   /** Extension inherited by an extensionless copy destination. */
   sourceExtension?: string;
   origin?: WriteProvenance;
-  /** Stable identity reserved by an authoritative aggregate before content creation. */
-  documentId?: string;
   /**
-   * Create only the context row for a tracked document; the caller must ensure
-   * the live Y.Doc before committed content is applied.
+   * Stable identity reserved by an authoritative aggregate before content creation (an
+   * upload's reservation): a create mints it.
    */
-  deferDocumentSync?: boolean;
+  documentId?: string;
   /** Recorded in `documents.metadata` when this call creates the document; never on an existing one. */
   metadata?: DocumentCreationMetadata;
 }
@@ -320,6 +353,14 @@ export interface ContextPort {
     options?: ContextWriteOptions,
   ): Promise<Result<ContextCreateTrackedDocumentResult, ContextError>>;
 
+  /**
+   * Where this reader sees a document, by id: its URI in the first of this port's sources
+   * that shows it (the scan untitled creation uses to find a materialized id), or null.
+   */
+  locate(
+    documentId: string,
+  ): Promise<Result<{ documentId: string; uri: string } | null, ContextError>>;
+
   /** Allocate and persist an empty client-seeded document under a home directory URI. */
   createUntitledDocument(
     homeUri: string,
@@ -332,11 +373,19 @@ export interface ContextPort {
     options?: ContextWriteOptions,
   ): Promise<Result<ContextEnsureTrackedDocumentResult, ContextError>>;
 
+  /**
+   * Reverse a create this port made, for a rolled-back reply or a failed create write
+   * (contract §12.5): a live create is deleted; a draft's create ends the draft's use of
+   * the document unless the draft's branch already holds committed text. A draft-mode
+   * port's `delete` never reverses a draft's create.
+   */
+  retractCreate(uri: string, options: { documentId: string }): Promise<Result<void, ContextError>>;
+
   /** Write a binary (storage-backed) file to a URI. Creates parent folders as needed. */
   writeBinary(
     uri: string,
     options: ContextWriteBinaryOptions,
-  ): Promise<Result<ContextWriteResult, ContextError>>;
+  ): Promise<Result<ContextBinaryWriteResult, ContextError>>;
 
   move(
     sourceUri: string,

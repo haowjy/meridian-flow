@@ -38,7 +38,8 @@ export function useHandoffBrief(input: {
   const standIns = useRetryStandIns({
     threadId,
     storedTurns,
-    post: (id) => retryHandoffBrief(threadId, { id }),
+    // A brief holds no execution: its seed's id is its only identity.
+    post: async (id) => ({ turn: await retryHandoffBrief(threadId, { id }), executionId: null }),
     lostCopy: t`Couldn't start a new brief. Try again.`,
   });
 

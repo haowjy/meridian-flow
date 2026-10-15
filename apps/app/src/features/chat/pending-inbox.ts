@@ -17,11 +17,30 @@ export function queuedWriterTurnIds(pending: ThreadPendingInbox): ReadonlySet<st
     if (
       item.intent !== "control" &&
       item.provenance.kind === "writer" &&
-      item.deliveryState === "waiting"
+      (item.deliveryState === "waiting" || pending.blocked?.reason === "credits_exhausted")
     )
       ids.add(item.id);
   }
   return ids;
+}
+
+/**
+ * The writer's messages the chat still owes an answer: writer-provenance
+ * message rows in either delivery state. A row leaves the projection in the
+ * commit that delivers it.
+ */
+export function owedWriterMessageIds(pending: ThreadPendingInbox): string[] {
+  return pending.items
+    .filter((item) => item.intent === "message" && item.provenance.kind === "writer")
+    .map((item) => item.id);
+}
+
+/** The ids of queued write-mode switches, as one comparable key; "" when none is queued. */
+export function queuedSwitchKey(pending: ThreadPendingInbox): string {
+  return pending.items
+    .filter((item) => item.control?.kind === "write_mode")
+    .map((item) => item.id)
+    .join(",");
 }
 
 export function isThreadPendingInbox(value: unknown): value is ThreadPendingInbox {

@@ -9,9 +9,11 @@ import {
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
+  branchPushSettlementBatches,
   branchPushSettlementOutbox,
   contextSources,
   documentDerivations,
+  documentMarkdownProjections,
   documents,
   documentYjsUpdates,
   projects,
@@ -25,28 +27,33 @@ import {
 import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createDocumentLastAddress } from "../context/document-uri-resolver.js";
 import {
   createDrizzleBranchJournalReadStore,
   createDrizzlePushCommitStore,
-  createDrizzleWorkDraftPendingStore,
-  createDrizzleWorkPushPolicyStore,
 } from "./adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailAggregateWriter } from "./adapters/drizzle-change-trail-aggregate.js";
 import { createDrizzleDocumentProjectionEffects } from "./adapters/drizzle-document-activity.js";
 import { createDrizzleDocumentDerivationStore } from "./adapters/drizzle-document-derivations.js";
+import {
+  createDrizzleDraftStore,
+  createDrizzleDraftWriteBoundary,
+} from "./adapters/drizzle-drafts.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import {
   createDrizzlePendingSettlementStore,
-  stagePendingSettlementWithinTx,
+  stageSettlementBatchWithinTx,
 } from "./adapters/drizzle-pending-settlement.js";
 import { createStaticDocumentLinkScopes } from "./adapters/in-memory/static-document-link-scopes.js";
 import { createBranchCoordinator } from "./domain/branch-coordinator.js";
 import { createBranchPushService } from "./domain/branch-push.js";
+import { createDrafts } from "./domain/drafts.js";
 import { createMarkdownDocumentEngine } from "./domain/markdown-document.js";
+import { commitJournaledUpdate } from "./test-support/branch-update-writes.js";
+import { resetDatabase } from "./test-support/change-trail-postgres-harness.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) throw new Error("DB suites require DATABASE_URL");
@@ -69,15 +76,28 @@ describe("branch-push durable projection", () => {
     },
     async recover() {},
   };
+  const drafts = createDrafts({
+    store: createDrizzleDraftStore(db),
+    boundary: createDrizzleDraftWriteBoundary(db),
+  });
   const branchStore = createDrizzleBranchStore(db, {
-    journal: persistence.journal,
-    lifecycle: persistence.lifecycle,
-    coordinator: liveCoordinator,
+    live: {
+      journal: persistence.journal,
+      lifecycle: persistence.lifecycle,
+    },
+    drafts,
   });
 
   afterAll(async () => {
     for (const doc of liveDocs.values()) doc.destroy();
     await db.$client.end();
+  });
+
+  // Recovery settles every pending batch in the database, so another file's leftover
+  // batch would change this file's counts.
+  beforeEach(async () => {
+    await resetDatabase(db);
+    liveDocs.clear();
   });
 
   it("keeps a generic projection failure pending and completes it on recovery", async () => {
@@ -165,10 +185,9 @@ describe("branch-push durable projection", () => {
     const journalReadStore = createDrizzleBranchJournalReadStore(db);
     const commitStore = createDrizzlePushCommitStore(
       db,
-      stagePendingSettlementWithinTx,
+      stageSettlementBatchWithinTx,
       changeTrails,
     );
-    const workPushPolicyStore = createDrizzleWorkPushPolicyStore(db);
     const settlementStore = createDrizzlePendingSettlementStore(
       db,
       serializer,
@@ -178,19 +197,26 @@ describe("branch-push durable projection", () => {
     );
     const branchCoordinator = createBranchCoordinator({ store: branchStore });
     const liveDoc = createCollabYDoc({ gc: false });
-    const branch = await branchStore.ensureWorkDraftBranch({
-      documentId: documentId as never,
+    const draft = await drafts.ensureActiveForWrite({
       workId: workId as never,
+      projectId: projectId as never,
+      threadId: null,
+      userId: userId as never,
+    });
+    const branch = await branchStore.ensureDraftBranch({
+      documentId: documentId as never,
+      draftId: draft.id,
       liveDoc,
     });
     const branchDoc = createCollabYDoc({ gc: false });
     model.insertBlocks(toDocHandle(branchDoc), null, codec.parse("Recovered projection"));
-    await branchCoordinator.commitUpdate({
+    await commitJournaledUpdate(branchCoordinator, {
       branchId: branch.branchId,
       updateData: Y.encodeStateAsUpdate(branchDoc),
       source: "agent",
       threadId: threadId as never,
       turnId: turnId as never,
+      wId: 1,
     });
     const branchPush = createBranchPushService({
       links: createStaticDocumentLinkScopes(),
@@ -198,8 +224,6 @@ describe("branch-push durable projection", () => {
       branchStore,
       journalReadStore,
       commitStore,
-      workPushPolicyStore,
-      workDraftPendingStore: createDrizzleWorkDraftPendingStore(db),
       settlementStore,
       branchCoordinator,
       journal: persistence.journal,
@@ -217,36 +241,37 @@ describe("branch-push durable projection", () => {
       .where(eq(documentYjsUpdates.documentId, documentId));
     expect(journalAfterFailure).toEqual([]);
     const [documentAfterFailure] = await db
-      .select({ markdownProjection: documents.markdownProjection })
-      .from(documents)
-      .where(eq(documents.id, documentId));
-    expect(documentAfterFailure?.markdownProjection).toBe("");
+      .select({ markdownProjection: documentMarkdownProjections.markdown })
+      .from(documentMarkdownProjections)
+      .where(eq(documentMarkdownProjections.documentId, documentId));
+    expect(documentAfterFailure).toBeUndefined();
     const [pending] = await db
       .select({
-        pushId: branchPushSettlementOutbox.pushId,
-        state: branchPushSettlementOutbox.state,
-        lastErrorCode: branchPushSettlementOutbox.lastErrorCode,
+        batchId: branchPushSettlementBatches.id,
+        state: branchPushSettlementBatches.state,
+        lastErrorCode: branchPushSettlementBatches.lastErrorCode,
       })
       .from(branchPushSettlementOutbox)
+      .innerJoin(
+        branchPushSettlementBatches,
+        eq(branchPushSettlementBatches.id, branchPushSettlementOutbox.batchId),
+      )
       .where(eq(branchPushSettlementOutbox.documentId, documentId))
       .limit(1);
     expect(pending).toMatchObject({ state: "pending", lastErrorCode: null });
     if (!pending) throw new Error("missing pending settlement");
-    const liveSettlement = await settlementStore.loadLiveSettlement(pending.pushId);
-    if (!liveSettlement) throw new Error("missing live settlement");
-    await expect(
-      settlementStore.handoffClaim({
-        pushId: pending.pushId,
-        claim: liveSettlement.claim,
-      }),
-    ).resolves.toBe(true);
+    // The warm owner hands the batch off, as a process that gave up would.
+    await db
+      .update(branchPushSettlementBatches)
+      .set({ claimToken: null, claimKind: null, claimedAt: null, leaseExpiresAt: null })
+      .where(eq(branchPushSettlementBatches.id, pending.batchId));
 
     failProjection = false;
     await expect(branchPush.recoverPendingLiveSettlements()).resolves.toBe(1);
     const [completed] = await db
-      .select({ state: branchPushSettlementOutbox.state })
-      .from(branchPushSettlementOutbox)
-      .where(eq(branchPushSettlementOutbox.pushId, pending.pushId));
+      .select({ state: branchPushSettlementBatches.state })
+      .from(branchPushSettlementBatches)
+      .where(eq(branchPushSettlementBatches.id, pending.batchId));
     expect(completed?.state).toBe("completed");
     const journalAfterRecovery = await db
       .select({
@@ -262,9 +287,9 @@ describe("branch-push durable projection", () => {
       expect.objectContaining({ originType: "reconcile", actorTurnId: null }),
     ]);
     const [documentAfterRecovery] = await db
-      .select({ markdownProjection: documents.markdownProjection })
-      .from(documents)
-      .where(eq(documents.id, documentId));
+      .select({ markdownProjection: documentMarkdownProjections.markdown })
+      .from(documentMarkdownProjections)
+      .where(eq(documentMarkdownProjections.documentId, documentId));
     expect(documentAfterRecovery?.markdownProjection).toBe("Recovered projection\n");
     const [watermark] = await db
       .select()
@@ -316,9 +341,11 @@ describe("branch-push durable projection", () => {
       name: "chapter",
       extension: "",
       fileType: "markdown",
-      markdownProjection: "stale projection",
       updatedAt: old,
     });
+    await db
+      .insert(documentMarkdownProjections)
+      .values({ documentId, markdown: "stale projection" });
     await db.insert(threads).values({
       rootThreadId: threadId,
       id: threadId,
@@ -367,24 +394,31 @@ describe("branch-push durable projection", () => {
     const journalReadStore = createDrizzleBranchJournalReadStore(db);
     const commitStore = createDrizzlePushCommitStore(
       db,
-      stagePendingSettlementWithinTx,
+      stageSettlementBatchWithinTx,
       changeTrails,
     );
     const branchCoordinator = createBranchCoordinator({ store: branchStore });
     const liveDoc = createCollabYDoc({ gc: false });
-    const branch = await branchStore.ensureWorkDraftBranch({
-      documentId: documentId as never,
+    const draft = await drafts.ensureActiveForWrite({
       workId: workId as never,
+      projectId: projectId as never,
+      threadId: null,
+      userId: userId as never,
+    });
+    const branch = await branchStore.ensureDraftBranch({
+      documentId: documentId as never,
+      draftId: draft.id,
       liveDoc,
     });
     const branchDoc = createCollabYDoc({ gc: false });
     model.insertBlocks(toDocHandle(branchDoc), null, codec.parse("Never completed"));
-    await branchCoordinator.commitUpdate({
+    await commitJournaledUpdate(branchCoordinator, {
       branchId: branch.branchId,
       updateData: Y.encodeStateAsUpdate(branchDoc),
       source: "agent",
       threadId: threadId as never,
       turnId: turnId as never,
+      wId: 1,
     });
     const branchPush = createBranchPushService({
       links: createStaticDocumentLinkScopes(),
@@ -392,8 +426,6 @@ describe("branch-push durable projection", () => {
       branchStore,
       journalReadStore,
       commitStore,
-      workPushPolicyStore: createDrizzleWorkPushPolicyStore(db),
-      workDraftPendingStore: createDrizzleWorkDraftPendingStore(db),
       settlementStore: createDrizzlePendingSettlementStore(
         db,
         engine,
@@ -413,15 +445,19 @@ describe("branch-push durable projection", () => {
     });
 
     await expect(branchPush.pushToLive({ branchId: branch.branchId })).rejects.toThrow(
-      /pending_live_settlement after bounded retries/,
+      /remains pending after bounded retries/,
     );
 
     const [document] = await db
       .select({
-        markdownProjection: documents.markdownProjection,
+        markdownProjection: documentMarkdownProjections.markdown,
         updatedAt: documents.updatedAt,
       })
       .from(documents)
+      .leftJoin(
+        documentMarkdownProjections,
+        eq(documentMarkdownProjections.documentId, documents.id),
+      )
       .where(eq(documents.id, documentId));
     const [threadDocument] = await db
       .select({ lastTouchedAt: threadDocuments.lastTouchedAt })

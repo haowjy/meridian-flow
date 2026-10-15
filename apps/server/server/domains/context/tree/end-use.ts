@@ -1,0 +1,220 @@
+/**
+ * End of use (contract §12.2 steps 3–5, §12.4, §12.5): a draft stops using documents it
+ * created, and what no active draft uses any more is tombstoned, its storage released,
+ * with every hidden ancestor it leaves empty; a rolled-back reply's create is retracted
+ * the same way, and an inconsistent hidden node met by a read is repaired by it too.
+ *
+ * Every function runs in its caller's transaction, which holds the Work, the draft (when
+ * there is one) and the namespaces. Hidden nodes are tombstoned, never hard-deleted.
+ */
+import type { ContextSourceId, DocumentId, DraftId, FolderId } from "@meridian/contracts";
+import type { Database } from "@meridian/database";
+import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
+import { lockDocumentNamespaces } from "../adapters/context-fs/document-locations.js";
+import { dropDocumentRows } from "./draft-tree-store.js";
+import {
+  lockDocuments,
+  type ReleasedBranch,
+  releaseDocumentStorage,
+  tombstoneDocuments,
+  tombstoneFolders,
+} from "./node-rows.js";
+import { treeHook } from "./test-hooks.js";
+import { loadFolderChains } from "./tree-addresses.js";
+import type { NodeRef } from "./tree-view.js";
+import {
+  isUnusedHiddenFolder,
+  loadActiveDraftUses,
+  loadDocumentIdentityRows,
+  loadDraftCreatedDocuments,
+} from "./tree-view-sql.js";
+
+/**
+ * What an end of use tombstoned, the stored objects to delete once it commits, and the
+ * branches its storage release deleted (their rooms and runtimes retire after commit).
+ */
+export type EndedUse = {
+  tombstoned: readonly NodeRef[];
+  releasedObjects: readonly string[];
+  releasedBranches: readonly ReleasedBranch[];
+};
+
+const NOTHING_ENDED: EndedUse = Object.freeze({
+  tombstoned: [],
+  releasedObjects: [],
+  releasedBranches: [],
+});
+
+/**
+ * The draft stops using these documents: its rows go,
+ * then each hidden document no active draft uses any more is tombstoned (`tombstoneUnused`).
+ * A revealed document is live and stays.
+ */
+export async function endUse(
+  db: Database,
+  input: { draftId: DraftId; documentIds: readonly DocumentId[] },
+): Promise<EndedUse> {
+  const ids = [...new Set(input.documentIds)].sort();
+  if (ids.length === 0) return NOTHING_ENDED;
+  await dropDocumentRows(db, { draftId: input.draftId, documentIds: ids });
+  return tombstoneUnused(db, ids);
+}
+
+/**
+ * Each of these documents that is hidden, not a tombstone, and used by no active draft is
+ * tombstoned under its lock (`deleted_at`, a location version bump, `hidden` kept) and
+ * its storage released (R8); then its hidden folders bottom-up while nothing live sits
+ * under them and no draft places anything there (`keepFolders`: a create that is about
+ * to place its own document in that folder). The caller holds the namespaces of the
+ * documents' sources. A binary's object keys come back for deletion after commit.
+ */
+export async function tombstoneUnused(
+  db: Database,
+  documentIds: readonly DocumentId[],
+  options: { keepFolders?: boolean } = {},
+): Promise<EndedUse> {
+  const ids = [...new Set(documentIds)].sort();
+  if (ids.length === 0) return NOTHING_ENDED;
+  await lockDocuments(db, ids);
+  const tx = currentDrizzleDb(db);
+  const rows = await loadDocumentIdentityRows(tx, ids);
+  const used = new Set((await loadActiveDraftUses(tx, ids)).map((use) => use.documentId));
+  const ending = rows.filter((row) => row.hidden && !row.deleted && !used.has(row.id));
+  await treeHook("endUse.afterRevalidate");
+  if (ending.length === 0) return NOTHING_ENDED;
+  const endingIds = ending.map((row) => row.id);
+  await tombstoneDocuments(db, endingIds);
+  const releasedBranches = await releaseDocumentStorage(db, endingIds);
+  const tombstoned: NodeRef[] = endingIds.map((id) => ({ kind: "document" as const, id }));
+  const releasedObjects = ending.flatMap((row) => (row.storageUrl ? [row.storageUrl] : []));
+  if (options.keepFolders) return { tombstoned, releasedObjects, releasedBranches };
+  // Every ancestor of every ended document, deepest first: a folder is judged only after
+  // all of the batch's folders beneath it, so a sibling still alive at first glance never
+  // leaves its parent behind.
+  const chains = await loadFolderChains(
+    tx,
+    ending.map((row) => row.folderId),
+  );
+  const depthOf = new Map<FolderId, number>();
+  for (const chain of chains.values()) {
+    chain.forEach((folder, index) => {
+      const depth = chain.length - index;
+      depthOf.set(folder.id, Math.max(depthOf.get(folder.id) ?? 0, depth));
+    });
+  }
+  const deepestFirst = [...depthOf.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
+  for (const folderId of deepestFirst) {
+    if (!(await isUnusedHiddenFolder(tx, folderId))) continue;
+    await tombstoneFolders(db, [folderId]);
+    tombstoned.push({ kind: "folder", id: folderId });
+  }
+  return { tombstoned, releasedObjects, releasedBranches };
+}
+
+/** What an end of use touches: documents, and every source they sit in now or in a draft. */
+export type EndUseScope = {
+  documentIds: readonly DocumentId[];
+  sourceIds: readonly ContextSourceId[];
+};
+
+/**
+ * What to lock for an end of use: each draft's created documents (all of them, or the
+ * named ones) at their rows and at the draft's location, and other documents where they
+ * sit now (an item's text, a node a read repairs).
+ */
+export type EndUseRequest = {
+  drafts?: readonly { draftId: DraftId; documentIds?: readonly DocumentId[] }[];
+  documentIds?: readonly DocumentId[];
+};
+
+/** The scope moved (a document changed source) between reading and locking it: start over. */
+export class EndUseScopeChangedError extends Error {
+  constructor() {
+    super("An end of use's scope changed while its namespaces were being locked");
+    this.name = "EndUseScopeChangedError";
+  }
+}
+
+/** The scope as it reads now, unlocked. */
+/**
+ * Which of `ids` are hidden now, read in the caller's transaction. Under the caller's
+ * document locks this is the visibility an end of use acts on (another Work's Apply may
+ * have revealed a draft's create since the caller resolved it).
+ */
+export async function hiddenDocumentIds(
+  db: Database,
+  ids: readonly DocumentId[],
+): Promise<ReadonlySet<DocumentId>> {
+  const rows = await loadDocumentIdentityRows(currentDrizzleDb(db), [...new Set(ids)]);
+  return new Set(rows.filter((row) => row.hidden).map((row) => row.id));
+}
+
+export async function readEndUseScope(db: Database, request: EndUseRequest): Promise<EndUseScope> {
+  const tx = currentDrizzleDb(db);
+  const documentIds = new Set<DocumentId>();
+  const sourceIds = new Set<ContextSourceId>();
+  for (const { draftId, documentIds: named } of request.drafts ?? []) {
+    const only = named ? new Set(named) : null;
+    for (const row of await loadDraftCreatedDocuments(tx, draftId)) {
+      if (only && !only.has(row.id)) continue;
+      documentIds.add(row.id);
+      sourceIds.add(row.contextSourceId);
+    }
+  }
+  for (const row of await loadDocumentIdentityRows(tx, [...new Set(request.documentIds ?? [])])) {
+    documentIds.add(row.id);
+    sourceIds.add(row.contextSourceId);
+  }
+  return { documentIds: [...documentIds].sort(), sourceIds: [...sourceIds].sort() };
+}
+
+/**
+ * The one verified acquisition every end of use takes, after the caller's Work and draft
+ * locks (§14): the namespaces of exactly the sources read, then the scope read again; a
+ * document that moved to a source not locked, or a new one, throws
+ * `EndUseScopeChangedError`, so the caller aborts its transaction and rediscovers (no
+ * namespace is ever taken while holding a document lock). Then the document locks, id
+ * order. Once a source's namespace is held nothing moves out of it, so the scope holds.
+ */
+export async function acquireEndUseScope(
+  db: Database,
+  request: EndUseRequest,
+): Promise<EndUseScope> {
+  const scope = await readEndUseScope(db, request);
+  await lockDocumentNamespaces(db, [], scope.sourceIds);
+  const again = await readEndUseScope(db, request);
+  const documents = new Set(scope.documentIds);
+  const sources = new Set(scope.sourceIds);
+  if (
+    !again.documentIds.every((id) => documents.has(id)) ||
+    !again.sourceIds.every((id) => sources.has(id))
+  ) {
+    throw new EndUseScopeChangedError();
+  }
+  await lockDocuments(db, scope.documentIds);
+  return scope;
+}
+
+/**
+ * Reverse a draft's create for a rolled-back reply or a failed create (§12.5, O-11). The
+ * tree half only: collab's `retractBranch` decides whether the draft's text branch holds
+ * another contribution (then the create stands) and otherwise removes it; the draft's use
+ * then ends.
+ */
+export async function retractCreate(
+  db: Database,
+  input: {
+    draftId: DraftId;
+    documentId: DocumentId;
+    retractBranch(): Promise<"retracted" | "stands">;
+  },
+): Promise<{ retracted: boolean; tombstoned: readonly NodeRef[] }> {
+  await lockDocuments(db, [input.documentId]);
+  const uses = await loadActiveDraftUses(currentDrizzleDb(db), [input.documentId]);
+  if (!uses.some((use) => use.draftId === input.draftId)) {
+    return { retracted: false, tombstoned: [] };
+  }
+  if ((await input.retractBranch()) === "stands") return { retracted: false, tombstoned: [] };
+  const ended = await endUse(db, { draftId: input.draftId, documentIds: [input.documentId] });
+  return { retracted: true, tombstoned: ended.tombstoned };
+}

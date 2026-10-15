@@ -1,5 +1,5 @@
 /** Neutral public boundary for Work controls shared by composer surfaces. */
-export { useSelectedWorkWriteModeToolbarControl } from "./SelectedWorkWriteModeControl";
+
 export {
   deriveWorkPickerViewModel,
   type WorkCatalogView,
@@ -8,3 +8,4 @@ export {
   WorkPickerPanel,
   type WorkPickerViewModel,
 } from "./WorkPickerPanel";
+export { useWriteModeToolbarControl } from "./WriteModeControl";

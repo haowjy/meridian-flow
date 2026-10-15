@@ -26,6 +26,7 @@ export async function resolveThreadContextPort(
   deps: ThreadContextRouteDeps,
   threadId: ThreadId,
   userId: UserId,
+  options: { liveWrites?: boolean } = {},
 ) {
   const resolution = await resolveThreadContext(
     { ...deps, scratchLineages: deps.contextPorts.lineages },
@@ -34,7 +35,7 @@ export async function resolveThreadContextPort(
   if (!resolution || resolution.thread.userId !== userId) {
     throw createError({ statusCode: 404, message: "Thread not found" });
   }
-  return { resolution, port: contextPortForThread(deps.contextPorts, resolution) };
+  return { resolution, port: contextPortForThread(deps.contextPorts, resolution, options) };
 }
 
 /**
@@ -86,7 +87,10 @@ export async function writeThreadContextDocument(
   input: { threadId: ThreadId; userId: UserId; uri: string; markdown: string },
 ) {
   const threadId = requireRequestId(input.threadId, "threadId") as ThreadId;
-  const context = await resolveThreadContextPort(deps, threadId, input.userId);
+  // People write live (D20): a writer's whole-document write never lands in a draft.
+  const context = await resolveThreadContextPort(deps, threadId, input.userId, {
+    liveWrites: true,
+  });
   const grant = await requireFileGrant(
     deps.fileAccess,
     input.userId,

@@ -12,7 +12,7 @@
  */
 import { createContext, useCallback, useContext } from "react";
 import type { ServerContextTab } from "@/client/stores";
-import { useDockViewStore } from "../dock/dock-view-store";
+import { useDockDocumentStore } from "../dock/dock-document-store";
 import {
   type OpenProjectDocument,
   type OpenProjectDocumentRequest,
@@ -20,7 +20,11 @@ import {
 } from "./open-project-document";
 
 /** Shows the tab beside the chat under a claim; `cancelled` if a newer intent won. */
-export type OpenBesideChat = (tab: ServerContextTab, claim: number) => "opened" | "cancelled";
+export type OpenBesideChat = (
+  tab: ServerContextTab,
+  claim: number,
+  focus?: true,
+) => "opened" | "cancelled";
 
 export const BesideChatContext = createContext<OpenBesideChat | null>(null);
 
@@ -37,8 +41,8 @@ export function useOpenChatDocument(
   return useCallback(
     ({ claim, ...request }) => {
       if (request.disposition === "background" || !beside) return open(request);
-      const attempt = claim ?? useDockViewStore.getState().claim();
-      return open({ ...request, beside: (tab) => beside(tab, attempt) });
+      const attempt = claim ?? useDockDocumentStore.getState().claim();
+      return open({ ...request, beside: (tab, focus) => beside(tab, attempt, focus) });
     },
     [beside, open],
   );

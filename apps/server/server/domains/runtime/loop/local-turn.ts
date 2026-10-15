@@ -5,7 +5,7 @@
  * projection see a single turn contract.
  */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import type { Turn } from "@meridian/contracts/threads";
+import type { JsonValue, Turn } from "@meridian/contracts/threads";
 import { toIsoString } from "../../threads/domain/contract-serialization.js";
 import { compactionTurnMetadata } from "../../threads/index.js";
 import type { CompactionDecision } from "./compaction/decision.js";
@@ -23,6 +23,8 @@ export function createLocalTurn(input: {
   status: Turn["status"];
   writeMode?: Turn["writeMode"];
   metadata?: Turn["metadata"];
+  executionId?: string | null;
+  reservedForUserTurnIds?: readonly string[];
 }): Turn {
   return {
     id: input.id ?? crypto.randomUUID(),
@@ -34,6 +36,9 @@ export function createLocalTurn(input: {
     origin: input.origin,
     writeMode: input.writeMode ?? null,
     status: input.status,
+    executionId: input.executionId ?? null,
+    reservedForUserTurnIds: [...(input.reservedForUserTurnIds ?? [])],
+    delivery: null,
     promptBakeId: null,
     finishReason: null,
     model: null,
@@ -57,6 +62,10 @@ export function createLocalTurn(input: {
     siblingIds: [],
     responses: [],
   };
+}
+
+function isRecord(value: Turn["metadata"]): value is Record<string, JsonValue> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function emptyTurnUsage(): NonNullable<Turn["usage"]> {
@@ -90,15 +99,38 @@ export function readCompactionTrigger(metadata: Turn["metadata"]): "auto" | "man
   return "auto";
 }
 
+/**
+ * What an execution writes on every turn it reserves, in the reserving
+ * transaction: its id, the messages the turn is for, and on a Retry's first
+ * reservation the failed reply it retries and the request's reply id
+ * (`metadata.retryOf`, `metadata.retryReplyId`), so a replay of that request
+ * finds its execution before the reply exists.
+ */
+export type ReservationIdentity = {
+  executionId: string;
+  reservedForUserTurnIds: readonly string[];
+  retry?: { of: TurnId; replyTurnId: TurnId };
+};
+
 /** Both run-start and split reservation use the boundary's decision unchanged. */
 export function reservationTurn(
-  input: Omit<Parameters<typeof createLocalTurn>[0], "role" | "origin" | "status" | "metadata"> & {
+  input: Omit<
+    Parameters<typeof createLocalTurn>[0],
+    "role" | "origin" | "status" | "metadata" | "executionId" | "reservedForUserTurnIds"
+  > & {
     metadata?: Turn["metadata"];
+    identity: ReservationIdentity;
   },
   decision: CompactionDecision = { kind: "generate" },
 ): Turn {
+  const { identity, ...local } = input;
+  const retryOf: Record<string, JsonValue> = identity.retry
+    ? { retryOf: identity.retry.of, retryReplyId: identity.retry.replyTurnId }
+    : {};
   return createLocalTurn({
-    ...input,
+    ...local,
+    executionId: identity.executionId,
+    reservedForUserTurnIds: identity.reservedForUserTurnIds,
     role: decision.kind === "compact" ? "compaction" : "assistant",
     origin: decision.kind === "compact" ? "system" : "assistant",
     status: decision.kind === "compact" ? "pending" : "streaming",
@@ -114,7 +146,10 @@ export function reservationTurn(
               : {}),
             ...(decision.controlMessageId ? { controlMessageId: decision.controlMessageId } : {}),
             ...(decision.instructions ? { instructions: decision.instructions } : {}),
+            ...retryOf,
           }
-        : (input.metadata ?? null),
+        : identity.retry
+          ? { ...(isRecord(input.metadata) ? input.metadata : {}), ...retryOf }
+          : (input.metadata ?? null),
   });
 }

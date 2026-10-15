@@ -1,13 +1,21 @@
 import type { Database } from "@meridian/database";
-import { contextSources, documents, works } from "@meridian/database/schema";
+import { contextSources, works } from "@meridian/database/schema";
 import { and, eq, isNull, or } from "drizzle-orm";
+import { currentDrizzleDb } from "../../../../shared/drizzle-transaction.js";
 import { mapFigureFileType } from "../../figures/figure-file-types.js";
 import type {
   DocumentFileRecord,
   FigureDocumentRepository,
 } from "../../ports/figure-document-repository.js";
+import { createTreeReader, LIVE_TREE, type TreeView } from "../../tree/tree-view.js";
 
-type DocumentRow = typeof documents.$inferSelect;
+type DocumentRow = {
+  id: string;
+  storageUrl: string | null;
+  mimeType: string | null;
+  fileType: string;
+  sizeBytes: number | null;
+};
 
 function mapDocumentFile(
   row: Pick<DocumentRow, "id" | "storageUrl" | "mimeType" | "fileType" | "sizeBytes">,
@@ -34,33 +42,33 @@ export class DrizzleFigureDocumentRepository implements FigureDocumentRepository
   async findDocumentFileForProject(
     projectId: string,
     assetDocumentId: string,
+    view: TreeView = LIVE_TREE,
   ): Promise<DocumentFileRecord | null> {
-    const row = await this.findDocumentForProject(projectId, assetDocumentId);
+    const row = await this.findDocumentForProject(projectId, assetDocumentId, view);
     return row ? mapDocumentFile(row) : null;
   }
 
-  private async findDocumentForProject(projectId: string, documentId: string) {
-    const [row] = await this.db
-      .select({
-        id: documents.id,
-        storageUrl: documents.storageUrl,
-        mimeType: documents.mimeType,
-        fileType: documents.fileType,
-        sizeBytes: documents.sizeBytes,
-      })
-      .from(documents)
-      .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
+  private async findDocumentForProject(
+    projectId: string,
+    documentId: string,
+    view: TreeView = LIVE_TREE,
+  ) {
+    const tree = createTreeReader(this.db);
+    const found = await tree.findById(view, documentId);
+    if (found.kind !== "found") return null;
+    const [source] = await currentDrizzleDb(this.db)
+      .select({ id: contextSources.id })
+      .from(contextSources)
       .leftJoin(works, eq(contextSources.workId, works.id))
       .where(
         and(
-          eq(documents.id, documentId),
-          isNull(documents.deletedAt),
+          eq(contextSources.id, found.document.contextSourceId),
           isNull(contextSources.deletedAt),
           or(eq(contextSources.projectId, projectId), eq(works.projectId, projectId)),
         ),
       )
       .limit(1);
-    return row ?? null;
+    return source ? found.document : null;
   }
 }
 

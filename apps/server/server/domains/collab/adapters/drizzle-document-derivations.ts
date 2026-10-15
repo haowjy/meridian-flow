@@ -5,6 +5,7 @@ import {
   contextSources,
   documentDerivations,
   documentLinks,
+  documentMarkdownProjections,
   documents,
   documentYjsHeads,
   projects,
@@ -40,7 +41,6 @@ export async function captureDocumentDerivation(
       generation: documentYjsHeads.authorityGeneration,
       admissionSequence: documentYjsHeads.nextAdmissionSequence,
       locationVersion: documents.locationVersion,
-      kind: documents.kind,
       deletedAt: documents.deletedAt,
     })
     .from(documents)
@@ -52,15 +52,14 @@ export async function captureDocumentDerivation(
   // Never certify a warm room: writer admission precedes its in-memory apply.
   const state = await loadDocumentState(createDrizzleJournal(tx as Database), documentId);
   if (!state) return null;
-  const address = row.kind === "manifest" ? null : await lastAddress(documentId);
-  if (row.kind === "content" && !row.deletedAt && !address)
+  const address = await lastAddress(documentId);
+  if (!row.deletedAt && !address)
     throw new Error(`Missing canonical URI for live document ${documentId}`);
   // Under the deleted-ancestor rule a document in a deleted folder or Work holds no address.
   const holderUri = address && !address.deleted ? address.uri : null;
   return {
     documentId,
     holderUri,
-    kind: row.kind,
     state,
     watermark: {
       generation: row.generation,
@@ -122,13 +121,19 @@ export async function certifyDocumentDerivation(
   const [updated] = await tx
     .update(documents)
     .set({
-      markdownProjection: outputs.markdown,
       sizeBytes: Buffer.byteLength(outputs.markdown, "utf8"),
       updatedAt: at,
     })
     .where(and(eq(documents.id, cut.documentId), eq(documents.locationVersion, w.locationVersion)))
     .returning({ id: documents.id });
   if (!updated) return false;
+  await tx
+    .insert(documentMarkdownProjections)
+    .values({ documentId: cut.documentId, markdown: outputs.markdown, updatedAt: at })
+    .onConflictDoUpdate({
+      target: documentMarkdownProjections.documentId,
+      set: { markdown: outputs.markdown, updatedAt: at },
+    });
   await tx.delete(documentLinks).where(eq(documentLinks.sourceDocumentId, cut.documentId));
   if (outputs.links.length)
     await tx

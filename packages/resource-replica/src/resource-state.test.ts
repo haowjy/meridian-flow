@@ -12,7 +12,6 @@ import {
   markResourceCreateEligible,
   planCachedSessionAdoption,
   planResourceLocation,
-  planSessionAdoptionGeneration,
   publishResourceTerminal,
   recordAcquiredResourceContent,
   remintCreateConflict,
@@ -61,7 +60,6 @@ it("records a live server cache once and leaves its adoption witness stable", ()
       sessionAdoption: {
         transitionId: "acquire-7",
         projectId: "project",
-        generation: "7",
       },
     },
   });
@@ -108,12 +106,18 @@ it("publishes and acknowledges exact terminal cleanup without removing recovery 
     generation: "9",
     transitionId: "delete-9",
     exactDatabaseName: "database",
+    deletionVersion: "4",
   });
   if (!terminal) throw new Error("Expected terminal transition");
   validateResourceRecordUpdate(record, terminal.next);
   expect(terminal.next.resource).toMatchObject({
     canonical: null,
-    lifecycle: { kind: "terminal", generation: "9", transitionId: "delete-9" },
+    lifecycle: {
+      kind: "terminal",
+      generation: "9",
+      transitionId: "delete-9",
+      deletionVersion: "4",
+    },
     obligations: {
       cleanup: { obligationId: "delete-9", exactDatabaseName: "database" },
     },
@@ -137,6 +141,7 @@ it("hands same-generation namespace terminal evidence to the session cleanup tra
     kind: "terminal",
     generation: "9",
     transitionId: "namespace-operation",
+    deletionVersion: "6",
   };
 
   const handedOff = publishResourceTerminal({
@@ -145,10 +150,16 @@ it("hands same-generation namespace terminal evidence to the session cleanup tra
     generation: "9",
     transitionId: "session-drain",
     exactDatabaseName: "database",
+    deletionVersion: "5",
   });
 
   expect(handedOff?.next.resource).toMatchObject({
-    lifecycle: { kind: "terminal", generation: "9", transitionId: "session-drain" },
+    lifecycle: {
+      kind: "terminal",
+      generation: "9",
+      transitionId: "session-drain",
+      deletionVersion: "6",
+    },
     obligations: {
       cleanup: { obligationId: "session-drain", exactDatabaseName: "database" },
     },
@@ -261,7 +272,7 @@ it("rebases queued placement behind the retry when creation remints", () => {
   ).toMatchObject({ state: "submitted" });
 });
 
-it("pins and acknowledges one immutable session-adoption generation", () => {
+it("acknowledges a session adoption with the committed incarnation generation", () => {
   const record = reserved();
   if (record.resource.content.kind === "exact") delete record.resource.content.initialization;
   const eligible = markResourceCreateEligible(record, 1);
@@ -283,29 +294,14 @@ it("pins and acknowledges one immutable session-adoption generation", () => {
   });
   const adopted = received && settleNamespaceOutcome(received.next);
   if (!adopted) throw new Error("Expected adoption obligation");
-  const pinned = planSessionAdoptionGeneration(adopted.next, "7");
-  if (!pinned) throw new Error("Expected generation pin");
-  validateResourceRecordUpdate(adopted.next, pinned.next);
-  expect(() => planSessionAdoptionGeneration(pinned.next, "8")).toThrow("immutable");
-  const acknowledged = acknowledgeSessionAdoption(pinned.next);
+  const acknowledged = acknowledgeSessionAdoption(adopted.next, "7");
   if (!acknowledged) throw new Error("Expected adoption acknowledgement");
-  validateResourceRecordUpdate(pinned.next, acknowledged.next);
+  validateResourceRecordUpdate(adopted.next, acknowledged.next);
   expect(acknowledged.next.resource).toMatchObject({
     lifecycle: { kind: "acknowledged", availabilityGeneration: "7" },
     obligations: {},
   });
-  const replayed = structuredClone(acknowledged.next);
-  replayed.resource.revision += 1;
-  replayed.resource.obligations.sessionAdoption = {
-    ...(pinned.next.resource.obligations.sessionAdoption as NonNullable<
-      typeof pinned.next.resource.obligations.sessionAdoption
-    >),
-    generation: null,
-  };
-  expect(() => validateResourceRecordUpdate(acknowledged.next, replayed)).toThrow(
-    "requires created or acquired exact content",
-  );
-  expect(() => planSessionAdoptionGeneration(adopted.next, "")).toThrow(
+  expect(() => acknowledgeSessionAdoption(adopted.next, "")).toThrow(
     "Invalid availability generation",
   );
 });
@@ -326,7 +322,6 @@ it("starts a fresh adoption witness for an acknowledged exact cache", () => {
   validateResourceRecordUpdate(record, adoption.next);
   expect(adoption.next.resource.obligations.sessionAdoption).toMatchObject({
     transitionId: "reopen-7",
-    generation: null,
   });
 });
 

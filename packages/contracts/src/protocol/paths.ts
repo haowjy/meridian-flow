@@ -8,6 +8,15 @@ import { isWorkScopedProjectContextScheme, type ProjectContextTreeScheme } from 
 /** A Work-capable scheme's owner: a Work, or for Scratch a lineage (the first chat's id). */
 export type ProjectContextRequestOptions = ContextOwner;
 
+/** Review URLs name the Work and the item (`itemKey`); a branch id or `drafts.id` never selects one. */
+export type DocumentAddressReviewSelector = {
+  workId: string;
+  itemKey: string;
+};
+export type DocumentAddressRequestOptions = ProjectContextRequestOptions & {
+  review?: DocumentAddressReviewSelector;
+};
+
 /** Names a Work-capable document's owner in a query; exactly one owner is sent. */
 function setOwnerQuery(
   query: URLSearchParams,
@@ -51,10 +60,14 @@ export function apiProjectDocumentAddressPath(
   projectId: string,
   scheme: ProjectContextTreeScheme,
   path: string,
-  opts?: ProjectContextRequestOptions,
+  opts?: DocumentAddressRequestOptions,
 ): string {
   const query = new URLSearchParams({ path });
   setOwnerQuery(query, scheme, opts);
+  if (opts?.review) {
+    query.set("reviewWorkId", opts.review.workId);
+    query.set("itemKey", opts.review.itemKey);
+  }
   return `${apiProjectPath(projectId)}/context/${scheme}/address?${query}`;
 }
 
@@ -99,12 +112,32 @@ export function apiProjectWorkingSetPath(projectId: string): string {
   return `${API_PROJECTS_PATH}/${projectId}/working-set`;
 }
 
-export function apiProjectWorkWriteModePath(projectId: string, workId: string): string {
-  return `${apiProjectWorksPath(projectId)}/${workId}/write-mode`;
+/** The active drafts with changes to one document, from any view. */
+export function apiProjectDocumentDraftsPath(projectId: string, documentId: string): string {
+  return `${apiProjectPath(projectId)}/documents/${documentId}/drafts`;
 }
 
 export function apiProjectWorkDraftsPath(projectId: string, workId: string): string {
   return `${apiProjectWorksPath(projectId)}/${workId}/drafts`;
+}
+
+/** Apply all: one command over the Work's whole draft. */
+export function apiProjectWorkDraftsApplyPath(projectId: string, workId: string): string {
+  return `${apiProjectWorkDraftsPath(projectId, workId)}/apply`;
+}
+
+/** Observes one Apply or Discard command by its client `commandId`. */
+export function apiProjectWorkDraftCommandPath(
+  projectId: string,
+  workId: string,
+  commandId: string,
+): string {
+  return `${apiProjectWorkDraftsPath(projectId, workId)}/commands/${commandId}`;
+}
+
+/** Discard all: one command over the Work's whole draft. */
+export function apiProjectWorkDraftsDiscardPath(projectId: string, workId: string): string {
+  return `${apiProjectWorkDraftsPath(projectId, workId)}/discard`;
 }
 
 export function apiProjectWorkDocumentDraftPath(
@@ -121,6 +154,14 @@ export function apiProjectWorkDocumentDraftApplyPath(
   documentId: string,
 ): string {
   return `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}/apply`;
+}
+
+export function apiProjectWorkDocumentDraftApplyChangesPath(
+  projectId: string,
+  workId: string,
+  documentId: string,
+): string {
+  return `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}/apply-changes`;
 }
 
 export function apiProjectWorkDocumentDraftDiscardPath(

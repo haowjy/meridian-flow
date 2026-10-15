@@ -2,6 +2,8 @@
 import type { DocumentId, ProjectId } from "@meridian/contracts";
 import type { DocumentAddressResult, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 
+import type { TreeView } from "../tree/tree-view.js";
+
 export type DocumentAddressInput = {
   projectId: ProjectId;
   userId: string;
@@ -9,6 +11,7 @@ export type DocumentAddressInput = {
   workId: string | null;
   rootThreadId?: string | null;
   path: string;
+  view?: TreeView;
 };
 
 export interface DocumentAddressStore {
@@ -18,6 +21,13 @@ export interface DocumentAddressStore {
   ): Promise<{ kind: "current" | "alias"; documentId: DocumentId } | null>;
 }
 
+export type DocumentIdentityAddressInput = Pick<
+  DocumentAddressInput,
+  "projectId" | "userId" | "view"
+> & { documentId: DocumentId };
+
 export interface DocumentAddressResolver {
+  /** A validated review branch selects identity, never the occupant of its locator. */
+  resolveById(input: DocumentIdentityAddressInput): Promise<DocumentAddressResult>;
   resolve(input: DocumentAddressInput): Promise<DocumentAddressResult>;
 }

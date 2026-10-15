@@ -47,7 +47,8 @@ const USER = crypto.randomUUID() as UserId;
 const SOURCE = crypto.randomUUID();
 const TARGET = crypto.randomUUID();
 const HIDDEN = crypto.randomUUID();
-const DRAFT: LinkView = { kind: "draft", workId: crypto.randomUUID() };
+const DRAFT_ID = crypto.randomUUID();
+const DRAFT: LinkView = { kind: "draft", draftId: DRAFT_ID };
 const TARGET_URI = "user://target";
 
 const call: { context?: ResolvedModelContextPort } = {};
@@ -141,7 +142,9 @@ async function harness(
     readTimeoutMs?: number;
     /** The blocks every document's search read returns, with each block's facts. */
     search?: { entries: string[]; links: SpelledLinkFact[][] };
-    write?: (context: { responseId?: string }) => Promise<WriteOutcome>;
+    write?: (context: {
+      responseIdentity?: import("@meridian/contracts").ModelResponseIdentity;
+    }) => Promise<WriteOutcome>;
   } = {},
 ) {
   const transactionOwner = new InMemoryTransactionOwner();
@@ -173,6 +176,7 @@ async function harness(
       },
     }),
     refreshDocumentProjection: async () => {},
+    drafts: { viewForWork: async () => ({ kind: "live" }) },
     agentEdit: () => ({
       // A copy's source read asks for nodes; a plain read shows facts spelled
       // in a reply's pinned draft, not the live grant it was routed with.
@@ -182,7 +186,10 @@ async function harness(
         await options.read?.();
         return success("read", [fact(91 + 10 * n)], DRAFT);
       },
-      write: async (_command: unknown, context: { responseId?: string }) =>
+      write: async (
+        _command: unknown,
+        context: { responseIdentity?: import("@meridian/contracts").ModelResponseIdentity },
+      ) =>
         options.write
           ? options.write(context)
           : success("insert", [fact(92)], undefined, TARGET_URI),
@@ -200,7 +207,7 @@ async function harness(
     [TARGET, "target"],
     [HIDDEN, "hidden"],
   ] as const) {
-    await userStore.createDocument({
+    await userStore.createDocumentRecordIfAbsent({
       id,
       folderId: null,
       name,
@@ -227,7 +234,7 @@ async function harness(
     threadId: crypto.randomUUID(),
     draftWork: null,
   });
-  call.context = { port, livePort: () => port, resolution: {} as never };
+  call.context = { port, resolution: {} as never };
   const registrations = createModelToolRegistrations(deps).map(
     (registration): ToolRegistration =>
       registration.definition.type === "function" &&
@@ -377,7 +384,7 @@ const rows: Array<{
       return {
         store: h.store,
         threadId,
-        shown: { [SOURCE]: expected([fact(91)], `draft:${DRAFT.workId}`), [TARGET]: [] },
+        shown: { [SOURCE]: expected([fact(91)], `draft:${DRAFT_ID}`), [TARGET]: [] },
       };
     },
   },
@@ -461,7 +468,7 @@ const rows: Array<{
         write: async (context) => ({
           ...success("insert", [fact(94)], undefined, TARGET_URI),
           phase: "staged",
-          ...(context.responseId ? { writeId: "w1", settlementId: "s1" } : {}),
+          ...(context.responseIdentity?.editScopeId ? { writeId: "w1", settlementId: "s1" } : {}),
         }),
       });
       const receipt = {
@@ -624,7 +631,11 @@ const rows: Array<{
     name: "a result whose persistence fails leaves no evidence",
     async act(check) {
       const h = await harness();
-      const thread = await h.repos.threads.create({ projectId: PROJECT, userId: USER });
+      const thread = await h.repos.threads.create({
+        aiWriteMode: "direct",
+        projectId: PROJECT,
+        userId: USER,
+      });
       const turn = await h.repos.turns.create({
         threadId: thread.id,
         role: "assistant",
@@ -696,7 +707,7 @@ const rows: Array<{
       return {
         store: h.store,
         threadId: run.threadId,
-        shown: { [SOURCE]: expected([fact(91)], `draft:${DRAFT.workId}`) },
+        shown: { [SOURCE]: expected([fact(91)], `draft:${DRAFT_ID}`) },
       };
     },
   },
@@ -787,7 +798,7 @@ const rows: Array<{
       return {
         store: h.store,
         threadId: run.threadId,
-        shown: { [TARGET]: expected([fact(101)], `draft:${DRAFT.workId}`) },
+        shown: { [TARGET]: expected([fact(101)], `draft:${DRAFT_ID}`) },
       };
     },
   },

@@ -1,4 +1,4 @@
-/** Postgres-backed coverage for work-scoped untitled creation and manifest repair. */
+/** Postgres-backed coverage for work-scoped untitled creation, rollback and identity recovery. */
 
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -40,7 +40,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
 
     const USER_ID = "00000000-0000-4000-8000-000000000931";
-    const DOCUMENT_ID = "00000000-0000-4000-8000-000000000933";
     const REPAIR_DOCUMENT_ID = "00000000-0000-4000-8000-000000000934";
     const CROSS_SCHEME_DOCUMENT_ID = "00000000-0000-4000-8000-000000000935";
     const database = useRollbackTestDatabase(DATABASE_URL, {
@@ -81,6 +80,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         fileAccess: createAllowAllFileAccess(),
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
+        catalogMutations: createDrizzleContextCatalog(db),
       });
       collab.bindHocuspocus(
         new Hocuspocus({
@@ -93,105 +93,24 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       return collab;
     }
 
-    it("registers a scratch untitled document in the live manifest used by the ws gate", async () => {
+    it("rolls back a failed scratch create so the same document id retries cleanly", async () => {
       const { projectId, workId } = await provisionProject();
       const collab = createBoundCollab();
+      let failNextCatalogWrite = true;
       const catalog = createDrizzleContextCatalog(db);
       const contextPorts = createProductionUnifiedContextPortFactory({
         links: createTestDocumentLinkScopes(db),
         db,
         documentSync: collab,
-        manifestMembership: collab,
-        catalogMutations: catalog,
-      });
-      const authority = await createDrizzleProjectWorkAuthorityResolver(db).byId(projectId, workId);
-      if (!authority) throw new Error("missing Work authority");
-      const port = contextPorts.forWork(
-        authority,
-        projectId,
-        USER_ID,
-        authority.workSlug ? new Map([[authority.workSlug, authority]]) : new Map(),
-      );
-
-      await expect(
-        createUntitledContextDocument({
-          port,
-          userId: USER_ID,
-          scheme: "scratch",
-          workId,
-          body: { documentId: DOCUMENT_ID },
-        }),
-      ).resolves.toMatchObject({
-        status: "created",
-        documentId: DOCUMENT_ID,
-        scheme: "scratch",
-        path: "Untitled 1",
-        name: "Untitled 1",
-      });
-
-      await expect(
-        catalog.lookup({
-          scope: { kind: "work", projectId, workId },
-          entryId: DOCUMENT_ID,
-        }),
-      ).resolves.toMatchObject({
-        entry: {
-          observationVersion: expect.any(String),
-          kind: "file",
-          entryId: DOCUMENT_ID,
-          name: "Untitled 1",
-          provisionalName: true,
-        },
-      });
-
-      await expect(
-        port.move(`scratch://@current-work/Untitled 1`, `scratch://@current-work/Opening scene`, {
-          origin: { type: "human", userId: USER_ID },
-        }),
-      ).resolves.toMatchObject({ ok: true });
-      await expect(
-        catalog.lookup({
-          scope: { kind: "work", projectId, workId },
-          entryId: DOCUMENT_ID,
-        }),
-      ).resolves.toMatchObject({
-        entry: {
-          observationVersion: expect.any(String),
-          kind: "file",
-          entryId: DOCUMENT_ID,
-          name: "Opening scene",
-          provisionalName: false,
-        },
-      });
-
-      const membership = await collab.resolveManifestMembership({ projectId });
-      expect(membership.members).toContain(DOCUMENT_ID);
-      await expect(
-        db.select().from(schema.contextSources).where(eq(schema.contextSources.workId, workId)),
-      ).resolves.toEqual([expect.objectContaining({ workId, slug: "scratch", scope: "work" })]);
-    });
-
-    it("rolls back a failed scratch create so the same document id retries cleanly", async () => {
-      const { projectId, workId } = await provisionProject();
-      const collab = createBoundCollab();
-      let failNextMembershipWrite = true;
-      const contextPorts = createProductionUnifiedContextPortFactory({
-        links: createTestDocumentLinkScopes(db),
-        db,
-        documentSync: collab,
-        manifestMembership: {
-          async recordManifestDocumentCreated(documentId, view) {
-            if (failNextMembershipWrite) {
-              failNextMembershipWrite = false;
-              throw new Error("simulated manifest membership failure");
+        drafts: collab.drafts,
+        catalogMutations: {
+          async refreshSources(ids, invalidated) {
+            if (failNextCatalogWrite) {
+              failNextCatalogWrite = false;
+              throw new Error("simulated catalog failure");
             }
-            await collab.recordManifestDocumentCreated(documentId, view);
+            return catalog.refreshSources(ids, invalidated);
           },
-          recordManifestDocumentDeleted: (documentId, view) =>
-            collab.recordManifestDocumentDeleted(documentId, view),
-          resolveManifestMembership: (input) => collab.resolveManifestMembership(input),
-          transferLiveManifestMembership: (ids, projects) =>
-            collab.transferLiveManifestMembership(ids, projects),
         },
       });
       const authority = await createDrizzleProjectWorkAuthorityResolver(db).byId(projectId, workId);
@@ -211,7 +130,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           body: { documentId: REPAIR_DOCUMENT_ID },
         });
 
-      await expect(create()).rejects.toThrow("simulated manifest membership failure");
+      await expect(create()).rejects.toThrow("simulated catalog failure");
       await expect(create()).resolves.toMatchObject({
         status: "created",
         documentId: REPAIR_DOCUMENT_ID,
@@ -219,8 +138,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         name: "Untitled 1",
       });
 
-      const membership = await collab.resolveManifestMembership({ projectId });
-      expect(membership.members).toContain(REPAIR_DOCUMENT_ID);
       await expect(
         db.select().from(schema.documents).where(eq(schema.documents.id, REPAIR_DOCUMENT_ID)),
       ).resolves.toHaveLength(1);
@@ -233,7 +150,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         links: createTestDocumentLinkScopes(db),
         db,
         documentSync: collab,
-        manifestMembership: collab,
+        drafts: collab.drafts,
       });
       const authority = await createDrizzleProjectWorkAuthorityResolver(db).byId(projectId, workId);
       if (!authority) throw new Error("missing Work authority");

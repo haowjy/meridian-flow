@@ -1,6 +1,8 @@
 // Deep public facade for the agent editing core.
 import { type CreateWriteToolOptions, createWriteTool } from "./tool/write.js";
 
+export type { ResponseReadLease } from "./tool/response-committer.js";
+
 export type AgentEditCoreOptions = CreateWriteToolOptions;
 
 export interface AgentEditCore {
@@ -10,13 +12,12 @@ export interface AgentEditCore {
   commitResponse: ReturnType<typeof createWriteTool>["commitResponse"];
   rollbackResponse: ReturnType<typeof createWriteTool>["rollbackResponse"];
   hasResponseDocument: ReturnType<typeof createWriteTool>["hasResponseDocument"];
-  withResponseDocument: ReturnType<typeof createWriteTool>["withResponseDocument"];
+  prepare: ReturnType<typeof createWriteTool>["prepare"];
   responseDocuments: ReturnType<typeof createWriteTool>["responseDocuments"];
-  getAvailability: ReturnType<typeof createWriteTool>["getAvailability"];
-  undo: ReturnType<typeof createWriteTool>["undo"];
-  redo: ReturnType<typeof createWriteTool>["redo"];
-  reverse: ReturnType<typeof createWriteTool>["reverse"];
-  invalidateThread: ReturnType<typeof createWriteTool>["invalidateThread"];
+  refuseStaged: ReturnType<typeof createWriteTool>["refuseStaged"];
+  retirePeer: ReturnType<typeof createWriteTool>["retirePeer"];
+  invalidateThreadDocument: ReturnType<typeof createWriteTool>["invalidateThreadDocument"];
+  evictThread: ReturnType<typeof createWriteTool>["evictThread"];
 }
 
 export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCore {
@@ -28,13 +29,12 @@ export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCor
     commitResponse: tool.commitResponse,
     rollbackResponse: tool.rollbackResponse,
     hasResponseDocument: tool.hasResponseDocument,
-    withResponseDocument: tool.withResponseDocument,
+    prepare: tool.prepare,
     responseDocuments: tool.responseDocuments,
-    getAvailability: tool.getAvailability,
-    undo: tool.undo,
-    redo: tool.redo,
-    reverse: tool.reverse,
-    invalidateThread: tool.invalidateThread,
+    refuseStaged: tool.refuseStaged,
+    retirePeer: tool.retirePeer,
+    invalidateThreadDocument: tool.invalidateThreadDocument,
+    evictThread: tool.evictThread,
   };
 }
 
@@ -89,6 +89,7 @@ export {
   modelBlockItem,
   modelConcurrentResult,
   modelResult,
+  type WriteRejection,
 } from "./tool/model-result.js";
 export {
   agentEditResultSummary,
@@ -98,7 +99,6 @@ export {
 export type {
   MutationActor,
   ReadFunction,
-  RedoResult,
   ResponseClaimDiscardedEntry,
   ResponseCommitDocumentResult,
   ResponseCommitSuccessResult,
@@ -109,7 +109,6 @@ export type {
   ResponseLifecycleEvent,
   ResponseRollbackResult,
   ResponseStagedCreateOutcome,
-  UndoResult,
   UnexpectedWriteErrorDetail,
   WriteContext,
   WriteErrorStatus,
@@ -119,8 +118,3 @@ export type {
   WriteStatus,
   WriteSuccessPhase,
 } from "./tool/types.js";
-export type {
-  ReverseInput,
-  VerifiedReverseEffect,
-  VerifiedReverseResult,
-} from "./tool/write-reversal-endpoints.js";

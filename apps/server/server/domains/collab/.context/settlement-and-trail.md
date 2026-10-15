@@ -1,222 +1,102 @@
 # Collab — push settlement and change trail
 
-- **Sorted push locks**: `BranchCriticalSections` is the only owner of the
-  branch `KeyedMutex`. It deduplicates and sorts branch IDs, produces an opaque
-  lease, and is constructed once in `composition.ts`. The mutex does not live on
-  `BranchStore`. Do not make the mutex reentrant (that conceals lock-order
-  cycles) and do not split push/coordinator mutexes (that creates inversion).
-  Callers acquire branch locks in branch-id order, then live coordinator locks
-  in document-id order.
-- **One push commit seam**: whole-content and manifest-companion builders
-  produce a `CandidateBatch` consumed by the single pipeline in
-  `branch-push.ts`. Content candidates always materialize the whole current
-  branch. Only the internal manifest candidate selects membership rows. Locked
-  preparation in `branch-push-preparation.ts` computes one block diff from the
-  live lock cut; `branch-trail-projection.ts` turns it into the sole durable
-  publication record, while typed `push_lineage.branch_generation` supports
-  generation-local idempotency queries without duplicating that diff.
-  `branch-push-transition.ts` alone orders capture
-  through fenced completion. The transition projects the aggregate writer's exact
-  committed replace-set and delivers it to connected bare-document rooms only
-  after the completion fence reports applied/already-applied. Delivery is a
-  session-local hint: it is not queued or replayed, and a vanished room cannot
-  fail an otherwise durable push. A durable commit requires its trail bundle. Review
-  reversal is a separately composed
-  `branch-review-operations.ts` service.
-  Projection failure is classified: only the canonical `DocumentSyncError` with
-  `code: "corrupt_state"` (a registered non-tracked filetype on a tracked
-  journal) permanently blocks live settlement via `PendingSettlementStore.block`;
-  transient serializer failures propagate but leave the settlement retryable.
-  Do not block on every projection throw.
-- **One trail write seam**: recording and reconciliation delegate aggregate
-  mutation to `drizzle-change-trail-aggregate.ts`. It is also the sole interpreter
-  of `TrailContributionReplacement`; settlement carries the replacement opaquely.
-  Each replacement carries its durable per-owner changes and document-title
-  context. Never recover that context from surviving aggregate rows: an intervening
-  fold can remove every provisional row before settlement must restore the
-  push contribution. The aggregate counts inserted/deleted payloads and persists
-  per-document word magnitudes; lightweight shells retain document ids/titles
-  plus nullable totals so receipt headers never need manuscript-bearing detail.
-  Dispatch, work claiming, and reconciliation do not duplicate aggregate SQL.
-- **Trail detail authorization precedes detail materialization**: the reader
-  resolves each occurrence to `available`, `deleted`, or denied before selecting
-  manuscript-bearing title/prose. Denied occurrences disappear; authorized
-  deleted anchors retain evidence under an explicit `anchorState`.
-- **Trail block identity**: durable changes carry document-scoped Yjs
-  `{clientID, clock}` identities. Change IDs, folding, dedupe, and destructive
-  evidence use that canonical identity; hash prefixes are display-only. The
-  wire contract always includes both `beforeBlockIdentity` and
-  `afterBlockIdentity` keys; each value is nullable for the absent side of an
-  insertion or deletion, while canonical folding requires at least one identity.
-  Display block IDs and a constant `reversible` flag are not part of the durable
-  trail contract.
-  `branch-trail-projection.ts` may repair exact content relocation across a
-  chain of shifted block identities only when the evidence forms a one-to-one
-  path ending in one terminal deletion. It projects the chain head as the
-  deletion and suppresses intermediate shifts. Proven structural replacement
-  evidence takes precedence, so its source cannot also participate in a
-  relocation. Fan-in, duplicate-source, cycle, or otherwise ambiguous evidence
-  falls back to ordinary per-block changes; projection never guesses a
-  relocation.
-- **Trail evidence is read-only**: durable Before/After excerpts support
-  disclosure and navigation but cannot mutate the manuscript. Receipt Undo/Redo
-  is the sole reversal authority for AI changes.
-- **Draft Apply settles the whole current branch**: every writer Apply and
-  Auto-apply switch push integrates through Yjs. `draftBaseUpdateSeq` is not Apply freshness
-  authority; sweep policy uses each AI row's value only as that candidate's
-  observation watermark. Each candidate is classified against the pre-push
-  document plus earlier selected branch rows, and recipient/change elevations
-  are unioned across candidates. Apply writes current branch rows into the live
-  journal with their original attribution, then appends the complete push update
-  as a `system:reconcile` row so cold replay includes causal dependencies omitted
-  from active rows. The row is same-admission causal coverage, not a new author:
-  first-birth attribution stays with earlier authored rows, dependency evaluation
-  ignores `system:reconcile`, and the row is not a reversal target. Active agent
-  handles materialize against their corresponding authored rows; reconciliation
-  coverage is not a later semantic dependency.
-  Handles eliminated by Work-draft write reversal remain absent. A later writer row can
-  therefore make producing-turn Undo unavailable through the canonical
-  dependency predicate (`@meridian/agent-edit` `undo/journal-dependencies.ts`).
-  Push-time and immediate-path sweep detection derive their live-session hint
-  from durable attribution, not push metadata or a separate protection table.
-  Branch settlement keeps compact `{userId, rootsAfterObservationWatermark}`
-  evidence and evaluates it against neutral target-to-root intervals; it does
-  not reuse destructive-safety birth classes. The checkpoint state supplies a
-  neutral covered-root floor, and authority-order replay assigns only
-  previously unseen insertion ranges, so a later sync update cannot claim
-  historical or AI roots it repeats. Materialization scans checkpoint metadata,
-  loads only the distinct full states selected for candidate watermarks, and
-  caches first-birth replay per checkpoint floor.
-  Trail rows persist every edit without classification; missing evidence
-  suppresses elevation and never blocks Apply.
-- **Trail work retries only an `auto` branch**: the trail-work claim
-  (`adapters/drizzle-turn-trail-work.ts`) settles pending work `no_op` for a
-  `manual` branch or a turn that ended `error` or `cancelled`. No branch is
-  `auto` since D59, so every claim settles `no_op` and drafts wait for the
-  writer's Apply. This depends on the read model never rewriting a failed
-  turn's status (see the threads read-model projector).
-- **Apply settles ahead refs per completion because drafts cannot move documents**
-  (contract §9.4, L6). A draft only creates, edits, and deletes; every move is
-  live and settles in the tree store's move transaction. So the only documents an
-  Apply brings to an address are draft creates the manifest push publishes, their
-  SQL address is already final, and the completion fence (`withCompletionFence`
-  in `adapters/drizzle-pending-settlement.ts`, `arrivingDocumentIds`) settles them
-  under Work → namespace → holder locks. Draft-held moves would break that: a
-  document's address would depend on the view. Building them changes
-  `context/adapters/document-address.ts` (current address and exact occupant
-  become view-dependent), `context/adapters/document-link-scope.ts` (per-view
-  URIs), `context/links/move-link-count.ts` (the note is counted at Apply), and
-  the completion fence here (moved documents become arrivals, and their old and
-  new namespaces both lock).
-- **Writer Apply is branch-scoped, not preview-scoped**:
-  `DraftApplyRequest` names only the draft. The server pushes the
-  complete current branch, including writer rows created after preview.
-  Preview operations and revision tokens are presentation evidence, not command
-  selection or freshness authority.
-- **Writer ingress barrier**: `beforeSync` consumes Hocuspocus's decoded sync
-  type/payload once. After fencing and provenance validation, a cached,
-  mutation-invalidated Yjs snapshot performs exact delete-set-aware containment;
-  struct novelty takes the state-vector fast path without constructing a
-  history-sized snapshot. Already-contained updates are acknowledged without
-  admission. Novel live updates are journaled through the narrow writer-ingress
-  capability and joined to unresolved settlements before Hocuspocus
-  apply/broadcast/ack. The domain seam drains started admissions and detects
-  later admission generations.
-  `pnpm --filter @meridian/server perf:writer-admission` is the manual performance
-  gate; cached containment must retain at least a 10x p50 advantage over rebuilding
-  a history-sized Yjs snapshot.
-- **Push settlement state**: the outbox stores binary `lock_cut_update` and
-  `push_update`, validated trail JSON, fenced ownership fields, and typed
-  pending/blocked/completed state. `PendingSettlementStore` is the required
-  persistence authority for settlement, claims, failure backoff, blocking, trail
-  refinement, and fenced completion. Exact post-cut Yjs admissions live in the
-  normalized `branch_push_outbox_updates` relation. Journal and staged-push
-  admission both call the single `joinAdmissionWithinTx` writer inside their
-  document-mutation transaction; source identity and completing-push exclusion
-  are parameters, while join-version advancement follows one SQL path. Cold
-  reads best-effort reconstruct compact causal, actor-specific root evidence for
-  the final pre-push document so each authenticated connected editor can elevate
-  only its own overwritten post-observation edits. Delivery projects a
-  recipient-specific boolean per connection rather than broadcasting recipient
-  arrays; connections without an authenticated user identity receive no change
-  event. Push admission identity does not transfer AI content authorship to the
-  admitting writer.
-  Provenance admission is root-unit injective: one protected root unit may have
-  only one visible target, so divergent restoration or replication blocks rather
-  than granting deletion credit to either copy.
-  Root-effect materialization failure emits diagnostics and yields no swept
-  elevation; it is never settlement authority. Settlement writes the complete
-  push trail in its existing aggregate version; only journal or staged-push
-  authority joined after the durable commit publishes another trail version. If
-  that admission's aggregate fold cancels a provisional row, settlement restores
-  the push contribution from the replacement's durable owner/title context.
-- **Settlement verification stack**: transition ordering, deletion rechecks,
-  lease expiry and handoff, and fault windows run in
-  `domain/branch-push-transition.test.ts` over real Yjs, in-memory ports and fake
-  time; add new matrix cases there. The PostgreSQL killed-process oracle
-  (`branch-push-settlement-oracle.db.test.ts`) keeps only what an in-memory port
-  cannot prove: the cold lock cut with post-cut joins, stale-claim fencing
-  against a live holder, and commit-fault durability inside the completion
-  transaction. `branch-push-durable-projection.db.test.ts` owns SQL-dependent
-  replay, aggregate row version, fold restoration, and journal attribution
-  assertions; do not move them to fakes. Pure provenance and policy semantics
-  belong to their focused owners rather than to a second PostgreSQL replay graph.
-  The oracle is necessary but not sufficient: `lib/compose.runtime-settlement.db.test.ts` must
-  also drive the real `createProductionAppPorts` + `composeAppServices` +
-  Hocuspocus + worker-drain chain with production-shaped sync-step-2 full-state
-  updates, and release probes must verify writer-visible trail flows.
-- **Trail-work time**: retry eligibility, backoff, and abandoned-running leases
-  use an injected schedule. Production obtains its time from PostgreSQL; tests
-  advance a controlled schedule. Do not reintroduce process-clock comparisons or
-  sleep-based lifecycle tests.
-- **Response-scoped thread-peer atomicity**: `domain/response-transaction.ts`
-  settles cache publication, watermarks, facade ownership, and response lifecycle
-  against the actual ambient Drizzle commit or rollback. The real-Postgres
-  `response-transaction-atomicity.db.test.ts` proves a failed
-  multi-document flush leaves no durable or process-local residue and is retryable.
-- **Generation replacement transport fence**: checkpoint restore installs the retained
-  checkpoint and attribution manifest in a fresh authority generation, retires the warm
-  Hocuspocus document without checkpointing it, and disconnects its clients. Each
-  connection is bound to the generation it opened; stale sessions reject before journal,
-  with retired-identity insertion and delete-set analysis as defense in depth.
-- **Transaction-context transport**: `response-transaction.ts` uses
-  `AsyncLocalStorage` (parallel to the existing Drizzle ambient-transaction
-  context) to carry response-transaction enrollment through arbitrary call depth.
-  Deep code calls `enlistResponseParticipant()` without explicit parameters;
-  composition binds settlement to the real DB outcome through an injected
-  commit/rollback deferral capability.
-- **Participant settlement contract**: enrolled `ResponseCommitParticipant`s
-  expose `commit()`, `abort()`, and optional best-effort
-  `onCommitFailure(cause)`. Commit runs in enrollment order after DB commit;
-  abort runs in reverse enrollment order on rollback. An abort failure is
-  aggregated with the transaction failure. A participant commit failure after
-  durability is logged, offered to `onCommitFailure`, and never rethrown as a
-  rollback-shaped response error; later participants still settle.
-- **Post-durability notice failures** are structured-logged and may emit a best-effort
-  `awareness_degraded` notice. They do not create process-local reporting authority.
-- **Report-only agent commits**: direct writes and reversals always merge through
-  Yjs. Neutral target-to-root lineage plus compact first-origin writer evidence
-  drives best-effort live sweep detection; destructive-safety provenance remains
-  a separate conservative lifecycle classifier. Checkpoint manifests carry
-  safety attribution across repeated compaction and floor-null authority
-  replacement, while checkpoint state supplies sweep policy's neutral covered
-  root floor. Under the same document-mutation lock as generation replacement,
-  compaction reads, folds, and deletes only the current authority generation;
-  retired-generation suffixes never enter restored authority. Compaction
-  (`journal.compact`) is implemented but has no production caller. Durable trails
-  retain the ordinary before/after record regardless of classification; writer
-  lineage only decides whether an authenticated connected session elevates the
-  mark.
+This page records the single push pipeline and its durable settlement boundary.
+Branch locks, live-document locks, journal admission, trail projection, and
+completion fencing must remain ordered; no caller may publish a partial push.
 
-## Recovery pass bounds
+## Push pipeline
 
-The process recovery scheduler invokes the change-trail worker as an independent
-lane. Each pass considers at most 100 recoverable live settlements, reconciles
-100 terminal-owner keys and 100 shell IDs, and dispatches at most 100 outbox
-rows. Reconciliation pages only actionable owners/shells (including shared reopen
-work while a turn is active), retaining separate wraparound keyset cursors and acquiring a
-sorted union of the selected trail locks; all updates are restricted to that
-locked set. It keeps its own root transaction, not the runtime inbox owner.
+`BranchCriticalSections` owns the keyed branch mutex. It deduplicates and sorts
+branch IDs, then callers acquire live coordinator locks in document-ID order.
+Do not make the mutex reentrant or split push and coordinator mutexes: either
+hides or creates lock-order cycles.
 
-The change-trail scheduler count is dispatched outbox rows, not reconciliation
-transitions or settlement-recovery attempts. Other lanes report candidate counts.
+Whole-branch and selected-row builders produce one candidate batch consumed by
+the shared push pipeline. Locked preparation computes the diff from the live
+cut; trail projection turns that diff into the sole durable publication
+record. A typed branch generation supplies idempotency, not a second diff.
+
+The transition captures the immutable LOCK-WS cut, admits concurrent rows
+through the document mutation lock, and performs one snapshot CAS. It delivers
+the committed replace-set to connected bare-document rooms only after the
+completion fence reports applied or already applied. Delivery is a session hint,
+not a durable outbox and cannot make a committed push fail.
+
+Whole Apply publishes the current branch, including rows created after a
+preview. Per-change Apply and Discard replay only complete selected classes and
+require their displayed live revision, class identities, immutable member keys,
+and server-vended admission evidence. A missing or changed selected class
+returns typed stale/gone/incomplete refusal without mutation. Whole Discard is
+unfenced. Selective Discard re-forks from live plus surviving rows and creates
+no restoration edit. Success returns only after the settlement completion fence,
+never after a durable outbox handoff.
+
+## Trail and attribution
+
+The change trail is the durable publication record. It carries document-scoped
+Yjs block identities `{ clientID, clock }`, nullable before/after identities,
+and authorized evidence for receipts and navigation. Display hash prefixes and
+serialized prose are not durable identity. Before/After evidence is read-only;
+receipt Undo/Redo is the reversal authority.
+
+Trail detail authorization precedes detail materialization: each occurrence
+resolves to available, deleted, or denied before any manuscript-bearing title
+or prose is read. Denied occurrences disappear; authorized deleted anchors
+keep their evidence under an explicit `anchorState`.
+
+Trail rows persist every edit without classification. Missing sweep evidence
+suppresses a live editor's elevation and never blocks Apply. Elevation goes
+only to an authenticated connected editor, for their own overwritten
+post-observation edits, and a push's admission identity never transfers AI
+authorship to the admitting writer.
+
+Apply retains original authored rows and appends a `system:reconcile` row for
+causal replay coverage. The reconcile row is not a new author, inverse target,
+or provenance shortcut. Immutable edit parts and certified restoration aliases
+retain authorship across settlement. Trail projection must never infer an
+owner from equal text, rendered position, or an ambiguous relocation chain.
+
+Trail, receipt, journal disposition, publication, settlement, and turn-lifecycle
+producers append dirty signals in their own transaction. Reconciliation follows
+those signals through one semantic owner resolver under sorted aggregate locks,
+then deletes exactly the signals it observed. Sequence allocation is not commit
+order. Active drafts do not block reconciliation, but rollback-pending journals
+and pending live settlements do.
+
+Provenance admission is root-unit injective: one protected root unit has one
+visible target, so divergent restoration or replication blocks rather than
+granting deletion credit to either copy.
+
+Push completion settles arriving ahead refs in its completion transaction. Draft
+moves are not hidden-view moves: a draft can create, edit, and delete, while
+location changes settle in the tree-store move transaction. Draft-held moves are
+rejected because a document's address would depend on the view. An Apply arrival is
+already at its final SQL address when completion calls the arrivals seam.
+
+## Settlement and recovery
+
+`PendingSettlementStore` owns pending/blocked/completed state, claims, backoff,
+trail refinement, and fenced completion. Journal and staged-push admissions
+join post-cut updates through one SQL seam inside the document-mutation
+transaction. Root-effect materialization failure yields no swept elevation and
+never becomes settlement authority.
+
+Settlement takes the completion transaction's locks again before certification.
+It rejects retired generations, stale ownership, and unexplained post-cut
+changes. A transient failure stays pending and retries with backoff. Only a
+known corrupt durable projection is blocking; other projection errors remain
+retryable. Failure reports carry stable correlation IDs and diagnostic codes,
+not manuscript content.
+
+Recovery runs as an independent lane with bounded pages of actionable
+settlements, owner keys, and outbox rows. It keeps its own root transaction,
+uses a wraparound cursor, and acquires selected trail locks in sorted order.
+Unfinished shells remain eligible after signal consumption.
+
+## Undo-restored publication
+
+Net live-to-draft hunks use the same clock attribution index as review. A
+cancelled writer delete/restore must not add writer ownership to an AI-only
+publication. Certified restoration aliases replay from journal metadata;
+physical writer rows remain untouched. Apply trail and receipt keep the
+originating AI turn, including during cold replay.

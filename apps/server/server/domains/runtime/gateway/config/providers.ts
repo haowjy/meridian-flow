@@ -15,11 +15,11 @@ export interface GatewayEnvInput {
   MODEL_CALL_TIMEOUT_MS?: string | number;
   /** Inactivity stall window in ms; env strings and numbers both accepted. 0 disables. */
   MODEL_CALL_STALL_MS?: string | number;
-  ANTHROPIC_API_KEY?: string;
-  OPENAI_API_KEY?: string;
-  DEEPSEEK_API_KEY?: string;
-  OPENROUTER_API_KEY?: string;
-  OPENROUTER_BASE_URL?: string;
+  FLOW_ANTHROPIC_API_KEY?: string;
+  FLOW_OPENAI_API_KEY?: string;
+  FLOW_DEEPSEEK_API_KEY?: string;
+  FLOW_OPENROUTER_API_KEY?: string;
+  FLOW_OPENROUTER_BASE_URL?: string;
 }
 
 /** Parse an env override to a millisecond count. Unset, empty, or NaN yields undefined. */
@@ -58,18 +58,20 @@ export function buildProviderConfigs(
   }
 
   const gatewayConfig = buildFromRegistry(MODEL_REGISTRY, {
-    ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY,
-    OPENAI_API_KEY: env.OPENAI_API_KEY,
-    DEEPSEEK_API_KEY: env.DEEPSEEK_API_KEY,
-    OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
+    FLOW_ANTHROPIC_API_KEY: env.FLOW_ANTHROPIC_API_KEY,
+    FLOW_OPENAI_API_KEY: env.FLOW_OPENAI_API_KEY,
+    FLOW_DEEPSEEK_API_KEY: env.FLOW_DEEPSEEK_API_KEY,
+    FLOW_OPENROUTER_API_KEY: env.FLOW_OPENROUTER_API_KEY,
   });
 
-  if (!env.OPENROUTER_BASE_URL) return gatewayConfig;
+  if (!env.FLOW_OPENROUTER_BASE_URL) return gatewayConfig;
 
   return {
     ...gatewayConfig,
     providers: gatewayConfig.providers.map((provider) =>
-      provider.id === "openrouter" ? { ...provider, baseUrl: env.OPENROUTER_BASE_URL } : provider,
+      provider.id === "openrouter"
+        ? { ...provider, baseUrl: env.FLOW_OPENROUTER_BASE_URL }
+        : provider,
     ),
   };
 }

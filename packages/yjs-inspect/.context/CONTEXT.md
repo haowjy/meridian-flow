@@ -1,5 +1,9 @@
 # packages/yjs-inspect -- Context
 
+This page records the observer's egress boundary and correlation semantics.
+Inspection may decode transiently, but no manuscript or awareness content may
+leave the package.
+
 ## Contracts
 
 ### Egress-only content invariant

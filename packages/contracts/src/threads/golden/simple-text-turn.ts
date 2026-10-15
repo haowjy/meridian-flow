@@ -3,20 +3,37 @@
  * Why independent: The fixture captures a shared contract sequence used to compare server projection behavior with AG-UI output.
  */
 import type { OrchestratorEvent } from "../orchestrator-events.js";
-import { goldenAssistantTurn } from "./turn-fixture.js";
+import { GOLDEN_EXECUTION_ID, goldenAssistantTurn } from "./turn-fixture.js";
 
 export const GOLDEN_THREAD_ID = "thread_golden_text";
 export const GOLDEN_ASSISTANT_TURN_ID = "turn_golden_asst_text";
+/** The writer message the golden replies answer. */
+export const GOLDEN_USER_TURN_ID = "turn_golden_user";
 
-const assistantTurn = goldenAssistantTurn(GOLDEN_ASSISTANT_TURN_ID, GOLDEN_THREAD_ID);
+const assistantTurn = goldenAssistantTurn(GOLDEN_ASSISTANT_TURN_ID, GOLDEN_THREAD_ID, "streaming", [
+  GOLDEN_USER_TURN_ID,
+]);
 
-/** Assistant text stream: RUN_STARTED → two text deltas → RUN_FINISHED. */
+/**
+ * Assistant text stream: RUN_STARTED → two text deltas → delivery → RUN_FINISHED
+ * → execution end. The response's ack delivers the message before the close.
+ */
 export const SIMPLE_TEXT_TURN_ORCHESTRATOR: OrchestratorEvent[] = [
   { type: "turn.created", turn: assistantTurn },
   { type: "stream.delta", kind: "text", text: "Hello" },
   { type: "stream.delta", kind: "text", text: " world" },
   {
-    type: "turn.completed",
-    turn: goldenAssistantTurn(GOLDEN_ASSISTANT_TURN_ID, GOLDEN_THREAD_ID, "complete"),
+    type: "messages.delivered",
+    byTurnId: GOLDEN_ASSISTANT_TURN_ID,
+    byTurnPosition: 1,
+    executionId: GOLDEN_EXECUTION_ID,
+    userTurnIds: [GOLDEN_USER_TURN_ID],
   },
+  {
+    type: "turn.completed",
+    turn: goldenAssistantTurn(GOLDEN_ASSISTANT_TURN_ID, GOLDEN_THREAD_ID, "complete", [
+      GOLDEN_USER_TURN_ID,
+    ]),
+  },
+  { type: "execution.ended", executionId: GOLDEN_EXECUTION_ID },
 ];

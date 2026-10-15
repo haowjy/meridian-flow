@@ -1,16 +1,10 @@
 # Projects TODO
 
-## Sign-in bootstrap can hold the per-user lock indefinitely ([#596](https://github.com/haowjy/meridian-flow/issues/596))
+## Keep bootstrap locks out of long awaits
 
-`ensureDefaultBootstrapReady` runs one transaction under the per-user advisory
-lock that provisions the project and context sources, then awaits document
-creation. That includes manifest membership, Yjs seeding, and post-write hooks
-(`index.ts` `ensureDocument`). If any of those awaits never resolves, the
-transaction stays idle in transaction with the lock held. Every later request
-for that user then waits, and so does `pnpm db:reset`. Observed in dev
-2026-09-25; the hung await is unknown.
-
-Reproduce with concurrent first sign-ins for a fresh user. Then keep the lock
-and transaction to the rows that need atomicity, and move seeding and effects
-after commit as an idempotent completion step. Also set
-`idle_in_transaction_session_timeout` for the app role.
+`ensureDefaultBootstrapReady` currently provisions project and context rows
+under the per-user advisory lock while document seeding and post-write effects
+may await. If one await stalls, later sign-ins and database reset wait on that
+transaction. Keep the rows that need atomicity under the lock, then move seeding
+and effects into an idempotent completion step after commit. Configure an
+idle-in-transaction timeout for the app role as a defensive limit.

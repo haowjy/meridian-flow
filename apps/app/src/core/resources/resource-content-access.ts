@@ -420,12 +420,15 @@ export class ResourceContentAccess {
     return { kind: "reserved", handoff };
   }
 
-  abortTransfer(key: ResourceKey, handoff: LocalDocumentSessionHandoff): void {
+  /**
+   * Settles a reservation that did not reach adoption: the registry's and this entry's, together.
+   * A no-op once the commit moved ownership to the registry, so callers settle unconditionally.
+   */
+  abortTransfer(key: ResourceKey): void {
     const id = resourceKey(key);
     const entry = this.entries.get(id);
-    if (entry?.ownership.kind !== "transferring" || entry.ownership.handoff !== handoff)
-      throw new Error("Resource content handoff is not reserved");
-    entry.ownership.reservations.abort(handoff);
+    if (entry?.ownership.kind !== "transferring") return;
+    entry.ownership.reservations.abort(entry.ownership.handoff);
     entry.ownership = { kind: "local" };
     if (entry.leases.size === 0) {
       this.entries.delete(id);
@@ -444,7 +447,7 @@ export class ResourceContentAccess {
       return { kind: "cancelled" };
     const id = resourceKey(key);
     let entry = this.entries.get(id);
-    if (!entry) {
+    while (!entry) {
       let opening = this.openings.get(id);
       if (!opening) {
         opening = this.createEntry(projectId, key);
@@ -453,7 +456,13 @@ export class ResourceContentAccess {
       }
       const result = await opening;
       if ("kind" in result) return result;
-      entry = result;
+      // A sibling that awaited the same opening may have released it first; that is a lost
+      // race, not an identity change, so open again instead of reporting "changed".
+      entry = this.entries.get(id);
+      // A cancelled opener still takes and releases a lease on an installed entry below, so
+      // the last owner retires the session it just created; with no entry there is nothing to clean up.
+      if (!entry && (this.state !== "open" || this.epoch.aborted || signal?.aborted))
+        return { kind: "cancelled" };
     }
     const lease = Symbol(participantId);
     entry.leases.set(lease, false);

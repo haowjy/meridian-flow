@@ -1,5 +1,6 @@
 #!/usr/bin/env tsx
 import { execFile, execFileSync, spawnSync } from "node:child_process";
+import path from "node:path";
 import { stdin as input, stdout as output } from "node:process";
 import readline from "node:readline/promises";
 import {
@@ -43,14 +44,17 @@ interface CliOptions {
   readonly manuallyVerified?: string;
   readonly dryRun: boolean;
   readonly yes: boolean;
+  readonly force: boolean;
 }
 
 const USAGE = `Usage:
-  pnpm dev:prune-worktrees -- --target <value> [--manually-verified <reason>] [--dry-run] [--yes]
+  pnpm dev:prune-worktrees -- --target <value> [--manually-verified <reason>] [--force] [--dry-run] [--yes]
   pnpm dev:prune-worktrees -- --auto --acknowledge-batch-risk [--dry-run] [--yes]
   pnpm dev:prune-worktrees -- -h|--help
 
 Target values may be a Meridian work id, worktree path, local branch name, or PR number (123 or #123).
+--force permits shells/tmux in the target directory after stopping its managed dev stack and Nx daemon.
+It never kills those shells/panes, discards changes, or bypasses merge proof. Other live processes still block.
 Batch cleanup via --auto is advanced and not yet trusted for routine use.`;
 
 const AUTO_NOTICE = `Batch cleanup via --auto is advanced and not yet trusted for routine use.
@@ -64,11 +68,16 @@ function parseArgs(argv: readonly string[]): CliOptions {
   let manuallyVerified: string | undefined;
   let dryRun = false;
   let yes = false;
+  let force = false;
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--") continue;
-    if (arg === "-h" || arg === "--help") return { mode: "help", dryRun, yes };
+    if (arg === "-h" || arg === "--help") return { mode: "help", dryRun, yes, force };
+    if (arg === "--force") {
+      force = true;
+      continue;
+    }
     if (arg === "--auto") {
       auto = true;
       continue;
@@ -115,9 +124,11 @@ function parseArgs(argv: readonly string[]): CliOptions {
     throw new Error(`--manually-verified cannot be used with a PR-number target.\n\n${USAGE}`);
   }
   if (auto && !acknowledgeBatchRisk) throw new Error(AUTO_NOTICE);
+  if (auto && force)
+    throw new Error(`--force requires --target; batch force cleanup is not supported.\n\n${USAGE}`);
   return auto
-    ? { mode: "auto", dryRun, yes }
-    : { mode: "target", target, manuallyVerified, dryRun, yes };
+    ? { mode: "auto", dryRun, yes, force }
+    : { mode: "target", target, manuallyVerified, dryRun, yes, force };
 }
 
 function runText(command: string, args: readonly string[], cwd: string): string {
@@ -156,7 +167,7 @@ function formatCommand(action: CleanupAction): string {
   return action.cwd ? `(cd ${action.cwd} && ${command})` : command;
 }
 
-function printPlan(plan: CleanupPlan): void {
+function printPlan(plan: CleanupPlan, force: boolean): void {
   if (plan.targets.length === 0) {
     console.log("No worktrees eligible for cleanup.");
     return;
@@ -165,6 +176,10 @@ function printPlan(plan: CleanupPlan): void {
   console.log(
     `Cleanup plan (${plan.targets.length} target${plan.targets.length === 1 ? "" : "s"}):`,
   );
+  if (force)
+    console.log(
+      "Force policy: stop managed services, preserve shells/tmux, refuse other remaining processes.",
+    );
   for (const target of plan.targets) {
     console.log(`\n- worktree: ${target.worktree.path}`);
     console.log(`  branch:   ${target.branch}`);
@@ -573,7 +588,11 @@ async function buildPlan(
           });
         })()
       : resolveTarget(context, reference);
-    const readiness = inspectAutoCleanupReadiness(target.worktree.path, meridianWorkItems);
+    const readiness = inspectAutoCleanupReadiness(
+      target.worktree.path,
+      meridianWorkItems,
+      options.force ? "stop-managed" : "idle",
+    );
     if (!readiness.ready) {
       throw new CleanupResolverError(
         `Refusing to clean '${target.worktree.path}': ${readiness.reasons.join("; ")}.`,
@@ -587,8 +606,13 @@ async function buildPlan(
 
 function runAction(action: CleanupAction): { ok: boolean; output: string } {
   const [command, ...args] = action.command;
+  const fallbackNodeModules = path.resolve(process.cwd(), "node_modules");
+  const nodePath = process.env.NODE_PATH
+    ? `${process.env.NODE_PATH}${path.delimiter}${fallbackNodeModules}`
+    : fallbackNodeModules;
   const result = spawnSync(command, args, {
     cwd: action.cwd,
+    env: { ...process.env, NODE_PATH: nodePath },
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -620,6 +644,8 @@ function revalidateTarget(target: CleanupPlan["targets"][number], ancestryRef: s
 
 async function revalidateCleanupReadiness(
   target: CleanupPlan["targets"][number],
+  action: CleanupAction,
+  force: boolean,
 ): Promise<AutoCleanupReadinessDecision> {
   try {
     const primaryCwd =
@@ -632,8 +658,24 @@ async function revalidateCleanupReadiness(
     );
     if (!currentWorktree) return { ready: false, reasons: ["worktree is no longer registered"] };
     if (currentWorktree.locked) return { ready: false, reasons: ["worktree is locked"] };
+    if (
+      currentWorktree.branch !== target.branch ||
+      currentWorktree.head !== target.eligibility.plannedOid
+    ) {
+      return { ready: false, reasons: ["worktree branch or HEAD changed since planning"] };
+    }
     const workItems = await collectMeridianWorkItems(primaryCwd);
-    return inspectAutoCleanupReadiness(target.worktree.path, workItems);
+    const policy = !force
+      ? "idle"
+      : action.kind === "stop-dev" || action.kind === "stop-nx"
+        ? "stop-managed"
+        : "preserve-shells";
+    const readiness = inspectAutoCleanupReadiness(target.worktree.path, workItems, policy);
+    if (action.kind === "remove-worktree" && readiness.ready) {
+      for (const warning of readiness.evidence.warnings ?? [])
+        console.warn(`Leaving alive: ${warning}`);
+    }
+    return readiness;
   } catch (error) {
     return {
       ready: false,
@@ -646,11 +688,15 @@ async function revalidateCleanupReadiness(
   }
 }
 
-async function executePlan(plan: CleanupPlan, ancestryRef: string): Promise<number> {
+async function executePlan(
+  plan: CleanupPlan,
+  ancestryRef: string,
+  force: boolean,
+): Promise<number> {
   const result = await executeCleanupPlan(
     plan,
     (target) => revalidateTarget(target, ancestryRef),
-    (target) => revalidateCleanupReadiness(target),
+    (target, action) => revalidateCleanupReadiness(target, action, force),
     (action) => runAction(action),
     {
       onTargetStart: (target) =>
@@ -699,7 +745,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  printPlan(plan);
+  printPlan(plan, options.force);
   if (plan.targets.length === 0) return;
 
   if (options.dryRun) {
@@ -712,7 +758,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const failures = await executePlan(plan, ancestryRef);
+  const failures = await executePlan(plan, ancestryRef, options.force);
   if (failures > 0) {
     console.error(`\nCleanup completed with ${failures} failure(s).`);
     process.exit(1);

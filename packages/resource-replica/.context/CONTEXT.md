@@ -1,5 +1,7 @@
 # Resource policy and transaction port
 
+This page covers the resource replica's transaction boundary, freshness, placement, and recovery rules. Identity and canonical observation are authoritative; paths and optimistic projections are not.
+
 Resource identity is account-global. A stable resource handle and current
 Document ID name one resource across every project that may expose it, including
 account-owned `user://` files. Project access belongs to catalog checkpoints and
@@ -14,6 +16,11 @@ whose captured revision is still current. A late response cannot regress a newer
 canonical location. Scope disappearance and invalidation change projection
 membership only; they never imply global deletion. Resource aliases are obsolete
 local identities after remint, not catalog identity aliases.
+A join (`resource-join.ts`) is the same re-identification triggered by a `joined`
+create answer or a catalog entry's `joinedFrom`: a create that carries its
+destination landed on a document that already existed (a draft's, hidden live only
+because it is a draft). The joined id becomes current, the handle stays, queued
+intents rebase, and no two records ever fold.
 
 `resource-records.ts` defines durable descriptors and ordered project-qualified
 namespace intentions. Submitted attempt payloads and outcomes are immutable.
@@ -113,6 +120,33 @@ Catalog observations install atomically with their checkpoint; exact-ID availabi
 observations use the same metadata CAS. Both journals share typed settlement policy,
 and terminal identity absorbs late outcomes as `unexecutable-after-terminal` history.
 
+Terminal is not forever. Deletion ownership is versioned: `confirmedDeletionVersion`
+reads an accepted delete's receipt version, and every terminal document holds the
+namespace version that proved its deletion in `lifecycle.deletionVersion`. A delete
+receipt (`committedResourceDeletion`) stores the receipt's version. The editor's
+exact-ID terminal (`publishResourceTerminal`) stores the version that exact-ID
+availability reported with the deletion. It reaches the terminal through the
+`terminal-remove` command, the `revokeDocument` session effect, the stored
+`terminal-local` room authority and `TerminalLineageReceipt`. Either path keeps the
+higher version when both apply. Folders hold their tombstone's `observationVersion`.
+Catalog installation compares a present entry with the deletion version, never with a
+pre-deletion `observationVersion`. A request that starts after the terminal can still
+replay history from before the deletion, one page at a time. Only strictly newer
+evidence revives, and which evidence counts differs by kind. A document revives only
+from a strictly newer catalog entry (`revivedResourceWrite`); exact-ID presence does
+not revive it (`settleNamespaceOutcome` and `installCanonicalRefresh` skip terminal
+records). A folder revives from a strictly newer canonical observation (catalog
+installation dropping `terminal`); exact-ID presence clears its witness only through
+a pending canonical refresh after a move (`installFolderNamespaceAvailability` into
+`installFolderCanonicalRefresh`). A
+terminal document without a deletion version never revives from a catalog. The
+validators admit exactly that transition: newer than the deletion version,
+acknowledged with a canonical location, unacquired content, no outstanding purge
+cleanup, `revivedFrom` naming the superseded transition. A terminal never loses or
+lowers its deletion version.
+`unexecutable-after-terminal` history survives revival. `publishResourceTerminal` and
+its cleanup acknowledgement are no-ops at or below `revivedFrom`'s generation.
+
 Folder and document destinations store `{ parent: ParentRef, createFolders?: string[], name }`, where a
 parent is a picked folder identity or qualified area root. Linked creation alone
 captures the deepest existing identity and missing folder names beneath it.
@@ -179,6 +213,38 @@ exact content database. Refused or superseded filing history ends provisional
 naming at the accepted location; it never authorizes automatic deletion. An
 explicit delete command can still retire an accepted document. Never-submitted
 reservations can still be deleted locally.
+
+Canonical freshness: every server file/folder entry and operation receipt carries
+a decimal `observationVersion` from one global namespace sequence, allocated
+under the publisher commit fence. Only namespace changes stamp (each advances the
+affected authority watermarks, several per transaction included); availability
+generations group a transaction and authority-only availability changes do not
+stamp. Snapshot and exact-ID entries read that watermark with their rows, and
+historical commits keep their original stamps. A record replaces canonical
+location, parent and classification only for a strictly newer version; equal or
+older entries advance replay checkpoints without replacing evidence. Equal held
+evidence may discharge a matching move refresh only at or above its receipt
+version. Deletion receipts use the same comparison. Local CAS revisions protect
+concurrent commands but are not server freshness.
+
+Typed non-retryable HTTP 4xx refusals settle a namespace attempt when route intake
+rejects before any server receipt exists: persist the refusal against the
+submitted operation id and never invent a receipt. Bare HTTP or network failures
+still need receipt evidence and stay replayable.
+
+Folder deletion shares the folder namespace journal. Only a delete receipt's exact
+document IDs authorize atomic descendant terminalization with the folder
+settlement; catalog absence, folder availability or a tombstone never does. Delete
+requests bind stable folder identity as well as path, so offline replay refuses a
+replacement folder. Pending deletes hide descendants; refusal restores the rows
+and keeps repair evidence. A successful move fences later dispatch until catalog
+or exact-ID availability installs the canonical location; scoped absence alone
+never clears it, and authoritative unavailability releases queued commands into
+visible repair. A catalog row missing for a known identity is rebuilt from its
+journal identity and last placement solely as a recovery row, never as deletion
+proof. File intents retain `typedName` apart from the canonical optimistic
+destination, and dispatch sends it so an explicit prose suffix is not read as
+source-extension inheritance.
 
 Catalog `invalidate-subtree` is atomic replacement, not a persistent freshness
 flag: discard the root and its cached descendants, then apply the same commit’s

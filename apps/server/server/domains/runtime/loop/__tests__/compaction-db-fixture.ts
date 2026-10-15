@@ -28,6 +28,7 @@ export function createCompactionFixture(db: Database) {
     const threadId = options.empty
       ? (
           await repos.threads.create({
+            aiWriteMode: "direct",
             id: crypto.randomUUID(),
             userId: ids.user,
             projectId: ids.project,

@@ -1,189 +1,105 @@
 # Collab — branch model and durable records
 
-## Branch model
+This page defines the durable vocabulary and provenance boundaries for Work
+drafts, branches, review items, and publication records. Do not use a draft ID,
+branch ID, item key, or presented address interchangeably.
 
-Branches are real Y.Docs. A thread peer starts from the Work draft, receives live
-pulls by CRDT sync, and stages agent writes. The Work draft is the writer review
-branch. There is at most one active Work-draft branch per
-`(documentId, workId)`; every thread peer for that document and Work shares it
-as upstream. Pushing computes a Yjs update from branch to live, records push
-lineage, marks source journal rows reviewed, and resets/advances branch
-generation where needed.
+## Vocabulary
 
-Work draft capture, redo, Apply and Discard require an active Work under the
-shared lifecycle row lock before durable mutation, and take the row through
-`lockSeamWorks` so bound edit grants are confirmed first
-([file policy](../../file-policy/.context/CONTEXT.md)). An archived Work's
-drafts are frozen: captured evidence stays, and nothing writes, applies or
-discards them until unarchive. Replaying
-an already committed push returns its durable receipt without reauthorizing a
-new write. Draft-only Discard removes only that document’s manifest entry and
-resets its content branch in one Work-locked transaction. Branch reset
-notifications publish after commit; rolled-back resets never advance a room.
+| Term | Meaning | Wire identity |
+|---|---|---|
+| **draft** | One active Work review draft; Apply leaves it open, whole Discard and purge close it. | `draftId` |
+| **branch** | One document's Work-draft Y.Doc and its thread peers; generation advances on reset. | opaque branch room plus generation |
+| **item** | One document's reviewable change, including an empty create or image. | `${draftId}:${documentId}` |
+| **command** | One idempotent writer Apply or Discard action. | `commandId` |
+| **presented address** | The writer's Work/item/change selection; it names no branch. | review selector |
 
-Thread-peer resolution is primary-Work-aware. After conversation reassignment,
-the old peer is no longer resolvable; provisioning closes it and seeds a new
-peer from the new primary Work draft while holding the conversation row lock.
+There is at most one active Work-draft branch per `(documentId, draftId)`.
+Thread peers fork from that branch and share its upstream. The server resolves
+every item key through the identity module; no caller accepts an ambiguous bare
+ID. A document with no branch can still be an item and can still be applied.
 
-The review list therefore emits one active item per document and folds all
-contributing journal rows into that item. `lastActorTurnId` is representative
-metadata, not review identity. `draftId` is the only application and wire
-identity. `createWorkDraftReviewService()` resolves it to the physical Work
-branch and keeps that branch identity inside the domain; `reviewRoomName`
-remains an opaque transport address.
+## Lifecycle and publication
 
-Propagation is sync-only. Cold attribution uses persisted branch journal rows
-and live journal metadata; memory-only runtime maps are never an attribution
-authority.
+Draft capture, Apply, Discard, and redo require an active Work under the shared
+lifecycle row lock and grant confirmation. Discard leases the affected branches
+before locking the Work, draft, namespaces, and documents; it resets selected
+text from live or closes the whole draft, then ends the draft's use of created
+nodes. Peer rooms retire after commit, only for branches actually reset or
+closed. Work purge reuses this kernel after proving its lifecycle set.
 
-Review operations keep two internal journal-row identities separate.
-`SourceUpdateIds` name the logical source rows used for operation attribution
-and presentation; `PhysicalSourceUpdateIds` name every physical row needed to
-reconstruct Discard, including reversal rows. Discard classes use the physical
-set. Neither identity is wire data, and callers must not substitute one for the
-other just because both are represented by numbers at runtime.
+Draft HTTP routes share one Work-access check: a deleted Work is 404 before any
+draft read or mutation, while an archived Work still permits review reads. An
+archived Work's drafts are frozen (captured evidence stays; nothing writes,
+applies, or discards them until unarchive). Replaying an already committed push
+returns its durable receipt without reauthorizing a new write.
 
-Live→Work-draft pulls run after persisted live updates (2-second debounce, 10-second
-maximum), on branch review room open/reconnect, and at agent tool boundaries. The
-room trigger is fire-and-forget; Hocuspocus admission never waits for the pull. Once
-durable, pull deltas use the branch coordinator's existing update publisher so loaded
-Hocuspocus branch rooms converge and broadcast normally; unloaded branches remain
-persistence-only.
+Apply and Discard are server commands, not client loops. Apply item and
+per-change commands leave the draft open. Whole Apply and whole Discard name
+the draft once. Reusing a `commandId` returns its recorded result without
+reapplying it. A per-change command on a whole-document-only item refuses
+`whole_item`.
 
-Live checkpoints are a separate cadence from those pulls. They come from four
-sources: the initialize-only seed (`up_to_seq = 0`); Hocuspocus
-`onStoreDocument` at `debounce: 2000` / `maxDebounce: 10000` plus last-client
-disconnect; explicit `CollabDomain.checkpoint`; and `journal.compact`. Compaction
-is implemented but has no production caller, so live journal rows are never
-deleted.
+A durable thread peer has no unpublished authored state after reply finalization:
+its writes enter the shared Work draft atomically. Before a new call, pull tests
+whether the parent contains the peer's complete update, including deletes. A
+retired peer is reset rather than merged back. A rebind closes the old peer and
+creates a peer in the new Work's draft under the conversation lock.
 
-**Releasing a live room never waits on a database lock.** Closing the last
-connection runs `onStoreDocument` inline in the releaser's async context, often
-inside its DB transaction. The store therefore only captures the journal cut and
-encoded state; the checkpoint write runs after the releaser's transaction
-commits, in its own transaction, and is dropped on rollback (the room may hold
-that transaction's uncommitted updates) or when the live generation was retired.
-Writes queue one per document, newest snapshot wins; shutdown drains them. A
-checkpoint only caches durable journal state, so a dropped or late one costs
-replay time, never data. Thread-peer pulls also take their live snapshot outside
-the caller's transaction, so loading the room cannot leave head or lock rows held
-by a caller that then waits on the root pull transaction.
+## Provenance and review identity
 
-**Branch mutations are durable before they reach a Hocuspocus room.** A draft
-branch room is a collaborative room: writer frames from a review editor are
-admitted like any other peer's, alongside server-side agent and disposition
-commands. No branch-room `onStore` path may re-persist or re-checkpoint to make
-a mutation durable — it already is. Live and branch writer frames use the same
-sequence: authority/generation validation, exact-containment acknowledgement,
-fresh-authorship validation, then durable append. Branch admission runs that
-sequence against one locked branch snapshot through the awaited `beforeSync`
-hook, before Hocuspocus apply/broadcast/ack. `onChange` does not own branch
-persistence. `admitBranchWriterUpdate` registers the whole admission with
-`trackAppend` before validation's first `await`, so a `storeHocuspocusBranch` or
-graceful-shutdown drain cannot miss an admission Hocuspocus is already
-processing — do not move registration after an `await`.
-`storeHocuspocusBranch` only drains pending branch admissions; calling
-`checkpointBranch` (or any `withBranches`) from it re-enters the publisher's
-`AsyncLocalStorage` branch-lock context and throws (`branch-critical-sections.ts`
-rejects overlap on sight).
+Attribution comes from persisted branch rows and live journal metadata, never
+from warm runtime maps, text similarity, or block proximity. Review closure
+joins visible hunks with physical rows, Yjs origin/parent references,
+delete-set overlaps, and same-client clock prefixes. Independent writer edits
+remain independent when no dependency connects them. Agent writes journal their
+own transaction deltas; state-vector diffs must not recreate cumulative
+`tombstones` as authored rows.
 
-The Yjs route owns only upgrade authentication, CrossWS peer adaptation, and
-gateway delegation. `lib/yjs-ws-handler.ts` owns connection state, admission,
-Hocuspocus lifecycle hooks, and graceful drain; transport changes must preserve
-the admission ordering above and keep `beforeSync` awaited. The gateway is a
-synchronous process singleton: authenticated upgrade captures it in the peer
-context, and `open`/`message`/`close`/`error` must dispatch through that
-instance without a lookup `await`. Startup retains that same instance so
-shutdown calls `drain()` before its first await; `drain()` closes admission
-synchronously before waiting for persistence.
+Source row IDs identify logical attribution. Physical row IDs identify every
+row needed to replay a class, including invisible suppliers and inverse rows.
+They are distinct internal identities and neither is wire data. Writer review
+clients rotate across independent closure classes, not merely on pauses or
+selection movement.
 
-## Certified provenance materialization
+A certified whole-block carry validates output length and one adjacent visible
+replacement; partial or ambiguous matches fail closed. Restoration aliases
+come from certified retained identities and exact anchors. Equal text or equal
+length is not authorship evidence. Browser Undo/Redo allocates fresh writer
+clocks and sends restoration claims that are untrusted: only claims whose
+content, range, retained source, and anchor certify under the admission lock
+grant aliases, and any other claim's bytes are admitted as writer text. A rich
+restoration may lose AI attribution rather than guess, and ambiguous
+correspondence never credits writer text to the AI.
+A removed live block is named by its Yjs item, which a draft re-forked from live
+keeps when the deletion is discarded, so a held review can find the restored
+block. Incomplete ownership remains unclassified
+and cannot become invented AI credit.
 
-**Ordering invariant:** declaration order in `ir.intent.edits` is not application
-order. A `textRanges` edit applies its same-block replacements right-to-left
-(`applyInlineReplacements`);
-partitioning allocation-ordered strings by iterating declared edits swaps
-provenance roots between adjacent targets. The writer instead locates each edit
-by its final output span and intersects that span with newly inserted strings.
+## Durable records and checkpoints
 
-**Regression trap:** hand-performing Yjs mutations in IR declaration order does
-not exercise this seam. Provenance ordering tests must compose the real
-`applyEdits`.
+The live journal is the durable content source. Branch snapshots and generation
+are stored separately; branch write rows carry review status. `push_lineage`
+provides publication identity and idempotency. The change trail is the durable
+publication record; a `system:reconcile` row carries causal replay coverage
+without becoming a semantic author or inverse target. Immutable edit parts keep
+authored identity through settlement.
 
-For a certified whole-block structural carry, lowering tombstones the input
-block before provenance materialization. The writer may locate its output only
-through one adjacent visible replacement block whose entire prose belongs to
-the current lowering and matches the certified output length. Partial, absent,
-or multiple matches fail closed through the length-conservation guard; rendered
-text equality is never continuity evidence.
+Pending-publication counts are distinct pending documents per Work (the active
+draft's branches with reviewable rows plus its change rows, so a created
+document counts before it has text), never raw journal-row totals. Tree
+presence comes from context's tree views, never a Yjs manifest.
 
-Restoration length is validated independently at both the certification and the
-writer boundary; neither check assumes the other ran.
+Live-to-draft pulls run independently of the caller's response transaction and
+publish to loaded branch rooms after durability. Checkpoints are a separate
+authority concern: a room release queues its immutable binding, and a worker
+captures a durable cut after the releasing transaction commits. A dropped or
+late checkpoint costs replay time, never data.
 
-## Live manifest membership
+Branch mutations are durable before Hocuspocus apply, broadcast, or ack. The
+awaited admission path validates authority/generation, exact containment, and
+fresh provenance, then appends under the branch snapshot. `onChange` does not
+own branch persistence. The transport layer only authenticates, adapts peers,
+and delegates this ordering.
 
-The project manifest's `documents` Y.Map is the membership authority used by the
-live-room gate. Ordinary `resolveManifestMembership` calls never reconcile or
-append membership history. `reconcileProjectManifest` is the additive-only, cross-replica-serialized
-self-heal command: it seeds missing active database content rows, but never
-rewrites an existing key or removes an entry. The WebSocket gate invokes it once
-after a membership miss. Manifest write-intent paths do not run this broad SQL
-reconciliation; draft-scoped creation (`workId` or `threadId`) must not allow
-unstaged document rows to enter live membership. Creation and deletion flow
-through `recordManifestDocument{Created,Deleted}`, with SQL
-soft-delete committed before the deletion notification. Preserve every no-op guard:
-setting an equal Y.Map value still creates Yjs history. See
-[KB: Manifest Membership Port](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/manifest/manifest-membership-port.md)
-for the cross-domain port decision and self-healing rationale.
-
-Manifest membership rows are branch bookkeeping, not writer-reviewable prose.
-`domain/work-draft-pending.ts` owns the pending Work-draft predicate used by
-review lists, counts, and Auto-apply confirmation: it requires current-generation
-reviewable rows loaded through the `WorkDraftPendingStore` seam and excludes
-`manifest_membership` rows. Its Drizzle adapter loads all evidence in one joined
-query and projects only the classification fields (`turnId` and `updateMeta`);
-ordinary counts and lists must not read full Yjs payloads. Counts are reviewable
-content branches (one per document), never raw journal-row totals. The authority
-still associates an excluded manifest entry with its content draft so confirmed
-Auto-apply publishes new-document content and live membership atomically. A
-reusable manifest Work-draft branch may remain `active` after its content
-companions settle; that status alone is not pending-review evidence.
-
-`domain/document-creation.ts` owns tracked-document materialization
-transactions. Context and bootstrap supply the row, initial-content, and
-manifest operations; the aggregate commits them together. Repair uses the same
-boundary so a row cannot become visible before its Yjs authority is usable.
-Initial-content and live-manifest recovery publish to warm Hocuspocus rooms only
-after the enclosing Drizzle transaction commits. Work/thread manifest mutations
-persist their branch state inside that transaction; they never push live (D59).
-
-## Durable records
-
-- `document_yjs_updates` is the live update journal.
-  Writer rows persist as `origin_type = human`; reads also normalize legacy
-  `user` rows to the package's `human:<actor>` origin. Reversal and bookkeeping
-  rows keep `origin_type = system`, and reversal rows store independent
-  `reversal_actor_type` attribution. Agent rows persist as `agent`. A branch
-  settlement appends its exact authored rows followed by one `reconcile` row
-  carrying the canonical pushed update; the latter supplies replay coverage,
-  not a later semantic edit. Only the writer class invalidates a live reversal
-  plan.
-- `document_branches` stores branch snapshots/state vectors/generation.
-- `branch_write_journal` stores branch write rows and review status.
-- `push_lineage` stores publication identity, typed branch generation, and
-  idempotency lineage. The change trail is the sole durable publication record;
-  lineage never duplicates block diffs.
-
-Human-origin edits produce one journal row per keystroke. A 50-character
-sentence becomes ~50 rows / ~935 bytes. Journal row counts are not equivalent
-to semantic edits. Checkpoint compaction would recover the storage, but it has
-no production caller.
-Reconnect frames already contained by the live document are acknowledged but
-do not enter the journal or trigger post-persistence hooks.
-
-Novel live sync-step-2 integration is the offline-reconciliation hook. It
-captures the converged state before asynchronous persistence work, replays the
-durable journal for origin and structural-delete attribution, and reports each
-removed writer-owned canonical block identity. Missing ancestry/body/owner
-evidence emits degradation telemetry rather than guessing from update bytes;
-it does not make the optional mark overlay authoritative.
+A peer reconstructed from journal rows is integrable only after every row has applied with no pending structs and no pending delete set. State-vector equality, or a pending-struct check before applying, is not enough.

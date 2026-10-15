@@ -3,14 +3,13 @@ import type { DocumentId, ProjectId, WorkId } from "@meridian/contracts/runtime"
 import { type AiWriteMode, decodeWorkSlug, type Work } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import {
-  contentDocumentPredicate,
   contextAvailabilityHeads,
   contextCatalogScopeHeads,
   documents,
   projects,
   works,
 } from "@meridian/database/schema";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, ne, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   runInDrizzleTransaction,
@@ -41,7 +40,7 @@ import {
   WorkNameConflictError,
   WorkRestoreConflictError,
 } from "../../ports/work-repository.js";
-import { hideWorkOwnedRows, unhideWorkOwnedRows } from "../work-cascade.js";
+import { cascadeDelete, cascadeRestore } from "../work-cascade.js";
 import type { WorkProjectionMutation } from "../work-projection-mutation.js";
 import { NO_WORK_NAME, nextWorkSlug } from "./shared.js";
 
@@ -71,7 +70,7 @@ function mapWork(row: WorkRow): Work {
     goal: row.goal,
     status: row.status,
     archivedAt: row.archivedAt?.toISOString() ?? null,
-    aiWriteMode: row.aiWriteMode as AiWriteMode,
+    defaultAiWriteMode: row.defaultAiWriteMode,
     entityRevision: String(row.entityRevision),
     lastActivityAt: row.updatedAt.toISOString(),
     createdAt: row.createdAt.toISOString(),
@@ -95,11 +94,11 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
   const projectionMutation = deps.projectionMutation;
   const now = deps.now ?? (() => new Date());
 
-  async function workHiddenDocumentIds(workId: WorkId): Promise<DocumentId[]> {
+  async function workCascadedDocumentIds(workId: WorkId): Promise<DocumentId[]> {
     const rows = await currentDrizzleDb(db)
       .select({ id: documents.id })
       .from(documents)
-      .where(and(eq(documents.deletedByWorkId, workId), contentDocumentPredicate()));
+      .where(eq(documents.deletedByWorkId, workId));
     return rows.map((row) => row.id as DocumentId);
   }
 
@@ -241,7 +240,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
             name: NO_WORK_NAME,
             slug: null,
             isNoWork: true,
-            aiWriteMode: "direct",
+            defaultAiWriteMode: "direct",
           })
           .returning();
         if (!row) throw new Error("Failed to create No Work");
@@ -330,7 +329,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         if (lockedTree.changed) throw new WorkDeleteRetryError();
 
         const deletedAt = now();
-        const deletedThreadIds = await hideWorkOwnedRows(db, {
+        const deletedThreadIds = await cascadeDelete(db, {
           workId: id,
           threadIds: lockedTree.threadIds,
           liveThreadIds: lockedTree.liveThreadIds,
@@ -362,7 +361,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
           }
           // Thread forest → Work above, then the namespaces the restore re-occupies, before
           // any row reappears (contract §9.3). Individually deleted rows stay deleted.
-          const arriving = deps.arrivals ? await workHiddenDocumentIds(id) : [];
+          const arriving = deps.arrivals ? await workCascadedDocumentIds(id) : [];
           if (arriving.length > 0) await deps.arrivals?.lockNamespaces(arriving);
           await guardWorkContextRestore(db, id);
           const restoredAt = now();
@@ -376,7 +375,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
             .where(eq(works.id, id))
             .returning();
           if (!row) throw new Error(`Work not found: ${id}`);
-          await unhideWorkOwnedRows(db, {
+          await cascadeRestore(db, {
             workId: id,
             threadIds: lockedTree.threadIds,
             liveThreadIds: lockedTree.liveThreadIds,
@@ -400,6 +399,20 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         }
         throw cause;
       }
+    },
+    async setDefaultAiWriteMode(id: WorkId, mode: AiWriteMode): Promise<void> {
+      await runInDrizzleTransaction(db, async () => {
+        const [changed] = await currentDrizzleDb(db)
+          .update(works)
+          .set({
+            defaultAiWriteMode: mode,
+            entityRevision: sql`${works.entityRevision} + 1`,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(works.id, id), ne(works.defaultAiWriteMode, mode)))
+          .returning({ id: works.id });
+        if (changed) await projectionMutation.publishWorks([id]);
+      });
     },
     async touch(id: WorkId): Promise<void> {
       const activeDb = currentDrizzleDb(db);

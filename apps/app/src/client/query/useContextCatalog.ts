@@ -4,6 +4,7 @@ import {
   type CatalogFileEntry,
   type CatalogScope,
   type CatalogWakeHint,
+  catalogScopeKey,
   contextOwner,
   isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
@@ -43,6 +44,7 @@ import {
   type CatalogNode,
   refusedMoveDestination,
 } from "@/client/query/context-catalog-projection";
+import { useIsThreadPendingCreation } from "@/client/stores";
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import {
   useAccountResourceProjection,
@@ -88,6 +90,22 @@ export function contextCatalogScope(
     return owner.workId ? { kind: "work", projectId, workId: owner.workId } : null;
   }
   return { kind: "project", projectId };
+}
+
+/**
+ * The one creation gate for a chat's catalog scopes. Only a lineage scope waits
+ * on its chat's creation; other scopes already exist on the server.
+ *
+ * Hidden constraint: `prefetchQuery` and `fetchQuery` ignore `enabled`, so a
+ * gate must remove the scope from the list a reader builds, not just disable
+ * its query. Every reader that lists a chat's scopes applies this.
+ */
+export function catalogScopeReady(
+  scope: CatalogScope,
+  enabled: boolean,
+  lineagePending: boolean,
+): boolean {
+  return enabled && !(scope.kind === "lineage" && lineagePending);
 }
 
 export function contextCatalogQueryOptions(
@@ -495,8 +513,10 @@ export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
   } & ContextOwner,
 ): Record<S, CatalogViewResult> {
   const projectPending = useIsProjectPendingCreation(projectId);
-  const enabled = (options.enabled ?? true) && !projectPending;
   const { workId, rootThreadId, uploadsWorkId } = options;
+  // A first send's chat is not on the server yet; its lineage scope would answer 404.
+  const lineagePending = useIsThreadPendingCreation(rootThreadId);
+  const enabled = (options.enabled ?? true) && !projectPending;
   const scopeFor = useCallback(
     (scheme: ProjectContextTreeScheme) =>
       aggregateCatalogScope(projectId, scheme, { workId, rootThreadId, uploadsWorkId }),
@@ -564,7 +584,7 @@ export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
   return useQueries({
     queries: scopes.map((scope) => ({
       ...contextCatalogQueryOptions(resources, projectId, scope),
-      enabled,
+      enabled: catalogScopeReady(scope, enabled, lineagePending),
     })),
     combine,
   });
@@ -572,6 +592,9 @@ export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
 
 export function useContextCatalogScope(projectId: string, scope: CatalogScope, enabled = true) {
   const projectPending = useIsProjectPendingCreation(projectId);
+  const lineagePending = useIsThreadPendingCreation(
+    scope.kind === "lineage" ? scope.rootThreadId : null,
+  );
   const scopeKind = scope.kind;
   const scopeProjectId = scope.kind === "user" ? undefined : scope.projectId;
   const scopeUserId = scope.kind === "user" ? scope.userId : undefined;
@@ -600,7 +623,7 @@ export function useContextCatalogScope(projectId: string, scope: CatalogScope, e
   const projection = useAccountResourceProjection(projectId);
   const query = useQuery({
     ...contextCatalogQueryOptions(resources, projectId, stableScope),
-    enabled: enabled && !projectPending,
+    enabled: catalogScopeReady(stableScope, enabled && !projectPending, lineagePending),
   });
   const data = useMemo(() => {
     const checkpoint = projection.snapshot?.catalogs.find(
@@ -647,6 +670,17 @@ export function useContextCatalogWake(
   const queryClient = useQueryClient();
   const resources = useOptionalAccountResourceReplica();
   const transport = useOptionalThreadTransport();
+  // A create that joined a draft's document now is that document, so its draft list is
+  // stale: the writer sees the draft's review at once, not at the next reload or hint.
+  useEffect(
+    () =>
+      projectId
+        ? resources?.onIdentityChanged((change) => {
+            if (change.projectId === projectId) invalidateDraftReads(queryClient, projectId);
+          })
+        : undefined,
+    [projectId, queryClient, resources],
+  );
   useEffect(
     () =>
       projectId
@@ -671,13 +705,55 @@ export function useContextCatalogWake(
   );
 }
 
+/** Every draft read of the project: each Work's list and each document's hints. */
+function invalidateDraftReads(queryClient: QueryClient, projectId: string): void {
+  void queryClient.invalidateQueries(allWorkDraftsOf(projectId));
+  void queryClient.invalidateQueries({
+    queryKey: projectQueryKeys.documentDraftHintsOf(projectId),
+  });
+}
+
+/** Every mounted draft list of the project, whatever Work it belongs to. */
+function allWorkDraftsOf(projectId: string) {
+  return {
+    predicate: ({ queryKey }: { queryKey: readonly unknown[] }) =>
+      queryKey[0] === "projects" &&
+      queryKey[1] === projectId &&
+      queryKey[2] === "works" &&
+      queryKey[4] === "drafts",
+  };
+}
+
+/** The newest installed catalog revision each scope's hints have already re-read draft lists for. */
+const refreshedRevisions = new WeakMap<QueryClient, Map<string, bigint>>();
+
+/** Whether `applied` is a revision this scope's draft lists were not yet re-read for; records it when so. */
+function advancesDraftRefresh(
+  queryClient: QueryClient,
+  scope: CatalogScope,
+  applied: string,
+): boolean {
+  if (!/^\d+$/.test(applied)) return true;
+  const revision = BigInt(applied);
+  const refreshed = refreshedRevisions.get(queryClient) ?? new Map<string, bigint>();
+  refreshedRevisions.set(queryClient, refreshed);
+  const key = catalogScopeKey(scope);
+  const last = refreshed.get(key);
+  if (last !== undefined && revision <= last) return false;
+  refreshed.set(key, revision);
+  return true;
+}
+
 /**
  * Duplicate-tolerant wake hint handler; the hint never mutates cache state itself.
  *
  * A manifest change is also the one signal another page's Apply or Discard sends: a draft-only
  * document joins or never joins the manifest, and nothing else tells this page its Work's draft
  * list is out of date. Mounted draft lists re-read, which is what ends a review and settles a
- * draft-only tab whose draft was disposed elsewhere.
+ * draft-only tab whose draft was disposed elsewhere. A Work-scoped hint names its Work, so only
+ * that Work's list re-reads; a project-wide hint cannot, so every list of the project does. A hint
+ * that installs no revision newer than the last one handled re-reads nothing, and a user-scoped
+ * catalog holds no project drafts.
  */
 export function pullContextCatalogOnHint(
   queryClient: QueryClient,
@@ -691,12 +767,15 @@ export function pullContextCatalogOnHint(
     .hintCatalog(projectId, requestedScope, hint.headRevision)
     .then((next) => {
       queryClient.setQueryData(projectQueryKeys.contextCatalog(projectId, requestedScope), next);
+      if (requestedScope.kind === "user") return;
+      if (!advancesDraftRefresh(queryClient, requestedScope, next.appliedRevision)) return;
+      void queryClient.invalidateQueries(
+        requestedScope.kind === "work"
+          ? { queryKey: projectQueryKeys.workDrafts(projectId, requestedScope.workId) }
+          : allWorkDraftsOf(projectId),
+      );
       void queryClient.invalidateQueries({
-        predicate: ({ queryKey }) =>
-          queryKey[0] === "projects" &&
-          queryKey[1] === projectId &&
-          queryKey[2] === "works" &&
-          queryKey[4] === "drafts",
+        queryKey: projectQueryKeys.documentDraftHintsOf(projectId),
       });
     })
     .catch(() => undefined);
