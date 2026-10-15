@@ -7,6 +7,7 @@ import type { Editor } from "@tiptap/core";
 import { yUndoPluginKey } from "@tiptap/y-tiptap";
 import { afterEach, expect, it, vi } from "vitest";
 import * as Y from "yjs";
+import { draftInlineReviewPluginKey } from "@/core/editor/extensions/inline-review";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@/core/editor/schema";
 import {
   createReviewEditor,
@@ -99,6 +100,13 @@ it("with two editors on one runtime, each Ctrl+Z undoes only its own typing and 
   // A header names its surface, not an editor: each lands in its own editor, never the longest-attached.
   expect(a.projector.editorHandle("editor")).toBe(a.handle);
   expect(a.projector.editorHandle("dock")).toBe(b.handle);
+
+  // Two editors over one room hold equal text in different documents: both paint the room's frame.
+  a.projector.projectNow();
+  for (const { editor } of [a, b]) {
+    expect(draftInlineReviewPluginKey.getState(editor.state)?.review?.doc).toBe(editor.state.doc);
+    expect(editor.view.dom.querySelectorAll("[data-review-change]").length).toBeGreaterThan(0);
+  }
 
   const typeAfter = (editor: Editor, text: string) =>
     editor.view.dispatch(editor.state.tr.insertText(text, posOf(editor, "Keep.") + 5));

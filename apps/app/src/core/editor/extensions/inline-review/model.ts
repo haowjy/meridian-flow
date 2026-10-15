@@ -22,6 +22,29 @@ export interface ProjectedReview extends ReviewProjection {
   pins: ReadonlyMap<string, Y.RelativePosition>;
 }
 
+const sameJson = (a: unknown, b: unknown) => a === b || JSON.stringify(a) === JSON.stringify(b);
+
+/**
+ * Whether two documents hold the same content at the same positions. `Node.eq` cannot answer it across
+ * editors: each editor builds its own schema, so equal text has different node types. Compares type names,
+ * attributes, marks and text, exiting at the first difference.
+ */
+export function sameContent(a: PMNode, b: PMNode): boolean {
+  if (a === b) return true;
+  if (a.type.name !== b.type.name || a.childCount !== b.childCount || a.nodeSize !== b.nodeSize)
+    return false;
+  if (a.isText) return a.text === b.text && sameMarks(a, b);
+  if (!sameJson(a.attrs, b.attrs) || !sameMarks(a, b)) return false;
+  for (let i = 0; i < a.childCount; i++) if (!sameContent(a.child(i), b.child(i))) return false;
+  return true;
+}
+
+const sameMarks = (a: PMNode, b: PMNode) =>
+  a.marks.length === b.marks.length &&
+  a.marks.every(
+    (mark, i) => mark.type.name === b.marks[i].type.name && sameJson(mark.attrs, b.marks[i].attrs),
+  );
+
 /** A group id is a content hash plus an occurrence rank (`h`, `h~1`); the hash is what the text decides. */
 export const contentHashOf = (id: string): string => id.split("~")[0];
 
