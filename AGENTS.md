@@ -187,6 +187,11 @@ Documentation-only changes commit directly to `main`; never open a PR only for
 documentation. This includes `AGENTS.md`, `.context/`, KB, and the Meridian Flow
 docs repository.
 
+Write a PR body for a reader who knows nothing about the area. Explain each term
+in a few words the first time it appears, and link the issues, PRs, decisions and
+code it refers to, so a newcomer catches up quickly. The
+[PR template](.github/PULL_REQUEST_TEMPLATE.md) holds the sections.
+
 Prune a worktree as soon as its branch merges, whether into `main`, `staging`,
 or a longer-lived integration branch — `pnpm dev:prune-worktrees -- --target
 <work-id|path|branch|pr> --dry-run` (see [tools/dev/AGENTS.md](tools/dev/AGENTS.md)).
