@@ -31,18 +31,20 @@ import type {
   HandBackStore,
   StoredHandBack,
 } from "./delivery-ports.js";
+import type { ExecutionSettlement } from "./execution-settlement.js";
 
 export type ThreadCommandPorts = {
   threadLock: ThreadLock;
   /** Absent where hand-back is not supported (the in-memory harness). */
   handBacks?: HandBackStore;
-  inbox: Pick<DeliveryStore, "ack" | "answerRunState">;
+  inbox: Pick<DeliveryStore, "answerRunState">;
+  /** The one acknowledgement path (`execution-settlement`): attributes the rows and clears an idle usage block. */
+  ack: ExecutionSettlement["ack"];
   leaseStore: Pick<DeliveryLeaseStore, "lockThreadReceipt" | "setAdoptedMessageIds">;
   appendEvent(
     threadId: ThreadId,
     event: { type: "messages.handed_back"; userTurnIds: string[]; requestId: string },
   ): Promise<unknown>;
-  clearBlockWhenIdle(threadId: ThreadId): Promise<void>;
 };
 
 export function createThreadCommands(ports: ThreadCommandPorts) {
@@ -93,7 +95,7 @@ export function createThreadCommands(ports: ThreadCommandPorts) {
         cancelledExecutionId: decision.cancelExecutionId,
       });
       if (decision.handBack.length > 0) {
-        await inbox.ack(threadId, decision.handBack, null, { handedBackBy: input.requestId });
+        await ports.ack(threadId, decision.handBack, { handedBackBy: input.requestId });
         // A cancelled compaction gives back what it had taken on; nothing would answer it.
         const taken = decision.handBack.filter((id) => facts.receipt.includes(id));
         if (taken.length > 0) {
@@ -109,7 +111,6 @@ export function createThreadCommands(ports: ThreadCommandPorts) {
           userTurnIds: decision.handBack,
           requestId: input.requestId,
         });
-        await ports.clearBlockWhenIdle(threadId);
       }
       if (decision.cancelExecutionId)
         await store.cancelExecution(threadId, decision.cancelExecutionId);

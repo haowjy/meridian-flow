@@ -112,8 +112,9 @@ validate under the same lock and refuse a flagged lease.
 lifecycle: `handBackRequest` (find the stored decision, read facts, decide, apply),
 `handBack`, `stop` and `sendNow`. Its ports are the thread lock, the optional
 `HandBackStore` (absent in the in-memory harness, where the commands throw), the
-inbox `ack` and `answerRunState`, the lease store's `lockThreadReceipt` and
-`setAdoptedMessageIds`, `appendEvent` and `clearBlockWhenIdle`. The delivery
+inbox `answerRunState`, the settlement's `ack` (the one acknowledgement path: it takes a
+deliverer or `{ handedBackBy }` and clears an idle usage block), the lease store's
+`lockThreadReceipt` and `setAdoptedMessageIds`, and `appendEvent`. The delivery
 adapter spreads it into `RuntimeDelivery`; adoption and settlement stay there.
 The pure rules stay in `loop/stop-rule.ts`. `runner.handBack` passes through;
 `runner.stop` and `runner.sendNow` abort the local run when it holds the flagged

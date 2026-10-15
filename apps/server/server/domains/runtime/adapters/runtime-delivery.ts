@@ -61,7 +61,7 @@ export function createDeliveryAdapter(
       deps.backgroundTasks.track(Promise.resolve().then(task), "runtime delivery callback"),
     );
   const settlement = createExecutionSettlement({ ...deps, schedulePostCommit });
-  const { ack, clearBlockWhenIdle, deliveredBy, endExecution, settleStaleExecution } = settlement;
+  const { ack, deliveredBy, endExecution, settleStaleExecution } = settlement;
   type SelectedDelivery<TSelection> = {
     selection: TSelection;
     pendingBatch: InboxMessage[];
@@ -723,9 +723,9 @@ export function createDeliveryAdapter(
     threadLock,
     handBacks: deps.handBacks,
     inbox,
+    ack,
     leaseStore,
     appendEvent: (threadId, event) => deps.eventWriter.appendEvent(threadId, event),
-    clearBlockWhenIdle,
   });
 
   return {
