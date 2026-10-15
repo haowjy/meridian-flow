@@ -568,6 +568,7 @@
     "packages/resource-replica/src/resource-records-policy.test.ts": 3,
     "packages/resource-replica/src/resource-state.test.ts": 11,
     "packages/resource-replica/src/resource-work-authority.test.ts": 1,
+    "packages/thread-client/src/hand-back/operation.test.ts": 6,
     "packages/thread-client/src/message/hand-back.test.ts": 2,
     "packages/thread-client/src/message/serialize.test.ts": 6,
     "packages/thread-client/src/run-state/fold-messages.test.ts": 5,
