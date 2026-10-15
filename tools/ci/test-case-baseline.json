@@ -572,6 +572,7 @@
     "packages/thread-client/src/message/hand-back.test.ts": 2,
     "packages/thread-client/src/message/serialize.test.ts": 6,
     "packages/thread-client/src/run-state/fold-messages.test.ts": 5,
+    "packages/thread-client/src/run-state/message-fate.test.ts": 6,
     "packages/thread-client/src/run-state/retry.test.ts": 1,
     "packages/thread-client/src/socket/dispatch-ws-server-message.test.ts": 4,
     "packages/thread-client/src/socket/thread-socket-client-connectivity.test.ts": 2,
@@ -601,7 +602,7 @@
     "tools/mf/src/commands/thread/reduced-thread.test.ts": 1,
     "tools/mf/src/commands/thread/result.test.ts": 7,
     "tools/mf/src/commands/thread/tail.test.ts": 11,
-    "tools/mf/src/commands/thread/thread.test.ts": 45,
+    "tools/mf/src/commands/thread/thread.test.ts": 42,
     "tools/mf/src/core/output.test.ts": 3,
     "tools/mf/src/main.test.ts": 4
   }
