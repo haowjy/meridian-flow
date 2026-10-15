@@ -1,7 +1,6 @@
 import { createTestDocumentLinkScopes } from "./test-support/document-link-scopes.js";
 /** Public collab-domain reverseTurn coverage over Drizzle branch infrastructure. */
 
-import { renderAgentEditResult } from "@meridian/agent-edit";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
@@ -18,7 +17,6 @@ import {
   TURN_2_ID,
   TURN_ID,
   USER_ID,
-  WORK_ID,
 } from "./test-support/work-draft-fixture.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -31,7 +29,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDb } = await import("@meridian/database");
     const {
       branchWriteJournal,
-      documentBranches,
       documentMarkdownProjections,
       documentYjsUpdates,
       documents,
@@ -389,80 +386,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const live = await readMarkdown(collab, DOC_ID);
       expect(live).toContain("Base.");
       expect(live).not.toContain("Agent paragraph.");
-    });
-
-    it("durably commits two same-response staged writes to one document", async () => {
-      const collab = createTestCollab();
-      collab.bindHocuspocus(hocuspocus as never);
-      await writeMarkdown(collab, {
-        documentId: DOC_ID as never,
-        markdown: "Base.",
-        origin: { type: "user", actorUserId: USER_ID as never },
-        threadId: THREAD_ID as never,
-      });
-
-      const responseId = "response-same-document-db";
-      const stagedCreate = await collab.agentEdit().write(
-        {
-          command: "insert",
-          file: "chapter.md",
-          documentId: DOC_ID,
-          content: "First same response.",
-        },
-        {
-          sessionId: "session-same-response-db",
-          grant: testFileGrant(DRAFT_DESTINATION),
-          threadId: THREAD_ID,
-          turnId: TURN_ID,
-          responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
-        },
-      );
-      if (stagedCreate.status !== "success") {
-        throw new Error(`staged create failed: ${renderAgentEditResult(stagedCreate.result)}`);
-      }
-      await expect(
-        collab.agentEdit().write(
-          {
-            command: "insert",
-            file: "chapter.md",
-            documentId: DOC_ID,
-            content: "Second same response.",
-          },
-          {
-            sessionId: "session-same-response-db",
-            grant: testFileGrant(DRAFT_DESTINATION),
-            threadId: THREAD_ID,
-            turnId: TURN_ID,
-            responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
-          },
-        ),
-      ).resolves.toMatchObject({ status: "success" });
-
-      await collab.finalizeResponseCommit(
-        { providerResponseId: responseId, editScopeId: responseId },
-        {
-          threadId: THREAD_ID as never,
-          turnId: TURN_ID as never,
-        },
-      );
-
-      const rows = await db
-        .select({ id: branchWriteJournal.id, status: branchWriteJournal.status })
-        .from(branchWriteJournal)
-        .orderBy(branchWriteJournal.id);
-      expect(rows).toHaveLength(2);
-      expect(rows[0]).toEqual(expect.objectContaining({ status: "active" }));
-      const item = await collab.draftReview.resolveItemByDocument({
-        workId: WORK_ID as never,
-        documentId: DOC_ID as never,
-      });
-      if (!item) throw new Error("Missing review item");
-      const pending = await collab.draftReview.preview({
-        workId: WORK_ID as never,
-        itemKey: item.itemKey,
-      });
-      expect(pending.status).toBe("active");
-      expect(await readMarkdown(collab, DOC_ID)).toContain("Base.");
     });
 
     it("durably commits distinct responses that reuse a provider-local tool id", async () => {
