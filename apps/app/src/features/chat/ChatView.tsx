@@ -39,6 +39,7 @@ import { uploadIntakePort } from "@/client/api/upload-intake-api";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
 import { useLineage } from "@/client/query/useLineageTitle";
+import { useTopChat } from "@/client/query/useTopChat";
 import {
   useIsThreadPendingCreation,
   useRunStateSlice,
@@ -266,11 +267,15 @@ export function ChatView({
   const composerAgentName = activeThread?.agentName ?? "General";
 
   const pageTitle = activeThread?.title ? displayThreadTitle(activeThread.title) : t`New chat`;
+  // Uploads belong to the chat; a thread not in the list yet is a New chat's own.
+  const listedChat = useTopChat(projectId, activeThread);
+  const topChat = listedChat ?? { chatId: threadId, chatRef: null };
   const referenceCatalog = useReferenceBrowserCatalog(
     projectId,
     activeWork?.id,
     t`Reference a file`,
     chatLineageId({ thread: activeThread, work: activeWork }),
+    topChat.chatId,
   );
   const availableSkills = useThreadAvailableSkills(threadId);
   const submissions = useChatSubmissions(
@@ -443,9 +448,19 @@ export function ChatView({
             work: { id: activeWork.id, slug: activeWork.slug },
             rootThreadId: activeThread.rootThreadId,
             rootThreadRef: lineage?.rootThreadRef ?? null,
+            chatId: topChat.chatId,
+            chatRef: topChat.chatRef,
           }
         : null,
-    [accountId, activeThread, activeWork, lineage?.rootThreadRef, projectId],
+    [
+      accountId,
+      activeThread,
+      activeWork,
+      lineage?.rootThreadRef,
+      projectId,
+      topChat.chatId,
+      topChat.chatRef,
+    ],
   );
   const chatStop = useChatStop({ threadId, accountId, scope: stopScope });
   function handleStop() {
@@ -506,9 +521,7 @@ export function ChatView({
                 availableSkills={availableSkills.skills}
                 commands={chatCommands}
                 uploadPort={uploadIntakePort}
-                uploadScope={
-                  activeWork ? { kind: "work", projectId, workId: activeWork.id } : undefined
-                }
+                uploadScope={{ kind: "chat", projectId, chatId: topChat.chatId }}
                 onSubmit={handleSubmit}
                 onStop={handleStop}
                 toolbarLeft={

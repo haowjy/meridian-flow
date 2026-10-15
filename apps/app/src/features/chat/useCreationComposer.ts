@@ -47,6 +47,7 @@ export function useCreationComposer(projectId: string) {
           workId: context.workId,
           workAiWriteMode: context.workAiWriteMode,
           ...(context.aiWriteMode ? { aiWriteMode: context.aiWriteMode } : {}),
+          threadId: draft.chatId,
           threadActions,
           selectChat: (threadId) => {
             draft.handoff();

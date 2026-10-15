@@ -533,13 +533,10 @@ export class ChatSubmissionOwner {
       const records = readChatSubmissionSnapshot(accountId);
       if (!records || records.some((entry) => entry.threadId === threadId)) return;
       const source = composerSessionDraft(accountId, { kind: "chat", id: threadId });
-      if (
-        source.initialDraft &&
-        !composerSessionDraft(accountId, { kind: "new-chat", id: projectId }).prependSnapshots([
-          source.initialDraft,
-        ])
-      )
-        return;
+      const target = composerSessionDraft(accountId, { kind: "new-chat", id: projectId });
+      // The server never had this chat, so the draft's uploads still belong to its id.
+      target.adoptChat(threadId);
+      if (source.initialDraft && !target.prependSnapshots([source.initialDraft])) return;
       source.handoff();
       this.destination = "editing";
       this.rebuild();

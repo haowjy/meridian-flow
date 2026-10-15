@@ -9,10 +9,12 @@ export function contextRequestOptionsForScheme(
   scheme: ProjectContextTreeScheme,
   owner: ContextOwner,
 ):
-  | { workId: string; rootThreadId?: undefined }
-  | { workId?: undefined; rootThreadId: string }
+  | { workId: string; rootThreadId?: undefined; chatThreadId?: undefined }
+  | { workId?: undefined; rootThreadId: string; chatThreadId?: undefined }
+  | { workId?: undefined; rootThreadId?: undefined; chatThreadId: string }
   | undefined {
   if (!isWorkScopedProjectContextScheme(scheme)) return undefined;
+  if (scheme === "uploads" && owner.chatThreadId) return { chatThreadId: owner.chatThreadId };
   if (scheme === "scratch" && owner.rootThreadId) return { rootThreadId: owner.rootThreadId };
   if (!owner.workId) throw new Error("Work-scoped reads require a Work row id");
   return { workId: owner.workId };

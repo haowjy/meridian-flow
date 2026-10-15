@@ -23,6 +23,8 @@ type StoredComposerDraft = (ComposerDraftSnapshot | { doc: null }) & {
   received?: string[];
   notices?: DeletedChatNotice[];
   handBacks?: PendingHandBack[];
+  /** A New chat's thread id, minted before its first attach so its uploads and Send share it. */
+  chatId?: string;
 };
 
 /** The `received` entry a hand-back leaves: the checked write that carries the content records it. */
@@ -49,6 +51,22 @@ export class ComposerSessionDraft {
   private received = new Set<string>();
   private handBacksPending: PendingHandBack[] = [];
   notices: DeletedChatNotice[] = [];
+  /**
+   * The thread id a New chat will be created with. Uploads attached before Send belong to it, so
+   * it is minted here, kept with the draft, and reused by Send. A sent draft mints the next one.
+   */
+  chatId: string;
+  private readonly mintsChat: boolean;
+  /**
+   * Take the id of a chat that was never created, so uploads that came back with its draft stay
+   * owned by the chat the next Send creates. The next write persists it.
+   */
+  adoptChat = (threadId: string): void => {
+    if (this.mintsChat) this.chatId = threadId;
+  };
+  private chatField(): { chatId?: string } {
+    return this.mintsChat ? { chatId: this.chatId } : {};
+  }
   dismissNotice = (threadId: string) => {
     this.notices = this.notices.filter((notice) => notice.threadId !== threadId);
     this.dirty = true;
@@ -181,6 +199,7 @@ export class ComposerSessionDraft {
       received: [...next.received],
       notices: next.notices,
       handBacks: next.handBacks,
+      ...this.chatField(),
     };
     if (!this.record.write(stored)) return false;
     this.notices = next.notices;
@@ -240,6 +259,7 @@ export class ComposerSessionDraft {
               received,
               notices: notices as DeletedChatNotice[],
               handBacks,
+              ...(typeof value.chatId === "string" ? { chatId: value.chatId } : {}),
             };
       },
     );
@@ -248,6 +268,8 @@ export class ComposerSessionDraft {
     this.received = new Set(saved?.received);
     this.notices = saved?.notices ?? [];
     this.handBacksPending = saved?.handBacks ?? [];
+    this.mintsChat = scope.kind === "new-chat";
+    this.chatId = saved?.chatId ?? crypto.randomUUID();
   }
 
   get initialDraft(): ComposerDraftSnapshot | null {
@@ -267,6 +289,7 @@ export class ComposerSessionDraft {
   handoff = (): void => {
     this.current = null;
     this.notices = [];
+    this.chatId = crypto.randomUUID();
     this.dirty = true;
     this.flush();
   };
@@ -285,6 +308,7 @@ export class ComposerSessionDraft {
                   received: [...this.received],
                   notices: this.notices,
                   handBacks: this.handBacksPending,
+                  ...this.chatField(),
                 }
               : undefined,
           )
@@ -293,6 +317,7 @@ export class ComposerSessionDraft {
             received: [...this.received],
             notices: this.notices,
             handBacks: this.handBacksPending,
+            ...this.chatField(),
           });
     if (saved) this.dirty = false;
   };
