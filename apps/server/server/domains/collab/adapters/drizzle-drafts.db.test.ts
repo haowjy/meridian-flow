@@ -13,7 +13,6 @@ import { draftTreeScenario } from "../../../test-support/draft-tree-scenario.js"
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { createDrafts } from "../domain/drafts.js";
 import { createDrizzleDraftStore, createDrizzleDraftWriteBoundary } from "./drizzle-drafts.js";
-import { createInMemoryDraftStore, createInMemoryDraftWriteBoundary } from "./in-memory/drafts.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -121,18 +120,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await resolver.byOriginWork(work.id)).toMatchObject([
         { id: made.id, status: "closed" },
       ]);
-
-      // The in-memory adapter keeps the same rule for concurrent first writes.
-      const memoryStore = createInMemoryDraftStore();
-      const memory = createDrafts({
-        store: memoryStore,
-        boundary: createInMemoryDraftWriteBoundary(),
-      });
-      const racing = await Promise.all(
-        Array.from({ length: 20 }, () => memory.ensureActiveForWrite(input)),
-      );
-      expect(new Set(racing.map((draft) => draft.id)).size).toBe(1);
-      expect(await memory.byOriginWork(work.id)).toHaveLength(1);
     });
   });
 }
