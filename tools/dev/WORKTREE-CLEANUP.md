@@ -71,8 +71,42 @@ pnpm dev:prune-worktrees -- --target <branch> \
 ```
 
 Manual verification replaces only the automatic ancestry or PR proof; the tool
-still refuses primary, current, base, locked, dirty, or live worktrees and
+still refuses primary, current, base, locked, dirty, or (by default) live worktrees and
 still revalidates the branch OID and readiness before destructive actions.
+
+## Shells parked in a merged worktree
+
+Use target-only `--force` when a shell or tmux pane still has its cwd inside
+the merged checkout:
+
+```bash
+pnpm dev:prune-worktrees -- --target <branch> --force --dry-run
+pnpm dev:prune-worktrees -- --target <branch> --force
+```
+
+The tool stops only the target's managed dev stack and Nx daemon, then
+rechecks occupants before dropping its database and removing the worktree.
+Known shells/tmux may remain alive; the tool prints their PIDs and pane IDs.
+Their owners should `cd` to an existing directory after cleanup. It never
+kills user shells or their tmux sessions. Other processes, active work items,
+dirty state and inspection failures still block. Merge proof (or concrete
+`--manually-verified` evidence), primary/current/base/locked protections and
+commit revalidation all still apply. Force is not available for batch cleanup,
+and does not pass Git's destructive `worktree remove --force` flag.
+
+### Verify shell preservation
+
+Use an owned disposable worktree with merged-commit proof. Park a shell and a
+tmux pane in it and record their PIDs/pane IDs. Without `--force`, targeted
+cleanup must refuse. A forced dry run must list dev/Nx shutdown without doing
+anything. Actual forced cleanup must stop managed services, remove the checkout
+and its database, leave both shells and the user tmux session alive, and print
+the surviving PIDs/pane IDs. Have those shells `cd` out afterwards.
+
+Repeat with an uncommitted file or an unmerged commit: force must refuse before
+shutdown. With an unrelated non-shell process in the target, force may shut down
+managed services but must refuse before dropping the database. Terminate only
+your fixture process and retry. `--auto --force` must be rejected.
 
 ## Don't
 
