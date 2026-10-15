@@ -55,17 +55,6 @@ export function sortPushesByDocumentId<T extends { branch: { documentId: string 
 
 export function createDrizzleBranchJournalReadStore(db: Database): BranchJournalReadStore {
   return {
-    async listActiveJournalRows(branchId) {
-      const rows = await db
-        .select()
-        .from(branchWriteJournal)
-        .where(
-          and(eq(branchWriteJournal.branchId, branchId), eq(branchWriteJournal.status, "active")),
-        )
-        .orderBy(branchWriteJournal.id);
-      return rows.map(mapJournalRow);
-    },
-
     async listReviewableJournalRows(branchId) {
       const rows = await db
         .select()
@@ -76,23 +65,6 @@ export function createDrizzleBranchJournalReadStore(db: Database): BranchJournal
             inArray(branchWriteJournal.status, ["active", "rollback_pending"]),
           ),
         )
-        .orderBy(branchWriteJournal.id);
-      return rows.map(mapJournalRow);
-    },
-
-    async listJournalRowsForTurn(input) {
-      const conditions = [
-        eq(branchWriteJournal.threadId, input.threadId),
-        eq(branchWriteJournal.turnId, input.turnId),
-      ];
-      if (input.branchId) conditions.push(eq(branchWriteJournal.branchId, input.branchId));
-      if (input.statuses && input.statuses.length > 0) {
-        conditions.push(inArray(branchWriteJournal.status, [...input.statuses]));
-      }
-      const rows = await db
-        .select()
-        .from(branchWriteJournal)
-        .where(and(...conditions))
         .orderBy(branchWriteJournal.id);
       return rows.map(mapJournalRow);
     },
@@ -128,33 +100,6 @@ export function createDrizzleBranchJournalReadStore(db: Database): BranchJournal
         }
       }
       return [...byRow.values()];
-    },
-
-    async listPushLineageForTurn(input) {
-      const turnRows = await db
-        .select({ id: branchWriteJournal.id })
-        .from(branchWriteJournal)
-        .where(
-          and(
-            eq(branchWriteJournal.threadId, input.threadId),
-            eq(branchWriteJournal.turnId, input.turnId),
-          ),
-        );
-      const journalIds = turnRows.map((row) => row.id);
-      const directCondition = and(
-        eq(pushLineage.threadId, input.threadId),
-        eq(pushLineage.turnId, input.turnId),
-      );
-      const rows = await db
-        .select()
-        .from(pushLineage)
-        .where(
-          journalIds.length > 0
-            ? sql`(${pushLineage.threadId} = ${input.threadId} AND ${pushLineage.turnId} = ${input.turnId}) OR ${pushLineage.journalIds} && ARRAY[${sql.join(journalIds, sql`, `)}]::bigint[]`
-            : directCondition,
-        )
-        .orderBy(pushLineage.id);
-      return rows.map(mapLineage);
     },
 
     async listConcurrentJournalRows(branchId, options) {

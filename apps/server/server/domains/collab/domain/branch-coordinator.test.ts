@@ -144,10 +144,6 @@ class MemoryBranchStore implements BranchStore {
     for (const row of input.journals ?? []) this.journal.push(row.updateData);
     return true;
   }
-
-  async appendJournal(input: { updateData: Uint8Array }): Promise<void> {
-    this.journal.push(input.updateData);
-  }
 }
 
 function storedBranch(store: MemoryBranchStore, branchId: string): BranchSnapshot {

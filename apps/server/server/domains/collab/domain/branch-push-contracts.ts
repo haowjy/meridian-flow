@@ -63,15 +63,6 @@ export type BranchJournalRow = {
   editKind?: "write" | "undo" | "redo" | "revert" | "rollback";
 };
 
-export function branchJournalRevision(
-  rows: readonly Pick<BranchJournalRow, "id" | "status">[],
-): string {
-  return [...rows]
-    .sort((left, right) => left.id - right.id)
-    .map((row) => `${row.id}:${row.status}`)
-    .join(",");
-}
-
 export type PublicationBlockChange = {
   blockId: string;
   beforeBlockIdentity: CanonicalBlockIdentity | null;
@@ -193,23 +184,15 @@ export type TrailContributionReplacement = {
 };
 
 export type BranchJournalReadStore = {
-  listActiveJournalRows(branchId: string): Promise<BranchJournalRow[]>;
   listReviewableJournalRows(branchId: string): Promise<BranchJournalRow[]>;
   listConcurrentJournalRows(
     branchId: string,
     options: { afterJournalId?: number; documentId: DocumentId },
   ): Promise<BranchJournalRow[]>;
-  listJournalRowsForTurn(input: {
-    branchId?: string;
-    threadId: ThreadId;
-    turnId: TurnId;
-    statuses?: readonly BranchJournalRow["status"][];
-  }): Promise<BranchJournalRow[]>;
   listJournalRowsForBranch(input: {
     branchId: string;
     throughJournalId?: number;
   }): Promise<BranchJournalRow[]>;
-  listPushLineageForTurn(input: { threadId: ThreadId; turnId: TurnId }): Promise<PushLineageRow[]>;
 };
 
 export type PushCommitStore = {

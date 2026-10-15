@@ -14,7 +14,6 @@ import type { PeerRetirementCause, RetiredBranch } from "../peer-retirement.js";
 
 export type ApplicationBranchStore = BranchStore &
   BranchResolver & {
-    appendJournal(input: AppendBranchJournalInput): Promise<void>;
     /**
      * The one runtime write of a branch's state, on the caller's ambient transaction, inside the Work
      * projection: the CAS on the full prior state writes the state, the effect arm and the optional
