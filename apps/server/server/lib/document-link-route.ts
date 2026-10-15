@@ -11,7 +11,9 @@ import {
   type CatalogDocument,
   type DocumentLinkAnswer,
   documentTitleFromUri,
+  type LinkResolution,
   type LinkView,
+  mintAheadRef,
   parseContextUri,
   parseLinkRef,
   type ResolveDocumentLinksRequest,
@@ -109,32 +111,14 @@ export async function handleDocumentLinkResolveRequest(
         ? deps.linkScopes.holder({ documentId: holder.documentId, view })
         : deps.linkScopes.reader({ uri: request.baseUri, view });
       for (const { link, index } of refLinks) {
-        const resolution = reader.resolve(link);
-        // Rule 3: the client keeps the settlement and never answers this ref by address again.
-        const marks: AheadMarks = "settled" in resolution ? { settled: true as const } : {};
-        if (resolution.kind === "document") {
-          const { document, inDraft } = resolution;
-          const described = describeDocument(document);
-          answers[index] = described
-            ? {
-                state: "document",
-                document: described,
-                inDraft,
-                ...(document.draft ? { draft: document.draft } : {}),
-                ...marks,
-              }
-            : { state: "gone", ...marks };
-        } else if (resolution.kind === "ahead") {
-          answers[index] = { state: "missing", uri: resolution.uri, ...marks };
-        } else {
-          // gone, and a snapshot miss: never a location the reader was not shown.
-          answers[index] = { state: "gone", ...marks };
-        }
+        answers[index] = answerOf(reader.resolve(link));
       }
     },
   );
 
   const found: Array<{ index: number; document: DocumentAnswer }> = [];
+  // Address-only links the live tree left unanswered: a Work's draft may have created them.
+  const unanswered: Array<{ index: number; uri: string }> = [];
   const byHref = new Map<string, ReturnType<DocumentLinkResolver["resolve"]>>();
   for (const [index, link] of request.links.entries()) {
     if (link.ref !== null) continue;
@@ -157,6 +141,7 @@ export async function handleDocumentLinkResolveRequest(
       byHref.set(link.href, resolving);
     }
     const resolved = await resolving;
+    if (!resolved) unanswered.push({ index, uri: target.uri });
     if (resolved) {
       found.push({
         index,
@@ -185,7 +170,71 @@ export async function handleDocumentLinkResolveRequest(
       }
     }
   }
+  if (unanswered.length > 0) {
+    await answerFromDraftView(deps, { projectId, userId, view, unanswered, answers });
+  }
   return holderUri === undefined ? { answers } : { answers, holderUri };
+}
+
+/**
+ * Reads an address the live tree leaves empty as an unsettled ahead ref in the Work's draft
+ * view, which names what that draft created there. A live occupant keeps winning (these
+ * never reached it), and the scope drops what the reader may not read. Only a document
+ * answers: a draft that created nothing there leaves the answer missing.
+ */
+async function answerFromDraftView(
+  deps: DocumentLinkRouteDeps,
+  input: {
+    projectId: string;
+    userId: UserId;
+    view: LinkView;
+    unanswered: ReadonlyArray<{ index: number; uri: string }>;
+    answers: DocumentLinkAnswer[];
+  },
+): Promise<void> {
+  const { projectId, userId, view, unanswered, answers } = input;
+  if (view.kind !== "draft") return;
+  const links = unanswered.map(({ index, uri }) => ({
+    index,
+    link: { ref: mintAheadRef(), href: uri },
+  }));
+  await deps.linkScopes.within({ projectId, viewer: { accountId: userId } }, async () => {
+    await deps.linkScopes.prepare({
+      holders: [],
+      views: [view],
+      refs: links.map(({ link }) => link.ref),
+      addresses: unanswered.map(({ uri }) => uri),
+    });
+    const reader = deps.linkScopes.reader({ uri: null, view });
+    for (const { index, link } of links) {
+      const resolution = reader.resolve(link);
+      // An ahead ref may show another draft's hidden document; an address names only this one's.
+      if (resolution.kind === "document" && resolution.document.draft?.draftId === view.draftId)
+        answers[index] = answerOf(resolution);
+    }
+  });
+}
+
+/** One reader resolution as the transport answer. */
+function answerOf(resolution: LinkResolution): DocumentLinkAnswer {
+  // Rule 3: the client keeps the settlement and never answers this ref by address again.
+  const marks: AheadMarks = "settled" in resolution ? { settled: true as const } : {};
+  if (resolution.kind === "document") {
+    const { document, inDraft } = resolution;
+    const described = describeDocument(document);
+    return described
+      ? {
+          state: "document",
+          document: described,
+          inDraft,
+          ...(document.draft ? { draft: document.draft } : {}),
+          ...marks,
+        }
+      : { state: "gone", ...marks };
+  }
+  if (resolution.kind === "ahead") return { state: "missing", uri: resolution.uri, ...marks };
+  // gone, and a snapshot miss: never a location the reader was not shown.
+  return { state: "gone", ...marks };
 }
 
 /** What an answer says about how a ref was read: settled, or without its holder's bindings. */
