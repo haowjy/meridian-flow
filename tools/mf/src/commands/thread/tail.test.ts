@@ -213,18 +213,20 @@ it.each([
       publish({ type: "TEXT_MESSAGE_START", messageId: "A::0", role: "assistant" });
       publish({ type: "TEXT_MESSAGE_CONTENT", messageId: "A::0", delta: "Hello " });
     }
-    publish({
-      type: "CUSTOM",
-      name: "meridian.run_state",
-      value: {
-        version: "9999",
-        items: [],
-        sentThrough: 0,
-        execution: null,
-        mode: "direct",
-        blocked: null,
-      },
-    });
+    const closing = (version: string) =>
+      publish({
+        type: "CUSTOM",
+        name: "meridian.run_state",
+        value: {
+          version,
+          items: [],
+          sentThrough: 0,
+          execution: null,
+          mode: "direct",
+          blocked: null,
+        },
+      });
+    closing("9999");
     while (stack.snapshotReads() < 2) await new Promise((resolve) => setTimeout(resolve, 1));
     if (kind === "tool")
       publish({
@@ -240,6 +242,8 @@ it.each([
     turn.status = "complete";
     if (kind === "text") turn.text = "Hello there";
     publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId: "A" });
+    // The closing record follows the turn's end in the same commit; it is what tail looks at.
+    closing("10000");
     const result = await tail;
     expect(result.code).toBe(0);
     const records = result.stdout

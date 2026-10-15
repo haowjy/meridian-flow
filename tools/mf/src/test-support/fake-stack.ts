@@ -175,7 +175,6 @@ function createFake() {
   const snapshotPolicy = { running: true, awake: false, releaseDelayMs: 0, delayMs: 0 };
   const replyPolicy = { holdUntilSubscribed: false };
   const heldReplies: (() => void)[] = [];
-  const afterSnapshot: (() => void)[] = [];
   let leaseReleasePending = false;
   const admissions = new Map<string, unknown>();
   let runCounter = 0;
@@ -545,6 +544,7 @@ function createFake() {
           first.status = "complete";
           first.text = "First answer";
           publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId: first.id } as AGUIEvent);
+          publishRunState(pendingItems, false, true);
           second.status = "streaming";
           publishStart(second.id);
           const finishSecond = () => {
@@ -554,9 +554,7 @@ function createFake() {
             publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId: second.id } as AGUIEvent);
             publishEnded(second.id);
           };
-          // Confirm the owed successor before settling it; no timer may erase that state.
-          if (replyPolicy.holdUntilSubscribed) afterSnapshot.push(finishSecond);
-          else setTimeout(finishSecond, 100);
+          setTimeout(finishSecond, 100);
         }, 50);
         return send(202, {
           threadId: THREAD_ID,
@@ -750,7 +748,6 @@ function createFake() {
         actionRequired: false,
         nextSeq: String(journal.length + 1),
       });
-      for (const reply of afterSnapshot.splice(0)) reply();
       return;
     }
     if (route === `POST /api/threads/${THREAD_ID}/stop`) {
