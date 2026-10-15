@@ -26,12 +26,21 @@ export function resourceLineageOwner(
   return { workId: null, rootThreadId: scope.rootThreadId, rootThreadRef };
 }
 
+/** The owner a chat catalog entry asserts: the scope's chat id and the handle its URI spells. */
+export function resourceChatOwner(
+  scope: Extract<CatalogScope, { kind: "chat" }>,
+  chatRef: string,
+): ResourceOwner {
+  return { workId: null, chatId: scope.chatId, chatRef };
+}
+
 /** What a location's owner spells in a context URI. */
 export type ResourceContextAuthority =
   | { kind: "contextual" }
   | { kind: "none" }
   | { kind: "work"; workSlug: string }
-  | { kind: "lineage"; rootThreadRef: string };
+  | { kind: "lineage"; rootThreadRef: string }
+  | { kind: "chat"; chatRef: string };
 
 /** Journal identity was checked against a Works snapshot or asserted by a scoped server catalog. */
 export function resourceContextAuthority(
@@ -41,9 +50,16 @@ export function resourceContextAuthority(
     workSlug?: string | null;
     rootThreadId?: string | null;
     rootThreadRef?: string | null;
+    chatId?: string | null;
+    chatRef?: string | null;
   },
 ): ResourceContextAuthority {
   if (!isWorkScopedProjectContextScheme(scheme)) return { kind: "contextual" };
+  if (owner.chatId) {
+    if (scheme !== "uploads" || owner.workId !== null || !owner.chatRef)
+      throw new Error("Chat authority requires Uploads and a chat handle");
+    return { kind: "chat", chatRef: owner.chatRef };
+  }
   if (owner.rootThreadId) {
     if (scheme !== "scratch" || owner.workId !== null || !owner.rootThreadRef)
       throw new Error("Lineage authority requires Scratch and a first-chat handle");
@@ -65,6 +81,8 @@ export function resourceUriQualifier(authority: ResourceContextAuthority): strin
       return `@${authority.workSlug}/`;
     case "lineage":
       return `@/${authority.rootThreadRef}/`;
+    case "chat":
+      return `@/${authority.chatRef}/`;
   }
 }
 
@@ -77,6 +95,10 @@ export function catalogEntryOwner(
     return authority.kind === "lineage"
       ? resourceLineageOwner(scope, authority.rootThreadRef)
       : { workId: null };
+  if (scope.kind === "chat")
+    return authority.kind === "chat"
+      ? resourceChatOwner(scope, authority.chatRef)
+      : { workId: null };
   if (scope.kind !== "work") return { workId: null };
   return { workId: scope.workId, workSlug: authority.kind === "work" ? authority.workSlug : null };
 }
@@ -88,6 +110,7 @@ export function ownerListedInScope(
   scope: CatalogScope,
   projectId: string,
 ): boolean {
+  if (owner.chatId !== undefined) return scope.kind === "chat" && scope.chatId === owner.chatId;
   if (owner.rootThreadId !== undefined)
     return scope.kind === "lineage" && scope.rootThreadId === owner.rootThreadId;
   if (owner.workId !== null) return scope.kind === "work" && scope.workId === owner.workId;

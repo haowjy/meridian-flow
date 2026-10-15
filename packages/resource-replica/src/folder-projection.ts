@@ -167,11 +167,13 @@ export function createResourcePlacement(
         const scope =
           location.scheme === "user"
             ? { kind: "user" as const, userId: "self" }
-            : location.rootThreadId !== undefined
-              ? { kind: "lineage" as const, projectId, rootThreadId: location.rootThreadId }
-              : location.workId
-                ? { kind: "work" as const, projectId, workId: location.workId }
-                : { kind: "project" as const, projectId };
+            : location.chatId !== undefined
+              ? { kind: "chat" as const, projectId, chatId: location.chatId }
+              : location.rootThreadId !== undefined
+                ? { kind: "lineage" as const, projectId, rootThreadId: location.rootThreadId }
+                : location.workId
+                  ? { kind: "work" as const, projectId, workId: location.workId }
+                  : { kind: "project" as const, projectId };
         source = {
           kind: "source",
           entryId: `repair-source:${location.scheme}:${JSON.stringify(scope)}`,
