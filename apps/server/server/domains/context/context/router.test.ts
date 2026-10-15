@@ -17,6 +17,7 @@ function writableAdapter(scheme: ContextScheme): ContextSchemeAdapter {
     createTrackedDocument: vi.fn(async () => Ok({ documentId: "document-new" })),
     mkdir: vi.fn(async () => Ok(undefined)),
     writeBinary: vi.fn(async () => Ok({ documentId: "binary-new" })),
+    list: vi.fn(async () => Ok([])),
     tree: {
       inspectMovable: vi.fn(async (path: string) => {
         if (path === "old.md") {
@@ -289,6 +290,41 @@ describe("context router scheme creation capabilities", () => {
       value: { movedNodeId: "document-old", destinationPath: "renamed" },
     });
     expect(uploads.tree?.commitPreparedMove).toHaveBeenCalledOnce();
+  });
+});
+
+it("reads another chat's uploads by handle and refuses a trashed, unknown or Work-spelled owner", async () => {
+  const own = writableAdapter("uploads");
+  const other = writableAdapter("uploads");
+  const port = createContextPortRouter({
+    sources: new Map([["uploads", { adapter: own, authority: { kind: "chat", chatRef: "c1" } }]]),
+    resolveChatSource: async (ref) =>
+      ref === "c2"
+        ? { kind: "found", binding: { adapter: other, authority: { kind: "chat", chatRef: "c2" } } }
+        : { kind: ref === "c3" ? "unavailable" : "missing" },
+    workAuthorities: new Map([[testWorkSlug("current"), authority("w", "current")]]),
+  });
+
+  await expect(port.list("uploads://")).resolves.toMatchObject({
+    ok: true,
+    value: { uri: "uploads://@/c1/" },
+  });
+  await expect(port.list("uploads://@/c2/")).resolves.toMatchObject({
+    ok: true,
+    value: { uri: "uploads://@/c2/" },
+  });
+  expect(other.list).toHaveBeenCalledOnce();
+  await expect(port.list("uploads://@/c3/")).resolves.toMatchObject({
+    ok: false,
+    error: { code: "invalid_uri", reason: expect.stringContaining("unavailable") },
+  });
+  await expect(port.list("uploads://@/c4/")).resolves.toMatchObject({
+    ok: false,
+    error: { code: "invalid_uri" },
+  });
+  await expect(port.list("uploads://@current/")).resolves.toMatchObject({
+    ok: false,
+    error: { code: "invalid_uri", reason: expect.stringContaining("chat") },
   });
 });
 
