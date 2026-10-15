@@ -256,7 +256,7 @@ Documents are Markdown with a few Meridian forms. You will see them when you rea
             "providerOptions": undefined,
             "text": "<system_update>
 Forked conversation through turn 00000000-0000-4000-8000-000000000012.
-This chat continues from c2. Its uploads are at uploads://@/c2/, and its history is readable with thread_history.
+This chat continues from c1. Its uploads are at uploads://@/c1/, and its history is readable with thread_history.
 </system_update>",
             "type": "text",
           },
