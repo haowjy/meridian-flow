@@ -870,10 +870,7 @@ export function createDeliveryAdapter(
     answerRunState: (threadId) =>
       threadLock.withThreadLock(threadId, () => inbox.answerRunState(threadId)),
     async handBack(threadId, request: HandBackRequest): Promise<HandBackResponse> {
-      const scope: HandBackScopeFacts =
-        request.scope.kind === "ids"
-          ? { kind: "ids", ids: request.scope.ids }
-          : { kind: "seen", seenThrough: request.scope.seenThrough, mine: request.scope.mine };
+      const scope: HandBackScopeFacts = { kind: "ids", ids: request.ids };
       const { handedBack, answered, gone, runState } = await handBackRequest(threadId, {
         requestId: request.requestId,
         fingerprint: handBackFingerprint({ kind: "hand_back", scope }),

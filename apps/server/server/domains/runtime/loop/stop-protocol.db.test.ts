@@ -639,9 +639,8 @@ else
       expect(requestText(rig)).toContain("M1 survives");
     });
 
-    const handBack = (rig: Rig, requestId: string, scope: HandBackRequest["scope"]) =>
-      rig.delivery.handBack(rig.threadId as never, { requestId, scope });
-    const ids = (ids_: string[]) => ({ kind: "ids" as const, ids: ids_ });
+    const handBack = (rig: Rig, requestId: string, ids: HandBackRequest["ids"]) =>
+      rig.delivery.handBack(rig.threadId as never, { requestId, ids });
     const content = (response: { handedBack: StopResponse["handedBack"] }) =>
       response.handedBack.map(({ userTurnId, blocks }) => [userTurnId, blocks] as const);
 
@@ -676,7 +675,7 @@ else
       const { done } = await startDrain(rig);
       await lockedAttempt.promise;
 
-      const response = await handBack(rig, crypto.randomUUID(), ids([m2]));
+      const response = await handBack(rig, crypto.randomUUID(), [m2]);
       await gateway.untilGatewayBoundary(1);
       expect(response).toMatchObject({ handedBack: [], answered: [m2], gone: [] });
       const adopted = (await leaseRow(rig))?.adoptedMessageIds ?? [];
@@ -697,11 +696,7 @@ else
           if (!armed) return [];
           armed = false;
           m3 = (await rig.send(rig.threadId, "M3")).userTurnId;
-          await handBack(rig, crypto.randomUUID(), {
-            kind: "seen",
-            seenThrough: await seqOf(rig, m3),
-            mine: [],
-          });
+          await handBack(rig, crypto.randomUUID(), [m3]);
           return [];
         },
         async consume() {},
@@ -724,27 +719,19 @@ else
       const m2 = (await rig.send(rig.threadId, "M2 words")).userTurnId;
       const m3 = (await rig.send(rig.threadId, "M3 words")).userTurnId;
       const [r1, r2] = [crypto.randomUUID(), crypto.randomUUID()];
-      const first = await handBack(rig, r1, ids([m2]));
+      const first = await handBack(rig, r1, [m2]);
       expect(text(first as never)).toEqual(["M2 words"]);
-      const second = await handBack(rig, r2, {
-        kind: "seen",
-        seenThrough: await seqOf(rig, m3),
-        mine: [],
-      });
+      const second = await handBack(rig, r2, [m2, m3]);
       expect(second).toMatchObject({ answered: [], gone: [m2] });
       expect(content(second)).toEqual([[m3, [{ type: "text", text: "M3 words" }]]]);
 
-      const replay2 = await handBack(rig, r2, {
-        kind: "seen",
-        seenThrough: await seqOf(rig, m3),
-        mine: [],
-      });
+      const replay2 = await handBack(rig, r2, [m2, m3]);
       expect(content(replay2)).toEqual(content(second));
       expect(replay2).toMatchObject({ answered: [], gone: [m2] });
-      const replay1 = await handBack(rig, r1, ids([m2]));
+      const replay1 = await handBack(rig, r1, [m2]);
       expect(content(replay1)).toEqual(content(first));
       // Another body under a used id is a conflict, however it would have decided.
-      await expect(handBack(rig, r1, ids([m3]))).rejects.toBeInstanceOf(HandBackConflictError);
+      await expect(handBack(rig, r1, [m3])).rejects.toBeInstanceOf(HandBackConflictError);
       expect((await rowOf(rig, m2)).handedBackBy).toBe(r1);
       expect((await rowOf(rig, m3)).handedBackBy).toBe(r2);
       expect(await journalTypes(rig, "messages.handed_back")).toHaveLength(2);
@@ -757,7 +744,7 @@ else
       const m2 = (await rig.send(rig.threadId, "M2 hidden words")).userTurnId;
       const m3 = (await rig.send(rig.threadId, "M3 kept words")).userTurnId;
       const r1 = crypto.randomUUID();
-      await handBack(rig, r1, ids([m2]));
+      await handBack(rig, r1, [m2]);
       const fork = (
         await rig.repos.threads.createDerivedPrimary({
           aiWriteMode: "direct",
@@ -886,7 +873,7 @@ else
 
       // The chat list: a handed-back message is neither the preview nor the activity head.
       const m5 = (await rig.send(rig.threadId, "M5 hidden preview")).userTurnId;
-      await handBack(rig, crypto.randomUUID(), ids([m5]));
+      await handBack(rig, crypto.randomUUID(), [m5]);
       const [head] = await db
         .select({ leaf: schema.threads.conversationalLeafTurnId })
         .from(schema.threads)
@@ -912,12 +899,12 @@ else
       const m2 = (await rig.send(rig.threadId, "M2 words")).userTurnId;
       const dead = await deadExecution(rig, "compaction", [m2]);
       const request = crypto.randomUUID();
-      const first = await handBack(rig, request, ids([m2]));
+      const first = await handBack(rig, request, [m2]);
       expect(first).toMatchObject({ handedBack: [], answered: [m2], gone: [] });
 
       await repair(rig);
       expect((await rowOf(rig, m2)).deliveredAt).toBeNull();
-      const replay = await handBack(rig, request, ids([m2]));
+      const replay = await handBack(rig, request, [m2]);
       expect(replay).toMatchObject({ handedBack: [], answered: [m2], gone: [] });
       expect((await rowOf(rig, m2)).handedBackBy).toBeNull();
       expect(await ended(rig, dead.executionId)).toBe(true);
@@ -931,7 +918,7 @@ else
       const summarizer = scriptedSummarizer();
       const rig = await rigWith({ summarizer });
       const m2 = (await rig.send(rig.threadId, "M2 hidden words")).userTurnId;
-      await handBack(rig, crypto.randomUUID(), ids([m2]));
+      await handBack(rig, crypto.randomUUID(), [m2]);
       const leaf = await turnGraph(rig.repos.turns).findById(m2 as never);
       expect((await rig.repos.threads.findById(rig.threadId))?.activeLeafTurnId).toBe(m2);
       await rig.delivery.enqueue({
@@ -984,7 +971,7 @@ else
       expect(await leaseRow(rig)).toBeNull();
       expect((await rowOf(rig, run.userTurnId)).deliveredAt).toBeNull();
 
-      await handBack(rig, crypto.randomUUID(), ids([run.userTurnId]));
+      await handBack(rig, crypto.randomUUID(), [run.userTurnId]);
       // The next run builds its context over the pin and answers M2 without it.
       rig.setThreshold(100000);
       const next = await startDrain(rig);

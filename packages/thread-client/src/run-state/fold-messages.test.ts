@@ -1,8 +1,8 @@
 /** The message folds over the run-state view: busy, the tray, the Stop body, what a hand-back hides, Retry retirement. */
-import type { HandBackScope, PendingInboxItem, RunState } from "@meridian/contracts/threads";
+import type { PendingInboxItem, RunState } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import {
-  cancelQueueScope,
+  type HandBackPress,
   handBackCandidates,
   hiddenWriterTurns,
   isBlockedForUsage,
@@ -126,7 +126,6 @@ describe("message folds", () => {
       record("6999", { sentThrough: 4, execution: { executionId: "e1", currentTurnId: null } }),
     );
     expect(stopRequest(seen, "req2")).toMatchObject({ seenThrough: 4, seenExecutionId: "e1" });
-    expect(cancelQueueScope(seen)).toEqual({ kind: "seen", seenThrough: 4, mine: [] });
 
     // Stop's control: a request out or failed stands as it is; an answer that cancelled an
     // execution reads Stopping while the record still shows it, and any other answer is idle.
@@ -145,7 +144,7 @@ describe("message folds", () => {
     const before = viewOf(
       record("1999", { sentThrough: 3, items: [message("m2", 2), message("m3", 3)] }),
     );
-    const scope: HandBackScope = { kind: "seen", seenThrough: 2, mine: ["m1"] };
+    const scope: HandBackPress = { kind: "seen", seenThrough: 2, mine: ["m1"] };
     const candidates = handBackCandidates(before, scope);
     expect(candidates).toEqual(["m2", "m1"]);
     const pressed = addIntent(before, {
