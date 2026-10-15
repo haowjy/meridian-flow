@@ -15,8 +15,8 @@
  * entering and leaving review never remounts it.
  */
 
-import { type ReactNode, useEffect, useRef, useState } from "react";
-import type { ReviewFileTarget } from "@/client/query/work-draft-files";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
+import type { DiscardSubject, ReviewFileTarget } from "@/client/query/work-draft-files";
 import type { ContextTab } from "@/client/stores";
 import { PaintCapture } from "@/components/app/PaintHold";
 import { DiscardedRow } from "@/features/draft-review/DiscardedRow";
@@ -53,28 +53,26 @@ export function MobileDocumentReview({
   const { openReviewFile } = useAiDraftLauncher();
   // The phone's review is read-only: a Discard is a headless edit of the draft's room with its own Undo,
   // scoped to this document's open review so its rows end with it.
-  const { fileForDocument, reviewRoomNameForDraft } = useDraftReview();
+  const { reviewRoomNameForDraft } = useDraftReview();
   const discards = useHeadlessDiscards(
     projectId,
     controller.workId,
     `${documentId}:${itemKey ?? ""}`,
   );
   const roomName = itemKey ? reviewRoomNameForDraft(documentId, itemKey) : null;
-  // The open review names what a Discard acts on. The Work list only supplies presentation: a draft that
-  // lists no changes any more (its last one was just discarded) leaves it, and its Undo still holds.
-  const listed = fileForDocument(documentId);
-  const kept = useRef<ReviewFileTarget | null>(null);
-  if (listed && listed.draft.itemKey === itemKey) kept.current = listed;
-  const file =
-    itemKey && kept.current?.draft.itemKey === itemKey
-      ? kept.current
-      : itemKey
-        ? reviewedFile(documentId, itemKey, tab.name)
-        : null;
+  // The open review names what a Discard acts on, so a draft the Work list no longer carries (its last
+  // change was just discarded) still has its Undo.
+  const subject = useMemo<DiscardSubject | null>(
+    () =>
+      itemKey
+        ? { documentId, itemKey, documentName: tab.name, contextLocation: null, isNew: false }
+        : null,
+    [documentId, itemKey, tab.name],
+  );
   const header = useReviewHeader({
     documentId,
     itemKey: itemKey ?? "",
-    headless: file && roomName ? { discards, file, roomName } : undefined,
+    headless: subject && roomName ? { discards, subject, roomName } : undefined,
     onCloseDraftOnly,
     onOpenDraft: (row: ReviewFileTarget) => openReviewFile(row, controller.workId),
   });
@@ -105,18 +103,6 @@ export function MobileDocumentReview({
       </div>
     </MobileKeyboardAware>
   );
-}
-
-/** The open review's own identity as a Discard's subject, for a review the Work list does not (or no longer) carry. */
-function reviewedFile(documentId: string, itemKey: string, name: string): ReviewFileTarget {
-  return {
-    documentId,
-    documentName: name,
-    contextLocation: null,
-    isNew: false,
-    // A Discard reads only the item key; the rest of a list row is presentation the review never needed.
-    draft: { documentId, itemKey } as ReviewFileTarget["draft"],
-  };
 }
 
 /**
@@ -166,7 +152,7 @@ function ReviewBottom({
   itemKey: string;
 }) {
   const { view } = header;
-  const rows = discards.entries.filter((entry) => entry.file.draft.itemKey === itemKey);
+  const rows = discards.entries.filter((entry) => entry.subject.itemKey === itemKey);
   return (
     <>
       {rows.length > 0 ? (
@@ -176,7 +162,7 @@ function ReviewBottom({
               key={entry.id}
               touch
               entry={entry}
-              name={entry.file.documentName ?? ""}
+              name={entry.subject.documentName ?? ""}
               onUndo={() => discards.undo(entry.id)}
             />
           ))}

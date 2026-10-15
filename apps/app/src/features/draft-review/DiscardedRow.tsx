@@ -17,7 +17,9 @@ export function DiscardedRow({
   onUndo,
   className,
 }: {
-  entry: Pick<DiscardedEntry, "id" | "change" | "phase">;
+  entry: Pick<DiscardedEntry, "id" | "phase"> & {
+    change: Pick<NonNullable<DiscardedEntry["change"]>, "excerpt"> | null;
+  };
   name: string;
   touch?: boolean;
   onUndo: () => void;

@@ -33,7 +33,10 @@ export function nextReviewFile(
  * What a draft's document is called: its name, else (for a new document the AI
  * created unnamed) the basename of its path, then a defensive label.
  */
-export function reviewFileTargetName(row: ReviewFileTarget, untitled: string): string {
+export function reviewFileTargetName(
+  row: Pick<ReviewFileTarget, "documentId" | "documentName" | "contextLocation" | "isNew">,
+  untitled: string,
+): string {
   return (
     row.documentName ??
     (row.isNew ? (documentBasename(row.contextLocation?.path) ?? untitled) : row.documentId)

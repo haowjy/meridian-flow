@@ -4,11 +4,9 @@
  * runtime's state, not to the room: the Y.Doc is subscribed to once, by the runtime.
  */
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { type DraftRef, draftCommandKey } from "@/client/query/draft-command-record";
 import { metaRoomName, useDraftMeta } from "@/client/query/useDraftMeta";
-import type { DocumentSession } from "@/core/editor/document-session";
-import { useLiveDocumentSessionRegistry } from "@/features/project/context/account-feature-context";
 import {
   type ReviewRoom,
   type ReviewState,
@@ -16,6 +14,7 @@ import {
   reviewStateOf,
   watchReviewState,
 } from "./review-runtime";
+import { useBranchRoom } from "./useBranchRoom";
 
 const NO_KEY = "";
 
@@ -58,8 +57,6 @@ export type RoomReview = {
   | { status: Exclude<RoomReviewStatus, "ready">; roomName: null }
 );
 
-let readerSequence = 0;
-
 /**
  * An unopened draft's room, read while `enabled` (a Work page or draft dock row is expanded): the room is
  * retained read-only and its runtime held. What the room says is `useReviewState`'s, so a draft some
@@ -69,29 +66,10 @@ export function useRoomReview(
   draft: DraftRef | null,
   { enabled }: { enabled: boolean },
 ): RoomReview {
-  const registry = useLiveDocumentSessionRegistry();
   const active = enabled && draft !== null;
   const { meta, failed, retry } = useDraftMeta(draft, { enabled: active });
   const roomName = metaRoomName(meta);
-  const [held, setHeld] = useState<{ roomName: string; session: DocumentSession } | null>(null);
-  const owner = useRef(`room-review:${++readerSequence}`);
-  const draftKey = draft ? draftCommandKey(draft) : NO_KEY;
-
-  useEffect(() => {
-    if (!active || !roomName) {
-      setHeld(null);
-      return;
-    }
-    registry.retainBranchRooms(owner.current, [roomName]);
-    setHeld({ roomName, session: registry.getBranchRoom(roomName) });
-    return () => {
-      registry.releaseBranchRooms(owner.current);
-      setHeld(null);
-    };
-  }, [active, roomName, draftKey, registry]);
-
-  // The room the effect above holds for this very name: a shared runtime can say `ready` a render earlier.
-  const session = held && held.roomName === roomName ? held.session : null;
+  const session = useBranchRoom(active ? roomName : null, retry);
   useReviewRuntime(active ? draft : null, session);
   const { ready } = useReviewState(active ? draft : null);
 

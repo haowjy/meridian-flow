@@ -158,7 +158,7 @@ export function useReviewHeader({
   const dispose = (mode: "apply" | "discard") => {
     if (locked) return;
     if (mode === "discard" && headless && !view.wholeDocument) {
-      headless.discards.discardAll(headless.file, headless.roomName);
+      headless.discards.discardAll(headless.subject, headless.roomName);
       return;
     }
     void controller.startDraft(

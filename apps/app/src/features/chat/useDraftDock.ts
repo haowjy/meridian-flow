@@ -6,7 +6,7 @@
  */
 import { t } from "@lingui/core/macro";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   type DraftCommandFailure,
   draftCommandFailure,
@@ -15,6 +15,7 @@ import {
 } from "@/client/query/draft-command-record";
 import { type DraftMeta, draftMetaQueryOptions } from "@/client/query/useDraftMeta";
 import { useThreadDraftFiles } from "@/client/query/useWorkDrafts";
+import { discardSubjectOf } from "@/client/query/work-draft-files";
 import { acquireChatChanges } from "@/features/draft-review/chat-changes";
 import {
   type DraftImagePreviewTarget,
@@ -48,22 +49,27 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
     () => dockFiles(listedFiles, (row) => reviewFileTargetName(row, untitled)),
     [listedFiles, untitled],
   );
-  // A file stays in the draft dock while one of its Discards can still be undone, even once it lists no changes.
+  // A file stays in the draft dock while one of its Discards can still be undone, even once it lists no
+  // changes. The row is the dock's own last view of it.
+  const seen = useRef(new Map<string, DockFile>());
+  for (const file of chatFiles) seen.current.set(file.row.draft.itemKey, file);
   const discardedFiles = discards.entries.filter((entry) => entry.change === null);
   const files = useMemo(() => {
-    const whole = new Set(discardedFiles.map((entry) => entry.file.draft.itemKey));
+    const whole = new Set(discardedFiles.map((entry) => entry.subject.itemKey));
     const kept = chatFiles.filter((file) => !whole.has(file.row.draft.itemKey));
     const listed = new Set(kept.map((file) => file.row.draft.itemKey));
-    const unlisted = discards.entries
-      .filter((entry) => entry.change && !whole.has(entry.file.draft.itemKey))
-      .filter(
-        (entry, at, all) =>
-          all.findIndex((o) => o.file.draft.itemKey === entry.file.draft.itemKey) === at,
-      )
-      .filter((entry) => !listed.has(entry.file.draft.itemKey))
-      .map((entry) => ({ row: entry.file, name: reviewFileTargetName(entry.file, untitled) }));
+    const unlisted = [
+      ...new Set(
+        discards.entries
+          .filter((entry) => entry.change && !whole.has(entry.subject.itemKey))
+          .map((entry) => entry.subject.itemKey),
+      ),
+    ].flatMap((itemKey) => {
+      const file = seen.current.get(itemKey);
+      return file && !listed.has(itemKey) ? [file] : [];
+    });
     return [...kept, ...unlisted];
-  }, [chatFiles, discards.entries, discardedFiles, untitled]);
+  }, [chatFiles, discards.entries, discardedFiles]);
 
   const review = useCallback(
     (file: DockFile, changeId?: string) => {
@@ -108,7 +114,7 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
           documentId: file.row.documentId,
           itemKey: file.row.draft.itemKey,
         }).outcome;
-      else discards.discardFile(file.row, threadId);
+      else discards.discardFile(discardSubjectOf(file.row), threadId);
     }
   }, [controller, chatFiles, discards, threadId]);
 
