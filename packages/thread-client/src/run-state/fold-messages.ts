@@ -7,7 +7,7 @@
  * writer provenance. A switch, or a control row, never counts toward busy, the tray or Stop.
  */
 
-import type { PendingInboxItem, StopRequest } from "@meridian/contracts/threads";
+import type { PendingInboxItem, SendNowRequest, StopRequest } from "@meridian/contracts/threads";
 import type { RunStateView } from "./run-state-view";
 
 const isWriterMessage = (item: PendingInboxItem) =>
@@ -112,6 +112,18 @@ export function stopRequest(view: RunStateView, requestId: string): StopRequest 
     seenExecutionId: view.record?.execution?.executionId ?? null,
     mine: messageIntentIds(view),
   };
+}
+
+/**
+ * Send now's body: the open execution the writer saw and every writer message the record shows
+ * waiting. Null when there is nothing to send now (no open reply, or nothing queued).
+ */
+export function sendNowRequest(view: RunStateView): SendNowRequest | null {
+  const record = view.record;
+  const executionId = record?.execution?.executionId;
+  const waiting = waitingWriterMessages(view).map((item) => item.id);
+  if (!record || !executionId || waiting.length === 0) return null;
+  return { seenThrough: record.sentThrough, seenExecutionId: executionId, waiting };
 }
 
 /** What a hand-back hides while in flight: the queue's ids, or Stop's press set (`seen`). */

@@ -9,6 +9,7 @@ export {
   isOwed,
   isUsageBlocked,
   type StopStatus,
+  sendNowRequest,
   stopRequest,
   stopStatus,
   unheldWriterMessages,
