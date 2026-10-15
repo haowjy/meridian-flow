@@ -95,34 +95,62 @@ export function classifyTurn(turn: Turn): TurnClass {
 }
 
 /**
+ * What the view draws for a turn, or null when the turn has no row of its own. This is the one rule for
+ * "which turns are rows": the builder draws from it and the delivery walk stops at it, so the view and the
+ * server's forgetting decision group deliveries the same way. It reads `turn.blocks` (an overflow shell is
+ * empty, a child seed carries thread references) and the turn that follows, so a caller must hand it a turn
+ * with its blocks loaded. It is visual membership only: whether a turn closes the chat is `isClosingRow`.
+ */
+export type RowShape =
+  | { kind: "compaction" | "write-mode" | "turn" | "handoff-seed" }
+  | { kind: "thread-reference"; references: readonly ThreadReference[] };
+
+export function rowOf(turn: Turn, successor: Turn | undefined): RowShape | null {
+  if (turn.role === "compaction") return { kind: "compaction" };
+  // A fork of a handoff inherits its brief, read-only.
+  if (isHandoffSeed(turn)) return { kind: "handoff-seed" };
+  if (isOverflowShell(turn, successor)) return null;
+  const kind = classifyTurn(turn);
+  if (kind === "write-mode") return { kind: "write-mode" };
+  if (kind === "bubble") return { kind: "turn" };
+  const references = readThreadReferences(turn.blocks ?? []);
+  return references.length ? { kind: "thread-reference", references } : null;
+}
+
+/**
  * The delivery turns (a `subagent_update`) the view groups under an assistant reply: those that follow it
- * until `endsAt` names the next row. The view passes its drawn rows; the server's forgetting decision passes
- * `isRowTurn`, so both walk the chain the same way.
+ * until the next row (`rowOf`). The caller supplies the successor index and the turns' blocks.
  */
 export function deliveriesUnder(
   reply: Turn,
   nextByPrev: ReadonlyMap<string, Turn>,
-  endsAt: (next: Turn) => boolean,
+  onVisit: (visited: Turn) => void = () => {},
 ): Turn[] {
   const delivered: Turn[] = [];
   const seen = new Set<string>();
   let next = nextByPrev.get(reply.id);
   while (next && !seen.has(next.id)) {
     seen.add(next.id);
-    // Delivery events belong to the reply until the next row (a writer turn, another reply, a divider,
-    // or a brief card).
-    if (endsAt(next)) break;
+    onVisit(next);
+    if (rowOf(next, nextByPrev.get(next.id))) break;
     if (classifyTurn(next) === "delivery" && next.role === "system") delivered.push(next);
     next = nextByPrev.get(next.id);
   }
   return delivered;
 }
 
-/** Whether the view draws this turn as a row of its own (a message, a reply, a compaction, a switch, a seed). */
-export function isRowTurn(turn: Turn): boolean {
-  if (turn.role === "compaction" || isHandoffSeed(turn)) return true;
-  const kind = classifyTurn(turn);
-  return kind === "bubble" || kind === "write-mode";
+/**
+ * Whether a closing turn (`isClosingRow`) follows a turn in this sequence: the chat has moved past it. A
+ * failure and its Retry end there. It reads turns, not drawn rows, because an agent's `inbox_message`
+ * closes the chat on the server yet draws no row.
+ */
+export function chatMovedPast(turns: readonly Turn[]): (turn: Turn) => boolean {
+  const at = new Map(turns.map((turn, index) => [turn.id, index]));
+  let lastClosing = -1;
+  turns.forEach((turn, index) => {
+    if (isClosingRow(turn)) lastClosing = index;
+  });
+  return (turn) => (at.get(turn.id) ?? Number.POSITIVE_INFINITY) < lastClosing;
 }
 
 export function buildTranscriptModel(
@@ -135,45 +163,28 @@ export function buildTranscriptModel(
   const nextByPrev = new Map<string, Turn>();
   for (const turn of turns) if (turn.prevTurnId) nextByPrev.set(turn.prevTurnId, turn);
   const rows: TranscriptRow[] = [];
+  const movedPast = chatMovedPast(turns);
   let latestSeedIndex = -1;
-  let latestSeedTurnIndex = -1;
   turns.forEach((turn, index) => {
+    const shape = rowOf(turn, nextByPrev.get(turn.id) ?? turns[index + 1]);
+    if (!shape) return;
     const owner = inherited?.ownerByTurnId.get(turn.id) ?? null;
     const mark: InheritedMark | null = owner
       ? { ownerThreadId: owner, startsOwner: false, endsInherited: false }
       : null;
-    if (turn.role === "compaction") {
-      rows.push({ kind: "compaction", turn, inherited: mark });
-      return;
-    }
-    // A fork of a handoff destination inherits its brief, read-only.
-    if (isHandoffSeed(turn)) {
-      if (!mark) {
-        latestSeedIndex = rows.length;
-        latestSeedTurnIndex = index;
-      }
+    if (shape.kind === "thread-reference") {
+      rows.push({ kind: "thread-reference", turn, references: shape.references, inherited: mark });
+    } else if (shape.kind === "handoff-seed") {
+      if (!mark) latestSeedIndex = rows.length;
       rows.push({ kind: "handoff-seed", turn, latest: false, inherited: mark });
-      return;
+    } else {
+      rows.push({ kind: shape.kind, turn, inherited: mark });
     }
-    if (isOverflowShell(turn, nextByPrev.get(turn.id) ?? turns[index + 1])) return;
-    if (classifyTurn(turn) === "write-mode") {
-      rows.push({ kind: "write-mode", turn, inherited: mark });
-      return;
-    }
-    if (classifyTurn(turn) === "bubble") {
-      rows.push({ kind: "turn", turn, inherited: mark });
-      return;
-    }
-    const references = readThreadReferences(turn.blocks ?? []);
-    if (references.length)
-      rows.push({ kind: "thread-reference", turn, references, inherited: mark });
   });
-  // A seed is `latest` while it is the newest local seed and no closing turn follows it: once the chat moves
-  // on, its failure and Retry end. Read from the turns, not the rows: an agent's message closes on the server
-  // but draws no row here.
+  // A seed is `latest` while it is the newest local seed and the chat has not moved past it: once it has,
+  // its failure and Retry end.
   const latestSeed = rows[latestSeedIndex];
-  const closedAfter = turns.slice(latestSeedTurnIndex + 1).some(isClosingRow);
-  if (latestSeed?.kind === "handoff-seed" && !closedAfter)
+  if (latestSeed?.kind === "handoff-seed" && !movedPast(latestSeed.turn))
     rows[latestSeedIndex] = { ...latestSeed, latest: true };
   markInheritedRuns(rows);
   // Index-aligned with `rows`: response grouping and reveal landing read turns.
@@ -223,13 +234,10 @@ export function buildTranscriptModel(
 
   const deliveryEventsByAssistantTurnId = new Map<string, DeliveryEvent[]>();
   const latestRevealTurnByChildThreadId = new Map<string, string>();
-  const rowTurnIds = new Set(visibleTurns.map((turn) => turn.id));
   for (const turn of visibleTurns) {
     if (turn.role !== "assistant") continue;
     const events: DeliveryEvent[] = [];
-    for (const next of deliveriesUnder(turn, nextByPrev, (candidate) =>
-      rowTurnIds.has(candidate.id),
-    )) {
+    for (const next of deliveriesUnder(turn, nextByPrev)) {
       const update = subagentUpdateByTurnId.get(next.id) ?? null;
       const invocation = update?.execution
         ? invocationByExecution.get(update.execution)
@@ -257,6 +265,7 @@ export function buildTranscriptModel(
   return {
     rows,
     visibleTurns,
+    movedPast,
     deliveryEventsByAssistantTurnId,
     invocationByExecution,
     latestRevealTurnByChildThreadId,

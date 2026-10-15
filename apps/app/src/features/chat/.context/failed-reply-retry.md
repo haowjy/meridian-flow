@@ -18,8 +18,9 @@ reply itself.
 A failure shows only while the writer can act on it. Whether a failed reply that is
 not the latest has a row is decided in `viewTranscript` (no row without items or
 deliveries, unless the `refused` input names it); `ErrorBlock` then draws nothing
-for it but a refusal card. "Latest" is `endsTranscript` in `TurnList`: no visible row follows, and a
-divider counts as a row. The client does not gate Retry on the chat being
+for it but a refusal card. "Latest" is `endsTranscript` in `TurnList`, read from the row's `movedPast`: no closing turn
+(`isClosingRow`, drawn or not) follows it, so a divider counts and an agent's message, which draws no
+row, does too. `chatMovedPast` in `@meridian/thread-client/view` is the one reader; handoff seeds use it as well. The client does not gate Retry on the chat being
 busy: a failed reply is followed at once by whatever runs next, which takes
 its Retry away, and the server refuses a Retry that races a run (409), which
 shows the refused card below. An unadmitted message keeps its "Couldn't send."

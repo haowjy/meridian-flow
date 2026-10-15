@@ -8,7 +8,7 @@
  */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { isClosingRow, retryTargetOf, type Turn } from "@meridian/contracts/threads";
-import { deliveriesUnder, isRowTurn, replyDrawsNothing } from "@meridian/thread-client/view";
+import { deliveriesUnder, replyDrawsNothing } from "@meridian/thread-client/view";
 import {
   type BlockRepository,
   CompactionMetadataCodec,
@@ -188,6 +188,21 @@ export async function loadForgettingFacts(
     cursor = next && next.id !== cursor.id ? next : undefined;
   }
 
+  // The delivery walk stops at the view's next row, and whether a turn is one reads its blocks (a child
+  // seed's thread references, an overflow shell's emptiness). Graph rows carry none, so the walk runs once
+  // to find the turns it visits, loads theirs, and runs again over those.
+  const deliveredUnder = async (reply: Turn): Promise<Turn[]> => {
+    const visited: Turn[] = [];
+    deliveriesUnder(reply, nextByPrev, (turn) => visited.push(turn));
+    const hydrated = new Map(nextByPrev);
+    for (const turn of visited) {
+      const blocks = (await deps.blocks.listByTurn(turn.id as TurnId)).map(toClientSafeBlock);
+      const loaded = { ...turn, blocks };
+      if (turn.prevTurnId) hydrated.set(turn.prevTurnId, loaded);
+    }
+    return deliveriesUnder(reply, hydrated);
+  };
+
   const members: AttemptMember[] = [];
   for (const turn of chain) {
     // An already-forgotten member counts as drawing nothing, so its content is never read.
@@ -197,7 +212,7 @@ export async function loadForgettingFacts(
         : [];
     members.push({
       turn: { ...turn, blocks },
-      delivered: turn.role === "assistant" ? deliveriesUnder(turn, nextByPrev, isRowTurn) : [],
+      delivered: turn.role === "assistant" ? await deliveredUnder(turn) : [],
     });
   }
 

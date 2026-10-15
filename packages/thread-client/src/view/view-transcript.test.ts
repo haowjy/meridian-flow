@@ -258,6 +258,21 @@ it("draws one failure for a chain of failed retries, the newest, and none for a 
     metadata: { kind: "inbox_message" },
   });
   expect(seedLatest([agentMessage])).toMatchObject({ latest: false });
+
+  // Risk (F1): a failed reply that kept its content still offers Retry after an agent's message, which
+  // closes the chat on the server but draws no row. The reply stays, its failure ends, and an empty one goes.
+  const afterAgent = (reply: Turn) =>
+    viewTranscript({
+      turns: [turn("u", "user", null), reply, { ...agentMessage, prevTurnId: reply.id }],
+      activity: { awaitingSubagents: false },
+    });
+  expect(afterAgent(turn("k", "assistant", "u", { status: "error" })).rows[1]).toMatchObject({
+    turn: { id: "k" },
+    movedPast: true,
+  });
+  expect(ids(afterAgent(turn("e", "assistant", "u", { status: "error", blocks: [] })))).toEqual([
+    "u",
+  ]);
 });
 
 it("leaves a handed-back message out and keeps history and later sends", () => {
