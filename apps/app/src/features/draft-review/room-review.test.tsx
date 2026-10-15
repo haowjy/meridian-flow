@@ -1,10 +1,11 @@
 // @vitest-environment node
 /**
- * The expanded-row Discard on real hooks over a supplied registry port. It protects: a rendered, enabled
+ * The expanded-row Discard on real hooks over the real branch-room pool. It protects: a rendered, enabled
  * row whose Discard has nothing to write into (readiness before the room is held), and an Undo that
  * outlives its room (the reader let go on collapse while the Discard entry stayed).
  */
 
+import { branchRoomName } from "@meridian/contracts/protocol";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, useState } from "react";
@@ -12,31 +13,21 @@ import { expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { draftAttributionQueryOptions } from "@/client/query/useDraftAttribution";
 import { draftMetaQueryOptions } from "@/client/query/useDraftMeta";
+import { BranchRoomPool } from "@/core/editor/branch-room-pool";
+import { DocumentSessionTeardownOwner } from "@/core/editor/document-session-teardown-owner";
 import { seedReviewBase } from "@/test-support/inline-review-editor";
 import { settleReact, withReactRoot } from "@/test-support/react-dom-harness";
 import { retainReviewRuntime, reviewRuntimeOf } from "./review-runtime";
 import { useDraftView } from "./useDraftView";
 import { useHeadlessDiscards } from "./useHeadlessDiscards";
 
-const registry = vi.hoisted(() => {
-  const state = {
-    retained: new Map<string, readonly string[]>(),
-    room: null as unknown,
-    // One object for the test's life, as the account's registry is: a new one per render would re-run effects.
-    port: {} as Record<string, unknown>,
-  };
-  state.port = {
-    retainBranchRooms: (owner: string, rooms: readonly string[]) =>
-      state.retained.set(owner, rooms),
-    releaseBranchRooms: (owner: string) => state.retained.delete(owner),
-    getBranchRoom: () => state.room,
-  };
-  return state;
-});
+// One port object for the test's life, as the account's registry is: a new one per render would re-run effects.
+const registry = vi.hoisted(() => ({ port: {} as Record<string, unknown> }));
 vi.mock("@/features/project/context/account-feature-context", () => ({
   useLiveDocumentSessionRegistry: () => registry.port,
 }));
 
+const ROOM = branchRoomName("draft");
 const draft = { projectId: "p", workId: "w", documentId: "doc", itemKey: "draft:doc" };
 const file = { documentId: "doc", draft: { itemKey: "draft:doc" } } as never;
 const text = (doc: Y.Doc) =>
@@ -56,16 +47,26 @@ function fixture() {
     subscribe: () => () => {},
     whenSynced: () => Promise.resolve(),
     hasUnacknowledgedEdits: () => false,
+    destroy: vi.fn(async () => {}),
   };
-  registry.room = room;
-  registry.retained.clear();
+  // The real pool: a room lives while any owner retains it and is destroyed after the grace once none does.
+  const pool = new BranchRoomPool({
+    teardownGraceMs: 1,
+    teardownOwner: new DocumentSessionTeardownOwner(() => new Error("unavailable")),
+    openSession: () => room as never,
+  });
+  registry.port = {
+    retainBranchRooms: (owner: string, rooms: readonly string[]) => pool.retain(owner, rooms),
+    releaseBranchRooms: (owner: string) => pool.release(owner),
+    getBranchRoom: (roomKey: string) => pool.get(roomKey),
+  };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   client.setQueryData(draftMetaQueryOptions(draft).queryKey, {
     kind: "text",
     draftId: "draft",
     itemKey: "draft:doc",
     documentId: "doc",
-    roomName: "branch:draft",
+    roomName: ROOM,
     isNew: false,
     wholeItem: false,
     hasChanges: true,
@@ -74,11 +75,11 @@ function fixture() {
     itemKey: "draft:doc",
     edits: [],
   });
-  return { doc, room, client };
+  return { doc, room, client, pool };
 }
 
-it("a row another surface's runtime made ready is actionable only once its room is held; the entry keeps the room for Undo", async () => {
-  const { doc, room, client } = fixture();
+it("a row another surface's runtime made ready is actionable only once its room is held; collapse keeps the room for Undo, and the last release disposes it", async () => {
+  const { doc, room, client, pool } = fixture();
   const release = retainReviewRuntime(draft, room as never, client);
   reviewRuntimeOf(draft)?.projectNow();
   const renders: { rows: number; ready: boolean }[] = [];
@@ -106,25 +107,33 @@ it("a row another surface's runtime made ready is actionable only once its room 
       <Reader />
     </QueryClientProvider>
   );
-  await withReactRoot(node, async () => {
-    await settleReact(() => expect(view.status).toBe("ready"));
-    // No render offered a row before the room was held.
-    expect(renders.filter((render) => render.rows > 0).every((render) => render.ready)).toBe(true);
+  try {
+    await withReactRoot(node, async () => {
+      await settleReact(() => expect(view.status).toBe("ready"));
+      // No render offered a row before the room was held.
+      expect(renders.filter((render) => render.rows > 0).every((render) => render.ready)).toBe(
+        true,
+      );
 
-    await act(async () => view.discard(view.items[0].change));
-    expect(text(doc)).toContain("red");
-    const leasedBy = (prefix: string) =>
-      [...registry.retained].find(([owner]) => owner.startsWith(prefix))?.[1];
-    expect(leasedBy("headless-discard")).toEqual(["branch:draft"]);
+      await act(async () => view.discard(view.items[0].change));
+      expect(text(doc)).toContain("red");
 
-    // The row's reader lets go (the file collapsed): the entry still holds the room, so Undo still lands.
-    expect([...registry.retained.keys()].some((k) => k.startsWith("room-review"))).toBe(true);
-    await act(async () => collapse());
-    expect([...registry.retained.keys()].some((k) => k.startsWith("room-review"))).toBe(false);
-    expect(leasedBy("headless-discard")).toEqual(["branch:draft"]);
-    act(() => view.undoDiscard?.(view.discarded?.[0].id as string));
-    expect(text(doc)).toContain("green");
-    expect(leasedBy("headless-discard")).toBeUndefined();
-  });
-  release();
+      // The row's reader lets go (the file collapsed) and the grace passes: the entry still holds the room.
+      await act(async () => collapse());
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(room.destroy).not.toHaveBeenCalled();
+      expect(pool.peek(ROOM)).toBe(room);
+      act(() => view.undoDiscard?.(view.discarded?.[0].id as string));
+      expect(text(doc)).toContain("green");
+
+      // Undo spent the entry: nothing holds the room, so it is destroyed.
+      await vi.waitFor(() => expect(room.destroy).toHaveBeenCalledTimes(1));
+      expect(pool.peek(ROOM)).toBeUndefined();
+    });
+  } finally {
+    release();
+    pool.invalidate();
+    client.clear();
+    doc.destroy();
+  }
 });
