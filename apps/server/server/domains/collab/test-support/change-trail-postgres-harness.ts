@@ -8,7 +8,6 @@ import { createModelDocumentEdits } from "../domain/model-document-edits.js";
 import {
   createAgentEditCodecFactory,
   toDocHandle,
-  unwrapDoc,
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
 import type { DraftDecidedOutcome } from "@meridian/contracts/drafts";
@@ -16,17 +15,13 @@ import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/con
 import type { JsonValue } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
-import {
-  allocateDocumentClient,
-  buildDocumentSchema,
-  PROSEMIRROR_FRAGMENT_NAME,
-} from "@meridian/prosemirror-schema";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { and, eq } from "drizzle-orm";
 import { expect } from "vitest";
 import { updateYFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { createAllowAllFileAccess } from "../../../domains/file-policy/index.js";
-import { grantedJournal, testFileGrant } from "../../../test-support/file-grants.js";
+import { testFileGrant } from "../../../test-support/file-grants.js";
 import { createDocumentLastAddress } from "../../context/document-uri-resolver.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import { hiddenDocumentIds } from "../../context/tree/end-use.js";
@@ -100,11 +95,9 @@ const { createDrizzleDocumentProjectionEffects } = await import(
   "../adapters/drizzle-document-activity.js"
 );
 const { createFixtureBranchStore } = await import("./fixture-branch-store.js");
-const { documentAuthority } = await import("../domain/document-handle.js");
 const { ensureAndReadDocumentAuthorityHead, replaceDocumentAuthorityHeadGeneration } = await import(
   "../adapters/drizzle-document-authority-head.js"
 );
-const { lockDocumentMutation } = await import("../../../shared/document-mutation-lock.js");
 const { createDrizzleCollabPersistence } = await import("../adapters/drizzle-journal.js");
 const { createDeferredLiveProjectionCoordinator, createHocuspocusCoordinator } = await import(
   "../adapters/hocuspocus-coordinator.js"
@@ -124,10 +117,7 @@ const { createBranchPullService } = await import("../domain/branch-pulls.js");
 const { createBranchPushService } = await import("../domain/branch-push.js");
 const { DRAFT_TREE_STEP, encodeDraftTreePayload } = await import("../domain/draft-tree-payload.js");
 const { fullStateFingerprint } = await import("../domain/branch-push-transition.js");
-const { journalAttributionByChangedBlock, trailContributionReplacement } = await import(
-  "../domain/branch-trail-projection.js"
-);
-const { projectChangeEventForRecipient } = await import("../domain/change-event-projection.js");
+const { trailContributionReplacement } = await import("../domain/branch-trail-projection.js");
 const { createDocumentWriteHookRunner } = await import(
   "../domain/document-projection-refresher.js"
 );
@@ -142,10 +132,7 @@ const { createDrizzleDraftWriteVisibilityStore } = await import(
 );
 const { createBranchThreadPeerAgentEditCore } = await import("../thread-peer-composition.js");
 const { createWorkDraftReviewService } = await import("../domain/work-draft-review-service.js");
-const { replicateFrozenIdentity } = await import("../domain/document-mutation-policy.js");
 const { createMarkdownDocumentEngine } = await import("../domain/markdown-document.js");
-const { appendProvenanceFacts, createSemanticProvenanceWriter, PROVENANCE_TARGETS_TYPE } =
-  await import("../domain/provenance.js");
 
 /** Each suite owns its connection; importing this module allocates no database resources. */
 export function createTestDatabase(): Database {
@@ -320,15 +307,6 @@ export type ChangeTrailHarnessOptions = {
   publicationSteps?: readonly SettlementPublicationStep[];
 };
 
-export type MatrixDraftStep = {
-  source: "writer" | "agent";
-  markdown: string;
-  remint?: boolean;
-  /** Certifies a length-preserving structural re-mint as one preserved root run. */
-  certifiedCarry?: boolean;
-  transientInsertDelete?: string;
-};
-
 export function createHarness(db: Database, options: ChangeTrailHarnessOptions = {}) {
   // One link scope for every door the harness assembles, as composition shares one.
   const links = options.links ?? createStaticDocumentLinkScopes();
@@ -341,7 +319,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     workSlug: "atomicity-work",
   } as const;
   const persistence = createDrizzleCollabPersistence(db);
-  const testJournal = grantedJournal(persistence.journal);
   const hocuspocus = fakeHocuspocus();
   const liveCoordinator = createHocuspocusCoordinator({
     hocuspocus: () => hocuspocus as never,
@@ -551,7 +528,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
           deleteWriterPrefix,
         });
       }
-      const completed = await durableSettlementStore.completeBatch({
+      return durableSettlementStore.completeBatch({
         ...input,
         recheck(cuts) {
           const decision = input.recheck(cuts);
@@ -559,19 +536,12 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
           return decision;
         },
       });
-      if (completed.status === "completed") settlementProjections.push(...completed.projections);
-      return completed;
     },
   };
-
-  const changeEvents: unknown[] = [];
-  const settlementProjections: unknown[] = [];
   const realBranchPush = createBranchPushService({
     links,
     changeEventDelivery: {
-      deliver(message, sweptChanges) {
-        changeEvents.push(projectChangeEventForRecipient(message, sweptChanges, USER_ID as UserId));
-      },
+      deliver() {},
     },
     branchStore,
     criticalSections: branchCriticalSections,
@@ -1094,276 +1064,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     return branch.branchId;
   }
 
-  async function seedSweepClassificationPush(input: {
-    responseId: string;
-    recentWriterUserId: UserId | null;
-  }): Promise<string> {
-    await persistence.lifecycle.ensureDocument(ALPHA_ID);
-    await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
-      const before = Y.encodeStateVector(doc);
-      model.insertBlocks(
-        toDocHandle(doc),
-        null,
-        markupCodec.parse("Historical writer body.\n\nSurvivor."),
-      );
-      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-        origin: `human:${USER_ID}`,
-        seq: 0,
-      });
-    });
-    const context = {
-      sessionId: THREAD_ID,
-      grant: testFileGrant(DRAFT_DESTINATION),
-      threadId: THREAD_ID,
-      turnId: TURN_ID,
-      responseIdentity: { providerResponseId: input.responseId, editScopeId: input.responseId },
-    };
-    await collab.agentEdit().read({ file: "alpha.md", documentId: ALPHA_ID }, context);
-    const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
-    const doomed = model.getBlocks(toDocHandle(branch.doc))[0];
-    if (!doomed) throw new Error("draft block missing before sweep classification push");
-    model.deleteBlock(toDocHandle(branch.doc), doomed);
-    const committed = await commitSegmentRows(branchCoordinator, {
-      branchId: branch.branchId,
-      sourceDoc: branch.doc,
-      rows: [
-        {
-          branchId: branch.branchId,
-          updateData: await captureHistoricalBranchRow(
-            branchCoordinator,
-            branch.branchId,
-            branch.doc,
-          ),
-          source: "agent",
-          actorUserId: null,
-          threadId: THREAD_ID,
-          turnId: TURN_ID,
-          wId: null,
-          updateMeta: null,
-        },
-      ],
-    });
-    branch.doc.destroy();
-    if (!committed) throw new Error("sweep classification draft edit did not commit");
-    if (input.recentWriterUserId) {
-      await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
-        const block = model.getBlocks(toDocHandle(doc))[0];
-        if (!block) throw new Error("live writer block missing");
-        const before = Y.encodeStateVector(doc);
-        model.applyTextEdit(toDocHandle(doc), block, { from: 0, to: 0 }, "Recent writer: ");
-        await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-          origin: `human:${input.recentWriterUserId}`,
-          seq: 0,
-        });
-      });
-    }
-    return branch.branchId;
-  }
-
-  /** Stages real ProseMirror reconciliation shapes for durable settlement regressions. */
-  async function seedMatrixPush(input: {
-    responseId: string;
-    initialMarkdown: string;
-    steps: readonly MatrixDraftStep[];
-  }): Promise<string> {
-    await persistence.lifecycle.ensureDocument(ALPHA_ID);
-    await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
-      let before = Y.encodeStateVector(doc);
-      replaceMarkdown(doc, input.initialMarkdown);
-      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-        origin: `human:${USER_ID}`,
-        seq: 0,
-      });
-      for (const step of input.steps.filter((candidate) => candidate.source === "writer")) {
-        before = Y.encodeStateVector(doc);
-        if (step.remint) remintMarkdown(doc, step.markdown);
-        else replaceMarkdown(doc, step.markdown);
-        await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-          origin: `human:${USER_ID}`,
-          seq: 0,
-        });
-      }
-    });
-    const context = {
-      sessionId: THREAD_ID,
-      grant: testFileGrant(DRAFT_DESTINATION),
-      threadId: THREAD_ID,
-      turnId: TURN_ID,
-      responseIdentity: { providerResponseId: input.responseId, editScopeId: input.responseId },
-    };
-    await collab
-      .agentEdit()
-      .read(
-        { file: "alpha.md", documentId: ALPHA_ID },
-        { ...context, responseIdentity: undefined },
-      );
-    const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
-    try {
-      for (const step of input.steps.filter((candidate) => candidate.source === "agent")) {
-        branch.doc.clientID = allocateDocumentClient(branch.doc);
-        const beforeStateVector = Y.encodeStateVector(branch.doc);
-        const priorBlock = model.getBlocks(toDocHandle(branch.doc))[0];
-        const source = priorBlock ? model.getVisibleContentLineage(priorBlock)[0] : undefined;
-        const inputRevision = [...Y.encodeStateVector(branch.doc)]
-          .map((byte) => byte.toString(16).padStart(2, "0"))
-          .join("");
-        if (step.transientInsertDelete !== undefined) {
-          branch.doc.transact(() => {
-            const fragment = branch.doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-            const paragraph = new Y.XmlElement("paragraph");
-            paragraph.push([new Y.XmlText(step.transientInsertDelete)]);
-            fragment.push([paragraph]);
-            fragment.delete(fragment.length - 1, 1);
-          });
-        } else if (step.remint) remintMarkdown(branch.doc, step.markdown);
-        else replaceMarkdown(branch.doc, step.markdown);
-        const replacement = markupCodec.parse(step.markdown).blocks[0];
-        const semanticEditIr = step.certifiedCarry
-          ? (() => {
-              if (!priorBlock || !source || !replacement) {
-                throw new Error("certified matrix carry requires one source and replacement block");
-              }
-              if (source.length !== replacement.textContent.length) {
-                throw new Error("certified matrix carry must preserve length");
-              }
-              return {
-                version: 1 as const,
-                documentId: ALPHA_ID,
-                inputRevision: inputRevision as never,
-                scope: [source],
-                intent: {
-                  kind: "mappedEdits" as const,
-                  edits: [
-                    {
-                      edit: {
-                        documentId: ALPHA_ID,
-                        file: "alpha.md",
-                        kind: "block" as const,
-                        block: priorBlock,
-                        replacement,
-                      },
-                      outputRuns: [
-                        {
-                          kind: "preserved" as const,
-                          source,
-                          output: { from: 0, to: source.length },
-                        },
-                      ],
-                    },
-                  ],
-                },
-                deleted: [source],
-              };
-            })()
-          : undefined;
-        if (semanticEditIr) {
-          createSemanticProvenanceWriter().writeCertifiedFacts(
-            toDocHandle(branch.doc),
-            semanticEditIr,
-            beforeStateVector,
-          );
-        }
-        const committed = await commitSegmentRows(branchCoordinator, {
-          branchId: branch.branchId,
-          sourceDoc: branch.doc,
-          rows: [
-            {
-              branchId: branch.branchId,
-              updateData: await captureHistoricalBranchRow(
-                branchCoordinator,
-                branch.branchId,
-                branch.doc,
-              ),
-              source: "agent",
-              actorUserId: null,
-              threadId: THREAD_ID,
-              turnId: TURN_ID,
-              wId: null,
-              updateMeta: null,
-              semanticEditIr: semanticEditIr,
-            },
-          ],
-        });
-        if (!committed) throw new Error(`matrix ${step.source} step did not commit`);
-      }
-      return branch.branchId;
-    } finally {
-      branch.doc.destroy();
-    }
-  }
-
-  async function seedPendingDependencyPush(): Promise<string> {
-    await persistence.lifecycle.ensureDocument(ALPHA_ID);
-    const source = new Y.Doc({ gc: false });
-    source.clientID = 424_242;
-    const fragment = source.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-    const paragraph = new Y.XmlElement("paragraph");
-    fragment.push([paragraph]);
-    const parentUpdate = Y.encodeStateAsUpdate(source);
-    const parentVector = Y.encodeStateVector(source);
-    paragraph.push([new Y.XmlText("Agent pending birth.")]);
-    const childUpdate = Y.encodeStateAsUpdate(source, parentVector);
-    await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
-      Y.applyUpdate(doc, childUpdate);
-      await testJournal.append(ALPHA_ID, childUpdate, {
-        origin: `agent:${TURN_ID}`,
-        actorTurnId: TURN_ID,
-        seq: 0,
-      });
-      Y.applyUpdate(doc, parentUpdate);
-      await persistence.journal.append(ALPHA_ID, parentUpdate, {
-        origin: `human:${USER_ID}`,
-        seq: 0,
-      });
-    });
-    source.destroy();
-    await collab.agentEdit().read(
-      { file: "alpha.md", documentId: ALPHA_ID },
-      {
-        grant: testFileGrant(DRAFT_DESTINATION),
-        sessionId: THREAD_ID,
-        threadId: THREAD_ID,
-        turnId: TURN_ID,
-        responseIdentity: undefined,
-      },
-    );
-    const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
-    branch.doc.destroy();
-    const staged = await branchCoordinator.readBranch(branch.branchId, async (doc) => {
-      const stagedDoc = new Y.Doc({ gc: false });
-      Y.applyUpdate(stagedDoc, Y.encodeStateAsUpdate(doc));
-      return { doc: stagedDoc };
-    });
-    try {
-      const block = model.getBlocks(toDocHandle(staged.doc))[0];
-      if (!block) throw new Error("pending-dependency draft block is unavailable");
-      model.deleteBlock(toDocHandle(staged.doc), block);
-      await commitSegmentRows(branchCoordinator, {
-        branchId: branch.branchId,
-        sourceDoc: staged.doc,
-        rows: [
-          {
-            branchId: branch.branchId,
-            updateData: await captureHistoricalBranchRow(
-              branchCoordinator,
-              branch.branchId,
-              staged.doc,
-            ),
-            source: "agent",
-            actorUserId: null,
-            threadId: THREAD_ID,
-            turnId: TURN_ID,
-            wId: null,
-            updateMeta: null,
-          },
-        ],
-      });
-    } finally {
-      staged.doc.destroy();
-    }
-    return branch.branchId;
-  }
-
   async function seedWriterDocument(markdown: string, responseId: string): Promise<void> {
     await persistence.lifecycle.ensureDocument(ALPHA_ID);
     await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
@@ -1384,293 +1084,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
       },
     );
-  }
-
-  async function compactMixedProvenanceTwice(): Promise<{
-    retainedUpdateCount: number;
-    warmProvenance: string[];
-    coldProvenance: string[];
-    rebasedBranchProvenance: string[];
-  }> {
-    await persistence.lifecycle.ensureDocument(ALPHA_ID);
-    return liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
-      const before = Y.encodeStateVector(doc);
-      replaceMarkdown(doc, "Agent-only passage.");
-      await testJournal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-        origin: `agent:${TURN_ID}`,
-        actorTurnId: TURN_ID,
-        seq: 0,
-      });
-      await persistence.journal.compact(ALPHA_ID, new Date("2100-01-01T00:00:00.000Z"));
-
-      const firstBlock = model.getBlocks(toDocHandle(doc))[0];
-      if (!firstBlock) throw new Error("compaction probe block is unavailable");
-      const beforeWriter = Y.encodeStateVector(doc);
-      model.applyTextEdit(toDocHandle(doc), firstBlock, { from: 0, to: 0 }, "Writer prefix. ");
-      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, beforeWriter), {
-        origin: `human:${USER_ID}`,
-        seq: 0,
-      });
-      await persistence.journal.compact(ALPHA_ID, new Date("2100-01-01T00:00:00.000Z"));
-
-      const warm = await persistence.journal.materializeDestructiveProvenance?.({
-        docId: ALPHA_ID,
-        before: toDocHandle(doc),
-        afterCandidate: toDocHandle(doc),
-      });
-      const snapshot = await persistence.journal.read(ALPHA_ID);
-      const coldDoc = new Y.Doc({ gc: false });
-      if (snapshot.checkpoint) Y.applyUpdate(coldDoc, snapshot.checkpoint);
-      for (const update of snapshot.updates) Y.applyUpdate(coldDoc, update.update);
-      const cold = await persistence.journal.materializeDestructiveProvenance?.({
-        docId: ALPHA_ID,
-        before: toDocHandle(coldDoc),
-        afterCandidate: toDocHandle(coldDoc),
-      });
-      coldDoc.destroy();
-
-      const [checkpoint] = await db
-        .select({ id: schema.documentYjsCheckpoints.id })
-        .from(schema.documentYjsCheckpoints)
-        .where(eq(schema.documentYjsCheckpoints.documentId, ALPHA_ID))
-        .orderBy(desc(schema.documentYjsCheckpoints.id))
-        .limit(1);
-      if (!checkpoint) throw new Error("compaction probe checkpoint is unavailable");
-      const authorityHead = await ensureAndReadDocumentAuthorityHead(db, ALPHA_ID);
-      const replaced = await replaceDocumentAuthorityHeadGeneration(db, {
-        documentId: ALPHA_ID,
-        checkpointId: checkpoint.id,
-        expectedGeneration: authorityHead.generation,
-      });
-      if (!replaced.ok) throw new Error(`compaction probe replacement failed: ${replaced.code}`);
-      const rebased = await persistence.journal.materializeDestructiveProvenance?.({
-        docId: ALPHA_ID,
-        before: toDocHandle(doc),
-        afterCandidate: toDocHandle(doc),
-        fallbackProvenance: "agent",
-      });
-      const retainedUpdateCount = (
-        await db
-          .select()
-          .from(schema.documentYjsUpdates)
-          .where(eq(schema.documentYjsUpdates.documentId, ALPHA_ID))
-      ).length;
-      return {
-        retainedUpdateCount,
-        warmProvenance: [...new Set(warm?.before.map((run) => run.provenance) ?? [])].sort(),
-        coldProvenance: [...new Set(cold?.before.map((run) => run.provenance) ?? [])].sort(),
-        rebasedBranchProvenance: [
-          ...new Set(rebased?.before.map((run) => run.provenance) ?? []),
-        ].sort(),
-      };
-    });
-  }
-
-  async function seedAuthorityReplacementProbe(): Promise<number> {
-    await persistence.lifecycle.ensureDocument(ALPHA_ID);
-    return liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
-      let before = Y.encodeStateVector(doc);
-      replaceMarkdown(doc, "Restored base.");
-      await testJournal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-        origin: `agent:${TURN_ID}`,
-        actorTurnId: TURN_ID,
-        seq: 0,
-      });
-      const cut = await persistence.journal.captureCheckpoint(ALPHA_ID, documentAuthority(doc));
-      if (!cut) throw new Error("Replacement probe checkpoint cut is unavailable");
-      await persistence.journal.storeCheckpoint(cut);
-      const [checkpoint] = await db
-        .select({ id: schema.documentYjsCheckpoints.id })
-        .from(schema.documentYjsCheckpoints)
-        .where(eq(schema.documentYjsCheckpoints.documentId, ALPHA_ID))
-        .orderBy(desc(schema.documentYjsCheckpoints.id))
-        .limit(1);
-      if (!checkpoint) throw new Error("replacement probe checkpoint is unavailable");
-
-      const block = model.getBlocks(toDocHandle(doc))[0];
-      if (!block) throw new Error("replacement probe block is unavailable");
-      before = Y.encodeStateVector(doc);
-      model.applyTextEdit(toDocHandle(doc), block, { from: 0, to: 0 }, "Retired suffix. ");
-      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-        origin: `human:${USER_ID}`,
-        seq: 0,
-      });
-      return checkpoint.id;
-    });
-  }
-
-  async function authorityReplacementProbeResult(generation: bigint): Promise<{
-    coldMarkdown: string;
-    currentGenerationUpdateCount: number;
-  }> {
-    const snapshot = await persistence.journal.read(ALPHA_ID);
-    const coldDoc = new Y.Doc({ gc: false });
-    if (snapshot.checkpoint) Y.applyUpdate(coldDoc, snapshot.checkpoint);
-    for (const update of snapshot.updates) Y.applyUpdate(coldDoc, update.update);
-    const coldMarkdown = serializeMarkdown(coldDoc);
-    coldDoc.destroy();
-    const currentGenerationUpdateCount = (
-      await db
-        .select()
-        .from(schema.documentYjsUpdates)
-        .where(
-          and(
-            eq(schema.documentYjsUpdates.documentId, ALPHA_ID),
-            eq(schema.documentYjsUpdates.authorityGeneration, generation),
-          ),
-        )
-    ).length;
-    return { coldMarkdown, currentGenerationUpdateCount };
-  }
-
-  async function compactAfterAuthorityReplacement(): Promise<{
-    coldMarkdown: string;
-    currentGenerationUpdateCount: number;
-  }> {
-    const checkpointId = await seedAuthorityReplacementProbe();
-    const authorityHead = await ensureAndReadDocumentAuthorityHead(db, ALPHA_ID);
-    const replaced = await replaceDocumentAuthorityHeadGeneration(db, {
-      documentId: ALPHA_ID,
-      checkpointId,
-      expectedGeneration: authorityHead.generation,
-    });
-    if (!replaced.ok) throw new Error(`replacement probe failed: ${replaced.code}`);
-    await persistence.journal.compact(ALPHA_ID, new Date("2100-01-01T00:00:00.000Z"));
-    return authorityReplacementProbeResult(replaced.generation);
-  }
-
-  async function compactWhileAuthorityReplacementWaits(): Promise<{
-    coldMarkdown: string;
-    currentGenerationUpdateCount: number;
-  }> {
-    const checkpointId = await seedAuthorityReplacementProbe();
-    const authorityHead = await ensureAndReadDocumentAuthorityHead(db, ALPHA_ID);
-    let releaseBlocker!: () => void;
-    let blockerReady!: () => void;
-    const blockerRelease = new Promise<void>((resolve) => {
-      releaseBlocker = resolve;
-    });
-    const blockerAcquired = new Promise<void>((resolve) => {
-      blockerReady = resolve;
-    });
-    const blocker = db.transaction(async (tx) => {
-      await lockDocumentMutation(tx, ALPHA_ID);
-      blockerReady();
-      await blockerRelease;
-    });
-    await blockerAcquired;
-
-    async function waitForAdvisoryLockWaiters(expected: number): Promise<void> {
-      for (let attempt = 0; attempt < 100; attempt += 1) {
-        const [row] = await db.execute<{ waiting: number }>(sql`
-          SELECT count(*)::int AS waiting
-          FROM pg_locks
-          WHERE locktype = 'advisory'
-            AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
-            AND NOT granted
-        `);
-        if ((row?.waiting ?? 0) >= expected) return;
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      }
-      throw new Error(`expected ${expected} waiting document mutation locks`);
-    }
-
-    const compact = persistence.journal.compact(ALPHA_ID, new Date("2100-01-01T00:00:00.000Z"));
-    let replacement: ReturnType<typeof replaceDocumentAuthorityHeadGeneration> | undefined;
-    try {
-      await waitForAdvisoryLockWaiters(1);
-      replacement = replaceDocumentAuthorityHeadGeneration(db, {
-        documentId: ALPHA_ID,
-        checkpointId,
-        expectedGeneration: authorityHead.generation,
-      });
-      await waitForAdvisoryLockWaiters(2);
-    } finally {
-      releaseBlocker();
-      await blocker;
-    }
-    if (!replacement) {
-      throw new Error("durable authority head generation replacement did not enter the lock queue");
-    }
-    const [, replaced] = await Promise.all([compact, replacement]);
-    if (!replaced.ok) throw new Error(`replacement probe failed: ${replaced.code}`);
-    return authorityReplacementProbeResult(replaced.generation);
-  }
-
-  async function seedLiveCertifiedCarry(input: {
-    initialMarkdown: string;
-    carriedMarkdown: string | readonly string[];
-    responseId: string;
-  }): Promise<string> {
-    await persistence.lifecycle.ensureDocument(ALPHA_ID);
-    await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
-      let before = Y.encodeStateVector(doc);
-      replaceMarkdown(doc, input.initialMarkdown);
-      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-        origin: `human:${USER_ID}`,
-        seq: 0,
-      });
-      const carries = Array.isArray(input.carriedMarkdown)
-        ? input.carriedMarkdown
-        : [input.carriedMarkdown];
-      for (const markdown of carries) {
-        const block = model.getBlocks(toDocHandle(doc))[0];
-        const source = block ? model.getVisibleContentLineage(block)[0] : undefined;
-        const replacement = markupCodec.parse(markdown).blocks[0];
-        if (!block || !source || !replacement || source.length !== replacement.textContent.length) {
-          throw new Error("live certified carry requires one length-preserving block");
-        }
-        before = Y.encodeStateVector(doc);
-        remintMarkdown(doc, markdown);
-        const ir = {
-          version: 1 as const,
-          documentId: ALPHA_ID,
-          inputRevision: "fixture-revision" as never,
-          scope: [source],
-          deleted: [source],
-          intent: {
-            kind: "mappedEdits" as const,
-            edits: [
-              {
-                edit: {
-                  documentId: ALPHA_ID,
-                  file: "alpha.md",
-                  kind: "block" as const,
-                  block,
-                  replacement,
-                },
-                outputRuns: [
-                  {
-                    kind: "preserved" as const,
-                    source,
-                    output: { from: 0, to: source.length },
-                  },
-                ],
-              },
-            ],
-          },
-        };
-        createSemanticProvenanceWriter().writeCertifiedFacts(toDocHandle(doc), ir, before);
-        await testJournal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-          origin: `agent:${TURN_ID}`,
-          actorTurnId: TURN_ID,
-          seq: 0,
-        });
-      }
-    });
-    await collab.agentEdit().read(
-      { file: "alpha.md", documentId: ALPHA_ID },
-      {
-        sessionId: THREAD_ID,
-        grant: testFileGrant(DRAFT_DESTINATION),
-        threadId: THREAD_ID,
-        turnId: TURN_ID,
-        responseIdentity: { providerResponseId: input.responseId, editScopeId: input.responseId },
-      },
-    );
-    const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
-    branch.doc.destroy();
-    return branch.branchId;
   }
 
   /** Runs an agent command through the certified semantic-mutation admission path. */
@@ -1711,130 +1124,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       ),
     ).resolves.toMatchObject({ status: "committed" });
     return branch.branchId;
-  }
-
-  async function seedCheckpointRestoredExplicitDelete(responseId: string): Promise<string> {
-    const restored = "Explicit restored writer root.";
-    const branchId = await seedLiveCertifiedCarry({
-      responseId,
-      initialMarkdown: restored,
-      carriedMarkdown: restored,
-    });
-    const authorityHead = await liveCoordinator.withDocument(ALPHA_ID, async (doc) =>
-      documentAuthority(doc),
-    );
-    const cut = await persistence.journal.captureCheckpoint(ALPHA_ID, authorityHead);
-    if (!cut) throw new Error("Restoration checkpoint cut is unavailable");
-    const checkpointId = Number(
-      await persistence.store.createCheckpoint(cut, "oracle-explicit-restoration"),
-    );
-    const replaced = await replaceDocumentAuthorityHeadGeneration(db, {
-      documentId: ALPHA_ID,
-      checkpointId,
-      expectedGeneration: authorityHead.generation,
-    });
-    if (!replaced.ok) throw new Error(`checkpoint restore failed: ${replaced.code}`);
-
-    // Recreate the carried prose after the generation replacement as an explicit
-    // restoration of the pre-carry writer root, not as fresh agent ancestry.
-    await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
-      const priorBlock = model.getBlocks(toDocHandle(doc))[0];
-      const source = priorBlock ? model.getVisibleContentLineage(priorBlock)[0] : undefined;
-      const facts = [
-        ...doc
-          .getMap<{
-            target: { clientID: number; clock: number; length: number };
-            root: { clientID: number; clock: number; length: number };
-          }>(PROVENANCE_TARGETS_TYPE)
-          .values(),
-      ];
-      const fact = facts.find(
-        ({ target }) =>
-          source &&
-          target.clientID === source.clientID &&
-          target.clock <= source.clock &&
-          target.clock + target.length >= source.clock + source.length,
-      );
-      const replacement = markupCodec.parse(restored).blocks[0];
-      if (!priorBlock || !source || !fact || !replacement) {
-        throw new Error("carried checkpoint root is unavailable for restoration");
-      }
-      const [installedCheckpoint] = await db
-        .select({ manifest: schema.documentYjsCheckpoints.attributionManifest })
-        .from(schema.documentYjsCheckpoints)
-        .where(eq(schema.documentYjsCheckpoints.documentId, ALPHA_ID))
-        .orderBy(desc(schema.documentYjsCheckpoints.id))
-        .limit(1);
-      const manifest = installedCheckpoint?.manifest as {
-        attributions?: Array<{
-          range: { clientID: number; clock: number; length: number };
-        }>;
-      };
-      if (
-        !manifest.attributions?.some(
-          ({ range }) =>
-            range.clientID === fact.root.clientID &&
-            range.clock <= fact.root.clock &&
-            range.clock + range.length >= fact.root.clock + fact.root.length,
-        )
-      ) {
-        throw new Error(
-          `checkpoint omitted carried writer root ${JSON.stringify(fact.root)} from ${JSON.stringify(manifest.attributions?.map(({ range }) => range))}`,
-        );
-      }
-      const before = Y.encodeStateVector(doc);
-      remintMarkdown(doc, restored);
-      createSemanticProvenanceWriter().writeCertifiedFacts(
-        toDocHandle(doc),
-        {
-          version: 1,
-          documentId: ALPHA_ID,
-          inputRevision: "fixture-revision" as never,
-          scope: [source],
-          deleted: [source],
-          intent: {
-            kind: "mappedEdits",
-            edits: [
-              {
-                edit: {
-                  documentId: ALPHA_ID,
-                  file: "alpha.md",
-                  kind: "block",
-                  block: priorBlock,
-                  replacement,
-                },
-                outputRuns: [
-                  {
-                    kind: "restoration",
-                    root: fact.root,
-                    payload: restored,
-                    output: { from: 0, to: source.length },
-                  },
-                ],
-              },
-            ],
-          },
-        },
-        before,
-      );
-      await testJournal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-        origin: `agent:${TURN_ID}`,
-        actorTurnId: TURN_ID,
-        seq: 0,
-      });
-    });
-    await collab.agentEdit().read(
-      { file: "alpha.md", documentId: ALPHA_ID },
-      {
-        sessionId: THREAD_ID,
-        grant: testFileGrant(DRAFT_DESTINATION),
-        threadId: THREAD_ID,
-        turnId: TURN_ID,
-        responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
-      },
-    );
-    void branchId;
-    return stageCertifiedReplace({ responseId, find: restored, content: "" });
   }
 
   /**
@@ -1966,68 +1255,9 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     push: (branchId: string) => applyBranches([branchId]),
     pushBranches: (branchIds: readonly string[], payloads?: Readonly<Record<string, JsonValue>>) =>
       applyBranches(branchIds, payloads),
-    changeEvents: () => [...changeEvents],
-    settlementProjections: () => [...settlementProjections],
     seedDestructivePush,
-    /** An outstanding tool reply on a real thread peer, not a journaled Work draft. */
-    async stagePeerReply(documentId: DocumentId, responseId: string) {
-      const context = {
-        grant: testFileGrant(DRAFT_DESTINATION),
-        sessionId: THREAD_ID,
-        threadId: THREAD_ID,
-        turnId: TURN_ID,
-        responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
-      };
-      const file = `${documentName(documentId)}.md`;
-      await collab
-        .agentEdit()
-        .read({ file, documentId }, { ...context, responseIdentity: undefined });
-      await expect(
-        collab.agentEdit().write(
-          {
-            command: "insert",
-            file,
-            documentId,
-            content: "Outstanding peer reply.",
-          },
-          context,
-        ),
-      ).resolves.toMatchObject({ status: "success", phase: "staged" });
-      const [peer] = await db
-        .select()
-        .from(schema.documentBranches)
-        .where(
-          and(
-            eq(schema.documentBranches.kind, "thread_peer"),
-            eq(schema.documentBranches.documentId, documentId),
-            eq(schema.documentBranches.threadId, THREAD_ID),
-          ),
-        );
-      if (!peer) throw new Error("staged reply has no thread peer");
-      return peer.id;
-    },
-    /** The reply's staged view of a document: its buffered writes live in the response, not the peer branch. */
-    async stagedReplyMarkdown(responseId: string, documentId: DocumentId) {
-      const lease = await collab.agentEdit().prepare(responseId, documentId);
-      if (!lease) throw new Error(`${responseId} has no staged writes on ${documentId}`);
-      try {
-        return serializeMarkdown(unwrapDoc(lease.doc));
-      } finally {
-        lease.dispose();
-      }
-    },
-    branchMarkdown: (branchId: string) =>
-      branchCoordinator.readBranch(branchId, async (doc) => serializeMarkdown(doc)),
-    seedSweepClassificationPush,
-    seedMatrixPush,
-    seedPendingDependencyPush,
     seedWriterDocument,
-    compactMixedProvenanceTwice,
-    compactAfterAuthorityReplacement,
-    compactWhileAuthorityReplacementWaits,
-    seedLiveCertifiedCarry,
     stageCertifiedReplace,
-    seedCheckpointRestoredExplicitDelete,
     /** A writer edit on the warm room, journaled first, as a socket write would be. */
     appendWriterPrefix,
     /** The process's branch critical sections, for lease probes. */
@@ -2134,17 +1364,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         { providerResponseId: responseId, editScopeId: responseId },
         { threadId: THREAD_ID, turnId: TURN_ID },
       ),
-    addLiveDependency: () =>
-      liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
-        const block = model.getBlocks(toDocHandle(doc))[0];
-        if (!block) throw new Error("live dependency block missing");
-        const before = Y.encodeStateVector(doc);
-        model.applyTextEdit(toDocHandle(doc), block, { from: 0, to: 0 }, "Writer follow-up: ");
-        await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-          origin: `human:${USER_ID}`,
-          seq: 0,
-        });
-      }),
     recoverPendingLiveSettlements: () => realBranchPush.recoverPendingLiveSettlements(),
     /**
      * Drives every ownership-fenced settlement operation with a stale claim and
@@ -2230,69 +1449,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         checkpointId: checkpoint.id,
         expectedGeneration: authorityHead.generation,
       });
-    },
-    async attemptDivergentReplicationAdmission() {
-      const base = new Y.Doc({ gc: false });
-      const fragment = base.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-      const root = (() => {
-        const paragraph = new Y.XmlElement("paragraph");
-        const text = new Y.XmlText("a");
-        paragraph.push([text]);
-        fragment.push([paragraph]);
-        const id = (text as unknown as { _start: { id: { client: number; clock: number } } })._start
-          .id;
-        return { clientID: id.client, clock: id.clock, length: 1 };
-      })();
-      const carry = (value: string) => {
-        const doc = new Y.Doc({ gc: false });
-        Y.applyUpdate(doc, Y.encodeStateAsUpdate(base));
-        doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).delete(0, 1);
-        const paragraph = new Y.XmlElement("paragraph");
-        const text = new Y.XmlText(value);
-        paragraph.push([text]);
-        doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).push([paragraph]);
-        const id = (text as unknown as { _start: { id: { client: number; clock: number } } })._start
-          .id;
-        appendProvenanceFacts(doc, {
-          targets: [
-            {
-              version: 1,
-              target: { clientID: id.client, clock: id.clock, length: 1 },
-              root,
-            },
-          ],
-        });
-        return doc;
-      };
-      const target = carry("t");
-      const source = carry("s");
-      const before = Y.encodeStateAsUpdate(target);
-      let journaled = false;
-      try {
-        await replicateFrozenIdentity({
-          source: { documentId: ALPHA_ID, doc: source },
-          target: { documentId: ALPHA_ID, generation: 1n, doc: target },
-          plan: { kind: "wholeDocument" },
-          admit: async ({ update }) => {
-            journaled = true;
-            Y.applyUpdate(target, update);
-            return { sequence: 1n, joined: 0 };
-          },
-        });
-        return { rejected: false, journaled, applied: true };
-      } catch (cause) {
-        return {
-          rejected:
-            cause instanceof Error &&
-            cause.message.includes("One provenance root unit cannot have two visible targets"),
-          journaled,
-          applied: !Buffer.from(Y.encodeStateAsUpdate(target)).equals(Buffer.from(before)),
-        };
-      } finally {
-        base.destroy();
-        target.destroy();
-        source.destroy();
-      }
     },
     destroyWarmState() {
       for (const doc of hocuspocus.documents.values()) doc.destroy();
@@ -2387,34 +1543,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
             eq(schema.branchWriteJournal.turnId, TURN_ID),
           ),
         ),
-    async activeJournalWriteShape(documentId: DocumentId = ALPHA_ID) {
-      const rows = await db
-        .select()
-        .from(schema.branchWriteJournal)
-        .where(eq(schema.branchWriteJournal.status, "active"))
-        .orderBy(schema.branchWriteJournal.id);
-      return liveCoordinator.withDocument(documentId, async (liveDoc) => {
-        const attribution = journalAttributionByChangedBlock({ priorDoc: liveDoc, rows, model });
-        const after = new Y.Doc({ gc: false });
-        try {
-          Y.applyUpdate(after, Y.encodeStateAsUpdate(liveDoc));
-          for (const row of rows) Y.applyUpdate(after, row.updateData);
-          const beforeBlock = model.getBlocks(toDocHandle(liveDoc))[0];
-          const afterBlock = model.getBlocks(toDocHandle(after))[0];
-          return {
-            rowCount: rows.length,
-            operationCount: attribution.operations.length,
-            stableIdentity:
-              beforeBlock !== undefined &&
-              afterBlock !== undefined &&
-              JSON.stringify(model.getCanonicalBlockIdentity(beforeBlock)) ===
-                JSON.stringify(model.getCanonicalBlockIdentity(afterBlock)),
-          };
-        } finally {
-          after.destroy();
-        }
-      });
-    },
     noticeRows: () => db.select().from(schema.pendingNotices),
     async trailRowMembership() {
       return {
@@ -2490,27 +1618,19 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   }
 }
 
-function serializeMarkdown(doc: Y.Doc): string {
+export function serializeMarkdown(doc: Y.Doc): string {
   const blocks = model.getBlocks(toDocHandle(doc));
   return blocks.length === 0
     ? ""
     : markupCodec.serialize(model.projectBlocks(toDocHandle(doc)), UNSCOPED_DOCUMENT_LINKS);
 }
 
-function replaceMarkdown(doc: Y.Doc, markdown: string): void {
+export function replaceMarkdown(doc: Y.Doc, markdown: string): void {
   const parsed = markupCodec.parse(markdown);
   const replacement = documentSchema.node("doc", null, parsed.blocks);
   updateYFragment(doc, doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), replacement, {
     mapping: new Map(),
     isOMark: new Map(),
-  });
-}
-
-function remintMarkdown(doc: Y.Doc, markdown: string): void {
-  doc.transact(() => {
-    const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-    if (fragment.length > 0) fragment.delete(0, fragment.length);
-    replaceMarkdown(doc, markdown);
   });
 }
 

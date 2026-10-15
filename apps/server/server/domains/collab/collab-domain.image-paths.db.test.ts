@@ -489,13 +489,3 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
   });
 }
-async function _expectMarkdown(
-  collab: {
-    readAsMarkdown(documentId: string): Promise<{ ok: true; value: string } | { ok: false }>;
-  },
-  documentId: string,
-  expected: string,
-) {
-  const read = await collab.readAsMarkdown(documentId);
-  expect(read.ok ? read.value : "").toContain(expected);
-}

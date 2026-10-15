@@ -94,7 +94,13 @@ async function setup() {
     branchId: string,
   ) => {
     doc.clientID = allocateDocumentClient(doc);
-    const updateData = Y.mergeUpdates(captureMutationUpdates(doc, () => edit(doc)));
+    return commitFrame(
+      Y.mergeUpdates(captureMutationUpdates(doc, () => edit(doc))),
+      room,
+      branchId,
+    );
+  };
+  const commitFrame = async (updateData: Uint8Array, room: Y.Doc, branchId: string) => {
     Y.applyUpdate(room, updateData);
     return view.branchCoordinator.commitWriterUpdate({
       branchId,
@@ -103,7 +109,7 @@ async function setup() {
       roomDocument: room,
     });
   };
-  return { ...fixture, draftRow, decode, read, catchUp, rebaseTo, writerUpdate };
+  return { ...fixture, draftRow, decode, read, catchUp, rebaseTo, writerUpdate, commitFrame };
 }
 
 const firstText = (doc: Y.Doc, fragment: string) =>
@@ -209,23 +215,25 @@ describe("content rebase of a Work draft", () => {
   });
 
   it("admits a reconnect that repeats the server's own base tombstones, and still refuses a live base delete", async () => {
-    const { harness, draftRow, decode, rebaseTo, writerUpdate } = await setup();
+    const { harness, draftRow, decode, rebaseTo, writerUpdate, commitFrame } = await setup();
     try {
       const start = (await draftRow()).baseRevision?.seq ?? 0;
       // A rebase that rewrites the base leaves server tombstones in review_base.
       await rebaseTo(start + 1, paragraphs("Rewritten by live."));
       const rebased = await draftRow();
-      // The browser's cumulative state carries those tombstones back on reconnect, with its own typing.
+      // The reconnect frame is the browser's state against the server vector: it repeats the
+      // server's own review_base tombstones in its delete set, beside the browser's typing.
       const room = decode(rebased.state);
       const reconnecting = decode(rebased.state);
-      await expect(
-        writerUpdate(
-          reconnecting,
-          room,
-          (d) => firstText(d, "prosemirror").insert(0, "typed "),
-          rebased.id,
-        ),
-      ).resolves.toMatchObject({ admitted: true });
+      reconnecting.clientID = allocateDocumentClient(reconnecting);
+      firstText(reconnecting, "prosemirror").insert(0, "typed ");
+      const frame = Y.encodeStateAsUpdate(reconnecting, Y.encodeStateVector(room));
+      const deletedClocks = [...Y.decodeUpdate(frame).ds.clients.values()].reduce(
+        (total, ranges) => total + ranges.reduce((sum, range) => sum + range.len, 0),
+        0,
+      );
+      expect(deletedClocks).toBeGreaterThan(0);
+      await expect(commitFrame(frame, room, rebased.id)).resolves.toMatchObject({ admitted: true });
       const deletion = decode(rebased.state);
       await expect(
         writerUpdate(
