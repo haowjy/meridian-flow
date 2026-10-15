@@ -8,17 +8,16 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createDb } from "@meridian/database";
-import postgres from "postgres";
+import type postgres from "postgres";
 import { describe, expect, it } from "vitest";
 import { runMigrations } from "../../../../tools/dev/lib/migration-runner.js";
 import { createDrizzleRunClaim } from "../domains/runtime/adapters/drizzle-run-claim.js";
 import { createDrizzleRepositoriesForTest } from "../domains/threads/adapters/drizzle/repositories.js";
 import {
-  isolateSchemas,
+  createScratchDatabase,
   journalIndex,
   MIGRATIONS,
   readJournal,
-  restoreSchemas,
   stageThrough,
 } from "./staged-migrations.js";
 
@@ -68,20 +67,18 @@ async function seedWorkModeShape(sql: postgres.Sql) {
 
 describe.skipIf(!enabled)("chat write mode migration (postgres)", () => {
   it("copies each chat's primary Work mode and keeps the Work's as its default", async () => {
-    const target = postgres(databaseUrl ?? "", { max: 1, onnotice: () => {} });
+    const scratch = await createScratchDatabase(databaseUrl ?? "", "chat_mode_upgrade");
+    const target = scratch.sql;
     const directory = await mkdtemp(path.join(tmpdir(), "meridian-chat-mode-upgrade-"));
-    let isolated = false;
     try {
       const journal = await readJournal();
       const first = journalIndex(journal, "0046_d62_chat_write_mode");
-      await isolateSchemas(target);
-      isolated = true;
       await stageThrough(MIGRATIONS, directory, journal, first);
-      await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
+      await runMigrations({ databaseUrl: scratch.url, migrationsDirectory: directory });
       await seedWorkModeShape(target);
       await rm(directory, { recursive: true, force: true });
       await stageThrough(MIGRATIONS, directory, journal, journal.entries.length);
-      await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
+      await runMigrations({ databaseUrl: scratch.url, migrationsDirectory: directory });
 
       expect(await target`SELECT id, default_ai_write_mode FROM works ORDER BY id`).toEqual([
         { id: id(3), default_ai_write_mode: "draft" },
@@ -120,7 +117,7 @@ describe.skipIf(!enabled)("chat write mode migration (postgres)", () => {
         { id: id(22), execution_id: null, reserved_for_user_turn_ids: null },
       ]);
       // The runtime's reads: the old lease is no open execution, M is delivered by an unknown turn.
-      const db = createDb(databaseUrl ?? "", { max: 1 });
+      const db = createDb(scratch.url, { max: 1 });
       try {
         expect(await createDrizzleRunClaim(db).readOpenExecutionId(id(10) as never)).toBeNull();
         const deliveries = await createDrizzleRepositoriesForTest(db).turns.listMessageDeliveries(
@@ -140,8 +137,7 @@ describe.skipIf(!enabled)("chat write mode migration (postgres)", () => {
         target`UPDATE threads SET ai_write_mode = 'live' WHERE id = ${id(10)}`,
       ).rejects.toMatchObject({ code: "23514" });
     } finally {
-      if (isolated) await restoreSchemas(target);
-      await target.end();
+      await scratch.close();
       await rm(directory, { recursive: true, force: true });
     }
   }, 60_000);
