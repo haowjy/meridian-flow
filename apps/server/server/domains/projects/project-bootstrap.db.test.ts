@@ -117,12 +117,7 @@ else
         .from(schema.contextSources)
         .where(eq(schema.contextSources.workId, noWorkId));
       expect(manuscript).toEqual([{ slug: "manuscript", workId: null, scope: "project" }]);
-      expect(workSources).toEqual(
-        expect.arrayContaining([
-          { slug: "uploads", workId: noWorkId, scope: "work", projectId: null },
-        ]),
-      );
-      expect(workSources).toHaveLength(1);
+      expect(workSources).toEqual([]);
       expect(threadRows).toEqual([]);
       expect(docs).toHaveLength(1);
       expect(docs[0]).toMatchObject({ name: "Chapter 1", extension: "", fileType: "markdown" });

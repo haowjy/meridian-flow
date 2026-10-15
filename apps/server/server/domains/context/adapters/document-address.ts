@@ -30,14 +30,12 @@ type CoordinateKey = Pick<
   "projectId" | "scheme" | "workId" | "rootThreadId" | "chatThreadId" | "path"
 >;
 
-/** The scheme tells the owners apart, so one thread slot compares a lineage and a chat alike. */
-const ownerThread = (at: CoordinateKey) => at.chatThreadId ?? at.rootThreadId ?? null;
-
 export const sameCoordinates = (a: CoordinateKey, b: CoordinateKey) =>
   a.projectId === b.projectId &&
   a.scheme === b.scheme &&
   a.workId === b.workId &&
-  ownerThread(a) === ownerThread(b) &&
+  a.rootThreadId === b.rootThreadId &&
+  a.chatThreadId === b.chatThreadId &&
   a.path === b.path;
 
 /** The address a content document holds now, or null when it is deleted there or unspellable. */
@@ -144,22 +142,9 @@ export async function resolveCanonicalAddress(
   let lockWorkId: string | null = null;
   let rootThreadId: string | null = null;
   let chatThreadId: string | null = null;
-  if (scheme === "scratch" && authority.kind === "none")
-    throw new RangeError("Scratch needs a chat handle or named Work authority");
-  if (authority.kind === "none") {
-    const [noWork] = await tx
-      .select({ id: works.id })
-      .from(works)
-      .where(
-        and(
-          eq(works.projectId, input.holderProjectId),
-          eq(works.isNoWork, true),
-          isNull(works.deletedAt),
-        ),
-      );
-    if (!noWork) throw new Error(`No Work row for ${input.holderProjectId} does not exist`);
-    lockWorkId = noWork.id;
-  } else if (authority.kind === "lineage") {
+  if (authority.kind === "none")
+    throw new RangeError(`${scheme} needs a chat handle or named Work authority`);
+  if (authority.kind === "lineage") {
     const [root] = await tx
       .select({ id: threads.id })
       .from(threads)

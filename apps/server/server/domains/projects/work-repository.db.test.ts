@@ -489,7 +489,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const withFile = await works.create({ projectId: PROJECT_ID, name: "With file" });
       const [source] = await db
         .insert(schema.contextSources)
-        .values({ workId: withFile.id, name: "Uploads", slug: "uploads", scope: "work" })
+        .values({ workId: withFile.id, name: "Scratch", slug: "scratch", scope: "work" })
         .returning();
       if (!source) throw new Error("Expected context source");
       const [document] = await db
@@ -1290,7 +1290,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         finalPath: "reference.png",
         objectKey,
         fileType: "png",
-        canonicalUri: "uploads://@/c1/reference.png",
         locationRevision: crypto.randomUUID(),
         state: "finalized",
         storageUrl: stored.value.storageUrl,
@@ -1395,7 +1394,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const insertBarrier = 748_210_843;
       const work = await works.create({ projectId: PROJECT_ID, name: "Creation race" });
       const { createWorkContextDocumentStore } = await import("../context/index.js");
-      const store = createWorkContextDocumentStore(db, work.id, "uploads");
+      const store = createWorkContextDocumentStore(db, work.id, "scratch");
       await control.unsafe(`
         CREATE FUNCTION test_block_work_document_insert() RETURNS trigger
         LANGUAGE plpgsql AS $$

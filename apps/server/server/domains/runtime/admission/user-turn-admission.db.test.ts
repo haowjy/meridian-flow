@@ -89,7 +89,7 @@ if (!RUN) {
     });
 
     async function seedUpload(documentId: string, suffix: string) {
-      const uri = `uploads://@/map-${suffix}.png`;
+      const uri = `uploads://@/c1/map-${suffix}.png`;
       await firstDb.insert(schema.documents).values({
         id: documentId as never,
         contextSourceId: SOURCE,
@@ -102,6 +102,7 @@ if (!RUN) {
         projectId: PROJECT,
         intakeId: `intake-${suffix}`,
         actorUserId: USER,
+        ownerThreadId: THREAD,
         contextSourceId: SOURCE,
         documentId: documentId as never,
         fingerprint: `upload-${suffix}`,
@@ -111,7 +112,6 @@ if (!RUN) {
         finalPath: `map-${suffix}.png`,
         objectKey: `uploads/${PROJECT}/${documentId}`,
         fileType: "png",
-        canonicalUri: uri,
         locationRevision: crypto.randomUUID(),
         state: "finalized",
       });
@@ -249,7 +249,8 @@ if (!RUN) {
         projectId: PROJECT,
         name: "Uploads",
         slug: "uploads",
-        scope: "project",
+        scope: "chat",
+        chatThreadId: THREAD,
       });
       const uri = await seedUpload(DOCUMENT, "commit");
       const rollbackUri = await seedUpload(ROLLBACK_DOCUMENT, "rollback");
