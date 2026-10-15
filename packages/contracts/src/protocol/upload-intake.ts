@@ -3,13 +3,8 @@ import type { ContextEntryValidationReason } from "../context-entry-validation.j
 import type { CanonicalContextUri } from "../context-uri.js";
 import type { Filetype } from "./filetype.js";
 
-/**
- * The chat (a primary thread) a file was attached to; its row may not exist yet.
- * TODO(#875 P3): delete the `work` variant with the Work-owned intake path.
- */
-export type UploadOwner =
-  | { kind: "chat"; projectId: string; chatId: string }
-  | { kind: "work"; projectId: string; workId: string };
+/** The chat (a primary thread) a file was attached to; its row may not exist yet. */
+export type UploadOwner = { kind: "chat"; projectId: string; chatId: string };
 
 export interface UploadIntakeResult {
   documentId: string;

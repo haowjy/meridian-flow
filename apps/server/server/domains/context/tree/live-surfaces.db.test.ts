@@ -751,9 +751,16 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
     it("allocates an upload's name past only live documents (C-1a)", async () => {
       const s = await bareSubject();
       // Uploads are never drafted; this adversarial row verifies the live relation.
+      const chatId = crypto.randomUUID();
       const [source] = await db
         .insert(contextSources)
-        .values({ workId: s.ascension.id, scope: "work", name: "Uploads", slug: "uploads" })
+        .values({
+          projectId: s.projectId,
+          chatThreadId: chatId,
+          scope: "chat",
+          name: "Uploads",
+          slug: "uploads",
+        })
         .returning();
       if (!source) throw new Error("Missing uploads source");
       const hidden = await s.scenario.seedHidden(s.ascension, "upload");
@@ -764,7 +771,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
       const reserved = await createDrizzleUploadIntakeRepository(db).reserve({
         intakeId: "reader-matrix",
         actorUserId: s.userId,
-        owner: { kind: "work", projectId: s.projectId, workId: s.ascension.id },
+        owner: { kind: "chat", projectId: s.projectId, chatId },
         filename: "upload.md",
         documentFilename: { name: "upload", extension: "", filetype: "markdown" },
         mimeType: "text/markdown",

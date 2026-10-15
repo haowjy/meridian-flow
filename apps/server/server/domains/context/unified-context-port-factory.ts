@@ -96,6 +96,8 @@ export interface UnifiedContextPortFactory {
     workAuthorities: ReadonlyMap<WorkSlug, ResolvedWorkAuthority>,
     thread?: ThreadContextView,
   ): ContextPort;
+  /** A port whose own `uploads://` is this chat's; the chat's row may not exist yet. */
+  forChatUploads(projectId: string, userId: string, chatId: string): ContextPort;
 }
 
 interface ContextStoreResolvers {
@@ -254,7 +256,29 @@ function buildNoWorkContextFsAdapters(
   return adapters;
 }
 
+function buildChatUploadsAdapter(
+  assembly: AdapterAssembly,
+  chatId: string,
+  projectId: string,
+): ContextSchemeAdapter {
+  const { storeResolvers, commandTransaction } = assembly;
+  return contextFsAdapter(assembly, {
+    store: storeResolvers.resolveChatStore(projectId, chatId, "uploads"),
+    mutationStore: storeResolvers.resolveMutationStore(),
+    commandTransaction,
+    scheme: "uploads",
+    holder: { projectId, authority: { kind: "contextual" } },
+  });
+}
+
 type ContextPortBuildScope =
+  | {
+      kind: "chat";
+      chatId: string;
+      projectId: string;
+      userId: string;
+      workAuthorities: ReadonlyMap<WorkSlug, ResolvedWorkAuthority>;
+    }
   | {
       kind: "project";
       lineage?: ScratchLineage;
@@ -310,6 +334,8 @@ function buildUnifiedContextPort(input: {
         )
       : buildNoWorkContextFsAdapters(assembly, scope.projectId);
   for (const [scheme, adapter] of primaryAdapters) adapters.set(scheme, adapter);
+  if (scope.kind === "chat")
+    adapters.set("uploads", buildChatUploadsAdapter(assembly, scope.chatId, scope.projectId));
 
   const lineageSource = (lineage: ScratchLineage): ContextSourceBinding => ({
     adapter: contextFsAdapter(assembly, {
@@ -335,7 +361,9 @@ function buildUnifiedContextPort(input: {
         authority: (WORK_SCOPED_CONTEXTFS_SCHEMES as readonly string[]).includes(scheme)
           ? scope.kind === "work"
             ? scope.authority
-            : { kind: "none" }
+            : scope.kind === "chat" && scheme === "uploads"
+              ? { kind: "contextual" }
+              : { kind: "none" }
           : { kind: "contextual" },
       },
     ]),
@@ -369,6 +397,8 @@ function buildUnifiedContextPort(input: {
         targetAuthority,
       ),
     resolveNoWork: async () => {
+      // A chat's uploads belong to no Work; it must not borrow the project's No Work scope.
+      if (scope.kind === "chat") return null;
       const workId =
         scope.kind === "work" && scope.authority.workSlug === null
           ? scope.authority.workId
@@ -583,6 +613,17 @@ export function createInMemoryUnifiedContextPortFactory(
         placements: "live-only",
       });
     },
+    forChatUploads(projectId, userId, chatId) {
+      const workAuthorities = new Map();
+      return buildUnifiedContextPort({
+        scope: { kind: "chat", chatId, projectId, userId, workAuthorities },
+        storeResolvers,
+        resolveDestinationFolder: resolveFolder(projectId, userId, workAuthorities),
+        documentSync,
+        links: { within: (_key, operation) => operation() },
+        placements: "live-only",
+      });
+    },
   };
 }
 
@@ -710,6 +751,23 @@ export function createProductionUnifiedContextPortFactory(options: {
     forWork(authority, projectId, userId, workAuthorities, thread) {
       return buildUnifiedContextPort({
         scope: { kind: "work", authority, projectId, userId, workAuthorities, thread },
+        storeResolvers,
+        documentSync: options.documentSync,
+        links: options.links,
+        documentCreation: options.documentSync,
+        moveLinks: moveLinks(projectId, userId),
+        resolveDestinationFolder: (id) => resolveActiveFolderUri(options.db, projectId, userId, id),
+        resolveForward: (id) => findForward(options.db, id, projectId as ProjectId),
+        operationReceipts: new ContextOperationReceipts(
+          createDrizzleContextOperationReceipts(options.db, { userId, projectId }),
+        ),
+        commandTransaction: commandTransaction(projectId, userId),
+        placements,
+      });
+    },
+    forChatUploads(projectId, userId, chatId) {
+      return buildUnifiedContextPort({
+        scope: { kind: "chat", chatId, projectId, userId, workAuthorities: new Map() },
         storeResolvers,
         documentSync: options.documentSync,
         links: options.links,

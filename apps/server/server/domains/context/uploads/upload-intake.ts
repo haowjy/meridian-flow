@@ -50,7 +50,8 @@ export interface UploadReservation {
   state: "reserved" | "object_stored" | "finalized" | "deleted";
   storageUrl: string | null;
   consumed: boolean;
-  owner: { kind: "work"; workId: string; workSlug: string | null };
+  /** `chatRef` is null until the chat's row, and so its handle, exists. */
+  owner: { kind: "chat"; chatId: string; chatRef: string | null };
 }
 
 export type ReserveUploadResult =
@@ -187,10 +188,7 @@ function fingerprint(input: {
   mimeType: string;
   byteDigest: string;
 }): string {
-  const owner =
-    input.owner.kind === "chat"
-      ? `chat:${input.owner.projectId}:${input.owner.chatId}`
-      : `work:${input.owner.projectId}:${input.owner.workId}`;
+  const owner = `chat:${input.owner.projectId}:${input.owner.chatId}`;
   return createHash("sha256")
     .update(
       JSON.stringify([input.actorUserId, owner, input.filename, input.mimeType, input.byteDigest]),

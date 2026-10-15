@@ -292,7 +292,6 @@ describe("UserTurnAdmission", () => {
   });
 
   it.each([
-    ["URI mismatch", [availableResolution("uploads://@/moved.png")], true],
     [
       "indeterminate",
       [
@@ -323,6 +322,20 @@ describe("UserTurnAdmission", () => {
         .join(""),
     ).toBe(input().text);
     expect(h.availability.lookup).toHaveBeenCalledTimes(1);
+  });
+
+  it("admits a New-chat upload by identity and records the address it now has", async () => {
+    const h = harness(null, [availableResolution("uploads://@/c1/moved.png")]);
+    await expect(h.service.admit(input())).resolves.toMatchObject({ kind: "accepted" });
+    expect(h.captured()?.references).toEqual([
+      {
+        documentId,
+        uri: "uploads://@/c1/moved.png",
+        purpose: "draft-upload",
+        intakeId: "intake-1",
+        relationship: "created",
+      },
+    ]);
   });
 
   it("rejects invalid membership, image pairing, and identity cardinality", async () => {
