@@ -10,9 +10,9 @@ Rationale: the [one-run preparation protocol][kb-run-prep].
 ## Run identity
 
 Three facts are server-decided, written once in the transaction that decides
-them, and exposed on both the stream and the snapshot (`protocol/run-boundary.ts`
-is the one reader). Clients merge them by union and never infer them from
-transcript ancestry or stream order:
+them, and exposed on the snapshot's turns (`RUN_STARTED` carries only `writeMode`).
+Clients never infer them from transcript ancestry or stream order; `messageFate`
+(`@meridian/thread-client`) reads them from one snapshot:
 
 - **Membership.** An *execution* is one hold of the run lease
   (`thread_run_leases.execution_id`). Reservation sites write
@@ -20,9 +20,8 @@ transcript ancestry or stream order:
   `reservationTurn`. A Retry is reserved for its failed reply's list (its inbox
   rows are already acknowledged), carried as execution state through a
   start-time compaction to the first assistant, and records `metadata.retryOf`
-  and `metadata.retryReplyId`. `RUN_STARTED.rawEvent` repeats
-  `{ writeMode, executionId, reservedForUserTurnIds, position }`. The
-  reserved-for list is a hint, never proof; `position` orders an execution's turns.
+  and `metadata.retryReplyId`. The
+  reserved-for list is a hint, never proof; `Turn.position` orders an execution's turns.
 - **Delivery.** Every acknowledgement goes through the adapter's one `ack`:
   message rows it transitions record `delivered_by_turn_id` with `delivered_at`.
   A yield, a cancelled compaction, and compaction orphan repair do not

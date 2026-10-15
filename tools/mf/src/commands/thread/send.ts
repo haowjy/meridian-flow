@@ -6,13 +6,21 @@ import {
   apiThreadMessagePath,
   apiThreadSkillsPath,
   apiThreadSnapshotPath,
+  MESSAGES_HANDED_BACK_EVENT,
+  RUN_STATE_EVENT,
   type SendMessageRequest,
   type SendMessageResponse,
   type ThreadAvailableSkillsResponse,
   type ThreadSnapshotResponse,
 } from "@meridian/contracts/protocol";
-import type { RunState, Turn } from "@meridian/contracts/threads";
-import { buildMessageDoc, imageCapable, serializeMessageDoc } from "@meridian/thread-client";
+import { interruptIdForBlock, type Turn } from "@meridian/contracts/threads";
+import {
+  buildMessageDoc,
+  imageCapable,
+  type MessageFate,
+  messageFate,
+  serializeMessageDoc,
+} from "@meridian/thread-client";
 import { CliError, usageError } from "../../core/cli-error";
 import {
   type CommandSpec,
@@ -30,26 +38,28 @@ import { resolveDocument, resolveUri } from "../doc/uri";
 import { enqueueMockScript, removeMockScript } from "../mock/queue";
 import type { CliEvent } from "./events-map";
 import { type LiveDiff, ReducedThread } from "./reduced-thread";
-import { replyReaching } from "./reply-reaching";
 import { replyText } from "./reply-text";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
 import {
   type Claim,
+  classifyDeadline,
   finishResult,
   snapshotActivity,
   type TerminalResult,
   terminalResult,
-  timeoutReport,
 } from "./result";
-import { AdmittedMessage, runStateOfEvent } from "./run-state";
 import { followThread } from "./stream";
 import { createThreadClient } from "./transport";
 
 export type SendFields = {
   submissionId?: string;
   threadId: string;
+  /** The admitted message: the user turn the fate is proven for. */
+  userTurnId?: string;
+  /** The reply that took the message; `turnId` is the last reply in its chain. */
+  answeredBy?: string;
   turnId: string | null;
-  status: Turn["status"] | "timeout" | "unknown" | "blocked";
+  status: Turn["status"] | "timeout" | "unknown" | "blocked" | "handed_back";
   finalText: string | null;
   error: string | null;
   interrupt?: { turnId: string; interruptId: string };
@@ -217,180 +227,87 @@ async function followToOutcome(
   admitted: SendMessageResponse,
 ): Promise<SendOutcome> {
   const { threadId } = input;
-  // The admission's steered reply is only where to start: the message joined its
-  // execution, so that execution's successors answer it. With none named, the
-  // reply reserved for this user turn is ours. Never the next start in the
-  // stream: the early cursor replays others', and another client's can follow.
-  // Not a redesign (#768): it keeps the old successor/finish shape on execution facts.
-  let ourTurn: string | null = null;
-  let ourExecution: string | null = null;
-  let lastSeq = admitted.resumeAfterSeq;
-  let truncated = false;
-  let interrupt: SendFields["interrupt"];
-  // A usage block is proven only for this send's own accepted message: its
-  // inbox id is the admitted user turn id.
-  const message = new AdmittedMessage(admitted.userTurnId, admitted.runStateVersion);
-  const blockedOutcome = (runState: RunState): SendOutcome | null => {
-    message.take(runState);
-    return message.blockedForUsage()
-      ? terminalResult(
-          "thread.send",
-          { outcome: "failed", reason: "credits_exhausted" },
-          {
-            threadId,
-            turnId: null,
-            status: "blocked",
-            finalText: null,
-            error: "Your message is waiting for usage",
-          },
-        )
-      : null;
-  };
-  let blocked: SendOutcome | null = null;
-  // Our reply finished; until its execution ends, the next start is its successor
-  // (one claim per thread: another execution can start only after that end).
-  let continuing = false;
-  let recover = false;
-  // A reply started in this stream. Before one, the open execution is the one the message joined.
-  let startSeen = false;
-  // Set when the execution M joined has ended with M still waiting: how long to wait for a start.
-  let grace: number | null = null;
-  // The shared reducer follows the same events the log prints, from admission's
-  // cursor. There is deliberately no snapshot read here: this send's turns are
-  // built from their own events, and a read would sit outside the deadline. A
-  // usage block arrives as a replayed `meridian.run_state` frame, which
-  // `shouldStop` below reconciles with the durable snapshot.
+  // The stream only decides when to look. Every claim comes from a confirming snapshot read
+  // through the shared `messageFate`; a frame is never an input to it.
+  let lastAnswering: string | null = null;
+  // The newest snapshot that completed; the deadline classifies it and never reads another.
+  let lastSnapshot: ThreadSnapshotResponse | null = null;
+  let proven: Proven | null = null;
+  // Once a snapshot settles the claim, the stream gets a short bounded time to reach that
+  // snapshot's position, so the printed log and the live view are whole. It never changes the claim.
+  let catchUpUntil = Infinity;
+  const CATCH_UP_MS = 1500;
   const reduced = new ReducedThread(threadId);
   const transport = createThreadClient(session);
-  const ENDED_GRACE_MS = 1500;
-  const isOurs = (turnId: string) => ourTurn === turnId;
+  const deadlineAt = Date.now() + input.timeoutMs;
+  let followed: Awaited<ReturnType<typeof followThread>>;
   try {
-    const deadlineAt = Date.now() + input.timeoutMs;
-    for (;;) {
-      let followed: Awaited<ReturnType<typeof followThread>>;
-      try {
-        followed = await followThread({
-          session,
-          transport,
-          threadId,
-          lastSeq,
-          deadlineAt: grace === null ? deadlineAt : Math.min(deadlineAt, grace),
-          out,
-          full: input.full,
-          textStream: "err",
-          reduced,
-          shouldStop(event: CliEvent) {
-            if (event.type === "event") {
-              const runState = runStateOfEvent(event);
-              if (runState) blocked = blockedOutcome(runState);
-              if (blocked) return true;
-              // No execution is open: ours ended, or (no start seen yet) the one this message
-              // joined at admission did. Once another reply started, only our own finish counts.
-              if (runState && runState.execution === null) {
-                if (continuing) return true;
-                if (ourTurn === null && !startSeen && grace === null) {
-                  // Not yet an answer: the next execution may be the one that takes M.
-                  grace = Date.now() + ENDED_GRACE_MS;
-                  return true;
-                }
-              }
-            }
-            if (event.type === "turn.started") {
-              startSeen = true;
-              grace = null;
-              const answers = event.reservedForUserTurnIds.includes(admitted.userTurnId);
-              const successor =
-                continuing ||
-                (ourExecution !== null &&
-                  event.executionId === ourExecution &&
-                  event.turnId !== ourTurn);
-              if (answers || successor) {
-                ourTurn = event.turnId;
-                ourExecution = event.executionId;
-                continuing = false;
-              }
-              return false;
-            }
-            if (event.type === "turn.finished") {
-              if (!isOurs(event.turnId)) return false;
-              continuing = true;
-              return false;
-            }
-            if (event.type === "turn.failed") {
-              recover = ourTurn !== null || !startSeen;
-              return recover;
-            }
-            if (event.type === "interrupt.requested" && isOurs(event.turnId)) {
-              interrupt = { turnId: event.turnId, interruptId: event.interruptId };
-              return true;
-            }
-            return false;
-          },
-        });
-      } catch (error) {
-        // The grace ran out with no reply starting for M: what is left is the snapshot's word.
-        if (
-          grace !== null &&
-          error instanceof CliError &&
-          error.code === "timeout" &&
-          Date.now() < deadlineAt
-        )
-          break;
-        throw error;
-      }
-      lastSeq = followed.lastSeq;
-      truncated ||= followed.truncated;
-      if (blocked) {
-        // A replayed refusal is state, not a terminal outcome. Recovery may already
-        // have completed beyond this event; reconcile before deciding or resuming.
+    followed = await followThread({
+      session,
+      transport,
+      threadId,
+      lastSeq: admitted.resumeAfterSeq,
+      deadlineAt,
+      out,
+      full: input.full,
+      textStream: "err",
+      reduced,
+      wakeOnGap: true,
+      currentDeadline: () => catchUpUntil,
+      shouldStop: (event: CliEvent) =>
+        proven !== null ||
+        event.type === "interrupt.requested" ||
+        (event.type === "event" &&
+          (event.name === RUN_STATE_EVENT || event.name === MESSAGES_HANDED_BACK_EVENT)),
+      shouldStopState: () => true,
+      async confirmStop(_turnIds, seenSeq) {
+        const behind = (snapshot: ThreadSnapshotResponse) =>
+          BigInt(seenSeq) < BigInt(snapshot.liveState.resumeAfterSeq);
+        if (proven) return !behind(proven.snapshot);
+        const remaining = deadlineAt - Date.now();
+        if (remaining <= 0) throw new CliError("timeout", "Send deadline reached");
         const snapshot = await session.request<ThreadSnapshotResponse>(
           "GET",
           apiThreadSnapshotPath(threadId),
+          undefined,
+          { timeoutMs: remaining },
         );
-        blocked = blockedOutcome(snapshot.liveState.runState);
-        if (blocked) return blocked;
-        const answer = replyReaching(snapshot.turns, admitted.userTurnId);
-        if (answer) {
-          ourTurn = answer.id;
-          if (["complete", "cancelled", "error"].includes(answer.status)) break;
-        }
-        continue;
-      }
-      if (grace !== null && !recover) continue;
-      if (!recover) break;
-      recover = false;
-      continuing = false;
-
-      // Our reply (or the lease it continued) failed while this send's user
-      // turn may still be queued: durable turns say what answers it now.
-      const snapshot = await session.request<ThreadSnapshotResponse>(
-        "GET",
-        apiThreadSnapshotPath(threadId),
-      );
-      interrupt = undefined;
-      const answer = replyReaching(snapshot.turns, admitted.userTurnId);
-      if (answer) {
-        ourTurn = answer.id;
-        if (["complete", "cancelled", "error"].includes(answer.status)) break;
-        continue;
-      }
-      message.take(snapshot.liveState.runState);
-      if (message.owed()) {
-        ourTurn = null;
-        continue;
-      }
-      break;
-    }
+        lastSnapshot = snapshot;
+        const fate = messageFate({
+          messageId: admitted.userTurnId,
+          admittedVersion: admitted.runStateVersion,
+          record: snapshot.liveState.runState,
+          turns: snapshot.turns,
+        });
+        if (fate.kind === "answering") lastAnswering = fate.last.id;
+        proven = finalResult(fate, snapshot, threadId, admitted.userTurnId);
+        if (!proven) return false;
+        if (!behind(snapshot)) return true;
+        catchUpUntil = Math.min(deadlineAt, Date.now() + CATCH_UP_MS);
+        return false;
+      },
+    });
   } catch (error) {
+    if (
+      proven &&
+      error instanceof CliError &&
+      (error.code === "timeout" || error.code === "unavailable" || error.code === "protocol")
+    ) {
+      // The claim stands. The catch-up only feeds the printed log and `liveView`: an incomplete
+      // log, so `liveView` is `not_observed`; a failure here never replaces a proven claim.
+      return withLiveView(proven, reduced, true);
+    }
     if (error instanceof CliError && error.code === "timeout") {
-      const { reason, ...report } = await timeoutReport(session, threadId);
+      const { reason, ...report } = classifyDeadline(lastSnapshot, threadId);
       return terminalResult(
         "thread.send",
         { outcome: "timeout", reason },
         {
           ...report,
+          ...(lastSnapshot ? { snapshotStale: true } : { snapshotUnavailable: true }),
           threadId,
-          turnId: ourTurn,
+          userTurnId: admitted.userTurnId,
+          turnId: lastAnswering,
           status: "timeout",
           finalText: null,
           error: `Run did not finish within ${input.timeoutMs}ms`,
@@ -401,68 +318,130 @@ async function followToOutcome(
   } finally {
     transport.disconnect();
   }
-  const snapshot = await session.request<ThreadSnapshotResponse>(
-    "GET",
-    apiThreadSnapshotPath(threadId),
-  );
-  blocked = blockedOutcome(snapshot.liveState.runState);
-  if (blocked) return blocked;
-  const turn = snapshot.turns.find((candidate) => candidate.id === ourTurn);
-  const liveView = reduced.compare(snapshot, ourTurn ? [ourTurn] : [], truncated);
-  const status: SendFields["status"] = interrupt
-    ? "waiting_interrupt"
-    : (turn?.status ?? "unknown");
-  const claim: Claim = interrupt
-    ? { outcome: "interrupt", reason: null }
-    : status === "complete"
-      ? { outcome: "complete", reason: null }
-      : status === "cancelled"
-        ? { outcome: "cancelled", reason: null }
-        : status === "error"
-          ? { outcome: "failed", reason: null }
-          : { outcome: "unproven", reason: "unconfirmed" };
-  // Writer admission reuses the user turn id as the inbox id. A finished
-  // steered run cannot prove this send while that same message remains pending.
-  // With no reply of ours named, an execution that ended with M still waiting is the same case.
-  message.take(snapshot.liveState.runState);
-  if ((claim.outcome === "complete" || ourTurn === null) && message.owed()) {
-    return terminalResult(
-      "thread.send",
-      { outcome: "unproven", reason: "owed" },
-      {
-        threadId,
-        turnId: ourTurn,
-        status,
-        finalText: null,
-        error: null,
-        ...liveView,
-        ...snapshotActivity(snapshot),
-        next: [`./mf thread tail ${threadId} --until-idle`],
-      },
-    );
-  }
-  return terminalResult("thread.send", claim, {
-    threadId,
-    turnId: ourTurn,
-    status,
-    finalText: replyText(snapshot.turns, turn?.id ?? null),
-    error: turn?.error ?? null,
-    ...liveView,
-    ...(interrupt
-      ? {
-          interrupt,
-          next: [
-            `./mf thread respond ${threadId} --turn ${interrupt.turnId} --interrupt ${interrupt.interruptId} --value '<json>'`,
-          ],
-        }
-      : {}),
+  if (!proven) throw new Error("Send stopped without a confirming snapshot");
+  return withLiveView(proven, reduced, followed.truncated);
+}
+
+/** A result frozen with the snapshot that proved it; `compared` is the turn `liveView` checks. */
+type Proven = { outcome: SendOutcome; snapshot: ThreadSnapshotResponse; compared: string | null };
+
+/** The CLI's final result for what `messageFate` proved, or null to keep following. */
+function finalResult(
+  fate: MessageFate,
+  snapshot: ThreadSnapshotResponse,
+  threadId: string,
+  userTurnId: string,
+): Proven | null {
+  const base = { threadId, userTurnId };
+  const none = { turnId: null, finalText: null, error: null };
+  const done = (outcome: SendOutcome, compared: string | null = null): Proven => ({
+    outcome,
+    snapshot,
+    compared,
   });
+  switch (fate.kind) {
+    case "waiting":
+      return fate.blocked
+        ? done(
+            terminalResult(
+              "thread.send",
+              { outcome: "failed", reason: "credits_exhausted" },
+              { ...base, ...none, status: "blocked", error: "Your message is waiting for usage" },
+            ),
+          )
+        : null;
+    case "handedBack":
+      return done(
+        terminalResult(
+          "thread.send",
+          { outcome: "handed_back", reason: null },
+          { ...base, ...none, status: "handed_back" },
+        ),
+      );
+    case "unproven":
+      return done(
+        terminalResult(
+          "thread.send",
+          { outcome: "unproven", reason: fate.reason },
+          {
+            ...base,
+            ...none,
+            status: "unknown",
+            ...snapshotActivity(snapshot),
+            next: [`./mf thread tail ${threadId} --until-idle`],
+          },
+        ),
+      );
+    case "answering": {
+      const { last } = fate;
+      const interruptId = last.blocks
+        .map(interruptIdForBlock)
+        .filter((id): id is string => id !== null)
+        .at(-1);
+      if (last.status !== "waiting_interrupt" || !interruptId) return null;
+      return done(
+        terminalResult(
+          "thread.send",
+          { outcome: "interrupt", reason: null },
+          {
+            ...base,
+            answeredBy: fate.answeredBy,
+            turnId: last.id,
+            status: "waiting_interrupt",
+            finalText: null,
+            error: null,
+            interrupt: { turnId: last.id, interruptId },
+            next: [
+              `./mf thread respond ${threadId} --turn ${last.id} --interrupt ${interruptId} --value '<json>'`,
+            ],
+          },
+        ),
+        last.id,
+      );
+    }
+    case "answered": {
+      const { last } = fate;
+      const claim: Claim =
+        last.status === "complete"
+          ? { outcome: "complete", reason: null }
+          : last.status === "cancelled"
+            ? { outcome: "cancelled", reason: null }
+            : last.status === "error"
+              ? { outcome: "failed", reason: null }
+              : { outcome: "unproven", reason: "unconfirmed" };
+      return done(
+        terminalResult("thread.send", claim, {
+          ...base,
+          answeredBy: fate.answeredBy,
+          turnId: last.id,
+          status: last.status,
+          finalText: replyText(snapshot.turns, last.id),
+          error: last.error,
+        }),
+        last.id,
+      );
+    }
+  }
+}
+
+/** The frozen result plus this follower's `liveView`, read after the bounded catch-up. */
+function withLiveView(
+  { outcome, snapshot, compared }: Proven,
+  reduced: ReducedThread,
+  truncated: boolean,
+): SendOutcome {
+  if (!compared) return outcome;
+  return {
+    ...outcome,
+    result: { ...outcome.result, ...reduced.compare(snapshot, [compared], truncated) },
+  };
 }
 
 /** Writes the terminal envelope (always the last NDJSON line) and returns the exit code. */
 export const threadSendCommand: CommandSpec = {
   path: ["thread", "send"],
-  summary: "Send and wait for the current CLI follow outcome (not yet proof of your reply)",
+  summary:
+    "Send and wait: proves from one snapshot what became of this message and the last reply in its chain",
   args: "<thread> <text>",
   route: "POST /api/threads/:threadId/messages + WS subscribe",
   options: {

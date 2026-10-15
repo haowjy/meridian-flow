@@ -31,7 +31,7 @@ import {
   workReceipt,
 } from "@meridian/thread-client";
 import { oneLine, truncate } from "../../core/output";
-import { currentTurnId, viewOfLive } from "./run-state";
+import { viewOfLive } from "./run-state";
 import { asRecord, liveStatusLabel } from "./transcript";
 
 export const CHAT_VIEW_VERSION = 2;
@@ -228,7 +228,7 @@ export function projectChatView(
     },
     live: {
       status: liveStatusLabel(snapshot),
-      runningTurnId: currentTurnId(snapshot.liveState.runState),
+      runningTurnId: snapshot.liveState.runState.execution?.currentTurnId ?? null,
       pending: snapshot.liveState.runState.items.length,
       ...switchLine(snapshot.liveState),
       actionRequired: snapshot.actionRequired,

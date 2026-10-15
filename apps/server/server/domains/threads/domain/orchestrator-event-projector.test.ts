@@ -104,7 +104,7 @@ describe("run identity", () => {
       } as never,
     });
     expect(start).toMatchObject({
-      rawEvent: { writeMode: null, executionId: null, reservedForUserTurnIds: [], position: null },
+      rawEvent: { writeMode: null },
     });
     // Risk: a stateful projector reusing the first segment's identity. A split reply's second
     // segment names its own run, execution, reservation and position.
@@ -127,12 +127,7 @@ describe("run identity", () => {
         type: EventType.RUN_STARTED,
         threadId: "thread-1",
         runId: "b",
-        rawEvent: {
-          writeMode: "direct",
-          executionId: "e1",
-          reservedForUserTurnIds: ["m2"],
-          position: 4,
-        },
+        rawEvent: { writeMode: "direct" },
       },
     ]);
   });
