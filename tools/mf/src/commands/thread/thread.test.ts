@@ -261,8 +261,8 @@ describe("thread send", () => {
       cancelledExecutionId: "exec-run",
       runState: recordOf(),
     });
-    // The press lands (the snapshot and journal move on), but its first answer is lost.
-    wire.fail("stop", { drop: true });
+    // The press lands (the snapshot and journal move on), but its first answer is unreadable.
+    wire.fail("stop", { text: "not JSON" });
     wire.play(async () => {
       await wire.until(() => wire.requestsOf("stop").length >= 1);
       wire.snapshot = () =>
@@ -276,11 +276,13 @@ describe("thread send", () => {
     });
     const sending = send(queued);
     await wire.until(() => wire.requestsOf("admit").length > 0);
-    const lost = await wire.mf(["thread", "stop", THREAD_ID, "--full"]);
+    const lost = await wire.mf(["thread", "stop", THREAD_ID, "--full", "--json"]);
     expect(lost.code).toBe(EXIT.unavailable);
-    expect(lost.stderr).toContain("--replay");
-    const printed = lost.stderr.match(/^stop request (\{.*\})$/m)?.[1];
-    expect(printed).toBeDefined();
+    // Under --json the error itself carries the frozen request and the replay command.
+    const failure = JSON.parse(lost.stderr);
+    expect(failure.hint).toContain("--replay");
+    const printed = JSON.stringify(failure.details.request);
+    expect(failure.hint).toContain(printed);
     const requestFile = join(await mkdtemp(join(tmpdir(), "mf-stop-")), "request.json");
     await writeFile(requestFile, printed ?? "");
     // The replay posts the identical request, with no new snapshot read.

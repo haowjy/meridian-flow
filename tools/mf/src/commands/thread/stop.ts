@@ -8,9 +8,10 @@ import { randomUUID } from "node:crypto";
 import {
   apiThreadSnapshotPath,
   apiThreadStopPath,
+  stopRequestSchema,
   type ThreadSnapshotResponse,
 } from "@meridian/contracts/protocol";
-import type { StopResponse } from "@meridian/contracts/threads";
+import type { StopRequest, StopResponse } from "@meridian/contracts/threads";
 import { INITIAL_RUN_STATE_VIEW, receiveRecord, stopRequest } from "@meridian/thread-client";
 import { CliError, usageError } from "../../core/cli-error";
 import {
@@ -20,6 +21,7 @@ import {
   requirePositional,
   stringOption,
 } from "../../core/command";
+import type { Session } from "../../core/session";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
 import { terminalResult } from "./result";
 
@@ -48,9 +50,9 @@ export const threadStopCommand: CommandSpec = {
     const replay = stringOption(ctx, "replay");
     let body: StopRequest;
     if (replay !== undefined) {
-      const parsed = readJsonArg(replay, "--replay");
-      if (!isStopRequest(parsed)) throw usageError("--replay is not a printed Stop request");
-      body = parsed;
+      const parsed = stopRequestSchema.safeParse(readJsonArg(replay, "--replay"));
+      if (!parsed.success) throw usageError("--replay is not a printed Stop request");
+      body = parsed.data;
     } else {
       const snapshot = await session.request<ThreadSnapshotResponse>(
         "GET",
@@ -64,22 +66,7 @@ export const threadStopCommand: CommandSpec = {
     }
     const requestJson = JSON.stringify(body);
     ctx.out.note(`stop request ${requestJson}`);
-    let response: StopResponse;
-    try {
-      response = await session.request<StopResponse>("POST", apiThreadStopPath(threadId), body);
-    } catch (error) {
-      // No answer, or one we cannot read: the press may have landed. Only a replay is safe.
-      if (
-        error instanceof CliError &&
-        (error.code === "timeout" || error.code === "unavailable" || error.code === "protocol")
-      ) {
-        throw new CliError("unavailable", `Stop answer lost (${error.message})`, {
-          hint: `The Stop may have landed. Replay the same request, not a new press: echo '${requestJson}' | ./mf thread stop ${threadId} --replay -`,
-          details: { threadId, request: body },
-        });
-      }
-      throw error;
-    }
+    const response = await postStop(session, threadId, body, requestJson);
     const full = flag(ctx, "full");
     const terminal = terminalResult(
       "thread.stop",
@@ -109,14 +96,49 @@ export const threadStopCommand: CommandSpec = {
   },
 };
 
-type StopRequest = ReturnType<typeof stopRequest>;
+/**
+ * Posts the frozen request and validates the answer. Whatever fails to confirm it (no answer,
+ * a 5xx, a body that is not a Stop answer) leaves the press possibly landed, so it is an
+ * ambiguity carrying the request in every output mode. A definite refusal (4xx) stays a refusal.
+ */
+async function postStop(
+  session: Session,
+  threadId: string,
+  body: StopRequest,
+  requestJson: string,
+): Promise<StopResponse> {
+  try {
+    return readStopAnswer(await session.request("POST", apiThreadStopPath(threadId), body));
+  } catch (error) {
+    if (!(error instanceof CliError)) throw error;
+    const unanswered =
+      error.httpStatus === undefined
+        ? ["timeout", "unavailable", "protocol"].includes(error.code)
+        : error.httpStatus >= 500;
+    if (!unanswered) throw error;
+    throw new CliError("unavailable", `Stop answer lost (${error.message})`, {
+      hint: `The Stop may have landed. Replay the same request, not a new press: echo '${requestJson}' | ./mf thread stop ${threadId} --replay -`,
+      details: { threadId, request: body },
+    });
+  }
+}
 
-function isStopRequest(value: unknown): value is StopRequest {
-  if (!value || typeof value !== "object") return false;
-  const record = value as Record<string, unknown>;
-  return (
-    typeof record.requestId === "string" &&
-    typeof record.seenThrough === "number" &&
-    Array.isArray(record.mine)
-  );
+/** The fields this command reads; anything else on the body is the server's to change. */
+function readStopAnswer(value: unknown): StopResponse {
+  const answer = value as Partial<StopResponse> | null;
+  const handedBack = answer?.handedBack;
+  if (
+    typeof value !== "object" ||
+    !answer ||
+    !Array.isArray(handedBack) ||
+    !handedBack.every(
+      (message) => typeof message?.userTurnId === "string" && Array.isArray(message.blocks),
+    ) ||
+    !Array.isArray(answer.answered) ||
+    !Array.isArray(answer.gone) ||
+    (answer.cancelledExecutionId !== null && typeof answer.cancelledExecutionId !== "string")
+  ) {
+    throw new CliError("protocol", "the answer is not a Stop response");
+  }
+  return answer as StopResponse;
 }
