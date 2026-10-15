@@ -70,10 +70,14 @@ export async function followThread(options: FollowOptions): Promise<FollowResult
    * follower did not hydrate, or another client's). Ask for a snapshot, bounded by the deadline,
    * at most once per interval; there is no tail-insertion fallback.
    */
+  // One deadline for everything this follow does: stream reads, anchor recovery, snapshot reads.
+  const effectiveDeadline = () =>
+    Math.min(options.deadlineAt, options.currentDeadline?.() ?? options.deadlineAt);
+
   const recoverAnchor = async () => {
     const reduced = options.reduced;
     if (!reduced?.awaitsAnchor()) return;
-    const remaining = options.deadlineAt - Date.now();
+    const remaining = effectiveDeadline() - Date.now();
     if (remaining <= 0 || Date.now() - anchorAskedAt < ANCHOR_RETRY_MS) return;
     anchorAskedAt = Date.now();
     const snapshot = await options.session.request<ThreadSnapshotResponse>(
@@ -114,9 +118,7 @@ export async function followThread(options: FollowOptions): Promise<FollowResult
 
   try {
     for (;;) {
-      const message = await subscription.next(
-        Math.min(options.deadlineAt, options.currentDeadline?.() ?? options.deadlineAt),
-      );
+      const message = await subscription.next(effectiveDeadline());
       switch (message.type) {
         case "live": {
           state = message.state;
