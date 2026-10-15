@@ -7,7 +7,7 @@
  * writer provenance. A switch, or a control row, never counts toward busy, the tray or Stop.
  */
 
-import type { HandBackScope, PendingInboxItem, StopRequest } from "@meridian/contracts/threads";
+import type { PendingInboxItem, StopRequest } from "@meridian/contracts/threads";
 import type { RunStateView } from "./run-state-view";
 
 const isWriterMessage = (item: PendingInboxItem) =>
@@ -114,17 +114,17 @@ export function stopRequest(view: RunStateView, requestId: string): StopRequest 
   };
 }
 
-/** Cancel queue's scope: Stop's press set without the execution. */
-export function cancelQueueScope(view: RunStateView): HandBackScope {
-  return { kind: "seen", seenThrough: view.record?.sentThrough ?? 0, mine: messageIntentIds(view) };
-}
+/** What a hand-back hides while in flight: the queue's ids, or Stop's press set (`seen`). */
+export type HandBackPress =
+  | { kind: "ids"; ids: string[] }
+  | { kind: "seen"; seenThrough: number; mine: string[] };
 
 /**
  * The messages a request hides while it is in flight, frozen at the press: the x's ids; for a
  * `seen` scope, the waiting writer messages at or below `seenThrough` plus `mine`. Delivered
  * history under the watermark and a message sent after the press are never in it.
  */
-export function handBackCandidates(view: RunStateView, scope: HandBackScope): string[] {
+export function handBackCandidates(view: RunStateView, scope: HandBackPress): string[] {
   if (scope.kind === "ids") return [...scope.ids];
   const ids = waitingWriterMessages(view)
     .filter((item) => item.seq <= scope.seenThrough)

@@ -1,6 +1,6 @@
 /** The run-state module: the chat's newest record, this device's unanswered intents, and the folds over them. */
 export {
-  cancelQueueScope,
+  type HandBackPress,
   handBackCandidates,
   hiddenWriterTurns,
   isAwaitingExecution,
