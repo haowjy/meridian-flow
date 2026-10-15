@@ -209,8 +209,17 @@ function stableAuthority(
       return { kind: "project", projectId: scope.projectId };
     case "user":
       return { kind: "user", userId: scope.userId };
-    case "chat":
-      return null; // TODO(#875 P5): a chat's uploads are a stable reference authority.
+    case "chat": {
+      const parsed = parseContextUri(uri);
+      return parsed.ok && parsed.value.authority.kind === "chat"
+        ? {
+            kind: "chat",
+            projectId: scope.projectId,
+            chatId: scope.chatId,
+            chatRef: parsed.value.authority.chatRef,
+          }
+        : null;
+    }
     case "work": {
       const entry = authorities.get(`work:${scope.workId}`);
       if (!entry) return null;
@@ -236,6 +245,15 @@ export function referenceUriForAuthority(
       parsed.value.authority.rootThreadRef === authority.rootThreadRef
       ? parsed.value.normalized
       : null;
+  if (authority.kind === "chat") {
+    // A New chat's upload has no handle yet, so its URI is whatever the intake issued.
+    if (parsed.value.scheme !== "uploads") return null;
+    return authority.chatRef === null ||
+      (parsed.value.authority.kind === "chat" &&
+        parsed.value.authority.chatRef === authority.chatRef)
+      ? parsed.value.normalized
+      : null;
+  }
   if (authority.kind === "work") {
     if (authority.workSlug === null) {
       return parsed.value.authority.kind === "none" ? parsed.value.normalized : null;

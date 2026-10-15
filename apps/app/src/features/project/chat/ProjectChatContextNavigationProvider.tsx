@@ -22,8 +22,11 @@ import {
 } from "@/features/chat/ChatContextNavigation";
 import {
   type ChatLineages,
+  type ChatUploadOwners,
+  chatIdForUploadsUri,
   contextRouteTargetFromUri,
   canOpenContextUri as isContextUriRoutable,
+  parseContextUri,
 } from "@/lib/context-uri";
 import { BesideChatContext, useOpenChatDocument } from "../context/open-chat-document";
 import { useDockDocumentStore } from "../dock/dock-document-store";
@@ -38,6 +41,7 @@ export function ProjectChatContextNavigationProvider({
   activeWork,
   availableWorks,
   rootThreadId,
+  chat,
   onOpenContextTarget,
   children,
 }: {
@@ -46,6 +50,8 @@ export function ProjectChatContextNavigationProvider({
   availableWorks: readonly { id: string; slug: string | null }[];
   /** The displayed chat's lineage: where its bare `scratch://` points while it is on No Work. */
   rootThreadId: string | null;
+  /** The chat that owns the displayed thread's uploads: a subagent's top chat. */
+  chat: { chatId: string; chatRef: string | null } | null;
   onOpenContextTarget?: OpenContextTarget;
   children: ReactNode;
 }) {
@@ -67,12 +73,49 @@ export function ProjectChatContextNavigationProvider({
     }),
     [ownHandle, rootThreadId, threads],
   );
+  const chats = useMemo<ChatUploadOwners>(
+    () => ({
+      own: chat?.chatId ?? null,
+      idForRef: (ref) =>
+        ref === chat?.chatRef
+          ? chat.chatId
+          : (threads?.find((thread) => thread.ref === ref && thread.kind !== "subagent")?.id ??
+            null),
+    }),
+    [chat, threads],
+  );
   const doorOpened = usePassageDoors(projectId, activeWork?.id ?? null);
   const besideChat = useContext(BesideChatContext);
   const openChatDocument = useOpenChatDocument(projectId);
   const openContextUri = useCallback(
     (uri: string, passage?: ContextPassageAnchor) => {
       if (!onOpenContextTarget || !activeWork || !noWorkId) return;
+      const uploadsChatId = chatIdForUploadsUri(uri, chats);
+      if (uploadsChatId) {
+        // An upload has no route: its door opens the document the chat's catalog names.
+        const path = parseContextUri(uri)?.path ?? "";
+        const ownerRef =
+          uploadsChatId === chat?.chatId
+            ? chat.chatRef
+            : threads?.find((thread) => thread.id === uploadsChatId)?.ref;
+        const catalogUri =
+          canonicalDoorUri(
+            { scheme: "uploads", path, workId: null, chatId: uploadsChatId },
+            { ownerRef },
+          ) ?? uri;
+        const dock = useDockDocumentStore.getState();
+        const claim = dock.claim();
+        void lookupContextCatalogFile(
+          projectId,
+          "uploads",
+          { chatId: uploadsChatId },
+          { uri: catalogUri },
+        ).then((file) => {
+          if (file && dock.isCurrent(claim))
+            void openChatDocument({ documentId: file.documentId, claim });
+        });
+        return;
+      }
       const target = contextRouteTargetFromUri(uri, activeWork, availableWorks, noWorkId, lineages);
       if (!target) return;
       // The catalog knows a document only by its canonical spelling, whoever owns it: a bare
@@ -135,6 +178,8 @@ export function ProjectChatContextNavigationProvider({
       availableWorks,
       noWorkId,
       lineages,
+      chats,
+      chat,
       doorOpened,
       onOpenContextTarget,
       besideChat,
@@ -149,8 +194,9 @@ export function ProjectChatContextNavigationProvider({
     (uri: string) =>
       !!activeWork &&
       !!noWorkId &&
-      isContextUriRoutable(uri, activeWork, availableWorks, noWorkId, lineages),
-    [activeWork, availableWorks, noWorkId, lineages],
+      (chatIdForUploadsUri(uri, chats) !== null ||
+        isContextUriRoutable(uri, activeWork, availableWorks, noWorkId, lineages)),
+    [activeWork, availableWorks, noWorkId, lineages, chats],
   );
 
   return (

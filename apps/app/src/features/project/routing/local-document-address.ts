@@ -156,7 +156,7 @@ export function resolveLocalDocumentAddress(
       rootThreadRef: uri.value.authority.rootThreadRef,
     };
   } else {
-    // TODO(#875 P5): chat-scope documents.
+    // A chat's uploads are files, never editable text: they have no editor address.
     if (entry.scope.kind === "chat") return undefined;
     if (!workId || workId !== entry.scope.workId) return undefined;
     const uri = parseUnifiedContextUri(file.uri);

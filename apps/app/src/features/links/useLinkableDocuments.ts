@@ -8,8 +8,8 @@
  * answer costs no request, and whether a link-ahead address is already taken.
  * It walks the project's manuscript, kb, and Unfiled, the writer's user files,
  * and the scope's Scratch (the chat's lineage notes on No Work, else the scope
- * Work's) and the scope Work's Uploads. A URI naming another owner's Scratch is
- * outside it and always asks the server.
+ * Work's) and the chat's uploads. A URI naming another owner's Scratch or
+ * another chat's uploads is outside it and always asks the server.
  *
  * The index also says WHICH catalog it is. A resolved answer is true of the
  * documents the project held when it was asked, so a rename, a create, or a
@@ -59,14 +59,16 @@ export function useLinkableDocuments({
   projectId,
   workId,
   rootThreadId,
+  chatId,
 }: {
   projectId: string | null;
   workId: string | null;
   rootThreadId?: string | null;
+  chatId?: string | null;
 }): LinkableDocumentIndex {
   const draftEpoch = useDraftLinkEpoch(projectId);
   const prior = useRef<LinkableDocumentIndex | null>(null);
-  const scopes = linkableCatalogScopes({ projectId, workId, rootThreadId });
+  const scopes = linkableCatalogScopes({ projectId, workId, rootThreadId, chatId });
   const catalogWorkId = scopes?.workId ?? null;
   const catalogRootThreadId = scopes?.rootThreadId ?? null;
   const {
@@ -79,8 +81,7 @@ export function useLinkableDocuments({
   } = useContextCatalogViews(scopes?.projectId ?? "", LINKABLE_SCHEMES, {
     enabled: scopes !== null,
     ...contextOwner(catalogWorkId, catalogRootThreadId),
-    // A lineage's Scratch and the Work row's Uploads are separate owners of one index.
-    uploadsWorkId: catalogWorkId,
+    chatId: scopes?.chatId ?? null,
   });
 
   return useMemo(() => {
@@ -96,7 +97,7 @@ export function useLinkableDocuments({
             catalogRootThreadId,
           )
         : []),
-      ...(uploads ? linkableDocuments(uploads, catalogWorkId) : []),
+      ...(uploads ? linkableDocuments(uploads, null) : []),
     ];
     const next = {
       documents,

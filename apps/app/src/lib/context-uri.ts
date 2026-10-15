@@ -34,6 +34,25 @@ export type ChatLineages = {
   idForRef(rootThreadRef: string): string | null;
 };
 
+/** The chats a chat's `uploads://` URIs can name: its own, and any other by its handle. */
+export type ChatUploadOwners = {
+  /** The chat's own id: what a bare `uploads://` means. A subagent's is its top chat's. */
+  own: string | null;
+  /** The chat's id for a handle such as `c15`, or null when the app does not know it. */
+  idForRef(chatRef: string): string | null;
+};
+
+/**
+ * The chat whose uploads an `uploads://` URI names, or null for any other URI. A Work route
+ * can't name an upload, so a chat door opens it by its document in the chat's catalog.
+ */
+export function chatIdForUploadsUri(uri: string, chats: ChatUploadOwners): string | null {
+  const parsed = parseContextUri(uri);
+  if (!parsed || parsed.scheme !== "uploads") return null;
+  if (parsed.authority.kind === "chat") return chats.idForRef(parsed.authority.chatRef);
+  return parsed.authority.kind === "contextual" ? chats.own : null;
+}
+
 export function parseContextUri(uri: string): ContextUri | null {
   const parsed = parseUnifiedContextUri(uri);
   if (!parsed.ok) return null;
@@ -65,6 +84,8 @@ export function contextRouteTargetFromUri(
   if (!isWorkScopedProjectContextScheme(parsed.scheme)) {
     return { scheme: parsed.scheme, path: parsed.path, workId: null };
   }
+  // Uploads belong to a chat; no Work or lineage route holds one (see `chatIdForUploadsUri`).
+  if (parsed.scheme === "uploads") return null;
 
   const inLineage = (rootThreadId: string | null | undefined): ParsedContextUriTarget | null =>
     rootThreadId ? { scheme: parsed.scheme, path: parsed.path, workId: null, rootThreadId } : null;
@@ -82,7 +103,6 @@ export function contextRouteTargetFromUri(
   if (parsed.authority.kind === "contextual") {
     return { scheme: parsed.scheme, path: parsed.path, workId: activeWork.id };
   }
-  // TODO(#875 P5): a chat-qualified uploads address opens the chat's uploads.
   if (parsed.authority.kind === "chat") return null;
   const requestedSlug = parsed.authority.workSlug;
   const qualified = availableWorks.find(({ slug }) => slug === requestedSlug);

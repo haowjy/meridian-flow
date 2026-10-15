@@ -134,7 +134,7 @@ export function CreationComposer({
           void openDocument({ documentId: reference.documentId, disposition: "current" });
         }}
         uploadPort={uploadIntakePort}
-        uploadScope={work ? { kind: "work", projectId, workId: work.id } : undefined}
+        uploadScope={{ kind: "chat", projectId, chatId: creation.draft.chatId }}
         submitDisabled={!choicesReady}
         submitDisabledReason={
           unavailableMessage ??

@@ -21,6 +21,7 @@ export function useComposerSessionDraft(accountId: string, scope: ComposerDraftS
     notices: owner.notices,
     dismissNotice: owner.dismissNotice,
     initialDraft: owner.initialDraft,
+    chatId: owner.chatId,
     updateDraft: owner.updateDraft,
     handoff: owner.handoff,
     handoffSubmitted: owner.handoffSubmitted,
