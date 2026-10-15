@@ -307,3 +307,22 @@ export function similarity(a: PMNode, b: PMNode, inPlace = false, floor = 0): nu
   for (const [op, n] of diffKeys(x, y)) if (op === DIFF_EQUAL) common += n;
   return common / denom;
 }
+
+/**
+ * Diff at word granularity over the review's own segments, as `[op, text]` runs. A character diff reuses
+ * letters across words, so a peer deleting the old word deletes part of the new one: garbled text. The
+ * AI write lowering and the Yjs writer both read it, so one edit has one set of unchanged words.
+ */
+export function wordDiff(a: string, b: string): Array<[number, string]> {
+  const wa = splitWords(a);
+  const wb = splitWords(b);
+  let i = 0;
+  let j = 0;
+  return diffKeys(wa, wb, { checkLines: false, timeout: 0 }).map(([op, n]) => {
+    const from = op === DIFF_INSERT ? wb : wa;
+    const at = op === DIFF_INSERT ? j : i;
+    if (op !== DIFF_INSERT) i += n;
+    if (op !== DIFF_DELETE) j += n;
+    return [op, from.slice(at, at + n).join("")];
+  });
+}

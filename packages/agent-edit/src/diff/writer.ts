@@ -13,7 +13,7 @@ import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT } from "@sanity/diff-match-patch";
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import * as Y from "yjs";
 import { readBlocks } from "./fragments.js";
-import { blockKey, diffKeys, similarity, splitWords } from "./tokens.js";
+import { blockKey, diffKeys, similarity, wordDiff } from "./tokens.js";
 
 type Attrs = Record<string, unknown>;
 
@@ -59,24 +59,6 @@ export interface WriteStats {
 }
 
 const flat = (b: PMNode) => b.isTextblock && b.content.size === b.textContent.length;
-
-/**
- * Diff at word granularity, over the same segments the review uses. A character diff reuses letters
- * across words, so a peer deleting the old word deletes part of the new one: garbled text.
- */
-function wordDiff(a: string, b: string): Array<[number, string]> {
-  const wa = splitWords(a);
-  const wb = splitWords(b);
-  let i = 0;
-  let j = 0;
-  return diffKeys(wa, wb, UNBOUNDED).map(([op, n]) => {
-    const from = op === DIFF_INSERT ? wb : wa;
-    const at = op === DIFF_INSERT ? j : i;
-    if (op !== DIFF_INSERT) i += n;
-    if (op !== DIFF_DELETE) j += n;
-    return [op, from.slice(at, at + n).join("")];
-  });
-}
 
 /** Edits one flat Y.XmlText into the target block's text and marks, touching only what changed. */
 function editText(el: Y.XmlElement, target: PMNode) {
