@@ -10,6 +10,7 @@ import {
   documents,
   linkAheadRefs,
   projects,
+  threads,
   uploadIntakes,
   users,
   works,
@@ -64,6 +65,14 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
       },
       { workId, name: "Scratch", slug: "scratch", scope: "work" },
     ]);
+    const chatId = randomUUID();
+    await db.insert(threads).values({
+      id: chatId,
+      projectId,
+      rootThreadId: chatId,
+      createdByUserId: userId,
+      ref: "c1",
+    });
     const ports = await createProductionAppPorts({
       backgroundTasks: processDetachedWork,
       db,
@@ -205,18 +214,17 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
         objectStore: createInMemoryObjectStore(),
         eventSink: createNoopEventSink(),
       });
-      const noWorkId = (await ports.workAuthorityResolver.noWork(projectId as never))?.workId;
       for (const [filename, mimeType] of [
         ["delete-target.toml", "application/toml"],
         ["delete-target.png", "image/png"],
       ] as const) {
-        const deletedRef = await register(`uploads://@/${filename}`);
+        const deletedRef = await register(`uploads://@/c1/${filename}`);
         const bytes = new TextEncoder().encode(`Upload ${filename}`);
         const uploadOnce = async () => {
           const uploaded = await intake.intake({
             intakeId: randomUUID(),
             actorUserId: userId,
-            owner: { kind: "work", projectId, workId: noWorkId as string },
+            owner: { kind: "chat", projectId, chatId },
             filename,
             mimeType,
             byteDigest: createHash("sha256").update(bytes).digest("hex"),
