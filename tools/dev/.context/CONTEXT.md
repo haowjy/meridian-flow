@@ -86,6 +86,14 @@ revalidates ownership, liveness, and the planned ref OID before destructive
 steps; and performs targeted stop, database removal, worktree removal, work-item
 completion, and ref deletion in that order. Batch cleanup needs explicit risk
 acknowledgement and exact merged-PR evidence (ancestry alone is not enough).
+Target-only `--force` permits managed dev-stack and Nx shutdown despite cwd
+occupants, then rechecks that only known shell/tmux executables remain before
+dropping the database and removing the checkout. It never signals those user
+shells/panes and prints their PIDs and tmux pane IDs so owners can `cd` out of
+the deleted directory. Unknown processes, unreadable attributed processes,
+inspection failures, active work items and dirty state still block. Force does
+not bypass merge evidence, branch/HEAD revalidation or structural protections,
+and is rejected with `--auto`. Git worktree removal itself never uses `--force`.
 Never infer staleness from branch ancestry or a branch name, and add no cleanup
 script that bypasses the shared resolver in `lib/worktree-cleanup.ts`. Prune a side-lane
 branch when it merges into its integration branch: once that branch is
