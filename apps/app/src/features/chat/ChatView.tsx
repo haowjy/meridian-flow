@@ -178,7 +178,8 @@ export function ChatView({
   // turn it followed until the server has it.
   const intent = derivation?.intent;
   const { localSeeds } = brief;
-  const { standIns: replyStandIns, retried: retriedReplies } = replyRetry;
+  const { standIns: replyStandIns, retried: retriedReplies, refused: refusedReplies } = replyRetry;
+  const refusedIds = useMemo(() => new Set(refusedReplies.keys()), [refusedReplies]);
   const activity = useThreadActivity({
     threadId,
     seed: snapshotLiveState,
@@ -227,6 +228,7 @@ export function ChatView({
         queued: queuedWriterTurnIds,
         hidden: hiddenTurnIds,
         retried: retriedReplies,
+        refused: refusedIds,
         switchAwaitsRun,
         onContractFailure: reportPersistedContractFailure,
       }),
@@ -238,6 +240,7 @@ export function ChatView({
       queuedWriterTurnIds,
       hiddenTurnIds,
       retriedReplies,
+      refusedIds,
       standIns,
       switchAwaitsRun,
     ],
@@ -538,7 +541,6 @@ export function ChatView({
                     onRespondToInterrupt={handleRespondToInterrupt}
                     changeTrails={changeTrails.byId}
                     submissionRecoveryByTurnId={submissions.presentation}
-                    waitingForUsage={usageBlocked}
                     controls={controls}
                     chatStop={chatStop}
                     brief={brief}

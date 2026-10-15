@@ -44,7 +44,6 @@ export type TurnListProps = {
   changeTrails?: Record<string, ChangeTrailShell>;
   /** Recovered failed submissions, keyed by the restored user turn id. */
   submissionRecoveryByTurnId?: ReadonlyMap<string, UserTurnRecovery>;
-  waitingForUsage?: boolean;
   /** Writer commands: queued `/compact` and switches with their Stop, and Stop on a running divider. */
   controls?: ThreadControls | null;
   /** The chat's Stop: a compaction divider's Stop is this one, not a turn cancel. */
@@ -98,7 +97,6 @@ export function TurnList({
   onRespondToInterrupt,
   changeTrails = {},
   submissionRecoveryByTurnId,
-  waitingForUsage,
   controls = null,
   chatStop = null,
   brief = null,
@@ -269,7 +267,7 @@ export function TurnList({
             latest={row.latest}
             stopping={actions?.stopping.has(turn.id) ?? false}
             stopFailed={actions?.stopFailed.has(turn.id) ?? false}
-            retryRefused={actions?.retryRefused.has(turn.id) ?? false}
+            retryRefused={actions?.retryRefused.get(turn.id) ?? null}
             destinationBusy={busy}
             onStop={actions?.canStop(turn) ? actions.stop : undefined}
             onRetry={actions?.retry}
@@ -284,7 +282,6 @@ export function TurnList({
             writer={writer}
             submissionRecovery={local ? submissionRecoveryByTurnId?.get(turn.id) : undefined}
             queued={row.queued}
-            waitingForUsage={waitingForUsage}
           />
         );
       }
@@ -312,9 +309,9 @@ export function TurnList({
                     replyRetry.retry(turn);
                   }
                 : undefined,
-              // The refused note is the state of what the writer did, so it stays on the reply
-              // even when another tab's reply landed below it; the next action clears it.
-              refused: replyRetry.refused.has(turn.id),
+              // The refused card is the state of what the writer did, so it stays on the reply
+              // even when another tab's reply landed below it; the next action or completed reply clears it.
+              refused: replyRetry.refused.get(turn.id) ?? null,
               requestLost: standIn === "failed",
             }
           : undefined;
@@ -350,7 +347,6 @@ export function TurnList({
       navigateToChange,
       onRespondToInterrupt,
       submissionRecoveryByTurnId,
-      waitingForUsage,
       threadId,
       threadUsage,
       view,

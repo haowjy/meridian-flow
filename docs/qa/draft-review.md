@@ -1,8 +1,8 @@
 # QA: draft-review runtime probes
 
 Repeatable browser probes for the draft-review surface: the Editor and dock review, the
-chat strip, the Work page's Changes to review, and the reply receipt. Run them whenever a
-change touches review projection, Discard, Apply, the draft command records, the strip, the
+chat's draft dock, the Work page's Changes to review, and the reply receipt. Run them whenever a
+change touches review projection, Discard, Apply, the draft command records, the draft dock, the
 Work page, or the review launcher. They catch what unit tests around React Query and Yjs
 state miss: stale-row windows, silent no-ops, stuck pending states, lost undo history and
 dead addresses.
@@ -54,7 +54,7 @@ draft readback. Read-only API success does not prove writer interaction. Never c
   identity for one reviewed document is `itemKey` = `draftId:documentId`, never a branch-row
   id. The Work's draft list (`GET /api/projects/<p>/works/<w>/drafts`) answers `items`, each
   with `origin`, `isNew`, `wholeItem`, `contextLocation { scheme, path }` and
-  `actorThreads`. A chat's strip list is `GET /api/threads/<t>/draft-files`.
+  `actorThreads`. A chat's draft dock list is `GET /api/threads/<t>/draft-files`.
 - Review addresses are `/editor/<scheme>/<path>?work=<workId>&item=<draftId>:<documentId>`.
   `?work=` empty means No Work.
 - Routes under `/api/projects/<p>/works/<w>/`: `documents/<d>/draft/apply-changes` (one or
@@ -64,7 +64,7 @@ draft readback. Read-only API success does not prove writer interaction. Never c
   `documents/<d>/draft/attribution` (the chat-name hint) and `drafts/commands/<commandId>`.
   There is no per-change Discard route: a change's Discard is a local edit.
 - Only red and green exist. Chat names on a change are a best-effort hint; nothing gates on
-  them. Surfaces show no numeric per-file badges: agreement between the strip, the Work page
+  them. Surfaces show no numeric per-file badges: agreement between the draft dock, the Work page
   and the Editor is checked by named rows and excerpts.
 
 ### What the surfaces say
@@ -82,13 +82,13 @@ Verify these against the screen before judging a probe; they are the strings the
   names them, with Dismiss.
 - Live document with a pending draft: a "Live" chip with the same version menu; Draft opens
   the review. A failed launch says so on the chip and Draft retries.
-- Chat strip: the document name (one document) or "N documents" (several), Collapse changes or
+- draft dock: the document name (one document) or "N documents" (several), Collapse changes or
   Expand changes, Discard and Apply. Several documents ask "Discard this chat's changes?"
   with Keep and Discard.
 - Work page, Files tab: the group "Changes to review" with an "All changes" menu holding Apply
   all changes and Discard all changes. Discard all asks "Discard all changes?" and "This
   removes pending changes from every document in this Work." with Keep and Discard.
-- Local Discard off the editor (strip or Work row) leaves "Discarding" with Cancel, then
+- Local Discard off the editor (draft dock or Work row) leaves "Discarding" with Cancel, then
   "Discarded" with Undo.
 - Reply receipt: "Edited 1 document" or "Edited N documents".
 
@@ -105,7 +105,7 @@ in B, insert a paragraph into Blank, and create a new document. Verify with `./m
 that the writes are durably `phase: committed` and that the new file is absent from the live
 tree before any Apply.
 
-1. Expand the chat strip. PASS: it says "4 documents" and names them on expansion; Chapter A
+1. Expand the draft dock. PASS: it says "4 documents" and names them on expansion; Chapter A
    shows two red and green changes, B one, Blank one, and the new file a single whole-item row
    (its name, with Discard and Apply). No numeric badge appears on any surface.
 2. Open the Work's Files tab. PASS: Changes to review lists the same four files in stable
@@ -117,7 +117,7 @@ tree before any Apply.
 4. Open the new file the same way. PASS: the tab opens and review renders before Apply even
    though the document has no context-tree entry; the file tree does NOT show it until Apply.
 5. Create a document with empty content in a second Work. PASS: the empty created item appears
-   in the strip, opens in an editable review, and offers item Apply and item Discard.
+   in the draft dock, opens in an editable review, and offers item Apply and item Discard.
 6. Dispose of the new-document draft both ways, in fresh Works:
    - Discard (the row's Discard or Discard all changes): the tab closes, the route repairs to
      a live destination (the URL must not keep the dead `work` and `item`, and must not read
@@ -145,19 +145,19 @@ follows it. Use a Work with two changes in Chapter A and one in Chapter B.
    Ctrl+Z restores that change.
 2. On the Work page, expand Chapter A and click one change's Discard. PASS: the row reads
    "Discarded" with Undo only after the draft already holds the discarded text; Undo restores
-   the change. Repeat from the chat strip's expanded row.
+   the change. Repeat from the draft dock's expanded row.
 3. Prove ordering offline: set the browser offline, click Discard on a Work row, then on a
-   strip row. Record a browser-side `Y.Doc` transaction observer (its origin is the room
+   draft dock row. Record a browser-side `Y.Doc` transaction observer (its origin is the room
    discard origin) and a MutationObserver on the receipt. PASS: the fragment change is
    observed no later than the "Discarded" row (K2: 8078.6 ms vs 8085.0 ms), Undo restores the
    text, and after reconnect the durable draft agrees. Do not take screenshots through a new
    CDP target during the offline window (see the offline-emulation note in [README.md](README.md)).
-4. Discard on a collapsed chat file through the strip's own Discard: PASS: the row reads
+4. Discard on a collapsed chat file through the draft dock's own Discard: PASS: the row reads
    "Discarding" with Cancel until the room is acquired, then "Discarded" with Undo.
 5. Work page, All changes, Discard all changes, Keep: no request. Repeat and confirm, holding
    the exact `/works/<W>/drafts/discard` request: PASS: the files read Discarding while held,
    the group disappears when the answer settles, and no navigation occurs. Live is unchanged.
-6. A new document's Discard (row, strip or Work page) is an item Discard: the server closes the
+6. A new document's Discard (row, draft dock or Work page) is an item Discard: the server closes the
    item and its tab. Verify the draft list no longer has it and the file never reaches the tree.
 
 ## Probe C: moves, Ctrl+Z and view handoff
@@ -194,7 +194,7 @@ All Apply requests carry the snapshot of the projection the writer clicked.
    request; the shown proposal is captured. A direct peer changes live halberd to staff
    (`./mf doc read` confirms). Release the clicked request. PASS: live becomes the lance text,
    and the screen says "Applied over a newer edit in live:" with the replaced word in quotes
-   ("staff"). The same notice appears, with Dismiss, on the strip row and the Work row.
+   ("staff"). The same notice appears, with Dismiss, on the draft dock row and the Work row.
    This exercises a live edit after the click but before the server ran it, not a stale screen
    clicked after the edit was received.
 4. Whole-Work batch. With Chapter A and B collapsed on Work Files, hold the exact
@@ -221,7 +221,7 @@ A draft-only tab is the document's one tab and is never persisted; the address (
 item key) reopens it. Only a command's own outcome closes or promotes it; a list change, a
 metadata read or a 404 never does.
 
-1. Open the new file from the strip, reload, and open the exact review URL in a fresh browser
+1. Open the new file from the draft dock, reload, and open the exact review URL in a fresh browser
    page, at desktop width and as a phone (390px, coarse pointer). PASS: the same review opens
    each time with `?item=` kept, and no other document shows at any time. Record history writes
    with a `history.replaceState` wrapper installed before first load: none beyond the router's
@@ -305,7 +305,7 @@ rather than a refusal.
 The DB witness is `draft-write-visibility.db.test.ts`
 (`DB_TEST_WORKERS=1 pnpm test:db apps/server/server/domains/collab/draft-write-visibility.db.test.ts`).
 
-## Probe H: the chat-scoped composer strip
+## Probe H: the chat-scoped draft dock
 
 Use real chat writes, not synthetic database rows: the chat names on a change come from the
 pending AI edit parts the server lists. Run at desktop width and on the phone (390px, coarse
@@ -333,10 +333,10 @@ then use the browser only to exercise and inspect the surfaces.
 
 ### Checks
 
-1. Open Pacing pass. PASS: the strip shows Chapter A and only the change this chat's writes
+1. Open Pacing pass. PASS: the draft dock shows Chapter A and only the change this chat's writes
    overlap (sword to sabre), not Lore pass's shield change and not Chapter B. Summary and
    controls share one line.
-2. Click the single-document strip's document name (Tab and Enter also work). PASS: the name
+2. Click the single-document draft dock's document name (Tab and Enter also work). PASS: the name
    opens review without toggling expansion, and there is no summary Review button. A failed
    review launch keeps the name available to retry and shows its error beside it. The chevron and the remaining summary area toggle expansion. On the phone the
    name has a 44px touch target and commands are visible without hover. The Editor opens on the
@@ -344,12 +344,12 @@ then use the browser only to exercise and inspect the surfaces.
    changes. The change bar names both chats (overflow names are in "+N", with the "More chats"
    menu); each name opens that chat beside the review without acting on the change (the chat
    sheet on the phone), without changing destination.
-3. From a fresh fixture, Apply on Pacing pass's strip. PASS: the shared change reaches live
+3. From a fresh fixture, Apply on Pacing pass's draft dock. PASS: the shared change reaches live
    (`sabre`), while `shield` and Chapter B's `spear` stay unchanged on live and Lore pass's
-   remaining changes stay pending. The strip never navigates. Recreate and repeat with Discard:
-   the shared change leaves both strips (the Discard is a local edit; the row reads "Discarded"
+   remaining changes stay pending. The draft dock never navigates. Recreate and repeat with Discard:
+   the shared change leaves both draft docks (the Discard is a local edit; the row reads "Discarded"
    with Undo), live keeps `sword`, and Lore pass's separate changes remain.
-4. Open Lore pass before disposition. PASS: the strip shows "2 documents"; expanding groups
+4. Open Lore pass before disposition. PASS: the draft dock shows "2 documents"; expanding groups
    this chat's changes under one-line file headers. Each file name opens its own review, never an
    arbitrary first document. A new document (one whole-item change) has ONE named review row
    with Discard and Apply, not a header followed by the same name; the Work page's expanded file
@@ -360,25 +360,25 @@ then use the browser only to exercise and inspect the surfaces.
 5. Open Dialogue pass. Its new document is one change with Apply, Discard and Review (the name).
    Apply publishes it; Discard removes it (item Discard on the server). Review opens it without
    publishing.
-6. Open Untouched. PASS: no strip, although the Work has pending changes. After Pacing pass's
-   last change is handled, its strip also disappears, even while Lore pass's other changes remain.
-7. No strip or change list offers a Work-page footer. Ordinary Work navigation reaches Files and
+6. Open Untouched. PASS: no draft dock, although the Work has pending changes. After Pacing pass's
+   last change is handled, its draft dock also disappears, even while Lore pass's other changes remain.
+7. No draft dock or change list offers a Work-page footer. Ordinary Work navigation reaches Files and
    its Work-wide commands.
 8. While a scripted mock turn is actively generating (use the 150-call recipe in Probe G), the
-   strip's Apply and Discard are disabled and click sends no request; the page states no reason.
+   draft dock's Apply and Discard are disabled and click sends no request; the page states no reason.
    After the reply finishes they enable. Hold one preview or list read for a new-document-only
    chat: commands stay unavailable until the list arrives.
 9. Fail one owned read: a file shows Retry on that file, not an empty list; retry restores it.
-   With two files, Keep in the strip's Discard confirmation sends nothing; confirming handles
+   With two files, Keep in the draft dock's Discard confirmation sends nothing; confirming handles
    both files. With one remaining file, Discard sends at once and affects only that file and chat.
    Verify the foreign chat's live and draft content.
 
-### Narrow strip failures and confirmation
+### Narrow draft dock failures and confirmation
 
 With one existing document, retain a failed Review launch or whole-item command: the automatic
 expansion leaves exactly one visible error owner. Whole-item rows carry their own failures.
 With several documents, Discard replaces the summary with its question and Keep and Discard
-rather than overlapping the filename. Probe 390px touch and a 320px dock (256px inner strip),
+rather than overlapping the filename. Probe 390px touch and a 320px dock (256px inner draft dock),
 including a long translated question: all controls stay inside the row with disjoint bounds and
 44px touch targets. Hold a whole-item Apply or Discard request: the row shows Applying or
 Discarding on the file and returns the failure on refusal, with no navigation change.
@@ -481,7 +481,7 @@ Continue with Probe H's fixture (recreate proposals between actions).
 
 Use a change two chats wrote. Run both shells.
 
-1. From the Work page's expanded row, the document change list and the strip's review bar, click
+1. From the Work page's expanded row, the document change list and the draft dock's review bar, click
    each chat name. PASS: that chat opens beside the screen (the phone's chat sheet), no review
    opens and no change command runs.
 2. Rename one writing chat and refresh. PASS: shared changes name each current chat and each name
@@ -495,7 +495,7 @@ In a named draft-mode Work, use the mock model to create `kb://Place`, edit an e
 view` and the Work's draft list: every item has `contextLocation: { scheme, path }` with its own
 scheme.
 
-Open each kb draft from the chat strip, the document's change list, and the Work page. The
+Open each kb draft from the draft dock, the document's change list, and the Work page. The
 Editor stays in Knowledge Base, shows the new draft as draft-only (no live-file error), and
 admits inline review. Apply the new document and read it back from `kb://`; Discard the
 existing-document edit and verify its live text is unchanged. Review the Manuscript chapter too.
@@ -521,7 +521,7 @@ change rows and browser errors. Stop only this worktree's stack.
 
 ## Reply commands against a replying model (browser, mock stack)
 
-The chat strip is disabled while a reply is still writing. Discard draft in the Editor and the
+The draft dock is disabled while a reply is still writing. Discard draft in the Editor and the
 Work page's Apply all and Discard all keep working. Use a draft-mode chat in a Work (`aiWriteMode:
 "draft"` at thread creation) and an owned project, and drive both pages in `agent-browser`
 (desktop 1440x900). `./mf` sets up the Work, the thread and the scripted turns, and reads durable
@@ -532,10 +532,10 @@ document (each `find` is the previous `content`) with `./mf thread send --no-wai
 about one second later. An earlier turn must already have saved a draft edit to the document so
 it is listed.
 
-1. **Strip disabled during the reply.** Open the Work's chat. While the reply runs, the strip's
+1. **Draft dock disabled during the reply.** Open the Work's chat. While the reply runs, the draft dock's
    Apply and Discard are disabled. PASS: clicking sends no request. After the reply finishes
    they enable.
-2. **Strip commands after the reply.** Click Apply on the strip. PASS: only this chat's changes
+2. **Draft dock commands after the reply.** Click Apply on the draft dock. PASS: only this chat's changes
    apply; other chats' and the writer's changes stay pending.
 3. **Discard draft during the reply.** In the Editor, click Discard draft while the reply is
    still writing. PASS: the base renders at once as one Ctrl+Z step; the reply keeps writing and
@@ -616,7 +616,7 @@ workflow passed.
 Observe `[data-paint-hold]`, `[data-paint-page][inert]`, the destination URL, visible prose and
 review marks with a MutationObserver and animation-frame samples. Use exact request interception
 for controlled pending and error windows, never sleeps. Exercise cold and warm Next draft, another
-document's strip Review, Apply draft and Discard draft moving on, room-read failure on desktop and
+document's draft dock Review, Apply draft and Discard draft moving on, room-read failure on desktop and
 phone, leaving to Chat mid-hold, and ordinary document switches on both shells. Navigation must
 change outside the hold immediately; no sampled frame may show uncovered blank prose or live prose
 under review chrome, and the cover must never show a loading status ("Opening document…"); phone
@@ -716,7 +716,7 @@ Setup (own stack, `MODEL_PROVIDER=mock pnpm dev`): `./mf api` to create a Work w
 5. **No regression.** New file at a free name, and at a name a visible document holds (the second
    takes the free name, `Chapter 2 (2)`).
 6. **A draft-only tab open before the join.** Open the draft's `Chapter 2` first (the chat's Edited
-   line, the composer strip, or the Work page's Changes to review), then New file `Chapter 2` from
+   line, the draft dock, or the Work page's Changes to review), then New file `Chapter 2` from
    the sidebar. Repeat with that tab open but another tab selected, and reload afterwards. PASS: no
    "Couldn't open this draft." card; the open tab becomes the document's ordinary tab with the
    draft's review over it (the view the chip's Draft choice gives; an unselected tab simply becomes

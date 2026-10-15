@@ -79,3 +79,28 @@ ignore it (`meridian.agent.spawn`, whose source the spawn card already carries
 in its durable props). An unmatched name falls through to an opaque custom
 block on the streaming reply and renders "Unknown component". When the server
 adds a CUSTOM name, add its branch and a reducer test in the same change.
+
+## Stop and hand-back
+
+Stop (`useChatStop`) cancels the running reply and hands every waiting writer
+message back into the composer, in send order as one plain editable message with
+a blank line between them, above what is typed. The press is written to the tab's
+composer draft (`handBacks`) before it is sent, so a reload re-posts it; the
+answer's content is prepended by one checked draft write that also records its
+`received` receipt, and only then is the command retired. A document that would
+not restore after a reload never retires the command. References come back as
+chips only when the chat proves their owner (`chatReferenceResolver`): a
+`scratch://` URI on this chat's lineage handle, `@/` uploads in a No Work chat,
+`@slug` for this chat's own Work, or a project or user reference. Anything else,
+another named Work included, comes back as its link text, so no content is lost.
+An image takes its type from the message's image block, not the extension.
+Send-time chip metadata would make this exact (see the shared client's FUTURE).
+
+`StopStatus` belongs to the tab that pressed Stop; other tabs see the record.
+`pending` is the press. An answer naming a cancelled execution reads `stopping`
+while the held record still shows it; any other answer clears. `failed` says so
+on the Stop control and stays after the chat goes idle and with text in the
+composer, so the retry (same request id and body) stays reachable. A compaction
+divider's Stop is this one; only a handoff brief's own Stop (`useTurnStop`) uses
+the turn cancel route. While a hand-back is in flight `hiddenWriterTurns` keeps
+those rows out of the transcript.

@@ -12,7 +12,7 @@ import type { Turn } from "@meridian/contracts/protocol";
 import { readHandoffSeed } from "@meridian/contracts/threads";
 import { useCallback } from "react";
 import { retryHandoffBrief } from "@/client/api/threads-api";
-import { useRetryStandIns } from "../useRetryStandIns";
+import { type RetryRefusal, useRetryStandIns } from "../useRetryStandIns";
 import { type TurnStop, useTurnStop } from "../useTurnStop";
 import { isOptimisticSeed, optimisticHandoffSeed } from "./handoff-seed";
 
@@ -22,7 +22,7 @@ export type HandoffBrief = {
   /** Whether Stop can reach this seed: the server has it. */
   canStop: (turn: Turn) => boolean;
   /** Cards whose Retry the server refused: the chat had moved on. */
-  retryRefused: ReadonlySet<string>;
+  retryRefused: ReadonlyMap<string, RetryRefusal>;
   /** A new brief after `from`, or the same request again when `from` is a failed Retry. */
   retry: (from: Turn) => void;
   stop: (turnId: string) => void;

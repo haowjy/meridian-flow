@@ -24,6 +24,15 @@ selection and upload ownership.
   runs it and clears the draft, while an unregistered verb sends as a message.
   `/compact` is the only registered command, on every chat, and server refusal
   stays on its row. Manuscript slash insertion uses a different catalog.
+- One button. Stop shows while the box is empty and a reply runs (or this tab's
+  Stop is pending, stopping or failed); once the writer types it is Send, with
+  the running ring while a reply runs, and it queues a steer. Stopping is the
+  button's spinning ring and its label, with no text beside it. A failed Stop is
+  an error card in the notice stack, "Couldn't stop the reply." with Try again,
+  which re-posts the same request. It shows while the reply still runs, even once
+  the writer types, and goes when the Stop succeeds, Try again is pressed or the
+  reply ends. Escape stops only while Stop shows. Stopping and sending at once belongs to
+  the queue's controls.
 - Hosts own session persistence through `initialDraft`/`onDraftChange`; apply an
   initial snapshot once. A successful catalog acquisition removes restored
   reference atoms whose resources are gone; offline or unavailable catalogs do
@@ -32,5 +41,5 @@ selection and upload ownership.
   If local recording fails, retain the live draft and show the shared
   `NoticeCard`; Send again is retry. Host notices and composer failure form one
   stack above attached strips, never between a strip and the box.
-- Usage waiting comes from the server inbox's `credits_exhausted` fact, not a
-  client balance guess. The box remains editable and the client does not poll.
+- Usage waiting comes from the chat's `RunState` (`blocked: credits_exhausted`),
+  not a client balance guess. The box remains editable and the client does not poll.

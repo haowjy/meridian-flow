@@ -14,6 +14,12 @@ React, or provider behavior.
 - Protocol unions are canonical definitions. WebSocket classifiers use the
   `WS_CLOSE` registry, pending transcript kinds use `PENDING_PLACEHOLDER_ROLES`,
   and thread controls use `ControlBody`.
+- Run state is one whole versioned `RunState` record (works or idle, open
+  execution, owed messages, applied write mode, usage block). Every carrier
+  holds the whole record, replaced by version: snapshot, subscribe, the
+  `meridian.run_state` frame and every command answer. Never add a second event
+  or answer field for a fact the record carries, and never infer run state from
+  arrival order or transcript ancestry.
 - Context ownership is exclusive: a named Work owns its drafted schemes, a
   lineage owns Scratch and No Work uploads, and No Work owns uploads only. A
   document owner is a Work or a lineage, never both.

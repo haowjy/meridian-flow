@@ -13,9 +13,17 @@ scrollport. A conversation reveal opened from an editor peer mark expands the
 receipt and brings its exact target row into view.
 
 `AssistantTurn` combines server-owned facts: full turn lineage supplies document
-scope and the settled trail supplies historical titles, word totals, and change rows. Both
-direct and draft lineage may produce the same receipt. Pending draft lineage shows the same “Edited N documents” card before Apply;
-Apply and Discard never erase its turn-owned record. Settled live trails
+scope, and the settled trail supplies historical titles, word totals, and change rows. Both
+direct and draft lineage may produce the same receipt. The receipt is a record of
+what the reply wrote: it counts every document the reply wrote to, live or draft,
+edited or created, as soon as the reply finishes. Apply and Discard never create
+or change it, and it has no Undo or Redo. Pending draft lineage
+shows the same “Edited N documents” card before Apply.
+
+This checkout diverges for created documents ([#843][issue-843], fix planned):
+the count reads edit targets that resolve to a live address, and a document the
+reply created in a draft has none until Apply reveals it. A reply that only
+creates draft documents shows no card until Apply makes one appear. Settled live trails
 add retained Before/After excerpts; pending draft rows name the edited files.
 
 The receipt reads server lineage, never tool results. A binary copy (an upload
@@ -62,3 +70,5 @@ arrives still leaves them in the thread. Nothing copies the pending request into
 component state — display without the lifecycle is what let a request outlive
 everything that could complete it. A stage deadline in the controller is only a
 backstop for the case no surface can report: a stage whose surface never mounts.
+
+[issue-843]: https://github.com/haowjy/meridian-flow/issues/843

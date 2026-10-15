@@ -28,6 +28,7 @@ import { TurnBlockStep } from "./TurnBlockStep";
 import { hasTurnEditsReceiptContent, TurnEditsReceipt } from "./TurnEditsReceipt";
 import { thinkingDigest } from "./thinking-digest";
 import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
+import type { RetryRefusal } from "./useRetryStandIns";
 
 export type AssistantTurnProps = {
   threadId?: string;
@@ -71,7 +72,7 @@ export type ReplyRetryView = {
   /** Present only while this failed reply is the latest turn. */
   onRetry?: () => void;
   /** The server refused this reply's last Retry, and the writer has not acted since. */
-  refused: boolean;
+  refused: RetryRefusal | null;
   /** This is a Retry's stand-in whose request never answered. */
   requestLost: boolean;
 };
@@ -102,6 +103,9 @@ function AssistantTurnComponent({
           metadata: turn.metadata,
         })
       : null;
+  // A failed reply the chat moved past, kept for its refusal card alone: nothing to copy or fork.
+  const showsOnlyRefusal =
+    errorKind !== null && !endsTranscript && items.length === 0 && deliveries.length === 0;
   const showsInkDrop = turn.status === "pending" || turn.status === "streaming";
   const isLive = !isSettled;
   const resolvedThreadId = threadId ?? turn.threadId;
@@ -158,11 +162,11 @@ function AssistantTurnComponent({
             isLatest={endsTranscript}
             kind={errorKind}
             onRetry={endsTranscript ? replyRetry?.onRetry : undefined}
-            retryRefused={replyRetry?.refused ?? false}
+            retryRefused={replyRetry?.refused ?? null}
           />
         ) : null}
       </div>
-      {isSettled && !continuesResponse && !standIn ? (
+      {isSettled && !continuesResponse && !standIn && !showsOnlyRefusal ? (
         <AssistantTurnActions
           threadId={resolvedThreadId}
           turn={turn}

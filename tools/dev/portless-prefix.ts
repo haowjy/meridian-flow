@@ -1,5 +1,6 @@
-/** Branch-name → portless worktree-prefix derivation. Single source of truth. */
+/** Checkout-owned Portless prefixes shared by startup, CLI discovery and browser tests. */
 import { createHash } from "node:crypto";
+import { isMainCheckout, resolveCheckoutSessionIdentity, runGit } from "./lib/dev-env";
 
 const DEFAULT_PORTLESS_BRANCHES = new Set(["main", "master"]);
 const MAX_DNS_LABEL_LENGTH = 63;
@@ -21,11 +22,21 @@ export function sanitizeForHostname(value: string): string {
   );
 }
 
-export function branchToPortlessPrefix(branchName: string): string | undefined {
+function branchToPortlessPrefix(branchName: string): string | undefined {
   if (!branchName || branchName === "HEAD" || DEFAULT_PORTLESS_BRANCHES.has(branchName)) {
     return undefined;
   }
 
   const lastSegment = branchName.split("/").at(-1) ?? branchName;
   return sanitizeForHostname(lastSegment) || undefined;
+}
+
+/** Only the primary checkout owns bare routes, including when HEAD is detached. */
+export function resolveCheckoutPortlessPrefix(repoRoot: string): string | undefined {
+  if (isMainCheckout(repoRoot)) return undefined;
+  const identity = resolveCheckoutSessionIdentity(repoRoot);
+  return (
+    branchToPortlessPrefix(runGit(repoRoot, ["rev-parse", "--abbrev-ref", "HEAD"])) ??
+    sanitizeForHostname(`${identity.slug}-${identity.worktreeHash}`)
+  );
 }

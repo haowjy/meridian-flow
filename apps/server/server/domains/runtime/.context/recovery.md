@@ -26,10 +26,17 @@ no-input run with the failed turn in history.
 
 ## Lease settlement
 
-Sweep lanes (unsettled-turn, placeholder, report, and expired-lease) delegate to
-delivery's `settleStaleExecution` inside one thread-lock transaction. The
-callback decides whether to delete the stale lease and publishes the resulting
-run-state record in that transaction; status publishes only after commit. A rollback keeps both
+`adapters/execution-settlement.ts` owns acknowledgement, ending an execution,
+abandoning a claim and orphan retirement. The unsettled-turn, placeholder and
+report sweep lanes pass their own repair to delivery's
+`settleStaleExecution(threadId, repair)` inside one thread-lock transaction; the
+callback decides whether to delete the stale lease, and the run-state record is
+published in that transaction. The expired-lease lane and run start call it with
+no `repair`: a listed expired row is stale as listed, so the full settlement
+ends it. The finalizer's repair scope is `sweep` by default, which leaves a
+subagent's assistant alone, and `claimed`, used only by that full settlement
+under a newly taken claim, which adds it and any unsettled compaction. Status
+publishes only after commit. A rollback keeps both
 unfinished work and lease. Every path that finalizes orphans under the claim
 (run start and idle materialization) goes through
 the delivery adapter's one `repairOrphans` helper.

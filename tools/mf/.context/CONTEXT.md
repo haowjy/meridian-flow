@@ -5,200 +5,127 @@ shim with the root's `tsx`. Read [AGENTS.md](../AGENTS.md) before editing.
 
 ## Architecture and contracts
 
-- **`./mf` dev CLI** — `src/` is the agent-facing CLI behind the repo-root `./mf`
-  shim. It drives the shared client core (`@meridian/thread-client`) against the
-  app's own HTTP routes and thread WebSocket, and calls the routes directly where
-  no core exists yet. It never reads Postgres and holds no business logic of its
-  own; when the API cannot answer a question, add a server route behind the
-  debug gate instead of a CLI-side query.
-  - `src/core/` is the framework and knows no domain: `command.ts` (`CommandSpec`,
-    `CommandGroup`, strict flat-arg parsing, option helpers), `output.ts` (text /
-    `--json` / NDJSON), `cli-error.ts` (the exit-code contract), `session.ts`
-    (Portless discovery, in-memory dev-login cookie, bounded requests).
-  - `src/commands/<group>/` holds one command group each (`thread`, `doc`,
-    `project`, `mock`, `log`, `seed`, `api`): one file per command, an `index.ts`
-    exporting the `CommandGroup`, and the group's own helpers (thread:
-    `transport.ts`, `stream.ts`, `events-map.ts`, `reduced-thread.ts`, `chat-view.ts`,
-    `reply-text.ts`, `resolve.ts`;
-    project: `resolve.ts`; doc: `uri.ts`; mock: `queue.ts`). Groups may import
-    another group's helper module (`thread/send` uses `mock/queue`, `doc/uri`),
-    never `main.ts`; `core/` imports no group.
-  - **Adding a group:** create `src/commands/<group>/` with its commands and an
-    `index.ts` exporting a `CommandGroup`, then list it in `GROUPS` in
-    `src/main.ts`. Help, parsing, output, and errors come from `core/`.
-  - **Views derive from the shared reducer.** `reduced-thread.ts` hydrates a snapshot
-    into `@meridian/thread-client`'s `InMemoryTurnStore` and applies each sequenced
-    event through the same `createTurnReducer` the app uses. `thread view` runs the
-    shared `viewTranscript` (`@meridian/thread-client`) over the hydrated turns and the
-    snapshot record's waiting writer messages (`liveState.runState.items`), then prints its rows: text as `you:`, `reply: 3 steps,
-    read 2 docs`, `compaction:`, `queued: N`, or `--json` as the versioned
-    `chatView: 2` envelope (row identity, kind, items, and `inputs`, which states what
-    the view was computed from: no local records, stand-ins, opening seed or live
-    activity, inherited history omitted, and background report bodies and change trails not fetched). `--full --json` is the inspectable form: paired
-    tools with input, result, streamed output, metadata and parsed Work receipt (plus the turn's `workReceipts`), raw card content and direct results, report
-    payloads, the handoff brief, delivery bodies (a reply's delivery groups are its last
-    item) and writer occurrences. Text mode summarizes (a card's kind only, since React words each card itself; fold tool names,
-    one `delivery:` line per group, references set apart by a space) and omits tool
-    inputs and results, card props, Work receipts, report payloads and occurrences. `chat-view.ts`
-    only prints; it decides no row and words no visible text (reasoning and plain-row
-    text come from the view model). `--blocks` times only the selected rows' turns,
-    not hidden plumbing or delivery turns. `--turn`, `--last`
-    and `--full` select rows; `--blocks` prints per-block timing
-    (`block-timing.ts`). A reply's `finalText` (`send`) and the `liveView`
-    comparison (`tail` prints no `finalText`; its text comparison changes only through
-    `ReducedThread.compare`) read the same view model's visible text items in order
-    (`reply-text.ts`).
-    `send` and `tail --until-idle` follow with a hydrated store and compare each
-    followed turn's reduced status and final text with the confirming snapshot's;
-    the result carries `liveView: "matches" | "differs" | "not_observed"` (and a
-    compact `liveDiff` when it differs), absent when nothing was followed.
-    `not_observed` means the follow had a replay gap, or a compared turn's events
-    were not seen from its start. `liveView` compares this CLI follower's reduced
-    status and final text with the stored turn. It is not a certificate of any
-    browser screen: it leaves out tools, reasoning, interrupts, the optimistic UI,
-    the visible-turn policy, write-mode dividers, queued rows and row placement, and
-    the app reconciles to the server at turn end. `ReducedThread.compare` checks
-    exactly `status` and `finalText`; a missing divider can't make it `differs`.
-    `differs` is a lead to investigate, `matches` does not prove the screen was
-    right, and it never changes the claim or exit code. The planned rule
-    ([claims are proofs](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/dev-cli/mf-claims-are-proofs.md))
-    is that once the chat session's sync is shared, a live disagreement will fail
-    with exit 6; that is not true yet. The claims themselves (`status`,
-    `finalText`, outcome) still come from the confirming snapshot. `send` reads no
-    snapshot before its deadline: it follows from the admission's `resumeAfterSeq`
-    and builds its turn from its own events. `tail --until-idle` hydrates a
-    snapshot and follows from that snapshot's `resumeAfterSeq`; `nextSeq` is only
-    snapshot freshness and never filters events.
-  - **The event log is a log.** `events-map.ts` (`RunEventMapper`) folds events into
-    the dotted lines `thread events`, `send` and `tail` print, including both
-    `tool.completed` and `tool.settled`. It decides when a command looks (stop
-    triggers) and what to print, never what a turn contains.
-  - **Output contract:** compact text by default; `--json` prints exactly one
-    object, or NDJSON for streams. Live claims and journal replay end with one
-    `type: "result"` envelope (`command`, `threadId`, `outcome`, `reason`, then
-    command fields). Seed embeds its sends' envelopes and exits with their worst
-    exit. `--fields` always preserves terminal `type`, `command`, `outcome` and
-    `reason`. Proven outcomes have null reason; unproven is exit 6 with a reason. `accepted` (exit 0)
-    is admission only: just `thread send --no-wait` returns it, never a waiting send.
-    `terminalResult` is the single constructor: it returns the typed envelope
-    and its mapped exit; proven outcomes require null reason, unproven and timeout
-    require a reason. Reasons are `owed`, `running`, `lease_awake`,
-    `admission_unknown`, `replay_truncated`, `unconfirmed`,
-    `deliverer_unknown`, and `snapshot_disagrees`. Cancel also uses it for its acknowledgement (retaining
-    not-found exit 3).
-    Run failures are results; CLI errors remain on stderr. `EXIT` in `src/core/cli-error.ts` is the exit-code contract. Set
-    `process.exitCode`; never call `process.exit()` (it truncates piped output).
-  - **Missing data** means a new server route behind the debug gate
-    (`resolveDebugPathsEnabled`, `APP_DEBUG=1`, never production), which
-    `pnpm dev` opens by default.
-  - Document commands parse the final path segment with the contracts name codec;
-    `doc put` reports the canonical URI returned by creation.
-    `doc put --overwrite` deletes the existing document and creates a new one
-    (new id; its drafts and history are gone) and reports `previousDocumentId`;
-    if the create then fails, the error says the old document was already deleted. Seed scenario names
-    use writer spelling, not slugs or prose suffixes.
-  - Usage refusals are current pending state, not terminal run events. Send
-    reconciles a replayed block with the durable snapshot before returning exit 1
-    (`failed` with reason `credits_exhausted`); an already recovered reply wins
-    over an obsolete refusal for that message.
-  - **Imports:** workspace libraries are limited to `@meridian/contracts` and
-    `@meridian/thread-client`. Portless discovery uses the same route contract
-    as `pnpm dev`: `../dev/portless-prefix.ts`, `../dev/portless-routes.ts`,
-    and `portlessCa` from `../dev/dev-readiness.ts`. Never import `apps/`.
-  - Tests share `src/test-support/fake-stack.ts` (fake API + thread socket on the
-    real contracts); `src/main.test.ts` also boots the real `./mf` shim.
+`./mf` drives the shared client core (`@meridian/thread-client`) against the
+app's own HTTP routes and thread WebSocket, and calls the routes directly where no
+core exists yet. It never reads Postgres and holds no business logic. Missing data
+means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
+`APP_DEBUG=1`, never production), which `pnpm dev` opens by default.
 
-## Package boundaries and verification
+- **Layout.** `src/core/` is the domain-free framework (`CommandSpec`/`CommandGroup`
+  parsing, `output.ts`, the `EXIT` contract in `cli-error.ts`, `session.ts` for
+  Portless discovery, the in-memory dev-login cookie and bounded requests) and
+  imports no group. `src/commands/<group>/` holds one group each; a new group is
+  listed in `GROUPS` in `src/main.ts`. A group may import another group's helper,
+  never `main.ts`. Tests share `src/test-support/fake-stack.ts` (fake API and
+  thread socket on the real contracts); `src/main.test.ts` boots the real shim.
+- **Imports.** Workspace libraries are `@meridian/contracts` and
+  `@meridian/thread-client` only. Portless discovery uses the route contract
+  `pnpm dev` registers (`../dev/portless-prefix.ts`, `portless-routes.ts`,
+  `portlessCa` in `dev-readiness.ts`, and `resolveCheckoutRouteUrls` in
+  `dev-session-state.ts`, which finds an active session's routes by its recorded
+  identity rather than the current branch). Duplicating that discovery here would
+  drift from `pnpm dev`, so the allowed list was widened deliberately; its
+  transitive `tools/dev` imports are Node-only. Never import `apps/`.
+- **Views derive from the shared reducer.** `reduced-thread.ts` hydrates a
+  snapshot into `InMemoryTurnStore` and applies each sequenced event through the
+  app's `createTurnReducer`, with the stream seq (`ReducedThread.apply(event, seq)`).
+  `thread view` runs `viewTranscript` over the hydrated turns and the record's
+  waiting writer messages and only prints the rows; `chat-view.ts` decides no row
+  and words no visible text. Text mode summarizes (a card's kind only, tool names,
+  one `delivery:` line per group) and omits tool inputs and results, card props,
+  Work receipts and occurrences; `--json` is the versioned `chatView: 2` envelope
+  whose `inputs` states what the view was computed from (no local records,
+  stand-ins, opening seed or live activity, inherited history omitted, background
+  report bodies and change trails not fetched). `--full --json` is the inspectable
+  form. A reply's `finalText` reads the same view model's visible text items.
+- **`liveView` is a lead, not proof.** `send` and `tail --until-idle` compare each
+  followed turn's reduced `status` and `finalText` with the confirming snapshot's:
+  `matches`, `differs` (with a compact `liveDiff`) or `not_observed` (a replay gap,
+  or a turn not seen from its start). It leaves out tools, reasoning, interrupts,
+  the optimistic UI, the visible-turn policy, dividers, queued rows and row
+  placement, so `matches` does not prove the screen was right, and it never
+  changes the claim or exit code. The claims themselves come from the confirming
+  snapshot. The planned rule
+  ([claims are proofs](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/dev-cli/mf-claims-are-proofs.md))
+  is that a live disagreement will fail with exit 6 once the chat session's sync
+  is shared; that is not true yet.
+- **Output contract.** Compact text by default; `--json` prints exactly one object,
+  or NDJSON for streams; errors go to stderr. Live claims and journal replay end
+  with one `type: "result"` envelope (`command`, `threadId`, `outcome`, `reason`,
+  then command fields), built only by `terminalResult`, which maps outcome to exit:
+  proven outcomes carry a null reason, unproven (exit 6) and timeout (124)
+  require one. Reasons: `owed`, `running`, `lease_awake`, `admission_unknown`,
+  `replay_truncated`, `unconfirmed`, `deliverer_unknown`, `snapshot_disagrees`.
+  `accepted` (exit 0) is admission only, returned just by `send --no-wait`. Run
+  failures are results; `--fields` always keeps `type`, `command`, `outcome` and
+  `reason`. Set `process.exitCode`; never call `process.exit()`.
+- **Documents.** Commands parse the final path segment with the contracts name
+  codec; `doc put` reports the canonical URI creation returns. `doc put
+  --overwrite` deletes and recreates (new id, drafts and history gone), reports
+  `previousDocumentId`, and says the old document was already deleted if the
+  create then fails. Seed scenario names use writer spelling.
+- **Usage refusals** are current pending state, not terminal run events. Send
+  reconciles a replayed refusal with the durable snapshot before exiting 1
+  (`failed`, reason `credits_exhausted`); an already recovered reply wins.
 
-JSON fixtures live in `fixtures/`; TypeScript lives in `src/`.
-The package declares its runtime dependencies (`@meridian/contracts`,
-`@meridian/thread-client`, `ws`) and its TypeScript/test tooling.
+## Following a run
 
-`transport.ts` composes one `ThreadSocketClient` per command run with the session's
-cookie and Portless CA. The shared client owns connected gating, replay,
-deduplication, gaps and reconnect/resume, with the package's default socket
-deadlines. A CLI subscription queue bounds waits by the command deadline; never
-add CLI socket timers or tune the package's deadlines to a command's
-`--timeout` (see the
-[package's deadline contract](../../../packages/thread-client/.context/CONTEXT.md)).
-Terminal/auth closes remain exit 4. `stream.ts` only
-maps events, prints them and runs the existing CLI follow predicates. Their run-state
-reads go through the shared `@meridian/thread-client` module (`commands/thread/run-state.ts`):
-`liveState.runState` and `meridian.run_state` frames. Send still cannot prove which reply
-answered its message until B. `tail --until-idle` reads an initial snapshot and
-returns at once if idle. After a turn finish/failure, journaled lease/pending update or idle subscription state it
-confirms a snapshot: `isBusy` false for `liveState.runState` (no open execution, no
-writer-provenance message in `items`) and `status.kind: "asleep"` (no awake lease).
-One command-scoped subscription and event mapper remain alive through every
-confirmation. Checkpoints drain queued events, await the snapshot, then consume
-frames received during the request before confirming again. The result's
-`turns` lists the initially running turn and every stream-named turn, with
-snapshot statuses. Any observed failure or covered turn error is failed; otherwise
-any cancellation is cancelled, missing/non-terminal turns are 6 `unconfirmed`,
-and all complete is complete. A replay gap without a proven failure or cancellation
-is 6 `replay_truncated`, preserving the idle evidence and covered turns.
-Already idle with no wait has an empty list. Snapshot requests are capped at the
-remaining deadline. A tail timeout uses the last snapshot with
-`snapshotStale: true`, or `snapshotUnavailable: true` if none succeeded,
-rather than extending the deadline for another HTTP request. This remains exit
-124, never proof of idle, even if the last snapshot looks idle.
-On a deadline, send reads a final snapshot; until-idle tail reports its last
-bounded snapshot as described above. With a snapshot, results report `stillRunning`,
-pending writer messages (`owed`), and `next`; they never cancel. Without a
-snapshot, the deadline report contains only `reason: "unconfirmed"` and `next`;
-the tail envelope adds `snapshotUnavailable: true`. Absent `stillRunning` and
-`owed` mean unknown, not no running turn or no owed messages. Both use `classifyDeadline`
-in `result.ts`, in precedence order: `running` for a running turn,
-`owed` for pending writer messages, `lease_awake` for an awake lease with
-neither, then `unconfirmed` (including no snapshot or an idle-looking snapshot
-without confirmed completion). `lease_awake` is a timeout whose snapshot shows neither a running turn nor an owed
-message but still reports `status.kind: "awake"`: the record and the status disagree,
-so idle is unconfirmed. It is not a claim about the record, and the next command is an
-until-idle tail to check again. Don't poll to hide it.
+`transport.ts` composes one `ThreadSocketClient` per command with the session's
+cookie and Portless CA. The shared client owns connected gating, replay, dedupe,
+gaps and reconnect with the package's default socket deadlines. A CLI queue bounds
+waits by the command deadline; never add CLI socket timers or tune the package's
+deadlines to `--timeout` (see the
+[deadline contract](../../../packages/thread-client/.context/CONTEXT.md)). Terminal
+and auth closes are exit 4. `stream.ts` maps events, prints them and runs the
+follow predicates; `events-map.ts` (`RunEventMapper`) folds events into the dotted
+lines `events`, `send` and `tail` print and decides when to look, never what a turn
+contains.
 
-The run-state record (`liveState.runState`, one whole record per snapshot, `subscribed`
-state or `meridian.run_state` frame) is what `./mf` reads for busy, owed and
-usage-blocked. The rules are the package's selectors over the view (`isBusy`,
-`isOwed`, `usageBlockedMessages`, `isBlockedForUsage`, `writerMessages`), the same the
-app uses; `run-state.ts` only holds the view. Before reporting complete, send checks
-that its admitted user turn id is no longer owed: the record doesn't list it, and the
-record read is at or past its admission (`runStateVersion`; none when the admission has
-none, because its record is from after it). If it is still owed, send returns 6
-`unproven` / `owed` with `stillRunning` and a next until-idle tail, not the earlier
-run's answer. This guard does not prove which reply answered; that binding waits for B,
-and `send`'s message proof waits for B too.
+- **Busy, owed and blocked** come from the run-state record
+  (`liveState.runState`, `subscribed`, `meridian.run_state`) through the package's
+  selectors (`isBusy`, `isOwed`, `usageBlockedMessages`, `writerMessages`), the same
+  the app uses; `commands/thread/run-state.ts` only holds the view.
+- **`send`** follows from the admission's `resumeAfterSeq` and builds its turn from
+  its own events, reading no snapshot before its deadline. Before reporting
+  complete it checks that its admitted user turn is no longer owed in a record at or
+  past its admission (`runStateVersion`; none when the admission has none). If still
+  owed it returns 6 `owed` with `stillRunning` and a next until-idle tail. This does
+  not prove which reply answered: that binding waits for #768 phase 2. A lost HTTP
+  admission answer is recovered with one app-route lookup (`submissionId`); a failed
+  lookup or pending admission is 6 `admission_unknown`.
+- **`tail --until-idle`** hydrates a snapshot, follows from its `resumeAfterSeq`
+  (`nextSeq` is freshness only and never filters events) and returns at once if
+  idle. After a finish, failure, lease or record change or idle state it confirms a
+  snapshot: `isBusy` false and `status.kind: "asleep"`. One subscription and mapper
+  stay alive through every confirmation. Any observed failure or covered turn error
+  is failed; otherwise any cancellation is cancelled; missing or non-terminal turns
+  are 6 `unconfirmed`; all complete is complete. A replay gap without a proven
+  failure or cancellation is 6 `replay_truncated`.
+- **Deadlines never prove idle.** A timeout is exit 124 with the last snapshot
+  (`snapshotStale: true`, or `snapshotUnavailable: true` if none), never an
+  extended deadline. With a snapshot the report carries `stillRunning`, `owed` and
+  `next`; absent means unknown, not none. `classifyDeadline` (`result.ts`) picks the
+  reason in order: `running`, `owed`, `lease_awake` (neither, but `status.kind` is
+  still `awake`: the record and the status disagree, so idle is unconfirmed; check
+  again with an until-idle tail, never poll to hide it), then `unconfirmed`.
+- **Removals and dividers are fenced by seq**, as in the app. A
+  `meridian.messages.handed_back` frame tombstones its turns at its seq, and a
+  `meridian.write_mode.switched` divider installs after its anchor turn. When the
+  anchor is a user turn the stream never carried, the store holds the divider out
+  (`ReducedThread.awaitsAnchor()`) and `followThread` hydrates one snapshot within
+  the remaining deadline, at most once per 250 ms, with `observed: false`. It never
+  inserts the divider at the tail. Sharing the reducer without this recovery left
+  `./mf` holding the divider forever.
+- `respond` uses the shared interrupt sender and confirms its interrupt's
+  journaled resolution (deadline: 6 `unconfirmed`). `events` on a replay gap is 6
+  `replay_truncated` after printing. Tool results distinguish staged
+  `tool.completed` from committed `tool.settled`.
+- Message admission builds one paragraph with `buildMessageDoc` and
+  `serializeMessageDoc` (reference labels and image capability from the address
+  route's catalog entry). This exercises the app's serializer, not the TipTap
+  editor or its submission lifecycle.
 
-Events reach the shared turn reducer with their stream seq (`ReducedThread.apply(event,
-seq)`), as in the app, so a removal (`meridian.messages.handed_back`) tombstones its
-turns at the frame's seq and an older snapshot cannot bring a handed-back message
-back. A `meridian.write_mode.switched` frame installs its divider after its anchor
-turn the same way. When the anchor is a user turn the stream never carried (`send`
-starts with an empty store; another client's message), the store holds the divider
-out and `ReducedThread.awaitsAnchor()` says so. `followThread` (`stream.ts`) then
-hydrates one snapshot within the remaining deadline, at most once per 250 ms, with
-`observed: false` so the comparison stays honest. It never inserts the divider at
-the tail. This is the app's recovery rule, shared through the store's
-`dividersAwaitingAnchor`; sharing the reducer without it left `./mf` holding the
-divider forever.
-
-`respond` uses the shared interrupt sender and confirms its exact interrupt's
-journaled resolution (deadline: 6 `unconfirmed`). A replay gap makes `events`
-6 `replay_truncated` after printing the replay. Send recovers a lost HTTP
-admission answer with one app-route lookup (`submissionId`); a failed lookup
-or pending admission is 6 `admission_unknown`. Tool results distinguish staged
-`tool.completed` from committed `tool.settled` in both output modes.
-
-Message admission calls `buildMessageDoc` for one paragraph containing inline
-skills, prose and references, with authored newlines represented by `hardBreak`
-(as in the composer), then passes it to `serializeMessageDoc`. Reference labels and image
-capability come from the address route's catalog entry. This exercises the app's
-serializer, not the TipTap editor or its submission lifecycle.
-
-The strict tsconfig includes `src/`; TypeScript resolves the imported Portless
-helpers without including the whole `tools/dev` tree. Cached Nx `typecheck` and
-`test` targets include those shared helper files and the root shim as inputs.
-
-The root Vitest project list includes this package's config exactly once.
-`pnpm test` runs all CLI tests, including `src/main.test.ts`, which boots the
-real root shim. The package's Nx test target is available for focused runs;
-the root test gate does not also invoke that target.
+JSON fixtures live in `fixtures/`; TypeScript in `src/`. The root Vitest project
+list includes this package's config once; `pnpm test` runs every CLI test, and the
+package's Nx test target is for focused runs only. Cached Nx `typecheck` and `test`
+include the shared Portless helpers and the root shim as inputs.

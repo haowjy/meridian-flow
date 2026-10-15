@@ -8,7 +8,7 @@ workspace navigation. It opens the toolbar's write-mode page for the Draft and
 Auto-apply choices instead of spending persistent width on both choices.
 `ProjectView` resolves the displayed thread’s Work once at the project
 composition boundary and passes that same Work identity to `DraftReviewProvider`
-and `ChatView`; the dock and composer control therefore share one binding.
+and `ChatView`; the draft dock and composer control therefore share one binding.
 Project chat always has a Work: named or No Work, looked up from
 `snapshot.noWork`, never `works.find`. `ChatView` renders picker plus write mode
 for that Work. There is no first/default-Work fallback.
@@ -47,7 +47,7 @@ with the switch view's intents laid over it
 control: a record in the chat's submission journal, posted in order with the
 messages around it. In the new-chat composer the value is the selected Work's
 `defaultAiWriteMode`, and `aiWriteMode` is sent with the first message only if
-the writer picked one there. Switching never touches drafts: the dock keeps
+the writer picked one there. Switching never touches drafts: the draft dock keeps
 showing pending changes in either mode, and its generating state reads the
 running turn's own mode.
 
@@ -96,6 +96,9 @@ records, taking the first record as its baseline, and calls `invalidateWriteMode
 
 The composer control shows the number of documents waiting beside Draft ("Draft (3)"), from the
 Work's draft list, in the trigger (while in Draft) and the menu option (in either mode); with none it reads "Draft".
+The count matters most from Auto-apply, when the writer is about to switch into a draft, so the
+`useWorkDrafts` read carries no mode gate. It counts the Work's draft, while the draft dock (`DraftDock`)
+lists only this chat's changes, so "Draft (2)" beside a one-document draft dock is correct.
 
 The dock projection is tri-state while its query loads: pending count and review
 availability are `null`, distinct from loaded zero/false; loading client state

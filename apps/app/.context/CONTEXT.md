@@ -55,8 +55,10 @@ ports, not adapter internals:
   Work, or No Work. The Work catalog never contains No Work, and Work management
   has no project-wide selection state and never resolves, repairs, or changes a
   chat binding.
-- `ThreadTransport` (from `@meridian/thread-client`) is the subscribe/cancel
-  port; runtime uses its `ThreadSocketClient`, composed in `TransportProvider`. The server event journal supplies replay across restarts.
+- `ThreadTransport` (`@meridian/thread-client`) is the subscribe/cancel port;
+  runtime uses the package's `ThreadSocketClient`, composed in
+  `src/client/providers/TransportProvider.tsx`. The server event journal
+  supplies replay across restarts.
 
 Account-stamped chat submissions are acknowledged-submission witnesses, not
 thread replicas or offline AI runtime. The first-send journal records the exact
@@ -70,11 +72,15 @@ the WorkOS external identity.
 
 ## Live turns and transcript references
 
-The turn reducer in `@meridian/thread-client` (shared with `./mf`) maps sequenced
-AG-UI events into ThreadStore actions through its `TurnStore` port. Live and settled assistant turns share the same `Turn`
-rows; partial blocks are an in-flight status, not a second view model.
-`partitionTurn` (`@meridian/thread-client`) renders ordered Process/Text/Artifact items,
-with Process collapsed in place and Text/Artifact visible. See the
+The turn reducer (`@meridian/thread-client`, `src/turns/`) is shared with `./mf`.
+It maps sequenced AG-UI events into the `TurnStore` port; the thread store is its
+adapter and owns one reducer instance. Optimistic reconciliation, cache
+invalidation, thread-list patches, seq floors and the interrupt response UI stay
+here. Live and settled assistant turns share the same `Turn` rows; partial blocks
+are an in-flight status, not a second view model. `viewTranscript` (same package)
+partitions blocks into ordered Process/Text/Artifact items, with Process
+collapsed in place and Text/Artifact visible. Run state (`RunState`) is held per
+chat in the thread store and read only through the package's selectors. See the
 [chat guide](../src/features/chat/AGENTS.md) and
 [composition reference](../src/features/chat/.context/turn-composition.md).
 
@@ -121,9 +127,9 @@ independent.
 
 First-send creation stays pending through admission, then activates the mounted
 projection before attaching the run controller. Cached turns render first.
-Activity, inbox, and Work/trail listeners join only after pending creation
+Activity, run-state, and Work/trail listeners join only after pending creation
 clears; none subscribe or fetch a missing thread.
-Distinct active runs resume once, including server-initiated child continuations.
+The first snapshot that shows work in progress re-subscribes from its cursor; there is no per-run resume.
 Account replacement fences the old lifetime and stale Query responses.
 
 ## Client-led creation and navigation
