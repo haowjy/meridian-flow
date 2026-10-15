@@ -7,7 +7,6 @@ import {
   projects,
   threads,
   threadWorks,
-  uploadIntakes,
   users,
   works,
 } from "@meridian/database/schema";
@@ -26,7 +25,6 @@ import { createDrizzleContextCatalog } from "./adapters/context-catalog.js";
 import { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-tree-mutation-store.js";
 import { createDrizzleDocumentLinkHistory } from "./adapters/document-link-history.js";
 import { createDrizzleDocumentLinkScopes } from "./adapters/document-link-scope.js";
-import { createDrizzleUploadOwnerLookup } from "./adapters/upload-owner-lookup.js";
 import { createDocumentLinkResolver } from "./document-link-resolution.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -132,7 +130,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         history: createDrizzleDocumentLinkHistory(db),
         workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
         chats: createDrizzleChatUploadsOwners(db),
-        uploadOwners: createDrizzleUploadOwnerLookup(db),
       });
     }
     async function add(
@@ -187,28 +184,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ref: "c9",
       });
       const upload = await add("uploads", "Gate", null, chatId);
-      const [uploadSource] = await database.current
-        .select({ contextSourceId: documents.contextSourceId })
-        .from(documents)
-        .where(eq(documents.id, upload));
-      await database.current.insert(uploadIntakes).values({
-        projectId: p,
-        intakeId: "intake",
-        actorUserId: u,
-        ownerThreadId: chatId,
-        contextSourceId: uploadSource?.contextSourceId ?? "",
-        documentId: upload,
-        fingerprint: "f",
-        byteDigest: "0".repeat(64),
-        filename: "Gate",
-        mimeType: "image/png",
-        finalPath: "Gate",
-        objectKey: "k",
-        fileType: "image",
-        canonicalUri: "uploads://@/c9/Gate",
-        locationRevision: crypto.randomUUID(),
-        state: "finalized",
-      });
       const resolveUpload = (uri: string, chat?: string) =>
         r.resolve({
           projectId: p,
@@ -222,8 +197,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         uri: "uploads://@/c9/Gate",
         chatThreadId: chatId,
       });
-      // A document that spells no chat finds the upload through its recorded owner.
-      expect(await resolveUpload("uploads://Gate")).toMatchObject({ documentId: upload });
+      // A bare name means the holder chat's file; a document holder has no chat, so it names nothing.
+      expect(await resolveUpload("uploads://Gate", chatId)).toMatchObject({ documentId: upload });
+      expect(await resolveUpload("uploads://Gate")).toBeNull();
       // A Work owns no uploads.
       expect(await resolveUpload("uploads://@work-b/Gate")).toBeNull();
     });

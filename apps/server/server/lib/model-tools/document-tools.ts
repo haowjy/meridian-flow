@@ -48,6 +48,7 @@ import {
   inContainer,
   keptDraftReader,
 } from "./file-access.js";
+import { qualifyWriteUploads } from "./qualify-uploads.js";
 import { readDocument } from "./read-document.js";
 import { retractCreatedTrackedDocument } from "./response-write-lifecycle.js";
 import { showingOf, threadShownLinks } from "./shown-link-capture.js";
@@ -267,12 +268,14 @@ export function createReadHandler(deps: ToolWiringDeps) {
 
 export function createWriteHandler(deps: ToolWiringDeps) {
   return async (input: unknown, ctx: ToolHandlerContext) => {
-    const parsed = input as WriteToolInput;
-    const skillRefusal = refuseSkillWrite(parsed);
+    const requested = input as WriteToolInput;
+    const skillRefusal = refuseSkillWrite(requested);
     if (skillRefusal) return skillRefusal;
     const call = await resolveToolCall(deps, ctx);
-    if (isToolError(call)) return writeToolError(parsed.command, call.output.message);
+    if (isToolError(call)) return writeToolError(requested.command, call.output.message);
     const { context, principal } = call;
+    // A bare `uploads://` embed would name whichever chat later reads the document.
+    const parsed = qualifyWriteUploads(requested, context.resolution.uploadsOwner?.chatRef);
     const creates = parsed.command === "create" || parsed.command === "copy";
     // A create or copy needs edit on the folder it makes the file in, at the
     // destination the file lands in; the namespace transaction confirms that
