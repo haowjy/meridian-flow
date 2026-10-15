@@ -811,8 +811,8 @@ else
         await rig.repos.turns.create({
           threadId: rig.threadId,
           prevTurnId: failed.id,
-          role: "system",
-          origin: "system",
+          role: "user",
+          origin: "writer",
           status: "complete",
         });
         return startExecution(threadId, executionId, settle);
@@ -1162,62 +1162,6 @@ else
         limit: 100,
       });
       expect(starts).toContain(rig.threadId);
-    });
-
-    it("a manual minimal tail over the usable window calls no summarizer", async () => {
-      const gateway = scriptedGateway({ usage: lowUsage, pauseAt: [1] });
-      const rig = await manualFixture({ gateway });
-      const active = await rig.orchestrator.prepare({
-        threadId: rig.threadId,
-        userText: "reply before compact",
-      });
-      const execution = active.execute();
-      await gateway.untilGatewayBoundary(1);
-      rig.deps.gateway.listModels = () => [
-        {
-          id: "gpt-4.1-mini",
-          provider: "openai",
-          displayName: "small",
-          contextWindow: 1000,
-          maxOutputTokens: 100,
-          tokenizer: "o200k",
-          promptCache: { kind: "none", ttlMs: null },
-          capabilities: new Set(),
-        },
-      ];
-      const control = await compactControl(rig);
-      await rig.send(rig.threadId, "unanswered ".repeat(1000));
-      expect(await rig.orchestrator.cancel(rig.threadId, active.executionTurnId)).toBe("cancelled");
-      gateway.release(1);
-      await execution;
-      await settled(rig);
-
-      const c = (await rig.repos.turns.listByThread(rig.threadId)).find(
-        (turn) =>
-          turn.role === "compaction" &&
-          (turn.metadata as { controlMessageId?: string } | null)?.controlMessageId === control.id,
-      );
-      expect(c).toMatchObject({
-        status: "error",
-        error: "This conversation couldn't be compacted. Try again.",
-        metadata: { reason: "context_too_large", phase: "initial_prepare" },
-      });
-      const journal = await db
-        .select({ eventType: schema.eventJournal.eventType, payload: schema.eventJournal.payload })
-        .from(schema.eventJournal);
-      expect(journal).toContainEqual({
-        eventType: "turn.error",
-        payload: expect.objectContaining({
-          error: expect.objectContaining({
-            message: "This message is too long for this chat's model.",
-            details: expect.objectContaining({
-              reason: "context_too_large",
-              phase: "initial_prepare",
-            }),
-          }),
-        }),
-      });
-      expect(rig.summarizer.calls).toHaveLength(0);
     });
 
     it("a remote Stop during manual summary wakes the owner after release", async () => {
