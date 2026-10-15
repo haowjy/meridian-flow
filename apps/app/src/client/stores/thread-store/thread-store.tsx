@@ -11,6 +11,21 @@ import {
   type TurnStatus,
 } from "@meridian/contracts/protocol";
 import { isTerminalTurnStatus } from "@meridian/contracts/threads";
+import {
+  applySnapshotTo,
+  createTurnReducer,
+  dividersAwaitingAnchorIn,
+  ensureAssistantTurnIn,
+  ensureSwitchTurnIn,
+  type HeldDividers,
+  isOptimisticTurnId,
+  OPTIMISTIC_TURN_ID_PREFIX,
+  patchTurnStatusIn,
+  type RunStateView,
+  removeTurnsIn,
+  type Tombstones,
+  upsertBlockIn,
+} from "@meridian/thread-client";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
@@ -31,27 +46,19 @@ import {
   subscribeChatSubmissions,
 } from "@/client/chat-submissions";
 import {
+  INITIAL_RUN_STATE_SLICE,
+  type RunStateSlice,
+  reduceRunState,
+} from "@/client/run-state/run-state-slice";
+import {
   type InterruptResponseEntry,
   interruptResponseKey,
 } from "@/core/session/interrupt-response";
-import {
-  clearPendingInterruptPatchesForThread,
-  clearPendingInterruptPatchesForTurn,
-} from "@/core/session/reduce-turn-event";
-import { baseTurnFields } from "@/core/session/state-helpers";
 import { useOptionalAccountEpochSignal } from "@/features/project/context/account-feature-context";
-
 import { buildOptimisticUserTurn } from "./build-optimistic-user-turn";
-import { isOptimisticTurnId, OPTIMISTIC_TURN_ID_PREFIX } from "./optimistic-turn-id";
 import { reconcileSnapshotTurns } from "./reconcile-snapshot-turns";
 import { createThreadCache, type ThreadCachePort } from "./thread-cache";
-import type {
-  EnsureAssistantTurnOptions,
-  LiveTurnMeta,
-  ThreadStoreActions,
-  ThreadStoreState,
-  TurnStatusPatch,
-} from "./types";
+import type { LiveTurnMeta, ThreadStoreActions, ThreadStoreState } from "./types";
 
 type PendingCreationState = {
   threadIds: Record<string, true>;
@@ -59,8 +66,14 @@ type PendingCreationState = {
 
 type ThreadStoreSliceState = ThreadStoreState & {
   turnsByThread: Record<string, Turn[]>;
+  /** Each chat's run state: the newest record, this device's unanswered intents, and what is news. */
+  runStateByThread: Record<string, RunStateSlice>;
   /** Minimum snapshot nextSeq accepted; snapshots below this floor are rejected. */
   snapshotNextSeqFloorByThread: Record<string, string>;
+  /** Turns removed from the conversation, until a snapshot covering the removal arrives. */
+  tombstonesByThread: Record<string, Tombstones>;
+  /** Dividers a `switched` frame added that no accepted snapshot covers yet. */
+  dividersByThread: Record<string, HeldDividers>;
   durableBlockCursorByThread: Record<string, string>;
   pendingCreation: PendingCreationState;
   interruptResponses: Record<string, InterruptResponseEntry>;
@@ -77,6 +90,8 @@ type ThreadStoreSeed = {
 
 type ThreadStoreConfig = ThreadStoreSeed & {
   threadCache: ThreadCachePort;
+  /** ISO timestamps for reducer-created rows; tests inject a fixed clock. */
+  clock?: () => string;
 };
 
 type ThreadStoreApi = StoreApi<ThreadStoreSlice>;
@@ -175,60 +190,27 @@ function reconcileInterruptResponsesForThread(
   return next;
 }
 
-function createAssistantTurn(
-  threadId: string,
-  turnId: string,
-  now: number,
-  existingTurns: readonly Turn[],
-  opts?: EnsureAssistantTurnOptions,
-): Turn {
-  const previousTurn = existingTurns.at(-1);
-  const prevTurnId =
-    opts && "prevTurnId" in opts ? (opts.prevTurnId ?? null) : (previousTurn?.id ?? null);
-  return {
-    id: turnId,
-    threadId,
-    position: 0,
-    prevTurnId,
-    role: "assistant",
-    origin: "assistant",
-    writeMode: opts?.writeMode ?? null,
-    status: "streaming",
-    promptBakeId: null,
-    finishReason: null,
-    ...baseTurnFields(),
-    error: null,
-    createdAt: opts?.createdAt ?? new Date(now).toISOString(),
-    completedAt: null,
-    blocks: [],
-    executionId: null,
-    reservedForUserTurnIds: [],
-    delivery: null,
-    siblingIds: [],
-    responses: [],
-  };
-}
-
-function definedTurnStatusPatch(patch: TurnStatusPatch): TurnStatusPatch {
-  return Object.fromEntries(
-    Object.entries(patch).filter(([, value]) => value !== undefined),
-  ) as TurnStatusPatch;
-}
-
 function selectThreadActions(state: ThreadStoreSlice): ThreadStoreActions {
   return {
     turns: state.turns,
+    dividersAwaitingAnchor: state.dividersAwaitingAnchor,
+    runState: state.runState,
     setStreamingThreadId: state.setStreamingThreadId,
     ensureThread: state.ensureThread,
     appendUserTurn: state.appendUserTurn,
     acknowledgeUserTurn: state.acknowledgeUserTurn,
     removeOptimisticUserTurn: state.removeOptimisticUserTurn,
     ensureAssistantTurn: state.ensureAssistantTurn,
+    ensureSwitchTurn: state.ensureSwitchTurn,
     upsertAssistantBlock: state.upsertAssistantBlock,
     invalidateThreadSnapshot: state.invalidateThreadSnapshot,
     patchTurnStatus: state.patchTurnStatus,
     pruneStaleAssistantTurns: state.pruneStaleAssistantTurns,
     bumpEventsApplied: state.bumpEventsApplied,
+    applyTurnEvent: state.applyTurnEvent,
+    removeTurns: state.removeTurns,
+    dispatchRunState: state.dispatchRunState,
+    applyDurableBlockEvent: state.applyDurableBlockEvent,
     acceptDurableBlockSeq: state.acceptDurableBlockSeq,
     acceptsThreadSnapshot: state.acceptsThreadSnapshot,
     applyThreadSnapshot: state.applyThreadSnapshot,
@@ -245,522 +227,555 @@ function selectThreadActions(state: ThreadStoreSlice): ThreadStoreActions {
 }
 
 export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
-  const { now, threadCache } = config;
+  const { now, threadCache, clock = () => new Date().toISOString() } = config;
   return createStore<ThreadStoreSlice>()(
     devtools(
-      (set, get) => ({
-        now,
-        turnsByThread: {},
-        snapshotNextSeqFloorByThread: {},
-        durableBlockCursorByThread: {},
-        liveMeta: {},
-        pendingCreation: { threadIds: {} },
-        interruptResponses: {},
-        interruptResponseCounter: 0,
-        streamingThreadId: null,
-        streamingProjectId: null,
-        turnCounter: 0,
+      (set, get) => {
+        // One reducer per store: its buffered interrupt patches die with the store.
+        const reducer = createTurnReducer({
+          now: clock,
+          store: {
+            turns: (threadId) => get().turns(threadId),
+            ensureAssistantTurn: (...args) => get().ensureAssistantTurn(...args),
+            ensureSwitchTurn: (...args) => get().ensureSwitchTurn(...args),
+            upsertAssistantBlock: (...args) => get().upsertAssistantBlock(...args),
+            invalidateThreadSnapshot: (threadId) => get().invalidateThreadSnapshot(threadId),
+            patchTurnStatus: (...args) => get().patchTurnStatus(...args),
+            removeTurns: (...args) => get().removeTurns(...args),
+            bumpEventsApplied: (threadId) => get().bumpEventsApplied(threadId),
+            settleInterruptResponse: (identity) => get().settleInterruptResponse(identity),
+          },
+        });
+        return {
+          now,
+          turnsByThread: {},
+          runStateByThread: {},
+          snapshotNextSeqFloorByThread: {},
+          tombstonesByThread: {},
+          dividersByThread: {},
+          durableBlockCursorByThread: {},
+          liveMeta: {},
+          pendingCreation: { threadIds: {} },
+          interruptResponses: {},
+          interruptResponseCounter: 0,
+          streamingThreadId: null,
+          streamingProjectId: null,
+          turnCounter: 0,
 
-        turns(id: string) {
-          return get().turnsByThread[id];
-        },
+          turns(id: string) {
+            return get().turnsByThread[id];
+          },
 
-        setStreamingThreadId(id, projectId = null) {
-          set({ streamingThreadId: id, streamingProjectId: id ? projectId : null });
-        },
+          dividersAwaitingAnchor(id: string) {
+            return dividersAwaitingAnchorIn({
+              turns: get().turnsByThread[id] ?? [],
+              dividers: get().dividersByThread[id] ?? new Map(),
+            });
+          },
 
-        ensureThread(thread) {
-          threadCache.upsertThread(thread);
-          set((state) =>
-            thread.id in state.turnsByThread
-              ? state
-              : { turnsByThread: { ...state.turnsByThread, [thread.id]: [] } },
-          );
-        },
+          runState(id: string) {
+            return (get().runStateByThread[id] ?? INITIAL_RUN_STATE_SLICE).view;
+          },
 
-        appendUserTurn(threadId, blocks) {
-          const { now, turnCounter } = get();
-          const { id, next } = nextTurnId(turnCounter);
-          const existing = get().turnsByThread[threadId] ?? [];
-          const prevTurnId = existing.length > 0 ? existing[existing.length - 1].id : null;
-          const turn = buildOptimisticUserTurn({ id, threadId, blocks, now, prevTurnId });
+          setStreamingThreadId(id, projectId = null) {
+            set({ streamingThreadId: id, streamingProjectId: id ? projectId : null });
+          },
 
-          set((state) => {
-            const existing = state.turnsByThread[threadId] ?? [];
-            return {
-              turnCounter: next,
-              turnsByThread: { ...state.turnsByThread, [threadId]: [...existing, turn] },
-            };
-          });
+          ensureThread(thread) {
+            threadCache.upsertThread(thread);
+            set((state) =>
+              thread.id in state.turnsByThread
+                ? state
+                : { turnsByThread: { ...state.turnsByThread, [thread.id]: [] } },
+            );
+          },
 
-          return turn;
-        },
+          appendUserTurn(threadId, blocks) {
+            const { now, turnCounter } = get();
+            const { id, next } = nextTurnId(turnCounter);
+            const existing = get().turnsByThread[threadId] ?? [];
+            const prevTurnId = existing.length > 0 ? existing[existing.length - 1].id : null;
+            const turn = buildOptimisticUserTurn({ id, threadId, blocks, now, prevTurnId });
 
-        acknowledgeUserTurn(threadId, optimisticTurnId, serverTurnId, snapshotFloorNextSeq) {
-          if (optimisticTurnId === serverTurnId) return;
+            set((state) => {
+              const existing = state.turnsByThread[threadId] ?? [];
+              return {
+                turnCounter: next,
+                turnsByThread: { ...state.turnsByThread, [threadId]: [...existing, turn] },
+              };
+            });
 
-          set((state) => {
-            if (!isOptimisticTurnId(optimisticTurnId)) return state;
+            return turn;
+          },
 
-            const turns = state.turnsByThread[threadId] ?? [];
-            const optimisticTurn = turns.find((turn) => turn.id === optimisticTurnId);
-            if (optimisticTurn?.role !== "user") return state;
+          acknowledgeUserTurn(threadId, optimisticTurnId, serverTurnId, snapshotFloorNextSeq) {
+            if (optimisticTurnId === serverTurnId) return;
 
-            const hasServerTurn = turns.some((turn) => turn.id === serverTurnId);
+            set((state) => {
+              if (!isOptimisticTurnId(optimisticTurnId)) return state;
 
-            /** The POST /messages response is the explicit identity bridge from the local `turn_local_*` row to the persisted user turn. */
-            const nextTurns = turns
-              .filter((turn) => !(hasServerTurn && turn.id === optimisticTurnId))
-              .map((turn) => {
-                if (turn.id === optimisticTurnId) {
-                  // The acknowledgement is the explicit bridge from the local
-                  // pending row to the admitted server turn; settle it here so
-                  // the row stops reading as pending before the snapshot lands.
-                  return {
-                    ...turn,
-                    id: serverTurnId,
-                    status: "complete" as const,
-                    completedAt: turn.completedAt ?? new Date(state.now).toISOString(),
-                    blocks: turn.blocks.map((block) => ({ ...block, turnId: serverTurnId })),
-                  };
-                }
-                if (turn.prevTurnId === optimisticTurnId) {
-                  return { ...turn, prevTurnId: serverTurnId };
-                }
-                return turn;
-              });
+              const turns = state.turnsByThread[threadId] ?? [];
+              const optimisticTurn = turns.find((turn) => turn.id === optimisticTurnId);
+              if (optimisticTurn?.role !== "user") return state;
 
-            // Never let an older acknowledgement move the snapshot floor backwards.
-            const acknowledgedNextSeq = BigInt(snapshotFloorNextSeq);
-            const currentNextSeq = state.snapshotNextSeqFloorByThread[threadId];
-            const nextSeq =
-              currentNextSeq === undefined || acknowledgedNextSeq > BigInt(currentNextSeq)
-                ? acknowledgedNextSeq.toString()
-                : currentNextSeq;
+              // Another tab handed this message back before the answer arrived: the row goes
+              // instead of becoming the turn that left the conversation.
+              const handedBack = state.tombstonesByThread[threadId]?.has(serverTurnId) === true;
+              const hasServerTurn = handedBack || turns.some((turn) => turn.id === serverTurnId);
 
-            return {
-              snapshotNextSeqFloorByThread: {
-                ...state.snapshotNextSeqFloorByThread,
-                [threadId]: nextSeq,
-              },
-              turnsByThread: { ...state.turnsByThread, [threadId]: nextTurns },
-            };
-          });
-        },
+              /** The POST /messages response is the explicit identity bridge from the local `turn_local_*` row to the persisted user turn. */
+              const nextTurns = turns
+                .filter((turn) => !(hasServerTurn && turn.id === optimisticTurnId))
+                .map((turn) => {
+                  if (turn.id === optimisticTurnId) {
+                    // The acknowledgement is the explicit bridge from the local
+                    // pending row to the admitted server turn; settle it here so
+                    // the row stops reading as pending before the snapshot lands.
+                    return {
+                      ...turn,
+                      id: serverTurnId,
+                      status: "complete" as const,
+                      completedAt: turn.completedAt ?? new Date(state.now).toISOString(),
+                      blocks: turn.blocks.map((block) => ({ ...block, turnId: serverTurnId })),
+                    };
+                  }
+                  if (turn.prevTurnId === optimisticTurnId) {
+                    return { ...turn, prevTurnId: serverTurnId };
+                  }
+                  return turn;
+                });
 
-        removeOptimisticUserTurn(threadId, optimisticTurnId) {
-          set((state) => {
-            const turns = state.turnsByThread[threadId] ?? [];
-            const nextTurns = turns.filter((turn) => turn.id !== optimisticTurnId);
-            if (nextTurns.length === turns.length) return state;
-            return { turnsByThread: { ...state.turnsByThread, [threadId]: nextTurns } };
-          });
-        },
+              // Never let an older acknowledgement move the snapshot floor backwards.
+              const acknowledgedNextSeq = BigInt(snapshotFloorNextSeq);
+              const currentNextSeq = state.snapshotNextSeqFloorByThread[threadId];
+              const nextSeq =
+                currentNextSeq === undefined || acknowledgedNextSeq > BigInt(currentNextSeq)
+                  ? acknowledgedNextSeq.toString()
+                  : currentNextSeq;
 
-        ensureAssistantTurn(threadId, turnId, opts) {
-          let threadListPatch: ThreadListLifecyclePatch | null = null;
+              return {
+                snapshotNextSeqFloorByThread: {
+                  ...state.snapshotNextSeqFloorByThread,
+                  [threadId]: nextSeq,
+                },
+                turnsByThread: { ...state.turnsByThread, [threadId]: nextTurns },
+              };
+            });
+          },
 
-          set((state) => {
-            const existing = state.turnsByThread[threadId] ?? [];
-            const existingTurn = existing.find((turn) => turn.id === turnId);
-            if (existingTurn) {
-              if (existingTurn.role !== "assistant") return state;
+          removeOptimisticUserTurn(threadId, optimisticTurnId) {
+            set((state) => {
+              const turns = state.turnsByThread[threadId] ?? [];
+              const nextTurns = turns.filter((turn) => turn.id !== optimisticTurnId);
+              if (nextTurns.length === turns.length) return state;
+              return { turnsByThread: { ...state.turnsByThread, [threadId]: nextTurns } };
+            });
+          },
+
+          ensureAssistantTurn(threadId, turnId, opts) {
+            let threadListPatch: ThreadListLifecyclePatch | null = null;
+
+            set((state) => {
+              const result = ensureAssistantTurnIn(
+                state.turnsByThread[threadId] ?? [],
+                threadId,
+                turnId,
+                new Date(state.now).toISOString(),
+                opts,
+              );
+              if (result.kind === "rejected") return state;
+              const existing = state.turnsByThread[threadId] ?? [];
 
               threadListPatch = liveThreadListPatchForTurnStatus(turnId, "streaming");
-
               const meta = liveMetaFor(state.liveMeta, threadId);
-              const nextTurns =
-                opts?.writeMode !== undefined && existingTurn.writeMode !== opts.writeMode
-                  ? existing.map((turn) =>
-                      turn.id === turnId ? { ...turn, writeMode: opts.writeMode ?? null } : turn,
-                    )
-                  : existing;
               return {
                 liveMeta: {
                   ...state.liveMeta,
                   [threadId]: { ...meta, runningTurnId: turnId },
                 },
                 turnsByThread:
-                  nextTurns === existing
+                  result.turns === existing
                     ? state.turnsByThread
-                    : { ...state.turnsByThread, [threadId]: nextTurns },
+                    : { ...state.turnsByThread, [threadId]: result.turns },
               };
-            }
-
-            const meta = liveMetaFor(state.liveMeta, threadId);
-            const liveMeta = {
-              ...state.liveMeta,
-              [threadId]: { ...meta, runningTurnId: turnId },
-            };
-
-            const turn = createAssistantTurn(threadId, turnId, state.now, existing, opts);
-            threadListPatch = liveThreadListPatchForTurnStatus(turnId, turn.status);
-            return {
-              liveMeta,
-              turnsByThread: { ...state.turnsByThread, [threadId]: [...existing, turn] },
-            };
-          });
-
-          if (threadListPatch) {
-            threadCache.patchThread(threadId, threadListPatch);
-          }
-        },
-
-        upsertAssistantBlock(threadId, turnId, block) {
-          set((state) => {
-            const turns = state.turnsByThread[threadId] ?? [];
-            const turnIndex = turns.findIndex((turn) => turn.id === turnId);
-            if (turnIndex < 0) return state;
-
-            const turn = turns[turnIndex];
-            if (!turn) return state;
-
-            const normalizedBlock = block.turnId === turnId ? block : { ...block, turnId };
-            const currentBlock = turn.blocks.find(
-              (existingBlock) => existingBlock.sequence === block.sequence,
-            );
-            if (currentBlock && sameBlock(currentBlock, normalizedBlock)) return state;
-            const blocks = [
-              ...turn.blocks.filter((existingBlock) => existingBlock.sequence !== block.sequence),
-              normalizedBlock,
-            ].sort((a, b) => a.sequence - b.sequence);
-
-            const nextTurns = turns.map((existingTurn, index) =>
-              index === turnIndex ? { ...existingTurn, blocks } : existingTurn,
-            );
-            const turnsByThread = { ...state.turnsByThread, [threadId]: nextTurns };
-            return { turnsByThread };
-          });
-        },
-
-        invalidateThreadSnapshot(threadId) {
-          threadCache.invalidateThreadSnapshot(threadId);
-        },
-
-        patchTurnStatus(threadId, turnId, status, patch = {}) {
-          let terminalProjectId: string | null = null;
-          let shouldInvalidateSnapshot = false;
-          let threadListPatch: ThreadListLifecyclePatch | null = null;
-
-          set((state) => {
-            const turns = state.turnsByThread[threadId] ?? [];
-            const turnIndex = turns.findIndex((turn) => turn.id === turnId);
-            if (turnIndex < 0) return state;
-
-            const definedPatch = definedTurnStatusPatch(patch);
-            const nextTurns = turns.map((turn, index) =>
-              index === turnIndex ? { ...turn, ...definedPatch, status } : turn,
-            );
-            // Unadmitted writer rows carry local knowledge, never a server lifecycle event.
-            if (turns[turnIndex]?.role === "user" && isOptimisticTurnId(turnId)) {
-              return { turnsByThread: { ...state.turnsByThread, [threadId]: nextTurns } };
-            }
-            threadListPatch = liveThreadListPatchForTurnStatus(turnId, status);
-            if (!isTerminalTurnStatus(status)) {
-              return { turnsByThread: { ...state.turnsByThread, [threadId]: nextTurns } };
-            }
-
-            clearPendingInterruptPatchesForTurn(threadId, turnId);
-            shouldInvalidateSnapshot = true;
-            terminalProjectId =
-              state.streamingThreadId === threadId ? state.streamingProjectId : null;
-
-            const remainingInterruptResponses = clearInterruptResponsesByPrefix(
-              state.interruptResponses,
-              `${threadId}\u0000${turnId}\u0000`,
-            );
-
-            const meta = liveMetaFor(state.liveMeta, threadId);
-            const isRunningTurn = meta.runningTurnId === turnId;
-            return {
-              liveMeta: {
-                ...state.liveMeta,
-                [threadId]: {
-                  ...meta,
-                  runningTurnId: isRunningTurn ? null : meta.runningTurnId,
-                },
-              },
-              turnsByThread: { ...state.turnsByThread, [threadId]: nextTurns },
-              ...(remainingInterruptResponses
-                ? { interruptResponses: remainingInterruptResponses }
-                : {}),
-            };
-          });
-
-          if (threadListPatch) {
-            threadCache.patchThread(threadId, threadListPatch);
-          }
-
-          if (!shouldInvalidateSnapshot) return;
-          // Cache side effects stay outside Zustand's `set()` call: the terminal
-          // reducer path writes store state first, then asks the cache to catch
-          // projector-only fields such as final usage/cost metadata. The port
-          // owns the render-safe deferral.
-          threadCache.invalidateThread(threadId, terminalProjectId);
-        },
-
-        pruneStaleAssistantTurns(threadId) {
-          set((state) => {
-            const turns = state.turnsByThread[threadId] ?? [];
-            const nextTurns = turns.filter((turn) => !isPrunableAssistantTransportTail(turn));
-            if (nextTurns.length === turns.length) return state;
-
-            const meta = liveMetaFor(state.liveMeta, threadId);
-            return {
-              liveMeta: {
-                ...state.liveMeta,
-                [threadId]: {
-                  ...meta,
-                  runningTurnId: null,
-                },
-              },
-              turnsByThread: { ...state.turnsByThread, [threadId]: nextTurns },
-            };
-          });
-        },
-
-        bumpEventsApplied(threadId) {
-          let nextEventsApplied = 0;
-          set((state) => {
-            const meta = liveMetaFor(state.liveMeta, threadId);
-            nextEventsApplied = meta.eventsApplied + 1;
-            return {
-              liveMeta: {
-                ...state.liveMeta,
-                [threadId]: { ...meta, eventsApplied: nextEventsApplied },
-              },
-            };
-          });
-          return nextEventsApplied;
-        },
-
-        acceptDurableBlockSeq(threadId, seq) {
-          if (parseSeq(seq) === null) return false;
-          const state = get();
-          const cursor = state.durableBlockCursorByThread[threadId];
-          if (cursor !== undefined && compareSeq(seq, cursor) <= 0) return false;
-          const nextFloor = (BigInt(seq) + 1n).toString();
-          const floor = state.snapshotNextSeqFloorByThread[threadId];
-          set({
-            durableBlockCursorByThread: {
-              ...state.durableBlockCursorByThread,
-              [threadId]: seq,
-            },
-            snapshotNextSeqFloorByThread: {
-              ...state.snapshotNextSeqFloorByThread,
-              [threadId]: floor && compareSeq(floor, nextFloor) > 0 ? floor : nextFloor,
-            },
-          });
-          return true;
-        },
-
-        acceptsThreadSnapshot(threadId, nextSeq) {
-          if (parseSeq(nextSeq) === null) return false;
-          const floor = get().snapshotNextSeqFloorByThread[threadId];
-          return floor === undefined || compareSeq(nextSeq, floor) >= 0;
-        },
-
-        applyThreadSnapshot(thread, serverTurns, options) {
-          const threadId = thread.id;
-          const { nextSeq, lifecycle } = options;
-          if (!get().acceptsThreadSnapshot(threadId, nextSeq)) return false;
-          threadCache.upsertThread(thread, lifecycle);
-          clearPendingInterruptPatchesForThread(threadId);
-          set((state) => {
-            const localTurns = state.turnsByThread[threadId] ?? [];
-            const runningTurnId = lifecycle.runningTurnId;
-            const mergedTurns = reconcileSnapshotTurns(localTurns, serverTurns, {
-              runningTurnId,
             });
 
-            const nextState: Partial<ThreadStoreSliceState> = {
-              turnsByThread: { ...state.turnsByThread, [threadId]: mergedTurns },
-            };
-
-            const reconciledInterruptResponses = reconcileInterruptResponsesForThread(
-              state.interruptResponses,
-              threadId,
-              mergedTurns,
-            );
-            if (reconciledInterruptResponses) {
-              nextState.interruptResponses = reconciledInterruptResponses;
+            if (threadListPatch) {
+              threadCache.patchThread(threadId, threadListPatch);
             }
+          },
 
-            const coveredSeq = (BigInt(nextSeq) - 1n).toString();
-            const priorCursor = state.durableBlockCursorByThread[threadId];
-            if (BigInt(nextSeq) > 0n && (!priorCursor || compareSeq(coveredSeq, priorCursor) > 0)) {
-              nextState.durableBlockCursorByThread = {
-                ...state.durableBlockCursorByThread,
-                [threadId]: coveredSeq,
-              };
-            }
+          upsertAssistantBlock(threadId, turnId, block) {
+            set((state) => {
+              const nextTurns = upsertBlockIn(state.turnsByThread[threadId] ?? [], turnId, block);
+              if (!nextTurns) return state;
+              return { turnsByThread: { ...state.turnsByThread, [threadId]: nextTurns } };
+            });
+          },
 
-            nextState.snapshotNextSeqFloorByThread = {
-              ...state.snapshotNextSeqFloorByThread,
-              [threadId]: nextSeq,
-            };
+          invalidateThreadSnapshot(threadId) {
+            threadCache.invalidateThreadSnapshot(threadId);
+          },
 
-            const meta = liveMetaFor(state.liveMeta, threadId);
-            nextState.liveMeta = {
-              ...state.liveMeta,
-              [threadId]: {
-                ...meta,
-                runningTurnId,
-              },
-            };
+          patchTurnStatus(threadId, turnId, status, patch = {}) {
+            let terminalProjectId: string | null = null;
+            let shouldInvalidateSnapshot = false;
+            let threadListPatch: ThreadListLifecyclePatch | null = null;
 
-            return nextState;
-          });
-          return true;
-        },
+            set((state) => {
+              const turns = state.turnsByThread[threadId] ?? [];
+              const turnIndex = turns.findIndex((turn) => turn.id === turnId);
+              if (turnIndex < 0) return state;
 
-        markPendingCreation({ threadId }) {
-          set((state) => ({
-            pendingCreation: {
-              threadIds: { ...state.pendingCreation.threadIds, [threadId]: true },
-            },
-          }));
-        },
+              const nextTurns = patchTurnStatusIn(turns, turnId, status, patch) ?? turns;
+              // Unadmitted writer rows carry local knowledge, never a server lifecycle event.
+              if (turns[turnIndex]?.role === "user" && isOptimisticTurnId(turnId)) {
+                return { turnsByThread: { ...state.turnsByThread, [threadId]: nextTurns } };
+              }
+              threadListPatch = liveThreadListPatchForTurnStatus(turnId, status);
+              if (!isTerminalTurnStatus(status)) {
+                return { turnsByThread: { ...state.turnsByThread, [threadId]: nextTurns } };
+              }
 
-        clearPendingCreation({ threadId }) {
-          set((state) => {
-            const threadIds = { ...state.pendingCreation.threadIds };
-            if (threadId) delete threadIds[threadId];
-            return { pendingCreation: { threadIds } };
-          });
-        },
+              reducer.clearPendingInterruptPatchesForTurn(threadId, turnId);
+              shouldInvalidateSnapshot = true;
+              terminalProjectId =
+                state.streamingThreadId === threadId ? state.streamingProjectId : null;
 
-        interruptResponseFor(identity) {
-          return get().interruptResponses[interruptResponseKey(identity)];
-        },
+              const remainingInterruptResponses = clearInterruptResponsesByPrefix(
+                state.interruptResponses,
+                `${threadId}\u0000${turnId}\u0000`,
+              );
 
-        beginInterruptResponse(input) {
-          const key = interruptResponseKey(input);
-          set((state) => {
-            const sequence = state.interruptResponseCounter + 1;
-            return {
-              interruptResponseCounter: sequence,
-              interruptResponses: {
-                ...state.interruptResponses,
-                [key]: {
-                  threadId: input.threadId,
-                  turnId: input.turnId,
-                  interruptId: input.interruptId,
-                  status: "pending",
-                  value: input.value,
-                  sequence,
-                  generation: input.generation,
-                },
-              },
-            };
-          });
-        },
-
-        failInterruptResponse(input, failure) {
-          const key = interruptResponseKey(input);
-          set((state) => {
-            const existing = state.interruptResponses[key];
-            if (existing) {
-              // Preserve the retained value/sequence; only the status moves.
+              const meta = liveMetaFor(state.liveMeta, threadId);
+              const isRunningTurn = meta.runningTurnId === turnId;
               return {
+                liveMeta: {
+                  ...state.liveMeta,
+                  [threadId]: {
+                    ...meta,
+                    runningTurnId: isRunningTurn ? null : meta.runningTurnId,
+                  },
+                },
+                turnsByThread: { ...state.turnsByThread, [threadId]: nextTurns },
+                ...(remainingInterruptResponses
+                  ? { interruptResponses: remainingInterruptResponses }
+                  : {}),
+              };
+            });
+
+            if (threadListPatch) {
+              threadCache.patchThread(threadId, threadListPatch);
+            }
+
+            if (!shouldInvalidateSnapshot) return;
+            // Cache side effects stay outside Zustand's `set()` call: the terminal
+            // reducer path writes store state first, then asks the cache to catch
+            // projector-only fields such as final usage/cost metadata. The port
+            // owns the render-safe deferral.
+            threadCache.invalidateThread(threadId, terminalProjectId);
+          },
+
+          dispatchRunState(threadId, action) {
+            set((state) => {
+              const slice = state.runStateByThread[threadId] ?? INITIAL_RUN_STATE_SLICE;
+              const next = reduceRunState(slice, action);
+              return next === slice
+                ? state
+                : { runStateByThread: { ...state.runStateByThread, [threadId]: next } };
+            });
+          },
+
+          pruneStaleAssistantTurns(threadId) {
+            set((state) => {
+              const turns = state.turnsByThread[threadId] ?? [];
+              const nextTurns = turns.filter((turn) => !isPrunableAssistantTransportTail(turn));
+              if (nextTurns.length === turns.length) return state;
+
+              const meta = liveMetaFor(state.liveMeta, threadId);
+              return {
+                liveMeta: {
+                  ...state.liveMeta,
+                  [threadId]: {
+                    ...meta,
+                    runningTurnId: null,
+                  },
+                },
+                turnsByThread: { ...state.turnsByThread, [threadId]: nextTurns },
+              };
+            });
+          },
+
+          bumpEventsApplied(threadId) {
+            let nextEventsApplied = 0;
+            set((state) => {
+              const meta = liveMetaFor(state.liveMeta, threadId);
+              nextEventsApplied = meta.eventsApplied + 1;
+              return {
+                liveMeta: {
+                  ...state.liveMeta,
+                  [threadId]: { ...meta, eventsApplied: nextEventsApplied },
+                },
+              };
+            });
+            return nextEventsApplied;
+          },
+
+          applyTurnEvent(threadId, event, seq) {
+            reducer.applyEvent(threadId, event, seq);
+          },
+
+          ensureSwitchTurn(threadId, facts, seq) {
+            set((state) => {
+              const held = {
+                turns: state.turnsByThread[threadId] ?? [],
+                dividers: state.dividersByThread[threadId] ?? new Map(),
+              };
+              const next = ensureSwitchTurnIn(
+                held,
+                threadId,
+                facts,
+                seq,
+                new Date(state.now).toISOString(),
+              );
+              return next === held
+                ? state
+                : {
+                    turnsByThread: { ...state.turnsByThread, [threadId]: next.turns },
+                    dividersByThread: { ...state.dividersByThread, [threadId]: next.dividers },
+                  };
+            });
+          },
+
+          removeTurns(threadId, ids, seq) {
+            set((state) => {
+              const next = removeTurnsIn(
+                {
+                  turns: state.turnsByThread[threadId] ?? [],
+                  tombstones: state.tombstonesByThread[threadId] ?? new Map(),
+                },
+                ids,
+                seq,
+              );
+              return {
+                turnsByThread: { ...state.turnsByThread, [threadId]: next.turns },
+                tombstonesByThread: { ...state.tombstonesByThread, [threadId]: next.tombstones },
+              };
+            });
+          },
+
+          applyDurableBlockEvent(threadId, event) {
+            return reducer.applyDurableBlockEvent(threadId, event);
+          },
+
+          acceptDurableBlockSeq(threadId, seq) {
+            if (parseSeq(seq) === null) return false;
+            const state = get();
+            const cursor = state.durableBlockCursorByThread[threadId];
+            if (cursor !== undefined && compareSeq(seq, cursor) <= 0) return false;
+            const nextFloor = (BigInt(seq) + 1n).toString();
+            const floor = state.snapshotNextSeqFloorByThread[threadId];
+            set({
+              durableBlockCursorByThread: {
+                ...state.durableBlockCursorByThread,
+                [threadId]: seq,
+              },
+              snapshotNextSeqFloorByThread: {
+                ...state.snapshotNextSeqFloorByThread,
+                [threadId]: floor && compareSeq(floor, nextFloor) > 0 ? floor : nextFloor,
+              },
+            });
+            return true;
+          },
+
+          acceptsThreadSnapshot(threadId, nextSeq) {
+            if (parseSeq(nextSeq) === null) return false;
+            const floor = get().snapshotNextSeqFloorByThread[threadId];
+            return floor === undefined || compareSeq(nextSeq, floor) >= 0;
+          },
+
+          applyThreadSnapshot(thread, serverTurns, options) {
+            const threadId = thread.id;
+            const { nextSeq, lifecycle } = options;
+            if (!get().acceptsThreadSnapshot(threadId, nextSeq)) return false;
+            threadCache.upsertThread(thread, lifecycle);
+            reducer.clearPendingInterruptPatchesForThread(threadId);
+            set((state) => {
+              const localTurns = state.turnsByThread[threadId] ?? [];
+              const runningTurnId = lifecycle.runningTurnId;
+              const applied = applySnapshotTo(
+                {
+                  tombstones: state.tombstonesByThread[threadId] ?? new Map(),
+                  dividers: state.dividersByThread[threadId] ?? new Map(),
+                },
+                serverTurns,
+                nextSeq,
+              );
+              const mergedTurns = reconcileSnapshotTurns(localTurns, applied.turns, {
+                runningTurnId,
+              });
+              // A row still waiting on its admission answer is an identity bridge: the answer
+              // may name a turn another tab handed back. Covered tombstones stay until it settles.
+              const awaitingAdmission = localTurns.some((turn) => isOptimisticTurnId(turn.id));
+              const tombstones = awaitingAdmission
+                ? (state.tombstonesByThread[threadId] ?? applied.tombstones)
+                : applied.tombstones;
+
+              const nextState: Partial<ThreadStoreSliceState> = {
+                turnsByThread: { ...state.turnsByThread, [threadId]: mergedTurns },
+                tombstonesByThread: { ...state.tombstonesByThread, [threadId]: tombstones },
+                dividersByThread: { ...state.dividersByThread, [threadId]: applied.dividers },
+              };
+
+              const reconciledInterruptResponses = reconcileInterruptResponsesForThread(
+                state.interruptResponses,
+                threadId,
+                mergedTurns,
+              );
+              if (reconciledInterruptResponses) {
+                nextState.interruptResponses = reconciledInterruptResponses;
+              }
+
+              const coveredSeq = (BigInt(nextSeq) - 1n).toString();
+              const priorCursor = state.durableBlockCursorByThread[threadId];
+              if (
+                BigInt(nextSeq) > 0n &&
+                (!priorCursor || compareSeq(coveredSeq, priorCursor) > 0)
+              ) {
+                nextState.durableBlockCursorByThread = {
+                  ...state.durableBlockCursorByThread,
+                  [threadId]: coveredSeq,
+                };
+              }
+
+              nextState.snapshotNextSeqFloorByThread = {
+                ...state.snapshotNextSeqFloorByThread,
+                [threadId]: nextSeq,
+              };
+
+              const meta = liveMetaFor(state.liveMeta, threadId);
+              nextState.liveMeta = {
+                ...state.liveMeta,
+                [threadId]: {
+                  ...meta,
+                  runningTurnId,
+                },
+              };
+
+              return nextState;
+            });
+            return true;
+          },
+
+          markPendingCreation({ threadId }) {
+            set((state) => ({
+              pendingCreation: {
+                threadIds: { ...state.pendingCreation.threadIds, [threadId]: true },
+              },
+            }));
+          },
+
+          clearPendingCreation({ threadId }) {
+            set((state) => {
+              const threadIds = { ...state.pendingCreation.threadIds };
+              if (threadId) delete threadIds[threadId];
+              return { pendingCreation: { threadIds } };
+            });
+          },
+
+          interruptResponseFor(identity) {
+            return get().interruptResponses[interruptResponseKey(identity)];
+          },
+
+          beginInterruptResponse(input) {
+            const key = interruptResponseKey(input);
+            set((state) => {
+              const sequence = state.interruptResponseCounter + 1;
+              return {
+                interruptResponseCounter: sequence,
                 interruptResponses: {
                   ...state.interruptResponses,
-                  [key]: { ...existing, status: failure.status },
+                  [key]: {
+                    threadId: input.threadId,
+                    turnId: input.turnId,
+                    interruptId: input.interruptId,
+                    status: "pending",
+                    value: input.value,
+                    sequence,
+                    generation: input.generation,
+                  },
                 },
               };
-            }
-            // A send that never left the client has no pending row yet.
-            const sequence = state.interruptResponseCounter + 1;
-            return {
-              interruptResponseCounter: sequence,
-              interruptResponses: {
-                ...state.interruptResponses,
-                [key]: {
-                  threadId: input.threadId,
-                  turnId: input.turnId,
-                  interruptId: input.interruptId,
-                  status: failure.status,
-                  value: input.value,
-                  sequence,
-                  generation: null,
+            });
+          },
+
+          failInterruptResponse(input, failure) {
+            const key = interruptResponseKey(input);
+            set((state) => {
+              const existing = state.interruptResponses[key];
+              if (existing) {
+                // Preserve the retained value/sequence; only the status moves.
+                return {
+                  interruptResponses: {
+                    ...state.interruptResponses,
+                    [key]: { ...existing, status: failure.status },
+                  },
+                };
+              }
+              // A send that never left the client has no pending row yet.
+              const sequence = state.interruptResponseCounter + 1;
+              return {
+                interruptResponseCounter: sequence,
+                interruptResponses: {
+                  ...state.interruptResponses,
+                  [key]: {
+                    threadId: input.threadId,
+                    turnId: input.turnId,
+                    interruptId: input.interruptId,
+                    status: failure.status,
+                    value: input.value,
+                    sequence,
+                    generation: null,
+                  },
                 },
-              },
-            };
-          });
-        },
+              };
+            });
+          },
 
-        settleInterruptResponse(identity) {
-          const key = interruptResponseKey(identity);
-          set((state) => {
-            if (!(key in state.interruptResponses)) return state;
-            const { [key]: _removed, ...rest } = state.interruptResponses;
-            return { interruptResponses: rest };
-          });
-        },
+          settleInterruptResponse(identity) {
+            const key = interruptResponseKey(identity);
+            set((state) => {
+              if (!(key in state.interruptResponses)) return state;
+              const { [key]: _removed, ...rest } = state.interruptResponses;
+              return { interruptResponses: rest };
+            });
+          },
 
-        pendingInterruptResponseForThread(threadId) {
-          let newest: InterruptResponseEntry | null = null;
-          for (const entry of Object.values(get().interruptResponses)) {
-            if (entry.threadId !== threadId || entry.status !== "pending") continue;
-            if (!newest || entry.sequence > newest.sequence) newest = entry;
-          }
-          return newest;
-        },
-
-        markInterruptResponsesForGenerationAmbiguous(generation) {
-          set((state) => {
-            let changed = false;
-            const next = { ...state.interruptResponses };
-            for (const [key, entry] of Object.entries(state.interruptResponses)) {
-              if (entry.status !== "pending" || entry.generation !== generation) continue;
-              next[key] = { ...entry, status: "ambiguous" };
-              changed = true;
+          pendingInterruptResponseForThread(threadId) {
+            let newest: InterruptResponseEntry | null = null;
+            for (const entry of Object.values(get().interruptResponses)) {
+              if (entry.threadId !== threadId || entry.status !== "pending") continue;
+              if (!newest || entry.sequence > newest.sequence) newest = entry;
             }
-            return changed ? { interruptResponses: next } : state;
-          });
-        },
-      }),
+            return newest;
+          },
+
+          markInterruptResponsesForGenerationAmbiguous(generation) {
+            set((state) => {
+              let changed = false;
+              const next = { ...state.interruptResponses };
+              for (const [key, entry] of Object.entries(state.interruptResponses)) {
+                if (entry.status !== "pending" || entry.generation !== generation) continue;
+                next[key] = { ...entry, status: "ambiguous" };
+                changed = true;
+              }
+              return changed ? { interruptResponses: next } : state;
+            });
+          },
+        };
+      },
       { name: "thread-store", enabled: import.meta.env.DEV },
     ),
-  );
-}
-
-function sameBlock(left: Block, right: Block): boolean {
-  return (
-    left.id === right.id &&
-    left.turnId === right.turnId &&
-    left.responseId === right.responseId &&
-    left.blockType === right.blockType &&
-    left.sequence === right.sequence &&
-    left.textContent === right.textContent &&
-    left.provider === right.provider &&
-    left.executionSide === right.executionSide &&
-    left.status === right.status &&
-    sameJson(left.content, right.content) &&
-    sameJson(left.providerData, right.providerData) &&
-    sameJson(left.collapsedContent, right.collapsedContent)
-  );
-}
-
-function sameJson(left: unknown, right: unknown): boolean {
-  if (left === right) return true;
-  if (!left || !right || typeof left !== "object" || typeof right !== "object") return false;
-  if (Array.isArray(left) || Array.isArray(right)) {
-    return (
-      Array.isArray(left) &&
-      Array.isArray(right) &&
-      left.length === right.length &&
-      left.every((value, index) => sameJson(value, right[index]))
-    );
-  }
-  const leftRecord = left as Record<string, unknown>;
-  const rightRecord = right as Record<string, unknown>;
-  const keys = Object.keys(leftRecord);
-  return (
-    keys.length === Object.keys(rightRecord).length &&
-    keys.every(
-      (key) => Object.hasOwn(rightRecord, key) && sameJson(leftRecord[key], rightRecord[key]),
-    )
   );
 }
 
@@ -822,6 +837,16 @@ export function ThreadStoreProvider({ now, children }: ThreadStoreSeed & { child
 
 export function useThreadStore<T>(selector: (state: ThreadStoreSlice) => T): T {
   return useStore(useThreadStoreApi(), selector);
+}
+
+/** The chat's run-state slice: its newest record, this device's intents, and the news the hooks speak. */
+export function useRunStateSlice(threadId: string): RunStateSlice {
+  return useThreadStore((state) => state.runStateByThread[threadId] ?? INITIAL_RUN_STATE_SLICE);
+}
+
+/** The chat's run-state view, the one input to the package's selectors (`isBusy`, `stopRequest`, ...). */
+export function useRunState(threadId: string): RunStateView {
+  return useRunStateSlice(threadId).view;
 }
 
 export function useThreadActions(): ThreadStoreActions {

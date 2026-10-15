@@ -59,6 +59,7 @@ export {
 } from "./domain/thread-activity.js";
 export { threadAvailabilityCode } from "./domain/thread-availability.js";
 export {
+  hasCompletedReplyInLineage,
   loadThreadConversationContext,
   type ThreadConversationContext,
   type ThreadConversationContextDeps,
@@ -167,6 +168,7 @@ export {
 export {
   createThreadEventHub,
   cursorSeqForJournalHead,
+  eventSeqForJournalEvent,
   type SequencedEventInternal,
   type ThreadEventHub,
 } from "./thread-event-hub.js";

@@ -1,0 +1,116 @@
+/**
+ * dispatch-ws-server-message — routes a parsed `WsServerMessage` to the right
+ * transport callback (sequenced event, gap, connected, error).
+ *
+ * Pure dispatcher injected with the transport's dependencies, so `ThreadSocketClient`
+ * stays focused on socket lifecycle. Owns only the message→callback mapping.
+ */
+import type { AGUIEvent, MeridianError, WsServerMessage } from "@meridian/contracts/protocol";
+
+import type { WsThreadSubscriptionRegistry } from "./ws-thread-subscription";
+
+export type WsServerMessageDispatchDeps = {
+  subscriptions: WsThreadSubscriptionRegistry;
+  toError: (error: MeridianError) => Error;
+  dispatchSequencedEvent: (
+    threadId: string,
+    seq: string,
+    event: AGUIEvent,
+    error?: MeridianError,
+    sourceThreadId?: string,
+  ) => void;
+  /** Send the subscribe that was queued behind a replay now settled. */
+  resubscribe: (threadId: string) => void;
+  handleGap: (message: Extract<WsServerMessage, { type: "gap" }>) => void | Promise<void>;
+  send: (payload: unknown) => void;
+  onConnected: (connectionToken: string) => void;
+  onThreadError: (threadId: string, error: Error) => void;
+  onInterruptResponseError: (threadId: string, error: Error) => void;
+  onGlobalError: (error: Error) => void;
+};
+
+function isNonFatalInterruptResponseError(
+  message: Extract<WsServerMessage, { type: "error" }>,
+): boolean {
+  // A late/double interrupt response is an allowed race: the server has
+  // already resumed or expired the interrupt, and the active run subscription
+  // must stay alive to receive the assistant output that follows.
+  return (
+    Boolean(message.threadId) &&
+    (message.error.code === "interrupt_not_pending" ||
+      message.error.code === "interrupt_correlation_mismatch")
+  );
+}
+
+export function dispatchWsServerMessage(
+  message: WsServerMessage,
+  deps: WsServerMessageDispatchDeps,
+): void {
+  switch (message.type) {
+    case "connected":
+      deps.onConnected(message.connectionToken);
+      return;
+
+    case "subscribed": {
+      const subscription = deps.subscriptions.get(message.threadId);
+      if (!subscription) return;
+      // Merges the catch-up with live frames held behind the replay fence.
+      const resend = deps.subscriptions.settleReplay(
+        message.threadId,
+        message.catchup.map((next) => ({
+          seq: next.seq,
+          event: next.event,
+          error: next.error,
+          sourceThreadId: next.sourceThreadId ?? message.threadId,
+        })),
+      );
+
+      // After catch-up: a replayed frame is frozen at emit time, so the
+      // server-computed live state wins over any stale replayed value.
+      for (const handler of subscription.handlers) {
+        handler.onLiveState?.(message.state);
+      }
+
+      if (resend) deps.resubscribe(message.threadId);
+
+      return;
+    }
+
+    case "event": {
+      deps.dispatchSequencedEvent(
+        message.threadId,
+        message.seq,
+        message.event,
+        message.error,
+        message.sourceThreadId,
+      );
+      return;
+    }
+
+    case "gap": {
+      void deps.handleGap(message);
+      return;
+    }
+
+    case "error": {
+      const error = deps.toError(message.error);
+      if (isNonFatalInterruptResponseError(message)) {
+        if (message.threadId) deps.onInterruptResponseError(message.threadId, error);
+        return;
+      }
+      if (message.threadId) {
+        deps.onThreadError(message.threadId, error);
+        return;
+      }
+      deps.onGlobalError(error);
+      return;
+    }
+
+    case "ping":
+      deps.send({ type: "pong" });
+      return;
+
+    default:
+      return;
+  }
+}

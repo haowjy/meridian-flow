@@ -7,6 +7,7 @@ import type { Block, JsonObject, JsonValue, Turn } from "@meridian/contracts/thr
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { InternalThreadRepositories } from "../../threads/ports/repositories.js";
+import { turnGraph } from "../../threads/ports/turn-graph.js";
 import { collectRecordedDocuments, planModelElisions } from "../loop/compaction/elide.js";
 import { WorkCommandSchema } from "../tools/core-tools.js";
 import {
@@ -92,7 +93,7 @@ export function defineThreadHistoryContract(
         origin,
         status,
         metadata,
-        prevTurnId: (await repos.turns.getLatestByThread(threadId))?.id,
+        prevTurnId: (await turnGraph(repos.turns).latest(threadId))?.id,
       });
     }
     async function child() {

@@ -41,7 +41,6 @@ import { createNoopInterruptArtifactFlushPort } from "../interrupt-session.js";
 import { createInterruptRegistry } from "../interrupts.js";
 import type { OrchestratorDeps } from "../orchestrator.js";
 import { createOrchestrator } from "../orchestrator.js";
-import { readPendingInbox } from "../pending-inbox.js";
 import { createRunStarter } from "../run-starter.js";
 import type { PreparedRun } from "../run-turn-port.js";
 import { createWakeIfRunnable } from "../wake-if-runnable.js";
@@ -64,7 +63,7 @@ export function createRuntimeHarness(
     repos?: ThreadRepositories;
     /** The owner supplied `repos` commit through; the in-memory shown-link store joins it. */
     transactionOwner?: InMemoryTransactionOwner;
-    inbox?: import("../../adapters/runtime-delivery.js").DeliveryStore;
+    inbox?: import("../../adapters/delivery-ports.js").DeliveryStore;
     threadLock?: import("../thread-lock.js").ThreadLock;
     creditLedger?: CreditLedger;
     boundThreads?: () => readonly string[];
@@ -445,7 +444,6 @@ export async function runtimeScenario(
             return {
               threadId: id,
               status: await harness.runClaim.read(id),
-              runningTurnId: await harness.runClaim.readRunningTurnId(id),
               activity: await readThreadActivity(
                 {
                   threads: repos.threads,
@@ -454,7 +452,7 @@ export async function runtimeScenario(
                 },
                 id,
               ),
-              pending: await readPendingInbox(harness.delivery, id),
+              runState: await harness.delivery.answerRunState(id),
               resumeAfterSeq: (await hub.headSeq(id)).toString(),
             };
           },

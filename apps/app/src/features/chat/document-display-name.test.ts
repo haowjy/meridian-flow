@@ -1,8 +1,7 @@
+import type { ToolView } from "@meridian/thread-client";
 import { describe, expect, it } from "vitest";
-
 import { descriptorFor } from "./command-descriptor";
 import { documentDisplayName } from "./document-display-name";
-import type { ToolView } from "./group-delivery-segments";
 
 function tool(toolName: string, input: Record<string, unknown>): ToolView {
   return {

@@ -97,8 +97,9 @@ end-to-end as one suite.
   "RP1 retired model"`). In the chat, expect "The AI provider turned this
   request down." and Retry on the latest failed reply. Clear that script with
   `./mf mock clear --id <script-id>` (read the ID from `error-script.json`),
-  then click Retry. Expect a new reply without retyping; the old failure keeps
-  its sentence as history, with no Retry. Before this fix, the current
+  then click Retry. Expect a new reply without retyping; the old failure is not
+  drawn, and a failed reply that a later message follows shows no failure line
+  (a row with no text is gone). Before this fix, the current
   provider-declined reply had no Retry. An inherited read-only failure must
   still have no Retry.
 - **Last run:** not recorded for this exact wall-clock recipe. Automated

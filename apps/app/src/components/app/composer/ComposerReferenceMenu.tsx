@@ -5,6 +5,7 @@
  */
 
 import { t } from "@lingui/core/macro";
+import { imageCapable } from "@meridian/thread-client";
 import { closeHistory } from "@tiptap/pm/history";
 import { type NodeViewProps, NodeViewWrapper } from "@tiptap/react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
@@ -186,7 +187,7 @@ function ReferenceReplacement({
         onSelect: ({ row }) =>
           selectRef.current({
             ...row.action.reference,
-            imageCapable: row.fileKind === "asset" && row.action.reference.fileType === "image",
+            imageCapable: row.fileKind === "asset" && imageCapable(row.action.reference.fileType),
             upload: null,
           }),
       }),

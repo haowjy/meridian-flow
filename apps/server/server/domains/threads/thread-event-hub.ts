@@ -5,7 +5,12 @@
  * subscribers. Owns the realtime delivery layer over the event journal.
  */
 import type { MeridianError } from "@meridian/contracts/interrupt";
-import { type AGUIEvent, EventType, type SequencedEvent } from "@meridian/contracts/protocol";
+import {
+  type AGUIEvent,
+  EventType,
+  RUN_STATE_EVENT,
+  type SequencedEvent,
+} from "@meridian/contracts/protocol";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
@@ -44,7 +49,8 @@ export type ThreadEventHubOptions = {
 
 export type ThreadEventHub = ReturnType<typeof createThreadEventHub>;
 
-function eventSeqForJournalEvent(journalSeq: bigint, projectedIndex: number): bigint {
+/** The socket seq of a journal row's `projectedIndex`-th frame. */
+export function eventSeqForJournalEvent(journalSeq: bigint, projectedIndex: number): bigint {
   return journalSeq * EVENT_SEQ_FACTOR + BigInt(projectedIndex);
 }
 
@@ -68,16 +74,25 @@ function errorEnvelopeForProjectedEvent(
   return orchestratorEvent.error;
 }
 
+/** A run-state frame is a whole `RunState` at its own stream seq; live and replayed frames stamp the same value. */
+function stampRunStateVersion(event: AGUIEvent, seq: bigint): AGUIEvent {
+  if (event.type !== EventType.CUSTOM || event.name !== RUN_STATE_EVENT) return event;
+  return { ...event, value: { ...(event.value as object), version: seq.toString() } };
+}
+
 function toSequencedEvents(
   journalSeq: bigint,
   events: AGUIEvent[],
   orchestratorEvent: OrchestratorEvent,
 ): SequencedEventInternal[] {
-  return events.map((event, index) => ({
-    seq: eventSeqForJournalEvent(journalSeq, index),
-    event,
-    error: errorEnvelopeForProjectedEvent(orchestratorEvent, event),
-  }));
+  return events.map((event, index) => {
+    const seq = eventSeqForJournalEvent(journalSeq, index);
+    return {
+      seq,
+      event: stampRunStateVersion(event, seq),
+      error: errorEnvelopeForProjectedEvent(orchestratorEvent, event),
+    };
+  });
 }
 
 export function createThreadEventHub(

@@ -1,4 +1,6 @@
-/** Tab-local authoring owner for pane continuity, journal hand-off and Edit. */
+/** Tab-local authoring owner for pane continuity, journal hand-off, Edit and hand-backs. */
+import type { StopRequest } from "@meridian/contracts/threads";
+import { type MessageDoc, prependMessageDoc } from "@meridian/thread-client";
 import type { ComposerDraftChange, ComposerDraftSnapshot } from "@/components/app/composer";
 import {
   parseRestorableComposerDraft,
@@ -10,16 +12,42 @@ export type ComposerDraftScope = { kind: "chat" | "new-chat"; id: string };
 
 export type DeletedChatNotice = { threadId: string; title: string | null; count: number };
 
+/**
+ * A hand-back request the writer pressed whose answer has not been written to the composer: kept
+ * with the draft so a reload re-posts the same body (the server replays its stored decision) and
+ * the content still arrives exactly once. Q adds the x and Cancel queue kinds beside Stop.
+ */
+export type PendingHandBack = { kind: "stop"; requestId: string; body: StopRequest };
+
 type StoredComposerDraft = (ComposerDraftSnapshot | { doc: null }) & {
   received?: string[];
   notices?: DeletedChatNotice[];
+  handBacks?: PendingHandBack[];
 };
+
+/** The `received` entry a hand-back leaves: the checked write that carries the content records it. */
+export const handBackReceipt = (requestId: string) => `handBack:${requestId}`;
+
+function isPendingHandBack(value: unknown): value is PendingHandBack {
+  if (!isRecord(value) || value.kind !== "stop" || typeof value.requestId !== "string")
+    return false;
+  const body = value.body;
+  return (
+    isRecord(body) &&
+    body.requestId === value.requestId &&
+    typeof body.seenThrough === "number" &&
+    (body.seenExecutionId === null || typeof body.seenExecutionId === "string") &&
+    Array.isArray(body.mine) &&
+    body.mine.every((id) => typeof id === "string")
+  );
+}
 
 export class ComposerSessionDraft {
   readonly key: string;
   private readonly record: ReturnType<typeof browserRecord<StoredComposerDraft>>;
   private current: ComposerDraftSnapshot | null;
   private received = new Set<string>();
+  private handBacksPending: PendingHandBack[] = [];
   notices: DeletedChatNotice[] = [];
   dismissNotice = (threadId: string) => {
     this.notices = this.notices.filter((notice) => notice.threadId !== threadId);
@@ -58,21 +86,107 @@ export class ComposerSessionDraft {
     const first = snapshots[0];
     if (!first) return false;
     const all = [...snapshots];
-    if (this.current && serializeComposerDraft(this.current.doc).text) all.push(this.current);
+    const typed =
+      this.current && serializeComposerDraft(this.current.doc).text ? this.current : null;
+    if (typed) all.push(typed);
+    // The package's rule: each earlier message above the rest, one empty paragraph between.
+    const doc = all.reduceRight<MessageDoc | null>(
+      (below, snapshot) => prependMessageDoc(snapshot.doc as MessageDoc, below),
+      null,
+    ) as ComposerDraftSnapshot["doc"];
     const edited = {
       ...first,
       revision: Math.max(...all.map((snapshot) => snapshot.revision)) + 1,
-      doc: { type: "doc", content: all.flatMap((snapshot) => snapshot.doc.content ?? []) },
+      doc,
       ownedUploads: all.flatMap((snapshot) => snapshot.ownedUploads),
     };
     const received = new Set([...this.received, ...recordIds]);
     const notices = notice
       ? [...this.notices.filter((item) => item.threadId !== notice.threadId), notice]
       : this.notices;
-    if (!this.record.write({ ...edited, received: [...received], notices })) return false;
-    this.notices = notices;
-    this.received = received;
-    this.current = edited;
+    return this.commit(edited, { received, notices, handBacks: this.handBacksPending });
+  }
+
+  /** The hand-back requests this tab pressed and has not written to the composer. */
+  get handBacks(): readonly PendingHandBack[] {
+    return this.handBacksPending;
+  }
+
+  /** Whether a hand-back's content already went into this composer. */
+  hasReceivedHandBack = (requestId: string) => this.received.has(handBackReceipt(requestId));
+
+  /**
+   * Keep a hand-back request with the draft before it is sent, so no press is lost to a reload.
+   * False when the write failed: the caller must not send.
+   */
+  recordHandBack(command: PendingHandBack): boolean {
+    if (this.handBacksPending.some((known) => known.requestId === command.requestId)) return true;
+    return this.commit(this.current, {
+      received: this.received,
+      notices: this.notices,
+      handBacks: [...this.handBacksPending, command],
+    });
+  }
+
+  /** A request the server refused: nothing came back, so the command goes. */
+  dropHandBack(requestId: string): boolean {
+    if (!this.handBacksPending.some((known) => known.requestId === requestId)) return true;
+    return this.commit(this.current, {
+      received: this.received,
+      notices: this.notices,
+      handBacks: this.handBacksPending.filter((known) => known.requestId !== requestId),
+    });
+  }
+
+  /**
+   * A hand-back's content above what is typed, the receipt, and the command's retirement in one
+   * checked write. A request already received prepends nothing (two answers for one request, or
+   * a reload after the write). False when the write failed or the merged document wouldn't
+   * restore after a reload: the command stays, and a retry of the same request brings the
+   * content again. A document that can't restore never retires the command.
+   */
+  receiveHandBack(requestId: string, returned: MessageDoc): boolean {
+    if (this.hasReceivedHandBack(requestId)) return this.dropHandBack(requestId);
+    const typed =
+      this.current && serializeComposerDraft(this.current.doc).text ? this.current : null;
+    const doc = prependMessageDoc(
+      returned,
+      typed ? (typed.doc as MessageDoc) : null,
+    ) as ComposerDraftSnapshot["doc"];
+    const edited = {
+      revision: (this.current?.revision ?? 0) + 1,
+      selection: typed?.selection ?? { anchor: 1, head: 1 },
+      ownedUploads: typed?.ownedUploads ?? [],
+      doc,
+    };
+    if (!parseRestorableComposerDraft(edited)) return false;
+    return this.commit(edited, {
+      received: new Set([...this.received, handBackReceipt(requestId)]),
+      notices: this.notices,
+      handBacks: this.handBacksPending.filter((known) => known.requestId !== requestId),
+    });
+  }
+
+  /** One checked write of the draft with its receipts, notices and pending commands. */
+  private commit(
+    draft: ComposerDraftSnapshot | null,
+    next: {
+      received: Set<string>;
+      notices: DeletedChatNotice[];
+      handBacks: PendingHandBack[];
+    },
+  ): boolean {
+    const stored: StoredComposerDraft = {
+      ...(draft ?? { doc: null }),
+      received: [...next.received],
+      notices: next.notices,
+      handBacks: next.handBacks,
+    };
+    if (!this.record.write(stored)) return false;
+    this.notices = next.notices;
+    this.received = next.received;
+    this.handBacksPending = next.handBacks;
+    this.current = draft;
     this.dirty = false;
     this.publish();
     return true;
@@ -103,6 +217,8 @@ export class ComposerSessionDraft {
         const received = value.received === undefined ? [] : value.received;
         if (!Array.isArray(received) || !received.every((id) => typeof id === "string"))
           return undefined;
+        const handBacks = value.handBacks === undefined ? [] : value.handBacks;
+        if (!Array.isArray(handBacks) || !handBacks.every(isPendingHandBack)) return undefined;
         const draft = value.doc === null ? null : parseRestorableComposerDraft(value);
         const notices = value.notices ?? [];
         if (
@@ -119,13 +235,19 @@ export class ComposerSessionDraft {
           return undefined;
         return value.doc !== null && !draft
           ? undefined
-          : { ...(draft ?? { doc: null }), received, notices: notices as DeletedChatNotice[] };
+          : {
+              ...(draft ?? { doc: null }),
+              received,
+              notices: notices as DeletedChatNotice[],
+              handBacks,
+            };
       },
     );
     const saved = this.record.read();
     this.current = saved ? parseRestorableComposerDraft(saved) : null;
     this.received = new Set(saved?.received);
     this.notices = saved?.notices ?? [];
+    this.handBacksPending = saved?.handBacks ?? [];
   }
 
   get initialDraft(): ComposerDraftSnapshot | null {
@@ -157,11 +279,21 @@ export class ComposerSessionDraft {
     const saved =
       !draft || !serializeComposerDraft(draft.doc).text
         ? this.record.write(
-            this.received.size
-              ? { doc: null, received: [...this.received], notices: this.notices }
+            this.received.size || this.handBacksPending.length
+              ? {
+                  doc: null,
+                  received: [...this.received],
+                  notices: this.notices,
+                  handBacks: this.handBacksPending,
+                }
               : undefined,
           )
-        : this.record.write({ ...draft, received: [...this.received], notices: this.notices });
+        : this.record.write({
+            ...draft,
+            received: [...this.received],
+            notices: this.notices,
+            handBacks: this.handBacksPending,
+          });
     if (saved) this.dirty = false;
   };
 }

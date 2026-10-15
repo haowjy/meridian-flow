@@ -1,7 +1,7 @@
 # tools/dev — development contracts
 
 This page records the safety boundaries for local databases, dev sessions,
-cleanup, migrations, and the `./mf` wrapper. The scripts are implementation;
+cleanup, and migrations. The scripts are implementation;
 this page keeps only contracts that cross them.
 
 ## Environment and database
@@ -48,6 +48,17 @@ executable command may contain secrets and is sent only to tmux; display output
 and `.meridian/dev-session.json` contain the redacted command. The internal SSR
 API origin is the paired worktree server origin, not the public app URL.
 
+`resolveCheckoutPortlessPrefix` owns hostname derivation for startup, `./mf`,
+and browser tests. Only the primary checkout gets bare names. Linked detached
+checkouts include their session slug and path hash, so equal commits cannot
+alias each other. Commands use Portless named mode, not its branch inference;
+session metadata retains the prefix used by a running stack across Git changes.
+`dev-session-state.ts` validates the checkout-bound launch record and discovers
+its live tmux session. Startup, `./mf`, and browser discovery use that active
+identity, not current HEAD; Git derives only the next launch's identity. A
+single resolved `DevSessionPlan` supplies commands, ports and verification
+expectations. New/reused sessions share one readiness-and-publication pipeline.
+
 Portless is the URL source of truth. `pnpm dev` reports `started` only after
 expected routes, real HTTP readiness probes, and (when enabled) verified
 Tailscale bindings pass. Startup failures identify the repository-relative
@@ -56,6 +67,15 @@ stale routes; it never calls a global reset or removes a live route. `--restart`
 owns its configured ports: after tmux teardown it SIGTERMs every discovered
 holder, waits briefly, then SIGKILLs stragglers, with discovery never gated on
 tmux, cwd, or ancestry; a bound port it cannot inspect aborts startup loudly.
+Fixed app backend ports sit in 20000-27999, below Linux's ephemeral range, so
+an outgoing connection's source port can never hold one; a port busy with no
+listener is reported as such.
+`--force` requests restart semantics too. Both explicitly take over expected
+Portless hostnames with warnings identifying the old PID, cwd when inspectable,
+and backend port; ordinary startup refuses occupied names. Takeover uses
+Portless's route-locked `--force` registration, not a global proxy reset.
+Readiness requires positive route PIDs with cwd evidence inside this checkout,
+and exact configured backend ports, before HTTP probes may pass.
 
 App boot smokes trust only a live spawned child and the exact shared route
 contract. A foreign listener or generic non-5xx response is not evidence of a
@@ -69,6 +89,14 @@ revalidates ownership, liveness, and the planned ref OID before destructive
 steps; and performs targeted stop, database removal, worktree removal, work-item
 completion, and ref deletion in that order. Batch cleanup needs explicit risk
 acknowledgement and exact merged-PR evidence (ancestry alone is not enough).
+Target-only `--force` permits managed dev-stack and Nx shutdown despite cwd
+occupants, then rechecks that only known shell/tmux executables remain before
+dropping the database and removing the checkout. It never signals those user
+shells/panes and prints their PIDs and tmux pane IDs so owners can `cd` out of
+the deleted directory. Unknown processes, unreadable attributed processes,
+inspection failures, active work items and dirty state still block. Force does
+not bypass merge evidence, branch/HEAD revalidation or structural protections,
+and is rejected with `--auto`. Git worktree removal itself never uses `--force`.
 Never infer staleness from branch ancestry or a branch name, and add no cleanup
 script that bypasses the shared resolver in `lib/worktree-cleanup.ts`. Prune a side-lane
 branch when it merges into its integration branch: once that branch is
@@ -78,24 +106,8 @@ targeted `--manually-verified <reason>` path. That path replaces only automatic
 eligibility discovery; every structural, readiness, and commit-movement guard
 still applies.
 
-The `./mf` shim wraps the app API and thread WebSocket. CLI output is compact
-text by default, exactly one JSON object for `--json`, and NDJSON for streams;
-errors go to stderr and commands set `process.exitCode` rather than calling
-`process.exit()` (it truncates piped output). CLI imports only `@meridian/contracts`
-and asks the debug-gated server for missing data (`resolveDebugPathsEnabled`,
-`APP_DEBUG=1`, never production). A group that needs more, such as a live Yjs
-editor peer, is the trigger to move `./mf` into its own workspace package, not to
-widen this import rule.
-
-`cli/core/` is the domain-free framework (command parsing, output, the exit-code
-contract, session) and imports no group. Each `cli/commands/<group>/` owns its
-commands and helpers; a group may import another group's helper module but never
-`main.ts`. A new group is listed in `GROUPS` in `cli/main.ts`. Document commands
-parse the final path segment with the contracts name codec and report the
-canonical URI creation returns; seed scenario names use writer spelling. A usage
-refusal is current pending state, not a terminal run event: `send` reconciles a
-replayed block with the durable snapshot before exiting 1, and an already
-recovered reply wins over the obsolete refusal.
+The `./mf` CLI is [`tools/mf`](../../mf/.context/CONTEXT.md). It reads this
+directory's Portless route contract (see [`AGENTS.md`](../AGENTS.md)).
 
 ## Migration and observability helpers
 
