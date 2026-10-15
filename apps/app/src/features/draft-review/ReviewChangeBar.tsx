@@ -49,8 +49,7 @@ export function ReviewChangeBar({
           <ChangeAuthor
             touch={touch}
             overflow="menu"
-            writer={change.writer}
-            chats={change.chats}
+            change={change}
             className={touch ? "min-h-11" : undefined}
           />
         </div>

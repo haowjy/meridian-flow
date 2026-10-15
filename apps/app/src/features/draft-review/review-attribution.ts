@@ -14,11 +14,11 @@ import {
 import type { DraftAttribution, DraftAttributionEdit } from "@meridian/contracts/drafts";
 import type * as Y from "yjs";
 import type { ReviewFrame } from "./review-frame";
-import type { ChangeAttribution, ChatRef } from "./review-model";
+import type { BylineSource, ChangeAttribution, ChatRef, ReviewChange } from "./review-model";
 
 type Thread = Extract<Author, { kind: "thread" }>;
 
-function chatOf(edits: readonly DraftAttributionEdit[], author: Thread): ChatRef {
+function chatOf(edits: readonly BylineSource[], author: Thread): ChatRef {
   const edit =
     edits.find(
       (e) =>
@@ -40,19 +40,30 @@ export function toChangeAttribution(
   classified: ChangeClassification,
   edits: readonly DraftAttributionEdit[],
 ): ChangeAttribution {
+  return {
+    byline: classified.byline,
+    edits,
+    members: [...new Set(classified.members.map((i) => edits[i].owner.threadId))],
+  };
+}
+
+/**
+ * A byline as it is drawn: "You" while the project has the one user (any user author is them), then a link
+ * for each conversation whose writes made the change, each once (a subagent's write links its spawn row).
+ */
+export function bylineView(change: Pick<ReviewChange, "byline" | "edits">): {
+  you: boolean;
+  chats: ChatRef[];
+} {
   const chats: ChatRef[] = [];
-  for (const author of classified.byline) {
+  for (const author of change.byline) {
     if (author.kind !== "thread") continue;
-    const chat = chatOf(edits, author);
+    const chat = chatOf(change.edits, author);
     const same = (c: ChatRef) =>
       c.chatId === chat.chatId && c.reveal?.subagentThreadId === chat.reveal?.subagentThreadId;
     if (!chats.some(same)) chats.push(chat);
   }
-  return {
-    writer: classified.byline.some((author) => author.kind === "user"),
-    chats,
-    members: [...new Set(classified.members.map((i) => edits[i].owner.threadId))],
-  };
+  return { you: change.byline.some((author) => author.kind === "user"), chats };
 }
 
 /** Per change id: its byline and the conversations it belongs to. Empty until the payload has loaded. */

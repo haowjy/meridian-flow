@@ -1,15 +1,15 @@
 /**
  * The review as cards, rows, the stepper, the chip and counts read it: one `ReviewChange` per group of
  * the browser-computed projection. Pure. The projection decides what the changes are; attribution only
- * adds who wrote each change (the byline: the writer, then the chats whose writes made it) and which
+ * adds who wrote each change (the byline: authors, as identities) and which
  * conversations the change belongs to (`members`, which the dock and chat-scoped Apply and Discard read).
  */
 import type { ReviewGroup, ReviewSpan } from "@meridian/agent-edit/diff";
-import type { DraftEditReveal } from "@meridian/contracts/drafts";
+import type { Author, DraftAttributionEdit } from "@meridian/contracts/drafts";
 import * as Y from "yjs";
 import { groupAnchor, type ReviewFrame } from "./review-frame";
 
-/** A conversation the byline links to. */
+/** A conversation a byline links to: how an `Author` of kind thread is shown. Made at render time. */
 export interface ChatRef {
   /** The conversation the writer knows: for a subagent's write, the primary conversation that spawned it. */
   chatId: string;
@@ -17,17 +17,26 @@ export interface ChatRef {
   /** A subagent's own task title, for the link's accessible label and tooltip. */
   subagentTitle?: string;
   /** Where the latest write that made the change happened (a subagent's: its spawn row); absent for a list row. */
-  reveal?: DraftEditReveal;
+  reveal?: DraftAttributionEdit["owner"]["reveal"];
 }
+
+/** The writes a byline's thread authors are named from: the attribution payload's edits, or an item's actors. */
+export type BylineSource = Pick<
+  DraftAttributionEdit,
+  "threadId" | "turnId" | "toolCallId" | "title"
+> & {
+  owner: Pick<DraftAttributionEdit["owner"], "threadId" | "title"> &
+    Partial<Pick<DraftAttributionEdit["owner"], "reveal">>;
+};
 
 /** What the classifier says of one change, in the terms the surfaces read. */
 export interface ChangeAttribution {
-  /** The writer typed, restored or discarded some of the change. */
-  writer: boolean;
-  /** The chats whose writes made it, each once. */
-  chats: ChatRef[];
+  /** Who wrote some of the change, as identities: the writer (user) and the threads whose writes made it. */
+  byline: Author[];
   /** The conversations (`owner.threadId`) any of whose AI writes may be in the change: the dock's filter. */
   members: string[];
+  /** What a byline's thread authors resolve against when the byline is drawn. */
+  edits: readonly BylineSource[];
 }
 
 export interface ReviewChange {
@@ -35,10 +44,10 @@ export interface ReviewChange {
   id: string;
   kind: ReviewGroup["kind"];
   excerpt: ReviewGroup["excerpt"];
-  /** Byline: whether the writer made some of the change (their typing, a recovery, a Discard or its Undo). */
-  writer: boolean;
-  /** Byline: the chats whose writes made it. */
-  chats: ChatRef[];
+  /** Byline: who made some of the change, as identities. Drawn through `bylineView`. */
+  byline: Author[];
+  /** The writes the byline's threads are named from. */
+  edits: readonly BylineSource[];
   /** Membership: the conversations whose AI writes are in the change under any alignment. */
   members: string[];
   /** Draft position of the change's first mark in `frame`, where the stepper scrolls to. */
@@ -61,8 +70,8 @@ export function reviewChanges(
     id: group.id,
     kind: group.kind,
     excerpt: group.excerpt,
-    writer: attribution.get(group.id)?.writer ?? false,
-    chats: attribution.get(group.id)?.chats ?? [],
+    byline: attribution.get(group.id)?.byline ?? [],
+    edits: attribution.get(group.id)?.edits ?? [],
     members: attribution.get(group.id)?.members ?? [],
     anchor: groupAnchor(group),
     spans: group.spans,
@@ -103,12 +112,21 @@ export function itemChange(item: {
   return {
     id: `item:${item.itemKey}`,
     kind: "change",
-    writer: false,
     excerpt: { removed: "", inserted: item.documentName ?? "" },
-    chats: item.actorThreads.map((chat) => ({
-      chatId: chat.threadId,
-      title: chat.title?.trim() ?? "",
+    byline: item.actorThreads.map((chat) => ({
+      kind: "thread" as const,
+      threadId: chat.threadId,
+      turnId: "",
     })),
+    edits: item.actorThreads.map((chat) => {
+      const title = chat.title?.trim() ?? "";
+      return {
+        threadId: chat.threadId,
+        turnId: "",
+        title,
+        owner: { threadId: chat.threadId, title },
+      };
+    }),
     members: item.actorThreads.map((chat) => chat.threadId),
     anchor: 0,
     spans: [],
