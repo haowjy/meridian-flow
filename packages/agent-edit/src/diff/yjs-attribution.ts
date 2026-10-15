@@ -420,7 +420,7 @@ function attribute(
       hunkEvidence(projection.diff.hunks[h.index], projection.diff.base, view, evidence);
     if (!evidence.length) continue;
     const verdict: Verdict = { writer: false, hits: [], named: [] };
-    for (const { span: s, dead, blur } of evidence)
+    for (const { span: s, dead } of evidence)
       if (!(dead ? delAll : insAll).covers(s.client, s.lo, s.hi)) verdict.writer = true;
     prepared.forEach((e, i) => {
       const set = (dead: boolean) => (dead ? e.deleted : e.inserted);
