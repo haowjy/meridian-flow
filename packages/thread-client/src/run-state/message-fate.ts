@@ -15,9 +15,13 @@
  * deliverer on, then each Retry's execution (`metadata.retryOf`), so a failed or cancelled
  * successor can never fall back to an earlier reply's success.
  */
-import { isTerminalTurnStatus, type RunState, type Turn } from "@meridian/contracts/threads";
+import {
+  isTerminalTurnStatus,
+  type RunState,
+  retryTargetOf,
+  type Turn,
+} from "@meridian/contracts/threads";
 import { isBlockedForUsage, isOwed } from "./fold-messages";
-import { retryTargetOf } from "./retry";
 import { addIntent, INITIAL_RUN_STATE_VIEW, receiveRecord } from "./run-state-view";
 
 export type MessageFate =
