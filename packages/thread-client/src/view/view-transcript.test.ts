@@ -25,6 +25,7 @@ function turn(
     id,
     threadId: "t",
     role,
+    origin: role === "user" ? "writer" : role === "assistant" ? "assistant" : "system",
     status: "complete",
     prevTurnId: prev,
     blocks: [text],
@@ -193,6 +194,15 @@ it("draws one failure for a chain of failed retries, the newest, and none for a 
     ids(viewTranscript({ turns: forgotten, refused, activity: { awaitingSubagents: false } }));
   expect(rowsAmong()).toEqual(["u2", "p", "u3", "a3"]);
   expect(rowsAmong(new Set(["f"]))).toEqual(["f", "u2", "p", "u3", "a3"]);
+  // The anchor also outranks Retry suppression: the Retry that won stamps and supersedes the reply the
+  // refused Retry was aimed at, and the refusal's card still needs that reply's row.
+  const competing = turn("r2", "assistant", "f", { status: "error", metadata: { retryOf: "f" } });
+  const raced = viewTranscript({
+    turns: [turn("u1", "user", null), { ...emptyFailed, forgottenBy: "r2" }, competing],
+    refused: new Set(["f"]),
+    activity: { awaitingSubagents: false },
+  });
+  expect(ids(raced)).toEqual(["u1", "f", "r2"]);
   const inheritedRows = viewTranscript({
     turns: [turn("l1", "user", "a3")],
     inherited: {
@@ -242,6 +252,12 @@ it("draws one failure for a chain of failed retries, the newest, and none for a 
     );
   expect(seedLatest([])).toMatchObject({ latest: true });
   expect(seedLatest([turn("w", "user", "s")])).toMatchObject({ latest: false });
+  // An agent's message closes on the server but draws no row, so the rows alone would keep the Retry alive.
+  const agentMessage = turn("m", "user", "s", {
+    origin: "system",
+    metadata: { kind: "inbox_message" },
+  });
+  expect(seedLatest([agentMessage])).toMatchObject({ latest: false });
 });
 
 it("leaves a handed-back message out and keeps history and later sends", () => {
