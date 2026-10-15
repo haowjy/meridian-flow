@@ -32,26 +32,11 @@ stays here.)
 (RP-13 proves no prose moves. This check is only about the filter's effect on the
 row list, which a document read cannot see.)
 
-3a. With the filter hiding a file, use **Apply all changes**. Every listed draft
-    applies, including the file the filter hides.
-3b. **Discard all changes** asks first ("Discard all changes?") and discards nothing
-    until you confirm **Discard**. It then closes the Work's draft with one command,
-    so a reply still running opens a new draft.
-3c. On a row for a **new document**, open its changes and press **Discard**. The
-    row closes on the server; no text is edited.
-3d. Press **Apply** on a row, and while it is in flight have a peer undo that
-    change so the Apply is refused. The file **stays listed with an alert saying
-    why**, even after the list stops returning it.
-
-## Phone review sheet
-
-4. On a phone viewport, open a document with review changes. Focus a change through
-   the sheet, then **Discard** the whole draft from the sheet. The editor stays
-   present through the discard.
-5. Review the **last** change in the sheet. The sheet closes and does not repeat the
-   attribution line.
-6. With two drafts on the phone, one live and one under review, the hint names **the
-   other draft**, never the one being reviewed.
+Apply all, Discard all with its confirmation, a new document's Discard and a refused row
+are checked in [Probe J](draft-review.md#probe-j-work-page-commands-and-held-failures) and
+[Probe B](draft-review.md#probe-b-discard-everywhere). The phone's sheet, Discard, Undo and
+hints are in [Probe I](draft-review.md#probe-i-the-change-list-on-both-shells). Do not
+restate them here.
 
 ## Composer
 
