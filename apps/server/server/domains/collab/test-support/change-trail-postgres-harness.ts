@@ -16,12 +16,12 @@ import type { JsonValue } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { expect } from "vitest";
 import { updateYFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { createAllowAllFileAccess } from "../../../domains/file-policy/index.js";
-import { grantedJournal, testFileGrant } from "../../../test-support/file-grants.js";
+import { testFileGrant } from "../../../test-support/file-grants.js";
 import { createDocumentLastAddress } from "../../context/document-uri-resolver.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import { hiddenDocumentIds } from "../../context/tree/end-use.js";
@@ -95,11 +95,9 @@ const { createDrizzleDocumentProjectionEffects } = await import(
   "../adapters/drizzle-document-activity.js"
 );
 const { createFixtureBranchStore } = await import("./fixture-branch-store.js");
-const { documentAuthority } = await import("../domain/document-handle.js");
 const { ensureAndReadDocumentAuthorityHead, replaceDocumentAuthorityHeadGeneration } = await import(
   "../adapters/drizzle-document-authority-head.js"
 );
-const { lockDocumentMutation } = await import("../../../shared/document-mutation-lock.js");
 const { createDrizzleCollabPersistence } = await import("../adapters/drizzle-journal.js");
 const { createDeferredLiveProjectionCoordinator, createHocuspocusCoordinator } = await import(
   "../adapters/hocuspocus-coordinator.js"
@@ -321,7 +319,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     workSlug: "atomicity-work",
   } as const;
   const persistence = createDrizzleCollabPersistence(db);
-  const testJournal = grantedJournal(persistence.journal);
   const hocuspocus = fakeHocuspocus();
   const liveCoordinator = createHocuspocusCoordinator({
     hocuspocus: () => hocuspocus as never,
@@ -1092,217 +1089,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     );
   }
 
-  async function compactMixedProvenanceTwice(): Promise<{
-    retainedUpdateCount: number;
-    warmProvenance: string[];
-    coldProvenance: string[];
-    rebasedBranchProvenance: string[];
-  }> {
-    await persistence.lifecycle.ensureDocument(ALPHA_ID);
-    return liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
-      const before = Y.encodeStateVector(doc);
-      replaceMarkdown(doc, "Agent-only passage.");
-      await testJournal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-        origin: `agent:${TURN_ID}`,
-        actorTurnId: TURN_ID,
-        seq: 0,
-      });
-      await persistence.journal.compact(ALPHA_ID, new Date("2100-01-01T00:00:00.000Z"));
-
-      const firstBlock = model.getBlocks(toDocHandle(doc))[0];
-      if (!firstBlock) throw new Error("compaction probe block is unavailable");
-      const beforeWriter = Y.encodeStateVector(doc);
-      model.applyTextEdit(toDocHandle(doc), firstBlock, { from: 0, to: 0 }, "Writer prefix. ");
-      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, beforeWriter), {
-        origin: `human:${USER_ID}`,
-        seq: 0,
-      });
-      await persistence.journal.compact(ALPHA_ID, new Date("2100-01-01T00:00:00.000Z"));
-
-      const warm = await persistence.journal.materializeDestructiveProvenance?.({
-        docId: ALPHA_ID,
-        before: toDocHandle(doc),
-        afterCandidate: toDocHandle(doc),
-      });
-      const snapshot = await persistence.journal.read(ALPHA_ID);
-      const coldDoc = new Y.Doc({ gc: false });
-      if (snapshot.checkpoint) Y.applyUpdate(coldDoc, snapshot.checkpoint);
-      for (const update of snapshot.updates) Y.applyUpdate(coldDoc, update.update);
-      const cold = await persistence.journal.materializeDestructiveProvenance?.({
-        docId: ALPHA_ID,
-        before: toDocHandle(coldDoc),
-        afterCandidate: toDocHandle(coldDoc),
-      });
-      coldDoc.destroy();
-
-      const [checkpoint] = await db
-        .select({ id: schema.documentYjsCheckpoints.id })
-        .from(schema.documentYjsCheckpoints)
-        .where(eq(schema.documentYjsCheckpoints.documentId, ALPHA_ID))
-        .orderBy(desc(schema.documentYjsCheckpoints.id))
-        .limit(1);
-      if (!checkpoint) throw new Error("compaction probe checkpoint is unavailable");
-      const authorityHead = await ensureAndReadDocumentAuthorityHead(db, ALPHA_ID);
-      const replaced = await replaceDocumentAuthorityHeadGeneration(db, {
-        documentId: ALPHA_ID,
-        checkpointId: checkpoint.id,
-        expectedGeneration: authorityHead.generation,
-      });
-      if (!replaced.ok) throw new Error(`compaction probe replacement failed: ${replaced.code}`);
-      const rebased = await persistence.journal.materializeDestructiveProvenance?.({
-        docId: ALPHA_ID,
-        before: toDocHandle(doc),
-        afterCandidate: toDocHandle(doc),
-        fallbackProvenance: "agent",
-      });
-      const retainedUpdateCount = (
-        await db
-          .select()
-          .from(schema.documentYjsUpdates)
-          .where(eq(schema.documentYjsUpdates.documentId, ALPHA_ID))
-      ).length;
-      return {
-        retainedUpdateCount,
-        warmProvenance: [...new Set(warm?.before.map((run) => run.provenance) ?? [])].sort(),
-        coldProvenance: [...new Set(cold?.before.map((run) => run.provenance) ?? [])].sort(),
-        rebasedBranchProvenance: [
-          ...new Set(rebased?.before.map((run) => run.provenance) ?? []),
-        ].sort(),
-      };
-    });
-  }
-
-  async function seedAuthorityReplacementProbe(): Promise<number> {
-    await persistence.lifecycle.ensureDocument(ALPHA_ID);
-    return liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
-      let before = Y.encodeStateVector(doc);
-      replaceMarkdown(doc, "Restored base.");
-      await testJournal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-        origin: `agent:${TURN_ID}`,
-        actorTurnId: TURN_ID,
-        seq: 0,
-      });
-      const cut = await persistence.journal.captureCheckpoint(ALPHA_ID, documentAuthority(doc));
-      if (!cut) throw new Error("Replacement probe checkpoint cut is unavailable");
-      await persistence.journal.storeCheckpoint(cut);
-      const [checkpoint] = await db
-        .select({ id: schema.documentYjsCheckpoints.id })
-        .from(schema.documentYjsCheckpoints)
-        .where(eq(schema.documentYjsCheckpoints.documentId, ALPHA_ID))
-        .orderBy(desc(schema.documentYjsCheckpoints.id))
-        .limit(1);
-      if (!checkpoint) throw new Error("replacement probe checkpoint is unavailable");
-
-      const block = model.getBlocks(toDocHandle(doc))[0];
-      if (!block) throw new Error("replacement probe block is unavailable");
-      before = Y.encodeStateVector(doc);
-      model.applyTextEdit(toDocHandle(doc), block, { from: 0, to: 0 }, "Retired suffix. ");
-      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-        origin: `human:${USER_ID}`,
-        seq: 0,
-      });
-      return checkpoint.id;
-    });
-  }
-
-  async function authorityReplacementProbeResult(generation: bigint): Promise<{
-    coldMarkdown: string;
-    currentGenerationUpdateCount: number;
-  }> {
-    const snapshot = await persistence.journal.read(ALPHA_ID);
-    const coldDoc = new Y.Doc({ gc: false });
-    if (snapshot.checkpoint) Y.applyUpdate(coldDoc, snapshot.checkpoint);
-    for (const update of snapshot.updates) Y.applyUpdate(coldDoc, update.update);
-    const coldMarkdown = serializeMarkdown(coldDoc);
-    coldDoc.destroy();
-    const currentGenerationUpdateCount = (
-      await db
-        .select()
-        .from(schema.documentYjsUpdates)
-        .where(
-          and(
-            eq(schema.documentYjsUpdates.documentId, ALPHA_ID),
-            eq(schema.documentYjsUpdates.authorityGeneration, generation),
-          ),
-        )
-    ).length;
-    return { coldMarkdown, currentGenerationUpdateCount };
-  }
-
-  async function compactAfterAuthorityReplacement(): Promise<{
-    coldMarkdown: string;
-    currentGenerationUpdateCount: number;
-  }> {
-    const checkpointId = await seedAuthorityReplacementProbe();
-    const authorityHead = await ensureAndReadDocumentAuthorityHead(db, ALPHA_ID);
-    const replaced = await replaceDocumentAuthorityHeadGeneration(db, {
-      documentId: ALPHA_ID,
-      checkpointId,
-      expectedGeneration: authorityHead.generation,
-    });
-    if (!replaced.ok) throw new Error(`replacement probe failed: ${replaced.code}`);
-    await persistence.journal.compact(ALPHA_ID, new Date("2100-01-01T00:00:00.000Z"));
-    return authorityReplacementProbeResult(replaced.generation);
-  }
-
-  async function compactWhileAuthorityReplacementWaits(): Promise<{
-    coldMarkdown: string;
-    currentGenerationUpdateCount: number;
-  }> {
-    const checkpointId = await seedAuthorityReplacementProbe();
-    const authorityHead = await ensureAndReadDocumentAuthorityHead(db, ALPHA_ID);
-    let releaseBlocker!: () => void;
-    let blockerReady!: () => void;
-    const blockerRelease = new Promise<void>((resolve) => {
-      releaseBlocker = resolve;
-    });
-    const blockerAcquired = new Promise<void>((resolve) => {
-      blockerReady = resolve;
-    });
-    const blocker = db.transaction(async (tx) => {
-      await lockDocumentMutation(tx, ALPHA_ID);
-      blockerReady();
-      await blockerRelease;
-    });
-    await blockerAcquired;
-
-    async function waitForAdvisoryLockWaiters(expected: number): Promise<void> {
-      for (let attempt = 0; attempt < 100; attempt += 1) {
-        const [row] = await db.execute<{ waiting: number }>(sql`
-          SELECT count(*)::int AS waiting
-          FROM pg_locks
-          WHERE locktype = 'advisory'
-            AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
-            AND NOT granted
-        `);
-        if ((row?.waiting ?? 0) >= expected) return;
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      }
-      throw new Error(`expected ${expected} waiting document mutation locks`);
-    }
-
-    const compact = persistence.journal.compact(ALPHA_ID, new Date("2100-01-01T00:00:00.000Z"));
-    let replacement: ReturnType<typeof replaceDocumentAuthorityHeadGeneration> | undefined;
-    try {
-      await waitForAdvisoryLockWaiters(1);
-      replacement = replaceDocumentAuthorityHeadGeneration(db, {
-        documentId: ALPHA_ID,
-        checkpointId,
-        expectedGeneration: authorityHead.generation,
-      });
-      await waitForAdvisoryLockWaiters(2);
-    } finally {
-      releaseBlocker();
-      await blocker;
-    }
-    if (!replacement) {
-      throw new Error("durable authority head generation replacement did not enter the lock queue");
-    }
-    const [, replaced] = await Promise.all([compact, replacement]);
-    if (!replaced.ok) throw new Error(`replacement probe failed: ${replaced.code}`);
-    return authorityReplacementProbeResult(replaced.generation);
-  }
-
   /** Runs an agent command through the certified semantic-mutation admission path. */
   async function stageCertifiedReplace(input: {
     responseId: string;
@@ -1474,9 +1260,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       applyBranches(branchIds, payloads),
     seedDestructivePush,
     seedWriterDocument,
-    compactMixedProvenanceTwice,
-    compactAfterAuthorityReplacement,
-    compactWhileAuthorityReplacementWaits,
     stageCertifiedReplace,
     /** A writer edit on the warm room, journaled first, as a socket write would be. */
     appendWriterPrefix,
@@ -1838,14 +1621,14 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   }
 }
 
-function serializeMarkdown(doc: Y.Doc): string {
+export function serializeMarkdown(doc: Y.Doc): string {
   const blocks = model.getBlocks(toDocHandle(doc));
   return blocks.length === 0
     ? ""
     : markupCodec.serialize(model.projectBlocks(toDocHandle(doc)), UNSCOPED_DOCUMENT_LINKS);
 }
 
-function replaceMarkdown(doc: Y.Doc, markdown: string): void {
+export function replaceMarkdown(doc: Y.Doc, markdown: string): void {
   const parsed = markupCodec.parse(markdown);
   const replacement = documentSchema.node("doc", null, parsed.blocks);
   updateYFragment(doc, doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), replacement, {
