@@ -273,7 +273,11 @@ export async function forkThreadAgent(
       await deps.eventWriter.appendEvent(target.id as ThreadId, event);
     }
     await inheritEditingDocuments(deps, lockedSource, target);
-    await seedSystemTurn(deps, target, `Forked conversation through turn ${cutoff.turn.id}.`);
+    await seedSystemTurn(
+      deps,
+      target,
+      `Forked conversation through turn ${cutoff.turn.id}.\n${continuesFromLine(lockedSource.ref ?? lockedSource.id)}`,
+    );
     await deps.eventWriter.appendEvent(source.id as ThreadId, {
       type: "agent.fork",
       sourceThreadId: source.id,
@@ -456,6 +460,11 @@ async function inheritEditingDocuments(
         deps.threadDocuments.attach(target.id as ThreadId, document.documentId, "editing"),
       ),
   );
+}
+
+/** Tells a derived chat where its source chat's files are and how to read its history. */
+export function continuesFromLine(sourceRef: string): string {
+  return `This chat continues from ${sourceRef}. Its uploads are at uploads://@/${sourceRef}/, and its history is readable with thread_history.`;
 }
 
 async function seedSystemTurn(deps: ThreadAgentSwapDeps, thread: Thread, text: string) {
