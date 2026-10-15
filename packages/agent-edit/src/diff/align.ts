@@ -9,7 +9,7 @@
  */
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT } from "@sanity/diff-match-patch";
 import type { Node as PMNode } from "prosemirror-model";
-import { weightedOrderedMatches } from "../ordered-matching.js";
+import { equalOrderedMatches, weightedOrderedMatches } from "../ordered-matching.js";
 import { type Hunk, posMap } from "./hunks.js";
 import {
   blockKey,
@@ -318,46 +318,37 @@ function refine(bt: Tok[], hunks: Hunk[]): Hunk[] {
   for (const h of hunks) {
     const n = h.to - h.from;
     const m = h.ins.length;
-    if (!n || !m || n * m > 250_000) {
+    if (!n || !m) {
       out.push(h);
       continue;
     }
     const a = Array.from({ length: n }, (_, k) => coreKey(bt[h.from + k]));
     const b = h.ins.map(coreKey);
-    const best = Array.from({ length: n + 1 }, () => new Int32Array(m + 1));
-    for (let i = n - 1; i >= 0; i--)
-      for (let j = m - 1; j >= 0; j--)
-        best[i][j] =
-          a[i] === b[j] ? best[i + 1][j + 1] + 1 : Math.max(best[i + 1][j], best[i][j + 1]);
-    if (!best[0][0]) {
+    const matches = equalOrderedMatches(a, b);
+    if (!matches.length) {
       out.push(h);
       continue;
     }
     let i = 0;
     let j = 0;
-    let cur: Hunk | null = null;
-    const close = () => {
-      if (cur) out.push(cur);
-      cur = null;
+    // Everything between two matches is one plain replacement; a match whose marks differ is its own.
+    const gap = (toI: number, toJ: number) => {
+      if (toI > i || toJ > j)
+        out.push({
+          from: h.from + i,
+          to: h.from + toI,
+          sfrom: h.sfrom + j,
+          ins: h.ins.slice(j, toJ),
+        });
     };
-    while (i < n || j < m) {
-      if (i < n && j < m && a[i] === b[j]) {
-        close();
-        if (bt[h.from + i].key !== h.ins[j].key)
-          out.push({ from: h.from + i, to: h.from + i + 1, sfrom: h.sfrom + j, ins: [h.ins[j]] });
-        i++;
-        j++;
-      } else if (j >= m || (i < n && best[i + 1][j] >= best[i][j + 1])) {
-        cur ??= { from: h.from + i, to: h.from + i, sfrom: h.sfrom + j, ins: [] };
-        cur.to = h.from + i + 1;
-        i++;
-      } else {
-        cur ??= { from: h.from + i, to: h.from + i, sfrom: h.sfrom + j, ins: [] };
-        cur.ins.push(h.ins[j]);
-        j++;
-      }
+    for (const [mi, mj] of matches) {
+      gap(mi, mj);
+      if (bt[h.from + mi].key !== h.ins[mj].key)
+        out.push({ from: h.from + mi, to: h.from + mi + 1, sfrom: h.sfrom + mj, ins: [h.ins[mj]] });
+      i = mi + 1;
+      j = mj + 1;
     }
-    close();
+    gap(n, m);
   }
   return out;
 }
