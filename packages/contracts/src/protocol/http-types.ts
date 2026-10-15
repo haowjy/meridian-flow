@@ -503,6 +503,40 @@ export const stopRequestSchema = z.strictObject({
   mine: z.array(z.uuid()).max(500),
 });
 
+const userMessageBlockSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("text"), text: z.string() }),
+  z.object({
+    type: z.literal("reference"),
+    text: z.string(),
+    documentId: z.string(),
+    uri: z.string(),
+  }),
+  z.object({
+    type: z.literal("skill"),
+    text: z.string(),
+    slug: z.string(),
+    name: z.string(),
+    description: z.string(),
+  }),
+  z.object({ type: z.literal("image"), documentId: z.string(), uri: z.string() }),
+]);
+
+/**
+ * Chat Stop's answer, shape-checked in full: the hand-back content (blocks) and the id arrays.
+ * `runState` is checked for its record identity only; clients that read it parse it further.
+ * A client confirms a Stop only from an answer this accepts. Types: `StopResponse`.
+ */
+export const stopResponseSchema = z.object({
+  threadId: z.string(),
+  handedBack: z.array(
+    z.object({ userTurnId: z.string(), blocks: z.array(userMessageBlockSchema) }),
+  ),
+  answered: z.array(z.string()),
+  gone: z.array(z.string()),
+  cancelledExecutionId: z.string().nullable(),
+  runState: z.object({ version: z.string(), items: z.array(z.unknown()) }).passthrough(),
+});
+
 /**
  * An accepted Retry: 201 when this request started it, 200 on a replay. The
  * execution is what a client follows until the run-state record shows another or none; it may end

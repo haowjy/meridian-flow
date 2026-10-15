@@ -262,7 +262,15 @@ describe("thread send", () => {
       runState: recordOf(),
     });
     // The press lands (the snapshot and journal move on), but its first answer is unreadable.
+    // None of these confirms the press: not JSON, a nested block that is not a block, and an
+    // answer over the session's response limit. Each is a lost answer that keeps the request.
+    const malformed = {
+      ...wire.stop({} as never),
+      handedBack: [{ userTurnId: "u1", blocks: [null] }],
+    };
     wire.fail("stop", { text: "not JSON" });
+    wire.fail("stop", { body: malformed });
+    wire.fail("stop", { text: " ".repeat(20 * 1024 * 1024 + 1) });
     wire.play(async () => {
       await wire.until(() => wire.requestsOf("stop").length >= 1);
       wire.snapshot = () =>
@@ -276,13 +284,16 @@ describe("thread send", () => {
     });
     const sending = send(queued);
     await wire.until(() => wire.requestsOf("admit").length > 0);
-    const lost = await wire.mf(["thread", "stop", THREAD_ID, "--full", "--json"]);
-    expect(lost.code).toBe(EXIT.unavailable);
-    // Under --json the error itself carries the frozen request and the replay command.
-    const failure = JSON.parse(lost.stderr);
-    expect(failure.hint).toContain("--replay");
-    const printed = JSON.stringify(failure.details.request);
-    expect(failure.hint).toContain(printed);
+    let printed = "";
+    for (let lostAnswer = 0; lostAnswer < 3; lostAnswer++) {
+      const lost = await wire.mf(["thread", "stop", THREAD_ID, "--full", "--json"]);
+      expect(lost.code).toBe(EXIT.unavailable);
+      // Under --json the error itself carries the frozen request and the replay command.
+      const failure = JSON.parse(lost.stderr);
+      expect(failure.hint).toContain("--replay");
+      printed = JSON.stringify(failure.details.request);
+      expect(failure.hint).toContain(printed);
+    }
     const requestFile = join(await mkdtemp(join(tmpdir(), "mf-stop-")), "request.json");
     await writeFile(requestFile, printed ?? "");
     // The replay posts the identical request, with no new snapshot read.
@@ -299,10 +310,15 @@ describe("thread send", () => {
     expect(stopped.stdout).toContain(queued);
     expect(wire.reads).toBe(readsBefore);
     // The shared Stop body: the record's watermark and execution, and no intents of ours.
-    expect(wire.bodiesOf("stop")).toEqual([
-      { requestId: expect.any(String), seenThrough: 1, seenExecutionId: "exec-run", mine: [] },
-      JSON.parse(printed ?? ""),
-    ]);
+    const posted = wire.bodiesOf("stop");
+    expect(posted).toHaveLength(4);
+    expect(posted[0]).toEqual({
+      requestId: expect.any(String),
+      seenThrough: 1,
+      seenExecutionId: "exec-run",
+      mine: [],
+    });
+    expect(posted[3]).toEqual(JSON.parse(printed));
     const result = await sending;
     expect(result.code).toBe(EXIT.cancelled);
     expect(result.stdout).toBe("");

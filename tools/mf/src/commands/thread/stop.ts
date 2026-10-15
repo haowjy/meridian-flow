@@ -9,6 +9,7 @@ import {
   apiThreadSnapshotPath,
   apiThreadStopPath,
   stopRequestSchema,
+  stopResponseSchema,
   type ThreadSnapshotResponse,
 } from "@meridian/contracts/protocol";
 import type { StopRequest, StopResponse } from "@meridian/contracts/threads";
@@ -97,9 +98,10 @@ export const threadStopCommand: CommandSpec = {
 };
 
 /**
- * Posts the frozen request and validates the answer. Whatever fails to confirm it (no answer,
- * a 5xx, a body that is not a Stop answer) leaves the press possibly landed, so it is an
- * ambiguity carrying the request in every output mode. A definite refusal (4xx) stays a refusal.
+ * Posts the frozen request and confirms it only from an answer `stopResponseSchema` accepts in
+ * full. Any failure to read or validate the answer (no answer, a 5xx, an oversized or malformed
+ * body) leaves the press possibly landed, so it is an ambiguity carrying the request in every
+ * output mode. Only a definite refusal (a 4xx status) drops the recovery path.
  */
 async function postStop(
   session: Session,
@@ -107,38 +109,21 @@ async function postStop(
   body: StopRequest,
   requestJson: string,
 ): Promise<StopResponse> {
+  let failure: string;
   try {
-    return readStopAnswer(await session.request("POST", apiThreadStopPath(threadId), body));
+    const parsed = stopResponseSchema.safeParse(
+      await session.request("POST", apiThreadStopPath(threadId), body),
+    );
+    if (parsed.success) return parsed.data as StopResponse;
+    failure = "the answer is not a Stop response";
   } catch (error) {
     if (!(error instanceof CliError)) throw error;
-    const unanswered =
-      error.httpStatus === undefined
-        ? ["timeout", "unavailable", "protocol"].includes(error.code)
-        : error.httpStatus >= 500;
-    if (!unanswered) throw error;
-    throw new CliError("unavailable", `Stop answer lost (${error.message})`, {
-      hint: `The Stop may have landed. Replay the same request, not a new press: echo '${requestJson}' | ./mf thread stop ${threadId} --replay -`,
-      details: { threadId, request: body },
-    });
+    const status = error.httpStatus;
+    if (status !== undefined && status >= 400 && status < 500) throw error;
+    failure = error.message;
   }
-}
-
-/** The fields this command reads; anything else on the body is the server's to change. */
-function readStopAnswer(value: unknown): StopResponse {
-  const answer = value as Partial<StopResponse> | null;
-  const handedBack = answer?.handedBack;
-  if (
-    typeof value !== "object" ||
-    !answer ||
-    !Array.isArray(handedBack) ||
-    !handedBack.every(
-      (message) => typeof message?.userTurnId === "string" && Array.isArray(message.blocks),
-    ) ||
-    !Array.isArray(answer.answered) ||
-    !Array.isArray(answer.gone) ||
-    (answer.cancelledExecutionId !== null && typeof answer.cancelledExecutionId !== "string")
-  ) {
-    throw new CliError("protocol", "the answer is not a Stop response");
-  }
-  return answer as StopResponse;
+  throw new CliError("unavailable", `Stop answer lost (${failure})`, {
+    hint: `The Stop may have landed. Replay the same request, not a new press: echo '${requestJson}' | ./mf thread stop ${threadId} --replay -`,
+    details: { threadId, request: body },
+  });
 }
