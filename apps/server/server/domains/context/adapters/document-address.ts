@@ -30,14 +30,12 @@ type CoordinateKey = Pick<
   "projectId" | "scheme" | "workId" | "rootThreadId" | "chatThreadId" | "path"
 >;
 
-/** The scheme tells the owners apart, so one thread slot compares a lineage and a chat alike. */
-const ownerThread = (at: CoordinateKey) => at.chatThreadId ?? at.rootThreadId ?? null;
-
 export const sameCoordinates = (a: CoordinateKey, b: CoordinateKey) =>
   a.projectId === b.projectId &&
   a.scheme === b.scheme &&
   a.workId === b.workId &&
-  ownerThread(a) === ownerThread(b) &&
+  a.rootThreadId === b.rootThreadId &&
+  a.chatThreadId === b.chatThreadId &&
   a.path === b.path;
 
 /** The address a content document holds now, or null when it is deleted there or unspellable. */

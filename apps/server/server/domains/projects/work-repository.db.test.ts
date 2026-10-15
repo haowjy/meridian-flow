@@ -1290,7 +1290,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         finalPath: "reference.png",
         objectKey,
         fileType: "png",
-        canonicalUri: "uploads://@/c1/reference.png",
         locationRevision: crypto.randomUUID(),
         state: "finalized",
         storageUrl: stored.value.storageUrl,
