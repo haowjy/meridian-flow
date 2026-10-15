@@ -482,6 +482,20 @@ describe("projectActiveHistoryWithBakes", () => {
       "c:summary",
       "after",
     ]);
+
+    // Risk (C4): a Retry-led compaction whose whole prefix was an attempt the chat later abandoned (every
+    // turn it covered is forgotten) found no cut and made every later request throw. It keeps its summary.
+    const alone = compactionTurn("c2", 4, "gone", "gone", "complete", { prevTurnId: "gone" });
+    const emptied = await projectActiveHistoryWithBakes(
+      [alone, turn("after2", 5, "user")],
+      [compactionBlock("summary2", alone.id)],
+      "c12",
+      noPromptBakes,
+    );
+    expect(emptied.turns.map((projectedTurn) => projectedTurn.id)).toEqual([
+      "c2:summary",
+      "after2",
+    ]);
   });
 });
 

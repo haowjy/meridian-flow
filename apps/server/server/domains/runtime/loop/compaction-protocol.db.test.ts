@@ -1132,6 +1132,15 @@ else
             },
       );
       const rig = await fixture({ summarizer });
+      // Two messages wait together: the planner pins the newest on its own, so only an explicit pin keeps
+      // the other out of the summary.
+      await rig.delivery.enqueue({
+        threadId: rig.threadId,
+        intent: "message",
+        provenance: { kind: "writer", actorId: rig.ids.user },
+        body: { kind: "text", text: "An earlier question." },
+        idempotencyKey: "earlier-question",
+      });
       const original = await rig.orchestrator.prepare({
         threadId: rig.threadId,
         tools: [],
@@ -1157,6 +1166,12 @@ else
       const retriedReply = await rig.repos.turns.findById(replyTurnId as never);
       expect(compactions).toHaveLength(2);
       expect(compactions[1]).toMatchObject({ status: "complete" });
+      // Risk (C5): a Retry-led compaction summarizing the messages its Retry still answers. It pins them, so
+      // forgetting the failed attempt later can never leave their words only in a summary.
+      expect(failedReply.reservedForUserTurnIds).toHaveLength(2);
+      expect(CompactionMetadataCodec.parse(compactions[1]?.metadata).pinnedRequestTurnIds).toEqual(
+        expect.arrayContaining(failedReply.reservedForUserTurnIds),
+      );
       expect(compactions[1]?.id).not.toBe(replyTurnId);
       expect(retriedReply).toMatchObject({
         id: replyTurnId,
