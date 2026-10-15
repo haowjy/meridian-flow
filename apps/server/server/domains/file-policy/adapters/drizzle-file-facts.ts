@@ -138,6 +138,7 @@ function documentRows(db: Database, view: TreeView) {
       documentDeletedAt: documents.deletedAt,
       sourceId: contextSources.id,
       rootThreadId: contextSources.rootThreadId,
+      chatThreadId: contextSources.chatThreadId,
       scheme: contextSources.slug,
       sourceDeletedAt: contextSources.deletedAt,
       work: {
@@ -170,6 +171,7 @@ function documentBase(
     ownerAccountId: row.ownerAccountId as UserId,
     projectDeleted: row.projectDeletedAt !== null,
     ownerRootThreadId: row.rootThreadId,
+    ownerChatThreadId: row.chatThreadId,
     ownerWork: row.work ? workFacts(row.work as WorkRow) : null,
     deleted:
       row.documentDeletedAt !== null ||
@@ -205,7 +207,17 @@ async function loadContainer(
 ): Promise<BaseFacts | null> {
   const work = owner.scope === "work" ? await readWork(db, owner.workId) : null;
   if (owner.scope === "work" && !work) return null;
-  let lineageLive = true;
+  let ownerLive = true;
+  if (owner.scope === "chat") {
+    if (scheme !== "uploads") return null;
+    // The chat's row may not exist yet (a New chat's first upload); a trashed one is deleted.
+    const [chat] = await currentDrizzleDb(db)
+      .select({ deleted: sql<boolean>`${threads.deletedAt} IS NOT NULL` })
+      .from(threads)
+      .where(and(eq(threads.id, owner.threadId), eq(threads.projectId, owner.projectId)))
+      .limit(1);
+    ownerLive = !chat?.deleted;
+  }
   if (owner.scope === "lineage") {
     const [root] = await currentDrizzleDb(db)
       .select({ id: threads.id, live: lineageHasLiveMember(owner.rootThreadId) })
@@ -219,7 +231,7 @@ async function loadContainer(
       )
       .limit(1);
     if (!root || scheme !== "scratch") return null;
-    lineageLive = root.live;
+    ownerLive = root.live;
   }
   const projectId = work ? work.projectId : (owner as { projectId: ProjectId }).projectId;
   const [project] = await currentDrizzleDb(db)
@@ -241,6 +253,9 @@ async function loadContainer(
               owner.scope === "lineage"
                 ? eq(contextSources.rootThreadId, owner.rootThreadId)
                 : isNull(contextSources.rootThreadId),
+              owner.scope === "chat"
+                ? eq(contextSources.chatThreadId, owner.threadId)
+                : isNull(contextSources.chatThreadId),
             ),
         isNull(contextSources.deletedAt),
       ),
@@ -251,9 +266,10 @@ async function loadContainer(
     ownerAccountId: project.ownerAccountId as UserId,
     projectDeleted: project.deletedAt !== null,
     ownerRootThreadId: owner.scope === "lineage" ? owner.rootThreadId : null,
+    ownerChatThreadId: owner.scope === "chat" ? owner.threadId : null,
     ownerWork: work ? workFacts(work) : null,
     // A missing source is provisioned by the create itself.
-    deleted: !lineageLive,
+    deleted: !ownerLive,
     scheme,
     self: null,
     ancestors: sourceAncestors(source?.id ?? null, work?.id ?? null, projectId),
