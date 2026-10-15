@@ -9,12 +9,14 @@ import {
 } from "@meridian/contracts";
 import type { CatalogFileEntry, CatalogScope } from "@meridian/contracts/protocol";
 import type { ProjectWorkAuthorityResolver } from "../projects/domain/work-authority.js";
+import type { ChatUploadsOwners } from "./chat-uploads-owners.js";
 import type { ContextCatalog } from "./ports/context-catalog.js";
 import type {
   DocumentLinkHistory,
   DocumentLinkResolver,
   ResolveDocumentLinkInput,
   ResolvedDocumentLink,
+  UploadOwnerLookup,
 } from "./ports/document-link-resolver.js";
 
 type Location = { scope: CatalogScope; scheme: ContextUriScheme; path: string };
@@ -24,9 +26,13 @@ export function createDocumentLinkResolver({
   workAuthorityResolver,
   history,
   lineages,
+  chats,
+  uploadOwners,
 }: {
   catalog: ContextCatalog;
   lineages?: import("./scratch-owner.js").ScratchLineages;
+  chats?: ChatUploadsOwners;
+  uploadOwners?: UploadOwnerLookup;
   history?: DocumentLinkHistory;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
 }): DocumentLinkResolver {
@@ -56,6 +62,16 @@ export function createDocumentLinkResolver({
       scope = lineage
         ? { kind: "lineage", projectId: input.projectId, rootThreadId: lineage.rootThreadId }
         : null;
+    } else if (scheme === "uploads" && authority.kind !== "none") {
+      // Uploads belong to a chat; a Work owns none, so `uploads://@slug/` names nothing.
+      const chatId =
+        authority.kind === "chat"
+          ? (await chats?.byRef(input.projectId, authority.chatRef))?.chatId
+          : authority.kind === "contextual"
+            ? // A bare name in a holder with no chat resolves by who received the upload.
+              (input.chatId ?? (await uploadOwners?.chatOf(input.projectId, path)))
+            : null;
+      scope = chatId ? { kind: "chat", projectId: input.projectId, chatId } : null;
     } else if (authority.kind === "none") scope = await noWorkScope(input.projectId);
     else if (authority.kind === "work") {
       const work = await workAuthorityResolver.bySlug(input.projectId, authority.workSlug);
@@ -105,6 +121,7 @@ function resolvedLink(file: CatalogFileEntry): ResolvedDocumentLink | null {
     path: parsed.value.path,
     uri: file.uri,
     ...(file.scope.kind === "lineage" ? { rootThreadId: file.scope.rootThreadId } : {}),
+    ...(file.scope.kind === "chat" ? { chatThreadId: file.scope.chatId } : {}),
     workId: file.scope.kind === "work" ? file.scope.workId : null,
   };
 }

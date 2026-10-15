@@ -335,7 +335,7 @@ export function createDrizzleDocumentLinkScopes(deps: {
       id: address.documentId,
       projectId: address.projectId,
       scheme: address.scheme,
-      owner: contextOwner(address.lockWorkId, address.rootThreadId),
+      owner: contextOwner(address.lockWorkId, address.rootThreadId, address.chatThreadId),
       path: address.path,
       uri: address.uri,
       deleted: address.deleted,

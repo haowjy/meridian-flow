@@ -42,6 +42,8 @@ export type DocumentCoordinates = {
   lockWorkId: string | null;
   /** A lineage Scratch's first chat; null or absent for every other source. */
   rootThreadId?: string | null;
+  /** The chat whose uploads hold the document; null or absent for every other source. */
+  chatThreadId?: string | null;
   /** Path inside the source, with extension. */
   path: string;
 };
@@ -84,6 +86,7 @@ export async function loadDocumentAddresses(
     work_id: string | null;
     work_slug: string | null;
     root_thread_id: string | null;
+    chat_thread_id: string | null;
     root_thread_ref: string | null;
     is_no_work: boolean | null;
     path: string;
@@ -108,7 +111,8 @@ export async function loadDocumentAddresses(
       COALESCE(cs.project_id, w.project_id)::text AS project_id,
       p.user_id::text AS user_id,
       cs.slug AS scheme, cs.work_id::text AS work_id, w.slug AS work_slug,
-      w.is_no_work AS is_no_work, cs.root_thread_id::text AS root_thread_id, root.ref AS root_thread_ref,
+      w.is_no_work AS is_no_work, cs.root_thread_id::text AS root_thread_id,
+      cs.chat_thread_id::text AS chat_thread_id, root.ref AS root_thread_ref,
       up.path || c.name || CASE WHEN c.extension = '' THEN '' ELSE '.' || c.extension END AS path,
       c.deleted OR up.deleted OR cs.deleted_at IS NOT NULL OR w.deleted_at IS NOT NULL
         AS deleted,
@@ -118,7 +122,7 @@ export async function loadDocumentAddresses(
     JOIN up ON up.document_id = c.id AND up.folder_id IS NULL
     JOIN context_sources cs ON cs.id = c.context_source_id
     LEFT JOIN works w ON w.id = cs.work_id
-    LEFT JOIN threads root ON root.id = cs.root_thread_id
+    LEFT JOIN threads root ON root.id = COALESCE(cs.root_thread_id, cs.chat_thread_id)
     LEFT JOIN projects p ON p.id = COALESCE(cs.project_id, w.project_id)
   `);
   return rows.flatMap((row): DocumentAddress[] => {
@@ -134,6 +138,7 @@ export async function loadDocumentAddresses(
           row.work_id,
           row.is_no_work ? null : row.work_slug,
           row.root_thread_ref,
+          row.chat_thread_id !== null,
         ),
       );
     } catch {
@@ -148,6 +153,7 @@ export async function loadDocumentAddresses(
         workId: row.work_id && !row.is_no_work ? row.work_id : null,
         lockWorkId: row.work_id,
         rootThreadId: row.root_thread_id,
+        chatThreadId: row.chat_thread_id,
         path: row.path,
         uri,
         deleted: row.deleted,
@@ -192,6 +198,7 @@ export async function presentSourceId(
     workId: string | null;
     project: { id: string } | { personalOf: string };
     rootThreadId?: string | null;
+    chatThreadId?: string | null;
   },
 ): Promise<ContextSourceId | null> {
   const workScoped = !isProjectScopedScheme(input.scheme as ContextUriScheme);
@@ -205,28 +212,34 @@ export async function presentSourceId(
       and(
         eq(contextSources.slug, input.scheme),
         isNull(contextSources.deletedAt),
-        input.rootThreadId
+        input.chatThreadId
           ? and(
-              eq(contextSources.rootThreadId, input.rootThreadId),
+              eq(contextSources.chatThreadId, input.chatThreadId),
               eq(projects.id, projectId ?? ""),
               isNull(projects.deletedAt),
             )
-          : workScoped
+          : input.rootThreadId
             ? and(
-                projectId === null ? sql`false` : eq(works.projectId, projectId),
-                isNull(works.deletedAt),
-                input.workId !== null ? eq(works.id, input.workId) : eq(works.isNoWork, true),
-              )
-            : and(
-                isNull(contextSources.workId),
+                eq(contextSources.rootThreadId, input.rootThreadId),
+                eq(projects.id, projectId ?? ""),
                 isNull(projects.deletedAt),
-                "personalOf" in input.project
-                  ? and(
-                      eq(projects.userId, input.project.personalOf),
-                      eq(projects.isPersonal, true),
-                    )
-                  : eq(projects.id, input.project.id),
-              ),
+              )
+            : workScoped
+              ? and(
+                  projectId === null ? sql`false` : eq(works.projectId, projectId),
+                  isNull(works.deletedAt),
+                  input.workId !== null ? eq(works.id, input.workId) : eq(works.isNoWork, true),
+                )
+              : and(
+                  isNull(contextSources.workId),
+                  isNull(projects.deletedAt),
+                  "personalOf" in input.project
+                    ? and(
+                        eq(projects.userId, input.project.personalOf),
+                        eq(projects.isPersonal, true),
+                      )
+                    : eq(projects.id, input.project.id),
+                ),
       ),
     )
     .limit(1);
@@ -308,6 +321,8 @@ export type NodeAddress = {
   workSlug: string | null;
   /** A lineage Scratch's first chat; null for every other source. */
   rootThreadId: string | null;
+  /** The chat whose uploads these are; null for every other source. */
+  chatThreadId: string | null;
   contextSourceId: ContextSourceId;
   path: string;
   uri: string;
@@ -345,15 +360,16 @@ export async function spellNodeAddresses(
           work_slug: string | null;
           is_no_work: boolean | null;
           root_thread_id: string | null;
+          chat_thread_id: string | null;
           root_thread_ref: string | null;
         }>(sql`
           SELECT cs.id::text AS id, COALESCE(cs.project_id, w.project_id)::text AS project_id,
             p.user_id::text AS user_id, cs.slug AS scheme, cs.work_id::text AS work_id,
             w.slug AS work_slug, w.is_no_work, cs.root_thread_id::text AS root_thread_id,
-            root.ref AS root_thread_ref
+            cs.chat_thread_id::text AS chat_thread_id, root.ref AS root_thread_ref
           FROM context_sources cs
           LEFT JOIN works w ON w.id = cs.work_id
-          LEFT JOIN threads root ON root.id = cs.root_thread_id
+          LEFT JOIN threads root ON root.id = COALESCE(cs.root_thread_id, cs.chat_thread_id)
           LEFT JOIN projects p ON p.id = COALESCE(cs.project_id, w.project_id)
           WHERE cs.id IN (${uuidList(sourceIds)})`)
     ).map((row) => [row.id, row]),
@@ -371,7 +387,13 @@ export async function spellNodeAddresses(
       uri = canonicalContextUri(
         scheme,
         path,
-        catalogSourceAuthority(scheme, source.work_id, workSlug, source.root_thread_ref),
+        catalogSourceAuthority(
+          scheme,
+          source.work_id,
+          workSlug,
+          source.root_thread_ref,
+          source.chat_thread_id !== null,
+        ),
       );
     } catch {
       return null;
@@ -384,6 +406,7 @@ export async function spellNodeAddresses(
       workId: source.work_id && !source.is_no_work ? (source.work_id as WorkId) : null,
       workSlug,
       rootThreadId: source.root_thread_id,
+      chatThreadId: source.chat_thread_id,
       contextSourceId: location.contextSourceId,
       path,
       uri,
