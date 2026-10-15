@@ -1239,7 +1239,7 @@ export function createInMemoryAppServices(): AppServices {
     async publishFinalizedReports() {},
     writeModeSwitch: {
       async renderNotice(_threadId, mode) {
-        return writeModeSwitchNotice({ archivedAt: null }, mode, false);
+        return writeModeSwitchNotice({ archivedAt: null, isNoWork: false }, mode, false);
       },
       async setWorkDefault() {
         throw new Error("in-memory work repository is not implemented");
