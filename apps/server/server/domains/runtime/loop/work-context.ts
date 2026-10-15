@@ -13,6 +13,7 @@ import type { WorkRepository } from "../../projects/index.js";
 import {
   type ThreadRepository,
   type ThreadWorksRepository,
+  type TopPrimaryChatResolver,
   threadExecutionContext,
 } from "../../threads/index.js";
 import { mayChangeWorks } from "./permissions/action-policy.js";
@@ -149,6 +150,8 @@ export function renderWorkContext(input: {
   /** Whether the thread's agent chain may unarchive (D39). */
   mayUnarchive: boolean;
   rootThreadRef?: string;
+  /** The chat whose uploads bare `uploads://` names: this thread's top primary chat. */
+  chatRef?: string;
 }): string {
   const writes = writeModeLines({
     mode: input.aiWriteMode,
@@ -167,6 +170,9 @@ export function renderWorkContext(input: {
           "  Move notes to kb:// or manuscript:// to keep them for the project. Rebinding never moves notes.",
         ]
       : []),
+    ...(input.chatRef
+      ? [`  uploads: bare uploads:// is this chat's files at uploads://@/${input.chatRef}/.`]
+      : []),
     "</work_context>",
   ].join("\n");
 }
@@ -175,6 +181,7 @@ export function createWorkContextReader(deps: {
   threads: Pick<ThreadRepository, "findById" | "findByIdIncludingDeleted">;
   works: Pick<WorkRepository, "findById">;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary">;
+  topPrimaryChats: TopPrimaryChatResolver;
   readChainPermission(threadId: ThreadId): Promise<AgentPermission>;
 }): WorkContextReader {
   return {
@@ -187,6 +194,7 @@ export function createWorkContextReader(deps: {
       if (!current || workLifecycleState(current) === "deleted") {
         throw new Error(`Thread primary Work is unavailable: ${threadId}`);
       }
+      const chat = await deps.topPrimaryChats.resolveTopPrimaryChat(threadId);
       const root = await deps.threads.findByIdIncludingDeleted(thread.rootThreadId);
       const execution: ThreadExecutionContext = threadExecutionContext(current, thread.aiWriteMode);
       return {
@@ -194,6 +202,7 @@ export function createWorkContextReader(deps: {
           current,
           aiWriteMode: thread.aiWriteMode,
           rootThreadRef: root?.ref ?? undefined,
+          chatRef: chat?.chatRef,
           mayUnarchive: mayChangeWorks(await deps.readChainPermission(threadId)),
         }),
         current: { projectId: thread.projectId, execution },

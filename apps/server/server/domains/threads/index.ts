@@ -16,6 +16,7 @@ export {
 export { createBoundConversation } from "./domain/bound-conversation.js";
 export { ForkCutoffOwnerNotFoundError, findCutoffOwnerThreadId } from "./domain/cutoff-owner.js";
 export {
+  continuesFromLine,
   DerivedSourceNotFoundError,
   DerivedThreadConflictError,
   ForkCutoffError,

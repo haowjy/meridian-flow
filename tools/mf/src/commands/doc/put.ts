@@ -18,14 +18,21 @@ import { PROJECT_OPTION, resolveUri } from "./uri";
  */
 export async function putDocument(
   session: Session,
-  input: { projectId: string; uri: string; content: string; work?: string; overwrite: boolean },
+  input: {
+    projectId: string;
+    uri: string;
+    content: string;
+    work?: string;
+    chat?: string;
+    overwrite: boolean;
+  },
 ): Promise<{
   uri: string;
   documentId: string;
   replaced: boolean;
   previousDocumentId: string | null;
 }> {
-  const target = await resolveUri(session, input.projectId, input.uri, input.work);
+  const target = await resolveUri(session, input.projectId, input.uri, input.work, input.chat);
   const create = () =>
     session.request<{ status: "created"; documentId: string; uri: string }>(
       "POST",
@@ -103,6 +110,7 @@ export const docPutCommand: CommandSpec = {
       uri: requirePositional(ctx, 0, "<uri>"),
       content: readValueArg(raw),
       work: stringOption(ctx, "work"),
+      chat: stringOption(ctx, "chat"),
       overwrite: flag(ctx, "overwrite"),
     });
     ctx.out.result({ projectId, ...result }, (value) =>

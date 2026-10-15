@@ -1,5 +1,5 @@
 /** URI → project context route inputs and live document identity, via the app's own address route. */
-import { parseContextUri, WORK_SCOPED_CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
+import { parseContextUri } from "@meridian/contracts/context-uri";
 import {
   apiProjectDocumentAddressPath,
   type DocumentAddressResult,
@@ -18,6 +18,8 @@ export type ResolvedUri = {
   /** Canonical spelling the admission path requires. */
   uri: string;
   workId: string | null;
+  /** The chat whose uploads an `uploads://` URI names; null for every other scheme. */
+  chatRef: string | null;
 };
 
 export async function resolveUri(
@@ -25,14 +27,33 @@ export async function resolveUri(
   projectId: string,
   raw: string,
   workOverride?: string,
+  chatOverride?: string,
 ): Promise<ResolvedUri> {
   const parsed = parseContextUri(raw);
   if (!parsed.ok) throw usageError(`Invalid URI ${raw}: ${parsed.error.reason}`);
   const { scheme, authority, path, normalized } = parsed.value;
   if (!path) throw usageError(`URI ${raw} has no path`);
-  const workScoped = (WORK_SCOPED_CONTEXT_URI_SCHEMES as readonly string[]).includes(scheme);
   let workId: string | null = null;
-  if (workScoped) {
+  let chatRef: string | null = null;
+  if (scheme === "uploads") {
+    if (workOverride !== undefined)
+      throw usageError("uploads belong to a chat: use --chat <c-handle>");
+    if (authority.kind === "chat") chatRef = authority.chatRef;
+    if (chatOverride !== undefined) {
+      if (!/^c[1-9][0-9]*$/.test(chatOverride)) {
+        throw usageError("--chat takes a chat handle like c12");
+      }
+      if (chatRef !== null && chatRef !== chatOverride) {
+        throw usageError(`URI ${raw} names chat ${chatRef}, not ${chatOverride}`);
+      }
+      chatRef = chatOverride;
+    }
+    if (chatRef === null) {
+      throw usageError(
+        `uploads belong to a chat: use uploads://@/<c-handle>/… or --chat <c-handle>`,
+      );
+    }
+  } else if (scheme === "scratch") {
     const workRaw =
       workOverride ?? (authority.kind === "work" ? `@${authority.workSlug}` : undefined);
     workId = await resolveWorkId(session, projectId, workRaw);
@@ -42,8 +63,11 @@ export async function resolveUri(
   if (!parsedName.ok) throw usageError(parsedName.error.message);
   const canonicalPath =
     path.slice(0, slash + 1) + renderFilename(parsedName.value.name, parsedName.value.extension);
-  const uri = normalized.slice(0, normalized.length - path.length) + canonicalPath;
-  return { scheme, path: canonicalPath, uri, workId };
+  const prefix =
+    chatRef !== null
+      ? `uploads://@/${chatRef}/`
+      : normalized.slice(0, normalized.length - path.length);
+  return { scheme, path: canonicalPath, uri: prefix + canonicalPath, workId, chatRef };
 }
 
 /** Live documentId for a URI, or a not_found CliError. */
@@ -68,8 +92,9 @@ export async function resolveDocumentId(
   return (await resolveDocument(session, projectId, target)).documentId;
 }
 
-/** `--project`/`--work` shared by every command that takes a document URI. */
+/** `--project`/`--work`/`--chat` shared by every command that takes a document URI. */
 export const PROJECT_OPTION = {
   project: { type: "string" as const, description: "Project id, or `default` (default)" },
-  work: { type: "string" as const, description: "Work for scratch/uploads URIs: @slug or @/" },
+  work: { type: "string" as const, description: "Work for scratch URIs: @slug or @/" },
+  chat: { type: "string" as const, description: "Chat handle for uploads URIs: c12" },
 };
