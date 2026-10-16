@@ -7,7 +7,7 @@
  *
  * The four positions of the sync KB decision stay apart: the floor (a read applies only at or
  * above it), `resumeAfterSeq` (read from each read, never stored), the durable cursor and the
- * transport's delivery cursor.
+ * delivery cursor (the highest frame the stream wrote here).
  */
 
 import type { Block } from "@meridian/contracts/protocol";
@@ -52,6 +52,11 @@ export type SyncedThread = {
   floor: string | null;
   /** The last durable block applied. */
   durableCursor: string | null;
+  /**
+   * The highest frame seq the stream has written into the value. A sync joins above it, so a kept
+   * value's stream-built blocks are never delivered twice. It only rises; a read leaves it alone.
+   */
+  deliveryCursor: string | null;
   /** The reducer's event counter; it names fallback block ids, so it never resets. */
   eventsApplied: number;
   runState: RunStateSlice;
@@ -64,6 +69,7 @@ export const EMPTY_SYNCED_THREAD: SyncedThread = {
   forgotten: new Map(),
   floor: null,
   durableCursor: null,
+  deliveryCursor: null,
   eventsApplied: 0,
   runState: INITIAL_RUN_STATE_SLICE,
 };
@@ -82,6 +88,13 @@ export type ReadFacts = {
 export function acceptsSnapshot(synced: SyncedThread, nextSeq: string): boolean {
   if (parseSeq(nextSeq) === null) return false;
   return synced.floor === null || compareSeq(nextSeq, synced.floor) >= 0;
+}
+
+/** Raise the delivery cursor to `seq`. The value itself when `seq` is malformed or not above it. */
+export function raiseDeliveryCursor(synced: SyncedThread, seq: string): SyncedThread {
+  if (parseSeq(seq) === null) return synced;
+  if (synced.deliveryCursor !== null && compareSeq(seq, synced.deliveryCursor) <= 0) return synced;
+  return { ...synced, deliveryCursor: seq };
 }
 
 /**

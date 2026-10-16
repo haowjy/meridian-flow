@@ -28,14 +28,19 @@ const IDLE = {
 
 afterEach(() => vi.useRealTimers());
 
-function harness(initial: SyncedThread = EMPTY_SYNCED_THREAD) {
+/** `join: false` leaves the sync waiting for its first read, as `start()` does. */
+function harness(initial: SyncedThread = EMPTY_SYNCED_THREAD, { join = true } = {}) {
   let synced = initial;
-  const subscriptions: Array<{ handlers: ThreadTransportHandlers; active: boolean }> = [];
+  const subscriptions: Array<{
+    handlers: ThreadTransportHandlers;
+    active: boolean;
+    after: string | undefined;
+  }> = [];
   const requests: string[] = [];
   const observations: SyncObservation[] = [];
   const transport = {
-    subscribe(_threadId: string, handlers: ThreadTransportHandlers) {
-      const entry = { handlers, active: true };
+    subscribe(_threadId: string, handlers: ThreadTransportHandlers, options?: { after?: string }) {
+      const entry = { handlers, active: true, after: options?.after };
       subscriptions.push(entry);
       return () => {
         entry.active = false;
@@ -54,6 +59,11 @@ function harness(initial: SyncedThread = EMPTY_SYNCED_THREAD) {
     scheduleFlush: () => () => undefined,
   });
   sync.start();
+  if (join) {
+    // Read first: no handler exists until a read applies. An empty read joins at once.
+    requests.length = 0;
+    sync.receive(read([], "0"));
+  }
   return {
     sync,
     requests,
@@ -171,6 +181,56 @@ describe.each([
     });
     expect(after?.status).not.toBe("streaming");
     expect(after?.blocks[0]?.sequence).toBe(before?.blocks[0]?.sequence);
+  });
+});
+
+describe("the join", () => {
+  it("subscribes only from a read, above every frame the cell holds", () => {
+    // A host that never delivers a read has subscribed nothing and asked for one.
+    const idle = harness(EMPTY_SYNCED_THREAD, { join: false });
+    expect(idle.subscriptions).toHaveLength(0);
+    expect(idle.requests).toEqual(["any"]);
+
+    // Sync A streams part of a message, then its last handler goes. The cell holds a stream-built block.
+    const a = harness();
+    a.emit(runStarted("turn-1"), "1000");
+    a.emit(textStart("m1"), "1001");
+    a.emit(textDelta("m1", "Hello"), "1002");
+    a.emit(textDelta("m1", " world"), "1003");
+    a.sync.stop();
+    expect(a.synced().deliveryCursor).toBe("1003");
+
+    // Sync B on that cell joins on a read that lacks the block: above A's frames, one block kept.
+    const b = harness(a.synced(), { join: false });
+    expect(b.sync.receive(read([reply("turn-1", "streaming", "")], "1000"))).toBe("stale");
+    expect(b.subscriptions).toHaveLength(0);
+    expect(b.sync.receive(read([reply("turn-1", "streaming", "")], "2000"))).toBe("applied");
+    expect(b.subscriptions.map((entry) => entry.after)).toEqual(["2000"]);
+    expect(b.turn("turn-1")?.blocks).toHaveLength(1);
+    expect(b.turn("turn-1")?.blocks[0]?.textContent).toBe("Hello world");
+
+    // A read with the same position as the cursor is stale; the host's next read, above it, joins.
+    const c = harness(a.synced(), { join: false });
+    const behind = read([], "1003");
+    behind.liveState.resumeAfterSeq = "1000";
+    expect(c.sync.receive(behind)).toBe("stale");
+    expect(c.turn("turn-1")?.blocks[0]?.textContent).toBe("Hello world");
+    const ahead = read([reply("turn-1", "streaming", "Hello")], "1004");
+    ahead.liveState.resumeAfterSeq = "1000";
+    expect(c.sync.receive(ahead)).toBe("applied");
+    // The handler starts at the later of the read's position and the cursor.
+    expect(c.subscriptions.map((entry) => entry.after)).toEqual(["1003"]);
+    c.emit(textDelta("m1", "!"), "1004");
+    c.sync.stop();
+    expect(c.turn("turn-1")?.blocks.map((block) => block.textContent)).toEqual(["Hello!"]);
+
+    // A same-instance restart joins again, above its frames.
+    a.sync.start();
+    expect(a.requests).toEqual(["any"]);
+    const restart = read([], "1500");
+    restart.liveState.resumeAfterSeq = "1000";
+    a.sync.receive(restart);
+    expect(a.subscriptions.map((entry) => entry.after)).toEqual(["0", "1003"]);
   });
 });
 

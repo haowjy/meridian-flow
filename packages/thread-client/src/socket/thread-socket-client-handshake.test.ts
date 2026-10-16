@@ -198,13 +198,19 @@ it("retires a silent connected socket without waiting for native close and resum
       type: "resume",
       subscriptions: [{ threadId: "thread-1", lastSeq: "1" }],
     });
+    // A handler added while the resume replay is in flight, with a cursor at the replay's own,
+    // gets the catch-up before the live frame that arrives ahead of it.
+    const joinedLate: SequencedEvent[] = [];
+    transport.subscribe("thread-1", { onEvent: (event) => joinedLate.push(event) }, { after: "1" });
+    replacement.deliver({ type: "event", threadId: "thread-1", ...delta("3", "final line") });
+    expect(joinedLate).toEqual([]);
     replacement.deliver({
       type: "subscribed",
       threadId: "thread-1",
       catchup: [delta("2", "catch-up ")],
       state,
     });
-    replacement.deliver({ type: "event", threadId: "thread-1", ...delta("3", "final line") });
+    expect(joinedLate).toEqual([delta("2", "catch-up "), delta("3", "final line")]);
     expect(events).toEqual([
       delta("1", "Early "),
       delta("2", "catch-up "),

@@ -34,6 +34,12 @@ export type ActiveThreadSubscription = {
   replayInFlight: boolean;
   /** A subscribe was requested while one was in flight; resend on `subscribed`. */
   resendQueued: boolean;
+  /**
+   * The cursor the wire request now in flight carried (an omitted one is "0"). Neither `lastSeq`
+   * nor the handlers' cursors can say what that replay will bring, so a handler added meanwhile is
+   * judged against this. Set where the request is built; cleared when the replay ends.
+   */
+  requestedAfter?: string;
   fence?: ReplayFence;
 };
 
@@ -118,6 +124,27 @@ export class WsThreadSubscriptionRegistry {
 
     const wasServerSubscribed = subscription.serverSubscribed;
     const position = subscription.lastSeq;
+    const requested = subscription.requestedAfter;
+    if (
+      wasServerSubscribed &&
+      subscription.replayInFlight &&
+      after !== undefined &&
+      requested !== undefined &&
+      compareSeq(after, requested) >= 0
+    ) {
+      // The replay in flight carries everything above `after`: wait for it with the live frames
+      // held, so the catch-up reaches this handler before any live frame moves its cursor.
+      subscription.handlers.add(handlers);
+      subscription.cursors.set(handlers, after);
+      const fence = subscription.fence ?? {
+        waiting: new Set(),
+        deferred: new Set(),
+        held: new Map(),
+      };
+      subscription.fence = fence;
+      fence.waiting.add(handlers);
+      return { subscription, sendSubscribe: false, forceSubscribe: false, waiters: [] };
+    }
     const rewinding =
       after !== undefined && (position === undefined || compareSeq(after, position) < 0);
     subscription.handlers.add(handlers);
@@ -198,6 +225,7 @@ export class WsThreadSubscriptionRegistry {
     subscription.gapCount = 0;
     subscription.serverSubscribed = true;
     subscription.replayInFlight = false;
+    subscription.requestedAfter = undefined;
 
     const fence = subscription.fence;
     let frames = catchup;
@@ -222,6 +250,7 @@ export class WsThreadSubscriptionRegistry {
     if (!subscription) return;
     subscription.replayInFlight = false;
     subscription.resendQueued = false;
+    subscription.requestedAfter = undefined;
     const fence = subscription.fence;
     subscription.fence = undefined;
     if (!fence) return;
@@ -243,6 +272,7 @@ export class WsThreadSubscriptionRegistry {
     subscription.serverSubscribed = false;
     subscription.replayInFlight = false;
     subscription.resendQueued = false;
+    subscription.requestedAfter = undefined;
     const fence = subscription.fence;
     if (fence) {
       for (const handler of fence.deferred) fence.waiting.add(handler);

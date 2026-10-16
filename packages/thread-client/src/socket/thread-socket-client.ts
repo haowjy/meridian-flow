@@ -244,12 +244,13 @@ export class ThreadSocketClient implements ThreadTransport {
       this.subscriptions.holdForReplay(subscription, subscription.handlers);
       subscription.replayInFlight = true;
       subscription.serverSubscribed = true;
+      subscription.requestedAfter = oldestCursor(subscription) ?? "0";
     }
     this.send({
       type: "resume",
       subscriptions: Array.from(this.subscriptions.entries()).map(([threadId, subscription]) => ({
         threadId,
-        lastSeq: oldestCursor(subscription) ?? "0",
+        lastSeq: subscription.requestedAfter,
       })),
     });
   }
@@ -280,6 +281,7 @@ export class ThreadSocketClient implements ThreadTransport {
     subscription.replayInFlight = true;
     subscription.serverSubscribed = true;
     const lastSeq = oldestCursor(subscription);
+    subscription.requestedAfter = lastSeq ?? "0";
     this.send({
       type: "subscribe",
       threadId,

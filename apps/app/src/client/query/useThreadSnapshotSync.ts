@@ -66,6 +66,8 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
     return {
       sync,
       state: ports.state,
+      /** Bumped by cleanup: a request queued under an earlier mount must not run after it. */
+      epoch: 0,
       /** Late-bound: the query that fetches is built after the sync that needs to ask it. */
       bind(next: (kind: "fresh" | "any") => void) {
         request = next;
@@ -97,9 +99,11 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
   });
 
   // Asked in a microtask, as the cache port defers: a request can come from inside a write.
-  binding.bind((kind) =>
+  binding.bind((kind) => {
+    const mounted = binding.epoch;
+    const live = () => !accountSignal.aborted && binding.epoch === mounted;
     queueMicrotask(() => {
-      if (accountSignal.aborted) return;
+      if (!live()) return;
       if (kind === "any") {
         void refetch({ cancelRefetch: false });
         return;
@@ -111,23 +115,29 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
       const read = refetch();
       if (again) {
         void read.then(() => {
-          if (!accountSignal.aborted) void refetch();
+          if (live()) void refetch();
         });
       }
-    }),
-  );
+    });
+  });
 
   const latest = useRef(data);
   latest.current = data;
 
   // The sync's lifetime is independent of the pending-creation flag. A commit that
   // clears that flag must not stop the handler installed by first send.
-  useLayoutEffect(() => () => binding.sync.stop(), [binding]);
+  useLayoutEffect(
+    () => () => {
+      binding.epoch += 1;
+      binding.sync.stop();
+    },
+    [binding],
+  );
   useLayoutEffect(() => {
     if (isPendingCreation) return;
     binding.sync.start();
-    // A read the cache already holds never runs the queryFn, so it is received here: it joins
-    // the stream, so replay from 0 cannot append to turns the kept cell already holds.
+    // A read the cache already holds never runs the queryFn, so it is offered here on every
+    // mount. The sync decides: it joins only if it is newer than every frame the cell holds.
     const cached = latest.current;
     if (
       cached &&
