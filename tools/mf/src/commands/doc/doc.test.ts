@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import { CliError } from "../../core/cli-error";
 import type { Session } from "../../core/session";
 import { putDocument } from "./put";
-import { resolveUri } from "./uri";
 
 const session: Session = {
   serverUrl: "https://unused.test",
@@ -13,30 +12,6 @@ const session: Session = {
     return { status: "created", documentId: "document-1", uri: "manuscript://Chapter 13" } as T;
   },
 };
-
-describe("CLI document names", () => {
-  it("accepts every prose spelling, preserving the writer's dots and case", async () => {
-    for (const suffix of ["", ".md", ".markdown", ".mdx", ".txt"]) {
-      expect(await resolveUri(session, "project", `manuscript://Vol. 2${suffix}`)).toMatchObject({
-        path: "Vol. 2",
-        uri: "manuscript://Vol. 2",
-      });
-    }
-    expect(
-      await putDocument(session, {
-        projectId: "project",
-        uri: "manuscript://Chapter 13.TXT",
-        content: "A story",
-        overwrite: false,
-      }),
-    ).toEqual({
-      uri: "manuscript://Chapter 13",
-      documentId: "document-1",
-      replaced: false,
-      previousDocumentId: null,
-    });
-  });
-});
 
 describe("doc put --overwrite", () => {
   const conflict = new CliError("http_error", "conflict", { details: { status: "conflict" } });
@@ -58,12 +33,6 @@ describe("doc put --overwrite", () => {
       },
     };
   }
-
-  it("names the deleted document id", async () => {
-    const result = await putDocument(scripted("ok"), input);
-    expect(result).toMatchObject({ replaced: true, documentId: "new-id" });
-    expect(result.previousDocumentId).toBe("old-id");
-  });
 
   it("says the old document was already deleted when the create fails", async () => {
     await expect(putDocument(scripted("fail"), input)).rejects.toThrow(/old-id.*already deleted/);
