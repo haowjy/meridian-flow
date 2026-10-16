@@ -41,6 +41,14 @@ export const handBackReceipt = (requestId: string) => `handBack:${requestId}`;
 
 function isPendingHandBack(value: unknown): value is PendingHandBack {
   if (!isRecord(value) || typeof value.requestId !== "string") return false;
+  const occurrence = value.occurrence;
+  if (
+    !isRecord(occurrence) ||
+    typeof occurrence.requestId !== "string" ||
+    !Number.isSafeInteger(occurrence.attempt) ||
+    Number(occurrence.attempt) < 1
+  )
+    return false;
   if (value.kind === "queue")
     return Array.isArray(value.ids) && value.ids.every((id) => typeof id === "string");
   if (value.kind !== "stop") return false;
@@ -172,11 +180,15 @@ export class ComposerSessionDraft {
    * False when the write failed: the caller must not send.
    */
   recordHandBack(command: PendingHandBack): boolean {
-    if (this.handBacksPending.some((known) => known.requestId === command.requestId)) return true;
+    const held = this.handBacksPending.some((known) => known.requestId === command.requestId);
     return this.commit(this.current, {
       received: this.received,
       notices: this.notices,
-      handBacks: [...this.handBacksPending, command],
+      handBacks: held
+        ? this.handBacksPending.map((known) =>
+            known.requestId === command.requestId ? command : known,
+          )
+        : [...this.handBacksPending, command],
     });
   }
 

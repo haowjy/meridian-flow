@@ -19,6 +19,7 @@ import {
   stopResponseSchema,
 } from "@meridian/contracts/protocol";
 import type { HandBackResult, RunState, StopRequest } from "@meridian/contracts/threads";
+import type { Occurrence } from "../commands";
 import {
   type FailedStop,
   failedStopIsMoot,
@@ -41,9 +42,10 @@ import {
 } from "./classify";
 
 /** What the operation posts and persists. `stop` keeps Stop's stored format. */
-export type HandBackCommand =
+export type HandBackCommand = (
   | { kind: "stop"; requestId: string; body: StopRequest }
-  | { kind: "queue"; requestId: string; ids: readonly string[] };
+  | { kind: "queue"; requestId: string; ids: readonly string[] }
+) & { occurrence: Occurrence };
 
 /** A press: Stop over the view the writer saw, or the x / Cancel queue over the ids drawn as queued. */
 export type HandBackPressInput =
@@ -114,8 +116,8 @@ export type UnresolvedHandBack = {
   count: number;
   /** Stop only: the execution the writer saw when pressing (the command's target); else null. */
   targetExecutionId: string | null;
-  /** How many times this request has been posted this session (1 for a first post): the card's occurrence. */
-  attempt: number;
+  /** Allocated before saving or posting, persisted with the command, and retained by resume. */
+  occurrence: Occurrence;
 };
 
 /**
@@ -210,8 +212,6 @@ export function createHandBackOperation(options: {
   const entries = new Map<string, Entry>();
 
   /** The attempt now running for each request: the one authoritative per-request state. */
-  /** Posts made per request this session; a reload's resume counts from its own first post. */
-  const attempts = new Map<string, number>();
   const running = new Map<
     string,
     { kind: HandBackCommand["kind"]; done: Promise<HandBackOutcome> }
@@ -227,12 +227,16 @@ export function createHandBackOperation(options: {
   };
 
   /** Run `held`'s attempt, or join the one already running for its request. */
-  function attempt(held: Held): Promise<HandBackOutcome> {
+  function attempt(held: Held, save = true): Promise<HandBackOutcome> {
     const requestId = held.command.requestId;
     const joined = running.get(requestId);
     if (joined) return joined.done;
+    if (save && !store.record(held.command)) {
+      fail(held, "unsaved");
+      changed();
+      return Promise.resolve({ kind: "unsaved", command: held.command });
+    }
     if (held.command.kind === "stop") cancelledByStop = null;
-    attempts.set(requestId, (attempts.get(requestId) ?? 0) + 1);
     const done = post(held).finally(() => {
       running.delete(requestId);
       changed();
@@ -284,14 +288,18 @@ export function createHandBackOperation(options: {
     return { kind: "confirmed", command, result, cancelledExecutionId };
   }
 
-  /** Replay a held entry: join its running attempt, or re-record an unsaved command and post. */
+  /** Join an existing attempt, or own a new occurrence before the next save or post. */
   async function replay(entry: Entry): Promise<HandBackOutcome> {
     const requestId = entry.command.requestId;
     const joined = running.get(requestId);
     if (joined) return joined.done;
-    if (entry.status === "unsaved" && !store.record(entry.command))
-      return { kind: "unsaved", command: entry.command };
-    return attempt(entry);
+    return attempt({
+      ...entry,
+      command: {
+        ...entry.command,
+        occurrence: { requestId: mint(), attempt: entry.command.occurrence.attempt + 1 },
+      },
+    });
   }
 
   return {
@@ -312,16 +320,17 @@ export function createHandBackOperation(options: {
         if (owed) return replay(owed);
       }
       const requestId = mint();
+      const occurrence = { requestId, attempt: 1 };
       let held: Held;
       if (input.kind === "stop") {
         const body = stopRequest(input.view, requestId);
         held = {
-          command: { kind: "stop", requestId, body },
+          command: { kind: "stop", requestId, body, occurrence },
           candidates: handBackCandidates(input.view, body),
         };
       } else {
         held = {
-          command: { kind: "queue", requestId, ids: [...input.ids] },
+          command: { kind: "queue", requestId, ids: [...input.ids], occurrence },
           candidates: [...input.ids],
         };
       }
@@ -333,11 +342,6 @@ export function createHandBackOperation(options: {
           (entry.status === "refused" || entry.status === "unsaved")
         )
           entries.delete(id);
-      if (!store.record(command)) {
-        fail(held, "unsaved");
-        changed();
-        return { kind: "unsaved", command };
-      }
       return attempt(held);
     },
 
@@ -347,7 +351,7 @@ export function createHandBackOperation(options: {
         // The list is a snapshot: a command another path confirmed while an earlier one posted
         // has left the store, and must not be posted (and possibly failed) again.
         if (!store.pending().some((held) => held.requestId === command.requestId)) continue;
-        outcomes.push(await attempt({ command, candidates: idsOf(command) }));
+        outcomes.push(await attempt({ command, candidates: idsOf(command) }, false));
       }
       return outcomes;
     },
@@ -384,7 +388,7 @@ export function createHandBackOperation(options: {
         status: e.status,
         count: e.candidates.length,
         targetExecutionId: e.command.kind === "stop" ? e.command.body.seenExecutionId : null,
-        attempt: attempts.get(e.command.requestId) ?? 1,
+        occurrence: e.command.occurrence,
       }));
     },
 
