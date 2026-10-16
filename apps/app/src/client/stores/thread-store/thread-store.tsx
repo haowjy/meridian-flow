@@ -8,13 +8,12 @@ import {
   blockContentRecord,
   interruptIdForBlock,
   type ThreadListItem,
+  type ThreadSnapshotResponse,
   type Turn,
   type TurnStatus,
 } from "@meridian/contracts/protocol";
 import { isTerminalTurnStatus } from "@meridian/contracts/threads";
 import {
-  createTurnReducer,
-  dividersAwaitingAnchorIn,
   INITIAL_RUN_STATE_SLICE,
   isOptimisticTurnId,
   OPTIMISTIC_TURN_ID_PREFIX,
@@ -24,9 +23,8 @@ import {
 import * as sync from "@meridian/thread-client/sync";
 import {
   EMPTY_SYNCED_THREAD,
-  type SyncedCell,
   type SyncedThread,
-  syncedTurnStore,
+  type SyncObservation,
 } from "@meridian/thread-client/sync";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -52,6 +50,7 @@ import {
   interruptResponseKey,
 } from "@/core/session/interrupt-response";
 import { useOptionalAccountEpochSignal } from "@/features/project/context/account-feature-context";
+import { announceError } from "./announcements";
 import { buildOptimisticUserTurn } from "./build-optimistic-user-turn";
 import { createThreadCache, type ThreadCachePort } from "./thread-cache";
 import type { ThreadStoreActions, ThreadStoreState } from "./types";
@@ -76,8 +75,6 @@ type ThreadStoreSeed = {
 
 type ThreadStoreConfig = ThreadStoreSeed & {
   threadCache: ThreadCachePort;
-  /** ISO timestamps for reducer-created rows; tests inject a fixed clock. */
-  clock?: () => string;
 };
 
 type ThreadStoreApi = StoreApi<ThreadStoreSlice>;
@@ -108,15 +105,20 @@ function liveThreadListPatchForTurnStatus(
   };
 }
 
-/** Drop every settlement whose key starts with `prefix`; null when none match. */
-function clearInterruptResponsesByPrefix(
+/** Drop the settlements of turns that ended: a terminal turn has nothing left to answer. */
+function dropEndedInterruptResponses(
   responses: Record<string, InterruptResponseEntry>,
-  prefix: string,
+  threadId: string,
+  turns: readonly Turn[],
 ): Record<string, InterruptResponseEntry> | null {
-  const keys = Object.keys(responses).filter((key) => key.startsWith(prefix));
-  if (keys.length === 0) return null;
-  const next = { ...responses };
-  for (const key of keys) delete next[key];
+  let next: Record<string, InterruptResponseEntry> | null = null;
+  for (const [key, entry] of Object.entries(responses)) {
+    if (entry.threadId !== threadId) continue;
+    const turn = turns.find((candidate) => candidate.id === entry.turnId);
+    if (!turn || !isTerminalTurnStatus(turn.status)) continue;
+    next ??= { ...responses };
+    delete next[key];
+  }
   return next;
 }
 
@@ -161,28 +163,18 @@ function reconcileInterruptResponsesForThread(
 function selectThreadActions(state: ThreadStoreSlice): ThreadStoreActions {
   return {
     turns: state.turns,
-    dividersAwaitingAnchor: state.dividersAwaitingAnchor,
     runState: state.runState,
+    syncPorts: state.syncPorts,
     setStreamingThreadId: state.setStreamingThreadId,
     ensureThread: state.ensureThread,
     appendUserTurn: state.appendUserTurn,
     acknowledgeUserTurn: state.acknowledgeUserTurn,
     removeOptimisticUserTurn: state.removeOptimisticUserTurn,
-    ensureAssistantTurn: state.ensureAssistantTurn,
-    ensureSwitchTurn: state.ensureSwitchTurn,
-    upsertAssistantBlock: state.upsertAssistantBlock,
     invalidateThreadSnapshot: state.invalidateThreadSnapshot,
     patchTurnStatus: state.patchTurnStatus,
     pruneStaleAssistantTurns: state.pruneStaleAssistantTurns,
-    bumpEventsApplied: state.bumpEventsApplied,
-    applyTurnEvent: state.applyTurnEvent,
     removeTurns: state.removeTurns,
-    markForgotten: state.markForgotten,
     dispatchRunState: state.dispatchRunState,
-    applyDurableBlockEvent: state.applyDurableBlockEvent,
-    acceptDurableBlockSeq: state.acceptDurableBlockSeq,
-    acceptsThreadSnapshot: state.acceptsThreadSnapshot,
-    applyThreadSnapshot: state.applyThreadSnapshot,
     markPendingCreation: state.markPendingCreation,
     clearPendingCreation: state.clearPendingCreation,
     interruptResponseFor: state.interruptResponseFor,
@@ -196,7 +188,7 @@ function selectThreadActions(state: ThreadStoreSlice): ThreadStoreActions {
 }
 
 export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
-  const { now, threadCache, clock = () => new Date().toISOString() } = config;
+  const { now, threadCache } = config;
   return createStore<ThreadStoreSlice>()(
     devtools(
       (set, get) => {
@@ -204,59 +196,83 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
           get().syncedByThread[threadId];
         const cellOf = (threadId: string): SyncedThread =>
           readCell(threadId) ?? EMPTY_SYNCED_THREAD;
-        const withCell = (state: ThreadStoreSlice, threadId: string, next: SyncedThread) => ({
-          syncedByThread: { ...state.syncedByThread, [threadId]: next },
-        });
-        const cell: SyncedCell = {
-          get: readCell,
-          set: (threadId, next) => set((state) => withCell(state, threadId, next)),
+        /**
+         * The chat's next value, and with it the settlements of turns it shows ended: a terminal
+         * status write and the interrupt responses it clears are one update, so no render sees one
+         * without the other.
+         */
+        const withCell = (state: ThreadStoreSlice, threadId: string, next: SyncedThread) => {
+          const ended = dropEndedInterruptResponses(state.interruptResponses, threadId, next.turns);
+          return {
+            syncedByThread: { ...state.syncedByThread, [threadId]: next },
+            ...(ended ? { interruptResponses: ended } : {}),
+          };
         };
+        const writeCell = (threadId: string, next: SyncedThread) =>
+          set((state) => withCell(state, threadId, next));
         /** Write the chat's next value; a transition that changed nothing writes nothing. */
         const update = (threadId: string, change: (synced: SyncedThread) => SyncedThread) => {
           const current = cellOf(threadId);
           const next = change(current);
-          if (next !== current) cell.set(threadId, next);
+          if (next !== current) writeCell(threadId, next);
         };
         const storeNow = () => new Date(get().now).toISOString();
 
-        // The reducer's side effects: what the thread lists, the caches and the interrupt
-        // settlements do when a stream write starts a turn or changes its status.
-        const turnStore = syncedTurnStore({
-          cell,
-          now: storeNow,
-          onTurnEnsured(threadId, turnId) {
-            threadCache.patchThread(
-              threadId,
-              liveThreadListPatchForTurnStatus(turnId, "streaming"),
-            );
-          },
-          onStatusPatched(threadId, turnId, status, before) {
-            // Unadmitted writer rows carry local knowledge, never a server lifecycle event.
-            if (before.role === "user" && isOptimisticTurnId(turnId)) return;
-            threadCache.patchThread(threadId, liveThreadListPatchForTurnStatus(turnId, status));
-            if (!isTerminalTurnStatus(status)) return;
-
-            reducer.clearPendingInterruptPatchesForTurn(threadId, turnId);
-            const state = get();
-            const remaining = clearInterruptResponsesByPrefix(
+        // What the thread lists, the caches and the interrupt settlements do when a turn starts,
+        // changes status, or a read lands. The sync's observations and the command actions that
+        // cause the same thing both call these.
+        const turnChanged = (
+          threadId: string,
+          turnId: string,
+          status: TurnStatus,
+          options: { snapshot: boolean },
+        ) => {
+          threadCache.patchThread(threadId, liveThreadListPatchForTurnStatus(turnId, status));
+          if (!isTerminalTurnStatus(status)) return;
+          const state = get();
+          // Cache side effects stay outside Zustand's `set()` call: the terminal write stores
+          // state first, then asks the cache to catch projector-only fields such as final
+          // usage/cost metadata. The port owns the render-safe deferral.
+          threadCache.invalidateThread(
+            threadId,
+            state.streamingThreadId === threadId ? state.streamingProjectId : null,
+            { snapshot: options.snapshot },
+          );
+        };
+        const readApplied = (threadId: string, read: ThreadSnapshotResponse) => {
+          threadCache.upsertThread(read.thread, {
+            actionRequired: read.actionRequired,
+            runningTurnId: read.liveState.runState.execution?.currentTurnId ?? null,
+          });
+          set((state) => {
+            const reconciled = reconcileInterruptResponsesForThread(
               state.interruptResponses,
-              `${threadId}\u0000${turnId}\u0000`,
-            );
-            if (remaining) set({ interruptResponses: remaining });
-            // Cache side effects stay outside Zustand's `set()` call: the terminal
-            // reducer path writes store state first, then asks the cache to catch
-            // projector-only fields such as final usage/cost metadata. The port
-            // owns the render-safe deferral.
-            threadCache.invalidateThread(
               threadId,
-              state.streamingThreadId === threadId ? state.streamingProjectId : null,
+              cellOf(threadId).turns,
             );
-          },
-          invalidateThreadSnapshot: (threadId) => threadCache.invalidateThreadSnapshot(threadId),
-          settleInterruptResponse: (identity) => get().settleInterruptResponse(identity),
-        });
-        // One reducer per store: its buffered interrupt patches die with the store.
-        const reducer = createTurnReducer({ now: clock, store: turnStore });
+            return reconciled ? { interruptResponses: reconciled } : state;
+          });
+        };
+        const observe = (threadId: string, observation: SyncObservation) => {
+          switch (observation.kind) {
+            case "turn":
+              // The sync asks for its own read at a turn's end.
+              turnChanged(threadId, observation.turnId, observation.status, { snapshot: false });
+              break;
+            case "read":
+              if (observation.applied) readApplied(threadId, observation.read);
+              break;
+            case "interruptSettled":
+              get().settleInterruptResponse(observation.identity);
+              break;
+            case "error":
+              announceError(observation.error.message || "Thread stream failed");
+              break;
+            default:
+              break;
+          }
+        };
+
         return {
           now,
           syncedByThread: {},
@@ -271,12 +287,15 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
             return readCell(id)?.turns;
           },
 
-          dividersAwaitingAnchor(id: string) {
-            return dividersAwaitingAnchorIn(cellOf(id));
-          },
-
           runState(id: string) {
             return cellOf(id).runState.view;
+          },
+
+          syncPorts(threadId) {
+            return {
+              state: { get: () => cellOf(threadId), set: (next) => writeCell(threadId, next) },
+              observe: (observation) => observe(threadId, observation),
+            };
           },
 
           setStreamingThreadId(id, projectId = null) {
@@ -285,7 +304,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
 
           ensureThread(thread) {
             threadCache.upsertThread(thread);
-            if (!readCell(thread.id)) cell.set(thread.id, EMPTY_SYNCED_THREAD);
+            if (!readCell(thread.id)) writeCell(thread.id, EMPTY_SYNCED_THREAD);
           },
 
           appendUserTurn(threadId, blocks) {
@@ -326,18 +345,18 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
             update(threadId, (synced) => sync.removeLocalUserTurn(synced, optimisticTurnId));
           },
 
-          ensureAssistantTurn: (threadId, turnId, opts) =>
-            turnStore.ensureAssistantTurn(threadId, turnId, opts),
-
-          upsertAssistantBlock: (threadId, turnId, block) =>
-            turnStore.upsertAssistantBlock(threadId, turnId, block),
-
           invalidateThreadSnapshot(threadId) {
             threadCache.invalidateThreadSnapshot(threadId);
           },
 
-          patchTurnStatus: (threadId, turnId, status, patch) =>
-            turnStore.patchTurnStatus(threadId, turnId, status, patch),
+          patchTurnStatus(threadId, turnId, status, patch) {
+            const before = readCell(threadId)?.turns.find((turn) => turn.id === turnId);
+            if (!before) return;
+            update(threadId, (synced) => sync.patchTurnStatus(synced, turnId, status, patch));
+            // Unadmitted writer rows carry local knowledge, never a server lifecycle event.
+            if (before.role === "user" && isOptimisticTurnId(turnId)) return;
+            turnChanged(threadId, turnId, status, { snapshot: true });
+          },
 
           dispatchRunState(threadId, action) {
             update(threadId, (synced) => sync.receiveRunState(synced, action));
@@ -347,58 +366,8 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
             update(threadId, sync.pruneStreamingTail);
           },
 
-          bumpEventsApplied: (threadId) => turnStore.bumpEventsApplied(threadId),
-
-          applyTurnEvent(threadId, event, seq) {
-            reducer.applyEvent(threadId, event, seq);
-          },
-
-          ensureSwitchTurn: (threadId, facts, seq) =>
-            turnStore.ensureSwitchTurn(threadId, facts, seq),
-
-          removeTurns: (threadId, ids, seq) => turnStore.removeTurns(threadId, ids, seq),
-
-          markForgotten: (threadId, ids, byTurnId) =>
-            turnStore.markForgotten(threadId, ids, byTurnId),
-
-          applyDurableBlockEvent(threadId, event) {
-            return reducer.applyDurableBlockEvent(threadId, event);
-          },
-
-          acceptDurableBlockSeq(threadId, seq) {
-            const next = sync.acceptDurableBlockSeq(cellOf(threadId), seq);
-            if (!next) return false;
-            cell.set(threadId, next);
-            return true;
-          },
-
-          acceptsThreadSnapshot(threadId, nextSeq) {
-            return sync.acceptsSnapshot(cellOf(threadId), nextSeq);
-          },
-
-          applyThreadSnapshot(thread, serverTurns, options) {
-            const threadId = thread.id;
-            const { nextSeq, lifecycle } = options;
-            const next = sync.applyRead(cellOf(threadId), {
-              turns: serverTurns,
-              nextSeq,
-              runningTurnId: lifecycle.runningTurnId,
-            });
-            if (!next) return false;
-            threadCache.upsertThread(thread, lifecycle);
-            reducer.clearPendingInterruptPatchesForThread(threadId);
-            set((state) => {
-              const reconciled = reconcileInterruptResponsesForThread(
-                state.interruptResponses,
-                threadId,
-                next.turns,
-              );
-              return {
-                ...withCell(state, threadId, next),
-                ...(reconciled ? { interruptResponses: reconciled } : {}),
-              };
-            });
-            return true;
+          removeTurns(threadId, ids, seq) {
+            update(threadId, (synced) => sync.removeTurns(synced, ids, seq));
           },
 
           markPendingCreation({ threadId }) {

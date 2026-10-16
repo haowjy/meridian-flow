@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import {
   TURN_FIXTURE_EVENTS,
   TURN_FIXTURE_NOW,
+  TURN_FIXTURE_REWRITE_EVENT,
   TURN_FIXTURE_THREAD_ID,
 } from "../test-support/turn-events";
 import { InMemoryTurnStore } from "./in-memory-turn-store";
@@ -65,6 +66,43 @@ describe("turn reducer", () => {
     second.reducer.applyEvent(THREAD, blockEvent("b2", "int-2", 2));
     const late = second.store.turns(THREAD)?.[0]?.blocks.find((block) => block.id === "b2");
     expect(late?.content).not.toHaveProperty("props.resolvedValue");
+
+    // The fixture stream's end state is the canonical turn contract: the typed tool result
+    // survives later events, rows carry the injected clock, blocks sit in sequence order, and an
+    // identical rewrite changes nothing.
+    const whole = instance();
+    const statuses: unknown[] = [];
+    for (const event of TURN_FIXTURE_EVENTS) {
+      whole.reducer.applyEvent(THREAD, event);
+      statuses.push(whole.store.turns(THREAD)?.[0]?.status);
+    }
+    expect(statuses).toContain("waiting_interrupt");
+    const turns = whole.store.turns(THREAD) ?? [];
+    expect(turns.map((turn) => [turn.id, turn.status])).toEqual([
+      ["turn-1", "complete"],
+      ["turn-2", "error"],
+    ]);
+    const [turn] = turns;
+    expect(turn?.blocks.map((block) => [block.sequence, block.id])).toEqual([
+      [0, "m1"],
+      [1, "turn-1::1"],
+      [2, "tool-call-1"],
+      [3, "interrupt-block-1"],
+      [4, "m2"],
+      [5, expect.stringMatching(/^text_[1-9]\d*$/)],
+      [7, "late-b"],
+      [9, "late-c"],
+    ]);
+    expect(turn?.blocks.find((block) => block.blockType === "tool_use")?.content).toMatchObject({
+      output: "committed: ch1.md",
+      result: { schema: "meridian.agent-edit.v1", status: "success" },
+    });
+    expect(turn?.createdAt).toBe(TURN_FIXTURE_NOW);
+    expect(turn?.completedAt).toBe(TURN_FIXTURE_NOW);
+    expect(turn?.blocks.every((block) => block.createdAt === TURN_FIXTURE_NOW)).toBe(true);
+    const before = whole.store.turns(THREAD);
+    whole.reducer.applyEvent(THREAD, TURN_FIXTURE_REWRITE_EVENT);
+    expect(whole.store.turns(THREAD)).toBe(before);
   });
 
   describe("a handed-back message leaving the conversation", () => {

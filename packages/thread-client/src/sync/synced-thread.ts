@@ -12,6 +12,8 @@
 
 import type { Block } from "@meridian/contracts/protocol";
 import { compareSeq, parseSeq, type Turn, type TurnStatus } from "@meridian/contracts/protocol";
+import type { RunState } from "@meridian/contracts/threads";
+import { unheldWriterMessages } from "../run-state/fold-messages";
 import {
   INITIAL_RUN_STATE_SLICE,
   type RunStateAction,
@@ -22,6 +24,7 @@ import { reconcileSnapshotTurns } from "../turns/reconcile-snapshot-turns";
 import type { TurnStore } from "../turns/reduce-turn-event";
 import {
   applySnapshotTo,
+  dividersAwaitingAnchorIn,
   type EnsureAssistantTurnOptions,
   ensureAssistantTurnIn,
   ensureSwitchTurnIn,
@@ -65,12 +68,14 @@ export const EMPTY_SYNCED_THREAD: SyncedThread = {
   runState: INITIAL_RUN_STATE_SLICE,
 };
 
-/** The facts of one applied read that change the turns. Its record reaches the slice as `history`. */
+/** The facts of one applied read: its turns, and its record, which reaches the slice as `history`. */
 export type ReadFacts = {
   turns: Turn[];
   nextSeq: string;
   /** The assistant turn the server says is still running, even before the read's turns hold it. */
   runningTurnId: string | null;
+  /** The read's record: it agrees with the turns, so both change in one transition. */
+  runState: RunState;
 };
 
 /** Whether a read at `nextSeq` may apply: it is not older than what the chat already took. */
@@ -107,7 +112,21 @@ export function applyRead(synced: SyncedThread, read: ReadFacts): SyncedThread |
     dividers: applied.dividers,
     floor: nextSeq,
     durableCursor,
+    runState: reduceRunState(synced.runState, { type: "history", runState: read.runState }),
   };
+}
+
+/**
+ * Whether the stream named a fact only a read can bring: a held divider waits for its anchor
+ * turn, or the record names a waiting writer message the transcript lacks. Asked when a
+ * refresh timer fires, so this device's own message, acknowledged meanwhile, is no gap.
+ */
+export function missing(synced: SyncedThread): boolean {
+  if (dividersAwaitingAnchorIn(synced).length > 0) return true;
+  const { record } = synced.runState.view;
+  if (!record) return false;
+  const held = new Set(synced.turns.map((turn) => turn.id));
+  return unheldWriterMessages(record, (id) => held.has(id)).length > 0;
 }
 
 /** Admit a durable block's wire sequence: the cursor and the floor rise past it. Null when it is old or malformed. */

@@ -12,6 +12,7 @@ export {
   applyRead,
   EMPTY_SYNCED_THREAD,
   markForgotten,
+  missing,
   patchTurnStatus,
   pruneStreamingTail,
   type ReadFacts,
@@ -23,3 +24,12 @@ export {
   type SyncedTurnStoreOptions,
   syncedTurnStore,
 } from "./synced-thread";
+export {
+  createThreadSync,
+  type Diff,
+  REFRESH_DEBOUNCE_MS,
+  SNAPSHOT_RETRY_MS,
+  type SyncObservation,
+  type ThreadSync,
+  type ThreadSyncPorts,
+} from "./thread-sync";
