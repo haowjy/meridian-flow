@@ -3,7 +3,8 @@
 Agent-facing dev CLI for this worktree's app API, not application runtime code.
 Read [`.context/CONTEXT.md`](.context/CONTEXT.md) first.
 
-- **`./mf` is evidence about the browser only for code both run.** It drives the
+- **`./mf` debugs; it does not verify the browser.** Verification is a prober's
+  browser run. `./mf` shares code with the app so its debugging is faithful: it drives the
   shared client core (`@meridian/thread-client`: socket, turn reducer, transcript
   view model), so never reimplement that logic here; `thread view` prints the
   view model and never words or decides a row itself. Where a feature has no shared core yet, `./mf`
