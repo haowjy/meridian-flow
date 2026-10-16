@@ -49,8 +49,7 @@
    end there is none either: a gap before "," reads as a typo.
    Inline removals only; a block removal is its own paragraph. The tight case is
    excluded in this one selector: a separate zero-margin rule loses on specificity. */
-.meridian-editor
-  .ProseMirror
+.meridian-editor .ProseMirror
   span.meridian-review-removal:not(.meridian-review-removal-block, .meridian-review-removal-tight) {
   margin-inline-end: 0.12em;
 }
