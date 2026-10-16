@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+- A socket replaced while still closing now reports its close once (handler callbacks, generation-closed listeners and subscription cleanup) instead of silently skipping them.
+
+- A disconnected or unsubscribed client no longer acquires a catalog listener when a pending project ownership read finishes.
+
+- Completed chat replay requests now release superseded request ids instead of retaining them until disconnect.
+
+- Leaving a chat from a stream-error or history-gap callback now cancels its recovery; an abandoned retry can no longer replace the next chat subscription and lose reply text.
+
 - A file attached in a New chat opens from the sent message as soon as the chat is named, in No Work as in a Work, instead of staying unclickable until a reload.
 - A bare `[map](uploads://map)` the model writes into a document binds to the chat's existing `map.png`, the same as the full `uploads://@/c3/map` spelling, instead of minting a link to a file that does not exist.
 - Files attached to a Work, or to No Work, before uploads moved to chats are deleted, and a message that attached one shows the file as no longer available. Uploads without a chat handle (`uploads://@/name`) are no longer an address.

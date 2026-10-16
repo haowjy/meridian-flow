@@ -2,7 +2,7 @@
  * Regression contract for the gap ↔ resubscribe storm.
  *
  * A thread whose journal outgrows the server replay cap makes the transport
- * resubscribe forever from the same unreplayable cursor. These tests drive the
+ * request forever from the same unreplayable cursor. These tests drive the
  * real `ThreadSocketClient` against a fake server that models the cap: any
  * subscribe at/below the capped window answers `gap`, anything beyond answers
  * `subscribed`. The transport must move its resume point to the gap's `toSeq`
@@ -35,7 +35,7 @@ const LIVE_STATE = {
   resumeAfterSeq: "1",
 };
 
-type FakeFrame = { type?: string; threadId?: string; lastSeq?: string; subscriptions?: unknown };
+type FakeFrame = { type?: string; requestId?: string; threadId?: string; lastSeq?: string };
 
 /**
  * Minimal in-memory WebSocket that hands every client frame to the fake server
@@ -52,21 +52,29 @@ function createHarness(maxResubscribes = 5) {
   const deliveredEvents: string[] = [];
   let socket: FakeThreadSocket | null = null;
 
-  const answer = (target: FakeThreadSocket, lastSeq: string | undefined): void => {
+  const answer = (
+    target: FakeThreadSocket,
+    requestId: string,
+    lastSeq: string | undefined,
+  ): void => {
     if (!isBeyondCap(lastSeq)) {
       target.deliver({
         type: "gap",
+        requestId,
         threadId: THREAD_ID,
         cause: "replay_limit_exceeded",
         fromSeq: lastSeq ?? "0",
         toSeq: HEAD_SEQ.toString(),
         message: "Journal replay capped at 10000 events",
       });
+      return;
     }
 
     target.deliver({
       type: "subscribed",
+      requestId,
       threadId: THREAD_ID,
+      after: lastSeq ?? "0",
       catchup: [{ seq: "1", event: { type: EventType.RAW, event: {} }, sourceThreadId: THREAD_ID }],
       state: LIVE_STATE,
     });
@@ -74,11 +82,6 @@ function createHarness(maxResubscribes = 5) {
 
   const respond = (target: FakeThreadSocket, rawFrame: unknown): void => {
     const frame = rawFrame as FakeFrame;
-    if (frame.type === "resume") {
-      const first = (frame.subscriptions as FakeFrame[] | undefined)?.[0];
-      answer(target, first?.lastSeq);
-      return;
-    }
     if (frame.type !== "subscribe") return;
 
     subscribeFrames.push(frame);
@@ -86,7 +89,7 @@ function createHarness(maxResubscribes = 5) {
     // is a clean assertion, not an unbounded synchronous recursion.
     if (subscribeFrames.length > maxResubscribes) return;
 
-    answer(target, frame.lastSeq);
+    answer(target, frame.requestId ?? "", frame.lastSeq);
   };
 
   const transport = new ThreadSocketClient({
@@ -127,7 +130,7 @@ function createHarness(maxResubscribes = 5) {
 
 describe("ThreadSocketClient gap recovery", () => {
   it("does not resume past a head advertised without a delivered event", () => {
-    const resumes: Array<{ subscriptions?: Array<{ lastSeq?: string }> }> = [];
+    const requests: FakeFrame[] = [];
     let socket: FakeThreadSocket | null = null;
     const transport = new ThreadSocketClient({
       url: () => "ws://test/api/threads/ws",
@@ -135,9 +138,7 @@ describe("ThreadSocketClient gap recovery", () => {
       cancelTurn: vi.fn(),
       webSocketFactory: () => {
         socket = new FakeThreadSocket((_target, frame) => {
-          if ((frame as { type?: string }).type === "resume") {
-            resumes.push(frame as { subscriptions?: Array<{ lastSeq?: string }> });
-          }
+          if ((frame as FakeFrame).type === "subscribe") requests.push(frame as FakeFrame);
         });
         return socket;
       },
@@ -155,14 +156,16 @@ describe("ThreadSocketClient gap recovery", () => {
     activeSocket.deliver(connected);
     activeSocket.deliver({
       type: "subscribed",
+      requestId: requests[0]?.requestId,
       threadId: THREAD_ID,
+      after: "0",
       catchup: [],
       state: LIVE_STATE,
     });
 
-    // A reconnect's resume cursor is event-delivery state, not the durable head.
+    // A reconnect's cursor is event-delivery state, not the durable head.
     activeSocket.deliver(connected);
-    expect(resumes.at(-1)?.subscriptions?.[0]?.lastSeq).toBe("0");
+    expect(requests.at(-1)?.lastSeq).toBe("0");
     unsubscribe();
     transport.disconnect();
   });
@@ -170,10 +173,11 @@ describe("ThreadSocketClient gap recovery", () => {
   it("advances the resume point to the gap head and converges after one resubscribe", () => {
     const harness = createHarness();
     try {
-      // The initial resume replays from 0 → gap. The transport must then
+      // The initial request replays from 0 → gap. The transport must then
       // resubscribe from toSeq exactly once; the follow-up is beyond the cap.
-      expect(harness.subscribeFrames).toHaveLength(1);
-      expect(harness.subscribeFrames[0]?.lastSeq).toBe(HEAD_SEQ.toString());
+      expect(harness.subscribeFrames).toHaveLength(2);
+      expect(harness.subscribeFrames[0]?.lastSeq).toBeUndefined();
+      expect(harness.subscribeFrames[1]?.lastSeq).toBe(HEAD_SEQ.toString());
       expect(harness.gapEvents).toEqual([expect.objectContaining({ toSeq: HEAD_SEQ.toString() })]);
       // The truncated catch-up is skipped, not replayed onto the reducer.
       expect(harness.deliveredEvents).toEqual([]);
