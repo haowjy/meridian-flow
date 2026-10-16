@@ -291,17 +291,6 @@ export function deserializeThreadSnapshot(
   ) as ThreadSnapshotResponse;
 }
 
-/** Canonical projection from the wire snapshot to the store apply boundary. */
-export function toThreadSnapshotApplyOptions(snapshot: ThreadSnapshotResponse) {
-  return {
-    lifecycle: {
-      actionRequired: snapshot.actionRequired,
-      runningTurnId: snapshot.liveState.runState.execution?.currentTurnId ?? null,
-    },
-    nextSeq: snapshot.nextSeq,
-  };
-}
-
 /**
  * GET /api/threads/:threadId/recent-documents — documents the agent recently
  * read/touched in this thread (`turn_document_touches`, deduped by docId).

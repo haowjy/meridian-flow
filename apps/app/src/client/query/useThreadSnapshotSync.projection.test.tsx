@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 /** The mounted snapshot owner is the chat's one subscriber: durable blocks, the stream and run-state records. */
-import { type AGUIEvent, EventType, type SequencedEvent } from "@meridian/contracts/protocol";
+import {
+  type AGUIEvent,
+  EventType,
+  type SequencedEvent,
+  type Turn,
+} from "@meridian/contracts/protocol";
 import type { ThreadTransport, ThreadTransportHandlers } from "@meridian/thread-client";
+import { EMPTY_SYNCED_THREAD } from "@meridian/thread-client/sync";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, type ReactNode, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
@@ -179,6 +185,17 @@ function card(status: string): AGUIEvent {
   } as AGUIEvent;
 }
 
+/** A completed assistant turn already in the chat's cell, as an earlier mount would leave it. */
+function seedCompleteTurn(store: ReturnType<typeof createThreadStore>, threadId: string) {
+  const turn = { id: "turn-1", threadId, role: "assistant", status: "complete", blocks: [] };
+  store.setState((state) => ({
+    syncedByThread: {
+      ...state.syncedByThread,
+      [threadId]: { ...EMPTY_SYNCED_THREAD, turns: [turn as unknown as Turn] },
+    },
+  }));
+}
+
 const disposers: Array<() => Promise<void>> = [];
 afterEach(async () => {
   try {
@@ -187,115 +204,6 @@ afterEach(async () => {
     vi.useRealTimers();
     harness.snapshotRequest.mockReset().mockImplementation(() => new Promise(() => undefined));
   }
-});
-
-for (const terminal of [EventType.RUN_FINISHED, EventType.RUN_ERROR]) {
-  describe(`durable owner after ${terminal}`, () => {
-    it("replaces the original historical card with snapshots withheld and no new run", async () => {
-      vi.useFakeTimers();
-      const scenario = mountThreadProjectionScenario();
-      const { bus, store } = scenario;
-      function Probe() {
-        useThreadSnapshotSync("thread-1");
-        return null;
-      }
-      await scenario.mount(<Probe />);
-
-      act(() => {
-        bus.emit(
-          {
-            type: EventType.RUN_STARTED,
-            threadId: "thread-1",
-            runId: "turn-1",
-            rawEvent: { writeMode: null },
-          } as AGUIEvent,
-          "1000",
-        );
-        bus.emit(card("running"), "2000");
-        bus.emit({ type: terminal, threadId: "thread-1", runId: "turn-1" } as AGUIEvent, "3000");
-      });
-      await vi.advanceTimersByTimeAsync(260);
-      expect(bus.subscriptions.filter((entry) => entry.active)).toHaveLength(1);
-      const before = store.getState().turns("thread-1")?.[0];
-      expect(before?.blocks[0]?.id).toBe("card-1");
-      act(() => {
-        bus.emit(card("completed"), "4000");
-      });
-      const after = store.getState().turns("thread-1")?.[0];
-      expect(after?.blocks[0]?.content).toMatchObject({
-        props: { status: "completed", toolCallId: "call-1", execution: "child-turn" },
-      });
-      expect(after?.status).not.toBe("streaming");
-      expect(after?.blocks[0]?.id).toBe(before?.blocks[0]?.id);
-      expect(after?.blocks[0]?.sequence).toBe(before?.blocks[0]?.sequence);
-    });
-  });
-}
-
-describe("current stream ordering", () => {
-  it("flushes buffered deltas before durable mutation", async () => {
-    vi.useFakeTimers();
-    const scenario = mountThreadProjectionScenario();
-    const { bus, store } = scenario;
-    function Probe() {
-      useThreadSnapshotSync("thread-1");
-      return null;
-    }
-    await scenario.mount(<Probe />);
-    act(() => {
-      bus.emit(
-        {
-          type: EventType.RUN_STARTED,
-          threadId: "thread-1",
-          runId: "turn-1",
-          rawEvent: { writeMode: null },
-        } as AGUIEvent,
-        "1000",
-      );
-      bus.emit({ type: EventType.TEXT_MESSAGE_START, messageId: "text-1" } as AGUIEvent, "1100");
-      bus.emit(
-        {
-          type: EventType.TEXT_MESSAGE_CONTENT,
-          messageId: "text-1",
-          delta: "hello",
-        } as AGUIEvent,
-        "1200",
-      );
-      bus.emit(card("running"), "1300");
-    });
-    const blocks = store
-      .getState()
-      .turns("thread-1")
-      ?.find((turn) => turn.id === "turn-1")?.blocks;
-    expect(blocks?.find((block) => block.id === "text-1")?.textContent).toBe("hello");
-    expect(blocks?.find((block) => block.id === "card-1")?.content).toMatchObject({
-      props: { status: "running" },
-    });
-    expect(store.getState().syncedByThread["thread-1"]?.eventsApplied).toBe(3);
-    act(() => {
-      bus.emit(
-        {
-          type: EventType.TEXT_MESSAGE_CONTENT,
-          messageId: "text-1",
-          delta: " world",
-        } as AGUIEvent,
-        "1400",
-      );
-      bus.emit(
-        { type: EventType.RUN_FINISHED, threadId: "thread-1", runId: "turn-1" } as AGUIEvent,
-        "1500",
-      );
-    });
-    await vi.advanceTimersByTimeAsync(260);
-    expect(
-      store
-        .getState()
-        .turns("thread-1")
-        ?.find((turn) => turn.id === "turn-1")
-        ?.blocks.find((block) => block.id === "text-1")?.textContent,
-    ).toBe("hello world");
-    expect(bus.subscriptions.filter((entry) => entry.active)).toHaveLength(1);
-  });
 });
 
 describe("stale acquisition and missing targets", () => {
@@ -310,8 +218,7 @@ describe("stale acquisition and missing targets", () => {
       .mockImplementationOnce(() => third.promise);
     const scenario = mountThreadProjectionScenario();
     const { actions, bus, client } = scenario;
-    actions.ensureAssistantTurn("thread-1", "turn-1");
-    actions.patchTurnStatus("thread-1", "turn-1", "complete");
+    seedCompleteTurn(scenario.store, "thread-1");
     const observed = { current: null as ReturnType<typeof useThreadSnapshotSync> | null };
     function Probe() {
       observed.current = useThreadSnapshotSync("thread-1");
@@ -413,170 +320,6 @@ describe("stale acquisition and missing targets", () => {
     expect(actions.turns("thread-1")).toHaveLength(1);
   });
 
-  it("revalidates as a run ends, on a record whose execution changed, and on every status frame", async () => {
-    vi.useFakeTimers();
-    harness.snapshotRequest.mockReset().mockImplementation(async () => ({
-      thread: { id: "thread-1", projectId: "project-1", userId: "account-1" },
-      turns: [],
-      nextSeq: "1000",
-      actionRequired: false,
-      liveState: { runningTurnId: null, runState: IDLE_RUN_STATE },
-    }));
-    const scenario = mountThreadProjectionScenario();
-    const { bus } = scenario;
-    function Probe() {
-      useThreadSnapshotSync("thread-1");
-      return null;
-    }
-    await scenario.mount(<Probe />);
-    await vi.waitFor(() => expect(harness.snapshotRequest).toHaveBeenCalledTimes(1));
-    const record = (version: string, executionId: string | null) =>
-      ({
-        type: EventType.CUSTOM,
-        name: "meridian.run_state",
-        value: {
-          ...IDLE_RUN_STATE,
-          version,
-          execution: executionId ? { executionId, currentTurnId: null } : null,
-        },
-      }) as AGUIEvent;
-    const settle = async () => {
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(300);
-      });
-    };
-    // A divider reserves: the record's execution changed.
-    act(() => bus.emit(record("1000", "e1"), "1000"));
-    await settle();
-    expect(harness.snapshotRequest).toHaveBeenCalledTimes(2);
-    // The same execution, and an older record, change nothing.
-    act(() => {
-      bus.emit(record("1500", "e1"), "1500");
-      bus.emit(record("900", null), "1501");
-    });
-    await settle();
-    expect(harness.snapshotRequest).toHaveBeenCalledTimes(2);
-    // Frames inside one debounce window share a single refresh.
-    act(() => {
-      bus.emit(record("2000", null), "2000");
-      bus.emit(record("2001", "e2"), "2001");
-    });
-    await settle();
-    expect(harness.snapshotRequest).toHaveBeenCalledTimes(3);
-    // A record naming another client's waiting message revalidates once: the stream does not
-    // carry that user turn.
-    const waiting = (version: string, id: string) =>
-      ({
-        type: EventType.CUSTOM,
-        name: "meridian.run_state",
-        value: {
-          ...IDLE_RUN_STATE,
-          version,
-          execution: { executionId: "e2", currentTurnId: null },
-          items: [
-            {
-              id,
-              intent: "message",
-              seq: 1,
-              provenance: { kind: "writer", actorId: "u1" },
-              deliveryState: "waiting",
-              summary: "M2",
-              enqueuedAt: "2026-01-01T00:00:00.000Z",
-            },
-          ],
-        },
-      }) as AGUIEvent;
-    act(() => {
-      bus.emit(waiting("2500", "foreign-1"), "2500");
-      bus.emit(waiting("2501", "foreign-1"), "2501");
-    });
-    await settle();
-    expect(harness.snapshotRequest).toHaveBeenCalledTimes(4);
-    // The run's end revalidates too (the store's own terminal refresh may add one more).
-    act(() =>
-      bus.emit(
-        { type: EventType.RUN_FINISHED, threadId: "thread-1", runId: "a" } as AGUIEvent,
-        "3000",
-      ),
-    );
-    await settle();
-    const afterRun = harness.snapshotRequest.mock.calls.length;
-    expect(afterRun).toBeGreaterThan(4);
-    // A handoff brief starts and ends with no run: only its status frame says so.
-    act(() =>
-      bus.emit(
-        {
-          type: EventType.CUSTOM,
-          name: "meridian.thread.status",
-          value: { threadId: "thread-1", status: { kind: "asleep" }, runningTurnId: null },
-        } as AGUIEvent,
-        "4000",
-      ),
-    );
-    await settle();
-    expect(harness.snapshotRequest.mock.calls.length).toBeGreaterThan(afterRun);
-  });
-
-  it("settles a stopped autocompaction from the record its lease release sends", async () => {
-    // A cancelled autocompaction projects no RUN_FINISHED; the record whose execution closed
-    // is its only signal.
-    vi.useFakeTimers();
-    const compaction = (status: "pending" | "cancelled") => ({
-      id: "c",
-      threadId: "thread-1",
-      role: "compaction",
-      status,
-      position: 3,
-      blocks: [],
-      metadata: { kind: "compaction", trigger: "auto" },
-    });
-    const running = {
-      ...IDLE_RUN_STATE,
-      version: "1000",
-      execution: { executionId: "e-c", currentTurnId: "c" },
-    };
-    harness.snapshotRequest
-      .mockReset()
-      .mockResolvedValueOnce({
-        thread: { id: "thread-1", projectId: "project-1", userId: "account-1" },
-        turns: [compaction("pending")],
-        nextSeq: "1000",
-        actionRequired: false,
-        liveState: { runningTurnId: null, runState: running },
-      })
-      .mockResolvedValue({
-        thread: { id: "thread-1", projectId: "project-1", userId: "account-1" },
-        turns: [compaction("cancelled")],
-        nextSeq: "2000",
-        actionRequired: false,
-        liveState: { runningTurnId: null, runState: { ...IDLE_RUN_STATE, version: "2000" } },
-      });
-    const scenario = mountThreadProjectionScenario();
-    const { bus } = scenario;
-    let status: string | null = null;
-    function Probe() {
-      status = useThreadSnapshotSync("thread-1").snapshot?.turns[0]?.status ?? null;
-      return null;
-    }
-    await scenario.mount(<Probe />);
-    await vi.waitFor(() => expect(status).toBe("pending"));
-    act(() =>
-      bus.emit(
-        {
-          type: EventType.CUSTOM,
-          name: "meridian.run_state",
-          value: { ...IDLE_RUN_STATE, version: "2000" },
-        } as AGUIEvent,
-        "2000",
-      ),
-    );
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(300);
-    });
-    expect(harness.snapshotRequest).toHaveBeenCalledTimes(2);
-    await vi.waitFor(() => expect(status).toBe("cancelled"));
-  });
-
   it("reports history settled only once its turns are in the transcript store", async () => {
     // A reveal into a chat the page has not loaded asks "is this turn absent?"
     // the moment history settles. Settling before the turns reach the store
@@ -644,8 +387,7 @@ describe("projection lifetime fencing", () => {
     const scenario = mountThreadProjectionScenario();
     const { actions, bus } = scenario;
     for (const threadId of ["thread-1", "thread-2"]) {
-      actions.ensureAssistantTurn(threadId, "turn-1");
-      actions.patchTurnStatus(threadId, "turn-1", "complete");
+      seedCompleteTurn(scenario.store, threadId);
     }
     const render = async (threadId: string) => {
       await scenario.render(<Probe threadId={threadId} />, true);

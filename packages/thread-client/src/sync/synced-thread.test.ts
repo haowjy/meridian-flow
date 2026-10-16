@@ -1,5 +1,6 @@
 /** The synced thread's freshness and admission rules, on the pure transitions. */
 import type { Block, JsonValue, Turn } from "@meridian/contracts/protocol";
+import type { RunState } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import {
   acceptDurableBlockSeq,
@@ -12,6 +13,15 @@ import {
   type SyncedThread,
   syncedTurnStore,
 } from "./synced-thread";
+
+const IDLE = {
+  version: "0",
+  items: [],
+  sentThrough: 0,
+  execution: null,
+  mode: "direct",
+  blocked: null,
+} as RunState;
 
 function customBlock(props: Record<string, JsonValue>): Block {
   return {
@@ -66,7 +76,9 @@ describe("durable block wire freshness", () => {
     store.upsertAssistantBlock("thread-1", "turn-1", customBlock({ outcome: "done" }));
     const before = store.turns("thread-1");
     cell.set("thread-1", acceptDurableBlockSeq(value(), "375000") as SyncedThread);
-    expect(applyRead(value(), { turns: [], nextSeq: "375000", runningTurnId: null })).toBeNull();
+    expect(
+      applyRead(value(), { turns: [], nextSeq: "375000", runningTurnId: null, runState: IDLE }),
+    ).toBeNull();
     expect(store.turns("thread-1")).toBe(before);
     expect(value().durableCursor).toBe("375000");
   });
@@ -84,6 +96,7 @@ it("drops an optimistic row whose admission answer names a message another tab h
     turns: [{ id: "turn-server-1", role: "user", blocks: [] } as never],
     nextSeq: "6500",
     runningTurnId: null,
+    runState: IDLE,
   });
   expect(stale?.turns).toEqual([]);
 
@@ -91,7 +104,12 @@ it("drops an optimistic row whose admission answer names a message another tab h
   // answer; the late answer must still find the removal.
   let waiting = appendLocalUserTurn(EMPTY_SYNCED_THREAD, localRow);
   waiting = removeTurns(waiting, ["turn-server-2"], "7000");
-  waiting = applyRead(waiting, { turns: [], nextSeq: "8000", runningTurnId: null }) as SyncedThread;
+  waiting = applyRead(waiting, {
+    turns: [],
+    nextSeq: "8000",
+    runningTurnId: null,
+    runState: IDLE,
+  }) as SyncedThread;
   expect(waiting.turns.map((turn) => turn.id)).toEqual([localRow.id]);
   waiting = acknowledgeAdmission(waiting, localRow.id, "turn-server-2", "6001", when);
   expect(waiting.turns).toEqual([]);
