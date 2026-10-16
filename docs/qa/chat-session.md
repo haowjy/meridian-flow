@@ -155,7 +155,7 @@ once each, in that order, with no stop button, and it equals `./mf thread view "
 - **Steps:** reload the page. Wait for text, then wait out the delay.
 - **Expect:** after the reload the chat shows "Part one…" and "1 step" with the streaming dot (an empty log
   for a moment first is fine), then "Part two…" arrives and the chat is settled, equal to `thread view`.
-- **Protects:** the same join from an empty cell, with the replay from 0 running before the read.
+- **Protects:** the same join from an empty cell: the sync subscribes only from its first read, so nothing replays from 0 into the chat.
 - **Baseline (main `9eb7030cf`, 2026-10-15, mock, desktop):** pass. After the reload Part one and the dot, then Part two; settled equals `thread view`. The log is empty for about a second after the reload. Screenshots `SY-02-reload-mid`, `SY-02-end`.
 
 ### SY-03: leave the chat and come back mid-reply
@@ -165,8 +165,19 @@ once each, in that order, with no stop button, and it equals `./mf thread view "
   history); once it has drawn, come back to `T`.
 - **Expect:** on return `T` shows "Part one…" and the fold at once (the kept transcript, with no empty log
   or "Loading"), then "Part two…" arrives and the chat settles, equal to `thread view`.
-- **Protects:** the join from a cell the store kept.
+- **Protects:** the join from a cell the store kept: the handler starts above the cell's delivery cursor, after the mount read, so nothing the cell already shows is delivered twice.
 - **Baseline (main `9eb7030cf`, 2026-10-15, mock, desktop):** pass. On return Part one and the fold at once (`SY-03-back`, read immediately after navigating), then Part two; equals `thread view`. Navigation was a client-side history push, not the switcher menu. Screenshot `SY-03-end`.
+
+### SY-03a: leave and come back with the cached read stale
+
+- **Setup:** as SY-03, but the script's first step carries a tool call and the second does too, so a durable
+  block lands while the chat is open and raises the floor past the read Query keeps:
+  `S3='[{"text":"Part one: the gate opens onto a courtyard of grey stone."},{"delayMs":3000,"text":"Part two: Lin Feng crosses it slowly.","toolCalls":[{"name":"thread_ls","args":{"depth":1}}]},{"delayMs":50000,"text":"Part three: the lanterns bend toward him."}]'`.
+  Send it with `--no-wait`, open `T` and wait for "Part two…" and its fold, then switch to a second chat.
+- **Steps:** once the second chat has drawn, come back to `T`.
+- **Expect:** on return "Part one…", "Part two…" and the fold at once; "Part three…" arrives after the delay;
+  "Part one…" and "Part two…" each appear once, never doubled; the settled chat equals `thread view`.
+- **Protects:** a stale cached read is not applied and is not a join; the mount fetch's read joins instead.
 
 ### SY-04: another client sends into a chat the browser has open
 
