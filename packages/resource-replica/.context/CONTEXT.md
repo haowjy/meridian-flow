@@ -42,36 +42,33 @@ identity, gain remote authority or restart after acknowledgement. Namespace
 dispatch waits until the content adapter establishes the exact database marker and
 clears the reservation.
 
-A Work-scoped location (Scratch) retains its Work row id and handle; an upload's
-location retains its chat id and handle (`chatId`, `chatRef`);
-the locked No Work row uses a null handle.
+A location's owner is `ResourceOwner`, and each owner spells itself with one flat
+handle: a Work (`workId` and `workHandle`, URI `@w3`), a lineage (`rootThreadId` and
+the handle `rootThreadRef` of its first chat, URI `@c12`, `workId` null), or a chat
+that received uploads (`chatId` and `chatRef`, URI `@c15`, `workId` null). Project
+schemes have no owner authority. The locked No Work row uses a null handle and owns no
+Scratch: a No Work chat's Scratch belongs to its lineage, which a lineage-scoped server
+catalog asserts (`resourceLineageOwner`). Never map a lineage location onto the No Work
+row. Handles are minted by the server and are never reconstructed from names.
+
 `resourceWorkAuthorityFor` checks command construction against the known project
 Works snapshot and its separate locked No Work id. Link Create, tree Create and
-Editor identity commits use this boundary. `resourceContextAuthority` is the
-single durable URI authority rule (`@/`, `@slug`, or a lineage's `@/c12/`) used by catalog projection,
-receipt matching and identity placement. Tab ownership does not use it: app tabs
-carry the location's Work row id, No Work's included, or a chat's lineage.
+Editor identity commits use this boundary; the journal type and structural validator
+cannot prove that a row id is the project's locked row (they have no Works registry),
+so commands must use the checked snapshot constructor, not manufacture a null handle.
+Server catalog acquisition asserts that relationship through its owner-qualified
+scope and canonical URI. This is a trusted-input boundary, not a type-only identity
+guarantee.
 
-A location's owner is `ResourceOwner`: a Work (`workId` and `workSlug`, null for
-No Work), a lineage (`rootThreadId` and the handle `rootThreadRef` its URI
-spells, `workId` null), or neither for project schemes. A Work owner is checked
-against the Works snapshot (`resourceWorkAuthorityFor`); a lineage owner is what
-a lineage-scoped server catalog asserts (`resourceLineageOwner`). `sameOwner` compares
-only the Work or lineage id. Move and delete requests carry the lineage id and
-its handle (`moveOwnerFields`), and receipt matching spells the handle back
-(`resourceContextAuthority`), so a receipt under another chat's notes never
-settles this one's intent.
-
-The journal type and structural validator cannot prove that a row id is the
-project's locked row: they have no Works registry. Server catalog acquisition
-asserts that relationship through its Work-qualified scope and canonical URI;
-commands must use the checked snapshot constructor, not manufacture a nullable
-slug. This is a trusted-input boundary, not a type-only identity guarantee.
-No Work link Create and Editor identity rename use the same namespace journal
-as named Works. The server's No Work row owns no Scratch: a No Work chat's
-Scratch belongs to its lineage (`scratch://@c12/`), and a lineage catalog scope
-installs locations owned by that lineage. Never map a lineage location onto the
-No Work row.
+`resourceContextAuthority` is the single durable URI authority rule: `@w<n>` for a
+Work, `@c<n>` for a lineage or a chat's uploads, none for project schemes. Catalog
+projection, receipt matching and identity placement all use it. Tab ownership does
+not: app tabs carry the location's Work row id, No Work's included, or a chat's
+lineage. `sameOwner` compares the Work or lineage id and its handle. Move and delete
+requests carry the owner's id and handle (`moveOwnerFields`), and receipt matching
+spells the handle back, so a receipt under another chat's notes never settles this
+one's intent. No Work link Create and Editor identity rename use the same namespace
+journal as named Works.
 
 `planResourceDeletion` records writer intent without fabricating remote authority.
 A never-submitted local resource settles deletion locally, cancels unsubmitted
