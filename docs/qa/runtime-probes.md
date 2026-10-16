@@ -610,6 +610,10 @@ restart smoke check.
   # 3. moved_on: a failure that kept a tool call, then another message
   ./mf mock script '[{"toolCalls":[{"name":"ls","args":{"path":"manuscript://"}}]},{"error":{"status":500,"message":"RP16"}}]'
   ./mf thread send "$D" 'd1'; ./mf mock clear; ./mf thread send "$D" 'd2' --mock '[{"text":"ok"}]'
+  # 3b. a kept failure is ended once: a kept-tool failure A, Retry into another failure B, Retry again
+  ./mf mock script '[{"toolCalls":[{"name":"ls","args":{"path":"manuscript://"}}]},{"error":{"status":500,"message":"RP16"}}]'
+  ./mf thread send "$G" 'g1'; ./mf mock clear
+  ./mf mock script "$FAIL"   # Retry from A (id $A_ID) fails as B; then Retry from B (id $B_ID), which succeeds
   # 4. carried: a slow failure while a second message is admitted
   ./mf mock script '[{"delayMs":6000,"error":{"status":500,"message":"RP16"}}]'
   ./mf thread send "$E" 'e1' & sleep 2; ./mf thread send "$E" 'e2' --mock '[{"text":"ok"}]'; wait
@@ -624,7 +628,9 @@ restart smoke check.
 - **Expect:** one `failure.recorded` per failed turn, whose `occurrenceId` is the turn id, then
   exactly one `failure.ended` with the same id: `retried` (1; `byTurnId` is the Retry's turn),
   `forgotten` (2 and 5; `byTurnId` is the writer's message), `moved_on` (3 and the no-Retry
-  brief; `byTurnId` is the message), and `retried` for the brief's Retry seed. The carried case
+  brief; `byTurnId` is the message), and `retried` for the brief's Retry seed. A kept-tool failure
+  that two later Retries walk (3b) has exactly one `failure.ended` for A (`moved_on` by the first
+  Retry), never a second one by the second. The carried case
   (4) writes both records in the same millisecond with `moved_on`. Usage writes
   `usage:<threadId>:<episode>` twice, `recorded` on the block and `ended { resolved }` on the
   clear, with the same episode. Payload values read as text, never `[redacted]`. Then
