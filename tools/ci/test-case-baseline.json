@@ -112,7 +112,7 @@
     "apps/app/src/features/chat/useChatFollowScroll.test.tsx": 1,
     "apps/app/src/features/chat/useChatSubmissions.test.tsx": 1,
     "apps/app/src/features/chat/useComposerSessionDraft.test.ts": 5,
-    "apps/app/src/features/chat/useLiveTurnAnnouncements.test.tsx": 3,
+    "apps/app/src/features/chat/useLiveTurnAnnouncements.test.tsx": 4,
     "apps/app/src/features/chat/useReplyRetry.test.tsx": 8,
     "apps/app/src/features/draft-review/draft-only-membership.test.tsx": 2,
     "apps/app/src/features/draft-review/DraftReviewProvider.remote-settlement.test.tsx": 4,
