@@ -3,7 +3,6 @@ import { parseInvocationCard } from "@meridian/contracts/components";
 import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
 import { parseSubagentUpdateMetadata } from "@meridian/contracts/spawn";
 import {
-  isClosingRow,
   isHandoffSeed,
   isOverflowShell,
   readCompactionFacts,
@@ -11,6 +10,7 @@ import {
   readWriteModeSwitch,
   type ThreadReference,
 } from "@meridian/contracts/threads";
+import { latestRow } from "./latest-row";
 
 /** A persisted record that missed its contract. The caller decides where this is reported. */
 export type PersistedContractFailure = {
@@ -146,10 +146,7 @@ export function deliveriesUnder(
  */
 export function chatMovedPast(turns: readonly Turn[]): (turn: Turn) => boolean {
   const at = new Map(turns.map((turn, index) => [turn.id, index]));
-  let lastClosing = -1;
-  turns.forEach((turn, index) => {
-    if (isClosingRow(turn)) lastClosing = index;
-  });
+  const lastClosing = latestRow(turns)?.index ?? -1;
   return (turn) => (at.get(turn.id) ?? Number.POSITIVE_INFINITY) < lastClosing;
 }
 

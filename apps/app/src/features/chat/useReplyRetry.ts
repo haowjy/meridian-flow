@@ -7,7 +7,7 @@
  * from the ordinary conversation history (`POST /turns/:turnId/retry`). The
  * failed reply is not drawn: the Retry takes its place (`viewTranscript`, from the
  * stand-in's `metadata.retryOf` and the explicit `retried` set). `useRetryStandIns` owns the stand-in,
- * the refusal card, and the re-send of a lost request.
+ * the refusal and lost-request facts (`chatCards` draws them as cards), and the re-send of a lost request.
  *
  * The request is known by its execution and the record version of its answer. When it ends is
  * the package's decision (`reconcileRetries`). A lost response has no version: its stand-in
@@ -22,7 +22,7 @@ import { type RetryStandIns, useRetryStandIns } from "./useRetryStandIns";
 
 export type ReplyRetry = Pick<
   RetryStandIns,
-  "standIns" | "requestOf" | "refused" | "retried" | "clearRefused"
+  "standIns" | "requestOf" | "outcomes" | "retried" | "clearRefused"
 > & {
   /** A new reply after `failed`, or the same request again when `failed` is a lost Retry. */
   retry: (failed: Turn) => void;
@@ -71,7 +71,6 @@ export function useReplyRetry(input: {
     threadId,
     storedTurns,
     post: (id, from) => retryReply(threadId, from, { id }),
-    lostCopy: t`Couldn't start the retry. Try again.`,
     supersedes: true,
   });
   const { retry: retryStandIn } = standIns;
@@ -87,7 +86,7 @@ export function useReplyRetry(input: {
   return {
     standIns: standIns.standIns,
     requestOf: standIns.requestOf,
-    refused: standIns.refused,
+    outcomes: standIns.outcomes,
     retried: standIns.retried,
     clearRefused: standIns.clearRefused,
     retry,

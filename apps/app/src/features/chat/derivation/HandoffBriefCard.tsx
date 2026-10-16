@@ -6,7 +6,8 @@
  * offers Stop (the composer's Stop targets the same turn). A ready brief shows
  * the summary the new Agent starts from, clipped with Show more. A brief that
  * failed, was stopped, or was cut off by a restart says so, and the newest one
- * offers Retry, which adds a new card at once. Retry waits while the chat is
+ * offers Retry, which adds a new card at once. Its failures (the brief's own, a failed Stop, a refused
+ * or lost Retry) are `FailureCard`s from `chatCards`, drawn here by the brief's turn. Retry waits while the chat is
  * busy (a reply or a compaction): the server refuses a brief then. The
  * source's name links back to it. State changes are spoken by the global
  * announcer, never a live region here.
@@ -17,14 +18,12 @@ import type { Turn } from "@meridian/contracts/protocol";
 import { readHandoffSeed } from "@meridian/contracts/threads";
 import { CircleAlert, Forward } from "lucide-react";
 import { useId, useRef, useState } from "react";
-import { NoticeCard } from "@/components/app/NoticeCard";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
+import { AnchoredCards } from "../ChatCards";
 import { ClippedProse } from "../ClippedExpand";
 import { useFocusWithinRow } from "../compaction/useFocusWithinRow";
-import { retryRefusedCopy } from "../ErrorBlock";
-import type { RetryRefusal } from "../useRetryStandIns";
 import { type BriefCardView, briefCardView } from "./handoff-seed";
 import { SourceChatLink, useSourceThread } from "./SourceChatLink";
 
@@ -33,10 +32,6 @@ export type HandoffBriefCardProps = {
   /** The newest seed: only it can be retried. */
   latest: boolean;
   stopping: boolean;
-  /** The writer's last Stop on this seed failed. */
-  stopFailed?: boolean;
-  /** The server refused this card's Retry; the cause stays in diagnostics. Drawn as an error card until the next action or the next completed reply. */
-  retryRefused?: RetryRefusal | null;
   /** A reply (or anything else) holds the chat: Retry waits until it ends. */
   destinationBusy?: boolean;
   /** Absent in a read-only view (a fork's inherited brief) or before the server has the seed. */
@@ -62,8 +57,6 @@ export function HandoffBriefCard({
   turn,
   latest,
   stopping,
-  stopFailed = false,
-  retryRefused = null,
   destinationBusy = false,
   onStop,
   onRetry,
@@ -161,23 +154,11 @@ export function HandoffBriefCard({
               </Trans>
             </p>
           ) : null}
-          {view.failureCopy ? (
-            <p className="text-caption text-destructive">{view.failureCopy}</p>
-          ) : null}
-          {stopFailed && view.state === "generating" ? (
-            <p className="text-caption text-destructive">
-              <Trans>Couldn't stop the brief. Try again.</Trans>
-            </p>
-          ) : null}
+          <AnchoredCards anchor={{ turn: turn.id }} />
           {view.state === "failed" && view.superseded ? (
             <p className="text-caption text-muted-foreground">
               <Trans>This brief failed.</Trans>
             </p>
-          ) : null}
-          {retryRefused ? (
-            <NoticeCard tone="error">
-              <p>{retryRefusedCopy(retryRefused)}</p>
-            </NoticeCard>
           ) : null}
           {view.state === "stopped" && !view.superseded ? (
             <p className="text-caption text-muted-foreground">

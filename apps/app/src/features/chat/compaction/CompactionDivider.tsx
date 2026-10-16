@@ -8,9 +8,9 @@
  * a reply's actions. A finished
  * divider's state words (icon and label, one button) open and close its
  * summary; a running compaction's Stop lives on the same line. The writer's `/compact <instructions>` sit under the line, verbatim. A
- * manual compaction's failure speaks on the divider it belongs to. An
- * autocompaction's failure stays quiet (R3): the failed reply under the
- * writer's newest message already says so. State changes are spoken by the
+ * manual compaction's failure is a card on the divider it belongs to
+ * (`chatCards`), with Try again. An autocompaction's failure stays quiet (R3):
+ * the failed reply under the writer's newest message already says so. State changes are spoken by the
  * global polite announcer, never a live region on the row.
  */
 import { i18n } from "@lingui/core";
@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { useStatsForNerds } from "@/hooks/use-stats-for-nerds";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
+import { AnchoredCards } from "../ChatCards";
 import { ForkTurnAction } from "../derivation/DeriveTurnActions";
 import { TurnInfoButton, TurnInfoRow } from "../TurnInfoButton";
 import { CompactionInstructions } from "./CompactionInstructions";
@@ -70,7 +71,7 @@ export function CompactionDivider({ turn, stopping, onStop }: CompactionDividerP
   const sectionRef = useRef<HTMLElement>(null);
   const focusWithin = useFocusWithinRow(sectionRef);
   const label = stateLabel(view, stopping);
-  const loud = view.state === "failed" && view.failureCopy !== null;
+  const loud = view.state === "failed" && view.trigger === "manual";
   const { full } = label;
 
   return (
@@ -150,7 +151,7 @@ export function CompactionDivider({ turn, stopping, onStop }: CompactionDividerP
 
       {view.instructions ? <CompactionInstructions instructions={view.instructions} /> : null}
 
-      {view.failureCopy ? <p className="text-meta text-destructive">{view.failureCopy}</p> : null}
+      <AnchoredCards anchor={{ turn: turn.id }} />
 
       {view.summary ? (
         <div

@@ -1,8 +1,10 @@
 /**
  * `thread view`: the chat transcript as the app's view model decides it. Hydrate the snapshot,
- * run `viewTranscript` over its facts, and print rows structurally (text) or as the versioned
- * `chatView: 2` envelope (JSON). Nothing here decides a row; it only prints what the view
- * model returned, and states `inputs`: what the view was computed from.
+ * run `chatCards` and `viewTranscript` over its facts, and print rows and cards structurally
+ * (text) or as the versioned `chatView: 2` envelope (its `cards` field is additive) (JSON). Nothing here decides a row or a card;
+ * it only prints what the shared projections returned, and states `inputs`: what they were
+ * computed from. `./mf` holds no local command state, so a card from one (a lost Retry, a failed
+ * Stop, an unsent message) cannot appear here: only the cards durable facts give.
  */
 import type { JsonValue, ThreadSnapshotResponse } from "@meridian/contracts/protocol";
 import {
@@ -16,6 +18,10 @@ import {
   type Turn,
 } from "@meridian/contracts/threads";
 import {
+  type CardControl,
+  type ChatCard,
+  type ChatCards,
+  chatCards,
   type DeliveryEvent,
   type FoldDigest,
   type RowIdentity,
@@ -44,6 +50,8 @@ export type ChatViewInputs = {
   /** The fork's inherited history is not read here; a fork's own rows start at its fork point. */
   inherited: "omitted";
   localRecords: "none";
+  /** Cards come from the snapshot's facts alone: no unresolved commands, Retry outcomes or unsent messages. */
+  cards: "snapshot facts";
   standIns: "none";
   /** No optimistic opening seed: a handoff's seed appears when the server has it. */
   opening: "none";
@@ -172,6 +180,8 @@ export type ChatViewEnvelope = {
     actionRequired: boolean;
   };
   inputs: ChatViewInputs;
+  /** The failure cards `chatCards` projects for these facts, as the app draws them (usage first). */
+  cards: ChatCard[];
   rows: ChatRow[];
   showing: number;
   total: number;
@@ -179,13 +189,44 @@ export type ChatViewEnvelope = {
 
 export type RowSelection = { full: boolean; turnId?: string; last?: number };
 
-/** The view model over a snapshot's facts: no local records, stand-ins or live activity. */
-export function viewSnapshot(snapshot: Pick<ThreadSnapshotResponse, "liveState">, turns: Turn[]) {
-  return viewTranscript({
+/**
+ * The shared projections over a snapshot's facts: no local records, stand-ins or live activity.
+ * The cards are decided first, and the view keeps the rows they are anchored on, as in the app.
+ */
+export function chatSnapshot(
+  snapshot: Pick<ThreadSnapshotResponse, "liveState" | "thread">,
+  turns: Turn[],
+): { view: TranscriptView; cards: ChatCards } {
+  const runState = viewOfLive(snapshot.liveState);
+  const controls: CardControl[] = (switchState(runState)?.rows ?? []).map((row) => ({
+    id: row.id,
+    control: { kind: "write_mode", mode: row.mode },
+    status: row.status,
+  }));
+  const cards = chatCards({
+    threadId: snapshot.thread?.id ?? "",
+    turns: { turns },
+    runState,
+    handBack: [],
+    retries: [],
+    briefStops: [],
+    controls,
+  });
+  const view = viewTranscript({
     turns,
     activity: { awaitingSubagents: false },
-    queued: new Set(waitingWriterMessages(viewOfLive(snapshot.liveState)).map((item) => item.id)),
+    queued: new Set(waitingWriterMessages(runState).map((item) => item.id)),
+    anchoredTurnIds: cards.anchoredTurnIds,
   });
+  return { view, cards };
+}
+
+/** The view model over a snapshot's facts. */
+export function viewSnapshot(
+  snapshot: Pick<ThreadSnapshotResponse, "liveState" | "thread">,
+  turns: Turn[],
+) {
+  return chatSnapshot(snapshot, turns).view;
 }
 
 /** `--turn` (id or prefix) or the last N rows (all with --full); `total` counts the matches. */
@@ -208,7 +249,7 @@ function switchLine(live: ThreadSnapshotResponse["liveState"]) {
 
 export function projectChatView(
   snapshot: ThreadSnapshotResponse,
-  view: TranscriptView,
+  { view, cards }: { view: TranscriptView; cards: ChatCards },
   options: RowSelection,
 ): ChatViewEnvelope {
   const { rows, total } = selectRows(view.rows, options);
@@ -237,6 +278,7 @@ export function projectChatView(
       turns: "snapshot",
       inherited: "omitted",
       localRecords: "none",
+      cards: "snapshot facts",
       standIns: "none",
       opening: "none",
       liveActivity: "none",
@@ -244,6 +286,7 @@ export function projectChatView(
       backgroundReports: "not fetched",
       changeTrails: "not fetched",
     },
+    cards: cards.cards,
     rows: rows.map((row) => chatRow(row, view, options)),
     showing: rows.length,
     total,
@@ -520,6 +563,20 @@ function rowLines(row: ChatRow): string[] {
   return lines;
 }
 
+/** One card as a line: its copy key, where it sits, its action and its occurrence key. */
+function cardLine(card: ChatCard): string {
+  const anchor =
+    typeof card.anchor === "string"
+      ? card.anchor
+      : "turn" in card.anchor
+        ? `turn ${card.anchor.turn}`
+        : "message" in card.anchor
+          ? `message ${card.anchor.message}`
+          : `queued command ${card.anchor.queuedControl}`;
+  const words = card.text ? `: ${oneLine(card.text)}` : "";
+  return `  card ${card.copy}${words} on ${anchor}${card.action ? ` [${card.action}]` : ""} ${card.key}`;
+}
+
 export function renderChatView(view: ChatViewEnvelope): string {
   const { thread, live, inputs } = view;
   const lines = [
@@ -527,9 +584,10 @@ export function renderChatView(view: ChatViewEnvelope): string {
     `  project ${thread.projectId}  work ${thread.workId ?? "(none)"}  agent ${thread.agentName ?? "?"}`,
     `  live ${live.status}${live.runningTurnId ? ` running ${live.runningTurnId}` : ""}  pending ${live.pending}  mode ${live.mode}${live.switchQueued ? ` (switching to ${live.switchQueued})` : ""}${live.actionRequired ? "  ACTION REQUIRED" : ""}  cost $${thread.totalCostUsd}`,
     `  chatView ${view.chatView}  rows: showing ${view.showing} of ${view.total}${view.showing < view.total ? " (--full or --turn for more)" : ""}`,
-    `  inputs: turns from ${inputs.turns}; inherited history ${inputs.inherited}; local records ${inputs.localRecords}, stand-ins ${inputs.standIns}, live activity ${inputs.liveActivity}; queued from ${inputs.queued}; background reports ${inputs.backgroundReports}, change trails ${inputs.changeTrails}`,
+    `  inputs: turns from ${inputs.turns}; inherited history ${inputs.inherited}; local records ${inputs.localRecords}, cards from ${inputs.cards}, stand-ins ${inputs.standIns}, live activity ${inputs.liveActivity}; queued from ${inputs.queued}; background reports ${inputs.backgroundReports}, change trails ${inputs.changeTrails}`,
   ];
   const queued = view.rows.filter((row) => row.queued).length;
+  for (const card of view.cards) lines.push(cardLine(card));
   for (const row of view.rows) {
     lines.push("");
     lines.push(...rowLines(row));

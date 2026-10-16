@@ -30,12 +30,7 @@ import {
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { queuedSwitchKey, switchDisplay } from "@/client/run-state/run-state-slice";
 import { announce, announceError, useRunStateSlice, useThreadActions } from "@/client/stores";
-import {
-  controlAlreadyStartedCopy,
-  controlStatusCopy,
-  controlStoppedCopy,
-  controlWithdrawFailedCopy,
-} from "./control-copy";
+import { controlAlreadyStartedCopy, controlStatusCopy, controlStoppedCopy } from "./control-copy";
 import type { QueuedControl } from "./thread-controls";
 
 /** What the chat's submission journal offers the view: its switches, stamped once answered. */
@@ -166,7 +161,6 @@ export function useSwitchView(input: {
           if (httpErrorStatus(error) === 404)
             return dispatch(threadId, { type: "dropWithdraw", id });
           dispatch(threadId, { type: "withdraw", id, failed: true });
-          announceError(controlWithdrawFailedCopy(row.control));
         }
       };
       // A switch the journal holds that the server can't have (never posted, or refused):

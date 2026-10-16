@@ -28,7 +28,6 @@ import { UserTurn } from "./UserTurn";
 import { useChangeTrailNavigation } from "./useChangeTrailNavigation";
 import { useChatFollowScroll } from "./useChatFollowScroll";
 import type { ChatStop } from "./useChatStop";
-import type { ReplyRetry } from "./useReplyRetry";
 import { useTurnRevealLanding } from "./useTurnRevealLanding";
 
 /** What the queued rows can do; the hooks behind them are `useQueueControls` and `useSendNow`. */
@@ -60,8 +59,8 @@ export type TurnListProps = {
   queue?: TurnQueueControls | null;
   /** Retry and Stop on this handoff destination's brief cards. */
   brief?: HandoffBrief | null;
-  /** Retry on the latest failed reply, and the new replies it stands in for. */
-  replyRetry?: ReplyRetry | null;
+  /** Whether a reply is a Retry's stand-in the server doesn't have yet: nothing to read or act on. */
+  isStandIn?: ((turnId: string) => boolean) | null;
   /** Something holds this chat (a reply, a compaction, a brief): a brief card's Retry waits. */
   busy?: boolean;
   /** A fork's frozen prefix from its source, rendered read-only above its own turns. */
@@ -111,7 +110,7 @@ export function TurnList({
   chatStop = null,
   queue = null,
   brief = null,
-  replyRetry = null,
+  isStandIn = null,
   busy = false,
   inherited = null,
   onRetryInherited = null,
@@ -280,8 +279,6 @@ export function TurnList({
             turn={turn}
             latest={row.latest}
             stopping={actions?.stopping.has(turn.id) ?? false}
-            stopFailed={actions?.stopFailed.has(turn.id) ?? false}
-            retryRefused={actions?.retryRefused.get(turn.id) ?? null}
             destinationBusy={busy}
             onStop={actions?.canStop(turn) ? actions.stop : undefined}
             onRetry={actions?.retry}
@@ -304,32 +301,7 @@ export function TurnList({
       }
       const items = view.items.get(turn.id);
       if (!items || !row.response) return null;
-      // Once a closing turn follows a failed reply, that failure is history,
-      // whether or not the turn draws a row (an agent's message does not). An
-      // inherited reply is the source's history, even with nothing below it.
-      const endsTranscript = local && !row.movedPast;
-
-      const standIn = local ? (replyRetry?.requestOf(turn.id) ?? null) : null;
-      const retry =
-        local && replyRetry && turn.status === "error"
-          ? {
-              // Only the latest turn can be retried: the server answers its
-              // messages again below it.
-              onRetry: endsTranscript
-                ? () => {
-                    // Retry leaves with this row's error; keep focus in the
-                    // transcript and bring the new reply into view.
-                    viewportRef.current?.focus({ preventScroll: true });
-                    enterFollow();
-                    replyRetry.retry(turn);
-                  }
-                : undefined,
-              // The refused card is the state of what the writer did, so it stays on the reply
-              // even when another tab's reply landed below it; the next action or completed reply clears it.
-              refused: replyRetry.refused.get(turn.id) ?? null,
-              requestLost: standIn === "failed",
-            }
-          : undefined;
+      const standIn = local && (isStandIn?.(turn.id) ?? false);
       return (
         <AssistantTurn
           threadId={row.inherited?.ownerThreadId ?? threadId}
@@ -339,10 +311,9 @@ export function TurnList({
           threadUsage={local ? threadUsage : null}
           deliveries={row.deliveries}
           isLatestAssistant={idx === lastAssistantIdx}
-          endsTranscript={endsTranscript}
+          movedPast={row.movedPast}
           continuesResponse={row.continuing}
-          replyRetry={retry}
-          standIn={standIn !== null}
+          standIn={standIn}
           onRespondToInterrupt={local ? onRespondToInterrupt : undefined}
           changeTrail={local ? byTurnId.get(turn.id) : undefined}
           navigateToChange={navigateToChange}
@@ -353,8 +324,7 @@ export function TurnList({
       brief,
       busy,
       byTurnId,
-      enterFollow,
-      replyRetry,
+      isStandIn,
       controls,
       chatStop,
       queue,
@@ -399,7 +369,6 @@ export function TurnList({
                   }
                 : undefined
             }
-            onRetry={controls?.retry}
           />
         );
       }

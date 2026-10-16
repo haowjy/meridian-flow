@@ -697,6 +697,7 @@ describe("thread view, cancel, events, respond", () => {
     expect(envelope).toMatchObject({
       chatView: 2,
       inputs: { inherited: "omitted", localRecords: "none", standIns: "none", opening: "none" },
+      cards: expect.any(Array),
     });
     expect(envelope.rows.length).toBeGreaterThan(0);
     for (const row of envelope.rows)
