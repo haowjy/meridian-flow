@@ -68,7 +68,7 @@ else
       domain.bindHocuspocus(hocuspocus);
       return { domain, hocuspocus };
     }
-    it("converges project, manuscript, locked No Work, and No Work uploads without a thread", async () => {
+    it("converges project, manuscript and locked No Work, with no uploads source and no thread", async () => {
       const repository = createDrizzleProjectBootstrapRepository({ db, documents: collab() });
       const first = await repository.ensureDefaultBootstrap(USER_ID as never);
       const second = await repository.ensureDefaultBootstrap(USER_ID as never);
