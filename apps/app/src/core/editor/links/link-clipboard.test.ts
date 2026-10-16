@@ -62,9 +62,9 @@ it("carries what a copied link names across the clipboard", async () => {
     },
     {
       row: "a contextual Scratch link keeps the Work it meant",
-      copied: { from: "scratch://@revision/notes/a.md", href: "scratch://plan.md", ref: null },
-      into: { holder: "scratch://@other/b.md", project: "project-a" },
-      pasted: { link: "scratch://@revision/plan.md", ref: null },
+      copied: { from: "scratch://@w1/notes/a.md", href: "scratch://plan.md", ref: null },
+      into: { holder: "scratch://@w2/b.md", project: "project-a" },
+      pasted: { link: "scratch://@w1/plan.md", ref: null },
     },
     {
       row: "a contextual Scratch link carries its lineage",

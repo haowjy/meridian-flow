@@ -19,7 +19,7 @@ function emptyWorkContext(projectId: string): WorkContextReader {
           execution: {
             scope: {
               workId: "00000000-0000-0000-0000-000000000002",
-              workHandle: testWorkHandle("test-work"),
+              workHandle: testWorkHandle("w1"),
             },
             aiWriteMode: "direct",
             draftOwner: null,

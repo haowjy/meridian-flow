@@ -36,7 +36,7 @@ dev-login. Seed a document and chat with `./mf seed tools/mf/fixtures/basic.json
     and type a message, then refuse the chat-creation POST (wrap `fetch` to
     return 400). The message stays on its failed row. Choose Edit, then Send:
     the creation request carries the same chat id, and the transcript shows the
-    model reading the attachment at its `uploads://@/c<N>/` address.
+    model reading the attachment at its `uploads://@c<N>/` address.
     Variant: after the refusal, start a newer New-chat draft with its own upload
     and words. Edit puts only the refused message back in the composer, and the
     newer draft is parked. Send creates the refused chat with its attachment;

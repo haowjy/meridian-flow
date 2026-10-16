@@ -42,9 +42,9 @@ identity, gain remote authority or restart after acknowledgement. Namespace
 dispatch waits until the content adapter establishes the exact database marker and
 clears the reservation.
 
-A Work-scoped location (Scratch) retains its Work row id and slug; an upload's
+A Work-scoped location (Scratch) retains its Work row id and handle; an upload's
 location retains its chat id and handle (`chatId`, `chatRef`);
-the locked No Work row uses a null slug.
+the locked No Work row uses a null handle.
 `resourceWorkAuthorityFor` checks command construction against the known project
 Works snapshot and its separate locked No Work id. Link Create, tree Create and
 Editor identity commits use this boundary. `resourceContextAuthority` is the
@@ -69,7 +69,7 @@ commands must use the checked snapshot constructor, not manufacture a nullable
 slug. This is a trusted-input boundary, not a type-only identity guarantee.
 No Work link Create and Editor identity rename use the same namespace journal
 as named Works. The server's No Work row owns no Scratch: a No Work chat's
-Scratch belongs to its lineage (`scratch://@/c12/`), and a lineage catalog scope
+Scratch belongs to its lineage (`scratch://@c12/`), and a lineage catalog scope
 installs locations owned by that lineage. Never map a lineage location onto the
 No Work row.
 

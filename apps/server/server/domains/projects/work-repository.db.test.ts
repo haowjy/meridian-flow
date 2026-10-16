@@ -999,7 +999,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: PROJECT_ID,
           createdByUserId: USER_ID,
           name: row.name,
-          handle: `w${retained.indexOf(row) + 1}`,
+          handle: `w${retained.indexOf(row) + 100}`,
           deletedAt: expiredAt,
         })),
       );

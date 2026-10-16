@@ -728,7 +728,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         entry: {
           scope: { kind: "work", workId: WORK },
           path: ["Moved"],
-          uri: "scratch://@draft/Moved",
+          uri: "scratch://@w2/Moved",
         },
       });
       await db.update(works).set({ deletedAt: new Date() }).where(eq(works.id, WORK));

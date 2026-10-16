@@ -45,7 +45,7 @@ external IDs fail closed rather than merging accounts.
 
 `WorkRepository` owns create/list/update/archive/unarchive/delete/restore.
 `ProjectWorkAuthorityResolver` is the only projects-domain mint for opaque,
-stable Work URI authority and offers exact same-project ID/slug resolution plus
+stable Work URI authority and offers exact same-project ID/handle resolution plus
 transactional locking. `listWorkCatalog` owner-gates the requested collection
 and enriches it with one set-oriented pending-draft count read.
 
@@ -65,8 +65,10 @@ collections nest under `/api/projects/:projectId/works`, items are flat under
 `/api/works/:workId`, and a collection response never selects a Work
 implicitly.
 
-Work slugs are project-unique handles assigned at creation. Rename preserves a
-slug; soft deletion releases active name uniqueness but reserves the slug.
+Work handles (`w1`, `w2`, ...) are minted per project from `project_handle_counters`
+at creation and never reused. Rename preserves the handle; soft deletion releases
+active name uniqueness but keeps the handle reserved. Names are labels, unique among
+non-deleted Works.
 Omitted or explicit-null root creation `workId` selects locked No Work. Only a
 writer Chat rebind changes a chat's Work; model tools cannot rebind it.
 

@@ -84,7 +84,7 @@ export async function loadDocumentAddresses(
     user_id: string | null;
     scheme: string;
     work_id: string | null;
-    work_slug: string | null;
+    work_handle: string | null;
     root_thread_id: string | null;
     chat_thread_id: string | null;
     root_thread_ref: string | null;
@@ -110,7 +110,7 @@ export async function loadDocumentAddresses(
     SELECT c.id::text AS id,
       COALESCE(cs.project_id, w.project_id)::text AS project_id,
       p.user_id::text AS user_id,
-      cs.slug AS scheme, cs.work_id::text AS work_id, w.slug AS work_slug,
+      cs.slug AS scheme, cs.work_id::text AS work_id, w.handle AS work_handle,
       w.is_no_work AS is_no_work, cs.root_thread_id::text AS root_thread_id,
       cs.chat_thread_id::text AS chat_thread_id, root.ref AS root_thread_ref,
       up.path || c.name || CASE WHEN c.extension = '' THEN '' ELSE '.' || c.extension END AS path,
@@ -136,7 +136,7 @@ export async function loadDocumentAddresses(
         catalogSourceAuthority(
           scheme,
           row.work_id,
-          row.is_no_work ? null : row.work_slug,
+          row.is_no_work ? null : row.work_handle,
           row.root_thread_ref,
           row.chat_thread_id !== null,
         ),
@@ -357,7 +357,7 @@ export async function spellNodeAddresses(
           user_id: string | null;
           scheme: string;
           work_id: string | null;
-          work_slug: string | null;
+          work_handle: string | null;
           is_no_work: boolean | null;
           root_thread_id: string | null;
           chat_thread_id: string | null;
@@ -365,7 +365,7 @@ export async function spellNodeAddresses(
         }>(sql`
           SELECT cs.id::text AS id, COALESCE(cs.project_id, w.project_id)::text AS project_id,
             p.user_id::text AS user_id, cs.slug AS scheme, cs.work_id::text AS work_id,
-            w.slug AS work_slug, w.is_no_work, cs.root_thread_id::text AS root_thread_id,
+            w.handle AS work_handle, w.is_no_work, cs.root_thread_id::text AS root_thread_id,
             cs.chat_thread_id::text AS chat_thread_id, root.ref AS root_thread_ref
           FROM context_sources cs
           LEFT JOIN works w ON w.id = cs.work_id
@@ -381,7 +381,7 @@ export async function spellNodeAddresses(
     if (!chain || chain.at(-1)?.parentId) return null;
     const path = chainPrefix(chain) + renderFilename(location.name, location.extension);
     const scheme = source.scheme;
-    const workHandle = source.is_no_work ? null : source.work_slug;
+    const workHandle = source.is_no_work ? null : source.work_handle;
     let uri: string;
     try {
       uri = canonicalContextUri(

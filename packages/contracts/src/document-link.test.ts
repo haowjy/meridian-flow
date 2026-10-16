@@ -474,7 +474,7 @@ it("spells lineage links through their holder, without a chat-only spelling chan
     spellStoredLink({ ref: null, href: "scratch://x" }, ownScratch, { kind: "address" }, "holder")
       .href,
   ).toBe("scratch://x");
-  for (const uri of [null, "scratch://@c13/holder", "scratch://@arc/holder", "manuscript://holder"])
+  for (const uri of [null, "scratch://@c13/holder", "scratch://@w1/holder", "manuscript://holder"])
     expect(spellStoredLink(link, { ...holder, uri }, resolution, "holder").href).toBe(
       "scratch://@c12/x#gate",
     );

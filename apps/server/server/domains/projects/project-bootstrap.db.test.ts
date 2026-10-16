@@ -101,7 +101,7 @@ else
       expect(workRows).toEqual([
         expect.objectContaining({
           isNoWork: true,
-          slug: null,
+          handle: null,
           name: "No Work",
           status: null,
         }),

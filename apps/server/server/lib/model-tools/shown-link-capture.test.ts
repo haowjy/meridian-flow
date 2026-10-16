@@ -18,6 +18,7 @@ import type { SpelledLinkFact } from "@meridian/markup/links";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { createInMemoryUnifiedContextPortFactory } from "../../domains/context/index.js";
+import { emptyOwnerLookup } from "../../domains/context/owner-lookup.js";
 import {
   createInMemoryUnifiedContextStoreRegistry,
   getInMemoryProjectContextStore,
@@ -221,6 +222,7 @@ async function harness(
     threads: repos.threads,
     documentSync,
     shownLinks: store,
+    contextPorts: { chatFiles: emptyOwnerLookup },
     fileAccess: {
       // The hidden document's hit is filtered before the model sees it.
       listAccess: async (_principal: unknown, ids: readonly string[]) =>
@@ -234,7 +236,7 @@ async function harness(
     threadId: crypto.randomUUID(),
     draftWork: null,
   });
-  call.context = { port, resolution: {} as never };
+  call.context = { port, resolution: { thread: { projectId: PROJECT } } as never };
   const registrations = createModelToolRegistrations(deps).map(
     (registration): ToolRegistration =>
       registration.definition.type === "function" &&

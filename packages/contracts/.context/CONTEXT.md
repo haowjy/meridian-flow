@@ -45,10 +45,11 @@ contract owns a rule and where it is consumed.
 
 `context-uri.ts` owns scheme classification and address syntax. Draft-mode
 Works own manuscript, KB, user, and unfiled content; Scratch and uploads are
-not drafted. A leading `@` in each path segment is reserved for Work authority;
-other `@` characters are valid. `uploads://@/c15/x` names a chat's upload
-(`{ kind: "chat" }`); `@/` without a handle, `@slug` and a subagent handle
-(`p…`) are refused for uploads. Bare `uploads://x` and `scratch://x` remain
+not drafted. A leading `@` in each path segment is reserved for owner authority;
+other `@` characters are valid. `uploads://@c15/x` names a chat's upload
+(`{ kind: "chat" }`); a bare `@`, a name, an uppercase handle and a subagent handle
+(`p…`) are refused for uploads, each with its own correction (`handles.ts` classifies
+the token). Bare `uploads://x` and `scratch://x` remain
 contextual.
 
 `ContextOwner` is either `workId` or, for Scratch, `rootThreadId`; never both.
@@ -56,11 +57,11 @@ A resolved catalog owner carries that identity and its lineage handle from the
 address snapshot. Flatten it to `workId` or `rootThreadId` only at HTTP and
 storage edges. `formatParsedContextUri` formats syntax but never grants
 authority; clipboard qualification uses the holder's ownership of the scheme,
-and with no applicable owner the link stays contextual. `WorkSlug` proves
-grammar only, so UUID-shaped slugs are valid.
+and with no applicable owner the link stays contextual. `WorkHandle` proves
+grammar only (`w` and digits).
 
-The Scratch `@/c12/` qualifier is a lineage owner, not a path segment: `@/x`
-without a first-chat handle is invalid, and href traversal and relative spelling
+The Scratch `@c12/` qualifier is a lineage owner, not a path segment: a handle
+without a lineage is invalid, and href traversal and relative spelling
 never cross lineage owners. `WorkingSetRoute` has the same two arms (`workId`
 or `rootThreadId`). `GET .../context/lineages/:rootThreadId` names a lineage by
 handle and title, trashed first chat included.

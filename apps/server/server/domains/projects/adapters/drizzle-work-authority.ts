@@ -27,7 +27,7 @@ export function createDrizzleProjectWorkAuthorityResolver(
     if (!row) return null;
     if (row.isNoWork) return resolvedWorkAuthority({ workId: row.workId, workHandle: null });
     const workHandle = decodeWorkHandle(row.workHandle);
-    if (!workHandle) throw new Error(`Persisted Work ${row.workId} has an invalid slug`);
+    if (!workHandle) throw new Error(`Persisted Work ${row.workId} has an invalid handle`);
     return resolvedWorkAuthority({ workId: row.workId, workHandle });
   }
 

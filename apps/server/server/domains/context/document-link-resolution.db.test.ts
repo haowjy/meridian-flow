@@ -164,7 +164,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ["kb", null, ""],
         ["unfiled", null, ""],
         ["user", null, ""],
-        ["scratch", b, "@work-b/"],
+        ["scratch", b, "@w3/"],
       ] as const) {
         const id = await add(scheme, "Gate", workId);
         const uri = `${scheme}://${qualifier}Gate`;
@@ -203,7 +203,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await resolveUpload("uploads://Gate", chatId)).toMatchObject({ documentId: upload });
       expect(await resolveUpload("uploads://Gate")).toBeNull();
       // A Work owns no uploads.
-      expect(await resolveUpload("uploads://@work-b/Gate")).toBeNull();
+      expect(await resolveUpload("uploads://@w3/Gate")).toBeNull();
     });
     it("canonicalizes prose aliases before exact-first non-prose omission", async () => {
       const r = resolver();
@@ -267,7 +267,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: p,
           userId: u,
           workId: a,
-          target: { kind: "scheme", uri: "scratch://@work-b/Gate" },
+          target: { kind: "scheme", uri: "scratch://@w3/Gate" },
         }),
       ).toMatchObject({ scheme: "scratch", path: "Gate" });
       await database.current.update(works).set({ deletedAt: new Date() }).where(eq(works.id, b));
@@ -276,7 +276,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: p,
           userId: u,
           workId: a,
-          target: { kind: "scheme", uri: "scratch://@work-b/Gate" },
+          target: { kind: "scheme", uri: "scratch://@w3/Gate" },
         }),
       ).toBeNull();
       await database.current
@@ -362,7 +362,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const rows = [
         { id: note, uri: "scratch://@c1/note", workId: null, rootThreadId: root },
-        { id: await add("scratch", "named", b), uri: "scratch://@work-b/named", workId: b },
+        { id: await add("scratch", "named", b), uri: "scratch://@w3/named", workId: b },
         { id: await add("manuscript", "chapter"), uri: "manuscript://chapter", workId: null },
         { id: await add("user", "personal"), uri: "user://personal", workId: null },
       ];

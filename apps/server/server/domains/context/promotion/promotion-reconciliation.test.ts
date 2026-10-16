@@ -39,7 +39,7 @@ function harness(outcome: { kind: "definitely_not_committed" | "unknown"; error:
       async byId(_projectId, workId) {
         return resolvedWorkAuthority({
           workId,
-          workHandle: testWorkHandle("123e4567-e89b-12d3-a456-426614174000"),
+          workHandle: testWorkHandle("w1"),
         });
       },
       async byHandle() {

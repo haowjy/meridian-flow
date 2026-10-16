@@ -209,7 +209,7 @@ Focused automated proofs: `indexeddb-resource-metadata.test.ts` (atomic folder s
    convergence, and reload. Read the document through `./mf` at its new URI.
 4. Repeat across two named Works: move alpha's B to beta without changing B's
    name, then move beta's X under B/sub. Both row orders must place X at
-   `scratch://@beta/B/sub/X`.
+   `scratch://@w2/B/sub/X`.
 5. If availability returns `unavailable` while a move refresh fences a queued
    command, the queued command becomes repair, not deletion. Even without the
    folder's catalog row, its journal identity must remain reachable in the

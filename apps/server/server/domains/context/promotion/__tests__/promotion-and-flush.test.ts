@@ -49,7 +49,7 @@ const promotionDeps = (
   workAuthorityResolver: {
     async byId(_projectId: string, workId: string) {
       return workId === "work-1"
-        ? resolvedWorkAuthority({ workId, workHandle: testWorkHandle("revision-pass") })
+        ? resolvedWorkAuthority({ workId, workHandle: testWorkHandle("w1") })
         : null;
     },
     async byHandle() {
@@ -92,7 +92,7 @@ describe("promotion service", () => {
 
     expect(promoted.value).toMatchObject({
       sourcePath,
-      resultsUri: "scratch://@revision-pass/results/output/qc/overlay.png",
+      resultsUri: "scratch://@w1/results/output/qc/overlay.png",
       mimeType: "image/png",
       sizeBytes: 4,
       provenance: {
@@ -104,7 +104,7 @@ describe("promotion service", () => {
     });
     expect(parseUnifiedContextUri(promoted.value.resultsUri)).toMatchObject({
       ok: true,
-      value: { authority: { kind: "work", workHandle: "revision-pass" } },
+      value: { authority: { kind: "work", workHandle: "w1" } },
     });
 
     expect(rows).toHaveLength(1);

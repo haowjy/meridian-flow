@@ -115,7 +115,7 @@ describe("response helper revocation (Postgres)", () => {
       projectId: PROJECT_ID,
       createdByUserId: USER_ID,
       name: "Other Work",
-      handle: "w1",
+      handle: "w2",
     });
     await db.insert(schema.threads).values({
       id: threadB as never,

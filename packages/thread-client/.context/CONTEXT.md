@@ -76,8 +76,8 @@ again gives the same blocks), and `prependMessageDoc` puts it above typed text w
 a blank line. Every prepend in the app uses it, failed-send Edit included. A chip is
 a `RestorableReference` (`MessageReference` plus `fileType` and owner authority);
 `chatReferenceResolver(scope)` builds one only when the URI proves the owner
-against this chat (its lineage handle for `scratch://`, `uploads://@/c15/` for this chat's own
-chat, its own Work's `@slug`, or a project or user scheme). Anything else comes back
+against this chat (its lineage handle for `scratch://`, `uploads://@c15/` for this chat's own
+chat, its own Work's `@w3`, or a project or user scheme). Anything else comes back
 as link text. An image block in the message makes the chip an image. The limit
 and its fix are in [FUTURE](FUTURE).
 

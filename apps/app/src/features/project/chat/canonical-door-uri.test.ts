@@ -11,13 +11,13 @@ describe("a chat door's catalog address", () => {
     ).toBe("scratch://@c2/duel/beats.md");
   });
 
-  it("spells a named Work's Scratch with its slug, not left bare", () => {
+  it("spells a named Work's Scratch with its handle, not left bare", () => {
     expect(
       canonicalDoorUri(
         { scheme: "scratch", path: "/beats.md", workId: "arc" },
-        { workHandle: "arc-one" },
+        { workHandle: "w1" },
       ),
-    ).toBe("scratch://@arc-one/beats.md");
+    ).toBe("scratch://@w1/beats.md");
   });
 
   it("spells a chat's Uploads with its handle and leaves project areas plain", () => {
