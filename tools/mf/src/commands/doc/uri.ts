@@ -48,10 +48,10 @@ export async function resolveUri(
 
 /** Live documentId for a URI, or a not_found CliError. */
 export async function resolveDocument(session: Session, projectId: string, target: ResolvedUri) {
-  const address = await session.request<DocumentAddressResult>(
+  const address = (await session.request(
     "GET",
     apiProjectDocumentAddressPath(projectId, target.scheme, target.path, { workId: target.workId }),
-  );
+  )) as DocumentAddressResult;
   if (address.kind === "unavailable") {
     throw new CliError("not_found", `No live document at ${target.uri}`, {
       hint: `Create it with \`./mf doc put ${target.uri} --text "..."\`.`,

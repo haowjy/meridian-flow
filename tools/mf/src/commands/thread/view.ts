@@ -1,5 +1,5 @@
 /** Thread data commands: list, view, context (model requests), events (journal replay). */
-import { apiThreadSnapshotPath, type ThreadSnapshotResponse } from "@meridian/contracts/protocol";
+import { apiThreadSnapshotPath, threadSnapshotSchema } from "@meridian/contracts/protocol";
 import {
   type CommandSpec,
   flag,
@@ -46,10 +46,9 @@ export const threadViewCommand: CommandSpec = {
       requirePositional(ctx, 0, "<thread>"),
       stringOption(ctx, "project"),
     );
-    const snapshot = await session.request<ThreadSnapshotResponse>(
-      "GET",
-      apiThreadSnapshotPath(threadId),
-    );
+    const snapshot = await session.request("GET", apiThreadSnapshotPath(threadId), undefined, {
+      parse: threadSnapshotSchema.safeParse,
+    });
     // One authoritative read, no socket and no sync: the shared view model decides the rows, as the app does.
     const view = viewSnapshot(snapshot, snapshot.turns);
     const selection = {

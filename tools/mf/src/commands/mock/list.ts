@@ -14,7 +14,7 @@ export const mockListCommand: CommandSpec = {
   async run(ctx) {
     const session = await ctx.session();
     ctx.out.result(
-      await session.request<MockModelScriptState>("GET", API_DEBUG_MOCK_MODEL_SCRIPT_PATH),
+      (await session.request("GET", API_DEBUG_MOCK_MODEL_SCRIPT_PATH)) as MockModelScriptState,
       renderState,
     );
     return undefined;

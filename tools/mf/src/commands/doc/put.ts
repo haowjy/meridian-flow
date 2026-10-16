@@ -27,11 +27,11 @@ export async function putDocument(
 }> {
   const target = await resolveUri(session, input.projectId, input.uri, input.work);
   const create = () =>
-    session.request<{ status: "created"; documentId: string; uri: string }>(
+    session.request(
       "POST",
       apiProjectContextCreatePath(input.projectId, target.scheme, { workId: target.workId }),
       { type: "file", path: target.path, content: input.content },
-    );
+    ) as Promise<{ status: "created"; documentId: string; uri: string }>;
   try {
     const created = await create();
     return {

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Invalid snapshot responses are rejected before reaching the shared thread sync. A failed diagnostic read no longer erases a proven `./mf send` or `tail --until-idle` result; it marks observation incomplete.
+
 - The app and `./mf` now follow replies through one thread sync. Followed send/tail outcomes require a confirming snapshot; live checks remain diagnostics, and retryable replay errors recover through the shared transport without ending the command.
 
 - Failed or unanswered replay requests recover one chat at a time on the existing connection, using request ids and a 20-second deadline that pings do not extend. Healthy chats remain live, and a view joining an in-flight replay receives its missing events in order.

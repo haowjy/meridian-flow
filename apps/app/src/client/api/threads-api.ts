@@ -51,6 +51,7 @@ import {
   type TranscriptPageResponse,
   type Turn,
   type TurnContextPreview,
+  threadSnapshotSchema,
   type UpdateThreadUserStateRequest,
   type UpdateThreadUserStateResponse,
 } from "@meridian/contracts/protocol";
@@ -240,14 +241,16 @@ export function deleteThread({ data }: { data: { threadId: string } }): Promise<
   return deleteRequest(apiThreadPath(data.threadId));
 }
 
-export function getThreadSnapshot({
+export async function getThreadSnapshot({
   data,
   signal,
 }: {
   data: GetThreadSnapshotInput;
   signal?: AbortSignal;
 }): Promise<ThreadSnapshotResponse> {
-  return getJson(apiThreadSnapshotPath(data.threadId, { after: data.after }), { signal });
+  return threadSnapshotSchema.parse(
+    await getJson<unknown>(apiThreadSnapshotPath(data.threadId, { after: data.after }), { signal }),
+  );
 }
 
 export function updateThreadUserState(

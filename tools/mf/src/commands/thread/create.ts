@@ -11,10 +11,10 @@ import { resolveProjectId, resolveWorkId } from "../project/resolve";
 const DEFAULT_AGENT_SLUG = "general";
 
 async function resolveAgentSelection(session: Session, projectId: string, slug: string) {
-  const page = await session.request<AgentCatalogPage>(
+  const page = (await session.request(
     "GET",
     `/api/agents?projectId=${encodeURIComponent(projectId)}&limit=100`,
-  );
+  )) as AgentCatalogPage;
   const agent = page.agents.find((entry) => entry.slug === slug);
   if (!agent) {
     throw new CliError("not_found", `No agent with slug "${slug}"`, {
@@ -46,7 +46,7 @@ export async function createThread(
     workId: await resolveWorkId(session, projectId, input.work),
     ...(input.title ? { title: input.title } : {}),
   };
-  return session.request<Thread>("POST", API_THREADS_PATH, body);
+  return session.request("POST", API_THREADS_PATH, body) as Promise<Thread>;
 }
 
 export const threadCreateCommand: CommandSpec = {

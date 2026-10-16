@@ -2,6 +2,7 @@ import {
   apiThreadSnapshotPath,
   type ThreadLiveState,
   type ThreadSnapshotResponse,
+  threadSnapshotSchema,
 } from "@meridian/contracts/protocol";
 import { isTerminalTurnStatus } from "@meridian/contracts/threads";
 import { CliError, usageError } from "../../core/cli-error";
@@ -62,12 +63,10 @@ export const threadTailCommand: CommandSpec = {
       const lastSeq =
         since ??
         (
-          await session.request<ThreadSnapshotResponse>(
-            "GET",
-            apiThreadSnapshotPath(threadId),
-            undefined,
-            { timeoutMs: deadlineAt - Date.now() },
-          )
+          await session.request("GET", apiThreadSnapshotPath(threadId), undefined, {
+            timeoutMs: deadlineAt - Date.now(),
+            parse: threadSnapshotSchema.safeParse,
+          })
         ).liveState.resumeAfterSeq;
       await followThread({
         session,

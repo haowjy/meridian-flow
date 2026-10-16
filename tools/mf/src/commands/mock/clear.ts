@@ -16,10 +16,10 @@ export const mockClearCommand: CommandSpec = {
     const id = stringOption(ctx, "id");
     const session = await ctx.session();
     ctx.out.result(
-      await session.request<MockModelScriptState>(
+      (await session.request(
         "DELETE",
         `${API_DEBUG_MOCK_MODEL_SCRIPT_PATH}${id ? `?id=${encodeURIComponent(id)}` : ""}`,
-      ),
+      )) as MockModelScriptState,
       renderState,
     );
     return undefined;

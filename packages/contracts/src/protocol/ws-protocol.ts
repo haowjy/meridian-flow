@@ -182,7 +182,7 @@ export function readRunState(value: unknown): RunState | null {
   return parsed.success ? parsed.data : null;
 }
 
-const threadLiveStateSchema: z.ZodType<ThreadLiveState> = z.object({
+export const threadLiveStateSchema: z.ZodType<ThreadLiveState> = z.object({
   threadId: z.string().min(1),
   status: threadStatusSchema,
   activity: threadActivitySchema,
