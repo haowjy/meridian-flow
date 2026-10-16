@@ -320,6 +320,8 @@ export function dropMovedText(
 ): MovedText[] {
   const isContent = (t: Tok) => t.kind !== "block";
   const deleted: number[] = [];
+  const deletedRanks: number[] = [];
+  let rank = 0;
   for (const h of liveHunks) {
     // A paste matters only when the other side edited its source. Keep the entire touched
     // deletion, including unchanged words on either side of that edit, for matching the run.
@@ -328,8 +330,14 @@ export function dropMovedText(
         ? g.ins.length > 0 && h.from < g.from && g.from < h.to
         : g.from < h.to && h.from < g.to,
     );
-    if (!touched) continue;
-    for (let i = h.from; i < h.to; i++) if (isContent(baseToks[i])) deleted.push(i);
+    for (let i = h.from; i < h.to; i++) {
+      if (!isContent(baseToks[i])) continue;
+      if (touched) {
+        deleted.push(i);
+        deletedRanks.push(rank);
+      }
+      rank++;
+    }
   }
   if (!deleted.length) return [];
   const positions = new Map<string, number[]>();
@@ -354,6 +362,7 @@ export function dropMovedText(
         if (
           insAt > 0 &&
           delAt > 0 &&
+          deletedRanks[delAt - 1] + 1 === deletedRanks[delAt] &&
           inserted[insAt - 1][0].key === baseToks[deleted[delAt - 1]].key
         )
           continue;
@@ -361,6 +370,8 @@ export function dropMovedText(
         while (
           insAt + n < inserted.length &&
           delAt + n < deleted.length &&
+          // Filtering must not join runs separated by an untouched deletion.
+          deletedRanks[delAt + n] === deletedRanks[delAt] + n &&
           inserted[insAt + n][0].key === baseToks[deleted[delAt + n]].key
         )
           n++;

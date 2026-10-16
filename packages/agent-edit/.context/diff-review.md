@@ -85,7 +85,9 @@ the modifying and report-only passes. It indexes the remaining content tokens by
 key, extends only matching seeds at the start of a diagonal run, and keeps the
 first-inserted then first-deleted tie rule. Work depends on token counts and
 matching seeds, never elapsed time; repeated suffixes are not extended again.
-The final source check still rejects a matching subrun that misses the edit.
+The original content ranks keep skipped deletions as match boundaries; filtering
+cannot fabricate a longer run by joining their neighbours. The final source check
+still rejects a matching subrun that misses the edit.
 
 ## Late peers
 
