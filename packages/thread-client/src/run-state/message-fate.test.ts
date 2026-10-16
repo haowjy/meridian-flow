@@ -1,5 +1,5 @@
 /** `messageFate` against the four #768 defects and its two refusals, from plain snapshot fixtures. */
-import type { Turn } from "@meridian/contracts/protocol";
+import type { ThreadSnapshotResponse, Turn } from "@meridian/contracts/protocol";
 import type { RunState } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import { messageFate } from "./message-fate";
@@ -59,7 +59,12 @@ const fate = (
   rec: RunState,
   messageId = "m",
   admittedVersion: string | null = "10",
-) => messageFate({ messageId, admittedVersion, record: rec, turns });
+) =>
+  messageFate({
+    messageId,
+    admittedVersion,
+    read: { turns, liveState: { runState: rec } as ThreadSnapshotResponse["liveState"] },
+  });
 
 describe("messageFate", () => {
   it("binds a steered message to the reply that took it, not the one it steered", () => {

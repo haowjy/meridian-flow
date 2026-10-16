@@ -1,26 +1,44 @@
 /**
- * The reducer against the package's plain store: tool results, instance-owned
+ * The reducer against `syncedTurnStore`: tool results, instance-owned
  * interrupt buffering, and the injected clock.
  */
 import type { AGUIEvent, Turn } from "@meridian/contracts/protocol";
 import { EventType } from "@meridian/contracts/protocol";
 import { answeredControlIds, readWriteModeSwitch } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
+import { EMPTY_SYNCED_THREAD, type SyncedThread, syncedTurnStore } from "../sync/synced-thread";
 import {
   TURN_FIXTURE_EVENTS,
   TURN_FIXTURE_NOW,
   TURN_FIXTURE_REWRITE_EVENT,
   TURN_FIXTURE_THREAD_ID,
 } from "../test-support/turn-events";
-import { InMemoryTurnStore } from "./in-memory-turn-store";
 import { createTurnReducer } from "./reduce-turn-event";
+import { applySnapshotTo, dividersAwaitingAnchorIn } from "./turn-ops";
 
 const THREAD = TURN_FIXTURE_THREAD_ID;
 
+/** The reducer over `syncedTurnStore`, as the app and `./mf` run it, with a plain cell for the value. */
 function instance(now = () => TURN_FIXTURE_NOW) {
-  const store = new InMemoryTurnStore({ now });
+  let synced: SyncedThread = EMPTY_SYNCED_THREAD;
+  const base = syncedTurnStore({
+    cell: { get: () => synced, set: (_id, next) => (synced = next) },
+    now,
+  });
+  const store = {
+    ...base,
+    /** A snapshot read applies its turns and raises the floor; false when it is older than the floor. */
+    hydrate(_threadId: string, turns: readonly Turn[], nextSeq: string): boolean {
+      if (synced.floor !== null && BigInt(nextSeq) < BigInt(synced.floor)) return false;
+      const applied = applySnapshotTo(synced, turns, nextSeq);
+      synced = { ...synced, ...applied, floor: nextSeq };
+      return true;
+    },
+    dividersAwaitingAnchor: (_threadId: string) => dividersAwaitingAnchorIn(synced),
+  };
   return { store, reducer: createTurnReducer({ store, now }) };
 }
+type TestStore = ReturnType<typeof instance>["store"];
 
 const blockEvent = (id: string, interruptId = "int-1", sequence = 1): AGUIEvent =>
   ({
@@ -55,7 +73,7 @@ describe("turn reducer", () => {
     first.reducer.applyEvent(THREAD, blockEvent("b1"));
     second.reducer.applyEvent(THREAD, blockEvent("b1"));
 
-    const props = (store: InMemoryTurnStore) =>
+    const props = (store: TestStore) =>
       (store.turns(THREAD)?.[0]?.blocks[0]?.content as { props: Record<string, unknown> }).props;
     expect(props(first.store)).toMatchObject({ resolvedValue: "yes" });
     expect(props(second.store)).not.toHaveProperty("resolvedValue");
@@ -113,7 +131,7 @@ describe("turn reducer", () => {
         name: "meridian.messages.handed_back",
         value: { userTurnIds: ids },
       }) as unknown as AGUIEvent;
-    const ids = (store: InMemoryTurnStore) => store.turns(THREAD)?.map((turn) => turn.id);
+    const ids = (store: TestStore) => store.turns(THREAD)?.map((turn) => turn.id);
 
     it("stays gone against a snapshot read before the removal, until a snapshot covers it", () => {
       // Risk: a hand-back frame undone by an older in-flight snapshot, or a tombstone that
@@ -188,7 +206,7 @@ describe("turn reducer", () => {
     // the frame, a snapshot, or a second switch, and its notice then jumps. Also: an answered
     // switch showing queued again when a snapshot read before the frame drops the divider.
     const { store, reducer } = instance();
-    const ids = (of: InMemoryTurnStore) => of.turns(THREAD)?.map((turn) => turn.id);
+    const ids = (of: TestStore) => of.turns(THREAD)?.map((turn) => turn.id);
     const t = (id: string, prevTurnId: string | null) =>
       ({ id, role: "assistant", prevTurnId, blocks: [] }) as unknown as Turn;
     // r2a and r2b are one reply split by an autocompaction; r3 is a later reply.
