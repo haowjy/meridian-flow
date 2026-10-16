@@ -164,7 +164,7 @@ describe("context router Work slug resolution", () => {
     await expect(port().read("scratch://@c1/notes.md")).resolves.toMatchObject({
       ok: false,
       error: {
-        reason: `Unknown Work @c1. List Works with work({"command":"list"}). Chat c1's scratch notes are at scratch://@[c1]/`,
+        reason: "No Work is named @c1. Chat c1's notes are at scratch://@[c1]/…",
       },
     });
     await expect(port().read("scratch://@c9/notes.md")).resolves.toMatchObject({
@@ -341,11 +341,11 @@ it("reads another chat's uploads by handle and refuses a trashed, unknown or Wor
   });
   await expect(port.list("uploads://@c2/x")).resolves.toMatchObject({
     ok: false,
-    error: { reason: "Another chat's uploads are at uploads://@[c2]/…" },
+    error: { reason: "Chat handles go in brackets: uploads://@[c2]/…" },
   });
   await expect(port.list("uploads://@c4/x")).resolves.toMatchObject({
     ok: false,
-    error: { reason: expect.stringContaining("Uploads belong to a chat") },
+    error: { reason: expect.stringContaining("Chat handles go in brackets: uploads://@[c4]/…") },
   });
 });
 
