@@ -688,7 +688,14 @@ export class DocumentSession {
       ];
     }
 
-    const attempt = (async () => {
+    // The promise is installed before the first stage runs: that stage notifies observers, and one may
+    // call `destroy()` again from inside the notification, which must join this attempt.
+    let settle!: { resolve: () => void; reject: (error: unknown) => void };
+    const attempt = new Promise<void>((resolve, reject) => {
+      settle = { resolve, reject };
+    });
+    this.destroyPromise = attempt;
+    void (async () => {
       const errors: unknown[] = [];
       for (const stage of this.destroyStages ?? []) {
         if (stage.settled) continue;
@@ -702,10 +709,16 @@ export class DocumentSession {
 
       if (errors.length === 1) throw errors[0];
       if (errors.length > 1) throw new AggregateError(errors, "Document session teardown failed");
-    })().finally(() => {
-      if (this.destroyPromise === attempt) this.destroyPromise = null;
-    });
-    this.destroyPromise = attempt;
+    })().then(
+      () => {
+        if (this.destroyPromise === attempt) this.destroyPromise = null;
+        settle.resolve();
+      },
+      (error) => {
+        if (this.destroyPromise === attempt) this.destroyPromise = null;
+        settle.reject(error);
+      },
+    );
     return attempt;
   }
 
