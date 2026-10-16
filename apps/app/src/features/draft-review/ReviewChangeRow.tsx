@@ -113,11 +113,7 @@ export function ReviewChangeRow({
             </span>
           </button>
           {showAttribution ? (
-            <ChangeAuthor
-              overflow="hide"
-              change={change}
-              className="hidden shrink-0 @min-[28rem]/changes:inline-flex"
-            />
+            <ChangeAuthor overflow="hide" change={change} className="shrink-0" />
           ) : null}
         </div>
         <span className="flex shrink-0 items-center">

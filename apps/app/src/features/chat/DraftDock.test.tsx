@@ -222,6 +222,50 @@ it("an expanded file lists its room's changes; Apply sends the id with the snaps
   );
 });
 
+it("a file where the chat has no change after the writer's own edits leaves the dock, not a summary with commands and no rows", async () => {
+  const file = draft("chapter", { itemKey: "draft-a" });
+  fixture.network.listWorkDrafts.mockResolvedValue({ items: [file] });
+  fixture.network.getThreadDraftFiles.mockResolvedValue({ drafts: [file] });
+  // The chat's only write sits in ids nothing in the room holds: every change in the room is the writer's.
+  fixture.network.getDraftAttribution.mockImplementation(async () => ({
+    itemKey: "draft-a",
+    userId: "user-1",
+    edits: [
+      {
+        threadId: "thread-a",
+        title: "Chat A",
+        turnId: "turn-1",
+        owner: {
+          threadId: "thread-a",
+          title: "Chat A",
+          reveal: { threadId: "thread-a", turnId: "turn-1" },
+        },
+        at: "2026-10-13T10:00:00Z",
+        inserted: [[4_000_000_000, 0, 10]],
+        deleted: [],
+      },
+    ],
+  }));
+  fixture.network.getDraftMeta.mockResolvedValue({
+    ...meta,
+    itemKey: "draft-a",
+    roomName: "room-chapter",
+  });
+  await fixture.render(
+    async () => {
+      await settleReact(() =>
+        expect(document.querySelector("[data-draft-dock-file]")).not.toBeNull(),
+      );
+      await click('[aria-label="Expand changes"]');
+      await settleReact(() => expect(fixture.rooms.has("room-chapter")).toBe(true));
+      await act(async () => fillRoom("room-chapter", ["It was green."], ["It was red."]));
+      await settleReact(() => expect(document.querySelector("[data-draft-dock-file]")).toBeNull());
+      expect(document.body.textContent).not.toContain("Apply");
+    },
+    { chatSurface: <Strip />, host },
+  );
+});
+
 it("a new document has no live text to return to, so Discard closes its draft on the server", async () => {
   const created = draft("scene", { isNew: true, wholeItem: true, origin: "created" });
   fixture.network.listWorkDrafts.mockResolvedValue({ items: [created] });

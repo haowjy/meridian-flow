@@ -125,4 +125,27 @@ describe("useRenameThread account fence", () => {
       expect(titleOf(queryClient)).toBe("Original");
     });
   });
+
+  it("a confirmed rename refetches draft bylines, which name the chat by the title they carried", async () => {
+    const queryClient = client();
+    const key = projectQueryKeys.workDraftAttribution(PROJECT_ID, "work", "doc", "item");
+    queryClient.setQueryData(key, { itemKey: "item", userId: "u", edits: [] });
+    mocks.renameThread.mockResolvedValue({
+      threadId: THREAD_ID,
+      title: "Renamed",
+      updatedAt: new Date().toISOString(),
+    });
+    let rename: Rename | undefined;
+    await withReactRoot(
+      <QueryClientProvider client={queryClient}>
+        <AccountFeatureTestProvider accountId="account-a">
+          <Probe expose={(next) => (rename = next)} />
+        </AccountFeatureTestProvider>
+      </QueryClientProvider>,
+      async () => {
+        await act(async () => rename?.("Renamed"));
+        expect(queryClient.getQueryState(key)?.isInvalidated).toBe(true);
+      },
+    );
+  });
 });

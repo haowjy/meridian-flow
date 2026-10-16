@@ -38,6 +38,7 @@ export function DocumentChanges({
 
   return (
     <DocumentChangeRows
+      showAttribution
       view={view}
       touch={touch}
       standIn={view.status === "loading" ? null : stateLine()}
