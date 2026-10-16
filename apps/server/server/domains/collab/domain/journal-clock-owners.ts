@@ -30,10 +30,8 @@ export function indexJournalClockOwners(input: {
   baseDoc: Y.Doc;
   updates: readonly IndexedDraftUpdate[];
 }): JournalClockOwners {
-  const rowsWithEffect = new Set<string>();
   const introduced: RangeLookup = new Map();
   const deleted: RangeLookup = new Map();
-  const deletedHistory: RangeLookup = new Map();
   const replayDoc = cloneDoc(input.baseDoc);
 
   try {
@@ -43,11 +41,10 @@ export function indexJournalClockOwners(input: {
       const beforeVisibility = deleteSetRanges(decoded.ds)
         .flatMap((range) => splitRangeAtStructBoundaries(replayDoc, range))
         .map((range) => ({ range, visible: isRangeVisible(replayDoc, range) }));
-      const beforeState = Y.decodeStateVector(Y.encodeStateVector(replayDoc));
       const introducedRanges = decoded.structs.flatMap((struct) => {
         // Reconnect frames repeat old structs. Only novel clocks acquire the current row's
         // ownership; inherited bytes keep their earlier owner.
-        const clock = Math.max(struct.id.clock, beforeState.get(struct.id.client) ?? 0);
+        const clock = Math.max(struct.id.clock, Y.getState(replayDoc.store, struct.id.client));
         const length = struct.id.clock + struct.length - clock;
         return length > 0 ? [{ client: struct.id.client, clock, length }] : [];
       });
@@ -56,30 +53,26 @@ export function indexJournalClockOwners(input: {
 
       for (const { range, visible: wasVisible } of beforeVisibility) {
         if (wasVisible && !isRangeVisible(replayDoc, range)) {
-          setAssignedRange(deleted, range, operationId);
-          setAssignedRange(deletedHistory, range, operationId);
-          rowsWithEffect.add(operationId);
+          appendAssignment(deleted, range, operationId);
         }
       }
       for (const range of introducedRanges) {
-        setAssignedRange(introduced, range, operationId);
-        rowsWithEffect.add(operationId);
+        appendAssignment(introduced, range, operationId);
       }
     }
   } finally {
     replayDoc.destroy();
   }
 
+  normalizeAssignments(introduced);
+  normalizeAssignments(deleted);
+
   return {
     owningRowIds({ insertedRanges, deletedRanges }) {
       const ids = new Set<string>();
       for (const range of insertedRanges) addMatchingOperations(ids, introduced, range);
-      for (const range of deletedRanges) {
-        const beforeSize = ids.size;
-        addMatchingOperations(ids, deleted, range);
-        if (ids.size === beforeSize) addMatchingOperations(ids, deletedHistory, range);
-      }
-      return [...ids].filter((id) => rowsWithEffect.has(id)).sort();
+      for (const range of deletedRanges) addMatchingOperations(ids, deleted, range);
+      return [...ids].sort();
     },
   };
 }
@@ -157,49 +150,72 @@ function matchingOperationIds(lookup: RangeLookup, range: ClockRange): string[] 
   const candidates = lookup.get(range.client) ?? [];
   const start = range.clock;
   const end = range.clock + range.length;
-  for (const candidate of candidates) {
-    if (candidate.start < end && start < candidate.end) ids.add(candidate.operationId);
+  let low = 0;
+  let high = candidates.length;
+  while (low < high) {
+    const mid = (low + high) >>> 1;
+    if (candidates[mid].end <= start) low = mid + 1;
+    else high = mid;
+  }
+  for (let index = low; index < candidates.length && candidates[index].start < end; index++) {
+    ids.add(candidates[index].operationId);
   }
   return [...ids].sort();
 }
 
-function setAssignedRange(lookup: RangeLookup, range: ClockRange, operationId: string): void {
-  const start = range.clock;
-  const end = range.clock + range.length;
-  const retained = (lookup.get(range.client) ?? []).flatMap((candidate) =>
-    subtractRange(candidate, { start, end }),
-  );
-  retained.push({ start, end, operationId });
-  lookup.set(range.client, mergeAssignments(retained));
+function appendAssignment(lookup: RangeLookup, range: ClockRange, operationId: string): void {
+  let assignments = lookup.get(range.client);
+  if (!assignments) {
+    assignments = [];
+    lookup.set(range.client, assignments);
+  }
+  assignments.push({ start: range.clock, end: range.clock + range.length, operationId });
 }
 
-function subtractRange(
-  candidate: RangeAssignment,
-  removed: { start: number; end: number },
-): RangeAssignment[] {
-  if (removed.end <= candidate.start || candidate.end <= removed.start) return [candidate];
-  const ranges: RangeAssignment[] = [];
-  if (candidate.start < removed.start) {
-    ranges.push({ ...candidate, end: removed.start });
-  }
-  if (removed.end < candidate.end) {
-    ranges.push({ ...candidate, start: removed.end });
-  }
-  return ranges;
-}
-
-function mergeAssignments(ranges: RangeAssignment[]): RangeAssignment[] {
-  const sorted = ranges
-    .filter((range) => range.start < range.end)
-    .sort((left, right) => left.start - right.start || left.end - right.end);
-  const merged: RangeAssignment[] = [];
-  for (const range of sorted) {
-    const previous = merged.at(-1);
-    if (previous && previous.operationId === range.operationId && range.start <= previous.end) {
-      previous.end = Math.max(previous.end, range.end);
-    } else {
-      merged.push({ ...range });
+/** Last assignment wins, including repeated clocks from updates awaiting a dependency. */
+function normalizeAssignments(lookup: RangeLookup): void {
+  for (const [client, assignments] of lookup) {
+    const boundaries = [...new Set(assignments.flatMap(({ start, end }) => [start, end]))].sort(
+      (a, b) => a - b,
+    );
+    const positions = new Map(boundaries.map((clock, index) => [clock, index]));
+    const owners: Array<string | undefined> = new Array(boundaries.length - 1);
+    const next = boundaries.map((_, index) => index);
+    // Paint newest first. The disjoint-set successor skips spans already owned, so each
+    // elementary interval is visited once even when reconnect frames overlap every range.
+    const unassigned = (index: number): number => {
+      let root = index;
+      while (next[root] !== root) root = next[root];
+      while (next[index] !== index) {
+        const parent = next[index];
+        next[index] = root;
+        index = parent;
+      }
+      return root;
+    };
+    for (let index = assignments.length - 1; index >= 0; index--) {
+      const range = assignments[index];
+      const end = positions.get(range.end) as number;
+      for (
+        let span = unassigned(positions.get(range.start) as number);
+        span < end;
+        span = unassigned(span)
+      ) {
+        owners[span] = range.operationId;
+        next[span] = unassigned(span + 1);
+      }
     }
+    const normalized: RangeAssignment[] = [];
+    for (let index = 0; index < owners.length; index++) {
+      const operationId = owners[index];
+      if (operationId === undefined) continue;
+      const previous = normalized.at(-1);
+      if (previous?.operationId === operationId && previous.end === boundaries[index]) {
+        previous.end = boundaries[index + 1];
+      } else {
+        normalized.push({ start: boundaries[index], end: boundaries[index + 1], operationId });
+      }
+    }
+    lookup.set(client, normalized);
   }
-  return merged;
 }

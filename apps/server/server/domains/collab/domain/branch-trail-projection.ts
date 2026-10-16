@@ -59,20 +59,33 @@ export function draftPriorDoc(draftState: Uint8Array, rows: readonly BranchJourn
         }
       }
       for (const [client, items] of decoded.ds.clients) {
-        rowDeletes.set(client, [...(rowDeletes.get(client) ?? []), ...items]);
+        let ranges = rowDeletes.get(client);
+        if (!ranges) {
+          ranges = [];
+          rowDeletes.set(client, ranges);
+        }
+        for (const item of items) ranges.push(item);
       }
     }
     const deleteSet = Y.createDeleteSetFromStructStore(draft.store);
     for (const [client, lifted] of rowDeletes) {
+      lifted.sort((a, b) => a.clock - b.clock);
+      let gapIndex = 0;
       const kept: Array<{ clock: number; len: number }> = [];
       for (const item of deleteSet.clients.get(client) ?? []) {
         let start = item.clock;
         const end = item.clock + item.len;
-        for (const gap of [...lifted].sort((a, b) => a.clock - b.clock)) {
+        while (gapIndex < lifted.length) {
+          const gap = lifted[gapIndex];
+          if (gap.clock >= end) break;
           const gapEnd = gap.clock + gap.len;
-          if (gapEnd <= start || gap.clock >= end) continue;
-          if (gap.clock > start) kept.push({ clock: start, len: gap.clock - start });
-          start = Math.max(start, gapEnd);
+          if (gapEnd > start) {
+            if (gap.clock > start) kept.push({ clock: start, len: gap.clock - start });
+            start = gapEnd;
+          }
+          // A lifted range can span several disjoint tombstones. Keep it for the next item.
+          if (gapEnd >= end) break;
+          gapIndex++;
         }
         if (start < end) kept.push({ clock: start, len: end - start });
       }

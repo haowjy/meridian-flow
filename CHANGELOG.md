@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Draft Apply indexes fragmented journal ownership once and reconstructs prior deletions with a linear scan, avoiding repeated full-range sorting after Discard and Undo.
+
 - Draft review no longer names a chat whose edit was replaced when the final change only inserts text. Shared replacements still name the chat that removed the base text.
 - Formatting-only draft review rows exclude separate text edits from their excerpts and red/green paint.
 
