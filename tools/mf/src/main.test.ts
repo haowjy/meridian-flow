@@ -4,14 +4,15 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { EXIT } from "./core/cli-error";
 import { GROUPS } from "./main";
-import { type FakeStack, startFakeStack, THREAD_ID } from "./test-support/fake-stack";
+import { startWire, type Wire } from "./test-support/wire";
+import { THREAD_ID } from "./test-support/wire-fixtures";
 
-let stack: FakeStack;
+let wire: Wire;
 beforeAll(async () => {
-  stack = await startFakeStack();
+  wire = await startWire();
 });
-afterAll(() => stack.close());
-const mf: FakeStack["mf"] = (argv, env) => stack.mf(argv, env);
+afterAll(() => wire.close());
+const mf: Wire["mf"] = (argv, env) => wire.mf(argv, env);
 
 describe("./mf", () => {
   it("rejects unknown flags and commands with exit 2", async () => {

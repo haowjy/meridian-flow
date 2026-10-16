@@ -7,6 +7,8 @@ import type {
   HandBackResponse,
   OrchestratorEvent,
   RunState,
+  SendNowRequest,
+  SendNowResponse,
   StopRequest,
   StopResponse,
   Turn,
@@ -188,6 +190,11 @@ export interface RuntimeDelivery
    * the open execution for cancellation when the rule says so. Only flags; the run session aborts.
    */
   stop(threadId: ThreadId, request: StopRequest): Promise<StopResponse>;
+  /**
+   * Send now: flags the open execution for cancellation when it is the one the writer saw and has
+   * taken on none of the waiting messages. Hands nothing back; only flags, the run session aborts.
+   */
+  sendNow(threadId: ThreadId, request: SendNowRequest): Promise<SendNowResponse>;
   /** Parent-first business transaction; the producer does not reacquire the lock. */
   withThreadLock<T>(
     threadId: ThreadId,

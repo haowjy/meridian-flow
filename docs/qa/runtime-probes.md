@@ -533,6 +533,48 @@ restart smoke check.
   that keeps the row listed, and the envelope's `requestId` makes whole-payload
   comparison wrong. Evidence: `/tmp/opencode/probe-rp14/`.
 
+## RP-15: `send` proves its own message's fate
+
+- **Protects:** `./mf thread send` follows its reply through the shared `messageFate`
+  over one snapshot, and names what became of its own message: answered (by which
+  reply, with the chain's last reply as the result), handed back, or unproven. This
+  replaces the deleted interim-follow cases in `tools/mf` for steer, queued switch and
+  unrelated starts, whose risks are now `message-fate.test.ts`.
+- **Stack:** mock. Use `--match` on each scripted reply, and `./mf mock clear` at the end.
+- **Steps:** (`T` is a fresh thread per case; `E` holds the evidence)
+
+  ```bash
+  # 1. Plain send
+  ./mf thread send "$T" 'c1 plain' --mock '[{"text":"Plain reply."}]' --json > "$E/1.ndjson"
+  # 2. Steer into a held reply: the result is the successor's own text
+  ./mf mock script '[{"text":"Held first reply.","delayMs":6000}]' --match 'c2 first'
+  ./mf mock script '[{"text":"Steer successor reply."}]' --match 'c2 steer'
+  ./mf thread send "$T" 'c2 first' --no-wait --json
+  ./mf thread send "$T" 'c2 steer' --json > "$E/2.ndjson"
+  # 3. Queued behind a held reply, then the chat's Stop
+  ./mf mock script '[{"text":"Held.","delayMs":30000}]' --match 'c3 first'
+  ./mf thread send "$T" 'c3 first' --no-wait --json
+  ./mf thread send "$T" 'c3 queued' --json > "$E/3.ndjson" & sleep 8
+  ./mf thread stop "$T" --json > "$E/3-stop.json"; wait
+  # 4. A scripted failing successor
+  ./mf mock script '[{"text":"Earlier reply text.","delayMs":5000}]' --match 'c4 first'
+  ./mf mock script '[{"error":{"status":400,"message":"scripted successor failure"}}]' --match 'c4 steer'
+  ./mf thread send "$T" 'c4 first' --no-wait --json
+  ./mf thread send "$T" 'c4 steer' --json > "$E/4.ndjson"
+  # 5. After each case
+  ./mf thread view "$T"; ./mf mock clear
+  ```
+
+- **Expect:** 1 exits 0 with `userTurnId`, `answeredBy` and `finalText` of that reply. 2 exits 0 with `turnId`
+  the successor and its text only. 3: `stop` exits 0 and its `handedBack` names the queued
+  message's id; the queued `send` exits 5 with `outcome: "handed_back"`, `turnId: null`;
+  the message is absent from `thread view`. 4 exits 1 with `turnId` the failed successor
+  and no text from the earlier reply. In every case `thread view` agrees with the claim.
+  A claim that `view` contradicts is a failure of the probe, not of the view.
+- **Evidence:** each command, stdout, stderr and exit code, and the `thread view` after it.
+- **Last run:** 2026-10-15 on `fa1040e86` (`feat/mf-send-fate`, the final code), mock; all four cases
+  passed. Evidence: `work/mf-client-unification/evidence/B6/` in the docs repository.
+
 [c6a]: https://github.com/haowjy/meridian-flow-docs/blob/683395ca9b084cee0196ec9c9070755930d38329/work/agents-milestone-4/evidence/c6a-probe/report.md
 [merge]: https://github.com/haowjy/meridian-flow-docs/blob/a4b1dddbd615bbab334dc6fa7b700245f768d288/work/agents-milestone-4/evidence/merge-gate/REPORT.md
 [link-probes]: https://github.com/haowjy/meridian-flow-docs/tree/6934bec3c8771d80ae9014ccc5a93b61da74f8b1/work/model-tool-surface/experiments

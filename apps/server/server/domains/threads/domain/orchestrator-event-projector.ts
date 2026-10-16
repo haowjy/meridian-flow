@@ -160,10 +160,6 @@ export function createOrchestratorEventProjector() {
             runId: event.turn.id,
             rawEvent: {
               writeMode: event.turn.writeMode,
-              // Old journal payloads lack these; they read as unknown.
-              executionId: event.turn.executionId ?? null,
-              reservedForUserTurnIds: event.turn.reservedForUserTurnIds ?? [],
-              position: event.turn.position ?? null,
             } satisfies RunStartedMeta,
           }),
         ];
