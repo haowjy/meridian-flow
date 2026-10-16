@@ -203,7 +203,7 @@ export interface InMemoryRepositoriesOptions {
 
 export function createInMemoryRepositories(
   options: InMemoryRepositoriesOptions = {},
-): InternalThreadRepositories {
+): InternalThreadRepositories & { readonly transactionOwner: InMemoryTransactionOwner } {
   const transactionOwner = options.transactionOwner ?? new InMemoryTransactionOwner();
   const threads = transactionOwner.map<string, Thread>();
   const turns = transactionOwner.map<string, Turn>();
@@ -1425,6 +1425,7 @@ export function createInMemoryRepositories(
       blocks,
       projects: options.projects,
     }),
+    transactionOwner,
     readSnapshot: (operation) => transactionOwner.run(operation),
     threadDocuments: threadDocumentRepo,
     documentTouches: documentTouchRepo,
@@ -1440,4 +1441,5 @@ export function createInMemoryRepositories(
   };
 }
 
+/** The repositories plus the owner of their data, so a journal writer follows the same commits. */
 export type InMemoryRepositories = ReturnType<typeof createInMemoryRepositories>;

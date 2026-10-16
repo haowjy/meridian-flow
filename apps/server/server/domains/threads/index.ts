@@ -8,6 +8,7 @@ export {
   createInMemoryEventJournalReader,
   createInMemoryEventJournalWriter,
   createInMemoryRepositories,
+  type InMemoryRepositories,
 } from "./adapters/in-memory/index.js";
 export {
   type ActiveDocumentResolver,
