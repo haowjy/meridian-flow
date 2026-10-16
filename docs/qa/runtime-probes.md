@@ -595,7 +595,7 @@ restart smoke check.
   Also that the model never reads a failure. Run it on the first check of any change to a
   terminal writer, the append primitive, or the usage block.
 - **Stack:** mock. A usage block needs a thread's owner at zero credits.
-- **Steps:** make `mk() { ./mf thread create --agent runtime-probe --work @/ --title "$1" --json | jq -r .threadId; }`
+- **Steps:** make `mk() { ./mf thread create --agent runtime-probe --title "$1" --json | jq -r .threadId; }`
   and read each result with `./mf log --thread "$X" --name failure. --full --since 2m`.
 
   ```bash

@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 - Addresses name an owner by its handle: a Work's notes are `scratch://@w3/`, a chat's files `uploads://@c15/`, and a No Work chat's notes `scratch://@c12/`. Every Work gets a permanent handle (`w1`, `w2`, ...) when it is created, and the old Work slugs and the `@/` spelling are gone. A wrong address now gets a correction that names the owner it meant, for example a Work's name answers with its handle, and `ls scratch://@` and `ls uploads://@` list every owner with its handle and label. Work names stay unique among Works that are not deleted.
+- Path segments beginning with `~` are reserved for branches, which are not addressable yet: `manuscript://~b7/Chapter 12` is refused with a pointer to the bare address, and files and folders cannot be named that way. `scratch://@/` and `uploads://@/` are refused too; `ls scratch://@` and `ls uploads://@` list owners.
 - A bare `[map](uploads://map)` the model writes into a document binds to the chat's existing `map.png`, the same as the full `uploads://@c3/map` spelling, instead of minting a link to a file that does not exist.
 - Files attached to a Work, or to No Work, before uploads moved to chats are deleted, and a message that attached one shows the file as no longer available. Uploads without a chat handle (`uploads://@name`) are no longer an address.
 - A file attached in a New chat opens from the sent message as soon as the chat is named, in No Work as in a Work, instead of staying unclickable until a reload.
