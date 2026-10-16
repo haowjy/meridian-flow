@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { EXIT } from "../../core/cli-error";
 import { startWire, type Wire } from "../../test-support/wire";
 import {
+  COOKIE,
   DIVERGED_STORED_TEXT,
   frames,
   inboxItem,
@@ -28,6 +29,7 @@ import {
   THREAD_ID,
   userTurn,
 } from "../../test-support/wire-fixtures";
+import { createThreadClient, subscribeThread } from "./transport";
 
 let wire: Wire;
 beforeEach(async () => {
@@ -633,9 +635,23 @@ describe("thread view, cancel, events, respond", () => {
     });
   });
 
-  it("keeps terminal socket close 4401 at exit 4", async () => {
+  it.each([
+    "events",
+    "send",
+    "tail",
+  ] as const)("keeps %s terminal socket close 4401 at exit 4", async (command) => {
+    runningReply();
     wire.onSubscribe = () => ({ close: 4401 });
-    const result = await wire.mf(["thread", "events", THREAD_ID, "--timeout", "1s", "--json"]);
+    const args = command === "send" ? ["hang"] : command === "tail" ? ["--until-idle"] : [];
+    const result = await wire.mf([
+      "thread",
+      command,
+      THREAD_ID,
+      ...args,
+      "--timeout",
+      "1s",
+      "--json",
+    ]);
     expect(result.code).toBe(EXIT.unavailable);
     expect(JSON.parse(result.stderr)).toMatchObject({ code: "unavailable" });
   });
@@ -712,4 +728,97 @@ describe("thread tail --until-idle", () => {
     expect(wire.requestsOf("stop")).toHaveLength(0);
     expect(wire.requestsOf("cancel")).toHaveLength(0);
   });
+});
+
+describe("replay outcomes", () => {
+  it.each([
+    "send",
+    "tail",
+    "events",
+  ] as const)("%s recovers retryable errors but ends on a refusal", async (command) => {
+    runningReply();
+    let attempts = 0;
+    wire.onSubscribe = (cursor) => {
+      attempts += 1;
+      return {
+        type: "error",
+        kind: "error",
+        requestId: cursor.requestId,
+        threadId: cursor.threadId,
+        error: {
+          code: "internal",
+          source: "system",
+          message: attempts === 1 ? "temporary read failure" : "refused replay",
+          retryable: attempts === 1,
+        },
+      };
+    };
+    const args = command === "send" ? ["hang"] : command === "tail" ? ["--until-idle"] : [];
+    const result = await wire.mf([
+      "thread",
+      command,
+      THREAD_ID,
+      ...args,
+      "--timeout",
+      "2s",
+      "--json",
+    ]);
+    expect(result.code).toBe(EXIT.failed);
+    expect(result.stderr).toContain("refused replay");
+    expect(result.stdout).not.toContain('"outcome":"complete"');
+    expect(attempts).toBe(2);
+    expect(wire.connections).toBe(1);
+    const requests = wire.clientMessages.filter((message) => message.type === "subscribe");
+    expect(requests[0].requestId).not.toBe(requests[1].requestId);
+  });
+});
+
+it("keeps a sibling live on the same socket while a replay retries", async () => {
+  let attempts = 0;
+  wire.onSubscribe = (cursor) => {
+    if (cursor.threadId !== "failed-thread") return;
+    attempts += 1;
+    if (attempts !== 1) return;
+    return {
+      type: "error",
+      kind: "error",
+      requestId: cursor.requestId,
+      threadId: cursor.threadId,
+      error: { code: "internal", source: "system", message: "try again", retryable: true },
+    };
+  };
+  const transport = createThreadClient({
+    serverUrl: wire.baseUrl,
+    cookie: COOKIE,
+    ca: undefined,
+    request: async () => {
+      throw new Error("no HTTP expected");
+    },
+  });
+  const healthy = subscribeThread(transport, THREAD_ID, "0");
+  const failed = subscribeThread(transport, "failed-thread", "10");
+  try {
+    const deadline = Date.now() + 2000;
+    expect((await healthy.next(deadline)).type).toBe("live");
+    await wire.until(() => attempts === 1);
+    wire.publish(frames.started("healthy"));
+    expect(await healthy.next(deadline)).toMatchObject({ type: "event", event: { seq: "1" } });
+    expect((await failed.next(deadline)).type).toBe("live");
+    wire.publish(frames.finished("healthy"));
+    expect(await healthy.next(deadline)).toMatchObject({ type: "event", event: { seq: "2" } });
+    expect(attempts).toBe(2);
+    expect(wire.connections).toBe(1);
+    expect(
+      wire.clientMessages.filter((m) => m.type === "subscribe" && m.threadId === THREAD_ID),
+    ).toHaveLength(1);
+    expect(
+      wire.clientMessages
+        .filter((m) => m.type === "subscribe" && m.threadId === "failed-thread")
+        .map((m) => m.lastSeq),
+    ).toEqual(["10", "10"]);
+  } finally {
+    healthy.unsubscribe();
+    failed.unsubscribe();
+    transport.disconnect();
+  }
 });

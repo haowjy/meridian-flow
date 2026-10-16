@@ -16,6 +16,11 @@ Read [`.context/CONTEXT.md`](.context/CONTEXT.md) first.
   another reducer or turn store here. Biome restricts reducer/store module imports and
   re-exports in the two hosts, including relative source paths. This guards the import boundary,
   not independently written reduction logic.
+- **Replay failures are not connection failures.** The shared socket transport correlates
+  requests, retries only the failed thread, and keeps healthy subscriptions live. Both the sync
+  observer and journal subscription wait through retryable errors and replay deadlines until
+  the command deadline; a refusal ends the command. Do not add a CLI retry loop. A diagnostic
+  failure after a proving read preserves that result and marks observation incomplete.
 - **Imports:** only `@meridian/contracts` and `@meridian/thread-client` from
   workspace packages. From `tools/dev`, only the Portless route contract:
   `portless-prefix.ts`, `portless-routes.ts`, `portlessCa` in
