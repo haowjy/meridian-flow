@@ -1,4 +1,4 @@
-import { apiProjectContextReadPath, type ContextReadResponse } from "@meridian/contracts/protocol";
+import { apiProjectContextReadPath, contextReadResponseSchema } from "@meridian/contracts/protocol";
 import { type CommandSpec, flag, requirePositional, stringOption } from "../../core/command";
 import { truncate } from "../../core/output";
 import { resolveProjectId } from "../project/resolve";
@@ -21,9 +21,11 @@ export const docReadCommand: CommandSpec = {
       stringOption(ctx, "work"),
       stringOption(ctx, "chat"),
     );
-    const response = await session.request<ContextReadResponse>(
+    const response = await session.request(
       "GET",
       apiProjectContextReadPath(projectId, target.scheme, target.path, ownerOf(target)),
+      undefined,
+      { parse: contextReadResponseSchema.safeParse },
     );
     const full = flag(ctx, "full");
     ctx.out.result({ uri: target.uri, ...response }, (value) =>

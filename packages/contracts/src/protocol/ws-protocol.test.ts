@@ -17,7 +17,9 @@ function subscribedFrameWithQueuedControl(control: ControlBody): string {
   ];
   return JSON.stringify({
     type: "subscribed",
+    requestId: "r1",
     threadId: "thread-1",
+    after: "0",
     catchup: [],
     state: {
       threadId: "thread-1",

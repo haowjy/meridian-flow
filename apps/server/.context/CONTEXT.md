@@ -163,10 +163,10 @@ primitives in `server/lib/`:
 
 1. Authenticated `open()` sends `{ type: "connected", userId, scope }`; deferred
    close emits an error frame and closes.
-2. `subscribe` calls the thread/project access gate, then `hub.catchupAndSubscribe`.
-3. Server sends `subscribed` with catchup/state/cursor.
+2. `subscribe {requestId, threadId, lastSeq?}` calls the thread/project access gate, then `hub.catchupAndSubscribe`.
+3. Server sends `subscribed` with the `requestId`, `after`, catchup and state.
 4. Live events flow as `{ type: "event", threadId, seq, event }`.
-5. `resume` re-subscribes many threads; `unsubscribe` stops one.
+5. `unsubscribe` stops one; a reconnect sends one `subscribe` per thread.
 6. Route heartbeat sends `ping`; clients reply `pong`. All sends use safe send.
 
 ## Model gateway deadlines

@@ -1,5 +1,5 @@
 /** Thread data commands: list, view, context (model requests), events (journal replay). */
-import { apiThreadSnapshotPath, type ThreadSnapshotResponse } from "@meridian/contracts/protocol";
+import { apiThreadSnapshotPath, threadSnapshotSchema } from "@meridian/contracts/protocol";
 import {
   type CommandSpec,
   flag,
@@ -9,7 +9,6 @@ import {
 } from "../../core/command";
 import { blockTimings, renderBlocks } from "./block-timing";
 import { projectChatView, renderChatView, selectRows, viewSnapshot } from "./chat-view";
-import { ReducedThread } from "./reduced-thread";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
 
 export const threadViewCommand: CommandSpec = {
@@ -47,15 +46,11 @@ export const threadViewCommand: CommandSpec = {
       requirePositional(ctx, 0, "<thread>"),
       stringOption(ctx, "project"),
     );
-    const snapshot = await session.request<ThreadSnapshotResponse>(
-      "GET",
-      apiThreadSnapshotPath(threadId),
-    );
-    // Turns come from the shared reducer's store, as the app builds them; the shared
-    // view model then decides the rows, as the app does.
-    const reduced = new ReducedThread(threadId);
-    reduced.hydrate(snapshot);
-    const view = viewSnapshot(snapshot, reduced.turns());
+    const snapshot = await session.request("GET", apiThreadSnapshotPath(threadId), undefined, {
+      parse: threadSnapshotSchema.safeParse,
+    });
+    // One authoritative read, no socket and no sync: the shared view model decides the rows, as the app does.
+    const view = viewSnapshot(snapshot, snapshot.turns);
     const selection = {
       full: flag(ctx, "full"),
       turnId: stringOption(ctx, "turn"),

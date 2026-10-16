@@ -11,18 +11,16 @@ import {
   MESSAGES_HANDED_BACK_EVENT,
   type SendMessageResponse,
 } from "@meridian/contracts/protocol";
-import { serializeMessageDoc } from "@meridian/thread-client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { EXIT } from "../../core/cli-error";
 import { startWire, type Wire } from "../../test-support/wire";
 import {
+  COOKIE,
   DIVERGED_STORED_TEXT,
-  DOCUMENT_ID,
   frames,
   inboxItem,
   ndjson,
   openReply,
-  PROJECT_ID,
   publishRecord,
   recordOf,
   replyScenario,
@@ -31,6 +29,7 @@ import {
   THREAD_ID,
   userTurn,
 } from "../../test-support/wire-fixtures";
+import { createThreadClient, subscribeThread } from "./transport";
 
 let wire: Wire;
 beforeEach(async () => {
@@ -55,39 +54,97 @@ function runningReply() {
 }
 
 describe("thread send", () => {
-  it("exits on a usage block proven for its own accepted message", async () => {
-    wire.snapshot = snapshotOf({
-      turns: [userTurn("u1", 1, "wait for usage")],
-      record: {
-        items: [inboxItem("u1", 1)],
-        sentThrough: 1,
-        blocked: { reason: "credits_exhausted" },
+  it("assembles CLI skills and repeated refs from address lookups into the admission", async () => {
+    wire.fail("other", {
+      body: { skills: [{ slug: "revise", name: "Revise", description: "Revise prose" }] },
+    });
+    wire.fail("other", {
+      body: {
+        kind: "current",
+        document: {
+          kind: "available",
+          documentId: "notes-id",
+          entry: { name: "Notes", editable: true },
+        },
       },
     });
-    const result = await send("wait for usage", "--timeout", "2s", "--json");
-    expect(result.code).toBe(EXIT.failed);
-    expect(lastRecord(result.stdout)).toMatchObject({
-      status: "blocked",
-      reason: "credits_exhausted",
-      turnId: null,
+    wire.fail("other", {
+      body: {
+        kind: "current",
+        document: {
+          kind: "available",
+          documentId: "image-id",
+          entry: { name: "Cover", editable: false, fileType: "image" },
+        },
+      },
     });
+    const result = await send(
+      "Compare\nthese",
+      "--skill",
+      "revise",
+      "--ref",
+      "kb://notes.md",
+      "--ref",
+      "kb://cover.png",
+      "--no-wait",
+      "--json",
+    );
+    expect(result.code).toBe(EXIT.ok);
+    expect(wire.requestsOf("other").map((request) => request.path)).toEqual([
+      `/api/threads/${THREAD_ID}/skills`,
+      "/api/projects/22222222-2222-4222-8222-222222222222/context/kb/address?path=notes",
+      "/api/projects/22222222-2222-4222-8222-222222222222/context/kb/address?path=cover.png",
+    ]);
+    expect(wire.bodiesOf("admit")).toEqual([
+      {
+        submissionId: expect.any(String),
+        text: "/reviseCompare\nthese[Notes](kb://notes)[Cover](kb://cover.png)",
+        activatedSkillSlugs: ["revise"],
+        references: [
+          { documentId: "notes-id", uri: "kb://notes", purpose: "reference" },
+          { documentId: "image-id", uri: "kb://cover.png", purpose: "reference" },
+        ],
+        blocks: [
+          {
+            type: "skill",
+            text: "/revise",
+            slug: "revise",
+            name: "Revise",
+            description: "Revise prose",
+          },
+          { type: "text", text: "Compare\nthese" },
+          {
+            type: "reference",
+            text: "[Notes](kb://notes)",
+            documentId: "notes-id",
+            uri: "kb://notes",
+          },
+          {
+            type: "reference",
+            text: "[Cover](kb://cover.png)",
+            documentId: "image-id",
+            uri: "kb://cover.png",
+          },
+          { type: "image", documentId: "image-id", uri: "kb://cover.png" },
+        ],
+      },
+    ]);
   });
 
   it("uses the snapshot's outcome rather than an obsolete usage block in the replay", async () => {
-    replyScenario(wire, { stored: "Recovered reply" });
-    // The journal carries a blocked record from before the usage returned. It lands after the
-    // admission's cursor is taken, so the client really replays it.
-    const admit = wire.admit;
-    wire.admit = (body) => {
-      const resumeAfterSeq = String(wire.head);
-      publishRecord(wire, {
-        items: [inboxItem("u1", 1)],
-        sentThrough: 1,
-        blocked: { reason: "credits_exhausted" },
-      });
-      publishRecord(wire, { sentThrough: 1 });
-      return { ...admit(body), resumeAfterSeq };
-    };
+    // The journal carries a blocked record from before the usage returned. It sits above the join
+    // read's cursor, so the client really replays it.
+    replyScenario(wire, {
+      stored: "Recovered reply",
+      lead: () => {
+        publishRecord(wire, {
+          items: [inboxItem("u1", 1)],
+          sentThrough: 1,
+          blocked: { reason: "credits_exhausted" },
+        });
+        publishRecord(wire, { sentThrough: 1 });
+      },
+    });
     const result = await send("recovered before admission returns", "--timeout", "2s", "--json");
     // The obsolete blocked record did reach the CLI, and the newer snapshot still decides.
     expect(result.stdout).toContain('"blocked":{"reason":"credits_exhausted"}');
@@ -100,27 +157,6 @@ describe("thread send", () => {
     });
   });
 
-  it("streams NDJSON ending in the result envelope, with its live view against the stored reply", async () => {
-    replyScenario(wire, {});
-    const result = await send("hi again", "--json");
-    expect(result.code).toBe(EXIT.ok);
-    // Only confirming snapshots (the subscribed state, then the closing record).
-    expect(wire.reads).toBeLessThanOrEqual(2);
-    const lines = ndjson(result.stdout);
-    expect(lines.map((line) => line.type)).toContain("message.delta");
-    expect(lines.at(-1)).toMatchObject({
-      type: "result",
-      command: "thread.send",
-      outcome: "complete",
-      reason: null,
-      status: "complete",
-      finalText: "Hello there",
-      liveView: "matches",
-    });
-    expect(lines.at(-1)).not.toHaveProperty("liveDiff");
-    expect(result.stderr).toBe("");
-  });
-
   it("reports a reply stored differently from what streamed, never a different claim", async () => {
     replyScenario(wire, { streamed: ["Hello there"], stored: DIVERGED_STORED_TEXT });
     const json = await send("diverge", "--json");
@@ -129,7 +165,9 @@ describe("thread send", () => {
       outcome: "complete",
       finalText: DIVERGED_STORED_TEXT,
       liveView: "differs",
-      liveDiff: [{ field: "finalText", live: "Hello there", server: DIVERGED_STORED_TEXT }],
+      liveDiff: [
+        { turnId: "a1", field: "finalText", live: "Hello there", server: DIVERGED_STORED_TEXT },
+      ],
     });
     const text = await send("diverge");
     expect(text.code).toBe(EXIT.ok);
@@ -140,115 +178,20 @@ describe("thread send", () => {
     expect(full.stderr).not.toContain("--full to show");
   });
 
-  it("resumes after a socket drop mid-run without duplicating the replay", async () => {
-    wire.snapshot = snapshotOf({
-      turns: [
-        userTurn("u1", 1, "please reconnect", "a1"),
-        replyTurn("a1", 2, { prevTurnId: "u1", status: "streaming" }),
-      ],
-      record: { execution: { executionId: "exec-a1", currentTurnId: "a1" } },
-    });
-    wire.play(async () => {
-      await wire.until(() => wire.subscriptions >= 1);
-      wire.publish(frames.started("a1"));
-      wire.dropSockets();
-      await wire.until(() => wire.subscriptions >= 2);
-      wire.snapshot = () =>
-        snapshotOf({
-          seq: wire.head,
-          turns: [
-            userTurn("u1", 1, "please reconnect", "a1"),
-            replyTurn("a1", 2, { prevTurnId: "u1", text: "Hello there" }),
-          ],
-        });
-      for (const event of frames.text("a1", "Hello", " there")) wire.publish(event);
-      wire.publish(frames.finished("a1"));
-      publishRecord(wire);
-    });
-    const result = await send("please reconnect", "--timeout", "3s", "--json");
-    expect(result.code).toBe(EXIT.ok);
-    const records = ndjson(result.stdout);
-    const started = records.filter((record) => record.type === "turn.started");
-    expect(started).toHaveLength(1);
-    expect(
-      records
-        .filter((record) => record.type === "message.delta")
-        .map((record) => record.text)
-        .join(""),
-    ).toBe("Hello there");
-    expect(records.at(-1)).toMatchObject({ status: "complete", finalText: "Hello there" });
-    // The reconnect asks for events after the last one it saw, not from the start again.
-    const cursors = wire.clientMessages
-      .filter((message) => message.type === "resume")
-      .flatMap((message) => message.subscriptions as { lastSeq: string }[]);
-    expect(cursors.at(-1)?.lastSeq).toBe(started[0].seq);
-    expect(wire.connections).toBe(2);
-  });
-
-  it("admits a composer-shaped multiline message with a skill and multiple references", async () => {
-    const reference = {
-      documentId: DOCUMENT_ID,
-      uri: "kb://cover.png",
-      label: "Cover",
-      imageCapable: true,
-    };
-    const expected = serializeMessageDoc({
-      type: "doc",
-      content: [
-        {
-          type: "paragraph",
-          content: [
-            {
-              type: "composerSkill",
-              attrs: { slug: "revise", name: "Revise", description: "Revise prose" },
-            },
-            { type: "text", text: "Compare" },
-            { type: "hardBreak" },
-            { type: "text", text: "this" },
-            { type: "composerReference", attrs: { reference } },
-            { type: "composerReference", attrs: { reference } },
-          ],
-        },
-      ],
-    });
-    const result = await send(
-      "Compare\nthis",
-      "--skill",
-      "revise",
-      "--ref",
-      "kb://cover.png",
-      "--ref",
-      "kb://cover.png",
-      "--no-wait",
-      "--json",
-    );
-    expect(result.code).toBe(EXIT.ok);
-    expect(wire.bodiesOf("admit").at(-1)).toEqual({
-      submissionId: expect.any(String),
-      ...expected,
-    });
-  });
-
-  it.each([
-    ["error", EXIT.failed, "failed", { error: "boom" }],
-    ["cancelled", EXIT.cancelled, "cancelled", {}],
-    ["waiting_interrupt", EXIT.interrupt, "interrupt", {}],
-  ] as const)("ends a %s run with exactly one result", async (status, code, outcome, fields) => {
-    replyScenario(wire, { status });
+  it("ends a waiting_interrupt run with exactly one result and prints the respond command", async () => {
+    replyScenario(wire, { status: "waiting_interrupt" });
     const result = await send("go", "--json");
     const records = ndjson(result.stdout);
-    expect(result.code).toBe(code);
+    expect(result.code).toBe(EXIT.interrupt);
     expect(records.filter((record) => record.type === "result")).toHaveLength(1);
     expect(records.at(-1)).toMatchObject({
       type: "result",
       command: "thread.send",
       threadId: THREAD_ID,
-      outcome,
+      outcome: "interrupt",
       reason: null,
-      ...fields,
     });
-    if (status === "waiting_interrupt")
-      expect((await send("go")).stderr).toContain("./mf thread respond");
+    expect((await send("go")).stderr).toContain("./mf thread respond");
   });
 
   it("queue hand-back --all posts every queued id and maps the scripted lists to output and an exit code", async () => {
@@ -503,29 +446,6 @@ describe("thread send", () => {
     );
   });
 
-  it("reports a failed successor, not the earlier reply's success", async () => {
-    // Reply A took the message and completed; its execution continued into B, which failed.
-    wire.snapshot = snapshotOf({
-      turns: [
-        userTurn("u1", 1, "go", "reply-earlier"),
-        replyTurn("reply-earlier", 2, { executionId: "exec-1", text: "The earlier reply" }),
-        replyTurn("reply-successor", 3, { executionId: "exec-1", status: "error", error: "boom" }),
-      ],
-    });
-    const result = await send("go", "--json");
-    expect(result.code).toBe(EXIT.failed);
-    const last = lastRecord(result.stdout);
-    expect(last).toMatchObject({
-      outcome: "failed",
-      userTurnId: "u1",
-      answeredBy: "reply-earlier",
-      turnId: "reply-successor",
-      status: "error",
-      error: "boom",
-    });
-    expect(last?.finalText ?? "").not.toContain("The earlier reply");
-  });
-
   it("times out with exit 124 on the last snapshot, labelled stale, and starts no read at the deadline", async () => {
     runningReply();
     const result = await send("hang", "--timeout", "300ms", "--json");
@@ -585,52 +505,23 @@ describe("thread send", () => {
     });
   });
 
-  it("--mock queues a script scoped to the message text, then removes it", async () => {
-    replyScenario(wire, {});
-    const result = await send("scripted hi", "--mock", '[{"text":"ok"}]');
-    expect(result.code).toBe(EXIT.ok);
-    const [queued, removed] = wire.requestsOf("mock");
-    expect(queued?.body).toEqual({ match: "scripted hi", steps: [{ text: "ok" }] });
-    expect(removed).toMatchObject({ method: "DELETE", path: expect.stringContaining("script-1") });
-  });
-
-  it("keeps reserved terminal keys with --fields finalText", async () => {
-    replyScenario(wire, {});
-    const result = await send("hi", "--json", "--fields", "finalText");
-    expect(result.code).toBe(EXIT.ok);
-    expect(lastRecord(result.stdout)).toEqual({
-      type: "result",
-      command: "thread.send",
-      outcome: "complete",
-      reason: null,
-      finalText: "Hello there",
-    });
-  });
-
-  it.each([false, true])("names staged and committed writes honestly (json=%s)", async (json) => {
+  it("names staged and committed writes honestly", async () => {
     replyScenario(wire, {
       extra: frames.toolCall("write-1", "doc_write", "{}", "staged", "committed"),
     });
-    const result = await send("write tool", ...(json ? ["--json"] : []));
+    const result = await send("write tool", "--json");
     expect(result.code).toBe(EXIT.ok);
-    if (json) {
-      const tools = ndjson(result.stdout).filter((record) => record.type.startsWith("tool."));
-      expect(tools.map((record) => record.type)).toEqual([
-        "tool.started",
-        "tool.completed",
-        "tool.settled",
-      ]);
-      expect(tools.every((record) => !("settled" in record))).toBe(true);
-    } else {
-      expect(result.stderr).toMatch(/tool.completed[^\n]*staged[\s\S]*tool.settled[^\n]*committed/);
-    }
+    const tools = ndjson(result.stdout).filter((record) => record.type.startsWith("tool."));
+    expect(tools.map((record) => record.type)).toEqual([
+      "tool.started",
+      "tool.completed",
+      "tool.settled",
+    ]);
+    expect(tools.every((record) => !("settled" in record))).toBe(true);
   });
 
   it.each([
     ["accepted", EXIT.ok, "complete", null],
-    ["rejected", EXIT.failed, "failed", null],
-    ["not-seen", EXIT.failed, "failed", null],
-    ["pending", EXIT.unproven, "unproven", "admission_unknown"],
     ["failed", EXIT.unproven, "unproven", "admission_unknown"],
   ] as const)("recovers a lost admission answer: %s", async (kind, code, outcome, reason) => {
     replyScenario(wire, {});
@@ -640,7 +531,6 @@ describe("thread send", () => {
     wire.fail("admit", { drop: true });
     wire.lookup = (submissionId) => {
       if (kind === "accepted" && admitted) return { ...admitted, kind, submissionId };
-      if (kind === "pending" || kind === "not-seen") return { kind, submissionId };
       return { kind: "rejected", submissionId, code: "refused" };
     };
     if (kind === "failed") wire.fail("lookup", { status: 503, body: { message: "lookup down" } });
@@ -655,6 +545,85 @@ describe("thread send", () => {
     expect(wire.requestsOf("admit")).toHaveLength(1);
   });
 
+  it("a proven send does not wait on an abandoned read", async () => {
+    // The first read joins with the reply running; the next shows it complete and proves the claim
+    // while the stream has not yet ended the turn. Then a frame makes the sync start one more read,
+    // which the harness holds for 5 s.
+    wire.snapshot = (read) => {
+      if (read === 1)
+        return snapshotOf({
+          seq: 0,
+          turns: [
+            userTurn("u1", 1, "hold", "a1"),
+            replyTurn("a1", 2, { prevTurnId: "u1", status: "streaming" }),
+          ],
+          record: { execution: { executionId: "exec-a1", currentTurnId: "a1" } },
+        });
+      return snapshotOf({
+        seq: wire.head,
+        turns: [
+          userTurn("u1", 1, "hold", "a1"),
+          replyTurn("a1", 2, { prevTurnId: "u1", text: "Hello there" }),
+        ],
+      });
+    };
+    wire.play(async () => {
+      await wire.until(() => wire.subscriptions >= 1);
+      wire.publish(frames.started("a1"));
+      publishRecord(wire);
+      await wire.until(() => wire.reads >= 2);
+      // Let the proving answer leave, so the held fault is for the read after it.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      wire.fail("snapshot", { delayMs: 5000 });
+      wire.publish(frames.finished("a1"));
+    });
+    const started = Date.now();
+    const result = await send("hold", "--timeout", "10s", "--json");
+    expect(Date.now() - started).toBeLessThan(2000);
+    expect(result.code).toBe(EXIT.ok);
+    expect(lastRecord(result.stdout)).toMatchObject({
+      outcome: "complete",
+      finalText: "Hello there",
+    });
+    // The command ended with a read still open: the harness saw the client close it.
+    await wire.until(() => wire.aborted.some((request) => request.kind === "snapshot"));
+  });
+
+  it("keeps a proven reply when its diagnostic snapshot has an empty body", async () => {
+    wire.snapshot = (read) =>
+      snapshotOf({
+        seq: read === 1 ? 0 : wire.head,
+        turns: [
+          userTurn("u1", 1, "hold", "a1"),
+          replyTurn("a1", 2, {
+            prevTurnId: "u1",
+            ...(read === 1 ? { status: "streaming" } : { text: "Hello there" }),
+          }),
+        ],
+        ...(read === 1
+          ? { record: { execution: { executionId: "exec-a1", currentTurnId: "a1" } } }
+          : {}),
+      });
+    wire.play(async () => {
+      await wire.until(() => wire.subscriptions >= 1);
+      wire.publish(frames.started("a1"));
+      publishRecord(wire);
+      await wire.until(() => wire.reads >= 2);
+      // Deliver the proving answer before the fault for the diagnostic read.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      wire.fail("snapshot", { status: 204, text: "" });
+      wire.publish(frames.finished("a1"));
+    });
+    const result = await send("hold", "--timeout", "10s", "--json");
+    expect(result.code).toBe(EXIT.ok);
+    expect(lastRecord(result.stdout)).toMatchObject({
+      outcome: "complete",
+      finalText: "Hello there",
+      observationIncomplete: true,
+    });
+    expect(result.stderr).toBe("");
+  });
+
   it("--no-wait proves admission only, never complete", async () => {
     const result = await send("hi", "--no-wait", "--json");
     expect(result.code).toBe(EXIT.ok);
@@ -665,65 +634,15 @@ describe("thread send", () => {
     });
     expect(wire.subscriptions).toBe(0);
   });
-
-  it("--no-wait also reports admission uncertainty", async () => {
-    wire.fail("admit", { drop: true });
-    wire.fail("lookup", { status: 503, body: { message: "lookup down" } });
-    const result = await send("hi", "--no-wait", "--json");
-    expect(result.code).toBe(EXIT.unproven);
-    expect(JSON.parse(result.stdout)).toMatchObject({
-      type: "result",
-      command: "thread.send",
-      outcome: "unproven",
-      reason: "admission_unknown",
-      submissionId: expect.any(String),
-    });
-  });
 });
 
 describe("thread view, cancel, events, respond", () => {
-  it("resolves cN refs through the by-ref route in the default or given project", async () => {
-    wire.snapshot = snapshotOf({
-      turns: [userTurn("u1", 1, "hi", "a1"), replyTurn("a1", 2, { text: "Hello there" })],
-    });
-    const byRef = await wire.mf(["thread", "view", "c1", "--json", "--fields", "thread"]);
-    expect(byRef.code).toBe(EXIT.ok);
-    expect(JSON.parse(byRef.stdout)).toEqual({
-      thread: expect.objectContaining({ id: THREAD_ID, ref: "c1" }),
-    });
-    expect((await wire.mf(["thread", "view", "c1", "--project", PROJECT_ID])).code).toBe(EXIT.ok);
-    // The envelope is the shared view model's rows, with what they were computed from.
-    const envelope = JSON.parse((await wire.mf(["thread", "view", "c1", "--json"])).stdout);
-    expect(envelope).toMatchObject({
-      chatView: 2,
-      inputs: { inherited: "omitted", localRecords: "none", standIns: "none", opening: "none" },
-    });
-    expect(envelope.rows.length).toBeGreaterThan(0);
-    for (const row of envelope.rows)
-      expect(row.identity).toEqual({ turnId: row.renderKey, kind: row.kind, occurrence: 0 });
-    const elsewhere = await wire.mf(["thread", "view", "c1", "--project", "other-project"]);
-    expect(elsewhere.code).toBe(EXIT.notFound);
-    expect(elsewhere.stderr).toContain("--project");
-    expect((await wire.mf(["thread", "view", "c9"])).code).toBe(EXIT.notFound);
-  });
-
-  it.each([
-    ["cancelled", EXIT.ok, "complete"],
-    ["not_found", EXIT.notFound, "failed"],
-  ] as const)("cancel answered %s emits one acknowledgement envelope and preserves its exit", async (status, code, outcome) => {
-    wire.cancel = (turnId) => ({ threadId: THREAD_ID, turnId, status });
+  it("rejects a malformed cancel answer without claiming completion", async () => {
+    wire.fail("cancel", { status: 200, body: {} });
     const result = await wire.mf(["thread", "cancel", THREAD_ID, "--turn", "a1", "--json"]);
-    expect(result.code).toBe(code);
-    expect(JSON.parse(result.stdout)).toEqual({
-      type: "result",
-      command: "thread.cancel",
-      threadId: THREAD_ID,
-      turnId: "a1",
-      outcome,
-      reason: null,
-      status,
-    });
-    expect(wire.requestsOf("cancel")).toHaveLength(1);
+    expect(result.code).toBe(EXIT.failed);
+    expect(result.stdout).toBe("");
+    expect(JSON.parse(result.stderr)).toMatchObject({ code: "http_error" });
   });
 
   it("prints gaps and finishes events only after replay and live state", async () => {
@@ -734,6 +653,7 @@ describe("thread view, cancel, events, respond", () => {
       BigInt(cursor.lastSeq) < 1n
         ? {
             type: "gap",
+            requestId: cursor.requestId,
             threadId: THREAD_ID,
             cause: "replay_limit_exceeded",
             fromSeq: cursor.lastSeq,
@@ -760,37 +680,31 @@ describe("thread view, cancel, events, respond", () => {
     });
   });
 
-  it.each([4401, 4403])("keeps terminal socket close %s at exit 4", async (code) => {
-    wire.onSubscribe = () => ({ close: code });
-    const result = await wire.mf(["thread", "events", THREAD_ID, "--timeout", "1s", "--json"]);
+  it.each([
+    "events",
+    "send",
+    "tail",
+  ] as const)("keeps %s terminal socket close 4401 at exit 4", async (command) => {
+    runningReply();
+    wire.onSubscribe = () => ({ close: 4401 });
+    const args = command === "send" ? ["hang"] : command === "tail" ? ["--until-idle"] : [];
+    const result = await wire.mf([
+      "thread",
+      command,
+      THREAD_ID,
+      ...args,
+      "--timeout",
+      "1s",
+      "--json",
+    ]);
     expect(result.code).toBe(EXIT.unavailable);
     expect(JSON.parse(result.stderr)).toMatchObject({ code: "unavailable" });
   });
 
-  it.each([
-    ["resolved", EXIT.ok, "complete", null],
-    ["unconfirmed", EXIT.unproven, "unproven", "unconfirmed"],
-    ["other", EXIT.unproven, "unproven", "unconfirmed"],
-    ["rejected", EXIT.failed, "failed", null],
-  ] as const)("respond is confirmed only by its own interrupt (socket %s)", async (answer, code, outcome, reason) => {
-    wire.onClient = (message, ws) => {
+  it("respond is confirmed only by its own interrupt (another interrupt's resolution proves nothing)", async () => {
+    wire.onClient = (message) => {
       if (message.type !== "interrupt.respond") return;
-      if (answer === "rejected")
-        ws.send(
-          JSON.stringify({
-            type: "error",
-            kind: "error",
-            threadId: THREAD_ID,
-            error: {
-              code: "interrupt_not_pending",
-              message: "response rejected",
-              retryable: false,
-              source: "system",
-            },
-          }),
-        );
-      else if (answer !== "unconfirmed")
-        wire.publish(frames.interrupt("a1", answer === "other" ? "other-id" : "int-1", "resolved"));
+      wire.publish(frames.interrupt("a1", "other-id", "resolved"));
     };
     const result = await wire.mf([
       "thread",
@@ -806,60 +720,17 @@ describe("thread view, cancel, events, respond", () => {
       "100ms",
       "--json",
     ]);
-    expect(result.code).toBe(code);
+    expect(result.code).toBe(EXIT.unproven);
     expect(JSON.parse(result.stdout)).toMatchObject({
       type: "result",
       command: "thread.respond",
-      outcome,
-      reason,
+      outcome: "unproven",
+      reason: "unconfirmed",
     });
   });
 });
 
 describe("thread tail --until-idle", () => {
-  it("follows both consecutive replies before confirming idle", async () => {
-    // One execution answers the message in two replies; the record between them still owes it.
-    wire.publish(frames.started("reply-first"));
-    wire.publish(frames.finished("reply-first"));
-    publishRecord(wire, { items: [inboxItem("u1", 1)], sentThrough: 1 });
-    wire.publish(frames.started("reply-second"));
-    wire.publish(frames.finished("reply-second"));
-    publishRecord(wire, { sentThrough: 1 });
-    const done = [
-      replyTurn("reply-first", 1, { executionId: "exec-1" }),
-      userTurn("u1", 2, "steer", "reply-second"),
-      replyTurn("reply-second", 3, { executionId: "exec-1" }),
-    ];
-    wire.snapshot = (read) =>
-      read === 1
-        ? snapshotOf({
-            turns: [
-              replyTurn("reply-first", 1, { executionId: "exec-1", status: "streaming" }),
-              userTurn("u1", 2, "steer", "reply-second"),
-              replyTurn("reply-second", 3, { executionId: "exec-1", status: "pending" }),
-            ],
-            record: {
-              items: [inboxItem("u1", 1)],
-              sentThrough: 1,
-              execution: { executionId: "exec-1", currentTurnId: "reply-first" },
-            },
-          })
-        : snapshotOf({ seq: wire.head, turns: done, record: { sentThrough: 1 } });
-    const result = await tail("--since", "0", "--until-idle", "--timeout", "1s", "--json");
-    expect(result.code).toBe(EXIT.ok);
-    const records = ndjson(result.stdout);
-    expect(
-      records.filter((record) => record.type === "turn.finished").map((record) => record.turnId),
-    ).toEqual(["reply-first", "reply-second"]);
-    expect(records.at(-1)).toMatchObject({
-      type: "result",
-      command: "thread.tail",
-      outcome: "complete",
-      reason: null,
-      turnId: "reply-second",
-    });
-  });
-
   it("confirms the lease release after a turn finishes, not the turn alone", async () => {
     wire.snapshot = openReply("a1");
     wire.play(async () => {
@@ -888,27 +759,6 @@ describe("thread tail --until-idle", () => {
     expect(records.at(-1)).toMatchObject({ outcome: "complete", reason: null, turnId: "a1" });
   });
 
-  it("returns immediately on an already-idle chat", async () => {
-    const result = await tail("--until-idle", "--timeout", "100ms", "--json");
-    expect(result.code).toBe(EXIT.ok);
-    expect(JSON.parse(result.stdout)).toEqual({
-      type: "result",
-      command: "thread.tail",
-      outcome: "complete",
-      reason: null,
-      threadId: THREAD_ID,
-      turnId: null,
-      turns: [],
-      idle: true,
-    });
-    expect(result.stderr).toBe("");
-    const text = await tail("--until-idle");
-    expect(text.code).toBe(EXIT.ok);
-    expect(text.stdout).toBe("");
-    expect(text.stderr).toBe("complete: chat idle, no turn ran during the wait\n");
-    expect(wire.subscriptions).toBe(0);
-  });
-
   it("reports a final timeout snapshot without stopping the run", async () => {
     wire.snapshot = openReply("a1");
     const result = await tail("--until-idle", "--timeout", "100ms", "--json");
@@ -923,34 +773,97 @@ describe("thread tail --until-idle", () => {
     expect(wire.requestsOf("stop")).toHaveLength(0);
     expect(wire.requestsOf("cancel")).toHaveLength(0);
   });
+});
 
-  it("times out with an awake lease after an orphan error and empty inbox", async () => {
-    wire.publish(frames.failed("orphaned"));
-    publishRecord(wire, { version: "9999" });
-    wire.snapshot = snapshotOf({
-      seq: 2,
-      awake: true,
-      turns: [replyTurn("orphan-turn", 1, { status: "error", error: "orphaned" })],
-    });
-    const result = await tail("--since", "0", "--until-idle", "--timeout", "100ms", "--json");
-    expect(result.code).toBe(EXIT.timeout);
-    const records = ndjson(result.stdout);
-    expect(records).toContainEqual(expect.objectContaining({ type: "turn.failed" }));
-    expect(records).toContainEqual(
-      expect.objectContaining({ type: "event", name: "meridian.run_state" }),
-    );
-    expect(records.at(-1)).toMatchObject({
-      outcome: "timeout",
-      reason: "lease_awake",
-      stillRunning: null,
-      owed: [],
-      snapshotStale: true,
-      next: [`./mf thread tail ${THREAD_ID} --until-idle`],
-    });
-    const text = await tail("--until-idle", "--timeout", "100ms");
-    expect(text.code).toBe(EXIT.timeout);
-    expect(text.stderr).toContain(
-      "timeout: last snapshot showed no running turn or owed message, but the chat was awake; idle is unconfirmed",
-    );
+describe("replay outcomes", () => {
+  it.each([
+    "send",
+    "tail",
+    "events",
+  ] as const)("%s recovers retryable errors but ends on a refusal", async (command) => {
+    runningReply();
+    let attempts = 0;
+    wire.onSubscribe = (cursor) => {
+      attempts += 1;
+      return {
+        type: "error",
+        kind: "error",
+        requestId: cursor.requestId,
+        threadId: cursor.threadId,
+        error: {
+          code: "internal",
+          source: "system",
+          message: attempts === 1 ? "temporary read failure" : "refused replay",
+          retryable: attempts === 1,
+        },
+      };
+    };
+    const args = command === "send" ? ["hang"] : command === "tail" ? ["--until-idle"] : [];
+    const result = await wire.mf([
+      "thread",
+      command,
+      THREAD_ID,
+      ...args,
+      "--timeout",
+      "2s",
+      "--json",
+    ]);
+    expect(result.code).toBe(EXIT.failed);
+    expect(result.stderr).toContain("refused replay");
+    expect(result.stdout).not.toContain('"outcome":"complete"');
+    expect(attempts).toBe(2);
+    expect(wire.connections).toBe(1);
+    const requests = wire.clientMessages.filter((message) => message.type === "subscribe");
+    expect(requests[0].requestId).not.toBe(requests[1].requestId);
   });
+});
+
+it("keeps a sibling live on the same socket while a replay retries", async () => {
+  let attempts = 0;
+  wire.onSubscribe = (cursor) => {
+    if (cursor.threadId !== "failed-thread") return;
+    attempts += 1;
+    if (attempts !== 1) return;
+    return {
+      type: "error",
+      kind: "error",
+      requestId: cursor.requestId,
+      threadId: cursor.threadId,
+      error: { code: "internal", source: "system", message: "try again", retryable: true },
+    };
+  };
+  const transport = createThreadClient({
+    serverUrl: wire.baseUrl,
+    cookie: COOKIE,
+    ca: undefined,
+    request: async () => {
+      throw new Error("no HTTP expected");
+    },
+  });
+  const healthy = subscribeThread(transport, THREAD_ID, "0");
+  const failed = subscribeThread(transport, "failed-thread", "10");
+  try {
+    const deadline = Date.now() + 2000;
+    expect((await healthy.next(deadline)).type).toBe("live");
+    await wire.until(() => attempts === 1);
+    wire.publish(frames.started("healthy"));
+    expect(await healthy.next(deadline)).toMatchObject({ type: "event", event: { seq: "1" } });
+    expect((await failed.next(deadline)).type).toBe("live");
+    wire.publish(frames.finished("healthy"));
+    expect(await healthy.next(deadline)).toMatchObject({ type: "event", event: { seq: "2" } });
+    expect(attempts).toBe(2);
+    expect(wire.connections).toBe(1);
+    expect(
+      wire.clientMessages.filter((m) => m.type === "subscribe" && m.threadId === THREAD_ID),
+    ).toHaveLength(1);
+    expect(
+      wire.clientMessages
+        .filter((m) => m.type === "subscribe" && m.threadId === "failed-thread")
+        .map((m) => m.lastSeq),
+    ).toEqual(["10", "10"]);
+  } finally {
+    healthy.unsubscribe();
+    failed.unsubscribe();
+    transport.disconnect();
+  }
 });

@@ -32,9 +32,10 @@ import type {
   TurnStatus,
   TurnUsage,
 } from "../threads/index.js";
+import { threadSchema } from "../threads/thread.js";
 import type { AiWriteMode, Work, WorkHandle, WorksSnapshot } from "../works/index.js";
-import type { Filetype, YjsTrackedSchemaType } from "./filetype.js";
-import type { SubmittedReference } from "./user-turn-admission.js";
+import { type Filetype, filetypeSchema, type YjsTrackedSchemaType } from "./filetype.js";
+import { admissionReceiptShape, type SubmittedReference } from "./user-turn-admission.js";
 import { runStateSchema } from "./ws-protocol.js";
 
 export type { JsonValue } from "../threads/index.js";
@@ -63,6 +64,14 @@ export type ThreadLiveState = {
   resumeAfterSeq: string;
 };
 
+export const projectBootstrapResponseSchema = z.object({
+  projectId: z.string().min(1),
+  documentId: z.string().min(1),
+  manuscriptSourceId: z.string().min(1),
+  uri: z.string().min(1),
+});
+export type ProjectBootstrapResponse = z.infer<typeof projectBootstrapResponseSchema>;
+
 export type CreateProjectRequest = {
   /** Client-provided ID for optimistic creation. Server generates one if omitted. */
   id?: string;
@@ -90,6 +99,12 @@ export type { ProjectChatFeedPage as ListWorkThreadsResponse } from "../threads/
 export type { AiWriteMode, Work };
 
 export type ListWorksResponse = WorksSnapshot;
+
+/** Identity projection for callers resolving a named Work, not a complete catalog validator. */
+export const workCatalogIdentitySchema = z.object({
+  projectId: z.string().min(1),
+  works: z.array(z.object({ id: z.string().min(1), handle: z.string().min(1), name: z.string() })),
+});
 
 export const PROJECT_CONTEXT_TREE_SCHEMES = CONTEXT_URI_SCHEMES;
 
@@ -141,6 +156,14 @@ export type CreateUntitledContextDocumentJoined = {
   address: ContextDocumentAddress;
 };
 
+/** File creation success always carries the created identity and its canonical URI. */
+export const createContextFileResponseSchema = z.object({
+  status: z.literal("created"),
+  documentId: z.string().min(1),
+  uri: z.string().min(1),
+});
+export type CreateContextFileResponse = z.infer<typeof createContextFileResponseSchema>;
+
 /** Creation uses the same conflict payload for files and folders, including HTTP 409. */
 export type CreateContextEntryResult =
   | { status: "created"; documentId?: string; uri?: string }
@@ -159,11 +182,12 @@ export type CreateUntitledContextDocumentAnswer =
   | CreateUntitledContextDocumentJoined;
 
 /** Exact identities committed by one successful context-tree deletion. */
-export type DeleteContextEntryResult = {
-  status: "deleted";
-  deletedDocumentIds: string[];
-  availabilityGeneration: string;
-};
+export const deleteContextEntryResultSchema = z.object({
+  status: z.literal("deleted"),
+  deletedDocumentIds: z.array(z.string().min(1)),
+  availabilityGeneration: z.string().regex(/^(0|[1-9]\d*)$/),
+});
+export type DeleteContextEntryResult = z.infer<typeof deleteContextEntryResultSchema>;
 
 export type DeleteContextEntryRequest = {
   operationId: string;
@@ -437,6 +461,22 @@ export type ContextReadBinaryResponse = {
   mimeType: string;
 };
 
+export const contextReadResponseSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("tracked"),
+    path: z.string(),
+    schemaType: z.enum(["document", "code"]),
+    filetype: filetypeSchema,
+    content: z.string(),
+  }),
+  z.object({
+    kind: z.literal("binary"),
+    path: z.string(),
+    url: z.string().min(1),
+    fileType: z.enum(["docx", "image", "pdf", "binary"]),
+    mimeType: z.string(),
+  }),
+]) satisfies z.ZodType<ContextReadResponse>;
 export type ContextReadResponse = ContextReadTrackedResponse | ContextReadBinaryResponse;
 
 export type CorpusImportSourceKind = "upload" | "google_drive_fixture" | "google_drive";
@@ -625,9 +665,15 @@ export type ThreadAvailableSkill = {
   description: string;
 };
 
-export type ThreadAvailableSkillsResponse = {
-  skills: ThreadAvailableSkill[];
-};
+export const threadAvailableSkillsResponseSchema = z.object({
+  skills: z.array(z.object({ slug: z.string().min(1), name: z.string(), description: z.string() })),
+});
+export type ThreadAvailableSkillsResponse = z.infer<typeof threadAvailableSkillsResponseSchema>;
+
+export const sendMessageResponseSchema = z.object({
+  ...admissionReceiptShape,
+  status: z.literal("accepted"),
+}) satisfies z.ZodType<SendMessageResponse>;
 
 export type SendMessageResponse = {
   threadId: string;
@@ -648,11 +694,12 @@ export type SendMessageResponse = {
   status: "accepted";
 };
 
-export type CancelTurnResponse = {
-  threadId: string;
-  turnId: string;
-  status: "cancelled" | "already_finished" | "not_found";
-};
+export const cancelTurnResponseSchema = z.object({
+  threadId: z.string().min(1),
+  turnId: z.string().min(1),
+  status: z.enum(["cancelled", "already_finished", "not_found"]),
+});
+export type CancelTurnResponse = z.infer<typeof cancelTurnResponseSchema>;
 
 export type ThreadSnapshotAncestor = {
   id: string;
@@ -706,9 +753,8 @@ export type ModelRequestDebugListResponse = {
   retention: ModelRequestDebugRetention;
 };
 
-export type ListThreadsResponse = {
-  threads: Thread[];
-};
+export const listThreadsResponseSchema = z.object({ threads: z.array(threadSchema) });
+export type ListThreadsResponse = z.infer<typeof listThreadsResponseSchema>;
 
 export type BinaryDocumentFileType = "docx" | "image" | "pdf";
 

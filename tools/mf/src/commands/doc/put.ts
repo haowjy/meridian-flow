@@ -1,4 +1,7 @@
-import { apiProjectContextCreatePath } from "@meridian/contracts/protocol";
+import {
+  apiProjectContextCreatePath,
+  createContextFileResponseSchema,
+} from "@meridian/contracts/protocol";
 import { CliError, usageError } from "../../core/cli-error";
 import {
   type CommandSpec,
@@ -34,10 +37,11 @@ export async function putDocument(
 }> {
   const target = await resolveUri(session, input.projectId, input.uri, input.work, input.chat);
   const create = () =>
-    session.request<{ status: "created"; documentId: string; uri: string }>(
+    session.request(
       "POST",
       apiProjectContextCreatePath(input.projectId, target.scheme, ownerOf(target)),
       { type: "file", path: target.path, content: input.content },
+      { parse: createContextFileResponseSchema.safeParse },
     );
   try {
     const created = await create();

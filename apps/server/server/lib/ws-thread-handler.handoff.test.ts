@@ -113,10 +113,20 @@ async function harness(
   };
   const session = createThreadWebSocketSession(peer);
   session.open();
+  let requests = 0;
   const subscribe = (lastSeq = "0") =>
-    session.onMessage(JSON.stringify({ type: "subscribe", threadId: THREAD_ID, lastSeq }));
+    session.onMessage(
+      JSON.stringify({
+        type: "subscribe",
+        requestId: `r${++requests}`,
+        threadId: THREAD_ID,
+        lastSeq,
+      }),
+    );
   const unsubscribe = () =>
-    session.onMessage(JSON.stringify({ type: "unsubscribe", threadId: THREAD_ID }));
+    session.onMessage(
+      JSON.stringify({ type: "unsubscribe", requestId: `r${++requests}`, threadId: THREAD_ID }),
+    );
   const appendLive = async () => {
     await hub.appendEvent(THREAD_ID, { type: "stream.delta", kind: "text", text: "b" });
     await hub.appendEvent(THREAD_ID, {

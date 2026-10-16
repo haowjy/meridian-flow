@@ -290,62 +290,8 @@ export type JournalEventType =
   | "file.written";
 
 /** JSON-natural thread — survives JSON.parse/stringify unchanged. */
-export interface Thread {
-  id: string;
-  /** Project this thread belongs to. */
-  projectId: string;
-  /** Work item this thread belongs to; null when ungrouped. */
-  workId: string | null;
-  /** The chat's own write mode, copied at creation from the request or its Work's default. */
-  aiWriteMode: AiWriteMode;
-  /** The mode the chat writes in next: a queued mode switch's mode, else `aiWriteMode`. */
-  effectiveAiWriteMode: AiWriteMode;
-  userId: string;
-  kind: ThreadKind;
-  status: ThreadLifecycleStatus;
-  title: string | null;
-  /** Server-assigned handle: `cN` for primaries, `pN` for subagents; null before persist. */
-  ref: string | null;
-  /** First immutable bake for this thread; null until the first request is assembled. */
-  initialPromptBakeId: PromptBakeId | null;
-  agentDefinitionRevisionId: string | null;
-  /** Display name from the retained Agent definition. */
-  agentName: string | null;
-  nextSeq?: string;
-  /** Canonical logical head of the active conversation branch. */
-  activeLeafTurnId: string | null;
-  /**
-   * Spawn-tree parent: null for a root, the spawning thread for a subagent.
-   * A fork/handoff derivation is a SIBLING of its source, not the source's
-   * child, so it takes the source's own `parentThreadId` (null when the
-   * source is itself a root) rather than pointing at the source.
-   */
-  parentThreadId: string | null;
-  /** Set when this thread was derived via handoff or fork. */
-  originType?: ThreadOriginType | null;
-  /**
-   * Fork/handoff anchor turn on the SOURCE thread (not necessarily
-   * `parentThreadId`); resolving its owning thread recovers the fork-source
-   * edge, since `parentThreadId` never carries it.
-   */
-  originTurnId?: string | null;
-  /**
-   * Identifies the run tree this thread belongs to. An organic root equals its
-   * own id; a subagent takes its spawning parent's root; a fork/handoff
-   * derivation takes its SOURCE's root (sharing lineage with it instead of
-   * starting a new tree). Used for run-scoped project workspace paths such as
-   * `runs/<rootThreadId>/input/…`.
-   */
-  rootThreadId: string;
-  spawnDepth: number;
-  spawnStatus: SpawnStatus | null;
-  totalCostUsd: string;
-  turnCount: number;
-  createdAt: string;
-  updatedAt: string;
-  lastActivityAt: string;
-  deletedAt: string | null;
-}
+export type { Thread } from "./thread.js";
+export { threadSchema } from "./thread.js";
 
 export type TurnUsage = {
   /** Provider-normalized prompt total, including cache-read and cache-write token subsets. */

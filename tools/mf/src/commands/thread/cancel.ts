@@ -1,4 +1,4 @@
-import { apiThreadCancelPath, type CancelTurnResponse } from "@meridian/contracts/protocol";
+import { apiThreadCancelPath, cancelTurnResponseSchema } from "@meridian/contracts/protocol";
 import { EXIT, usageError } from "../../core/cli-error";
 import { type CommandSpec, requirePositional, stringOption } from "../../core/command";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
@@ -23,9 +23,11 @@ export const threadCancelCommand: CommandSpec = {
       requirePositional(ctx, 0, "<thread>"),
       stringOption(ctx, "project"),
     );
-    const response = await session.request<CancelTurnResponse>(
+    const response = await session.request(
       "POST",
       apiThreadCancelPath(threadId, turnId),
+      undefined,
+      { parse: cancelTurnResponseSchema.safeParse },
     );
     const terminal = terminalResult(
       "thread.cancel",
