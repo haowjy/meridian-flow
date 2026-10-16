@@ -27,7 +27,6 @@ import {
   REVIEW_BASE_FRAGMENT,
   readBlocks,
   rebase,
-  restorationLinks,
   type Tok,
   writeBlocks,
 } from "@meridian/agent-edit/diff";
@@ -140,7 +139,7 @@ export function appliedRecord(input: {
     const classified = classifyChanges(
       seen,
       projectReview(diffBlocks(base, draft)),
-      { userId: "", parts: input.parts, restorations: restorationLinks(seen) },
+      { userId: "", parts: input.parts },
       { record: true },
     );
     return applyRecordOf(

@@ -14,6 +14,7 @@
  * every editor that surface mounts over the room adopts it. Collaboration detaches a retained manager on
  * view destroy and re-attaches it on the next view.
  */
+import { recordRestorations } from "@meridian/agent-edit/diff";
 import { Extension } from "@tiptap/core";
 import { Plugin } from "@tiptap/pm/state";
 import {
@@ -48,6 +49,7 @@ export function createSurfaceHistory(fragment: Y.XmlFragment): SurfaceHistory {
         transaction.meta.get(origin) === true),
   });
   ownOrigins.set(undoManager, origin);
+  recordRestorations(undoManager);
   return { undoManager, origin };
 }
 

@@ -20,23 +20,14 @@ export interface ChatRef {
   reveal?: DraftAttributionEdit["owner"]["reveal"];
 }
 
-/** The writes a byline's thread authors are named from: the attribution payload's edits, or an item's actors. */
-export type BylineSource = Pick<
-  DraftAttributionEdit,
-  "threadId" | "turnId" | "toolCallId" | "title"
-> & {
-  owner: Pick<DraftAttributionEdit["owner"], "threadId" | "title"> &
-    Partial<Pick<DraftAttributionEdit["owner"], "reveal">>;
-};
-
 /** What the classifier says of one change, in the terms the surfaces read. */
 export interface ChangeAttribution {
   /** Who wrote some of the change, as identities: the writer (user) and the threads whose writes made it. */
   byline: Author[];
+  /** How each conversation in the byline is shown, each once, resolved when the payload was joined. */
+  chats: ChatRef[];
   /** The conversations (`owner.threadId`) any of whose AI writes may be in the change: the dock's filter. */
   members: string[];
-  /** What a byline's thread authors resolve against when the byline is drawn. */
-  edits: readonly BylineSource[];
 }
 
 export interface ReviewChange {
@@ -44,10 +35,10 @@ export interface ReviewChange {
   id: string;
   kind: ReviewGroup["kind"];
   excerpt: ReviewGroup["excerpt"];
-  /** Byline: who made some of the change, as identities. Drawn through `bylineView`. */
+  /** Byline: who made some of the change, as identities. */
   byline: Author[];
-  /** The writes the byline's threads are named from. */
-  edits: readonly BylineSource[];
+  /** The conversations in the byline as they are drawn and linked; "You" is the byline's user author. */
+  chats: ChatRef[];
   /** Membership: the conversations whose AI writes are in the change under any alignment. */
   members: string[];
   /** Draft position of the change's first mark in `frame`, where the stepper scrolls to. */
@@ -71,7 +62,7 @@ export function reviewChanges(
     kind: group.kind,
     excerpt: group.excerpt,
     byline: attribution.get(group.id)?.byline ?? [],
-    edits: attribution.get(group.id)?.edits ?? [],
+    chats: attribution.get(group.id)?.chats ?? [],
     members: attribution.get(group.id)?.members ?? [],
     anchor: groupAnchor(group),
     spans: group.spans,
@@ -118,15 +109,10 @@ export function itemChange(item: {
       threadId: chat.threadId,
       turnId: "",
     })),
-    edits: item.actorThreads.map((chat) => {
-      const title = chat.title?.trim() ?? "";
-      return {
-        threadId: chat.threadId,
-        turnId: "",
-        title,
-        owner: { threadId: chat.threadId, title },
-      };
-    }),
+    chats: item.actorThreads.map((chat) => ({
+      chatId: chat.threadId,
+      title: chat.title?.trim() ?? "",
+    })),
     members: item.actorThreads.map((chat) => chat.threadId),
     anchor: 0,
     spans: [],

@@ -50,6 +50,10 @@ export function isProjectContextCatalogKey(
   );
 }
 
+/** Any draft's attribution payload in the project: its chat titles go stale when a chat is renamed. */
+export const isProjectDraftAttributionKey = (projectId: string, key: readonly unknown[]) =>
+  key[0] === "projects" && key[1] === projectId && key[6] === "draft-attribution";
+
 export const projectQueryKeys = {
   all: ["projects"] as const,
   list: ["projects", "list"] as const,

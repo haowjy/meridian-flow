@@ -180,10 +180,12 @@ export type SettlementPublicationStep = {
   /**
    * The outer preparation, from the step's payload: the branch ids whose
    * critical-section leases the batch needs (Apply all: every branch of the draft
-   * an Apply may close). Warm execution and recovery both acquire them before
-   * coordinator leases and any database transaction; completion calls it again
-   * under its locks, and a set that grew sends the batch back to discovery.
-   * Never take leases from `beforeAdmission`.
+   * an Apply may close). Preparation derives them once, from the immutable items of
+   * the payload as submitted. A finalized payload may only drop items, so its set
+   * can only shrink; completion asserts it is a subset of what was leased and fails
+   * loudly otherwise (it never leases more). Recovery has no caller's set to reuse
+   * and leases afresh over the stored payload before any coordinator lease or
+   * database transaction. Never take leases from `beforeAdmission`.
    */
   prepare?(payload: JsonValue): Promise<{ branchIds: readonly string[] }>;
   /**

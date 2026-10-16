@@ -104,7 +104,6 @@ function fixture(rooms: ReturnType<typeof fakeRoom>[] = [fakeRoom()]) {
   client.setQueryData(draftAttributionQueryOptions(draft).queryKey, {
     itemKey: "draft:doc",
     userId: "user-1",
-    restorations: [],
     edits: [],
   });
   return { doc, room, client, pool };

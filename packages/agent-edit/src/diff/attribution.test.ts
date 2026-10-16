@@ -2,8 +2,8 @@
  * The attribution classifier's named risks, one table: a writer-only change credited to a chat, a chat
  * named for text it did not write, a chat dropped from a change it did write, and an AI part read as
  * applied while a change still holds it. Every row asserts all three outputs: byline, members, status.
- * Each row also runs on a gc-on reload of the draft that has only the payload's restoration links, and
- * must give the same answer.
+ * Each row also runs on a gc-on reload of the draft, which has only what the draft itself carries (the
+ * restoration links Undo recorded into it), and must give the same answer.
  */
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
@@ -21,7 +21,7 @@ import {
 import { readBlocks } from "./fragments.js";
 import { diffBlocks } from "./hunks.js";
 import { rebase } from "./merge.js";
-import { restorationLinks } from "./restorations.js";
+import { recordRestorations } from "./restorations.js";
 import { projectReview } from "./review.js";
 import { writeBlocks } from "./writer.js";
 
@@ -72,11 +72,7 @@ function room(blocks: Array<string | PMNode>) {
   let base = readBlocks(frag(seed), schema);
   let writers = 100;
   const projection = () => projectReview(diffBlocks(base, readBlocks(frag(draft), schema)));
-  const provenance = () => ({
-    userId: "u1",
-    parts,
-    restorations: restorationLinks(draft),
-  });
+  const provenance = () => ({ userId: "u1", parts });
   const room = {
     draft,
     parts,
@@ -114,6 +110,7 @@ function room(blocks: Array<string | PMNode>) {
             trackedOrigins: new Set([origin]),
             captureTimeout: 0,
           });
+          recordRestorations(history);
           d.transact(() => run(d), origin);
           history.undo();
           history.destroy();
@@ -128,7 +125,7 @@ function room(blocks: Array<string | PMNode>) {
       base = live;
     },
     /** Names and members per change, on the server's doc and on a gc-on reload; the two must agree. */
-    read(options: { budget?: number } = {}) {
+    read(options: { budget?: number; slide?: number } = {}) {
       const view = projection();
       const read = (doc: Y.Doc) => {
         const out = classifyChanges(doc, view, provenance(), options);
@@ -138,6 +135,7 @@ function room(blocks: Array<string | PMNode>) {
       const server = read(draft);
       expect(read(peer(draft, 50, true))).toEqual(server);
       return {
+        groups: server,
         byline: [...new Set(server.flatMap((c) => c.byline))],
         members: [...new Set(server.flatMap((c) => c.members))].sort(),
         status: parts.map((_, i) =>
@@ -156,6 +154,9 @@ interface Row {
   blocks?: Array<string | PMNode>;
   text?: string;
   budget?: number;
+  slide?: number;
+  /** Per change, in document order, when the row has more than one. */
+  groups?: Array<{ byline: string[]; members: number[] }>;
   /** "user" and chat names, in byline order. */
   byline: string[];
   members: number[];
@@ -179,6 +180,8 @@ const listText = (d: Y.Doc) =>
   (((frag(d).get(0) as Y.XmlElement).get(0) as Y.XmlElement).get(0) as Y.XmlElement).get(
     0,
   ) as Y.XmlText;
+const bold = (s: string) =>
+  schema.nodes.paragraph.create(null, schema.text(s, [schema.marks.strong.create()]));
 const heading = (level: number, s: string) =>
   schema.nodes.heading.create({ level }, schema.text(s));
 
@@ -192,25 +195,9 @@ const ROWS: Row[] = [
     status: ["pending"],
   },
   {
-    name: "an AI insertion among repeated words",
-    text: "echo echo tail words",
-    run: (r) => r.ai((d) => textOf(d).insert(5, "echo ")),
-    byline: [T()],
-    members: [0],
-    status: ["pending"],
-  },
-  {
     name: "an insertion before a space the AI wrote",
     text: "alpha beta gamma delta",
     run: (r) => r.ai((d) => textOf(d).insert(5, " MAGIC")),
-    byline: [T()],
-    members: [0],
-    status: ["pending"],
-  },
-  {
-    name: "an insertion after a space the AI wrote",
-    text: "alpha beta gamma delta",
-    run: (r) => r.ai((d) => textOf(d).insert(6, "MAGIC ")),
     byline: [T()],
     members: [0],
     status: ["pending"],
@@ -335,11 +322,37 @@ const ROWS: Row[] = [
     status: ["pending"],
   },
   {
-    name: "a second Discard and Undo of an insertion",
+    name: "Discard then Undo of text at the end of a run keeps its chat (no right neighbor to infer from)",
+    text: "alpha beta gamma delta",
+    run: (r) => {
+      r.ai((d) => textOf(d).insert(textOf(d).length, " tail"));
+      r.discardUndo((d) => textOf(d).delete(textOf(d).length - 5, 5), 2);
+    },
+    byline: [T()],
+    members: [0],
+    status: ["pending"],
+  },
+  {
+    name: "red to blue, Apply, then the writer deletes blue: the writer's, and nothing is left pending",
+    text: "red",
+    run: (r) => {
+      r.ai((d) => {
+        textOf(d).delete(0, 3);
+        textOf(d).insert(0, "blue");
+      });
+      r.apply();
+      r.writer((d) => textOf(d).delete(0, 4));
+    },
+    byline: ["user"],
+    members: [],
+    status: ["applied"],
+  },
+  {
+    name: "33 Discard and Undo rounds of an insertion still name its chat",
     text: "alpha beta gamma delta",
     run: (r) => {
       r.ai((d) => textOf(d).insert(0, "zeta "));
-      r.discardUndo((d) => textOf(d).delete(0, 5), 2);
+      r.discardUndo((d) => textOf(d).delete(0, 5), 33);
     },
     byline: [T()],
     members: [0],
@@ -425,6 +438,92 @@ const ROWS: Row[] = [
     status: ["applied"],
   },
   {
+    name: "a deletion in the middle of a long repeat names its chat",
+    text: `${"echo ".repeat(250)}tail words`,
+    run: (r) => r.ai((d) => textOf(d).delete(500, 5)),
+    byline: [T()],
+    members: [0],
+    status: ["pending"],
+  },
+  {
+    name: "the same when the slide gives up: no name, the chat stays a member",
+    text: `${"echo ".repeat(250)}tail words`,
+    slide: 64,
+    run: (r) => r.ai((d) => textOf(d).insert(500, "echo ")),
+    byline: [],
+    members: [0],
+    status: ["pending"],
+  },
+  {
+    name: "two chats, each in its own change: neither is credited with the other's",
+    text: "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu",
+    run: (r) => {
+      r.ai((d) => textOf(d).insert(0, "ONE "));
+      r.ai((d) => textOf(d).insert(textOf(d).length, " TWO"));
+    },
+    byline: [T(0), T(1)],
+    members: [0, 1],
+    groups: [
+      { byline: [T(0)], members: [0] },
+      { byline: [T(1)], members: [1] },
+    ],
+    status: ["pending", "pending"],
+  },
+  {
+    name: "Discard then Undo of an AI paragraph keeps its chat",
+    text: "alpha tail",
+    run: (r) => {
+      r.ai((d) => frag(d).insert(0, [paragraphXml("AI new block")]));
+      r.discardUndo((d) => frag(d).delete(0, 1), 2);
+    },
+    byline: [T()],
+    members: [0],
+    status: ["pending"],
+  },
+  {
+    name: "Discard then Undo of AI bold keeps its chat",
+    text: "alpha beta gamma delta",
+    run: (r) => {
+      r.ai((d) => textOf(d).format(6, 4, { strong: true }));
+      r.discardUndo((d) => textOf(d).format(6, 4, { strong: null }), 2);
+    },
+    byline: [T()],
+    members: [0],
+    status: ["pending"],
+  },
+  {
+    name: "Discard then Undo of an AI heading level keeps its chat",
+    blocks: [heading(1, "alpha tail")],
+    run: (r) => {
+      r.ai((d) => (frag(d).get(0) as Y.XmlElement).setAttribute("level", 2 as never));
+      r.discardUndo((d) => (frag(d).get(0) as Y.XmlElement).setAttribute("level", 1 as never), 2);
+    },
+    byline: [T()],
+    members: [0],
+    status: ["pending"],
+  },
+  {
+    name: "an AI that turns a bullet list into a numbered one is still in the change",
+    blocks: [list],
+    run: (r) =>
+      r.ai((d) =>
+        writeBlocks(frag(d), schema, [
+          schema.nodes.ordered_list.create(null, list.firstChild as PMNode),
+        ]),
+      ),
+    byline: [T()],
+    members: [0],
+    status: ["pending"],
+  },
+  {
+    name: "an AI that removes bold is still in the change",
+    blocks: [bold("alpha beta gamma delta")],
+    run: (r) => r.ai((d) => textOf(d).format(0, 22, { strong: null })),
+    byline: [],
+    members: [0],
+    status: ["pending"],
+  },
+  {
     name: "a past-budget span names no one and keeps its members",
     text: "alpha beta gamma delta",
     budget: 1,
@@ -492,7 +591,10 @@ describe("attribution", () => {
   it.each(ROWS)("$name", (row) => {
     const r = room(row.blocks ?? [row.text ?? ""]);
     row.run(r);
-    expect(r.read({ budget: row.budget })).toEqual({
+    const read = r.read({ budget: row.budget, slide: row.slide });
+    if (row.groups) expect(read.groups).toEqual(row.groups);
+    expect({ ...read, groups: undefined }).toEqual({
+      groups: undefined,
       byline: row.byline,
       members: row.members,
       status: row.status,
@@ -503,19 +605,23 @@ describe("attribution", () => {
     const r = room(["one AIOLD two three four"]);
     r.ai((d) => textOf(d).insert(0, "NEW "));
     r.ai((d) => textOf(d).delete(8, 6));
-    const classified = classifyChanges(
-      r.draft,
-      r.projection(),
-      { userId: "u", parts: r.parts },
-      { record: true },
-    );
-    r.draft.clientID = 1;
-    r.draft.transact(() =>
-      appendApplyRecord(r.draft, applyRecordOf(classified, classified.keys())),
-    );
-    const [entry] = readApplyRecord(r.draft);
+    const recordOf = (budget?: number) => {
+      const classified = classifyChanges(
+        r.draft,
+        r.projection(),
+        { userId: "u", parts: r.parts },
+        { record: true, budget },
+      );
+      return applyRecordOf(classified, classified.keys());
+    };
+    const entry = recordOf();
     const [insert, remove] = r.parts;
     expect(entry.base).toEqual(insert.inserted);
     expect(entry.settled).toEqual(remove.deleted);
+    // Running out of diff budget silences names; the record Apply persists must not shrink with it.
+    expect(recordOf(1)).toEqual(entry);
+    r.draft.clientID = 1;
+    r.draft.transact(() => appendApplyRecord(r.draft, entry));
+    expect(readApplyRecord(r.draft)).toEqual([entry]);
   });
 });

@@ -34,7 +34,13 @@ export {
   recoverLatePeerEdits,
 } from "./late-peer-recovery.js";
 export { type Conflict, type RebaseResult, rebase } from "./merge.js";
-export { type RestorationLink, restorationLinks } from "./restorations.js";
+export {
+  RESTORED_ORIGIN,
+  RESTORED_ROOT,
+  type RestorationLink,
+  readRestorationLinks,
+  recordRestorations,
+} from "./restorations.js";
 export {
   composeGroups,
   type ProseMirrorJSON,

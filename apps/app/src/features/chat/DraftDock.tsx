@@ -219,6 +219,10 @@ function DockFileLine({
       </>
     ) : null;
   if (!summary && !expanded) return null;
+  // A file stays listed only for a chat that has a change in it: the server's list can be a step behind
+  // the writer's own edits (typing after an Apply), and a summary with commands and no rows is a lie.
+  const noChanges = view.status === "ready" && !wholeDocument && items.length === 0;
+  if (noChanges && !trouble && !view.discarded?.length && overrode.length === 0) return null;
   return (
     <div
       data-draft-dock-file={file.row.documentId}

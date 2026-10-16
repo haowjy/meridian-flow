@@ -4,6 +4,7 @@
  * `Y.UndoManager` that tracks only this edit. Undo reverts exactly the discard and leaves the writer's
  * later typing; the history is the caller's to keep for the session and gone with it.
  */
+import { recordRestorations } from "@meridian/agent-edit/diff";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { refindGroup, writeDiscard } from "./draft-discard";
@@ -49,6 +50,7 @@ function writeInRoom(
     trackedOrigins: new Set([origin]),
     captureTimeout: 0,
   });
+  recordRestorations(history);
   try {
     writeDiscard(
       { doc, fragment, schema: buildDocumentSchema(), undo: history, origin },
