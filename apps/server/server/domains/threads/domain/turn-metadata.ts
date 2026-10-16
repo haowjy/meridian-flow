@@ -1,5 +1,6 @@
 /** Typed metadata codecs, constructors, and history classification for durable turns. */
 
+import type { TypedFailureReason } from "@meridian/contracts/failures";
 import { SummaryRejectionReasonCodec } from "@meridian/contracts/runtime";
 import type {
   JsonObject,
@@ -117,6 +118,14 @@ export const CompactionFailureOutcomeCodec = z.object({
 });
 
 export type CompactionFailureOutcome = z.infer<typeof CompactionFailureOutcomeCodec>;
+
+// A reason added to either codec must be classified in `@meridian/contracts/failures`: the constraint
+// fails to compile for an unclassified member (a conditional type resolving to `never` would not).
+type AssertClassified<_Reason extends TypedFailureReason> = true;
+type _FailureReasonsAreClassified = [
+  AssertClassified<z.infer<typeof HandoffFailureReasonCodec>>,
+  AssertClassified<z.infer<typeof CompactionFailureReasonCodec>>,
+];
 
 const compactionFailureMetadataFields = {
   reason: CompactionFailureReasonCodec.optional(),

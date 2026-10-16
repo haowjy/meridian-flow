@@ -76,7 +76,8 @@ export interface HistoryTurn {
   report?: SavedReportView;
   /** Earlier turns were compacted; the marker renders above this turn. */
   summarizedBefore?: boolean;
-  failure?: { status: string; error?: string; reason?: string };
+  /** The writer stopped this turn. A failed turn carries nothing here: the model never reads a failure. */
+  cancelled?: true;
 }
 
 export interface HistoryResult {
@@ -209,12 +210,7 @@ function renderTurn(result: HistoryResult, turn: HistoryTurn, live: boolean): st
         ? turnItem(result, turn, item)
         : singleItem(turn, item),
   );
-  const failure = turn.failure
-    ? [
-        `${turn.failure.status}${turn.failure.error ? `: ${turn.failure.error}` : ""}`,
-        ...(turn.failure.reason ? [`failure reason: ${turn.failure.reason}`] : []),
-      ]
-    : [];
+  const cancelled = turn.cancelled ? ["cancelled"] : [];
   const hidden =
     turn.hiddenCount > 0 && turn.number !== undefined
       ? [
@@ -226,7 +222,7 @@ function renderTurn(result: HistoryResult, turn: HistoryTurn, live: boolean): st
   return [
     heading,
     ...items,
-    ...failure,
+    ...cancelled,
     ...(turn.report ? [reportBlock(result, turn, turn.report)] : []),
     ...hidden,
   ].join("\n");

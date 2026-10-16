@@ -4,8 +4,10 @@ import type { ThreadId } from "@meridian/contracts/runtime";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { journalEventsByThread } from "../../../test-support/journal-events.js";
+import { createQuietDrizzleJournalWriter } from "../../../test-support/journal-writer.js";
 import { releaseLeaseUnderLock } from "../../../test-support/release-lease.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
+import { noFailureRecorder } from "../../threads/ports/event-journal.js";
 import type { MessageDraft } from "../loop/ports.js";
 import { readRunStateAtHead } from "./drizzle-run-state.js";
 
@@ -193,7 +195,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const { createDrizzleEventJournalWriter } = await import("../../threads/index.js");
       const repos = createDrizzleRepositoriesForTest(db);
       const authority = createDrizzleRunClaim(db);
-      const eventWriter = createDrizzleEventJournalWriter(db);
+      const eventWriter = createQuietDrizzleJournalWriter(db);
       const delivery = createTestDrizzleDelivery(db, { repos, runClaim: authority, eventWriter });
       const adopted = await delivery.enqueue(message("failed-summary"));
       await repos.turns.create({
@@ -254,6 +256,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         repos,
         runClaim: authority,
         eventWriter: {
+          ...noFailureRecorder,
           async appendEvent(threadId, event) {
             if (event.type === "run_state.changed") throw new Error("projection unavailable");
             return eventWriter.appendEvent(threadId, event);
@@ -341,7 +344,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         repos,
         inbox: delivery,
         authority,
-        eventWriter: createDrizzleEventJournalWriter(db),
+        eventWriter: createQuietDrizzleJournalWriter(db),
         settleStaleExecution: delivery.settleStaleExecution,
         retireOrphanedReply: delivery.retireOrphanedReply,
         clearOrphanedTurn: delivery.clearOrphanedTurn,
@@ -357,6 +360,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         runClaim: authority,
         publishStatus,
         eventWriter: {
+          ...noFailureRecorder,
           async appendEvent() {
             throw new Error("projection unavailable");
           },
@@ -507,6 +511,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     describe("RuntimeDelivery atomic transitions", () => {
       const failure = {
+        ...noFailureRecorder,
         async appendEvent() {
           throw new Error("projection unavailable");
         },
@@ -647,7 +652,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       it("rolls back enqueue when projection fails; commits one replacement before the wake", async () => {
         const { createDrizzleEventJournalWriter } = await import("../../threads/index.js");
-        const writer = createDrizzleEventJournalWriter(db);
+        const writer = createQuietDrizzleJournalWriter(db);
         let wakes = 0;
         const visible: number[][] = [];
         const runStarter = {
@@ -807,7 +812,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       it("serializes a racing enqueue after terminal commit and leaves it recoverable", async () => {
         const { repos, turn } = await assistant();
         const { createDrizzleEventJournalWriter } = await import("../../threads/index.js");
-        const writer = createDrizzleEventJournalWriter(db);
+        const writer = createQuietDrizzleJournalWriter(db);
         const runClaim = createDrizzleRunClaim(db);
         const lease = required(await runClaim.startExecution(THREAD_A, "race", async () => {}));
         let entered!: () => void, release!: () => void;
@@ -828,6 +833,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           repos,
           runClaim,
           eventWriter: {
+            ...noFailureRecorder,
+            ...noFailureRecorder,
+            ...noFailureRecorder,
+            ...noFailureRecorder,
+            ...noFailureRecorder,
             async appendEvent(threadId, event) {
               if (event.type === "run_state.changed") {
                 entered();

@@ -492,6 +492,11 @@ export class ProjectDocumentNavigationAdapter {
       }
     }
     if (input.disposition === "current") {
+      // An upload has no Editor route: with no dock to hold it, the open goes nowhere.
+      if (input.scheme === "uploads") {
+        this.current = null;
+        return "cancelled";
+      }
       if (!this.dependencies.openRoute)
         throw new Error("Opening a project document requires the project route owner");
       this.current = null;

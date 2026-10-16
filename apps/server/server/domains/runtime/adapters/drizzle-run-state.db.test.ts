@@ -1,7 +1,9 @@
 /** PostgreSQL coverage for the run-state publication participant: lock tracking, savepoints and the flush. */
+
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { journalEventsByThread } from "../../../test-support/journal-events.js";
+import { createQuietDrizzleJournalWriter } from "../../../test-support/journal-writer.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -35,7 +37,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
     const db = createDb(DATABASE_URL, { max: 6 });
-    const lock = createDrizzleThreadLock(db, createDrizzleEventJournalWriter(db));
+    const lock = createDrizzleThreadLock(db, createQuietDrizzleJournalWriter(db));
     const inbox = createDrizzleInbox(db);
 
     beforeEach(async () => {
