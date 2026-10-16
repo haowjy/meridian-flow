@@ -2200,8 +2200,8 @@ msgid "Handoff brief stopped"
 msgstr ""
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
-msgid "Handoff brief unavailable"
-msgstr ""
+#~ msgid "Handoff brief unavailable"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Header row"
@@ -3471,8 +3471,8 @@ msgid "Retry Pending drafts"
 msgstr ""
 
 #: src/features/chat/thread-controls/control-copy.ts
-msgid "Retry queueing"
-msgstr ""
+#~ msgid "Retry queueing"
+#~ msgstr ""
 
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Retry save"
@@ -3483,8 +3483,8 @@ msgid "Retry sign-in"
 msgstr ""
 
 #: src/features/chat/thread-controls/control-copy.ts
-msgid "Retry switching"
-msgstr ""
+#~ msgid "Retry switching"
+#~ msgstr ""
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "Retry the handoff brief"
@@ -4259,8 +4259,8 @@ msgid "Thinking out loud?"
 msgstr "边想边说？"
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
-msgid "This brief failed."
-msgstr ""
+#~ msgid "This brief failed."
+#~ msgstr ""
 
 #: src/features/project/context/viewers/PdfViewer.tsx
 msgid "This browser cannot display the PDF inline."
