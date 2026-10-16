@@ -54,7 +54,7 @@ async function setup() {
     cardBlockId: null,
   });
   const transcript: SpawnTranscript = {
-    persistence: { repos, eventWriter: createInMemoryEventJournalWriter() },
+    persistence: { repos, eventWriter: createInMemoryEventJournalWriter(repos.transactionOwner) },
     threadId: child.id as ThreadId,
     turnId: turn.id,
     blockSeqRef: { value: 0 },
