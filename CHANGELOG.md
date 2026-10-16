@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Consolidate and trim duplicate package and development-tool tests, reducing per-file Vitest startup overhead while preserving admitted coverage.
+
 - A failed Stop with nothing queued no longer leaves a "Couldn't move your queued message" card behind once its reply ends, and the Stop button stops reading failed. A failed Stop that was taking back queued messages keeps its card.
 - Retrying a failed reply, or moving on from one, makes the AI forget the failed attempt. A retry keeps your message and drops the failure. Moving on from a failure that produced nothing drops the attempt and its messages from the screen, the chat's history, summaries and forks cut after it. A failed reply that used a tool, or whose reply carried on, stays. This is one stored fact on the turn, so the app, `./mf` and the AI all read the same thing.
 - A failure's screen-reader alert is announced only for a failure that happens in front of you, and goes when the chat moves past it or the reply is forgotten; reloading no longer re-announces an ended failure. `./mf thread send` reports a message the chat moved past as `failed` with reason `forgotten`, not as answered.

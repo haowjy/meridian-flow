@@ -11,6 +11,11 @@ import {
   resolveTarget,
 } from "./worktree-cleanup";
 import type { CleanupEligibility } from "./worktree-cleanup-eligibility";
+import {
+  decideCleanupEligibility,
+  type MergedPullRequest,
+  validateCleanupEligibility,
+} from "./worktree-cleanup-eligibility";
 import type { AutoCleanupReadinessDecision } from "./worktree-cleanup-readiness";
 
 // Two worktrees: primary on the base branch, one feature worktree. The feature
@@ -304,33 +309,6 @@ describe("worktree cleanup resolver", () => {
     expect(actionsRun).toBe(0);
   });
 
-  it("revalidates targeted cleanup readiness before teardown", async () => {
-    const context = makeContext();
-    const plan = createCleanupPlan(context, [
-      resolveTarget(context, { kind: "direct", value: "feature" }),
-    ]);
-    let actionsRun = 0;
-
-    const result = await executeCleanupPlan(
-      plan,
-      () => ({
-        eligible: true,
-        evidence: plan.targets[0].eligibility,
-      }),
-      () => ({ ready: false, reasons: ["worktree has uncommitted changes"] }),
-      () => {
-        actionsRun += 1;
-        return { ok: true };
-      },
-    );
-
-    expect(result).toMatchObject({
-      ok: false,
-      readinessFailure: "worktree has uncommitted changes",
-    });
-    expect(actionsRun).toBe(0);
-  });
-
   it("revalidates readiness again before dropping the database", async () => {
     const context = makeContext();
     const plan = createCleanupPlan(context, [
@@ -363,3 +341,140 @@ describe("worktree cleanup resolver", () => {
     expect(actionsRun).toEqual(["stop-dev", "stop-nx"]);
   });
 });
+
+{
+  const plannedOid = "2222222222222222222222222222222222222222";
+
+  function mergedPullRequest(overrides: Partial<MergedPullRequest> = {}): MergedPullRequest {
+    return {
+      number: 42,
+      baseRefName: "main",
+      headRefName: "feature",
+      headRefOid: plannedOid,
+      headRepositoryOwner: "haowjy",
+      ...overrides,
+    };
+  }
+
+  describe("decideCleanupEligibility", () => {
+    it("refuses a historical same-name PR when the local branch has new commits", () => {
+      const decision = decideCleanupEligibility({
+        branch: "feature",
+        plannedOid,
+        baseBranch: "main",
+        repositoryOwner: "haowjy",
+        isAncestor: false,
+        allowAncestry: true,
+        pullRequestDiscovery: {
+          ok: true,
+          pullRequests: [
+            mergedPullRequest({ headRefOid: "1111111111111111111111111111111111111111" }),
+          ],
+        },
+      });
+
+      expect(decision).toMatchObject({ eligible: false });
+    });
+
+    it("allows a squash-merged PR only when its head OID, base, branch, and owner match", () => {
+      const decision = decideCleanupEligibility({
+        branch: "feature",
+        plannedOid,
+        baseBranch: "main",
+        repositoryOwner: "haowjy",
+        isAncestor: false,
+        allowAncestry: true,
+        pullRequestDiscovery: { ok: true, pullRequests: [mergedPullRequest()] },
+      });
+
+      expect(decision).toEqual({
+        eligible: true,
+        evidence: {
+          kind: "pull-request",
+          branch: "feature",
+          plannedOid,
+          baseBranch: "main",
+          repositoryOwner: "haowjy",
+          pullRequestNumber: 42,
+        },
+      });
+    });
+
+    it("refuses when GitHub PR discovery fails", () => {
+      const decision = decideCleanupEligibility({
+        branch: "feature",
+        plannedOid,
+        baseBranch: "main",
+        repositoryOwner: "haowjy",
+        isAncestor: false,
+        allowAncestry: true,
+        pullRequestDiscovery: { ok: false, error: "gh unavailable" },
+      });
+
+      expect(decision).toMatchObject({ eligible: false });
+    });
+
+    it("requires exact merged-PR evidence for auto even when the commit is an ancestor", () => {
+      const ancestryOnly = decideCleanupEligibility({
+        branch: "feature",
+        plannedOid,
+        baseBranch: "main",
+        repositoryOwner: "haowjy",
+        isAncestor: true,
+        allowAncestry: false,
+        pullRequestDiscovery: { ok: true, pullRequests: [] },
+      });
+      const exactPr = decideCleanupEligibility({
+        branch: "feature",
+        plannedOid,
+        baseBranch: "main",
+        repositoryOwner: "haowjy",
+        isAncestor: true,
+        allowAncestry: false,
+        pullRequestDiscovery: { ok: true, pullRequests: [mergedPullRequest()] },
+      });
+
+      expect(ancestryOnly).toMatchObject({ eligible: false });
+      expect(exactPr).toMatchObject({
+        eligible: true,
+        evidence: { kind: "pull-request", pullRequestNumber: 42 },
+      });
+    });
+  });
+
+  describe("validateCleanupEligibility", () => {
+    it("accepts manually verified evidence while the branch remains at its planned commit", () => {
+      const evidence = {
+        kind: "manual" as const,
+        branch: "feature",
+        plannedOid,
+        baseBranch: "main",
+        note: "verified against the preserved integration tip",
+      };
+
+      expect(
+        validateCleanupEligibility({
+          evidence,
+          currentOid: plannedOid,
+          isAncestor: undefined,
+        }),
+      ).toEqual({ eligible: true, evidence });
+    });
+
+    it("refuses manually verified evidence after the planned local ref moves", () => {
+      const decision = validateCleanupEligibility({
+        evidence: {
+          kind: "manual",
+          branch: "feature",
+          plannedOid,
+          baseBranch: "main",
+          note: "verified against the preserved integration tip",
+        },
+        currentOid: "3333333333333333333333333333333333333333",
+        isAncestor: undefined,
+      });
+
+      expect(decision).toMatchObject({ eligible: false });
+    });
+  });
+}

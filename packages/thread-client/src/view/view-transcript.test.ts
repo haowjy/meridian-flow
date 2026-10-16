@@ -1,7 +1,9 @@
-/** Guards the view model's seams: row identity versus render key, stand-in placement, queued writer rows, and which turns draw as items. */
-import type { Block, Turn } from "@meridian/contracts/protocol";
-import { expect, it } from "vitest";
+import type { Block, JsonValue, Turn } from "@meridian/contracts/protocol";
+import { describe, expect, it } from "vitest";
+import { directResultsForTurn } from "./invocation-direct-result";
 import { OPTIMISTIC_TURN_ID_PREFIX } from "./optimistic-turn-id";
+import { placeStandIns } from "./retry-stand-ins";
+import { buildTranscriptModel } from "./transcript-model";
 import { viewTranscript } from "./view-transcript";
 
 function turn(
@@ -289,3 +291,164 @@ it("leaves a handed-back message out and keeps history and later sends", () => {
   });
   expect(ids(view)).toEqual(["m1", "a1", "m3"]);
 });
+
+{
+  function block(
+    id: string,
+    sequence: number,
+    blockType: Block["blockType"],
+    content: JsonValue,
+  ): Block {
+    return {
+      id,
+      turnId: "parent-turn",
+      responseId: null,
+      blockType,
+      sequence,
+      content,
+      status: "complete",
+      textContent: null,
+      createdAt: "2026-09-23T00:00:00.000Z",
+    };
+  }
+
+  function card(mode = "direct", execution: string | null = "execution-1") {
+    return block("card", 0, "custom", {
+      kind: "helper-result",
+      props: {
+        agentSlug: "critic",
+        agentName: "Critic",
+        parentTurnId: "parent-turn",
+        toolCallId: "call-1",
+        childThreadId: "child-1",
+        deliveryMode: mode,
+        execution,
+        startedAt: "2026-01-01T00:00:00.000Z",
+        terminalAt: "2026-01-01T00:01:00.000Z",
+        outcome: "succeeded",
+      },
+    });
+  }
+
+  function toolResult(name: string, result: JsonValue, isError = false): [Block, Block] {
+    return [
+      block("use", 1, "tool_use", {
+        toolCallId: "call-1",
+        toolName: name,
+        input: {},
+        result: null,
+        isError: false,
+      }),
+      block("result", 2, "tool_result", {
+        toolCallId: "call-1",
+        output: "Subagent p3\n\nReport (completed)",
+        result,
+        isError,
+        message: isError ? "Tool failed" : null,
+      }),
+    ];
+  }
+
+  function resultFor(blocks: Block[], invocation = card()) {
+    return directResultsForTurn(blocks).get(invocation.id) ?? null;
+  }
+
+  const success: JsonValue = {
+    status: "completed",
+    execution: "execution-1",
+    outcome: "succeeded",
+    report: { threadId: "child-1", summary: "First line.\nFull report.", payload: { answer: 42 } },
+  };
+
+  describe("direct invocation result join", () => {
+    it("does not join another parent turn or tool call with the same execution", () => {
+      const [use, result] = toolResult("spawn", success);
+      expect(resultFor([{ ...use, turnId: "other" }, card(), result])).toBeNull();
+      expect(resultFor([use, card(), { ...result, turnId: "other" }])).toBeNull();
+      expect(
+        resultFor([use, card(), { ...result, content: { toolCallId: "other", result: success } }]),
+      ).toBeNull();
+    });
+
+    it("keeps empty success truthful and does not borrow another execution or mode", () => {
+      const empty: JsonValue = {
+        status: "completed",
+        execution: "execution-1",
+        outcome: "succeeded",
+        report: { threadId: "child-1", summary: "" },
+      };
+      const [use, result] = toolResult("thread_message", empty);
+      expect(resultFor([use, card(), result])).toMatchObject({ summary: "", outcome: "succeeded" });
+      expect(
+        resultFor([
+          use,
+          card(),
+          {
+            ...result,
+            content: { toolCallId: "call-1", result: { ...success, execution: "other" } },
+          },
+        ]),
+      ).toBeNull();
+      expect(resultFor([use, card("background_notification"), result])).toBeNull();
+      expect(resultFor([use, card("direct", null), result])).toBeNull();
+    });
+  });
+}
+
+{
+  function turn(id: string, role: Turn["role"], prevTurnId: string | null, extra = {}): Turn {
+    return {
+      id,
+      role,
+      prevTurnId,
+      status: "complete",
+      blocks: [],
+      ...extra,
+    } as unknown as Turn;
+  }
+
+  const failed = turn("f", "assistant", "u", { status: "error" });
+  const modeSwitch = turn("s", "system", "f", {
+    metadata: { kind: "write_mode_switch", mode: "draft", controlMessageId: "c1" },
+  });
+  const retry = turn("r", "assistant", "f", { status: "pending" });
+
+  it("places a Retry stand-in after the switch a partial snapshot holds, but before a newer message", () => {
+    // The server commits the queued switch before it reserves the Retry's reply.
+    const ids = (turns: Turn[]) => turns.map((t) => t.id);
+    expect(ids(placeStandIns([failed, modeSwitch], [retry]))).toEqual(["f", "s", "r"]);
+    const newer = turn("n", "user", "s");
+    expect(ids(placeStandIns([failed, modeSwitch, newer], [retry]))).toEqual(["f", "s", "r", "n"]);
+    expect(ids(placeStandIns([failed, newer], [retry]))).toEqual(["f", "r", "n"]);
+  });
+}
+
+{
+  function turn(id: string, role: Turn["role"], extra: Partial<Turn> = {}): Turn {
+    return {
+      id,
+      threadId: "t",
+      position: 0,
+      role,
+      status: "complete",
+      blocks: [],
+      metadata: null,
+      ...extra,
+    } as unknown as Turn;
+  }
+
+  it("never groups a reply across a write-mode divider, even after a steer", () => {
+    const turns = [
+      turn("a", "assistant"),
+      // Sent before the switch was queued, so the server stamped it a steer.
+      turn("m", "user", { metadata: { delivery: "steer" } }),
+      turn("sw", "system", { metadata: { kind: "write_mode_switch", mode: "direct" } }),
+      turn("b", "assistant"),
+    ];
+    const model = buildTranscriptModel(turns, false);
+    expect(model.rows.map((row) => row.kind)).toEqual(["turn", "turn", "write-mode", "turn"]);
+    expect(model.continuing).toEqual([false, false, false, false]);
+    expect(model.partsByFinalTurnId.get("a")?.map((part) => part.id)).toEqual(["a"]);
+    expect(model.partsByFinalTurnId.get("b")?.map((part) => part.id)).toEqual(["b"]);
+  });
+}

@@ -1,3 +1,6 @@
+import type { AGUIEvent } from "@meridian/contracts/protocol";
+import { type CliEvent, RunEventMapper, renderEventLine } from "./events-map";
+
 /**
  * `thread` commands against the wire harness: each test states the admission, snapshots, frames and
  * Stop answer it needs, and checks what ./mf posted and how it read them. Server policy is not tested here.
@@ -6,11 +9,7 @@
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  EventType,
-  MESSAGES_HANDED_BACK_EVENT,
-  type SendMessageResponse,
-} from "@meridian/contracts/protocol";
+import { MESSAGES_HANDED_BACK_EVENT, type SendMessageResponse } from "@meridian/contracts/protocol";
 import { serializeMessageDoc } from "@meridian/thread-client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { EXIT } from "../../core/cli-error";
@@ -21,7 +20,6 @@ import {
   frames,
   inboxItem,
   ndjson,
-  openReply,
   PROJECT_ID,
   publishRecord,
   recordOf,
@@ -39,7 +37,6 @@ beforeEach(async () => {
 afterEach(() => wire.close());
 
 const lastRecord = (stdout: string) => ndjson(stdout).at(-1);
-const tail = (...args: string[]) => wire.mf(["thread", "tail", THREAD_ID, ...args]);
 const send = (text: string, ...rest: string[]) =>
   wire.mf(["thread", "send", THREAD_ID, text, ...rest]);
 
@@ -98,27 +95,6 @@ describe("thread send", () => {
       finalText: "Recovered reply",
       turnId: "a1",
     });
-  });
-
-  it("streams NDJSON ending in the result envelope, with its live view against the stored reply", async () => {
-    replyScenario(wire, {});
-    const result = await send("hi again", "--json");
-    expect(result.code).toBe(EXIT.ok);
-    // Only confirming snapshots (the subscribed state, then the closing record).
-    expect(wire.reads).toBeLessThanOrEqual(2);
-    const lines = ndjson(result.stdout);
-    expect(lines.map((line) => line.type)).toContain("message.delta");
-    expect(lines.at(-1)).toMatchObject({
-      type: "result",
-      command: "thread.send",
-      outcome: "complete",
-      reason: null,
-      status: "complete",
-      finalText: "Hello there",
-      liveView: "matches",
-    });
-    expect(lines.at(-1)).not.toHaveProperty("liveDiff");
-    expect(result.stderr).toBe("");
   });
 
   it("reports a reply stored differently from what streamed, never a different claim", async () => {
@@ -594,19 +570,6 @@ describe("thread send", () => {
     expect(removed).toMatchObject({ method: "DELETE", path: expect.stringContaining("script-1") });
   });
 
-  it("keeps reserved terminal keys with --fields finalText", async () => {
-    replyScenario(wire, {});
-    const result = await send("hi", "--json", "--fields", "finalText");
-    expect(result.code).toBe(EXIT.ok);
-    expect(lastRecord(result.stdout)).toEqual({
-      type: "result",
-      command: "thread.send",
-      outcome: "complete",
-      reason: null,
-      finalText: "Hello there",
-    });
-  });
-
   it.each([false, true])("names staged and committed writes honestly (json=%s)", async (json) => {
     replyScenario(wire, {
       extra: frames.toolCall("write-1", "doc_write", "{}", "staged", "committed"),
@@ -816,141 +779,25 @@ describe("thread view, cancel, events, respond", () => {
   });
 });
 
-describe("thread tail --until-idle", () => {
-  it("follows both consecutive replies before confirming idle", async () => {
-    // One execution answers the message in two replies; the record between them still owes it.
-    wire.publish(frames.started("reply-first"));
-    wire.publish(frames.finished("reply-first"));
-    publishRecord(wire, { items: [inboxItem("u1", 1)], sentThrough: 1 });
-    wire.publish(frames.started("reply-second"));
-    wire.publish(frames.finished("reply-second"));
-    publishRecord(wire, { sentThrough: 1 });
-    const done = [
-      replyTurn("reply-first", 1, { executionId: "exec-1" }),
-      userTurn("u1", 2, "steer", "reply-second"),
-      replyTurn("reply-second", 3, { executionId: "exec-1" }),
-    ];
-    wire.snapshot = (read) =>
-      read === 1
-        ? snapshotOf({
-            turns: [
-              replyTurn("reply-first", 1, { executionId: "exec-1", status: "streaming" }),
-              userTurn("u1", 2, "steer", "reply-second"),
-              replyTurn("reply-second", 3, { executionId: "exec-1", status: "pending" }),
-            ],
-            record: {
-              items: [inboxItem("u1", 1)],
-              sentThrough: 1,
-              execution: { executionId: "exec-1", currentTurnId: "reply-first" },
-            },
-          })
-        : snapshotOf({ seq: wire.head, turns: done, record: { sentThrough: 1 } });
-    const result = await tail("--since", "0", "--until-idle", "--timeout", "1s", "--json");
-    expect(result.code).toBe(EXIT.ok);
-    const records = ndjson(result.stdout);
-    expect(
-      records.filter((record) => record.type === "turn.finished").map((record) => record.turnId),
-    ).toEqual(["reply-first", "reply-second"]);
-    expect(records.at(-1)).toMatchObject({
-      type: "result",
-      command: "thread.tail",
-      outcome: "complete",
-      reason: null,
-      turnId: "reply-second",
-    });
-  });
+{
+  function mapAll(events: AGUIEvent[]): CliEvent[] {
+    const mapper = new RunEventMapper();
+    return events.flatMap((event, index) => mapper.map({ seq: String(index + 1), event }));
+  }
 
-  it("confirms the lease release after a turn finishes, not the turn alone", async () => {
-    wire.snapshot = openReply("a1");
-    wire.play(async () => {
-      await wire.until(() => wire.subscriptions >= 1);
-      // The turn is done and the record idle, but the lease is still awake.
-      wire.snapshot = () =>
-        snapshotOf({ seq: wire.head, awake: true, turns: [replyTurn("a1", 1, { text: "Hi" })] });
-      wire.publish(frames.started("a1"));
-      wire.publish(frames.finished("a1"));
-      publishRecord(wire);
-      await new Promise((resolve) => setTimeout(resolve, 40));
-      wire.snapshot = () =>
-        snapshotOf({ seq: wire.head, turns: [replyTurn("a1", 1, { text: "Hi" })] });
-      wire.publish({
-        type: EventType.CUSTOM,
-        name: "meridian.thread.status",
-        value: { status: { kind: "asleep" }, runningTurnId: null },
-      });
+  describe("RunEventMapper", () => {
+    it("marks a message joined mid-stream as partial instead of passing a fragment off as whole", () => {
+      const events = mapAll([
+        {
+          type: "TEXT_MESSAGE_CONTENT",
+          messageId: "m1",
+          delta: " there",
+        } as AGUIEvent,
+        { type: "TEXT_MESSAGE_END", messageId: "m1" } as AGUIEvent,
+      ]);
+      const completed = events.at(-1);
+      expect(completed).toMatchObject({ type: "message.completed", text: " there", partial: true });
+      expect(completed && renderEventLine(completed, false)).toBe("assistant (partial): there");
     });
-    const result = await tail("--until-idle", "--timeout", "1s", "--json");
-    expect(result.code).toBe(EXIT.ok);
-    const records = ndjson(result.stdout);
-    expect(records).toContainEqual(
-      expect.objectContaining({ type: "event", name: "meridian.thread.status" }),
-    );
-    expect(records.at(-1)).toMatchObject({ outcome: "complete", reason: null, turnId: "a1" });
   });
-
-  it("returns immediately on an already-idle chat", async () => {
-    const result = await tail("--until-idle", "--timeout", "100ms", "--json");
-    expect(result.code).toBe(EXIT.ok);
-    expect(JSON.parse(result.stdout)).toEqual({
-      type: "result",
-      command: "thread.tail",
-      outcome: "complete",
-      reason: null,
-      threadId: THREAD_ID,
-      turnId: null,
-      turns: [],
-      idle: true,
-    });
-    expect(result.stderr).toBe("");
-    const text = await tail("--until-idle");
-    expect(text.code).toBe(EXIT.ok);
-    expect(text.stdout).toBe("");
-    expect(text.stderr).toBe("complete: chat idle, no turn ran during the wait\n");
-    expect(wire.subscriptions).toBe(0);
-  });
-
-  it("reports a final timeout snapshot without stopping the run", async () => {
-    wire.snapshot = openReply("a1");
-    const result = await tail("--until-idle", "--timeout", "100ms", "--json");
-    expect(result.code).toBe(EXIT.timeout);
-    expect(lastRecord(result.stdout)).toMatchObject({
-      type: "result",
-      command: "thread.tail",
-      outcome: "timeout",
-      reason: "running",
-      stillRunning: { status: "streaming" },
-    });
-    expect(wire.requestsOf("stop")).toHaveLength(0);
-    expect(wire.requestsOf("cancel")).toHaveLength(0);
-  });
-
-  it("times out with an awake lease after an orphan error and empty inbox", async () => {
-    wire.publish(frames.failed("orphaned"));
-    publishRecord(wire, { version: "9999" });
-    wire.snapshot = snapshotOf({
-      seq: 2,
-      awake: true,
-      turns: [replyTurn("orphan-turn", 1, { status: "error", error: "orphaned" })],
-    });
-    const result = await tail("--since", "0", "--until-idle", "--timeout", "100ms", "--json");
-    expect(result.code).toBe(EXIT.timeout);
-    const records = ndjson(result.stdout);
-    expect(records).toContainEqual(expect.objectContaining({ type: "turn.failed" }));
-    expect(records).toContainEqual(
-      expect.objectContaining({ type: "event", name: "meridian.run_state" }),
-    );
-    expect(records.at(-1)).toMatchObject({
-      outcome: "timeout",
-      reason: "lease_awake",
-      stillRunning: null,
-      owed: [],
-      snapshotStale: true,
-      next: [`./mf thread tail ${THREAD_ID} --until-idle`],
-    });
-    const text = await tail("--until-idle", "--timeout", "100ms");
-    expect(text.code).toBe(EXIT.timeout);
-    expect(text.stderr).toContain(
-      "timeout: last snapshot showed no running turn or owed message, but the chat was awake; idle is unconfirmed",
-    );
-  });
-});
+}
