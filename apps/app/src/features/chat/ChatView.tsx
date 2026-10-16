@@ -58,7 +58,10 @@ import {
   useAccountEpochSignal,
   useAccountId,
 } from "@/features/project/context/account-feature-context";
-import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
+import {
+  useCanOpenChatReference,
+  useOpenChatDocument,
+} from "@/features/project/context/open-chat-document";
 import {
   displayedChatThreadId,
   useChatNavigation,
@@ -155,6 +158,7 @@ export function ChatView({
   active = true,
 }: ChatViewProps) {
   const openReferenceDocument = useOpenChatDocument(projectId);
+  const canOpenReference = useCanOpenChatReference();
   const actions = useThreadActions();
   const { changeTrails } = useThreadDurableProjections({ threadId, projectId });
   const composerRef = useRef<ComposerHandle>(null);
@@ -494,6 +498,7 @@ export function ChatView({
                 initialDraft={draft.initialDraft}
                 onDraftChange={draft.updateDraft}
                 onOpenReference={(reference) => {
+                  if (!canOpenReference(reference.uri)) return;
                   void openReferenceDocument({
                     documentId: reference.documentId,
                     disposition: "current",

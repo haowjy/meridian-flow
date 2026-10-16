@@ -68,6 +68,7 @@ export type TranscriptReferenceResolution =
 export const TranscriptReferenceContext = createContext<{
   resolutions?: ReadonlyMap<string, TranscriptReferenceResolution>;
   onOpen?: (documentId: string) => void;
+  canOpen?: (uri: string) => boolean;
 }>({});
 
 export function TranscriptReference({
@@ -83,7 +84,7 @@ export function TranscriptReference({
   "data-target-href"?: string;
   "data-authored-label"?: string;
 }) {
-  const { resolutions, onOpen } = useContext(TranscriptReferenceContext);
+  const { resolutions, onOpen, canOpen } = useContext(TranscriptReferenceContext);
   const navigation = useContext(TranscriptLinkNavigationContext);
   const target = targetHref ? classifyLinkTarget(targetHref) : null;
   const trigger = useRef<HTMLSpanElement>(null);
@@ -100,7 +101,7 @@ export function TranscriptReference({
   const syntax = !documentId && target ? target : null;
   const syntaxFollowable = Boolean(syntax && navigation?.canFollow(syntax));
   const follow = documentId
-    ? resolution?.available && onOpen
+    ? resolution?.available && onOpen && (canOpen?.(resolution.uri) ?? true)
       ? () => onOpen(resolution.documentId)
       : undefined
     : navigation && syntax && syntaxFollowable

@@ -1,4 +1,5 @@
 /** Editor view identity and membership, independent of React and persistence. */
+import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type {
   ContextOwner,
   DocumentFileType,
@@ -6,7 +7,6 @@ import type {
   ProjectContextTreeScheme,
   YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
-import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 /**
  * A tab's owner, exclusive by type: a Work row id (Scratch), a No Work chat's
  * lineage, or a chat (uploads), each with the handle its URI spells. Project
@@ -32,8 +32,7 @@ export type TabOwner =
       rootThreadId?: undefined;
       rootThreadRef?: undefined;
       chatId: string;
-      /** Null before the chat exists, when its uploads spell a bare URI. */
-      chatRef: string | null;
+      chatRef: string;
     };
 
 /** A patch's owner, with the absent arm spelled out so a spread replaces the old owner. */
@@ -59,8 +58,7 @@ export function replaceOwner(owner: TabOwner): TabOwner {
 
 /** The owner a tab names, for catalog and request lookups. */
 export function tabContextOwner(owner: TabOwner): ContextOwner {
-  if (owner.chatId !== undefined)
-    return { chatThreadId: owner.chatId, ...(owner.chatRef ? { chatRef: owner.chatRef } : {}) };
+  if (owner.chatId !== undefined) return { chatThreadId: owner.chatId, chatRef: owner.chatRef };
   return owner.rootThreadId !== undefined
     ? { rootThreadId: owner.rootThreadId, rootThreadRef: owner.rootThreadRef }
     : { workId: owner.workId ?? null };
@@ -151,7 +149,7 @@ export function isEditorTab(tab: EditorTabCandidate, workId: string | null): boo
   if (isDraftOnly(tab) && !(workId && reviewEntryOf(tab, workId))) return false;
   if (!isEditorScheme(tab.scheme)) return false;
   if (tab.rootThreadId) return true;
-  return !isWorkScopedProjectContextScheme(tab.scheme) || tab.workId === workId;
+  return !isWorkScopedScheme(tab.scheme) || tab.workId === workId;
 }
 
 /**

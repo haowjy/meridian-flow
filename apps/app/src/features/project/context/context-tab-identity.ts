@@ -1,12 +1,12 @@
 /**
  * context-tab-identity — route/tab matching for work-scoped context files.
  *
- * Work-scoped schemes (`scratch`, `uploads`) share path shape across works and
+ * Scratch shares path shape across works and
  * a No Work chat's Scratch shares it across lineages; tab and route
  * reconciliation must include the owner (`workId` or `rootThreadId`) so
  * switching active work cannot reuse another owner's open tab.
  */
-import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
+import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ContextTab } from "@/client/stores";
 import { isDraftOnly, reviewEntryOf } from "@/client/stores";
 import type { ContextRouteTarget } from "../routing/project-route";
@@ -17,14 +17,14 @@ export function contextTabMatchesRoute(tab: ContextTab, target: RouteLocator): b
   if (tab.kind === "new") return false;
   if (isDraftOnly(tab) && !(target.workId && reviewEntryOf(tab, target.workId))) return false;
   if (tab.scheme !== target.scheme || tab.path !== target.path) return false;
-  if (!isWorkScopedProjectContextScheme(target.scheme)) return true;
+  if (!isWorkScopedScheme(target.scheme)) return true;
   return target.rootThreadId !== undefined
     ? tab.rootThreadId === target.rootThreadId
     : tab.rootThreadId === undefined && tab.workId === target.workId;
 }
 
 export function contextTabRouteKey(projectId: string, target: RouteLocator): string {
-  if (isWorkScopedProjectContextScheme(target.scheme)) {
+  if (isWorkScopedScheme(target.scheme)) {
     const owner = target.rootThreadId ? `chat:${target.rootThreadId}` : target.workId;
     return `${projectId}:${target.scheme}:${owner}:${target.path}`;
   }

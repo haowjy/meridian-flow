@@ -1,10 +1,6 @@
 /** Checked owner construction at command boundaries and one durable URI authority rule. */
-import type { ParsedContextAuthority } from "@meridian/contracts/context-uri";
-import {
-  type CatalogScope,
-  isWorkScopedProjectContextScheme,
-  type ProjectContextTreeScheme,
-} from "@meridian/contracts/protocol";
+import { isOwnedContextScheme, type ParsedContextAuthority } from "@meridian/contracts/context-uri";
+import type { CatalogScope, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { ResourceOwner } from "./resource-records";
 
 /** The locked row is separate from named Works in the project's authoritative snapshot. */
@@ -54,14 +50,14 @@ export function resourceContextAuthority(
     chatRef?: string | null;
   },
 ): ResourceContextAuthority {
-  if (!isWorkScopedProjectContextScheme(scheme)) return { kind: "contextual" };
-  if (owner.chatId) {
-    if (scheme !== "uploads" || owner.workId !== null)
-      throw new Error("Chat authority requires Uploads");
+  if (!isOwnedContextScheme(scheme)) return { kind: "contextual" };
+  if (scheme === "uploads") {
+    if (!owner.chatId || owner.workId !== null) throw new Error("Uploads require a chat owner");
     return { kind: "chat", chatRef: owner.chatRef ?? null };
   }
+  if (owner.chatId) throw new Error("Chat authority requires Uploads");
   if (owner.rootThreadId) {
-    if (scheme !== "scratch" || owner.workId !== null || !owner.rootThreadRef)
+    if (owner.workId !== null || !owner.rootThreadRef)
       throw new Error("Lineage authority requires Scratch and a first-chat handle");
     return { kind: "lineage", rootThreadRef: owner.rootThreadRef };
   }

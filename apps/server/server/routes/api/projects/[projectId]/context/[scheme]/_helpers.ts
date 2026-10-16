@@ -7,16 +7,16 @@ import { throwContextWorkUnavailableHttpError } from "../../../../../../lib/cont
  * performs. Writer-input validation lives in the route-core validation seam.
  */
 
-import type { CanonicalContextAuthority } from "@meridian/contracts/context-uri";
+import {
+  type CanonicalContextAuthority,
+  isWorkScopedScheme,
+} from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { H3Event } from "nitro/h3";
 import { createError, getQuery, getRouterParam } from "nitro/h3";
-import {
-  isWorkScopedBrowseScheme,
-  projectBrowseContextUri,
-} from "../../../../../../domains/context/browse-layer-scheme.js";
+import { projectBrowseContextUri } from "../../../../../../domains/context/browse-layer-scheme.js";
 import {
   contextPortForProjectBrowse,
   contextPortForProjectRecovery,
@@ -101,7 +101,9 @@ export async function resolveContextRoute(
     // A New chat's composer uploads before the chat row exists: no handle yet, so no qualifier.
     const chat = await app.contextPorts.topPrimaryChats.resolveTopPrimaryChat(chatId as ThreadId);
     authority = chat ? { kind: "chat", chatRef: chat.chatRef } : { kind: "contextual" };
-  } else if (isWorkScopedBrowseScheme(scheme)) {
+  } else if (scheme === "uploads") {
+    throw createError({ statusCode: 400, message: "Uploads belong to a chat" });
+  } else if (isWorkScopedScheme(scheme)) {
     if (!workId) authority = { kind: "none" };
     else {
       const resolved = await app.workAuthorityResolver.byId(projectId, workId);

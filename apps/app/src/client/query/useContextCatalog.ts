@@ -1,12 +1,15 @@
 /** React Query acquisition and flat selectors over one normalized ID cache. */
-import { parseContextUri } from "@meridian/contracts/context-uri";
+import {
+  isOwnedContextScheme,
+  isWorkScopedScheme,
+  parseContextUri,
+} from "@meridian/contracts/context-uri";
 import {
   type CatalogFileEntry,
   type CatalogScope,
   type CatalogWakeHint,
   catalogScopeKey,
   contextOwner,
-  isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import {
@@ -142,12 +145,15 @@ const ROOT_NAMES: Record<ProjectContextTreeScheme, string> = {
 
 function locationBelongsToScope(location: ResourceLocation, scope: CatalogScope): boolean {
   if (scope.kind === "project")
-    return !isWorkScopedProjectContextScheme(location.scheme) && location.scheme !== "user";
+    return !isOwnedContextScheme(location.scheme) && location.scheme !== "user";
   if (scope.kind === "user") return location.scheme === "user";
-  if (!isWorkScopedProjectContextScheme(location.scheme)) return false;
-  if (scope.kind === "lineage") return location.rootThreadId === scope.rootThreadId;
-  if (scope.kind === "chat") return location.chatId === scope.chatId;
-  return scope.kind === "work" && location.workId === scope.workId;
+  if (scope.kind === "lineage")
+    return location.scheme === "scratch" && location.rootThreadId === scope.rootThreadId;
+  if (scope.kind === "chat")
+    return location.scheme === "uploads" && location.chatId === scope.chatId;
+  return (
+    scope.kind === "work" && isWorkScopedScheme(location.scheme) && location.workId === scope.workId
+  );
 }
 
 function catalogUri(location: ResourceLocation, path: string): string {

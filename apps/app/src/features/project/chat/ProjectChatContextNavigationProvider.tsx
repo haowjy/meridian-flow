@@ -194,9 +194,11 @@ export function ProjectChatContextNavigationProvider({
     (uri: string) =>
       !!activeWork &&
       !!noWorkId &&
-      (chatIdForUploadsUri(uri, chats) !== null ||
-        isContextUriRoutable(uri, activeWork, availableWorks, noWorkId, lineages)),
-    [activeWork, availableWorks, noWorkId, lineages, chats],
+      // An upload opens only where the host has a viewer for it (beside the centered chat).
+      (chatIdForUploadsUri(uri, chats) !== null
+        ? besideChat !== null
+        : isContextUriRoutable(uri, activeWork, availableWorks, noWorkId, lineages)),
+    [activeWork, availableWorks, noWorkId, lineages, chats, besideChat],
   );
 
   return (
