@@ -1,6 +1,7 @@
 /** Thread socket deadlines preserve delivered cursors through restart recovery. */
 import { EventType, type SequencedEvent } from "@meridian/contracts/protocol";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type { FakeThreadSocket as FakeSocket } from "../test-support/fake-thread-socket";
 import { FakeThreadSocket } from "../test-support/fake-thread-socket";
 import { ThreadSocketClient } from "./thread-socket-client";
 
@@ -220,6 +221,177 @@ it("retires a silent connected socket without waiting for native close and resum
     silent.close(4403);
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(states).toHaveBeenLastCalledWith({ kind: "connected" });
+  } finally {
+    transport.disconnect();
+  }
+});
+
+const internalError = {
+  code: "internal",
+  message: "Internal server error",
+  retryable: false,
+  source: "system" as const,
+};
+
+// A reconnect that has sent its `resume` for `thread-1`, with handlers A (at 1) and B (joined at
+// 1 meanwhile) waiting on it.
+function resumeInFlight() {
+  const { transport, sockets, events } = setup();
+  const first = sockets[0];
+  first.open();
+  first.deliver(connected);
+  first.deliver({ type: "subscribed", threadId: "thread-1", catchup: [delta("1", "a")], state });
+  first.close(1006);
+  vi.advanceTimersByTime(250);
+  const next = sockets[1];
+  next.open();
+  next.deliver(connected);
+  const joined: SequencedEvent[] = [];
+  transport.subscribe("thread-1", { onEvent: (event) => joined.push(event) }, { after: "1" });
+  return { transport, sockets, events, joined, next };
+}
+
+function recoversOn(next: FakeSocket, sockets: FakeSocket[]) {
+  expect(sockets).toHaveLength(2);
+  vi.advanceTimersByTime(500);
+  expect(sockets).toHaveLength(3);
+  const again = sockets[2];
+  again.open();
+  again.deliver(connected);
+  expect(JSON.parse(again.sent[0])).toEqual({
+    type: "resume",
+    subscriptions: [{ threadId: "thread-1", lastSeq: "1" }],
+  });
+  expect(next.readyState).toBeGreaterThan(1);
+  return again;
+}
+
+it("an unscoped server error while a replay waits drops the connection, and both handlers resume once", () => {
+  const { transport, sockets, events, joined, next } = resumeInFlight();
+  try {
+    next.deliver({ type: "event", threadId: "thread-1", ...delta("3", "live") });
+    next.deliver({
+      type: "error",
+      kind: "error",
+      error: internalError,
+    });
+    const again = recoversOn(next, sockets);
+    again.deliver({
+      type: "subscribed",
+      threadId: "thread-1",
+      catchup: [delta("2", "b"), delta("3", "live")],
+      state,
+    });
+    again.deliver({ type: "event", threadId: "thread-1", ...delta("4", "c") });
+    expect(events.map((event) => event.seq)).toEqual(["1", "2", "3", "4"]);
+    expect(joined.map((event) => event.seq)).toEqual(["2", "3", "4"]);
+  } finally {
+    transport.disconnect();
+  }
+});
+
+it("a thread-scoped error for a waiting replay recovers the same way", () => {
+  const { transport, sockets, events, next } = resumeInFlight();
+  try {
+    next.deliver({
+      type: "error",
+      kind: "error",
+      threadId: "thread-1",
+      error: internalError,
+    });
+    const again = recoversOn(next, sockets);
+    again.deliver({ type: "subscribed", threadId: "thread-1", catchup: [delta("2", "b")], state });
+    expect(events.map((event) => event.seq)).toEqual(["1", "2"]);
+  } finally {
+    transport.disconnect();
+  }
+});
+
+it("a replay that never settles ends at the deadline, whatever the pings", () => {
+  const { transport, sockets, events, joined, next } = resumeInFlight();
+  try {
+    next.deliver({ type: "event", threadId: "thread-1", ...delta("3", "live") });
+    for (let elapsed = 0; elapsed < 15_000; elapsed += 5_000) {
+      vi.advanceTimersByTime(5_000);
+      next.deliver({ type: "ping" });
+    }
+    vi.advanceTimersByTime(4_999);
+    expect(sockets).toHaveLength(2);
+    expect(joined).toEqual([]);
+    vi.advanceTimersByTime(1);
+    const again = recoversOn(next, sockets);
+    again.deliver({
+      type: "subscribed",
+      threadId: "thread-1",
+      catchup: [delta("2", "b"), delta("3", "live")],
+      state,
+    });
+    expect(events.map((event) => event.seq)).toEqual(["1", "2", "3"]);
+    expect(joined.map((event) => event.seq)).toEqual(["2", "3"]);
+  } finally {
+    transport.disconnect();
+  }
+});
+
+it("a handler below the in-flight request gets its own replay (the lower-cursor join)", () => {
+  const sockets: FakeThreadSocket[] = [];
+  const transport = new ThreadSocketClient({
+    url: () => "ws://test/api/threads/ws",
+    toError: (error) => new Error(error.message),
+    cancelTurn: vi.fn(),
+    webSocketFactory: () => {
+      const socket = new FakeThreadSocket();
+      sockets.push(socket);
+      return socket;
+    },
+  });
+  try {
+    const b: string[] = [];
+    const c: string[] = [];
+    const leaveA = transport.subscribe("thread-1", { onEvent: () => {} }, { after: "100" });
+    const first = sockets[0];
+    first.open();
+    first.deliver(connected);
+    first.deliver({ type: "subscribed", threadId: "thread-1", catchup: [], state });
+    transport.subscribe("thread-1", { onEvent: (e) => b.push(e.seq) }, { after: "300" });
+    leaveA();
+    first.close(1006);
+    vi.advanceTimersByTime(250);
+    const next = sockets[1];
+    next.open();
+    next.deliver(connected);
+    expect(JSON.parse(next.sent[0])).toMatchObject({
+      type: "resume",
+      subscriptions: [{ lastSeq: "300" }],
+    });
+    transport.subscribe("thread-1", { onEvent: (e) => c.push(e.seq) }, { after: "200" });
+    next.deliver({ type: "subscribed", threadId: "thread-1", catchup: [delta("350", "x")], state });
+    expect(JSON.parse(next.sent[1])).toMatchObject({ type: "subscribe", lastSeq: "200" });
+    next.deliver({
+      type: "subscribed",
+      threadId: "thread-1",
+      catchup: [delta("250", "y"), delta("350", "x")],
+      state,
+    });
+    next.deliver({ type: "event", threadId: "thread-1", ...delta("400", "z") });
+    expect(c).toEqual(["250", "350", "400"]);
+    expect(b).toEqual(["350", "400"]);
+  } finally {
+    transport.disconnect();
+  }
+});
+
+it("a cursorless handler joining a replay gets the catch-up, then live frames, in order", () => {
+  const { transport, next } = resumeInFlight();
+  try {
+    const late: string[] = [];
+    transport.subscribe("thread-1", { onEvent: (e) => late.push(e.seq) });
+    next.deliver({ type: "event", threadId: "thread-1", ...delta("3", "live") });
+    expect(late).toEqual([]);
+    next.deliver({ type: "subscribed", threadId: "thread-1", catchup: [delta("2", "b")], state });
+    next.deliver({ type: "event", threadId: "thread-1", ...delta("4", "c") });
+    expect(late).toEqual(["2", "3", "4"]);
+    expect(next.sent).toHaveLength(1);
   } finally {
     transport.disconnect();
   }

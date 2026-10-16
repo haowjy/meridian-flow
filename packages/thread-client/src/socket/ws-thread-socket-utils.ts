@@ -8,6 +8,8 @@ import { WS_CLOSE } from "@meridian/contracts/protocol";
 import type { SocketClose } from "./socket-ports";
 
 export const DEFAULT_WS_PING_TIMEOUT_MS = 45_000;
+/** A replay's `subscribed` must arrive within this; server pings do not reset it. */
+export const DEFAULT_WS_REPLAY_DEADLINE_MS = 20_000;
 
 export function isTerminalWsClose(event: SocketClose): boolean {
   return event.code === WS_CLOSE.AUTH_FAILED.code || event.code === WS_CLOSE.PERMISSION_DENIED.code;

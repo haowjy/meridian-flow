@@ -119,6 +119,17 @@ function sendError(peer: WsPeer, error: MeridianError, threadId?: string): boole
   return sendFrame(peer, { type: "error", kind: "error", error, threadId });
 }
 
+function logMessageFailed(peer: WsPeer, error: unknown): void {
+  const eventSink = peer.context?.app.eventSink;
+  if (!eventSink) return;
+  emitEvent(eventSink, {
+    level: "error",
+    source: "wire.thread_ws",
+    name: "message.failed",
+    payload: unknownToEventPayload(error),
+  });
+}
+
 function runInPeerScope<T>(peer: WsPeer, operation: () => T): T {
   const traceId = peer.context?.traceId;
   return traceId ? runWithEventCorrelation({ traceId }, operation) : operation();
@@ -258,7 +269,9 @@ async function subscribeThread(
     if (!currentLease()) return;
     disposeLease(lease);
     state.subscriptions.delete(threadId);
-    throw error;
+    // Scoped to the thread: the client's replay for it has failed, and it recovers by reconnecting.
+    logMessageFailed(peer, error);
+    sendError(peer, meridianError("internal", "Internal server error"), threadId);
   }
 
   function flushBuffered(): void {
@@ -407,15 +420,7 @@ export function createThreadWebSocketSession(peer: WsPeer) {
               return;
           }
         } catch (error) {
-          const eventSink = peer.context?.app.eventSink;
-          if (eventSink) {
-            emitEvent(eventSink, {
-              level: "error",
-              source: "wire.thread_ws",
-              name: "message.failed",
-              payload: unknownToEventPayload(error),
-            });
-          }
+          logMessageFailed(peer, error);
           sendError(peer, meridianError("internal", "Internal server error"));
         }
       });

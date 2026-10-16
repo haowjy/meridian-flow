@@ -15,7 +15,6 @@ import {
   parseWsServerMessage,
   type WsServerMessage,
 } from "@meridian/contracts/protocol";
-
 import { dispatchWsServerMessage } from "./dispatch-ws-server-message";
 import { SocketLifecycleController, type SocketLifecycleOptions } from "./socket-lifecycle";
 import type {
@@ -27,6 +26,7 @@ import type {
   ThreadTransportHandlers,
   ThreadTransportSubscribeOptions,
 } from "./thread-transport";
+import { DEFAULT_WS_REPLAY_DEADLINE_MS } from "./ws-thread-socket-utils";
 import {
   type ActiveThreadSubscription,
   oldestCursor,
@@ -37,6 +37,8 @@ export type ThreadSocketClientOptions = SocketLifecycleOptions & {
   url: () => string;
   toError: (error: MeridianError) => Error;
   cancelTurn: (threadId: string, turnId: string) => Promise<CancelTurnResponse>;
+  /** Longest a replay may wait for its `subscribed`; pings do not extend it. */
+  replayDeadlineMs?: number;
 };
 
 export class ThreadSocketClient implements ThreadTransport {
@@ -52,8 +54,11 @@ export class ThreadSocketClient implements ThreadTransport {
   >();
   private readonly socketGenerationClosedListeners = new Set<(generation: number) => void>();
   private wantsConnection = false;
+  private readonly replayDeadlines = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly replayDeadlineMs: number;
 
   constructor(private readonly options: ThreadSocketClientOptions) {
+    this.replayDeadlineMs = options.replayDeadlineMs ?? DEFAULT_WS_REPLAY_DEADLINE_MS;
     this.socket = new SocketLifecycleController(
       {
         buildUrl: options.url,
@@ -64,6 +69,7 @@ export class ThreadSocketClient implements ThreadTransport {
           // (it only advances on the next `startSocket`/`teardown`), so a send
           // tagged with it can be recognized as unconfirmed.
           const closedGeneration = this.socket.currentGeneration;
+          this.clearReplayDeadlines();
           for (const listener of this.socketGenerationClosedListeners) {
             listener(closedGeneration);
           }
@@ -90,6 +96,7 @@ export class ThreadSocketClient implements ThreadTransport {
   disconnect(_reason?: "logout" | "app_unmount"): void {
     this.wantsConnection = false;
     this.socket.teardown();
+    this.clearReplayDeadlines();
     this.subscriptions.clearServerSubscribed();
   }
 
@@ -202,6 +209,11 @@ export class ThreadSocketClient implements ThreadTransport {
       return;
     }
 
+    if (message.type === "subscribed") {
+      // Before the dispatch: it may queue the next replay, which arms its own deadline.
+      this.clearReplayDeadline(message.threadId);
+      this.socket.releaseBackoff();
+    }
     dispatchWsServerMessage(message, {
       subscriptions: this.subscriptions,
       toError: this.options.toError,
@@ -216,6 +228,7 @@ export class ThreadSocketClient implements ThreadTransport {
       onConnected: () => {
         this.socket.markConnected();
         this.sendResume();
+        if (!this.replayInFlight()) this.socket.releaseBackoff();
         for (const projectId of this.catalogSubscriptions.keys()) {
           this.send({ type: "catalog.subscribe", projectId });
         }
@@ -223,24 +236,69 @@ export class ThreadSocketClient implements ThreadTransport {
       onThreadError: (threadId, error) => {
         const subscription = this.subscriptions.get(threadId);
         if (!subscription) return;
-        this.subscriptions.abortReplay(threadId);
         for (const handler of subscription.handlers) {
           handler.onError?.(error);
         }
+        if (subscription.replayInFlight) this.failReplay("replay_failed");
       },
       onInterruptResponseError: (threadId, error) => {
         for (const listener of this.interruptResponseErrorListeners) {
           listener({ threadId, error });
         }
       },
-      onGlobalError: (error) => this.publishError(error),
+      onGlobalError: (error) => {
+        this.publishError(error);
+        // The server's error names no request: any replay still waiting may be the one it failed.
+        if (this.replayInFlight()) this.failReplay("replay_failed");
+      },
     });
+  }
+
+  private replayInFlight(): boolean {
+    for (const subscription of this.subscriptions.values()) {
+      if (subscription.replayInFlight) return true;
+    }
+    return false;
+  }
+
+  /**
+   * A replay ended without `subscribed`. Recovery is the connection's alone: drop it, and the
+   * reconnect (backoff, banner) resumes every handler from its cursor, with held frames dropped
+   * and the replay state cleared.
+   */
+  private failReplay(reason: string): void {
+    this.clearReplayDeadlines();
+    this.socket.dropConnection(reason);
+  }
+
+  private armReplayDeadline(threadId: string): void {
+    this.clearReplayDeadline(threadId);
+    this.replayDeadlines.set(
+      threadId,
+      setTimeout(() => {
+        this.replayDeadlines.delete(threadId);
+        if (this.subscriptions.get(threadId)?.replayInFlight) this.failReplay("replay_deadline");
+      }, this.replayDeadlineMs),
+    );
+  }
+
+  private clearReplayDeadline(threadId: string): void {
+    const timer = this.replayDeadlines.get(threadId);
+    if (timer === undefined) return;
+    clearTimeout(timer);
+    this.replayDeadlines.delete(threadId);
+  }
+
+  private clearReplayDeadlines(): void {
+    for (const timer of this.replayDeadlines.values()) clearTimeout(timer);
+    this.replayDeadlines.clear();
   }
 
   private sendResume(): void {
     if (!this.socket.isSocketOpen() || this.subscriptions.size === 0) return;
     // A reconnect replays for every handler, so every handler waits for it.
-    for (const subscription of this.subscriptions.values()) {
+    for (const [threadId, subscription] of this.subscriptions.entries()) {
+      this.armReplayDeadline(threadId);
       this.subscriptions.holdForReplay(subscription, subscription.handlers);
       subscription.replayInFlight = true;
       subscription.serverSubscribed = true;
@@ -282,6 +340,7 @@ export class ThreadSocketClient implements ThreadTransport {
     subscription.serverSubscribed = true;
     const lastSeq = oldestCursor(subscription);
     subscription.requestedAfter = lastSeq ?? "0";
+    this.armReplayDeadline(threadId);
     this.send({
       type: "subscribe",
       threadId,
