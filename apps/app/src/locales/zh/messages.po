@@ -1140,8 +1140,8 @@ msgid "Conversation compacted automatically"
 msgstr ""
 
 #: src/features/chat/compaction/CompactionDivider.tsx
-msgid "Conversation not compacted"
-msgstr ""
+#~ msgid "Conversation not compacted"
+#~ msgstr ""
 
 #: src/components/app/CopyTextButton.tsx
 #: src/features/chat/AssistantTurnActions.tsx
@@ -1244,8 +1244,8 @@ msgid "Couldn't check Work"
 msgstr ""
 
 #: src/features/chat/compaction/CompactionDivider.tsx
-msgid "Couldn't compact"
-msgstr ""
+#~ msgid "Couldn't compact"
+#~ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
@@ -2964,8 +2964,8 @@ msgid "No Work yet."
 msgstr ""
 
 #: src/features/chat/compaction/CompactionDivider.tsx
-msgid "Not compacted"
-msgstr ""
+#~ msgid "Not compacted"
+#~ msgstr ""
 
 #: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkCreationDestination.tsx

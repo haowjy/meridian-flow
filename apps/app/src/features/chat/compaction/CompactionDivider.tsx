@@ -17,7 +17,7 @@ import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Turn } from "@meridian/contracts/protocol";
-import { CircleAlert, FoldVertical } from "lucide-react";
+import { FoldVertical } from "lucide-react";
 import { useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useStatsForNerds } from "@/hooks/use-stats-for-nerds";
@@ -56,9 +56,7 @@ function stateLabel(view: DividerView, stopping: boolean): StateLabel {
         ? { full: t`Conversation compacted`, short: t`Compacted` }
         : { full: t`Conversation compacted automatically`, short: t`Compacted` };
     case "failed":
-      return view.trigger === "manual"
-        ? same(t`Couldn't compact`)
-        : { full: t`Conversation not compacted`, short: t`Not compacted` };
+      return same(t`Compaction`);
     case "cancelled":
       return same(t`Compaction stopped`);
   }
@@ -71,7 +69,6 @@ export function CompactionDivider({ turn, stopping, onStop }: CompactionDividerP
   const sectionRef = useRef<HTMLElement>(null);
   const focusWithin = useFocusWithinRow(sectionRef);
   const label = stateLabel(view, stopping);
-  const loud = view.state === "failed" && view.trigger === "manual";
   const { full } = label;
 
   return (
@@ -106,16 +103,13 @@ export function CompactionDivider({ turn, stopping, onStop }: CompactionDividerP
             // the edge every other divider state and the instructions align to.
             className="focus-ring -mx-1 flex min-w-0 items-center gap-[var(--chat-space-block)] rounded-md px-1 py-1 text-ink-muted transition-colors hover:bg-sidebar-accent hover:text-foreground aria-expanded:text-foreground"
           >
-            <DividerMark state={view.state} loud={loud} />
+            <DividerMark state={view.state} />
             <DividerLabel label={label} className="text-inherit" />
           </button>
         ) : (
           <span className="flex min-w-0 items-center gap-[var(--chat-space-block)]">
-            <DividerMark state={view.state} loud={loud} />
-            <DividerLabel
-              label={label}
-              className={view.state === "failed" && !loud ? "text-ink-subtle" : "text-ink-muted"}
-            />
+            <DividerMark state={view.state} />
+            <DividerLabel label={label} className="text-ink-muted" />
           </span>
         )}
 
@@ -217,9 +211,8 @@ export function DividerRule() {
   return <span aria-hidden className="h-px min-w-3 flex-1 bg-border" />;
 }
 
-export function DividerMark({ state, loud }: { state: DividerView["state"]; loud: boolean }) {
+function DividerMark({ state }: { state: DividerView["state"] }) {
   if (state === "pending") return <span aria-hidden className="streaming-dot mx-1" />;
-  if (loud) return <CircleAlert aria-hidden className="size-3.5 shrink-0 text-destructive" />;
   return <FoldVertical aria-hidden className="size-3.5 shrink-0 text-ink-subtle" />;
 }
 
