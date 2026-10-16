@@ -400,7 +400,6 @@ it("fails one thread's request alone: its lease voids, it retries at its own bac
     const a1 = h.join("thread-1", "100");
     h.answer("thread-1", "100", []);
     const b1 = h.join("thread-2", "10");
-    h.answer("thread-2", "10", []);
     const a2 = h.join("thread-1", "50");
     h.fail("thread-1", true);
 
@@ -409,7 +408,7 @@ it("fails one thread's request alone: its lease voids, it retries at its own bac
     expect(a2.errors).toHaveLength(1);
     expect(b1.errors).toHaveLength(0);
     h.live("thread-2", "20");
-    expect(b1.seqs).toEqual(["20"]);
+    expect(b1.seqs).toEqual([]);
     expect(h.sockets).toHaveLength(1);
 
     for (const delay of [250, 500, 1_000]) {
@@ -420,6 +419,30 @@ it("fails one thread's request alone: its lease voids, it retries at its own bac
       expect(h.asks("thread-1")).toHaveLength(before + 1);
       expect(h.asks("thread-1").at(-1)?.lastSeq).toBe("50");
       if (delay < 1_000) h.fail("thread-1", true);
+      if (delay === 250) {
+        // A sibling acknowledgement and an unrelated catalog failure must not reset this retry.
+        h.answer("thread-2", "10", []);
+        h.transport.subscribeCatalog("project-1", () => {});
+        const catalog = h
+          .socket()
+          .sent.map((data) => JSON.parse(data))
+          .at(-1);
+        h.socket().deliver({
+          type: "error",
+          kind: "error",
+          requestId: catalog.requestId,
+          error: {
+            code: "not_found",
+            message: "Project not found",
+            retryable: false,
+            source: "system",
+          },
+        });
+        h.live("thread-2", "30");
+        expect(b1.seqs).toEqual(["20", "30"]);
+        expect(b1.errors).toHaveLength(0);
+        expect(h.sockets).toHaveLength(1);
+      }
     }
     expect(a1.errors).toHaveLength(1);
     expect(h.asks("thread-2")).toHaveLength(1);
@@ -504,6 +527,37 @@ it("removing the last waiter unsubscribes and leaves no timer to fire", () => {
     b.leave();
     vi.advanceTimersByTime(30_000);
     expect(h.asks("thread-1")).toHaveLength(2);
+
+    for (const outcome of ["error", "gap"] as const) {
+      let leave = () => {};
+      leave = h.transport.subscribe(
+        "thread-1",
+        {
+          onEvent: () => {},
+          onError: () => leave(),
+          onGap: () => leave(),
+        },
+        { after: "0" },
+      );
+      if (outcome === "error") h.fail("thread-1", true);
+      else
+        h.socket().deliver({
+          type: "gap",
+          threadId: "thread-1",
+          requestId: h.asks("thread-1").at(-1)?.requestId,
+          cause: "buffer_evicted",
+          fromSeq: "0",
+          toSeq: "100",
+        });
+      const replacement = h.join("thread-1", "100");
+      h.answer("thread-1", "100", ["150"]);
+      const before = h.asks("thread-1").length;
+      vi.advanceTimersByTime(250);
+      expect(h.asks("thread-1")).toHaveLength(before);
+      h.live("thread-1", "200");
+      expect(replacement.seqs).toEqual(["150", "200"]);
+      replacement.leave();
+    }
   } finally {
     h.transport.disconnect();
   }

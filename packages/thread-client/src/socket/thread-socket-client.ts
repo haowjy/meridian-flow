@@ -3,10 +3,10 @@
  *
  * Owns the thread-domain control plane: one `subscribe` request per thread
  * (named by `requestId`, ended by its `subscribed`, `gap`, error, deadline or
- * the connection's loss), per-thread retry, and connection-state fan-out. The socket lifecycle
+ * the connection's loss), connection-state fan-out and request routing. The socket lifecycle
  * (handshake readiness/deadline, connect/reconnect/backoff, ping-timeout,
  * generation tracking, terminal-close policy) lives in `SocketLifecycleController`;
- * message routing in `dispatch-ws-server-message`; subscription bookkeeping in
+ * message routing in `dispatch-ws-server-message`; subscription requests, retries and delivery in
  * `ws-thread-subscription`. The single live agent-event transport.
  */
 import {
@@ -28,19 +28,7 @@ import type {
   ThreadTransportHandlers,
   ThreadTransportSubscribeOptions,
 } from "./thread-transport";
-import {
-  computePersistentReconnectDelayMs,
-  computeReconnectDelayMs,
-  DEFAULT_WS_RECONNECT,
-} from "./ws-reconnect";
-import { DEFAULT_WS_REPLAY_DEADLINE_MS } from "./ws-thread-socket-utils";
-import {
-  clearRetryTimer,
-  endRequest,
-  oldestCursor,
-  type ThreadSubscription,
-  WsThreadSubscriptionRegistry,
-} from "./ws-thread-subscription";
+import { WsThreadSubscriptionRegistry } from "./ws-thread-subscription";
 
 export type ThreadSocketClientOptions = SocketLifecycleOptions & {
   url: () => string;
@@ -50,7 +38,11 @@ export type ThreadSocketClientOptions = SocketLifecycleOptions & {
 
 export class ThreadSocketClient implements ThreadTransport {
   private readonly socket: SocketLifecycleController;
-  private readonly subscriptions = new WsThreadSubscriptionRegistry();
+  private readonly subscriptions = new WsThreadSubscriptionRegistry({
+    isConnected: () => this.socket.isServerConnected(),
+    nextRequestId: () => this.nextRequestId(),
+    send: (message) => this.send(message),
+  });
   private readonly connectionListeners = new Set<(state: ConnectionState) => void>();
   private readonly catalogSubscriptions = new Map<
     string,
@@ -137,7 +129,7 @@ export class ThreadSocketClient implements ThreadTransport {
     }
 
     this.ensureConnected();
-    if (sendRequest && connected) this.sendRequest(threadId, subscription);
+    if (sendRequest && connected) this.subscriptions.sendRequest(threadId, subscription);
 
     return () => {
       const removed = this.subscriptions.remove(threadId, handlers);
@@ -228,14 +220,14 @@ export class ThreadSocketClient implements ThreadTransport {
       dispatchSequencedEvent: (threadId, seq, aguiEvent, error, sourceThreadId) =>
         this.dispatchSequencedEvent(threadId, seq, aguiEvent, error, sourceThreadId),
       onSubscribed: (subscribed) => this.handleSubscribed(subscribed),
-      handleGap: (gap) => this.handleGap(gap),
+      handleGap: (gap) => this.subscriptions.handleGap(gap),
       send: (payload) => this.send(payload),
       onConnected: () => {
         this.socket.markConnected();
         // A reconnect replays for every handler, one request per thread.
         for (const [threadId, subscription] of this.subscriptions.entries()) {
           subscription.waiting = new Set(subscription.handlers);
-          this.sendRequest(threadId, subscription);
+          this.subscriptions.sendRequest(threadId, subscription);
         }
         for (const projectId of this.catalogSubscriptions.keys()) {
           this.send({ type: "catalog.subscribe", requestId: this.nextRequestId(), projectId });
@@ -255,26 +247,6 @@ export class ThreadSocketClient implements ThreadTransport {
       },
       onGlobalError: (error) => this.publishError(error),
     });
-  }
-
-  /** Sends a `subscribe` from the oldest cursor; it supersedes any request in flight. */
-  private sendRequest(threadId: string, subscription: ThreadSubscription): void {
-    const previous = subscription.request;
-    if (previous) subscription.superseded.add(previous.id);
-    endRequest(subscription);
-    clearRetryTimer(subscription);
-
-    const id = this.nextRequestId();
-    const after = oldestCursor(subscription);
-    subscription.request = {
-      id,
-      after,
-      deadline: setTimeout(
-        () => this.failRequest(threadId, subscription, id, new Error("Thread replay timed out")),
-        DEFAULT_WS_REPLAY_DEADLINE_MS,
-      ),
-    };
-    this.send({ type: "subscribe", requestId: id, threadId, ...(after ? { lastSeq: after } : {}) });
   }
 
   private handleSubscribed(message: Extract<WsServerMessage, { type: "subscribed" }>): void {
@@ -302,7 +274,7 @@ export class ThreadSocketClient implements ThreadTransport {
     if (!found) return;
     const [threadId, subscription] = found;
     if (retryable) {
-      this.failRequest(threadId, subscription, requestId, error);
+      this.subscriptions.failRequest(threadId, subscription, requestId, error);
       return;
     }
     // Refused: an old lease that survived a failed auth must not stream into `held` without end.
@@ -311,59 +283,6 @@ export class ThreadSocketClient implements ThreadTransport {
       this.send({ type: "unsubscribe", requestId: this.nextRequestId(), threadId });
     }
     for (const handler of subscription.handlers) handler.onError?.(error);
-  }
-
-  /** A request failed (retryable error or deadline): its thread retries alone, at its own backoff. */
-  private failRequest(
-    threadId: string,
-    subscription: ThreadSubscription,
-    requestId: string,
-    error: Error,
-  ): void {
-    if (subscription.request?.id !== requestId) return;
-    this.subscriptions.voidLease(subscription);
-    // Handlers hear a failure once per episode.
-    if (subscription.retry.attempt === 0) {
-      for (const handler of subscription.handlers) handler.onError?.(error);
-    }
-    subscription.retry.attempt += 1;
-    const attempt = subscription.retry.attempt;
-    const delayMs =
-      attempt <= DEFAULT_WS_RECONNECT.maxReconnectAttempts
-        ? computeReconnectDelayMs(DEFAULT_WS_RECONNECT, attempt, Math.random)
-        : computePersistentReconnectDelayMs(DEFAULT_WS_RECONNECT, Math.random);
-    subscription.retry.timer = setTimeout(() => {
-      subscription.retry.timer = undefined;
-      if (this.socket.isServerConnected() && !subscription.request) {
-        this.sendRequest(threadId, subscription);
-      }
-    }, delayMs);
-  }
-
-  private handleGap(message: Extract<WsServerMessage, { type: "gap" }>): void {
-    const subscription = this.subscriptions.get(message.threadId);
-    // A gap answers the request in flight in place of a `subscribed`.
-    if (!subscription || subscription.request?.id !== message.requestId) return;
-
-    subscription.gapCount += 1;
-    for (const handler of subscription.handlers) {
-      handler.onGap?.({
-        threadId: message.threadId,
-        cause: message.cause,
-        fromSeq: message.fromSeq,
-        toSeq: message.toSeq,
-        message: message.message,
-        gapCount: subscription.gapCount,
-      });
-    }
-
-    // The server could not replay from our cursor. Jump to the head it
-    // reported so the next request asks for events it can serve; the truncated
-    // history is recovered from the thread snapshot the onGap consumers refetch.
-    this.subscriptions.voidLease(subscription);
-    if (message.toSeq) this.subscriptions.skipTo(subscription, message.toSeq);
-    // The server answered, so no backoff.
-    if (this.socket.isServerConnected()) this.sendRequest(message.threadId, subscription);
   }
 
   private send(payload: unknown): boolean {
