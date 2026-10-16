@@ -28,12 +28,18 @@ export const JOURNAL_ONLY_EVENT_TYPES = [
 
 export interface EventJournalWriter {
   appendEvent(threadId: ThreadId, event: JournalEventEnvelope): Promise<bigint>;
-  /**
-   * Logs a failure transition the caller detected in its transaction. The writer emits it after the
-   * outermost commit, so a rolled-back transition emits nothing. Absent where nothing logs diagnostics.
-   */
-  recordFailure?(record: FailureRecord): void;
 }
+
+/**
+ * Logs a failure transition the caller detected in its transaction. It emits after the outermost commit,
+ * so a rolled-back transition emits nothing. Live persistence requires one (`PersistenceDeps`); wiring
+ * `noFailureRecorder` is the explicit choice where nothing logs diagnostics. The raw journal stays append-only.
+ */
+export interface FailureRecorder {
+  recordFailure(record: FailureRecord): void;
+}
+
+export const noFailureRecorder: FailureRecorder = { recordFailure() {} };
 
 export interface JournalEntry {
   id: string;
@@ -63,3 +69,6 @@ export interface EventJournalReader {
   listSince(threadId: ThreadId, afterId: string): Promise<JournalEntry[]>;
   listByTimeRange(threadId: ThreadId, from: string, to: string): Promise<JournalEntry[]>;
 }
+
+/** What live persistence and delivery take: the append-only journal plus the failure recorder. */
+export type LiveEventWriter = EventJournalWriter & FailureRecorder;

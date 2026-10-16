@@ -3,8 +3,8 @@
  * them only after the outermost commit. A savepoint that rolls back discards its records, and a record
  * detected twice in one transaction (same occurrence and phase) emits once. It is its own participant,
  * not part of `run_state.changed`: a failure can happen without a run-state change, and chat never
- * coalesces it. Outside a Drizzle transaction (the in-memory repositories) there is no commit to wait
- * for, so a record emits at once.
+ * coalesces it. The in-memory repositories' transaction defers the same way; outside any transaction
+ * there is no commit to wait for, so a record emits at once.
  */
 import type { FailureRecord } from "@meridian/contracts/failures";
 import {
@@ -13,6 +13,7 @@ import {
   enlistDrizzleTransactionParticipant,
   isInDrizzleTransaction,
 } from "./drizzle-transaction.js";
+import { deferUntilInMemoryCommit } from "./in-memory-transaction.js";
 
 type Pending = { record: FailureRecord; emit: (record: FailureRecord) => void };
 type FailureState = { pending: Map<string, Pending> };
@@ -40,7 +41,7 @@ export function recordFailureAfterCommit(
   emit: (record: FailureRecord) => void,
 ): void {
   if (!isInDrizzleTransaction()) {
-    emit(record);
+    if (!deferUntilInMemoryCommit(() => emit(record))) emit(record);
     return;
   }
   const state = enlistDrizzleTransactionParticipant(participant);

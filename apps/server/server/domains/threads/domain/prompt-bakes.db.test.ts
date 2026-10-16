@@ -2,6 +2,7 @@
 
 import { assertThrowawayDatabaseForRunDbTests } from "@meridian/database/__test-support__/db-fixtures";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createQuietDrizzleJournalWriter } from "../../../test-support/journal-writer.js";
 import { compactionTurnMetadata } from "../index.js";
 import {
   THREAD_WORK_RACE as ids,
@@ -27,7 +28,7 @@ else {
     const { hashPromptBakeContent } = await import("./prompt-bake-hash.js");
     const db = createDb(DATABASE_URL, { max: 4 });
     const repos = createDrizzleRepositoriesForTest(db);
-    const writer = createDrizzleEventJournalWriter(db);
+    const writer = createQuietDrizzleJournalWriter(db);
     const reader = createDrizzleEventJournalReader(db);
 
     beforeEach(async () => resetThreadWorkRaceFixture(db));

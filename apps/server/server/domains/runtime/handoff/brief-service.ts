@@ -13,7 +13,7 @@ import {
   handoffSeedMetadata,
   type ThreadRepositories,
 } from "../../threads/index.js";
-import type { EventJournalWriter } from "../../threads/ports/event-journal.js";
+import type { EventJournalWriter, LiveEventWriter } from "../../threads/ports/event-journal.js";
 import type {
   HandoffBriefHold,
   HandoffBriefLauncher,
@@ -61,7 +61,7 @@ type HandoffBriefServiceDeps = {
   backgroundTasks: DetachedWorkTracker;
   shutdown: { started: boolean };
   repos: ThreadRepositories;
-  eventWriter: EventJournalWriter;
+  eventWriter: LiveEventWriter;
   eventSink: EventSink;
   threadLock: ThreadLock;
   runClaim: Pick<RunClaim, "hold">;

@@ -1,9 +1,12 @@
 /** PostgreSQL terminal A: turn, report, journal, and publication share one commit. */
+
 import type { FailureRecord } from "@meridian/contracts/failures";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { recordFailureAfterCommit } from "../../../shared/failure-records.js";
 import { executionScenario } from "../../../test-support/execution-scenario.js";
+import { createQuietDrizzleJournalWriter } from "../../../test-support/journal-writer.js";
+import { noFailureRecorder } from "../../threads/ports/event-journal.js";
 import { processDetachedWork } from "../detached-work.js";
 import { createTestDrizzleDelivery } from "./__tests__/test-drizzle-delivery.js";
 
@@ -39,7 +42,7 @@ else
     assertThrowawayDatabaseForRunDbTests(databaseUrl);
     const db = createDb(databaseUrl, { max: 6 });
     const repos = createDrizzleRepositoriesForTest(db);
-    const eventWriter = createDrizzleEventJournalWriter(db);
+    const eventWriter = createQuietDrizzleJournalWriter(db);
 
     beforeEach(async () => {
       await deleteDrizzleRows(db, [schema.users]);
@@ -123,6 +126,7 @@ else
       const cleanupWakes: ThreadId[] = [];
       let failSplit = boundary === "rollback";
       const splitWriter: typeof eventWriter = {
+        ...noFailureRecorder,
         async appendEvent(threadId, event) {
           if (
             failSplit &&

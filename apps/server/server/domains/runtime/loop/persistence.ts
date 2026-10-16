@@ -31,9 +31,11 @@ import type { ThreadId } from "@meridian/contracts/runtime";
 import { isClosingRow, type OrchestratorEvent, type Turn } from "@meridian/contracts/threads";
 import {
   type EventJournalWriter,
+  type LiveEventWriter,
   projectReadModelEvent,
   type ThreadRepositories,
 } from "../../threads/index.js";
+import type { FailureRecorder } from "../../threads/ports/event-journal.js";
 import { detectFailures, recordPassed } from "./failure-detection.js";
 import {
   appendedTurns,
@@ -53,7 +55,7 @@ export type PersistenceDeps = {
     | "transaction"
     | "turns"
   >;
-  eventWriter: EventJournalWriter;
+  eventWriter: LiveEventWriter;
   /** Real nested transaction boundary when caller already owns a transaction. */
   savepoint?: <T>(operation: () => Promise<T>) => Promise<T>;
 };

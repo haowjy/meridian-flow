@@ -22,14 +22,14 @@ import {
   runInRootDrizzleReadSnapshot,
 } from "../../../shared/drizzle-transaction.js";
 import { cursorSeqForJournalHead, eventSeqForJournalEvent } from "../../threads/index.js";
-import type { EventJournalWriter } from "../../threads/ports/event-journal.js";
+import type { EventJournalWriter, FailureRecorder } from "../../threads/ports/event-journal.js";
 import { projectRunState, type RunStateBody } from "../loop/run-state.js";
 import { toInboxMessage } from "./drizzle-inbox.js";
 
 /** Where a chat's record goes: the connection it is read on and the writer that appends it. */
 export type RunStatePublisher = {
   db: DrizzleDatabase;
-  events: Pick<EventJournalWriter, "appendEvent" | "recordFailure">;
+  events: Pick<EventJournalWriter, "appendEvent"> & FailureRecorder;
 };
 
 type PublicationState = {
@@ -237,7 +237,7 @@ export async function recordUsageTransition(
   now: "credits_exhausted" | null,
 ) {
   const publisher = lockedState(threadId).publisher;
-  if (!publisher?.events.recordFailure || (was === null) === (now === null)) return;
+  if (!publisher || (was === null) === (now === null)) return;
   const [row] = await currentDrizzleDb(publisher.db)
     .select({ seq: sql<string | null>`max(${schema.eventJournal.seq})` })
     .from(schema.eventJournal)

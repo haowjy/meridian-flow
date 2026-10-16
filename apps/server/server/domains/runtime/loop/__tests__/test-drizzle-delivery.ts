@@ -1,9 +1,11 @@
 /** PostgreSQL delivery fixture using the production lock, inbox and lease implementation. */
+
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import * as schema from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../../shared/drizzle-transaction.js";
+import { createQuietDrizzleJournalWriter } from "../../../../test-support/journal-writer.js";
 import { createDrizzleRepositoriesForTest } from "../../../threads/adapters/drizzle/repositories.js";
 import { createDrizzleEventJournalWriter } from "../../../threads/index.js";
 import { createDrizzleRuntimeDelivery } from "../../adapters/drizzle/runtime-delivery.js";
@@ -24,7 +26,7 @@ export function createTestDrizzleDelivery(
       },
     },
     repos: createDrizzleRepositoriesForTest(db),
-    eventWriter: createDrizzleEventJournalWriter(db),
+    eventWriter: createQuietDrizzleJournalWriter(db),
     notices: createTestNoticePort(),
     runClaim: createDrizzleRunClaim(db),
     runStarter: { async start() {} },
