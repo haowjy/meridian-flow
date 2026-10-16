@@ -271,7 +271,14 @@ it("move, cut across a paragraph break, paste and Undo keep the chat, atomically
   const t = (doc.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(0) as Y.XmlText;
   t.delete(4, 3);
   t.insert(4, "blue");
-  const part = { threadId: "chat", turnId: "turn", inserted: [[77, 0, 4]] as const, deleted: [] };
+  const part = {
+    threadId: "chat",
+    turnId: "turn",
+    inserted: [[77, 0, 4]] as const,
+    deleted: [...Y.snapshot(doc).ds.clients].flatMap(([client, ranges]) =>
+      ranges.map(({ clock, len }) => [client, clock, len] as const),
+    ),
+  };
   doc.clientID = 99;
   const { editor, history } = createReviewEditor([], doc);
   const original = editor.getJSON();

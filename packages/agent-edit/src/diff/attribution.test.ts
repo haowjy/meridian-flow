@@ -602,7 +602,11 @@ it("unlisted item IDs need a covered revision or this browser's client, never ab
     ][0];
   expect(read(pending.snapshot)).toMatchObject({ byline: [], members: [0], unresolved: true });
   expect(read(Y.snapshot(r.draft))).toMatchObject({
-    byline: [{ kind: "user", userId: "u" }],
+    // The writer replaced blue, but the chat's removal of the base word red still contributes.
+    byline: [
+      { kind: "user", userId: "u" },
+      { kind: "thread", threadId: "chat0", turnId: "turn" },
+    ],
     unresolved: false,
   });
   // With no AI writes or deletions in play, this browser can name its own fresh typing.

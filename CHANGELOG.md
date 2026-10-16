@@ -271,6 +271,8 @@
 
 ### Fixed
 
+- Shared draft replacements name both chats, including the chat whose removal survives after another chat rewrites its insertion. Discard and Undo retain those names.
+
 - Development: `pnpm dev --restart` failed with "port … could not be inspected" when an open connection happened to use a backend port as its source port. Backend ports now come from 20000-27999, below Linux's ephemeral range, and a port busy with no listener says so.
 - Exiting review while its address is resolving no longer reopens that review. Switching to another Work or draft keeps the new destination.
 
