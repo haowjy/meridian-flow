@@ -588,6 +588,59 @@ restart smoke check.
 - **Last run:** 2026-10-15 on `fa1040e86` (`feat/mf-send-fate`, the final code), mock; all four cases
   passed. Evidence: `work/mf-client-unification/evidence/B6/` in the docs repository.
 
+## RP-16: Every failure is logged once where it is classified and once where it ends
+
+- **Protects:** the server's `failure.recorded` and `failure.ended` records
+  (`loop/failure-detection.ts`), one pair per occurrence, each carrying the same occurrence id.
+  Also that the model never reads a failure. Run it on the first check of any change to a
+  terminal writer, the append primitive, or the usage block.
+- **Stack:** mock. A usage block needs a thread's owner at zero credits.
+- **Steps:** make `mk() { ./mf thread create --agent runtime-probe --work @/ --title "$1" --json | jq -r .threadId; }`
+  and read each result with `./mf log --thread "$X" --name failure. --full --since 2m`.
+
+  ```bash
+  FAIL='[{"error":{"status":500,"message":"RP16 failure"}}]'
+  # 1. retried: a failed reply, then Retry
+  ./mf mock script "$FAIL"; ./mf thread send "$A" 'a1'; ./mf mock clear
+  ./mf mock script '[{"text":"ok"}]'
+  ./mf api POST "/api/threads/$A/turns/$FAILED/retry" --data "{\"id\":\"$(node -p 'crypto.randomUUID()')\"}"
+  # 2. forgotten: an empty failure, then another message
+  ./mf mock script "$FAIL"; ./mf thread send "$B" 'b1'; ./mf mock clear
+  ./mf thread send "$B" 'b2' --mock '[{"text":"ok"}]'
+  # 3. moved_on: a failure that kept a tool call, then another message
+  ./mf mock script '[{"toolCalls":[{"name":"ls","args":{"path":"manuscript://"}}]},{"error":{"status":500,"message":"RP16"}}]'
+  ./mf thread send "$D" 'd1'; ./mf mock clear; ./mf thread send "$D" 'd2' --mock '[{"text":"ok"}]'
+  # 3b. a kept failure is ended once: a kept-tool failure A, Retry into another failure B, Retry again
+  ./mf mock script '[{"toolCalls":[{"name":"ls","args":{"path":"manuscript://"}}]},{"error":{"status":500,"message":"RP16"}}]'
+  ./mf thread send "$G" 'g1'; ./mf mock clear
+  ./mf mock script "$FAIL"   # Retry from A (id $A_ID) fails as B; then Retry from B (id $B_ID), which succeeds
+  # 4. carried: a slow failure while a second message is admitted
+  ./mf mock script '[{"delayMs":6000,"error":{"status":500,"message":"RP16"}}]'
+  ./mf thread send "$E" 'e1' & sleep 2; ./mf thread send "$E" 'e2' --mock '[{"text":"ok"}]'; wait
+  # 5. a failed compaction, then another message (forgotten)
+  ./mf thread send "$F" 'f1' --mock '[{"text":"ok"}]'; ./mf mock script "$FAIL"
+  ./mf api POST "/api/threads/$F/controls" --data "{\"id\":\"$(node -p 'crypto.randomUUID()')\",\"control\":{\"kind\":\"compact\"}}"
+  ./mf mock clear; ./mf thread send "$F" 'f2' --mock '[{"text":"ok"}]'
+  # 6. a failed handoff brief with no Retry (moved_on), then one with Retry (retried): see RP-8
+  # 7. usage: zero the owner's credit lots, send, restore them, wait one sweep (30 s)
+  ```
+
+- **Expect:** one `failure.recorded` per failed turn, whose `occurrenceId` is the turn id, then
+  exactly one `failure.ended` with the same id: `retried` (1; `byTurnId` is the Retry's turn),
+  `forgotten` (2 and 5; `byTurnId` is the writer's message), `moved_on` (3 and the no-Retry
+  brief; `byTurnId` is the message), and `retried` for the brief's Retry seed. A kept-tool failure
+  that two later Retries walk (3b) has exactly one `failure.ended` for A (`moved_on` by the first
+  Retry), never a second one by the second. The carried case
+  (4) writes both records in the same millisecond with `moved_on`. Usage writes
+  `usage:<threadId>:<episode>` twice, `recorded` on the block and `ended { resolved }` on the
+  clear, with the same episode. Payload values read as text, never `[redacted]`. Then
+  `./mf thread context "$X" --all` shows no `turn.error` text, and
+  `thread_history` has no `error:` line.
+- **Evidence:** the `log` output of each case, with the occurrence ids.
+- **Last run:** 2026-10-16 on `feat/failure-model-server`, mock, all seven passed. The mock
+  cannot script partial text followed by an error, or `max_tokens`, so the `max_tokens` and
+  partial-text cases are covered by the `thread_history` contract test and the classifier test.
+
 [c6a]: https://github.com/haowjy/meridian-flow-docs/blob/683395ca9b084cee0196ec9c9070755930d38329/work/agents-milestone-4/evidence/c6a-probe/report.md
 [merge]: https://github.com/haowjy/meridian-flow-docs/blob/a4b1dddbd615bbab334dc6fa7b700245f768d288/work/agents-milestone-4/evidence/merge-gate/REPORT.md
 [link-probes]: https://github.com/haowjy/meridian-flow-docs/tree/6934bec3c8771d80ae9014ccc5a93b61da74f8b1/work/model-tool-surface/experiments

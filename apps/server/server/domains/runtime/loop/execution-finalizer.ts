@@ -18,6 +18,7 @@ import {
   CompactionFailureReasonCodec,
   compactionFailureMetadata,
   type EventJournalWriter,
+  type LiveEventWriter,
   replyFailureMetadata,
   type ThreadRepositories,
   turnFailedCopy,
@@ -144,7 +145,7 @@ export async function finalizeExecution(
       | "executionReports"
       | "runTurnStartTransition"
     >;
-    eventWriter: EventJournalWriter;
+    eventWriter: LiveEventWriter;
     toolRegistry?: Pick<import("../tools/types.js").ToolRegistry, "getRegistration">;
   },
   input: {

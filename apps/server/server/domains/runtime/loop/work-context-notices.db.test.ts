@@ -3,6 +3,7 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { journalEventsByThread } from "../../../test-support/journal-events.js";
+import { createQuietDrizzleJournalWriter } from "../../../test-support/journal-writer.js";
 import { releaseLeaseUnderLock } from "../../../test-support/release-lease.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createDrizzleLineageScratchLifecycle } from "../../context/adapters/lineage-scratch-lifecycle.js";
@@ -16,6 +17,7 @@ import {
   hashPromptBakeContent,
   isSystemUpdateMetadata,
 } from "../../threads/index.js";
+import { noFailureRecorder } from "../../threads/ports/event-journal.js";
 import {
   THREAD_WORK_RACE as ids,
   resetThreadWorkRaceFixture,
@@ -46,7 +48,7 @@ else
       works,
       readChainPermission: async () => "edit" as const,
     });
-    const eventWriter = createDrizzleEventJournalWriter(db);
+    const eventWriter = createQuietDrizzleJournalWriter(db);
     const runClaim = createDrizzleRunClaim(db);
     const delivery = () =>
       createTestDrizzleDelivery(db, { repos, workContext, eventWriter, runClaim });
@@ -177,6 +179,7 @@ else
         workContext,
         runClaim,
         eventWriter: {
+          ...noFailureRecorder,
           async appendEvent(threadId, event) {
             if (event.type === "work_context.changed") throw new Error("crash before ack");
             return eventWriter.appendEvent(threadId, event);
