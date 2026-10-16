@@ -188,10 +188,11 @@ messages. Plain `tail` and `send`'s live output don't draw queued rows.
   still running and how to stop it (`./mf thread stop <thread>`). **Timeout never cancels a run.** Plain
   `tail` remains a bounded live view and exits 0 when its wait expires.
 - `tail --until-idle` returns immediately if the initial snapshot is idle.
-  Otherwise it follows from the last sequence and checks a snapshot when a
+  Otherwise it follows through the shared sync, which requests snapshots on terminal
+  turn writes and run lifecycle events. Tail also requests a snapshot when a
   `meridian.run_state` record or the subscribed state shows no open execution and no
-  writer message, or a `meridian.thread.status` frame arrives (turn events alone don't
-  trigger: the closing record follows them in the same commit). Idle means
+  writer message, or a `meridian.thread.status` frame arrives. A frame triggers a read;
+  it never proves idle on its own. Idle means
   the shared run-state module's `isBusy` is false for the snapshot's `liveState.runState` (no open
   `execution`, no writer-provenance message in `items`) and `liveState.status.kind` is `asleep`
   (no awake lease). A successor run or owed writer message keeps it
