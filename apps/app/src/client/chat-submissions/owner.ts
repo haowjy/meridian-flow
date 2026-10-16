@@ -1,5 +1,6 @@
 /** Tab submission model: durable handoff, row projection, and writer commands. */
 import type { AiWriteMode } from "@meridian/contracts/works";
+import type { JournalSwitch } from "@meridian/thread-client";
 import type { QueryClient } from "@tanstack/react-query";
 import { HttpResponseError } from "@/client/api/http-client";
 import { createProjectThread } from "@/client/api/projects-api";
@@ -32,12 +33,7 @@ import {
 } from "./index";
 import { abortable } from "./lock";
 import type { UserTurnRecovery } from "./presentation";
-import {
-  type ChatSubmission,
-  type ControlAnswer,
-  compareSubmissions,
-  type NewChatSubmission,
-} from "./store";
+import { type ChatSubmission, compareSubmissions, type NewChatSubmission } from "./store";
 import { threadAvailability } from "./thread-availability";
 
 type Row = {
@@ -56,21 +52,6 @@ type RecoveryState = {
   editable?: boolean;
   busy?: boolean;
   moving?: boolean;
-};
-/** A write-mode switch the journal still holds: unanswered, or answered with the stamp. */
-export type JournalSwitch = {
-  id: string;
-  mode: AiWriteMode;
-  /** The record's place in the chat's order. */
-  seq: number;
-  /** Marked posted before its first request left. */
-  posted: boolean;
-  /** The server refused it: nothing is held there, so Withdraw is local. */
-  refused: boolean;
-  /** The last attempt did not succeed (refused, or lost in this tab). */
-  failed: boolean;
-  /** The server's answer, stamped by whichever tab drove the record. */
-  answer: ControlAnswer | null;
 };
 type ThreadModel = {
   epoch: number;

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import {
   apiProjectContextDeletePath,
   type DeleteContextEntryRequest,
+  deleteContextEntryResultSchema,
 } from "@meridian/contracts/protocol";
 import { type CommandSpec, requirePositional, stringOption } from "../../core/command";
 import type { Session } from "../../core/session";
@@ -20,6 +21,12 @@ export async function deleteDocument(session: Session, projectId: string, target
     "POST",
     apiProjectContextDeletePath(projectId, target.scheme, ownerOf(target)),
     body,
+    {
+      parse: deleteContextEntryResultSchema.refine(
+        (response) => response.deletedDocumentIds.includes(documentId),
+        "Deletion did not cover the requested document",
+      ).safeParse,
+    },
   );
   return documentId;
 }

@@ -1,7 +1,7 @@
 /** `mock list`: show queued mock scripts. */
 import {
   API_DEBUG_MOCK_MODEL_SCRIPT_PATH,
-  type MockModelScriptState,
+  mockModelScriptStateSchema,
 } from "@meridian/contracts/protocol";
 import type { CommandSpec } from "../../core/command";
 import { renderState } from "./queue";
@@ -14,7 +14,9 @@ export const mockListCommand: CommandSpec = {
   async run(ctx) {
     const session = await ctx.session();
     ctx.out.result(
-      await session.request<MockModelScriptState>("GET", API_DEBUG_MOCK_MODEL_SCRIPT_PATH),
+      await session.request("GET", API_DEBUG_MOCK_MODEL_SCRIPT_PATH, undefined, {
+        parse: mockModelScriptStateSchema.safeParse,
+      }),
       renderState,
     );
     return undefined;

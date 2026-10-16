@@ -234,11 +234,15 @@ export type ReplySpec = {
   error?: string;
   /** Frames between the run's start and its text, such as tool calls. */
   extra?: AGUIEvent[];
+  /** Runs after the admission's cursor is taken and before the run's frames: journal the test needs the stream to replay. */
+  lead?: () => void;
 };
 
 /**
- * Each admission publishes the frames of a run that took the message, and from then on the
- * snapshot shows that run's turns. The nth admission uses the nth spec (the last repeats).
+ * Each admission publishes the frames of a run that took the message. The first read after it is
+ * taken at the admission's cursor, with the reply still running, so the sync joins below the run's
+ * frames and replays them; every later read shows the run's turns as the spec ended them. The nth
+ * admission uses the nth spec (the last repeats).
  */
 export function replyScenario(wire: Wire, specs: ReplySpec | ReplySpec[]) {
   const list = [specs].flat();
@@ -253,6 +257,7 @@ export function replyScenario(wire: Wire, specs: ReplySpec | ReplySpec[]) {
     const stored = spec.stored ?? streamed.join("");
     const error = status === "error" ? (spec.error ?? "boom") : null;
     const resumeAfterSeq = String(wire.head);
+    spec.lead?.();
     wire.publish(frames.started(reply));
     for (const event of spec.extra ?? []) wire.publish(event);
     if (streamed.length) for (const event of frames.text(reply, ...streamed)) wire.publish(event);
@@ -261,27 +266,41 @@ export function replyScenario(wire: Wire, specs: ReplySpec | ReplySpec[]) {
     else wire.publish(error ? frames.failed(error) : frames.finished(reply));
     const execution = open ? { executionId: `exec-${reply}`, currentTurnId: reply } : null;
     if (!open) publishRecord(wire);
-    const seq = wire.head;
-    wire.snapshot = snapshotOf({
-      seq,
-      record: { execution },
+    const running = snapshotOf({
+      seq: Number(resumeAfterSeq),
+      record: { execution: { executionId: `exec-${reply}`, currentTurnId: reply } },
       turns: [
         userTurn(user, 1, body.text, reply),
-        replyTurn(reply, 2, {
-          prevTurnId: user,
-          status,
-          error,
-          text: stored,
-          ...(open
-            ? {
-                blocks: [
-                  block(reply, 0, { blockType: "custom", content: { interrupt: { id: "int-1" } } }),
-                ],
-              }
-            : {}),
-        }),
+        replyTurn(reply, 2, { prevTurnId: user, status: "streaming" }),
       ],
     });
+    const first = wire.reads + 1;
+    wire.snapshot = (read) =>
+      read === first
+        ? running
+        : snapshotOf({
+            seq: wire.head,
+            record: { execution },
+            turns: [
+              userTurn(user, 1, body.text, reply),
+              replyTurn(reply, 2, {
+                prevTurnId: user,
+                status,
+                error,
+                text: stored,
+                ...(open
+                  ? {
+                      blocks: [
+                        block(reply, 0, {
+                          blockType: "custom",
+                          content: { interrupt: { id: "int-1" } },
+                        }),
+                      ],
+                    }
+                  : {}),
+              }),
+            ],
+          });
     return {
       threadId: THREAD_ID,
       userTurnId: user,

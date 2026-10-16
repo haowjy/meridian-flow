@@ -9,7 +9,7 @@ export const projectListCommand: CommandSpec = {
   examples: ["./mf project list", "./mf project list --json --fields id,title"],
   async run(ctx) {
     const session = await ctx.session();
-    const { projects } = await session.request<ListProjectsResponse>("GET", API_PROJECTS_PATH);
+    const { projects } = (await session.request("GET", API_PROJECTS_PATH)) as ListProjectsResponse;
     ctx.out.result(projects, (value) =>
       value.length === 0
         ? "(no projects)"

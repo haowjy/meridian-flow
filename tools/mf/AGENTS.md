@@ -10,11 +10,24 @@ Read [`.context/CONTEXT.md`](.context/CONTEXT.md) first.
   view model and never words or decides a row itself. Where a feature has no shared core yet, `./mf`
   calls the server API and its claims say so. Missing data needs a server route
   behind the debug gate, not a CLI-side database query or business logic.
-- **Share a rule's inputs and recovery, not only its reducer.** When a shared
-  rule needs a snapshot to finish (a divider waiting for its anchor turn), use
-  the package's waiting list and recover as the app does. (Not yet true: `./mf` still has its own follow and
-  recovery code, which the planned shared sync replaces.) A CLI-only fallback,
-  or none, diverges from the browser without failing any check.
+- **Share a rule's inputs and recovery, not only its reducer.** `send` and `tail --until-idle`
+  follow through the app's `ThreadSync`, so the rules that need a read to finish (a divider waiting for
+  its anchor turn, a waiting writer message the transcript lacks) are the sync's. Never build
+  another reducer or turn store here. Biome restricts reducer/store module imports and
+  re-exports in the two hosts, including relative source paths. This guards the import boundary,
+  not independently written reduction logic.
+- **Replay failures are not connection failures.** The shared socket transport correlates
+  requests, retries only the failed thread, and keeps healthy subscriptions live. Both the sync
+  observer and journal subscription wait through retryable errors and replay deadlines until
+  the command deadline; a refusal ends the command. Do not add a CLI retry loop. A diagnostic
+  failure after a proving read preserves that result and marks observation incomplete.
+- **Success claims require validated evidence.** Every domain-success claim printed by
+  `./mf` comes from a contracts-validated response (or the shared client's validated
+  protocol evidence). Pass `parse` on HTTP reads that feed a claim; never assert an
+  unknown body into success. Identity/reference projections validate only their declared
+  inputs and cannot authorize writes. Diagnostic-only `project list`, `log` and
+  `thread context` retain casts; generic `api` prints raw server data and its exit 0
+  means HTTP 2xx only, not domain success.
 - **Imports:** only `@meridian/contracts` and `@meridian/thread-client` from
   workspace packages. From `tools/dev`, only the Portless route contract:
   `portless-prefix.ts`, `portless-routes.ts`, `portlessCa` in

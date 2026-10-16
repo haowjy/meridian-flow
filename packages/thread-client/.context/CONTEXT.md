@@ -95,19 +95,69 @@ the optional `invalidateThreadSnapshot` an adapter may supply.
 - **No ambient clock.** `now()` returns an ISO timestamp; the reducer never reads
   `Date`, and the package touches no browser or Node global at module load.
 - **One store semantics.** `turn-ops.ts` owns turn creation, block upsert by
-  sequence (sorted, identical writes are no-ops) and status patching. The app's
-  Zustand adapter and `InMemoryTurnStore` both call it. `InMemoryTurnStore` adds
-  `hydrate(threadId, turns, nextSeq)` (rejects a snapshot older than the accepted
-  floor, like `acceptsThreadSnapshot`). The floor is snapshot freshness only; it
-  never filters events. Replay coverage is the caller's subscription cursor
-  (`liveState.resumeAfterSeq`, or the admission's for a send).
-- **Parity rule.** `apps/app/.../turn-store-parity.test.ts` runs one fixture
-  (`test-support/turn-events.ts`) through the app store and `InMemoryTurnStore` and
-  requires equal turns. A new event family goes into that fixture; a store change
-  that the other store does not share fails there.
-- **Stays in the host.** Optimistic rows and `reconcileSnapshotTurns`, cache
-  invalidation, thread-list patches, `liveMeta`, account checks, durable-seq
-  cursors, and the interrupt response UI. Visible-turn and transcript partition
+  sequence (sorted, identical writes are no-ops) and status patching. The one `TurnStore`,
+  `syncedTurnStore`, calls it over the host's `SyncedThread`. The floor is snapshot freshness
+  only; it never filters events. Replay coverage is the subscription cursor
+  (`liveState.resumeAfterSeq` of the join read, or the cell's delivery cursor).
+- **One implementation, no parity test.** The reducer's end state is pinned by the fixture in
+  `test-support/turn-events.ts` through `reduce-turn-event.test.ts`, which runs the reducer over
+  `syncedTurnStore` with a plain cell. A new event family goes into that fixture. The reducer and
+  turn store are not part of the package's public exports: a host composes `createThreadSync`.
+- **One value per chat (`sync/synced-thread.ts`).** `SyncedThread` is the plain value a host
+  holds per chat: turns, tombstones, held dividers, forgotten stamps, the snapshot floor, the
+  durable-block cursor, the delivery cursor (the highest frame seq the stream wrote into the value; it
+  only rises, `raiseDeliveryCursor`, and a read leaves it alone), the reducer's event counter and the
+  run-state slice. Pure transitions
+  change it (`applyRead`, `acceptDurableBlockSeq`, `acknowledgeAdmission`, `removeTurns`,
+  `markForgotten`, ...), each returning the same value when nothing changed. `applyRead` runs
+  `applySnapshotTo` then `reconcileSnapshotTurns` (server turns are the spine; optimistic rows
+  and the running turn survive; a terminal read is authoritative), moves the cursor and the
+  floor, and keeps covered tombstones while an optimistic row awaits its answer.
+  `syncedTurnStore({ cell, now, ...callbacks })` is the `TurnStore` the reducer writes through,
+  over the host's cell (`get`/`set` for one chat); callbacks are the host's effects and run
+  after the write. The app's Zustand store holds one value per chat (`syncedByThread`). The
+  admission answer raises the floor whether or not the local row is still there: the server
+  stated it, and the floor only rises.
+- **One driver (`sync/thread-sync.ts`).** `createThreadSync(ports)` keeps one chat's value in
+  step with the server for any host. It owns the transcript handler on the subscription (added by
+  the first read that joins, removed on `stop()`; a generation fence drops late callbacks), frame routing and
+  order (`StreamDeltaCoalescer`: deltas merge per frame; durable blocks, switch, hand-back and
+  forgotten frames flush first; records and the `subscribed` state bypass), the debounced
+  refresh timer (`REFRESH_DEBOUNCE_MS`; unconditional triggers win over gap-only), `missing`
+  (a held divider awaits its anchor, or the record names a waiting writer message the transcript
+  lacks, asked at timer fire), `receive(read)`, the join, and its reducer instance. It never
+  fetches: `requestSnapshot("fresh" | "any")` asks the host, and every completed read comes back
+  through `receive`, which flushes buffered deltas, applies the read and its record as one
+  transition (`applyRead`), and returns `stale` (changing nothing) when the read is below the
+  floor. **Reads arrive validated.** Each host parses the snapshot with the contracts'
+  `threadSnapshotSchema` at its HTTP read boundary (the app's `threads-api.ts`, the CLI's
+  `Session.request` `parse`) before calling `receive`, so an invalid response is a read failure
+  there. The sync neither validates nor catches: an exception inside it is a programming error
+  and propagates. **The join:** `start()` asks for a read (`requestSnapshot("any")`) and subscribes nothing.
+  While a started generation has no handler, a read applies only if it passes the floor *and* its
+  `nextSeq` is above the delivery cursor (it was taken after every frame the cell holds); it then
+  subscribes at the later of its `resumeAfterSeq` and the cursor. A read failing either test
+  returns `stale` and the host asks again. Later reads never move the handler. So a generation
+  reduces no frame before it has applied a read, on an empty cell and a kept one alike, and
+  nothing replays from 0 into the sync. Stream writes raise the cursor (the coalescer hands its
+  flush the run's highest seq; `stop()` flushes first; a gap raises it to `toSeq`). A stream write that ends a turn requests a `"fresh"` read at
+  once; a durable block for a turn the transcript lacks requests an `"any"` read. Host effects go
+  through `observe(observation)` after the write each follows (`event`, `live`, `gap`, `read`,
+  `check`, `turn`, `interruptSettled`, `error`).
+- **The end-of-turn check.** Per turn the sync keeps sets of ids: *stream-ended* (the reducer's
+  first not-terminal to terminal write), *checked*, and *rewritten* (a read put the turn's status
+  or text in the cell before the stream ended it, or changed a turn the reducer was writing, or
+  seeded its text before the reducer first wrote to it, or the cell already held it when the
+  sync started; never cleared, so replay reopening and re-ending a turn cannot launder it). At
+  the first applied read after a stream end the turn's status and own text (the text items of
+  `viewAssistantTurn`, not the transcript) are compared with the read's, and a `check`
+  observation carries `rewritten` and the `diffs`. `forgottenBy` is neither compared nor a
+  rewrite.
+- **Moved here from the app:** `reconcileSnapshotTurns` (`turns/`), the run-state slice
+  (`run-state/run-state-slice.ts`, with `JournalSwitch`) and `StreamDeltaCoalescer`
+  with `frameScheduler` (`sync/`, subpath `@meridian/thread-client/sync`).
+- **Stays in the host.** Optimistic-row construction, cache invalidation, thread-list
+  patches, account checks and the interrupt response UI. Visible-turn and transcript partition
   policy is also the app's.
 - **A new server CUSTOM name** needs a decision in `reduce-turn-event.ts` (apply,
   leave to the snapshot, or ignore) and a reducer test.
@@ -124,10 +174,8 @@ the optional `invalidateThreadSnapshot` an adapter may supply.
 - **A missing anchor is never guessed.** A divider whose `prevTurnId` isn't in
   the store (another client's message: user turns aren't streamed) is held out of
   the transcript. `dividersAwaitingAnchorIn` lists those, and both hosts ask it:
-  the app's subscriber refreshes the snapshot, and `./mf`'s `followThread`
-  hydrates one within its deadline. Sharing the reducer alone is not enough:
-  `./mf` would hold such a divider forever unless the waiting list and the
-  recovery are shared too.
+  `ThreadSync` asks for a read, in the app and in `./mf` alike (`missing`, at timer fire).
+  The waiting list and the recovery are the sync's, so neither host keeps its own.
 
 ## Run state (`src/run-state/`)
 
@@ -148,12 +196,14 @@ Retry's one retirement rule: a stand-in whose reservation ended without its repl
 retires once the record at or past its answer shows another execution or none.
 
 `messageFate` (`message-fate.ts`) is the one rule for what became of an admitted writer
-message, from a single snapshot's record and turns: waiting, handed back (a user turn
+message, from one applied read's response whole (`messageFate({ messageId, admittedVersion, read })`):
+waiting, handed back (a user turn
 absent from the snapshot; a snapshot that hides turns another way must expose
 `handedBackIds`), answering or answered by the chain's last reply (the deliverer's
 execution, then Retries by `metadata.retryOf`), or unproven. It is a pure selector over one
 snapshot that any client can use; its only caller today is `./mf thread send` (the app does not
-call it yet), and stream frames are never inputs.
+call it yet). Stream frames and the synced value, whose turns and record come from different
+frames, are never inputs.
 
 The record arrives whole on every carrier (snapshot, `subscribed`,
 `meridian.run_state`, every command answer), so no host composes one from parts.
