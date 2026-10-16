@@ -4,12 +4,16 @@
  * Watches the canonical assistant `Turn` from ThreadStore (not a separate live
  * view model), announces thinking/tool/completion states, and restores composer
  * focus after terminal transitions.
+ *
+ * A failure is announced to someone who can still act on it, and only for a failure seen to happen:
+ * a turn first observed already failed (a reload, a history page) is not announced, and the alert is
+ * taken down once the chat moves past the failure (`failureEnded`, from `chatMovedPast`).
  */
 import { t } from "@lingui/core/macro";
 import type { Turn } from "@meridian/contracts/protocol";
 import { groupDeliverySegments, isToolViewVisible, type ToolView } from "@meridian/thread-client";
 import { type RefObject, useEffect, useMemo, useRef } from "react";
-import { announce, announceError } from "@/client/stores";
+import { announce, announceError, clearAnnouncement } from "@/client/stores";
 import type { ComposerHandle } from "@/components/app/composer";
 import { toolActivityAnnouncement, toolActivityPhrase } from "./command-descriptor";
 import { reportChatError } from "./error-telemetry";
@@ -26,15 +30,19 @@ function runningTool(turn: Turn | null): ToolView | null {
   return isToolViewVisible(segment.tool) ? segment.tool : null;
 }
 
+const failureKey = (turnId: string) => `turn-failed:${turnId}`;
+
 export function useLiveTurnAnnouncements(
   threadId: string,
   liveTurn: Turn | null,
+  failureEnded: boolean,
   composerRef: RefObject<ComposerHandle | null>,
   chatSurfaceRef: RefObject<HTMLDivElement | null>,
 ): void {
   const announcedThinkingRef = useRef(false);
   const status = liveTurn?.status ?? "pending";
   const prevStatusRef = useRef(status);
+  const observedTurnIdRef = useRef<string | null>(null);
   const tool = useMemo(() => runningTool(liveTurn), [liveTurn]);
   const toolAnnouncement = tool ? toolActivityAnnouncement(toolActivityPhrase(tool)) : null;
   const hasPartialText = Boolean(
@@ -64,8 +72,12 @@ export function useLiveTurnAnnouncements(
         }
       } else if (status === "cancelled") {
         announce(t`Stopped`);
-      } else if (status === "error") {
-        if (liveTurn?.error) announceError(liveTurn.error);
+      } else if (
+        status === "error" &&
+        observedTurnIdRef.current === liveTurn?.id &&
+        !failureEnded
+      ) {
+        if (liveTurn?.error) announceError(liveTurn.error, { key: failureKey(liveTurn.id) });
         reportChatError({
           turnId: liveTurn?.id ?? "unknown",
           threadId,
@@ -77,6 +89,19 @@ export function useLiveTurnAnnouncements(
       }
     }
 
+    // The failure is over once the chat moved on; take its alert down, leaving any other alert alone.
+    if (status === "error" && failureEnded && liveTurn) clearAnnouncement(failureKey(liveTurn.id));
+
     prevStatusRef.current = status;
-  }, [chatSurfaceRef, composerRef, hasPartialText, liveTurn, status, threadId, toolAnnouncement]);
+    observedTurnIdRef.current = liveTurn?.id ?? null;
+  }, [
+    chatSurfaceRef,
+    composerRef,
+    failureEnded,
+    hasPartialText,
+    liveTurn,
+    status,
+    threadId,
+    toolAnnouncement,
+  ]);
 }
