@@ -3,11 +3,12 @@
  * policy decides each command (D39); a model `switch` always needs the
  * writer's approval (D37), so it only says why it can't happen or asks.
  */
+
 import type { PermissionDeniedReason } from "@meridian/contracts/protocol";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
 import type { Work, WorkReceipt, WorkReceiptState } from "@meridian/contracts/works";
-import { workLifecycleState } from "@meridian/contracts/works";
+import { formatWorkRef, workLifecycleState } from "@meridian/contracts/works";
 import { unknownWorkMessage } from "../../domains/context/context/router.js";
 import {
   createWork,
@@ -132,7 +133,7 @@ async function switchPrecheck(
     if (!noWork) return toolError({ message: "No Work is missing for this project" });
     work = noWork;
   }
-  const named = work.slug ? `@${work.slug}` : "No Work";
+  const named = work.slug ? formatWorkRef(work.slug) : "No Work";
   if (workLifecycleState(work) === "archived") {
     return toolError({
       code: "work_archived",
@@ -155,12 +156,14 @@ function workLifecycleMessage(
   mayUnarchive: boolean,
 ): string {
   if (reason !== "work_archived") {
-    return workSlug ? `Work @${workSlug} is unavailable.` : "The requested Work is unavailable.";
+    return workSlug
+      ? `Work ${formatWorkRef(workSlug)} is unavailable.`
+      : "The requested Work is unavailable.";
   }
   if (!workSlug) return "The requested Work is archived and read-only.";
   return mayUnarchive
-    ? `Work @${workSlug} is archived and read-only. Unarchive it with \`work({"command":"unarchive","work":"${workSlug}"})\` before changing it.`
-    : `Work @${workSlug} is archived and read-only. Ask the user to unarchive @${workSlug}.`;
+    ? `Work ${formatWorkRef(workSlug)} is archived and read-only. Unarchive it with \`work({"command":"unarchive","work":"${formatWorkRef(workSlug)}"})\` before changing it.`
+    : `Work ${formatWorkRef(workSlug)} is archived and read-only. Ask the user to unarchive ${formatWorkRef(workSlug)}.`;
 }
 
 function policyRefusal(command: WorkCommand, decision: "ask" | "deny"): ToolErrorOutput {

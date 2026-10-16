@@ -20,7 +20,7 @@ it("records Work refusals and replays the same final HTTP code even after recove
     });
     const command = {
       kind: "delete" as const,
-      uri: "scratch://@arc/note.md",
+      uri: "scratch://@[arc]/note.md",
       expected: { kind: "file" as const, documentId: "document" },
     };
     const refusal: ContextOperationResult<"delete"> = {

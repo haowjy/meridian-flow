@@ -72,7 +72,7 @@ export interface ScenarioWriter {
     path: string,
     options?: {
       content?: string;
-      /** Create in this Work's Scratch (`scratch://@slug/path`) instead of a project source. */
+      /** Create in this Work's Scratch (`scratch://@[slug]/path`) instead of a project source. */
       inScratchOf?: ScenarioWork;
     },
   ): Promise<{ status: "created" | "conflict"; documentId?: string }>;

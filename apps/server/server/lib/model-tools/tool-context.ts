@@ -3,6 +3,7 @@
  * one per-call resolution (thread, Work, context port, principal), and the
  * model's copy for context errors.
  */
+
 import type {
   DocumentAddress,
   DocumentVersion,
@@ -19,7 +20,11 @@ import {
 import type { DocumentRevisionEvidence } from "@meridian/contracts/protocol";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
-import { type ThreadExecutionContext, workLifecycleState } from "@meridian/contracts/works";
+import {
+  formatWorkRef,
+  type ThreadExecutionContext,
+  workLifecycleState,
+} from "@meridian/contracts/works";
 import type {
   AgentEditAccess,
   CollabDrafts,
@@ -204,7 +209,7 @@ export function contextErrorMessage(error: ContextError): string {
   if (error.code === "context_unavailable") {
     // The file policy refuses an archived Work's files first, with copy fit for
     // the agent; this storage-side refusal only follows an archive mid-call.
-    const work = error.workSlug ? `Work @${error.workSlug}` : "The requested Work";
+    const work = error.workSlug ? `Work ${formatWorkRef(error.workSlug)}` : "The requested Work";
     return error.reason === "work_archived"
       ? `${work} is archived, so this change wasn't made.`
       : `${work} is unavailable.`;

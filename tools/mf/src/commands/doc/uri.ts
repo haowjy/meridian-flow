@@ -1,5 +1,5 @@
 /** URI → project context route inputs and live document identity, via the app's own address route. */
-import { parseContextUri } from "@meridian/contracts/context-uri";
+import { formatParsedContextUri, parseContextUri } from "@meridian/contracts/context-uri";
 import {
   apiProjectDocumentAddressPath,
   type ContextOwner,
@@ -8,6 +8,7 @@ import {
   parseDocumentFilename,
   renderFilename,
 } from "@meridian/contracts/protocol";
+import { formatWorkRef } from "@meridian/contracts/works";
 import { CliError, usageError } from "../../core/cli-error";
 
 import type { Session } from "../../core/session";
@@ -59,12 +60,12 @@ export async function resolveUri(
     }
     if (chatRef === null) {
       throw usageError(
-        `uploads belong to a chat: use uploads://@/<c-handle>/… or --chat <c-handle>`,
+        `uploads belong to a chat: use ${formatParsedContextUri("uploads", "…", { kind: "chat", chatRef: "<c-handle>" })} or --chat <c-handle>`,
       );
     }
   } else if (scheme === "scratch") {
     const workRaw =
-      workOverride ?? (authority.kind === "work" ? `@${authority.workSlug}` : undefined);
+      workOverride ?? (authority.kind === "work" ? formatWorkRef(authority.workSlug) : undefined);
     workId = await resolveWorkId(session, projectId, workRaw);
   }
   const slash = path.lastIndexOf("/");
@@ -74,7 +75,7 @@ export async function resolveUri(
     path.slice(0, slash + 1) + renderFilename(parsedName.value.name, parsedName.value.extension);
   const prefix =
     chatRef !== null
-      ? `uploads://@/${chatRef}/`
+      ? formatParsedContextUri("uploads", "", { kind: "chat", chatRef })
       : normalized.slice(0, normalized.length - path.length);
   const chatId = chatRef === null ? null : await resolveThreadId(session, chatRef, projectId);
   return { scheme, path: canonicalPath, uri: prefix + canonicalPath, workId, chatRef, chatId };
@@ -105,6 +106,6 @@ export async function resolveDocumentId(
 /** `--project`/`--work`/`--chat` shared by every command that takes a document URI. */
 export const PROJECT_OPTION = {
   project: { type: "string" as const, description: "Project id, or `default` (default)" },
-  work: { type: "string" as const, description: "Work for scratch URIs: @slug or @/" },
+  work: { type: "string" as const, description: "Work for scratch URIs: @[slug] or @/" },
   chat: { type: "string" as const, description: "Chat handle for uploads URIs: c12" },
 };

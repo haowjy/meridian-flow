@@ -5,7 +5,12 @@
  */
 
 import { validateContextEntryPath } from "@meridian/contracts/context-entry-validation";
-import type { CanonicalContextAuthority } from "@meridian/contracts/context-uri";
+import {
+  type CanonicalContextAuthority,
+  type ContextUriScheme,
+  formatParsedContextUri,
+  type ParsedContextAuthority,
+} from "@meridian/contracts/context-uri";
 import {
   type DeleteContextEntryResult,
   filenameForBinary,
@@ -14,6 +19,7 @@ import {
   storedFilename,
 } from "@meridian/contracts/protocol";
 import type { ResolvedWorkAuthority, WorkSlug } from "@meridian/contracts/works";
+import { formatWorkRef } from "@meridian/contracts/works";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type { BoundWrite } from "../../collab/index.js";
 import type {
@@ -61,16 +67,12 @@ export interface ContextPortRouterDeps {
   resolveDestinationFolder?: (folderId: string) => Promise<string | null>;
   /** The document a device's create id was forwarded to (a join), within this project. */
   resolveForward?: (documentId: string) => Promise<string | null>;
-  /** A chat's uploads by handle (`uploads://@/c12/`): found, trashed, or no such chat. */
+  /** A chat's uploads by handle (`uploads://@c12/`): found, trashed, or no such chat. */
   resolveChatSource?: (
     ref: string,
   ) => Promise<
     { kind: "found"; binding: ContextSourceBinding } | { kind: "unavailable" } | { kind: "missing" }
   >;
-  /** Where a chat's uploads and Scratch live, to name them in near-miss errors. */
-  chatFiles?: (
-    ref: string,
-  ) => Promise<import("../chat-file-addresses.js").ChatFileAddresses | null>;
   resolveLineageSource?: (ref: string) => Promise<ContextSourceBinding | null>;
   rootForThreadRef?: (ref: string) => Promise<import("../scratch-owner.js").ScratchLineage | null>;
   listLineages?: () => Promise<import("../scratch-owner.js").ScratchLineage[]>;
@@ -247,8 +249,13 @@ async function callAdapter<T>(
  * tool (D51). It points to `work list` rather than listing slugs, so it stays
  * one line however many Works the project has.
  */
+const EXAMPLE_CHAT: ParsedContextAuthority = { kind: "chat", chatRef: "c12" };
+const EXAMPLE_LINEAGE: ParsedContextAuthority = { kind: "lineage", rootThreadRef: "c12" };
+const spell = (scheme: ContextUriScheme, authority: ParsedContextAuthority, path = "") =>
+  formatParsedContextUri(scheme, path, authority);
+
 export function unknownWorkMessage(slug: string): string {
-  return `Unknown Work @${slug}. List Works with work({"command":"list"}).`;
+  return `Unknown Work ${formatWorkRef(slug)}. List Works with work({"command":"list"}).`;
 }
 
 export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPort {
@@ -388,14 +395,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
   async function resolve(uri: string): Promise<Result<Dispatch, ContextError>> {
     const parsed = parseContextUri(uri, parseOptions);
     if (!parsed.ok) {
-      const { error } = parsed;
-      const files =
-        error.code === "invalid_uri" && error.chatHandle
-          ? await deps.chatFiles?.(error.chatHandle)
-          : null;
-      return files && error.code === "invalid_uri"
-        ? Err({ ...error, reason: `Another chat's uploads are at ${files.uploads}…` })
-        : parsed;
+      return parsed;
     }
     const { scheme, authority, path } = parsed.value;
 
@@ -435,8 +435,8 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
           code: "invalid_uri",
           uri,
           reason: owner
-            ? `This chat's notes are at scratch://@/${owner.rootThreadRef}/. Use its first chat handle, or scratch://x in that chat.`
-            : "Scratch requires a first chat handle. Use scratch://x in a chat, or scratch://@/c12/x. List chats with ls scratch://@/.",
+            ? `This chat's notes are at ${spell("scratch", { kind: "lineage", rootThreadRef: owner.rootThreadRef })}. Use its first chat handle, or scratch://x in that chat.`
+            : `Scratch requires a first chat handle. Use scratch://x in a chat, or ${spell("scratch", EXAMPLE_LINEAGE, "x")}. List chats with ls scratch://@/.`,
         });
       }
       adapter = lineageSource.adapter;
@@ -452,16 +452,10 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     } else if (authority.kind === "work") {
       const resolvedAuthority = deps.workAuthorities.get(authority.workSlug) ?? null;
       if (!resolvedAuthority) {
-        const chatFiles =
-          scheme === "scratch" && /^c[1-9][0-9]*$/.test(authority.workSlug)
-            ? await deps.chatFiles?.(authority.workSlug)
-            : null;
         return Err({
           code: "invalid_uri",
           uri: parsed.value.normalized,
-          reason: chatFiles
-            ? `${unknownWorkMessage(authority.workSlug)} Chat ${authority.workSlug}'s scratch notes are at ${chatFiles.scratch}`
-            : unknownWorkMessage(authority.workSlug),
+          reason: unknownWorkMessage(authority.workSlug),
           workSlug: authority.workSlug,
         });
       }
@@ -484,14 +478,13 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       return Err({
         code: "invalid_uri",
         uri,
-        reason: "Bare uploads:// needs a chat. Use uploads://@/c12/x to name one.",
+        reason: `Bare uploads:// needs a chat. Use ${spell("uploads", EXAMPLE_CHAT, "x")} to name one.`,
       });
     if (scheme === "scratch" && authority.kind === "contextual" && !adapter)
       return Err({
         code: "invalid_uri",
         uri,
-        reason:
-          "Bare scratch:// requires a chat or named Work. Use scratch://@/c12/x for another lineage.",
+        reason: `Bare scratch:// requires a chat or named Work. Use ${spell("scratch", EXAMPLE_LINEAGE, "x")} for another lineage.`,
       });
     const canonical = toCanonical(scheme, path, canonicalAuthority);
 
@@ -917,7 +910,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
           uri,
           entries: ((await deps.listLineages?.()) ?? []).map((lineage) => ({
             kind: "directory" as const,
-            uri: `scratch://@/${lineage.rootThreadRef}/`,
+            uri: spell("scratch", { kind: "lineage", rootThreadRef: lineage.rootThreadRef }),
             title: lineage.title,
             readonly: false,
           })),

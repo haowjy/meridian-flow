@@ -137,11 +137,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const scratchCall = await call("ls", { path: "scratch://" });
       const scratch = listed(scratchCall);
       expect(scratch).toEqual([
-        expect.objectContaining({ uri: "scratch://@rewrite/notes", readonly: true }),
+        expect.objectContaining({ uri: "scratch://@[rewrite]/notes", readonly: true }),
       ]);
       expect(scratch[0]).not.toHaveProperty("editable");
       expect(scratch[0]).not.toHaveProperty("documentId");
-      expect(scratchCall.output).toBe("scratch://@rewrite/\n  notes (read-only)");
+      expect(scratchCall.output).toBe("scratch://@[rewrite]/\n  notes (read-only)");
       const search = await call("search", { pattern: "Writer" });
       expect(search.output).toContain("manuscript://chapter");
       expect(search.output).not.toContain(".md");
@@ -263,7 +263,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await script.text("scratch://ideas")).toContain("Agent ideas.");
       const { call: next } = await script.begin();
       expect(listed(await next("ls", { path: "scratch://", verbose: true }))).toContainEqual(
-        expect.objectContaining({ uri: "scratch://@rewrite/ideas", wordCount: 2 }),
+        expect.objectContaining({ uri: "scratch://@[rewrite]/ideas", wordCount: 2 }),
       );
     });
   });

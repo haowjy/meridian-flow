@@ -14,7 +14,7 @@ export const threadListCommand: CommandSpec = {
   route: "GET /api/threads | GET /api/projects/:projectId/threads",
   options: {
     project: { type: "string", description: "Project id, or `default`" },
-    work: { type: "string", description: "Filter by Work: @slug, or @/ for No Work" },
+    work: { type: "string", description: "Filter by Work: @[slug], or @/ for No Work" },
     limit: { type: "string", description: "Max rows (default 20)" },
   },
   examples: ["./mf thread list", "./mf thread list --project default --work @/ --limit 5 --json"],

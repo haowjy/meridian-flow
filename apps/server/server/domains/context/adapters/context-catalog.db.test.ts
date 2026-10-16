@@ -764,12 +764,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .flatMap((entry) => (entry.kind === "file" ? [entry.uri] : []))
           .sort();
       expect(await fileUris({ kind: "work", projectId: PROJECT_ID, workId: NAMED })).toEqual([
-        "scratch://@draft/arc",
+        "scratch://@[draft]/arc",
       ]);
 
       await db.update(works).set({ archivedAt: new Date() }).where(eq(works.id, NAMED));
       expect(await fileUris({ kind: "work", projectId: PROJECT_ID, workId: NAMED })).toEqual([
-        "scratch://@draft/arc",
+        "scratch://@[draft]/arc",
       ]);
       const namedAddress = () =>
         createDocumentAddressResolver({
@@ -787,7 +787,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         document: {
           documentId: NAMED_FILE,
           authority: { kind: "work", projectId: PROJECT_ID, workId: NAMED },
-          entry: { uri: "scratch://@draft/arc" },
+          entry: { uri: "scratch://@[draft]/arc" },
         },
       });
 

@@ -89,7 +89,7 @@ const WORK_SCOPED_CONTEXTFS_SCHEMES: readonly WorkScopedContextFsScheme[] = ["sc
 export interface UnifiedContextPortFactory {
   lineages: ScratchLineages;
   topPrimaryChats: TopPrimaryChatResolver;
-  /** Chats by handle, for `uploads://@/c12/` addresses. */
+  /** Chats by handle, for `uploads://@c12/` addresses. */
   chats: ChatUploadsOwners;
   /** Where a chat's uploads and Scratch live, for errors and pointers. */
   chatFiles: ChatFileLookup;
@@ -367,7 +367,6 @@ function buildUnifiedContextPort(input: {
         ? { kind: "found", binding: chatSource({ chatId: chat.chatId, chatRef: chat.chatRef }) }
         : { kind: "unavailable" };
     },
-    chatFiles: async (ref) => (await storeResolvers.chatFiles?.byRef(scope.projectId, ref)) ?? null,
     resolveLineageSource: async (ref) => {
       const lineage = await storeResolvers.lineages.byRef(scope.projectId, ref);
       return lineage ? lineageSource(lineage) : null;

@@ -123,8 +123,6 @@ describe("context router Work slug resolution", () => {
           }),
         ],
       ]),
-      chatFiles: async (ref) =>
-        ref === "c1" ? { uploads: "uploads://@/c1/", scratch: "scratch://@/c1/" } : null,
       primaryWorkAuthority: authority(PRIMARY_ID, "drafting"),
       workAuthorities: new Map([
         [testWorkSlug("drafting"), authority(PRIMARY_ID, "drafting")],
@@ -141,35 +139,29 @@ describe("context router Work slug resolution", () => {
       ok: true,
       value: { entries: [{ kind: "directory", uri: "scratch://", readonly: false }] },
     });
-    await expect(context.read("scratch://@revision-pass/notes.md")).resolves.toEqual({
+    await expect(context.read("scratch://@[revision-pass]/notes.md")).resolves.toEqual({
       ok: true,
-      value: { content: SIBLING_ID, uri: "scratch://@revision-pass/notes" },
+      value: { content: SIBLING_ID, uri: "scratch://@[revision-pass]/notes" },
     });
-    await expect(context.write("scratch://@revision-pass/notes.md", "revised")).resolves.toEqual({
+    await expect(context.write("scratch://@[revision-pass]/notes.md", "revised")).resolves.toEqual({
       ok: true,
-      value: { documentId: SIBLING_ID, uri: "scratch://@revision-pass/notes" },
+      value: { documentId: SIBLING_ID, uri: "scratch://@[revision-pass]/notes" },
     });
   });
 
   it("reports an unknown or cross-project slug and points to work list", async () => {
-    await expect(port().read("scratch://@other-project-work/notes.md")).resolves.toEqual({
+    await expect(port().read("scratch://@[other-project-work]/notes.md")).resolves.toEqual({
       ok: false,
       error: {
         code: "invalid_uri",
-        uri: "scratch://@other-project-work/notes.md",
+        uri: "scratch://@[other-project-work]/notes.md",
         reason: 'Unknown Work @other-project-work. List Works with work({"command":"list"}).',
         workSlug: "other-project-work",
       },
     });
-    await expect(port().read("scratch://@c1/notes.md")).resolves.toMatchObject({
+    await expect(port().read("scratch://@[c1]/notes.md")).resolves.toMatchObject({
       ok: false,
-      error: {
-        reason: `Unknown Work @c1. List Works with work({"command":"list"}). Chat c1's scratch notes are at scratch://@/c1/`,
-      },
-    });
-    await expect(port().read("scratch://@c9/notes.md")).resolves.toMatchObject({
-      ok: false,
-      error: { reason: 'Unknown Work @c9. List Works with work({"command":"list"}).' },
+      error: { reason: 'Unknown Work @[c1]. List Works with work({"command":"list"}).' },
     });
   });
 });
@@ -271,7 +263,7 @@ describe("context router scheme creation capabilities", () => {
       }),
     ).resolves.toEqual({
       ok: true,
-      value: { documentId: "document-new", uri: "uploads://@/c12/notes" },
+      value: { documentId: "document-new", uri: "uploads://@c12/notes" },
     });
     expect(uploads.createTrackedDocument).toHaveBeenCalledWith("notes", "notes", {
       documentId: "00000000-0000-4000-8000-000000000001",
@@ -281,21 +273,21 @@ describe("context router scheme creation capabilities", () => {
   it("rejects cross-scheme moves into uploads but allows renames within uploads", async () => {
     const { port, uploads } = createPort();
 
-    await expect(port.move(`scratch://@current/old.md`, `uploads://old.md`)).resolves.toMatchObject(
-      {
-        ok: false,
-        error: {
-          code: "invalid_operation",
-          uri: "uploads://@/c12/old.md",
-          message: expect.stringContaining("scratch://"),
-        },
-      },
-    );
     await expect(
-      port.commitWriterLocation(`scratch://@current/old.md`, `uploads://old.md`),
+      port.move(`scratch://@[current]/old.md`, `uploads://old.md`),
     ).resolves.toMatchObject({
       ok: false,
-      error: { code: "invalid_operation", uri: "uploads://@/c12/old.md" },
+      error: {
+        code: "invalid_operation",
+        uri: "uploads://@c12/old.md",
+        message: expect.stringContaining("scratch://"),
+      },
+    });
+    await expect(
+      port.commitWriterLocation(`scratch://@[current]/old.md`, `uploads://old.md`),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "invalid_operation", uri: "uploads://@c12/old.md" },
     });
     await expect(port.move(`uploads://old.md`, `uploads://renamed.md`)).resolves.toEqual({
       ok: true,
@@ -310,7 +302,6 @@ it("reads another chat's uploads by handle and refuses a trashed, unknown or Wor
   const other = writableAdapter("uploads");
   const port = createContextPortRouter({
     sources: new Map([["uploads", { adapter: own, authority: { kind: "chat", chatRef: "c1" } }]]),
-    chatFiles: async (ref) => (ref === "c2" ? { uploads: "uploads://@/c2/", scratch: "" } : null),
     resolveChatSource: async (ref) =>
       ref === "c2"
         ? { kind: "found", binding: { adapter: other, authority: { kind: "chat", chatRef: "c2" } } }
@@ -320,32 +311,24 @@ it("reads another chat's uploads by handle and refuses a trashed, unknown or Wor
 
   await expect(port.list("uploads://")).resolves.toMatchObject({
     ok: true,
-    value: { uri: "uploads://@/c1/" },
+    value: { uri: "uploads://@c1/" },
   });
-  await expect(port.list("uploads://@/c2/")).resolves.toMatchObject({
+  await expect(port.list("uploads://@c2/")).resolves.toMatchObject({
     ok: true,
-    value: { uri: "uploads://@/c2/" },
+    value: { uri: "uploads://@c2/" },
   });
   expect(other.list).toHaveBeenCalledOnce();
-  await expect(port.list("uploads://@/c3/")).resolves.toMatchObject({
+  await expect(port.list("uploads://@c3/")).resolves.toMatchObject({
     ok: false,
     error: { code: "invalid_uri", reason: expect.stringContaining("unavailable") },
   });
-  await expect(port.list("uploads://@/c4/")).resolves.toMatchObject({
+  await expect(port.list("uploads://@c4/")).resolves.toMatchObject({
     ok: false,
     error: { code: "invalid_uri" },
   });
-  await expect(port.list("uploads://@current/")).resolves.toMatchObject({
+  await expect(port.list("uploads://@[current]/")).resolves.toMatchObject({
     ok: false,
     error: { code: "invalid_uri", reason: expect.stringContaining("Uploads belong to a chat") },
-  });
-  await expect(port.list("uploads://@c2/x")).resolves.toMatchObject({
-    ok: false,
-    error: { reason: "Another chat's uploads are at uploads://@/c2/…" },
-  });
-  await expect(port.list("uploads://@c4/x")).resolves.toMatchObject({
-    ok: false,
-    error: { reason: expect.stringContaining("Uploads belong to a chat") },
   });
 });
 
@@ -363,7 +346,7 @@ it("guards both tracked creation doors by lineage actor while binding remains pr
       authority: { kind: "lineage", rootThreadRef: "c12" },
     }),
   });
-  const uri = "scratch://@/c12/note.md";
+  const uri = "scratch://@c12/note.md";
   const origin = { type: "human" as const, userId: "writer" };
   const bound = await port.bindTrackedDocument(uri, "prepared");
   expect(bound.ok).toBe(true);

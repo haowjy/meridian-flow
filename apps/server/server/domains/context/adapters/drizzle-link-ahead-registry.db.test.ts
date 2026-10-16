@@ -350,8 +350,8 @@ if (!RUN) {
       }
       const registry = newRegistry(database);
       await registry.register([
-        { ...registration, address: "scratch://@/c1/note.toml" },
-        { ...registration, aheadId: DOCUMENT_2, address: "scratch://@/c2/note.toml" },
+        { ...registration, address: "scratch://@c1/note.toml" },
+        { ...registration, aheadId: DOCUMENT_2, address: "scratch://@c2/note.toml" },
       ]);
       await database
         .insert(documents)
@@ -495,7 +495,7 @@ if (!RUN) {
         const [ghost, beside] = [crypto.randomUUID(), crypto.randomUUID()];
         await scenario.writer.editDraft(work, chapter, (doc) => {
           link(beside)(doc);
-          link(ghost, "scratch://@ghost-work/notes")(doc);
+          link(ghost, "scratch://@[ghost-work]/notes")(doc);
         });
         await draftLinks.flush();
         expect.soft((await registryRow(beside)).registered, "the valid ref registers").toBe(true);

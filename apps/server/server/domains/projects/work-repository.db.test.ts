@@ -196,7 +196,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(slugAuthority).toMatchObject({ workId: bySlugWork.id, workSlug: ambiguous });
       if (!idAuthority || !slugAuthority) throw new Error("missing resolved authority");
       expect(canonicalContextUri("scratch", "notes.md", idAuthority)).toBe(
-        "scratch://@alpha/notes.md",
+        "scratch://@[alpha]/notes.md",
       );
       expect(canonicalContextUri("scratch", "notes.md", slugAuthority)).toBe(
         `scratch://@${ambiguous}/notes.md`,

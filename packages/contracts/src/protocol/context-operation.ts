@@ -27,7 +27,6 @@ export type ContextError =
       reason: string;
       workSlug?: string;
       unknownScheme?: string;
-      chatHandle?: string;
     }
   | { code: "io_error"; uri: string; message: string };
 

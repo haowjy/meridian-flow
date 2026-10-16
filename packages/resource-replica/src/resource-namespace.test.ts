@@ -503,7 +503,7 @@ describe("namespace record transitions", () => {
           operationId: "operation",
           command: {
             kind: "delete",
-            uri: "scratch://@beta/note",
+            uri: "scratch://@[beta]/note",
             expected: { kind: "file", documentId: "document" },
           },
           result: {
@@ -607,7 +607,7 @@ describe("a chat's Scratch owner", () => {
         submitted.next,
         "delete",
         "attempt",
-        receipt("scratch://@/c12/duel/beats"),
+        receipt("scratch://@c12/duel/beats"),
       ),
     ).not.toThrow();
     expect(() =>
@@ -615,7 +615,7 @@ describe("a chat's Scratch owner", () => {
         submitted.next,
         "delete",
         "attempt",
-        receipt("scratch://@/c40/duel/beats"),
+        receipt("scratch://@c40/duel/beats"),
       ),
     ).toThrow("does not match current attempt");
   });
@@ -790,8 +790,8 @@ it.each([
                     owner: { workId: "work", workSlug: "notes" },
                   },
                   kind: "move",
-                  sourceUri: "scratch://@notes/before",
-                  destinationUri: "scratch://@notes/after",
+                  sourceUri: "scratch://@[notes]/before",
+                  destinationUri: "scratch://@[notes]/after",
                   expected: { kind: "file", nodeId: "document" },
                 },
                 result: {
@@ -800,7 +800,7 @@ it.each([
                     code: "context_unavailable",
                     reason,
                     workSlug: "notes",
-                    uri: "scratch://@notes/after",
+                    uri: "scratch://@[notes]/after",
                   },
                 },
               },
@@ -861,10 +861,10 @@ it.each([
             operationId: "delete-operation",
             command: {
               kind: "delete",
-              uri: "scratch://@notes/before",
+              uri: "scratch://@[notes]/before",
               expected: { kind: "file", documentId: "document" },
             },
-            result: { ok: false, error: { code: "conflict", uri: "scratch://@notes/before" } },
+            result: { ok: false, error: { code: "conflict", uri: "scratch://@[notes]/before" } },
           },
         }),
       }),
@@ -908,10 +908,10 @@ it("restores a rejected delete after retry and admits another delete", async () 
               operationId: `operation-${number}`,
               command: {
                 kind: "delete",
-                uri: "scratch://@alpha/note",
+                uri: "scratch://@[alpha]/note",
                 expected: { kind: "file", documentId: "document" },
               },
-              result: { ok: false, error: { code: "conflict", uri: "scratch://@alpha/note" } },
+              result: { ok: false, error: { code: "conflict", uri: "scratch://@[alpha]/note" } },
             },
           }),
         }),

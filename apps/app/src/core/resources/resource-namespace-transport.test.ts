@@ -28,10 +28,10 @@ const receipt: ContextOperationReceipt = {
   operationId: "operation",
   command: {
     kind: "delete",
-    uri: "scratch://@alpha/note.md",
+    uri: "scratch://@[alpha]/note.md",
     expected: { kind: "file", documentId: "document" },
   },
-  result: { ok: false, error: { code: "conflict", uri: "scratch://@alpha/note.md" } },
+  result: { ok: false, error: { code: "conflict", uri: "scratch://@[alpha]/note.md" } },
 };
 beforeEach(() => vi.resetAllMocks());
 

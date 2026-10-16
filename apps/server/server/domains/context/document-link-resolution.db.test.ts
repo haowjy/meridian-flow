@@ -109,7 +109,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
         },
       };
-      for (const baseUri of [null, "scratch://@/c1/holder"]) {
+      for (const baseUri of [null, "scratch://@c1/holder"]) {
         viewed.length = 0;
         const response = await handleDocumentLinkResolveRequest(deps, {
           projectId: p,
@@ -194,16 +194,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ...(chat ? { chatId: chat } : {}),
           target: { kind: "scheme", uri },
         });
-      expect(await resolveUpload("uploads://@/c9/Gate")).toMatchObject({
+      expect(await resolveUpload("uploads://@c9/Gate")).toMatchObject({
         documentId: upload,
-        uri: "uploads://@/c9/Gate",
+        uri: "uploads://@c9/Gate",
         chatThreadId: chatId,
       });
       // A bare name means the holder chat's file; a document holder has no chat, so it names nothing.
       expect(await resolveUpload("uploads://Gate", chatId)).toMatchObject({ documentId: upload });
       expect(await resolveUpload("uploads://Gate")).toBeNull();
       // A Work owns no uploads.
-      expect(await resolveUpload("uploads://@work-b/Gate")).toBeNull();
+      expect(await resolveUpload("uploads://@[work-b]/Gate")).toBeNull();
     });
     it("canonicalizes prose aliases before exact-first non-prose omission", async () => {
       const r = resolver();
@@ -267,7 +267,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: p,
           userId: u,
           workId: a,
-          target: { kind: "scheme", uri: "scratch://@work-b/Gate" },
+          target: { kind: "scheme", uri: "scratch://@[work-b]/Gate" },
         }),
       ).toMatchObject({ scheme: "scratch", path: "Gate" });
       await database.current.update(works).set({ deletedAt: new Date() }).where(eq(works.id, b));
@@ -276,7 +276,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: p,
           userId: u,
           workId: a,
-          target: { kind: "scheme", uri: "scratch://@work-b/Gate" },
+          target: { kind: "scheme", uri: "scratch://@[work-b]/Gate" },
         }),
       ).toBeNull();
       await database.current
@@ -361,8 +361,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         extension: "",
       });
       const rows = [
-        { id: note, uri: "scratch://@/c1/note", workId: null, rootThreadId: root },
-        { id: await add("scratch", "named", b), uri: "scratch://@work-b/named", workId: b },
+        { id: note, uri: "scratch://@c1/note", workId: null, rootThreadId: root },
+        { id: await add("scratch", "named", b), uri: "scratch://@[work-b]/named", workId: b },
         { id: await add("manuscript", "chapter"), uri: "manuscript://chapter", workId: null },
         { id: await add("user", "personal"), uri: "user://personal", workId: null },
       ];

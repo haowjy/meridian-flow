@@ -168,11 +168,11 @@ it("names a chat's Scratch by its named Work, or in No Work by its lineage's fir
     namedWorkSlug: async (id) => (id === "id-c15" ? null : "tea-notes"),
   });
   await expect(lookup.byRef("project", "c15")).resolves.toEqual({
-    uploads: "uploads://@/c15/",
-    scratch: "scratch://@/c12/",
+    uploads: "uploads://@c15/",
+    scratch: "scratch://@c12/",
   });
   await expect(lookup.byRef("project", "c1")).resolves.toEqual({
-    uploads: "uploads://@/c1/",
-    scratch: "scratch://@tea-notes/",
+    uploads: "uploads://@c1/",
+    scratch: "scratch://@[tea-notes]/",
   });
 });

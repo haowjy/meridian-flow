@@ -27,6 +27,7 @@ import {
   normalizeWorkGoal,
   normalizeWorkName,
   normalizeWorkStatus,
+  parseWorkRef,
   WORK_STATUS_MAX_LENGTH,
 } from "@meridian/contracts/works";
 import { z } from "zod";
@@ -39,15 +40,14 @@ import { renderSearchResult } from "./search-result.js";
 import type { ToolExecutionError, ToolRegistration } from "./types.js";
 import { renderWorkResult } from "./work-result.js";
 
-/** A Work slug as the model writes it: trimmed, and `@x` means Work `x`. */
+/** A Work reference as the model writes it: `@[arc]` is the spelling it is shown; `[arc]`, `@arc` and `arc` also read as Work `arc`. */
 const WorkRefSchema = z
   .string()
   .min(1)
   .transform((raw, context) => {
-    const trimmed = raw.trim();
-    const slug = trimmed.startsWith("@") ? trimmed.slice(1) : trimmed;
+    const slug = parseWorkRef(raw);
     if (!slug) {
-      context.addIssue({ code: "custom", message: 'must name a Work slug, e.g. "arc" or "@arc"' });
+      context.addIssue({ code: "custom", message: 'must name a Work, e.g. "@[arc]"' });
       return z.NEVER;
     }
     return slug;
@@ -88,7 +88,7 @@ const WorkVerboseSchema = z
   .optional();
 
 const WorkSelectorSchema = z.object({
-  work: WorkRefSchema.describe('Work slug, e.g. "arc" or "@arc".'),
+  work: WorkRefSchema.describe('Work, e.g. "@[arc]".'),
 });
 
 export const WorkCommandSchema = z.discriminatedUnion("command", [
@@ -137,7 +137,7 @@ export const WorkCommandSchema = z.discriminatedUnion("command", [
       command: z.literal("switch"),
       work: WorkRefSchema.nullable()
         .optional()
-        .describe('Work slug, e.g. "arc" or "@arc"; omit or null for No Work.'),
+        .describe('Work, e.g. "@[arc]"; omit or null for No Work.'),
     })
     .strict()
     .describe("Move this conversation to another Work. Needs the user's approval."),

@@ -10,7 +10,7 @@ describe("contextRouteTargetFromUri", () => {
   it("degrades when an explicit work authority does not belong to the active work", () => {
     expect(
       contextRouteTargetFromUri(
-        "scratch://@other-work/notes/beat.md",
+        "scratch://@[other-work]/notes/beat.md",
         ACTIVE_WORK,
         [ACTIVE_WORK],
         NO_WORK.id,
@@ -37,11 +37,11 @@ describe("contextRouteTargetFromUri", () => {
     ).toBeNull();
     // A canonical handle names another chat's lineage from any chat; an unknown handle routes nowhere.
     for (const active of [NO_WORK, ACTIVE_WORK])
-      expect(route("scratch://@/c40/duel/beats.md", active)).toMatchObject({
+      expect(route("scratch://@c40/duel/beats.md", active)).toMatchObject({
         workId: null,
         rootThreadId: "root-c40",
       });
-    expect(route("scratch://@/c99/x.md")).toBeNull();
+    expect(route("scratch://@c99/x.md")).toBeNull();
     // A named-Work chat's bare Scratch stays in its Work.
     expect(route("scratch://x.md", ACTIVE_WORK)).toEqual({
       scheme: "scratch",
@@ -53,7 +53,7 @@ describe("contextRouteTargetFromUri", () => {
   it("resolves an explicit same-project authority from the supplied Work catalog", () => {
     expect(
       contextRouteTargetFromUri(
-        "scratch://@other-work/reference.pdf",
+        "scratch://@[other-work]/reference.pdf",
         ACTIVE_WORK,
         [ACTIVE_WORK, { id: "work-2", slug: "other-work" }],
         NO_WORK.id,

@@ -56,12 +56,12 @@ export const threadCreateCommand: CommandSpec = {
   options: {
     project: { type: "string", description: "Project id, or `default` (default)" },
     agent: { type: "string", description: `Agent slug (default ${DEFAULT_AGENT_SLUG})` },
-    work: { type: "string", description: "Bind to a Work: @slug, or @/ for No Work (default)" },
+    work: { type: "string", description: "Bind to a Work: @[slug], or @/ for No Work (default)" },
     title: { type: "string", description: "Thread title" },
   },
   examples: [
     "./mf thread create",
-    "./mf thread create --work @draft-2 --title 'Arc 3 planning' --json",
+    "./mf thread create --work @[draft-2] --title 'Arc 3 planning' --json",
   ],
   async run(ctx) {
     const session = await ctx.session();

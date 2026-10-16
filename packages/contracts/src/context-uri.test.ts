@@ -45,7 +45,7 @@ describe("parseContextUri", () => {
 
   it("accepts UUID-shaped Work slug syntax without inferring an ID", () => {
     const workSlug = "123e4567-e89b-12d3-a456-426614174000";
-    expect(parseContextUri(`scratch://@${workSlug}/notes.md`)).toMatchObject({
+    expect(parseContextUri(`scratch://@[${workSlug}]/notes.md`)).toMatchObject({
       ok: true,
       value: { authority: { kind: "work", workSlug } },
     });
@@ -57,23 +57,44 @@ describe("parseContextUri", () => {
       value: { authority: { kind: "contextual" }, normalized: "uploads://draft.png" },
     });
     // No Work's `@/` and a Work's `@slug` name no chat, so they are not uploads addresses.
-    for (const uri of ["uploads://@revision-pass/draft.png", "uploads://@/"])
+    for (const uri of [
+      "uploads://@[revision-pass]/draft.png",
+      "uploads://@revision-pass/draft.png",
+    ])
       expect(parseContextUri(uri)).toMatchObject({
         ok: false,
         error: { reason: expect.stringContaining("belong to a chat") },
       });
-    // Uploads belong to a chat: `@/` plus the chat's handle, never `@/` alone.
-    expect(parseContextUri("uploads://@/c15/draft.png")).toMatchObject({
+    const reason = (uri: string) => {
+      const parsed = parseContextUri(uri);
+      return parsed.ok ? "" : parsed.error.reason;
+    };
+    expect(reason("uploads://@/")).toContain("addressed by chat handle");
+    // Near-misses name the corrected address, spelled by the serializer.
+    expect(reason("uploads://@/c15/x")).toContain("Use uploads://@c15/…");
+    expect(reason("scratch://@/c12/x")).toContain("Use scratch://@c12/…");
+    expect(reason("scratch://@tea-notes/x")).toBe(
+      "Work names go in brackets: scratch://@[tea-notes]/…",
+    );
+    expect(reason("scratch://@[tea-notes/x")).toContain("Use scratch://@[tea-notes]/…");
+    expect(reason("uploads://@c15]/x")).toContain("Use uploads://@c15/…");
+    expect(reason("uploads://@[tea-notes]/x")).toContain("Name the chat with uploads://@c12/…");
+    // A Work named "c12" is `@[c12]`; `@c12` is always the chat.
+    expect(parseContextUri("scratch://@[c12]/x")).toMatchObject({
+      value: { authority: { kind: "work", workSlug: "c12" }, normalized: "scratch://@[c12]/x" },
+    });
+    // Uploads belong to a chat: `@` plus the chat's handle.
+    expect(parseContextUri("uploads://@c15/draft.png")).toMatchObject({
       ok: true,
       value: {
         authority: { kind: "chat", chatRef: "c15" },
-        normalized: "uploads://@/c15/draft.png",
+        normalized: "uploads://@c15/draft.png",
       },
     });
     expect(canonicalContextUri("uploads", "./a//b.png", { kind: "chat", chatRef: "c15" })).toBe(
-      "uploads://@/c15/a/b.png",
+      "uploads://@c15/a/b.png",
     );
-    expect(parseContextUri("uploads://@/p3/draft.png")).toMatchObject({
+    expect(parseContextUri("uploads://@p3/draft.png")).toMatchObject({
       ok: false,
       error: { reason: expect.stringContaining("not a subagent") },
     });
@@ -81,30 +102,30 @@ describe("parseContextUri", () => {
       canonicalContextUri("scratch", "a.png", { kind: "chat", chatRef: "c1" }),
     ).toThrow();
     // A chat holder supplies uploads; a Work holder does not.
-    expect(qualifyContextUriByHolder("uploads://a.png", "uploads://@/c15/b.png")).toBe(
-      "uploads://@/c15/a.png",
+    expect(qualifyContextUriByHolder("uploads://a.png", "uploads://@c15/b.png")).toBe(
+      "uploads://@c15/a.png",
     );
-    expect(qualifyContextUriByHolder("uploads://a.png", "scratch://@revision/b.md")).toBe(
+    expect(qualifyContextUriByHolder("uploads://a.png", "scratch://@[revision]/b.md")).toBe(
       "uploads://a.png",
     );
-    // A chat's Scratch is named by its first chat's handle: `@/` plus the handle, never `@/` alone.
-    expect(parseContextUri("scratch://@/c12/notes/a.md")).toMatchObject({
+    // A chat's Scratch is named by its first chat's handle after `@`.
+    expect(parseContextUri("scratch://@c12/notes/a.md")).toMatchObject({
       ok: true,
       value: {
         authority: { kind: "lineage", rootThreadRef: "c12" },
-        normalized: "scratch://@/c12/notes/a.md",
+        normalized: "scratch://@c12/notes/a.md",
       },
     });
     expect(
       canonicalContextUri("scratch", "./notes//a.md", { kind: "lineage", rootThreadRef: "c12" }),
-    ).toBe("scratch://@/c12/notes/a.md");
+    ).toBe("scratch://@c12/notes/a.md");
     expect(() => canonicalContextUri("scratch", "a.md", { kind: "none" })).toThrow();
   });
 
   it.each([
-    "scratch://@revision-pass/folder/@reserved/file.md",
+    "scratch://@[revision-pass]/folder/@reserved/file.md",
     "scratch://@bad_slug/file.md",
-    "scratch://@other/@/c12/file.md",
+    "scratch://@[other]/@/c12/file.md",
   ])("rejects reserved path segments and invalid authorities: %s", (uri) => {
     expect(parseContextUri(uri)).toMatchObject({ ok: false });
   });
@@ -122,7 +143,7 @@ describe("documentTitleFromUri", () => {
   it("is the stored name, with no extension stripped on its own", () => {
     expect(documentTitleFromUri("manuscript://Chapter 13")).toBe("Chapter 13");
     expect(documentTitleFromUri("manuscript://Book/Vol. 2")).toBe("Vol. 2");
-    expect(documentTitleFromUri("scratch://@/c12/outline.json")).toBe("outline.json");
+    expect(documentTitleFromUri("scratch://@c12/outline.json")).toBe("outline.json");
     expect(documentTitleFromUri("kb://maps/map.png")).toBe("map.png");
     expect(documentTitleFromUri("user://config.toml")).toBe("config.toml");
   });

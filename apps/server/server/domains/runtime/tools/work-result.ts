@@ -7,6 +7,7 @@
 
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
+import { formatWorkRef } from "@meridian/contracts/works";
 import { formatUtc } from "./ls-result.js";
 
 /** A Work as the handler returns it. Pending changes use the writer's words. */
@@ -125,7 +126,7 @@ function workLines(work: ModelWork, verbose: boolean, goalLength: number): strin
 }
 
 function workRef(work: Pick<ModelWork, "slug">): string {
-  return work.slug ? `@${work.slug}` : "@/";
+  return formatWorkRef(work.slug);
 }
 
 function pending(count: number): string {

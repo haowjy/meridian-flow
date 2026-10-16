@@ -3,7 +3,9 @@
  * A refusal that suggests a call writes it exactly, and only when the agent
  * may make it; otherwise it says to ask the user.
  */
+
 import type { FileAccessDenial } from "@meridian/contracts/protocol";
+import { formatWorkRef } from "@meridian/contracts/works";
 import type { FileAccessDenied } from "../domains/file-policy/index.js";
 import { chainPermission, mayChangeWorks } from "../domains/runtime/index.js";
 
@@ -57,9 +59,10 @@ export function permissionDeniedMessage(denial: PermissionDenial): string {
  */
 function workArchivedMessage(denial: FileAccessDenied): string {
   const slug = denial.archivedWork?.slug ?? null;
-  const work = slug === null ? "This chat's Work" : `Work @${slug}`;
-  const named = slug === null ? "it" : `@${slug}`;
-  const unarchive = slug === null ? null : `\`work({"command":"unarchive","work":"${slug}"})\``;
+  const work = slug === null ? "This chat's Work" : `Work ${formatWorkRef(slug)}`;
+  const named = slug === null ? "it" : formatWorkRef(slug);
+  const unarchive =
+    slug === null ? null : `\`work({"command":"unarchive","work":"${formatWorkRef(slug)}"})\``;
   const mayUnarchive =
     unarchive !== null &&
     denial.agentChain !== null &&

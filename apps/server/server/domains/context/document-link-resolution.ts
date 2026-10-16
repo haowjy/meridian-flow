@@ -60,7 +60,7 @@ export function createDocumentLinkResolver({
         ? { kind: "lineage", projectId: input.projectId, rootThreadId: lineage.rootThreadId }
         : null;
     } else if (scheme === "uploads") {
-      // Uploads belong to a chat; a Work owns none, so `uploads://@slug/` names nothing.
+      // Uploads belong to a chat; a Work owns none, so `uploads://@[slug]/` names nothing.
       const chatId =
         authority.kind === "chat"
           ? (await chats?.byRef(input.projectId, authority.chatRef))?.chatId

@@ -1,6 +1,11 @@
 /** Resolve and spell standard Markdown document hrefs against Context URIs. */
 
-import { type ParsedContextUri, parseContextUri, splitDocumentHrefSuffix } from "./context-uri.js";
+import {
+  formatParsedContextUri,
+  type ParsedContextUri,
+  parseContextUri,
+  splitDocumentHrefSuffix,
+} from "./context-uri.js";
 import { parseDocumentFilename, renderFilename } from "./protocol/document-filename.js";
 
 export { splitDocumentHrefSuffix } from "./context-uri.js";
@@ -120,17 +125,7 @@ function decodePath(path: string): string | null {
 }
 
 function format(base: ParsedContextUri, path: string): string {
-  const qualifier =
-    base.authority.kind === "lineage"
-      ? `@/${base.authority.rootThreadRef}`
-      : base.authority.kind === "chat"
-        ? `@/${base.authority.chatRef}`
-        : base.authority.kind === "work"
-          ? `@${base.authority.workSlug}`
-          : base.authority.kind === "none"
-            ? "@"
-            : "";
-  return qualifier ? `${base.scheme}://${qualifier}/${path}` : `${base.scheme}://${path}`;
+  return formatParsedContextUri(base.scheme, path, base.authority);
 }
 
 function sameAuthority(a: ParsedContextUri, b: ParsedContextUri): boolean {

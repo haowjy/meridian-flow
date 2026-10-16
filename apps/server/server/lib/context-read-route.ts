@@ -1,5 +1,6 @@
 import {
   type CanonicalContextAuthority,
+  formatParsedContextUri,
   isOwnedContextScheme,
   isWorkScopedScheme,
   parseUnifiedContextUri,
@@ -158,8 +159,7 @@ export async function handleContextReadRequest(
   ) {
     throw createError({
       statusCode: 400,
-      message:
-        "Scratch requires a chat lineage or named Work. Use scratch://x in a chat, or scratch://@/c12/x.",
+      message: `Scratch requires a chat lineage or named Work. Use scratch://x in a chat, or ${formatParsedContextUri("scratch", "x", { kind: "lineage", rootThreadRef: "c12" })}.`,
     });
   }
   const path = resolveContextReadPath(input.scheme, input.rawPath, authority);

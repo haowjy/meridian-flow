@@ -3,12 +3,14 @@
  * from the call's typed result, never its rendered text (D43). The call's
  * arguments are already on the line, so a summary adds only what came of it.
  */
+
 import {
   type AgentEditResultV1,
   agentEditResultSummary,
   isAgentEditResultEnvelope,
 } from "@meridian/agent-edit";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
+import { formatWorkRef } from "@meridian/contracts/works";
 
 const object = (value: JsonValue | undefined) =>
   typeof value === "object" && value !== null && !Array.isArray(value) ? value : undefined;
@@ -43,5 +45,5 @@ export function workHistorySummary(input: JsonObject, result: JsonValue): string
     return `${result.length} ${result.length === 1 ? "Work" : "Works"}`;
   if (input.command !== "create") return undefined;
   const slug = object(result)?.slug;
-  return typeof slug === "string" ? `@${slug}` : slug === null ? "@/" : undefined;
+  return typeof slug === "string" || slug === null ? formatWorkRef(slug) : undefined;
 }

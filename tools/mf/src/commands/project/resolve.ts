@@ -1,5 +1,6 @@
 /** Project and Work resolution shared by thread, doc, and seed commands. */
 import { apiProjectWorksPath, type ListWorksResponse } from "@meridian/contracts/protocol";
+import { formatWorkRef, parseWorkRef } from "@meridian/contracts/works";
 import { CliError } from "../../core/cli-error";
 import type { Session } from "../../core/session";
 
@@ -15,7 +16,7 @@ export async function resolveProjectId(session: Session, raw: string | undefined
   return bootstrap.projectId;
 }
 
-/** `@/` (or omitted) → No Work (null); `@slug` → that Work's id; a bare id passes through. */
+/** `@/` (or omitted) → No Work (null); `@[slug]` → that Work's id; a bare id passes through. */
 export async function resolveWorkId(
   session: Session,
   projectId: string,
@@ -23,13 +24,18 @@ export async function resolveWorkId(
 ): Promise<string | null> {
   if (raw === undefined || raw === "@/" || raw === "@") return null;
   if (!raw.startsWith("@")) return raw;
-  const slug = raw.slice(1);
+  const slug = parseWorkRef(raw);
+  if (!slug) return null;
   const snapshot = await session.request<ListWorksResponse>("GET", apiProjectWorksPath(projectId));
   const work = snapshot.works.find((entry) => entry.slug === slug);
   if (!work) {
-    throw new CliError("not_found", `No Work with slug @${slug} in project ${projectId}`, {
-      details: snapshot.works.map((entry) => `@${entry.slug}`),
-    });
+    throw new CliError(
+      "not_found",
+      `No Work with slug ${formatWorkRef(slug)} in project ${projectId}`,
+      {
+        details: snapshot.works.map((entry) => formatWorkRef(entry.slug)),
+      },
+    );
   }
   return work.id;
 }

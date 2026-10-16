@@ -92,7 +92,7 @@ describe("promotion service", () => {
 
     expect(promoted.value).toMatchObject({
       sourcePath,
-      resultsUri: "scratch://@revision-pass/results/output/qc/overlay.png",
+      resultsUri: "scratch://@[revision-pass]/results/output/qc/overlay.png",
       mimeType: "image/png",
       sizeBytes: 4,
       provenance: {

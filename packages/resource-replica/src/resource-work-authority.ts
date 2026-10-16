@@ -1,6 +1,11 @@
 /** Checked owner construction at command boundaries and one durable URI authority rule. */
-import { isOwnedContextScheme, type ParsedContextAuthority } from "@meridian/contracts/context-uri";
+import {
+  formatParsedContextUri,
+  isOwnedContextScheme,
+  type ParsedContextAuthority,
+} from "@meridian/contracts/context-uri";
 import type { CatalogScope, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import type { WorkSlug } from "@meridian/contracts/works";
 import type { ResourceOwner } from "./resource-records";
 
 /** The locked row is separate from named Works in the project's authoritative snapshot. */
@@ -66,20 +71,19 @@ export function resourceContextAuthority(
   return owner.workSlug === null ? { kind: "none" } : { kind: "work", workSlug: owner.workSlug };
 }
 
-/** The authority's spelling in a URI: nothing for contextual, `@arc/`, `@/` or `@/c12/`. */
+/** The authority's spelling in a URI, as the serializer writes it: nothing for contextual, else `@[arc]/`, `@/` or `@c12/`. */
 export function resourceUriQualifier(authority: ResourceContextAuthority): string {
-  switch (authority.kind) {
-    case "contextual":
-      return "";
-    case "none":
-      return "@/";
-    case "work":
-      return `@${authority.workSlug}/`;
-    case "lineage":
-      return `@/${authority.rootThreadRef}/`;
-    case "chat":
-      return authority.chatRef === null ? "" : `@/${authority.chatRef}/`;
-  }
+  const parsed: ParsedContextAuthority | null =
+    authority.kind === "chat"
+      ? authority.chatRef === null
+        ? null
+        : { kind: "chat", chatRef: authority.chatRef }
+      : authority.kind === "work"
+        ? { kind: "work", workSlug: authority.workSlug as WorkSlug }
+        : authority;
+  if (!parsed) return "";
+  const root = "scratch://";
+  return formatParsedContextUri("scratch", "", parsed).slice(root.length);
 }
 
 /** The owner a catalog entry asserts through its scope and the authority its URI spells. */

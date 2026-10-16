@@ -67,7 +67,7 @@ it("binds a descendant through a same-path cross-Work parent in either record or
   ])
     expect(
       projectFolderCatalog("p", entries, records).find((e) => e.entryId === "X"),
-    ).toMatchObject({ uri: "scratch://@beta/B/sub/X", parentId: "sub" });
+    ).toMatchObject({ uri: "scratch://@[beta]/B/sub/X", parentId: "sub" });
 });
 
 it("marks a document pending when its parent changes owner without changing path", async () => {

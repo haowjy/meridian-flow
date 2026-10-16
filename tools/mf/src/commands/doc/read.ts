@@ -12,7 +12,7 @@ export const docReadCommand: CommandSpec = {
   options: { ...PROJECT_OPTION, full: { type: "boolean", description: "No truncation" } },
   examples: [
     './mf doc read "manuscript://Chapter 1"',
-    "./mf doc read scratch://@arc-3/notes --json",
+    "./mf doc read scratch://@[arc-3]/notes --json",
   ],
   async run(ctx) {
     const session = await ctx.session();
