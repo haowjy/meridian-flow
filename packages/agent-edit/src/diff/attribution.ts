@@ -15,7 +15,7 @@
 
 import type { Author } from "@meridian/contracts/drafts";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
-import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT, makeDiff } from "@sanity/diff-match-patch";
+import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT } from "@sanity/diff-match-patch";
 import type { Node as PMNode } from "prosemirror-model";
 import * as Y from "yjs";
 import { type ApplyEntry, readApplyRecord } from "./apply-record.js";
@@ -24,7 +24,7 @@ import type { Hunk } from "./hunks.js";
 import { IdIndex, type ItemRange, indexRanges } from "./id-index.js";
 import { type RestorationLink, readRestorations } from "./restorations.js";
 import type { ReviewProjection } from "./review.js";
-import { DIFF_OPTS, isBlockTok, type Side, type Tok } from "./tokens.js";
+import { isBlockTok, type Side, type Tok, textDiff } from "./tokens.js";
 
 export type { ItemRange } from "./id-index.js";
 export type { Author };
@@ -717,7 +717,7 @@ class Classifier {
               ...(was ? [[DIFF_DELETE, was] as [number, string]] : []),
               ...(now ? [[DIFF_INSERT, now] as [number, string]] : []),
             ]
-          : (makeDiff(was, now, DIFF_OPTS) as Array<[number, string]>);
+          : textDiff(was, now);
       if (cached.size + cost > DIFF_BUDGET) {
         cached.spans.clear();
         cached.size = 0;

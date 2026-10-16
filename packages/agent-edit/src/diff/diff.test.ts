@@ -304,48 +304,26 @@ describe("partial Apply and Discard never corrupt text", () => {
   });
 });
 
-// A deadline used to turn the same rewrite into different hunks under machine load.
-it("large rewrites have identical hunks with a slow clock and fresh nodes", () => {
-  const baseText = Array.from({ length: 24 }, (_, i) =>
-    `Scene ${i} The patient traveller followed the narrow river toward the western hills. `.repeat(
-      5,
-    ),
-  );
-  const draftText = Array.from({ length: 25 }, (_, i) =>
-    `Scene ${i} The impatient messenger hurried along the flooded road toward the eastern port. `.repeat(
-      5,
-    ),
-  );
-  const run = () => {
-    const base = plain(...baseText);
-    const draft = plain(...draftText);
-    const diff = diffBlocks(base, draft);
-    expect(
-      blocksEqual(
-        applySpanPatches(base, composeHunks(schema, diff, diff.hunks, "apply"), "base"),
-        draft,
-      ),
-    ).toBe(true);
-    expect(
-      blocksEqual(
-        applySpanPatches(draft, composeHunks(schema, diff, diff.hunks, "discard"), "draft"),
-        base,
-      ),
-    ).toBe(true);
-    return diff.hunks.map((h) => ({
+// diff-match-patch reads `timeout || 1`: a "no timeout" of 0 was a one-second deadline. Under load, a diff cut
+// short there was cached on its retained nodes and kept, so the same text reviewed differently warm and cold.
+it("a diff computed under a slow clock matches the same text diffed fresh", () => {
+  const hunksOf = (base: PMNode[], draft: PMNode[]) =>
+    diffBlocks(base, draft).hunks.map((h) => ({
       from: h.from,
       to: h.to,
       sfrom: h.sfrom,
       ins: h.ins.map((t) => t.key),
     }));
-  };
-  const expected = run();
-  expect(run()).toEqual(expected);
+  const baseText = "g a ! g . b ? f f d ? d . ! g ? c f . c . . g c ? f d g . ! d b d g b b";
+  const draftText = "g ! g ? . g . b . c d f ! e a ! f d d ! ? ? . g . ? a ! e d";
+  const base = plain(baseText);
+  const draft = plain(draftText);
   let now = 0;
   const clock = vi.spyOn(Date, "now").mockImplementation(() => (now += 60_000));
   try {
-    expect(run()).toEqual(expected);
+    hunksOf(base, draft);
   } finally {
     clock.mockRestore();
   }
+  expect(hunksOf(base, draft)).toEqual(hunksOf(plain(baseText), plain(draftText)));
 });

@@ -46,7 +46,7 @@ Cached offsets are unit-local and publication copies them, so moving a paragraph
 or typing before it cannot mutate another unit's coordinates.
 
 The size cap is a guard for one oversized unit, not the primary performance
-mechanism. Alignment never uses a wall-clock timeout (`DIFF_OPTS.timeout = 0`).
+mechanism. Alignment never uses a wall-clock deadline: every diff-match-patch call goes through `textDiff` in `tokens.ts`, which passes `timeout: -1` (the library reads `timeout || 1`, so 0 would mean one second).
 Gaps of at most 1,000 tokens per side stay whole, preserving small splits and
 joins. Larger gaps use ordered 80%-similar paragraph anchors; unequal residual
 runs try 40% anchors. Remaining paragraphs pair in order, with excess paragraphs

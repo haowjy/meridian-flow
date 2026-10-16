@@ -18,9 +18,6 @@ import { blockKey, diffKeys, similarity, splitWords, wordDiff } from "./tokens.j
 
 type Attrs = Record<string, unknown>;
 
-/** The writer wants the exact diff, however long it takes; review latency does not depend on it. */
-const UNBOUNDED = { checkLines: false, timeout: 0 };
-
 /** y-prosemirror's mark encoding: one attribute per mark, holding the mark's attrs. */
 const markAttrs = (n: PMNode): Attrs =>
   Object.fromEntries(n.marks.map((m) => [m.type.name, m.attrs]));
@@ -155,7 +152,7 @@ export function writeBlocks(
   let ci = 0;
   let ti = 0;
   let g: [number, number, number, number] | null = null;
-  for (const [op, n] of diffKeys(current.map(blockKey), target.map(blockKey), UNBOUNDED)) {
+  for (const [op, n] of diffKeys(current.map(blockKey), target.map(blockKey))) {
     if (op === DIFF_EQUAL) {
       if (g) gaps.push(g);
       g = null;
@@ -378,7 +375,6 @@ function copiedUnits(
   for (const [op, length] of diffKeys(
     left.map((u) => u.key),
     right.map((u) => u.key),
-    UNBOUNDED,
   )) {
     if (op === DIFF_EQUAL) {
       for (let i = 0; i < length; i++) {

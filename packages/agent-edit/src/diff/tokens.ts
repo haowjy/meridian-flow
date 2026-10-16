@@ -200,8 +200,15 @@ function joinText(nodes: PMNode[]): PMNode[] {
 }
 
 // ---------- shared diff helpers ----------
-// Text alone decides the diff. Interactive bounds belong to deterministic input-size limits.
-export const DIFF_OPTS = { checkLines: false, timeout: 0 };
+// Text alone decides the diff: no deadline may cut it short, so interactive bounds are input-size
+// limits only. The library reads `timeout || 1` (0 becomes a one-second deadline) and treats a negative
+// timeout as "never", so -1 is the only value that turns the deadline off.
+const NO_DEADLINE = { checkLines: false, timeout: -1 };
+
+/** The one diff-match-patch call: a character diff of two strings, with no wall-clock deadline. */
+export function textDiff(a: string, b: string): Array<[number, string]> {
+  return makeDiff(a, b, NO_DEADLINE) as Array<[number, string]>;
+}
 
 /** Largest count of distinct keys one UTF-16 code per key can name (the surrogate block is skipped). */
 const MAX_CODES = 0xffff - 0x800 - 1;
@@ -227,11 +234,7 @@ function encodeKeys(keys: readonly string[], codes: Map<string, string>): string
  * prefix and suffix are trimmed first; if the middle still has more distinct keys than a code can name,
  * it is one delete and one insert (coarser, never wrong) rather than a diff over aliased codes.
  */
-export function diffKeys(
-  a: readonly string[],
-  b: readonly string[],
-  opts: { checkLines: boolean; timeout: number } = DIFF_OPTS,
-): Array<[number, number]> {
+export function diffKeys(a: readonly string[], b: readonly string[]): Array<[number, number]> {
   let lo = 0;
   while (lo < a.length && lo < b.length && a[lo] === b[lo]) lo++;
   let hi = 0;
@@ -250,7 +253,7 @@ export function diffKeys(
   if (ea === null || eb === null) {
     push(DIFF_DELETE, ma.length);
     push(DIFF_INSERT, mb.length);
-  } else for (const [op, text] of makeDiff(ea, eb, opts)) push(op, text.length);
+  } else for (const [op, text] of textDiff(ea, eb)) push(op, text.length);
   push(DIFF_EQUAL, hi);
   return out;
 }
@@ -319,7 +322,7 @@ export function wordDiff(a: string, b: string): Array<[number, string]> {
   const wb = splitWords(b);
   let i = 0;
   let j = 0;
-  return diffKeys(wa, wb, { checkLines: false, timeout: 0 }).map(([op, n]) => {
+  return diffKeys(wa, wb).map(([op, n]) => {
     const from = op === DIFF_INSERT ? wb : wa;
     const at = op === DIFF_INSERT ? j : i;
     if (op !== DIFF_INSERT) i += n;
