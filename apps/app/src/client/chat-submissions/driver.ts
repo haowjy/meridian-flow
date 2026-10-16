@@ -1,6 +1,7 @@
 /** One bounded, fenced lifecycle for first and subsequent writer messages. */
 import type { Thread } from "@meridian/contracts/protocol";
 import type { EnqueueThreadControlResponse } from "@meridian/contracts/threads";
+import { nextOccurrence } from "@meridian/thread-client";
 import type { SubmissionOutcome, ThreadRunController } from "@/client/copilot/ThreadRunController";
 import { classifyWriteFailure } from "@/client/copilot/ThreadRunController";
 import { abortable, type SubmissionLock } from "./lock";
@@ -266,14 +267,13 @@ export class ChatSubmissionDriver {
   private nextAttempt(entry: ChatSubmission): ChatSubmission {
     return {
       ...entry,
-      occurrence: {
-        requestId: crypto.randomUUID(),
-        attempt:
-          Math.max(
-            entry.occurrence?.attempt ?? 0,
-            this.localFailures.get(entry.recordId)?.occurrence?.attempt ?? 0,
-          ) + 1,
-      },
+      occurrence: nextOccurrence(
+        Math.max(
+          entry.occurrence?.attempt ?? 0,
+          this.localFailures.get(entry.recordId)?.occurrence?.attempt ?? 0,
+        ),
+        crypto.randomUUID(),
+      ),
     };
   }
 

@@ -10,8 +10,10 @@ import {
   type HandBackCommand,
   type HandBackOperation,
   type HandBackOutcome,
+  type HandBackRequest,
   type HttpPort,
   INITIAL_RUN_STATE_VIEW,
+  nextOccurrence,
   type RunStateView,
   receiveRecord,
   viewRunStatePort,
@@ -72,15 +74,7 @@ export function refusedError(label: string, status: number): CliError {
 
 type Input =
   | { press: { kind: "stop"; view: RunStateView } | { kind: "queue"; ids: readonly string[] } }
-  | {
-      replay:
-        | {
-            kind: "stop";
-            requestId: string;
-            body: Extract<HandBackCommand, { kind: "stop" }>["body"];
-          }
-        | { kind: "queue"; requestId: string; ids: readonly string[] };
-    };
+  | { replay: HandBackRequest };
 
 /**
  * Runs one hand-back command (a fresh press or an exact replay) through the shared operation and
@@ -99,7 +93,7 @@ export async function runHandBack(options: {
   // CLI replay imports a wire request, not a saved client occurrence.
   let held: HandBackCommand | null =
     "replay" in input
-      ? { ...input.replay, occurrence: { requestId: crypto.randomUUID(), attempt: 1 } }
+      ? { ...input.replay, occurrence: nextOccurrence(0, crypto.randomUUID()) }
       : null;
   const bodyOf = (command: HandBackCommand) =>
     command.kind === "stop"

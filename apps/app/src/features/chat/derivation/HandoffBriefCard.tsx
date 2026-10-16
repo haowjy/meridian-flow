@@ -5,8 +5,9 @@
  * A pending seed is a brief being written. While it is, the card says so and
  * offers Stop (the composer's Stop targets the same turn). A ready brief shows
  * the summary the new Agent starts from, clipped with Show more. A brief that
- * failed, was stopped, or was cut off by a restart says so, and the newest one
- * offers Retry, which adds a new card at once. Its failures (the brief's own, a failed Stop, a refused
+ * was stopped says so; a failed brief keeps its neutral title and reports failure only through
+ * its anchored card. The newest brief offers Retry, which adds a new card at once.
+ * Its failures (the brief's own, a failed Stop, a refused
  * or lost Retry) are `FailureCard`s from `chatCards`, drawn here by the brief's turn. Retry waits while the chat is
  * busy (a reply or a compaction): the server refuses a brief then. The
  * source's name links back to it. State changes are spoken by the global

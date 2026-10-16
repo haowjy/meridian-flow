@@ -115,10 +115,7 @@ export function controlsReducer(state: LocalControls, action: ControlAction): Lo
       return withdrawal(
         action.id,
         "withdrawing",
-        nextOccurrence({
-          requestId: action.requestId,
-          attempt: state.withdrawals.get(action.id)?.attempt ?? 0,
-        }),
+        nextOccurrence(state.withdrawals.get(action.id)?.attempt ?? 0, action.requestId),
       );
     case "withdrawn":
       return withdrawal(action.id, "settled");

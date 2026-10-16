@@ -1,7 +1,12 @@
 /** Tab submission model: durable handoff, row projection, and writer commands. */
 
 import type { AiWriteMode } from "@meridian/contracts/works";
-import type { CommandFailure, JournalSwitch, Occurrence } from "@meridian/thread-client";
+import {
+  type CommandFailure,
+  type JournalSwitch,
+  nextOccurrence,
+  type Occurrence,
+} from "@meridian/thread-client";
 import type { QueryClient } from "@tanstack/react-query";
 import { HttpResponseError } from "@/client/api/http-client";
 import { createProjectThread } from "@/client/api/projects-api";
@@ -357,10 +362,7 @@ export class ChatSubmissionOwner {
     const { accountId, threadId, projectId, current } = this.options;
     if (!current()) return false;
     const previous = this.model.unsavedSwitches.get(id);
-    const occurrence = {
-      requestId: crypto.randomUUID(),
-      attempt: (previous?.occurrence.attempt ?? 0) + 1,
-    };
+    const occurrence = nextOccurrence(previous?.occurrence.attempt ?? 0, crypto.randomUUID());
     const entry: NewChatSubmission = {
       occurrence,
       recordId: id,
