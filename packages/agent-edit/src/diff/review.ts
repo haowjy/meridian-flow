@@ -116,13 +116,16 @@ export function projectReview(diff: BlockDiff): ReviewProjection {
   const positions = new DraftPositions(D, blockStarts);
   const groups: ReviewGroup[] = [];
   for (const members of byGroup.values()) {
-    const rhunks = members.map((i) => reviewHunk(diff, i, positions));
+    const contents = members.map((i) => hunkContent(diff, diff.hunks[i]));
+    const memo = descend(groupContents, contents);
+    memo.value ??= { id: groupHash(diff, members), excerpt: excerpt(diff, members) };
+    const rhunks = members.map((i, n) => reviewHunk(diff, i, positions, contents[n]));
     groups.push({
-      id: groupHash(diff, members),
+      id: memo.value.id,
       kind: members.some((i) => moved.has(i)) ? "move" : "change",
       spans: groupSpans(diff, members, clusterOf),
       hunks: rhunks,
-      excerpt: excerpt(diff, members),
+      excerpt: memo.value.excerpt,
     });
   }
   groups.sort((x, y) => firstDraftToken(diff, x) - firstDraftToken(diff, y));
@@ -283,15 +286,15 @@ function groupSpans(diff: BlockDiff, members: number[], clusterOf: number[]): Re
 }
 
 // ---------- draft positions ----------
+const tokenOffsets = new WeakMap<PMNode, Int32Array>();
 class DraftPositions {
-  private offsets = new Map<number, Int32Array>(); // block -> content offset of each of its tokens
   constructor(
     private side: Side,
     readonly blockStarts: number[],
   ) {}
 
   private offsetsOf(b: number): Int32Array {
-    let o = this.offsets.get(b);
+    let o = tokenOffsets.get(this.side.blocks[b]);
     if (!o) {
       const { toks, starts } = this.side;
       o = new Int32Array(starts[b + 1] - starts[b] + 1);
@@ -301,7 +304,7 @@ class DraftPositions {
         at += tokenSize(toks[i]);
       }
       o[o.length - 1] = at;
-      this.offsets.set(b, o);
+      tokenOffsets.set(this.side.blocks[b], o);
     }
     return o;
   }
@@ -338,7 +341,60 @@ class DraftPositions {
 const tokenSize = (t: Tok) =>
   t.kind === "text" ? t.ws.length + t.core.length : t.kind === "inline" ? t.node.nodeSize : 0;
 
-function reviewHunk(diff: BlockDiff, index: number, pos: DraftPositions): ReviewHunk {
+// Memo keys retain node identity, never content strings across schemas. Coordinates remain
+// global at publication; only position-independent content is shared between frames.
+interface ContentMemo<T> {
+  next: WeakMap<object, ContentMemo<T>>;
+  value?: T;
+}
+function descend<T>(root: ContentMemo<T>, keys: Iterable<object>): ContentMemo<T> {
+  let memo = root;
+  for (const key of keys) {
+    let child = memo.next.get(key);
+    if (!child) {
+      child = { next: new WeakMap() };
+      memo.next.set(key, child);
+    }
+    memo = child;
+  }
+  return memo;
+}
+type HunkContent = Pick<ReviewHunk, "removed" | "kind">;
+const hunkContents: ContentMemo<Map<string, HunkContent>> = { next: new WeakMap() };
+const groupContents: ContentMemo<Pick<ReviewGroup, "id" | "excerpt">> = { next: new WeakMap() };
+const contentBoundary = {};
+function hunkContent(diff: BlockDiff, h: Hunk): HunkContent {
+  const keys: object[] = [];
+  const range = (side: Side, from: number, to: number) => {
+    if (from === to) return "empty";
+    const first = side.blockOf[from];
+    const last = side.blockOf[to - 1];
+    for (let b = first; b <= last; b++) keys.push(side.blocks[b]);
+    return `${from - side.starts[first]}:${to - side.starts[last]}`;
+  };
+  const base = range(diff.base, h.from, h.to);
+  keys.push(contentBoundary);
+  const draft = range(diff.draft, h.sfrom, h.sfrom + h.ins.length);
+  const memo = descend(hunkContents, keys);
+  memo.value ??= new Map();
+  const key = `${base}/${draft}`;
+  let content = memo.value.get(key);
+  if (!content) {
+    content = {
+      removed: tokensToJSON(diff.base.toks.slice(h.from, h.to)),
+      kind: hunkKind(diff.base.toks, h),
+    };
+    memo.value.set(key, content);
+  }
+  return content;
+}
+
+function reviewHunk(
+  diff: BlockDiff,
+  index: number,
+  pos: DraftPositions,
+  content: HunkContent,
+): ReviewHunk {
   const h = diff.hunks[index];
   const end = h.sfrom + h.ins.length;
   const inserted = h.ins.length ? { from: pos.start(h.sfrom), to: pos.end(end - 1) } : null;
@@ -347,10 +403,10 @@ function reviewHunk(diff: BlockDiff, index: number, pos: DraftPositions): Review
     index,
     baseTokens: { from: h.from, to: h.to },
     draftTokens: { from: h.sfrom, to: end },
-    removed: tokensToJSON(diff.base.toks.slice(h.from, h.to)),
+    removed: content.removed,
     inserted,
     anchor: inserted ? inserted.from : pos.gap(h.sfrom, continues),
-    kind: hunkKind(diff.base.toks, h),
+    kind: content.kind,
   };
 }
 

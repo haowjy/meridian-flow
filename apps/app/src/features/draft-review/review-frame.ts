@@ -35,7 +35,7 @@ export function groupAnchor(group: ReviewGroup): number {
 }
 
 /** The base blocks of a room's `review_base`: read once per base change by whoever keeps them. */
-export function readBase(doc: Y.Doc, blockSchema = roomSchema()): PMNode[] {
+export function readBase(doc: Y.Doc, blockSchema = roomContent(doc).doc.type.schema): PMNode[] {
   return readBlocks(doc.getXmlFragment(REVIEW_BASE_FRAGMENT), blockSchema);
 }
 
@@ -55,9 +55,47 @@ export function buildFrame(
   });
   const projection: ReviewProjection = projectReview(diffBlocks(base, blocks));
   const pins = new Map<string, Y.RelativePosition>();
-  for (const group of projection.groups) pins.set(group.id, pin(groupAnchor(group)));
+  const types = yDoc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).toArray();
+  for (const group of projection.groups) {
+    const position = groupAnchor(group);
+    let lo = 0;
+    let hi = projection.blockStarts.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (projection.blockStarts[mid] <= position) lo = mid + 1;
+      else hi = mid;
+    }
+    const index = lo - 1;
+    const node = blocks[index];
+    const offset = position - projection.blockStarts[index];
+    // A PM node alone is not CRDT identity: moving or recreating equal prose may replace its
+    // Yjs items. Require both identities. Boundary pins depend on neighbours, so do not cache them.
+    if (!node || offset === 0) {
+      pins.set(group.id, pin(position));
+      continue;
+    }
+    const type = types[index];
+    let nodes = retainedPins.get(type);
+    if (!nodes) {
+      nodes = new WeakMap();
+      retainedPins.set(type, nodes);
+    }
+    let offsets = nodes.get(node);
+    if (!offsets) {
+      offsets = new Map();
+      nodes.set(node, offsets);
+    }
+    let relative = offsets.get(offset);
+    if (!relative) {
+      relative = pin(position);
+      offsets.set(offset, relative);
+    }
+    pins.set(group.id, relative);
+  }
   return { ...projection, doc: draft, snapshot: Y.snapshot(yDoc), pins };
 }
+
+const retainedPins = new WeakMap<object, WeakMap<PMNode, Map<number, Y.RelativePosition>>>();
 
 // A room has one runtime, but headless Discard also reads it directly. Both must use the same
 // retained nodes and current pin mapping, not a fresh conversion (or a second per-command cache).
@@ -69,7 +107,12 @@ function roomContent(doc: Y.Doc) {
     const retained = initProseMirrorDoc(fragment, roomSchema());
     roomContents.set(doc, retained);
     const refresh = (_events: Y.YEvent<Y.AbstractType<unknown>>[], transaction: Y.Transaction) => {
-      const next = refreshProseMirrorDoc(fragment, roomSchema(), retained.meta, transaction);
+      const next = refreshProseMirrorDoc(
+        fragment,
+        retained.doc.type.schema,
+        retained.meta,
+        transaction,
+      );
       retained.doc = next.doc;
     };
     // Observe Yjs, not PM steps: remote writes and Undo are one whole-document replace step,
@@ -82,6 +125,19 @@ function roomContent(doc: Y.Doc) {
     content = retained;
   }
   return content;
+}
+
+/** Adopt the editor's schema and retained identities off the typing path, including after detach. */
+export function adoptRoomEditor(
+  doc: Y.Doc,
+  root: PMNode,
+  mapping: Map<Y.AbstractType<unknown>, PMNode>,
+): void {
+  const retained = roomContent(doc);
+  retained.doc = root;
+  retained.meta.mapping.clear();
+  for (const [type, node] of mapping) retained.meta.mapping.set(type, node);
+  retained.meta.isOMark.clear();
 }
 
 /** The review of a room nobody has open, read from its Yjs text alone. */

@@ -98,6 +98,34 @@ function cachedSimilarity(a: PMNode, b: PMNode): number {
   }
   return v;
 }
+const wordSets = new WeakMap<PMNode, Set<string>>();
+const wordOverlaps = new WeakMap<PMNode, WeakMap<PMNode, number>>();
+function cachedWordOverlap(a: PMNode, b: PMNode): number {
+  let row = wordOverlaps.get(a);
+  if (!row) {
+    row = new WeakMap();
+    wordOverlaps.set(a, row);
+  }
+  let overlap = row.get(b);
+  if (overlap === undefined) {
+    const words = (node: PMNode) => {
+      let set = wordSets.get(node);
+      if (!set) {
+        set = new Set(blockWords(node));
+        wordSets.set(node, set);
+      }
+      return set;
+    };
+    const sa = words(a);
+    const sb = words(b);
+    let common = 0;
+    for (const word of sa) if (sb.has(word)) common++;
+    overlap = sa.size || sb.size ? common / Math.max(sa.size, sb.size) : 1;
+    row.set(b, overlap);
+  }
+  return overlap;
+}
+
 function anchorGap(
   B: Side,
   gb: number,
@@ -128,27 +156,13 @@ function anchorGap(
       )
   )
     return Array.from({ length: bi - gb }, (_, k) => [gb + k, gb + k + 1, gs + k, gs + k + 1]);
-  const sets = new Map<PMNode, Set<string>>();
-  const setOf = (n: PMNode) => {
-    let x = sets.get(n);
-    if (!x) {
-      x = new Set(blockWords(n));
-      sets.set(n, x);
-    }
-    return x;
-  };
   const ratio = (si - gs) / (bi - gb);
   const w = (x: number, y: number) => {
     if (Math.abs(y - gs - (x - gb) * ratio) > ANCHOR_BAND) return 0;
     const a = B.blocks[x];
     const b = S.blocks[y];
     if (a.type !== b.type || !a.isTextblock) return 0;
-    const sa = setOf(a);
-    const sb = setOf(b);
-    if (Math.min(sa.size, sb.size) < threshold * Math.max(sa.size, sb.size)) return 0;
-    let common = 0;
-    for (const t of sa) if (sb.has(t)) common++;
-    if (common < threshold * Math.max(sa.size, sb.size)) return 0;
+    if (cachedWordOverlap(a, b) < threshold) return 0;
     return cachedSimilarity(a, b) >= threshold ? 1 : 0;
   };
   const m = weightedOrderedMatches(w, gb, bi, gs, si, 4_000_000);

@@ -31,12 +31,18 @@ it is removed on document destruction. Do not infer changed paragraphs from PM
 transaction steps: remote and Undo updates replace the whole document in one step
 while preserving the untouched nodes inside it.
 
-Attaching an editor reuses the headless frame for paint when its base generation,
-complete Yjs snapshot and document content still match. Commands still project
-through their own editor schema before composing a Discard: equal content does
-not make nodes from different ProseMirror schemas interchangeable. `Node.eq`
-compares node-type identity, so this cross-schema check uses the existing
-`sameContent` structural comparison (type names, attributes, marks and text).
+At attachment the retained room source adopts the editor's actual schema, nodes and a copy
+of its Yjs mapping. The runtime projects that editor immediately, warming its schema-bound
+unit cache off the typing path rather than making the first key pay for every unit. This
+adds a cold projection to opening a previously headless room. After detach the headless
+source keeps the adopted schema and retained nodes; its base read reuses the same schema's
+base array. TipTap owns its extension-bound schema; never content-key tokens across schemas.
+Each editor still projects commands in its own schema. Base arrays for other editors are
+weakly held, so repeated mounts do not retain every old schema.
+
+Pins reuse both a retained Yjs top-level type and its immutable PM node, at a unit-local
+offset. PM identity alone is insufficient: a move or equal-prose recreation can replace
+Yjs items. Boundary pins are rebuilt because they depend on neighbouring items.
 
 Who wrote a change is one classifier (`classifyChanges`, `@meridian/agent-edit/diff`, `attribution.ts`)
 over the room's Yjs items and the attribution payload (`review-attribution.ts` joins its answer to
@@ -151,6 +157,8 @@ decorations and remove/add only changed descriptors, rather than recreating the 
 Composition deferral is a paint constraint, not a delay to editing or the review runtime.
 PM can rebuild decorated wrappers during final composition cleanup with an unchanged EditorState;
 the view hydrates these updates too, restoring semantic click targets and emphasis.
+It also removes view-owned semantic attributes from nodes whose PM decoration has retired;
+a move/Undo can preserve a DOM node after its render attribute disappears.
 The view brackets DOM-only updates with ProseMirror's observer stop/start so they cannot be parsed
 as manuscript edits. Ordinary cancelable `insertText` at a painted range uses the existing PM
 `handleTextInput` chain before native DOM mutation: PM otherwise dirties/replaces a decorated text

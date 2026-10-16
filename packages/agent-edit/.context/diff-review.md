@@ -55,7 +55,15 @@ still over budget is one whole replacement, without later word-level refinement.
 
 Disjoint paragraph probes took 18–29 ms around 1,000 words, versus up to 128 ms
 around 1,500, motivating the guard. Strong diagonal matches avoid the paragraph
-matching table for dense in-place edits. Caches change cost, never output.
+matching table for dense in-place edits. Caches change cost, never output. The paragraph anchor search also retains each node pair's
+word-set overlap; a warm key must not repeat the same intersections for every candidate.
+
+Projection caches position-independent hunk content by retained node ranges, then caches
+an unchanged group's hash and excerpt by those content identities. Cached hunk content
+includes removed JSON and kind; token-to-character offsets are per retained draft node.
+Grouping, move pairing, occurrence ranks and global hunk coordinates still recompute. A
+changed group still hashes its whole content (the existing hash/wire contract is unchanged).
+No schema-bound token or node is reused by text across schemas.
 
 Pure character-refinement scripts also reuse retained draft nodes and the base
 array, keyed by their exact input strings. Their cache is bounded to the 64k

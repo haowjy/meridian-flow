@@ -191,9 +191,13 @@ follows it. Use a Work with two changes in Chapter A and one in Chapter B.
 ## Large rewrites
 
 On 10k- and 50k-word full rewrites, time open and native typing through the next
-paint (including a paused key after the 120 ms review debounce). Check that attach
-paints the headless frame without a second projection, unchanged paragraphs reuse
-their diff work, and a paragraph above the token budget shows whole red/green
+paint (including the first key after opening, a paused key after the 120 ms review
+debounce, and Enter), both in the middle and inside green. Typing p95 must be
+below 100 ms at 10k and 250 ms at 50k. Check that attach warms the editor schema
+before typing and the detached headless source keeps that schema; report attach's
+cold projection separately. Unchanged paragraphs reuse their diff and review
+content; pins require retained Yjs as well as PM identity. A paragraph above the
+token budget shows whole red/green
 replacement rather than cross-paragraph word noise. Repeat the move, cut/paste
 and Discard Undo checks below; retained and fresh-node diffs must agree.
 
@@ -960,7 +964,9 @@ change, focus must select it, and its action bar must open. Repeat with a change
 emphasis survives the settled DOM. Undo restores the original prose and review.
 Check ordinary text input and auto-pairs inside and at the edge of green, then move a paragraph,
 Undo, native cut/paste and Undo twice. Discard and Undo must restore exact text and red/green marks;
-Apply must publish exactly the reviewed text. Reload has fresh render keys but identical semantics.
+Apply must publish exactly the reviewed text. Compare **all** `[data-review-change]`
+elements before and after Undo, not just red/green classes: an unchanged destination must
+not retain a bare semantic attribute. Reload has fresh render keys but identical semantics.
 
 ### Headless identity reuse
 

@@ -44,7 +44,14 @@ import { sameContent } from "@/core/editor/extensions/inline-review";
 import { relativePositionRuntimeFromState } from "@/core/editor/relative-position-runtime";
 import type { ReviewEditorHandle } from "./draft-discard";
 import { classifyRoom, writeKey } from "./review-attribution";
-import { baseKeyOf, buildFrame, projectRoom, type ReviewFrame, readBase } from "./review-frame";
+import {
+  adoptRoomEditor,
+  baseKeyOf,
+  buildFrame,
+  projectRoom,
+  type ReviewFrame,
+  readBase,
+} from "./review-frame";
 import { type ReviewChange, reviewChanges } from "./review-model";
 import { deriveVisible, NO_VISIBLE, type ReviewVisible } from "./review-visible";
 
@@ -175,8 +182,9 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
   let destroyed = false;
   let synced = room.getSnapshot().status === "synced";
   /** The base blocks, parsed once per schema (an editor's own, or the headless one) until `review_base` changes. */
-  let baseBlocks = new Map<Schema | null, PMNode[]>();
-  let projectedBase: typeof baseBlocks | null = null;
+  let baseBlocks = new WeakMap<Schema, PMNode[]>();
+  let initialHeadlessBase: PMNode[] | null = null;
+  let headlessSchema: Schema | null = null;
 
   const attributionOf = (frame: ReviewFrame): Attribution => {
     // Until the chats' writes have loaded, a change is not the writer's: nothing is said.
@@ -411,9 +419,13 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
   if (attributionQuery) edits = attributionQuery.getCurrentResult().data ?? NO_EDITS;
 
   const baseFor = (schema: Schema | null): PMNode[] => {
+    if (!schema) {
+      initialHeadlessBase ??= readBase(yDoc);
+      return initialHeadlessBase;
+    }
     let blocks = baseBlocks.get(schema);
     if (!blocks) {
-      blocks = schema ? readBase(yDoc, schema) : readBase(yDoc);
+      blocks = readBase(yDoc, schema);
       baseBlocks.set(schema, blocks);
     }
     return blocks;
@@ -429,7 +441,7 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
   };
 
   const projectHeadless = (): ReviewFrame => {
-    return projectRoom(yDoc, baseFor(null));
+    return projectRoom(yDoc, baseFor(headlessSchema));
   };
 
   /** Project now from `from` (default the room's own editor, else the room's text) and publish to every painter. */
@@ -445,7 +457,6 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
     if (!from && !synced) return state.frame;
     const frame = from ? projectEditor(from) : projectHeadless();
     if (!frame) return state.frame;
-    projectedBase = baseBlocks;
     publish(frame, deferred);
     return frame;
   };
@@ -466,7 +477,8 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
 
   const baseFragment = yDoc.getXmlFragment(REVIEW_BASE_FRAGMENT);
   const onBaseChange = () => {
-    baseBlocks = new Map();
+    baseBlocks = new WeakMap();
+    initialHeadlessBase = null;
     if (attachments.length > 0) flushSoon();
   };
   baseFragment.observeDeep(onBaseChange);
@@ -537,18 +549,15 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
       };
       attachments.push(attachment);
       attached.on("transaction", onTransaction);
-      // A second editor joins a frame already published: it is painted now, not at the next change.
-      paintAttachment(attached, painted);
-      // A headless frame already describes this text. Paint can bind its positions across schemas;
-      // commands still project in their own editor schema before composing Discard's replacement.
-      if (
-        painted &&
-        projectedBase === baseBlocks &&
-        Y.equalSnapshots(painted.snapshot, Y.snapshot(yDoc)) &&
-        sameContent(painted.doc, attached.state.doc)
-      ) {
-        if (timer) clearTimeout(timer);
-        timer = null;
+      const bound = relativePositionRuntimeFromState(attached.state);
+      if (bound) {
+        // TipTap owns its schema (including extension-bound DOM specs). Adopt its actual nodes
+        // and mapping instead of content-keying schema-bound tokens. The cold conversion and
+        // diff happen at attach, never on the first keystroke; headless reads keep this schema.
+        adoptRoomEditor(yDoc, attached.state.doc, bound.mapping);
+        headlessSchema = attached.schema;
+        initialHeadlessBase = null;
+        projectNow(attached);
       } else flushSoon();
       return () => {
         attached.off("transaction", onTransaction);

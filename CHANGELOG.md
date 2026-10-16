@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 - Draft review keeps existing red widgets and green highlights while typing. Focus, removal folds and arrival pulses update in place; composing text defers review repaint until composition ends. Green changes remain clickable after IME blur, and reduced-motion arrivals cannot replay when motion is re-enabled.
-- Large draft rewrites use deterministic paragraph-sized diffs, reuse unchanged paragraph work in both open editors and headless rooms, and paint the initial review without projecting it again on editor attachment.
+- Large draft rewrites use deterministic paragraph-sized diffs, reuse unchanged paragraph work in both open editors and headless rooms, and warm the attached editor before the first key. Unchanged review content and pins are reused; move/Undo also clears retired review attributes.
 
 - Draft review keeps existing red widgets and green highlights while typing. Focus, removal folds and arrival pulses update in place; composing text defers review repaint until composition ends.
 

@@ -44,10 +44,21 @@ export function createReviewPaintView(
     const animateArrival =
       arrivals.size > 0 && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     paintDOM(() => {
-      for (const element of view.dom.querySelectorAll<HTMLElement>(`[${RENDER_ATTR}]`)) {
+      for (const element of view.dom.querySelectorAll<HTMLElement>(
+        `[${RENDER_ATTR}],[${CHANGE_ATTR}]`,
+      )) {
         const key = element.getAttribute(RENDER_ATTR) ?? "";
         const id = changes.get(key);
-        if (!id) continue;
+        if (!id) {
+          // PM removes its decoration attributes, but semantic IDs are owned by this view.
+          // A moved/undone node can survive after its decoration, so retire our attributes too.
+          element.removeAttribute(CHANGE_ATTR);
+          element.classList.remove(
+            inlineReviewClassNames.emphasized,
+            inlineReviewClassNames.arrived,
+          );
+          continue;
+        }
         if (element.getAttribute(CHANGE_ATTR) !== id) element.setAttribute(CHANGE_ATTR, id);
         element.classList.toggle(inlineReviewClassNames.emphasized, id === state.activeChangeId);
         if (animateArrival && arrivals.has(key))
