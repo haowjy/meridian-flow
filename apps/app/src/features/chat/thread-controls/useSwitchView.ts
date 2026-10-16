@@ -6,7 +6,7 @@
  * each `meridian.run_state` frame, the `switched` frame. This hook reads that slice and folds
  * it for the toolbar's mode and the queued rows. It carries the journal's switches and the
  * writer's Withdraw into the slice, speaks a switch when it becomes pending (the one announcer
- * for a switch; a failure stays with the journal owner's keyed announcement), and marks the
+ * for pending switches; failures are facts for chatCards), and marks the
  * Works and project thread lists stale when a switch applies.
  *
  * An applied switch is silent and has no row here: it was spoken when it became pending, and its
@@ -29,7 +29,7 @@ import {
 } from "@/client/query/project-invalidation";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { queuedSwitchKey, switchDisplay } from "@/client/run-state/run-state-slice";
-import { announce, announceError, useRunStateSlice, useThreadActions } from "@/client/stores";
+import { announce, useRunStateSlice, useThreadActions } from "@/client/stores";
 import { controlAlreadyStartedCopy, controlStatusCopy, controlStoppedCopy } from "./control-copy";
 import type { QueuedControl } from "./thread-controls";
 
@@ -134,8 +134,7 @@ export function useSwitchView(input: {
   );
 
   const switchWriteMode = useCallback((mode: AiWriteMode) => {
-    if (!latest.current.journal.submit(crypto.randomUUID(), mode))
-      announceError(controlStatusCopy({ kind: "write_mode", mode }, "failed"));
+    latest.current.journal.submit(crypto.randomUUID(), mode);
   }, []);
 
   const retry = useCallback((id: string) => latest.current.journal.retry(id), []);
