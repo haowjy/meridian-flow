@@ -124,6 +124,13 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
       return row ? { ...row } : null;
     },
 
+    async findByHandle(projectId: ProjectId, handle: string): Promise<Work | null> {
+      const row = [...rows.values()].find(
+        (work) => work.projectId === projectId && work.handle === handle,
+      );
+      return row ? { ...row } : null;
+    },
+
     async findNoWork(projectId: ProjectId): Promise<Work | null> {
       const row = [...rows.values()].find(
         (work) => work.projectId === projectId && work.isNoWork && work.deletedAt === null,

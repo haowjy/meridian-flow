@@ -23,7 +23,7 @@ import {
 import type { ResolvedWorkAuthority, WorkHandle } from "@meridian/contracts/works";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type { BoundWrite } from "../../collab/index.js";
-import type { ProjectOwners } from "../owner-lookup.js";
+import { type ContextualOwner, type ProjectOwners, unknownWorkMessage } from "../owner-lookup.js";
 import type {
   AdapterFault,
   AdapterFileEntry,
@@ -97,11 +97,6 @@ export interface ContextPortRouterDeps {
   /** URI parse options — unified port passes manuscript default + extended schemes. */
   parseOptions?: ParseContextUriOptions;
   commandTransaction?: ContextCommandTransaction;
-}
-
-interface ParsedOwnerHandle {
-  kind: "work" | "chat";
-  handle: string;
 }
 
 interface Dispatch extends ContextTreeDispatch {
@@ -251,14 +246,6 @@ async function callAdapter<T>(
   return Ok(result.value);
 }
 
-/**
- * The one error for a Work handle that names no Work, from a URI or the `work` tool (D51). It
- * points to `work list` rather than listing Works, so it stays one line however many there are.
- */
-export function unknownWorkMessage(handle: string): string {
-  return `Unknown Work ${handle}. List Works with work list.`;
-}
-
 export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPort {
   const { sources, parseOptions } = deps;
   /**
@@ -393,17 +380,8 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     deps.moveLinks,
   );
 
-  /** A Work handle no live Work carries: unknown, or deleted and still restorable. */
-  async function unknownWorkReason(handle: string): Promise<string> {
-    const owner = await deps.owners?.work(handle);
-    if (owner?.state !== "deleted") return unknownWorkMessage(handle);
-    return owner.restorableDays === null
-      ? `Work ${handle} was deleted.`
-      : `Work ${handle} was deleted; restorable for ${owner.restorableDays} ${owner.restorableDays === 1 ? "day" : "days"}.`;
-  }
-
   /** The handle this port's contextual source supplies for a scheme, to name in an error. */
-  async function contextualHandle(scheme: ContextScheme): Promise<ParsedOwnerHandle | null> {
+  async function contextualHandle(scheme: ContextScheme): Promise<ContextualOwner | null> {
     const source = sources.get(scheme);
     const binding = typeof source === "function" ? await source() : source;
     const authority = binding?.authority;
@@ -416,57 +394,10 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     return authority.workHandle ? { kind: "work", handle: authority.workHandle } : null;
   }
 
-  /**
-   * A near-miss owner spelling answered with the real owner. The parser's `fallback` is the
-   * answer that needs no lookup; each case here upgrades it when the owner lookup finds one.
-   */
   async function slipReason(slip: OwnerSlip, fallback: string): Promise<string> {
-    const { owners } = deps;
-    const owned = (scheme: OwnedContextUriScheme, authority: ParsedContextAuthority) =>
-      formatParsedContextUri(scheme, "", authority);
-    switch (slip.kind) {
-      case "name": {
-        const work = await owners?.workNamed(slip.token);
-        return work
-          ? `Addresses name a Work by handle. "${work.name}" is ${work.handle}: ${owned("scratch", { kind: "work", workHandle: work.handle })}…`
-          : fallback;
-      }
-      case "subagent": {
-        const subagent = await owners?.subagent(slip.token);
-        if (!subagent) return fallback;
-        return slip.scheme === "uploads"
-          ? `Use the chat's handle, not a subagent's. ${slip.token}'s chat is ${subagent.chatRef}: ${subagent.uploads}…`
-          : `Use the chat's handle, not a subagent's. ${slip.token}'s notes are at ${subagent.scratch}…`;
-      }
-      case "uppercase": {
-        if (slip.scheme !== "scratch") return fallback;
-        const named = await owners?.workNamed(slip.token);
-        const lower = classifyHandleToken(slip.token.toLowerCase());
-        const lowerWork =
-          lower.kind === "handle" && lower.handle.kind === "work"
-            ? await owners?.work(lower.handle.handle)
-            : null;
-        const both =
-          named && lowerWork && lowerWork.state !== "deleted"
-            ? ` Work ${lowerWork.handle} is "${lowerWork.name}"; the Work named "${slip.token}" is ${named.handle}.`
-            : named
-              ? ` The Work named "${slip.token}" is ${named.handle}.`
-              : "";
-        return `${fallback}${both}`;
-      }
-      case "no-handle": {
-        const own = await contextualHandle(slip.scheme);
-        if (!own) return fallback;
-        if (slip.scheme === "uploads") {
-          return `@ takes a chat's handle: ${owned("uploads", { kind: "chat", chatRef: own.handle })}… . List chats with files with ls uploads://@.`;
-        }
-        const address =
-          own.kind === "work"
-            ? owned("scratch", { kind: "work", workHandle: own.handle as WorkHandle })
-            : owned("scratch", { kind: "lineage", rootThreadRef: own.handle });
-        return `@ takes a handle: ${address}… for ${own.kind === "work" ? "this Work" : "this chat's lineage"}. List the others with ls scratch://@.`;
-      }
-    }
+    if (!deps.owners) return fallback;
+    const own = slip.kind === "no-handle" ? await contextualHandle(slip.scheme) : null;
+    return deps.owners.slipReason(slip, fallback, own);
   }
 
   async function resolve(uri: string): Promise<Result<Dispatch, ContextError>> {
@@ -536,7 +467,9 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         return Err({
           code: "invalid_uri",
           uri: parsed.value.normalized,
-          reason: await unknownWorkReason(authority.workHandle),
+          reason: deps.owners
+            ? await deps.owners.unknownWork(authority.workHandle)
+            : unknownWorkMessage(authority.workHandle),
           workHandle: authority.workHandle,
         });
       }

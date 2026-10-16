@@ -8,7 +8,7 @@ import {
   contextPortForThread,
   resolveThreadContext,
 } from "./context-port-resolution.js";
-import { createOwnerLookup, emptyOwnerLookup } from "./owner-lookup.js";
+import { createOwnerLookup, emptyOwnerLookup, type WorkOwner } from "./owner-lookup.js";
 import type { ContextPort } from "./ports/context-port.js";
 import type { UnifiedContextPortFactory } from "./unified-context-port-factory.js";
 
@@ -150,6 +150,11 @@ describe("project recovery context-port resolution", () => {
 });
 
 describe("owner lookup", () => {
+  const allWorks: WorkOwner[] = [
+    { handle: testWorkHandle("w3"), name: "Tea Notes", state: "active", restorableDays: null },
+    { handle: testWorkHandle("w4"), name: "w9", state: "archived", restorableDays: null },
+    { handle: testWorkHandle("w5"), name: "Gone", state: "deleted", restorableDays: 12 },
+  ];
   const lookup = createOwnerLookup({
     chats: { byRef: async (_p, ref) => ({ chatId: `id-${ref}`, chatRef: ref, live: true }) },
     lineages: {
@@ -166,11 +171,9 @@ describe("owner lookup", () => {
     },
     namedWorkHandle: async (id) => (id === "id-c15" ? null : "w3"),
     subagentChatRef: async (_p, ref) => (ref === "p3" ? "c15" : null),
-    works: async () => [
-      { handle: testWorkHandle("w3"), name: "Tea Notes", state: "active", restorableDays: null },
-      { handle: testWorkHandle("w4"), name: "w9", state: "archived", restorableDays: null },
-      { handle: testWorkHandle("w5"), name: "Gone", state: "deleted", restorableDays: 12 },
-    ],
+    workByHandle: async (_p, handle) => allWorks.find((work) => work.handle === handle) ?? null,
+    worksNamed: async () => allWorks.filter((work) => work.state !== "deleted"),
+    listWorks: async () => allWorks.filter((work) => work.state !== "deleted"),
     chatsWithFiles: async () => [{ chatRef: "c15", title: "Map research" }],
   });
 

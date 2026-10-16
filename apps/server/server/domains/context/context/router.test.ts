@@ -3,19 +3,15 @@ import { describe, expect, it, vi } from "vitest";
 import { Err, Ok } from "../../../shared/result.js";
 import { testWorkHandle } from "../../../test-support/work-handle.js";
 import { resolvedWorkAuthority } from "../../projects/domain/work-authority.js";
-import type { ProjectOwners } from "../owner-lookup.js";
+import {
+  bindOwners,
+  createOwnerLookup,
+  emptyOwnerLookup,
+  type WorkOwner,
+} from "../owner-lookup.js";
 import { type ContextSchemeAdapter, schemeCapabilities } from "../ports/context-adapter.js";
 import type { ContextScheme } from "../ports/context-port.js";
 import { createContextPortRouter } from "./router.js";
-
-const emptyProjectOwners: ProjectOwners = {
-  chat: async () => null,
-  subagent: async () => null,
-  work: async () => null,
-  workNamed: async () => null,
-  scratchOwners: async () => [],
-  uploadOwners: async () => [],
-};
 
 const authority = (workId: string, handle: string) =>
   resolvedWorkAuthority({ workId, workHandle: testWorkHandle(handle) });
@@ -120,37 +116,47 @@ describe("context router owner resolution", () => {
     } as unknown as ContextSchemeAdapter;
   }
 
-  const work = (handle: string, name: string, state: "active" | "deleted" = "active") => ({
+  const work = (
+    handle: string,
+    name: string,
+    state: "active" | "deleted" = "active",
+  ): WorkOwner => ({
     handle: testWorkHandle(handle),
     name,
     state,
     restorableDays: state === "deleted" ? 12 : null,
   });
-  const owners: ProjectOwners = {
-    chat: async (ref) =>
-      ref === "c1" ? { uploads: "uploads://@c1/", scratch: "scratch://@c1/" } : null,
-    subagent: async (ref) =>
-      ref === "p3" ? { chatRef: "c1", uploads: "uploads://@c1/", scratch: "scratch://@w1/" } : null,
-    work: async (handle) =>
-      [work("w1", "Drafting"), work("w2", "Second pass"), work("w4", "Gone", "deleted")].find(
-        (owner) => owner.handle === handle,
-      ) ?? null,
-    workNamed: async (name) =>
-      [
-        work("w1", "Drafting"),
-        work("w2", "Second pass"),
-        work("w3", "Tea Notes"),
-        work("w7", "W2"),
-      ].find((owner) => owner.name.toLowerCase().replace(/\s+/g, "-") === name.toLowerCase()) ??
-      null,
-    scratchOwners: async () => [{ uri: "scratch://@w1/", label: "Drafting" }],
-    uploadOwners: async () => [{ uri: "uploads://@c1/", label: '"Map" (chat c1)' }],
-  };
+  const allWorks = [
+    work("w1", "Drafting"),
+    work("w2", "Second pass"),
+    work("w3", "Tea Notes"),
+    work("w4", "Gone", "deleted"),
+    work("w7", "W2"),
+  ];
+  // The real owner component over fake storage, so the corrections under test are the shipped ones.
+  const owners = bindOwners(
+    createOwnerLookup({
+      chats: { byRef: async (_p, ref) => ({ chatId: ref, chatRef: ref, live: ref === "c1" }) },
+      lineages: {
+        byId: async () => null,
+        byRef: async () => null,
+        list: async () => [],
+        rootForThreadRef: async () => null,
+      },
+      namedWorkHandle: async () => "w1",
+      subagentChatRef: async (_p, ref) => (ref === "p3" ? "c1" : null),
+      workByHandle: async (_p, handle) => allWorks.find((owner) => owner.handle === handle) ?? null,
+      worksNamed: async () => allWorks.filter((owner) => owner.state !== "deleted"),
+      listWorks: async () => allWorks.filter((owner) => owner.state !== "deleted"),
+      chatsWithFiles: async () => [],
+    }),
+    "project",
+  );
 
   function port() {
     const primary = workAdapter(PRIMARY_ID);
     const sibling = workAdapter(SIBLING_ID);
-    return createContextPortRouter({
+    const router = createContextPortRouter({
       sources: new Map([
         ["scratch", async () => ({ adapter: primary, authority: authority(PRIMARY_ID, "w1") })],
       ]),
@@ -163,6 +169,7 @@ describe("context router owner resolution", () => {
       resolveWorkAdapters: (resolved) =>
         new Map([["scratch", resolved.workId === SIBLING_ID ? sibling : primary]]),
     });
+    return Object.assign(router, { adapters: [primary, sibling] });
   }
 
   it("resolves a same-project sibling by handle for both reads and writes", async () => {
@@ -178,45 +185,31 @@ describe("context router owner resolution", () => {
   });
 
   it.each([
-    ["scratch://@w99/notes.md", "Unknown Work w99. List Works with work list."],
     ["scratch://@w4/notes.md", "Work w4 was deleted; restorable for 12 days."],
     [
       "scratch://@tea-notes/notes.md",
       'Addresses name a Work by handle. "Tea Notes" is w3: scratch://@w3/…',
     ],
-    ["scratch://@nothing/notes.md", "Unknown Work nothing. List Works with work list."],
-    [
-      "scratch://@p3/notes.md",
-      "Use the chat's handle, not a subagent's. p3's notes are at scratch://@w1/…",
-    ],
     [
       "scratch://@W2/notes.md",
       'Handles are lowercase: scratch://@w2/… Work w2 is "Second pass"; the Work named "W2" is w7.',
     ],
-    [
-      "scratch://@/notes.md",
-      "@ takes a handle: scratch://@w1/… for this Work. List the others with ls scratch://@.",
-    ],
-    ["scratch://@/c1/notes.md", "Handles follow @ directly: scratch://@c1/…"],
-    [
-      "scratch://@c9/notes.md",
-      "This project has no first chat c9. List the owners of notes with ls scratch://@.",
-    ],
-    [
-      "scratch://@c1/notes.md",
-      "Chat c1's scratch notes are at scratch://@c1/. scratch://x in that chat reaches the same notes.",
-    ],
-  ])("answers the slip %s with the real owner", async (uri, reason) => {
-    await expect(port().read(uri)).resolves.toMatchObject({ ok: false, error: { reason } });
+  ])("points the wrong spelling %s at the right owner and never writes", async (uri, reason) => {
+    const context = port();
+    for (const result of [await context.read(uri), await context.write(uri, "x")]) {
+      expect(result).toMatchObject({ ok: false, error: { reason } });
+    }
+    for (const adapter of context.adapters) expect(adapter.write).not.toHaveBeenCalled();
   });
 
   it("lists owners with the handle address first and the label after", async () => {
-    await expect(port().list("scratch://@")).resolves.toEqual({
-      ok: true,
-      value: {
-        uri: "scratch://@",
-        entries: [{ kind: "directory", uri: "scratch://@w1/", title: "Drafting", readonly: false }],
-      },
+    const listed = await port().list("scratch://@");
+    expect(listed).toMatchObject({ ok: true, value: { uri: "scratch://@" } });
+    expect(listed.ok && listed.value.entries[0]).toEqual({
+      kind: "directory",
+      uri: "scratch://@w1/",
+      title: "Drafting",
+      readonly: false,
     });
   });
 });
@@ -356,7 +349,7 @@ it("reads another chat's uploads by handle and refuses a trashed, unknown or Wor
   const port = createContextPortRouter({
     sources: new Map([["uploads", { adapter: own, authority: { kind: "chat", chatRef: "c1" } }]]),
     owners: {
-      ...emptyProjectOwners,
+      ...bindOwners(emptyOwnerLookup, "project"),
       chat: async (ref) => (ref === "c2" ? { uploads: "uploads://@c2/", scratch: "" } : null),
     },
     resolveChatSource: async (ref) =>
