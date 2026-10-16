@@ -243,6 +243,11 @@ export class ComposerSessionDraft {
     return true;
   }
 
+  /** The chat Send created: a no-op when recording the Send already handed the draft off. */
+  handoffCreated = (chatId: string): void => {
+    if (this.chatId === chatId) this.handoff();
+  };
+
   /** Once recorded, only the exact unchanged authoring draft transfers to the journal. */
   handoffSubmitted = (snapshot: ComposerDraftSnapshot): void => {
     if (this.matches(snapshot)) this.handoff();
