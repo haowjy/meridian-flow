@@ -143,7 +143,8 @@ export function useSwitchView(input: {
     (row: QueuedControl) => {
       const { id } = row;
       // The row goes at once, whichever side owns it.
-      dispatch(threadId, { type: "withdraw", id });
+      const requestId = crypto.randomUUID();
+      dispatch(threadId, { type: "withdraw", id, requestId });
       const onServer = async () => {
         try {
           const answer = await withdrawThreadControl(threadId, id);
@@ -159,7 +160,7 @@ export function useSwitchView(input: {
           // The server never had it: nothing to withdraw.
           if (httpErrorStatus(error) === 404)
             return dispatch(threadId, { type: "dropWithdraw", id });
-          dispatch(threadId, { type: "withdraw", id, failed: true });
+          dispatch(threadId, { type: "withdraw", id, requestId, failed: true });
         }
       };
       // A switch the journal holds that the server can't have (never posted, or refused):

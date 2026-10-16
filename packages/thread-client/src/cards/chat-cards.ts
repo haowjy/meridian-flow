@@ -193,7 +193,7 @@ export function chatCards(input: ChatCardsInput): ChatCards {
     if (!seed || (seed.status !== "pending" && seed.status !== "streaming")) continue;
     cards.push(
       card({
-        key: `stop:${stop.turnId}:${stop.attempt}`,
+        key: occurrenceKey(stop),
         failure: classifyCommandFailure({ kind: "lost" }),
         copy: "brief-stop-failed",
         action: "try_again",

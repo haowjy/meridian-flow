@@ -3,7 +3,9 @@
  * its occurrence (`key`), its `Failure`, a closed copy key, the one action it offers and the thing
  * it sits on. The app draws it where it is anchored and words it from the copy key.
  */
+
 import type { Failure } from "@meridian/contracts/failures";
+import type { Occurrence } from "../commands";
 
 /** The closed set of cards. The app owns the words; a reply's own words ride in `text`. */
 export type ChatCardCopy =
@@ -94,4 +96,4 @@ export type RetryOutcome =
   | { kind: "lost"; turnId: string; requestId: string; attempt: number };
 
 /** A Stop on a handoff brief that did not reach the server, by attempt. */
-export type BriefStopFailure = { turnId: string; attempt: number };
+export type BriefStopFailure = { turnId: string } & Occurrence;

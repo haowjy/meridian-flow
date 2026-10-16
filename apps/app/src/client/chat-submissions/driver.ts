@@ -30,7 +30,11 @@ export type SubmissionDriverOptions = {
   /** Post a control record (a write-mode switch) to the chat's controls route. */
   postControl(entry: ChatSubmission, signal: AbortSignal): Promise<EnqueueThreadControlResponse>;
   row(entry: ChatSubmission): string;
-  status(entry: ChatSubmission, status: "pending" | "error", localFailure?: boolean): void;
+  status(
+    entry: ChatSubmission,
+    status: "pending" | "error",
+    localFailure?: "unsaved" | "lost",
+  ): void;
   /** Consumed immediately before dispatch, never after an awaited request. */
   takeFresh(recordId: string): boolean;
   finished(entry: ChatSubmission): void;
@@ -241,10 +245,10 @@ export class ChatSubmissionDriver {
     }
   }
 
-  private localFailure(entry: ChatSubmission) {
+  private localFailure(entry: ChatSubmission, kind: "unsaved" | "lost" = "lost") {
     this.localFailures.set(entry.recordId, entry);
     try {
-      this.options.status(entry, "error", true);
+      this.options.status(entry, "error", kind);
     } catch (error) {
       reportError(error);
     }
@@ -255,7 +259,7 @@ export class ChatSubmissionDriver {
       this.localFailures.delete(entry.recordId);
       return true;
     }
-    this.localFailure(entry);
+    this.localFailure(entry, "unsaved");
     return false;
   }
 
@@ -303,13 +307,18 @@ export class ChatSubmissionDriver {
       return;
     }
     const fresh = this.options.takeFresh(entry.recordId) && !retry;
+    const before = entry;
     entry = {
       ...entry,
       occurrence: (requested ?? (fresh && entry.occurrence ? entry : this.nextAttempt(entry)))
         .occurrence,
       ...(retry ? { state: undefined } : {}),
     };
-    if (!this.write(entry)) return;
+    if (
+      (entry.occurrence !== before.occurrence || entry.state !== before.state) &&
+      !this.write(entry)
+    )
+      return;
     this.options.status(entry, "pending");
     if (!derived) {
       this.settle(entry, "rejected");
@@ -457,7 +466,7 @@ export class ChatSubmissionDriver {
       else if (entry.posted && entry.state !== "rejected") result = "kept";
       else if (this.options.journal.retire(recordId)) result = "removed";
       else {
-        this.localFailure(entry);
+        this.localFailure(this.nextAttempt(entry), "unsaved");
         result = "kept";
       }
     });

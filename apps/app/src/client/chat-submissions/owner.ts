@@ -283,7 +283,7 @@ export class ChatSubmissionOwner {
           status === "error"
             ? commandFailure(
                 entry,
-                localFailure ? "unsaved" : entry.state === "rejected" ? "refused" : "lost",
+                localFailure ?? (entry.state === "rejected" ? "refused" : "lost"),
               )
             : undefined;
         if (entry.control) {
@@ -303,7 +303,7 @@ export class ChatSubmissionOwner {
         if (status === "error") {
           // A message moving to the message box is no failure; otherwise the failed row is a card.
           row.failed = !this.transferDestination(entry).hasReceived(entry.recordId);
-          row.localFailure = localFailure ?? false;
+          row.localFailure = !!localFailure;
         } else {
           row.failed = false;
         }
@@ -374,7 +374,13 @@ export class ChatSubmissionOwner {
   submitSwitch = (id: string, mode: AiWriteMode): boolean => {
     const { accountId, threadId, projectId, current } = this.options;
     if (!current()) return false;
+    const previous = this.model.unsavedSwitches.get(id);
+    const occurrence = {
+      requestId: crypto.randomUUID(),
+      attempt: (previous?.occurrence.attempt ?? 0) + 1,
+    };
     const entry: NewChatSubmission = {
+      occurrence,
       recordId: id,
       submissionId: id,
       threadId,
@@ -391,8 +397,6 @@ export class ChatSubmissionOwner {
       const seq =
         this.model.unsavedSwitches.get(id)?.seq ??
         Math.max(0, ...this.model.switches.map((row) => row.seq)) + 1;
-      const previous = this.model.unsavedSwitches.get(id);
-      const occurrence = { requestId: id, attempt: (previous?.occurrence.attempt ?? 0) + 1 };
       this.model.unsavedSwitches.set(id, { mode, seq, occurrence });
       this.publishSwitches();
       return false;
@@ -640,12 +644,16 @@ export class ChatSubmissionOwner {
 }
 
 function commandFailure(entry: ChatSubmission, kind: CommandFailure["kind"]): CommandFailure {
-  return { ...(entry.occurrence ?? { requestId: entry.submissionId, attempt: 1 }), kind };
+  return {
+    ...(entry.occurrence ?? { requestId: entry.submissionId, attempt: 1 }),
+    submissionId: entry.submissionId,
+    kind,
+  };
 }
 
-/** A newer durable attempt from another tab supersedes this tab's old failure. */
+/** A newer attempt is not evidence of failure; only its durable refusal can replace local facts. */
 function latestFailure(entry: ChatSubmission, local?: CommandFailure): CommandFailure {
-  return local && local.attempt >= (entry.occurrence?.attempt ?? 0)
+  return local && (entry.state !== "rejected" || local.attempt >= (entry.occurrence?.attempt ?? 0))
     ? local
     : commandFailure(entry, entry.state === "rejected" ? "refused" : "lost");
 }

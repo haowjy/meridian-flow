@@ -76,7 +76,7 @@ export function useHandoffBrief(input: {
   );
 
   const stopFailures = useMemo(
-    () => [...turnStop.failed].map(([turnId, attempt]) => ({ turnId, attempt })),
+    () => [...turnStop.failed].map(([turnId, occurrence]) => ({ turnId, ...occurrence })),
     [turnStop.failed],
   );
 
