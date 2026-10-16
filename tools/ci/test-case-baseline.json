@@ -607,8 +607,8 @@
     "tools/mf/src/commands/thread/events-map.test.ts": 1,
     "tools/mf/src/commands/thread/result.test.ts": 1,
     "tools/mf/src/commands/thread/tail.test.ts": 5,
-    "tools/mf/src/commands/thread/thread.test.ts": 26,
+    "tools/mf/src/commands/thread/thread.test.ts": 27,
     "tools/mf/src/core/output.test.ts": 1,
-    "tools/mf/src/main.test.ts": 2
+    "tools/mf/src/main.test.ts": 3
   }
 }
