@@ -1209,7 +1209,7 @@ export function createInMemoryAppServices(): AppServices {
   const inbox = createInMemoryInbox();
   const runClaim = createInMemoryRunClaim();
   const runStarter = createInMemoryRunStarter();
-  const journal = createInMemoryEventJournalWriter();
+  const journal = createInMemoryEventJournalWriter(transactionOwner);
   const delivery = createInMemoryRuntimeDelivery({
     backgroundTasks,
     workContext: {
@@ -1274,6 +1274,7 @@ export function createInMemoryAppServices(): AppServices {
   };
   const inMemoryThreadEventHub: ThreadEventHub = {
     invalidateCommittedJournal() {},
+    recordFailure() {},
     async appendEvent() {
       return 0n;
     },

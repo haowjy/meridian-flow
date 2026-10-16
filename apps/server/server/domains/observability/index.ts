@@ -35,6 +35,7 @@ export type {
   EventSink,
   TraceStreamRef,
 } from "./ports/event-sink.js";
+export { recordFailure } from "./record-failure.js";
 export {
   MAX_EVENT_RECORD_BYTES,
   safeSnippet,

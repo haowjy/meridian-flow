@@ -2,9 +2,11 @@
 export type {
   EventJournalReader,
   EventJournalWriter,
+  FailureRecorder,
   JournalEntry,
   JournalEventEnvelope,
   ListJournalEventsOptions,
+  LiveEventWriter,
 } from "./event-journal.js";
 export type {
   AdmitExecutionReportInput,

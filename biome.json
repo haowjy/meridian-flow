@@ -69,6 +69,7 @@
         "apps/server/server/domains/threads/domain/transcript-page.ts",
         "apps/server/server/domains/threads/thread-snapshot.ts",
         "apps/server/server/domains/runtime/loop/orchestrator.ts",
+        "apps/server/server/domains/runtime/loop/failure-detection.ts",
         "apps/server/server/domains/runtime/loop/latest-row.ts",
         "apps/server/server/domains/runtime/loop/forget-failed-attempt.ts",
         "apps/server/server/domains/runtime/loop/run-session.ts",

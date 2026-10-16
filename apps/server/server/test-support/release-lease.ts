@@ -3,17 +3,19 @@
  * publishes the chat's run-state record. Tests that simulate a finished or crashed run call this
  * instead of `runClaim.release` directly.
  */
+
 import type { Database } from "@meridian/database";
 import { createDrizzleThreadLock } from "../domains/runtime/adapters/drizzle-thread-lock.js";
 import type { Lease, RunClaim } from "../domains/runtime/loop/ports.js";
 import { createDrizzleEventJournalWriter } from "../domains/threads/adapters/drizzle/event-writer.js";
+import { createQuietDrizzleJournalWriter } from "./journal-writer.js";
 
 export function releaseLeaseUnderLock(
   db: Database,
   runClaim: Pick<RunClaim, "release">,
   lease: Lease,
 ) {
-  return createDrizzleThreadLock(db, createDrizzleEventJournalWriter(db)).withThreadLock(
+  return createDrizzleThreadLock(db, createQuietDrizzleJournalWriter(db)).withThreadLock(
     lease.threadId,
     () => runClaim.release(lease),
   );

@@ -87,6 +87,7 @@ import type {
   ActiveDocumentResolver,
   BlockRepository,
   EventJournalWriter,
+  LiveEventWriter,
   ModelResponseRepository,
   ThreadRepositories,
   ThreadRepository,
@@ -231,7 +232,7 @@ export interface OrchestratorDeps {
   referenceReader: ReferenceReader;
   documentRevisions: DocumentRevisions;
   repos: OrchestratorRepositories;
-  eventWriter: EventJournalWriter;
+  eventWriter: LiveEventWriter;
   headSeq(threadId: ThreadId): Promise<bigint>;
   onRunStarted?: (threadId: ThreadId) => void;
   onRunSettled?: (threadId: ThreadId) => void;

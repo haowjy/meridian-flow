@@ -4,7 +4,9 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { executionScenario } from "../../../test-support/execution-scenario.js";
 import { journalEventsByThread } from "../../../test-support/journal-events.js";
+import { createQuietDrizzleJournalWriter } from "../../../test-support/journal-writer.js";
 import { releaseLeaseUnderLock } from "../../../test-support/release-lease.js";
+import { noFailureRecorder } from "../../threads/ports/event-journal.js";
 
 const runDb = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const databaseUrl = process.env.DATABASE_URL;
@@ -60,7 +62,7 @@ else
     const audited = await openAuditedDatabase(databaseUrl, { max: 6 });
     const db = audited.db;
     const repos = createDrizzleRepositoriesForTest(db);
-    const eventWriter = createDrizzleEventJournalWriter(db);
+    const eventWriter = createQuietDrizzleJournalWriter(db);
     const inbox = createDrizzleInbox(db);
     const threadLock = createDrizzleThreadLock(db, eventWriter);
     const eventSink = createInMemoryEventSink();
@@ -602,6 +604,7 @@ else
       const failingFirst = createReportPublisher({
         repos,
         eventWriter: {
+          ...noFailureRecorder,
           async appendEvent(threadId, event) {
             if (event.type === "agent.run_completed" && event.execution === ids.execution) {
               throw new Error("first publication unavailable");
