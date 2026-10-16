@@ -106,8 +106,10 @@ generating brief. Restore `fetch` and press Try again: the brief stops and the c
 - **Two-tab replay:** open the same chat in two tabs, locally fail message POSTs
   and admission lookups, and send once. After the initial attempts settle, saved
   occurrence counters and request counts must stop increasing without a Retry,
-  reconnect or reload. One tab publishing attempt metadata must not wake the
-  other into another replay or announce that in-flight attempt as failed.
+  reconnect or reload. Read counters from one focused tab: a focus change can
+  refetch the snapshot and replay once, but counters must stay flat while focus
+  is unchanged. One tab publishing attempt metadata must not wake the other
+  into another replay or announce that in-flight attempt as failed.
 
 Restore credits, fetch/storage wrappers and scripts after each injected failure.
 Raw `./mf` error lines are diagnostic; compare the `card` lines and anchors, not
