@@ -173,8 +173,8 @@ msgstr ""
 
 #. placeholder {0}: destination.name
 #: src/features/project/context/ContextViewer.tsx
-msgid "{0} isn't in {section}."
-msgstr ""
+#~ msgid "{0} isn't in {section}."
+#~ msgstr ""
 
 #. placeholder {0}: children.length
 #: src/features/chat/RunningSubagentsStrip.tsx
@@ -3314,8 +3314,8 @@ msgid "Refresh"
 msgstr ""
 
 #: src/features/project/context/ContextViewer.tsx
-msgid "Refresh to try again."
-msgstr ""
+#~ msgid "Refresh to try again."
+#~ msgstr ""
 
 #: src/features/billing/UsageCard.tsx
 msgid "remaining"
@@ -4147,8 +4147,8 @@ msgid "The AI provider turned this request down."
 msgstr ""
 
 #: src/features/project/context/ContextViewer.tsx
-msgid "The assistant referred to this document, but it isn't there now. It may have been renamed, deleted, or never finished being created."
-msgstr ""
+#~ msgid "The assistant referred to this document, but it isn't there now. It may have been renamed, deleted, or never finished being created."
+#~ msgstr ""
 
 #: src/features/editor/surfaces/objects/verb-feedback.tsx
 msgid "The browser blocked the clipboard. Check this site's permissions."
@@ -4383,8 +4383,8 @@ msgid "This conversation couldn't be compacted."
 msgstr ""
 
 #: src/features/project/context/ContextViewer.tsx
-msgid "This destination couldn't load."
-msgstr ""
+#~ msgid "This destination couldn't load."
+#~ msgstr ""
 
 #: src/features/project/routing/ProjectRouteBoundary.tsx
 msgid "This destination couldn’t load."
