@@ -18,7 +18,6 @@ export type SwitchRowStatus = "sending" | "queued" | "failed" | "withdraw_failed
 export type SwitchRow = {
   id: string;
   mode: AiWriteMode;
-
   /** The server may hold it and hasn't answered: Retry only, no Withdraw. */
   awaitingServer?: boolean;
   /**

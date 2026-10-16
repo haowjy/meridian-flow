@@ -130,3 +130,12 @@
 The owner, on removing Stop from beside Send: "why would u want to prepare something but stop it...?
 unless u want to stop and send it... which there should be a way to do that in the queue". Add a per-message
 "stop the reply and send this now" to the queue's controls. The composer no longer offers it.
+
+## Cancelled failure-announcement batches
+
+If an unrelated unkeyed announceError supersedes a card batch before its
+publication microtask, its keys correctly remain unannounced, but retry waits
+for the next card projection change. Consider reporting cancellation from the
+announcement store so useChatCardAnnouncer can requeue without interrupting the
+newer alert. Accepted P3 in the F3a structural sign-off; visible cards are not
+lost.
