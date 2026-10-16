@@ -7,7 +7,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type * as Y from "yjs";
 import type { ChatApplyPlan } from "@/client/query/draft-command-executor";
-import { fetchForCommand } from "@/client/query/fetch-for-command";
+import { cachedForCommand, fetchForCommand } from "@/client/query/fetch-for-command";
 import { draftAttributionQueryOptions } from "@/client/query/useDraftAttribution";
 import { draftMetaQueryOptions } from "@/client/query/useDraftMeta";
 import {
@@ -20,17 +20,22 @@ import { projectRoom } from "./review-frame";
 import { whenAcknowledged } from "./review-runtime";
 import { encodeSnapshot } from "./useDraftApply";
 
-/** The room's changes that belong to this chat: those some of whose AI writes are the chat's (or a subagent's it spawned). */
+/**
+ * The room's changes that belong to this chat: those some of whose AI writes are the chat's (or a subagent's it
+ * spawned). `read: "cached"` (a local Discard) classifies against the attribution already loaded, so an offline
+ * Discard never waits for the network; a write the cached payload lacks reads as unresolved and is refused.
+ */
 export async function chatChangeTargets(
   queryClient: QueryClient,
   draft: { projectId: string; workId: string; documentId: string; itemKey: string },
   doc: Y.Doc,
   threadId: string,
+  read: "fresh" | "cached" = "fresh",
 ) {
-  const attribution = await fetchForCommand(queryClient, {
-    ...draftAttributionQueryOptions(draft),
-    staleTime: 0,
-  });
+  const options = { ...draftAttributionQueryOptions(draft), staleTime: 0 };
+  const attribution = await (read === "cached"
+    ? cachedForCommand(queryClient, options)
+    : fetchForCommand(queryClient, options));
   const frame = projectRoom(doc);
   const classified = classifyRoom(doc, frame, attribution);
   if ([...classified.values()].some((change) => change.unresolved))

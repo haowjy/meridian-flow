@@ -15,7 +15,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type * as Y from "yjs";
 import type { DraftRef } from "@/client/query/draft-command-record";
-import { fetchForCommand } from "@/client/query/fetch-for-command";
+import { cachedForCommand } from "@/client/query/fetch-for-command";
 import { draftMetaQueryOptions } from "@/client/query/useDraftMeta";
 import type { DiscardSubject } from "@/client/query/work-draft-files";
 import { type BranchRoomRead, readBranchRoom, withLiveRoom } from "@/core/editor/branch-room-read";
@@ -203,7 +203,8 @@ export function useHeadlessDiscards(
       const current = () => epoch.current === born;
       setEntries((held) => [...held, { id, subject, change: null, index: 0, phase: "pending" }]);
       const done = (async () => {
-        const meta = await fetchForCommand(queryClient, draftMetaQueryOptions(draft));
+        // A local edit: what the dock already loaded is enough, so an offline Discard does not wait.
+        const meta = await cachedForCommand(queryClient, draftMetaQueryOptions(draft));
         if (meta.kind !== "text" || !current()) return null;
         // Cancelled while the room was looked up: nothing is leased or written.
         if (!histories.current.has(id)) return NOTHING;
@@ -211,7 +212,13 @@ export function useHeadlessDiscards(
         reads.current.set(id, read);
         // The room is checked again after each await: a session that retired meanwhile is not written into.
         return withLiveRoom(read, async (room) => {
-          const { targets } = await chatChangeTargets(queryClient, draft, room.document, threadId);
+          const { targets } = await chatChangeTargets(
+            queryClient,
+            draft,
+            room.document,
+            threadId,
+            "cached",
+          );
           // Cancelled while preparing: nothing is written.
           if (!histories.current.has(id)) return NOTHING;
           // The hint misses this file: nothing of this chat's to discard, so the row never flips.

@@ -44,3 +44,13 @@ export async function fetchForCommand<T>(
     }
   }
 }
+
+/**
+ * A local command's read: the cached value when there is one, else `fetchForCommand`. A Discard is a local
+ * edit, so it must not wait for the network (TanStack pauses a fetch while offline); whatever the cache
+ * lacks is fetched, and a server command (Apply) keeps reading fresh with `fetchForCommand`.
+ */
+export function cachedForCommand<T>(queryClient: QueryClient, options: Options<T>): Promise<T> {
+  const cached = queryClient.getQueryData<T>(options.queryKey);
+  return cached === undefined ? fetchForCommand(queryClient, options) : Promise.resolve(cached);
+}
