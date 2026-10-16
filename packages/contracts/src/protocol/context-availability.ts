@@ -1,4 +1,5 @@
 /** Project-final stable-document availability protocol. */
+import { z } from "zod";
 import type { DocumentId, ProjectId, UserId, WorkId } from "../ids.js";
 import type { WorkSlug } from "../works/work-slug.js";
 import type { CatalogFileEntry } from "./context-catalog.js";
@@ -72,7 +73,9 @@ export type ProjectContextAuthority =
   | { kind: "project"; projectId: ProjectId }
   | { kind: "user"; userId: UserId }
   | { kind: "work"; projectId: ProjectId; workId: WorkId; workSlug: WorkSlug | null }
-  | { kind: "lineage"; projectId: ProjectId; rootThreadId: string; rootThreadRef: string };
+  | { kind: "lineage"; projectId: ProjectId; rootThreadId: string; rootThreadRef: string }
+  /** `chatRef` is null while the chat's row does not exist yet (a New chat's first uploads). */
+  | { kind: "chat"; projectId: ProjectId; chatId: string; chatRef: string | null };
 
 export type ProjectContextIdentityResolution =
   | {
@@ -94,7 +97,7 @@ export type ProjectContextIdentityResolution =
       documentId: DocumentId;
       generation: AvailabilityGeneration;
       authority: ProjectContextAuthority;
-      reason: "work_deleted" | "project_deleted" | "lineage_hidden";
+      reason: "work_deleted" | "project_deleted" | "lineage_hidden" | "chat_hidden";
     }
   | {
       kind: "not-visible";
@@ -132,6 +135,28 @@ export type ProjectContextIdentityLookupResult = {
 export const PROJECT_CONTEXT_AVAILABILITY_MAX_IDS = 128;
 
 /** Owner-scoped browser address lookup; aliases never redirect through another alias. */
+/** Address identity and presentation inputs for reference admission; not an authority grant. */
+export const documentAddressReferenceSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.enum(["current", "alias"]),
+    document: z.object({
+      kind: z.literal("available"),
+      documentId: z.string().min(1),
+      entry: z
+        .object({
+          name: z.string(),
+          editable: z.boolean(),
+          fileType: z.enum(["docx", "image", "pdf", "binary"]).optional(),
+        })
+        .refine(
+          (entry) => entry.editable || entry.fileType !== undefined,
+          "Non-editable references require a fileType",
+        ),
+    }),
+  }),
+  z.object({ kind: z.literal("unavailable") }),
+]);
+
 export type DocumentAddressResult =
   | {
       kind: "current" | "alias";

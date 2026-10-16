@@ -10,6 +10,7 @@ import { createDrizzleLineageScratchLifecycle } from "../../context/adapters/lin
 import { createLocalFileAccessChanges } from "../../file-policy/index.js";
 import { createDrizzleProjectWorkRepository, updateWorkTransition } from "../../projects/index.js";
 import { createDrizzleRepositoriesForTest } from "../../threads/adapters/drizzle/repositories.js";
+import { createDrizzleTopPrimaryChatResolver } from "../../threads/adapters/drizzle/top-primary-chat.js";
 import { rebindThreadWork } from "../../threads/domain/rebind-thread-work.js";
 import {
   classifyHistoryItem,
@@ -46,6 +47,7 @@ else
       threads: repos.threads,
       threadWorks: repos.threadWorks,
       works,
+      topPrimaryChats: createDrizzleTopPrimaryChatResolver(db),
       readChainPermission: async () => "edit" as const,
     });
     const eventWriter = createQuietDrizzleJournalWriter(db);

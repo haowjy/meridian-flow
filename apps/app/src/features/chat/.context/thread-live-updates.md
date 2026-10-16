@@ -9,7 +9,13 @@ streams while the writer watches.
 
 ## Snapshot revalidation
 
-`useThreadSnapshotSync` (`../../../client/query/useThreadSnapshotSync.ts`) owns
+`useThreadSnapshotSync` (`../../../client/query/useThreadSnapshotSync.ts`) is the binding of
+the chat's `ThreadSync` (`createThreadSync`, `@meridian/thread-client/sync`): it creates, starts
+and stops one per mounted chat, and React Query is the fetcher it asks for reads. The rules below
+(refresh triggers, gap checks, the join) are the sync's, shared with `./mf`; the hook keeps the
+fetch. Every completed read reaches `sync.receive` inside the `queryFn`, so the cache publishes
+only reads the sync applied; a `stale` answer throws `StaleThreadSnapshot` and retries after
+`SNAPSHOT_RETRY_MS`. It owns
 the authoritative history fetch. Every producer of the snapshot key builds its options with
 `threadSnapshotQueryOptions` (`../../../client/query/thread-snapshot-query.ts`); the host adds
 the account abort signal and its identity and staleness checks as a guard.
@@ -24,10 +30,10 @@ the account abort signal and its identity and staleness checks as a guard.
   a divider reserves or settles with its execution, so the execution change is
   when those land.
 - **Gap-only refreshes** (same timer): any other record, and the `subscribed`
-  state. When the timer fires, the hook refetches only if the record names a
+  state. When the timer fires, the sync asks for a read only if the record names a
   waiting writer message the transcript lacks (`unheldWriterMessages`) or the
-  store holds a write-mode divider whose anchor turn is missing
-  (`dividersAwaitingAnchor`). The stream carries no user turns, so another
+  cell holds a write-mode divider whose anchor turn is missing
+  (`missing(synced)`). The stream carries no user turns, so another
   client's waiting message reaches a passive tab only through this snapshot.
   Checking at fire time keeps this device's own acknowledged send from
   refetching.
@@ -35,13 +41,13 @@ the account abort signal and its identity and staleness checks as a guard.
   turn. The store's durable wire cursor and snapshot floor reject replay
   rewinds and old HTTP responses.
 
-- `settled` means the snapshot's turns are in the transcript store (or the
-  load failed), not merely fetched: the accepted snapshot is visible one commit
-  before `applyThreadSnapshot` lands it, and a reader such as the turn reveal
-  would take that empty transcript for "no such turn".
+- `settled` means the chat's run-state `history` is set, so the snapshot's turns are in the
+  transcript store (or the load failed), not merely fetched. The sync applies a read before
+  React Query publishes it, so a render never sees the snapshot ahead of its turns; a cell kept
+  from an earlier mount is settled at once.
 
 Both this fetch and the transport's gap recovery funnel through
-`applyThreadSnapshot`. The reconciliation mechanics (identity bridge, monotonic
+`sync.receive` (`applyRead`). The reconciliation mechanics (identity bridge, monotonic
 sequence guard) live in the app-level
 [`../../../../.context/CONTEXT.md`](../../../../.context/CONTEXT.md) "Thread
 snapshot reconciliation" section.
@@ -49,7 +55,7 @@ snapshot reconciliation" section.
 ## Run state and joining a live run
 
 The accepted snapshot, the `subscribed` state and every `meridian.run_state`
-frame go into the run-state slice (`../../../client/run-state/run-state-slice.ts`)
+frame go into the run-state slice (`packages/thread-client/src/run-state/run-state-slice.ts`, held in the chat's `SyncedThread`)
 as whole records; the shared view keeps the newest by version. The admission
 answer adds this device's message intent at its `runStateVersion`
 (`ThreadRunController`, which follows no run). A `meridian.write_mode.switched`
@@ -90,7 +96,7 @@ answer's content is prepended by one checked draft write that also records its
 `received` receipt, and only then is the command retired. A document that would
 not restore after a reload never retires the command. References come back as
 chips only when the chat proves their owner (`chatReferenceResolver`): a
-`scratch://` URI on this chat's lineage handle, `@/` uploads in a No Work chat,
+`scratch://` URI on this chat's lineage handle, `uploads://@/c15/` for this chat's own handle,
 `@slug` for this chat's own Work, or a project or user reference. Anything else,
 another named Work included, comes back as its link text, so no content is lost.
 An image takes its type from the message's image block, not the extension.

@@ -36,6 +36,27 @@ export type ChatDocumentRequest = OpenProjectDocumentRequest & {
   claim?: number;
 };
 
+/**
+ * Opens a chat's own resource (an upload) where this host has a viewer for it, null where it
+ * has none. An upload has no Editor route, so the one viewer is the dock beside a centered chat.
+ * A host without it (the docked chat on Work and Editor pages, the phone) must not offer Open.
+ */
+export function useOpenChatResource(
+  projectId: string | undefined,
+): ReturnType<typeof useOpenChatDocument> | null {
+  const open = useOpenChatDocument(projectId);
+  return useContext(BesideChatContext) ? open : null;
+}
+
+/** Whether a reference to `uri` can be opened here: an upload only where its viewer is. */
+export function useCanOpenChatReference(): (uri: string) => boolean {
+  const hasResourceViewer = useContext(BesideChatContext) !== null;
+  return useCallback(
+    (uri) => hasResourceViewer || !uri.startsWith("uploads://"),
+    [hasResourceViewer],
+  );
+}
+
 export function useOpenChatDocument(
   projectId: string | undefined,
 ): (request: ChatDocumentRequest) => ReturnType<OpenProjectDocument> {

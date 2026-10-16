@@ -489,7 +489,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const withFile = await works.create({ projectId: PROJECT_ID, name: "With file" });
       const [source] = await db
         .insert(schema.contextSources)
-        .values({ workId: withFile.id, name: "Uploads", slug: "uploads", scope: "work" })
+        .values({ workId: withFile.id, name: "Scratch", slug: "scratch", scope: "work" })
         .returning();
       if (!source) throw new Error("Expected context source");
       const [document] = await db
@@ -1229,9 +1229,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await threadRepos.threads.setTrashState(expiredTrashThreadId as never, "deleted");
       const [source] = await db
         .insert(schema.contextSources)
-        .values({ workId: work.id, name: "Uploads", slug: "uploads", scope: "work" })
+        .values({
+          projectId: PROJECT_ID,
+          chatThreadId: THREAD_ID,
+          name: "Uploads",
+          slug: "uploads",
+          scope: "chat",
+        })
         .returning();
-      if (!source) throw new Error("Expected Work Uploads source");
+      if (!source) throw new Error("Expected the chat's Uploads source");
       const [document] = await db
         .insert(schema.documents)
         .values({
@@ -1274,7 +1280,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         intakeId: "purge-intake",
         actorUserId: USER_ID,
-        workId: work.id,
+        ownerThreadId: THREAD_ID,
         contextSourceId: source.id,
         documentId: document.id,
         fingerprint: "fingerprint",
@@ -1284,7 +1290,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         finalPath: "reference.png",
         objectKey,
         fileType: "png",
-        canonicalUri: `uploads://@${work.slug}/reference.png`,
         locationRevision: crypto.randomUUID(),
         state: "finalized",
         storageUrl: stored.value.storageUrl,
@@ -1342,7 +1347,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ),
       ).resolves.toEqual([]);
       await expect(
-        db.select().from(schema.uploadIntakes).where(eq(schema.uploadIntakes.workId, work.id)),
+        db
+          .select()
+          .from(schema.uploadIntakes)
+          .where(eq(schema.uploadIntakes.ownerThreadId, THREAD_ID as never)),
       ).resolves.toEqual([]);
       await expect(
         db
@@ -1386,7 +1394,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const insertBarrier = 748_210_843;
       const work = await works.create({ projectId: PROJECT_ID, name: "Creation race" });
       const { createWorkContextDocumentStore } = await import("../context/index.js");
-      const store = createWorkContextDocumentStore(db, work.id, "uploads");
+      const store = createWorkContextDocumentStore(db, work.id, "scratch");
       await control.unsafe(`
         CREATE FUNCTION test_block_work_document_insert() RETURNS trigger
         LANGUAGE plpgsql AS $$

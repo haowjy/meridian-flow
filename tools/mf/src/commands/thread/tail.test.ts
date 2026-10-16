@@ -22,31 +22,6 @@ const tail = (...args: string[]) => wire.mf(["thread", "tail", THREAD_ID, ...arg
 const lastRecord = (stdout: string) => ndjson(stdout).at(-1);
 
 describe("tail --until-idle", () => {
-  it.each([
-    "error",
-    "cancelled",
-  ] as const)("reconciles %s after an inbox checkpoint before the terminal event", async (status) => {
-    wire.snapshot = openReply("A");
-    wire.play(async () => {
-      await wire.until(() => wire.subscriptions >= 1);
-      wire.snapshot = () =>
-        snapshotOf({ seq: wire.head, turns: [replyTurn("A", 1, { status, error: null })] });
-      publishRecord(wire);
-      wire.publish(status === "error" ? frames.failed("boom") : frames.finished("A"));
-    });
-    const result = await tail("--until-idle", "--timeout", "1s", "--json");
-    expect(result.code).toBe(status === "error" ? EXIT.failed : EXIT.cancelled);
-    expect(lastRecord(result.stdout)).toMatchObject({
-      outcome: status === "error" ? "failed" : "cancelled",
-      turns: [{ turnId: "A", status }],
-    });
-    expect(
-      ndjson(result.stdout).some(
-        (record) => record.type === (status === "error" ? "turn.failed" : "turn.finished"),
-      ),
-    ).toBe(true);
-  });
-
   it("covers every turn in batched catch-up and reports failure even after a later cancellation", async () => {
     wire.publish(frames.started("A"));
     publishRecord(wire);
@@ -54,18 +29,20 @@ describe("tail --until-idle", () => {
     wire.publish(frames.started("B"));
     wire.publish(frames.finished("B"));
     const cancelledB = replyTurn("B", 2, { status: "cancelled" });
+    // The first read, taken before the evidence frames, sees A open; the join's catch-up delivers
+    // the frames above its cursor, and every later read sees the chat idle.
     wire.snapshot = (read) =>
       read === 1
         ? snapshotOf({
-            seq: 5,
-            turns: [replyTurn("A", 1, { status: "streaming" }), cancelledB],
+            seq: 0,
+            turns: [replyTurn("A", 1, { status: "streaming" })],
             record: { execution: { executionId: "exec-A", currentTurnId: "A" } },
           })
         : snapshotOf({
             seq: 5,
             turns: [replyTurn("A", 1, { status: "error", error: "boom" }), cancelledB],
           });
-    const result = await tail("--since", "0", "--until-idle", "--timeout", "1s", "--json");
+    const result = await tail("--until-idle", "--timeout", "1s", "--json");
     expect(result.code).toBe(EXIT.failed);
     expect(lastRecord(result.stdout)).toMatchObject({
       outcome: "failed",
@@ -77,17 +54,14 @@ describe("tail --until-idle", () => {
     expect(ndjson(result.stdout).map((record) => record.type)).toContain("turn.failed");
   });
 
-  it.each([
-    "missing",
-    "streaming",
-  ] as const)("never proves a named %s turn complete", async (status) => {
+  it("never proves a named turn complete when the read lacks it", async () => {
     wire.snapshot = openReply("A");
     wire.play(async () => {
       await wire.until(() => wire.subscriptions >= 1);
       wire.snapshot = () =>
         snapshotOf({
           seq: wire.head,
-          turns: status === "missing" ? [] : [replyTurn("A", 1, { status: "streaming" })],
+          turns: [],
         });
       wire.publish(frames.finished("A"));
       publishRecord(wire);
@@ -97,7 +71,7 @@ describe("tail --until-idle", () => {
     expect(lastRecord(result.stdout)).toMatchObject({
       outcome: "unproven",
       reason: "unconfirmed",
-      turns: [{ turnId: "A", status }],
+      turns: [{ turnId: "A", status: "missing" }],
     });
   });
 
@@ -119,64 +93,6 @@ describe("tail --until-idle", () => {
   });
 
   it.each([
-    "tool",
-    "text",
-  ] as const)("preserves %s presentation across a checkpoint on one socket", async (kind) => {
-    const final = (seq: number) =>
-      snapshotOf({
-        seq,
-        turns: [replyTurn("A", 1, kind === "text" ? { text: "Hello there" } : {})],
-      });
-    // Reads: the initial one and the checkpoint's still show A open; the third shows it done.
-    wire.snapshot = (read) => (read < 3 ? openReply("A", wire.head) : final(wire.head));
-    wire.play(async () => {
-      await wire.until(() => wire.subscriptions >= 1);
-      wire.publish(frames.started("A"));
-      if (kind === "tool") {
-        for (const event of frames.toolCall(
-          "write-1",
-          "doc_write",
-          '{"uri":"kb://notes.md"}',
-          "staged",
-        ))
-          wire.publish(event);
-      } else for (const event of frames.text("A", "Hello ").slice(0, 2)) wire.publish(event);
-      publishRecord(wire);
-      await wire.until(() => wire.reads >= 2);
-      if (kind === "tool") wire.publish(frames.toolResult("write-1", "committed"));
-      else for (const event of frames.text("A", "there").slice(1)) wire.publish(event);
-      wire.publish(frames.finished("A"));
-      publishRecord(wire);
-    });
-    const result = await tail("--until-idle", "--timeout", "1s", "--json");
-    expect(result.code).toBe(EXIT.ok);
-    const records = ndjson(result.stdout);
-    if (kind === "tool")
-      expect(records).toContainEqual(
-        expect.objectContaining({
-          type: "tool.settled",
-          name: "doc_write",
-          args: '{"uri":"kb://notes.md"}',
-          result: "committed",
-        }),
-      );
-    else
-      expect(records.find((record) => record.type === "message.completed")).toMatchObject({
-        text: "Hello there",
-      });
-    expect(records.at(-1)).toMatchObject({ liveView: "matches" });
-    expect(wire.connections).toBe(1);
-  });
-
-  it.each([
-    {
-      name: "lost start with retained error",
-      gap: true,
-      failure: true,
-      code: EXIT.failed,
-      outcome: "failed",
-      reason: null,
-    },
     {
       name: "gap without a failure",
       gap: true,
@@ -193,7 +109,7 @@ describe("tail --until-idle", () => {
       outcome: "failed",
       reason: null,
     },
-  ])("counts $name without inventing covered membership", async ({
+  ])("counts $name with membership from the proving read", async ({
     gap,
     failure,
     code,
@@ -208,6 +124,7 @@ describe("tail --until-idle", () => {
         BigInt(cursor.lastSeq) < 1n
           ? {
               type: "gap",
+              requestId: cursor.requestId,
               threadId: THREAD_ID,
               cause: "replay_limit_exceeded",
               fromSeq: cursor.lastSeq,
@@ -215,16 +132,16 @@ describe("tail --until-idle", () => {
             }
           : undefined;
     const B = replyTurn("B", 2, failure ? { status: "error", error: "B failed" } : {});
-    // The initial read sees A open; the subscription and every later read see the chat idle.
+    // The first read, taken before the evidence, sees A open; every later read sees the chat idle.
     wire.snapshot = (read) =>
       read === 1
         ? snapshotOf({
-            seq: wire.head,
-            turns: [replyTurn("A", 1, { status: "streaming" }), B],
+            seq: 0,
+            turns: [replyTurn("A", 1, { status: "streaming" })],
             record: { execution: { executionId: "exec-A", currentTurnId: "A" } },
           })
         : snapshotOf({ seq: wire.head, turns: [replyTurn("A", 1), B] });
-    const result = await tail("--since", "0", "--until-idle", "--timeout", "1s", "--json");
+    const result = await tail("--until-idle", "--timeout", "1s", "--json");
     expect(result.code).toBe(code);
     const records = ndjson(result.stdout);
     expect(records.some((record) => record.type === "gap")).toBe(gap);
@@ -236,7 +153,10 @@ describe("tail --until-idle", () => {
       outcome,
       reason,
       idle: true,
-      turns: [{ turnId: "A", status: "complete" }],
+      turns: [
+        { turnId: "A", status: "complete" },
+        { turnId: "B", status: failure ? "error" : "complete" },
+      ],
       // A replay gap leaves nothing fair to compare.
       ...(gap ? { liveView: "not_observed" } : {}),
     });

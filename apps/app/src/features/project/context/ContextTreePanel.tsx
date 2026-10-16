@@ -2,10 +2,8 @@
 
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import {
-  isWorkScopedProjectContextScheme,
-  type ProjectContextTreeScheme,
-} from "@meridian/contracts/protocol";
+import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
+import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { FilePlus, FolderPlus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
@@ -79,7 +77,7 @@ export function ContextTreePanel({
   const catalogs = useContextCatalogViews(projectId, schemes, { workId: editorWorkId });
   const renderScheme = (scheme: (typeof EDITOR_CONTEXT_SCHEMES)[number]) => (
     <SchemeSection
-      key={`${projectId}:${scheme}:${isWorkScopedProjectContextScheme(scheme) ? editorWorkId : "project"}`}
+      key={`${projectId}:${scheme}:${isWorkScopedScheme(scheme) ? editorWorkId : "project"}`}
       projectId={projectId}
       editorWorkId={editorWorkId}
       scheme={scheme}
@@ -152,7 +150,7 @@ function SchemeSection({
   }, [catalog, isComplete]);
   const { expanded, setExpanded, isExpanded, toggleEntry, setExpandedEntryIds } = useTreeExpansion(
     projectId,
-    `editor:${scheme}:${isWorkScopedProjectContextScheme(scheme) ? editorWorkId : "project"}`,
+    `editor:${scheme}:${isWorkScopedScheme(scheme) ? editorWorkId : "project"}`,
     folderIds,
   );
   const activeLocationPath = activeScheme === scheme ? activePath : null;

@@ -12,8 +12,11 @@ never into `apps/app`; the chat session moves the rest.
 - Depend on `@meridian/contracts` and the light `@meridian/markup/links`
   subpath, never app or server code, Yjs or ProseMirror.
 - Event application lives here: `createTurnReducer` over a `TurnStore` port.
-  The app's Zustand store and `InMemoryTurnStore` both implement it, and the
-  app's parity test keeps them equal. Do not fork reducer behavior into a client.
+  Hosts hold one `SyncedThread` per chat; `syncedTurnStore` is the one adapter over it. Do not fork reducer behavior into a client.
+- The chat's sync lives here too: `createThreadSync` (`sync/`) decides when to read, what is
+  missing, how a read applies and joins replay, and in what order frames reach the turns. Hosts
+  give it ports (state cell, `requestSnapshot`, `observe`, signal) and never re-implement those
+  rules; it never fetches, and every completed read comes back through `receive`.
 - `view/` is also a subpath, `@meridian/thread-client/view`, for the server: it
   exports `replyDrawsNothing`, the one rule for "this failed reply draws nothing", so the
   server's forgetting and the client's hiding cannot drift.

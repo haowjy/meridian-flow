@@ -1,10 +1,8 @@
 /** Plain-data orchestration for committing a writer-visible context identity. */
 
+import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { MoveContextEntryRequest, MoveContextEntryResult } from "@meridian/contracts/protocol";
-import {
-  isProjectContextTreeScheme,
-  isWorkScopedProjectContextScheme,
-} from "@meridian/contracts/protocol";
+import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { ResolvedWorkAuthority } from "@meridian/contracts/works";
 import { createError } from "nitro/h3";
@@ -92,6 +90,13 @@ export type ResolvedContextMove = {
   name?: string;
 };
 
+function uploadsNotMovable() {
+  return createError({
+    statusCode: 400,
+    message: "Uploads belong to the chat that received them and can't be moved",
+  });
+}
+
 function parseWorkId(raw: unknown, field: "sourceWorkId" | "destinationWorkId") {
   if (raw === undefined || raw === null) return null;
   if (typeof raw !== "string" || raw.trim() === "") {
@@ -110,6 +115,7 @@ function parseLocator(input: {
   if (!isProjectContextTreeScheme(input.scheme)) {
     throw createError({ statusCode: 400, message: "Context scheme is invalid" });
   }
+  if (input.scheme === "uploads") throw uploadsNotMovable();
   if (input.rootThreadId != null) {
     if (input.scheme !== "scratch" || input.workId)
       throw createError({ statusCode: 400, message: "Choose one Scratch owner" });
@@ -120,7 +126,7 @@ function parseLocator(input: {
       rootThreadId: requireRequestId(input.rootThreadId, "rootThreadId"),
     };
   }
-  if (isWorkScopedProjectContextScheme(input.scheme)) {
+  if (isWorkScopedScheme(input.scheme)) {
     if (!input.workId) {
       return { scope: "none", scheme: input.scheme, path: input.path };
     }
@@ -463,6 +469,7 @@ export async function handleContextMoveRequest(
     const parsed = parseUnifiedContextUri(uri);
     if (!parsed.ok) contextErrorToHttp(parsed.error);
     const { scheme, path, authority } = parsed.value;
+    if (scheme === "uploads") throw uploadsNotMovable();
     if (authority.kind === "work" || authority.kind === "none") {
       const resolved =
         authority.kind === "none"

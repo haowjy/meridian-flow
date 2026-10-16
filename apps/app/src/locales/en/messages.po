@@ -171,11 +171,6 @@ msgstr "{0} is not an image. Choose a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 msgid "{0} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 msgstr "{0} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 
-#. placeholder {0}: destination.name
-#: src/features/project/context/ContextViewer.tsx
-#~ msgid "{0} isn't in {section}."
-#~ msgstr "{0} isn't in {section}."
-
 #. placeholder {0}: children.length
 #: src/features/chat/RunningSubagentsStrip.tsx
 msgid "{0} running"
@@ -230,6 +225,10 @@ msgstr "{binary} is a binary file."
 msgid "{count, plural, one {# change} other {# changes}}"
 msgstr "{count, plural, one {# change} other {# changes}}"
 
+#: src/features/chat/ChatUploadsMenu.tsx
+msgid "{count, plural, one {# file} other {# files}}"
+msgstr "{count, plural, one {# file} other {# files}}"
+
 #: src/features/chat/tool-result-preview.ts
 msgid "{count, plural, one {# match} other {# matches}}"
 msgstr "{count, plural, one {# match} other {# matches}}"
@@ -245,6 +244,10 @@ msgstr "{count, plural, one {# paragraph removed} other {# paragraphs removed}}"
 #: src/features/draft-review/ReviewStepper.tsx
 msgid "{count} changes"
 msgstr "{count} changes"
+
+#: src/features/chat/chat-upload-display.ts
+msgid "{days, plural, one {# day ago} other {# days ago}}"
+msgstr "{days, plural, one {# day ago} other {# days ago}}"
 
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "{days, plural, one {# day left} other {# days left}}"
@@ -270,6 +273,10 @@ msgstr "{filename} did not import. It stayed a link."
 msgid "{full}, summary"
 msgstr "{full}, summary"
 
+#: src/features/chat/chat-upload-display.ts
+msgid "{hours, plural, one {# hour ago} other {# hours ago}}"
+msgstr "{hours, plural, one {# hour ago} other {# hours ago}}"
+
 #: src/lib/date-groups.ts
 msgid "{hours}h"
 msgstr "{hours}h"
@@ -293,6 +300,10 @@ msgstr "{mark} on “{text}”"
 #: src/features/chat/tool-result-preview.ts
 msgid "{matches} results in {inDocuments}"
 msgstr "{matches} results in {inDocuments}"
+
+#: src/features/chat/chat-upload-display.ts
+msgid "{minutes} min ago"
+msgstr "{minutes} min ago"
 
 #: src/lib/date-groups.ts
 msgid "{minutes}m"
@@ -480,6 +491,10 @@ msgstr "Active Work"
 #: src/components/app/composer/placeholders.ts
 msgid "Actually…"
 msgstr "Actually…"
+
+#: src/features/chat/ChatUploadsMenu.tsx
+msgid "Add {name} to your message"
+msgstr "Add {name} to your message"
 
 #: src/features/project/chat-list/ProjectChatRow.tsx
 msgid "Add {title} to favorites"
@@ -992,6 +1007,7 @@ msgstr "Close the list"
 msgid "Closed"
 msgstr "Closed"
 
+#: src/features/chat/chat-upload-display.ts
 #: src/features/draft-review/operation-change-text.ts
 msgid "Code"
 msgstr "Code"
@@ -1109,6 +1125,10 @@ msgstr "Confirming your purchase…"
 #: src/components/app/ConnectionBanner.tsx
 msgid "Connection lost. Retrying… attempt {0}"
 msgstr "Connection lost. Retrying… attempt {0}"
+
+#: src/features/chat/ChatUploadsMenu.tsx
+msgid "Continues from <0/>"
+msgstr "Continues from <0/>"
 
 #: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/compaction/useControlTurnAnnouncements.ts
@@ -1296,6 +1316,10 @@ msgstr "Couldn't delete this document. Try again."
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Couldn't delete this entry. Try again."
 msgstr "Couldn't delete this entry. Try again."
+
+#: src/features/chat/ChatUploadsMenu.tsx
+msgid "Couldn’t delete this file. Try again."
+msgstr "Couldn’t delete this file. Try again."
 
 #: src/features/project/context/NamespaceFailureMark.tsx
 msgid "Couldn't delete this folder. Try again."
@@ -1698,6 +1722,10 @@ msgstr "Default alignment"
 msgid "Delete"
 msgstr "Delete"
 
+#: src/features/chat/ChatUploadsMenu.tsx
+msgid "Delete {name}"
+msgstr "Delete {name}"
+
 #: src/features/project/chat-list/ProjectChatRow.tsx
 msgid "Delete chat"
 msgstr "Delete chat"
@@ -2064,6 +2092,10 @@ msgstr "fig:terrace"
 msgid "Figure could not be loaded."
 msgstr "Figure could not be loaded."
 
+#: src/features/chat/chat-upload-display.ts
+msgid "File"
+msgstr "File"
+
 #: src/features/project/context/IdentityChips.tsx
 msgid "File it"
 msgstr "File it"
@@ -2081,11 +2113,20 @@ msgstr "File suggestions"
 msgid "File this document"
 msgstr "File this document"
 
+#: src/features/chat/ChatUploadsMenu.tsx
 #: src/features/project/context/PendingDocumentPath.tsx
 #: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Files"
 msgstr "Files"
+
+#: src/features/chat/ChatUploadsMenu.tsx
+msgid "Files attached in this chat, {count}"
+msgstr "Files attached in this chat, {count}"
+
+#: src/features/chat/ChatUploadsMenu.tsx
+msgid "Files in this chat"
+msgstr "Files in this chat"
 
 #: src/features/chat/SubagentHeader.tsx
 msgid "Filter subagents"
@@ -2199,6 +2240,7 @@ msgstr "Handoff brief ready"
 msgid "Handoff brief stopped"
 msgstr "Handoff brief stopped"
 
+#: src/features/chat/compaction/useControlTurnAnnouncements.ts
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 #~ msgid "Handoff brief unavailable"
 #~ msgstr "Handoff brief unavailable"
@@ -2263,6 +2305,7 @@ msgstr "Id"
 msgid "Identity"
 msgstr "Identity"
 
+#: src/features/chat/chat-upload-display.ts
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "Image"
@@ -2376,6 +2419,10 @@ msgstr "Italic"
 #: src/features/chat/thread-report-renderer.tsx
 msgid "Jump to in chat"
 msgstr "Jump to in chat"
+
+#: src/features/chat/chat-upload-display.ts
+msgid "Just now"
+msgstr "Just now"
 
 #: src/features/chat/DraftDock.tsx
 #: src/features/project/work/WorkChanges.tsx
@@ -2564,6 +2611,10 @@ msgstr "Manage billing"
 #: src/features/project/context/context-schemes.ts
 msgid "Manuscript"
 msgstr "Manuscript"
+
+#: src/features/chat/chat-upload-display.ts
+msgid "Markdown"
+msgstr "Markdown"
 
 #. placeholder {0}: formatPreset(amountOptions.maxUsd)
 #: src/features/billing/ExtraUsagePicker.tsx
@@ -2837,6 +2888,10 @@ msgstr "No favorite chats yet."
 msgid "No fields required; confirm to continue."
 msgstr "No fields required; confirm to continue."
 
+#: src/features/chat/ChatUploadsMenu.tsx
+msgid "No files attached in this chat yet."
+msgstr "No files attached in this chat yet."
+
 #: src/features/editor/surfaces/link/AtReferenceMenu.tsx
 msgid "No files in {containerLabel}."
 msgstr "No files in {containerLabel}."
@@ -2929,6 +2984,10 @@ msgstr "Not Found"
 msgid "Not reported"
 msgstr "Not reported"
 
+#: src/features/chat/chat-upload-display.ts
+msgid "Notebook"
+msgstr "Notebook"
+
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Nothing here yet"
 msgstr "Nothing here yet"
@@ -2996,6 +3055,10 @@ msgstr "Open {0} ({1})"
 #: src/features/chat/PassageDoor.tsx
 msgid "Open {0} at this passage. {1}"
 msgstr "Open {0} at this passage. {1}"
+
+#: src/features/chat/ChatUploadsMenu.tsx
+msgid "Open {name}"
+msgstr "Open {name}"
 
 #: src/features/chat/DocumentName.tsx
 #: src/features/home/ProjectLibrary.tsx
@@ -3122,6 +3185,10 @@ msgstr "Paste"
 msgid "Paused to reread"
 msgstr "Paused to reread"
 
+#: src/features/chat/chat-upload-display.ts
+msgid "PDF"
+msgstr "PDF"
+
 #: src/features/project/work/WorkChanges.tsx
 msgid "Pending drafts couldn’t load"
 msgstr "Pending drafts couldn’t load"
@@ -3190,10 +3257,6 @@ msgstr "Purchase confirmed."
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Put the caret in a table first."
 msgstr "Put the caret in a table first."
-
-#: src/features/chat/UserTurn.tsx
-#~ msgid "Queued"
-#~ msgstr "Queued"
 
 #: src/features/chat/thread-controls/QueuedControlRows.tsx
 msgid "Queued commands"
@@ -3316,10 +3379,6 @@ msgstr "Reference a file"
 #: src/components/app/ConnectionBanner.tsx
 msgid "Refresh"
 msgstr "Refresh"
-
-#: src/features/project/context/ContextViewer.tsx
-#~ msgid "Refresh to try again."
-#~ msgstr "Refresh to try again."
 
 #: src/features/billing/UsageCard.tsx
 msgid "remaining"
@@ -3808,6 +3867,10 @@ msgstr "Something went wrong while reading that document."
 msgid "Split cell"
 msgstr "Split cell"
 
+#: src/features/chat/chat-upload-display.ts
+msgid "Spreadsheet data"
+msgstr "Spreadsheet data"
+
 #: src/features/project/work/WorkCollection.tsx
 msgid "Start a Work"
 msgstr "Start a Work"
@@ -4000,6 +4063,7 @@ msgstr "Talk it out"
 msgid "Tap a change to go to it in the manuscript."
 msgstr "Tap a change to go to it in the manuscript."
 
+#: src/features/chat/chat-upload-display.ts
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "Text"
 msgstr "Text"
@@ -4148,10 +4212,6 @@ msgstr "The AI asked you a question"
 msgid "The AI provider turned this request down."
 msgstr "The AI provider turned this request down."
 
-#: src/features/project/context/ContextViewer.tsx
-#~ msgid "The assistant referred to this document, but it isn't there now. It may have been renamed, deleted, or never finished being created."
-#~ msgstr "The assistant referred to this document, but it isn't there now. It may have been renamed, deleted, or never finished being created."
-
 #: src/features/editor/surfaces/objects/verb-feedback.tsx
 msgid "The browser blocked the clipboard. Check this site's permissions."
 msgstr "The browser blocked the clipboard. Check this site's permissions."
@@ -4209,6 +4269,7 @@ msgstr "The requested passage wasn't specific enough."
 msgid "The server couldn't do that. Try again."
 msgstr "The server couldn't do that. Try again."
 
+#: src/features/chat/ChatUploadsMenu.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "the source chat"
 msgstr "the source chat"
@@ -4387,10 +4448,6 @@ msgstr "This compaction already started."
 #: src/features/chat/chat-card-copy.ts
 msgid "This conversation couldn't be compacted."
 msgstr "This conversation couldn't be compacted."
-
-#: src/features/project/context/ContextViewer.tsx
-#~ msgid "This destination couldn't load."
-#~ msgstr "This destination couldn't load."
 
 #: src/features/project/routing/ProjectRouteBoundary.tsx
 msgid "This destination couldn’t load."
@@ -4826,10 +4883,6 @@ msgstr "Viewing chat resources is not available yet. These files remain availabl
 msgid "Wait for this response to finish, then try again."
 msgstr "Wait for this response to finish, then try again."
 
-#: src/features/chat/UserTurn.tsx
-#~ msgid "Waiting for usage"
-#~ msgstr "Waiting for usage"
-
 #: src/features/draft-review/DraftImagePreview.tsx
 msgid "Waiting for your review"
 msgstr "Waiting for your review"
@@ -4873,6 +4926,10 @@ msgstr "What's on your mind?"
 #: src/components/app/composer/placeholders.ts
 msgid "Where were we?"
 msgstr "Where were we?"
+
+#: src/features/chat/chat-upload-display.ts
+msgid "Word document"
+msgstr "Word document"
 
 #: src/features/chat/ComposerWorkControl.tsx
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
@@ -4940,6 +4997,7 @@ msgstr "Writing"
 msgid "Writing the handoff brief"
 msgstr "Writing the handoff brief"
 
+#: src/features/chat/chat-upload-display.ts
 #: src/features/project/RecencyGroupedList.tsx
 msgid "Yesterday"
 msgstr "Yesterday"

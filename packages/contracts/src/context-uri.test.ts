@@ -5,6 +5,7 @@ import {
   documentTitleFromUri,
   isDraftedScheme,
   parseContextUri,
+  qualifyContextUriByHolder,
 } from "./context-uri.js";
 
 describe("parseContextUri", () => {
@@ -55,17 +56,37 @@ describe("parseContextUri", () => {
       ok: true,
       value: { authority: { kind: "contextual" }, normalized: "uploads://draft.png" },
     });
-    expect(parseContextUri("uploads://@revision-pass/draft.png")).toMatchObject({
+    // No Work's `@/` and a Work's `@slug` name no chat, so they are not uploads addresses.
+    for (const uri of ["uploads://@revision-pass/draft.png", "uploads://@/"])
+      expect(parseContextUri(uri)).toMatchObject({
+        ok: false,
+        error: { reason: expect.stringContaining("belong to a chat") },
+      });
+    // Uploads belong to a chat: `@/` plus the chat's handle, never `@/` alone.
+    expect(parseContextUri("uploads://@/c15/draft.png")).toMatchObject({
       ok: true,
       value: {
-        authority: { kind: "work", workSlug: "revision-pass" },
-        normalized: "uploads://@revision-pass/draft.png",
+        authority: { kind: "chat", chatRef: "c15" },
+        normalized: "uploads://@/c15/draft.png",
       },
     });
-    expect(parseContextUri("uploads://@/draft.png")).toMatchObject({
-      ok: true,
-      value: { authority: { kind: "none" }, normalized: "uploads://@/draft.png" },
+    expect(canonicalContextUri("uploads", "./a//b.png", { kind: "chat", chatRef: "c15" })).toBe(
+      "uploads://@/c15/a/b.png",
+    );
+    expect(parseContextUri("uploads://@/p3/draft.png")).toMatchObject({
+      ok: false,
+      error: { reason: expect.stringContaining("not a subagent") },
     });
+    expect(() =>
+      canonicalContextUri("scratch", "a.png", { kind: "chat", chatRef: "c1" }),
+    ).toThrow();
+    // A chat holder supplies uploads; a Work holder does not.
+    expect(qualifyContextUriByHolder("uploads://a.png", "uploads://@/c15/b.png")).toBe(
+      "uploads://@/c15/a.png",
+    );
+    expect(qualifyContextUriByHolder("uploads://a.png", "scratch://@revision/b.md")).toBe(
+      "uploads://a.png",
+    );
     // A chat's Scratch is named by its first chat's handle: `@/` plus the handle, never `@/` alone.
     expect(parseContextUri("scratch://@/c12/notes/a.md")).toMatchObject({
       ok: true,

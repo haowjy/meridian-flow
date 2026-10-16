@@ -19,7 +19,10 @@ import {
   upsertThreadInProject,
 } from "@/client/query/project-thread-cache";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
-import { invalidateThreadProjectionDependencies } from "@/client/query/thread-work-binding-cache";
+import {
+  invalidateThreadKeys,
+  invalidateThreadProjectionDependencies,
+} from "@/client/query/thread-work-binding-cache";
 
 export interface ThreadCachePort {
   /** Optimistically insert/merge a thread into its project's cached list. */
@@ -30,8 +33,13 @@ export interface ThreadCachePort {
    * Invalidate the persisted projections for a terminal turn: the thread
    * snapshot and, when the owning project is known, Work draft-review lists,
    * its thread list, canonical Work catalog, and the project's context trees.
+   * `snapshot: false` leaves the snapshot to the caller, which asks for its own read.
    */
-  invalidateThread(threadId: string, projectId: string | null): void;
+  invalidateThread(
+    threadId: string,
+    projectId: string | null,
+    options?: { snapshot?: boolean },
+  ): void;
   /** Refetch the durable snapshot when a historical live projection has no loaded turn. */
   invalidateThreadSnapshot(threadId: string): void;
 }
@@ -50,7 +58,8 @@ export function createThreadCache(
     patchThread(threadId, lifecycle) {
       projectThreadLifecycleInProjectCaches(client, threadId, lifecycle);
     },
-    invalidateThread(threadId, projectId) {
+    invalidateThread(threadId, projectId, options) {
+      const skipSnapshot = options?.snapshot === false;
       // Deferred to a microtask: terminal-turn invalidation runs inside the
       // live event reducer, so firing `invalidateQueries` synchronously could
       // schedule a refetch + React update during a render/notification phase.
@@ -65,9 +74,10 @@ export function createThreadCache(
             refreshLists: true,
             workIds: "all",
             contextTrees: "all",
+            skipSnapshot,
           });
         } else {
-          void client.invalidateQueries({ queryKey: threadQueryKeys.thread(threadId) });
+          void invalidateThreadKeys(client, threadId, skipSnapshot);
         }
       });
     },

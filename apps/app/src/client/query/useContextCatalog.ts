@@ -1,12 +1,15 @@
 /** React Query acquisition and flat selectors over one normalized ID cache. */
-import { parseContextUri } from "@meridian/contracts/context-uri";
+import {
+  isOwnedContextScheme,
+  isWorkScopedScheme,
+  parseContextUri,
+} from "@meridian/contracts/context-uri";
 import {
   type CatalogFileEntry,
   type CatalogScope,
   type CatalogWakeHint,
   catalogScopeKey,
   contextOwner,
-  isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import {
@@ -22,7 +25,7 @@ import {
   type ResourcePlacement,
   type ResourceRecord,
   resourceContextAuthority,
-  resourceUriQualifier,
+  resourceContextUri,
   sameCatalogProjectionScope,
 } from "@meridian/resource-replica";
 import {
@@ -54,11 +57,17 @@ import type { ContextOwner } from "./context-request-options";
 import { projectQueryKeys } from "./project-query-keys";
 import { useIsProjectPendingCreation } from "./useProjectCreation";
 
-/** The catalog listing a scheme's documents for this owner; null when a Work-scoped scheme has none. */
+/** Who a catalog request is for: a Work or lineage holds Scratch, and a chat holds its uploads. */
+export type CatalogOwner = {
+  workId?: string | null;
+  rootThreadId?: string;
+  chatId?: string | null;
+};
+
 /**
  * The catalog an aggregate view (the link index) reads a scheme from. Scratch
- * reads with the lineage when there is one; Uploads always reads with the Work
- * row, so a lineage scope still has a scope, and a catalog, for every scheme.
+ * reads with the lineage when there is one, else the Work; Uploads read with the
+ * chat, and have no catalog where there is none.
  */
 export function aggregateCatalogScope(
   projectId: string,
@@ -66,35 +75,35 @@ export function aggregateCatalogScope(
   owners: {
     workId?: string | null;
     rootThreadId?: string | null;
-    uploadsWorkId?: string | null;
+    chatId?: string | null;
   },
 ): CatalogScope | null {
-  return contextCatalogScope(
-    projectId,
-    scheme,
-    scheme === "uploads" && owners.uploadsWorkId
-      ? { workId: owners.uploadsWorkId }
-      : contextOwner(owners.workId, owners.rootThreadId),
-  );
+  return contextCatalogScope(projectId, scheme, {
+    ...contextOwner(owners.workId, owners.rootThreadId),
+    chatId: owners.chatId,
+  });
 }
 
+/** The catalog listing a scheme's documents for this owner; null when its owner is not known. */
 export function contextCatalogScope(
   projectId: string,
   scheme: ProjectContextTreeScheme,
-  owner: ContextOwner,
+  owner: CatalogOwner,
 ): CatalogScope | null {
   if (scheme === "user") return { kind: "user", userId: "self" };
+  if (scheme === "uploads")
+    return owner.chatId ? { kind: "chat", projectId, chatId: owner.chatId } : null;
   if (scheme === "scratch" && owner.rootThreadId)
     return { kind: "lineage", projectId, rootThreadId: owner.rootThreadId };
-  if (scheme === "scratch" || scheme === "uploads") {
+  if (scheme === "scratch") {
     return owner.workId ? { kind: "work", projectId, workId: owner.workId } : null;
   }
   return { kind: "project", projectId };
 }
 
 /**
- * The one creation gate for a chat's catalog scopes. Only a lineage scope waits
- * on its chat's creation; other scopes already exist on the server.
+ * The one creation gate for a chat's catalog scopes. Only a lineage or chat scope
+ * waits on its chat's creation; other scopes already exist on the server.
  *
  * Hidden constraint: `prefetchQuery` and `fetchQuery` ignore `enabled`, so a
  * gate must remove the scope from the list a reader builds, not just disable
@@ -103,9 +112,12 @@ export function contextCatalogScope(
 export function catalogScopeReady(
   scope: CatalogScope,
   enabled: boolean,
-  lineagePending: boolean,
+  pending: { lineage: boolean; chat: boolean },
 ): boolean {
-  return enabled && !(scope.kind === "lineage" && lineagePending);
+  return (
+    enabled &&
+    !((scope.kind === "lineage" && pending.lineage) || (scope.kind === "chat" && pending.chat))
+  );
 }
 
 export function contextCatalogQueryOptions(
@@ -133,17 +145,25 @@ const ROOT_NAMES: Record<ProjectContextTreeScheme, string> = {
 
 function locationBelongsToScope(location: ResourceLocation, scope: CatalogScope): boolean {
   if (scope.kind === "project")
-    return !isWorkScopedProjectContextScheme(location.scheme) && location.scheme !== "user";
+    return !isOwnedContextScheme(location.scheme) && location.scheme !== "user";
   if (scope.kind === "user") return location.scheme === "user";
-  if (!isWorkScopedProjectContextScheme(location.scheme)) return false;
-  if (scope.kind === "lineage") return location.rootThreadId === scope.rootThreadId;
-  return scope.kind === "work" && location.workId === scope.workId;
+  if (scope.kind === "lineage")
+    return location.scheme === "scratch" && location.rootThreadId === scope.rootThreadId;
+  if (scope.kind === "chat")
+    return location.scheme === "uploads" && location.chatId === scope.chatId;
+  return (
+    scope.kind === "work" && isWorkScopedScheme(location.scheme) && location.workId === scope.workId
+  );
 }
 
 function catalogUri(location: ResourceLocation, path: string): string {
-  const prefix = resourceUriQualifier(resourceContextAuthority(location.scheme, location));
-  const parsed = parseContextUri(`${location.scheme}://${prefix}${path}`);
-  if (!parsed.ok) throw new Error("Invalid local catalog URI");
+  const uri = resourceContextUri(
+    location.scheme,
+    path,
+    resourceContextAuthority(location.scheme, location),
+  );
+  const parsed = uri ? parseContextUri(uri) : null;
+  if (!parsed?.ok) throw new Error("Invalid local catalog URI");
   return parsed.value.normalized;
 }
 
@@ -469,7 +489,7 @@ export function projectCatalogView(
 export async function lookupContextCatalogFile(
   projectId: string,
   scheme: ProjectContextTreeScheme,
-  owner: ContextOwner,
+  owner: CatalogOwner,
   lookup: { entryId: string } | { uri: string },
 ) {
   const scope = contextCatalogScope(projectId, scheme, owner);
@@ -504,23 +524,20 @@ export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
   schemes: readonly S[],
   options: {
     enabled?: boolean;
-    /**
-     * An aggregate scope (the link index) can hold a lineage's Scratch and a
-     * Work's Uploads together. Each document and request still has one owner;
-     * Uploads reads with this Work where `owner` names a lineage.
-     */
-    uploadsWorkId?: string | null;
-  } & ContextOwner,
+  } & CatalogOwner,
 ): Record<S, CatalogViewResult> {
   const projectPending = useIsProjectPendingCreation(projectId);
-  const { workId, rootThreadId, uploadsWorkId } = options;
-  // A first send's chat is not on the server yet; its lineage scope would answer 404.
-  const lineagePending = useIsThreadPendingCreation(rootThreadId);
+  const { workId, rootThreadId, chatId } = options;
+  // A first send's chat is not on the server yet; its lineage and chat scopes would answer 404.
+  const pending = {
+    lineage: useIsThreadPendingCreation(rootThreadId),
+    chat: useIsThreadPendingCreation(chatId),
+  };
   const enabled = (options.enabled ?? true) && !projectPending;
   const scopeFor = useCallback(
     (scheme: ProjectContextTreeScheme) =>
-      aggregateCatalogScope(projectId, scheme, { workId, rootThreadId, uploadsWorkId }),
-    [projectId, workId, rootThreadId, uploadsWorkId],
+      aggregateCatalogScope(projectId, scheme, { workId, rootThreadId, chatId }),
+    [projectId, workId, rootThreadId, chatId],
   );
   const scopes = useMemo(() => {
     const result: CatalogScope[] = [];
@@ -584,7 +601,7 @@ export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
   return useQueries({
     queries: scopes.map((scope) => ({
       ...contextCatalogQueryOptions(resources, projectId, scope),
-      enabled: catalogScopeReady(scope, enabled, lineagePending),
+      enabled: catalogScopeReady(scope, enabled, pending),
     })),
     combine,
   });
@@ -592,14 +609,16 @@ export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
 
 export function useContextCatalogScope(projectId: string, scope: CatalogScope, enabled = true) {
   const projectPending = useIsProjectPendingCreation(projectId);
-  const lineagePending = useIsThreadPendingCreation(
-    scope.kind === "lineage" ? scope.rootThreadId : null,
-  );
+  const pending = {
+    lineage: useIsThreadPendingCreation(scope.kind === "lineage" ? scope.rootThreadId : null),
+    chat: useIsThreadPendingCreation(scope.kind === "chat" ? scope.chatId : null),
+  };
   const scopeKind = scope.kind;
   const scopeProjectId = scope.kind === "user" ? undefined : scope.projectId;
   const scopeUserId = scope.kind === "user" ? scope.userId : undefined;
   const scopeWorkId = scope.kind === "work" ? scope.workId : undefined;
   const scopeRootThreadId = scope.kind === "lineage" ? scope.rootThreadId : undefined;
+  const scopeChatId = scope.kind === "chat" ? scope.chatId : undefined;
   const stableScope = useMemo<CatalogScope>(
     () =>
       scopeKind === "user"
@@ -616,14 +635,20 @@ export function useContextCatalogScope(projectId: string, scope: CatalogScope, e
                 projectId: scopeProjectId as string,
                 rootThreadId: scopeRootThreadId as string,
               }
-            : { kind: "project", projectId: scopeProjectId as string },
-    [scopeKind, scopeProjectId, scopeUserId, scopeWorkId, scopeRootThreadId],
+            : scopeKind === "chat"
+              ? {
+                  kind: "chat",
+                  projectId: scopeProjectId as string,
+                  chatId: scopeChatId as string,
+                }
+              : { kind: "project", projectId: scopeProjectId as string },
+    [scopeKind, scopeProjectId, scopeUserId, scopeWorkId, scopeRootThreadId, scopeChatId],
   );
   const resources = useOptionalAccountResourceReplica();
   const projection = useAccountResourceProjection(projectId);
   const query = useQuery({
     ...contextCatalogQueryOptions(resources, projectId, stableScope),
-    enabled: catalogScopeReady(stableScope, enabled && !projectPending, lineagePending),
+    enabled: catalogScopeReady(stableScope, enabled && !projectPending, pending),
   });
   const data = useMemo(() => {
     const checkpoint = projection.snapshot?.catalogs.find(

@@ -1,6 +1,6 @@
 /**
  * Authenticated session against this worktree's running dev stack: origin discovery,
- * dev-login cookie (memory only), and bounded JSON requests to the app's own API.
+ * dev-login cookie (memory only), and bounded requests to the app's own API.
  */
 import { execFileSync } from "node:child_process";
 import http, { type IncomingHttpHeaders } from "node:http";
@@ -13,18 +13,39 @@ import { CliError } from "./cli-error";
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
-export type RequestOptions = { timeoutMs?: number; maxResponseBytes?: number };
+export type RequestOptions = {
+  timeoutMs?: number;
+  maxResponseBytes?: number;
+  /** Closes the request when aborted, so a read left running cannot hold the process open. */
+  signal?: AbortSignal;
+};
+
+export type ResponseParser<T> = (
+  value: unknown,
+) => { success: true; data: T } | { success: false; error: unknown };
 
 export interface Session {
   readonly serverUrl: string;
   readonly cookie: string;
   readonly ca: string[] | undefined;
-  request<T = unknown>(
+  request(
+    method: HttpMethod,
+    requestPath: string,
+    body: unknown,
+    options: RequestOptions & { responseType: "text" },
+  ): Promise<string>;
+  request<T>(
+    method: HttpMethod,
+    requestPath: string,
+    body: unknown,
+    options: RequestOptions & { parse: ResponseParser<T> },
+  ): Promise<T>;
+  request(
     method: HttpMethod,
     requestPath: string,
     body?: unknown,
-    options?: RequestOptions,
-  ): Promise<T>;
+    options?: RequestOptions & { allowEmpty?: boolean },
+  ): Promise<unknown>;
 }
 
 type RawResponse = { status: number; headers: IncomingHttpHeaders; body: string };
@@ -41,6 +62,7 @@ export function rawRequest(input: {
   ca?: string[];
   timeoutMs: number;
   maxResponseBytes: number;
+  signal?: AbortSignal;
 }): Promise<RawResponse> {
   const url = new URL(input.url);
   const client = url.protocol === "http:" ? http : https;
@@ -50,8 +72,11 @@ export function rawRequest(input: {
       if (settled) return;
       settled = true;
       clearTimeout(deadline);
+      input.signal?.removeEventListener("abort", abort);
       operation();
     };
+    const abort = () =>
+      request.destroy(new CliError("unavailable", `${input.method} ${url.pathname} was aborted`));
     const request = client.request(
       url,
       {
@@ -105,6 +130,8 @@ export function rawRequest(input: {
     request.on("error", (error) =>
       finish(() => reject(error instanceof CliError ? error : connectionError(url, error))),
     );
+    if (input.signal?.aborted) abort();
+    else input.signal?.addEventListener("abort", abort, { once: true });
     if (input.body !== undefined) request.write(input.body);
     request.end();
   });
@@ -147,39 +174,70 @@ export function createSession(input: {
   cookie: string;
   ca: string[] | undefined;
 }): Session {
-  return {
-    serverUrl: input.serverUrl,
-    cookie: input.cookie,
-    ca: input.ca,
-    async request<T>(
-      method: HttpMethod,
-      requestPath: string,
-      body?: unknown,
-      options?: RequestOptions,
-    ): Promise<T> {
-      const response = await rawRequest({
-        url: new URL(requestPath, input.serverUrl).toString(),
-        method,
-        headers: input.cookie ? { cookie: input.cookie } : {},
-        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-        ca: input.ca,
-        timeoutMs: options?.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-        maxResponseBytes: options?.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
-      });
-      if (response.status < 200 || response.status >= 300) {
-        throw httpError(method, requestPath, response);
-      }
-      if (!response.body) return undefined as T;
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(response.body);
-      } catch {
-        return response.body as T;
-      }
-      // Many routes answer through serializeTransport; callers always see the bare value.
-      return deserializeTransport(parsed) as T;
+  function request(
+    method: HttpMethod,
+    requestPath: string,
+    body: unknown,
+    options: RequestOptions & { responseType: "text" },
+  ): Promise<string>;
+  function request<T>(
+    method: HttpMethod,
+    requestPath: string,
+    body: unknown,
+    options: RequestOptions & { parse: ResponseParser<T> },
+  ): Promise<T>;
+  function request(
+    method: HttpMethod,
+    requestPath: string,
+    body?: unknown,
+    options?: RequestOptions & { allowEmpty?: boolean },
+  ): Promise<unknown>;
+  async function request(
+    method: HttpMethod,
+    requestPath: string,
+    body?: unknown,
+    options?: RequestOptions & {
+      parse?: ResponseParser<unknown>;
+      allowEmpty?: boolean;
+      responseType?: "text";
     },
-  };
+  ) {
+    const response = await rawRequest({
+      url: new URL(requestPath, input.serverUrl).toString(),
+      method,
+      headers: input.cookie ? { cookie: input.cookie } : {},
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      ca: input.ca,
+      timeoutMs: options?.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+      maxResponseBytes: options?.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
+      ...(options?.signal ? { signal: options.signal } : {}),
+    });
+    if (response.status < 200 || response.status >= 300) {
+      throw httpError(method, requestPath, response);
+    }
+    if (options?.responseType === "text") return response.body;
+    if (!response.body) {
+      if (options?.allowEmpty) return undefined;
+      throw new CliError("http_error", `${method} ${requestPath}: empty JSON response`);
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(response.body);
+    } catch {
+      throw new CliError("http_error", `${method} ${requestPath}: invalid JSON response`);
+    }
+    // Many routes answer through serializeTransport; callers always see the bare value.
+    const value = deserializeTransport(parsed);
+    if (!options?.parse) return value;
+    const result = options.parse(value);
+    if (!result.success) {
+      throw new CliError("http_error", `${method} ${requestPath}: invalid response`, {
+        details: result.error,
+      });
+    }
+    return result.data;
+  }
+  return { serverUrl: input.serverUrl, cookie: input.cookie, ca: input.ca, request };
 }
 
 function sessionCookie(headers: IncomingHttpHeaders): string {

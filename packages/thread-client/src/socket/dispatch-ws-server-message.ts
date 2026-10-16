@@ -7,10 +7,7 @@
  */
 import type { AGUIEvent, MeridianError, WsServerMessage } from "@meridian/contracts/protocol";
 
-import type { WsThreadSubscriptionRegistry } from "./ws-thread-subscription";
-
 export type WsServerMessageDispatchDeps = {
-  subscriptions: WsThreadSubscriptionRegistry;
   toError: (error: MeridianError) => Error;
   dispatchSequencedEvent: (
     threadId: string,
@@ -19,13 +16,17 @@ export type WsServerMessageDispatchDeps = {
     error?: MeridianError,
     sourceThreadId?: string,
   ) => void;
-  /** Send the subscribe that was queued behind a replay now settled. */
-  resubscribe: (threadId: string) => void;
-  handleGap: (message: Extract<WsServerMessage, { type: "gap" }>) => void | Promise<void>;
+  /** `subscribed` answers a request; the client decides whether that request is still its own. */
+  onSubscribed: (message: Extract<WsServerMessage, { type: "subscribed" }>) => void;
+  handleGap: (message: Extract<WsServerMessage, { type: "gap" }>) => void;
   send: (payload: unknown) => void;
   onConnected: (connectionToken: string) => void;
+  /** An error that names a request. The client ends the request it matches and drops the rest. */
+  onRequestError: (requestId: string, error: Error, retryable: boolean) => void;
+  /** An error that names a thread but no request. Ends nothing. */
   onThreadError: (threadId: string, error: Error) => void;
   onInterruptResponseError: (threadId: string, error: Error) => void;
+  /** An error that names neither. Ends nothing. */
   onGlobalError: (error: Error) => void;
 };
 
@@ -51,30 +52,9 @@ export function dispatchWsServerMessage(
       deps.onConnected(message.connectionToken);
       return;
 
-    case "subscribed": {
-      const subscription = deps.subscriptions.get(message.threadId);
-      if (!subscription) return;
-      // Merges the catch-up with live frames held behind the replay fence.
-      const resend = deps.subscriptions.settleReplay(
-        message.threadId,
-        message.catchup.map((next) => ({
-          seq: next.seq,
-          event: next.event,
-          error: next.error,
-          sourceThreadId: next.sourceThreadId ?? message.threadId,
-        })),
-      );
-
-      // After catch-up: a replayed frame is frozen at emit time, so the
-      // server-computed live state wins over any stale replayed value.
-      for (const handler of subscription.handlers) {
-        handler.onLiveState?.(message.state);
-      }
-
-      if (resend) deps.resubscribe(message.threadId);
-
+    case "subscribed":
+      deps.onSubscribed(message);
       return;
-    }
 
     case "event": {
       deps.dispatchSequencedEvent(
@@ -87,15 +67,19 @@ export function dispatchWsServerMessage(
       return;
     }
 
-    case "gap": {
-      void deps.handleGap(message);
+    case "gap":
+      deps.handleGap(message);
       return;
-    }
 
     case "error": {
       const error = deps.toError(message.error);
+      // Interrupt refusals never touch a request, whatever id they carry.
       if (isNonFatalInterruptResponseError(message)) {
         if (message.threadId) deps.onInterruptResponseError(message.threadId, error);
+        return;
+      }
+      if (message.requestId) {
+        deps.onRequestError(message.requestId, error, message.error.retryable);
         return;
       }
       if (message.threadId) {

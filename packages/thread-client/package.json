@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./sync": "./src/sync/index.ts",
     "./view": "./src/view/index.ts",
     "./test-support": "./src/test-support/index.ts"
   },

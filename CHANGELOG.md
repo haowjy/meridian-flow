@@ -3,6 +3,28 @@
 ## [Unreleased]
 
 - Every chat failure is a card drawn from one place (`chatCards`), announced once when you watched it appear and cleared from the screen reader's live region when the card ends. A failed compaction's card now has Try again (it sends `/compact` again), a hidden "Couldn't stop the reply." no longer lingers in the page after its card goes, and a Retry whose request was lost is a "Couldn't start the retry." card with Try again on the failed reply instead of a fake failed reply. `./mf thread view` prints the same cards (`cards` in its JSON).
+### Fixed
+- `./mf api` preserves raw text responses again; domain command outcomes now require
+  validated response bodies, including cancellation, admission, creation and document deletion.
+
+
+- Invalid snapshot responses are rejected before reaching the shared thread sync. A failed diagnostic read no longer erases a proven `./mf send` or `tail --until-idle` result; it marks observation incomplete.
+
+- The app and `./mf` now follow replies through one thread sync. Followed send/tail outcomes require a confirming snapshot; live checks remain diagnostics, and retryable replay errors recover through the shared transport without ending the command.
+
+- Failed or unanswered replay requests recover one chat at a time on the existing connection, using request ids and a 20-second deadline that pings do not extend. Healthy chats remain live, and a view joining an in-flight replay receives its missing events in order.
+- A socket replaced while still closing now reports its close once (handler callbacks, generation-closed listeners and subscription cleanup) instead of silently skipping them.
+
+- A disconnected or unsubscribed client no longer acquires a catalog listener when a pending project ownership read finishes.
+
+- Completed chat replay requests now release superseded request ids instead of retaining them until disconnect.
+
+- Leaving a chat from a stream-error or history-gap callback now cancels its recovery; an abandoned retry can no longer replace the next chat subscription and lose reply text.
+
+- A file attached in a New chat opens from the sent message as soon as the chat is named, in No Work as in a Work, instead of staying unclickable until a reload.
+- A bare `[map](uploads://map)` the model writes into a document binds to the chat's existing `map.png`, the same as the full `uploads://@/c3/map` spelling, instead of minting a link to a file that does not exist.
+- Files attached to a Work, or to No Work, before uploads moved to chats are deleted, and a message that attached one shows the file as no longer available. Uploads without a chat handle (`uploads://@/name`) are no longer an address.
+- A chat's top bar lists the files attached in that chat (a paperclip and the count, once it has one). A row adds the file to the message as an `@` reference, opens it beside the chat, or deletes it while no sent message has used it. A fork or handoff names the chat it continues from. A chat upload's dock tab comes back after a reload.
 - The AI never sees a failure. `thread_history` no longer prints `error:` or `failure reason:` lines or marks failed turns: a failed turn shows the text and tool calls it kept, and is skipped when it kept none. Stop keeps its `cancelled` marker. A tool call that a failed reply never finished now reads "did not finish" instead of "interrupted by an error".
 - The server logs each failure once where it is classified and once where it ends, as `failure.recorded` and `failure.ended` in `./mf log` (a failed reply, compaction or handoff brief; a usage block and its clear). Each carries the occurrence id, a category and source, and how it ended (`retried`, `forgotten`, `moved_on` or `resolved`). They are emitted after the transaction commits. The event hub's `turn.error` log line is replaced by `failure.recorded`.
 - New `@meridian/contracts/failures` holds the failure types and `classifyReplyFailure`, the one place a failed reply's source is chosen.

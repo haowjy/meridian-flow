@@ -60,7 +60,7 @@ export const threadContextCommand: CommandSpec = {
       stringOption(ctx, "project"),
     );
     const narrowed = all || iteration !== undefined || gatewayCallId !== undefined;
-    const response = await session.request<ModelRequestDebugListResponse>(
+    const response = (await session.request(
       "GET",
       apiThreadModelRequestsDebugPath(threadId, {
         turnId: stringOption(ctx, "turn"),
@@ -68,7 +68,7 @@ export const threadContextCommand: CommandSpec = {
         gatewayCallId,
         latest: !narrowed,
       }),
-    );
+    )) as ModelRequestDebugListResponse;
     const views = deriveModelRequestDebugViews(response.records).filter(
       ({ record }) =>
         (iteration === undefined || record.iteration === iteration) &&

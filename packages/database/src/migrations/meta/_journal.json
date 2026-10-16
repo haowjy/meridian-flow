@@ -365,6 +365,34 @@
       "when": 1792099511333,
       "tag": "0057_forgotten_by_turn_online",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1792099947418,
+      "tag": "0058_chat_uploads_owner",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1792099960912,
+      "tag": "0059_chat_uploads_owner_online",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1792105161056,
+      "tag": "0060_chat_uploads_reset",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1792105167460,
+      "tag": "0061_chat_uploads_reset_online",
+      "breakpoints": true
     }
   ]
 }

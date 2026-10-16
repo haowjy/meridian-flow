@@ -1,7 +1,7 @@
 /** Tab submission model: durable handoff, row projection, and writer commands. */
 
 import type { AiWriteMode } from "@meridian/contracts/works";
-import type { CommandFailure, FailedCommand, Occurrence } from "@meridian/thread-client";
+import type { CommandFailure, JournalSwitch, Occurrence } from "@meridian/thread-client";
 import type { QueryClient } from "@tanstack/react-query";
 import { HttpResponseError } from "@/client/api/http-client";
 import { createProjectThread } from "@/client/api/projects-api";
@@ -34,12 +34,7 @@ import {
 } from "./index";
 import { abortable } from "./lock";
 import type { UserTurnRecovery } from "./presentation";
-import {
-  type ChatSubmission,
-  type ControlAnswer,
-  compareSubmissions,
-  type NewChatSubmission,
-} from "./store";
+import { type ChatSubmission, compareSubmissions, type NewChatSubmission } from "./store";
 import { threadAvailability } from "./thread-availability";
 
 type Row = {
@@ -61,19 +56,6 @@ type RecoveryState = {
   busy?: boolean;
   moving?: boolean;
 };
-/** A write-mode switch the journal still holds: unanswered, or answered with the stamp. */
-export type JournalSwitch = {
-  id: string;
-  mode: AiWriteMode;
-  /** The record's place in the chat's order. */
-  seq: number;
-  /** Marked posted before its first request left. */
-  posted: boolean;
-  /** The server refused it: nothing is held there, so Withdraw is local. */
-  refused: boolean;
-  /** The server's answer, stamped by whichever tab drove the record. */
-  answer: ControlAnswer | null;
-} & FailedCommand;
 type ThreadModel = {
   epoch: number;
   rows: Map<string, Row>;
@@ -330,11 +312,11 @@ export class ChatSubmissionOwner {
           !cohort.some((record) => target.hasReceived(record.recordId))
         )
           snapshots.push(source.initialDraft);
+        const recordIds = messages.map((record) => record.recordId);
         if (
-          !target.prependSnapshots(
-            snapshots,
-            messages.map((record) => record.recordId),
-          )
+          !(entry.creation
+            ? target.recoverCreation(entry.threadId, snapshots, recordIds)
+            : target.prependSnapshots(snapshots, recordIds))
         )
           return false;
         if (entry.creation) {
@@ -590,13 +572,9 @@ export class ChatSubmissionOwner {
       const records = readChatSubmissionSnapshot(accountId);
       if (!records || records.some((entry) => entry.threadId === threadId)) return;
       const source = composerSessionDraft(accountId, { kind: "chat", id: threadId });
-      if (
-        source.initialDraft &&
-        !composerSessionDraft(accountId, { kind: "new-chat", id: projectId }).prependSnapshots([
-          source.initialDraft,
-        ])
-      )
-        return;
+      const target = composerSessionDraft(accountId, { kind: "new-chat", id: projectId });
+      // The server never had this chat, so the draft's uploads still belong to its id.
+      if (source.initialDraft && !target.recoverCreation(threadId, [source.initialDraft])) return;
       source.handoff();
       this.destination = "editing";
       this.rebuild();

@@ -8,9 +8,9 @@
  */
 import type { RunState } from "@meridian/contracts/threads";
 import { expect, it } from "vitest";
-import type { JournalSwitch } from "@/client/chat-submissions/owner";
 import {
   INITIAL_RUN_STATE_SLICE,
+  type JournalSwitch,
   type RunStateAction,
   type RunStateSlice,
   reduceRunState,
