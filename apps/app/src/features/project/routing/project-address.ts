@@ -27,8 +27,8 @@ export type ProjectAddress = {
   projectId: string;
   destination: ProjectDestination;
   /**
-   * The Editor's Work. For Scratch and Uploads it is the resource's identity:
-   * `none` is No Work (Uploads only) and `absent` is not an address.
+   * The Editor's Work. For Scratch it is the resource's identity (unless a
+   * lineage names the owner); `absent` is not an address.
    */
   work: AddressSelection;
   /**

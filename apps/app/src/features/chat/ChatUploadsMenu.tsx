@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/dropdown-presentation";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
+import { useOpenChatResource } from "@/features/project/context/open-chat-document";
 import { cn } from "@/lib/utils";
 import { attachedAgo, uploadTypeLabel } from "./chat-upload-display";
 import { insertIntoChatComposer, removeFromChatComposer } from "./composer-insertion";
@@ -74,7 +74,7 @@ function UploadsDropdown({
 }) {
   const { uploads, refetch } = useChatUploads(projectId, chatId);
   const continuesFrom = useContinuesFrom(chatThread);
-  const openDocument = useOpenChatDocument(projectId);
+  const openResource = useOpenChatResource(projectId);
   const densityPopoverCollisionProps = useDensityPopoverCollisionProps();
   const now = useThreadStore((state) => state.now);
   const [open, setOpen] = useState(false);
@@ -232,10 +232,17 @@ function UploadsDropdown({
                   now={now}
                   refusal={refusals.get(upload.documentId) ?? null}
                   onInsert={() => insert(upload)}
-                  onOpen={() => {
-                    close(false);
-                    void openDocument({ documentId: upload.documentId, disposition: "current" });
-                  }}
+                  onOpen={
+                    openResource
+                      ? () => {
+                          close(false);
+                          void openResource({
+                            documentId: upload.documentId,
+                            disposition: "current",
+                          });
+                        }
+                      : null
+                  }
                   onDelete={() => remove(upload)}
                 />
               ))}
@@ -259,7 +266,8 @@ function UploadRow({
   now: number;
   refusal: string | null;
   onInsert: () => void;
-  onOpen: () => void;
+  /** Null where this host has no viewer for an upload. */
+  onOpen: (() => void) | null;
   onDelete: () => void;
 }) {
   const Icon = iconFor(upload);
@@ -304,15 +312,17 @@ function UploadRow({
             <Trash2 className="size-3.5" aria-hidden />
           </IconButton>
         )}
-        <IconButton
-          size="xs"
-          aria-label={t`Open ${name}`}
-          title={t`Open ${name}`}
-          onClick={onOpen}
-          className="mr-1 [@media(pointer:coarse)]:size-11"
-        >
-          <PanelRightOpen className="size-3.5" aria-hidden />
-        </IconButton>
+        {onOpen ? (
+          <IconButton
+            size="xs"
+            aria-label={t`Open ${name}`}
+            title={t`Open ${name}`}
+            onClick={onOpen}
+            className="mr-1 [@media(pointer:coarse)]:size-11"
+          >
+            <PanelRightOpen className="size-3.5" aria-hidden />
+          </IconButton>
+        ) : null}
       </div>
       {refusal ? (
         <p id={errorId} role="alert" className="px-2 pt-1 pb-0.5 text-meta text-destructive">
