@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 - Draft attribution collects a complete word-and-structure footprint before refining author names. Shared word ends, rebuilt list text and repeated-text changes keep their chat membership and full Apply evidence even when naming exhausts its budget.
-- An open editor refreshes attribution when Undo restoration links or Apply records arrive separately from the text. The chat draft dock derives its summary, file count and commands from the same ready membership as its rows, including while collapsed.
+- An open editor refreshes attribution when Undo restoration links or Apply records arrive separately from the text. The chat draft dock derives its summary, file count and commands from the same ready membership as its rows, including while collapsed. An attribution refresh during the editor’s projection debounce cannot stall on offsets from the previous text.
 
 - Discard then Undo keeps a change's chat on every surface, and after a reload. Undo now writes its restoration links into the draft itself (a new writer-writable root, `__meridian_review_restored_v1`), so the server and every reload read what Yjs knew at the moment of Undo; the inference from tombstone text and the `restorations` field of the attribution read are gone. Apply records every pending item inside an edit, including characters the text diff calls unchanged ("red" to "blue" keeps the shared "e"), so deleting an applied word reads "You".
 - The change list shows each change's byline ("You", then the chat links), keeps "You" when the names do not fit, and refreshes it when a chat is renamed. A chat's draft dock no longer lists a file where the chat has no change.

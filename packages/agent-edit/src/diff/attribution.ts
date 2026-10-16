@@ -475,6 +475,13 @@ class Classifier {
             hi = Math.max(hi, slide.hi);
           }
         }
+        if (ix.bad) {
+          // A payload can arrive before the editor's debounced projection catches up. Its old
+          // offsets no longer address this block: retain the block's footprint, but name nobody.
+          const last = ix.units.at(-1);
+          lo = 0;
+          hi = last ? last.at + last.item.length : 0;
+        }
         this.eachChar(ix, lo, hi, live);
         for (let i = lowerBound(ix.dead, lo); i < ix.dead.length && ix.dead[i].at <= hi; i++)
           dead(ix.dead[i].item);
@@ -657,6 +664,10 @@ class Classifier {
 
   /** The character edit of one span, `draft` starting at offset `ds` of draft block `b`. */
   private chars(acc: Names, b: number, ds: number, base: string, draft: string) {
+    if (this.index(b).bad) {
+      acc.incomplete = true;
+      return;
+    }
     const ops = this.diff(base, draft);
     if (!ops) {
       acc.incomplete = true;
