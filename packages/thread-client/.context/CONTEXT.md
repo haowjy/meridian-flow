@@ -320,3 +320,7 @@ registry. Failure and gap recovery are installed before notifying consumers:
 callbacks may unsubscribe or replace a subscription. Every request send checks
 registry identity and nonempty handlers, so detached work cannot replace a
 new handler's server lease.
+Superseded ids describe pending work only: a matching settlement, failure, gap,
+removal or connection loss retires them before callbacks. Before settlement, an
+older acknowledgement still contributes frames; socket ordering prevents a
+valid older acknowledgement first arriving after the newer one settles.

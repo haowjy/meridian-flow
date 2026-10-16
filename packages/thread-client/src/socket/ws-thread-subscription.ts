@@ -39,7 +39,7 @@ export type ThreadSubscription = {
   held: Map<string, SequencedEvent>;
   /** The one request in flight. */
   request?: { id: string; after?: string; deadline: Timer };
-  /** Requests this subscription replaced; their `subscribed`, if it arrives, is still a valid batch of frames. */
+  /** Pending requests this subscription replaced; their `subscribed`, if it arrives, is still a valid batch of frames. */
   superseded: Set<string>;
   /** This thread's backoff for failed requests. Reset by `subscribed`, connection loss, and removal. */
   retry: { attempt: number; timer?: Timer };
@@ -90,7 +90,7 @@ export class WsThreadSubscriptionRegistry {
       return;
     const previous = subscription.request;
     if (previous) subscription.superseded.add(previous.id);
-    endRequest(subscription);
+    endRequest(subscription, true);
     clearRetryTimer(subscription);
     const id = this.transport.nextRequestId();
     const after = oldestCursor(subscription);
@@ -310,7 +310,6 @@ export class WsThreadSubscriptionRegistry {
   /** The connection is gone: nothing is in flight, no lease exists, and the next `connected` replays for everyone. */
   connectionLost(subscription: ThreadSubscription): void {
     this.voidLease(subscription);
-    subscription.superseded.clear();
     clearRetryTimer(subscription);
     subscription.retry.attempt = 0;
   }
@@ -333,9 +332,11 @@ export class WsThreadSubscriptionRegistry {
 }
 
 /** Ends the request in flight and stops its deadline. */
-function endRequest(subscription: ThreadSubscription): void {
+function endRequest(subscription: ThreadSubscription, superseding = false): void {
   if (subscription.request) clearTimeout(subscription.request.deadline);
   subscription.request = undefined;
+  // Socket ordering puts any valid older acknowledgement before this terminal outcome.
+  if (!superseding) subscription.superseded.clear();
 }
 
 function clearRetryTimer(subscription: ThreadSubscription): void {
