@@ -31,6 +31,14 @@ import type { ChatStop } from "./useChatStop";
 import type { ReplyRetry } from "./useReplyRetry";
 import { useTurnRevealLanding } from "./useTurnRevealLanding";
 
+/** What the queued rows can do; the hooks behind them are `useQueueControls` and `useSendNow`. */
+export type TurnQueueControls = {
+  /** The x on a queued row. */
+  remove: (turnId: string) => void;
+  cancelQueue: () => void;
+  sendNow: { available: boolean; busy: boolean; send: () => void };
+};
+
 export type TurnListProps = {
   threadId: string;
   /** What the transcript shows, decided by `viewTranscript`: rows, items and writer text. */
@@ -48,6 +56,8 @@ export type TurnListProps = {
   controls?: ThreadControls | null;
   /** The chat's Stop: a compaction divider's Stop is this one, not a turn cancel. */
   chatStop?: ChatStop | null;
+  /** The queued rows' x, Cancel queue and Send now. */
+  queue?: TurnQueueControls | null;
   /** Retry and Stop on this handoff destination's brief cards. */
   brief?: HandoffBrief | null;
   /** Retry on the latest failed reply, and the new replies it stands in for. */
@@ -99,6 +109,7 @@ export function TurnList({
   submissionRecoveryByTurnId,
   controls = null,
   chatStop = null,
+  queue = null,
   brief = null,
   replyRetry = null,
   busy = false,
@@ -112,8 +123,11 @@ export function TurnList({
   const { rows } = view;
   const visibleTurns = useMemo(() => rows.map((row) => row.turn), [rows]);
   const lastAssistantIdx = findLastLocalAssistantIndex(rows);
-  let lastReplyRowIdx = rows.length - 1;
-  while (lastReplyRowIdx > 0 && rows[lastReplyRowIdx]?.kind === "write-mode") lastReplyRowIdx -= 1;
+  // Cancel queue and Send now sit on the last queued row; Cancel queue needs two to differ from the x.
+  const { lastQueuedTurnId, queuedCount } = useMemo(() => {
+    const queued = rows.filter((row) => row.queued);
+    return { lastQueuedTurnId: queued.at(-1)?.turn.id ?? null, queuedCount: queued.length };
+  }, [rows]);
   // A command runs only when no message waits, so queued commands sit at the
   // tail, after every queued message: they take no position until they run. A switch the
   // record says applies at the next run's start is the exception: its turn lands before that
@@ -282,17 +296,18 @@ export function TurnList({
             writer={writer}
             submissionRecovery={local ? submissionRecoveryByTurnId?.get(turn.id) : undefined}
             queued={row.queued}
+            queueControls={row.queued && local ? queue : null}
+            lastQueued={row.queued && turn.id === lastQueuedTurnId}
+            queuedCount={queuedCount}
           />
         );
       }
       const items = view.items.get(turn.id);
       if (!items || !row.response) return null;
-      // A divider is a row: once one follows a failed reply, that failure is
-      // history. The queued-controls tail is not a row and never counts. An
+      // Once a closing turn follows a failed reply, that failure is history,
+      // whether or not the turn draws a row (an agent's message does not). An
       // inherited reply is the source's history, even with nothing below it.
-      // A write-mode line after the reply does not close it: the server's Retry
-      // looks past switches.
-      const endsTranscript = local && idx === lastReplyRowIdx;
+      const endsTranscript = local && !row.movedPast;
 
       const standIn = local ? (replyRetry?.requestOf(turn.id) ?? null) : null;
       const retry =
@@ -342,8 +357,10 @@ export function TurnList({
       replyRetry,
       controls,
       chatStop,
+      queue,
+      lastQueuedTurnId,
+      queuedCount,
       lastAssistantIdx,
-      lastReplyRowIdx,
       navigateToChange,
       onRespondToInterrupt,
       submissionRecoveryByTurnId,

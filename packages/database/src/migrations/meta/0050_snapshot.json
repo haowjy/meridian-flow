@@ -1,5 +1,5 @@
 {
-  "id": "f2545f28-9999-455a-979c-f2178405eb36",
+  "id": "3bd5d25d-1fef-4d54-8a76-4d854ad89f4a",
   "prevId": "b7327f87-5da8-472a-bddb-b9f498bb8052",
   "version": "7",
   "dialect": "postgresql",
@@ -3367,6 +3367,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "forgotten_by_turn_id": {
+          "name": "forgotten_by_turn_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "finish_reason": {
           "name": "finish_reason",
           "type": "text",
@@ -3640,6 +3646,21 @@
             "prompt_bake_id"
           ],
           "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "turns_forgotten_by_fk": {
+          "name": "turns_forgotten_by_fk",
+          "tableFrom": "turns",
+          "tableTo": "turns",
+          "columnsFrom": [
+            "thread_id",
+            "forgotten_by_turn_id"
+          ],
+          "columnsTo": [
+            "thread_id",
             "id"
           ],
           "onDelete": "no action",
@@ -4209,12 +4230,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "chat_thread_id": {
-          "name": "chat_thread_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "name": {
           "name": "name",
           "type": "text",
@@ -4335,7 +4350,7 @@
             }
           ],
           "isUnique": true,
-          "where": "\"context_sources\".\"work_id\" IS NULL AND \"context_sources\".\"root_thread_id\" IS NULL AND \"context_sources\".\"chat_thread_id\" IS NULL AND \"context_sources\".\"deleted_at\" IS NULL",
+          "where": "\"context_sources\".\"work_id\" IS NULL AND \"context_sources\".\"root_thread_id\" IS NULL AND \"context_sources\".\"deleted_at\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -4380,28 +4395,6 @@
           ],
           "isUnique": true,
           "where": "\"context_sources\".\"root_thread_id\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "context_sources_chat_slug": {
-          "name": "context_sources_chat_slug",
-          "columns": [
-            {
-              "expression": "chat_thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "slug",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"context_sources\".\"chat_thread_id\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -4476,11 +4469,11 @@
       "checkConstraints": {
         "context_sources_exactly_one_scope": {
           "name": "context_sources_exactly_one_scope",
-          "value": "(\"context_sources\".\"scope\" = 'project' AND \"context_sources\".\"project_id\" IS NOT NULL AND \"context_sources\".\"work_id\" IS NULL AND \"context_sources\".\"root_thread_id\" IS NULL AND \"context_sources\".\"chat_thread_id\" IS NULL) OR (\"context_sources\".\"scope\" = 'work' AND \"context_sources\".\"project_id\" IS NULL AND \"context_sources\".\"work_id\" IS NOT NULL AND \"context_sources\".\"root_thread_id\" IS NULL AND \"context_sources\".\"chat_thread_id\" IS NULL) OR (\"context_sources\".\"scope\" = 'lineage' AND \"context_sources\".\"project_id\" IS NOT NULL AND \"context_sources\".\"work_id\" IS NULL AND \"context_sources\".\"root_thread_id\" IS NOT NULL AND \"context_sources\".\"chat_thread_id\" IS NULL AND \"context_sources\".\"slug\" = 'scratch') OR (\"context_sources\".\"scope\" = 'chat' AND \"context_sources\".\"project_id\" IS NOT NULL AND \"context_sources\".\"work_id\" IS NULL AND \"context_sources\".\"root_thread_id\" IS NULL AND \"context_sources\".\"chat_thread_id\" IS NOT NULL AND \"context_sources\".\"slug\" = 'uploads')"
+          "value": "(\"context_sources\".\"scope\" = 'project' AND \"context_sources\".\"project_id\" IS NOT NULL AND \"context_sources\".\"work_id\" IS NULL AND \"context_sources\".\"root_thread_id\" IS NULL) OR (\"context_sources\".\"scope\" = 'work' AND \"context_sources\".\"project_id\" IS NULL AND \"context_sources\".\"work_id\" IS NOT NULL AND \"context_sources\".\"root_thread_id\" IS NULL) OR (\"context_sources\".\"scope\" = 'lineage' AND \"context_sources\".\"project_id\" IS NOT NULL AND \"context_sources\".\"work_id\" IS NULL AND \"context_sources\".\"root_thread_id\" IS NOT NULL AND \"context_sources\".\"slug\" = 'scratch')"
         },
         "context_sources_scope_valid": {
           "name": "context_sources_scope_valid",
-          "value": "\"context_sources\".\"scope\" IN ('project', 'work', 'lineage', 'chat')"
+          "value": "\"context_sources\".\"scope\" IN ('project', 'work', 'lineage')"
         },
         "context_sources_scope_work_fk": {
           "name": "context_sources_scope_work_fk",
@@ -5830,12 +5823,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "owner_thread_id": {
-          "name": "owner_thread_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "context_source_id": {
           "name": "context_source_id",
           "type": "uuid",
@@ -5955,22 +5942,6 @@
           ],
           "isUnique": true,
           "where": "\"upload_intakes\".\"state\" <> 'deleted'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "upload_intakes_owner_thread": {
-          "name": "upload_intakes_owner_thread",
-          "columns": [
-            {
-              "expression": "owner_thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"upload_intakes\".\"owner_thread_id\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}

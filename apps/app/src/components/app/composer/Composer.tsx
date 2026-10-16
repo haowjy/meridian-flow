@@ -579,31 +579,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       <p className="min-w-0 flex-1">{t`Couldn't send.`}</p>
     </NoticeCard>
   ) : null;
-  // A failed Stop is a card while the reply it failed to stop still runs; typing doesn't hide it,
-  // and Try again is the Stop button's own press (the same request id).
-  const stopFailureCard =
-    stopStatus === "failed" && running ? (
-      <NoticeCard tone="error" announce={false}>
-        <p className="min-w-0 flex-1">{t`Couldn't stop the reply.`}</p>
-        <Button
-          type="button"
-          variant="outline"
-          size="xs"
-          data-composer-stop-retry
-          onClick={() => onStop?.()}
-        >
-          {t`Try again`}
-        </Button>
-      </NoticeCard>
-    ) : null;
   return (
     <>
-      {notices || failureCard || stopFailureCard ? (
+      {notices || failureCard ? (
         // Above the box and its strips, as wide as the box: every note above the box is the
         // same card in the same place, whoever raised it. Send is the failure's retry.
         <div className="mb-[var(--chat-space-inline)] flex flex-col gap-[var(--chat-space-inline)]">
           {notices}
-          {stopFailureCard}
           {failureCard}
         </div>
       ) : null}

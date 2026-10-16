@@ -7,6 +7,7 @@ import { createInMemoryEventSink } from "../../observability/index.js";
 import { createDrizzleRunClaim } from "../adapters/drizzle-run-claim.js";
 import { createDrizzleThreadLock } from "../adapters/drizzle-thread-lock.js";
 import { processDetachedWork } from "../detached-work.js";
+import { decideForgetting, loadForgettingFacts } from "../loop/forget-failed-attempt.js";
 import { createHandoffBriefs } from "./brief-service.js";
 
 const url = process.env.DATABASE_URL;
@@ -631,6 +632,44 @@ else
       expect(await fixture.repos.turns.findById(fixture.seed.id)).not.toHaveProperty(
         "metadata.summarizer",
       );
+    });
+
+    it("ends a failed brief's failure at the writer's first message and forgets nothing (C13)", async () => {
+      // Risk: a first-brief failure has no earlier closing row, so it could neither be forgotten nor end;
+      // and forgetting it would drop the model text ("handed off with no brief") the model can act on.
+      const fixture = await handoffSeed();
+      const runClaim = createDrizzleRunClaim(db, { holderId: "failed-brief" });
+      const service = serviceFor(fixture.repos, runClaim, {
+        async canStartTurn() {
+          return false;
+        },
+      });
+      expect(await startBrief(service, fixture.destination.id, fixture.seed.id)).toBe(true);
+      await expect
+        .poll(async () => (await fixture.repos.turns.findById(fixture.seed.id))?.status)
+        .toBe("error");
+      const deps = { turns: fixture.repos.turns, blocks: fixture.repos.blocks };
+      const closing = { closes: true, reservationExecutionId: null, retries: null };
+      expect(
+        decideForgetting(
+          await loadForgettingFacts(deps, fixture.destination.id, fixture.seed.id),
+          closing,
+        ),
+      ).toEqual({ forget: [], passed: [fixture.seed.id], reason: null });
+
+      const runner = await destinationRunner(fixture);
+      await runner.delivery.enqueue({
+        threadId: fixture.destination.id,
+        intent: "message",
+        provenance: { kind: "writer", actorId: fixture.ids.user },
+        body: { kind: "text", text: "Where were we?" },
+        idempotencyKey: "first-message",
+      });
+      await runner.delivery.materializeIdle(fixture.destination.id);
+      await runner.backgroundTasks.drain();
+      const turns = await fixture.repos.turns.listByThread(fixture.destination.id);
+      expect(turns.map((turn) => turn.role).slice(0, 2)).toEqual(["system", "user"]);
+      expect(turns.every((turn) => turn.forgottenBy === null)).toBe(true);
     });
 
     it("runs one provider call when two service instances claim the same seed", async () => {

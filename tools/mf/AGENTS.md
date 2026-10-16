@@ -11,7 +11,8 @@ Read [`.context/CONTEXT.md`](.context/CONTEXT.md) first.
   behind the debug gate, not a CLI-side database query or business logic.
 - **Share a rule's inputs and recovery, not only its reducer.** When a shared
   rule needs a snapshot to finish (a divider waiting for its anchor turn), use
-  the package's waiting list and recover as the app does. A CLI-only fallback,
+  the package's waiting list and recover as the app does. (Not yet true: `./mf` still has its own follow and
+  recovery code, which the planned shared sync replaces.) A CLI-only fallback,
   or none, diverges from the browser without failing any check.
 - **Imports:** only `@meridian/contracts` and `@meridian/thread-client` from
   workspace packages. From `tools/dev`, only the Portless route contract:

@@ -778,7 +778,6 @@ function ReadableProjectDestination({
             activeScreen={activeScreen}
             chatDisplay={chat.display}
             entryHydration={entryHydration}
-            addressOwnsDocumentAdmission
             routeWork={routeWork}
             rememberedWork={rememberedWork}
             editorRouteWork={editorWork}

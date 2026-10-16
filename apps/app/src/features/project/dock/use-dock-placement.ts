@@ -45,9 +45,9 @@ export function useDockPlacement() {
   const { revealDock } = useChatNavigation();
   /** Show `tab` in the dock under `claim` (a fresh one when the caller has none). */
   const commit = useCallback(
-    (tab: ContextTab, claim?: number, focus?: true): DockCommit => {
+    (tab: ContextTab, claim?: number, focus?: true, review?: ReviewAddress): DockCommit => {
       if (!projectId || (screen !== "chat" && screen !== "work")) return "cancelled";
-      return commitDockDocument(projectId, screen, tab, revealDock, claim, null, focus);
+      return commitDockDocument(projectId, screen, tab, revealDock, claim, review ?? null, focus);
     },
     [projectId, revealDock, screen],
   );

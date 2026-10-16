@@ -1,5 +1,5 @@
 -- migration: no-transaction
--- Online half of 0052_chat_uploads_reset. Re-runnable.
+-- Online half of 0060_chat_uploads_reset. Re-runnable.
 -- The unsettled-ref index keys the chat owner too, so it is rebuilt: the replacement exists before the old one goes.
 CREATE INDEX CONCURRENTLY IF NOT EXISTS "link_ahead_refs_owner_unsettled_v2" ON "link_ahead_refs" USING btree ("project_id","scheme","work_id","root_thread_id","chat_thread_id",md5("path")) WHERE "settled_document_id" IS NULL;
 --> statement-breakpoint

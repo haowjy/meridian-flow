@@ -176,3 +176,38 @@ export function readWriteModeSwitch(turn: Turn): WriteModeSwitchFacts | null {
   if (metadata.mode !== "draft" && metadata.mode !== "direct") return null;
   return { mode: metadata.mode, controlId: text(metadata.controlMessageId) };
 }
+
+/** The failed reply a turn is the Retry of, from its `metadata.retryOf` (a stored turn's or a stand-in's). */
+export function retryTargetOf(turn: Turn): string | null {
+  const target = record(turn.metadata)?.retryOf;
+  return typeof target === "string" ? target : null;
+}
+
+/** Metadata kinds that make a user or assistant turn a system message rather than conversation. */
+export const SYSTEM_TURN_KINDS = ["system_update", "derivation_seed", "subagent_update"] as const;
+
+/**
+ * A conversation turn: a writer request, an agent request (`inbox_message`), or an assistant reply.
+ * History numbers only these, and so does the client's "a closing turn follows". The rule reads role, origin
+ * and `metadata.kind` alone so a repository can count it in one query.
+ */
+export function isConversationTurn(turn: Pick<Turn, "role" | "origin" | "metadata">): boolean {
+  const kind = record(turn.metadata)?.kind;
+  if ((SYSTEM_TURN_KINDS as readonly unknown[]).includes(kind)) return false;
+  if (turn.role === "user")
+    return turn.origin === "writer" || (turn.origin === "system" && kind === "inbox_message");
+  return turn.role === "assistant" && turn.origin === "assistant";
+}
+
+/**
+ * A turn that ends the previous reply as the latest row: a conversation turn or a compaction. The server's
+ * Retry and forgetting walk and the client's handoff-seed card share this one classification.
+ */
+export function isClosingRow(turn: Pick<Turn, "role" | "origin" | "metadata">): boolean {
+  return turn.role === "compaction" || isConversationTurn(turn);
+}
+
+/** Whether a locally held turn is still part of the conversation: a stamped turn is forgotten and diagnostic only. */
+export function inConversation(turn: Pick<Turn, "forgottenBy">): boolean {
+  return turn.forgottenBy == null;
+}

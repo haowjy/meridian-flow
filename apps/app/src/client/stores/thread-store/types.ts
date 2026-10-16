@@ -83,6 +83,8 @@ export type ThreadStoreActions = {
   applyTurnEvent(threadId: string, event: AGUIEvent, seq?: string): void;
   /** Remove turns that left the conversation, keeping a tombstone at `seq` (see `removeTurnsIn`). */
   removeTurns(threadId: string, ids: readonly string[], seq: string): void;
+  /** Stamp failed turns that left the conversation, remembering every id (see `markForgottenIn`). */
+  markForgotten(threadId: string, ids: readonly string[], byTurnId: string): void;
   /** Take a fact about the chat's run state into its slice (`client/run-state/run-state-slice.ts`). */
   dispatchRunState(threadId: string, action: RunStateAction): void;
   /** Reduce one durable block event; false when it is malformed or for another thread. */

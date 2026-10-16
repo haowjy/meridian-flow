@@ -124,7 +124,10 @@ or receipt spans a mode change. Keep both true.
 Retry is runnable input at that boundary. Its compare-and-swap looks past
 trailing switch turns to find the failed reply and chains the retry after them,
 so a switch never takes Retry away; a newer message or another Retry moves the
-leaf and refuses it, leaving the switch pending.
+leaf and refuses it, leaving the switch pending. Both walks use `latestRowAt`
+(`loop/latest-row.ts`), the same closing-row rule that decides
+[forgetting](delivery.md#forgetting-a-failed-attempt); a Retry forgets the failed
+reply and keeps the writer's messages.
 
 ## Enqueue, cancel-out and replay
 

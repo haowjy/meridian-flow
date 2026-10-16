@@ -264,6 +264,7 @@ export type JournalEventType =
   | "agent.run_completed" // PRODUCED NOW — ReportPublisher B, body-free metadata
   | "subagent.activity" // PRODUCED NOW — ChildRunCoordinator/Driver (direct-parent journal, direct children)
   | "messages.handed_back" // PRODUCED NOW — waiting writer messages left the chat (Stop, the queue's x, Cancel queue)
+  | "turns.forgotten" // PRODUCED NOW — a failed attempt left the conversation (the writer retried it, or the chat moved past it)
   | "run_state.changed" // PRODUCED NOW — the chat's run-state record, before every commit that changed its inputs
   | "thread.status" // PRODUCED NOW — non-lease work status refresh
   | "context.assembled"
@@ -392,6 +393,12 @@ export interface Turn {
    * Null while undelivered and on every other turn.
    */
   delivery: TurnDelivery | null;
+  /**
+   * The turn that retried this failed attempt or moved the chat past it; write-once. A forgotten turn
+   * stays in the graph but has left the conversation. Null on every turn the chat still holds, and on
+   * local and optimistic turns. A reader applies it only when the forgetting turn is inside the span it reads.
+   */
+  forgottenBy: string | null;
   /** Set once on a completed prompt-epoch boundary. */
   promptBakeId: PromptBakeId | null;
   compactionModel?: string | null;
@@ -455,8 +462,9 @@ export type {
   HandBackRequest,
   HandBackResponse,
   HandBackResult,
-  HandBackScope,
   RunState,
+  SendNowRequest,
+  SendNowResponse,
   StopRequest,
   StopResponse,
 } from "./run-state.js";

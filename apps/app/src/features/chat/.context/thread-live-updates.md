@@ -82,7 +82,7 @@ adds a CUSTOM name, add its branch and a reducer test in the same change.
 
 ## Stop and hand-back
 
-Stop (`useChatStop`) cancels the running reply and hands every waiting writer
+Stop (`useChatStop`, pressing the shared hand-back operation through `useHandBack`; the queue's x and Cancel queue press the same one) cancels the running reply and hands every waiting writer
 message back into the composer, in send order as one plain editable message with
 a blank line between them, above what is typed. The press is written to the tab's
 composer draft (`handBacks`) before it is sent, so a reload re-posts it; the

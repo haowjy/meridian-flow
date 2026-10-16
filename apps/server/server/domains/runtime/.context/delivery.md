@@ -10,9 +10,9 @@ Rationale: the [one-run preparation protocol][kb-run-prep].
 ## Run identity
 
 Three facts are server-decided, written once in the transaction that decides
-them, and exposed on both the stream and the snapshot (`protocol/run-boundary.ts`
-is the one reader). Clients merge them by union and never infer them from
-transcript ancestry or stream order:
+them, and exposed on the snapshot's turns (`RUN_STARTED` carries only `writeMode`).
+Clients never infer them from transcript ancestry or stream order; `messageFate`
+(`@meridian/thread-client`) reads them from one snapshot:
 
 - **Membership.** An *execution* is one hold of the run lease
   (`thread_run_leases.execution_id`). Reservation sites write
@@ -20,9 +20,8 @@ transcript ancestry or stream order:
   `reservationTurn`. A Retry is reserved for its failed reply's list (its inbox
   rows are already acknowledged), carried as execution state through a
   start-time compaction to the first assistant, and records `metadata.retryOf`
-  and `metadata.retryReplyId`. `RUN_STARTED.rawEvent` repeats
-  `{ writeMode, executionId, reservedForUserTurnIds, position }`. The
-  reserved-for list is a hint, never proof; `position` orders an execution's turns.
+  and `metadata.retryReplyId`. The
+  reserved-for list is a hint, never proof; `Turn.position` orders an execution's turns.
 - **Delivery.** Every acknowledgement goes through the adapter's one `ack`:
   message rows it transitions record `delivered_by_turn_id` with `delivered_at`.
   A yield, a cancelled compaction, and compaction orphan repair do not
@@ -88,11 +87,16 @@ validate under the same lock and refuse a flagged lease.
   when the writer saw it or it took on a message in P, unless it took on one in
   L. `decideHandBack` classifies each covered message as `gone` (another request
   handed it back), handed back, or `answered`.
-- **`handBack`** is the same operation for the queue's x and Cancel queue: scope
-  `ids` or `seen`, never cancels. Both write one `thread_hand_backs` row per
-  request id in the request's transaction. **A replay returns that stored
-  decision** with a fresh `runState` and flags nothing; the same id with another
-  body is `HandBackConflictError` (409).
+- **`handBack`** is the same operation for the queue's x and Cancel queue
+  (`POST /api/threads/:id/hand-back`, `HandBackRequest { requestId, ids }`,
+  `handBackRequestSchema`): the named ids only, never cancels. One queue per chat,
+  so any queued message can be named from any tab. The x sends its one id;
+  Cancel queue sends every id the client drew as queued, frozen at the press. Both
+  write one `thread_hand_backs` row per request id in the request's transaction.
+  **A replay returns that stored decision** with a fresh `runState` and flags
+  nothing; the same id with another body is `HandBackConflictError` (409).
+  `handBackFingerprint` keeps its canonical `ids` form, so decisions stored before
+  the `seen` scope left still replay.
 - **Applying a decision.** The hand-back row first (inbox rows reference it),
   then `inbox.ack` with `{ handedBackBy }`, the cancelled compaction's receipt
   strip, one `messages.handed_back` journal event, the usage-block clear, and
@@ -102,12 +106,50 @@ validate under the same lock and refuse a flagged lease.
 - **Nothing is deleted.** The handed-back message's inbox row, turn and blocks
   stay for diagnostics.
 
+### The command module and Send now
+
+`adapters/thread-commands.ts` (`createThreadCommands(ports)`) owns the command
+lifecycle: `handBackRequest` (find the stored decision, read facts, decide, apply),
+`handBack`, `stop` and `sendNow`. Its ports are the thread lock, the optional
+`HandBackStore` (absent in the in-memory harness, where the commands throw), the
+inbox `answerRunState`, the settlement's `ack` (the one acknowledgement path: it takes a
+deliverer or `{ handedBackBy }` and clears an idle usage block), the lease store's
+`lockThreadReceipt` and `setAdoptedMessageIds`, and `appendEvent`. The delivery
+adapter spreads it into `RuntimeDelivery`; adoption and settlement stay there.
+The pure rules stay in `loop/stop-rule.ts`. `runner.handBack` passes through;
+`runner.stop` and `runner.sendNow` abort the local run when it holds the flagged
+execution.
+
+`POST /api/threads/:id/send-now` (`SendNowRequest { seenThrough, seenExecutionId,
+waiting }`) cancels the reply the writer saw so the whole queue runs in the next
+reply (inbox delivery adopts all waiting messages as one batch). It hands nothing
+back and stores no decision: `seenExecutionId` makes a repeat of the same body
+safe, and a lost answer is re-sent with the same body, never one rebuilt from a
+newer record.
+
+- **The rule** (`decideSendNow`, beside `decideStop`, sharing `takesOn`). W is the
+  `waiting` ids, L the writer rows above `seenThrough` that are not in W.
+  Cancel iff the open execution is `seenExecutionId` and has taken on no row in W
+  (too late: cancelling would answer the queue with a cancelled reply) and none
+  in L.
+- **The fact read** is Stop's `seen` scope: `readFacts(threadId, { kind: "seen",
+  seenThrough, mine: waiting })`, under the thread lock. It returns every
+  undelivered row, every row the open execution delivered, the W ids and earlier
+  hand-backs, with the receipt: every row for which `takesOn` can hold for the
+  open execution. **Never the ids-only scope**: it reads only W, so if an x took M2
+  back and the reply then adopted a later M3, it would miss M3 and cancel the
+  reply that is answering it. After a reply's acknowledgement clears the receipt,
+  the delivering turn's row (`byExecution`) is the evidence.
+- `cancelledExecutionId: null` means this attempt requested no cancellation; it
+  says nothing about the reply's fate. A 200 confirms the control answer, never
+  that the queue was answered.
+
 ### Leaving the chat: the graph and the conversation
 
 The repository ports return the **conversation**: `TurnRepository.findById` and
 `listByThread`, and every `BlockRepository` read, drop a handed-back writer
-message and its blocks. The adapters own the one SQL predicate
-(`notHandedBackSql`), which also guards transcript page keys, counts and ordinals,
+message and its blocks. The adapters own the SQL predicate
+(`inConversationSql`, which also applies the forgetting stamp; `notHandedBackSql` stays for identity reads), which also guards transcript page keys, counts and ordinals,
 `listMessageDeliveries`, `listLatestLocalRequesterText` and the chat-activity
 projection. A reader that knows nothing about hand-back gets the safe read.
 
@@ -119,6 +161,31 @@ modules, adapters, tests and contract suites import it. Add a module to that lis
 only when it walks `prevTurnId` or positions and filters its output. The
 compaction projection drops a pin to a handed-back turn and resolves a cut at one
 by position.
+
+### Forgetting a failed attempt
+
+Hand-back removes a message the writer took back. Forgetting removes an attempt
+the writer abandoned or retried. It is one durable fact,
+`turns.forgotten_by_turn_id`, written in the transaction that appends the turn
+that retries the failure or moves the chat past it. Every transcript reader
+filters it (`inConversationSql`), and a reader applies a stamp only if the
+forgetting turn is inside the span it reads: a local read applies every stamp, a
+fork or a paged cutoff only those at or before its last position. So a fork cut
+before the move-on still sees the attempt, and one cut after inherits the
+forgetting.
+
+`decideForgetting` (`loop/forget-failed-attempt.ts`) is pure. It acts only when
+the latest closing row (`loop/latest-row.ts`) is a settled failed reply or a
+compaction, and never on a continuation (same execution id). A tool call in any
+live member keeps the whole attempt. Retry forgets the failed reply and keeps
+the writer's messages. Moving on also forgets the delivered writer messages when
+every live member draws nothing (`replyDrawsNothing`, shared from
+`@meridian/thread-client/view`), except messages a summary already protects. A
+carried reply is never forgotten, and there is no backfill. Run start decides
+first, hands the result to the append primitive as `expectedForgetting`, and the
+primitive throws `ForgettingMismatchError` if the transaction would decide
+differently. The journal gets `turns.forgotten` (`turnIds`, `byTurnId`, reason
+`retried` or `forgotten`), which the client stamps on held turns.
 
 A compaction that starts before it reaches the loop's cancel read still holds the
 adopted message in its captured history, so `executeCompaction` reads the lease's

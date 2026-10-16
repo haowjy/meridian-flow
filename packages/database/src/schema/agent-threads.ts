@@ -356,6 +356,12 @@ export const turns = pgTable(
     executionId: uuid("execution_id"),
     /** The messages this turn was reserved for (write-once); a hint, never delivery. */
     reservedForUserTurnIds: uuid("reserved_for_user_turn_ids").array(),
+    /**
+     * The turn that retried this failed attempt or moved the chat past it (write-once, same thread).
+     * The turn stays in the graph and the journal but has left the conversation; a reader applies the
+     * stamp only when the forgetting turn is inside the span it reads.
+     */
+    forgottenByTurnId: uuid("forgotten_by_turn_id").$type<TurnId>(),
     finishReason: text("finish_reason"),
     error: text("error"),
     model: text("model"),
@@ -376,6 +382,11 @@ export const turns = pgTable(
   },
   (table) => [
     unique("turns_thread_id_id_unique").on(table.threadId, table.id),
+    foreignKey({
+      columns: [table.threadId, table.forgottenByTurnId],
+      foreignColumns: [table.threadId, table.id],
+      name: "turns_forgotten_by_fk",
+    }),
     uniqueIndex("turns_thread_position_unique").on(table.threadId, table.position),
     index("turns_epoch_boundaries")
       .on(table.threadId, table.position)

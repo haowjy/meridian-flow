@@ -133,7 +133,6 @@ export {
   ImageInclusionMetadataCodec,
   InboxMessageMetadataCodec,
   inboxMessageMetadata,
-  isConversationTurn,
   isPromptEpochMetadata,
   isSystemUpdateMetadata,
   isWriteModeSwitchTurn,
@@ -174,4 +173,4 @@ export {
   type SequencedEventInternal,
   type ThreadEventHub,
 } from "./thread-event-hub.js";
-export { buildThreadSnapshot } from "./thread-snapshot.js";
+export { buildThreadSnapshot, toClientSafeBlock } from "./thread-snapshot.js";

@@ -9,25 +9,33 @@ const destination = {
   scheme: "manuscript" as const,
   optimisticTab: { id: "optimistic:new", name: "New" },
 };
+const state = (
+  mask: Parameters<typeof deriveContextPaneState>[0]["mask"],
+  over: Partial<Parameters<typeof deriveContextPaneState>[0]> = {},
+) =>
+  deriveContextPaneState({
+    activeTab: null,
+    tabs: [],
+    mask,
+    destination,
+    removalFenced: false,
+    ...over,
+  });
 
-it("a masked destination shows its own pending tab, never the retained document", () => {
-  const state = (masked: boolean) =>
-    deriveContextPaneState({
-      activeTab: retained,
-      tabs: [retained],
-      masked,
-      destination,
-      catalog: null,
-      isFetching: false,
-      isError: false,
-      removalFenced: false,
-    });
-  expect(state(false)).toEqual({ kind: "document", tab: retained });
-  expect(state(true)).toEqual({
+it("a masked destination shows its own pending tab, and a terminal verdict is the boundary's", () => {
+  const withRetained = (mask: Parameters<typeof state>[0]) =>
+    state(mask, { activeTab: retained, tabs: [retained] });
+  expect(withRetained({})).toEqual({ kind: "document", tab: retained });
+  expect(withRetained({ issue: "loading" })).toEqual({
     kind: "optimistic-loading",
     tab: destination.optimisticTab,
     settledTab: null,
   });
+  expect(state({ issue: "loading" }).kind).toBe("optimistic-loading");
+  expect(state({}).kind).toBe("optimistic-loading");
+  // A terminal verdict is the boundary's to present; the pane stays a neutral wait.
+  expect(state({ issue: "unavailable" }).kind).toBe("optimistic-loading");
+  expect(state({ issue: "error" }).kind).toBe("optimistic-loading");
 });
 
 it("a settled tab for the destination is the strip's one entry while the body loads", () => {
@@ -38,15 +46,8 @@ it("a settled tab for the destination is the strip's one entry while the body lo
     path: "/new.md",
     name: "New",
   } as ContextTab;
-  const state = deriveContextPaneState({
-    activeTab: null,
-    tabs: [retained, settled],
-    masked: false,
-    destination,
-    catalog: null,
-    isFetching: true,
-    isError: false,
-    removalFenced: false,
+  expect(state({ issue: "loading" }, { tabs: [retained, settled] })).toMatchObject({
+    kind: "optimistic-loading",
+    settledTab: settled,
   });
-  expect(state).toMatchObject({ kind: "optimistic-loading", settledTab: settled });
 });
