@@ -591,8 +591,11 @@ restart smoke check.
   (usage-block, failed-successor, NDJSON shape, `--mock` cleanup, idle `tail`) have their risks here and in
   `message-fate.test.ts`.
 - **Evidence:** each command, stdout, stderr and exit code, and the `thread view` after it.
-- **Last run:** 2026-10-15 on `fa1040e86` (`feat/mf-send-fate`, the final code), mock; all four cases
-  passed. Evidence: `work/mf-client-unification/evidence/B6/` in the docs repository.
+- **Last run:** 2026-10-16 on `1bfd1e703` (`feat/thread-sync-mf`, L1c's code, `./mf` on `ThreadSync`), mock;
+  all four cases passed, one `result` record each, `./mf mock list` empty after each. `liveView`: case 1
+  `matches`, case 2 `not_observed` `rewritten`, case 3 `not_observed` `no_turn` (handed back), case 4
+  `matches`. Earlier run: 2026-10-15 on `fa1040e86` (`feat/mf-send-fate`, B6), all four passed. Evidence:
+  `work/mf-client-unification/evidence/L1c/live/` in the docs repository.
 
 ## RP-17: `./mf` beside the browser
 
@@ -612,21 +615,28 @@ restart smoke check.
   ./mf thread send "$T" 'rp17 stop' --no-wait --mock '[{"text":"Held.","delayMs":30000}]' --json
   ./mf thread tail "$T" --until-idle --json > "$E/sy05.ndjson" & sleep 4
   ./mf thread stop "$T" --json; wait
-  # Checkpoint step: a tool call and partial text, a read lands while it runs, then the result and the rest
-  ./mf thread send "$T" 'rp17 checkpoint' --no-wait --mock '[{"toolCalls":[{"name":"doc_write","args":{"uri":"manuscript://rp17.md","content":"x"}}]},{"delayMs":3000,"text":"Hello there"}]' --json
+  # Checkpoint step: the tail joins while the reply is still waiting to call its tool, so the tool's
+  # frames and the text arrive after the join, with reads landing between them
+  ./mf thread send "$T" 'rp17 checkpoint' --no-wait --mock '[{"delayMs":3000,"toolCalls":[{"name":"thread_ls","args":{"depth":1}}]},{"delayMs":3000,"text":"Hello there"}]' --json
   ./mf thread tail "$T" --until-idle --json > "$E/checkpoint.ndjson"
   ```
 
 - **Expect:** every claim is as the scenario says (complete, handed back or cancelled, with the exit code), and
-  `thread view "$T"` agrees with each claim. The checkpoint run prints one `tool.settled` with result
-  `committed` and one `message.completed` whose text is the whole text. Record every `liveView` and, for
+  `thread view "$T"` agrees with each claim. The checkpoint run prints one `tool.started`, one
+  `tool.completed` and one `message.completed` whose text is the whole text, on one socket. (A tail that
+  joins after the tool finished replays nothing of it: the read holds it. Staged against committed writes
+  is `tools/mf`'s `names staged and committed writes honestly`.) Record every `liveView` and, for
   each `not_observed`, its reason: `matches` is the expected case; `not_observed` is acceptable when its
   reason holds (a rewritten turn, a turn a read ended first, a gap); a `differs` is classified (a true
   disagreement is a defect in the shared rules, filed with its `liveDiff`; a false one is a defect in the check).
   `liveView` is a diagnostic over client state: it never changes the claim or the exit code.
 - **Evidence:** each command, stdout, stderr and exit code, the `thread view`, the browser's chat text, and the
   table of `liveView` records with their classes.
-- **Last run:** not yet recorded.
+- **Last run:** 2026-10-16 on `1bfd1e703` (`feat/thread-sync-mf`, L1c's code), mock, desktop browser beside
+  it; every claim and exit as expected, `thread view` agreed with each. `liveView` records: `send` with a
+  live browser, `matches`; `tail --until-idle` joining a reply with durable text already in its read (SY-01)
+  and a Stopped reply (SY-05), `not_observed` `rewritten`; the checkpoint run, `matches`. No `differs`.
+  Evidence: `work/mf-client-unification/evidence/L1c/` in the docs repository.
 
 [c6a]: https://github.com/haowjy/meridian-flow-docs/blob/683395ca9b084cee0196ec9c9070755930d38329/work/agents-milestone-4/evidence/c6a-probe/report.md
 [merge]: https://github.com/haowjy/meridian-flow-docs/blob/a4b1dddbd615bbab334dc6fa7b700245f768d288/work/agents-milestone-4/evidence/merge-gate/REPORT.md
