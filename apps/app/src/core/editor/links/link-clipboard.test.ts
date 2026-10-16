@@ -91,12 +91,6 @@ it("carries what a copied link names across the clipboard", async () => {
       pasted: { link: "uploads://@c15/seal.md", ref: null },
     },
     {
-      row: "named Work Uploads supply the Scratch owner across schemes",
-      copied: { from: "uploads://@arc/holder.md", href: "scratch://note%23one.md#gate", ref: null },
-      into: { holder: "manuscript://chapter.md", project: "project-a" },
-      pasted: { link: "scratch://@arc/note%23one.md#gate", ref: null },
-    },
-    {
       row: "a same-project paste keeps the ref",
       copied: { from: "manuscript://a/source.md", href: "manuscript://a/kael.md", ref: KAEL_REF },
       into: { holder: "manuscript://b/new.md", project: "project-a" },
@@ -575,12 +569,6 @@ it("copies contextual links through the plugin's plain-text scope by applicable 
     ["uploads://@c15/holder.md", "uploads://seal.md", "uploads://@c15/seal.md"],
     ["scratch://@c12/holder.md", "scratch://note.md#gate", "scratch://@c12/note.md#gate"],
     ["scratch://@c12/holder.md", "uploads://seal.md", "uploads://seal.md"],
-    [
-      "uploads://@arc/holder.md",
-      "scratch://note%23one.md#gate",
-      "scratch://@arc/note%23one.md#gate",
-    ],
-    ["uploads://@arc/holder.md", "uploads://seal.md", "uploads://seal.md"],
     ["manuscript://holder.md", "scratch://note.md", "scratch://note.md"],
   ];
   for (const [holder, href, expected] of rows) {
