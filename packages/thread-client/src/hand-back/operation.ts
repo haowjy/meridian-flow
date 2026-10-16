@@ -122,10 +122,10 @@ export type UnresolvedHandBack = {
  * folds these with the held record.
  */
 export type StopFacts = {
-  request: "idle" | "pending" | "failed";
+  request: "idle" | "pending";
   cancelledExecutionId: string | null;
-  /** The Stop behind `request: "failed"`; `stopStatus` drops it once moot. */
-  failedStop: FailedStop | null;
+  /** Every Stop still held; `stopStatus` reads "failed" when any one is not moot. */
+  failedStops: readonly FailedStop[];
 };
 
 export type HandBackOperation = {
@@ -295,15 +295,16 @@ export function createHandBackOperation(options: {
         // A Stop already in flight is the press; an unresolved one is replayed, never doubled.
         const flying = [...running.values()].find((a) => a.kind === "stop");
         if (flying) return flying.done;
+        // A moot Stop (refused included) targeted a reply that ended and owes nothing: forget it.
+        for (const [id, e] of entries)
+          if (e.command.kind === "stop" && failedStopIsMoot(input.view, failedStopOf(e))) {
+            entries.delete(id);
+            store.drop(id);
+          }
         const owed = [...entries.values()].find(
           (e) => e.command.kind === "stop" && e.status !== "refused",
         );
-        if (owed && !failedStopIsMoot(input.view, failedStopOf(owed))) return replay(owed);
-        // A moot Stop targeted a reply that ended: this press is a new request, not its replay.
-        if (owed) {
-          entries.delete(owed.command.requestId);
-          store.drop(owed.command.requestId);
-        }
+        if (owed) return replay(owed);
       }
       const requestId = mint();
       let held: Held;
@@ -383,11 +384,12 @@ export function createHandBackOperation(options: {
 
     stopFacts() {
       const pending = [...running.values()].some((a) => a.kind === "stop");
-      const owed = [...entries.values()].find((e) => e.command.kind === "stop");
       return {
-        request: pending ? "pending" : owed ? "failed" : "idle",
+        request: pending ? "pending" : "idle",
         cancelledExecutionId: cancelledByStop,
-        failedStop: owed ? failedStopOf(owed) : null,
+        failedStops: [...entries.values()]
+          .filter((e) => e.command.kind === "stop")
+          .map(failedStopOf),
       };
     },
 

@@ -44,7 +44,7 @@ export function useSendNow(threadId: string): SendNow {
   const [failed, setFailed] = useState<FailedSendNow | null>(null);
   const busyRef = useRef(false);
 
-  const status: StopStatus = stopStatus(view, command);
+  const status: StopStatus = stopStatus(view, { ...command, failedStops: [] });
   const busy = status === "pending" || status === "stopping";
   busyRef.current = busy;
 

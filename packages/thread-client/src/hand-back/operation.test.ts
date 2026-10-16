@@ -272,9 +272,9 @@ describe("hand-back operation", () => {
     r.answer(async () => ({ status: null }));
     await r.op.press({ kind: "stop", view: running });
     expect(r.op.stopFacts()).toEqual({
-      request: "failed",
+      request: "idle",
       cancelledExecutionId: null,
-      failedStop: { targetExecutionId: "e1", candidates: 1 },
+      failedStops: [{ targetExecutionId: "e1", candidates: 1 }],
     });
     const [card] = handBackCards(r.op.unresolved(), running);
     expect(card?.copy).toBe("stop-failed");
@@ -303,7 +303,7 @@ describe("hand-back operation", () => {
     expect(r.op.stopFacts()).toEqual({
       request: "idle",
       cancelledExecutionId: "e1",
-      failedStop: null,
+      failedStops: [],
     });
   });
 
@@ -313,12 +313,21 @@ describe("hand-back operation", () => {
     const running = receiveRecord(INITIAL_RUN_STATE_VIEW, { ...record("1000"), execution: ex });
     const ended = receiveRecord(running, record("1001"));
     const r = rig();
-    r.answer(async () => ({ status: null }));
+    r.answer(async () => ({ status: 409, body: {} }));
     await r.op.press({ kind: "stop", view: running });
     const facts = r.op.stopFacts();
     expect(handBackCards(r.op.unresolved(), running)[0]?.copy).toBe("stop-failed");
     expect(stopStatus(running, facts)).toBe("failed");
     expect(handBackCards(r.op.unresolved(), ended)).toEqual([]);
     expect(stopStatus(ended, facts)).toBe("idle");
+
+    // The refused moot Stop must not stand in for a later reply's failed Stop.
+    const next = receiveRecord(ended, {
+      ...record("1002"),
+      execution: { executionId: "e2", currentTurnId: "t2" },
+    });
+    await r.op.press({ kind: "stop", view: next });
+    expect(r.op.stopFacts().failedStops).toHaveLength(1);
+    expect(stopStatus(next, r.op.stopFacts())).toBe("failed");
   });
 });
