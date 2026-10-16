@@ -4,9 +4,10 @@
  * since origin/main, including staged, unstaged, and untracked files.
  *
  * Vitest resolves related tests through its module graph. Changes that the
- * graph cannot model safely (DB config, migrations, test support, and DB-test
- * lifecycle helpers) run the full suite, as does DB_GATE_FULL=1. A missing or
- * unreachable local database and a change with no related DB tests skip loudly.
+ * graph cannot model safely (DB config, migrations, test support, DB-test
+ * lifecycle helpers, and dependency resolution) run the full suite, as does
+ * DB_GATE_FULL=1. A missing or unreachable local database and a change with no
+ * related DB tests skip loudly.
  * CI's db-tests job and `pnpm test:db` always run the full suite.
  *
  *   pnpm check:db
@@ -27,12 +28,18 @@ const SELECTION_DATABASE_URL = "postgresql://db-gate-selection@127.0.0.1:1/db_ga
 
 const DB_TEST_INFRASTRUCTURE_FILES = new Set([
   DB_TEST_CONFIG,
+  "package.json",
+  "pnpm-lock.yaml",
+  "pnpm-workspace.yaml",
   "tools/ci/db-test-reporter.ts",
   "tools/ci/db-test-worker-setup.ts",
+  "tools/ci/test-budget-reporter.ts",
+  "tools/ci/test-case-baseline.json",
   "tools/dev/cleanup-test-databases.ts",
   "tools/dev/lib/dev-db-target.ts",
   "tools/dev/lib/dev-db.ts",
   "tools/dev/lib/dev-env.ts",
+  "tools/dev/lib/migration-history.ts",
   "tools/dev/lib/migration-runner.ts",
   "tools/dev/lib/migration-sql.ts",
   "tools/dev/lib/test-db-lifecycle.ts",
