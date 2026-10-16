@@ -55,6 +55,9 @@ describe("useChatCardAnnouncer", () => {
     await view.show([]);
     await view.show([card("s:1", "stop-failed")]);
     expect(alert).toBe("Couldn't stop the reply.");
+    // The same occurrence in new words (the Stop's reply ended): the region never keeps the old ones.
+    await view.show([card("s:1", "hand-back-failed")]);
+    expect(alert).toBe("Couldn't move your queued message to the message box.");
     await view.show([]);
     expect(alert).toBe("");
     // An unrelated alert is left alone when another card ends.
