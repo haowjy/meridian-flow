@@ -30,6 +30,31 @@ foreign key, and both occur in one transaction. Tool dispatch persists typed
 `tool_result` values and delegates policy to the per-turn gate. return-result
 settlement remains spawn-owned.
 
+**Failure records.** `projectAndAppendEvents` (`loop/persistence.ts`) is the one seam
+every live durable event passes through inside its transaction, so it is also
+where a failure is detected (`loop/failure-detection.ts`). A `turn.error`
+becomes `failure.recorded` (the occurrence is the turn id, classified by
+`classifyReplyFailure` from `@meridian/contracts/failures`), plus an immediate
+`failure.ended { moved_on }` when a closing row already follows the turn (the
+carried case). A `turns.forgotten` becomes `failure.ended` for each failed id
+with the event's own reason and `byTurnId`. The append primitive records the
+commit's `passed` turns as `moved_on` (run start decides the same, and only the
+commit logs). A failed handoff seed's Retry records `retried` in
+`brief-service.ts`, because the Retry seed's `turn.created` names no seed. A usage
+block records `failure.recorded` and its clear `failure.ended { resolved }`
+from `setBlockedReason`, with occurrence `usage:${threadId}:${episode}`, where the
+episode is the journal seq of the chat's last unblocked `run_state.changed`
+record (no column holds it). `interrupts.ts` projects directly and calls the same
+detector. The projector itself never logs.
+
+Records go to the writer's `recordFailure`, which queues them on the
+`FailureRecord` transaction participant (`shared/failure-records.ts`): own
+state, forked and merged across savepoints, deduped on `(occurrenceId, phase)`,
+emitted through `recordFailure` over `emitEvent` after the outermost commit. A
+rolled-back transition emits nothing, and without a Drizzle transaction (the
+in-memory repositories) a record emits at once. The journal row is the durable
+record; the log entry is its classified, best-effort view.
+
 `POST /api/threads/:threadId/turns/:turnId/retry` is available only for the
 latest failed assistant reply on an idle primary or subagent thread; a repeated
 client ID is answered with the same execution from durable facts, and once

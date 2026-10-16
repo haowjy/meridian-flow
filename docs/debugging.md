@@ -487,6 +487,17 @@ time), and `--limit` (default 50). Compact output omits payloads; `--full`
 includes the sanitized records. JSON output includes dropped record/byte counts.
 Failures exit nonzero with a hint.
 
+A failed turn, a failed compaction or handoff brief, and a usage block each leave two
+records: `failure.recorded` when the server classifies it, and `failure.ended` when it
+stops applying. `./mf log --name failure.recorded` and `--name failure.ended` read them.
+Both carry `occurrenceId` (the failed turn's id, or `usage:<threadId>:<episode>`),
+`category`, `source` (`transport`, `refusal`, `provider`, `usage`, `validation` or `bug`),
+`actionable`, `failureCode` (the typed reason; an untyped provider code is a `bug`),
+`failureReason` (the error code, when it differs), `providerStatus` and `executionId`
+where known. `failure.ended` adds `end` (`retried`, `forgotten`, `moved_on` or
+`resolved`) and `byTurnId`, the turn that ended it. They are emitted after the
+transaction commits, so a rolled-back settlement leaves none.
+
 Servers with the debug gate open and the `local` event provider retain up to
 5,000 sanitized records or 16 MiB in memory. Otherwise these routes return 404.
 
