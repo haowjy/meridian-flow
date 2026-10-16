@@ -297,7 +297,6 @@ export interface PromptBake {
 
 export { blockContentRecord } from "./block-content-record.js";
 export { blockPlainText } from "./block-plain-text.js";
-export * from "./golden/index.js";
 export { interruptIdForBlock } from "./interrupt-id-for-block.js";
 export type {
   ModelRequestDebugCapture,

@@ -101,3 +101,6 @@ Thread snapshots compose the canonical `threadSchema` and `turnSchema` (includin
 blocks, usage and model responses). Their DTO types are inferred from the schemas;
 the app and `./mf` consume the parsed result, not a widened partial check. Identity
 lookups remain explicit projections and cannot stand in for full DTO validation.
+
+Golden protocol fixtures are test-only exports at `@meridian/contracts/test-support`.
+Production barrels do not re-export test data.
