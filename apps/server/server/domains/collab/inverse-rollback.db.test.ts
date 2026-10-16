@@ -193,7 +193,7 @@ it.each([
     await core.read(address, initial);
     expect(
       await core.write({ ...address, command: "replace", find: "Beta", content: "Gamma" }, initial),
-    ).toMatchObject({ status: "success", writeId: "w1" });
+    ).toMatchObject({ status: "success", writeId: "e1" });
     await harness.commit(responseId);
     const responseIdentity = { providerResponseId: responseId, editScopeId: randomUUID() };
     const inverseContext = { ...initial, responseIdentity };
@@ -202,8 +202,8 @@ it.each([
         status: "success",
       });
     expect(
-      await core.write({ ...address, command: "revert", edit: "w1" }, inverseContext),
-    ).toMatchObject({ status: "success", writeId: "w4" });
+      await core.write({ ...address, command: "revert", edit: "e1" }, inverseContext),
+    ).toMatchObject({ status: "success", writeId: "e4" });
     const [branch] = await db
       .select()
       .from(schema.documentBranches)
@@ -237,8 +237,8 @@ it.each([
     ]);
     expect(rows.filter((row) => row.kind === "rollback")).toHaveLength(0);
     const edits = await core.read({ ...address, format: "edits" }, initial);
-    expect(edits.result.message).toMatch(/w4.*rolled back/);
-    expect(edits.result.message).toMatch(/w1.*undo(?:\n|$)/);
+    expect(edits.result.message).toMatch(/e4.*rolled back/);
+    expect(edits.result.message).toMatch(/e1.*undo(?:\n|$)/);
     expect(await core.write({ ...address, command: "redo" }, initial)).toMatchObject({
       status: "nothing_to_redo",
     });
@@ -302,7 +302,7 @@ it.each(
     await core.read(address, initial);
     expect(
       await core.write({ ...address, command: "replace", find: "Beta", content: "Gamma" }, initial),
-    ).toMatchObject({ status: "success", writeId: "w1" });
+    ).toMatchObject({ status: "success", writeId: "e1" });
     await harness.commit(responseId);
     const saved = {
       ...initial,
@@ -311,7 +311,7 @@ it.each(
     if (command === "redo")
       expect(await core.write({ ...address, command: "undo" }, saved)).toMatchObject({
         status: "success",
-        result: { message: "undone: w1" },
+        result: { message: "undone: e1" },
       });
     const failed = {
       ...initial,
@@ -319,7 +319,7 @@ it.each(
     };
     expect(
       await core.write(
-        command === "revert" ? { ...address, command, edit: "w1" } : { ...address, command },
+        command === "revert" ? { ...address, command, edit: "e1" } : { ...address, command },
         failed,
       ),
     ).toMatchObject({ status: "success" });
@@ -350,7 +350,7 @@ it.each(
         command === "redo" ? "Alpha Beta.\n\nBlue.\n" : "Alpha Gamma.\n\nBlue.\n",
       );
       const edits = await core.read({ ...address, format: "edits" }, saved);
-      const original = edits.result.message?.split("\n").find((line) => line.startsWith("w1  "));
+      const original = edits.result.message?.split("\n").find((line) => line.startsWith("e1  "));
       expect(original).toMatch(
         command === "redo" ? /undone.* {2}redo$/ : /(?:live|pending).* {2}undo$/,
       );
@@ -367,7 +367,7 @@ it.each(
       await core.write({ ...address, command: command === "redo" ? "redo" : "undo" }, retry),
     ).toMatchObject({
       status: "success",
-      result: { message: command === "redo" ? "redone: w1" : "undone: w1" },
+      result: { message: command === "redo" ? "redone: e1" : "undone: e1" },
     });
     expect(await text()).toBe(
       command === "redo" ? "Alpha Gamma.\n\nBlue.\n" : "Alpha Beta.\n\nBlue.\n",

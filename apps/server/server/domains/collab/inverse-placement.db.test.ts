@@ -166,7 +166,7 @@ it.each([
       expect(
         await view.collab
           .agentEdit()
-          .write({ ...address, command: "revert", edit: "w1" }, modelContext),
+          .write({ ...address, command: "revert", edit: "e1" }, modelContext),
       ).toMatchObject({ status: "nothing_to_revert" });
     }
     if (origin === "redo") {

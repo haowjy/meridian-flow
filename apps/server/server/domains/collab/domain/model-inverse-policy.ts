@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import {
   type ComputedInverse,
   type DocumentEditResult,
+  editHandle,
   type InverseSelection,
   type ModelInverseCommand,
   type PreparedEditRoots,
@@ -34,7 +35,11 @@ function entries(document: InverseDocument, threadId: string): Entry[] {
       (!part.effect.inserted.length && !part.effect.deleted.length)
     )
       continue;
-    const entry = map.get(part.editId) ?? { id: part.editId, handle: `w${part.wId}`, parts: [] };
+    const entry = map.get(part.editId) ?? {
+      id: part.editId,
+      handle: editHandle(part.wId),
+      parts: [],
+    };
     entry.parts.push(part);
     map.set(part.editId, entry);
   }

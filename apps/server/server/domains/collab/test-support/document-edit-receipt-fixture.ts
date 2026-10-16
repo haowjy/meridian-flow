@@ -1,6 +1,7 @@
 // Durable draft receipts and staged response setup shared by the Postgres suites.
 
 import { randomUUID } from "node:crypto";
+import { editHandle } from "@meridian/agent-edit/integration";
 import { and, eq } from "drizzle-orm";
 import { expect } from "vitest";
 import { testFileGrant } from "../../../test-support/file-grants.js";
@@ -66,9 +67,9 @@ export async function stageDraft(
       ),
     )
     .orderBy(schema.documentEdits.wId);
-  expect(identities).toEqual(edits.map((edit) => `w${edit.wId}`));
+  expect(identities).toEqual(edits.map((edit) => editHandle(edit.wId as number)));
   expect(new Set(identities).size).toBe(writes.length);
-  expect(rows.map((row) => `w${row.wId}`)).toEqual(identities);
+  expect(rows.map((row) => editHandle(row.wId as number))).toEqual(identities);
   return { fixture, branchId, rows, responseId };
 }
 
