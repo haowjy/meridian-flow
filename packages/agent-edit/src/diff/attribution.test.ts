@@ -392,7 +392,7 @@ const ROWS: Row[] = [
     members: [0],
   },
   {
-    name: "NEW typed beside an OLD the AI deleted is the writer's, never the AI's (the probe's accepted reading)",
+    name: "concurrent NEW is named You; the OLD deletion remains a member of the raw replacement",
     text: "alpha OLD tail",
     run: (r) => {
       const stale = peer(r.draft, 600, true);

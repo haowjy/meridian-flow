@@ -178,7 +178,7 @@ interface Boundaries {
     wide: { at: number; text: string },
     before: string,
   ): void;
-  items(items: readonly Y.Item[]): void;
+  items(items: readonly Y.Item[], name?: boolean): void;
   subtree(item: Y.Item): void;
   removed(points: Array<readonly Y.Item[]>, weight: number): void;
 }
@@ -508,7 +508,8 @@ class Classifier {
     const acc: Names = { names: new Map(), incomplete: false };
     const boundaries: Boundaries = {
       text: (b, _raw, _was, now, before) => this.chars(acc, b, now.at, before, now.text),
-      items: (items) => {
+      items: (items, name = true) => {
+        if (!name) return;
         for (const item of items) {
           const who = item.deleted
             ? this.deleter(item.id.client, item.id.clock)
@@ -714,7 +715,7 @@ class Classifier {
     const changed = new Set(
       [...was, ...now].filter(([k]) => !(was.has(k) && now.has(k))).map(([, n]) => n),
     );
-    if (!changed.size || !rem.length || !ins.length) return items;
+    if (!changed.size) return items;
     const { formats } = this.index(b);
     for (let i = lowerBound(formats, ds); i < formats.length && formats[i].at <= de; i++) {
       const { item } = formats[i];
@@ -800,21 +801,17 @@ class Classifier {
         const [dl, dh] = this.widen(D, i[0], i[1], true, si.length === 1);
         const was = this.span(0, bb, bl, bh);
         const now = this.span(1, db, dl, dh);
-        boundaries.text(
-          db,
-          this.rawSpan(1, db, i[0], i[1]),
-          this.rawSpan(0, bb, r[0], r[1]).text,
-          now,
-          was.text,
-        );
+        const raw = this.rawSpan(1, db, i[0], i[1]);
+        boundaries.text(db, raw, this.rawSpan(0, bb, r[0], r[1]).text, now, was.text);
         boundaries.items(
           this.marks(
             db,
-            now.at,
-            now.at + now.text.length,
+            raw.at,
+            raw.at + raw.text.length,
             B.toks.slice(r[0], r[1]),
             D.toks.slice(i[0], i[1]),
           ),
+          r[0] < r[1] && i[0] < i[1],
         );
         continue;
       }
@@ -841,21 +838,17 @@ class Classifier {
         const [, dh] = this.widen(D, i[0] + 1, i[1], false, k === si.length - 1);
         const was = this.span(0, bb, r[0] + 1, bh);
         const now = this.span(1, db, i[0] + 1, dh);
-        boundaries.text(
-          db,
-          this.rawSpan(1, db, i[0] + 1, i[1]),
-          this.rawSpan(0, bb, r[0] + 1, r[1]).text,
-          now,
-          was.text,
-        );
+        const raw = this.rawSpan(1, db, i[0] + 1, i[1]);
+        boundaries.text(db, raw, this.rawSpan(0, bb, r[0] + 1, r[1]).text, now, was.text);
         boundaries.items(
           this.marks(
             db,
-            now.at,
-            now.at + now.text.length,
+            raw.at,
+            raw.at + raw.text.length,
             B.toks.slice(r[0] + 1, r[1]),
             D.toks.slice(i[0] + 1, i[1]),
           ),
+          r[0] + 1 < r[1] && i[0] + 1 < i[1],
         );
         continue;
       }

@@ -148,8 +148,6 @@ it("an expanded file lists its room's changes; Apply sends the id with the snaps
       await settleReact(() =>
         expect(document.querySelectorAll("[data-review-change-row]")).toHaveLength(1),
       );
-      const id = document.querySelector<HTMLElement>("[data-review-change-row]")?.dataset
-        .reviewChangeRow;
 
       const room = fixture.rooms.get("room-chapter") as NonNullable<
         ReturnType<typeof fixture.rooms.get>
@@ -187,6 +185,11 @@ it("an expanded file lists its room's changes; Apply sends the id with the snaps
       expect(fixture.network.discardDraft).not.toHaveBeenCalled();
       expect(document.querySelector("[data-discarded-row]")).toBeNull();
 
+      // Undo provenance can publish its frame immediately, before the subsequent writer edit's
+      // debounce. Wait for that edit's projection, not merely for the already-visible row count.
+      await act(async () => vi.advanceTimersByTime(200));
+      const id = document.querySelector<HTMLElement>("[data-review-change-row]")?.dataset
+        .reviewChangeRow;
       const clicked = encodeSnapshot(Y.snapshot(room.document));
       // A peer writes after the projection the row shows, before the next one is computed.
       await act(async () => fillRoom("room-chapter", ["A peer's paragraph."], []));
