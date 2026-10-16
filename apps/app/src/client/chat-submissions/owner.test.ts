@@ -66,9 +66,6 @@ async function mount(scenario: ThreadRunScenario, paused = false) {
     actions: scenario.store.getState(),
     queryClient: client,
     changed: () => {},
-    failed: () => {},
-    failedSwitch: () => {},
-    clear: () => {},
     focusComposer: focused,
     dissolveChat: dissolved,
   });

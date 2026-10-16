@@ -1,7 +1,7 @@
 /** AssistantTurn — single render path for assistant turns. */
 
 import { Trans } from "@lingui/react/macro";
-import { isProviderDeclined, isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
+import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
 import {
   type AssistantView,
   isImageBlock,
@@ -17,8 +17,8 @@ import { Markdown } from "@/rich-content/Markdown";
 import { AssistantTurnActions } from "./AssistantTurnActions";
 import { assistantTurnCopyMarkdown } from "./assistant-turn-copy";
 import { blockRenderKey } from "./block-render-key";
+import { AnchoredCards } from "./ChatCards";
 import { CustomBlockRenderer, type InterruptRespondRequest } from "./CustomBlockRenderer";
-import { ErrorBlock, type ErrorBlockKind } from "./ErrorBlock";
 import { ProcessDisclosure } from "./ProcessDisclosure";
 import { ReportContent } from "./ReportContent";
 import { StreamingText } from "./StreamingText";
@@ -28,7 +28,6 @@ import { TurnBlockStep } from "./TurnBlockStep";
 import { hasTurnEditsReceiptContent, TurnEditsReceipt } from "./TurnEditsReceipt";
 import { thinkingDigest } from "./thinking-digest";
 import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
-import type { RetryRefusal } from "./useRetryStandIns";
 
 export type AssistantTurnProps = {
   threadId?: string;
@@ -49,32 +48,21 @@ export type AssistantTurnProps = {
   deliveries?: ViewRow["deliveries"];
   isLatestAssistant?: boolean;
   /**
-   * No visible turn follows this one. An error is current only here: once the
-   * writer (or a woken model) moves on, it stays as a quiet historical marker.
+   * A closing turn follows this one. A failed reply the chat moved past draws only what it said, so a
+   * row kept for a card alone (nothing to read) offers no actions.
    */
-  endsTranscript?: boolean;
+  movedPast?: boolean;
   /**
    * The next visible turn continues this response (a subagent notification
    * woke the model, with no writer message between), so this part has no
    * settled action row of its own.
    */
   continuesResponse?: boolean;
-  /** Retry on a failed reply; absent where the reply can't be retried from here. */
-  replyRetry?: ReplyRetryView;
   /** A Retry's new reply before the server has it: nothing to read or act on yet. */
   standIn?: boolean;
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   changeTrail?: ChangeTrailShell;
   navigateToChange?: NavigateToTrailChange;
-};
-
-export type ReplyRetryView = {
-  /** Present only while this failed reply is the latest turn. */
-  onRetry?: () => void;
-  /** The server refused this reply's last Retry, and the writer has not acted since. */
-  refused: RetryRefusal | null;
-  /** This is a Retry's stand-in whose request never answered. */
-  requestLost: boolean;
 };
 
 function AssistantTurnComponent({
@@ -85,9 +73,8 @@ function AssistantTurnComponent({
   threadUsage,
   deliveries = NO_DELIVERIES,
   isLatestAssistant = false,
-  endsTranscript = false,
+  movedPast = false,
   continuesResponse = false,
-  replyRetry,
   standIn = false,
   onRespondToInterrupt,
   changeTrail,
@@ -96,16 +83,9 @@ function AssistantTurnComponent({
   const isSettled = isTerminalTurnStatus(turn.status);
   const { items } = view;
   const copyMarkdown = useMemo(() => assistantTurnCopyMarkdown(view), [view]);
-  const errorKind =
-    turn.status === "error"
-      ? replyErrorKind({
-          requestLost: replyRetry?.requestLost ?? false,
-          metadata: turn.metadata,
-        })
-      : null;
-  // A failed reply the chat moved past, kept for its refusal card alone: nothing to copy or fork.
-  const showsOnlyRefusal =
-    errorKind !== null && !endsTranscript && items.length === 0 && deliveries.length === 0;
+  // A failed reply the chat moved past, kept for a card alone: nothing to copy or fork.
+  const showsOnlyCards =
+    turn.status === "error" && movedPast && items.length === 0 && deliveries.length === 0;
   const showsInkDrop = turn.status === "pending" || turn.status === "streaming";
   const isLive = !isSettled;
   const resolvedThreadId = threadId ?? turn.threadId;
@@ -158,16 +138,9 @@ function AssistantTurnComponent({
           />
         ) : null}
 
-        {errorKind ? (
-          <ErrorBlock
-            isLatest={endsTranscript}
-            kind={errorKind}
-            onRetry={endsTranscript ? replyRetry?.onRetry : undefined}
-            retryRefused={replyRetry?.refused ?? null}
-          />
-        ) : null}
+        <AnchoredCards anchor={{ turn: turn.id }} />
       </div>
-      {isSettled && !continuesResponse && !standIn && !showsOnlyRefusal ? (
+      {isSettled && !continuesResponse && !standIn && !showsOnlyCards ? (
         <AssistantTurnActions
           threadId={resolvedThreadId}
           turn={turn}
@@ -183,19 +156,6 @@ function AssistantTurnComponent({
 
 const NO_DELIVERIES: NonNullable<AssistantTurnProps["deliveries"]> = [];
 const NO_WORK_RECEIPTS: AssistantView["workReceipts"] = [];
-
-/** Which failure an errored reply reads as; the provider's decline wins only over a plain failure. */
-function replyErrorKind({
-  requestLost,
-  metadata,
-}: {
-  requestLost: boolean;
-  metadata: Turn["metadata"];
-}): ErrorBlockKind {
-  if (requestLost) return "retry";
-  if (isProviderDeclined(metadata)) return "provider-declined";
-  return "generation";
-}
 
 function InkDrop() {
   return (

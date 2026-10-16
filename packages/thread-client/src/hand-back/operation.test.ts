@@ -1,13 +1,13 @@
 /** The hand-back operation over in-memory ports: the state transitions the app and ./mf share. */
 import type { HandBackResult, PendingInboxItem, RunState } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
+import { handBackCards } from "../cards/hand-back-cards";
 import { stopStatus } from "../run-state/fold-messages";
 import {
   INITIAL_RUN_STATE_VIEW,
   type RunStateView,
   receiveRecord,
 } from "../run-state/run-state-view";
-import { handBackCards } from "./cards";
 import {
   createHandBackOperation,
   type HandBackCommand,
@@ -226,12 +226,13 @@ describe("hand-back operation", () => {
       commandKind: "queue" as const,
       count: 2,
       targetExecutionId: null,
+      attempt: 1,
     };
     expect(handBackCards([{ ...base, status: "ambiguous" }], rowsGone)).toMatchObject([
-      { copy: "hand-back-failed", action: "retry", count: 2 },
+      { copy: "hand-back-failed", action: "try_again", count: 2 },
     ]);
     expect(handBackCards([{ ...base, status: "unsaved" }], rowsGone)).toMatchObject([
-      { copy: "hand-back-failed", action: "retry" },
+      { copy: "hand-back-failed", action: "try_again" },
     ]);
     expect(handBackCards([{ ...base, status: "refused" }], rowsGone)).toMatchObject([
       { copy: "hand-back-refused", action: "dismiss" },

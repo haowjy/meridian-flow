@@ -158,10 +158,6 @@ type OwnerOptions = {
   actions: ThreadStoreActions;
   queryClient: QueryClient;
   changed(): void;
-  failed(recordId: string): void;
-  /** A switch the server did not take; announce it where the writer can hear it. */
-  failedSwitch(entry: ChatSubmission): void;
-  clear(recordId: string): void;
   focusComposer(): void;
   dissolveChat(): void;
 };
@@ -274,13 +270,8 @@ export class ChatSubmissionOwner {
       status: (entry, status, localFailure) => {
         if (entry.control) {
           // A switch has no writer row: only its queued row (`switches`) shows the state.
-          if (status === "error") {
-            if (!this.model.failedSwitches.has(entry.recordId)) options.failedSwitch(entry);
-            this.model.failedSwitches.add(entry.recordId);
-          } else {
-            this.model.failedSwitches.delete(entry.recordId);
-            options.clear(entry.recordId);
-          }
+          if (status === "error") this.model.failedSwitches.add(entry.recordId);
+          else this.model.failedSwitches.delete(entry.recordId);
           this.rebuild();
           return;
         }
@@ -291,16 +282,10 @@ export class ChatSubmissionOwner {
             ? { session: this.session, submissionId: entry.submissionId, signal }
             : undefined;
         if (status === "error") {
-          if (this.transferDestination(entry).hasReceived(entry.recordId)) {
-            options.clear(entry.recordId);
-            row.failed = false;
-          } else {
-            if (!row.failed) options.failed(entry.recordId);
-            row.failed = true;
-          }
+          // A message moving to the message box is no failure; otherwise the failed row is a card.
+          row.failed = !this.transferDestination(entry).hasReceived(entry.recordId);
           row.localFailure = localFailure ?? false;
         } else {
-          options.clear(entry.recordId);
           row.failed = false;
         }
         actions.patchTurnStatus(threadId, row.turnId, status);
@@ -426,7 +411,6 @@ export class ChatSubmissionOwner {
     for (const [id, row] of rows) {
       if (!id.startsWith(`${accountId}:`) || row.threadId !== threadId || ids.has(id)) continue;
       actions.removeOptimisticUserTurn(threadId, row.turnId);
-      this.options.clear(id.slice(accountId.length + 1));
       rows.delete(id);
       retired = true;
     }
@@ -462,9 +446,8 @@ export class ChatSubmissionOwner {
     const failed = this.model.failedSwitches;
     for (const id of failed) {
       if (found.some((entry) => entry.recordId === id && !entry.answer)) continue;
-      // Withdrawn, answered by another tab, or retired: its "Couldn't switch" announcement ends.
+      // Withdrawn, answered by another tab, or retired: its "Couldn't switch" card ends.
       failed.delete(id);
-      this.options.clear(id);
     }
     const next: JournalSwitch[] = found.map((entry) => ({
       id: entry.recordId,

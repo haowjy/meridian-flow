@@ -114,6 +114,8 @@ export type UnresolvedHandBack = {
   count: number;
   /** Stop only: the execution the writer saw when pressing (the command's target); else null. */
   targetExecutionId: string | null;
+  /** How many times this request has been posted this session (1 for a first post): the card's occurrence. */
+  attempt: number;
 };
 
 /**
@@ -208,6 +210,8 @@ export function createHandBackOperation(options: {
   const entries = new Map<string, Entry>();
 
   /** The attempt now running for each request: the one authoritative per-request state. */
+  /** Posts made per request this session; a reload's resume counts from its own first post. */
+  const attempts = new Map<string, number>();
   const running = new Map<
     string,
     { kind: HandBackCommand["kind"]; done: Promise<HandBackOutcome> }
@@ -228,6 +232,7 @@ export function createHandBackOperation(options: {
     const joined = running.get(requestId);
     if (joined) return joined.done;
     if (held.command.kind === "stop") cancelledByStop = null;
+    attempts.set(requestId, (attempts.get(requestId) ?? 0) + 1);
     const done = post(held).finally(() => {
       running.delete(requestId);
       changed();
@@ -379,6 +384,7 @@ export function createHandBackOperation(options: {
         status: e.status,
         count: e.candidates.length,
         targetExecutionId: e.command.kind === "stop" ? e.command.body.seenExecutionId : null,
+        attempt: attempts.get(e.command.requestId) ?? 1,
       }));
     },
 

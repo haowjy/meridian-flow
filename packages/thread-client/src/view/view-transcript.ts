@@ -5,12 +5,12 @@
  * with the caller.
  */
 import type { Turn } from "@meridian/contracts/protocol";
-import { inConversation, retryTargetOf } from "@meridian/contracts/threads";
+import { retryTargetOf } from "@meridian/contracts/threads";
 import { type AssistantView, viewAssistantTurn } from "./assistant-view";
 import { groupDeliveryEvents } from "./delivery-groups";
+import { normalizeTurns, type TurnFacts } from "./normalize-turns";
 import { isOptimisticTurnId } from "./optimistic-turn-id";
 import { replyDrawsNothing } from "./reply-draws-nothing";
-import { placeStandIns } from "./retry-stand-ins";
 import {
   buildTranscriptModel,
   type DeliveryEvent,
@@ -21,42 +21,20 @@ import {
 import { type TurnStats, turnStats } from "./turn-stats";
 import { projectWriterText, type WriterText } from "./writer";
 
-export type TranscriptViewInput = {
-  /** Stored turns in order, local writer turns included. */
-  turns: Turn[];
-  /**
-   * The seed card of a handoff whose destination the server hasn't created yet. It leads the
-   * transcript, ahead of stand-in placement. Today's stand-in producers never anchor to it:
-   * a Retry follows a stored turn or a reply, so placement never has to order a stand-in
-   * against this seed.
-   */
-  opening?: Turn | null;
+export type TranscriptViewInput = TurnFacts & {
   /** A fork's frozen prefix from its source, or omitted when none is known. */
   inherited?: InheritedTranscript | null;
   activity: {
     /** Background subagents are still running; their notification will wake the latest reply. */
     awaitingSubagents: boolean;
   };
-  /** Local placeholders for turns the server doesn't have yet, laid over `turns` by `prevTurnId`. */
-  standIns?: readonly Turn[];
   /** Ids of accepted writer turns the model hasn't read yet. */
   queued?: ReadonlySet<string>;
   /**
-   * Writer turns a hand-back request in flight hides (`hiddenWriterTurns`): they leave the
-   * transcript with no row, as they will when the server's answer removes them.
+   * Turns a card is anchored on (`chatCards().anchoredTurnIds`): their row stays even when they are
+   * forgotten, retried or past, because the card needs somewhere to be. `./mf` passes the same set.
    */
-  hidden?: ReadonlySet<string>;
-  /**
-   * Failed replies whose accepted Retry the stored turns do not show yet: the Retry's target,
-   * carried explicitly. A Retry the turns do show says so itself (`metadata.retryOf`, on a stored
-   * turn or a stand-in).
-   */
-  retried?: ReadonlySet<string>;
-  /**
-   * Failed replies whose Retry the server refused: the caller shows that refusal on them, so
-   * their row stays even with nothing else to draw. Local to the caller; `./mf` passes none.
-   */
-  refused?: ReadonlySet<string>;
+  anchoredTurnIds?: ReadonlySet<string>;
   /**
    * A queued switch applies when the next run starts (`awaiting_run` in the record). Its notice
    * then sits before that run's reply stand-in (`controlSlot`), where its turn will land.
@@ -127,27 +105,16 @@ const NO_DELIVERIES: readonly (readonly DeliveryEvent[])[] = [];
 
 export function viewTranscript(input: TranscriptViewInput): TranscriptView {
   const standIns = input.standIns ?? [];
-  const placed = placeStandIns(
-    input.opening ? [input.opening, ...input.turns] : input.turns,
-    standIns,
-  );
-  // The transcript is not a log: a failed reply the writer retried is not drawn (its Retry
-  // is, in its place), and neither is a message handed back. Stand-ins were placed first, with
-  // the failed reply as their anchor, so a pending Retry sits exactly where it was. A chain of
-  // failed retries draws only the newest. The turns stay in the store; this is drawing only.
-  const retried = new Set(input.retried);
-  for (const turn of placed) {
-    const target = retryTargetOf(turn);
-    if (target !== null) retried.add(target);
-  }
-  // A forgotten local turn has left the conversation: no row. A refused Retry's card still needs its reply's
-  // row, so that anchor outranks both Retry suppression and forgetting (the competing Retry that won stamps
-  // the reply it retried). Inherited rows are never filtered by stamp: page membership is authoritative,
-  // and the server already applied the stamps inside the fork's span.
+  const normalized = normalizeTurns(input);
+  const { placed } = normalized;
+  // A card needs its turn's row, so an anchored turn outranks Retry suppression and forgetting
+  // (a refused Retry's reply is stamped by the competing Retry that won). Inherited rows are never
+  // filtered by stamp: page membership is authoritative, and the server already applied the stamps
+  // inside the fork's span.
+  const anchored = input.anchoredTurnIds;
+  const effective = new Set(normalized.turns.map((turn) => turn.id));
   const turns = placed.filter(
-    (turn) =>
-      !input.hidden?.has(turn.id) &&
-      (input.refused?.has(turn.id) || (!retried.has(turn.id) && inConversation(turn))),
+    (turn) => !input.hidden?.has(turn.id) && (anchored?.has(turn.id) || effective.has(turn.id)),
   );
   // Provenance is stated, never read from an id's shape: only the server's own turns are named.
   const stored = new Set(input.turns.map((turn) => turn.id));
@@ -161,12 +128,12 @@ export function viewTranscript(input: TranscriptViewInput): TranscriptView {
   );
   // A failure shows only while the writer can act on it: until the chat moves past the reply (a closing
   // turn follows it, drawn or not; a write-mode line does not close it). A failed reply the chat moved past
-  // has no failure line, and with nothing to read it has no row, unless a refused Retry shows its card there.
+  // has no failure line, and with nothing to read it has no row, unless a card is anchored on it.
   const leavesNoTrace = (row: TranscriptRow) =>
     (row.kind === "compaction" || (row.kind === "turn" && row.turn.role === "assistant")) &&
     row.turn.status === "error" &&
     model.movedPast(row.turn) &&
-    !input.refused?.has(row.turn.id) &&
+    !anchored?.has(row.turn.id) &&
     replyDrawsNothing(
       row.turn,
       (model.deliveryEventsByAssistantTurnId.get(row.turn.id) ?? []).map((event) => event.turn),

@@ -1,12 +1,12 @@
 /** Tab-local note above the New chat box that received a deleted chat's words. */
 import { Trans } from "@lingui/react/macro";
-import type { DeletedChatNotice as Notice } from "@/client/composer-drafts";
-import { NoticeCard } from "@/components/app/NoticeCard";
+import type { DeletedChatCard as Notice } from "@/client/composer-drafts";
+import { FailureCard } from "@/components/app/FailureCard";
 
-export function DeletedChatNotice({ notice, onDismiss }: { notice: Notice; onDismiss(): void }) {
+export function DeletedChatCard({ notice, onDismiss }: { notice: Notice; onDismiss(): void }) {
   const title = notice.title;
   return (
-    <NoticeCard tone="info" onDismiss={onDismiss}>
+    <FailureCard tone="info" onDismiss={onDismiss}>
       <p className="min-w-0 flex-1 break-words">
         {title ? (
           <Trans>
@@ -21,6 +21,6 @@ export function DeletedChatNotice({ notice, onDismiss }: { notice: Notice; onDis
           <Trans>Your message is below.</Trans>
         )}
       </p>
-    </NoticeCard>
+    </FailureCard>
   );
 }

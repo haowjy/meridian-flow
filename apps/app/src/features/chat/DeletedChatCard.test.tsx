@@ -4,7 +4,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { DeletedChatNotice } from "./DeletedChatNotice";
+import { DeletedChatCard } from "./DeletedChatCard";
 
 it("renders titled singular, plural and untitled copy with a working Dismiss X", async () => {
   const host = document.createElement("div");
@@ -17,7 +17,7 @@ it("renders titled singular, plural and untitled copy with a working Dismiss X",
         createElement(
           TooltipProvider,
           null,
-          createElement(DeletedChatNotice, {
+          createElement(DeletedChatCard, {
             notice: { threadId: "chat", title, count },
             onDismiss: () => {
               dismissed = "chat";

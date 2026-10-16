@@ -112,12 +112,12 @@ msgid "{0, plural, one {Changes in # more document did not apply} other {Changes
 msgstr "{0, plural, one {Changes in # more document did not apply} other {Changes in # more documents did not apply}}"
 
 #. placeholder {0}: card.count
-#: src/features/chat/HandBackCards.tsx
+#: src/features/chat/chat-card-copy.ts
 msgid "{0, plural, one {Couldn't move your queued message to the message box.} other {Couldn't move your queued messages to the message box.}}"
 msgstr "{0, plural, one {Couldn't move your queued message to the message box.} other {Couldn't move your queued messages to the message box.}}"
 
 #. placeholder {0}: card.count
-#: src/features/chat/HandBackCards.tsx
+#: src/features/chat/chat-card-copy.ts
 msgid "{0, plural, one {Couldn't move your queued message.} other {Couldn't move your queued messages.}}"
 msgstr "{0, plural, one {Couldn't move your queued message.} other {Couldn't move your queued messages.}}"
 
@@ -369,7 +369,7 @@ msgstr "<0>{0}</0> and its messages will be deleted."
 msgid "<0>{0}</0> will be permanently deleted."
 msgstr "<0>{0}</0> will be permanently deleted."
 
-#: src/features/chat/DeletedChatNotice.tsx
+#: src/features/chat/DeletedChatCard.tsx
 msgid "<0>{title}</0> was deleted."
 msgstr "<0>{title}</0> was deleted."
 
@@ -391,7 +391,7 @@ msgstr "1 change"
 msgid "3 by 3, header row"
 msgstr "3 by 3, header row"
 
-#: src/features/chat/DeletedChatNotice.tsx
+#: src/features/chat/DeletedChatCard.tsx
 msgid "A chat you had open was deleted."
 msgstr "A chat you had open was deleted."
 
@@ -505,7 +505,7 @@ msgstr "Add row"
 msgid "Add to favorites"
 msgstr "Add to favorites"
 
-#: src/features/chat/UsageBlockedNotice.tsx
+#: src/features/chat/ChatCards.tsx
 msgid "Add usage"
 msgstr "Add usage"
 
@@ -1411,8 +1411,8 @@ msgid "Couldn't move to {failedFolder}. Use Move… in the file list to try agai
 msgstr "Couldn't move to {failedFolder}. Use Move… in the file list to try again."
 
 #: src/features/chat/useQueueControls.ts
-msgid "Couldn't move your queued message to the message box."
-msgstr "Couldn't move your queued message to the message box."
+#~ msgid "Couldn't move your queued message to the message box."
+#~ msgstr "Couldn't move your queued message to the message box."
 
 #: src/features/editor/EditorView.tsx
 msgid "Couldn't open review mode."
@@ -1483,12 +1483,11 @@ msgstr "Couldn't rename. Use Rename in the file list to try again."
 msgid "Couldn’t restore this Work"
 msgstr "Couldn’t restore this Work"
 
-#: src/features/chat/ErrorBlock.tsx
-#: src/features/chat/useRetryStandIns.ts
+#: src/features/chat/chat-card-copy.ts
 msgid "Couldn't retry."
 msgstr "Couldn't retry."
 
-#: src/features/chat/ErrorBlock.tsx
+#: src/features/chat/chat-card-copy.ts
 msgid "Couldn't retry. Another reply started first."
 msgstr "Couldn't retry. Another reply started first."
 
@@ -1521,8 +1520,7 @@ msgstr "Couldn't search"
 msgid "Couldn't send a message to {line}"
 msgstr "Couldn't send a message to {line}"
 
-#: src/features/chat/HandBackCards.tsx
-#: src/features/chat/useSendNow.ts
+#: src/features/chat/chat-card-copy.ts
 msgid "Couldn't send now."
 msgstr "Couldn't send now."
 
@@ -1531,42 +1529,49 @@ msgid "Couldn't send your answer."
 msgstr "Couldn't send your answer."
 
 #: src/features/chat/useChatSubmissions.ts
-msgid "Couldn't send your message."
-msgstr "Couldn't send your message."
+#~ msgid "Couldn't send your message."
+#~ msgstr "Couldn't send your message."
 
 #: src/components/app/composer/Composer.tsx
-#: src/features/chat/UserTurn.tsx
+#: src/features/chat/chat-card-copy.ts
 msgid "Couldn't send."
 msgstr "Couldn't send."
 
-#: src/features/chat/derivation/useHandoffBrief.ts
-msgid "Couldn't start a new brief. Try again."
-msgstr "Couldn't start a new brief. Try again."
+#: src/features/chat/chat-card-copy.ts
+msgid "Couldn't start a new brief."
+msgstr "Couldn't start a new brief."
 
-#: src/features/chat/ErrorBlock.tsx
-#~ msgid "Couldn't start the retry."
-#~ msgstr "Couldn't start the retry."
+#: src/features/chat/derivation/useHandoffBrief.ts
+#~ msgid "Couldn't start a new brief. Try again."
+#~ msgstr "Couldn't start a new brief. Try again."
+
+#: src/features/chat/chat-card-copy.ts
+msgid "Couldn't start the retry."
+msgstr "Couldn't start the retry."
 
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/useReplyRetry.ts
-msgid "Couldn't start the retry. Try again."
-msgstr "Couldn't start the retry. Try again."
+#~ msgid "Couldn't start the retry. Try again."
+#~ msgstr "Couldn't start the retry. Try again."
 
 #: src/features/chat/derivation/derive-conversation.ts
 msgid "Couldn't start this handoff."
 msgstr "Couldn't start this handoff."
 
+#: src/features/chat/chat-card-copy.ts
+msgid "Couldn't stop the brief."
+msgstr "Couldn't stop the brief."
+
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 #: src/features/chat/derivation/useHandoffBrief.ts
-msgid "Couldn't stop the brief. Try again."
-msgstr "Couldn't stop the brief. Try again."
+#~ msgid "Couldn't stop the brief. Try again."
+#~ msgstr "Couldn't stop the brief. Try again."
 
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "Couldn't stop the compaction."
 msgstr "Couldn't stop the compaction."
 
-#: src/features/chat/HandBackCards.tsx
-#: src/features/chat/useChatStop.ts
+#: src/features/chat/chat-card-copy.ts
 msgid "Couldn't stop the reply."
 msgstr "Couldn't stop the reply."
 
@@ -1819,8 +1824,8 @@ msgstr "Discard with your edits"
 msgid "Discarding"
 msgstr "Discarding"
 
+#: src/components/app/FailureCard.tsx
 #: src/components/app/InlineErrorRow.tsx
-#: src/components/app/NoticeCard.tsx
 #: src/features/editor/SchemaRepairNotice.tsx
 #: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkCommandFailureRow.tsx
@@ -1905,7 +1910,7 @@ msgstr "Earlier"
 msgid "Earlier notes"
 msgstr "Earlier notes"
 
-#: src/features/chat/UserTurn.tsx
+#: src/features/chat/ChatCards.tsx
 msgid "Edit"
 msgstr "Edit"
 
@@ -2194,7 +2199,6 @@ msgstr "Handoff brief ready"
 msgid "Handoff brief stopped"
 msgstr "Handoff brief stopped"
 
-#: src/features/chat/compaction/useControlTurnAnnouncements.ts
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "Handoff brief unavailable"
 msgstr "Handoff brief unavailable"
@@ -3438,11 +3442,9 @@ msgstr "Resume my documents on any device"
 #: src/core/editor/FigureNodeView.tsx
 #: src/core/editor/images/ImageNodeView.tsx
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
+#: src/features/chat/ChatCards.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 #: src/features/chat/DraftDock.tsx
-#: src/features/chat/ErrorBlock.tsx
-#: src/features/chat/thread-controls/QueuedControlRows.tsx
-#: src/features/chat/UserTurn.tsx
 #: src/features/editor/EditorView.tsx
 #: src/features/project/chat-index/ChatIndex.tsx
 #: src/features/project/context/ContextDocumentHost.tsx
@@ -3783,8 +3785,8 @@ msgid "Some typing inside a discarded change couldn't be kept."
 msgstr "Some typing inside a discarded change couldn't be kept."
 
 #: src/features/chat/useLiveTurnAnnouncements.ts
-msgid "Something went wrong generating a response."
-msgstr "Something went wrong generating a response."
+#~ msgid "Something went wrong generating a response."
+#~ msgstr "Something went wrong generating a response."
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Something went wrong while changing {name}."
@@ -4142,7 +4144,7 @@ msgstr "That Work is no longer available. Choose another Work."
 msgid "The AI asked you a question"
 msgstr "The AI asked you a question"
 
-#: src/features/chat/ErrorBlock.tsx
+#: src/features/chat/chat-card-copy.ts
 msgid "The AI provider turned this request down."
 msgstr "The AI provider turned this request down."
 
@@ -4174,6 +4176,10 @@ msgstr "The endpoint reports its own env-presence checklist in the body above (p
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "The entry changed. Refresh the tree and try again."
 msgstr "The entry changed. Refresh the tree and try again."
+
+#: src/features/chat/chat-card-copy.ts
+msgid "The handoff brief failed."
+msgstr "The handoff brief failed."
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "The header row does not merge into the body."
@@ -4378,7 +4384,7 @@ msgstr "This column is already at the edge."
 msgid "This compaction already started."
 msgstr "This compaction already started."
 
-#: src/features/chat/compaction/compaction-model.ts
+#: src/features/chat/chat-card-copy.ts
 msgid "This conversation couldn't be compacted."
 msgstr "This conversation couldn't be compacted."
 
@@ -4520,7 +4526,7 @@ msgstr "This removes pending changes from every document in this Work."
 msgid "This report is from its previous run. It's running again now."
 msgstr "This report is from its previous run. It's running again now."
 
-#: src/features/chat/ErrorBlock.tsx
+#: src/features/chat/chat-card-copy.ts
 msgid "This response failed."
 msgstr "This response failed."
 
@@ -4607,8 +4613,7 @@ msgstr "Tokens before"
 msgid "Top up any time. Extra usage carries over month to month."
 msgstr "Top up any time. Extra usage carries over month to month."
 
-#: src/features/chat/HandBackCards.tsx
-#: src/features/chat/thread-controls/QueuedControlRows.tsx
+#: src/features/chat/ChatCards.tsx
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "Try again"
@@ -4969,7 +4974,7 @@ msgstr "You discarded this new document, so the change wasn't kept. The AI will 
 msgid "You left checkout. No purchase was confirmed."
 msgstr "You left checkout. No purchase was confirmed."
 
-#: src/features/chat/UsageBlockedNotice.tsx
+#: src/features/chat/chat-card-copy.ts
 msgid "You're out of usage. Your messages will send when you add more."
 msgstr "You're out of usage. Your messages will send when you add more."
 
@@ -4981,7 +4986,7 @@ msgstr "Your answer may not have reached the agent."
 msgid "Your message"
 msgstr "Your message"
 
-#: src/features/chat/DeletedChatNotice.tsx
+#: src/features/chat/DeletedChatCard.tsx
 msgid "Your message is below."
 msgstr "Your message is below."
 
@@ -4989,7 +4994,7 @@ msgstr "Your message is below."
 msgid "Your message, queued"
 msgstr "Your message, queued"
 
-#: src/features/chat/DeletedChatNotice.tsx
+#: src/features/chat/DeletedChatCard.tsx
 msgid "Your messages are below."
 msgstr "Your messages are below."
 

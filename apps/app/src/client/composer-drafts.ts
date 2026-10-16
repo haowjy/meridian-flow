@@ -9,7 +9,7 @@ import { browserRecord, isRecord, type StorageSource } from "./storage/browser-r
 
 export type ComposerDraftScope = { kind: "chat" | "new-chat"; id: string };
 
-export type DeletedChatNotice = { threadId: string; title: string | null; count: number };
+export type DeletedChatCard = { threadId: string; title: string | null; count: number };
 
 /**
  * A hand-back request the writer pressed whose answer has not been written to the composer: kept
@@ -21,7 +21,7 @@ export type PendingHandBack = HandBackCommand;
 
 type StoredComposerDraft = (ComposerDraftSnapshot | { doc: null }) & {
   received?: string[];
-  notices?: DeletedChatNotice[];
+  notices?: DeletedChatCard[];
   handBacks?: PendingHandBack[];
 };
 
@@ -50,7 +50,7 @@ export class ComposerSessionDraft {
   private current: ComposerDraftSnapshot | null;
   private received = new Set<string>();
   private handBacksPending: PendingHandBack[] = [];
-  notices: DeletedChatNotice[] = [];
+  notices: DeletedChatCard[] = [];
   dismissNotice = (threadId: string) => {
     this.notices = this.notices.filter((notice) => notice.threadId !== threadId);
     this.dirty = true;
@@ -78,7 +78,7 @@ export class ComposerSessionDraft {
   prependSnapshots(
     snapshots: ComposerDraftSnapshot[],
     recordIds: string[] = [],
-    notice?: DeletedChatNotice,
+    notice?: DeletedChatCard,
   ): boolean {
     const pending = snapshots.filter(
       (_, index) => !recordIds[index] || !this.hasReceived(recordIds[index]),
@@ -174,7 +174,7 @@ export class ComposerSessionDraft {
     draft: ComposerDraftSnapshot | null,
     next: {
       received: Set<string>;
-      notices: DeletedChatNotice[];
+      notices: DeletedChatCard[];
       handBacks: PendingHandBack[];
     },
   ): boolean {
@@ -240,7 +240,7 @@ export class ComposerSessionDraft {
           : {
               ...(draft ?? { doc: null }),
               received,
-              notices: notices as DeletedChatNotice[],
+              notices: notices as DeletedChatCard[],
               handBacks,
             };
       },

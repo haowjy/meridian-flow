@@ -96,7 +96,7 @@
     "apps/app/src/features/billing/useCheckoutReturn.test.tsx": 5,
     "apps/app/src/features/chat/chat-scratch-owner.test.ts": 2,
     "apps/app/src/features/chat/composer-run.test.ts": 3,
-    "apps/app/src/features/chat/DeletedChatNotice.test.tsx": 1,
+    "apps/app/src/features/chat/DeletedChatCard.test.tsx": 1,
     "apps/app/src/features/chat/derivation/derive-conversation.test.ts": 3,
     "apps/app/src/features/chat/derivation/inherited-view.test.ts": 4,
     "apps/app/src/features/chat/derivation/useHandoffBrief.test.tsx": 2,

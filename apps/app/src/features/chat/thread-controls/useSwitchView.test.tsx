@@ -128,7 +128,7 @@ afterEach(async () => {
   client.clear();
 });
 
-it("announces a Stop only once its outcome is known", async () => {
+it("announces a Stop only once its outcome is known, and a failed one only as a card", async () => {
   await act(async () =>
     root.render(
       <QueryClientProvider client={client}>
@@ -178,7 +178,7 @@ it("announces a Stop only once its outcome is known", async () => {
     ],
     ["w4", "admitted", new HttpResponseError("gone", 404, null), []],
     ["w5", "kept", undefined, []],
-    ["w6", "admitted", new Error("offline"), ["error:Couldn't stop the switch."]],
+    ["w6", "admitted", new Error("offline"), []],
   ];
   for (const [id, outcome, server, expected] of cases) {
     vi.clearAllMocks();
