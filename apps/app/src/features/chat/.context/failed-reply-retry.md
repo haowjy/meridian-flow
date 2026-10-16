@@ -18,7 +18,7 @@ reply itself.
 A failure shows only while the writer can act on it. Whether a failed reply that is
 not the latest has a row is decided in `viewTranscript` (no row without items or
 deliveries, unless a card is anchored on it, `anchoredTurnIds`). `chatCards` decides every card
-(a `FailureCard` per anchor; `ErrorBlock` is gone). "Latest" is `latestRow` over the normalized turns:
+(a `FailureCard` per anchor). "Latest" is `latestRow` over the normalized turns:
 no closing turn (`isClosingRow`, drawn or not) follows it, so a divider counts and an agent's message, which draws no
 row, does too. `chatMovedPast` in `@meridian/thread-client/view` is the one reader; handoff seeds use it as well. The client does not gate Retry on the chat being
 busy: a failed reply is followed at once by whatever runs next, which takes
