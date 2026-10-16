@@ -6,6 +6,29 @@ SET LOCAL lock_timeout = '2s';
 -- Ahead refs for the old uploads go first: deleting the documents would only unsettle them.
 DELETE FROM "link_ahead_refs" WHERE "scheme" = 'uploads' AND ("work_id" IS NOT NULL OR "root_thread_id" IS NULL);
 --> statement-breakpoint
+-- A catalog stream is JSON under a scope head, not FK-linked to these sources. A browser holding a cursor into
+-- one would resume it and keep the deleted uploads, so each affected Work scope gets a new generation (an old
+-- cursor reads "reset required" and takes a fresh snapshot) and loses its published entries and commits (the next
+-- reconcile republishes the surviving ones). Scratch documents are not touched.
+UPDATE "context_catalog_scope_heads" SET "generation" = gen_random_uuid(), "updated_at" = now()
+WHERE "scope_key" IN (
+  SELECT 'work:' || "works"."project_id" || ':' || "works"."id" FROM "context_sources"
+  JOIN "works" ON "works"."id" = "context_sources"."work_id"
+  WHERE "context_sources"."slug" = 'uploads' AND "context_sources"."scope" <> 'chat'
+);
+--> statement-breakpoint
+DELETE FROM "context_catalog_entries" WHERE "scope_key" IN (
+  SELECT 'work:' || "works"."project_id" || ':' || "works"."id" FROM "context_sources"
+  JOIN "works" ON "works"."id" = "context_sources"."work_id"
+  WHERE "context_sources"."slug" = 'uploads' AND "context_sources"."scope" <> 'chat'
+);
+--> statement-breakpoint
+DELETE FROM "context_catalog_commits" WHERE "scope_key" IN (
+  SELECT 'work:' || "works"."project_id" || ':' || "works"."id" FROM "context_sources"
+  JOIN "works" ON "works"."id" = "context_sources"."work_id"
+  WHERE "context_sources"."slug" = 'uploads' AND "context_sources"."scope" <> 'chat'
+);
+--> statement-breakpoint
 -- Documents, folders, previous locations, Yjs rows, edits and intakes of these sources go with them by FK cascade.
 -- A document an upload was moved out of its source into another source is not deleted.
 DELETE FROM "context_sources" WHERE "slug" = 'uploads' AND "scope" <> 'chat';
