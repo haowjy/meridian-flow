@@ -19,12 +19,16 @@ import {
 import { CliError } from "../../core/cli-error";
 import type { Output } from "../../core/output";
 import type { Session } from "../../core/session";
+import { unknownJsonResponse } from "../../core/session";
 
 /** The HTTP port over a session: a status and decoded body, or `status: null` for no answer. */
 export function sessionHttp(session: Session): HttpPort {
   return async (path, body) => {
     try {
-      return { status: 200, body: await session.request("POST", path, body) };
+      return {
+        status: 200,
+        body: await session.request("POST", path, body, { decode: unknownJsonResponse }),
+      };
     } catch (error) {
       if (!(error instanceof CliError)) throw error;
       return error.httpStatus === undefined

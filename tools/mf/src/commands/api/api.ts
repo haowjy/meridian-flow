@@ -3,6 +3,7 @@ import { deserializeTransport } from "@meridian/contracts/protocol";
 import { usageError } from "../../core/cli-error";
 import { type CommandSpec, readJsonArg, requirePositional, stringOption } from "../../core/command";
 import type { HttpMethod } from "../../core/session";
+import { textResponse } from "../../core/session";
 
 const METHODS = new Set<HttpMethod>(["GET", "POST", "PUT", "PATCH", "DELETE"]);
 
@@ -27,7 +28,7 @@ export const apiCommand: CommandSpec = {
     const data = stringOption(ctx, "data");
     const session = await ctx.session();
     const body = data === undefined ? undefined : readJsonArg(data, "--data");
-    const text = await session.request(method, path, body, { responseType: "text" });
+    const text = await session.request(method, path, body, { decode: textResponse });
     // Generic API is an inspection escape hatch, not a domain-success claim.
     let response: unknown = text || null;
     try {

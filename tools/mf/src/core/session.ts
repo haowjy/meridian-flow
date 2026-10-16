@@ -20,32 +20,47 @@ export type RequestOptions = {
   signal?: AbortSignal;
 };
 
-export type ResponseParser<T> = (
-  value: unknown,
-) => { success: true; data: T } | { success: false; error: unknown };
+/** A decoder owns the entire response body and returns only the evidence it checked. */
+export type ResponseDecoder<T> = (body: string, request: string) => T;
+
+export const textResponse: ResponseDecoder<string> = (body) => body;
+
+export const unknownJsonResponse: ResponseDecoder<unknown> = (body, request) => {
+  if (!body) throw new CliError("http_error", `${request}: empty JSON response`);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    throw new CliError("http_error", `${request}: invalid JSON response`);
+  }
+  // Many routes answer through serializeTransport; callers see the bare value.
+  return deserializeTransport(parsed);
+};
+
+export function jsonResponse<T>(schema: {
+  safeParse(value: unknown): { success: true; data: T } | { success: false; error: unknown };
+}): ResponseDecoder<T> {
+  return (body, request) => {
+    const result = schema.safeParse(unknownJsonResponse(body, request));
+    if (!result.success) {
+      throw new CliError("http_error", `${request}: invalid response`, {
+        details: result.error,
+      });
+    }
+    return result.data;
+  };
+}
 
 export interface Session {
   readonly serverUrl: string;
   readonly cookie: string;
   readonly ca: string[] | undefined;
-  request(
-    method: HttpMethod,
-    requestPath: string,
-    body: unknown,
-    options: RequestOptions & { responseType: "text" },
-  ): Promise<string>;
   request<T>(
     method: HttpMethod,
     requestPath: string,
     body: unknown,
-    options: RequestOptions & { parse: ResponseParser<T> },
+    options: RequestOptions & { decode: ResponseDecoder<T> },
   ): Promise<T>;
-  request(
-    method: HttpMethod,
-    requestPath: string,
-    body?: unknown,
-    options?: RequestOptions & { allowEmpty?: boolean },
-  ): Promise<unknown>;
 }
 
 type RawResponse = { status: number; headers: IncomingHttpHeaders; body: string };
@@ -174,34 +189,12 @@ export function createSession(input: {
   cookie: string;
   ca: string[] | undefined;
 }): Session {
-  function request(
+  async function request<T>(
     method: HttpMethod,
     requestPath: string,
     body: unknown,
-    options: RequestOptions & { responseType: "text" },
-  ): Promise<string>;
-  function request<T>(
-    method: HttpMethod,
-    requestPath: string,
-    body: unknown,
-    options: RequestOptions & { parse: ResponseParser<T> },
-  ): Promise<T>;
-  function request(
-    method: HttpMethod,
-    requestPath: string,
-    body?: unknown,
-    options?: RequestOptions & { allowEmpty?: boolean },
-  ): Promise<unknown>;
-  async function request(
-    method: HttpMethod,
-    requestPath: string,
-    body?: unknown,
-    options?: RequestOptions & {
-      parse?: ResponseParser<unknown>;
-      allowEmpty?: boolean;
-      responseType?: "text";
-    },
-  ) {
+    options: RequestOptions & { decode: ResponseDecoder<T> },
+  ): Promise<T> {
     const response = await rawRequest({
       url: new URL(requestPath, input.serverUrl).toString(),
       method,
@@ -215,27 +208,7 @@ export function createSession(input: {
     if (response.status < 200 || response.status >= 300) {
       throw httpError(method, requestPath, response);
     }
-    if (options?.responseType === "text") return response.body;
-    if (!response.body) {
-      if (options?.allowEmpty) return undefined;
-      throw new CliError("http_error", `${method} ${requestPath}: empty JSON response`);
-    }
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(response.body);
-    } catch {
-      throw new CliError("http_error", `${method} ${requestPath}: invalid JSON response`);
-    }
-    // Many routes answer through serializeTransport; callers always see the bare value.
-    const value = deserializeTransport(parsed);
-    if (!options?.parse) return value;
-    const result = options.parse(value);
-    if (!result.success) {
-      throw new CliError("http_error", `${method} ${requestPath}: invalid response`, {
-        details: result.error,
-      });
-    }
-    return result.data;
+    return options.decode(response.body, `${method} ${requestPath}`);
   }
   return { serverUrl: input.serverUrl, cookie: input.cookie, ca: input.ca, request };
 }
