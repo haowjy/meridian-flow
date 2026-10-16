@@ -11,8 +11,9 @@
  * its background tab.
  */
 import { createContext, useCallback, useContext } from "react";
-import type { ServerContextTab } from "@/client/stores";
+import type { ContextTab } from "@/client/stores";
 import { useDockDocumentStore } from "../dock/dock-document-store";
+import type { ReviewAddress } from "../presented-document";
 import {
   type OpenProjectDocument,
   type OpenProjectDocumentRequest,
@@ -21,9 +22,11 @@ import {
 
 /** Shows the tab beside the chat under a claim; `cancelled` if a newer intent won. */
 export type OpenBesideChat = (
-  tab: ServerContextTab,
+  tab: ContextTab,
   claim: number,
   focus?: true,
+  /** A draft-only review's address: the dock shows it by item identity, not by path. */
+  review?: ReviewAddress,
 ) => "opened" | "cancelled";
 
 export const BesideChatContext = createContext<OpenBesideChat | null>(null);

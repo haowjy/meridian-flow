@@ -68,6 +68,7 @@ import {
 import { defaultThreadTitle, displayThreadTitle } from "@/lib/thread-title";
 import { TranscriptLinkNavigationContext } from "@/rich-content/TranscriptReference";
 import { ChatComposerToolbar } from "./ChatComposerToolbar";
+import { ChatContextNavigationProvider } from "./ChatContextNavigation";
 import { ChatSurface } from "./ChatSurface";
 import { useOpenChatThread } from "./ChatThreadNavigation";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
@@ -511,108 +512,113 @@ export function ChatView({
   return (
     <TranscriptLinkNavigationContext.Provider value={links.navigation}>
       <ReferenceAvailabilityContext.Provider value={links.references}>
-        <ChatSurface
-          title={pageTitle}
-          surfaceRef={chatSurfaceRef}
-          footer={
-            <div data-debug-composer={threadId}>
-              <Composer
-                notices={
-                  usageBlocked || handBackCardList.length > 0 ? (
+        <ChatContextNavigationProvider
+          onOpenContextUri={links.doors?.open}
+          canOpenContextUri={links.doors?.canOpen}
+        >
+          <ChatSurface
+            title={pageTitle}
+            surfaceRef={chatSurfaceRef}
+            footer={
+              <div data-debug-composer={threadId}>
+                <Composer
+                  notices={
+                    usageBlocked || handBackCardList.length > 0 ? (
+                      <>
+                        {usageBlocked ? <UsageBlockedNotice /> : null}
+                        <HandBackCards
+                          cards={handBackCardList}
+                          onRetry={retryCard}
+                          onDismiss={dismissCard}
+                        />
+                      </>
+                    ) : undefined
+                  }
+                  key={draft.key}
+                  initialDraft={draft.initialDraft}
+                  onDraftChange={draft.updateDraft}
+                  onOpenReference={(reference) => {
+                    void openReferenceDocument({
+                      documentId: reference.documentId,
+                      disposition: "current",
+                    });
+                  }}
+                  ref={composerRef}
+                  variant="pinned"
+                  attached={
                     <>
-                      {usageBlocked ? <UsageBlockedNotice /> : null}
-                      <HandBackCards
-                        cards={handBackCardList}
-                        onRetry={retryCard}
-                        onDismiss={dismissCard}
-                      />
-                    </>
-                  ) : undefined
-                }
-                key={draft.key}
-                initialDraft={draft.initialDraft}
-                onDraftChange={draft.updateDraft}
-                onOpenReference={(reference) => {
-                  void openReferenceDocument({
-                    documentId: reference.documentId,
-                    disposition: "current",
-                  });
-                }}
-                ref={composerRef}
-                variant="pinned"
-                attached={
-                  <>
-                    {composerStrip ? (
-                      // The composer's own border and radius, open at the bottom: the
-                      // composer's top border is the strip's lower edge, so the two
-                      // read as one unit. Inset like the draft dock below it.
-                      <div className="mx-[var(--chat-space-block)] rounded-t-composer-pinned border border-b-0 border-composer-border bg-composer-surface">
-                        {composerStrip}
-                      </div>
-                    ) : null}
-                    {/* The dock strip sits BEHIND (below) the composer — narrower via
+                      {composerStrip ? (
+                        // The composer's own border and radius, open at the bottom: the
+                        // composer's top border is the strip's lower edge, so the two
+                        // read as one unit. Inset like the draft dock below it.
+                        <div className="mx-[var(--chat-space-block)] rounded-t-composer-pinned border border-b-0 border-composer-border bg-composer-surface">
+                          {composerStrip}
+                        </div>
+                      ) : null}
+                      {/* The dock strip sits BEHIND (below) the composer — narrower via
                         mx-2, top corners rounded, jade-tinted background. The composer
                         always keeps its own border and overlaps the strip's edge. */}
-                    <DraftDock dock={dock} />
-                  </>
-                }
-                running={running}
-                stopStatus={chatStop.status}
-                referenceCatalog={referenceCatalog}
-                availableSkills={availableSkills.skills}
-                commands={chatCommands}
-                uploadPort={uploadIntakePort}
-                uploadScope={
-                  activeWork ? { kind: "work", projectId, workId: activeWork.id } : undefined
-                }
-                onSubmit={handleSubmit}
-                onStop={handleStop}
-                toolbarLeft={
-                  activeWork ? (
-                    <ChatComposerToolbar
-                      projectId={projectId}
+                      <DraftDock dock={dock} />
+                    </>
+                  }
+                  running={running}
+                  stopStatus={chatStop.status}
+                  referenceCatalog={referenceCatalog}
+                  availableSkills={availableSkills.skills}
+                  commands={chatCommands}
+                  uploadPort={uploadIntakePort}
+                  uploadScope={
+                    activeWork ? { kind: "work", projectId, workId: activeWork.id } : undefined
+                  }
+                  onSubmit={handleSubmit}
+                  onStop={handleStop}
+                  toolbarLeft={
+                    activeWork ? (
+                      <ChatComposerToolbar
+                        projectId={projectId}
+                        threadId={threadId}
+                        work={activeWork}
+                        agentName={composerAgentName}
+                        writeMode={controls.writeMode}
+                        onWriteModeChange={controls.switchWriteMode}
+                      />
+                    ) : undefined
+                  }
+                />
+              </div>
+            }
+          >
+            <TurnDerivationProvider value={turnDerivation}>
+              <SubagentDisclosureProvider>
+                <SubagentActivityProvider nodes={activity.activity.children} turns={turns}>
+                  <div className="relative flex min-h-0 flex-1 flex-col">
+                    <RunningSubagentsStrip threadId={threadId} />
+                    <TurnList
                       threadId={threadId}
-                      work={activeWork}
-                      agentName={composerAgentName}
-                      writeMode={controls.writeMode}
-                      onWriteModeChange={controls.switchWriteMode}
+                      view={view}
+                      historySettled={historySettled}
+                      tailFollowRevision={tailFollowRevision}
+                      ariaLabel={t`Chat`}
+                      onRespondToInterrupt={handleRespondToInterrupt}
+                      changeTrails={changeTrails.byId}
+                      submissionRecoveryByTurnId={submissions.presentation}
+                      controls={controls}
+                      chatStop={chatStop}
+                      queue={queue}
+                      brief={brief}
+                      replyRetry={replyRetry}
+                      busy={running}
+                      inherited={inheritedView}
+                      onRetryInherited={inherited.failed ? inherited.retry : null}
+                      threadUsage={snapshotThreadUsage}
                     />
-                  ) : undefined
-                }
-              />
-            </div>
-          }
-        >
-          <TurnDerivationProvider value={turnDerivation}>
-            <SubagentDisclosureProvider>
-              <SubagentActivityProvider nodes={activity.activity.children} turns={turns}>
-                <div className="relative flex min-h-0 flex-1 flex-col">
-                  <RunningSubagentsStrip threadId={threadId} />
-                  <TurnList
-                    threadId={threadId}
-                    view={view}
-                    historySettled={historySettled}
-                    tailFollowRevision={tailFollowRevision}
-                    ariaLabel={t`Chat`}
-                    onRespondToInterrupt={handleRespondToInterrupt}
-                    changeTrails={changeTrails.byId}
-                    submissionRecoveryByTurnId={submissions.presentation}
-                    controls={controls}
-                    chatStop={chatStop}
-                    queue={queue}
-                    brief={brief}
-                    replyRetry={replyRetry}
-                    busy={running}
-                    inherited={inheritedView}
-                    onRetryInherited={inherited.failed ? inherited.retry : null}
-                    threadUsage={snapshotThreadUsage}
-                  />
-                </div>
-              </SubagentActivityProvider>
-            </SubagentDisclosureProvider>
-          </TurnDerivationProvider>
-        </ChatSurface>
-        <LinkFollowDialog {...links.dialog} />
+                  </div>
+                </SubagentActivityProvider>
+              </SubagentDisclosureProvider>
+            </TurnDerivationProvider>
+          </ChatSurface>
+          <LinkFollowDialog {...links.dialog} />
+        </ChatContextNavigationProvider>
       </ReferenceAvailabilityContext.Provider>
     </TranscriptLinkNavigationContext.Provider>
   );
