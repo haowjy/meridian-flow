@@ -45,6 +45,23 @@ function delta(seq: string, text: string) {
     sourceThreadId: "thread-1",
   };
 }
+/** The `subscribe` requests a socket was sent, in order. */
+function requests(
+  socket: FakeThreadSocket,
+): Array<{ requestId: string; threadId: string; lastSeq?: string }> {
+  return socket.sent.map((data) => JSON.parse(data)).filter((frame) => frame.type === "subscribe");
+}
+function subscribed(socket: FakeThreadSocket, catchup: unknown[] = [], after = "0", index = -1) {
+  const request = requests(socket).at(index);
+  socket.deliver({
+    type: "subscribed",
+    requestId: request?.requestId,
+    threadId: request?.threadId,
+    after,
+    catchup,
+    state,
+  });
+}
 function setup(handshakeTimeoutMs?: number) {
   const sockets: FakeThreadSocket[] = [];
   const transport = new ThreadSocketClient({
@@ -72,7 +89,7 @@ it.each([
   try {
     sockets[0].open();
     sockets[0].deliver(connected);
-    sockets[0].deliver({ type: "subscribed", threadId: "thread-1", catchup: [], state });
+    subscribed(sockets[0]);
     sockets[0].deliver({ type: "event", threadId: "thread-1", ...delta("1", "Early ") });
     sockets[0].close(1006);
     vi.advanceTimersByTime(250);
@@ -108,16 +125,10 @@ it.each([
     replacement.open();
     expect(replacement.sent).toEqual([]);
     replacement.deliver(connected);
-    expect(JSON.parse(replacement.sent[0])).toEqual({
-      type: "resume",
-      subscriptions: [{ threadId: "thread-1", lastSeq: "1" }],
-    });
-    replacement.deliver({
-      type: "subscribed",
-      threadId: "thread-1",
-      catchup: [delta("1", "Early "), delta("2", "catch-up ")],
-      state,
-    });
+    expect(requests(replacement)).toEqual([
+      { type: "subscribe", requestId: expect.any(String), threadId: "thread-1", lastSeq: "1" },
+    ]);
+    subscribed(replacement, [delta("1", "Early "), delta("2", "catch-up ")], "1");
     replacement.deliver({ type: "event", threadId: "thread-1", ...delta("3", "final line") });
     expect(events).toEqual([
       delta("1", "Early "),
@@ -175,7 +186,7 @@ it("retires a silent connected socket without waiting for native close and resum
     const silent = sockets[0];
     silent.open();
     silent.deliver(connected);
-    silent.deliver({ type: "subscribed", threadId: "thread-1", catchup: [], state });
+    subscribed(silent);
     silent.deliver({ type: "event", threadId: "thread-1", ...delta("1", "Early ") });
     silent.stallClose = true;
     vi.advanceTimersByTime(44_999);
@@ -194,16 +205,10 @@ it("retires a silent connected socket without waiting for native close and resum
     const replacement = sockets[1];
     replacement.open();
     replacement.deliver(connected);
-    expect(JSON.parse(replacement.sent[0])).toEqual({
-      type: "resume",
-      subscriptions: [{ threadId: "thread-1", lastSeq: "1" }],
-    });
-    replacement.deliver({
-      type: "subscribed",
-      threadId: "thread-1",
-      catchup: [delta("2", "catch-up ")],
-      state,
-    });
+    expect(requests(replacement)).toEqual([
+      { type: "subscribe", requestId: expect.any(String), threadId: "thread-1", lastSeq: "1" },
+    ]);
+    subscribed(replacement, [delta("2", "catch-up ")], "1");
     replacement.deliver({ type: "event", threadId: "thread-1", ...delta("3", "final line") });
     expect(events).toEqual([
       delta("1", "Early "),
@@ -216,5 +221,334 @@ it("retires a silent connected socket without waiting for native close and resum
     expect(states).toHaveBeenLastCalledWith({ kind: "connected" });
   } finally {
     transport.disconnect();
+  }
+});
+
+// Replay requests: each `subscribe` has an id, and each ends in an outcome the client attributes to it.
+function replayHarness() {
+  const sockets: FakeThreadSocket[] = [];
+  const transport = new ThreadSocketClient({
+    url: () => "ws://test/api/threads/ws",
+    toError: (error) => new Error(error.message),
+    cancelTurn: vi.fn(),
+    webSocketFactory: () => {
+      const socket = new FakeThreadSocket();
+      sockets.push(socket);
+      return socket;
+    },
+  });
+  transport.connect();
+  sockets[0].open();
+  sockets[0].deliver(connected);
+  const socket = () => sockets.at(-1) as FakeThreadSocket;
+  const asks = (threadId: string) => requests(socket()).filter((r) => r.threadId === threadId);
+  const frame = (seq: string) => delta(seq, `d${seq}`);
+  return {
+    sockets,
+    transport,
+    socket,
+    asks,
+    unsubscribes: () =>
+      socket()
+        .sent.map((data) => JSON.parse(data))
+        .filter((message) => message.type === "unsubscribe"),
+    join(threadId: string, after?: string) {
+      const seqs: string[] = [];
+      const errors: Error[] = [];
+      const leave = transport.subscribe(
+        threadId,
+        { onEvent: (event) => seqs.push(event.seq), onError: (error) => errors.push(error) },
+        after === undefined ? undefined : { after },
+      );
+      return { seqs, errors, leave };
+    },
+    live: (threadId: string, seq: string) =>
+      socket().deliver({ type: "event", threadId, ...frame(seq) }),
+    answer(threadId: string, after: string, catchup: string[], index = -1) {
+      const request = asks(threadId).at(index);
+      socket().deliver({
+        type: "subscribed",
+        requestId: request?.requestId,
+        threadId,
+        after,
+        catchup: catchup.map(frame),
+        state,
+      });
+    },
+    fail(threadId: string, retryable: boolean, index = -1) {
+      socket().deliver({
+        type: "error",
+        kind: "error",
+        requestId: asks(threadId).at(index)?.requestId,
+        threadId,
+        error: { code: "internal", message: "read failed", retryable, source: "system" },
+      });
+    },
+  };
+}
+
+type Replay = ReturnType<typeof replayHarness>;
+
+it.each<{
+  row: string;
+  run: (h: Replay) => { a: string[]; b: string[]; c?: string[]; asks: Array<string | undefined> };
+  expected: { a: string[]; b: string[]; c?: string[]; asks: Array<string | undefined> };
+}>([
+  {
+    row: "in flight, cursor at or above the request's: waits, sends nothing",
+    run(h) {
+      const a = h.join("thread-1", "100");
+      const b = h.join("thread-1", "150");
+      h.live("thread-1", "300");
+      h.answer("thread-1", "100", ["200"]);
+      return { a: a.seqs, b: b.seqs, asks: h.asks("thread-1").map((r) => r.lastSeq) };
+    },
+    expected: { a: ["200", "300"], b: ["200", "300"], asks: ["100"] },
+  },
+  {
+    row: "in flight, cursor below the request's: supersedes with one request from it",
+    run(h) {
+      const a = h.join("thread-1", "100");
+      const b = h.join("thread-1", "50");
+      h.live("thread-1", "300");
+      h.answer("thread-1", "50", ["75", "120"]);
+      return { a: a.seqs, b: b.seqs, asks: h.asks("thread-1").map((r) => r.lastSeq) };
+    },
+    expected: { a: ["120", "300"], b: ["75", "120", "300"], asks: ["100", "50"] },
+  },
+  {
+    row: "lease active, cursor at or above the position: live from now",
+    run(h) {
+      const a = h.join("thread-1", "100");
+      h.answer("thread-1", "100", []);
+      const b = h.join("thread-1", "100");
+      h.live("thread-1", "200");
+      return { a: a.seqs, b: b.seqs, asks: h.asks("thread-1").map((r) => r.lastSeq) };
+    },
+    expected: { a: ["200"], b: ["200"], asks: ["100"] },
+  },
+  {
+    row: "lease active, cursor below an empty settle's floor: re-requests (the lease floor is the position)",
+    run(h) {
+      const a = h.join("thread-1", "300");
+      h.answer("thread-1", "300", []);
+      const b = h.join("thread-1", "200");
+      h.answer("thread-1", "200", ["250", "350"]);
+      return { a: a.seqs, b: b.seqs, asks: h.asks("thread-1").map((r) => r.lastSeq) };
+    },
+    expected: { a: ["350"], b: ["250", "350"], asks: ["300", "200"] },
+  },
+  {
+    row: "in flight, no cursor: takes the position and the catch-up above it before any live frame",
+    run(h) {
+      const a = h.join("thread-1", "100");
+      h.answer("thread-1", "100", ["150"]);
+      const b = h.join("thread-1", "50");
+      const c = h.join("thread-1");
+      h.live("thread-1", "200");
+      h.answer("thread-1", "50", ["75", "150", "200"]);
+      return { a: a.seqs, b: b.seqs, c: c.seqs, asks: h.asks("thread-1").map((r) => r.lastSeq) };
+    },
+    expected: {
+      a: ["150", "200"],
+      b: ["75", "150", "200"],
+      c: ["200"],
+      asks: ["100", "50"],
+    },
+  },
+  {
+    row: "first subscriber, no cursor: asks without lastSeq",
+    run(h) {
+      const a = h.join("thread-1");
+      h.answer("thread-1", "0", ["1"]);
+      return { a: a.seqs, b: [], asks: h.asks("thread-1").map((r) => r.lastSeq) };
+    },
+    expected: { a: ["1"], b: [], asks: [undefined] },
+  },
+])("join: $row", ({ run, expected }) => {
+  const h = replayHarness();
+  try {
+    const result = run(h);
+    expect(result).toEqual(expected);
+  } finally {
+    h.transport.disconnect();
+  }
+});
+
+it("applies a superseded request's acknowledgement as frames, so no handler misses one", () => {
+  const h = replayHarness();
+  try {
+    const a = h.join("thread-1", "100");
+    h.answer("thread-1", "100", []);
+    const b = h.join("thread-1", "50");
+    const c = h.join("thread-1", "25");
+    // r2's `subscribed` arrives after r3 was sent: the socket's order puts it before r2's live frames.
+    h.answer("thread-1", "50", ["75", "150"], -2);
+    h.live("thread-1", "200");
+    h.answer("thread-1", "25", ["40", "75", "150"]);
+    expect(a.seqs).toEqual(["150", "200"]);
+    expect(b.seqs).toEqual(["75", "150", "200"]);
+    expect(c.seqs).toEqual(["40", "75", "150", "200"]);
+  } finally {
+    h.transport.disconnect();
+  }
+});
+
+it("fails one thread's request alone: its lease voids, it retries at its own backoff, the others stream on", () => {
+  const h = replayHarness();
+  try {
+    const a1 = h.join("thread-1", "100");
+    h.answer("thread-1", "100", []);
+    const b1 = h.join("thread-2", "10");
+    h.answer("thread-2", "10", []);
+    const a2 = h.join("thread-1", "50");
+    h.fail("thread-1", true);
+
+    // Both of thread-1's handlers hear it once; thread-2 and the socket are unaffected.
+    expect(a1.errors).toHaveLength(1);
+    expect(a2.errors).toHaveLength(1);
+    expect(b1.errors).toHaveLength(0);
+    h.live("thread-2", "20");
+    expect(b1.seqs).toEqual(["20"]);
+    expect(h.sockets).toHaveLength(1);
+
+    for (const delay of [250, 500, 1_000]) {
+      const before = h.asks("thread-1").length;
+      vi.advanceTimersByTime(delay - 1);
+      expect(h.asks("thread-1")).toHaveLength(before);
+      vi.advanceTimersByTime(1);
+      expect(h.asks("thread-1")).toHaveLength(before + 1);
+      expect(h.asks("thread-1").at(-1)?.lastSeq).toBe("50");
+      if (delay < 1_000) h.fail("thread-1", true);
+    }
+    expect(a1.errors).toHaveLength(1);
+    expect(h.asks("thread-2")).toHaveLength(1);
+
+    h.answer("thread-1", "50", ["60", "110"]);
+    expect(a1.seqs).toEqual(["110"]);
+    expect(a2.seqs).toEqual(["60", "110"]);
+  } finally {
+    h.transport.disconnect();
+  }
+});
+
+it("refuses a thread on a non-retryable error: unsubscribes, stays quiet, and a join asks again", () => {
+  const h = replayHarness();
+  try {
+    const a = h.join("thread-1", "0");
+    h.fail("thread-1", false);
+    expect(a.errors).toHaveLength(1);
+    expect(h.unsubscribes()).toEqual([
+      { type: "unsubscribe", requestId: expect.any(String), threadId: "thread-1" },
+    ]);
+    vi.advanceTimersByTime(30_000);
+    expect(h.asks("thread-1")).toHaveLength(1);
+
+    h.join("thread-1", "0");
+    expect(h.asks("thread-1")).toHaveLength(2);
+  } finally {
+    h.transport.disconnect();
+  }
+});
+
+it("ends an unanswered request at its deadline, whatever pings arrive, and retries it", () => {
+  const h = replayHarness();
+  try {
+    const a = h.join("thread-1", "0");
+    vi.advanceTimersByTime(15_000);
+    h.socket().deliver({ type: "ping", ts: 1 });
+    vi.advanceTimersByTime(4_999);
+    expect(a.errors).toHaveLength(0);
+    vi.advanceTimersByTime(1);
+    expect(a.errors).toHaveLength(1);
+    vi.advanceTimersByTime(250);
+    expect(h.asks("thread-1")).toHaveLength(2);
+  } finally {
+    h.transport.disconnect();
+  }
+});
+
+it("lets an error that names no request end nothing", () => {
+  const h = replayHarness();
+  try {
+    const a = h.join("thread-1", "0");
+    h.socket().deliver({
+      type: "error",
+      kind: "error",
+      threadId: "thread-1",
+      error: { code: "internal", message: "stray", retryable: true, source: "system" },
+    });
+    expect(a.errors).toHaveLength(1);
+    h.answer("thread-1", "0", ["1"]);
+    expect(a.seqs).toEqual(["1"]);
+    expect(h.asks("thread-1")).toHaveLength(1);
+    vi.advanceTimersByTime(30_000);
+    expect(a.errors).toHaveLength(1);
+  } finally {
+    h.transport.disconnect();
+  }
+});
+
+it("removing the last waiter unsubscribes and leaves no timer to fire", () => {
+  const h = replayHarness();
+  try {
+    const a = h.join("thread-1", "0");
+    a.leave();
+    expect(h.unsubscribes()).toHaveLength(1);
+    vi.advanceTimersByTime(30_000);
+    expect(h.asks("thread-1")).toHaveLength(1);
+    expect(a.errors).toHaveLength(0);
+
+    const b = h.join("thread-1", "0");
+    h.fail("thread-1", true);
+    b.leave();
+    vi.advanceTimersByTime(30_000);
+    expect(h.asks("thread-1")).toHaveLength(2);
+  } finally {
+    h.transport.disconnect();
+  }
+});
+
+it("keeps the other handler waiting when the one that asked for history leaves a pending retry", () => {
+  const h = replayHarness();
+  try {
+    const a = h.join("thread-1", "100");
+    h.answer("thread-1", "100", []);
+    const b = h.join("thread-1", "50");
+    h.fail("thread-1", true);
+    b.leave();
+    h.live("thread-1", "130");
+    expect(a.seqs).toEqual([]);
+    vi.advanceTimersByTime(250);
+    expect(h.asks("thread-1").at(-1)?.lastSeq).toBe("100");
+    h.answer("thread-1", "100", ["120", "130"]);
+    expect(a.seqs).toEqual(["120", "130"]);
+  } finally {
+    h.transport.disconnect();
+  }
+});
+
+it("reconnects with one subscribe per thread, and each handler gets its frames once", () => {
+  const h = replayHarness();
+  try {
+    const a = h.join("thread-1", "0");
+    const b = h.join("thread-2", "0");
+    h.answer("thread-1", "0", ["1"]);
+    h.answer("thread-2", "0", ["1"]);
+    h.sockets[0].close(1006);
+    vi.advanceTimersByTime(250);
+    h.sockets[1].open();
+    h.sockets[1].deliver(connected);
+    expect(h.sockets[1].sent.map((data) => JSON.parse(data).type)).toEqual([
+      "subscribe",
+      "subscribe",
+    ]);
+    h.answer("thread-1", "1", ["1", "2"]);
+    h.answer("thread-2", "1", ["1", "2"]);
+    h.live("thread-1", "3");
+    expect(a.seqs).toEqual(["1", "2", "3"]);
+    expect(b.seqs).toEqual(["1", "2"]);
+  } finally {
+    h.transport.disconnect();
   }
 });
