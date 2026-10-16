@@ -1,6 +1,7 @@
 /** The hand-back operation over in-memory ports: the state transitions the app and ./mf share. */
 import type { HandBackResult, PendingInboxItem, RunState } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
+import { stopStatus } from "../run-state/fold-messages";
 import {
   INITIAL_RUN_STATE_VIEW,
   type RunStateView,
@@ -264,12 +265,17 @@ describe("hand-back operation", () => {
     const ex = { executionId: "e1", currentTurnId: "t" };
     const running = receiveRecord(INITIAL_RUN_STATE_VIEW, {
       ...record("1000", [item(M1, 1)]),
+      sentThrough: 1,
       execution: ex,
     });
     const r = rig();
     r.answer(async () => ({ status: null }));
     await r.op.press({ kind: "stop", view: running });
-    expect(r.op.stopFacts()).toEqual({ request: "failed", cancelledExecutionId: null });
+    expect(r.op.stopFacts()).toEqual({
+      request: "idle",
+      cancelledExecutionId: null,
+      failedStops: [{ targetExecutionId: "e1", candidates: 1 }],
+    });
     const [card] = handBackCards(r.op.unresolved(), running);
     expect(card?.copy).toBe("stop-failed");
     const later = receiveRecord(running, {
@@ -294,6 +300,34 @@ describe("hand-back operation", () => {
       },
     });
     await retried;
-    expect(r.op.stopFacts()).toEqual({ request: "idle", cancelledExecutionId: "e1" });
+    expect(r.op.stopFacts()).toEqual({
+      request: "idle",
+      cancelledExecutionId: "e1",
+      failedStops: [],
+    });
+  });
+
+  it("a failed Stop with nothing queued shows while its reply runs and is moot once it ends", async () => {
+    // Risk: a Stop with no candidates leaving a hand-back card (and a failed Stop button) behind.
+    const ex = { executionId: "e1", currentTurnId: "t" };
+    const running = receiveRecord(INITIAL_RUN_STATE_VIEW, { ...record("1000"), execution: ex });
+    const ended = receiveRecord(running, record("1001"));
+    const r = rig();
+    r.answer(async () => ({ status: 409, body: {} }));
+    await r.op.press({ kind: "stop", view: running });
+    const facts = r.op.stopFacts();
+    expect(handBackCards(r.op.unresolved(), running)[0]?.copy).toBe("stop-failed");
+    expect(stopStatus(running, facts)).toBe("failed");
+    expect(handBackCards(r.op.unresolved(), ended)).toEqual([]);
+    expect(stopStatus(ended, facts)).toBe("idle");
+
+    // The refused moot Stop must not stand in for a later reply's failed Stop.
+    const next = receiveRecord(ended, {
+      ...record("1002"),
+      execution: { executionId: "e2", currentTurnId: "t2" },
+    });
+    await r.op.press({ kind: "stop", view: next });
+    expect(r.op.stopFacts().failedStops).toHaveLength(1);
+    expect(stopStatus(next, r.op.stopFacts())).toBe("failed");
   });
 });
