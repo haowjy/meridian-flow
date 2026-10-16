@@ -56,7 +56,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             projectId: PROJECT_ID,
             createdByUserId: USER_ID,
             name: `Contract Work ${workCounter}`,
-            slug: `contract-work-${workCounter}`,
+            handle: "w1",
           });
           return id;
         },

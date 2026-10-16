@@ -122,7 +122,7 @@ await db.insert(works).values({
   projectId,
   createdByUserId: userId,
   name: "Smoke work",
-  slug: "smoke-work",
+  handle: "w1",
 });
 await db.insert(threads).values({
   rootThreadId: threadId,

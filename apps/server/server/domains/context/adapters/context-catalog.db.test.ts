@@ -735,7 +735,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: PROJECT_ID,
           createdByUserId: USER_ID,
           name: "No Work",
-          slug: null,
+          handle: null,
           isNoWork: true,
         },
         {
@@ -743,7 +743,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: PROJECT_ID,
           createdByUserId: USER_ID,
           name: "Draft",
-          slug: "draft",
+          handle: "w2",
         },
       ]);
       await db.insert(contextSources).values([

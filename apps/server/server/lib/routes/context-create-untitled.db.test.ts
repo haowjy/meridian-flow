@@ -64,7 +64,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: bootstrap.projectId,
         createdByUserId: USER_ID,
         name: "Current Work",
-        slug: "current-work",
+        handle: "w1",
       });
       return { ...bootstrap, workId };
     }
@@ -119,7 +119,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         authority,
         projectId,
         USER_ID,
-        authority.workSlug ? new Map([[authority.workSlug, authority]]) : new Map(),
+        authority.workHandle ? new Map([[authority.workHandle, authority]]) : new Map(),
       );
       const create = () =>
         createUntitledContextDocument({
@@ -158,7 +158,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         authority,
         projectId,
         USER_ID,
-        authority.workSlug ? new Map([[authority.workSlug, authority]]) : new Map(),
+        authority.workHandle ? new Map([[authority.workHandle, authority]]) : new Map(),
       );
 
       await expect(

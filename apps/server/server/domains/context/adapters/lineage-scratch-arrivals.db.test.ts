@@ -44,7 +44,7 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
     await db.insert(projects).values({ id: p, userId: u, name: "Project", slug: "project" });
     await db
       .insert(works)
-      .values({ id: work, projectId: p, createdByUserId: u, name: "A", slug: "a" });
+      .values({ id: work, projectId: p, createdByUserId: u, name: "A", handle: "w1" });
     await db
       .insert(threads)
       .values({ id: root, projectId: p, rootThreadId: root, createdByUserId: u, ref: "c1" });
@@ -135,7 +135,7 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
       if (door === "chat") {
         await db
           .update(works)
-          .set({ isNoWork: true, name: "No Work", slug: null })
+          .set({ isNoWork: true, name: "No Work", handle: null })
           .where(eq(works.id, work));
         await threadRepo.setTrashState(root as never, "deleted");
       } else await workRepo.softDelete(work as never);
@@ -159,9 +159,9 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
         deletedAhead = crypto.randomUUID(),
         hiddenAhead = crypto.randomUUID();
       await registry.register([
-        { aheadId: ahead, holderProjectId: p, address: "scratch://@/c1/note.toml" },
-        { aheadId: deletedAhead, holderProjectId: p, address: "scratch://@/c1/deleted.toml" },
-        { aheadId: hiddenAhead, holderProjectId: p, address: "scratch://@/c1/hidden/note.toml" },
+        { aheadId: ahead, holderProjectId: p, address: "scratch://@c1/note.toml" },
+        { aheadId: deletedAhead, holderProjectId: p, address: "scratch://@c1/deleted.toml" },
+        { aheadId: hiddenAhead, holderProjectId: p, address: "scratch://@c1/hidden/note.toml" },
       ]);
       if (door === "chat") await threadRepo.setTrashState(root as never, "visible");
       else await workRepo.restore(work as never);
@@ -169,7 +169,7 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
         resolutions: [{ kind: "available", entry: { entryId: note } }],
       });
       await expect(lookup(upload)).resolves.toMatchObject({
-        resolutions: [{ kind: "available", entry: { uri: "uploads://@/c1/pic.png" } }],
+        resolutions: [{ kind: "available", entry: { uri: "uploads://@c1/pic.png" } }],
       });
       await expect(
         catalog.snapshot({ kind: "chat", projectId: p, chatId: root } as never),

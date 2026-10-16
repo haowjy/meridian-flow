@@ -3,7 +3,7 @@
 import type { ProjectPreferences } from "@meridian/contracts/preferences";
 import { type AGUIEvent, EventType, type UserMessageBlock } from "@meridian/contracts/protocol";
 import { InMemoryTransactionOwner } from "../../../../shared/in-memory-transaction.js";
-import { testWorkSlug } from "../../../../test-support/work-slug.js";
+import { testWorkHandle } from "../../../../test-support/work-handle.js";
 import {
   type CreditLedger,
   createBillingUsagePolicy,
@@ -118,7 +118,7 @@ export function createRuntimeHarness(
           execution: {
             scope: {
               workId: "00000000-0000-0000-0000-000000000002",
-              workSlug: testWorkSlug("test-work"),
+              workHandle: testWorkHandle("test-work"),
             },
             aiWriteMode: "direct" as const,
             draftOwner: null,

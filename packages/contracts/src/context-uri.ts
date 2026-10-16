@@ -1,8 +1,8 @@
 /** Shared syntax parser, stable serializer, and presentation-neutral context URI derivations. */
 
+import { classifyHandleToken, decodeWorkHandle, parseHandle, type WorkHandle } from "./handles.js";
 import { parseDocumentFilename, renderFilename } from "./protocol/document-filename.js";
-import type { ResolvedWorkAuthority, WorkSlug } from "./works/index.js";
-import { decodeWorkSlug } from "./works/index.js";
+import type { ResolvedWorkAuthority } from "./works/index.js";
 
 export const CONTEXT_URI_SCHEMES = [
   "manuscript",
@@ -22,7 +22,7 @@ export function isDraftedScheme(scheme: ContextUriScheme): boolean {
 export const PROJECT_SCOPED_CONTEXT_URI_SCHEMES = ["manuscript", "kb", "user", "unfiled"] as const;
 export type ProjectScopedContextUriScheme = (typeof PROJECT_SCOPED_CONTEXT_URI_SCHEMES)[number];
 
-/** Schemes whose address takes an owner authority (`@slug`, `@/c12/`, `@/`): Scratch and chat uploads. */
+/** Schemes whose address takes an owner authority (`@w3`, `@c12`): Scratch and chat uploads. */
 export const OWNED_CONTEXT_URI_SCHEMES = ["scratch", "uploads"] as const;
 export type OwnedContextUriScheme = (typeof OWNED_CONTEXT_URI_SCHEMES)[number];
 
@@ -46,11 +46,12 @@ export interface ContextSchemeCapabilities {
 /** Syntax-only authority carried by a parsed Work-capable context URI. */
 export type ParsedContextAuthority =
   | { kind: "contextual" }
-  | { kind: "none" }
+  /** `@` alone: a request to list the scheme's owners. */
+  | { kind: "owners" }
   | { kind: "lineage"; rootThreadRef: string }
   /** The chat (a primary thread) that received the files; only `uploads://` takes it. */
   | { kind: "chat"; chatRef: string }
-  | { kind: "work"; workSlug: WorkSlug };
+  | { kind: "work"; workHandle: WorkHandle };
 
 /** The owners a holder's authority supplies, independently for each owned scheme. */
 export function holderAuthorities(
@@ -63,7 +64,7 @@ export function holderAuthorities(
       return { scratch: authority, uploads: null };
     case "chat":
       return { scratch: null, uploads: authority };
-    case "none":
+    case "owners":
     case "contextual":
       return { scratch: null, uploads: null };
   }
@@ -84,7 +85,7 @@ export function qualifyContextUriByHolder(uri: string, holderUri: string | null)
 /** Authority accepted by stable URI serialization. */
 export type CanonicalContextAuthority =
   | { kind: "contextual" }
-  | { kind: "none" }
+  | { kind: "owners" }
   | { kind: "lineage"; rootThreadRef: string }
   | { kind: "chat"; chatRef: string }
   | ResolvedWorkAuthority;
@@ -98,13 +99,24 @@ export interface ParsedContextUri {
   normalized: string;
 }
 
+/**
+ * A near-miss owner spelling that only the server can fully answer (it knows which Works and chats
+ * exist). `reason` already holds the answer the contracts can give alone.
+ */
+export type OwnerSlip =
+  /** `@tea-notes`: a name where a handle belongs. */
+  | { kind: "name"; scheme: OwnedContextUriScheme; token: string }
+  /** `@p3`: a subagent's handle where its chat's belongs. */
+  | { kind: "subagent"; scheme: OwnedContextUriScheme; token: string }
+  /** `@W3`: handles are lowercase. */
+  | { kind: "uppercase"; scheme: OwnedContextUriScheme; token: string }
+  /** `@x` or `@/x` with no usable handle. */
+  | { kind: "no-handle"; scheme: OwnedContextUriScheme };
+
 type ContextUriParseError = {
   ok: false;
-  /**
-   * `unknownScheme` marks a URI that names no context scheme, so it addresses no document.
-   * `chatHandle` marks `uploads://@c1/…`, a chat's handle spelled straight after `@`.
-   */
-  error: { uri: string; reason: string; unknownScheme?: string; chatHandle?: string };
+  /** `unknownScheme` marks a URI that names no context scheme, so it addresses no document. */
+  error: { uri: string; reason: string; unknownScheme?: string; slip?: OwnerSlip };
 };
 export type ContextUriParseResult = { ok: true; value: ParsedContextUri } | ContextUriParseError;
 type AuthorityParseResult =
@@ -154,36 +166,20 @@ export function canonicalContextUri(
   if (scheme !== "uploads" && "kind" in authority && authority.kind === "chat") {
     throw new RangeError("Only uploads support a chat qualifier");
   }
-  if (scheme === "scratch" && normalizedPath && authorityQualifier(authority) === "@") {
-    throw new RangeError(missingScratchHandle);
+  if (scheme === "uploads" && "workId" in authority) {
+    throw new RangeError("Uploads belong to a chat, not a Work");
   }
-  if (
-    scheme === "uploads" &&
-    authorityQualifier(authority) &&
-    !("kind" in authority && authority.kind === "chat")
-  ) {
-    throw new RangeError(uploadsBelongToChat);
+  if ("workId" in authority && !authority.workHandle) {
+    throw new RangeError("No Work has no address");
   }
-  const qualifier = authorityQualifier(authority);
-  if (qualifier)
-    return normalizedPath
-      ? `${scheme}://${qualifier}/${normalizedPath}`
-      : `${scheme}://${qualifier}/`;
-  return normalizedPath ? `${scheme}://${normalizedPath}` : `${scheme}://`;
+  return formatParsedContextUri(scheme, normalizedPath, toParsedAuthority(authority));
 }
 
-function authorityQualifier(authority: CanonicalContextAuthority): string | null {
-  if ("kind" in authority && authority.kind === "lineage") {
-    if (!/^c[1-9][0-9]*$/.test(authority.rootThreadRef))
-      throw new RangeError("Invalid first-chat handle");
-    return `@/${authority.rootThreadRef}`;
-  }
-  if ("kind" in authority && authority.kind === "chat") {
-    if (!/^c[1-9][0-9]*$/.test(authority.chatRef)) throw new RangeError("Invalid chat handle");
-    return `@/${authority.chatRef}`;
-  }
-  if ("workSlug" in authority) return authority.workSlug ? `@${authority.workSlug}` : "@";
-  return authority.kind === "none" ? "@" : null;
+function toParsedAuthority(authority: CanonicalContextAuthority): ParsedContextAuthority {
+  if ("kind" in authority) return authority;
+  const workHandle = decodeWorkHandle(authority.workHandle);
+  if (!workHandle) throw new RangeError("Invalid Work handle");
+  return { kind: "work", workHandle };
 }
 
 /** Strict serializer, lenient parser; bare paths resolve to `manuscript://`. */
@@ -277,7 +273,7 @@ function parseAuthorityPrefix(
 
   const segments = rawPath.split("/").filter((segment) => segment !== "" && segment !== ".");
   const qualifiers: string[] = [];
-  while (segments[0]?.startsWith("@")) qualifiers.push(segments.shift() ?? "");
+  while (segments[0]?.startsWith(OWNER_SIGIL)) qualifiers.push(segments.shift() ?? "");
   if (qualifiers.length === 0) {
     return { ok: true, value: { authority: { kind: "contextual" }, rawPath } };
   }
@@ -293,46 +289,109 @@ function parseAuthorityPrefix(
       `Scheme "${scheme}" does not yet support authority qualifiers`,
     );
   }
-  const qualifier = qualifiers[0] ?? "";
-  // Uploads belong to a chat: the only owner they take is a chat's handle.
-  if (scheme === "uploads" && !(qualifier === "@" && segments.length)) {
-    const chatHandle = /^@(c[1-9][0-9]*)$/.exec(qualifier)?.[1];
-    const error = invalidContextUri(rawUri, uploadsBelongToChat);
-    return chatHandle ? { ok: false, error: { ...error.error, chatHandle } } : error;
+  const token = (qualifiers[0] ?? "").slice(OWNER_SIGIL.length);
+  if (token === "") return parseBareSigil(scheme, segments, rawUri);
+  return parseOwnerToken(scheme, token, segments, rawUri);
+}
+
+/** `@` with no handle after it: a listing request, or the #875 spelling `@/c12/`, which is refused. */
+function parseBareSigil(
+  scheme: OwnedContextUriScheme,
+  segments: string[],
+  rawUri: string,
+): AuthorityParseResult {
+  const first = segments[0];
+  if (first === undefined) {
+    return { ok: true, value: { authority: { kind: "owners" }, rawPath: "" } };
   }
-  if (qualifier === "@" && scheme === "scratch" && segments.length) {
-    const rootThreadRef = segments.shift() ?? "";
-    if (!/^c[1-9][0-9]*$/.test(rootThreadRef))
-      return invalidContextUri(rawUri, missingScratchHandle);
-    return {
-      ok: true,
-      value: { authority: { kind: "lineage", rootThreadRef }, rawPath: segments.join("/") },
-    };
+  const classified = classifyHandleToken(first);
+  const authority =
+    classified.kind === "handle" ? ownerAuthority(scheme, classified.handle.handle) : null;
+  if (authority) {
+    return invalidContextUri(
+      rawUri,
+      `Handles follow ${OWNER_SIGIL} directly: ${formatParsedContextUri(scheme, "", authority)}…`,
+    );
   }
-  if (qualifier === "@" && scheme === "uploads" && segments.length) {
-    const chatRef = segments.shift() ?? "";
-    if (/^p[1-9][0-9]*$/.test(chatRef)) {
-      return invalidContextUri(rawUri, "Use the chat's handle (c…), not a subagent's (p…).");
+  return noHandleError(scheme, rawUri);
+}
+
+function parseOwnerToken(
+  scheme: OwnedContextUriScheme,
+  token: string,
+  segments: string[],
+  rawUri: string,
+): AuthorityParseResult {
+  const classified = classifyHandleToken(token);
+  const rest = segments.join("/");
+  switch (classified.kind) {
+    case "handle": {
+      const authority = ownerAuthority(scheme, classified.handle.handle);
+      if (authority) return { ok: true, value: { authority, rawPath: rest } };
+      const { kind } = classified.handle;
+      if (kind === "subagent") {
+        return invalidContextUri(rawUri, SUBAGENT_NOT_AN_OWNER, {
+          kind: "subagent",
+          scheme,
+          token,
+        });
+      }
+      return scheme === "uploads" && kind === "work"
+        ? invalidContextUri(rawUri, uploadsBelongToChat)
+        : noHandleError(scheme, rawUri);
     }
-    if (/^c[1-9][0-9]*$/.test(chatRef)) {
-      return {
-        ok: true,
-        value: { authority: { kind: "chat", chatRef }, rawPath: segments.join("/") },
-      };
+    case "uppercase": {
+      const authority = ownerAuthority(scheme, classified.lower);
+      return invalidContextUri(
+        rawUri,
+        authority
+          ? `Handles are lowercase: ${formatParsedContextUri(scheme, "", authority)}…`
+          : unknownOwnerHandle(scheme),
+        { kind: "uppercase", scheme, token },
+      );
     }
-    return invalidContextUri(rawUri, missingUploadsHandle);
+    case "leading-zero":
+      return invalidContextUri(
+        rawUri,
+        `Invalid handle "${token}". Handles are a letter and digits with no leading zero.`,
+      );
+    case "name":
+      return scheme === "scratch"
+        ? invalidContextUri(rawUri, `Unknown Work ${token}. List Works with work list.`, {
+            kind: "name",
+            scheme,
+            token,
+          })
+        : noHandleError(scheme, rawUri);
+    case "unknown-letter":
+      return noHandleError(scheme, rawUri);
   }
-  if (qualifier === "@") {
-    return { ok: true, value: { authority: { kind: "none" }, rawPath: segments.join("/") } };
+}
+
+/** The authority a handle names under a scheme, or null when the scheme takes no such owner. */
+function ownerAuthority(
+  scheme: OwnedContextUriScheme,
+  handle: string,
+): ParsedContextAuthority | null {
+  const parsed = parseHandle(handle);
+  if (!parsed) return null;
+  if (parsed.kind === "chat") {
+    return scheme === "uploads"
+      ? { kind: "chat", chatRef: handle }
+      : { kind: "lineage", rootThreadRef: handle };
   }
-  const workSlug = decodeWorkSlug(qualifier.slice(1));
-  if (!workSlug) {
-    return invalidContextUri(rawUri, `Invalid Work slug authority "${qualifier.slice(1)}"`);
-  }
-  return {
-    ok: true,
-    value: { authority: { kind: "work", workSlug }, rawPath: segments.join("/") },
-  };
+  const workHandle = decodeWorkHandle(handle);
+  return scheme === "scratch" && workHandle ? { kind: "work", workHandle } : null;
+}
+
+function noHandleError(scheme: OwnedContextUriScheme, rawUri: string): ContextUriParseError {
+  return invalidContextUri(rawUri, unknownOwnerHandle(scheme), { kind: "no-handle", scheme });
+}
+
+function unknownOwnerHandle(scheme: OwnedContextUriScheme): string {
+  return scheme === "scratch"
+    ? "@ takes a handle: scratch://@w3/… for a Work, scratch://@c12/… for a chat's lineage. List them with ls scratch://@."
+    : "@ takes a chat's handle: uploads://@c12/… . List chats with files with ls uploads://@.";
 }
 
 /** Schemes whose address takes an owner authority; the complement of the project-scoped ones. */
@@ -352,28 +411,52 @@ export function isProjectScopedScheme(
   return (PROJECT_SCOPED_CONTEXT_URI_SCHEMES as readonly string[]).includes(scheme);
 }
 
-/** Spell parsed address syntax; this does not resolve or grant Work authority. */
+/** The sigil before an owner's handle. */
+export const OWNER_SIGIL = "@";
+
+/** The one serializer for addresses. Spells parsed syntax; it does not resolve or grant authority. */
 export function formatParsedContextUri(
   scheme: ContextUriScheme,
   path: string,
   authority: ParsedContextAuthority,
 ): string {
-  const qualifier =
-    authority.kind === "lineage"
-      ? `@/${authority.rootThreadRef}`
-      : authority.kind === "chat"
-        ? `@/${authority.chatRef}`
-        : authority.kind === "work"
-          ? `@${authority.workSlug}`
-          : authority.kind === "none"
-            ? "@"
-            : null;
-  if (qualifier) return path ? `${scheme}://${qualifier}/${path}` : `${scheme}://${qualifier}/`;
-  return path ? `${scheme}://${path}` : `${scheme}://`;
+  const qualifier = ownerQualifier(authority);
+  if (qualifier === null) return path ? `${scheme}://${path}` : `${scheme}://`;
+  if (authority.kind === "owners") return `${scheme}://${qualifier}`;
+  return path ? `${scheme}://${qualifier}/${path}` : `${scheme}://${qualifier}/`;
 }
 
-function invalidContextUri(uri: string, reason: string): ContextUriParseError {
-  return { ok: false, error: { uri, reason } };
+/** One owner segment of an address, `@w3/`: the text a typed address completes with. */
+export function ownerSegment(authority: ParsedContextAuthority): string | null {
+  const qualifier = ownerQualifier(authority);
+  return qualifier === null ? null : `${qualifier}/`;
+}
+
+function ownerQualifier(authority: ParsedContextAuthority): string | null {
+  switch (authority.kind) {
+    case "contextual":
+      return null;
+    case "owners":
+      return OWNER_SIGIL;
+    case "lineage":
+      return OWNER_SIGIL + chatHandle(authority.rootThreadRef);
+    case "chat":
+      return OWNER_SIGIL + chatHandle(authority.chatRef);
+    case "work": {
+      const workHandle = decodeWorkHandle(authority.workHandle);
+      if (!workHandle) throw new RangeError("Invalid Work handle");
+      return OWNER_SIGIL + workHandle;
+    }
+  }
+}
+
+function chatHandle(ref: string): string {
+  if (parseHandle(ref)?.kind !== "chat") throw new RangeError("Invalid chat handle");
+  return ref;
+}
+
+function invalidContextUri(uri: string, reason: string, slip?: OwnerSlip): ContextUriParseError {
+  return { ok: false, error: slip ? { uri, reason, slip } : { uri, reason } };
 }
 
 /** Split an href at its first `?` or `#`: the path, and the suffix every spelling keeps. */
@@ -407,9 +490,6 @@ export function documentTitleFromUri(uri: string | null | undefined): string | n
   return parsed.ok ? renderFilename(parsed.value.name, parsed.value.extension) : segment;
 }
 
-const missingUploadsHandle =
-  "Uploads under @/ require the chat handle. Use uploads://x for this chat’s files, or uploads://@/c12/x for a specific chat.";
 const uploadsBelongToChat =
-  "Uploads belong to a chat. Use uploads://x for this chat’s files, or uploads://@/c12/x for another chat’s.";
-const missingScratchHandle =
-  "Scratch under @/ requires the first chat handle. Use scratch://x for this chat’s notes, or scratch://@/c12/x for a specific chat. List chats with ls scratch://@/.";
+  "Uploads belong to a chat, not a Work. Use uploads://x for this chat's files, or ls uploads://@ to list chats with files.";
+const SUBAGENT_NOT_AN_OWNER = "Use the chat's handle, not a subagent's.";

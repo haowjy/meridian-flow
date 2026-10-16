@@ -100,11 +100,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         accountId: USER_ID as never,
         agent: {
           chain,
-          draftWork: draftMode ? { id: workId as WorkId, slug: slugs.get(workId) ?? null } : null,
+          draftWork: draftMode
+            ? { id: workId as WorkId, handle: handles.get(workId) ?? null }
+            : null,
         },
       };
     }
-    const slugs = new Map<string, string>([[WORK_ID, "rewrite"]]);
+    const handles = new Map<string, string>([[WORK_ID, "w1"]]);
     const drafting = () => agent(THREAD_ID, WORK_ID, true);
     const direct = () => agent(THREAD_ID, WORK_ID, false);
     async function grant(principal: Principal, documentId: string): Promise<FileGrant<"edit">> {
@@ -165,7 +167,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: PROJECT_ID,
           createdByUserId: USER_ID,
           name: "Rewrite",
-          slug: "rewrite",
+          handle: "w1",
         },
       ]);
       await db.insert(schema.contextSources).values([
@@ -427,7 +429,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         refused: [
           {
             documentId: SCRATCH_ID,
-            denial: { reason: "work_archived", archivedWork: { slug: "rewrite" } },
+            denial: { reason: "work_archived", archivedWork: { handle: "w1" } },
           },
         ],
       });
@@ -716,13 +718,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     /** Work B with its own scratch file, and a draft-mode thread in it with a reply. */
     async function addSecondWorkAndThread() {
-      slugs.set(WORK_B_ID, "second");
+      handles.set(WORK_B_ID, "w2");
       await db.insert(schema.works).values({
         id: WORK_B_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
         name: "Second",
-        slug: "second",
+        handle: "w2",
       });
       await db.insert(schema.contextSources).values({
         id: SCRATCH_B_SOURCE_ID,

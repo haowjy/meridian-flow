@@ -14,7 +14,7 @@ describe("parseContextUri", () => {
       ok: true,
       value: { scheme: "unfiled", path: "Untitled 1.md" },
     });
-    expect(parseContextUri("unfiled://@work/Untitled 1.md").ok).toBe(false);
+    expect(parseContextUri("unfiled://@w1/Untitled 1.md").ok).toBe(false);
     expect(canonicalContextUri("unfiled", "Untitled 1.md")).toBe("unfiled://Untitled 1.md");
   });
   it.each([
@@ -25,7 +25,7 @@ describe("parseContextUri", () => {
   });
 
   it("recognizes qualifier chains through normalized separators", () => {
-    expect(parseContextUri("scratch:////@other-project//@revision-pass/notes.md")).toMatchObject({
+    expect(parseContextUri("scratch:////@w1//@w2/notes.md")).toMatchObject({
       ok: false,
       error: { reason: expect.stringContaining("not yet supported") },
     });
@@ -43,78 +43,102 @@ describe("parseContextUri", () => {
     });
   });
 
-  it("accepts UUID-shaped Work slug syntax without inferring an ID", () => {
-    const workSlug = "123e4567-e89b-12d3-a456-426614174000";
-    expect(parseContextUri(`scratch://@${workSlug}/notes.md`)).toMatchObject({
+  it("names an owner by handle after the sigil, and lists owners with the sigil alone", () => {
+    expect(parseContextUri("scratch://@w3/outline.md")).toMatchObject({
       ok: true,
-      value: { authority: { kind: "work", workSlug } },
+      value: {
+        authority: { kind: "work", workHandle: "w3" },
+        normalized: "scratch://@w3/outline.md",
+      },
     });
-  });
-
-  it("distinguishes contextual, explicit Work, and explicit no-Work authority", () => {
+    expect(parseContextUri("scratch://@c12/notes/a.md")).toMatchObject({
+      ok: true,
+      value: { authority: { kind: "lineage", rootThreadRef: "c12" } },
+    });
+    expect(parseContextUri("uploads://@c15/draft.png")).toMatchObject({
+      ok: true,
+      value: {
+        authority: { kind: "chat", chatRef: "c15" },
+        normalized: "uploads://@c15/draft.png",
+      },
+    });
+    for (const uri of ["scratch://@", "scratch://@/"])
+      expect(parseContextUri(uri)).toMatchObject({
+        ok: true,
+        value: { authority: { kind: "owners" }, normalized: "scratch://@" },
+      });
     expect(parseContextUri("uploads://draft.png")).toMatchObject({
       ok: true,
       value: { authority: { kind: "contextual" }, normalized: "uploads://draft.png" },
     });
-    // No Work's `@/` and a Work's `@slug` name no chat, so they are not uploads addresses.
-    for (const uri of ["uploads://@revision-pass/draft.png", "uploads://@/"])
-      expect(parseContextUri(uri)).toMatchObject({
-        ok: false,
-        error: { reason: expect.stringContaining("belong to a chat") },
-      });
-    // Uploads belong to a chat: `@/` plus the chat's handle, never `@/` alone.
-    expect(parseContextUri("uploads://@/c15/draft.png")).toMatchObject({
-      ok: true,
-      value: {
-        authority: { kind: "chat", chatRef: "c15" },
-        normalized: "uploads://@/c15/draft.png",
-      },
-    });
-    expect(canonicalContextUri("uploads", "./a//b.png", { kind: "chat", chatRef: "c15" })).toBe(
-      "uploads://@/c15/a/b.png",
-    );
-    expect(parseContextUri("uploads://@/p3/draft.png")).toMatchObject({
-      ok: false,
-      error: { reason: expect.stringContaining("not a subagent") },
-    });
-    expect(() =>
-      canonicalContextUri("scratch", "a.png", { kind: "chat", chatRef: "c1" }),
-    ).toThrow();
-    // A chat holder supplies uploads; a Work holder does not.
-    expect(qualifyContextUriByHolder("uploads://a.png", "uploads://@/c15/b.png")).toBe(
-      "uploads://@/c15/a.png",
-    );
-    expect(qualifyContextUriByHolder("uploads://a.png", "scratch://@revision/b.md")).toBe(
-      "uploads://a.png",
-    );
-    // A chat's Scratch is named by its first chat's handle: `@/` plus the handle, never `@/` alone.
-    expect(parseContextUri("scratch://@/c12/notes/a.md")).toMatchObject({
-      ok: true,
-      value: {
-        authority: { kind: "lineage", rootThreadRef: "c12" },
-        normalized: "scratch://@/c12/notes/a.md",
-      },
-    });
-    expect(
-      canonicalContextUri("scratch", "./notes//a.md", { kind: "lineage", rootThreadRef: "c12" }),
-    ).toBe("scratch://@/c12/notes/a.md");
-    expect(() => canonicalContextUri("scratch", "a.md", { kind: "none" })).toThrow();
   });
 
   it.each([
-    "scratch://@revision-pass/folder/@reserved/file.md",
-    "scratch://@bad_slug/file.md",
-    "scratch://@other/@/c12/file.md",
-  ])("rejects reserved path segments and invalid authorities: %s", (uri) => {
+    ["scratch://@/c12/x", "Handles follow @ directly: scratch://@c12/…"],
+    ["uploads://@/c15/x", "Handles follow @ directly: uploads://@c15/…"],
+    ["scratch://@/w3/x", "Handles follow @ directly: scratch://@w3/…"],
+    [
+      "uploads://@w3/x",
+      "Uploads belong to a chat, not a Work. Use uploads://x for this chat's files, or ls uploads://@ to list chats with files.",
+    ],
+    ["uploads://@p3/x", "Use the chat's handle, not a subagent's."],
+    ["scratch://@W3/x", "Handles are lowercase: scratch://@w3/…"],
+    ["uploads://@C15/x", "Handles are lowercase: uploads://@c15/…"],
+    [
+      "scratch://@w03/x",
+      'Invalid handle "w03". Handles are a letter and digits with no leading zero.',
+    ],
+    ["scratch://@tea-notes/x", "Unknown Work tea-notes. List Works with work list."],
+    [
+      "scratch://@/x",
+      "@ takes a handle: scratch://@w3/… for a Work, scratch://@c12/… for a chat's lineage. List them with ls scratch://@.",
+    ],
+  ])("refuses the slip %s with its answer", (uri, reason) => {
+    expect(parseContextUri(uri)).toMatchObject({ ok: false, error: { reason } });
+  });
+
+  it("serializes every owner through one spelling", () => {
+    expect(canonicalContextUri("uploads", "./a//b.png", { kind: "chat", chatRef: "c15" })).toBe(
+      "uploads://@c15/a/b.png",
+    );
+    expect(
+      canonicalContextUri("scratch", "./notes//a.md", { kind: "lineage", rootThreadRef: "c12" }),
+    ).toBe("scratch://@c12/notes/a.md");
+    expect(canonicalContextUri("scratch", "", { kind: "owners" })).toBe("scratch://@");
+    expect(() =>
+      canonicalContextUri("scratch", "a.png", { kind: "chat", chatRef: "c1" }),
+    ).toThrow();
+    expect(() =>
+      canonicalContextUri("uploads", "a.png", { kind: "chat", chatRef: "w3" }),
+    ).toThrow();
+  });
+
+  it("qualifies a contextual address only with the owner its holder supplies", () => {
+    expect(qualifyContextUriByHolder("uploads://a.png", "uploads://@c15/b.png")).toBe(
+      "uploads://@c15/a.png",
+    );
+    expect(qualifyContextUriByHolder("uploads://a.png", "scratch://@w1/b.md")).toBe(
+      "uploads://a.png",
+    );
+  });
+
+  it.each([
+    "scratch://@w1/folder/@reserved/file.md",
+    "scratch://@w1/@c12/file.md",
+  ])("rejects reserved path segments: %s", (uri) => {
     expect(parseContextUri(uri)).toMatchObject({ ok: false });
   });
 
   it("refuses to serialize authorities or paths the parser rejects", () => {
     expect(() =>
-      Reflect.apply(canonicalContextUri, undefined, ["manuscript", "chapter.md", { kind: "none" }]),
+      Reflect.apply(canonicalContextUri, undefined, [
+        "manuscript",
+        "chapter.md",
+        { kind: "owners" },
+      ]),
     ).toThrow(/does not support authority/);
     expect(() => canonicalContextUri("scratch", "folder/@reserved/file.md")).toThrow(/reserved/);
-    expect(() => canonicalContextUri("scratch", "../secret.md", { kind: "none" })).toThrow();
+    expect(() => canonicalContextUri("scratch", "../secret.md", { kind: "owners" })).toThrow();
   });
 });
 
@@ -122,7 +146,7 @@ describe("documentTitleFromUri", () => {
   it("is the stored name, with no extension stripped on its own", () => {
     expect(documentTitleFromUri("manuscript://Chapter 13")).toBe("Chapter 13");
     expect(documentTitleFromUri("manuscript://Book/Vol. 2")).toBe("Vol. 2");
-    expect(documentTitleFromUri("scratch://@/c12/outline.json")).toBe("outline.json");
+    expect(documentTitleFromUri("scratch://@c12/outline.json")).toBe("outline.json");
     expect(documentTitleFromUri("kb://maps/map.png")).toBe("map.png");
     expect(documentTitleFromUri("user://config.toml")).toBe("config.toml");
   });

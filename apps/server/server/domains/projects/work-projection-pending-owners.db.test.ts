@@ -66,7 +66,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
         name: "Pending owner work",
-        slug: "pending-owner-work",
+        handle: "w1",
       });
       await db.insert(contextSources).values({
         id: SOURCE_ID,

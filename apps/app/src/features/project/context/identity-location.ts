@@ -69,7 +69,7 @@ export function identityDestination(
  */
 export function destinationOwner(
   destination: { scheme: ProjectContextTreeScheme } & TabOwner,
-  works: readonly { id: string; slug: string | null }[] | null | undefined,
+  works: readonly { id: string; handle: string | null }[] | null | undefined,
   noWork: { id: string } | null | undefined,
 ): ResourceOwner | null {
   if (destination.rootThreadId !== undefined)

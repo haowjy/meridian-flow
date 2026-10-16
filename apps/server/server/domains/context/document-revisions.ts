@@ -41,7 +41,7 @@ export function createDocumentRevisions(deps: {
     const valid = thread && !thread.deletedAt && work && !work.deletedAt;
     const draftOwner =
       work && thread ? threadExecutionContext(work, thread.aiWriteMode).draftOwner : null;
-    const draftWork = draftOwner && work ? { id: draftOwner.workId, slug: work.slug } : null;
+    const draftWork = draftOwner && work ? { id: draftOwner.workId, handle: work.handle } : null;
     const view = draftWork ? await deps.drafts.viewForWork(draftWork.id) : LIVE_TREE;
     for (const documentId of new Set(documentIds)) {
       let revision: string | null = null;

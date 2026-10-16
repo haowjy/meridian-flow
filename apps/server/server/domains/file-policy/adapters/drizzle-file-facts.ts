@@ -40,7 +40,7 @@ type WorkRow = {
   projectId: ProjectId;
   /** The account that owns the Work's project: its draft's holder (`draftMayHold`). */
   accountId: UserId;
-  slug: string | null;
+  handle: string | null;
   isNoWork: boolean;
   archivedAt: Date | null;
   deletedAt: Date | null;
@@ -144,7 +144,7 @@ function documentRows(db: Database, view: TreeView) {
       work: {
         id: works.id,
         projectId: works.projectId,
-        slug: works.slug,
+        handle: works.handle,
         isNoWork: works.isNoWork,
         archivedAt: works.archivedAt,
         deletedAt: works.deletedAt,
@@ -295,7 +295,7 @@ async function readWork(db: Database, workId: WorkId): Promise<WorkRow | null> {
       id: works.id,
       projectId: works.projectId,
       accountId: projects.userId,
-      slug: works.slug,
+      handle: works.handle,
       isNoWork: works.isNoWork,
       archivedAt: works.archivedAt,
       deletedAt: works.deletedAt,
@@ -308,11 +308,11 @@ async function readWork(db: Database, workId: WorkId): Promise<WorkRow | null> {
 }
 
 function workFacts(
-  row: Pick<WorkRow, "id" | "slug" | "isNoWork" | "archivedAt" | "deletedAt">,
+  row: Pick<WorkRow, "id" | "handle" | "isNoWork" | "archivedAt" | "deletedAt">,
 ): FileWorkFacts {
   return {
     id: row.id,
-    slug: row.slug,
+    handle: row.handle,
     isNoWork: row.isNoWork,
     archived: row.archivedAt !== null,
     deleted: row.deletedAt !== null,
@@ -321,5 +321,5 @@ function workFacts(
 
 /** A purged Work reads as deleted, never as a free pass. */
 function missingWork(id: WorkId): FileWorkFacts {
-  return { id, slug: null, isNoWork: false, archived: false, deleted: true };
+  return { id, handle: null, isNoWork: false, archived: false, deleted: true };
 }

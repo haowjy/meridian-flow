@@ -113,14 +113,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: PROJECT_ID,
           createdByUserId: USER_ID,
           name: "Direct",
-          slug: "direct",
+          handle: "w1",
         },
         {
           id: DRAFT_WORK_ID,
           projectId: PROJECT_ID,
           createdByUserId: USER_ID,
           name: "Draft",
-          slug: "draft",
+          handle: "w2",
         },
       ]);
       await db.insert(schema.threads).values({

@@ -172,8 +172,8 @@ export function parseDestinationParent(
       scheme: parent.scheme,
       owner: {
         workId: parseWorkId(owner.workId, "destinationWorkId"),
-        ...(typeof owner.workSlug === "string" || owner.workSlug === null
-          ? { workSlug: owner.workSlug }
+        ...(typeof owner.workHandle === "string" || owner.workHandle === null
+          ? { workHandle: owner.workHandle }
           : {}),
         ...(owner.rootThreadId != null
           ? {
@@ -318,10 +318,8 @@ export async function commitContextMove(input: {
           : destination.scope === "lineage"
             ? collision.value.authority.kind === "lineage" &&
               collision.value.authority.rootThreadRef === destination.authority.rootThreadRef
-            : destination.authority.workSlug === null
-              ? collision.value.authority.kind === "none"
-              : collision.value.authority.kind === "work" &&
-                collision.value.authority.workSlug === destination.authority.workSlug;
+            : collision.value.authority.kind === "work" &&
+              collision.value.authority.workHandle === destination.authority.workHandle;
       if (
         collision.value.scheme !== destination.scheme ||
         (!identityDestination && collision.value.path !== destinationPath) ||
@@ -351,7 +349,7 @@ export async function commitContextMove(input: {
                   path: collision.value.path,
                   authority: {
                     workId: destination.authority.workId,
-                    workSlug: destination.authority.workSlug,
+                    workHandle: destination.authority.workHandle,
                   },
                 }
               : {
@@ -470,11 +468,11 @@ export async function handleContextMoveRequest(
     if (!parsed.ok) contextErrorToHttp(parsed.error);
     const { scheme, path, authority } = parsed.value;
     if (scheme === "uploads") throw uploadsNotMovable();
-    if (authority.kind === "work" || authority.kind === "none") {
-      const resolved =
-        authority.kind === "none"
-          ? await deps.workAuthorityResolver.noWork(input.projectId)
-          : await deps.workAuthorityResolver.bySlug(input.projectId, authority.workSlug);
+    if (authority.kind === "work") {
+      const resolved = await deps.workAuthorityResolver.byHandle(
+        input.projectId,
+        authority.workHandle,
+      );
       if (!resolved) throwContextWorkUnavailableHttpError("work_missing");
       return {
         scope: "work",

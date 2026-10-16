@@ -3,6 +3,7 @@
  * the file policy grants the call, and the collab pool reads or writes under
  * that grant. `skills://` paths go to the skill files (D52).
  */
+
 import type {
   DocumentCommandName,
   ReadToolInput,
@@ -48,6 +49,7 @@ import {
   inContainer,
   keptDraftReader,
 } from "./file-access.js";
+import { ownerNotice } from "./owner-notice.js";
 import { readDocument } from "./read-document.js";
 import { retractCreatedTrackedDocument } from "./response-write-lifecycle.js";
 import { showingOf, threadShownLinks } from "./shown-link-capture.js";
@@ -112,7 +114,7 @@ export async function resolveDocumentAddress(
     // A URI naming no Work or no scheme addresses no document; the reason lists the valid ones.
     const unknownAddress =
       ref.error.code === "invalid_uri" &&
-      (ref.error.workSlug !== undefined || ref.error.unknownScheme !== undefined);
+      (ref.error.workHandle !== undefined || ref.error.unknownScheme !== undefined);
     if (ref.error.code === "invalid_operation" && ref.error.reason === "ambiguous_path") {
       return writeToolError(command, contextErrorMessage(ref.error), "ambiguous_path", {
         path: canonicalPath,
@@ -180,7 +182,7 @@ function withDestination(outcome: WriteOutcome, destination: FileDestination): W
     result: {
       ...outcome.result,
       destination: destination.kind,
-      ...(destination.kind === "draft" ? { draftWork: destination.workSlug ?? "/" } : {}),
+      ...(destination.kind === "draft" ? { draftWork: destination.workHandle ?? "/" } : {}),
     },
   };
 }
@@ -259,8 +261,14 @@ export function createReadHandler(deps: ToolWiringDeps) {
     );
     if (outcome.isError) return { isError: true, output: outcome.result };
     recordTouchInBackground(deps, address.documentId, ctx);
+    const notice = await ownerNotice(
+      deps.contextPorts.chatFiles,
+      call.context.resolution.thread.projectId,
+      path,
+      address.uri,
+    );
     return {
-      output: outcome.result,
+      output: notice ? { ...outcome.result, notice } : outcome.result,
       metadata: documentRevisionMetadata(address, outcome.revision),
       shown: showingOf(address.documentId, outcome),
     };
@@ -401,8 +409,14 @@ export function createWriteHandler(deps: ToolWiringDeps) {
         threadId: ctx.threadId,
       });
     }
+    const notice = await ownerNotice(
+      deps.contextPorts.chatFiles,
+      context.resolution.thread.projectId,
+      parsed.path,
+      address.uri,
+    );
     return {
-      output: outcome.result,
+      output: notice ? { ...outcome.result, notice } : outcome.result,
       metadata: {
         ...documentRevisionMetadata(address, outcome.revision),
         ...(stagedWrite

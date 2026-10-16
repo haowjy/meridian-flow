@@ -1,6 +1,7 @@
 /** Renders and resolves the frozen model-facing Work context block. */
 
 import type { AgentPermission } from "@meridian/contracts/agents";
+import { formatParsedContextUri } from "@meridian/contracts/context-uri";
 import type { ProjectId, ThreadId } from "@meridian/contracts/runtime";
 import {
   type AiWriteMode,
@@ -55,12 +56,13 @@ function boundedGoal(value: string | null): string | null {
     : null;
 }
 
-function workIdentity(work: Pick<Work, "slug" | "name">): string {
-  return `${promptText(work.slug ?? "none")}: ${JSON.stringify(promptText(work.name))}`;
+/** The handle beside the name, so the model copies the handle into an address instead of composing one. */
+function workIdentity(work: Pick<Work, "handle" | "name">): string {
+  return `${promptText(work.handle ?? "none")} ${JSON.stringify(promptText(work.name))}`;
 }
 
 function currentWorkLines(
-  work: Pick<Work, "slug" | "name" | "goal" | "status" | "archivedAt">,
+  work: Pick<Work, "handle" | "name" | "goal" | "status" | "archivedAt">,
 ): string[] {
   const identity = workIdentity(work);
   const status = work.status;
@@ -135,7 +137,7 @@ function writeModeLines(input: Parameters<typeof describeWriteMode>[0]): string[
   return [`  writes: ${label}. ${first}`, ...rest.map((line) => `  ${line}`)];
 }
 
-type ContextWork = Pick<Work, "slug" | "name" | "goal" | "status" | "archivedAt" | "isNoWork">;
+type ContextWork = Pick<Work, "handle" | "name" | "goal" | "status" | "archivedAt" | "isNoWork">;
 
 function currentLines(work: ContextWork, writes: string[]): string[] {
   if (work.isNoWork) return ["current: none", ...writes];
@@ -153,6 +155,12 @@ export function renderWorkContext(input: {
   /** The chat whose uploads bare `uploads://` names: this thread's top primary chat. */
   chatRef?: string;
 }): string {
+  const lineage = input.rootThreadRef
+    ? formatParsedContextUri("scratch", "", { kind: "lineage", rootThreadRef: input.rootThreadRef })
+    : null;
+  const workScratch = input.current.handle
+    ? formatParsedContextUri("scratch", "", { kind: "work", workHandle: input.current.handle })
+    : null;
   const writes = writeModeLines({
     mode: input.aiWriteMode,
     archived: isWorkArchived(input.current),
@@ -162,16 +170,18 @@ export function renderWorkContext(input: {
   return [
     "<work_context>",
     ...currentLines(input.current, writes),
-    ...(input.rootThreadRef
+    ...(lineage
       ? [
-          input.current.isNoWork
-            ? `  scratch: bare scratch:// is this chat's notes at scratch://@/${input.rootThreadRef}/, shared with its forks and subagents. A handoff starts fresh notes.`
-            : `  scratch: bare scratch:// is this Work's notes at scratch://@${input.current.slug}/. Earlier chat notes remain at scratch://@/${input.rootThreadRef}/.`,
+          workScratch
+            ? `  scratch: bare scratch:// is this Work's notes at ${workScratch}. Earlier chat notes remain at ${lineage}.`
+            : `  scratch: bare scratch:// is this chat's notes at ${lineage}, shared with its forks and subagents. A handoff starts fresh notes.`,
           "  Move notes to kb:// or manuscript:// to keep them for the project. Rebinding never moves notes.",
         ]
       : []),
     ...(input.chatRef
-      ? [`  uploads: bare uploads:// is this chat's files at uploads://@/${input.chatRef}/.`]
+      ? [
+          `  uploads: bare uploads:// is this chat's files at ${formatParsedContextUri("uploads", "", { kind: "chat", chatRef: input.chatRef })}.`,
+        ]
       : []),
     "</work_context>",
   ].join("\n");

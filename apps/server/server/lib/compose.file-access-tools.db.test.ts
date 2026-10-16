@@ -57,7 +57,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
         name: "Rewrite",
-        slug: "rewrite",
+        handle: "w1",
       });
       await db.insert(schema.contextSources).values([
         {
@@ -165,12 +165,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     // D37, D51: a switch that couldn't happen says why instead of asking for approval.
     it("resolves a switch's target before asking for the user's approval", async () => {
       await db.insert(schema.works).values([
-        { projectId: PROJECT_ID, createdByUserId: USER_ID, name: "Other", slug: "other" },
+        { projectId: PROJECT_ID, createdByUserId: USER_ID, name: "Other", handle: "w2" },
         {
           projectId: PROJECT_ID,
           createdByUserId: USER_ID,
           name: "Frozen",
-          slug: "frozen",
+          handle: "w3",
           archivedAt: new Date(),
         },
       ]);

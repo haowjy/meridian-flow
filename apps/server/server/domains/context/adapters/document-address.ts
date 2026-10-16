@@ -145,8 +145,6 @@ export async function resolveCanonicalAddress(
   let lockWorkId: string | null = null;
   let rootThreadId: string | null = null;
   let chatThreadId: string | null = null;
-  if (authority.kind === "none")
-    throw new RangeError(`${scheme} needs a chat handle or named Work authority`);
   if (
     (authority.kind === "chat") !== (scheme === "uploads") ||
     ((authority.kind === "lineage" || authority.kind === "work") && scheme !== "scratch")
@@ -187,11 +185,13 @@ export async function resolveCanonicalAddress(
     const [work] = await tx
       .select({ id: works.id })
       .from(works)
-      .where(and(eq(works.projectId, input.holderProjectId), eq(works.slug, authority.workSlug)));
+      .where(
+        and(eq(works.projectId, input.holderProjectId), eq(works.handle, authority.workHandle)),
+      );
     if (!work) {
       throw new UnresolvableAddressError(
         input.address,
-        `Work ${authority.workSlug} does not exist`,
+        `Work ${authority.workHandle} does not exist`,
       );
     }
     workId = lockWorkId = work.id;

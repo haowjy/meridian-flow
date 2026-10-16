@@ -17,6 +17,7 @@ import type { AiWriteMode } from "@meridian/contracts/works";
 import * as schema from "@meridian/database/schema";
 import { and, asc, desc, eq, getTableColumns, isNotNull, isNull, sql } from "drizzle-orm";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
+import { allocateHandleNumber } from "../../../../shared/handle-counter.js";
 import { lockThreadAndWorks, lockThreadForMutation } from "../../../../shared/thread-work-lock.js";
 import type { LineageScratchLifecycle } from "../../../context/index.js";
 import { normalizeThreadCreate } from "../../domain/thread-create.js";
@@ -160,16 +161,8 @@ async function insertThreadRow(
 ) {
   return runInDrizzleTransaction(db, async () => {
     const activeDb = currentDrizzleDb(db);
-    const [counter] = await activeDb
-      .insert(schema.projectThreadCounters)
-      .values({ projectId: values.projectId as ProjectId, n: 1 })
-      .onConflictDoUpdate({
-        target: schema.projectThreadCounters.projectId,
-        set: { n: sql`${schema.projectThreadCounters.n} + 1` },
-      })
-      .returning({ n: schema.projectThreadCounters.n });
-    if (!counter) throw new Error("Failed to allocate thread ref");
-    const ref = formatThreadRef(values.kind, counter.n);
+    const n = await allocateHandleNumber(activeDb, values.projectId as ProjectId, "thread");
+    const ref = formatThreadRef(values.kind, n);
     const insert = activeDb.insert(schema.threads).values({ ...values, ref });
     const [created] = options.ignoreIdConflict
       ? await insert.onConflictDoNothing({ target: schema.threads.id }).returning(threadColumns)

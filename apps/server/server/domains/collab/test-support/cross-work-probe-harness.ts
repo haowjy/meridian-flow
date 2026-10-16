@@ -20,7 +20,7 @@ export async function seedSecondWork(fixture: CrossWorkProbeFixture): Promise<vo
       projectId: PROJECT_ID,
       createdByUserId: USER_ID,
       name: "Work B",
-      slug: "work-b",
+      handle: "w1",
     })
     .onConflictDoNothing();
   await db

@@ -100,7 +100,7 @@ describe("inverse integration (postgres)", () => {
 
   const grantFor = (documentId: string, workId: string = WORK_ID, slug = "atomicity-work") => {
     const granted = testFileGrant(
-      { kind: "draft", workId: workId as never, workSlug: slug },
+      { kind: "draft", workId: workId as never, workHandle: slug },
       documentId,
     );
     return {

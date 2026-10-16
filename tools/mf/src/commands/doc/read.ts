@@ -10,10 +10,7 @@ export const docReadCommand: CommandSpec = {
   args: "<uri>",
   route: "GET /api/projects/:projectId/context/:scheme/read",
   options: { ...PROJECT_OPTION, full: { type: "boolean", description: "No truncation" } },
-  examples: [
-    './mf doc read "manuscript://Chapter 1"',
-    "./mf doc read scratch://@arc-3/notes --json",
-  ],
+  examples: ['./mf doc read "manuscript://Chapter 1"', "./mf doc read scratch://@w3/notes --json"],
   async run(ctx) {
     const session = await ctx.session();
     const projectId = await resolveProjectId(session, stringOption(ctx, "project"));

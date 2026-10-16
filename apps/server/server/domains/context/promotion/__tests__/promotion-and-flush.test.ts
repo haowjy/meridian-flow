@@ -4,7 +4,7 @@
 
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import { describe, expect, it } from "vitest";
-import { testWorkSlug } from "../../../../test-support/work-slug.js";
+import { testWorkHandle } from "../../../../test-support/work-handle.js";
 import { createNoopEventSink } from "../../../observability/index.js";
 import { resolvedWorkAuthority } from "../../../projects/domain/work-authority.js";
 import { createInMemoryObjectStore } from "../../../storage/index.js";
@@ -49,10 +49,10 @@ const promotionDeps = (
   workAuthorityResolver: {
     async byId(_projectId: string, workId: string) {
       return workId === "work-1"
-        ? resolvedWorkAuthority({ workId, workSlug: testWorkSlug("revision-pass") })
+        ? resolvedWorkAuthority({ workId, workHandle: testWorkHandle("revision-pass") })
         : null;
     },
-    async bySlug() {
+    async byHandle() {
       return null;
     },
     async noWork() {
@@ -104,7 +104,7 @@ describe("promotion service", () => {
     });
     expect(parseUnifiedContextUri(promoted.value.resultsUri)).toMatchObject({
       ok: true,
-      value: { authority: { kind: "work", workSlug: "revision-pass" } },
+      value: { authority: { kind: "work", workHandle: "revision-pass" } },
     });
 
     expect(rows).toHaveLength(1);

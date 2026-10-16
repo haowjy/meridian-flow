@@ -79,7 +79,7 @@ if (!RUN) {
         projectId: PROJECT,
         createdByUserId: USER,
         name: "Notes",
-        slug: "notes",
+        handle: "w1",
         isNoWork: false,
       });
       await database
@@ -350,8 +350,8 @@ if (!RUN) {
       }
       const registry = newRegistry(database);
       await registry.register([
-        { ...registration, address: "scratch://@/c1/note.toml" },
-        { ...registration, aheadId: DOCUMENT_2, address: "scratch://@/c2/note.toml" },
+        { ...registration, address: "scratch://@c1/note.toml" },
+        { ...registration, aheadId: DOCUMENT_2, address: "scratch://@c2/note.toml" },
       ]);
       await database
         .insert(documents)
