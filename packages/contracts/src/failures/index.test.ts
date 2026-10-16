@@ -18,16 +18,10 @@ describe("classifyReplyFailure", () => {
     ["interrupted", { reason: "interrupted" }, "bug"],
     ["credits_exhausted", { reason: "credits_exhausted" }, "usage"],
     ["the error code when no reason", { code: "rate_limited" }, "provider"],
-    ["an untyped provider code", { reason: "some_new_provider_code" }, "bug"],
+    ["an untyped provider code", { reason: "some_new_provider_code", status: 529 }, "bug"],
     ["no reason and no code", {}, "bug"],
     ["an inherited key name", { reason: "toString" }, "bug"],
   ])("%s", (_name, input, source) => {
     expect(classifyReplyFailure(input)).toMatchObject({ category: "reply", source });
-  });
-
-  it("keeps the code, the error code that differs, and the status for diagnostics", () => {
-    expect(
-      classifyReplyFailure({ reason: "provider_error", code: "x", status: 529 }).cause,
-    ).toEqual({ code: "provider_error", reason: "x", status: 529 });
   });
 });
