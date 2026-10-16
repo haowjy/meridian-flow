@@ -132,6 +132,13 @@ publishes watched cards.
   release. Rows gone and the card shows. Free storage, Try again: the words arrive once.
 - **Unsaved:** fill `sessionStorage` first, press the x. Nothing is sent, the row stays queued and
   the card shows. Free storage, Try again: the row leaves and the words arrive.
+- **Occurrence identity:** lose a hand-back answer, then make the composer storage write fail.
+  Press Try again twice: each press has a new card key, no new POST occurs, and the already
+  stored command and its recovery card remain. Restore storage, Retry with another lost answer,
+  and read the pending command's `occurrence`. Reload while the response is still lost: the
+  stored occurrence and card key stay the same. Restore transport and reload: words arrive once,
+  the command/card retire, and a second reload does not duplicate the words. A refused write
+  cannot preserve its new occurrence across reload; only the last saved occurrence survives.
 - **Refused:** answer `hand-back` with 409. The rows come back and the card has Dismiss only;
   Dismiss clears it. The copy follows the row count: "Couldn't move your queued message." for one
   row, "Couldn't move your queued messages." for more.
