@@ -12,9 +12,9 @@ Read [`.context/CONTEXT.md`](.context/CONTEXT.md) first.
 - **Share a rule's inputs and recovery, not only its reducer.** `send` and `tail --until-idle`
   follow through the app's `ThreadSync`, so the rules that need a read to finish (a divider waiting for
   its anchor turn, a waiting writer message the transcript lacks) are the sync's. Never build
-  another reducer or turn store here: Biome's `noRestrictedImports` fails an import of
-  `createTurnReducer` or a turn store from `@meridian/thread-client`, and the message names
-  `ThreadSync`.
+  another reducer or turn store here. Biome restricts reducer/store module imports and
+  re-exports in the two hosts, including relative source paths. This guards the import boundary,
+  not independently written reduction logic.
 - **Imports:** only `@meridian/contracts` and `@meridian/thread-client` from
   workspace packages. From `tools/dev`, only the Portless route contract:
   `portless-prefix.ts`, `portless-routes.ts`, `portlessCa` in
