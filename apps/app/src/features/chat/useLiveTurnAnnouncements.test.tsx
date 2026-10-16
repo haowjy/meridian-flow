@@ -49,6 +49,16 @@ describe("useLiveTurnAnnouncements failures", () => {
     await view.unmount();
   });
 
+  it("takes the alert down when the failed turn leaves the chat, as when it is forgotten", async () => {
+    const view = await mount();
+    await view.show(turn("streaming"), false);
+    await view.show(turn("error"), false);
+    expect(alert).toBe("This response failed.");
+    await view.show(null, false);
+    expect(alert).toBe("");
+    await view.unmount();
+  });
+
   it("does not announce a failure first seen already failed, as after a reload", async () => {
     const view = await mount();
     await view.show(null, false);
