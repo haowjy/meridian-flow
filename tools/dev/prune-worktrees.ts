@@ -31,6 +31,7 @@ import {
   parseNonSymbolicRefNames,
   selectContainedByRef,
   shortRefName,
+  splitRemoteTrackingRef,
   validateCleanupEligibility,
 } from "./lib/worktree-cleanup-eligibility";
 import { acquireCleanupLock, type CleanupLock } from "./lib/worktree-cleanup-lock";
@@ -314,6 +315,26 @@ function fetchBaseBranch(baseBranch: string, cwd: string): void {
   });
 }
 
+// Remote names may contain slashes, so own-ref detection needs the configured
+// names rather than a first-slash split of the ref path.
+function listRemotes(cwd: string): string[] {
+  const output = runText("git", ["remote"], cwd);
+  return output.split("\n").filter(Boolean);
+}
+
+// A remote-tracking ref is only a local cache of the remote, so it counts as a
+// surviving carrier only while its upstream branch still exists. A missing
+// upstream (or an unreachable remote) drops the candidate rather than pruning
+// or mutating anything locally.
+function remoteBranchExists(remote: string, branch: string, cwd: string): boolean {
+  const result = spawnSync("git", ["ls-remote", "--heads", remote, `refs/heads/${branch}`], {
+    cwd,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  return result.status === 0 && result.stdout.trim() !== "";
+}
+
 // Authorizes a targeted cleanup when the planned commit survives in a ref other
 // than the branch's own: a lane merged into a working or integration branch
 // keeps its commits reachable after its own refs are deleted. Symbolic refs are
@@ -323,6 +344,7 @@ function findContainedByRef(
   oid: string,
   branch: string,
   baseBranch: string,
+  remotes: readonly string[],
   cwd: string,
 ): string | undefined {
   const refs = runText(
@@ -336,7 +358,11 @@ function findContainedByRef(
     ],
     cwd,
   );
-  return selectContainedByRef(parseNonSymbolicRefNames(refs), branch, baseBranch);
+  const candidates = parseNonSymbolicRefNames(refs).filter((ref) => {
+    const remoteRef = splitRemoteTrackingRef(ref, remotes);
+    return remoteRef === undefined || remoteBranchExists(remoteRef.remote, remoteRef.branch, cwd);
+  });
+  return selectContainedByRef(candidates, branch, baseBranch, remotes);
 }
 
 // Shared by every worktree: refs are repository-wide state, so one lock file
@@ -435,6 +461,23 @@ function checkAncestry(oid: string, ref: string, cwd: string): boolean {
   );
 }
 
+// A ref that became an alias between planning and execution must not keep
+// authorizing the deletion: the alias can point at the branch being deleted.
+function isSymbolicRef(ref: string, cwd: string): boolean {
+  const result = spawnSync("git", ["symbolic-ref", "-q", ref], {
+    cwd,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (result.status === 0) return true;
+  if (result.status === 1) return false;
+  throw new Error(
+    result.stderr.trim() ||
+      result.error?.message ||
+      `Could not tell whether '${ref}' is a symbolic ref.`,
+  );
+}
+
 function pullRequestEvidenceKey(input: {
   readonly headRefName: string;
   readonly headRepositoryOwner: string;
@@ -483,6 +526,7 @@ async function collectCleanupEligibility(
   const pullRequestsByEvidence = pullRequestDiscovery.ok
     ? indexMergedPullRequests(pullRequestDiscovery.pullRequests)
     : new Map<string, readonly MergedPullRequest[]>();
+  const remotes = targeted ? listRemotes(cwd) : [];
 
   for (const worktree of parseGitWorktreePorcelain(gitWorktreePorcelain)) {
     const branch = worktree.branch;
@@ -496,7 +540,7 @@ async function collectCleanupEligibility(
     }
 
     const containedBy = targeted
-      ? findContainedByRef(plannedOid, branch, baseBranch, cwd)
+      ? findContainedByRef(plannedOid, branch, baseBranch, remotes, cwd)
       : undefined;
     const branchPullRequestDiscovery: PullRequestDiscovery = pullRequestDiscovery.ok
       ? {
@@ -677,11 +721,9 @@ function revalidateTarget(target: CleanupPlan["targets"][number]) {
   let isContained: boolean | undefined;
   if (target.eligibility.kind === "ancestry") {
     try {
-      isContained = checkAncestry(
-        target.eligibility.plannedOid,
-        target.eligibility.containedBy,
-        primaryCwd,
-      );
+      isContained =
+        checkAncestry(target.eligibility.plannedOid, target.eligibility.containedBy, primaryCwd) &&
+        !isSymbolicRef(target.eligibility.containedBy, primaryCwd);
     } catch {
       // A containing ref that vanished or is unreadable is a refusal, not an
       // error: the commit is no longer verifiably preserved.

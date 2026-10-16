@@ -33,7 +33,8 @@ bootstrap. The `./mf` CLI lives in [`tools/mf`](../mf/AGENTS.md).
   infer staleness from a branch name. Cleanup authorizes only the planned
   commit: contained in another surviving ref, or one exact merged PR; batch
   cleanup narrows to the exact PR into the detected base. Cleanup executes one
-  run at a time per repository.
+  run at a time per repository, refusing a stale lock rather than taking it
+  over.
 - `tools/mf` consumes `portless-prefix.ts`, `portless-routes.ts`,
   `portlessCa` in `dev-readiness.ts` and `resolveCheckoutRouteUrls` in
   `dev-session-state.ts`, and `apps/app/e2e` consumes

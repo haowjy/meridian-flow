@@ -99,18 +99,20 @@ was a working branch.
 2. A dry run on `fixture/prune-lane` plans with evidence
    `contained in fixture/prune-integration`; a dry run on
    `fixture/prune-integration` refuses (only its own refs contain it).
-3. Stacked PR: list merged PRs whose base is a working branch, pick one, and
-   create a worktree at its head commit.
+3. Stacked PR: pick a merged PR whose base is a working branch and whose head
+   commit no other ref contains, then create a worktree at that head commit.
 
    ```bash
    gh pr list --state merged --limit 500 \
      --json number,baseRefName,headRefName,headRefOid
+   git for-each-ref --contains=<headRefOid> refs/heads refs/remotes
    git worktree add -b <headRefName> \
      ../meridian-flow.worktrees/prune-fixture-pr <headRefOid>
    ```
 
    The dry run on `<headRefName>` plans with evidence `merged PR #N into
-   <base>`.
+   <base>`; a surviving carrier would be named instead, because containment is
+   checked first.
 4. A branch at a commit no other ref contains and no merged PR matches still
    refuses.
 5. Remove the fixture worktrees and branches: `git worktree remove <path>` and
