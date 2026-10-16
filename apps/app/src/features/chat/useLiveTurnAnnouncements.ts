@@ -43,6 +43,8 @@ export function useLiveTurnAnnouncements(
   const status = liveTurn?.status ?? "pending";
   const prevStatusRef = useRef(status);
   const observedTurnIdRef = useRef<string | null>(null);
+  // The failure this hook published: its alert goes when that turn ends or leaves the chat (forgotten).
+  const announcedFailureRef = useRef<string | null>(null);
   const tool = useMemo(() => runningTool(liveTurn), [liveTurn]);
   const toolAnnouncement = tool ? toolActivityAnnouncement(toolActivityPhrase(tool)) : null;
   const hasPartialText = Boolean(
@@ -77,7 +79,10 @@ export function useLiveTurnAnnouncements(
         observedTurnIdRef.current === liveTurn?.id &&
         !failureEnded
       ) {
-        if (liveTurn?.error) announceError(liveTurn.error, { key: failureKey(liveTurn.id) });
+        if (liveTurn?.error) {
+          announceError(liveTurn.error, { key: failureKey(liveTurn.id) });
+          announcedFailureRef.current = liveTurn.id;
+        }
         reportChatError({
           turnId: liveTurn?.id ?? "unknown",
           threadId,
@@ -89,8 +94,12 @@ export function useLiveTurnAnnouncements(
       }
     }
 
-    // The failure is over once the chat moved on; take its alert down, leaving any other alert alone.
-    if (status === "error" && failureEnded && liveTurn) clearAnnouncement(failureKey(liveTurn.id));
+    // The failure is over once the chat moved on or the turn left the chat; take its alert down, leaving any other alert alone.
+    const announced = announcedFailureRef.current;
+    if (announced && (liveTurn?.id !== announced || failureEnded)) {
+      clearAnnouncement(failureKey(announced));
+      announcedFailureRef.current = null;
+    }
 
     prevStatusRef.current = status;
     observedTurnIdRef.current = liveTurn?.id ?? null;
