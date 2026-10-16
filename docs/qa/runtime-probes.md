@@ -316,7 +316,7 @@ restart smoke check.
 - **Last run:** merge-gate §21–24 mock PASS; original real warm/cold run blocked
   by billing settlement. 2026-09-28 (source commit not recorded).
 
-## RP-17: Fork prefix remains frozen as source grows and compacts
+## RP-18: Fork prefix remains frozen as source grows and compacts
 
 - **Protects:** inherited cutoff/bake ownership (`compaction-protocol`).
 - **Stack:** mock.
@@ -388,7 +388,7 @@ restart smoke check.
   ```
 
   Follow returned cursors where the history exceeds one page. Repeat on the
-  compacted source and fork from RP-17.
+  compacted source and fork from RP-18.
 - **Expect:** child's first request has the reference/read instruction without
   source history. Invalid `from` fails before creating a child or charging a
   child run. Default inspection omits hidden tool payloads; explicit includes
