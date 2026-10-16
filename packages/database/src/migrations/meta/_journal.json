@@ -393,6 +393,20 @@
       "when": 1792105167460,
       "tag": "0061_chat_uploads_reset_online",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1792194896619,
+      "tag": "0062_lock_free_branch_store",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1792194906569,
+      "tag": "0063_lock_free_branch_store_online",
+      "breakpoints": true
     }
   ]
 }
