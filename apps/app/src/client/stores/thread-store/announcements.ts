@@ -10,7 +10,7 @@ import { useShallow } from "zustand/react/shallow";
 type AnnouncementState = {
   polite: string;
   assertive: string;
-  assertiveOwner: { key?: string } | null;
+  assertiveOwner: { entries: { key?: string; message: string }[] } | null;
 };
 
 type AnnouncementStore = AnnouncementState & {
@@ -33,21 +33,45 @@ export function announce(message: string): void {
   queueMicrotask(() => setPolite(message));
 }
 
-/** Push an assertive announcement (errors). Interrupts the current speech. */
-export function announceError(message: string, options?: { key: string }): void {
-  const owner = { key: options?.key };
+/** Publish a batch in one live-region update; report only keys actually published. */
+export function announceErrors(
+  entries: { key: string; message: string }[],
+  published: (keys: string[]) => void,
+): void {
+  publishErrors(entries, (keys) =>
+    published(keys.filter((key): key is string => key !== undefined)),
+  );
+}
+
+function publishErrors(
+  entries: { key?: string; message: string }[],
+  published?: (keys: (string | undefined)[]) => void,
+): void {
+  const owner = { entries };
   useAnnouncementStore.setState({ assertive: "", assertiveOwner: owner });
   queueMicrotask(() => {
-    // A clear or newer alert also cancels publication that has not reached the DOM yet.
-    if (useAnnouncementStore.getState().assertiveOwner === owner)
-      useAnnouncementStore.setState({ assertive: message });
+    if (useAnnouncementStore.getState().assertiveOwner !== owner) return;
+    useAnnouncementStore.setState({
+      assertive: owner.entries.map((entry) => entry.message).join(" "),
+    });
+    published?.(owner.entries.map((entry) => entry.key));
   });
 }
 
-/** Clear an alert only while the caller still owns it. */
+/** Push an assertive announcement (errors). Interrupts the current speech. */
+export function announceError(message: string, options?: { key: string }): void {
+  publishErrors([{ key: options?.key, message }]);
+}
+
+/** Remove only the caller's sentence, including from a batch not yet published. */
 export function clearAnnouncement(key: string): void {
-  if (useAnnouncementStore.getState().assertiveOwner?.key === key)
-    useAnnouncementStore.setState({ assertive: "", assertiveOwner: null });
+  const { assertiveOwner: owner, assertive } = useAnnouncementStore.getState();
+  if (!owner?.entries.some((entry) => entry.key === key)) return;
+  owner.entries = owner.entries.filter((entry) => entry.key !== key);
+  useAnnouncementStore.setState({
+    assertiveOwner: owner.entries.length ? owner : null,
+    assertive: assertive ? owner.entries.map((entry) => entry.message).join(" ") : "",
+  });
 }
 
 /** React hook for {@link AnnouncementRegion} and components that announce. */
