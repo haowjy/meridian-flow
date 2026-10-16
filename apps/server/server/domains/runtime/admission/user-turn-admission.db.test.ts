@@ -195,7 +195,9 @@ if (!RUN) {
           turns: repos.turns,
           delivery,
           records,
-          consumeUploads: (documentIds) => uploadIntake.consume(documentIds),
+          async consumeUploads(documentIds) {
+            await uploadIntake.consume(documentIds, THREAD);
+          },
           async attachDocument(threadId, documentId, relationship) {
             const attached = await repos.threadDocuments.attach(
               threadId as never,
@@ -284,8 +286,8 @@ if (!RUN) {
           {
             documentId,
             uri: referenceUri,
-            purpose: "draft-upload" as const,
-            intakeId: `intake-${documentId === DOCUMENT ? "commit" : "rollback"}`,
+            // A picked file, not the attach door: consumption follows the admitted reference.
+            purpose: "reference" as const,
           },
         ],
       });
@@ -352,7 +354,7 @@ if (!RUN) {
         expect.objectContaining({
           threadId: THREAD,
           documentId: DOCUMENT,
-          relationship: "created",
+          relationship: "reading",
         }),
       ]);
       await expect(firstDb.select().from(schema.uploadIntakes)).resolves.toEqual(

@@ -301,17 +301,21 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
           ),
         );
     },
-    async consume(documentIds) {
-      if (documentIds.length === 0) return;
-      await currentDrizzleDb(db)
+    async consume(documentIds, chatId) {
+      if (documentIds.length === 0) return [];
+      const consumed = await currentDrizzleDb(db)
         .update(uploadIntakes)
         .set({ consumedAt: new Date(), updatedAt: new Date() })
         .where(
           and(
             inArray(uploadIntakes.documentId, [...documentIds] as never[]),
+            eq(uploadIntakes.ownerThreadId, chatId as never),
             eq(uploadIntakes.state, "finalized"),
+            isNull(uploadIntakes.consumedAt),
           ),
-        );
+        )
+        .returning({ contextSourceId: uploadIntakes.contextSourceId });
+      return [...new Set(consumed.map((row) => row.contextSourceId as string))];
     },
   };
 }

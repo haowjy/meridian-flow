@@ -20,6 +20,8 @@ export type AuthoritativeReference = {
   fileType: Filetype | DocumentFileType;
   authority: StableReferenceAuthority;
   label: string;
+  /** A chat upload's intake identity: the proof a pre-creation pick carries into admission. */
+  intake?: { intakeId: string; locationRevision: string };
 };
 
 export type ReferenceNavigationAction = {
@@ -105,6 +107,14 @@ export function authoritativeReferenceForFile(
     fileType: entry.editable ? entry.filetype : entry.fileType,
     authority,
     label: entry.name,
+    ...(entry.upload
+      ? {
+          intake: {
+            intakeId: entry.upload.intakeId,
+            locationRevision: entry.upload.locationRevision,
+          },
+        }
+      : {}),
   };
 }
 

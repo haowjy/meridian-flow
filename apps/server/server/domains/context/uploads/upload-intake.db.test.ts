@@ -5,6 +5,7 @@ import { Hocuspocus } from "@hocuspocus/server";
 import { createDb, type Database } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
+  contextCatalogEntries,
   contextSources,
   documents,
   projects,
@@ -79,6 +80,7 @@ if (!RUN) {
         },
         objectStore: createInMemoryObjectStore(),
         eventSink: createNoopEventSink(),
+        catalog: { refreshSources: async () => "1" },
       });
       return { removed, deleteDraft: intake.deleteDraft };
     }
@@ -120,6 +122,7 @@ if (!RUN) {
             content: createContextUploadContentPort(contextPorts),
             objectStore,
             eventSink: createNoopEventSink(),
+            catalog: { refreshSources: async () => "1" },
           });
         };
         const content = new TextEncoder().encode("# Concurrent\n");
@@ -266,6 +269,7 @@ if (!RUN) {
           content: createContextUploadContentPort(contextPorts),
           objectStore: createInMemoryObjectStore(),
           eventSink: createNoopEventSink(),
+          catalog: { refreshSources: async () => "1" },
         });
         const text =
           "# Chapter One\n\nThe temperature was <10 degrees. {The crowd roared} *loudly*.";
@@ -352,6 +356,7 @@ if (!RUN) {
           },
         },
         eventSink: createNoopEventSink(),
+        catalog,
       });
       const content = new TextEncoder().encode("# Chapter One\n\nIt began.");
       const result = await service.intake({
@@ -370,6 +375,20 @@ if (!RUN) {
         .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
         .where(eq(documents.id, result.value.documentId as never));
       expect(stored?.chatThreadId).toBe(NEW_CHAT);
+
+      // Consumption republishes the upload's facts, so a reader on the delta stream sees `used`.
+      const publishedUsed = async () => {
+        const [row] = await database.current
+          .select({ entry: contextCatalogEntries.entry })
+          .from(contextCatalogEntries)
+          .where(eq(contextCatalogEntries.entryId, result.value.documentId));
+        return row?.entry.kind === "file" ? row.entry.upload?.used : undefined;
+      };
+      expect(await publishedUsed()).toBe(false);
+      await service.consume([result.value.documentId], CHAT);
+      expect(await publishedUsed()).toBe(false);
+      await service.consume([result.value.documentId], NEW_CHAT);
+      expect(await publishedUsed()).toBe(true);
     });
   });
 }

@@ -17,9 +17,10 @@ export type ChatUpload = {
   uri: string;
   /** When the file was attached; null until the server reports it. */
   attachedAt: string | null;
-  /** A sent message used it, so it can no longer be deleted. */
-  used: boolean;
-  /** What deleting it must present; null until the server reports the upload's facts. */
+  /**
+   * What deleting it must present. Null when it can't be deleted: a sent message used it, or the
+   * server has not reported the upload's facts.
+   */
   deletion: { intakeId: string; locationRevision: string } | null;
   /** The `@` reference the composer inserts for it; null when its address is not stable yet. */
   reference: AuthoritativeReference | null;
@@ -46,10 +47,10 @@ export function useChatUploads(projectId: string, chatId: string | null | undefi
         fileType: entry.editable ? entry.filetype : (entry.fileType ?? null),
         uri: entry.uri,
         attachedAt: entry.upload?.attachedAt ?? null,
-        used: entry.upload?.used ?? false,
-        deletion: entry.upload
-          ? { intakeId: entry.upload.intakeId, locationRevision: entry.upload.locationRevision }
-          : null,
+        deletion:
+          entry.upload && !entry.upload.used
+            ? { intakeId: entry.upload.intakeId, locationRevision: entry.upload.locationRevision }
+            : null,
         reference: authoritativeReferenceForFile(entry, NO_AUTHORITIES),
         fileKind: entry.editable ? ("document" as const) : ("asset" as const),
       }))
@@ -59,7 +60,5 @@ export function useChatUploads(projectId: string, chatId: string | null | undefi
     uploads,
     isLoading: Boolean(chatId) && query.data === undefined && !query.isError,
     isError: query.isError,
-    /** `used` changes with a send, which fires no catalog event: refetch when the menu opens. */
-    refetch: query.refetch,
   };
 }

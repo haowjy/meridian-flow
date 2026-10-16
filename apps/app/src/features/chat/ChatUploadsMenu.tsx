@@ -72,7 +72,7 @@ function UploadsDropdown({
   chatId: string;
   chatThread: Thread | null;
 }) {
-  const { uploads, refetch } = useChatUploads(projectId, chatId);
+  const { uploads } = useChatUploads(projectId, chatId);
   const continuesFrom = useContinuesFrom(chatThread);
   const openDocument = useOpenChatDocument(projectId);
   const densityPopoverCollisionProps = useDensityPopoverCollisionProps();
@@ -84,12 +84,10 @@ function UploadsDropdown({
   const contentRef = useRef<HTMLDivElement>(null);
   const focusHandoff = useRef(false);
 
-  // `used` changes with a send, which fires no catalog event: ask again each time it opens.
+  // A refusal belongs to one opening of the menu.
   useEffect(() => {
-    if (!open) return;
-    setRefusals(new Map());
-    void refetch();
-  }, [open, refetch]);
+    if (open) setRefusals(new Map());
+  }, [open]);
 
   const rows = uploads.filter((upload) => !deleted.has(upload.documentId));
   if (rows.length === 0 && !continuesFrom && !open) return null;
@@ -131,13 +129,11 @@ function UploadsDropdown({
           removeFromChatComposer(threadId, upload.documentId);
           return;
         }
-        if (result.kind === "already_used") {
-          void refetch();
-          bringBack(t`A sent message used this file, so it can’t be deleted.`);
-        } else {
-          void refetch();
-          bringBack(t`This file changed, so it wasn’t deleted. Try again.`);
-        }
+        bringBack(
+          result.kind === "already_used"
+            ? t`A sent message used this file, so it can’t be deleted.`
+            : t`This file changed, so it wasn’t deleted. Try again.`,
+        );
       },
       () => bringBack(t`Couldn’t delete this file. Try again.`),
     );
@@ -293,7 +289,7 @@ function UploadRow({
             </span>
           </span>
         </button>
-        {upload.used ? null : (
+        {upload.deletion === null ? null : (
           <IconButton
             size="xs"
             aria-label={t`Delete ${name}`}

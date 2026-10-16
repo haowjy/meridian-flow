@@ -611,6 +611,7 @@ export async function createProductionAppPorts(input: {
     content: createContextUploadContentPort(contextPorts),
     objectStore,
     eventSink,
+    catalog: contextCatalog,
   });
   const uploadIdentity = createDrizzleUploadIdentityPort(db);
   // Upload creates the asset as a context document, so the service needs the
@@ -938,6 +939,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     objects: ports.objectStore,
     eventSink: ports.eventSink,
   });
+  const topChats = createDrizzleTopPrimaryChatResolver(ports.db);
   const admissionProducer = createWriterTurnProducer({
     inbox,
     persistence: {
@@ -952,7 +954,10 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     records: admissionRecords,
     requireWritableThread: (threadId) =>
       requireWritableThread((id) => lockThreadAndWorks(ports.db, id), threadId),
-    consumeUploads: (documentIds) => ports.uploadIntake.consume(documentIds),
+    async consumeUploads(documentIds, threadId) {
+      const chat = await topChats.resolveTopPrimaryChat(threadId as ThreadId);
+      if (chat) await ports.uploadIntake.consume(documentIds, chat.chatId);
+    },
     attachDocument: (threadId, documentId, relationship) =>
       ports.threadRepos.threadDocuments.attach(threadId as never, documentId, relationship),
   });
@@ -965,7 +970,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     },
     verifyDraftUpload: createDraftUploadVerifier({
       identities: ports.uploadIdentity,
-      chats: createDrizzleTopPrimaryChatResolver(ports.db),
+      chats: topChats,
     }),
     async authorizeActivatedSkills({ threadId, slugs }) {
       const thread = await ports.threadRepos.threads.findById(threadId as never);

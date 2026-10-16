@@ -20,6 +20,7 @@ import {
   registeredExtensionForFiletype,
 } from "@meridian/contracts/protocol";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
+import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
 import type { ObjectStorePort } from "../../storage/index.js";
 
 export interface UploadIntakeInput {
@@ -86,8 +87,11 @@ export interface UploadIntakeRepository {
     | { kind: "refused"; result: DeleteDraftUploadResult; objectKey?: string }
   >;
   markDeleted(projectId: string, intakeId: string): Promise<void>;
-  /** F5 includes this singular seam in the admission transaction. */
-  consume(documentIds: readonly string[]): Promise<void>;
+  /**
+   * Marks the chat's own finalized uploads among `documentIds` as used by a sent message and
+   * returns the sources whose rows changed. Another chat's file named here is left alone.
+   */
+  consume(documentIds: readonly string[], chatId: string): Promise<string[]>;
 }
 
 /**
@@ -120,7 +124,8 @@ export interface UploadContentPort<Bound = unknown> {
 export interface UploadIntake {
   intake(input: UploadIntakeInput): Promise<UploadIntakeOutcome>;
   deleteDraft(input: DeleteDraftUploadInput, actorUserId: string): Promise<DeleteDraftUploadResult>;
-  consume(documentIds: readonly string[]): Promise<void>;
+  /** Runs in the sending transaction; republishes the catalog rows whose `used` it changed. */
+  consume(documentIds: readonly string[], chatId: string): Promise<void>;
 }
 
 const TEXT_MIMES = new Set([
@@ -220,6 +225,7 @@ export function createUploadIntake<Bound>(deps: {
   content: UploadContentPort<Bound>;
   objectStore: ObjectStorePort;
   eventSink: EventSink;
+  catalog: Pick<ContextCatalogMutationPort, "refreshSources">;
 }): UploadIntake {
   return {
     async intake(raw) {
@@ -377,6 +383,9 @@ export function createUploadIntake<Bound>(deps: {
       }
       return deleted.result;
     },
-    consume: (documentIds) => deps.repository.consume(documentIds),
+    async consume(documentIds, chatId) {
+      const sourceIds = await deps.repository.consume(documentIds, chatId);
+      if (sourceIds.length > 0) await deps.catalog.refreshSources(sourceIds);
+    },
   };
 }

@@ -69,6 +69,7 @@ function harness() {
     },
     async consume() {
       if (row) row = { ...row, consumed: true };
+      return [];
     },
   };
   const content = {
@@ -91,6 +92,7 @@ function harness() {
       content,
       objectStore,
       eventSink: createNoopEventSink(),
+      catalog: { refreshSources: async () => "1" },
     }),
     content,
     objectStore,
