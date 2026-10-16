@@ -88,7 +88,7 @@ export type WorkDetailTarget = {
 };
 
 /**
- * A document's route. For Scratch and Uploads `workId` is the owning Work; a
+ * A document's route. For Scratch `workId` is the owning Work; a
  * No Work chat's Scratch names its lineage in `rootThreadId` instead, and
  * `workId` is then only the Editor's own Work, as for a project document.
  */

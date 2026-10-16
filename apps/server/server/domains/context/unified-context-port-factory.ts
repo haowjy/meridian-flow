@@ -214,7 +214,7 @@ function buildWorkScopedContextFsAdapters(
   authority: CanonicalContextAuthority,
 ): Map<ContextScheme, ContextSchemeAdapter> {
   const { storeResolvers, commandTransaction } = assembly;
-  // Scratch/uploads are canonical live documents even though their storage is Work-scoped.
+  // Scratch is a canonical live document even though its storage is Work-scoped.
   const mutationStore = storeResolvers.resolveMutationStore();
   const adapters = new Map<ContextScheme, ContextSchemeAdapter>();
   for (const scheme of WORK_SCOPED_CONTEXTFS_SCHEMES) {

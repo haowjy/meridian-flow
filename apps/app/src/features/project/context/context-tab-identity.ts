@@ -1,7 +1,7 @@
 /**
  * context-tab-identity — route/tab matching for work-scoped context files.
  *
- * Work-scoped schemes (`scratch`, `uploads`) share path shape across works and
+ * Scratch shares path shape across works and
  * a No Work chat's Scratch shares it across lineages; tab and route
  * reconciliation must include the owner (`workId` or `rootThreadId`) so
  * switching active work cannot reuse another owner's open tab.
