@@ -13,7 +13,12 @@ import { CliError } from "./cli-error";
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
-export type RequestOptions = { timeoutMs?: number; maxResponseBytes?: number };
+export type RequestOptions = {
+  timeoutMs?: number;
+  maxResponseBytes?: number;
+  /** Closes the request when aborted, so a read left running cannot hold the process open. */
+  signal?: AbortSignal;
+};
 
 export interface Session {
   readonly serverUrl: string;
@@ -41,6 +46,7 @@ export function rawRequest(input: {
   ca?: string[];
   timeoutMs: number;
   maxResponseBytes: number;
+  signal?: AbortSignal;
 }): Promise<RawResponse> {
   const url = new URL(input.url);
   const client = url.protocol === "http:" ? http : https;
@@ -50,8 +56,11 @@ export function rawRequest(input: {
       if (settled) return;
       settled = true;
       clearTimeout(deadline);
+      input.signal?.removeEventListener("abort", abort);
       operation();
     };
+    const abort = () =>
+      request.destroy(new CliError("unavailable", `${input.method} ${url.pathname} was aborted`));
     const request = client.request(
       url,
       {
@@ -105,6 +114,8 @@ export function rawRequest(input: {
     request.on("error", (error) =>
       finish(() => reject(error instanceof CliError ? error : connectionError(url, error))),
     );
+    if (input.signal?.aborted) abort();
+    else input.signal?.addEventListener("abort", abort, { once: true });
     if (input.body !== undefined) request.write(input.body);
     request.end();
   });
@@ -165,6 +176,7 @@ export function createSession(input: {
         ca: input.ca,
         timeoutMs: options?.timeoutMs ?? DEFAULT_TIMEOUT_MS,
         maxResponseBytes: options?.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
+        ...(options?.signal ? { signal: options.signal } : {}),
       });
       if (response.status < 200 || response.status >= 300) {
         throw httpError(method, requestPath, response);
