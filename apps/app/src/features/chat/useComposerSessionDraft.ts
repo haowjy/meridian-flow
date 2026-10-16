@@ -23,7 +23,7 @@ export function useComposerSessionDraft(accountId: string, scope: ComposerDraftS
     initialDraft: owner.initialDraft,
     chatId: owner.chatId,
     updateDraft: owner.updateDraft,
-    handoff: owner.handoff,
+    handoffCreated: owner.handoffCreated,
     handoffSubmitted: owner.handoffSubmitted,
   };
 }

@@ -29,7 +29,7 @@ export function resourceLineageOwner(
 /** The owner a chat catalog entry asserts: the scope's chat id and the handle its URI spells. */
 export function resourceChatOwner(
   scope: Extract<CatalogScope, { kind: "chat" }>,
-  chatRef: string,
+  chatRef: string | null,
 ): ResourceOwner {
   return { workId: null, chatId: scope.chatId, chatRef };
 }
@@ -40,7 +40,7 @@ export type ResourceContextAuthority =
   | { kind: "none" }
   | { kind: "work"; workSlug: string }
   | { kind: "lineage"; rootThreadRef: string }
-  | { kind: "chat"; chatRef: string };
+  | { kind: "chat"; chatRef: string | null };
 
 /** Journal identity was checked against a Works snapshot or asserted by a scoped server catalog. */
 export function resourceContextAuthority(
@@ -56,9 +56,9 @@ export function resourceContextAuthority(
 ): ResourceContextAuthority {
   if (!isWorkScopedProjectContextScheme(scheme)) return { kind: "contextual" };
   if (owner.chatId) {
-    if (scheme !== "uploads" || owner.workId !== null || !owner.chatRef)
-      throw new Error("Chat authority requires Uploads and a chat handle");
-    return { kind: "chat", chatRef: owner.chatRef };
+    if (scheme !== "uploads" || owner.workId !== null)
+      throw new Error("Chat authority requires Uploads");
+    return { kind: "chat", chatRef: owner.chatRef ?? null };
   }
   if (owner.rootThreadId) {
     if (scheme !== "scratch" || owner.workId !== null || !owner.rootThreadRef)
@@ -82,7 +82,7 @@ export function resourceUriQualifier(authority: ResourceContextAuthority): strin
     case "lineage":
       return `@/${authority.rootThreadRef}/`;
     case "chat":
-      return `@/${authority.chatRef}/`;
+      return authority.chatRef === null ? "" : `@/${authority.chatRef}/`;
   }
 }
 
@@ -96,9 +96,8 @@ export function catalogEntryOwner(
       ? resourceLineageOwner(scope, authority.rootThreadRef)
       : { workId: null };
   if (scope.kind === "chat")
-    return authority.kind === "chat"
-      ? resourceChatOwner(scope, authority.chatRef)
-      : { workId: null };
+    // A chat that does not exist yet has no handle, so its uploads spell a bare URI.
+    return resourceChatOwner(scope, authority.kind === "chat" ? authority.chatRef : null);
   if (scope.kind !== "work") return { workId: null };
   return { workId: scope.workId, workSlug: authority.kind === "work" ? authority.workSlug : null };
 }
