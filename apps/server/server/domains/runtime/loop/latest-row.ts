@@ -26,3 +26,31 @@ export async function latestRowAt(
   }
   return { latest: null, walkedOver };
 }
+
+/**
+ * The first closing row that follows `turnId` on the chain ending at `leaf`: the boundary where that turn's
+ * failure ends. Walking back from the leaf, the last closing row met before reaching the turn is the one
+ * nearest it. Null when nothing closes after it. A turn off the chain (an orphan the leaf has left) has no
+ * position to be first after, so the latest closing row stands in.
+ */
+export async function firstClosingRowAfter(
+  turns: Parameters<typeof turnGraph>[0],
+  leaf: TurnId | null,
+  turnId: string,
+): Promise<Turn | null> {
+  const graph = turnGraph(turns);
+  const seen = new Set<string>();
+  let latest: Turn | null = null;
+  let nearest: Turn | null = null;
+  let current = leaf ? await graph.findById(leaf) : null;
+  while (current && !seen.has(current.id)) {
+    if (current.id === turnId) return nearest;
+    seen.add(current.id);
+    if (isClosingRow(current)) {
+      latest ??= current;
+      nearest = current;
+    }
+    current = current.prevTurnId ? await graph.findById(current.prevTurnId as TurnId) : null;
+  }
+  return latest;
+}

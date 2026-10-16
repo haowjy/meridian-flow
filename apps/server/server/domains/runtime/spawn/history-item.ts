@@ -58,23 +58,15 @@ export function toolPairMap(blocks: readonly Block[]): ReadonlyMap<string, Block
   );
 }
 
-/** The turn's heading and whether the whole turn is a system message. */
-export function describeTurn(turn: Turn): Pick<HistoryTurn, "role" | "label" | "failure"> & {
+/** The turn's heading, whether Stop cancelled it, and whether the whole turn is a system message. */
+export function describeTurn(turn: Turn): Pick<HistoryTurn, "role" | "label" | "cancelled"> & {
   system: boolean;
 } {
   const kind = classifyHistoryItem(turn);
   const metadata = turn.metadata as JsonObject | null;
-  const reason =
-    turn.status === "error" && typeof metadata?.reason === "string" ? metadata.reason : undefined;
-  const failure =
-    turn.error || reason || turn.status === "error" || turn.status === "cancelled"
-      ? {
-          status: turn.status,
-          ...(turn.error ? { error: turn.error } : {}),
-          ...(reason ? { reason } : {}),
-        }
-      : undefined;
-  const base = failure ? { failure } : {};
+  // Stop is the writer's decision and a fact about the conversation. A failure is not: the model can't
+  // act on it, so it never reads one (only the text and tool calls the turn kept).
+  const base = turn.status === "cancelled" ? { cancelled: true as const } : {};
   // One rule decides numbering here and in the repository count: isConversationTurn.
   if (isConversationTurn(turn)) {
     if (turn.role === "assistant")

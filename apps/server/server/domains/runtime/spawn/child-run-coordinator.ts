@@ -14,6 +14,7 @@ import type { EventSink } from "../../observability/index.js";
 import type { AgentRevisionStore, CompiledAgentDefinition } from "../../packages/index.js";
 import type {
   EventJournalWriter,
+  LiveEventWriter,
   SubagentThreadFactory,
   ThreadRepositories,
   ThreadRepository,
@@ -95,7 +96,7 @@ export interface ChildRunCoordinatorDeps {
     projectId: string;
     parentThreadId?: string | null;
   }): Promise<string>;
-  eventWriter: EventJournalWriter;
+  eventWriter: LiveEventWriter;
   /** Recomputes a parent's direct-child activity for its `subagent.activity` fact. */
   readActivity: (threadId: ThreadId) => Promise<ThreadActivity>;
   /** Producer-facing inbox: background thread_message enqueues here. */

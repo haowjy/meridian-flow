@@ -15,6 +15,7 @@ import {
   type ForgettingFacts,
   loadForgettingFacts,
 } from "./forget-failed-attempt.js";
+import { firstClosingRowAfter } from "./latest-row.js";
 
 function block(turnId: string, blockType: Block["blockType"], extra: Partial<Block> = {}): Block {
   return {
@@ -80,7 +81,7 @@ describe("decideForgetting", () => {
       decideForgetting(facts({ members: [member(f)], answered: [message] }), writerNext),
     ).toEqual({
       forget: ["f", "u"],
-      passed: [],
+      ends: [{ turnId: "f", end: "forgotten" }],
       reason: "forgotten",
     });
   });
@@ -92,7 +93,7 @@ describe("decideForgetting", () => {
       decideForgetting(facts({ members: [member(f)], answered: [message] }), writerNext),
     ).toEqual({
       forget: [],
-      passed: ["f"],
+      ends: [{ turnId: "f", end: "moved_on" }],
       reason: null,
     });
   });
@@ -124,7 +125,7 @@ describe("decideForgetting", () => {
       decideForgetting(facts({ members: [member(f)], answered: [message] }), writerNext),
     ).toEqual({
       forget: [],
-      passed: ["f"],
+      ends: [{ turnId: "f", end: "moved_on" }],
       reason: null,
     });
   });
@@ -136,7 +137,7 @@ describe("decideForgetting", () => {
       decideForgetting(facts({ members: [member(f)], answered: [message] }), run("f")),
     ).toEqual({
       forget: ["f"],
-      passed: [],
+      ends: [{ turnId: "f", end: "retried" }],
       reason: "retried",
     });
   });
@@ -151,7 +152,7 @@ describe("decideForgetting", () => {
     // Risk: forgetting an exchange the writer never chose to move on from. The latest row is their message.
     expect(
       decideForgetting(facts({ latest: turn("u2", "user"), members: [] }), writerNext),
-    ).toEqual({ forget: [], passed: [], reason: null });
+    ).toEqual({ forget: [], ends: [], reason: null });
   });
 
   it("forgets nothing when the same execution continues past a failed compaction", () => {
@@ -159,7 +160,7 @@ describe("decideForgetting", () => {
     const c = turn("c", "compaction", { status: "error", executionId: "e1" });
     const decision = decideForgetting(facts({ members: [member(c)] }), run(null, "e1"));
     expect(decision.forget).toEqual([]);
-    expect(decision.passed).toEqual(["c"]);
+    expect(decision.ends).toEqual([{ turnId: "c", end: "moved_on" }]);
   });
 
   it("still sees the continuation when a fresh agent message is adopted before the successor", () => {
@@ -204,6 +205,44 @@ describe("decideForgetting", () => {
     expect(decision.forget).toEqual(["f", "u"]);
   });
 
+  it("lists only the newest member of a kept Retry chain as ending now", () => {
+    // Risk: Retry C over B over A (A kept for its tool call) ending A again, after B's boundary ended it.
+    const a = failed("a", { blocks: [block("a", "tool_use")] });
+    const b = failed("b", { executionId: "e2" });
+    const decision = decideForgetting(facts({ members: [member(b), member(a)] }), run(null, "e3"));
+    expect(decision).toEqual({
+      forget: [],
+      ends: [{ turnId: "b", end: "moved_on" }],
+      reason: null,
+    });
+  });
+
+  // Risk: forgetting content read as ending the failure. Reply F retried through compaction C; C failed and
+  // the same execution continued with R (`C ended moved_on by R`); R failed. Whatever forgets R, then C, then
+  // F (a Retry or the writer moving on), only R's failure ends there. C and F ended at their own boundaries.
+  const chainFacts = () => {
+    const f = failed("f", { forgottenBy: "c" });
+    const c = turn("c", "compaction", {
+      status: "error",
+      executionId: "e1",
+      metadata: { retryOf: "f", retryReplyId: "r" },
+    });
+    const r = failed("r", { executionId: "e1" });
+    return facts({ members: [member(r), member(c), member(f)], answered: [message] });
+  };
+
+  it("ends only the latest reply when a Retry forgets a continued compaction chain", () => {
+    const decision = decideForgetting(chainFacts(), run("r", "e2"));
+    expect(decision.forget).toEqual(["r", "c"]);
+    expect(decision.ends).toEqual([{ turnId: "r", end: "retried" }]);
+  });
+
+  it("ends only the latest reply when the writer moves on from a continued compaction chain", () => {
+    const decision = decideForgetting(chainFacts(), writerNext);
+    expect(decision.forget).toEqual(["r", "c", "u"]);
+    expect(decision.ends).toEqual([{ turnId: "r", end: "forgotten" }]);
+  });
+
   it("ends a failed handoff seed without forgetting it, whatever the latest row is", () => {
     // Risk: a first-brief failure with no earlier closing row bypassing the move-on, or being forgotten
     // although its model text states a fact the model can act on.
@@ -213,7 +252,7 @@ describe("decideForgetting", () => {
     });
     expect(
       decideForgetting(facts({ latest: null, members: [], failedSeeds: [seed] }), writerNext),
-    ).toEqual({ forget: [], passed: ["s"], reason: null });
+    ).toEqual({ forget: [], ends: [{ turnId: "s", end: "moved_on" }], reason: null });
   });
 });
 
@@ -281,6 +320,14 @@ describe("loadForgettingFacts", () => {
     );
     expect(loaded.latest?.id).toBe("f");
     expect(decideForgetting(loaded, writerNext).forget).toEqual(["f", "u"]);
+  });
+
+  it("names the first closing row after a reply, not the latest, when two follow it", async () => {
+    // Risk: a reply that fails while the writer sends U then V being reported as moved on by V, so the
+    // log names a later boundary than the first one the rule promises.
+    const graph = chain([failed("a"), turn("u", "user"), turn("v", "user")]);
+    expect((await firstClosingRowAfter(graph as never, "v" as never, "a"))?.id).toBe("u");
+    expect(await firstClosingRowAfter(graph as never, "a" as never, "a")).toBeNull();
   });
 
   // Risk: the delivery walk stopping at a different turn than the view groups reports under, so the loader

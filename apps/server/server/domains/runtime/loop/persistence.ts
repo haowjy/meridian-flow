@@ -31,9 +31,11 @@ import type { ThreadId } from "@meridian/contracts/runtime";
 import { isClosingRow, type OrchestratorEvent, type Turn } from "@meridian/contracts/threads";
 import {
   type EventJournalWriter,
+  type LiveEventWriter,
   projectReadModelEvent,
   type ThreadRepositories,
 } from "../../threads/index.js";
+import { detectFailures, recordEnded } from "./failure-detection.js";
 import {
   appendedTurns,
   decideForgetting,
@@ -52,7 +54,7 @@ export type PersistenceDeps = {
     | "transaction"
     | "turns"
   >;
-  eventWriter: EventJournalWriter;
+  eventWriter: LiveEventWriter;
   /** Real nested transaction boundary when caller already owns a transaction. */
   savepoint?: <T>(operation: () => Promise<T>) => Promise<T>;
 };
@@ -101,11 +103,15 @@ export async function persistAndAppendTurnStartEvents<T>(
     );
     if (options?.expectedForgetting && !sameForgotten(options.expectedForgetting, decision))
       throw new ForgettingMismatchError(threadId);
-    if (decision.forget.length === 0 || decision.reason === null) return persisted;
     const first = persisted.events.findIndex(
       (event) => event.type === "turn.created" && isClosingRow(event.turn),
     );
     const closing = persisted.events[first];
+    // Only the commit's decision records the ends: run start decided the same, and one record each.
+    if (closing?.type === "turn.created")
+      for (const { turnId, end } of decision.ends)
+        await recordEnded(deps, [turnId], end, closing.turn.id);
+    if (decision.forget.length === 0 || decision.reason === null) return persisted;
     if (closing?.type !== "turn.created") return persisted;
     const events = [...persisted.events];
     events.splice(first + 1, 0, {
@@ -150,6 +156,7 @@ async function projectAndAppendEvents<T>(
       createdTurns.push(created);
     }
     await deps.eventWriter.appendEvent(threadId, event);
+    await detectFailures(deps, threadId, event);
   }
   await options?.afterEvents?.(persisted.result);
   return { ...persisted, createdTurns };

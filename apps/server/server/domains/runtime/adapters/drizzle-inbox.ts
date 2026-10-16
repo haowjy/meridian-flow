@@ -10,7 +10,12 @@ import { and, asc, eq, gt, inArray, isNull, ne, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDatabase } from "../../../shared/drizzle-transaction.js";
 import type { InboxMessage, MessageBody } from "../loop/ports.js";
 import type { DeliveryStore } from "./delivery-ports.js";
-import { answerRunState, markRunStateChanged, publishRunState } from "./drizzle-run-state.js";
+import {
+  answerRunState,
+  markRunStateChanged,
+  publishRunState,
+  recordUsageTransition,
+} from "./drizzle-run-state.js";
 
 function toIso(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : value;
@@ -59,6 +64,11 @@ export function createDrizzleInbox(db: DrizzleDatabase): DeliveryStore {
     },
     answerRunState,
     async setBlockedReason(threadId, reason) {
+      const [before] = await db_()
+        .select({ reason: schema.threads.inboxBlockedReason })
+        .from(schema.threads)
+        .where(eq(schema.threads.id, threadId))
+        .limit(1);
       const changed = await db_()
         .update(schema.threads)
         .set({ inboxBlockedReason: reason })
@@ -69,7 +79,10 @@ export function createDrizzleInbox(db: DrizzleDatabase): DeliveryStore {
           ),
         )
         .returning({ id: schema.threads.id });
-      if (changed.length > 0) markRunStateChanged(threadId);
+      if (changed.length > 0) {
+        markRunStateChanged(threadId);
+        await recordUsageTransition(threadId, before?.reason ?? null, reason);
+      }
     },
     async workNoticeTargets(workId) {
       const rows = await db_()

@@ -1,13 +1,19 @@
 /** In-memory event journal: append-only array of orchestrator events implementing both writer and reader ports, with per-thread sequencing. For tests/local dev; depends inward on the event-journal port. */
-import type { ThreadId } from "@meridian/contracts/runtime";
 
+import type { FailureRecord } from "@meridian/contracts/failures";
+import type { ThreadId } from "@meridian/contracts/runtime";
+import { recordFailureAfterCommit } from "../../../../shared/failure-records.js";
+import {
+  type InMemoryTransactionOwner,
+  noTransactionOwner,
+} from "../../../../shared/in-memory-transaction.js";
 import { toIsoString } from "../../domain/contract-serialization.js";
 import { deriveJournalTurnId } from "../../domain/journal-turn-id.js";
 import type {
   EventJournalReader,
-  EventJournalWriter,
   JournalEntry,
   JournalEventEnvelope,
+  LiveEventWriter,
 } from "../../ports/event-journal.js";
 import { JOURNAL_ONLY_EVENT_TYPES as journalOnlyEventTypes } from "../../ports/event-journal.js";
 
@@ -20,14 +26,23 @@ export interface RecordedEvent {
   createdAt: string;
 }
 
-export interface InMemoryEventJournalWriter extends EventJournalWriter, EventJournalReader {
+export interface InMemoryEventJournalWriter extends LiveEventWriter, EventJournalReader {
+  /** Failure records emitted so far, after the outermost in-memory commit. */
+  getFailureRecords(): ReadonlyArray<FailureRecord>;
   getEvents(threadId: ThreadId): ReadonlyArray<RecordedEvent>;
   getAllEvents(): ReadonlyArray<RecordedEvent>;
 }
 
-export function createInMemoryEventJournalWriter(): InMemoryEventJournalWriter {
+/**
+ * `owner` is the transaction owner of the repositories the journal serves; records follow its commit.
+ * It is required: a fixture with no transactions passes `noTransactionOwner`.
+ */
+export function createInMemoryEventJournalWriter(
+  owner: InMemoryTransactionOwner | typeof noTransactionOwner,
+): InMemoryEventJournalWriter {
   const seqByThread = new Map<string, bigint>();
   const events: RecordedEvent[] = [];
+  const failures: FailureRecord[] = [];
   const journalOnlyEventTypeSet = new Set<string>(journalOnlyEventTypes);
 
   function toEntry(e: RecordedEvent): JournalEntry {
@@ -43,6 +58,14 @@ export function createInMemoryEventJournalWriter(): InMemoryEventJournalWriter {
   }
 
   return {
+    recordFailure(record) {
+      recordFailureAfterCommit(
+        record,
+        (emitted) => failures.push(emitted),
+        owner === noTransactionOwner ? undefined : owner,
+      );
+    },
+    getFailureRecords: () => failures,
     async appendEvent(threadId, event) {
       const key = threadId as string;
       const prev = seqByThread.get(key) ?? 0n;
