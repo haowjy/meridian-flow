@@ -20,8 +20,8 @@ import {
   registeredExtensionForFiletype,
 } from "@meridian/contracts/protocol";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
 import type { ObjectStorePort } from "../../storage/index.js";
+import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
 
 export interface UploadIntakeInput {
   intakeId: string;
