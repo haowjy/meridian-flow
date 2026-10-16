@@ -10,7 +10,7 @@ fate from one snapshot (`messageFate`,
 [#861](https://github.com/haowjy/meridian-flow/pull/861)): exit 0 means the reply
 that answered your message settled, exit 5 means it was handed back or cancelled,
 and exit 6 means `./mf` could not tell (see
-[what each exit means](../../../../docs/debugging.md#set-up-and-verify-with-the-cli)).
+[what each exit means](../../../../docs/debugging.md#set-up-and-debug-with-the-cli)).
 After `./mf thread send <id> "browser smoke $(date +%s)"`, `./mf thread view <id>`
 prints the durable transcript. That is evidence for the shared client code and the
 server, not for what the writer sees: the browser is the evidence for app behavior.
