@@ -192,7 +192,16 @@ describe("useThreadControls", () => {
     await act(async () => {
       id = latest.enqueue({ kind: "compact" });
     });
-    expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "failed" }]);
+    expect(latest.queued).toEqual([
+      {
+        id,
+        control: { kind: "compact" },
+        status: "failed",
+        failure: { requestId: id, attempt: 1, kind: "lost" },
+      },
+    ]);
+    await act(async () => latest.retry(id));
+    expect(latest.queued[0]?.failure).toEqual({ requestId: id, attempt: 2, kind: "lost" });
     const serverRow: PendingInboxItem[] = [
       {
         id,

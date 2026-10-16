@@ -238,7 +238,11 @@ function reduceView(view: RunStateView, action: RunStateAction): RunStateView {
           answer: entry.answer?.runState.version ?? null,
           ...(entry.answer
             ? {}
-            : { failed: entry.failed, awaitingServer: entry.posted && !entry.refused }),
+            : {
+                failed: entry.failed,
+                failure: entry.failure,
+                awaitingServer: entry.posted && !entry.refused,
+              }),
         });
       }
       // An entry that left the journal was withdrawn or refused here, or pruned while this
@@ -248,14 +252,24 @@ function reduceView(view: RunStateView, action: RunStateAction): RunStateView {
           next = dropIntent(next, "switch", intent.id);
       return next;
     }
-    case "withdraw":
+    case "withdraw": {
+      const held = view.intents.find(
+        (intent) => intent.kind === "withdraw" && intent.id === action.id,
+      );
+      const attempt = held?.kind === "withdraw" ? (held.failure?.attempt ?? 0) : 0;
       return addIntent(view, {
         kind: "withdraw",
         id: action.id,
         order: 0,
         answer: null,
         failed: action.failed,
+        failure: {
+          requestId: `withdraw:${action.id}`,
+          attempt: attempt + (action.failed ? 0 : 1),
+          kind: "lost",
+        },
       });
+    }
     case "withdrawn":
       // The answer's record, then the intent's answer at its version.
       return answerIntent(

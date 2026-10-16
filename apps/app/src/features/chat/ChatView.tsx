@@ -385,11 +385,17 @@ export function ChatView({
         briefStops: brief.stopFailures,
         controls: controls.queued,
         movingTurnIds,
+        sends: new Map(
+          [...(submissions.presentation ?? [])].flatMap(([id, row]) =>
+            row.failure ? [[id, row.failure] as const] : [],
+          ),
+        ),
       }),
     [
       brief.outcomes,
       brief.stopFailures,
       controls.queued,
+      submissions.presentation,
       handBack.unresolved,
       movingTurnIds,
       replyRetry.outcomes,
