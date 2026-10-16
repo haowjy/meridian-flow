@@ -52,7 +52,10 @@ export interface AttemptMember {
 export interface ForgettingFacts {
   /** The latest row, or null when the walk reached the root. */
   latest: Turn | null;
-  /** Failed handoff seeds walked over to reach it (step 9). */
+  /**
+   * The failed handoff seed whose failure ends here (step 9): the newest handoff seed trailing the latest row,
+   * when it failed. An older failed seed ended when the Retry that replaced it began.
+   */
   failedSeeds: readonly Turn[];
   /** The failed attempt, newest first, when `latest` is a settled failed reply or compaction; else empty. */
   members: readonly AttemptMember[];
@@ -65,18 +68,21 @@ export interface ForgettingFacts {
 export interface ForgettingDecision {
   /** Turn ids to stamp, the attempt first. */
   forget: readonly string[];
-  /** Failed turns whose card ends without being forgotten: a kept attempt, a continuation, or a failed seed. */
+  /**
+   * Failed turns whose failure ends at this boundary without being forgotten: the kept attempt's newest
+   * member, a continuation, or the failed seed. Older members of a kept chain ended at the boundary that
+   * followed them, so they are never listed again.
+   */
   passed: readonly string[];
   reason: "retried" | "forgotten" | null;
 }
 
 const NOTHING: ForgettingDecision = { forget: [], passed: [], reason: null };
 
-function isFailedSeed(turn: Turn): boolean {
+function isHandoffSeed(turn: Turn): boolean {
   const metadata = turn.metadata;
   return (
     turn.role === "system" &&
-    turn.status === "error" &&
     !!metadata &&
     typeof metadata === "object" &&
     !Array.isArray(metadata) &&
@@ -105,7 +111,10 @@ export function decideForgetting(
   const pending = facts.members.filter((member) => member.turn.forgottenBy == null);
   const ends = (): ForgettingDecision => ({
     forget: [],
-    passed: [...passed, ...pending.map((member) => member.turn.id)],
+    passed: [
+      ...passed,
+      ...pending.filter((member) => member === facts.members[0]).map((member) => member.turn.id),
+    ],
     reason: null,
   });
   // 3. Continuation: the same execution carries on past the failure. A null id never matches.
@@ -144,7 +153,8 @@ export async function loadForgettingFacts(
   leaf: TurnId | null,
 ): Promise<ForgettingFacts> {
   const { latest, walkedOver } = await latestRowAt(deps.turns, leaf);
-  const failedSeeds = walkedOver.filter(isFailedSeed);
+  const newestSeed = walkedOver.find(isHandoffSeed);
+  const failedSeeds = newestSeed?.status === "error" ? [newestSeed] : [];
   const none: ForgettingFacts = {
     latest,
     failedSeeds,

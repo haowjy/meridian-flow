@@ -108,7 +108,7 @@ export async function persistAndAppendTurnStartEvents<T>(
     const closing = persisted.events[first];
     // Only the commit's decision logs the passes: run start decided the same, and one record each.
     if (closing?.type === "turn.created")
-      await recordPassed(deps, threadId, decision.passed, closing.turn.id);
+      await recordPassed(deps, decision.passed, closing.turn.id);
     if (decision.forget.length === 0 || decision.reason === null) return persisted;
     if (closing?.type !== "turn.created") return persisted;
     const events = [...persisted.events];

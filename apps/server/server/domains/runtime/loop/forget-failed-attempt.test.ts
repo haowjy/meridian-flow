@@ -204,6 +204,14 @@ describe("decideForgetting", () => {
     expect(decision.forget).toEqual(["f", "u"]);
   });
 
+  it("lists only the newest member of a kept Retry chain as ending now", () => {
+    // Risk: Retry C over B over A (A kept for its tool call) ending A again, after B's boundary ended it.
+    const a = failed("a", { blocks: [block("a", "tool_use")] });
+    const b = failed("b", { executionId: "e2" });
+    const decision = decideForgetting(facts({ members: [member(b), member(a)] }), run(null, "e3"));
+    expect(decision).toEqual({ forget: [], passed: ["b"], reason: null });
+  });
+
   it("ends a failed handoff seed without forgetting it, whatever the latest row is", () => {
     // Risk: a first-brief failure with no earlier closing row bypassing the move-on, or being forgotten
     // although its model text states a fact the model can act on.
