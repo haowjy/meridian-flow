@@ -79,21 +79,38 @@ export function parseNonSymbolicRefNames(refOutput: string): string[] {
     });
 }
 
-/** The branch a remote-tracking ref tracks, with the remote's first path segment dropped. */
-function remoteTrackingBranch(ref: string): string | undefined {
+/**
+ * Splits a remote-tracking ref into its configured remote and the branch it
+ * tracks. Remote names may contain slashes (`team/origin`), so the longest
+ * configured remote name wins; splitting at the first slash would read a
+ * pushed copy of the branch itself as somebody else's branch.
+ */
+export function splitRemoteTrackingRef(
+  ref: string,
+  remotes: readonly string[],
+): { readonly remote: string; readonly branch: string } | undefined {
   if (!ref.startsWith(REMOTE_BRANCH_PREFIX)) return undefined;
   const rest = ref.slice(REMOTE_BRANCH_PREFIX.length);
-  const slash = rest.indexOf("/");
-  return slash >= 0 ? rest.slice(slash + 1) : undefined;
+  let best: { remote: string; branch: string } | undefined;
+  for (const remote of remotes) {
+    if (!rest.startsWith(`${remote}/`)) continue;
+    const branch = rest.slice(remote.length + 1);
+    if (best === undefined || branch.length < best.branch.length) best = { remote, branch };
+  }
+  return best;
 }
 
-function isOwnRef(ref: string, branch: string): boolean {
-  return ref === `${LOCAL_BRANCH_PREFIX}${branch}` || remoteTrackingBranch(ref) === branch;
+function remoteTrackingBranch(ref: string, remotes: readonly string[]): string | undefined {
+  return splitRemoteTrackingRef(ref, remotes)?.branch;
 }
 
-function containmentRank(ref: string, baseBranch: string): number {
+function isOwnRef(ref: string, branch: string, remotes: readonly string[]): boolean {
+  return ref === `${LOCAL_BRANCH_PREFIX}${branch}` || remoteTrackingBranch(ref, remotes) === branch;
+}
+
+function containmentRank(ref: string, baseBranch: string, remotes: readonly string[]): number {
   if (ref === `${LOCAL_BRANCH_PREFIX}${baseBranch}`) return 0;
-  if (remoteTrackingBranch(ref) === baseBranch) return 1;
+  if (remoteTrackingBranch(ref, remotes) === baseBranch) return 1;
   if (ref.startsWith(LOCAL_BRANCH_PREFIX)) return 2;
   return 3;
 }
@@ -108,16 +125,18 @@ export function selectContainedByRef(
   refs: readonly string[],
   branch: string,
   baseBranch: string,
+  remotes: readonly string[],
 ): string | undefined {
   const candidates = refs
     .filter(
       (ref) =>
         (ref.startsWith(LOCAL_BRANCH_PREFIX) || ref.startsWith(REMOTE_BRANCH_PREFIX)) &&
-        !isOwnRef(ref, branch),
+        !isOwnRef(ref, branch, remotes),
     )
     .sort(
       (a, b) =>
-        containmentRank(a, baseBranch) - containmentRank(b, baseBranch) || compareRefNames(a, b),
+        containmentRank(a, baseBranch, remotes) - containmentRank(b, baseBranch, remotes) ||
+        compareRefNames(a, b),
     );
   return candidates[0];
 }
@@ -171,11 +190,19 @@ export function decideCleanupEligibility(input: {
     };
   }
 
-  // The same commit can be the head of several merged PRs: a retargeted
-  // branch, or one merged into an integration branch and later into the trunk.
-  // Every exact match independently proves the merge, so the choice is
-  // deterministic: the trunk's record when present, then the lowest base name
-  // and PR number.
+  // Batch cleanup has no per-target confirmation, so it keeps refusing
+  // duplicate exact records. Targeted cleanup picks one deterministically
+  // instead: a branch merged into an integration branch and later into the
+  // trunk legitimately matches twice, and every exact match independently
+  // proves the merge. The trunk's record is preferred, then the lowest base
+  // name and PR number.
+  if (input.pullRequestBaseScope === "base-branch" && exactMatches.length > 1) {
+    return {
+      eligible: false,
+      reason: `multiple merged pull requests match exact commit ${input.plannedOid}; refusing ambiguous evidence`,
+    };
+  }
+
   const match = [...exactMatches].sort((a, b) => {
     const aTrunk = a.baseRefName === input.baseBranch ? 0 : 1;
     const bTrunk = b.baseRefName === input.baseBranch ? 0 : 1;

@@ -220,6 +220,27 @@ describe("decideCleanupEligibility", () => {
       eligible: true,
       evidence: { pullRequestBase: "feat/a", pullRequestNumber: 7 },
     });
+
+    // Batch keeps refusing duplicate exact records: it has no per-target
+    // confirmation, and this was its behavior before base-agnostic matching.
+    const batchDuplicate = decideCleanupEligibility({
+      branch: "feature",
+      plannedOid,
+      baseBranch: "main",
+      repositoryOwner: "haowjy",
+      containedBy: undefined,
+      allowAncestry: false,
+      pullRequestBaseScope: "base-branch",
+      pullRequestDiscovery: {
+        ok: true,
+        pullRequests: [
+          mergedPullRequest({ baseRefName: "main", number: 7 }),
+          mergedPullRequest({ baseRefName: "main", number: 42 }),
+        ],
+      },
+    });
+
+    expect(batchDuplicate).toMatchObject({ eligible: false });
   });
 });
 
@@ -241,11 +262,13 @@ describe("parseNonSymbolicRefNames", () => {
 
 describe("selectContainedByRef", () => {
   it("excludes the branch's own refs, on the local repo and on any remote", () => {
+    const remotes = ["origin", "upstream"];
     expect(
       selectContainedByRef(
         ["refs/heads/feature", "refs/remotes/origin/feature", "refs/remotes/upstream/feature"],
         "feature",
         "main",
+        remotes,
       ),
     ).toBeUndefined();
     // A nested branch name keeps only the ref that names exactly that branch.
@@ -254,11 +277,25 @@ describe("selectContainedByRef", () => {
         ["refs/remotes/origin/feat/x", "refs/remotes/origin/feat/x/y"],
         "feat/x",
         "main",
+        remotes,
       ),
     ).toBe("refs/remotes/origin/feat/x/y");
+    // A remote whose own name contains a slash still recognizes its copy of
+    // the branch (the longest configured remote name wins).
+    expect(
+      selectContainedByRef(["refs/heads/lane", "refs/remotes/team/origin/lane"], "lane", "main", [
+        "team/origin",
+      ]),
+    ).toBeUndefined();
+    // With only `team` configured, the same ref names branch `origin/lane`,
+    // not the branch's own push, so it remains a candidate.
+    expect(selectContainedByRef(["refs/remotes/team/origin/lane"], "lane", "main", ["team"])).toBe(
+      "refs/remotes/team/origin/lane",
+    );
   });
 
   it("prefers the trunk, then local branches, then remote-tracking refs", () => {
+    const remotes = ["origin", "upstream"];
     expect(
       selectContainedByRef(
         [
@@ -269,6 +306,7 @@ describe("selectContainedByRef", () => {
         ],
         "feature",
         "main",
+        remotes,
       ),
     ).toBe("refs/heads/main");
     expect(
@@ -276,6 +314,7 @@ describe("selectContainedByRef", () => {
         ["refs/remotes/origin/feat/z", "refs/heads/feat/a", "refs/remotes/upstream/main"],
         "feature",
         "main",
+        remotes,
       ),
     ).toBe("refs/remotes/upstream/main");
     expect(
@@ -283,6 +322,7 @@ describe("selectContainedByRef", () => {
         ["refs/remotes/origin/feat/z", "refs/heads/feat/b", "refs/heads/feat/a"],
         "feature",
         "main",
+        remotes,
       ),
     ).toBe("refs/heads/feat/a");
     expect(
@@ -290,6 +330,7 @@ describe("selectContainedByRef", () => {
         ["refs/remotes/upstream/feat/a", "refs/remotes/origin/feat/z"],
         "feature",
         "main",
+        remotes,
       ),
     ).toBe("refs/remotes/origin/feat/z");
   });
