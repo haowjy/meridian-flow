@@ -155,8 +155,9 @@ contains. It carries no run identity: `turn.started` has only the turn id.
   plain `tail --since` still replay the journal). It returns after that read if the chat is
   already idle. Otherwise a record, the subscribed state or a status frame calls
   `sync.refresh()`, and an applied read with `isBusy` false and `status.kind: "asleep"` is idle,
-  frozen as the proof. The claimed turns are the ones its run wrote (the ones frames and states
-  named). Any observed failure or covered turn error is failed; otherwise any cancellation is
+  frozen as the proof. The claimed set is frozen with that read: unfinished assistant turns in the join read,
+  assistant turns added by the proving read, and turns frames or states named before proof.
+  Later frames never expand it. Result, pending checks and `liveView` use this same set. Any observed failure or covered turn error is failed; otherwise any cancellation is
   cancelled; missing or non-terminal turns are 6 `unconfirmed`; all complete is complete. A gap
   counted against the claim without a proven failure or cancellation is 6 `replay_truncated`.
 - **Deadlines never prove idle.** A timeout is exit 124 with the last snapshot
