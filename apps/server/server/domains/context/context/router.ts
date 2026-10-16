@@ -459,7 +459,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
           code: "invalid_uri",
           uri: parsed.value.normalized,
           reason: chatFiles
-            ? `${unknownWorkMessage(authority.workSlug)} Chat ${authority.workSlug}'s scratch notes are at ${chatFiles.scratch}`
+            ? `Chat ${authority.workSlug}'s scratch notes are at ${chatFiles.scratch}. @${authority.workSlug} is not a Work.`
             : unknownWorkMessage(authority.workSlug),
           workSlug: authority.workSlug,
         });
