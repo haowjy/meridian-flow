@@ -5,7 +5,7 @@
  * later typing; the history is the caller's to keep for the session and gone with it.
  */
 import { recordRestorations } from "@meridian/agent-edit/diff";
-import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { refindGroup, writeDiscard } from "./draft-discard";
 import { locateInRoom, projectRoom, type ReviewFrame } from "./review-frame";
@@ -53,7 +53,8 @@ function writeInRoom(
   recordRestorations(history);
   try {
     writeDiscard(
-      { doc, fragment, schema: buildDocumentSchema(), undo: history, origin },
+      // The frame's schema: after an editor attached, its nodes are the editor's, not a fresh schema's.
+      { doc, fragment, schema: projection.doc.type.schema, undo: history, origin },
       projection,
       which,
     );
