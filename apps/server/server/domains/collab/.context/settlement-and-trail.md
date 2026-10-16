@@ -64,8 +64,9 @@ resolves to available, deleted, or denied before any manuscript-bearing title
 or prose is read. Denied occurrences disappear; authorized deleted anchors
 keep their evidence under an explicit `anchorState`.
 
-Journal replay takes one identity/hash snapshot per state and reuses each row's
-output as the next row's input. Display hashes resolve sibling collisions in one
+Journal replay applies each row once, deriving clock ownership and block identity/hash
+snapshots from that same replay document. It reuses each row's output as the next
+row's input. Display hashes resolve sibling collisions in one
 `getDocumentBlockIds` batch, not once per block. Rich live snapshots already carry
 those hashes; push preparation reuses them for its block lookup. Do not serialize
 journal prose just to compare block identities.

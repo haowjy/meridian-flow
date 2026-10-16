@@ -7,14 +7,6 @@ import * as Y from "yjs";
 
 export type ClockRange = { client: number; clock: number; length: number };
 
-export type IndexedDraftUpdate = {
-  id: number;
-  actorTurnId: string | null;
-  actorUserId?: string | null;
-  updateData: Uint8Array;
-  updateMeta?: unknown;
-};
-
 export type JournalClockOwners = {
   /** Ids of the rows whose net effect inserted or removed these ranges, sorted. */
   owningRowIds(input: {
@@ -26,42 +18,41 @@ export type JournalClockOwners = {
 type RangeAssignment = { start: number; end: number; operationId: string };
 type RangeLookup = Map<number, RangeAssignment[]>;
 
-export function indexJournalClockOwners(input: {
-  baseDoc: Y.Doc;
-  updates: readonly IndexedDraftUpdate[];
+/** Mutates the caller's replay document; the visitor observes exactly the same cut as ownership. */
+export function replayJournalClockOwners(input: {
+  doc: Y.Doc;
+  updates: readonly { id: number; updateData: Uint8Array }[];
+  afterUpdate(index: number): void;
 }): JournalClockOwners {
   const introduced: RangeLookup = new Map();
   const deleted: RangeLookup = new Map();
-  const replayDoc = cloneDoc(input.baseDoc);
+  const replayDoc = input.doc;
 
-  try {
-    for (const update of input.updates) {
-      const operationId = String(update.id);
-      const decoded = Y.decodeUpdate(update.updateData);
-      const beforeVisibility = deleteSetRanges(decoded.ds)
-        .flatMap((range) => splitRangeAtStructBoundaries(replayDoc, range))
-        .map((range) => ({ range, visible: isRangeVisible(replayDoc, range) }));
-      const introducedRanges = decoded.structs.flatMap((struct) => {
-        // Reconnect frames repeat old structs. Only novel clocks acquire the current row's
-        // ownership; inherited bytes keep their earlier owner.
-        const clock = Math.max(struct.id.clock, Y.getState(replayDoc.store, struct.id.client));
-        const length = struct.id.clock + struct.length - clock;
-        return length > 0 ? [{ client: struct.id.client, clock, length }] : [];
-      });
+  for (const [index, update] of input.updates.entries()) {
+    const operationId = String(update.id);
+    const decoded = Y.decodeUpdate(update.updateData);
+    const beforeVisible = deleteSetRanges(decoded.ds).flatMap((range) =>
+      visibleRangesAtStructBoundaries(replayDoc, range),
+    );
+    const introducedRanges = decoded.structs.flatMap((struct) => {
+      // Reconnect frames repeat old structs. Only novel clocks acquire the current row's
+      // ownership; inherited bytes keep their earlier owner.
+      const clock = Math.max(struct.id.clock, Y.getState(replayDoc.store, struct.id.client));
+      const length = struct.id.clock + struct.length - clock;
+      return length > 0 ? [{ client: struct.id.client, clock, length }] : [];
+    });
 
-      Y.applyUpdate(replayDoc, update.updateData);
+    Y.applyUpdate(replayDoc, update.updateData);
 
-      for (const { range, visible: wasVisible } of beforeVisibility) {
-        if (wasVisible && !isRangeVisible(replayDoc, range)) {
-          appendAssignment(deleted, range, operationId);
-        }
-      }
-      for (const range of introducedRanges) {
-        appendAssignment(introduced, range, operationId);
+    for (const range of beforeVisible) {
+      if (!isRangeVisible(replayDoc, range)) {
+        appendAssignment(deleted, range, operationId);
       }
     }
-  } finally {
-    replayDoc.destroy();
+    for (const range of introducedRanges) {
+      appendAssignment(introduced, range, operationId);
+    }
+    input.afterUpdate(index);
   }
 
   normalizeAssignments(introduced);
@@ -77,12 +68,6 @@ export function indexJournalClockOwners(input: {
   };
 }
 
-function cloneDoc(source: Y.Doc): Y.Doc {
-  const doc = new Y.Doc({ gc: false });
-  Y.applyUpdate(doc, Y.encodeStateAsUpdate(source));
-  return doc;
-}
-
 function deleteSetRanges(deleteSet: {
   clients: Map<number, Array<{ clock: number; len: number }>>;
 }): ClockRange[] {
@@ -96,7 +81,7 @@ function deleteSetRanges(deleteSet: {
 }
 
 /** A single delete-set range can mix old tombstones and newly removed structs; visibility is per struct. */
-function splitRangeAtStructBoundaries(doc: Y.Doc, range: ClockRange): ClockRange[] {
+function visibleRangesAtStructBoundaries(doc: Y.Doc, range: ClockRange): ClockRange[] {
   const ranges: ClockRange[] = [];
   const end = range.clock + range.length;
   let clock = range.clock;
@@ -105,7 +90,9 @@ function splitRangeAtStructBoundaries(doc: Y.Doc, range: ClockRange): ClockRange
   while (clock < end) {
     const item = findItem(doc, range.client, clock);
     const next = item ? Math.min(end, item.id.clock + item.length) : end;
-    ranges.push({ client: range.client, clock, length: next - clock });
+    if (item instanceof Y.Item && !item.deleted) {
+      ranges.push({ client: range.client, clock, length: next - clock });
+    }
     clock = next;
   }
   return ranges;

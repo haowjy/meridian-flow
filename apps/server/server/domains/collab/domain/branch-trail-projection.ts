@@ -1,9 +1,5 @@
 /** Projects branch journal ownership and push effects into durable change-trail records. */
-import {
-  type AgentEditModel,
-  toDocHandle,
-  type YProsemirrorDocumentModel,
-} from "@meridian/agent-edit/integration";
+import { toDocHandle, type YProsemirrorDocumentModel } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
@@ -15,7 +11,7 @@ import type {
   TrailContributionReplacement,
 } from "./branch-push-contracts.js";
 import { changedRangesByBlock, documentDifference } from "./document-difference.js";
-import { type IndexedDraftUpdate, indexJournalClockOwners } from "./journal-clock-owners.js";
+import { replayJournalClockOwners } from "./journal-clock-owners.js";
 import type {
   ChangeTrailPersistence,
   DurableTrailRecord,
@@ -127,41 +123,35 @@ export function journalAttributionByChangedBlock(input: {
   try {
     Y.applyUpdate(scratch, Y.encodeStateAsUpdate(input.priorDoc));
     let before = canonicalSnapshot(input.model, scratch);
-    for (const [journalRowIndex, row] of input.rows.entries()) {
-      Y.applyUpdate(scratch, row.updateData);
-      const after = canonicalSnapshot(input.model, scratch);
-      const beforeByIdentity = new Map(before.map((block) => [block.identity, block]));
-      const afterByIdentity = new Map(after.map((block) => [block.identity, block]));
-      const deleted = before.filter((block) => !afterByIdentity.has(block.identity));
-      const inserted = after.filter((block) => !beforeByIdentity.has(block.identity));
-      if (deleted.length > 0 || inserted.length > 0) {
-        journalOperations.push({
-          removedBlockHashes: deleted.map((block) => block.hash),
-          insertedBlockIds: inserted.map((block) => block.hash),
-          ambiguous: deleted.length !== 1 || inserted.length !== 1,
-          removedIndex:
-            deleted.length === 1 ? before.indexOf(deleted[0] as (typeof before)[number]) : null,
-          insertedIndex:
-            inserted.length === 1 ? after.indexOf(inserted[0] as (typeof after)[number]) : null,
-          journalRowIndex,
-        });
-      }
-      before = after;
-    }
-    const rowsById = new Map(input.rows.map((row) => [String(row.id), row]));
-    const operationIdsByBlock = draftOperationIdsByChangedBlock({
-      priorDoc: input.priorDoc,
-      draftDoc: scratch,
-      model: input.model,
-      draftUpdates: input.rows.map((row) => ({
-        id: row.id,
-        actorTurnId: row.turnId,
-        actorUserId: row.actorUserId,
-        updateData: row.updateData,
-        updateMeta: row.updateMeta,
-      })),
+    const attribution = replayJournalClockOwners({
+      doc: scratch,
+      updates: input.rows,
+      afterUpdate(journalRowIndex) {
+        const after = canonicalSnapshot(input.model, scratch);
+        const beforeByIdentity = new Map(before.map((block) => [block.identity, block]));
+        const afterByIdentity = new Map(after.map((block) => [block.identity, block]));
+        const deleted = before.filter((block) => !afterByIdentity.has(block.identity));
+        const inserted = after.filter((block) => !beforeByIdentity.has(block.identity));
+        if (deleted.length > 0 || inserted.length > 0) {
+          journalOperations.push({
+            removedBlockHashes: deleted.map((block) => block.hash),
+            insertedBlockIds: inserted.map((block) => block.hash),
+            ambiguous: deleted.length !== 1 || inserted.length !== 1,
+            removedIndex:
+              deleted.length === 1 ? before.indexOf(deleted[0] as (typeof before)[number]) : null,
+            insertedIndex:
+              inserted.length === 1 ? after.indexOf(inserted[0] as (typeof after)[number]) : null,
+            journalRowIndex,
+          });
+        }
+        before = after;
+      },
     });
-    for (const [blockId, operationIds] of operationIdsByBlock) {
+    const rowsById = new Map(input.rows.map((row) => [String(row.id), row]));
+    for (const [blockId, ranges] of changedRangesByBlock(
+      documentDifference(input.priorDoc, scratch, input.model),
+    )) {
+      const operationIds = attribution.owningRowIds(ranges);
       const owners: Array<{ threadId: ThreadId; turnId: TurnId } | null> = [];
       for (const operationId of operationIds) {
         const row = rowsById.get(operationId);
@@ -512,23 +502,4 @@ export function buildDurablePushTrail(input: {
     journalOwners,
     changes: input.prepared.trailChanges,
   };
-}
-
-/** Net publication ownership uses the same clock attribution as review, not canceled keystrokes. */
-function draftOperationIdsByChangedBlock(input: {
-  priorDoc: Y.Doc;
-  draftDoc: Y.Doc;
-  model: AgentEditModel;
-  draftUpdates: readonly IndexedDraftUpdate[];
-}): Map<string, string[]> {
-  const attribution = indexJournalClockOwners({
-    baseDoc: input.priorDoc,
-    updates: input.draftUpdates,
-  });
-  const result = new Map<string, string[]>();
-  for (const [blockKey, ranges] of changedRangesByBlock(
-    documentDifference(input.priorDoc, input.draftDoc, input.model),
-  ))
-    result.set(blockKey, attribution.owningRowIds(ranges));
-  return result;
 }
