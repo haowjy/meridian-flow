@@ -107,6 +107,8 @@ export function paintDecorations(
           // An inline widget cannot hold paragraphs: a removal that crossed blocks reads as one run.
           paragraphs: block ? paragraphs : [paragraphs.join(" ")],
           tight: endsBeforePunctuation(doc, hunk.anchor),
+          // A token carries the space before it, so a removed word brings its own, drawn unstruck.
+          spaceBefore: !block && removed[0]?.type === "text" && /^\s/u.test(removed[0].text ?? ""),
           changeId: group.id,
           identity: key,
         });

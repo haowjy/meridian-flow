@@ -65,7 +65,9 @@ describe("hunk placement", () => {
     const { editor } = reviewing(["Alpha beta gamma delta"], ["Alpha BETA gamma delta"]);
     expect(added(editor)).toEqual(["BETA"]);
     const [removal] = removals(editor);
-    expect(removal?.textContent).toBe("beta");
+    // A removed word brings the space before it, unstruck, so it never fuses: "Alpha ~~beta~~ BETA".
+    expect(removal?.textContent).toBe(" beta");
+    expect(removal?.querySelector("del")?.textContent).toBe("beta");
     // Red then green: the widget is the green mark's previous sibling in the paragraph.
     expect(removal?.nextElementSibling?.classList.contains(inlineReviewClassNames.added)).toBe(
       true,
