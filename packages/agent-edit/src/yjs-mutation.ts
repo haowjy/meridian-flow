@@ -257,3 +257,27 @@ export function captureMutationUpdates(doc: Y.Doc, mutate: () => void): Uint8Arr
   }
   return updates;
 }
+
+/** Split existing text boundaries in clock order, before a bulk edit shifts the same struct tail repeatedly. */
+export function splitTextBoundaries(
+  transaction: Y.Transaction,
+  runs: readonly { text: Y.XmlText; offsets: readonly number[] }[],
+): void {
+  const ids: Y.ID[] = [];
+  for (const { text, offsets } of runs) {
+    let position = 0;
+    let cut = 0;
+    for (let item = text._start; item; item = item.right) {
+      if (item.deleted || !item.countable) continue;
+      const end = position + item.length;
+      while (cut < offsets.length && offsets[cut] < end) {
+        const offset = offsets[cut++];
+        if (offset > position && item.content instanceof Y.ContentString)
+          ids.push(Y.createID(item.id.client, item.id.clock + offset - position));
+      }
+      position = end;
+    }
+  }
+  ids.sort((a, b) => a.client - b.client || a.clock - b.clock);
+  for (const id of ids) Y.getItemCleanStart(transaction, id);
+}

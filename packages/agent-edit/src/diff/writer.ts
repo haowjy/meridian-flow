@@ -12,6 +12,7 @@
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT } from "@sanity/diff-match-patch";
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import * as Y from "yjs";
+import { splitTextBoundaries } from "../yjs-mutation.js";
 import { readBlocks } from "./fragments.js";
 import { type RestorationLink, recordWriteBack } from "./restorations.js";
 import { blockKey, diffKeys, similarity, splitWords, wordDiff } from "./tokens.js";
@@ -198,9 +199,27 @@ export function writeBlocks(
       (pairs.length !== c1 - c0 ||
         pairs.length !== t1 - t0 ||
         pairs.some(([c, t]) => !sameShape(frag.get(c) as Y.XmlElement, target[t])));
-    // Ordinary text Discards never scan or copy the chapter's content. Only a structural gap needs
-    // a source map; capture it before deleting containers can collect their descendants.
+    // Only a structural gap needs a source map; capture it before deleting containers can
+    // collect their descendants.
     const before = rebuilt ? copyUnits(frag.toArray().slice(c0, c1) as Y.XmlElement[]) : null;
+    // Yjs splits with Array.splice. Pre-splitting in clock order keeps a full rewrite from
+    // shifting all later paragraphs' new word items at each boundary; no clocks are allocated.
+    const runs: Array<{ text: Y.XmlText; offsets: number[] }> = [];
+    const visit = (element: Y.XmlElement) => {
+      for (const child of element.toArray()) {
+        if (child instanceof Y.XmlElement) visit(child);
+        else if (child instanceof Y.XmlText) {
+          let offset = 0;
+          const value = (child.toDelta() as Array<{ insert: string }>)
+            .map((part) => part.insert)
+            .join("");
+          const offsets = splitWords(value).map((word) => (offset += word.length));
+          runs.push({ text: child, offsets });
+        }
+      }
+    };
+    for (const [c] of pairs) visit(frag.get(c) as Y.XmlElement);
+    (frag.doc as Y.Doc).transact((transaction) => splitTextBoundaries(transaction, runs));
     const clock = Y.getState((frag.doc as Y.Doc).store, (frag.doc as Y.Doc).clientID);
     const pairedC = new Map(pairs);
     const pairedT = new Set(pairs.map(([, t]) => t));

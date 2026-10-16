@@ -207,6 +207,16 @@ token budget shows whole red/green
 replacement rather than cross-paragraph word noise. Repeat the move, cut/paste
 and Discard Undo checks below; retained and fresh-node diffs must agree.
 
+For one-change Discard timing, use a fresh 10k/50k full-rewrite room (100/500
+paragraphs of 100 words), type in the middle, wait for the trailing projection,
+and click the change's Discard. Measure click to restored DOM and next animation
+frame; verify exact base text and one Ctrl+Z restoring PM JSON, review IDs and
+classes. Record host `uptime`. Reopening a previously Discarded/Undone room is
+not a cold control: retained Yjs word splits can hide the first-write cost. For
+repeated measurements, disconnect the owned room before typing and close the
+browser without syncing, then reopen the unchanged durable fixture. Also run
+once online, and compare a no-typing control with exactly the same prose.
+
 ## Probe C: moves, Ctrl+Z and view handoff
 
 1. In an Editor review, select the first paragraph including its break with a native DOM
