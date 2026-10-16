@@ -80,6 +80,7 @@ type ThreadModel = {
   /** Records of switches whose last attempt in this tab did not reach the server. */
   failedSwitches: Set<string>;
   switches: readonly JournalSwitch[];
+  unsavedSwitches: Map<string, { entry: NewChatSubmission; seq: number }>;
 };
 const models = new Map<string, ThreadModel>();
 function threadModel(accountId: string, threadId: string): ThreadModel {
@@ -93,6 +94,7 @@ function threadModel(accountId: string, threadId: string): ThreadModel {
       bindings: new Set(),
       failedSwitches: new Set(),
       switches: [],
+      unsavedSwitches: new Map(),
     };
     models.set(id, model);
   }
@@ -368,16 +370,40 @@ export class ChatSubmissionOwner {
       control: { kind: "write_mode", mode },
       creation: this.entries().find((record) => record.creation)?.creation,
     };
-    if (!recordChatSubmission(accountId, entry)) return false;
+    if (!recordChatSubmission(accountId, entry)) {
+      const seq =
+        this.model.unsavedSwitches.get(id)?.seq ??
+        Math.max(0, ...this.model.switches.map((row) => row.seq)) + 1;
+      this.model.unsavedSwitches.set(id, { entry, seq });
+      this.publishSwitches();
+      return false;
+    }
+    this.model.unsavedSwitches.delete(id);
+    this.publishSwitches();
     void this.driver.drive(threadId);
     return true;
   };
 
   retrySwitch = (id: string) => {
-    if (this.options.current()) void this.driver.retry(id);
+    if (!this.options.current()) return;
+    const unsaved = this.model.unsavedSwitches.get(id);
+    if (unsaved?.entry.control) this.submitSwitch(id, unsaved.entry.control.mode);
+    else void this.driver.retry(id);
   };
 
-  withdrawSwitch = (id: string) => this.driver.withdrawControl(id, this.options.threadId);
+  withdrawSwitch = (id: string) => {
+    if (this.options.current() && this.model.unsavedSwitches.delete(id)) {
+      this.publishSwitches();
+      return Promise.resolve("removed" as const);
+    }
+    return this.driver.withdrawControl(id, this.options.threadId);
+  };
+
+  private publishSwitches() {
+    this.rebuildSwitches(this.entries());
+    for (const binding of this.model.bindings)
+      if (binding.options.current()) binding.options.changed();
+  }
 
   shownRecordIds = () =>
     new Set([...this.model.rows.keys()].map((id) => id.slice(this.options.accountId.length + 1)));
@@ -458,6 +484,21 @@ export class ChatSubmissionOwner {
       failed: !entry.answer && (entry.state === "rejected" || failed.has(entry.recordId)),
       answer: entry.answer ?? null,
     }));
+    for (const [id, { entry, seq }] of this.model.unsavedSwitches) {
+      if (found.some((record) => record.recordId === id)) {
+        this.model.unsavedSwitches.delete(id);
+        continue;
+      }
+      next.push({
+        id,
+        mode: entry.control?.mode ?? "direct",
+        seq,
+        posted: false,
+        refused: false,
+        failed: true,
+        answer: null,
+      });
+    }
     const previous = this.model.switches;
     const same =
       previous.length === next.length &&
