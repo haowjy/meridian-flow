@@ -63,7 +63,7 @@ describe("useChatCardAnnouncer", () => {
     await view.show([card("a", "reply-failed"), card("b", "retry-lost")]);
     expect(alert).toBe("This response failed. Couldn't start the retry.");
     await view.show([card("b", "retry-lost")]);
-    expect(alert).toBe("Couldn't start the retry.");
+    expect(alert).toBe("");
     await view.show([]);
     expect(alert).toBe("");
     // An unrelated alert is left alone when another card ends.

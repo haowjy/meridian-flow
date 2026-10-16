@@ -10,7 +10,7 @@ import { useShallow } from "zustand/react/shallow";
 type AnnouncementState = {
   polite: string;
   assertive: string;
-  assertiveOwner: { entries: { key?: string; message: string }[] } | null;
+  assertiveOwner: { token: object; entries: { key?: string; message: string }[] } | null;
 };
 
 type AnnouncementStore = AnnouncementState & {
@@ -47,14 +47,15 @@ function publishErrors(
   entries: { key?: string; message: string }[],
   published?: (keys: (string | undefined)[]) => void,
 ): void {
-  const owner = { entries };
+  const owner = { token: {}, entries };
   useAnnouncementStore.setState({ assertive: "", assertiveOwner: owner });
   queueMicrotask(() => {
-    if (useAnnouncementStore.getState().assertiveOwner !== owner) return;
+    const current = useAnnouncementStore.getState().assertiveOwner;
+    if (current?.token !== owner.token) return;
     useAnnouncementStore.setState({
-      assertive: owner.entries.map((entry) => entry.message).join(" "),
+      assertive: current.entries.map((entry) => entry.message).join(" "),
     });
-    published?.(owner.entries.map((entry) => entry.key));
+    published?.(current.entries.map((entry) => entry.key));
   });
 }
 
@@ -63,14 +64,15 @@ export function announceError(message: string, options?: { key: string }): void 
   publishErrors([{ key: options?.key, message }]);
 }
 
-/** Remove only the caller's sentence, including from a batch not yet published. */
+/** Retire a key, filtering unpublished batches and clearing published text without re-speaking survivors. */
 export function clearAnnouncement(key: string): void {
-  const { assertiveOwner: owner, assertive } = useAnnouncementStore.getState();
+  const { assertiveOwner: owner } = useAnnouncementStore.getState();
   if (!owner?.entries.some((entry) => entry.key === key)) return;
-  owner.entries = owner.entries.filter((entry) => entry.key !== key);
+  const entries = owner.entries.filter((entry) => entry.key !== key);
   useAnnouncementStore.setState({
-    assertiveOwner: owner.entries.length ? owner : null,
-    assertive: assertive ? owner.entries.map((entry) => entry.message).join(" ") : "",
+    assertiveOwner: entries.length ? { ...owner, entries } : null,
+    // An atomic region must not rewrite the surviving sentences and announce them again.
+    assertive: "",
   });
 }
 
