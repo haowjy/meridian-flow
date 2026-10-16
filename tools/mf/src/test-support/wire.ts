@@ -361,7 +361,16 @@ function classify(method: string, path: string): RouteKind {
 /** Routes whose answer is the same fixed fact in every scenario. */
 function staticRoute(route: string, path: string): [number, unknown, boolean?] {
   if (route === "GET /api/threads") return [200, { threads: [thread()] }, true];
-  if (route === "POST /api/projects/bootstrap-default") return [201, { projectId: PROJECT_ID }];
+  if (route === "POST /api/projects/bootstrap-default")
+    return [
+      201,
+      {
+        projectId: PROJECT_ID,
+        documentId: DOCUMENT_ID,
+        manuscriptSourceId: "source",
+        uri: "manuscript://Manuscript",
+      },
+    ];
   if (route === "POST /api/threads") return [201, thread(), true];
   if (route === `GET /api/threads/${THREAD_ID}/skills`)
     return [200, { skills: [{ slug: "revise", name: "Revise", description: "Revise prose" }] }];
@@ -378,7 +387,7 @@ function staticRoute(route: string, path: string): [number, unknown, boolean?] {
             model: null,
             ownership: "system",
             unavailableReasons: [],
-            selection: { catalogEntryId: "c", definitionRevisionId: "r" },
+            selection: { catalogEntryId: PROJECT_ID, definitionRevisionId: DOCUMENT_ID },
           },
         ],
         nextCursor: null,

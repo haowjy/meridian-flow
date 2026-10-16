@@ -38,12 +38,22 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
   identity rather than the current branch). Duplicating that discovery here would
   drift from `pnpm dev`, so the allowed list was widened deliberately; its
   transitive `tools/dev` imports are Node-only. Never import `apps/`.
-- **HTTP reads are unknown unless parsed.** `Session.request` rejects empty and non-JSON
-  answers as read failures; only explicit `allowEmpty` callers accept an absent body.
-  A typed result requires a `parse` validator. Snapshot consumers in both hosts use
-  the contracts' `threadSnapshotSchema` before the sync sees a read. Other CLI routes
-  retain explicit caller-side contract assertions; they do not gain snapshot validation.
-  Parser exceptions and exceptions inside the sync remain programming errors, not read failures.
+- **Success claims require validated evidence.** Every domain success/outcome printed by
+  `./mf` comes from a contracts-validated response or shared-client protocol evidence.
+  `Session.request` returns unknown without `parse`; structured requests reject empty,
+  non-JSON and schema-invalid answers as classified read errors. Send admission and
+  recovery, creation, cancellation, document reads/writes and mock commands pass contracts
+  schemas. Stop and queue pass unknown bodies to the shared hand-back operation, which
+  validates them before confirming. Snapshots use `threadSnapshotSchema` in both hosts.
+  Work and document-reference lookups use explicitly typed identity projections, not casts
+  claiming full catalog validation. Deletion must also name the requested document in
+  `deletedDocumentIds` before `doc rm` or overwrite reports it deleted.
+  Diagnostic-only assertions remain in `project/list.ts`, `log/log.ts` and
+  `thread/context.ts`; none feeds a mutation or terminal claim.
+  Generic `api` explicitly requests text, then decodes JSON/transport envelopes when possible;
+  empty responses print null. It prints arbitrary server data, not validated domain outcomes,
+  and exit 0 means only HTTP 2xx. Parser exceptions and exceptions inside sync remain
+  programming errors, not read failures.
 - **Views derive from the shared view model.** `thread view` runs `viewTranscript`
   over one authoritative snapshot read (`viewSnapshot(snapshot, snapshot.turns)`: no socket, no
   `ThreadSync`, no store) and only prints the rows; `chat-view.ts` decides no row

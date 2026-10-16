@@ -2,7 +2,7 @@
 import {
   API_THREADS_WS_PATH,
   apiThreadCancelPath,
-  type CancelTurnResponse,
+  cancelTurnResponseSchema,
   type SequencedEvent,
   type ThreadLiveState,
 } from "@meridian/contracts/protocol";
@@ -29,7 +29,9 @@ export function createThreadClient(session: Session): ThreadSocketClient {
         ? new Error(`Thread socket error: ${error.message}`)
         : new CliError("protocol", `Thread socket error: ${error.message}`, { details: error }),
     cancelTurn: (threadId, turnId) =>
-      session.request("POST", apiThreadCancelPath(threadId, turnId)) as Promise<CancelTurnResponse>,
+      session.request("POST", apiThreadCancelPath(threadId, turnId), undefined, {
+        parse: cancelTurnResponseSchema.safeParse,
+      }),
   });
 }
 

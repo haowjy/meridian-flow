@@ -1,4 +1,5 @@
 /** `./mf api`: any authenticated request against this worktree's server (like `gh api`). */
+import { deserializeTransport } from "@meridian/contracts/protocol";
 import { usageError } from "../../core/cli-error";
 import { type CommandSpec, readJsonArg, requirePositional, stringOption } from "../../core/command";
 import type { HttpMethod } from "../../core/session";
@@ -26,7 +27,13 @@ export const apiCommand: CommandSpec = {
     const data = stringOption(ctx, "data");
     const session = await ctx.session();
     const body = data === undefined ? undefined : readJsonArg(data, "--data");
-    const response = await session.request(method, path, body, { allowEmpty: true });
+    const text = await session.request(method, path, body, { responseType: "text" });
+    // Generic API is an inspection escape hatch, not a domain-success claim.
+    let response: unknown = text || null;
+    try {
+      response = deserializeTransport(JSON.parse(text));
+    } catch {}
+
     ctx.out.result(response ?? null, (value) =>
       typeof value === "string" ? value : JSON.stringify(value, null, 2),
     );

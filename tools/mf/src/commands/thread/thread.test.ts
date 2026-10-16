@@ -62,8 +62,9 @@ describe("thread send", () => {
       body: {
         kind: "current",
         document: {
+          kind: "available",
           documentId: "notes-id",
-          entry: { name: "Notes", fileType: "markdown" },
+          entry: { name: "Notes", editable: true },
         },
       },
     });
@@ -71,8 +72,9 @@ describe("thread send", () => {
       body: {
         kind: "current",
         document: {
+          kind: "available",
           documentId: "image-id",
-          entry: { name: "Cover", fileType: "image" },
+          entry: { name: "Cover", editable: false, fileType: "image" },
         },
       },
     });
@@ -635,6 +637,14 @@ describe("thread send", () => {
 });
 
 describe("thread view, cancel, events, respond", () => {
+  it("rejects a malformed cancel answer without claiming completion", async () => {
+    wire.fail("cancel", { status: 200, body: {} });
+    const result = await wire.mf(["thread", "cancel", THREAD_ID, "--turn", "a1", "--json"]);
+    expect(result.code).toBe(EXIT.failed);
+    expect(result.stdout).toBe("");
+    expect(JSON.parse(result.stderr)).toMatchObject({ code: "http_error" });
+  });
+
   it("prints gaps and finishes events only after replay and live state", async () => {
     replyScenario(wire, {});
     await send("hello");
