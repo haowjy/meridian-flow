@@ -28,7 +28,10 @@ focus validity do not subscribe to every frame. Notifications update a frame-bou
 view snapshot in a React transition, not `useSyncExternalStore` (whose notifications
 remain synchronous inside a transition). A draft/selector change is reconciled in a
 layout effect; deferred rows keep their own immutable command frame. This changes
-when chrome catches up, never which text Apply or Discard names.
+when chrome catches up, never which text Apply or Discard names: whole-draft Apply
+and Discard in an open editor take `projectNow()` at the click (the editor can show
+text newer than the published frame), while a change row keeps the frame it was
+listed from. Never lengthen the pause by making a command read the published frame.
 
 Repeated projections reuse classification and publication only when PM document and
 base identities, the Yjs snapshot, attribution payload and provenance revision are
@@ -190,6 +193,15 @@ to the base blocks. A surface with no editor does the same through
 `room-discard.ts` (`useHeadlessDiscards`): its own `Y.UndoManager` and a lease on
 the room last until the row's Undo or the writer leaves. Only item Discard and
 the Work page's Discard are server commands; they close the item or draft.
+
+A local Discard never waits for the network: its metadata and attribution reads
+use `cachedForCommand` (`client/query/fetch-for-command.ts`), and Apply keeps
+reading fresh with `fetchForCommand`. A chat-scoped Discard
+(`chatChangeTargets(…, "cached")`) whose cached attribution leaves a change
+unresolved reads fresh once when `isOnline()` and classifies again, re-projecting
+the frame after each await; offline, or still unresolved, it refuses ("Changes
+are still loading") rather than guess. Holding local deletion witnesses so an
+offline Discard can resolve is deferred (#927).
 
 ## Apply
 

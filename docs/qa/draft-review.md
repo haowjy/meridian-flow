@@ -978,9 +978,10 @@ browser acceptance still checks the controls and bylines above.
    Also cover a deletion-only edit after Discard/Undo: start with `red fox runs`, have Chat A
    replace `red` with `blue`, Discard, then Undo and cache attribution. Hold the next attribution
    response while Chat B deletes restored `blue`. The cached classification must be unresolved
-   for the restored IDs (not covered by their source tombstones); B's Discard must report
-   “Changes are still loading” rather than silently succeeding with no targets. Release the fresh
-   attribution: B becomes a member, Discard restores `red fox runs`, and Undo restores ` fox runs`.
+   for the restored IDs (not covered by their source tombstones), never a silent no-target success.
+   Online, B's Discard makes exactly one fresh attribution read and waits on it; release it: B
+   becomes a member, Discard restores `red fox runs`, and Undo restores ` fox runs`. Repeat with the
+   browser offline: B's Discard reports “Changes are still loading” at once, with no request (#927).
    Repeat after reload with garbage collection on; locally witnessed writer deletions still resolve.
 3. In a two-file chat dock, fail one attribution request with HTTP 503. Its file opens with
    “Changes couldn’t load” and “Retry changes”; the dock is not endlessly busy. Summary Apply/Discard

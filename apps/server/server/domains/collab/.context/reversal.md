@@ -72,9 +72,10 @@ re-encode a room or clone its Y.Doc. Write paths retain `withLockedDocuments`:
 the same capture is materialized and consumed **inside** the locked transaction.
 
 `modelEdits` caches the complete rendered status page, including revert advice,
-in a service-owned 16-entry LRU. Each key plus message is at most 65,536 UTF-16
-code units; larger pages remain uncached. The full JSON key, not a digest,
-determines equality. It contains the caller thread/turn, destination and page,
+in a service-owned 16-entry LRU keyed by the SHA-256 digest of the read's full
+state key; only messages over 65,536 UTF-16 code units stay uncached. Never key
+by the raw snapshots: a 50k-word rewrite's snapshot is ~260 KB, so the drafts the
+cache exists for would never cache. The key contains the caller thread/turn, destination and page,
 document identity/URI, every branch ID with its name/frozen flag, the live and
 every draft's encoded Yjs snapshot, and the ordered immutable edit-part IDs
 with their mutable placements and nullable thread/turn foreign keys. Within each lineage Yjs structs and edit parts
@@ -82,5 +83,5 @@ are immutable; the snapshot includes both their clock frontier and delete set.
 Thus deletion-only edits, moves, Undo/restoration links, Apply base patches,
 new/rolled-back parts, placement or thread/turn deletion changes, and a different page all invalidate
 when they can change the answer. No cache entry contains a mutable Y.Doc.
-The response's `revision` is SHA-256 of this exact key, an opaque label for the
+The response's `revision` is that same digest, an opaque label for the
 captured read, not a write precondition. Every revert reclassifies current truth.
