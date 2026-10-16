@@ -278,6 +278,7 @@ class Classifier {
   private readonly deleted: IdIndex;
   private readonly applied: IdIndex;
   private readonly writeBack: IdIndex;
+  private readonly undone: IdIndex;
   private readonly settled: IdIndex;
   private readonly links: IdIndex;
   private readonly superseded: IdIndex;
@@ -289,6 +290,7 @@ class Classifier {
   private readonly texts = [new Map<number, SideText>(), new Map<number, SideText>()] as const;
   private readonly originMemo = new IdMemo();
   private readonly deleterMemo = new IdMemo();
+  private readonly writeBackMemo = new IdMemo();
 
   constructor(
     doc: Y.Doc,
@@ -306,6 +308,7 @@ class Classifier {
     this.settled = indexRanges([record.flatMap((e) => e.settled)]);
     const restored = readRestorations(doc);
     this.writeBack = indexRanges([restored.base]);
+    this.undone = indexRanges([restored.undone]);
     this.linkList = restored.links;
     this.links = new IdIndex(this.linkList.map((l, i) => [l[0], l[1], l[2], i] as const));
     this.superseded = indexRanges([this.linkList.map((l) => [l[3], l[4], l[2]] as const)]);
@@ -391,6 +394,23 @@ class Classifier {
         c === this.provenance.localClientId || k < (this.provenance.snapshot.sv.get(c) ?? 0)
           ? USER
           : UNKNOWN,
+    );
+  }
+
+  /** A Discard copy (including Redo copies), unless Apply has since made it real base. */
+  private isWriteBack(client: number, clock: number): boolean {
+    return (
+      this.chase(
+        client,
+        clock,
+        this.writeBackMemo,
+        (c, k) => {
+          if (this.applied.get(c, k) >= 0) return 0;
+          if (this.links.get(c, k) < 0 && this.writeBack.get(c, k) >= 0) return 1;
+          return undefined;
+        },
+        () => 0,
+      ) === 1
     );
   }
 
@@ -631,6 +651,7 @@ class Classifier {
           const clock = item.id.clock + k;
           if (
             this.settled.get(c, clock) < 0 &&
+            !(this.undone.get(c, clock) >= 0 && this.isWriteBack(c, clock)) &&
             this.origin(c, clock) === BASE &&
             this.superseded.get(c, clock) < 0
           )

@@ -92,7 +92,9 @@ inline atoms or low similarity. Structural rebuilds record copied equal spans as
 source links; only the other inserted IDs become base write-backs. AI/rebase
 `writeBlocks` keeps its allocation policy. Both record kinds share the writer-writable
 restoration root. `recordRestorations` wraps each history's Undo/Redo in a transaction
-with the manager's origin, so prose and links travel in one update; the root lies
+with the manager's origin, so prose and links travel in one update. The same record includes Undo's deletions: removing a Discard base
+copy must not count as a second deletion of the review base. Its origin remains
+base for Redo, and later ordinary deletions still name the writer. The root lies
 outside its fragment scope. Links resolve through chains and validate known ID
 ranges, not tombstone content: originals and intermediate copies can be GC structs. Without an Apply record, surviving AI items inside a later raw-word change
 remain conservatively pending even if the character edit touches only writer text.
