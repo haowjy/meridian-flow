@@ -44,7 +44,9 @@ workloads separately. A missing prerequisite or skipped check is not a pass.
 - `pnpm exec tsx scripts/attribution-cost.ts` (from `packages/agent-edit`): [attribution classifier cost](../../packages/agent-edit/scripts/attribution-cost.ts).
   Prints the median `classifyChanges` time for 10,000- and 50,000-word chapters (50 changes, every paragraph
   changed, one giant paragraph) beside the design's targets: 10,000 words in 5 ms with 50 changes and 15 ms with
-  every paragraph changed; 50,000 words in 10 ms and 50 ms. Run it on an idle machine and record the numbers
+  every paragraph changed; 50,000 words in 10 ms and 50 ms. It also times the alternating `ab KEEP` shapes
+  (five 2,000-word paragraphs, one 3,000-word paragraph; 15 ms each) and prints how many changes were
+  named, so a fast run that named no one shows. Run it on an idle machine and record the numbers
   with the commit. It replaces `review-kf16/bench.ts`, which timed the old matcher. Not a unit test.
 - [Project repository smoke](../../tools/dev/smoke-project-domain.ts) is not recommended on a shared database: it deletes a fixed project UUID before seeding. It needs run-scoped fixture ownership before becoming a safe catalog entry.
 

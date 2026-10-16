@@ -124,6 +124,7 @@ export interface BlockDiff {
   base: Side;
   draft: Side;
   hunks: Hunk[];
+  raw: Hunk[]; // the same before semantic cleanup (the word-level edits `hunks` merged)
   pos: Int32Array; // base token -> draft token outside hunks, else -1
   alignment: Alignment; // uncleaned, for callers that need word precision
 }
@@ -139,6 +140,7 @@ export function diffBlocks(
   let hunks = alignment.hunks;
   const ws = whitespaceHunks(B, D, alignment);
   if (ws.length) hunks = [...hunks, ...ws].sort((x, y) => x.from - y.from || x.to - y.to);
+  const raw = hunks;
   if (opts.cleanup !== false) hunks = cleanupHunks(hunks, B.toks, D.toks);
-  return { base: B, draft: D, hunks, pos: posMap(B.toks.length, hunks), alignment };
+  return { base: B, draft: D, hunks, raw, pos: posMap(B.toks.length, hunks), alignment };
 }

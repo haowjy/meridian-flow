@@ -57,7 +57,9 @@ export const MAX_EQUAL_MATCH_CELLS = 250_000;
  * The in-order pairs of equal keys, `[indexInA, indexInB]`, ascending in both. Ties follow
  * `weightedOrderedMatches` (prefer a match, then skip `a`), so with unmatched runs between pairs the
  * `a` side's run comes first. Memory is bounded: keys absent from the other side can never match, so
- * they are dropped first; if the rest still exceeds `MAX_EQUAL_MATCH_CELLS`, only keys occurring once on
+ * they are dropped first. Ties are decided after that filtering, on the shortened sequences, so with
+ * repeated words an ambiguous merge can land on a different (equally long) pairing than the same
+ * inputs would give with the absent keys left in; callers must not rely on which one. If the rest still exceeds `MAX_EQUAL_MATCH_CELLS`, only keys occurring once on
  * each side are paired (longest increasing run). That fallback matches fewer pairs, never a wrong
  * one: callers keep everything unmatched.
  */

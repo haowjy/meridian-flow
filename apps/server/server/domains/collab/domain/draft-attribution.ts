@@ -4,6 +4,7 @@
  * belongs to; the project's user, who owns the browser clients; and the Undo-restoration links that only
  * tombstone text can prove (the browser's gc drops the text). Writer edits are never listed.
  */
+import { createHash } from "node:crypto";
 import { restorationLinks } from "@meridian/agent-edit/diff";
 import type { AttributionRestoration, DraftAttribution } from "@meridian/contracts/drafts";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
@@ -17,12 +18,13 @@ export function createDraftAttribution(
   store: DraftAttributionStore,
   branches: Pick<BranchStore, "getBranch">,
 ) {
-  // The browser refetches whenever a change id moves, so the link pass is cached per branch state vector.
+  // The browser refetches whenever a change id moves, so the link pass is cached per branch state. The key
+  // is a digest of the state, not its vector: a deletion moves no clock but can create a link.
   const links = new Map<string, AttributionRestoration[]>();
   async function restorations(branchId: string): Promise<AttributionRestoration[]> {
     const branch = await branches.getBranch(branchId);
     if (!branch) return [];
-    const key = `${branchId}:${Buffer.from(branch.stateVector).toString("base64")}`;
+    const key = `${branchId}:${createHash("sha1").update(branch.state).digest("base64")}`;
     const cached = links.get(key);
     if (cached) return cached;
     const doc = createCollabYDoc({ gc: false });
