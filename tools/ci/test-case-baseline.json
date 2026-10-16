@@ -600,14 +600,13 @@
     "tools/dev/migration-lint.test.ts": 8,
     "tools/dev/portless-ownership.test.ts": 2,
     "tools/dev/vitest-isolate-boundary.test.ts": 2,
-    "tools/mf/src/commands/doc/doc.test.ts": 3,
+    "tools/mf/src/commands/doc/doc.test.ts": 1,
     "tools/mf/src/commands/seed/seed.test.ts": 1,
-    "tools/mf/src/commands/thread/events-map.test.ts": 2,
-    "tools/mf/src/commands/thread/reduced-thread.test.ts": 1,
-    "tools/mf/src/commands/thread/result.test.ts": 7,
-    "tools/mf/src/commands/thread/tail.test.ts": 11,
-    "tools/mf/src/commands/thread/thread.test.ts": 41,
-    "tools/mf/src/core/output.test.ts": 3,
-    "tools/mf/src/main.test.ts": 4
+    "tools/mf/src/commands/thread/events-map.test.ts": 1,
+    "tools/mf/src/commands/thread/result.test.ts": 1,
+    "tools/mf/src/commands/thread/tail.test.ts": 5,
+    "tools/mf/src/commands/thread/thread.test.ts": 18,
+    "tools/mf/src/core/output.test.ts": 1,
+    "tools/mf/src/main.test.ts": 2
   }
 }
