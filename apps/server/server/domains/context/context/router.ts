@@ -599,7 +599,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       uri: resolved.value.canonical,
       reason:
         validation.reason === "name/reserved-authority-qualifier"
-          ? `File and folder names cannot begin with "@" (${validation.segment ?? "unknown"})`
+          ? `File and folder names cannot begin with "@" or "~" (${validation.segment ?? "unknown"})`
           : `Invalid context path (${validation.reason})`,
     });
   }
