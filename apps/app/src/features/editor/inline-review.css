@@ -47,13 +47,12 @@
    character, so it is not text and cannot be selected or saved. Before a
    space there is none (the space separates), and before punctuation or a line
    end there is none either: a gap before "," reads as a typo.
-   Inline removals only; a block removal is its own paragraph. */
-.meridian-editor .ProseMirror span.meridian-review-removal:not(.meridian-review-removal-block) {
+   Inline removals only; a block removal is its own paragraph. The tight case is
+   excluded in this one selector: a separate zero-margin rule loses on specificity. */
+.meridian-editor
+  .ProseMirror
+  span.meridian-review-removal:not(.meridian-review-removal-block, .meridian-review-removal-tight) {
   margin-inline-end: 0.12em;
-}
-
-.meridian-editor .ProseMirror span.meridian-review-removal-tight {
-  margin-inline-end: 0;
 }
 
 .meridian-editor
