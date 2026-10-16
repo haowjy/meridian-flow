@@ -3,6 +3,7 @@ import {
   type CleanupEligibility,
   decideCleanupEligibility,
   type MergedPullRequest,
+  parseNonSymbolicRefNames,
   selectContainedByRef,
   validateCleanupEligibility,
 } from "./worktree-cleanup-eligibility";
@@ -177,6 +178,64 @@ describe("decideCleanupEligibility", () => {
     });
 
     expect(decision).toMatchObject({ eligible: false });
+  });
+
+  it("prefers the trunk record when several merged PRs share the head commit", () => {
+    const viaIntegration = mergedPullRequest({ baseRefName: "feat/a", number: 7 });
+    const viaTrunk = mergedPullRequest({ baseRefName: "main", number: 42 });
+    const decision = decideCleanupEligibility({
+      branch: "feature",
+      plannedOid,
+      baseBranch: "main",
+      repositoryOwner: "haowjy",
+      containedBy: undefined,
+      allowAncestry: true,
+      pullRequestBaseScope: "any",
+      pullRequestDiscovery: { ok: true, pullRequests: [viaIntegration, viaTrunk] },
+    });
+
+    expect(decision).toMatchObject({
+      eligible: true,
+      evidence: { kind: "pull-request", pullRequestBase: "main", pullRequestNumber: 42 },
+    });
+
+    const noTrunkRecord = decideCleanupEligibility({
+      branch: "feature",
+      plannedOid,
+      baseBranch: "main",
+      repositoryOwner: "haowjy",
+      containedBy: undefined,
+      allowAncestry: true,
+      pullRequestBaseScope: "any",
+      pullRequestDiscovery: {
+        ok: true,
+        pullRequests: [
+          mergedPullRequest({ baseRefName: "feat/b", number: 9 }),
+          mergedPullRequest({ baseRefName: "feat/a", number: 7 }),
+        ],
+      },
+    });
+
+    expect(noTrunkRecord).toMatchObject({
+      eligible: true,
+      evidence: { pullRequestBase: "feat/a", pullRequestNumber: 7 },
+    });
+  });
+});
+
+describe("parseNonSymbolicRefNames", () => {
+  it("drops symbolic refs and keeps real branch rows", () => {
+    expect(
+      parseNonSymbolicRefNames(
+        [
+          "refs/heads/lane\u0000",
+          "refs/remotes/origin/HEAD\u0000refs/heads/lane",
+          "refs/remotes/origin/main\u0000",
+          "",
+        ].join("\n"),
+      ),
+    ).toEqual(["refs/heads/lane", "refs/remotes/origin/main"]);
+    expect(parseNonSymbolicRefNames("")).toEqual([]);
   });
 });
 

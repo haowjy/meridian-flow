@@ -91,9 +91,13 @@ completion, and ref deletion in that order. Targeted eligibility is the planned
 commit contained in another surviving ref (the branch's own local and
 remote-tracking refs never count: a pushed branch is not merged) or one exact
 merged pull request, whichever base branch it merged into; containment is
-revalidated against its ref before every action. Batch cleanup needs explicit
-risk acknowledgement and an exact merged PR into the base branch (ancestry alone
-is not enough).
+revalidated against its ref before every action, and symbolic refs never count
+as containers (an alias can point at the deleted branch). PR evidence rests on
+GitHub's merge record rather than a local ref. Cleanup executes one run at a
+time per repository: a second run refuses while one is executing, because two
+runs' containment refs can be each other's branches. Batch cleanup needs
+explicit risk acknowledgement and an exact merged PR into the base branch
+(ancestry alone is not enough).
 Target-only `--force` permits managed dev-stack and Nx shutdown despite cwd
 occupants, then rechecks that only known shell/tmux executables remain before
 dropping the database and removing the checkout. It never signals those user

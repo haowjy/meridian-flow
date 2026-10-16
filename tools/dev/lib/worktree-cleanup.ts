@@ -30,6 +30,7 @@ export interface CleanupContext {
   readonly primaryWorktreePath: string;
   readonly currentWorktreePath: string;
   readonly eligibilityByBranch: ReadonlyMap<string, CleanupEligibility>;
+  readonly eligibilityRefusalByBranch: ReadonlyMap<string, string>;
   readonly autoReadinessByWorktree: ReadonlyMap<string, AutoCleanupReadinessDecision>;
   readonly baseBranch: string;
   readonly workItems: readonly MeridianWorkItem[];
@@ -184,6 +185,7 @@ export function parseMeridianWorkShow(id: string, output: string): MeridianWorkI
 export function buildCleanupContext(input: {
   readonly gitWorktreePorcelain: string;
   readonly eligibilityByBranch: ReadonlyMap<string, CleanupEligibility>;
+  readonly eligibilityRefusalByBranch?: ReadonlyMap<string, string>;
   readonly autoReadinessByWorktree?: ReadonlyMap<string, AutoCleanupReadinessDecision>;
   readonly baseBranch: string;
   readonly meridianWorkItems: readonly MeridianWorkItem[];
@@ -197,6 +199,7 @@ export function buildCleanupContext(input: {
     primaryWorktreePath: normalizePath(worktrees[0].path),
     currentWorktreePath: normalizePath(input.currentWorktreePath),
     eligibilityByBranch: input.eligibilityByBranch,
+    eligibilityRefusalByBranch: input.eligibilityRefusalByBranch ?? new Map(),
     autoReadinessByWorktree: input.autoReadinessByWorktree ?? new Map(),
     baseBranch: input.baseBranch,
     workItems: input.meridianWorkItems,
@@ -346,9 +349,14 @@ export function resolveTarget(context: CleanupContext, reference: TargetReferenc
   }
   const eligibility = context.eligibilityByBranch.get(worktree.branch);
   if (!eligibility) {
+    // The decision's own reason names what failed (containment, GitHub
+    // discovery); the fallback covers contexts assembled without one.
+    const refusal = context.eligibilityRefusalByBranch.get(worktree.branch);
     throw new CleanupResolverError(
-      `Refusing to clean branch '${worktree.branch}': its current commit is not ` +
-        "contained in another branch and has no exact merged pull request.",
+      refusal
+        ? `Refusing to clean branch '${worktree.branch}': ${refusal}.`
+        : `Refusing to clean branch '${worktree.branch}': its current commit is not ` +
+            "contained in another branch and has no exact merged pull request.",
     );
   }
   return createCleanupTarget(context, worktree, eligibility);

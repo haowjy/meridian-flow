@@ -116,9 +116,11 @@ branch. Eligibility is bound to the planned branch commit and revalidated before
 every action. Targeted cleanup accepts the commit contained in another surviving
 local or remote-tracking ref, or an exact merged PR into any base branch; each
 matched PR's head commit and repository owner must match. Batch cleanup still
-requires an exact merged PR into the detected base branch. The resolver refuses
-primary/current or locked worktrees, the detected base branch, unmerged commits,
-dirty worktrees, ambiguous evidence, and refs that move after planning.
+requires an exact merged PR into the detected base branch. Executing cleanups
+are serialized per repository, so two runs cannot each treat the other's branch
+as the surviving ref. The resolver refuses primary/current or locked worktrees,
+the detected base branch, unmerged commits, dirty worktrees, and refs that move
+after planning.
 
 Batch cleanup is advanced and not yet trusted for routine use. It requires an
 explicit acknowledgement:

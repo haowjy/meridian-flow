@@ -206,6 +206,16 @@ describe("worktree cleanup resolver", () => {
     expect(() => resolveTarget(context, { kind: "direct", value: "feature" })).toThrow(
       /current commit is not contained in another branch.*exact merged pull request/s,
     );
+
+    const withReason = {
+      ...context,
+      eligibilityRefusalByBranch: new Map([
+        ["feature", "could not verify merged pull requests: gh unavailable"],
+      ]),
+    };
+    expect(() => resolveTarget(withReason, { kind: "direct", value: "feature" })).toThrow(
+      /could not verify merged pull requests: gh unavailable/,
+    );
   });
 
   it("protects the detected base branch even when it isn't named 'main'", () => {
