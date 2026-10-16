@@ -232,7 +232,8 @@ export function createHandBackOperation(options: {
     const joined = running.get(requestId);
     if (joined) return joined.done;
     if (save && !store.record(held.command)) {
-      fail(held, "unsaved");
+      // An occurrence update cannot turn an already durable, unresolved command into page memory.
+      fail(held, entries.get(requestId)?.status ?? "unsaved");
       changed();
       return Promise.resolve({ kind: "unsaved", command: held.command });
     }

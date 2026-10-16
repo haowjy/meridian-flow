@@ -241,6 +241,9 @@ One framework-free operation runs Stop, the queue's x and Cancel queue for the a
   allocated before any save or post. Retry mints a new occurrence and saves it, including when the
   previous save failed; the stable outer command id still replays the same server decision.
   Joining an in-flight attempt and reload's resume retain the saved occurrence.
+  If saving a Retry occurrence fails, nothing new is posted: an already durable command keeps
+  its unresolved status and recovery card, not the never-saved classification. Reload can only
+  recover the last occurrence whose save succeeded.
 - **Send now** is not a hand-back command: `postSendNow(ports, threadId, body)` shares the
   classifier and returns confirmed (`cancelledExecutionId`; null means this attempt requested no
   cancellation), refused, or ambiguous with the frozen body. `sendNowRequest(view)` builds the body.

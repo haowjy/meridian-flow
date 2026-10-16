@@ -137,6 +137,27 @@ describe("hand-back operation", () => {
     await reloaded.retry(REQ);
     expect(key(reloaded)).not.toBe(third);
     expect(r.sent.every((sent) => JSON.stringify(sent) === JSON.stringify(r.sent[0]))).toBe(true);
+
+    // A refused Retry metadata write must not turn an already durable command into page memory.
+    let nextId = 0;
+    const resumed = createHandBackOperation({
+      threadId: "t1",
+      ports: { ...r.ports, newId: () => `retry-${++nextId}` },
+    });
+    await resumed.resume();
+    r.state.saveFails = true;
+    const beforeSaveFailure = key(resumed);
+    await resumed.retry(REQ);
+    const failedSaveKey = key(resumed);
+    expect(failedSaveKey).not.toBe(beforeSaveFailure);
+    expect(resumed.unresolved()[0]?.status).toBe("ambiguous");
+    await resumed.press({ kind: "queue", ids: [M2] });
+    expect(handBackCards(resumed.unresolved(), r.view()).map((card) => card.key)).toContain(
+      failedSaveKey,
+    );
+    r.stored.delete(REQ);
+    resumed.reconcile();
+    expect(resumed.unresolved().map((entry) => entry.requestId)).not.toContain(REQ);
   });
 
   it.each([
