@@ -161,7 +161,7 @@ describe("interrupt cancel", () => {
     const session = createThreadWebSocketSession(peer);
     session.open();
     await session.onMessage(
-      JSON.stringify({ type: "subscribe", threadId: rig.thread.id, lastSeq: "0" }),
+      JSON.stringify({ type: "subscribe", requestId: "r1", threadId: rig.thread.id, lastSeq: "0" }),
     );
 
     const subscribed = frames.find((frame) => frame.type === "subscribed");

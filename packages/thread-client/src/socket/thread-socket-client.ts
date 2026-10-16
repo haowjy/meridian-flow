@@ -138,7 +138,11 @@ export class ThreadSocketClient implements ThreadTransport {
 
   respondInterrupt(input: InterruptRespondInput): InterruptRespondReceipt {
     const socketGeneration = this.socket.currentGeneration;
-    const sent = this.send({ type: "interrupt.respond", ...input });
+    const sent = this.send({
+      type: "interrupt.respond",
+      requestId: this.nextRequestId(),
+      ...input,
+    });
     return sent ? { sent: true, socketGeneration } : { sent: false };
   }
 
@@ -181,6 +185,13 @@ export class ThreadSocketClient implements ThreadTransport {
 
   cancel(threadId: string, turnId: string) {
     return this.options.cancelTurn(threadId, turnId);
+  }
+
+  private requestCounter = 0;
+
+  private nextRequestId(): string {
+    this.requestCounter += 1;
+    return `r${this.requestCounter}`;
   }
 
   private ensureConnected(): void {
