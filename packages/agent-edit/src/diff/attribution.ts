@@ -214,7 +214,7 @@ class Classifier {
   private readonly deleterMemo = new IdMemo();
 
   constructor(
-    private readonly doc: Y.Doc,
+    doc: Y.Doc,
     private readonly projection: ReviewProjection,
     private readonly provenance: Provenance,
     private readonly options: ClassifyOptions,
@@ -359,7 +359,7 @@ class Classifier {
     ix: BlockIx,
     from: number,
     to: number,
-    fn: (client: number, clock: number, item: Y.Item) => void,
+    fn: (client: number, clock: number) => void,
   ) {
     let u = lowerBound(ix.units, from + 1) - 1;
     for (let pos = from; pos < to; ) {
@@ -367,8 +367,7 @@ class Classifier {
       const unit = ix.units[u];
       if (!unit) return;
       const end = Math.min(to, unit.at + unit.item.length);
-      for (; pos < end; pos++)
-        fn(unit.item.id.client, unit.item.id.clock + (pos - unit.at), unit.item);
+      for (; pos < end; pos++) fn(unit.item.id.client, unit.item.id.clock + (pos - unit.at));
     }
   }
 
@@ -417,7 +416,7 @@ class Classifier {
   ) {
     const ix = this.index(b);
     if (what.live)
-      this.eachChar(ix, from, to, (c, k, item) => this.touch(acc, this.origin(c, k), c, k, false));
+      this.eachChar(ix, from, to, (c, k) => this.touch(acc, this.origin(c, k), c, k, false));
     if (!what.dead) return;
     const dead: Y.Item[] = [];
     for (let i = lowerBound(ix.dead, from); i < ix.dead.length && ix.dead[i].at <= to; i++)
@@ -436,7 +435,7 @@ class Classifier {
     const all: Array<Set<number>> = [];
     for (let p = lo; p <= hi; p++) {
       const origins = new Set<number>();
-      this.eachChar(ix, p, p + n, (c, k, item) => {
+      this.eachChar(ix, p, p + n, (c, k) => {
         const who = this.origin(c, k);
         origins.add(who);
         this.touch(acc, who, c, k, false);
