@@ -1,5 +1,6 @@
 /** Domain operations for explicit agent handoff/fork into a new primary thread. */
 import type { AgentSelection } from "@meridian/contracts/agents";
+import { formatParsedContextUri } from "@meridian/contracts/context-uri";
 import type { Thread } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { AiWriteMode } from "@meridian/contracts/works";
@@ -466,9 +467,10 @@ async function inheritEditingDocuments(
   );
 }
 
-/** Tells a derived chat where its source chat's files are and how to read its history. */
+/** Tells a derived chat which chat it continues and where that chat's files are. */
 export function continuesFromLine(sourceRef: string): string {
-  return `This chat continues from ${sourceRef}. Its uploads are at uploads://@/${sourceRef}/, and its history is readable with thread_history.`;
+  const uploads = formatParsedContextUri("uploads", "", { kind: "chat", chatRef: sourceRef });
+  return `This chat continues from ${sourceRef}. Its uploads are at ${uploads}.`;
 }
 
 async function seedSystemTurn(deps: ThreadAgentSwapDeps, thread: Thread, text: string) {
