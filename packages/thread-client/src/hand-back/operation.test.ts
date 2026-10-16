@@ -147,7 +147,9 @@ describe("hand-back operation", () => {
     await resumed.resume();
     r.state.saveFails = true;
     const beforeSaveFailure = key(resumed);
+    const postsBeforeSaveFailure = r.sent.length;
     await resumed.retry(REQ);
+    expect(r.sent).toHaveLength(postsBeforeSaveFailure);
     const failedSaveKey = key(resumed);
     expect(failedSaveKey).not.toBe(beforeSaveFailure);
     expect(resumed.unresolved()[0]?.status).toBe("ambiguous");
