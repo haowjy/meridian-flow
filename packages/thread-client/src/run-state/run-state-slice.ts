@@ -275,9 +275,7 @@ function reduceView(view: RunStateView, action: RunStateAction): RunStateView {
         order: 0,
         answer: null,
         failed: action.failed,
-        occurrence: action.failed
-          ? before
-          : { ...nextOccurrence(before), requestId: action.requestId },
+        occurrence: action.failed ? before : nextOccurrence(before.attempt, action.requestId),
       });
     }
     case "withdrawn":

@@ -19,7 +19,7 @@ import {
   stopResponseSchema,
 } from "@meridian/contracts/protocol";
 import type { HandBackResult, RunState, StopRequest } from "@meridian/contracts/threads";
-import type { Occurrence } from "../commands";
+import { nextOccurrence, type Occurrence } from "../commands";
 import {
   type FailedStop,
   failedStopIsMoot,
@@ -41,11 +41,13 @@ import {
   type ResponseSchema,
 } from "./classify";
 
-/** What the operation posts and persists. `stop` keeps Stop's stored format. */
-export type HandBackCommand = (
+/** Stable replay payload, independent of the client attempt that owns it. */
+export type HandBackRequest =
   | { kind: "stop"; requestId: string; body: StopRequest }
-  | { kind: "queue"; requestId: string; ids: readonly string[] }
-) & { occurrence: Occurrence };
+  | { kind: "queue"; requestId: string; ids: readonly string[] };
+
+/** What the operation persists before posting. */
+export type HandBackCommand = HandBackRequest & { occurrence: Occurrence };
 
 /** A press: Stop over the view the writer saw, or the x / Cancel queue over the ids drawn as queued. */
 export type HandBackPressInput =
@@ -298,7 +300,7 @@ export function createHandBackOperation(options: {
       ...entry,
       command: {
         ...entry.command,
-        occurrence: { requestId: mint(), attempt: entry.command.occurrence.attempt + 1 },
+        occurrence: nextOccurrence(entry.command.occurrence.attempt, mint()),
       },
     });
   }
@@ -321,7 +323,7 @@ export function createHandBackOperation(options: {
         if (owed) return replay(owed);
       }
       const requestId = mint();
-      const occurrence = { requestId, attempt: 1 };
+      const occurrence = nextOccurrence(0, requestId);
       let held: Held;
       if (input.kind === "stop") {
         const body = stopRequest(input.view, requestId);

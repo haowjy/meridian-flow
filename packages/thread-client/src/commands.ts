@@ -15,6 +15,6 @@ export function occurrenceKey(occurrence: Occurrence): string {
   return `${occurrence.requestId}:${occurrence.attempt}`;
 }
 
-export function nextOccurrence(previous: Occurrence): Occurrence {
-  return { requestId: previous.requestId, attempt: previous.attempt + 1 };
+export function nextOccurrence(previousAttempt: number, requestId: string): Occurrence {
+  return { requestId, attempt: previousAttempt + 1 };
 }
