@@ -25,10 +25,10 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
   with a body that is not JSON, delay a read, close the socket). A command test
   checks that request and how the answer was read. Stop's scope, adoption and
   settlement are proven by the server's protocol tests and real-stack probes, not
-  here. `src/main.test.ts` boots the real shim.
+  here.
 - **What `./mf`'s tests cover.** Shared rules are tested once, in their package. `./mf`'s
-  tests cover only exit codes, replay safety, the deadline and never claiming more than it
-  proved; everything else is a live probe or recipe
+  tests cover CLI admission assembly, exit codes, replay safety, the deadline and never claiming
+  more than it proved; everything else is a live probe or recipe
   ([decision](https://github.com/haowjy/meridian-flow-docs/blob/f3da199a87/kb/decisions/engineering/dev-cli/mf-tests-script-the-wire.md)).
 - **Imports.** Workspace libraries are `@meridian/contracts` and
   `@meridian/thread-client` only. Portless discovery uses the route contract
@@ -63,14 +63,15 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
   `resumeAfterSeq`; `tail`: the first applied read's) and above every seq already counted. A gap
   counts against the claim when its range reaches past the cursor or is unknown.
   `thread events`, plain `thread tail` and `thread respond` read the journal over the shared
-  transport and hold no client state (`stream.ts` prints; they claim nothing from content).
+  transport and hold no client state. Plain tail and the printer claim nothing from content;
+  `respond` proves its own interrupt resolution.
   `thread stop` and `thread queue` read one snapshot and run the hand-back operation.
 - **`liveView` is the sync's end-of-turn check, a diagnostic.** When the stream's own frames
   end an assistant turn (complete, cancelled, error), the next applied read is compared with it:
   status and the turn's own text, exactly. `matches`; `differs` (with a compact `liveDiff` naming
   each `turnId`); or `not_observed` with `liveReason`: `no_turn` (the claim names no assistant
-  turn), `rewritten` (a read changed the turn while the stream was writing it, or ended it first
-  and replay ended it again), `read_ended` (a read showed it terminal before the stream wrote
+  turn), `rewritten` (a read seeded text, including at join, changed the turn while the stream was
+  writing it, or ended it first and replay ended it again), `read_ended` (a read showed it terminal before the stream wrote
   it), `not_ended` (the stream did not end it within the catch-up), or `gap`. A difference is
   kept even if a later read agrees. It sees client state, not paint: no tools, reasoning,
   interrupts, rows, dividers or queued rows, so `matches` does not prove the screen was right,
@@ -179,7 +180,8 @@ contains. It carries no run identity: `turn.started` has only the turn id.
   `tool.completed` from committed `tool.settled`.
 - Message admission builds one paragraph with `buildMessageDoc` and
   `serializeMessageDoc` (reference labels and image capability from the address
-  route's catalog entry). This exercises the app's serializer, not the TipTap
+  route's catalog entry). Reference lookups run sequentially: a failed lookup leaves no
+  sibling request running after command return. This exercises the app's serializer, not the TipTap
   editor or its submission lifecycle.
 
 JSON fixtures live in `fixtures/`; TypeScript in `src/`. The root Vitest project

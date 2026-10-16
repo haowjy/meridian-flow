@@ -17,9 +17,9 @@ export type LiveDiff = Diff;
 
 /** Why a `liveView` is `not_observed`, so a run records which reason appears and how often. */
 export type LiveReason =
-  /** The claim names no assistant turn (the message never ran). */
+  /** The claim names no assistant turn. */
   | "no_turn"
-  /** A read changed the turn while the stream was writing it, or ended it first and replay ended it again. */
+  /** A read seeded text (including at join), changed a streaming turn, or ended it before replay. */
   | "rewritten"
   /** A read showed the turn terminal before the stream wrote it, so the stream never ended it here. */
   | "read_ended"
@@ -28,9 +28,8 @@ export type LiveReason =
   /** The stream had a gap reaching past the claim's cursor, or of unknown range. */
   | "gap";
 
-/** Absent when nothing was followed. */
+/** Commands omit these fields when nothing was followed. */
 export type LiveViewReport =
-  | Record<string, never>
   | { liveView: "matches" }
   | { liveView: "not_observed"; liveReason: LiveReason }
   | { liveView: "differs"; liveDiff: LiveDiff[] };

@@ -14,7 +14,6 @@ import {
   stringOption,
 } from "../../core/command";
 import type { Session } from "../../core/session";
-import type { LiveViewReport } from "./live-view";
 import { createObserver, type Observer } from "./observe";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
 import { type Claim, classifyDeadline, finishResult, terminalResult } from "./result";
@@ -219,7 +218,7 @@ function tailResult(
   threadId: string,
   snapshot: ThreadSnapshotResponse,
   ids: ReadonlySet<string>,
-  observed: { failed: boolean; truncated: boolean; liveView?: LiveViewReport } = {
+  observed: { failed: boolean; truncated: boolean } = {
     failed: false,
     truncated: false,
   },
@@ -242,6 +241,5 @@ function tailResult(
     turnId: [...ids].at(-1) ?? null,
     turns,
     idle: true,
-    ...observed.liveView,
   });
 }
