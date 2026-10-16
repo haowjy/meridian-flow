@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Every chat failure is a card drawn from one place (`chatCards`), announced once when you watched it appear and cleared from the screen reader's live region when the card ends. A failed compaction's card now has Try again (it sends `/compact` again), a hidden "Couldn't stop the reply." no longer lingers in the page after its card goes, and a Retry whose request was lost is a "Couldn't start the retry." card with Try again on the failed reply instead of a fake failed reply. `./mf thread view` prints the same cards (`cards` in its JSON).
 - The AI never sees a failure. `thread_history` no longer prints `error:` or `failure reason:` lines or marks failed turns: a failed turn shows the text and tool calls it kept, and is skipped when it kept none. Stop keeps its `cancelled` marker. A tool call that a failed reply never finished now reads "did not finish" instead of "interrupted by an error".
 - The server logs each failure once where it is classified and once where it ends, as `failure.recorded` and `failure.ended` in `./mf log` (a failed reply, compaction or handoff brief; a usage block and its clear). Each carries the occurrence id, a category and source, and how it ended (`retried`, `forgotten`, `moved_on` or `resolved`). They are emitted after the transaction commits. The event hub's `turn.error` log line is replaced by `failure.recorded`.
 - New `@meridian/contracts/failures` holds the failure types and `classifyReplyFailure`, the one place a failed reply's source is chosen.
