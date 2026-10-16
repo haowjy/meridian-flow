@@ -8,7 +8,7 @@ export {
   type HandBackOutcome,
   type HandBackPorts,
   type HandBackPressInput,
-  type HandBackRequest,
+  type HandBackReplay,
   type HandBackStore,
   type RunStatePort,
   type StopFacts,

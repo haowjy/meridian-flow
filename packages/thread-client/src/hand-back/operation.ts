@@ -42,12 +42,12 @@ import {
 } from "./classify";
 
 /** Stable replay payload, independent of the client attempt that owns it. */
-export type HandBackRequest =
+export type HandBackReplay =
   | { kind: "stop"; requestId: string; body: StopRequest }
   | { kind: "queue"; requestId: string; ids: readonly string[] };
 
 /** What the operation persists before posting. */
-export type HandBackCommand = HandBackRequest & { occurrence: Occurrence };
+export type HandBackCommand = HandBackReplay & { occurrence: Occurrence };
 
 /** A press: Stop over the view the writer saw, or the x / Cancel queue over the ids drawn as queued. */
 export type HandBackPressInput =

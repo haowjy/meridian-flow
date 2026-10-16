@@ -10,7 +10,7 @@ import {
   type HandBackCommand,
   type HandBackOperation,
   type HandBackOutcome,
-  type HandBackRequest,
+  type HandBackReplay,
   type HttpPort,
   INITIAL_RUN_STATE_VIEW,
   nextOccurrence,
@@ -74,7 +74,7 @@ export function refusedError(label: string, status: number): CliError {
 
 type Input =
   | { press: { kind: "stop"; view: RunStateView } | { kind: "queue"; ids: readonly string[] } }
-  | { replay: HandBackRequest };
+  | { replay: HandBackReplay };
 
 /**
  * Runs one hand-back command (a fresh press or an exact replay) through the shared operation and
