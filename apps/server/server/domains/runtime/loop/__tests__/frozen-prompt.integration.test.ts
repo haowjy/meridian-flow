@@ -80,7 +80,16 @@ async function fixture(
     ...repos,
     works,
     topPrimaryChats: {
-      resolveTopPrimaryChat: async (id) => ({ chatId: id, chatRef: thread.ref ?? "c1" }),
+      // Mirrors the Drizzle resolver: walk up to the primary row, so a fork is its own chat.
+      resolveTopPrimaryChat: async (id) => {
+        let current = await repos.threads.findById(id);
+        while (current && current.kind !== "primary" && current.parentThreadId) {
+          current = await repos.threads.findById(current.parentThreadId);
+        }
+        return current?.kind === "primary" && current.ref
+          ? { chatId: current.id, chatRef: current.ref }
+          : null;
+      },
     },
     readChainPermission: async () => "edit" as const,
   });

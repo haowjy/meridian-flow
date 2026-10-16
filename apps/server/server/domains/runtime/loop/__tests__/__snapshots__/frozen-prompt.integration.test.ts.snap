@@ -141,7 +141,7 @@ Documents are Markdown with a few Meridian forms. You will see them when you rea
             "providerOptions": undefined,
             "text": "<system_update>
 Forked conversation through turn 00000000-0000-4000-8000-000000000012.
-This chat continues from c1. Its uploads are at uploads://@/c1/, and its history is readable with thread_history.
+This chat continues from c1. Its uploads are at uploads://@/c1/.
 </system_update>",
             "type": "text",
           },
@@ -153,7 +153,7 @@ current: none
   writes: auto-apply. Your changes are written straight into the writer's documents.
   scratch: bare scratch:// is this chat's notes at scratch://@/c1/, shared with its forks and subagents. A handoff starts fresh notes.
   Move notes to kb:// or manuscript:// to keep them for the project. Rebinding never moves notes.
-  uploads: bare uploads:// is this chat's files at uploads://@/c1/.
+  uploads: bare uploads:// is this chat's files at uploads://@/c2/.
 </work_context>
 </system_update>",
             "type": "text",
@@ -256,7 +256,7 @@ Documents are Markdown with a few Meridian forms. You will see them when you rea
             "providerOptions": undefined,
             "text": "<system_update>
 Forked conversation through turn 00000000-0000-4000-8000-000000000012.
-This chat continues from c1. Its uploads are at uploads://@/c1/, and its history is readable with thread_history.
+This chat continues from c1. Its uploads are at uploads://@/c1/.
 </system_update>",
             "type": "text",
           },
@@ -268,7 +268,7 @@ current: none
   writes: auto-apply. Your changes are written straight into the writer's documents.
   scratch: bare scratch:// is this chat's notes at scratch://@/c1/, shared with its forks and subagents. A handoff starts fresh notes.
   Move notes to kb:// or manuscript:// to keep them for the project. Rebinding never moves notes.
-  uploads: bare uploads:// is this chat's files at uploads://@/c1/.
+  uploads: bare uploads:// is this chat's files at uploads://@/c3/.
 </work_context>
 </system_update>",
             "type": "text",
