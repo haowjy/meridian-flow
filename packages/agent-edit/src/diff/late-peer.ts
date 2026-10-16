@@ -5,6 +5,7 @@
  * typing sits under a deleted parent, invisible, and the deletion is a no-op on the old copy.
  */
 import * as Y from "yjs";
+import { indexDecodedStructs } from "../yjs-mutation.js";
 
 /** Deleted, collected, or under a deleted ancestor: the item shows nowhere in the document. */
 function gone(item: Y.Item | Y.GC): boolean {
@@ -38,26 +39,7 @@ export function findLostEdits(
   const { structs, ds } = Y.decodeUpdate(update);
   const known = (id: Y.ID) => id.clock < Y.getState(doc.store, id.client);
   const incoming = structs.filter((s): s is Y.Item => s instanceof Y.Item);
-  const byClient = new Map<number, Y.Item[]>();
-  for (const item of incoming) {
-    const items = byClient.get(item.id.client) ?? [];
-    items.push(item);
-    byClient.set(item.id.client, items);
-  }
-  // Decoded Yjs structs are clock-ordered within each client, including gaps.
-  const byId = (id: Y.ID): Y.Item | undefined => {
-    const items = byClient.get(id.client) ?? [];
-    let lo = 0;
-    let hi = items.length;
-    while (lo < hi) {
-      const mid = (lo + hi) >>> 1;
-      const item = items[mid]!;
-      if (id.clock < item.id.clock) hi = mid;
-      else if (id.clock >= item.id.clock + item.length) lo = mid + 1;
-      else return item;
-    }
-    return undefined;
-  };
+  const byId = indexDecodedStructs(incoming);
   const hidden = (s: Y.Item, depth = 0): boolean => {
     if (depth > 1000) return false;
     const p = s.parent as unknown;

@@ -8,6 +8,7 @@ import {
   unwrapBlock,
   unwrapDoc,
 } from "@meridian/agent-edit/integration";
+import { indexDecodedStructs } from "@meridian/agent-edit/yjs-mutation";
 import type { DocumentAuthorityId } from "@meridian/contracts";
 import { PROSEMIRROR_FRAGMENT_NAME, RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
@@ -622,8 +623,8 @@ function assertDecodedUpdateOutsideReservedNamespace(
     reserved = reservedStructRanges(referenceDocument);
     reservedNamespaceIndexes.set(referenceDocument, reserved);
   }
-  const incomingByClient = groupStructs(incoming);
-  if (isPlainProseFastPath(incoming, incomingByClient, decoded.ds.clients, reserved)) return;
+  const incomingById = indexDecodedStructs(incoming);
+  if (isPlainProseFastPath(incoming, incomingById, decoded.ds.clients, reserved)) return;
   const ancestryMemo = new Map<DecodedStruct, boolean>();
 
   const hasReservedAncestor = (
@@ -637,7 +638,7 @@ function assertDecodedUpdateOutsideReservedNamespace(
     const parent = struct.parent;
     let result = typeof parent === "string" && isReservedName(parent);
     if (!result && isId(parent)) {
-      const incomingParent = findStruct(incomingByClient, parent);
+      const incomingParent = incomingById(parent);
       result = incomingParent
         ? hasReservedAncestor(incomingParent, visiting)
         : reserved.contains(parent);
@@ -645,7 +646,7 @@ function assertDecodedUpdateOutsideReservedNamespace(
     if (!result) {
       for (const anchor of [struct.origin, struct.rightOrigin]) {
         if (!isId(anchor)) continue;
-        const incomingAnchor = findStruct(incomingByClient, anchor);
+        const incomingAnchor = incomingById(anchor);
         if (
           (incomingAnchor && hasReservedAncestor(incomingAnchor, visiting)) ||
           reserved.contains(anchor)
@@ -688,7 +689,7 @@ function hasLiveItem(doc: Y.Doc, client: number, clock: number, length: number):
 
 function isPlainProseFastPath(
   incoming: readonly DecodedStruct[],
-  incomingByClient: ReadonlyMap<number, readonly DecodedStruct[]>,
+  incomingById: (id: Y.ID) => DecodedStruct | undefined,
   deletes: ReadonlyMap<number, readonly { clock: number; len: number }[]>,
   reserved: ReservedRangeIndex,
 ): boolean {
@@ -701,13 +702,13 @@ function isPlainProseFastPath(
   for (const struct of incoming) {
     if (typeof struct.parent === "string") {
       if (struct.parent !== PROSEMIRROR_FRAGMENT_NAME) return false;
-    } else if (!isId(struct.parent) || findStruct(incomingByClient, struct.parent)) {
+    } else if (!isId(struct.parent) || incomingById(struct.parent)) {
       return false;
     } else if (reserved.contains(struct.parent)) {
       return false;
     }
     for (const anchor of [struct.origin, struct.rightOrigin]) {
-      if (isId(anchor) && (findStruct(incomingByClient, anchor) || reserved.contains(anchor))) {
+      if (isId(anchor) && (incomingById(anchor) || reserved.contains(anchor))) {
         return false;
       }
     }
@@ -962,10 +963,10 @@ class ReservedRangeIndex {
     let hi = values.length;
     while (lo < hi) {
       const mid = (lo + hi) >>> 1;
-      if (end(values[mid]!) <= range.clock) lo = mid + 1;
+      if (end(values[mid]) <= range.clock) lo = mid + 1;
       else hi = mid;
     }
-    return lo < values.length && values[lo]!.clock < end(range);
+    return lo < values.length && values[lo].clock < end(range);
   }
 }
 
@@ -1032,34 +1033,6 @@ function appendRootLineageRun(target: RootLineageRun[], unitRun: RootLineageRun)
     target: { ...unitRun.target },
     root: { ...unitRun.root },
   });
-}
-
-function groupStructs(structs: readonly DecodedStruct[]): Map<number, DecodedStruct[]> {
-  const result = new Map<number, DecodedStruct[]>();
-  for (const struct of structs) {
-    const values = result.get(struct.id.client) ?? [];
-    values.push(struct);
-    result.set(struct.id.client, values);
-  }
-  return result;
-}
-
-function findStruct(
-  structs: ReadonlyMap<number, readonly DecodedStruct[]>,
-  id: { client: number; clock: number },
-): DecodedStruct | undefined {
-  // decodeUpdate preserves clock order per client; Skip structs may leave gaps.
-  const values = structs.get(id.client) ?? [];
-  let lo = 0;
-  let hi = values.length;
-  while (lo < hi) {
-    const mid = (lo + hi) >>> 1;
-    const value = values[mid]!;
-    if (id.clock < value.id.clock) hi = mid;
-    else if (id.clock >= value.id.clock + value.length) lo = mid + 1;
-    else return value;
-  }
-  return undefined;
 }
 
 function asStruct(value: unknown): DecodedStruct {

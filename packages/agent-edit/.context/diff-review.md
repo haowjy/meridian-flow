@@ -167,7 +167,9 @@ rules: the [late-peer recovery decision][late-peer].
 Late-peer detection indexes the incoming structs once by client and clock. Parent/origin
 lookups must not scan the complete update for each incoming item: a whole-draft
 Discard or Undo can carry tens of thousands of structs. The existing ancestry
-depth bound and the ordered lost-edit output are unchanged.
+depth bound and the ordered lost-edit output are unchanged. The shared pinned
+Yjs adapter owns that index: noncanonical updates with repeated, out-of-order
+client blocks retain first-match lookup rather than changing admission.
 
 The caller's contract: `LateTyping` is opaque in-process memory the host keeps
 per draft, so a reconnect that sends one keystroke per frame extends one
