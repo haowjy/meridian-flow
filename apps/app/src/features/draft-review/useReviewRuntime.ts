@@ -5,7 +5,7 @@
  */
 import { useQueryClient } from "@tanstack/react-query";
 import { startTransition, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { useShallow } from "zustand/react/shallow";
+import { shallow } from "zustand/shallow";
 import { type DraftRef, draftCommandKey } from "@/client/query/draft-command-record";
 import { metaRoomName, useDraftMeta } from "@/client/query/useDraftMeta";
 import {
@@ -27,23 +27,30 @@ export function useReviewState(
   select: (state: ReviewState) => unknown = (state) => state,
 ): unknown {
   const key = draft ? draftCommandKey(draft) : NO_KEY;
-  const selected = useShallow(select);
   // Review chrome may lag the painter. Keep its immutable, frame-bound command targets together
   // in a transition; useSyncExternalStore notifications are synchronous even inside startTransition.
-  const [snapshot, setSnapshot] = useState(() => ({ key, value: selected(reviewStateOf(key)) }));
-  const queued = useRef(snapshot);
+  const [snapshot, setSnapshot] = useState(() => ({ key, value: select(reviewStateOf(key)) }));
+  const latest = useRef(snapshot);
+  // Re-read with this render's selector: a selector may close over props (a focused id), so a render can
+  // change what it selects without any publication. Shallow-equal results keep the previous value.
+  const sync = () => {
+    const value = select(reviewStateOf(key));
+    const prev = latest.current;
+    if (prev.key === key && shallow(prev.value, value)) return;
+    latest.current = { key, value };
+    setSnapshot(latest.current);
+  };
+  const current = useRef(sync);
   useLayoutEffect(() => {
-    const update = () => {
-      const value = selected(reviewStateOf(key));
-      if (queued.current.key === key && Object.is(queued.current.value, value)) return;
-      queued.current = { key, value };
-      setSnapshot(queued.current);
-    };
-    // Reconcile a changed draft/selector and any publication between render and subscription.
-    update();
-    return watchReviewState(key, () => startTransition(update));
-  }, [key, selected]);
-  return snapshot.key === key ? snapshot.value : selected(reviewStateOf(key));
+    current.current = sync;
+    sync();
+  });
+  // One subscription per draft; a publication re-reads through the latest render's selector.
+  useLayoutEffect(
+    () => watchReviewState(key, () => startTransition(() => current.current())),
+    [key],
+  );
+  return snapshot.key === key ? snapshot.value : select(reviewStateOf(key));
 }
 
 /** Hold the draft's runtime while `room` is its room. */
