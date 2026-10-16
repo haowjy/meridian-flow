@@ -367,11 +367,15 @@ function createUpstreamResolver(cwd: string): UpstreamResolver {
       const key = `${remote}\u0000${branch}`;
       const cached = refreshResults.get(key);
       if (cached !== undefined) return cached;
-      const result = spawnSync("git", ["fetch", remote, branch, "--quiet"], {
-        cwd,
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "pipe"],
-      });
+      // The explicit destination refspec is what guarantees the tracking ref
+      // moves to what the fetch returned. `git fetch <remote> <branch>` alone
+      // updates only refs the remote's fetch mapping covers, so a single-branch
+      // remote would leave the tracking ref stale and still trusted.
+      const result = spawnSync(
+        "git",
+        ["fetch", remote, `+refs/heads/${branch}:refs/remotes/${remote}/${branch}`, "--quiet"],
+        { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+      );
       const ok = result.status === 0;
       refreshResults.set(key, ok);
       return ok;
