@@ -3,6 +3,7 @@ import {
   type ThreadLiveState,
   type ThreadSnapshotResponse,
 } from "@meridian/contracts/protocol";
+import { isTerminalTurnStatus } from "@meridian/contracts/threads";
 import { CliError, usageError } from "../../core/cli-error";
 import {
   type CommandContext,
@@ -95,10 +96,14 @@ async function untilIdleTail(
   deadlineAt: number,
 ) {
   const CATCH_UP_MS = 1500;
-  let idle: ThreadSnapshotResponse | null = null;
-  // The first applied read was already idle: nothing ran, and nothing is claimed from the stream.
-  let immediate = false;
-  let reads = 0;
+  type Proof = {
+    read: ThreadSnapshotResponse;
+    claimed: string[];
+    outcome: ReturnType<typeof tailResult>;
+    immediate: boolean;
+  };
+  let proof: Proof | null = null;
+  let join: ThreadSnapshotResponse | null = null;
   const observer: Observer = createObserver({
     session,
     threadId,
@@ -118,20 +123,43 @@ async function untilIdleTail(
       if (recordIsIdle(state)) observer.refresh();
     },
     onRead(read) {
-      reads += 1;
-      if (idle !== null || !isIdle(read.liveState)) return;
-      idle = read;
-      immediate = reads === 1;
+      join ??= read;
+      if (proof !== null || !isIdle(read.liveState)) return;
+      const immediate = join === read;
+      // Read membership does not depend on replay arriving before the diagnostic deadline.
+      const initial = new Map(join.turns.map((turn) => [turn.id, turn]));
+      const claimed = immediate
+        ? []
+        : [
+            ...new Set([
+              ...[...initial.values()]
+                .filter((turn) => turn.role === "assistant" && !isTerminalTurnStatus(turn.status))
+                .map((turn) => turn.id),
+              ...read.turns
+                .filter((turn) => turn.role === "assistant" && !initial.has(turn.id))
+                .map((turn) => turn.id),
+              ...[...observer.turnIds].filter(
+                (id) => read.turns.find((turn) => turn.id === id)?.role !== "user",
+              ),
+            ]),
+          ];
+      proof = {
+        read,
+        claimed,
+        immediate,
+        outcome: tailResult(threadId, read, new Set(claimed), {
+          failed: observer.failed,
+          truncated: observer.truncated,
+        }),
+      };
     },
   });
   try {
     observer.start();
-    await observer.until(() => idle !== null, deadlineAt);
-    const proving = idle as ThreadSnapshotResponse | null;
-    if (!proving) throw new Error("Tail finished without a confirming snapshot");
-    const claimed = [...observer.turnIds].filter(
-      (id) => proving.turns.find((turn) => turn.id === id)?.role !== "user",
-    );
+    await observer.until(() => proof !== null, deadlineAt);
+    const frozen = proof as Proof | null;
+    if (!frozen) throw new Error("Tail finished without a confirming snapshot");
+    const { read: proving, claimed, outcome, immediate } = frozen;
     if (!immediate) {
       try {
         await observer.until(
@@ -149,11 +177,13 @@ async function untilIdleTail(
     }
     return finishResult(
       ctx.out,
-      tailResult(threadId, proving, new Set(immediate ? [] : observer.turnIds), {
-        failed: observer.failed,
-        truncated: observer.truncated,
-        ...(immediate ? {} : { liveView: observer.liveView(claimed) }),
-      }),
+      {
+        ...outcome,
+        result: {
+          ...outcome.result,
+          ...(immediate ? {} : observer.liveView(claimed)),
+        },
+      },
       { full: flag(ctx, "full") },
     );
   } catch (error) {
