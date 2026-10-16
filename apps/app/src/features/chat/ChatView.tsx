@@ -613,6 +613,7 @@ export function ChatView({
                     <RunningSubagentsStrip threadId={threadId} />
                     <TurnList
                       threadId={threadId}
+                      uploadsChat={topChat.chatRef ?? undefined}
                       view={view}
                       historySettled={historySettled}
                       tailFollowRevision={tailFollowRevision}
