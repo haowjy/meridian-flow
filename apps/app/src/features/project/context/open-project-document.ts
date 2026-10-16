@@ -30,6 +30,7 @@ import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session
  * that was already one tab away.
  */
 
+import { parseContextUri } from "@meridian/contracts/context-uri";
 import {
   type ContextOwner,
   isProjectContextTreeScheme,
@@ -335,7 +336,7 @@ export class ProjectDocumentNavigationAdapter {
           )
         : ({ kind: "missing" } as const);
       if (local.kind === "cancelled") return { kind: "cancelled" };
-      if (local.kind === "opened") {
+      localOpen: if (local.kind === "opened") {
         const prepared = local.handle;
         try {
           const placement = resourcePlacementForSnapshot(
@@ -344,6 +345,12 @@ export class ProjectDocumentNavigationAdapter {
           );
           const resolved = localFileForRecord(projectId, local.record, placement);
           if (!resolved) return { kind: "unavailable", reason: "deleted" };
+          // A chat's upload cached before its chat existed spells no handle, which a tab needs:
+          // the server's entry names it.
+          if (resolved.chatId !== undefined) {
+            const spelled = parseContextUri(resolved.file.uri);
+            if (!spelled.ok || spelled.value.authority.kind !== "chat") break localOpen;
+          }
           if (!isCurrent()) return { kind: "cancelled" };
           const committed = await this.commitFile({
             projectId,
