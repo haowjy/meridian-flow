@@ -11,7 +11,7 @@ The unified `ContextPort` resolves `manuscript://`, `kb://`, `user://`,
 `unfiled://`, `scratch://`, and `uploads://`. Bare paths default to
 `manuscript://`. Work-scoped authorities use a persisted project-local
 `@slug`; `uploads://@/c12/` names a chat's uploads (bare `uploads://name` is
-the asking chat's; the Work owns none), while `scratch://@/c12/` names the No Work chat lineage rooted at its first chat.
+the asking chat's), while `scratch://@/c12/` names the No Work chat lineage rooted at its first chat.
 Parsing normalizes syntax but does not authorize a Work. Cross-project or
 foreign authorities remain unavailable, and the legacy `work://` scheme does
 not exist.

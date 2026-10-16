@@ -24,9 +24,9 @@ come in through the real intake.
    can’t be deleted."
 6. "Open" on a row opens the file in the dock beside the chat (Chat screen with the
    right rail expanded). Reload: the dock tab comes back. This also holds for a chat
-   created with its first attachment (its cached file spells no handle until the server
-   names it). On the Work and Editor screens, where the chat is the dock, rows offer no
-   Open, and the sent message's attachment is not a link. There is no viewer there yet.
+   created with its first attachment. On the Work and Editor screens, where the chat is
+   the dock, rows offer no Open, and the sent message's attachment is not a link: those
+   screens have no viewer ([#884](https://github.com/haowjy/meridian-flow/issues/884)).
 7. Open a second chat in the same Work: no trigger. Fork the first chat: the fork's
    trigger reads "Files" and its menu says "No files attached in this chat yet."
    under "Continues from <source title>". The link opens the source chat.
