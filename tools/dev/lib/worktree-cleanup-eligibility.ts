@@ -128,11 +128,20 @@ export function selectContainedByRef(
   remotes: readonly string[],
 ): string | undefined {
   const candidates = refs
-    .filter(
-      (ref) =>
-        (ref.startsWith(LOCAL_BRANCH_PREFIX) || ref.startsWith(REMOTE_BRANCH_PREFIX)) &&
-        !isOwnRef(ref, branch, remotes),
-    )
+    .filter((ref) => {
+      if (!ref.startsWith(LOCAL_BRANCH_PREFIX) && !ref.startsWith(REMOTE_BRANCH_PREFIX)) {
+        return false;
+      }
+      // An unresolved remote-tracking ref (no configured remote matches) cannot
+      // be verified or recognized as the branch's own copy, so it never counts.
+      if (
+        ref.startsWith(REMOTE_BRANCH_PREFIX) &&
+        remoteTrackingBranch(ref, remotes) === undefined
+      ) {
+        return false;
+      }
+      return !isOwnRef(ref, branch, remotes);
+    })
     .sort(
       (a, b) =>
         containmentRank(a, baseBranch, remotes) - containmentRank(b, baseBranch, remotes) ||

@@ -322,29 +322,75 @@ function listRemotes(cwd: string): string[] {
   return output.split("\n").filter(Boolean);
 }
 
-// A remote-tracking ref is only a local cache of the remote, so it counts as a
-// surviving carrier only while its upstream branch still exists. A missing
-// upstream (or an unreachable remote) drops the candidate rather than pruning
-// or mutating anything locally.
-function remoteBranchExists(remote: string, branch: string, cwd: string): boolean {
-  const result = spawnSync("git", ["ls-remote", "--heads", remote, `refs/heads/${branch}`], {
+interface UpstreamResolver {
+  /** The upstream branch's commit, or undefined when the branch is gone or the remote is unreachable. */
+  upstreamOid(remote: string, branch: string): string | undefined;
+  /** Refreshes one remote-tracking branch once; false when the fetch fails. */
+  refreshBranch(remote: string, branch: string): boolean;
+}
+
+function readRemoteHeads(remote: string, cwd: string): ReadonlyMap<string, string> {
+  const heads = new Map<string, string>();
+  const result = spawnSync("git", ["ls-remote", "--heads", remote], {
     cwd,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   });
-  return result.status === 0 && result.stdout.trim() !== "";
+  if (result.status !== 0) return heads;
+  for (const line of (result.stdout ?? "").split("\n")) {
+    const tab = line.indexOf("\t");
+    if (tab < 0) continue;
+    const ref = line.slice(tab + 1);
+    if (!ref.startsWith("refs/heads/")) continue;
+    heads.set(ref.slice("refs/heads/".length), line.slice(0, tab));
+  }
+  return heads;
+}
+
+// Remote-tracking refs are a local cache of the remote: one `ls-remote --heads`
+// per remote (cached for the run) says which branches still exist and at which
+// commit, and a branch whose upstream moved is fetched once before it can be
+// trusted. Nothing is pruned or deleted.
+function createUpstreamResolver(cwd: string): UpstreamResolver {
+  const headsByRemote = new Map<string, ReadonlyMap<string, string>>();
+  const refreshResults = new Map<string, boolean>();
+  return {
+    upstreamOid(remote, branch) {
+      let heads = headsByRemote.get(remote);
+      if (heads === undefined) {
+        heads = readRemoteHeads(remote, cwd);
+        headsByRemote.set(remote, heads);
+      }
+      return heads.get(branch);
+    },
+    refreshBranch(remote, branch) {
+      const key = `${remote}\u0000${branch}`;
+      const cached = refreshResults.get(key);
+      if (cached !== undefined) return cached;
+      const result = spawnSync("git", ["fetch", remote, branch, "--quiet"], {
+        cwd,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      const ok = result.status === 0;
+      refreshResults.set(key, ok);
+      return ok;
+    },
+  };
 }
 
 // Authorizes a targeted cleanup when the planned commit survives in a ref other
 // than the branch's own: a lane merged into a working or integration branch
 // keeps its commits reachable after its own refs are deleted. Symbolic refs are
-// dropped (an alias can point back at the deleted branch), and selecting the
-// surviving ref is `selectContainedByRef`'s job.
+// dropped (an alias can point back at the deleted branch), a remote-tracking
+// candidate must still exist upstream (and contain the commit once refreshed),
+// and selecting the surviving ref is `selectContainedByRef`'s job.
 function findContainedByRef(
   oid: string,
   branch: string,
   baseBranch: string,
   remotes: readonly string[],
+  upstream: UpstreamResolver,
   cwd: string,
 ): string | undefined {
   const refs = runText(
@@ -352,17 +398,52 @@ function findContainedByRef(
     [
       "for-each-ref",
       `--contains=${oid}`,
-      "--format=%(refname)%00%(symref)",
+      "--format=%(refname)%00%(symref)%00%(objectname)",
       "refs/heads",
       "refs/remotes",
     ],
     cwd,
   );
-  const candidates = parseNonSymbolicRefNames(refs).filter((ref) => {
+  const oidByRef = new Map<string, string>();
+  for (const line of refs.split("\n").filter(Boolean)) {
+    const [name, , objectname] = line.split("\0");
+    if (name && objectname) oidByRef.set(name, objectname);
+  }
+  let candidates = parseNonSymbolicRefNames(refs).filter((ref) => {
     const remoteRef = splitRemoteTrackingRef(ref, remotes);
-    return remoteRef === undefined || remoteBranchExists(remoteRef.remote, remoteRef.branch, cwd);
+    // Local branches count as-is; unresolved remote refs are rejected by the
+    // selection policy, not here.
+    if (remoteRef === undefined) return true;
+    return upstream.upstreamOid(remoteRef.remote, remoteRef.branch) !== undefined;
   });
-  return selectContainedByRef(candidates, branch, baseBranch, remotes);
+
+  // Only the selected ref pays for freshness verification: a stale upstream is
+  // refreshed once and must still contain the commit. When it does not, the
+  // next ranked candidate gets the chance instead.
+  while (candidates.length > 0) {
+    const chosen = selectContainedByRef(candidates, branch, baseBranch, remotes);
+    if (chosen === undefined) break;
+    const remoteRef = splitRemoteTrackingRef(chosen, remotes);
+    if (remoteRef === undefined) return chosen;
+    const upstreamOid = upstream.upstreamOid(remoteRef.remote, remoteRef.branch);
+    if (upstreamOid !== undefined && upstreamOid === oidByRef.get(chosen)) return chosen;
+    if (
+      upstream.refreshBranch(remoteRef.remote, remoteRef.branch) &&
+      checkAncestrySafely(oid, chosen, cwd)
+    ) {
+      return chosen;
+    }
+    candidates = candidates.filter((ref) => ref !== chosen);
+  }
+  return undefined;
+}
+
+function checkAncestrySafely(oid: string, ref: string, cwd: string): boolean {
+  try {
+    return checkAncestry(oid, ref, cwd);
+  } catch {
+    return false;
+  }
 }
 
 // Shared by every worktree: refs are repository-wide state, so one lock file
@@ -527,6 +608,7 @@ async function collectCleanupEligibility(
     ? indexMergedPullRequests(pullRequestDiscovery.pullRequests)
     : new Map<string, readonly MergedPullRequest[]>();
   const remotes = targeted ? listRemotes(cwd) : [];
+  const upstream = createUpstreamResolver(cwd);
 
   for (const worktree of parseGitWorktreePorcelain(gitWorktreePorcelain)) {
     const branch = worktree.branch;
@@ -540,7 +622,7 @@ async function collectCleanupEligibility(
     }
 
     const containedBy = targeted
-      ? findContainedByRef(plannedOid, branch, baseBranch, remotes, cwd)
+      ? findContainedByRef(plannedOid, branch, baseBranch, remotes, upstream, cwd)
       : undefined;
     const branchPullRequestDiscovery: PullRequestDiscovery = pullRequestDiscovery.ok
       ? {
