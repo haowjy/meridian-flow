@@ -345,7 +345,11 @@ it("a refused Retry rewrite retains an actionable row but does not authorize Edi
     write.call(this, key, value);
   });
   try {
+    const first = mounted.read().presentation.get(row.id)?.failure;
     await mounted.read().driver.retry("one");
+    expect(mounted.read().presentation.get(row.id)?.failure?.attempt).toBe(
+      (first?.attempt ?? 0) + 1,
+    );
     expect(scenario.turns()[0]?.status).toBe("error");
     expect(mounted.read().presentation.get(row.id)?.onRetry).toBeTypeOf("function");
     expect(mounted.read().presentation.get(row.id)?.onEdit).toBeUndefined();
@@ -570,4 +574,37 @@ it("disposing a sibling does not abandon the invoking pane's in-flight Edit", as
   expect(draft && serializeComposerDraft(draft.doc).text).toBe("First rejected");
   await vi.waitFor(() => expect(first.focused).toHaveBeenCalledOnce());
   expect(second.focused).not.toHaveBeenCalled();
+});
+
+it("retains an unsaved switch with distinct failed retry occurrences and local withdrawal", async () => {
+  const scenario = new ThreadRunScenario();
+  const mounted = await mount(scenario);
+  const write = Storage.prototype.setItem;
+  const intercept = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (
+    this: Storage,
+    key,
+    value,
+  ) {
+    if (key.startsWith("meridian:chat-submissions:")) throw new Error("write refused");
+    write.call(this, key, value);
+  });
+  try {
+    const owner = mounted.read();
+    expect(owner.submitSwitch("unsaved", "draft")).toBe(false);
+    expect(owner.switches).toMatchObject([
+      {
+        id: "unsaved",
+        failed: true,
+        posted: false,
+        failure: { requestId: "unsaved", attempt: 1, kind: "unsaved" },
+      },
+    ]);
+    owner.retrySwitch("unsaved");
+    expect(owner.switches[0]?.failure?.attempt).toBe(2);
+    expect(readChatSubmissions(account)).toEqual([]);
+    expect(await owner.withdrawSwitch("unsaved")).toBe("removed");
+    expect(owner.switches).toEqual([]);
+  } finally {
+    intercept.mockRestore();
+  }
 });

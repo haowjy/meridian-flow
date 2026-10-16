@@ -27,10 +27,13 @@ import { handBackCards } from "./hand-back-cards";
 import type { BriefStopFailure, ChatCard, ChatCardAnchor, ChatCards, RetryOutcome } from "./types";
 
 /** A queued command's row, as the cards need it: the app's `QueuedControl` fits. */
+export type CommandFailure = { requestId: string; attempt: number; kind: "lost" | "unsaved" };
+
 export type CardControl = {
   id: string;
   control: ControlBody;
   status: "sending" | "queued" | "failed" | "withdraw_failed";
+  failure?: CommandFailure;
 };
 
 export type ChatCardsInput = {
@@ -44,6 +47,8 @@ export type ChatCardsInput = {
   controls: readonly CardControl[];
   /** Writer messages being moved back to the message box: their failure is not a card. */
   movingTurnIds?: ReadonlySet<string>;
+  /** Unadmitted sends, with attempt identity retained by their submission owner. */
+  sends?: ReadonlyMap<string, CommandFailure>;
 };
 
 /** A failed turn's `Failure`, read the way the server classified it (`failureOfTurn`). */
@@ -212,10 +217,12 @@ export function chatCards(input: ChatCardsInput): ChatCards {
       input.movingTurnIds?.has(turn.id)
     )
       continue;
+    const failure = input.sends?.get(turn.id);
+    if (!failure) continue;
     cards.push(
       card({
-        key: `${turn.id}:1`,
-        failure: classifyCommandFailure({ kind: "lost" }),
+        key: `${failure.requestId}:${failure.attempt}`,
+        failure: classifyCommandFailure({ kind: failure.kind }),
         copy: "send-failed",
         action: "edit_or_send",
         anchor: { message: turn.id },
@@ -224,11 +231,13 @@ export function chatCards(input: ChatCardsInput): ChatCards {
   }
 
   for (const control of input.controls) {
+    const failure = control.failure;
+    if (!failure) continue;
     if (control.status === "failed") {
       cards.push(
         card({
-          key: `${control.id}:1`,
-          failure: classifyCommandFailure({ kind: "lost" }),
+          key: `${failure.requestId}:${failure.attempt}`,
+          failure: classifyCommandFailure({ kind: failure.kind }),
           copy:
             control.control.kind === "compact"
               ? "compact-enqueue-failed"
@@ -242,8 +251,8 @@ export function chatCards(input: ChatCardsInput): ChatCards {
     } else if (control.status === "withdraw_failed") {
       cards.push(
         card({
-          key: `withdraw:${control.id}:1`,
-          failure: classifyCommandFailure({ kind: "lost" }),
+          key: `${failure.requestId}:${failure.attempt}`,
+          failure: classifyCommandFailure({ kind: failure.kind }),
           copy:
             control.control.kind === "compact"
               ? "compact-withdraw-failed"

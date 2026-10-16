@@ -129,7 +129,14 @@ it("cards a manual compaction's failure with Try again, never an autocompaction'
   ]);
   expect(cards("auto")).toEqual([]);
   expect(
-    cards("manual", [{ id: "q", control: { kind: "compact" }, status: "withdraw_failed" }]),
+    cards("manual", [
+      {
+        id: "q",
+        control: { kind: "compact" },
+        status: "withdraw_failed",
+        failure: { requestId: "withdraw:q", attempt: 2, kind: "lost" },
+      },
+    ]),
   ).toMatchObject([{ copy: "compact-withdraw-failed", action: "try_again" }]);
   expect(cards("manual", [{ id: "q", control: { kind: "compact" }, status: "queued" }])).toEqual(
     [],
@@ -162,6 +169,7 @@ it("stacks usage before commands, keeps a writer's unsent words, and anchors a q
         ],
       },
       movingTurnIds: new Set(["u2"]),
+      sends: new Map([["u1", { requestId: "u1", attempt: 1, kind: "lost" }]]),
       handBack: [
         {
           requestId: "h",
@@ -173,8 +181,18 @@ it("stacks usage before commands, keeps a writer's unsent words, and anchors a q
         },
       ],
       controls: [
-        { id: "k1", control: { kind: "compact" }, status: "failed" },
-        { id: "k2", control: { kind: "write_mode", mode: "draft" }, status: "withdraw_failed" },
+        {
+          id: "k1",
+          control: { kind: "compact" },
+          status: "failed",
+          failure: { requestId: "k1", attempt: 1, kind: "lost" },
+        },
+        {
+          id: "k2",
+          control: { kind: "write_mode", mode: "draft" },
+          status: "withdraw_failed",
+          failure: { requestId: "withdraw:k2", attempt: 1, kind: "lost" },
+        },
       ],
     }),
   );

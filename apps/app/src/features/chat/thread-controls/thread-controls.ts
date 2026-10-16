@@ -21,7 +21,7 @@
 import { compareSeq } from "@meridian/contracts/protocol";
 import type { ControlBody, PendingInboxItem } from "@meridian/contracts/threads";
 
-import { durableControls } from "@meridian/thread-client";
+import { type CommandFailure, durableControls } from "@meridian/thread-client";
 
 export type CompactControl = Extract<ControlBody, { kind: "compact" }>;
 
@@ -29,10 +29,11 @@ export type LocalSend = {
   id: string;
   control: CompactControl;
   request: "sending" | "sent" | "failed" | "finished";
+  attempt: number;
 };
 
 /** `settled`: the server confirmed it, either withdrawn or already started. */
-export type Withdrawal = "withdrawing" | "failed" | "settled";
+export type Withdrawal = { status: "withdrawing" | "failed" | "settled"; attempt: number };
 
 export type LocalControls = {
   sends: readonly LocalSend[];
@@ -48,6 +49,7 @@ export type QueuedControl = {
   id: string;
   control: ControlBody;
   status: QueuedControlStatus;
+  failure?: CommandFailure;
   /** A switch the server may hold and hasn't answered: Retry only, no local Withdraw. */
   awaitingServer?: boolean;
   /** A switch the record says applies at the next run's start: its notice sits before that run's reply. */
@@ -79,19 +81,32 @@ export function controlsReducer(state: LocalControls, action: ControlAction): Lo
     ...state,
     sends: state.sends.map((entry) => (entry.id === id ? { ...entry, request } : entry)),
   });
-  const withdrawal = (id: string, next: Withdrawal) => ({
+  const withdrawal = (id: string, next: Withdrawal["status"]) => ({
     ...state,
-    withdrawals: new Map(state.withdrawals).set(id, next),
+    withdrawals: new Map(state.withdrawals).set(id, {
+      status: next,
+      attempt: (state.withdrawals.get(id)?.attempt ?? 0) + (next === "withdrawing" ? 1 : 0),
+    }),
   });
   switch (action.type) {
     case "enqueue":
       if (state.sends.some((entry) => entry.id === action.id)) return state;
       return {
         ...state,
-        sends: [...state.sends, { id: action.id, control: action.control, request: "sending" }],
+        sends: [
+          ...state.sends,
+          { id: action.id, control: action.control, request: "sending", attempt: 1 },
+        ],
       };
     case "retry":
-      return patchSend(action.id, "sending");
+      return {
+        ...state,
+        sends: state.sends.map((entry) =>
+          entry.id === action.id
+            ? { ...entry, request: "sending", attempt: entry.attempt + 1 }
+            : entry,
+        ),
+      };
     case "enqueued":
       // Not in the record: it already ran or was withdrawn earlier.
       return patchSend(action.id, action.sent ? "sent" : "finished");
@@ -136,19 +151,35 @@ export function mergeQueuedControls(input: MergeInput): QueuedControl[] {
     const withdrawal = local.withdrawals.get(item.id);
     if (!withdrawal) {
       result.push({ id: item.id, control: item.control, status: "queued" });
-    } else if (withdrawal === "failed") {
-      result.push({ id: item.id, control: item.control, status: "withdraw_failed" });
+    } else if (withdrawal.status === "failed") {
+      result.push({
+        id: item.id,
+        control: item.control,
+        status: "withdraw_failed",
+        failure: { requestId: `withdraw:${item.id}`, attempt: withdrawal.attempt, kind: "lost" },
+      });
     }
   }
   for (const entry of local.sends) {
     const withdrawal = local.withdrawals.get(entry.id);
-    if (listed.has(entry.id) || (withdrawal && withdrawal !== "failed")) continue;
+    if (listed.has(entry.id) || (withdrawal && withdrawal.status !== "failed")) continue;
     const status = requestStatus(entry);
     if (!status) continue;
     result.push({
       id: entry.id,
       control: entry.control,
       status: withdrawal && status !== "failed" ? "withdraw_failed" : status,
+      ...(withdrawal && status !== "failed"
+        ? {
+            failure: {
+              requestId: `withdraw:${entry.id}`,
+              attempt: withdrawal.attempt,
+              kind: "lost" as const,
+            },
+          }
+        : status === "failed"
+          ? { failure: { requestId: entry.id, attempt: entry.attempt, kind: "lost" as const } }
+          : {}),
     });
   }
   return result;
