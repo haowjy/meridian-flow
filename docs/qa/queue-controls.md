@@ -27,8 +27,8 @@ A queued `/compact` needs a completed reply first (`compact_requires_completed_r
 and wait, then hold the next reply, then type `/compact` and press Enter twice.
 
 Selectors: `[data-queued]` (the article), `[data-queue-control=move-to-box|cancel-queue|send-now]`,
-`[data-chat-card=<copy>]` (a card's sentence) and `[data-chat-card-action=<try_again|retry|dismiss>]`
-(its button; Dismiss on a refused card is the X, "Dismiss"), `[data-composer-stop]`, and the box at
+`[data-chat-card=<copy>]` (a card's sentence), `[data-chat-card-action=<try_again|retry>]`
+(its action button), `button[aria-label="Dismiss"]` (a refused card's X), `[data-composer-stop]`, and the box at
 `[data-composer] .ProseMirror`. A queued command's card sits in its row.
 
 ## Fault injection
