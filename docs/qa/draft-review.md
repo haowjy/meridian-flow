@@ -649,6 +649,9 @@ red `OLD` appears once. Repeat with `OLD` in the middle, an insertion and a dele
 formatting context resumes after the independent edit without painting across it.
 Discard the formatting row: H2 with NEW remains; Ctrl+Z restores both proposals.
 Apply only formatting: live becomes H3 with OLD and the text proposal remains.
+With only two unchanged words before the edit (`Scene one OLD three four five`),
+formatting and text share a row: its excerpts preserve the original word order
+(`Scene one OLD three four five` → `Scene one NEW three four five`), without duplicates.
 
 ## Reply commands against a replying model (browser, mock stack)
 

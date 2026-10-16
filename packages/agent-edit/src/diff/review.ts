@@ -362,7 +362,7 @@ function descend<T>(root: ContentMemo<T>, keys: Iterable<object>): ContentMemo<T
   return memo;
 }
 type HunkContent = Pick<ReviewHunk, "removed" | "kind"> & {
-  context?: { removed: ProseMirrorJSON[]; ranges: BlockSpan[]; text: string };
+  context?: { removed: ProseMirrorJSON[]; ranges: Array<BlockSpan & { baseFrom: number }> };
 };
 const hunkContents: ContentMemo<Map<string, HunkContent>> = { next: new WeakMap() };
 const groupContents: ContentMemo<Pick<ReviewGroup, "id" | "excerpt">> = { next: new WeakMap() };
@@ -393,7 +393,7 @@ function hunkContent(diff: BlockDiff, h: Hunk): HunkContent {
       kind: hunkKind(diff.base.toks, h),
       ...(ranges &&
         tokens && {
-          context: { removed: tokensToJSON(tokens), ranges, text: plain(tokens) },
+          context: { removed: tokensToJSON(tokens), ranges },
         }),
     };
     memo.value.set(key, content);
@@ -517,20 +517,30 @@ function excerpt(
   members: number[],
   contents: HunkContent[],
 ): { removed: string; inserted: string } {
-  const clip = (parts: string[]) => {
+  const clip = (parts: Array<{ at: number; text: string }>) => {
     const s = parts
-      .map((p) => p.replace(/\s+/g, " ").trim())
+      .sort((a, b) => a.at - b.at)
+      .map(({ text }) => text.replace(/\s+/g, " ").trim())
       .filter(Boolean)
       .join(" ");
     return s.length > EXCERPT_MAX ? `${s.slice(0, EXCERPT_MAX - 1).trimEnd()}…` : s;
   };
-  const removed: string[] = [];
-  const inserted: string[] = [];
+  const removed: Array<{ at: number; text: string }> = [];
+  const inserted: Array<{ at: number; text: string }> = [];
   members.forEach((i, n) => {
     const h = diff.hunks[i];
     const context = contents[n].context;
-    removed.push(context ? context.text : plain(diff.base.toks.slice(h.from, h.to)));
-    inserted.push(context ? context.text : plain(h.ins));
+    if (context) {
+      for (const { from, to, baseFrom } of context.ranges) {
+        const at = h.from + baseFrom;
+        const part = { at, text: plain(diff.base.toks.slice(at, at + to - from)) };
+        removed.push(part);
+        inserted.push({ at: h.sfrom + from, text: part.text });
+      }
+    } else {
+      removed.push({ at: h.from, text: plain(diff.base.toks.slice(h.from, h.to)) });
+      inserted.push({ at: h.sfrom, text: plain(h.ins) });
+    }
   });
   return { removed: clip(removed), inserted: clip(inserted) };
 }
