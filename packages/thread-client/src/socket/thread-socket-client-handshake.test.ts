@@ -609,3 +609,40 @@ it("reconnects with one subscribe per thread, and each handler gets its frames o
     h.transport.disconnect();
   }
 });
+
+it("reports the close of a CLOSING socket replaced before its close event", () => {
+  const sockets: FakeThreadSocket[] = [];
+  const closedGenerations: number[] = [];
+  let handlerCloses = 0;
+  const client = new ThreadSocketClient({
+    url: () => "ws://test",
+    webSocketFactory: () => {
+      const socket = new FakeThreadSocket();
+      sockets.push(socket);
+      return socket;
+    },
+    toError: (error) => new Error(error.message),
+    cancelTurn: async () => ({}) as never,
+  });
+  client.onSocketGenerationClosed((generation) => closedGenerations.push(generation));
+  try {
+    client.subscribe(
+      "thread-1",
+      { onEvent: () => {}, onClose: () => handlerCloses++ },
+      { after: "0" },
+    );
+    sockets[0].open();
+    sockets[0].deliver(connected);
+    sockets[0].stallClose = true;
+    sockets[0].close(1006);
+    client.subscribe("thread-2", { onEvent: () => {} }, { after: "0" });
+    sockets[0].stallClose = false;
+    sockets[0].close(1006);
+    expect(sockets).toHaveLength(2);
+    expect(handlerCloses).toBe(1);
+    expect(closedGenerations).toEqual([1]);
+    expect(sockets[1].readyState).toBe(0);
+  } finally {
+    client.disconnect();
+  }
+});

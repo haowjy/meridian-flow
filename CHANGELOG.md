@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- A socket replaced while still closing now reports its close once (handler callbacks, generation-closed listeners and subscription cleanup) instead of silently skipping them.
+
 - A disconnected or unsubscribed client no longer acquires a catalog listener when a pending project ownership read finishes.
 
 - Completed chat replay requests now release superseded request ids instead of retaining them until disconnect.

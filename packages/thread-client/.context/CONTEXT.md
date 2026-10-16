@@ -286,7 +286,9 @@ frames does not extend it. The separate 45-second ping deadline starts on open
 and resets on every inbound frame. Expiry of either deadline retires the socket
 before requesting native close and uses the same reconnect backoff as a network
 close, without waiting for a close acknowledgement. Retired sockets cannot drive
-product callbacks. Both timers are cancelled on retirement or teardown; protocol
+product callbacks. A socket still CLOSING when a new connection starts is retired
+the same way, so its close is reported exactly once and never closes the new
+generation. Both timers are cancelled on retirement or teardown; protocol
 `connected` cancels only the handshake watchdog.
 
 Protocol readiness lives in this lifecycle, not in a second transport flag.
