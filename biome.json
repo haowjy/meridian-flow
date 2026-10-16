@@ -49,6 +49,17 @@
         "noRestrictedImports": {
           "level": "error",
           "options": {
+            "paths": {
+              "@meridian/thread-client": {
+                "importNames": [
+                  "createTurnReducer",
+                  "TurnReducer",
+                  "TurnReducerOptions",
+                  "TurnStore"
+                ],
+                "message": "Turns are reduced by the shared ThreadSync (createThreadSync from @meridian/thread-client/sync), which owns the reducer, the cell and the frame order for the app and ./mf. Do not build another reducer or turn store in a host."
+              }
+            },
             "patterns": [
               {
                 "group": ["**/turn-graph.js"],
