@@ -12,8 +12,8 @@ never into `apps/app`; the chat session moves the rest.
 - Depend on `@meridian/contracts` and the light `@meridian/markup/links`
   subpath, never app or server code, Yjs or ProseMirror.
 - Event application lives here: `createTurnReducer` over a `TurnStore` port.
-  The app's Zustand store and `InMemoryTurnStore` both implement it, and the
-  app's parity test keeps them equal. Do not fork reducer behavior into a client.
+  The app's store (one `SyncedThread` per chat, written through `syncedTurnStore`)
+  and `InMemoryTurnStore` both implement it, and the app's parity test keeps them equal. Do not fork reducer behavior into a client.
 - `view/` is also a subpath, `@meridian/thread-client/view`, for the server: it
   exports `replyDrawsNothing`, the one rule for "this failed reply draws nothing", so the
   server's forgetting and the client's hiding cannot drift.

@@ -49,7 +49,7 @@ snapshot reconciliation" section.
 ## Run state and joining a live run
 
 The accepted snapshot, the `subscribed` state and every `meridian.run_state`
-frame go into the run-state slice (`../../../client/run-state/run-state-slice.ts`)
+frame go into the run-state slice (`packages/thread-client/src/run-state/run-state-slice.ts`, held in the chat's `SyncedThread`)
 as whole records; the shared view keeps the newest by version. The admission
 answer adds this device's message intent at its `runStateVersion`
 (`ThreadRunController`, which follows no run). A `meridian.write_mode.switched`
