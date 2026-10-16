@@ -72,8 +72,8 @@ continues to use the thread's Work. Unresolved surfaces have
 no scope. `scratch://` uses that Work unless the scope also names a
 `rootThreadId`. A bare `uploads://` uses the scope's `chatId` (the chat's top
 primary), and a holder with no chat has none, so only a qualified
-`uploads://@c15/x` resolves there. Canonical `@<slug>` names a Work through
-Project Work authority.
+`uploads://@c15/x` resolves there. Canonical `@w3` names a Work by its
+handle through Project Work authority.
 
 `rootThreadId` is the lineage (the first chat's id) a bare `scratch://` means:
 a No Work chat's own, or the lineage a note in a chat's Scratch belongs to
@@ -243,9 +243,9 @@ the index never completes, and the resolver refuses every local answer.
 An unresolved surface has no catalog scope; the follower waits for its Work
 rather than resolving against a guessed authority.
 
-A Work-qualified URI outside the selected Work (`scratch://@other-work/…`), or
+A Work-qualified URI outside the selected Work (`scratch://@w9/…`), or
 another lineage's (`scratch://@c40/…`), is outside the index: it has no local match and always asks the server, which
-resolves the slug itself.
+resolves the handle itself.
 
 `revision` is content, not an object identity and not a counter: each
 document's id and URI. A refetch that found the
