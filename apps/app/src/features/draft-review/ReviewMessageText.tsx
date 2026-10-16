@@ -65,7 +65,7 @@ export function ReviewMessageText({
 }) {
   switch (code) {
     case "apply-offline":
-      return <Trans>Couldn't apply. Check your connection and try again.</Trans>;
+      return <Trans>Couldn't apply yet. Try again in a moment.</Trans>;
     case "apply-refused":
       return (
         <>

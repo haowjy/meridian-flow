@@ -302,7 +302,7 @@ export function ChangeFailureText({
         </Trans>
       );
     case "offline":
-      return <Trans>Couldn't apply. Check your connection and try again.</Trans>;
+      return <Trans>Couldn't apply yet. Try again in a moment.</Trans>;
     case "refused":
       return (
         <>

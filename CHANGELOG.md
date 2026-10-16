@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Large draft Discard and Undo updates use indexed writer admission instead of scanning the whole update for every item. Apply no longer blames the connection when it is still waiting for edits to save.
+
 ### Fixed
 
 - Draft Apply indexes fragmented journal ownership once and reconstructs prior deletions with a linear scan, avoiding repeated full-range sorting after Discard and Undo.

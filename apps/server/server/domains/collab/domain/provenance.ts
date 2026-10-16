@@ -622,8 +622,8 @@ function assertDecodedUpdateOutsideReservedNamespace(
     reserved = reservedStructRanges(referenceDocument);
     reservedNamespaceIndexes.set(referenceDocument, reserved);
   }
-  if (isPlainProseFastPath(incoming, decoded.ds.clients, reserved)) return;
   const incomingByClient = groupStructs(incoming);
+  if (isPlainProseFastPath(incoming, incomingByClient, decoded.ds.clients, reserved)) return;
   const ancestryMemo = new Map<DecodedStruct, boolean>();
 
   const hasReservedAncestor = (
@@ -688,6 +688,7 @@ function hasLiveItem(doc: Y.Doc, client: number, clock: number, length: number):
 
 function isPlainProseFastPath(
   incoming: readonly DecodedStruct[],
+  incomingByClient: ReadonlyMap<number, readonly DecodedStruct[]>,
   deletes: ReadonlyMap<number, readonly { clock: number; len: number }[]>,
   reserved: ReservedRangeIndex,
 ): boolean {
@@ -700,30 +701,18 @@ function isPlainProseFastPath(
   for (const struct of incoming) {
     if (typeof struct.parent === "string") {
       if (struct.parent !== PROSEMIRROR_FRAGMENT_NAME) return false;
-    } else if (!isId(struct.parent) || incomingContains(incoming, struct.parent)) {
+    } else if (!isId(struct.parent) || findStruct(incomingByClient, struct.parent)) {
       return false;
     } else if (reserved.contains(struct.parent)) {
       return false;
     }
     for (const anchor of [struct.origin, struct.rightOrigin]) {
-      if (isId(anchor) && (incomingContains(incoming, anchor) || reserved.contains(anchor))) {
+      if (isId(anchor) && (findStruct(incomingByClient, anchor) || reserved.contains(anchor))) {
         return false;
       }
     }
   }
   return true;
-}
-
-function incomingContains(
-  incoming: readonly DecodedStruct[],
-  id: { client: number; clock: number },
-): boolean {
-  return incoming.some(
-    (struct) =>
-      struct.id.client === id.client &&
-      id.clock >= struct.id.clock &&
-      id.clock < struct.id.clock + struct.length,
-  );
 }
 
 function validateManifestIdentity(input: {
@@ -929,6 +918,7 @@ function reservedStructRanges(doc: Y.Doc): ReservedRangeIndex {
     const type = doc.share.get(name);
     if (type) collectTypeStructs(type, index);
   }
+  index.sort();
   return index;
 }
 
@@ -959,15 +949,23 @@ class ReservedRangeIndex {
     ranges.push(range);
     this.byClient.set(range.clientID, ranges);
   }
+  sort(): void {
+    for (const ranges of this.byClient.values()) ranges.sort((a, b) => a.clock - b.clock);
+  }
   contains(id: { client: number; clock: number }): boolean {
-    return (
-      this.byClient
-        .get(id.client)
-        ?.some((range) => id.clock >= range.clock && id.clock < end(range)) ?? false
-    );
+    return this.overlaps({ clientID: id.client, clock: id.clock, length: 1 });
   }
   overlaps(range: LineageRange): boolean {
-    return this.byClient.get(range.clientID)?.some((value) => rangesOverlap(value, range)) ?? false;
+    // Stored Yjs structs have disjoint clock ranges, regardless of tree traversal order.
+    const values = this.byClient.get(range.clientID) ?? [];
+    let lo = 0;
+    let hi = values.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (end(values[mid]!) <= range.clock) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo < values.length && values[lo]!.clock < end(range);
   }
 }
 
@@ -1050,9 +1048,18 @@ function findStruct(
   structs: ReadonlyMap<number, readonly DecodedStruct[]>,
   id: { client: number; clock: number },
 ): DecodedStruct | undefined {
-  return structs
-    .get(id.client)
-    ?.find((struct) => id.clock >= struct.id.clock && id.clock < struct.id.clock + struct.length);
+  // decodeUpdate preserves clock order per client; Skip structs may leave gaps.
+  const values = structs.get(id.client) ?? [];
+  let lo = 0;
+  let hi = values.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    const value = values[mid]!;
+    if (id.clock < value.id.clock) hi = mid;
+    else if (id.clock >= value.id.clock + value.length) lo = mid + 1;
+    else return value;
+  }
+  return undefined;
 }
 
 function asStruct(value: unknown): DecodedStruct {
