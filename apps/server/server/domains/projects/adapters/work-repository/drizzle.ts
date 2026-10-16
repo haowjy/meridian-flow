@@ -208,6 +208,14 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
       // error; treat it as not-found so callers get a clean 404, not a 500.
       return findWorkById(id);
     },
+    async findByHandle(projectId: ProjectId, handle: string): Promise<Work | null> {
+      const [row] = await currentDrizzleDb(db)
+        .select()
+        .from(works)
+        .where(and(eq(works.projectId, projectId), eq(works.handle, handle)))
+        .limit(1);
+      return row ? mapWork(row) : null;
+    },
     async findNoWork(projectId: ProjectId): Promise<Work | null> {
       return findNoWorkRow(projectId);
     },

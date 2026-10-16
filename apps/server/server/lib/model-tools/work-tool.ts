@@ -8,8 +8,6 @@ import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
 import type { Work, WorkReceipt, WorkReceiptState } from "@meridian/contracts/works";
 import { workLifecycleState } from "@meridian/contracts/works";
-import { unknownWorkMessage } from "../../domains/context/context/router.js";
-import { findWorkNamed } from "../../domains/context/owner-lookup.js";
 import {
   createWork,
   deleteWorkTransition,
@@ -100,13 +98,16 @@ async function workByHandle(
   projectId: string,
   ref: string,
 ): Promise<Work | ToolErrorOutput> {
-  const works = await deps.works.listByProject(projectId, { lifecycle: "all" });
-  const work = works.find((candidate) => candidate.handle === ref);
+  const reference = await deps.contextPorts.chatFiles.workReference(projectId, ref);
+  const work = reference.ok
+    ? await deps.works.findByHandle(projectId, reference.work.handle)
+    : null;
   if (work) return work;
-  const named = findWorkNamed(works, ref);
   return toolError({
     code: "work_not_found",
-    message: named ? `"${named.name}" is ${named.handle}.` : unknownWorkMessage(ref),
+    message: reference.ok
+      ? await deps.contextPorts.chatFiles.unknownWork(projectId, ref)
+      : reference.message,
     workHandle: ref,
   });
 }
@@ -129,7 +130,7 @@ async function switchPrecheck(
     if (workLifecycleState(found) === "deleted") {
       return toolError({
         code: "work_not_found",
-        message: unknownWorkMessage(handle),
+        message: await deps.contextPorts.chatFiles.unknownWork(projectId, handle),
         workHandle: handle,
       });
     }

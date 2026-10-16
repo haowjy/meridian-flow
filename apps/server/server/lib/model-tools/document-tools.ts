@@ -49,7 +49,6 @@ import {
   inContainer,
   keptDraftReader,
 } from "./file-access.js";
-import { ownerNotice } from "./owner-notice.js";
 import { readDocument } from "./read-document.js";
 import { retractCreatedTrackedDocument } from "./response-write-lifecycle.js";
 import { showingOf, threadShownLinks } from "./shown-link-capture.js";
@@ -265,8 +264,7 @@ export function createReadHandler(deps: ToolWiringDeps) {
     );
     if (outcome.isError) return { isError: true, output: outcome.result };
     recordTouchInBackground(deps, address.documentId, ctx);
-    const notice = await ownerNotice(
-      deps.contextPorts.chatFiles,
+    const notice = await deps.contextPorts.chatFiles.notice(
       call.context.resolution.thread.projectId,
       path,
       address.uri,
@@ -413,8 +411,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
         threadId: ctx.threadId,
       });
     }
-    const notice = await ownerNotice(
-      deps.contextPorts.chatFiles,
+    const notice = await deps.contextPorts.chatFiles.notice(
       context.resolution.thread.projectId,
       parsed.path,
       address.uri,

@@ -1,11 +1,21 @@
 /**
- * The one answer to "who owns this address": the chat, subagent, lineage or Work a handle or a
- * near-miss name stands for, in the caller's project. Near-miss errors, the thread tools'
- * not-connected pointer, `ls scratch://@` and the receipt lines all read it, so they name only
+ * The one component that interprets an owner spelling: who a handle or near-miss name stands for
+ * in the caller's project, and what to tell the model about it (deleted Works, name and handle
+ * collisions, dropped sigils, handle-shaped names, subagent handles). The router, the receipt
+ * notice, the thread tools and the `work` tool all consume its answers, so they name only
  * addresses that resolve and show each handle beside its label.
+ *
+ * Storage questions are narrow: a handle is one indexed `(project_id, handle)` read and a name is
+ * one bounded read. Only discovery (`ls scratch://@`) lists every Work. Policy authorization is a
+ * separate concern and never lives here.
  */
-import { formatParsedContextUri } from "@meridian/contracts/context-uri";
-import type { WorkHandle } from "@meridian/contracts/handles";
+import {
+  formatParsedContextUri,
+  type OwnedContextUriScheme,
+  type OwnerSlip,
+  parseUnifiedContextUri,
+} from "@meridian/contracts/context-uri";
+import { classifyHandleToken, type WorkHandle } from "@meridian/contracts/handles";
 import type { ChatUploadsOwners } from "./chat-uploads-owners.js";
 import type { ScratchLineages } from "./scratch-owner.js";
 
@@ -32,6 +42,20 @@ export interface OwnerRow {
   label: string;
 }
 
+/** The one error for a Work handle that names no Work. It points to `work list` instead of listing. */
+export function unknownWorkMessage(handle: string): string {
+  return `Unknown Work ${handle}. List Works with work list.`;
+}
+
+/** The owner the caller's own port supplies for a scheme, to name in a "takes a handle" answer. */
+export interface ContextualOwner {
+  kind: "work" | "chat";
+  handle: string;
+}
+
+/** A Work handle or name the `work` tool copied: the Work it reaches, or what to say instead. */
+export type WorkReference = { ok: true; work: WorkOwner } | { ok: false; message: string };
+
 export interface OwnerLookup {
   /** A live chat of `projectId` by its `c` handle: where its files are. Null for anything else. */
   chat(projectId: string, ref: string): Promise<ChatFileAddresses | null>;
@@ -44,6 +68,22 @@ export interface OwnerLookup {
   work(projectId: string, handle: string): Promise<WorkOwner | null>;
   /** The one non-deleted Work a name (`Tea Notes` or `tea-notes`) stands for, if exactly one. */
   workNamed(projectId: string, name: string): Promise<WorkOwner | null>;
+  /** Why a Work handle reaches nothing: unknown, or deleted and perhaps still restorable. */
+  unknownWork(projectId: string, handle: string): Promise<string>;
+  /** A near-miss owner spelling answered with the real owner; `fallback` is the lookup-free answer. */
+  slipReason(
+    projectId: string,
+    slip: OwnerSlip,
+    fallback: string,
+    own: ContextualOwner | null,
+  ): Promise<string>;
+  /** The Work a handle names (deleted ones included), or the handle its name answers to. */
+  workReference(projectId: string, ref: string): Promise<WorkReference>;
+  /**
+   * The line to put first in a read or write result, or null when the address means what it
+   * says: a handle that is also a live Work's name, or a dropped sigil.
+   */
+  notice(projectId: string, requestedPath: string, canonicalUri: string): Promise<string | null>;
   scratchOwners(projectId: string): Promise<OwnerRow[]>;
   uploadOwners(projectId: string): Promise<OwnerRow[]>;
 }
@@ -55,8 +95,12 @@ export interface OwnerLookupDeps {
   namedWorkHandle(threadId: string): Promise<string | null>;
   /** The `c` handle of the chat a `p` handle belongs to; null when there is no such subagent. */
   subagentChatRef(projectId: string, ref: string): Promise<string | null>;
-  /** Every Work of the project, deleted ones too. */
-  works(projectId: string): Promise<WorkOwner[]>;
+  /** One Work by handle, deleted ones included: the indexed `(project_id, handle)` read. */
+  workByHandle(projectId: string, handle: string): Promise<WorkOwner | null>;
+  /** The few non-deleted Works whose name equals or collapses to `name`; a bounded read. */
+  worksNamed(projectId: string, name: string): Promise<WorkOwner[]>;
+  /** Every non-deleted Work of the project: discovery only. */
+  listWorks(projectId: string): Promise<WorkOwner[]>;
   /** Chats of the project that have uploaded files, with their titles. */
   chatsWithFiles(projectId: string): Promise<{ chatRef: string; title: string | null }[]>;
 }
@@ -105,26 +149,140 @@ export function createOwnerLookup(deps: OwnerLookupDeps): OwnerLookup {
           }),
     };
   }
+  async function subagentFiles(projectId: string, ref: string) {
+    const chatRef = await deps.subagentChatRef(projectId, ref);
+    const files = chatRef ? await chat(projectId, chatRef) : null;
+    return chatRef && files ? { ...files, chatRef } : null;
+  }
+
+  async function workNamed(projectId: string, name: string): Promise<WorkOwner | null> {
+    return findWorkNamed(await deps.worksNamed(projectId, name), name);
+  }
+
+  async function unknownWork(projectId: string, handle: string): Promise<string> {
+    const owner = await deps.workByHandle(projectId, handle);
+    if (owner?.state !== "deleted") return unknownWorkMessage(handle);
+    return owner.restorableDays === null
+      ? `Work ${handle} was deleted.`
+      : `Work ${handle} was deleted; restorable for ${owner.restorableDays} ${owner.restorableDays === 1 ? "day" : "days"}.`;
+  }
+
+  async function slipReason(
+    projectId: string,
+    slip: OwnerSlip,
+    fallback: string,
+    own: ContextualOwner | null,
+  ): Promise<string> {
+    const owned = (
+      scheme: OwnedContextUriScheme,
+      authority: Parameters<typeof formatParsedContextUri>[2],
+    ) => formatParsedContextUri(scheme, "", authority);
+    switch (slip.kind) {
+      case "name": {
+        const work = await workNamed(projectId, slip.token);
+        return work
+          ? `Addresses name a Work by handle. "${work.name}" is ${work.handle}: ${owned("scratch", { kind: "work", workHandle: work.handle })}…`
+          : fallback;
+      }
+      case "subagent": {
+        const subagent = await subagentFiles(projectId, slip.token);
+        if (!subagent) return fallback;
+        return slip.scheme === "uploads"
+          ? `Use the chat's handle, not a subagent's. ${slip.token}'s chat is ${subagent.chatRef}: ${subagent.uploads}…`
+          : `Use the chat's handle, not a subagent's. ${slip.token}'s notes are at ${subagent.scratch}…`;
+      }
+      case "uppercase": {
+        if (slip.scheme !== "scratch") return fallback;
+        const named = await workNamed(projectId, slip.token);
+        const lower = classifyHandleToken(slip.token.toLowerCase());
+        const lowerWork =
+          lower.kind === "handle" && lower.handle.kind === "work"
+            ? await deps.workByHandle(projectId, lower.handle.handle)
+            : null;
+        const both =
+          named && lowerWork && lowerWork.state !== "deleted"
+            ? ` Work ${lowerWork.handle} is "${lowerWork.name}"; the Work named "${slip.token}" is ${named.handle}.`
+            : named
+              ? ` The Work named "${slip.token}" is ${named.handle}.`
+              : "";
+        return `${fallback}${both}`;
+      }
+      case "no-handle": {
+        if (!own) return fallback;
+        if (slip.scheme === "uploads") {
+          return `@ takes a chat's handle: ${owned("uploads", { kind: "chat", chatRef: own.handle })}… . List chats with files with ls uploads://@.`;
+        }
+        const address =
+          own.kind === "work"
+            ? owned("scratch", { kind: "work", workHandle: own.handle as WorkHandle })
+            : owned("scratch", { kind: "lineage", rootThreadRef: own.handle });
+        return `@ takes a handle: ${address}… for ${own.kind === "work" ? "this Work" : "this chat's lineage"}. List the others with ls scratch://@.`;
+      }
+    }
+  }
+
+  async function notice(
+    projectId: string,
+    requestedPath: string,
+    canonicalUri: string,
+  ): Promise<string | null> {
+    const requested = parseUnifiedContextUri(requestedPath.replace(/#.*$/, ""));
+    if (!requested.ok || requested.value.scheme !== "scratch") return null;
+    const { authority, path } = requested.value;
+    const workAddress = (handle: string) =>
+      formatParsedContextUri("scratch", "", { kind: "work", workHandle: handle as WorkHandle });
+
+    if (authority.kind === "work" || authority.kind === "lineage") {
+      const handle = authority.kind === "work" ? authority.workHandle : authority.rootThreadRef;
+      const named = await workNamed(projectId, handle);
+      if (!named || named.handle === handle) return null;
+      const address = formatParsedContextUri("scratch", "", authority);
+      const reached =
+        authority.kind === "work"
+          ? `Work ${handle} "${(await deps.workByHandle(projectId, handle))?.name ?? ""}"`
+          : `chat ${handle}'s notes`;
+      return `${address} is ${reached}. The Work named "${handle}" is ${named.handle} at ${workAddress(named.handle)}… .`;
+    }
+
+    if (authority.kind !== "contextual") return null;
+    const first = classifyHandleToken(path.split("/")[0] ?? "");
+    if (first.kind !== "handle") return null;
+    const { handle, kind } = first.handle;
+    if (kind === "work") {
+      const work = await deps.workByHandle(projectId, handle);
+      if (!work || work.state === "deleted") return null;
+      return `${requestedPath} is a folder named ${handle} in this chat's notes, written to ${canonicalUri}. Work ${handle} "${work.name}" is at ${workAddress(handle)}… .`;
+    }
+    if (kind === "chat") {
+      const files = await chat(projectId, handle);
+      if (!files) return null;
+      return `${requestedPath} is a folder named ${handle} in this chat's notes, written to ${canonicalUri}. Chat ${handle}'s notes are at ${files.scratch}… .`;
+    }
+    return null;
+  }
+
   return {
     chat,
-    async subagent(projectId, ref) {
-      const chatRef = await deps.subagentChatRef(projectId, ref);
-      const files = chatRef ? await chat(projectId, chatRef) : null;
-      return chatRef && files ? { ...files, chatRef } : null;
+    subagent: subagentFiles,
+    work: deps.workByHandle,
+    workNamed,
+    unknownWork,
+    slipReason,
+    async workReference(projectId, ref) {
+      const work = await deps.workByHandle(projectId, ref);
+      if (work) return { ok: true, work };
+      const named = await workNamed(projectId, ref);
+      return {
+        ok: false,
+        message: named ? `"${named.name}" is ${named.handle}.` : unknownWorkMessage(ref),
+      };
     },
-    async work(projectId, handle) {
-      return (await deps.works(projectId)).find((work) => work.handle === handle) ?? null;
-    },
-    async workNamed(projectId, name) {
-      return findWorkNamed(await deps.works(projectId), name);
-    },
+    notice,
     async scratchOwners(projectId) {
-      const works = (await deps.works(projectId))
-        .filter((work) => work.state !== "deleted")
-        .map((work) => ({
-          uri: formatParsedContextUri("scratch", "", { kind: "work", workHandle: work.handle }),
-          label: work.state === "archived" ? `${work.name} (archived)` : work.name,
-        }));
+      const works = (await deps.listWorks(projectId)).map((work) => ({
+        uri: formatParsedContextUri("scratch", "", { kind: "work", workHandle: work.handle }),
+        label: work.state === "archived" ? `${work.name} (archived)` : work.name,
+      }));
       const lineages = (await deps.lineages.list(projectId)).map((lineage) => ({
         uri: formatParsedContextUri("scratch", "", {
           kind: "lineage",
@@ -146,9 +304,8 @@ export function createOwnerLookup(deps: OwnerLookupDeps): OwnerLookup {
 /** The lookup answering for one project, which is how a port's router asks. */
 export interface ProjectOwners {
   chat(ref: string): Promise<ChatFileAddresses | null>;
-  subagent(ref: string): Promise<(ChatFileAddresses & { chatRef: string }) | null>;
-  work(handle: string): Promise<WorkOwner | null>;
-  workNamed(name: string): Promise<WorkOwner | null>;
+  unknownWork(handle: string): Promise<string>;
+  slipReason(slip: OwnerSlip, fallback: string, own: ContextualOwner | null): Promise<string>;
   scratchOwners(): Promise<OwnerRow[]>;
   uploadOwners(): Promise<OwnerRow[]>;
 }
@@ -156,9 +313,8 @@ export interface ProjectOwners {
 export function bindOwners(lookup: OwnerLookup, projectId: string): ProjectOwners {
   return {
     chat: (ref) => lookup.chat(projectId, ref),
-    subagent: (ref) => lookup.subagent(projectId, ref),
-    work: (handle) => lookup.work(projectId, handle),
-    workNamed: (name) => lookup.workNamed(projectId, name),
+    unknownWork: (handle) => lookup.unknownWork(projectId, handle),
+    slipReason: (slip, fallback, own) => lookup.slipReason(projectId, slip, fallback, own),
     scratchOwners: () => lookup.scratchOwners(projectId),
     uploadOwners: () => lookup.uploadOwners(projectId),
   };
@@ -170,6 +326,10 @@ export const emptyOwnerLookup: OwnerLookup = {
   subagent: async () => null,
   work: async () => null,
   workNamed: async () => null,
+  unknownWork: async (_projectId, handle) => unknownWorkMessage(handle),
+  slipReason: async (_projectId, _slip, fallback) => fallback,
+  workReference: async (_projectId, ref) => ({ ok: false, message: unknownWorkMessage(ref) }),
+  notice: async () => null,
   scratchOwners: async () => [],
   uploadOwners: async () => [],
 };
