@@ -8,9 +8,9 @@ const ACTIVE_WORK = { id: WORK_ID, handle: "w1" };
 
 describe("contextRouteTargetFromUri", () => {
   it("names no address for a malformed model path instead of throwing", () => {
-    for (const path of ["uploads://@c1/notes", "scratch://@/x", "a/@b/c", "a/../b", "#/#x#"])
+    for (const path of ["uploads://@/c1/notes", "scratch://@/x", "a/@b/c", "a/../b", "#/#x#"])
       expect(() => contextUriFromWritePath(path)).not.toThrow();
-    expect(contextUriFromWritePath("uploads://@c1/notes")).toBeNull();
+    expect(contextUriFromWritePath("uploads://@/c1/notes")).toBeNull();
     expect(contextUriFromWritePath("chapter.md")).toBe("manuscript://chapter.md");
   });
 
