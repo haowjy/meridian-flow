@@ -19,7 +19,7 @@ from queue controls; the Retry route ends in `/retry` and a brief Stop's in `/ca
 Selectors: `[data-chat-card=<copy>]` is a card's sentence (`reply-failed`, `reply-declined`,
 `compaction-failed`, `brief-failed`, `retry-refused`, `retry-refused-another-reply`, `retry-lost`,
 `brief-retry-lost`, `brief-stop-failed`, `stop-failed`, `usage-blocked` and the queue's), and
-`[data-chat-card-action=<retry|try_again|add_usage|dismiss>]` its button. The live region is
+`[data-chat-card-action=<retry|try_again|add_usage>]` its action button. A refused card's Dismiss icon is `button[aria-label="Dismiss"]`. The live region is
 `[aria-live=assertive]`. Read it and the page text with
 `agent-browser eval "document.querySelector('[aria-live=assertive]').textContent"` and
 `document.body.innerText`. `./mf thread view T` prints a `card ...` line for each card the durable
