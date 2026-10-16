@@ -124,6 +124,12 @@ applied (the server merges that patch into live and into `review_base`).
 `discard` yields the draft with the selected hunks reverted; the editor writes it
 into the room as the writer's own edit. Unknown ids are ignored.
 
+The writer skips sequence matching when two blocks share no words: the exact
+similarity is zero. Before editing a gap, it splits existing word boundaries in
+client-clock order, avoiding repeated shifts of Yjs's struct arrays during the
+backwards block write. Splitting allocates no clocks; the edits, identities and
+restoration records remain unchanged.
+
 ## The rebase
 
 `rebase` is a three-way merge of top-level blocks (base, live, draft) and never

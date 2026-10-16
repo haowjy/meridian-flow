@@ -318,7 +318,9 @@ export function similarity(a: PMNode, b: PMNode, inPlace = false, floor = 0): nu
   const y = blockWords(b);
   if (!x.length || !y.length || !a.isTextblock || !b.isTextblock) return 0;
   const denom = inPlace ? Math.min(x.length, y.length) : Math.max(x.length, y.length);
-  if (floor > 0 && sharedBound(a, b) / denom < floor) return 0;
+  const bound = sharedBound(a, b);
+  // Disjoint word sets cannot have an in-order match, even when no floor was requested.
+  if (bound === 0 || (floor > 0 && bound / denom < floor)) return 0;
   let common = 0;
   for (const [op, n] of diffKeys(x, y)) if (op === DIFF_EQUAL) common += n;
   return common / denom;
