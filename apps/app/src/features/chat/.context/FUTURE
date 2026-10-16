@@ -105,16 +105,12 @@
   lands two completions on one reply, and a step in `docs/qa/chat-session.md`
   that checks the `./mf thread view` delivery grouping against the screen.
 
-- Live-region announcements linger after their action resolves. The polite and
-  assertive regions (`client/stores/thread-store/announcements.ts`) keep their
-  last text until something replaces it, so "Couldn't retry."
-  (`useRetryStandIns.ts`), "This response failed." and a raw "WebSocket closed
-  (1006)" from the stream's `onError` (`client/query/useThreadSnapshotSync.ts`,
-  `announceError(failure.message)`) stay readable after the Retry, the next
-  reply or the reconnect. Screen-reader only and older than run state. Clear
-  each one with its keyed owner (`clearAnnouncement`) when its state ends, and
-  word the stream failure for the writer instead of passing the close code
-  through.
+- Polite status announcements and connection-failure alerts still keep their
+  last text until replaced. In particular, the raw WebSocket close text from
+  `client/query/useThreadSnapshotSync.ts` calls unkeyed `announceError`.
+  Give that transport state its own clearable owner and writer-facing wording.
+  Reply, Retry and Stop failure cards are no longer part of this gap: F3a's
+  `useChatCardAnnouncer` clears their keyed alerts when the cards end.
 
 - A row below a reply that finishes hops by the reply's height change (27 px
   measured: 84.8 px while streaming, 57.8 px settled) for one frame. `TurnList.tsx`
