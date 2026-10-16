@@ -981,3 +981,23 @@ its Work/dock review is visible. Reopen it: counts, red/green marks and pins mus
 match a fresh load. The headless refresh must retain all other paragraph nodes;
 projection should re-diff one unit, and resolving an existing pin must not rebuild
 the document. Repeat after Undo and a remote paragraph deletion.
+
+### Status reads do not own writer admission (KF33)
+
+Use a 10k-word initially unchanged draft and a 50k-word draft with one model
+replacement. In a real browser, type 20 keys at 200 ms cadence in each of three
+conditions: quiet, an overlapping ordinary chat turn, and a turn issuing 25
+`read(format: "edits")` calls. Measure keydown to the active DocumentSession's
+acknowledged edge, not paint completion. Record p50/p95/max, host load, actual
+character delta, acknowledged-key count and errors. Confirm the tool calls
+succeeded and overlapped typing; distinguish sequential tool steps from 25
+simultaneously dispatched calls. Do not compare runs as a speedup without
+controlling host load and repeating both builds.
+
+Read the same status page twice without editing: its revision and status must
+match. Delete text without inserting, move a paragraph, Undo, Apply a change,
+and read again after each: the page must describe that captured state, not a
+cached prior one. A later `write revert` must classify the current text, even
+when its availability was cached before a writer edit. On a 50k draft, run an
+ordinary chat while the writer types and clicks Apply; verify the command
+returns HTTP 200 and publishes the reviewed text without “Couldn't apply”.

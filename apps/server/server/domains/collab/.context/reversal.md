@@ -51,3 +51,36 @@ branch/live process locks, Work rows, then ordinary admission locks; Apply does
 not take the transition lock. Root pulls must not be awaited while holding Work
 locks. Restoration correspondence comes from certified aliases on immutable
 parts, never equal text.
+
+## Status reads and locking
+
+| Caller / entry point | Classification | Snapshot and lock contract |
+| --- | --- | --- |
+| `model-inverse-policy.modelEdits` → `partsInChanges` (the only production caller) | Read-only | Capture encoded live journal updates, branch states, edit parts and Work metadata under the inverse/branch/live/Work/admission locks. Release the capture's root transaction and process locks before materializing status Y.Docs, planning availability, diffing or rendering. |
+| `model-document-edits.createModelDocumentEdits.read` → `modelEdits` | Read-only | Returns the captured status page; never writes from its status. Destination provisioning may ensure a draft before the read, independently of status. |
+| agent-edit `createDocumentEditCommands` → `DocumentEdits.read`, reached by the runtime's `read(format: "edits")` tool (including paged reads) | Read-only | Returns status and revert availability as advice, with the revision of the captured read. The later revert reads again. |
+| `model-inverse-policy.modelInverse` (`write revert`) | Read-then-write; **does not call either status reader** | `prepareHolds` / `prepareEditRoots` classify and select parts, then commit under the original locked invocation. Never uses cached availability. |
+| `turn-inverse-service.rollbackResponse` (failed reply) | Read-then-write; **does not call either status reader** | Selects and computes inverse parts, marks holds, then commits under the original locked invocation. |
+| Ordinary chat-turn context preparation | No call to either status reader | A chat can explicitly call the edits read tool; ordinary context construction does not. Concurrent-chat acknowledgement delays can therefore have other causes. |
+| `draft-edit-status.test.ts` | Read-only test calls to `partsInChanges` | Exercises the pure classifier directly, without a cache or storage locks. |
+
+`withReadDocuments` owns the captured Y.Docs and destroys them after the read,
+including on failure. It opens a root capture transaction so SQL locks cannot
+leak into the subsequent projection through an ambient caller transaction.
+The captured branch bytes are already encoded by storage; capture does not
+re-encode a room or clone its Y.Doc. Write paths retain `withLockedDocuments`:
+the same capture is materialized and consumed **inside** the locked transaction.
+
+`modelEdits` caches the complete rendered status page, including revert advice,
+in a service-owned 16-entry LRU. Each key plus message is at most 65,536 UTF-16
+code units; larger pages remain uncached. The full JSON key, not a digest,
+determines equality. It contains the caller thread/turn, destination and page,
+document identity/URI, every branch ID with its name/frozen flag, the live and
+every draft's encoded Yjs snapshot, and the ordered immutable edit-part IDs
+with their mutable placements and nullable thread/turn foreign keys. Within each lineage Yjs structs and edit parts
+are immutable; the snapshot includes both their clock frontier and delete set.
+Thus deletion-only edits, moves, Undo/restoration links, Apply base patches,
+new/rolled-back parts, placement or thread/turn deletion changes, and a different page all invalidate
+when they can change the answer. No cache entry contains a mutable Y.Doc.
+The response's `revision` is SHA-256 of this exact key, an opaque label for the
+captured read, not a write precondition. Every revert reclassifies current truth.
