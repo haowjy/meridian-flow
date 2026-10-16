@@ -171,6 +171,25 @@ function mountSync(scenario: ThreadRunScenario) {
     signal: new AbortController().signal,
   });
   sync.start();
+  // Read first: the stream is subscribed by the first read this chat applies.
+  sync.receive({
+    thread: { id: THREAD, projectId: "project_1", userId: "account-1" },
+    turns: [],
+    nextSeq: "0",
+    actionRequired: false,
+    liveState: {
+      runningTurnId: null,
+      resumeAfterSeq: "0",
+      runState: {
+        version: "0",
+        items: [],
+        sentThrough: 0,
+        execution: null,
+        mode: "direct",
+        blocked: null,
+      },
+    },
+  } as unknown as ThreadSnapshotResponse);
   return sync;
 }
 

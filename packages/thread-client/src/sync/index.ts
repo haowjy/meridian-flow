@@ -16,6 +16,7 @@ export {
   patchTurnStatus,
   pruneStreamingTail,
   type ReadFacts,
+  raiseDeliveryCursor,
   receiveRunState,
   removeLocalUserTurn,
   removeTurns,

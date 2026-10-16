@@ -1,12 +1,7 @@
 /** Shared types for the per-thread store. */
 import type { Thread, Turn, TurnStatus, UserMessageBlock } from "@meridian/contracts/protocol";
 import type { JsonValue } from "@meridian/contracts/threads";
-import type {
-  EnsureAssistantTurnOptions,
-  RunStateAction,
-  RunStateView,
-  TurnStatusPatch,
-} from "@meridian/thread-client";
+import type { RunStateAction, RunStateView, TurnStatusPatch } from "@meridian/thread-client";
 import type { SyncedThread, ThreadSyncPorts } from "@meridian/thread-client/sync";
 import type {
   InterruptResponseEntry,
@@ -14,7 +9,7 @@ import type {
   InterruptResponseState,
 } from "@/core/session/interrupt-response";
 
-export type { EnsureAssistantTurnOptions, TurnStatusPatch };
+export type { TurnStatusPatch };
 
 /** Read surface — subscribe with `useThreadStore((s) => …)`. */
 export type ThreadStoreState = {
