@@ -77,3 +77,32 @@ generating brief. Restore `fetch` and press Try again: the brief stops and the c
 - **A reply failure:** fail a reply while the chat is open: the live region says "This response
   failed." once. Send another message: it is empty.
 - **On load:** reload a chat whose latest reply failed. The card shows and the live region stays empty.
+
+## Review boundaries
+
+- **Outstanding compaction:** after FC-04 fails, block usage as in
+  [usage waiting](usage-waiting.md) and press Try again. The replacement is queued;
+  both the browser and `./mf thread view` must omit the old `compaction-failed`
+  card. Drop the replacement's withdrawal: only `compact-withdraw-failed` has
+  Try again. A lost replacement enqueue likewise leaves recovery on the queued
+  command, never a second enqueue button on the old divider.
+- **Superseded brief:** lose the brief Retry's `POST /handoff/brief` response,
+  then create a newer brief from another client. Neither `brief-retry-lost` nor
+  historical failure copy or Retry may remain on the old seed.
+- **Unsaved switch:** temporarily make `Storage.prototype.setItem` throw only
+  for `meridian:chat-submissions:` keys. Switch write mode. Expect one queued
+  failure card and recovery action, not an unowned alert. Retry twice, restore
+  storage, and retry or withdraw; the card and its alert disappear. Restore the
+  original method in a `finally` block.
+- **Batch:** cause two watched failures in one projection (for example FC-03's
+  reply failure and lost Retry). Both sentences must reach the assertive region
+  together. Ending one card must not rewrite the region to the surviving
+  sentence and announce it again. Reloaded cards stay silent.
+- **Occurrences across reload:** lose a message send and its Retry. Read the
+  journal's `occurrence` before reload; re-drive after reload and fail again.
+  The saved attempt increases and the new card key differs. The idempotent
+  `submissionId` need not change. Repeat with a failed write-mode switch.
+
+Restore credits, fetch/storage wrappers and scripts after each injected failure.
+Raw `./mf` error lines are diagnostic; compare the `card` lines and anchors, not
+provider error strings, with the app's cards.

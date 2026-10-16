@@ -2,7 +2,6 @@
 export {
   type CardControl,
   type ChatCardsInput,
-  type CommandFailure,
   chatCards,
 } from "./chat-cards";
 export type {

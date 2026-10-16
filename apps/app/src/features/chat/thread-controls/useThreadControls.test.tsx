@@ -216,6 +216,20 @@ describe("useThreadControls", () => {
     ];
     const [failed] = latest.queued;
     if (!failed) throw new Error("expected a failed control");
+    api.withdrawThreadControl.mockRejectedValueOnce(new TypeError("lost withdrawal"));
+    await act(async () => latest.withdraw(failed));
+    expect(latest.queued[0]?.failure).toEqual({
+      requestId: `withdraw:${id}`,
+      attempt: 1,
+      kind: "lost",
+    });
+    api.withdrawThreadControl.mockRejectedValueOnce(new TypeError("lost withdrawal again"));
+    await act(async () => latest.withdraw(failed));
+    expect(latest.queued[0]?.failure).toEqual({
+      requestId: `withdraw:${id}`,
+      attempt: 2,
+      kind: "lost",
+    });
     await act(async () => latest.withdraw(failed));
     expect(api.withdrawThreadControl).toHaveBeenCalledWith("thread-1", id);
     expect(latest.queued).toEqual([]);

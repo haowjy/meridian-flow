@@ -1,6 +1,7 @@
 /** Platform-neutral client behavior shared by the app and ./mf. */
 
 export * from "./cards";
+export * from "./commands";
 export * from "./hand-back";
 export { buildMessageDoc } from "./message/build";
 export {

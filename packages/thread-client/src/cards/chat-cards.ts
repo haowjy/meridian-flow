@@ -16,32 +16,27 @@ import {
 import type { Turn } from "@meridian/contracts/protocol";
 import { isProviderDeclined } from "@meridian/contracts/protocol";
 import { type ControlBody, isHandoffSeed, readCompactionFacts } from "@meridian/contracts/threads";
+import { type CommandFailure, occurrenceKey } from "../commands";
 import type { UnresolvedHandBack } from "../hand-back/operation";
 import type { FailedSendNow } from "../hand-back/send-now";
 import { usageBlockedMessages } from "../run-state/fold-messages";
 import type { RunStateView } from "../run-state/run-state-view";
 import { latestRow } from "../view/latest-row";
-import { type NormalizedTurns, normalizeTurns, type TurnFacts } from "../view/normalize-turns";
+import type { NormalizedTurns } from "../view/normalize-turns";
 import { classifyTurn } from "../view/transcript-model";
 import { handBackCards } from "./hand-back-cards";
 import type { BriefStopFailure, ChatCard, ChatCardAnchor, ChatCards, RetryOutcome } from "./types";
 
-/** A queued command's row, as the cards need it: the app's `QueuedControl` fits. */
-export type CommandFailure = { requestId: string; attempt: number; kind: "lost" | "unsaved" };
-
-export type CardControl = {
-  id: string;
-  control: ControlBody;
-  status: "sending" | "queued" | "failed" | "withdraw_failed";
-  failure?: CommandFailure;
-};
+/** Failed rows always carry their owner's occurrence fact. */
+export type CardControl = { id: string; control: ControlBody } & (
+  | { status: "sending" | "queued"; failure?: never }
+  | { status: "failed" | "withdraw_failed"; failure: CommandFailure }
+);
 
 export type ChatCardsInput = {
   threadId: string;
   /** The same turn facts `viewTranscript` takes, so both read one normalized sequence. */
-  turns: TurnFacts;
-  /** Reuse the host's normalization across cards, run selectors and transcript rows. */
-  normalized?: NormalizedTurns;
+  turns: NormalizedTurns;
   runState: RunStateView;
   handBack: readonly (UnresolvedHandBack | FailedSendNow)[];
   retries: readonly RetryOutcome[];
@@ -50,7 +45,7 @@ export type ChatCardsInput = {
   /** Writer messages being moved back to the message box: their failure is not a card. */
   movingTurnIds?: ReadonlySet<string>;
   /** Unadmitted sends, with attempt identity retained by their submission owner. */
-  sends?: ReadonlyMap<string, CommandFailure>;
+  sends: ReadonlyMap<string, CommandFailure>;
 };
 
 /** A failed turn's `Failure`, read the way the server classified it (`failureOfTurn`). */
@@ -76,7 +71,7 @@ function card(
 }
 
 export function chatCards(input: ChatCardsInput): ChatCards {
-  const normalized = input.normalized ?? normalizeTurns(input.turns);
+  const normalized = input.turns;
   const { turns } = normalized;
   const latest = latestRow(turns);
   const cards: ChatCard[] = [];
@@ -110,20 +105,18 @@ export function chatCards(input: ChatCardsInput): ChatCards {
   const placedById = new Map(normalized.placed.map((turn) => [turn.id, turn]));
   const turnsById = new Map(turns.map((turn) => [turn.id, turn]));
   const newestSeed = [...turns].reverse().find((turn) => isHandoffSeed(turn)) ?? null;
-  const compactQueued = input.controls.some(
-    (control) => control.control.kind === "compact" && control.status !== "failed",
-  );
+  const compactQueued = input.controls.some((control) => control.control.kind === "compact");
   for (const turn of turns) {
     if (turn.status !== "error" || !current(turn)) continue;
     if (isHandoffSeed(turn)) {
       // The newest brief only; its Retry stays in the brief's own header.
-      if (turn === newestSeed && turn.error) {
+      if (turn === newestSeed) {
         cards.push(
           card({
             key: turn.id,
             failure: replyFailure(turn),
             copy: "brief-failed",
-            action: null,
+            action: "retry_brief",
             anchor: onTurn(turn.id),
             text: turn.error,
           }),
@@ -162,7 +155,7 @@ export function chatCards(input: ChatCardsInput): ChatCards {
   for (const outcome of input.retries) {
     const target = placedById.get(outcome.turnId);
     if (!target) continue;
-    const key = `${outcome.requestId}:${outcome.attempt}`;
+    const key = occurrenceKey(outcome);
     if (outcome.kind === "refused") {
       cards.push(
         card({
@@ -209,36 +202,26 @@ export function chatCards(input: ChatCardsInput): ChatCards {
     );
   }
 
-  // The writer's own words are never moot: the card holds until they are sent or taken back.
-  for (const turn of turns) {
-    if (
-      turn.role !== "user" ||
-      turn.status !== "error" ||
-      isHandoffSeed(turn) ||
-      classifyTurn(turn) !== "bubble" ||
-      input.movingTurnIds?.has(turn.id)
-    )
-      continue;
-    const failure = input.sends?.get(turn.id);
-    if (!failure) continue;
+  // The writer's own words are never moot: their owner supplies each unadmitted failure.
+  for (const [turnId, failure] of input.sends) {
+    if (input.movingTurnIds?.has(turnId)) continue;
     cards.push(
       card({
-        key: `${failure.requestId}:${failure.attempt}`,
-        failure: classifyCommandFailure({ kind: failure.kind }),
+        key: occurrenceKey(failure),
+        failure: classifyCommandFailure(failure),
         copy: "send-failed",
         action: "edit_or_send",
-        anchor: { message: turn.id },
+        anchor: { message: turnId },
       }),
     );
   }
 
   for (const control of input.controls) {
-    const failure = control.failure;
-    if (!failure) continue;
     if (control.status === "failed") {
+      const failure = control.failure;
       cards.push(
         card({
-          key: `${failure.requestId}:${failure.attempt}`,
+          key: occurrenceKey(failure),
           failure: classifyCommandFailure({ kind: failure.kind }),
           copy:
             control.control.kind === "compact"
@@ -251,9 +234,10 @@ export function chatCards(input: ChatCardsInput): ChatCards {
         }),
       );
     } else if (control.status === "withdraw_failed") {
+      const failure = control.failure;
       cards.push(
         card({
-          key: `${failure.requestId}:${failure.attempt}`,
+          key: occurrenceKey(failure),
           failure: classifyCommandFailure({ kind: failure.kind }),
           copy:
             control.control.kind === "compact"

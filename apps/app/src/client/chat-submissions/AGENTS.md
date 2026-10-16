@@ -39,6 +39,13 @@ owner of writer rows, attempts, recovery status, and draft transfer.
   server response the driver stamps `answer: { seq, mode, pending, at }` rather
   than deleting immediately (pruned after 60 s), so every tab reads the answer
   through `switches[].answer` while `useSwitchView` decides presentation.
+- A journal record carries its failure occurrence (`requestId`, `attempt`). The
+  driver saves a new occurrence before replay or Retry; the idempotent submission
+  id is separate and can stay unchanged. A fresh request identity prevents a
+  failed local save from colliding with a later attempt after reload. Restored
+  failures read the saved occurrence, never allocate one while projecting.
+  Unsaved switches retain their mode, order and occurrence in the owner until
+  retried or withdrawn; these facts cannot survive refused browser storage.
 - Pane disposal fences only that pane's recovery session. Account disposal
   invalidates admissions. Deletion cleanup requires an authenticated,
   account-matching `thread_deleted` attestation; inconclusive checks preserve

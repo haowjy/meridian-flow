@@ -3,6 +3,7 @@ import type { Block, Turn } from "@meridian/contracts/protocol";
 import type { PendingInboxItem, RunState } from "@meridian/contracts/threads";
 import { expect, it } from "vitest";
 import { INITIAL_RUN_STATE_VIEW, receiveRecord } from "../run-state/run-state-view";
+import { normalizeTurns, type TurnFacts } from "../view/normalize-turns";
 import { type ChatCardsInput, chatCards } from "./chat-cards";
 
 function turn(
@@ -42,15 +43,18 @@ const record = (extra: Partial<RunState> = {}, items: PendingInboxItem[] = []): 
   ...extra,
 });
 
-const base = (over: Partial<ChatCardsInput> = {}): ChatCardsInput => ({
+const base = (
+  over: Partial<Omit<ChatCardsInput, "turns">> & { turns?: TurnFacts } = {},
+): ChatCardsInput => ({
   threadId: "t",
-  turns: { turns: [] },
   runState: INITIAL_RUN_STATE_VIEW,
+  sends: new Map(),
   handBack: [],
   retries: [],
   briefStops: [],
   controls: [],
   ...over,
+  turns: normalizeTurns(over.turns ?? { turns: [] }),
 });
 
 const failed = (id: string, prev: string | null, extra: Partial<Turn> = {}) =>
@@ -111,6 +115,23 @@ it("anchors a refused Retry on its reply for the view even when the reply was fo
     }),
   );
   expect(past.cards).toEqual([]);
+  const seed = turn("seed", "system", null, {
+    status: "error",
+    metadata: { kind: "derivation_seed", derivation: "handoff", sourceThreadId: "source" },
+  });
+  const briefRetry = { kind: "lost" as const, turnId: "seed", requestId: "brief", attempt: 1 };
+  expect(chatCards(base({ turns: { turns: [seed] }, retries: [briefRetry] })).cards).toMatchObject([
+    { copy: "brief-failed", action: "retry_brief" },
+    { copy: "brief-retry-lost" },
+  ]);
+  expect(
+    chatCards(
+      base({
+        turns: { turns: [seed, { ...seed, id: "new-seed", status: "complete" } as Turn] },
+        retries: [briefRetry],
+      }),
+    ).cards,
+  ).toEqual([]);
 });
 
 it("cards a manual compaction's failure with Try again, never an autocompaction's, and none once a /compact is queued", () => {
@@ -128,6 +149,16 @@ it("cards a manual compaction's failure with Try again, never an autocompaction'
     { key: "c", copy: "compaction-failed", action: "try_again", text: "Couldn't compact." },
   ]);
   expect(cards("auto")).toEqual([]);
+  expect(
+    cards("manual", [
+      {
+        id: "q",
+        control: { kind: "compact" },
+        status: "failed",
+        failure: { requestId: "q", attempt: 2, kind: "lost" },
+      },
+    ]),
+  ).toMatchObject([{ key: "q:2", copy: "compact-enqueue-failed" }]);
   expect(
     cards("manual", [
       {

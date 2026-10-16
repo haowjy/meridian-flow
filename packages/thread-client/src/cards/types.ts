@@ -50,6 +50,7 @@ export type ChatCardCopy =
 
 export type ChatCardAction =
   | "retry"
+  | "retry_brief"
   | "try_again"
   | "add_usage"
   | "dismiss"

@@ -17,6 +17,7 @@ import {
 } from "@meridian/contracts/protocol";
 import type { RunState } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
+import type { Occurrence } from "@meridian/thread-client";
 import { browserRecord } from "@/client/storage/browser-record";
 import {
   type ComposerDraftSnapshot,
@@ -52,6 +53,7 @@ export const ANSWER_GRACE_MS = 60_000;
 export type ChatSubmission = {
   recordId: string;
   submissionId: string;
+  occurrence?: Occurrence;
   threadId: string;
   projectId: string | null;
   createdAt: string;
@@ -196,6 +198,17 @@ function parseSubmission(value: unknown): ChatSubmission | null {
     blocks: value.blocks as UserMessageBlock[],
     references: value.references as SubmittedReference[],
     activatedSkillSlugs: value.activatedSkillSlugs,
+    ...(isObject(value.occurrence) &&
+    typeof value.occurrence.requestId === "string" &&
+    Number.isSafeInteger(value.occurrence.attempt) &&
+    Number(value.occurrence.attempt) > 0
+      ? {
+          occurrence: {
+            requestId: value.occurrence.requestId,
+            attempt: Number(value.occurrence.attempt),
+          },
+        }
+      : {}),
     ...(value.state === "rejected" ? { state: "rejected" } : {}),
     ...(control ? { control: { kind: "write_mode", mode: control.mode as AiWriteMode } } : {}),
     ...(value.answer ? { answer: parseAnswer(value.answer) } : {}),
@@ -304,7 +317,9 @@ export class DeviceChatSubmissionJournal {
     const stored = this.recordFor(accountId, chatSubmissionStorageKey(accountId, entry.recordId));
     const existing = stored.read();
     const seq = existing?.seq ?? this.nextSeq(accountId, entry.threadId);
-    const written = stored.write({ ...entry, seq });
+    const occurrence = entry.occurrence ??
+      existing?.occurrence ?? { requestId: entry.submissionId, attempt: 1 };
+    const written = stored.write({ ...entry, seq, occurrence });
     if (written) this.pruneAnswered(accountId);
     if (written) this.notify();
     return written;

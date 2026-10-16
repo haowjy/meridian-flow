@@ -203,16 +203,15 @@ export function chatSnapshot(
   const normalized = normalizeTurns({ turns });
   const cards = chatCards({
     threadId: snapshot.thread?.id ?? "",
-    turns: { turns },
-    normalized,
+    turns: normalized,
     runState,
+    sends: new Map(),
     handBack: [],
     retries: [],
     briefStops: [],
     controls,
   });
   const view = viewTranscript({
-    turns,
     normalized,
     activity: { awaitingSubagents: false },
     queued: new Set(waitingWriterMessages(runState).map((item) => item.id)),

@@ -9,7 +9,7 @@
  * queued one.
  */
 import type { AiWriteMode } from "@meridian/contracts/works";
-import type { CommandFailure } from "../cards/chat-cards";
+import type { CommandFailure } from "../commands";
 import { durableControls } from "./durable-controls";
 import type { RunStateIntent, RunStateView } from "./run-state-view";
 
@@ -18,8 +18,7 @@ export type SwitchRowStatus = "sending" | "queued" | "failed" | "withdraw_failed
 export type SwitchRow = {
   id: string;
   mode: AiWriteMode;
-  status: SwitchRowStatus;
-  failure?: CommandFailure;
+
   /** The server may hold it and hasn't answered: Retry only, no Withdraw. */
   awaitingServer?: boolean;
   /**
@@ -28,7 +27,10 @@ export type SwitchRow = {
    * one a reply holds the chat for (`waiting`): those stay at the tail.
    */
   awaitsRun?: boolean;
-};
+} & (
+  | { status: "sending" | "queued"; failure?: never }
+  | { status: "failed" | "withdraw_failed"; failure: CommandFailure }
+);
 
 type Switch = Extract<RunStateIntent, { kind: "switch" }>;
 type Queued = { id: string; mode: AiWriteMode; from: "server" | Switch; awaitsRun?: boolean };
@@ -82,22 +84,24 @@ export function switchState(view: RunStateView): { mode: AiWriteMode; rows: Swit
   const rows = [...failedRows];
   if (queued) {
     const { id, mode, from, awaitsRun } = queued;
-    rows.push(
-      from === "server"
-        ? {
-            id,
-            mode,
-            status: withdrawals.get(id)?.failed === true ? "withdraw_failed" : "queued",
-            ...(withdrawals.get(id)?.failed ? { failure: withdrawals.get(id)?.failure } : {}),
-            ...(awaitsRun ? { awaitsRun: true } : {}),
-          }
-        : {
-            id,
-            mode,
-            status: "sending",
-            ...(from.awaitingServer ? { awaitingServer: true } : {}),
-          },
-    );
+    if (from === "server") {
+      const withdrawal = withdrawals.get(id);
+      rows.push({
+        id,
+        mode,
+        ...(awaitsRun ? { awaitsRun: true } : {}),
+        ...(withdrawal?.failed
+          ? { status: "withdraw_failed", failure: { ...withdrawal.occurrence, kind: "lost" } }
+          : { status: "queued" }),
+      });
+    } else {
+      rows.push({
+        id,
+        mode,
+        status: "sending",
+        ...(from.awaitingServer ? { awaitingServer: true } : {}),
+      });
+    }
   }
   return { mode: queued?.mode ?? applied, rows };
 }

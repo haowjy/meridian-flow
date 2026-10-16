@@ -21,7 +21,12 @@
 import { compareSeq } from "@meridian/contracts/protocol";
 import type { ControlBody, PendingInboxItem } from "@meridian/contracts/threads";
 
-import { type CommandFailure, durableControls } from "@meridian/thread-client";
+import {
+  type CardControl,
+  durableControls,
+  nextOccurrence,
+  type Occurrence,
+} from "@meridian/thread-client";
 
 export type CompactControl = Extract<ControlBody, { kind: "compact" }>;
 
@@ -33,7 +38,7 @@ export type LocalSend = {
 };
 
 /** `settled`: the server confirmed it, either withdrawn or already started. */
-export type Withdrawal = { status: "withdrawing" | "failed" | "settled"; attempt: number };
+export type Withdrawal = Occurrence & { status: "withdrawing" | "failed" | "settled" };
 
 export type LocalControls = {
   sends: readonly LocalSend[];
@@ -45,11 +50,7 @@ export const NO_LOCAL_CONTROLS: LocalControls = { sends: [], withdrawals: new Ma
 /** `sending`: the writer asked and the server has not answered. */
 export type QueuedControlStatus = "sending" | "queued" | "failed" | "withdraw_failed";
 
-export type QueuedControl = {
-  id: string;
-  control: ControlBody;
-  status: QueuedControlStatus;
-  failure?: CommandFailure;
+export type QueuedControl = CardControl & {
   /** A switch the server may hold and hasn't answered: Retry only, no local Withdraw. */
   awaitingServer?: boolean;
   /** A switch the record says applies at the next run's start: its notice sits before that run's reply. */
@@ -81,13 +82,14 @@ export function controlsReducer(state: LocalControls, action: ControlAction): Lo
     ...state,
     sends: state.sends.map((entry) => (entry.id === id ? { ...entry, request } : entry)),
   });
-  const withdrawal = (id: string, next: Withdrawal["status"]) => ({
-    ...state,
-    withdrawals: new Map(state.withdrawals).set(id, {
-      status: next,
-      attempt: (state.withdrawals.get(id)?.attempt ?? 0) + (next === "withdrawing" ? 1 : 0),
-    }),
-  });
+  const withdrawal = (id: string, next: Withdrawal["status"]) => {
+    const before = state.withdrawals.get(id) ?? { requestId: `withdraw:${id}`, attempt: 0 };
+    const occurrence = next === "withdrawing" ? nextOccurrence(before) : before;
+    return {
+      ...state,
+      withdrawals: new Map(state.withdrawals).set(id, { ...occurrence, status: next }),
+    };
+  };
   switch (action.type) {
     case "enqueue":
       if (state.sends.some((entry) => entry.id === action.id)) return state;
@@ -156,7 +158,7 @@ export function mergeQueuedControls(input: MergeInput): QueuedControl[] {
         id: item.id,
         control: item.control,
         status: "withdraw_failed",
-        failure: { requestId: `withdraw:${item.id}`, attempt: withdrawal.attempt, kind: "lost" },
+        failure: { requestId: withdrawal.requestId, attempt: withdrawal.attempt, kind: "lost" },
       });
     }
   }
@@ -165,27 +167,27 @@ export function mergeQueuedControls(input: MergeInput): QueuedControl[] {
     if (listed.has(entry.id) || (withdrawal && withdrawal.status !== "failed")) continue;
     const status = requestStatus(entry);
     if (!status) continue;
-    result.push({
-      id: entry.id,
-      control: entry.control,
-      status: withdrawal && status !== "failed" ? "withdraw_failed" : status,
-      ...(withdrawal && status !== "failed"
-        ? {
-            failure: {
-              requestId: `withdraw:${entry.id}`,
-              attempt: withdrawal.attempt,
-              kind: "lost" as const,
-            },
-          }
-        : status === "failed"
-          ? { failure: { requestId: entry.id, attempt: entry.attempt, kind: "lost" as const } }
-          : {}),
-    });
+    const row = { id: entry.id, control: entry.control };
+    if (withdrawal) {
+      result.push({
+        ...row,
+        status: "withdraw_failed",
+        failure: { requestId: withdrawal.requestId, attempt: withdrawal.attempt, kind: "lost" },
+      });
+    } else if (status === "failed") {
+      result.push({
+        ...row,
+        status,
+        failure: { requestId: entry.id, attempt: entry.attempt, kind: "lost" },
+      });
+    } else {
+      result.push({ ...row, status });
+    }
   }
   return result;
 }
 
-function requestStatus(entry: LocalSend): QueuedControlStatus | null {
+function requestStatus(entry: LocalSend): Exclude<QueuedControlStatus, "withdraw_failed"> | null {
   if (entry.request === "sending") return "sending";
   if (entry.request === "failed") return "failed";
   if (entry.request === "finished") return null;
