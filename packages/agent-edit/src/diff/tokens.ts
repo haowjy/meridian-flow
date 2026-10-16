@@ -200,13 +200,25 @@ function joinText(nodes: PMNode[]): PMNode[] {
 }
 
 // ---------- shared diff helpers ----------
-// Text alone decides the diff: no deadline may cut it short, so interactive bounds are input-size
-// limits only. The library reads `timeout || 1` (0 becomes a one-second deadline) and treats a negative
-// timeout as "never", so -1 is the only value that turns the deadline off.
+// Text alone decides the diff: no deadline may cut it short, so its cost is bounded by input size alone.
+// The library reads `timeout || 1` (0 becomes a one-second deadline) and treats a negative timeout as
+// "never", so -1 is the only value that turns the deadline off.
 const NO_DEADLINE = { checkLines: false, timeout: -1 };
+// Past these sizes (both sides together, after trimming what they share at the ends) a diff is one delete
+// and one insert: coarser, never wrong. Similar inputs this large diff in milliseconds; the bound exists for
+// dissimilar ones (a full rewrite), whose worst case grows quadratically: about 60 ms at 4,000 keys and
+// 170 ms at 20,000 characters, where 16,000 keys took 0.6 s and a 50k-word rewrite stalled Discard past 30 s.
+const MAX_DIFF_KEYS = 4_000;
+const MAX_DIFF_CHARS = 20_000;
+
+const coarse = <T>(a: T, b: T, empty: (x: T) => boolean): Array<[number, T]> => [
+  ...(empty(a) ? [] : [[DIFF_DELETE, a] as [number, T]]),
+  ...(empty(b) ? [] : [[DIFF_INSERT, b] as [number, T]]),
+];
 
 /** The one diff-match-patch call: a character diff of two strings, with no wall-clock deadline. */
 export function textDiff(a: string, b: string): Array<[number, string]> {
+  if (a.length + b.length > MAX_DIFF_CHARS) return coarse(a, b, (x) => !x);
   return makeDiff(a, b, NO_DEADLINE) as Array<[number, string]>;
 }
 
@@ -231,8 +243,8 @@ function encodeKeys(keys: readonly string[], codes: Map<string, string>): string
 
 /**
  * Diffs two key sequences as `[op, count]` runs, the one entry point every diff caller uses. The common
- * prefix and suffix are trimmed first; if the middle still has more distinct keys than a code can name,
- * it is one delete and one insert (coarser, never wrong) rather than a diff over aliased codes.
+ * prefix and suffix are trimmed first; if the middle is still past `MAX_DIFF_KEYS`, or has more distinct
+ * keys than a code can name, it is one delete and one insert (coarser, never wrong).
  */
 export function diffKeys(a: readonly string[], b: readonly string[]): Array<[number, number]> {
   let lo = 0;
@@ -248,7 +260,7 @@ export function diffKeys(a: readonly string[], b: readonly string[]): Array<[num
   };
   push(DIFF_EQUAL, lo);
   const codes = new Map<string, string>();
-  const ea = encodeKeys(ma, codes);
+  const ea = ma.length + mb.length > MAX_DIFF_KEYS ? null : encodeKeys(ma, codes);
   const eb = ea === null ? null : encodeKeys(mb, codes);
   if (ea === null || eb === null) {
     push(DIFF_DELETE, ma.length);
