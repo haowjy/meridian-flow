@@ -1,5 +1,7 @@
 /** Platform-neutral client behavior shared by the app and ./mf. */
 
+export * from "./cards";
+export * from "./commands";
 export * from "./hand-back";
 export { buildMessageDoc } from "./message/build";
 export {
@@ -36,15 +38,6 @@ export * from "./run-state";
 export type * from "./socket/socket-ports";
 export { ThreadSocketClient, type ThreadSocketClientOptions } from "./socket/thread-socket-client";
 export type * from "./socket/thread-transport";
-export { InMemoryTurnStore, type InMemoryTurnStoreOptions } from "./turns/in-memory-turn-store";
-export {
-  createTurnReducer,
-  isDurableBlockEvent,
-  isWellFormedDurableBlockEvent,
-  type TurnReducer,
-  type TurnReducerOptions,
-  type TurnStore,
-} from "./turns/reduce-turn-event";
 export { baseTurnFields } from "./turns/state-helpers";
 export {
   type AwaitingDivider,
@@ -75,6 +68,8 @@ export {
   type ToolView,
 } from "./view/group-delivery-segments";
 export type { DirectInvocationResult } from "./view/invocation-direct-result";
+export { latestRow } from "./view/latest-row";
+export { type NormalizedTurns, normalizeTurns, type TurnFacts } from "./view/normalize-turns";
 export { isOptimisticTurnId, OPTIMISTIC_TURN_ID_PREFIX } from "./view/optimistic-turn-id";
 export { replyDrawsNothing } from "./view/reply-draws-nothing";
 export { placeStandIns } from "./view/retry-stand-ins";

@@ -30,7 +30,7 @@
 - A change row never hides its author. With a long chat title, the editor's change list, the phone's Changes sheet and the Work row show "You", then the first chat truncated with an ellipsis (full title in its tooltip and accessible name), then "+N" for the other chats. The red and green text gets its width first; the byline keeps a floor of about six letters. The change bar truncates its first chat the same way instead of folding it into "+1".
 - Typing or pressing Enter in a draft no longer replays AI arrival highlights or fetches attribution. New AI writes still pulse once; the initial review stays quiet.
 
-- Recreate the unmerged review migration sequence as `0058`–`0063` after main’s `0056` and `0057`, with later timestamps, so an existing database applies every review upgrade.
+- Recreate the unmerged review migration sequence as `0062`–`0067` after main’s `0056`–`0061`, with later timestamps, so an existing database applies every review upgrade.
 
 - Draft membership reads catch up when a peer edit overtakes an in-flight response, with Retry if the read stays stale. Closed files no longer leave the chat's ready drafts waiting to Apply or Discard.
 - The chat's draft dock lists files, not changes: each row is the file's name, this chat's +/− word diff in it, and Discard (✕) and Apply (✓) icon buttons with tooltips. Hovering washes the row and clicking it opens the file's review. A single file is the summary row itself. Per-change review stays in the editor, the dock pane, the phone sheet and the Work row. Word counts use the turn receipt's counter, now shared from `@meridian/agent-edit/diff`.
@@ -50,6 +50,35 @@
 - A review change names only the authors it can prove. "You" and each writing chat come from one classifier over the draft's text, so repeated words, a sliding space, a restored Undo or text the writer edited after an Apply no longer name the wrong chat, and an ambiguous change names no one rather than guessing. Apply now records which draft items it moved into the base so applied AI text reads as base afterward.
 - A subagent's changes belong to the chat that launched it: they show in that chat's draft dock and its Apply and Discard act on them. The card's link carries the parent chat's title and opens the spawn row. "You" stays visible when the chat names are hidden for lack of room.
 - API: `GET …/draft/attribution` adds `userId` and each edit's `owner`; `DraftAttribution` and `DraftAttributionEdit` change shape, and the matcher (`matchAttribution`, `editsInChanges`) is removed.
+- Every chat failure is a card drawn from one place (`chatCards`), announced once when you watched it appear and cleared from the screen reader's live region when the card ends. A failed compaction's card now has Try again (it sends `/compact` again), a hidden "Couldn't stop the reply." no longer lingers in the page after its card goes, and a Retry whose request was lost is a "Couldn't start the retry." card with Try again on the failed reply instead of a fake failed reply. `./mf thread view` prints the same cards (`cards` in its JSON).
+### Fixed
+- Production contracts imports no longer load golden test fixtures; tests use a separate test-support entry point.
+- Snapshot reads in the app and `./mf` validate the whole declared chat and turn shape, rejecting malformed reply errors before rendering.
+- Every `./mf` HTTP request now chooses one response decoder; contradictory options can no longer bypass validation while promising a validated result.
+- Hand-back failures have distinct Retry identities even when saving fails, and retain the saved identity on reload.
+- Failed compaction dividers stay neutral when a queued replacement suppresses their failure card.
+- `./mf api` preserves raw text responses again; domain command outcomes now require
+  validated response bodies, including cancellation, admission, creation and document deletion.
+
+
+- Invalid snapshot responses are rejected before reaching the shared thread sync. A failed diagnostic read no longer erases a proven `./mf send` or `tail --until-idle` result; it marks observation incomplete.
+
+- The app and `./mf` now follow replies through one thread sync. Followed send/tail outcomes require a confirming snapshot; live checks remain diagnostics, and retryable replay errors recover through the shared transport without ending the command.
+
+- Failed or unanswered replay requests recover one chat at a time on the existing connection, using request ids and a 20-second deadline that pings do not extend. Healthy chats remain live, and a view joining an in-flight replay receives its missing events in order.
+- A socket replaced while still closing now reports its close once (handler callbacks, generation-closed listeners and subscription cleanup) instead of silently skipping them.
+
+- A disconnected or unsubscribed client no longer acquires a catalog listener when a pending project ownership read finishes.
+
+- Completed chat replay requests now release superseded request ids instead of retaining them until disconnect.
+
+- Leaving a chat from a stream-error or history-gap callback now cancels its recovery; an abandoned retry can no longer replace the next chat subscription and lose reply text.
+
+- `pnpm dev:prune-worktrees` targeted cleanup accepts a branch whose planned commit is contained in another local or remote-tracking ref (its own refs never count), or whose exact merged pull request went into any base branch, stacked PRs included. Batch cleanup's evidence requirements are unchanged: an exact merged PR into the repository base branch, with duplicate exact records still refused. Cleanup runs execute one at a time per repository, and a stale lock refuses rather than being taken over.
+- A file attached in a New chat opens from the sent message as soon as the chat is named, in No Work as in a Work, instead of staying unclickable until a reload.
+- A bare `[map](uploads://map)` the model writes into a document binds to the chat's existing `map.png`, the same as the full `uploads://@/c3/map` spelling, instead of minting a link to a file that does not exist.
+- Files attached to a Work, or to No Work, before uploads moved to chats are deleted, and a message that attached one shows the file as no longer available. Uploads without a chat handle (`uploads://@/name`) are no longer an address.
+- A chat's top bar lists the files attached in that chat (a paperclip and the count, once it has one). A row adds the file to the message as an `@` reference, opens it beside the chat, or deletes it while no sent message has used it. A fork or handoff names the chat it continues from. A chat upload's dock tab comes back after a reload.
 - The AI never sees a failure. `thread_history` no longer prints `error:` or `failure reason:` lines or marks failed turns: a failed turn shows the text and tool calls it kept, and is skipped when it kept none. Stop keeps its `cancelled` marker. A tool call that a failed reply never finished now reads "did not finish" instead of "interrupted by an error".
 - The server logs each failure once where it is classified and once where it ends, as `failure.recorded` and `failure.ended` in `./mf log` (a failed reply, compaction or handoff brief; a usage block and its clear). Each carries the occurrence id, a category and source, and how it ended (`retried`, `forgotten`, `moved_on` or `resolved`). They are emitted after the transaction commits. The event hub's `turn.error` log line is replaced by `failure.recorded`.
 - New `@meridian/contracts/failures` holds the failure types and `classifyReplyFailure`, the one place a failed reply's source is chosen.

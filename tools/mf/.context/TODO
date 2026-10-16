@@ -1,18 +1,10 @@
 # TODO — must-do follow-ups (`./mf`)
 
-- `src/commands/thread/reduced-thread.ts` and `InMemoryTurnStore`
-  (`packages/thread-client/src/turns/in-memory-turn-store.ts`) as `./mf`'s
-  turn store go when `./mf` gets the shared chat session (one turn store in the package, the
-  app's Zustand store as a binding).
-  Until then `liveView` compares only reduced status and final text, and the
-  "turn not seen from its start" `not_observed` path in `reduced-thread.ts` has
-  no test (it is deleted with the file). Removal trigger: the shared chat session lands.
-
 - Card display text, failure copy and interrupt presentation are not in the
   view model yet (`packages/thread-client/src/view/`), so `./mf thread view`
   carries raw card props only. Until they move into the view model, `docs/qa/chat-session.md` says not to compare
   them with the screen. Removal trigger: card display moves into the view model.
 
-- `ReducedThread` and plain `tail` don't draw queued rows. The package's
+- Plain `tail` (no `--until-idle`) and `events` don't draw queued rows. The package's
   `unheldWriterMessages` and the record's items are ready for when they do;
-  `thread view` (the snapshot) already shows them. Removal trigger: the shared chat session lands.
+  `thread view` (the snapshot) already shows them.

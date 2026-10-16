@@ -1,6 +1,6 @@
 {
-  "id": "548ae9f7-42e7-4dd0-84a8-47a8a0e625cc",
-  "prevId": "8592f923-bd93-4910-9689-3d25d35fac36",
+  "id": "59778318-e0cb-4c10-be37-eec4346660a4",
+  "prevId": "b2d78e21-ae4a-42dd-97bd-742db30b654d",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1866,6 +1866,82 @@
       },
       "isRLSEnabled": false
     },
+    "public.thread_hand_backs": {
+      "name": "thread_hand_backs",
+      "schema": "",
+      "columns": {
+        "request_id": {
+          "name": "request_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fingerprint": {
+          "name": "fingerprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "handed_back": {
+          "name": "handed_back",
+          "type": "uuid[]",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "answered": {
+          "name": "answered",
+          "type": "uuid[]",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "gone": {
+          "name": "gone",
+          "type": "uuid[]",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cancelled_execution_id": {
+          "name": "cancelled_execution_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "thread_hand_backs_thread_id_threads_id_fk": {
+          "name": "thread_hand_backs_thread_id_threads_id_fk",
+          "tableFrom": "thread_hand_backs",
+          "tableTo": "threads",
+          "columnsFrom": [
+            "thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.thread_image_inclusions": {
       "name": "thread_image_inclusions",
       "schema": "",
@@ -2044,10 +2120,10 @@
             }
           ],
           "isUnique": false,
-          "with": {},
-          "method": "btree",
           "where": "\"thread_inbox_messages\".\"handed_back_by\" IS NOT NULL",
-          "concurrently": false
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         },
         "thread_inbox_messages_pending": {
           "name": "thread_inbox_messages_pending",
@@ -2066,49 +2142,49 @@
             }
           ],
           "isUnique": false,
-          "with": {},
-          "method": "btree",
           "where": "\"thread_inbox_messages\".\"delivered_at\" IS NULL",
-          "concurrently": false
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
         "thread_inbox_messages_thread_id_threads_id_fk": {
           "name": "thread_inbox_messages_thread_id_threads_id_fk",
           "tableFrom": "thread_inbox_messages",
+          "tableTo": "threads",
           "columnsFrom": [
             "thread_id"
           ],
-          "tableTo": "threads",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "thread_inbox_messages_handed_back_by_fk": {
           "name": "thread_inbox_messages_handed_back_by_fk",
           "tableFrom": "thread_inbox_messages",
+          "tableTo": "thread_hand_backs",
           "columnsFrom": [
             "handed_back_by"
           ],
-          "tableTo": "thread_hand_backs",
           "columnsTo": [
             "request_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "thread_inbox_messages_idem_unique": {
           "name": "thread_inbox_messages_idem_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "thread_id",
             "idempotency_key"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -3725,15 +3801,15 @@
         "user_turn_admissions_thread_id_threads_id_fk": {
           "name": "user_turn_admissions_thread_id_threads_id_fk",
           "tableFrom": "user_turn_admissions",
+          "tableTo": "threads",
           "columnsFrom": [
             "thread_id"
           ],
-          "tableTo": "threads",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
@@ -4154,6 +4230,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "chat_thread_id": {
+          "name": "chat_thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "name": {
           "name": "name",
           "type": "text",
@@ -4274,7 +4356,7 @@
             }
           ],
           "isUnique": true,
-          "where": "\"context_sources\".\"work_id\" IS NULL AND \"context_sources\".\"root_thread_id\" IS NULL AND \"context_sources\".\"deleted_at\" IS NULL",
+          "where": "\"context_sources\".\"work_id\" IS NULL AND \"context_sources\".\"root_thread_id\" IS NULL AND \"context_sources\".\"chat_thread_id\" IS NULL AND \"context_sources\".\"deleted_at\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -4319,6 +4401,28 @@
           ],
           "isUnique": true,
           "where": "\"context_sources\".\"root_thread_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "context_sources_chat_slug": {
+          "name": "context_sources_chat_slug",
+          "columns": [
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "slug",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"context_sources\".\"chat_thread_id\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -4393,11 +4497,15 @@
       "checkConstraints": {
         "context_sources_exactly_one_scope": {
           "name": "context_sources_exactly_one_scope",
-          "value": "(\"context_sources\".\"scope\" = 'project' AND \"context_sources\".\"project_id\" IS NOT NULL AND \"context_sources\".\"work_id\" IS NULL AND \"context_sources\".\"root_thread_id\" IS NULL) OR (\"context_sources\".\"scope\" = 'work' AND \"context_sources\".\"project_id\" IS NULL AND \"context_sources\".\"work_id\" IS NOT NULL AND \"context_sources\".\"root_thread_id\" IS NULL) OR (\"context_sources\".\"scope\" = 'lineage' AND \"context_sources\".\"project_id\" IS NOT NULL AND \"context_sources\".\"work_id\" IS NULL AND \"context_sources\".\"root_thread_id\" IS NOT NULL AND \"context_sources\".\"slug\" = 'scratch')"
+          "value": "(\"context_sources\".\"scope\" = 'project' AND \"context_sources\".\"project_id\" IS NOT NULL AND \"context_sources\".\"work_id\" IS NULL AND \"context_sources\".\"root_thread_id\" IS NULL AND \"context_sources\".\"chat_thread_id\" IS NULL) OR (\"context_sources\".\"scope\" = 'work' AND \"context_sources\".\"project_id\" IS NULL AND \"context_sources\".\"work_id\" IS NOT NULL AND \"context_sources\".\"root_thread_id\" IS NULL AND \"context_sources\".\"chat_thread_id\" IS NULL) OR (\"context_sources\".\"scope\" = 'lineage' AND \"context_sources\".\"project_id\" IS NOT NULL AND \"context_sources\".\"work_id\" IS NULL AND \"context_sources\".\"root_thread_id\" IS NOT NULL AND \"context_sources\".\"chat_thread_id\" IS NULL AND \"context_sources\".\"slug\" = 'scratch') OR (\"context_sources\".\"scope\" = 'chat' AND \"context_sources\".\"project_id\" IS NOT NULL AND \"context_sources\".\"work_id\" IS NULL AND \"context_sources\".\"root_thread_id\" IS NULL AND \"context_sources\".\"chat_thread_id\" IS NOT NULL AND \"context_sources\".\"slug\" = 'uploads')"
+        },
+        "context_sources_uploads_chat_only": {
+          "name": "context_sources_uploads_chat_only",
+          "value": "\"context_sources\".\"slug\" <> 'uploads' OR \"context_sources\".\"scope\" = 'chat'"
         },
         "context_sources_scope_valid": {
           "name": "context_sources_scope_valid",
-          "value": "\"context_sources\".\"scope\" IN ('project', 'work', 'lineage')"
+          "value": "\"context_sources\".\"scope\" IN ('project', 'work', 'lineage', 'chat')"
         },
         "context_sources_scope_work_fk": {
           "name": "context_sources_scope_work_fk",
@@ -5423,6 +5531,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "chat_thread_id": {
+          "name": "chat_thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "path": {
           "name": "path",
           "type": "text",
@@ -5473,6 +5587,12 @@
             },
             {
               "expression": "root_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "chat_thread_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -5741,11 +5861,11 @@
           "primaryKey": false,
           "notNull": true
         },
-        "work_id": {
-          "name": "work_id",
+        "owner_thread_id": {
+          "name": "owner_thread_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "context_source_id": {
           "name": "context_source_id",
@@ -5797,12 +5917,6 @@
         },
         "file_type": {
           "name": "file_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "canonical_uri": {
-          "name": "canonical_uri",
           "type": "text",
           "primaryKey": false,
           "notNull": true
@@ -5869,6 +5983,22 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "upload_intakes_owner_thread": {
+          "name": "upload_intakes_owner_thread",
+          "columns": [
+            {
+              "expression": "owner_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"upload_intakes\".\"owner_thread_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -5891,19 +6021,6 @@
           "tableTo": "users",
           "columnsFrom": [
             "actor_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "upload_intakes_work_id_works_id_fk": {
-          "name": "upload_intakes_work_id_works_id_fk",
-          "tableFrom": "upload_intakes",
-          "tableTo": "works",
-          "columnsFrom": [
-            "work_id"
           ],
           "columnsTo": [
             "id"
@@ -6855,21 +6972,6 @@
           "columns": [
             {
               "expression": "turn_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "document_edits_action_idx": {
-          "name": "document_edits_action_idx",
-          "columns": [
-            {
-              "expression": "action_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -9678,12 +9780,6 @@
           "notNull": true,
           "default": false
         },
-        "base_revision": {
-          "name": "base_revision",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
         "live_cut": {
           "name": "live_cut",
           "type": "bytea",
@@ -9723,6 +9819,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "base_revision": {
+          "name": "base_revision",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -10755,18 +10857,18 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
-        "apply_payload": {
-          "name": "apply_payload",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "apply_payload": {
+          "name": "apply_payload",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -10923,82 +11025,6 @@
           ],
           "onDelete": "set null",
           "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.thread_hand_backs": {
-      "name": "thread_hand_backs",
-      "schema": "",
-      "columns": {
-        "request_id": {
-          "name": "request_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "thread_id": {
-          "name": "thread_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "fingerprint": {
-          "name": "fingerprint",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "handed_back": {
-          "name": "handed_back",
-          "type": "uuid[]",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "answered": {
-          "name": "answered",
-          "type": "uuid[]",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "gone": {
-          "name": "gone",
-          "type": "uuid[]",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "cancelled_execution_id": {
-          "name": "cancelled_execution_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "thread_hand_backs_thread_id_threads_id_fk": {
-          "name": "thread_hand_backs_thread_id_threads_id_fk",
-          "tableFrom": "thread_hand_backs",
-          "columnsFrom": [
-            "thread_id"
-          ],
-          "tableTo": "threads",
-          "columnsTo": [
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},

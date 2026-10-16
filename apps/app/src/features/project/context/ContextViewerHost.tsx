@@ -11,7 +11,7 @@
  */
 
 import { Trans } from "@lingui/react/macro";
-import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
+import { isOwnedContextScheme } from "@meridian/contracts/context-uri";
 import { AlertCircle } from "lucide-react";
 import { useProjectContextRead } from "@/client/query/useProjectContextRead";
 import { type ContextTab, tabContextOwner } from "@/client/stores";
@@ -45,9 +45,7 @@ function ContextViewerContent({
   tab,
   header,
 }: ContextViewerHostProps & { header?: ReadOnlyViewerHeader }) {
-  const owner = isWorkScopedProjectContextScheme(tab.scheme)
-    ? tabContextOwner(tab)
-    : { workId: editorWorkId };
+  const owner = isOwnedContextScheme(tab.scheme) ? tabContextOwner(tab) : { workId: editorWorkId };
   const read = useProjectContextRead(projectId, tab.scheme, tab.path, owner);
   if (read.status === "loading") {
     return (

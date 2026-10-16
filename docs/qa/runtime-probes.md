@@ -295,8 +295,11 @@ restart smoke check.
   S cancelled; claim release starts the queued reply. Retry after Stop appends
   S2 and returns before its brief ends; replaying S2 returns the same seed with
   200. Destination context contains the brief/source ref, never source transcript
-  text. The brief has no fallback: a failed attempt shows `No brief is
-  available.` and Retry is the next attempt.
+  text. The brief has no fallback: a failed attempt is a card on the
+  brief ("This handoff brief couldn't be generated. Try again.", the server's `turn.error`) and the
+  header's Retry is the next attempt. A failed Stop on a generating brief is a second card on it
+  ("Couldn't stop the brief." with Try again), and a refused or lost Retry is a card too
+  ("Couldn't retry." / "Couldn't start a new brief."); see [failure cards](failure-cards.md).
 - **Crash variant:** start a second delayed handoff, kill the app process while
   its brief is in flight, restart it, and wait one orphan-repair interval. S
   settles with generic failure copy, internal `interrupted` reason, an
@@ -313,7 +316,7 @@ restart smoke check.
 - **Last run:** merge-gate §21–24 mock PASS; original real warm/cold run blocked
   by billing settlement. 2026-09-28 (source commit not recorded).
 
-## RP-9: Fork prefix remains frozen as source grows and compacts
+## RP-18: Fork prefix remains frozen as source grows and compacts
 
 - **Protects:** inherited cutoff/bake ownership (`compaction-protocol`).
 - **Stack:** mock.
@@ -353,7 +356,8 @@ restart smoke check.
   ./mf thread context "$T" --all --view raw --json
   ```
 
-- **Expect:** the post-C request excludes `RP10_OLD_SENTINEL`; retained stale
+- **Expect:** the second `doc put --overwrite --json` reports `previousDocumentId`
+  equal to the first put's `documentId`; the post-C request excludes `RP10_OLD_SENTINEL`; retained stale
   reads use the re-read stub. Historical debug captures may still contain old
   text: inspect the successor request, not every captured request concatenated.
 - **Evidence:** read result, document overwrite, elision metadata, successor request.
@@ -384,7 +388,7 @@ restart smoke check.
   ```
 
   Follow returned cursors where the history exceeds one page. Repeat on the
-  compacted source and fork from RP-9.
+  compacted source and fork from RP-18.
 - **Expect:** child's first request has the reference/read instruction without
   source history. Invalid `from` fails before creating a child or charging a
   child run. Default inspection omits hidden tool payloads; explicit includes
@@ -584,9 +588,58 @@ restart smoke check.
   the message is absent from `thread view`. 4 exits 1 with `turnId` the failed successor
   and no text from the earlier reply. In every case `thread view` agrees with the claim.
   A claim that `view` contradicts is a failure of the probe, not of the view.
+  Every `--json` run ends in exactly one `result` record, after its `message.delta` and
+  `message.completed` records (record order), and `./mf mock list` is empty after case 1 (`--mock`
+  removes its own script) and after the final `./mf mock clear`. The `tools/mf` cases deleted in L1c
+  (usage-block, failed-successor, NDJSON shape, `--mock` cleanup, idle `tail`) have their risks here and in
+  `message-fate.test.ts`.
 - **Evidence:** each command, stdout, stderr and exit code, and the `thread view` after it.
-- **Last run:** 2026-10-15 on `fa1040e86` (`feat/mf-send-fate`, the final code), mock; all four cases
-  passed. Evidence: `work/mf-client-unification/evidence/B6/` in the docs repository.
+- **Last run:** 2026-10-16 on `1bfd1e703` (`feat/thread-sync-mf`, L1c's code, `./mf` on `ThreadSync`), mock;
+  all four cases passed, one `result` record each, `./mf mock list` empty after each. `liveView`: case 1
+  `matches`, case 2 `not_observed` `rewritten`, case 3 `not_observed` `no_turn` (handed back), case 4
+  `matches`. Earlier run: 2026-10-15 on `fa1040e86` (`feat/mf-send-fate`, B6), all four passed. Evidence:
+  `work/mf-client-unification/evidence/L1c/live/` in the docs repository.
+
+## RP-17: `./mf` beside the browser
+
+- **Protects:** `./mf thread send` and `thread tail --until-idle` follow a chat through the same
+  `createThreadSync` the app runs, and never claim more than they proved. A `./mf` run is evidence for the
+  sync's rules (join, read application, frame order, the end-of-turn check), not for what the browser paints.
+- **Stack:** mock, an owned worktree stack with the browser showing the chat (`agent-browser`, one named session).
+- **Steps:** (`T` is a fresh thread per case; `E` holds the evidence)
+
+  ```bash
+  S='[{"text":"Part one.","toolCalls":[{"name":"thread_ls","args":{"depth":1}}]},{"delayMs":4000,"text":"Part two."}]'
+  # SY-01 setup: open the chat in the browser, then follow it from ./mf
+  ./mf thread send "$T" 'rp17 follow' --mock "$S" --json > "$E/sy01.ndjson"
+  # SY-04 setup: the browser has the chat open; a second send from ./mf
+  ./mf thread send "$T" 'rp17 other client' --mock '[{"text":"Reply to the other client."}]' --json > "$E/sy04.ndjson"
+  # SY-05 setup: stop a streaming reply while tailing
+  ./mf thread send "$T" 'rp17 stop' --no-wait --mock '[{"text":"Held.","delayMs":30000}]' --json
+  ./mf thread tail "$T" --until-idle --json > "$E/sy05.ndjson" & sleep 4
+  ./mf thread stop "$T" --json; wait
+  # Checkpoint step: the tail joins while the reply is still waiting to call its tool, so the tool's
+  # frames and the text arrive after the join, with reads landing between them
+  ./mf thread send "$T" 'rp17 checkpoint' --no-wait --mock '[{"delayMs":3000,"toolCalls":[{"name":"thread_ls","args":{"depth":1}}]},{"delayMs":3000,"text":"Hello there"}]' --json
+  ./mf thread tail "$T" --until-idle --json > "$E/checkpoint.ndjson"
+  ```
+
+- **Expect:** every claim is as the scenario says (complete, handed back or cancelled, with the exit code), and
+  `thread view "$T"` agrees with each claim. The checkpoint run prints one `tool.started`, one
+  `tool.completed` and one `message.completed` whose text is the whole text, on one socket. (A tail that
+  joins after the tool finished replays nothing of it: the read holds it. Staged against committed writes
+  is `tools/mf`'s `names staged and committed writes honestly`.) Record every `liveView` and, for
+  each `not_observed`, its reason: `matches` is the expected case; `not_observed` is acceptable when its
+  reason holds (a rewritten turn, a turn a read ended first, a gap); a `differs` is classified (a true
+  disagreement is a defect in the shared rules, filed with its `liveDiff`; a false one is a defect in the check).
+  `liveView` is a diagnostic over client state: it never changes the claim or the exit code.
+- **Evidence:** each command, stdout, stderr and exit code, the `thread view`, the browser's chat text, and the
+  table of `liveView` records with their classes.
+- **Last run:** 2026-10-16 on `1bfd1e703` (`feat/thread-sync-mf`, L1c's code), mock, desktop browser beside
+  it; every claim and exit as expected, `thread view` agreed with each. `liveView` records: `send` with a
+  live browser, `matches`; `tail --until-idle` joining a reply with durable text already in its read (SY-01)
+  and a Stopped reply (SY-05), `not_observed` `rewritten`; the checkpoint run, `matches`. No `differs`.
+  Evidence: `work/mf-client-unification/evidence/L1c/` in the docs repository.
 
 ## RP-16: Every failure is logged once where it is classified and once where it ends
 

@@ -9,7 +9,8 @@ export type CatalogScope =
   | { kind: "project"; projectId: ProjectId }
   | { kind: "user"; userId: UserId }
   | { kind: "work"; projectId: ProjectId; workId: WorkId }
-  | { kind: "lineage"; projectId: ProjectId; rootThreadId: string };
+  | { kind: "lineage"; projectId: ProjectId; rootThreadId: string }
+  | { kind: "chat"; projectId: ProjectId; chatId: string };
 
 export type CatalogAuthorityEntry = {
   kind: "authority";
@@ -64,6 +65,11 @@ type CatalogFileEntryBase = {
    * reservation under one of them follows the join. Absent when none were.
    */
   joinedFrom?: readonly DocumentId[];
+  /**
+   * Set on a chat's uploads: when the file was attached, whether a sent message has used it,
+   * and the identity its deletion must present (an unused upload is the only one the writer deletes).
+   */
+  upload?: { attachedAt: string; used: boolean; intakeId: string; locationRevision: string };
 };
 
 /** Persisted viewer/storage classification. It is never reconstructed from a filename. */
@@ -170,6 +176,8 @@ export function catalogScopeKey(scope: CatalogScope): string {
       return `user:${scope.userId}`;
     case "lineage":
       return `lineage:${scope.projectId}:${scope.rootThreadId}`;
+    case "chat":
+      return `chat:${scope.projectId}:${scope.chatId}`;
     case "work":
       return `work:${scope.projectId}:${scope.workId}`;
   }

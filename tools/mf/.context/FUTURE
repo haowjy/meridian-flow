@@ -4,3 +4,8 @@
   child activity; its `inputs` block says `"not fetched"` for them
   (`src/commands/thread/`). Fetch them through the shared chat session once it
   owns those surfaces, so the CLI draws what the app draws.
+
+- `liveView` deliberately reports `not_observed / rewritten` when the join read seeds text.
+  Per-block provenance could distinguish read-owned prefixes from stream-owned suffixes if
+  that diagnostic limitation becomes costly. Do not add a shadow transcript; the shared sync
+  would own the refinement (L1 design §5 in the mf-client-unification work item).

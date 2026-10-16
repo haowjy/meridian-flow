@@ -17,6 +17,7 @@ import {
   requirePositional,
   stringOption,
 } from "../../core/command";
+import { unknownJsonResponse } from "../../core/session";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
 
 type ContextView = "readable" | "raw" | "summary";
@@ -60,7 +61,7 @@ export const threadContextCommand: CommandSpec = {
       stringOption(ctx, "project"),
     );
     const narrowed = all || iteration !== undefined || gatewayCallId !== undefined;
-    const response = await session.request<ModelRequestDebugListResponse>(
+    const response = (await session.request(
       "GET",
       apiThreadModelRequestsDebugPath(threadId, {
         turnId: stringOption(ctx, "turn"),
@@ -68,7 +69,9 @@ export const threadContextCommand: CommandSpec = {
         gatewayCallId,
         latest: !narrowed,
       }),
-    );
+      undefined,
+      { decode: unknownJsonResponse },
+    )) as ModelRequestDebugListResponse;
     const views = deriveModelRequestDebugViews(response.records).filter(
       ({ record }) =>
         (iteration === undefined || record.iteration === iteration) &&

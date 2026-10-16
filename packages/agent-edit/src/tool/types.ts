@@ -194,6 +194,8 @@ export interface WriteContext {
    * generation, and optional attempt guard travel as one object.
    */
   interactionContext?: InteractionContext;
+  /** The writing thread's top chat handle: bare `uploads://` links written fresh are stored qualified to it. */
+  uploadsChat?: string;
   /** True only when the host resolved this create to a previously missing document. */
   createdDocument?: boolean;
   /** A read also returns the selected blocks as nodes (`WriteOutcome.nodes`), for a copy. */

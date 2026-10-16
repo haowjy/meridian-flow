@@ -1,4 +1,6 @@
 /** The run-state module: the chat's newest record, this device's unanswered intents, and the folds over them. */
+
+export { durableControls } from "./durable-controls";
 export {
   type FailedStop,
   failedStopIsMoot,
@@ -25,6 +27,18 @@ export {
   type RetryReconciliation,
   reconcileRetries,
 } from "./retry";
+export {
+  type AppliedNews,
+  INITIAL_RUN_STATE_SLICE,
+  isWriteModeControl,
+  type JournalSwitch,
+  type QueuedNews,
+  queuedSwitchKey,
+  type RunStateAction,
+  type RunStateSlice,
+  reduceRunState,
+  switchDisplay,
+} from "./run-state-slice";
 export {
   addIntent,
   answerIntent,

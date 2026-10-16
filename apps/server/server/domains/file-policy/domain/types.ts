@@ -95,7 +95,8 @@ export interface SkillFacts {
 export type FileOwnerRef =
   | { scope: "project"; projectId: ProjectId }
   | { scope: "work"; workId: WorkId }
-  | { scope: "lineage"; projectId: ProjectId; rootThreadId: ThreadId };
+  | { scope: "lineage"; projectId: ProjectId; rootThreadId: ThreadId }
+  | { scope: "chat"; projectId: ProjectId; threadId: ThreadId };
 
 /**
  * What a request is about. AI calls pass `document` and the policy picks live
@@ -131,6 +132,8 @@ export interface FileFacts {
   /** The Work owning the file's source; null when the project owns it. */
   ownerWork: FileWorkFacts | null;
   ownerRootThreadId?: ThreadId | null;
+  /** The chat that received an upload; set only for a `chat` source's documents. */
+  ownerChatThreadId?: ThreadId | null;
   /** The document, a folder above it, or its source is deleted. */
   deleted: boolean;
   scheme: ContextUriScheme;

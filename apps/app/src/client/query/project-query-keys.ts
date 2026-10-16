@@ -112,16 +112,18 @@ export const projectQueryKeys = {
   contextCatalogView: (
     projectId: string,
     scheme: ProjectContextTreeScheme,
-    owner: { workId?: string | null; rootThreadId?: string | null } = {},
+    owner: { workId?: string | null; rootThreadId?: string | null; chatId?: string | null } = {},
   ) => {
     const scope: CatalogScope =
       scheme === "user"
         ? { kind: "user", userId: "self" }
-        : scheme === "scratch" && owner.rootThreadId
-          ? { kind: "lineage", projectId, rootThreadId: owner.rootThreadId }
-          : scheme === "scratch" || scheme === "uploads"
-            ? { kind: "work", projectId, workId: owner.workId ?? "" }
-            : { kind: "project", projectId };
+        : scheme === "uploads"
+          ? { kind: "chat", projectId, chatId: owner.chatId ?? "" }
+          : scheme === "scratch" && owner.rootThreadId
+            ? { kind: "lineage", projectId, rootThreadId: owner.rootThreadId }
+            : scheme === "scratch"
+              ? { kind: "work", projectId, workId: owner.workId ?? "" }
+              : { kind: "project", projectId };
     return ["projects", projectId, "context-catalog", catalogScopeKey(scope)] as const;
   },
   agents: (projectId: string) => ["projects", projectId, "agents"] as const,

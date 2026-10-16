@@ -51,6 +51,7 @@ export {
 export {
   announce,
   announceError,
+  announceErrors,
   clearAnnouncement,
   useAnnouncement,
 } from "./thread-store/announcements";

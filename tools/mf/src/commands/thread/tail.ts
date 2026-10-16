@@ -2,16 +2,21 @@ import {
   apiThreadSnapshotPath,
   type ThreadLiveState,
   type ThreadSnapshotResponse,
+  threadSnapshotSchema,
 } from "@meridian/contracts/protocol";
+import { isTerminalTurnStatus } from "@meridian/contracts/threads";
 import { CliError, usageError } from "../../core/cli-error";
 import {
+  type CommandContext,
   type CommandSpec,
   durationOption,
   flag,
   requirePositional,
   stringOption,
 } from "../../core/command";
-import { type LiveViewReport, ReducedThread } from "./reduced-thread";
+import type { Session } from "../../core/session";
+import { jsonResponse } from "../../core/session";
+import { createObserver, type Observer } from "./observe";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
 import { type Claim, classifyDeadline, finishResult, terminalResult } from "./result";
 import { recordIsIdle, runStateOfEvent } from "./run-state";
@@ -26,11 +31,14 @@ export const threadTailCommand: CommandSpec = {
   route: "WS /api/threads/ws subscribe",
   options: {
     ...THREAD_TARGET_OPTIONS,
-    since: { type: "string", description: "Replay strictly after this seq (default: live only)" },
+    since: {
+      type: "string",
+      description: "Replay strictly after this seq (default: live only; not with --until-idle)",
+    },
     "until-idle": {
       type: "boolean",
       description:
-        "Confirm no open execution or awake lease and no pending writer message (already idle returns immediately)",
+        "Follow through the app's thread sync until a read shows no open execution or awake lease and no pending writer message (already idle returns after the first read)",
     },
     timeout: { type: "string", description: "Stop after this long (default 10m)" },
     full: { type: "boolean", description: "Do not truncate tool payloads" },
@@ -43,102 +51,162 @@ export const threadTailCommand: CommandSpec = {
       requirePositional(ctx, 0, "<thread>"),
       stringOption(ctx, "project"),
     );
-    let since = stringOption(ctx, "since");
-    if (since !== undefined && !/^\d+$/.test(since)) throw usageError("--since must be a seq");
     const untilIdle = flag(ctx, "until-idle");
-    const deadlineAt = Date.now() + durationOption(ctx, "timeout", 10 * 60_000);
-    let lastSnapshot: ThreadSnapshotResponse | null = null;
-    const readSnapshot = async () => {
-      const remaining = deadlineAt - Date.now();
-      if (remaining <= 0) throw new CliError("timeout", "Tail deadline reached");
-      lastSnapshot = await session.request<ThreadSnapshotResponse>(
-        "GET",
-        apiThreadSnapshotPath(threadId),
-        undefined,
-        { timeoutMs: remaining },
+    const since = stringOption(ctx, "since");
+    if (since !== undefined && !/^\d+$/.test(since)) throw usageError("--since must be a seq");
+    if (untilIdle && since !== undefined)
+      throw usageError(
+        "--since does not apply with --until-idle: the follow joins from its own first read (use ./mf thread events --since to replay)",
       );
-      return lastSnapshot;
-    };
-    const turnIds = new Set<string>();
-    // A failure event is evidence for the claim whether or not a snapshot already covers it.
-    let observedFailure = false;
-    const reduced = new ReducedThread(threadId);
+    const deadlineAt = Date.now() + durationOption(ctx, "timeout", 10 * 60_000);
+    if (untilIdle) return untilIdleTail(session, ctx, threadId, deadlineAt);
     try {
-      const initial = since === undefined || untilIdle ? await readSnapshot() : null;
-      if (initial) reduced.hydrate(initial);
-      since ??= initial?.liveState.resumeAfterSeq ?? "0";
-      const initialTurn = initial?.liveState.runState.execution?.currentTurnId;
-      if (initialTurn) turnIds.add(initialTurn);
-      if (untilIdle && initial && isIdle(initial.liveState))
-        return finishResult(ctx.out, tailResult(threadId, initial, new Set()));
-      const result = await followThread({
+      const lastSeq =
+        since ??
+        (
+          await session.request("GET", apiThreadSnapshotPath(threadId), undefined, {
+            timeoutMs: deadlineAt - Date.now(),
+            decode: jsonResponse(threadSnapshotSchema),
+          })
+        ).liveState.resumeAfterSeq;
+      await followThread({
         session,
         threadId,
-        lastSeq: since,
+        lastSeq,
         deadlineAt,
         out: ctx.out,
         full: flag(ctx, "full"),
         textStream: "out",
-        reduced,
-        shouldStop: (event) => {
-          if ("turnId" in event) turnIds.add(event.turnId);
-          if (event.type === "turn.failed") observedFailure = true;
-          // A turn event only precedes the closing record in the same commit; the record and the
-          // status frame are what can show the chat idle.
-          if (!untilIdle || event.type !== "event") return false;
-          if (event.name === STATUS_EVENT) return true;
-          const record = runStateOfEvent(event);
-          return record !== null && recordIsIdle({ runState: record });
-        },
-        ...(untilIdle
-          ? {
-              shouldStopState(state) {
-                const turn = state.runState.execution?.currentTurnId;
-                if (turn) turnIds.add(turn);
-                return recordIsIdle(state);
-              },
-              async confirmStop(observed: readonly string[]) {
-                for (const id of observed) turnIds.add(id);
-                return isIdle((await readSnapshot()).liveState);
-              },
-            }
-          : {}),
       });
-      if (!untilIdle) return undefined;
-      for (const id of result.turnIds) turnIds.add(id);
-      if (!lastSnapshot) throw new Error("Tail finished without a confirming snapshot");
-      return finishResult(
-        ctx.out,
-        tailResult(threadId, lastSnapshot, turnIds, {
-          failed: observedFailure,
-          truncated: result.truncated,
-          liveView: reduced.compare(lastSnapshot, turnIds, result.truncated),
-        }),
-        { full: flag(ctx, "full") },
-      );
     } catch (error) {
       // A bounded tail that simply ran out of time is a normal stop, not a failure.
-      if (error instanceof CliError && error.code === "timeout" && !untilIdle) return undefined;
-      if (error instanceof CliError && error.code === "timeout") {
-        const { reason, ...report } = classifyDeadline(lastSnapshot, threadId);
-        return finishResult(
-          ctx.out,
-          terminalResult(
-            "thread.tail",
-            { outcome: "timeout", reason },
-            {
-              threadId,
-              turns: [...turnIds],
-              ...report,
-              ...(lastSnapshot ? { snapshotStale: true } : { snapshotUnavailable: true }),
-            },
-          ),
-        );
-      }
+      if (error instanceof CliError && error.code === "timeout") return undefined;
       throw error;
     }
+    return undefined;
   },
 };
+
+/** Confirms the chat idle from an applied read, through the shared `ThreadSync` (`observe.ts`). */
+async function untilIdleTail(
+  session: Session,
+  ctx: CommandContext,
+  threadId: string,
+  deadlineAt: number,
+) {
+  const CATCH_UP_MS = 1500;
+  type Proof = {
+    read: ThreadSnapshotResponse;
+    claimed: string[];
+    outcome: ReturnType<typeof tailResult>;
+    immediate: boolean;
+  };
+  let proof: Proof | null = null;
+  let join: ThreadSnapshotResponse | null = null;
+  const observer: Observer = createObserver({
+    session,
+    threadId,
+    out: ctx.out,
+    full: flag(ctx, "full"),
+    textStream: "out",
+    deadlineAt,
+    onFrame(event) {
+      // A turn event only precedes the closing record in the same commit; the record and the
+      // status frame are what can show the chat idle.
+      if (event.type !== "event") return;
+      if (event.name === STATUS_EVENT) return observer.refresh();
+      const record = runStateOfEvent(event);
+      if (record !== null && recordIsIdle({ runState: record })) observer.refresh();
+    },
+    onLive: (state) => {
+      if (recordIsIdle(state)) observer.refresh();
+    },
+    onRead(read) {
+      join ??= read;
+      if (proof !== null || !isIdle(read.liveState)) return;
+      const immediate = join === read;
+      // Read membership does not depend on replay arriving before the diagnostic deadline.
+      const initial = new Map(join.turns.map((turn) => [turn.id, turn]));
+      const claimed = immediate
+        ? []
+        : [
+            ...new Set([
+              ...[...initial.values()]
+                .filter((turn) => turn.role === "assistant" && !isTerminalTurnStatus(turn.status))
+                .map((turn) => turn.id),
+              ...read.turns
+                .filter((turn) => turn.role === "assistant" && !initial.has(turn.id))
+                .map((turn) => turn.id),
+              ...[...observer.turnIds].filter(
+                (id) => read.turns.find((turn) => turn.id === id)?.role !== "user",
+              ),
+            ]),
+          ];
+      proof = {
+        read,
+        claimed,
+        immediate,
+        outcome: tailResult(threadId, read, new Set(claimed), {
+          failed: observer.failed,
+          truncated: observer.truncated,
+        }),
+      };
+    },
+  });
+  try {
+    observer.start();
+    await observer.until(() => proof !== null, deadlineAt);
+    const frozen = proof as Proof | null;
+    if (!frozen) throw new Error("Tail finished without a confirming snapshot");
+    const { read: proving, claimed, outcome, immediate } = frozen;
+    const turns = new Map(proving.turns.map((turn) => [turn.id, turn]));
+    let observationIncomplete = false;
+    if (!immediate) {
+      try {
+        await observer.until(
+          () => observer.pending(claimed, turns).length === 0,
+          Math.min(deadlineAt, Date.now() + CATCH_UP_MS),
+        );
+      } catch (error) {
+        if (!(error instanceof CliError)) throw error;
+        observationIncomplete = true;
+      }
+    }
+    return finishResult(
+      ctx.out,
+      {
+        ...outcome,
+        result: {
+          ...outcome.result,
+          ...(observationIncomplete ? { observationIncomplete: true } : {}),
+          ...(immediate ? {} : observer.liveView(claimed)),
+        },
+      },
+      { full: flag(ctx, "full") },
+    );
+  } catch (error) {
+    if (error instanceof CliError && error.code === "timeout") {
+      const last = observer.lastRead;
+      const { reason, ...report } = classifyDeadline(last, threadId);
+      return finishResult(
+        ctx.out,
+        terminalResult(
+          "thread.tail",
+          { outcome: "timeout", reason },
+          {
+            threadId,
+            turns: [...observer.turnIds],
+            ...report,
+            ...(last ? { snapshotStale: true } : { snapshotUnavailable: true }),
+          },
+        ),
+      );
+    }
+    throw error;
+  } finally {
+    observer.close();
+  }
+}
 
 /** Asleep, with no open execution and no writer message in the record (`isBusy` on a view with no intents). */
 function isIdle(state: ThreadLiveState): boolean {
@@ -150,7 +218,7 @@ function tailResult(
   threadId: string,
   snapshot: ThreadSnapshotResponse,
   ids: ReadonlySet<string>,
-  observed: { failed: boolean; truncated: boolean; liveView?: LiveViewReport } = {
+  observed: { failed: boolean; truncated: boolean } = {
     failed: false,
     truncated: false,
   },
@@ -173,6 +241,5 @@ function tailResult(
     turnId: [...ids].at(-1) ?? null,
     turns,
     idle: true,
-    ...observed.liveView,
   });
 }

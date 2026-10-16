@@ -9,8 +9,8 @@ import { type AgentSelection, agentSelectionSchema } from "../agents/index.js";
 import {
   CONTEXT_URI_SCHEMES,
   type ContextUriScheme,
-  WORK_SCOPED_CONTEXT_URI_SCHEMES,
-  type WorkScopedContextUriScheme,
+  isWorkScopedScheme,
+  type OwnedContextUriScheme,
 } from "../context-uri.js";
 import type { DocumentId, UserId, WorkId } from "../ids.js";
 import type { ProjectDto } from "../projects/index.js";
@@ -32,9 +32,10 @@ import type {
   TurnStatus,
   TurnUsage,
 } from "../threads/index.js";
+import { threadSchema } from "../threads/thread.js";
 import type { AiWriteMode, Work, WorkSlug, WorksSnapshot } from "../works/index.js";
-import type { Filetype, YjsTrackedSchemaType } from "./filetype.js";
-import type { SubmittedReference } from "./user-turn-admission.js";
+import { type Filetype, filetypeSchema, type YjsTrackedSchemaType } from "./filetype.js";
+import { admissionReceiptShape, type SubmittedReference } from "./user-turn-admission.js";
 import { runStateSchema } from "./ws-protocol.js";
 
 export type { JsonValue } from "../threads/index.js";
@@ -63,6 +64,14 @@ export type ThreadLiveState = {
   resumeAfterSeq: string;
 };
 
+export const projectBootstrapResponseSchema = z.object({
+  projectId: z.string().min(1),
+  documentId: z.string().min(1),
+  manuscriptSourceId: z.string().min(1),
+  uri: z.string().min(1),
+});
+export type ProjectBootstrapResponse = z.infer<typeof projectBootstrapResponseSchema>;
+
 export type CreateProjectRequest = {
   /** Client-provided ID for optimistic creation. Server generates one if omitted. */
   id?: string;
@@ -90,6 +99,12 @@ export type { ProjectChatFeedPage as ListWorkThreadsResponse } from "../threads/
 export type { AiWriteMode, Work };
 
 export type ListWorksResponse = WorksSnapshot;
+
+/** Identity projection for callers resolving a named Work, not a complete catalog validator. */
+export const workCatalogIdentitySchema = z.object({
+  projectId: z.string().min(1),
+  works: z.array(z.object({ id: z.string().min(1), slug: z.string().min(1) })),
+});
 
 export const PROJECT_CONTEXT_TREE_SCHEMES = CONTEXT_URI_SCHEMES;
 
@@ -141,6 +156,14 @@ export type CreateUntitledContextDocumentJoined = {
   address: ContextDocumentAddress;
 };
 
+/** File creation success always carries the created identity and its canonical URI. */
+export const createContextFileResponseSchema = z.object({
+  status: z.literal("created"),
+  documentId: z.string().min(1),
+  uri: z.string().min(1),
+});
+export type CreateContextFileResponse = z.infer<typeof createContextFileResponseSchema>;
+
 /** Creation uses the same conflict payload for files and folders, including HTTP 409. */
 export type CreateContextEntryResult =
   | { status: "created"; documentId?: string; uri?: string }
@@ -159,11 +182,12 @@ export type CreateUntitledContextDocumentAnswer =
   | CreateUntitledContextDocumentJoined;
 
 /** Exact identities committed by one successful context-tree deletion. */
-export type DeleteContextEntryResult = {
-  status: "deleted";
-  deletedDocumentIds: string[];
-  availabilityGeneration: string;
-};
+export const deleteContextEntryResultSchema = z.object({
+  status: z.literal("deleted"),
+  deletedDocumentIds: z.array(z.string().min(1)),
+  availabilityGeneration: z.string().regex(/^(0|[1-9]\d*)$/),
+});
+export type DeleteContextEntryResult = z.infer<typeof deleteContextEntryResultSchema>;
 
 export type DeleteContextEntryRequest = {
   operationId: string;
@@ -216,12 +240,12 @@ export type MoveContextEntrySuccess = {
 /** Canonical, server-normalized location used by Open-existing recovery. */
 export type MoveContextEntryLocator =
   | {
-      scheme: Exclude<ProjectContextTreeScheme, WorkAuthorityScheme>;
+      scheme: Exclude<ProjectContextTreeScheme, OwnedContextUriScheme>;
       path: string;
       authority: { kind: "project" };
     }
   | {
-      scheme: WorkAuthorityScheme;
+      scheme: "scratch";
       path: string;
       authority: { workId: WorkId; workSlug: WorkSlug | null };
     }
@@ -249,37 +273,27 @@ export function isProjectContextTreeScheme(value: unknown): value is ProjectCont
   );
 }
 
-/** Context tree schemes supporting contextual, `@slug`, and explicit `@/` authority. */
-export const WORK_SCOPED_PROJECT_CONTEXT_TREE_SCHEMES = new Set<ProjectContextTreeScheme>([
-  ...WORK_SCOPED_CONTEXT_URI_SCHEMES,
-]);
-
-export function isWorkScopedProjectContextScheme(
-  scheme: ProjectContextTreeScheme,
-): scheme is WorkAuthorityScheme {
-  return WORK_SCOPED_PROJECT_CONTEXT_TREE_SCHEMES.has(scheme);
-}
-
-export type WorkAuthorityScheme = WorkScopedContextUriScheme;
-
 /**
- * A recent document and its owner. Scratch and Uploads name a Work; a No Work
- * chat's Scratch names its lineage by the first chat's id (`rootThreadId`).
+ * A recent document and its owner. Scratch names a Work, or for a No Work chat its
+ * lineage by the first chat's id (`rootThreadId`). An upload names the chat it was
+ * attached in (`chatId`).
  */
 export type WorkingSetRoute =
   | {
       documentId: DocumentId;
-      scheme: Exclude<ProjectContextTreeScheme, WorkAuthorityScheme>;
+      scheme: Exclude<ProjectContextTreeScheme, OwnedContextUriScheme>;
       path: string;
       workId?: never;
       rootThreadId?: never;
+      chatId?: never;
     }
   | {
       documentId: DocumentId;
-      scheme: WorkAuthorityScheme;
+      scheme: "scratch";
       path: string;
       workId: WorkId | null;
       rootThreadId?: never;
+      chatId?: never;
     }
   | {
       documentId: DocumentId;
@@ -287,6 +301,15 @@ export type WorkingSetRoute =
       path: string;
       workId?: never;
       rootThreadId: string;
+      chatId?: never;
+    }
+  | {
+      documentId: DocumentId;
+      scheme: "uploads";
+      path: string;
+      workId?: never;
+      rootThreadId?: never;
+      chatId: string;
     };
 
 export type WorkingSetRouteParseResult =
@@ -339,6 +362,22 @@ export function parseWorkingSetRoute(input: unknown): WorkingSetRouteParseResult
     return { ok: false, message: "Working-set route path must contain 1 to 1024 characters" };
   }
 
+  if (route.chatId !== undefined) {
+    const chatId = parseRequestId(route.chatId);
+    if (route.scheme !== "uploads" || route.workId !== undefined || !chatId) {
+      return { ok: false, message: "Only upload routes name a chat, and without a workId" };
+    }
+    return {
+      ok: true,
+      value: {
+        documentId: documentId as DocumentId,
+        scheme: route.scheme,
+        path: route.path,
+        chatId,
+      },
+    };
+  }
+
   if (route.rootThreadId !== undefined) {
     const rootThreadId = parseRequestId(route.rootThreadId);
     if (route.scheme !== "scratch" || route.workId !== undefined || !rootThreadId) {
@@ -355,7 +394,11 @@ export function parseWorkingSetRoute(input: unknown): WorkingSetRouteParseResult
     };
   }
 
-  if (isWorkScopedProjectContextScheme(route.scheme)) {
+  if (route.scheme === "uploads") {
+    return { ok: false, message: "Upload routes require a chatId" };
+  }
+
+  if (isWorkScopedScheme(route.scheme)) {
     if (!("workId" in route) || (route.workId !== null && typeof route.workId !== "string")) {
       return { ok: false, message: "Work-scoped routes require an explicit workId or null" };
     }
@@ -418,6 +461,22 @@ export type ContextReadBinaryResponse = {
   mimeType: string;
 };
 
+export const contextReadResponseSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("tracked"),
+    path: z.string(),
+    schemaType: z.enum(["document", "code"]),
+    filetype: filetypeSchema,
+    content: z.string(),
+  }),
+  z.object({
+    kind: z.literal("binary"),
+    path: z.string(),
+    url: z.string().min(1),
+    fileType: z.enum(["docx", "image", "pdf", "binary"]),
+    mimeType: z.string(),
+  }),
+]) satisfies z.ZodType<ContextReadResponse>;
 export type ContextReadResponse = ContextReadTrackedResponse | ContextReadBinaryResponse;
 
 export type CorpusImportSourceKind = "upload" | "google_drive_fixture" | "google_drive";
@@ -606,9 +665,15 @@ export type ThreadAvailableSkill = {
   description: string;
 };
 
-export type ThreadAvailableSkillsResponse = {
-  skills: ThreadAvailableSkill[];
-};
+export const threadAvailableSkillsResponseSchema = z.object({
+  skills: z.array(z.object({ slug: z.string().min(1), name: z.string(), description: z.string() })),
+});
+export type ThreadAvailableSkillsResponse = z.infer<typeof threadAvailableSkillsResponseSchema>;
+
+export const sendMessageResponseSchema = z.object({
+  ...admissionReceiptShape,
+  status: z.literal("accepted"),
+}) satisfies z.ZodType<SendMessageResponse>;
 
 export type SendMessageResponse = {
   threadId: string;
@@ -629,39 +694,14 @@ export type SendMessageResponse = {
   status: "accepted";
 };
 
-export type CancelTurnResponse = {
-  threadId: string;
-  turnId: string;
-  status: "cancelled" | "already_finished" | "not_found";
-};
+export const cancelTurnResponseSchema = z.object({
+  threadId: z.string().min(1),
+  turnId: z.string().min(1),
+  status: z.enum(["cancelled", "already_finished", "not_found"]),
+});
+export type CancelTurnResponse = z.infer<typeof cancelTurnResponseSchema>;
 
-export type ThreadSnapshotAncestor = {
-  id: string;
-  title: string | null;
-  agentName: string | null;
-};
-
-export type ThreadSnapshotResponse = {
-  threadId: string;
-  thread: Thread;
-  turns: Turn[];
-  /** Token totals across every model response billed to this thread, all turn branches included. */
-  threadUsage: {
-    inputTokens: number;
-    cacheReadTokens: number;
-    cacheReportedInputTokens: number;
-    cacheReportedCalls: number;
-    cacheWriteTokens: number;
-    outputTokens: number;
-    cacheResets: number;
-  };
-  liveState: ThreadLiveState;
-  actionRequired: boolean;
-  /** First event position after this snapshot; clients reject it below their stored floor. */
-  nextSeq: string;
-  /** Point-looked-up spawn path, ordered root → direct parent; no ancestor conversations. */
-  ancestors: ThreadSnapshotAncestor[];
-};
+export type { ThreadSnapshotAncestor, ThreadSnapshotResponse } from "./thread-snapshot.js";
 
 /** GET /api/threads/:threadId/transcript: one keyset page of the effective or inherited transcript. */
 export type TranscriptPageResponse = {
@@ -687,9 +727,8 @@ export type ModelRequestDebugListResponse = {
   retention: ModelRequestDebugRetention;
 };
 
-export type ListThreadsResponse = {
-  threads: Thread[];
-};
+export const listThreadsResponseSchema = z.object({ threads: z.array(threadSchema) });
+export type ListThreadsResponse = z.infer<typeof listThreadsResponseSchema>;
 
 export type BinaryDocumentFileType = "docx" | "image" | "pdf";
 

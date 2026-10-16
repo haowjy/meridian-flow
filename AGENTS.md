@@ -47,7 +47,8 @@ explicit null binds the thread to that row. After creation, the writer may
 explicitly rebind the chat through one canonical operation; Work management
 and navigation never invoke it implicitly. The model can't rebind; see the
 [model's `work switch`][model-work-switch]. Named-Work URIs use `@slug`;
-No Work Uploads use `@/`. No Work owns no Scratch: a No Work chat's Scratch
+uploads belong to the chat they were attached in and use `uploads://@/c15/`
+(`c15` is the chat's handle; Works and No Work own no uploads). No Work owns no Scratch: a No Work chat's Scratch
 belongs to its lineage (the first chat, its forks and subagents) at
 `scratch://@/c12/`, named by the first chat's handle. Internal IDs never
 appear in URI authority. The schema is `works` + `thread_works`.
@@ -76,6 +77,11 @@ hidden constraints, surprising invariants, and workarounds.
 **Writer-facing copy.** Separate facts with layout, typography, sentences, or
 parentheses, never `·`, `•`, `—`, or `|`. See the
 [copy separation decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/writer-copy-separation.md).
+
+**Offer only what applies.** Show a control only while its action can succeed.
+Feedback never displaces content already on screen: it uses blank space, or the
+end of a surface that grows downward, like a chat's latest turn. See the
+[offer-only-what-applies decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/offer-only-what-applies.md).
 
 **Debugging.** Follow [docs/debugging.md](docs/debugging.md).
 
@@ -190,10 +196,11 @@ code it refers to, so a newcomer catches up quickly. The
 Prune a worktree as soon as its branch merges, whether into `main`, `staging`,
 or a longer-lived integration branch — `pnpm dev:prune-worktrees -- --target
 <work-id|path|branch|pr> --dry-run` (see [tools/dev/AGENTS.md](tools/dev/AGENTS.md)).
-Don't defer this: if the integration branch is later squash-merged, none of
-its side-lane branches remain provable as merged by PR match or by ancestry,
-and only a human who tracked the actual history can confirm by hand that they
-are safe to remove.
+Don't defer this: a side-lane is provable by containment in its integration
+branch, or by its own merged PR. Containment disappears when that ref is
+deleted: once the integration branch is squash-merged and its ref deleted
+without the lane having a PR of its own, only a human who tracked the actual
+history can confirm by hand that it is safe to remove.
 
 **Clean up as soon as you're done with something.** Idle dev stacks, databases and
 checkouts waste the machine's memory, CPU and disk. When a worktree, dev stack, probe,

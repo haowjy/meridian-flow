@@ -8,7 +8,7 @@
 import {
   apiThreadSnapshotPath,
   stopRequestSchema,
-  type ThreadSnapshotResponse,
+  threadSnapshotSchema,
 } from "@meridian/contracts/protocol";
 import { usageError } from "../../core/cli-error";
 import {
@@ -18,6 +18,7 @@ import {
   requirePositional,
   stringOption,
 } from "../../core/command";
+import { jsonResponse } from "../../core/session";
 import { runHandBack } from "./hand-back-adapter";
 import { handedBackText, viewOfSnapshot } from "./queue-output";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
@@ -53,10 +54,9 @@ export const threadStopCommand: CommandSpec = {
       if (!parsed.success) throw usageError("--replay is not a printed Stop request");
       input = { replay: { kind: "stop", requestId: parsed.data.requestId, body: parsed.data } };
     } else {
-      const snapshot = await session.request<ThreadSnapshotResponse>(
-        "GET",
-        apiThreadSnapshotPath(threadId),
-      );
+      const snapshot = await session.request("GET", apiThreadSnapshotPath(threadId), undefined, {
+        decode: jsonResponse(threadSnapshotSchema),
+      });
       // `mine` is empty: every message ./mf admitted is in the record at or below `sentThrough`.
       input = { press: { kind: "stop", view: viewOfSnapshot(snapshot) } };
     }

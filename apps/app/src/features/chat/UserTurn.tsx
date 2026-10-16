@@ -4,11 +4,14 @@ import type { WriterText } from "@meridian/thread-client";
 import { Loader2, X } from "lucide-react";
 import { memo, useMemo } from "react";
 import type { UserTurnRecovery } from "@/client/chat-submissions/presentation";
-import { NoticeCard } from "@/components/app/NoticeCard";
 import { Button } from "@/components/ui/button";
-import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
+import {
+  useCanOpenChatReference,
+  useOpenChatDocument,
+} from "@/features/project/context/open-chat-document";
 import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
 import { Markdown } from "@/rich-content/Markdown";
+import { AnchoredCards } from "./ChatCards";
 import { HandoffTurnAction, useTurnDerivation } from "./derivation/DeriveTurnActions";
 import { useReferenceAvailability } from "./reference-availability";
 import type { TurnQueueControls } from "./TurnList";
@@ -26,6 +29,8 @@ export type UserTurnProps = {
   queuedCount?: number;
   /** Retry and, after a durable server refusal, Edit on the unadmitted writer row. */
   submissionRecovery?: UserTurnRecovery | null;
+  /** This chat's handle, for a message that still names an upload bare. */
+  uploadsChat?: string;
 };
 
 function UserTurnComponent({
@@ -36,12 +41,14 @@ function UserTurnComponent({
   queueControls = null,
   lastQueued = false,
   queuedCount = 0,
+  uploadsChat,
 }: UserTurnProps) {
   // Hand off from a message the model has. A queued one sits beyond the
   // cutoff the server would use, so it offers none.
   const handoff = useTurnDerivation() !== null && !queued && turn.status === "complete";
   const projectId = useProjectDocumentNavigationProjectId();
   const openDocument = useOpenChatDocument(projectId ?? undefined);
+  const canOpenReference = useCanOpenChatReference();
   const resolutions = useReferenceAvailability(
     useMemo(
       () => [...new Set(projected.references.map(({ documentId }) => documentId))],
@@ -56,6 +63,8 @@ function UserTurnComponent({
       references={projected.references}
       skills={projected.skills}
       referenceResolutions={resolutions}
+      canOpenReference={canOpenReference}
+      uploadsChat={uploadsChat}
       onOpenReference={(documentId) => void openDocument({ documentId, disposition: "current" })}
     >
       {projected.text}
@@ -146,38 +155,13 @@ function UserTurnComponent({
         </p>
       ) : null}
       {turn.status === "error" && !submissionRecovery?.moving ? (
-        // Zero intrinsic width so a short message's bubble does not stretch to the card;
-        // the card right-aligns inside the row and overhangs to the left.
-        <div className="mt-[var(--chat-space-block)] flex w-0 min-w-full justify-end">
-          {/* The chat announces the failure once through its own assertive region, and a
-              rejection restored on reload must stay silent, so the card is not an alert. */}
-          <NoticeCard tone="error" inline announce={false}>
-            <p data-user-turn-status="error" role="status">
-              {t`Couldn't send.`}
-            </p>
-            {submissionRecovery?.onRetry ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="xs"
-                onClick={submissionRecovery.onRetry}
-              >
-                {t`Retry`}
-              </Button>
-            ) : null}
-            {submissionRecovery?.onEdit ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="xs"
-                disabled={submissionRecovery.busy}
-                onClick={submissionRecovery.onEdit}
-              >
-                {t`Edit`}
-              </Button>
-            ) : null}
-          </NoticeCard>
-        </div>
+        <AnchoredCards
+          anchor={{ message: turn.id }}
+          recovery={submissionRecovery}
+          // Zero intrinsic width so a short message's bubble does not stretch to the card;
+          // the card right-aligns inside the row and overhangs to the left.
+          wrapClassName="mt-[var(--chat-space-block)] flex w-0 min-w-full justify-end"
+        />
       ) : null}
       {handoff ? (
         // A row under the bubble on its right edge, like a reply's actions; revealed
@@ -193,15 +177,5 @@ function UserTurnComponent({
   );
 }
 
-export const UserTurn = memo(
-  UserTurnComponent,
-  (prev, next) =>
-    prev.turn === next.turn &&
-    prev.writer === next.writer &&
-    prev.submissionRecovery === next.submissionRecovery &&
-    prev.queued === next.queued &&
-    prev.queueControls === next.queueControls &&
-    prev.lastQueued === next.lastQueued &&
-    prev.queuedCount === next.queuedCount,
-);
+export const UserTurn = memo(UserTurnComponent);
 UserTurn.displayName = "UserTurn";

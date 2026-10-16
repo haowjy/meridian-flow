@@ -2,6 +2,7 @@
 import {
   API_THREADS_WS_PATH,
   apiThreadCancelPath,
+  cancelTurnResponseSchema,
   type SequencedEvent,
   type ThreadLiveState,
 } from "@meridian/contracts/protocol";
@@ -13,6 +14,7 @@ import {
 import WebSocket from "ws";
 import { CliError } from "../../core/cli-error";
 import type { Session } from "../../core/session";
+import { jsonResponse } from "../../core/session";
 
 export function createThreadClient(session: Session): ThreadSocketClient {
   const url = new URL(API_THREADS_WS_PATH, session.serverUrl);
@@ -21,10 +23,16 @@ export function createThreadClient(session: Session): ThreadSocketClient {
     url: () => url.toString(),
     webSocketFactory: (address) =>
       new WebSocket(address, { headers: { cookie: session.cookie }, ca: session.ca }),
+    // Only refusals are command failures. Retryable replay errors, like network errors and
+    // replay deadlines, remain with the shared transport until the command's own deadline.
     toError: (error) =>
-      new CliError("protocol", `Thread socket error: ${error.message}`, { details: error }),
+      error.retryable
+        ? new Error(`Thread socket error: ${error.message}`)
+        : new CliError("protocol", `Thread socket error: ${error.message}`, { details: error }),
     cancelTurn: (threadId, turnId) =>
-      session.request("POST", apiThreadCancelPath(threadId, turnId)),
+      session.request("POST", apiThreadCancelPath(threadId, turnId), undefined, {
+        decode: jsonResponse(cancelTurnResponseSchema),
+      }),
   });
 }
 
@@ -48,7 +56,7 @@ export function subscribeThread(transport: ThreadTransport, threadId: string, af
       onLiveState: (state) => push({ type: "live", state }),
       onGap: (gap) => push({ type: "gap", gap }),
       onError: (error) => {
-        // Network errors belong to the shared reconnect policy, not the command outcome.
+        // Retryable replay/network errors stay with the transport; only refusals end the command.
         if (error instanceof CliError) push({ type: "error", error });
       },
       onConnectionState: (state) => {
@@ -66,7 +74,6 @@ export function subscribeThread(transport: ThreadTransport, threadId: string, af
   );
   return {
     unsubscribe,
-    hasQueued: () => queue.length > 0,
     reject: (error: Error) => push({ type: "error", error }),
     async next(deadlineAt: number): Promise<SubscriptionItem> {
       if (Date.now() >= deadlineAt)

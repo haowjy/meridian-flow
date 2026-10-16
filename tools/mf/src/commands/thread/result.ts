@@ -3,7 +3,7 @@ import type { ThreadSnapshotResponse } from "@meridian/contracts/protocol";
 import { writerMessages } from "@meridian/thread-client";
 import { EXIT, type ExitCode } from "../../core/cli-error";
 import type { Output } from "../../core/output";
-import { type LiveDiff, renderLiveDiff } from "./reduced-thread";
+import { type LiveDiff, type LiveReason, renderLiveDiff } from "./live-view";
 
 export type Outcome =
   | "accepted"
@@ -42,6 +42,7 @@ export type Result = Claim & {
   next?: string[];
   liveView?: "matches" | "differs" | "not_observed";
   liveDiff?: LiveDiff[];
+  liveReason?: LiveReason;
 };
 export type TerminalResult<T extends Record<string, unknown> = Record<string, unknown>> = {
   result: Result & T;

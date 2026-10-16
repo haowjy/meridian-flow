@@ -7,7 +7,7 @@
  * they own the DB-level context-source lifecycle, separate from adapter assembly.
  */
 
-import type { ProjectId } from "@meridian/contracts";
+import type { ProjectId, ThreadId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { contextSources, projects, works } from "@meridian/database/schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
@@ -36,7 +36,10 @@ import type { HiddenNodeRepair } from "./tree/hidden-node-repair.js";
 import type { LiveClaim } from "./tree/hidden-node-types.js";
 import type { TreeView } from "./tree/tree-view.js";
 
-const CONTEXT_SOURCE_NAMES: Record<ProjectContextFsScheme | WorkScopedContextFsScheme, string> = {
+const CONTEXT_SOURCE_NAMES: Record<
+  ProjectContextFsScheme | WorkScopedContextFsScheme | "uploads",
+  string
+> = {
   manuscript: "Manuscript",
   kb: "Knowledge Base",
   user: "User Files",
@@ -152,7 +155,7 @@ async function ensureProjectContextSource(
     })
     .onConflictDoNothing({
       target: [contextSources.projectId, contextSources.slug],
-      where: sql`${contextSources.workId} IS NULL AND ${contextSources.rootThreadId} IS NULL AND ${contextSources.deletedAt} IS NULL`,
+      where: sql`${contextSources.workId} IS NULL AND ${contextSources.rootThreadId} IS NULL AND ${contextSources.chatThreadId} IS NULL AND ${contextSources.deletedAt} IS NULL`,
     })
     .returning({ id: contextSources.id });
   if (created) return created.id;
@@ -437,34 +440,6 @@ export function createWorkContextDocumentStore(
   );
 }
 
-export function createNoWorkContextDocumentStore(
-  db: Database,
-  projectId: string,
-  scheme: "uploads",
-  catalogMutations?: ContextCatalogMutationPort,
-  arrivals?: DocumentArrivals,
-  repair?: HiddenNodeRepair,
-): ContextDocumentStore {
-  const resolveWorkId = async () => {
-    const workId = await findNoWorkId(db, projectId);
-    if (!workId) throw new Error(`No Work missing for project ${projectId}`);
-    return workId;
-  };
-  return new SourceResolvedContextDocumentStore(
-    db,
-    async () => ensureWorkContextSource(db, await resolveWorkId(), scheme),
-    async () => {
-      const workId = await findNoWorkId(db, projectId);
-      return workId ? findWorkContextSource(db, workId, scheme) : null;
-    },
-    resolveWorkId,
-    catalogMutations,
-    undefined,
-    arrivals,
-    repair,
-  );
-}
-
 /** Reads never provision lineage notes; the first AI write does. */
 export function createLineageContextDocumentStore(
   db: Database,
@@ -497,6 +472,82 @@ export function createLineageContextDocumentStore(
     undefined,
     catalogMutations,
     () => lifecycle.requireLive(projectId, rootThreadId),
+    arrivals,
+    repair,
+  );
+}
+
+async function findChatContextSource(
+  db: Database,
+  projectId: string,
+  chatId: string,
+  scheme: "uploads",
+): Promise<string | null> {
+  const [row] = await currentDrizzleDb(db)
+    .select({ id: contextSources.id })
+    .from(contextSources)
+    .where(
+      and(
+        eq(contextSources.projectId, projectId),
+        eq(contextSources.chatThreadId, chatId),
+        eq(contextSources.slug, scheme),
+        isNull(contextSources.deletedAt),
+      ),
+    )
+    .limit(1);
+  return row?.id ?? null;
+}
+
+async function ensureChatContextSource(
+  db: Database,
+  projectId: string,
+  chatId: string,
+  scheme: "uploads",
+): Promise<string> {
+  const existing = await findChatContextSource(db, projectId, chatId, scheme);
+  if (existing) return existing;
+  const [created] = await currentDrizzleDb(db)
+    .insert(contextSources)
+    .values({
+      projectId: projectId as ProjectId,
+      chatThreadId: chatId as ThreadId,
+      name: CONTEXT_SOURCE_NAMES[scheme],
+      slug: scheme,
+      scope: "chat",
+      adapterType: "local",
+    })
+    .onConflictDoNothing({
+      target: [contextSources.chatThreadId, contextSources.slug],
+      where: sql`${contextSources.chatThreadId} IS NOT NULL`,
+    })
+    .returning({ id: contextSources.id });
+  if (created) return created.id;
+  const raced = await findChatContextSource(db, projectId, chatId, scheme);
+  if (!raced) throw new Error(`Failed to provision ${scheme} context source for chat ${chatId}`);
+  return raced;
+}
+
+/**
+ * A chat's uploads store, keyed by the chat's thread id (no thread-row FK, so the chat may not
+ * exist yet). Reads never provision; the first upload does. Which chat to pass is
+ * `resolveTopPrimaryChat`'s answer, never `root_thread_id`.
+ */
+export function createChatContextDocumentStore(
+  db: Database,
+  projectId: string,
+  chatId: string,
+  scheme: "uploads",
+  catalogMutations?: ContextCatalogMutationPort,
+  arrivals?: DocumentArrivals,
+  repair?: HiddenNodeRepair,
+): ContextDocumentStore {
+  return new SourceResolvedContextDocumentStore(
+    db,
+    () => ensureChatContextSource(db, projectId, chatId, scheme),
+    () => findChatContextSource(db, projectId, chatId, scheme),
+    undefined,
+    catalogMutations,
+    undefined,
     arrivals,
     repair,
   );

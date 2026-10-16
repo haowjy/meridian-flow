@@ -9,8 +9,16 @@
  * boundary for non-fatal interrupt errors lives in
  * `dispatch-ws-server-message.test.ts`.
  */
-import type { AGUIEvent, Block, JsonValue, Thread, Turn } from "@meridian/contracts/protocol";
+import type {
+  AGUIEvent,
+  Block,
+  JsonValue,
+  SequencedEvent,
+  ThreadSnapshotResponse,
+  Turn,
+} from "@meridian/contracts/protocol";
 import { EventType } from "@meridian/contracts/protocol";
+import { createThreadSync } from "@meridian/thread-client/sync";
 import { describe, expect, it } from "vitest";
 
 import { MeridianApiError } from "@/client/api/meridian-error";
@@ -97,8 +105,12 @@ describe("interrupt response settlement", () => {
     scenario.controller.respondInterrupt(response);
 
     scenario.closeSocket();
-    // The mounted subscriber applies the stream's resolution event to the store.
-    scenario.store.getState().applyTurnEvent(THREAD, resolutionEvent(), "6");
+    // The mounted sync applies the stream's resolution event to the store.
+    const sync = mountSync(scenario);
+    scenario.transport
+      .activeSubscription()
+      ?.handlers.onEvent({ seq: "6", event: resolutionEvent() } as SequencedEvent);
+    sync.stop();
 
     expect(pendingEntry(scenario)).toBeUndefined();
   });
@@ -149,11 +161,58 @@ function assistantTurn(status: Turn["status"], blocks: Block[]): Turn {
   } as unknown as Turn;
 }
 
+/** The chat's sync, bound to the scenario's store and transport as the app's hook binds it. */
+function mountSync(scenario: ThreadRunScenario) {
+  const sync = createThreadSync({
+    threadId: THREAD,
+    transport: scenario.transport,
+    ...scenario.store.getState().syncPorts(THREAD),
+    requestSnapshot: () => undefined,
+    signal: new AbortController().signal,
+  });
+  sync.start();
+  // Read first: the stream is subscribed by the first read this chat applies.
+  sync.receive({
+    thread: { id: THREAD, projectId: "project_1", userId: "account-1" },
+    turns: [],
+    nextSeq: "0",
+    actionRequired: false,
+    liveState: {
+      runningTurnId: null,
+      resumeAfterSeq: "0",
+      runState: {
+        version: "0",
+        items: [],
+        sentThrough: 0,
+        execution: null,
+        mode: "direct",
+        blocked: null,
+      },
+    },
+  } as unknown as ThreadSnapshotResponse);
+  return sync;
+}
+
 function applySnapshot(scenario: ThreadRunScenario, turn: Turn): void {
-  scenario.store
-    .getState()
-    .applyThreadSnapshot({ id: THREAD, projectId: "project_1" } as unknown as Thread, [turn], {
-      lifecycle: { actionRequired: false, runningTurnId: null },
-      nextSeq: "10",
-    });
+  const runState = {
+    version: "0",
+    items: [],
+    sentThrough: 0,
+    execution: null,
+    mode: "direct",
+    blocked: null,
+  };
+  createThreadSync({
+    threadId: THREAD,
+    transport: scenario.transport,
+    ...scenario.store.getState().syncPorts(THREAD),
+    requestSnapshot: () => undefined,
+    signal: new AbortController().signal,
+  }).receive({
+    thread: { id: THREAD, projectId: "project_1", userId: "account-1" },
+    turns: [turn],
+    nextSeq: "10",
+    actionRequired: false,
+    liveState: { runningTurnId: null, resumeAfterSeq: "10", runState },
+  } as unknown as ThreadSnapshotResponse);
 }

@@ -256,7 +256,7 @@ export function createWriteCommands(deps: {
       shown,
       context,
     });
-    const assigner = linkAssigner(address.documentId, links.scope, shown);
+    const assigner = linkAssigner(address.documentId, links.scope, shown, context.uploadsChat);
     const existingBlocks = options.model.getBlocks(toDocHandle(runtime.doc));
     if (existingBlocks.length > 0 && !overwriting) return alreadyExists;
     let overwrite: Extract<ResolveWriteResult, { ok: true }> | undefined;
@@ -363,7 +363,7 @@ export function createWriteCommands(deps: {
         context,
       });
     }
-    const assigner = linkAssigner(address.documentId, links.scope, shown);
+    const assigner = linkAssigner(address.documentId, links.scope, shown, context.uploadsChat);
     const resolved = plan.ok ? plan.assign(assigner) : plan;
     if (!resolved.ok) {
       return errorResponse(
@@ -643,10 +643,12 @@ export function createWriteCommands(deps: {
     documentId: string,
     scope: Parameters<typeof createWriteLinkAssigner>[0]["scope"],
     shown: Parameters<typeof createWriteLinkAssigner>[0]["shown"],
+    uploadsChat: string | undefined,
   ): WriteLinkAssigner {
     return createWriteLinkAssigner({
       scope,
       shown,
+      ...(uploadsChat ? { uploadsChat } : {}),
       ...(options.onLinkSpliceFallback
         ? {
             onSpliceFallback: (reason) => options.onLinkSpliceFallback?.({ documentId, reason }),

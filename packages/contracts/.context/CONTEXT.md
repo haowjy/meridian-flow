@@ -46,9 +46,10 @@ contract owns a rule and where it is consumed.
 `context-uri.ts` owns scheme classification and address syntax. Draft-mode
 Works own manuscript, KB, user, and unfiled content; Scratch and uploads are
 not drafted. A leading `@` in each path segment is reserved for Work authority;
-other `@` characters are valid. `@/` is a lineage-qualified No Work upload
-address only when a first-chat handle is present, and bare `scratch://x`
-remains contextual.
+other `@` characters are valid. `uploads://@/c15/x` names a chat's upload
+(`{ kind: "chat" }`); `@/` without a handle, `@slug` and a subagent handle
+(`p…`) are refused for uploads. Bare `uploads://x` and `scratch://x` remain
+contextual.
 
 `ContextOwner` is either `workId` or, for Scratch, `rootThreadId`; never both.
 A resolved catalog owner carries that identity and its lineage handle from the
@@ -93,3 +94,13 @@ cache counters, so each gateway adapter normalizes provider output before
 project-relative `assetPath`; signed URLs are render-time details only.
 Blocks describe the writer transcript. Model-only document-text elisions belong
 in compaction metadata.
+
+## Snapshot read boundary
+
+Thread snapshots compose the canonical `threadSchema` and `turnSchema` (including
+blocks, usage and model responses). Their DTO types are inferred from the schemas;
+the app and `./mf` consume the parsed result, not a widened partial check. Identity
+lookups remain explicit projections and cannot stand in for full DTO validation.
+
+Golden protocol fixtures are test-only exports at `@meridian/contracts/test-support`.
+Production barrels do not re-export test data.

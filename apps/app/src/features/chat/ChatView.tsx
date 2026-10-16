@@ -22,26 +22,28 @@ import {
   answeredControlIds,
   isHandoffSeed,
   type PendingInboxItem,
+  readCompactionFacts,
 } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import {
   type ChatReferenceScope,
-  type HandBackCard,
-  handBackCards,
+  chatCards,
   hiddenWriterTurns,
   isAwaitingExecution,
   isBusy,
+  normalizeTurns,
   switchState,
+  type TurnFacts,
   usageBlockedMessages,
   viewTranscript,
   waitingWriterMessages,
 } from "@meridian/thread-client";
-import { chatMovedPast } from "@meridian/thread-client/view";
 import { type ReactNode, useCallback, useMemo, useReducer, useRef } from "react";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
 import { useLineage } from "@/client/query/useLineageTitle";
+import { useTopChat } from "@/client/query/useTopChat";
 import {
   useIsThreadPendingCreation,
   useRunStateSlice,
@@ -54,19 +56,24 @@ import {
   type ComposerHandle,
   type ComposerSubmitEnvelope,
 } from "@/components/app/composer";
+import { useSettingsNavigation } from "@/features/account/SettingsDialog";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
 import { LinkFollowDialog } from "@/features/links";
 import {
   useAccountEpochSignal,
   useAccountId,
 } from "@/features/project/context/account-feature-context";
-import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
+import {
+  useCanOpenChatReference,
+  useOpenChatDocument,
+} from "@/features/project/context/open-chat-document";
 import {
   displayedChatThreadId,
   useChatNavigation,
 } from "@/features/project/routing/chat-navigation";
 import { defaultThreadTitle, displayThreadTitle } from "@/lib/thread-title";
 import { TranscriptLinkNavigationContext } from "@/rich-content/TranscriptReference";
+import { AnchoredCards, type ChatCardHandlers, ChatCardsProvider } from "./ChatCards";
 import { ChatComposerToolbar } from "./ChatComposerToolbar";
 import { ChatContextNavigationProvider } from "./ChatContextNavigation";
 import { ChatSurface } from "./ChatSurface";
@@ -74,6 +81,7 @@ import { useOpenChatThread } from "./ChatThreadNavigation";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { chatLineageId } from "./chat-scratch-owner";
 import { useControlTurnAnnouncements } from "./compaction/useControlTurnAnnouncements";
+import { useRegisterChatComposer } from "./composer-insertion";
 import { composerRun } from "./composer-run";
 import { DraftDock } from "./DraftDock";
 import {
@@ -89,7 +97,6 @@ import {
 import { optimisticHandoffSeed } from "./derivation/handoff-seed";
 import { optimisticForkPrefix, useInheritedView } from "./derivation/inherited-view";
 import { useHandoffBrief } from "./derivation/useHandoffBrief";
-import { HandBackCards } from "./HandBackCards";
 import { reportPersistedContractFailure } from "./persisted-contract-debug";
 import { RunningSubagentsStrip } from "./RunningSubagentsStrip";
 import { ReferenceAvailabilityContext } from "./reference-availability";
@@ -100,7 +107,7 @@ import { TurnList } from "./TurnList";
 import { activeChildren } from "./thread-activity";
 import { useSwitchView } from "./thread-controls/useSwitchView";
 import { useThreadControls } from "./thread-controls/useThreadControls";
-import { UsageBlockedNotice } from "./UsageBlockedNotice";
+import { useChatCardAnnouncer } from "./useChatCardAnnouncer";
 import { useChatLinkFollowing } from "./useChatLinkFollowing";
 import { useChatStop } from "./useChatStop";
 import { useChatSubmissions } from "./useChatSubmissions";
@@ -162,9 +169,11 @@ export function ChatView({
   active = true,
 }: ChatViewProps) {
   const openReferenceDocument = useOpenChatDocument(projectId);
+  const canOpenReference = useCanOpenChatReference();
   const actions = useThreadActions();
   const { changeTrails } = useThreadDurableProjections({ threadId, projectId });
   const composerRef = useRef<ComposerHandle>(null);
+  useRegisterChatComposer(threadId, composerRef);
   const chatSurfaceRef = useRef<HTMLDivElement>(null);
   const [tailFollowRevision, requestTailFollow] = useReducer((value: number) => value + 1, 0);
 
@@ -177,7 +186,9 @@ export function ChatView({
   const pendingCreation = useIsThreadPendingCreation(threadId);
   const derivation = useDerivationStatus(threadId);
   const inherited = useInheritedView(activeThread, derivation?.inherited ?? null);
-  const storedTurns = useThreadStore((state) => state.turnsByThread[threadId] ?? EMPTY_TURNS);
+  const storedTurns = useThreadStore(
+    (state) => state.syncedByThread[threadId]?.turns ?? EMPTY_TURNS,
+  );
   const brief = useHandoffBrief({ threadId, storedTurns });
   const { view: runState, history } = useRunStateSlice(threadId);
   const replyRetry = useReplyRetry({ threadId, storedTurns });
@@ -187,8 +198,8 @@ export function ChatView({
   // turn it followed until the server has it.
   const intent = derivation?.intent;
   const { localSeeds } = brief;
-  const { standIns: replyStandIns, retried: retriedReplies, refused: refusedReplies } = replyRetry;
-  const refusedIds = useMemo(() => new Set(refusedReplies.keys()), [refusedReplies]);
+  const { standIns: replyStandIns, retried: retriedReplies, requestOf } = replyRetry;
+  const isStandIn = useCallback((turnId: string) => requestOf(turnId) !== null, [requestOf]);
   const activity = useThreadActivity({
     threadId,
     seed: snapshotLiveState,
@@ -225,38 +236,22 @@ export function ChatView({
   );
   const standIns = useMemo(() => [...localSeeds, ...replyStandIns], [localSeeds, replyStandIns]);
   const awaitingSubagents = runningBackgroundSubagents.length > 0;
-  // Every decision about which rows the writer sees runs in the view model.
-  const view = useMemo(
-    () =>
-      viewTranscript({
-        turns: storedTurns,
-        opening,
-        inherited: inheritedTranscript,
-        activity: { awaitingSubagents },
-        standIns,
-        queued: queuedWriterTurnIds,
-        hidden: hiddenTurnIds,
-        retried: retriedReplies,
-        refused: refusedIds,
-        switchAwaitsRun,
-        onContractFailure: reportPersistedContractFailure,
-      }),
-    [
-      awaitingSubagents,
-      inheritedTranscript,
-      storedTurns,
+  // The effective sequence every later step reads (`normalizeTurns`): cards, rows, the running
+  // reply and the answered controls all start from these facts and none re-derives them.
+  const turnFacts = useMemo<TurnFacts>(
+    () => ({
+      turns: storedTurns,
       opening,
-      queuedWriterTurnIds,
-      hiddenTurnIds,
-      retriedReplies,
-      refusedIds,
       standIns,
-      switchAwaitsRun,
-    ],
+      hidden: hiddenTurnIds,
+      retried: retriedReplies,
+    }),
+    [hiddenTurnIds, opening, retriedReplies, standIns, storedTurns],
   );
-  const { turns } = view;
+  const normalized = useMemo(() => normalizeTurns(turnFacts), [turnFacts]);
+  const { turns } = normalized;
   // Live announcements follow the server's replies: a Retry's stand-in speaks
-  // for itself, and a lost one is not a failed run.
+  // for itself.
   const latestAssistantTurn =
     [...turns]
       .reverse()
@@ -275,11 +270,15 @@ export function ChatView({
   const composerAgentName = activeThread?.agentName ?? "General";
 
   const pageTitle = activeThread?.title ? displayThreadTitle(activeThread.title) : t`New chat`;
+  // Uploads belong to the chat; a thread not in the list yet is a New chat's own.
+  const listedChat = useTopChat(projectId, activeThread);
+  const topChat = listedChat ?? { chatId: threadId, chatRef: null };
   const referenceCatalog = useReferenceBrowserCatalog(
     projectId,
     activeWork?.id,
     t`Reference a file`,
     chatLineageId({ thread: activeThread, work: activeWork }),
+    topChat.chatId,
   );
   const availableSkills = useThreadAvailableSkills(threadId);
   const submissions = useChatSubmissions(
@@ -344,6 +343,177 @@ export function ChatView({
       },
     ],
     [enqueueControl],
+  );
+
+  const settings = useSettingsNavigation();
+  const lineage = useLineage(
+    projectId,
+    activeThread ? { rootThreadId: activeThread.rootThreadId } : null,
+  );
+  const stopScope = useMemo<ChatReferenceScope | null>(
+    () =>
+      activeThread && activeWork
+        ? {
+            projectId: projectId as ProjectId,
+            userId: accountId as UserId,
+            work: { id: activeWork.id, slug: activeWork.slug },
+            rootThreadId: activeThread.rootThreadId,
+            rootThreadRef: lineage?.rootThreadRef ?? null,
+            chatId: topChat.chatId,
+            chatRef: topChat.chatRef,
+          }
+        : null,
+    [
+      accountId,
+      activeThread,
+      activeWork,
+      lineage?.rootThreadRef,
+      projectId,
+      topChat.chatId,
+      topChat.chatRef,
+    ],
+  );
+  const handBack = useHandBack({ threadId, accountId, scope: stopScope });
+  const chatStop = useChatStop({ threadId, handBack });
+  const queueControls = useQueueControls({ threadId, handBack });
+  const sendNow = useSendNow(threadId);
+  const { remove, cancelQueue } = queueControls;
+  const { available: sendNowAvailable, busy: sendNowBusy, send: sendNowPress } = sendNow;
+  const queue = useMemo<TurnQueueControls>(
+    () => ({
+      remove,
+      cancelQueue,
+      sendNow: { available: sendNowAvailable, busy: sendNowBusy, send: sendNowPress },
+    }),
+    [remove, cancelQueue, sendNowAvailable, sendNowBusy, sendNowPress],
+  );
+  const movingTurnIds = useMemo(
+    () =>
+      new Set(
+        [...(submissions.presentation ?? [])].flatMap(([turnId, recovery]) =>
+          recovery.moving ? [turnId] : [],
+        ),
+      ),
+    [submissions.presentation],
+  );
+  // Every chat failure the writer sees comes from here; the rest of this component draws and
+  // announces what `chatCards` decided.
+  const failureCards = useMemo(
+    () =>
+      chatCards({
+        threadId,
+        turns: normalized,
+        runState,
+        handBack: [...handBack.unresolved, ...(sendNow.failed ? [sendNow.failed] : [])],
+        retries: [...replyRetry.outcomes, ...brief.outcomes],
+        briefStops: brief.stopFailures,
+        controls: controls.queued,
+        movingTurnIds,
+        sends: new Map([...(submissions.presentation ?? [])].map(([id, row]) => [id, row.failure])),
+      }),
+    [
+      brief.outcomes,
+      brief.stopFailures,
+      controls.queued,
+      submissions.presentation,
+      handBack.unresolved,
+      movingTurnIds,
+      replyRetry.outcomes,
+      runState,
+      sendNow.failed,
+      threadId,
+      normalized,
+    ],
+  );
+  useChatCardAnnouncer(threadId, failureCards.cards, historySettled);
+  const composerCards = useMemo(
+    () => failureCards.cards.filter((card) => card.anchor === "composer"),
+    [failureCards.cards],
+  );
+  const { retry: retryControl, withdraw: withdrawControl, queued: queuedControls } = controls;
+  const { retry: retryReplyPress } = replyRetry;
+  const { retry: retryBrief, stop: stopBrief } = brief;
+  const { operation: handBackOperation } = handBack;
+  const { retry: retrySendNow, dismiss: dismissSendNow } = sendNow;
+  const { open: openSettings } = settings;
+  const cardHandlers = useMemo<ChatCardHandlers>(() => {
+    const turnOf = (turnId: string) => turns.find((turn) => turn.id === turnId);
+    return {
+      retryReply: (turnId) => {
+        const turn = turnOf(turnId);
+        if (!turn) return;
+        // Retry leaves with this row's error; keep focus in the transcript and follow the new reply.
+        chatSurfaceRef.current
+          ?.querySelector<HTMLElement>('[role="log"]')
+          ?.focus({ preventScroll: true });
+        requestTailFollow();
+        retryReplyPress(turn);
+      },
+      // A failed compaction is retried by asking again: `/compact` with the instructions it had.
+      tryAgainCompaction: (turnId) => {
+        const turn = turnOf(turnId);
+        if (!turn) return;
+        const instructions = readCompactionFacts(turn).instructions;
+        requestTailFollow();
+        enqueueControl(instructions ? { kind: "compact", instructions } : { kind: "compact" });
+      },
+      retryLost: (turnId) => {
+        const turn = turnOf(turnId);
+        if (!turn) return;
+        if (isHandoffSeed(turn)) retryBrief(turn);
+        else retryReplyPress(turn);
+      },
+      retryBriefStop: stopBrief,
+      handBack: {
+        retry: (requestId) => void handBackOperation.retry(requestId),
+        dismiss: (requestId) => handBackOperation.dismiss(requestId),
+      },
+      sendNow: { retry: retrySendNow, dismiss: dismissSendNow },
+      control: {
+        retry: retryControl,
+        stop: (controlId) => {
+          const control = queuedControls.find((candidate) => candidate.id === controlId);
+          if (control) withdrawControl(control);
+        },
+      },
+      addUsage: () => openSettings("usage"),
+    };
+  }, [
+    dismissSendNow,
+    enqueueControl,
+    handBackOperation,
+    openSettings,
+    queuedControls,
+    retryBrief,
+    retryControl,
+    retryReplyPress,
+    retrySendNow,
+    stopBrief,
+    turns,
+    withdrawControl,
+  ]);
+
+  // Every decision about which rows the writer sees runs in the view model. A turn a card is
+  // anchored on keeps its row.
+  const view = useMemo(
+    () =>
+      viewTranscript({
+        normalized,
+        inherited: inheritedTranscript,
+        activity: { awaitingSubagents },
+        queued: queuedWriterTurnIds,
+        anchoredTurnIds: failureCards.anchoredTurnIds,
+        switchAwaitsRun,
+        onContractFailure: reportPersistedContractFailure,
+      }),
+    [
+      awaitingSubagents,
+      failureCards.anchoredTurnIds,
+      inheritedTranscript,
+      queuedWriterTurnIds,
+      switchAwaitsRun,
+      normalized,
+    ],
   );
 
   // Only a primary the server already has can be forked or handed off; a
@@ -422,13 +592,7 @@ export function ChatView({
     isStreaming,
   });
 
-  useLiveTurnAnnouncements(
-    threadId,
-    latestAssistantTurn,
-    latestAssistantTurn !== null && chatMovedPast(turns)(latestAssistantTurn),
-    composerRef,
-    chatSurfaceRef,
-  );
+  useLiveTurnAnnouncements(latestAssistantTurn, composerRef, chatSurfaceRef);
 
   // Generating signal: the latest assistant turn is streaming AND it started in
   // draft mode. A reply keeps the mode it started with while the chat's mode may
@@ -445,53 +609,6 @@ export function ChatView({
     return recorded;
   }
 
-  const lineage = useLineage(
-    projectId,
-    activeThread ? { rootThreadId: activeThread.rootThreadId } : null,
-  );
-  const stopScope = useMemo<ChatReferenceScope | null>(
-    () =>
-      activeThread && activeWork
-        ? {
-            projectId: projectId as ProjectId,
-            userId: accountId as UserId,
-            work: { id: activeWork.id, slug: activeWork.slug },
-            rootThreadId: activeThread.rootThreadId,
-            rootThreadRef: lineage?.rootThreadRef ?? null,
-          }
-        : null,
-    [accountId, activeThread, activeWork, lineage?.rootThreadRef, projectId],
-  );
-  const handBack = useHandBack({ threadId, accountId, scope: stopScope });
-  const chatStop = useChatStop({ threadId, handBack });
-  const queueControls = useQueueControls({ threadId, handBack });
-  const sendNow = useSendNow(threadId);
-  const { remove, cancelQueue } = queueControls;
-  const { available: sendNowAvailable, busy: sendNowBusy, send: sendNowPress } = sendNow;
-  const queue = useMemo<TurnQueueControls>(
-    () => ({
-      remove,
-      cancelQueue,
-      sendNow: { available: sendNowAvailable, busy: sendNowBusy, send: sendNowPress },
-    }),
-    [remove, cancelQueue, sendNowAvailable, sendNowBusy, sendNowPress],
-  );
-  const handBackCardList = useMemo(
-    () =>
-      handBackCards(
-        [...handBack.unresolved, ...(sendNow.failed ? [sendNow.failed] : [])],
-        runState,
-      ),
-    [handBack.unresolved, runState, sendNow.failed],
-  );
-  const retryCard = (card: HandBackCard) => {
-    if (card.source.kind === "send-now") sendNow.retry();
-    else void handBack.operation.retry(card.source.requestId);
-  };
-  const dismissCard = (card: HandBackCard) => {
-    if (card.source.kind === "send-now") return sendNow.dismiss();
-    handBack.operation.dismiss(card.source.requestId);
-  };
   function handleStop() {
     // A brief being written holds the chat with no run: its own Stop. Everything else, a reply,
     // a compaction, the gap between replies, is the chat's Stop, decided on the server, and
@@ -508,116 +625,109 @@ export function ChatView({
   const links = useChatLinkFollowing({ projectId, activeThread, activeWork, active });
 
   return (
-    <TranscriptLinkNavigationContext.Provider value={links.navigation}>
-      <ReferenceAvailabilityContext.Provider value={links.references}>
-        <ChatContextNavigationProvider
-          onOpenContextUri={links.doors?.open}
-          canOpenContextUri={links.doors?.canOpen}
-        >
-          <ChatSurface
-            title={pageTitle}
-            surfaceRef={chatSurfaceRef}
-            footer={
-              <div data-debug-composer={threadId}>
-                <Composer
-                  notices={
-                    usageBlocked || handBackCardList.length > 0 ? (
+    <ChatCardsProvider cards={failureCards.cards} handlers={cardHandlers}>
+      <TranscriptLinkNavigationContext.Provider value={links.navigation}>
+        <ReferenceAvailabilityContext.Provider value={links.references}>
+          <ChatContextNavigationProvider
+            onOpenContextUri={links.doors?.open}
+            canOpenContextUri={links.doors?.canOpen}
+          >
+            <ChatSurface
+              title={pageTitle}
+              surfaceRef={chatSurfaceRef}
+              footer={
+                <div data-debug-composer={threadId}>
+                  <Composer
+                    cards={
+                      composerCards.length > 0 ? <AnchoredCards anchor="composer" /> : undefined
+                    }
+                    key={draft.key}
+                    initialDraft={draft.initialDraft}
+                    onDraftChange={draft.updateDraft}
+                    onOpenReference={(reference) => {
+                      if (!canOpenReference(reference.uri)) return;
+                      void openReferenceDocument({
+                        documentId: reference.documentId,
+                        disposition: "current",
+                      });
+                    }}
+                    ref={composerRef}
+                    variant="pinned"
+                    attached={
                       <>
-                        {usageBlocked ? <UsageBlockedNotice /> : null}
-                        <HandBackCards
-                          cards={handBackCardList}
-                          onRetry={retryCard}
-                          onDismiss={dismissCard}
-                        />
-                      </>
-                    ) : undefined
-                  }
-                  key={draft.key}
-                  initialDraft={draft.initialDraft}
-                  onDraftChange={draft.updateDraft}
-                  onOpenReference={(reference) => {
-                    void openReferenceDocument({
-                      documentId: reference.documentId,
-                      disposition: "current",
-                    });
-                  }}
-                  ref={composerRef}
-                  variant="pinned"
-                  attached={
-                    <>
-                      {composerStrip ? (
-                        // The composer's own border and radius, open at the bottom: the
-                        // composer's top border is the strip's lower edge, so the two
-                        // read as one unit. Inset like the draft dock below it.
-                        <div className="mx-[var(--chat-space-block)] rounded-t-composer-pinned border border-b-0 border-composer-border bg-composer-surface">
-                          {composerStrip}
-                        </div>
-                      ) : null}
-                      {/* The draft dock sits BEHIND (below) the composer — narrower via
+                        {composerStrip ? (
+                          // The composer's own border and radius, open at the bottom: the
+                          // composer's top border is the strip's lower edge, so the two
+                          // read as one unit. Inset like the draft dock below it.
+                          <div className="mx-[var(--chat-space-block)] rounded-t-composer-pinned border border-b-0 border-composer-border bg-composer-surface">
+                            {composerStrip}
+                          </div>
+                        ) : null}
+                        {/* The draft dock sits BEHIND (below) the composer — narrower via
                         mx-2, top corners rounded, jade-tinted background. The composer
                         always keeps its own border and overlaps the draft dock's edge. */}
-                      <DraftDock dock={dock} />
-                    </>
-                  }
-                  running={running}
-                  stopStatus={chatStop.status}
-                  referenceCatalog={referenceCatalog}
-                  availableSkills={availableSkills.skills}
-                  commands={chatCommands}
-                  uploadPort={uploadIntakePort}
-                  uploadScope={
-                    activeWork ? { kind: "work", projectId, workId: activeWork.id } : undefined
-                  }
-                  onSubmit={handleSubmit}
-                  onStop={handleStop}
-                  toolbarLeft={
-                    activeWork ? (
-                      <ChatComposerToolbar
-                        projectId={projectId}
+                        <DraftDock dock={dock} />
+                      </>
+                    }
+                    running={running}
+                    stopStatus={chatStop.status}
+                    referenceCatalog={referenceCatalog}
+                    availableSkills={availableSkills.skills}
+                    commands={chatCommands}
+                    uploadPort={uploadIntakePort}
+                    uploadScope={{ kind: "chat", projectId, chatId: topChat.chatId }}
+                    onSubmit={handleSubmit}
+                    onStop={handleStop}
+                    toolbarLeft={
+                      activeWork ? (
+                        <ChatComposerToolbar
+                          projectId={projectId}
+                          threadId={threadId}
+                          work={activeWork}
+                          agentName={composerAgentName}
+                          writeMode={controls.writeMode}
+                          onWriteModeChange={controls.switchWriteMode}
+                        />
+                      ) : undefined
+                    }
+                  />
+                </div>
+              }
+            >
+              <TurnDerivationProvider value={turnDerivation}>
+                <SubagentDisclosureProvider>
+                  <SubagentActivityProvider nodes={activity.activity.children} turns={turns}>
+                    <div className="relative flex min-h-0 flex-1 flex-col">
+                      <RunningSubagentsStrip threadId={threadId} />
+                      <TurnList
                         threadId={threadId}
-                        work={activeWork}
-                        agentName={composerAgentName}
-                        writeMode={controls.writeMode}
-                        onWriteModeChange={controls.switchWriteMode}
+                        uploadsChat={topChat.chatRef ?? undefined}
+                        view={view}
+                        historySettled={historySettled}
+                        tailFollowRevision={tailFollowRevision}
+                        ariaLabel={t`Chat`}
+                        onRespondToInterrupt={handleRespondToInterrupt}
+                        changeTrails={changeTrails.byId}
+                        submissionRecoveryByTurnId={submissions.presentation}
+                        controls={controls}
+                        chatStop={chatStop}
+                        queue={queue}
+                        brief={brief}
+                        isStandIn={isStandIn}
+                        busy={running}
+                        inherited={inheritedView}
+                        onRetryInherited={inherited.failed ? inherited.retry : null}
+                        threadUsage={snapshotThreadUsage}
                       />
-                    ) : undefined
-                  }
-                />
-              </div>
-            }
-          >
-            <TurnDerivationProvider value={turnDerivation}>
-              <SubagentDisclosureProvider>
-                <SubagentActivityProvider nodes={activity.activity.children} turns={turns}>
-                  <div className="relative flex min-h-0 flex-1 flex-col">
-                    <RunningSubagentsStrip threadId={threadId} />
-                    <TurnList
-                      threadId={threadId}
-                      view={view}
-                      historySettled={historySettled}
-                      tailFollowRevision={tailFollowRevision}
-                      ariaLabel={t`Chat`}
-                      onRespondToInterrupt={handleRespondToInterrupt}
-                      changeTrails={changeTrails.byId}
-                      submissionRecoveryByTurnId={submissions.presentation}
-                      controls={controls}
-                      chatStop={chatStop}
-                      queue={queue}
-                      brief={brief}
-                      replyRetry={replyRetry}
-                      busy={running}
-                      inherited={inheritedView}
-                      onRetryInherited={inherited.failed ? inherited.retry : null}
-                      threadUsage={snapshotThreadUsage}
-                    />
-                  </div>
-                </SubagentActivityProvider>
-              </SubagentDisclosureProvider>
-            </TurnDerivationProvider>
-          </ChatSurface>
-          <LinkFollowDialog {...links.dialog} />
-        </ChatContextNavigationProvider>
-      </ReferenceAvailabilityContext.Provider>
-    </TranscriptLinkNavigationContext.Provider>
+                    </div>
+                  </SubagentActivityProvider>
+                </SubagentDisclosureProvider>
+              </TurnDerivationProvider>
+            </ChatSurface>
+            <LinkFollowDialog {...links.dialog} />
+          </ChatContextNavigationProvider>
+        </ReferenceAvailabilityContext.Provider>
+      </TranscriptLinkNavigationContext.Provider>
+    </ChatCardsProvider>
   );
 }

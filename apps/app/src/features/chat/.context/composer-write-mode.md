@@ -51,7 +51,7 @@ the writer picked one there. Switching never touches drafts: the draft dock keep
 showing pending changes in either mode, and its generating state reads the
 running turn's own mode.
 
-The **switch view** is a read of the chat's run-state slice (`client/run-state/run-state-slice.ts`;
+The **switch view** is a read of the chat's run-state slice (`@meridian/thread-client`'s `run-state/run-state-slice.ts`;
 `thread-controls/useSwitchView.ts` is its hook). Every server fact about a switch is a whole
 `RunState` record, and the view is a function of the latest record plus this device's unanswered
 intents. The mechanics live in the module headers: `run-state-slice.ts` (what is news, and what has

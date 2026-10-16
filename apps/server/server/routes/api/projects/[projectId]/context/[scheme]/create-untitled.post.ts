@@ -4,14 +4,17 @@
  * link's Create) it lands at the typed name: a draft's hidden document there is unhidden
  * and the answer is `joined`; a visible node there leaves the create at the free name.
  */
-import type { CanonicalContextAuthority } from "@meridian/contracts/context-uri";
-import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
+import {
+  type CanonicalContextAuthority,
+  isProjectScopedScheme,
+  isWorkScopedScheme,
+  parseUnifiedContextUri,
+} from "@meridian/contracts/context-uri";
 import type {
   CreateUntitledContextDocumentAnswer,
   CreateUntitledDestination,
 } from "@meridian/contracts/protocol";
-import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
-import type { ProjectId, UserId } from "@meridian/contracts/runtime";
+import type { ProjectId, ThreadId, UserId } from "@meridian/contracts/runtime";
 import { createError, defineEventHandler, readBody, setResponseStatus } from "nitro/h3";
 import type { ContextPort } from "../../../../../../domains/context/index.js";
 import {
@@ -75,16 +78,33 @@ async function containerOfUri(
   const parsed = parseUnifiedContextUri(uri);
   if (!parsed.ok) return null;
   const { scheme, authority } = parsed.value;
-  if (!isWorkScopedProjectContextScheme(scheme)) {
+  if (isProjectScopedScheme(scheme)) {
     return {
       kind: "container",
       scheme,
       owner: { scope: "project", projectId: projectId as ProjectId },
     };
   }
+  if (scheme === "uploads") {
+    const chat =
+      authority.kind === "chat"
+        ? await app.contextPorts.chats.byRef(projectId, authority.chatRef)
+        : null;
+    return chat
+      ? {
+          kind: "container",
+          scheme,
+          owner: {
+            scope: "chat",
+            projectId: projectId as ProjectId,
+            threadId: chat.chatId as ThreadId,
+          },
+        }
+      : null;
+  }
   if (authority.kind === "lineage") {
     const lineage = await app.contextPorts.lineages.byRef(projectId, authority.rootThreadRef);
-    return lineage && scheme === "scratch"
+    return lineage
       ? {
           kind: "container",
           scheme,
@@ -113,7 +133,7 @@ async function destinationRootUri(
     const lineage = await app.contextPorts.lineages.byId(projectId, owner.rootThreadId);
     if (!lineage) throw createError({ statusCode: 404, message: "Chat not found" });
     authority = { kind: "lineage", rootThreadRef: lineage.rootThreadRef };
-  } else if (isWorkScopedProjectContextScheme(scheme)) {
+  } else if (isWorkScopedScheme(scheme)) {
     if (!owner.workId) authority = { kind: "none" };
     else {
       const resolved = await app.workAuthorityResolver.byId(projectId, owner.workId);

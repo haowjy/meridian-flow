@@ -1,5 +1,5 @@
 /** Thread data commands: list, view, context (model requests), events (journal replay). */
-import { apiThreadSnapshotPath, type ThreadSnapshotResponse } from "@meridian/contracts/protocol";
+import { apiThreadSnapshotPath, threadSnapshotSchema } from "@meridian/contracts/protocol";
 import {
   type CommandSpec,
   flag,
@@ -7,14 +7,15 @@ import {
   requirePositional,
   stringOption,
 } from "../../core/command";
+import { jsonResponse } from "../../core/session";
 import { blockTimings, renderBlocks } from "./block-timing";
-import { projectChatView, renderChatView, selectRows, viewSnapshot } from "./chat-view";
-import { ReducedThread } from "./reduced-thread";
+import { chatSnapshot, projectChatView, renderChatView, selectRows } from "./chat-view";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
 
 export const threadViewCommand: CommandSpec = {
   path: ["thread", "view"],
-  summary: "Chat transcript as the app draws it: rows, replies' items, status, usage",
+  summary:
+    "Chat transcript as the app draws it: rows, replies' items, status, usage, and the failure cards the durable facts give (the latest failed reply, usage; ./mf holds no local command state, so a lost Retry or an unsent message never appears)",
   args: "<thread>",
   route: "GET /api/threads/:threadId/snapshot",
   options: {
@@ -47,15 +48,12 @@ export const threadViewCommand: CommandSpec = {
       requirePositional(ctx, 0, "<thread>"),
       stringOption(ctx, "project"),
     );
-    const snapshot = await session.request<ThreadSnapshotResponse>(
-      "GET",
-      apiThreadSnapshotPath(threadId),
-    );
-    // Turns come from the shared reducer's store, as the app builds them; the shared
-    // view model then decides the rows, as the app does.
-    const reduced = new ReducedThread(threadId);
-    reduced.hydrate(snapshot);
-    const view = viewSnapshot(snapshot, reduced.turns());
+    const snapshot = await session.request("GET", apiThreadSnapshotPath(threadId), undefined, {
+      decode: jsonResponse(threadSnapshotSchema),
+    });
+    // One authoritative read, no socket and no sync: the shared view model decides the rows, as the app does.
+    const shown = chatSnapshot(snapshot, snapshot.turns);
+    const { view } = shown;
     const selection = {
       full: flag(ctx, "full"),
       turnId: stringOption(ctx, "turn"),
@@ -71,7 +69,7 @@ export const threadViewCommand: CommandSpec = {
         renderBlocks,
       );
     } else {
-      ctx.out.result(projectChatView(snapshot, view, selection), renderChatView);
+      ctx.out.result(projectChatView(snapshot, shown, selection), renderChatView);
     }
     return undefined;
   },

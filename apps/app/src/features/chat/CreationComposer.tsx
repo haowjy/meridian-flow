@@ -11,8 +11,11 @@ import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { DEFAULT_AGENT_SLUG } from "@/features/agents";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
 import { NewThreadComposerToolbar } from "@/features/project/chat/NewThreadComposerToolbar";
-import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
-import { DeletedChatNotice } from "./DeletedChatNotice";
+import {
+  useCanOpenChatReference,
+  useOpenChatDocument,
+} from "@/features/project/context/open-chat-document";
+import { DeletedChatCard } from "./DeletedChatCard";
 import { useCreationComposer } from "./useCreationComposer";
 
 export function CreationComposer({
@@ -71,8 +74,15 @@ export function CreationComposer({
     : null;
   // An archived Work refuses new chats, so it is never the new chat's Work.
   const work = selected && (selected.isNoWork || !isWorkArchived(selected)) ? selected : null;
-  const references = useReferenceBrowserCatalog(projectId, work?.id, t`Reference a file`);
+  const references = useReferenceBrowserCatalog(
+    projectId,
+    work?.id,
+    t`Reference a file`,
+    null,
+    creation.draft.chatId,
+  );
   const openDocument = useOpenChatDocument(projectId);
+  const canOpenReference = useCanOpenChatReference();
   // The Work's default shows until the writer picks a mode here, and only a
   // picked mode is sent: a stale default from another tab never overwrites a newer one.
   const writeMode = choices?.aiWriteMode ?? work?.defaultAiWriteMode ?? "direct";
@@ -108,10 +118,10 @@ export function CreationComposer({
   return (
     <>
       <Composer
-        notices={
+        cards={
           creation.draft.notices.length > 0
             ? creation.draft.notices.map((notice) => (
-                <DeletedChatNotice
+                <DeletedChatCard
                   key={notice.threadId}
                   notice={notice}
                   onDismiss={() => creation.draft.dismissNotice(notice.threadId)}
@@ -131,10 +141,11 @@ export function CreationComposer({
         referenceCatalog={references}
         availableSkills={availableSkills.skills}
         onOpenReference={(reference) => {
+          if (!canOpenReference(reference.uri)) return;
           void openDocument({ documentId: reference.documentId, disposition: "current" });
         }}
         uploadPort={uploadIntakePort}
-        uploadScope={work ? { kind: "work", projectId, workId: work.id } : undefined}
+        uploadScope={{ kind: "chat", projectId, chatId: creation.draft.chatId }}
         submitDisabled={!choicesReady}
         submitDisabledReason={
           unavailableMessage ??

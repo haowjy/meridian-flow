@@ -5,14 +5,11 @@
  */
 
 import type { PromptBakeId, ThreadId } from "../runtime/ids.js";
-import type { AiWriteMode } from "../works/index.js";
+
 import type { ControlBody } from "./control-body.js";
-import type {
-  PrefixCachePredictionReason,
-  PrefixCachePredictionState,
-} from "./prefix-cache-prediction.js";
 import type { RunState } from "./run-state.js";
-import type { TurnStatus } from "./status.js";
+import type { Thread } from "./thread.js";
+import type { Block, ModelResponse, Turn } from "./turn.js";
 
 export type {
   ArtifactId,
@@ -46,7 +43,7 @@ export type JsonObject = { [key: string]: JsonValue };
  * Durable thread lifecycle. Run state (`active`/`idle`/`error`) is no longer
  * stored here; it is derived from the live lease. See {@link ThreadStatus}.
  */
-export type ThreadLifecycleStatus = "idle" | "archived";
+export type ThreadLifecycleStatus = Thread["status"];
 
 /** Lease phase published by the running loop; `generating` around the model call, `waiting` between tool waits. */
 export type ThreadPhase = "generating" | "waiting" | "compacting";
@@ -76,7 +73,7 @@ export type CurrentToolCall = {
   toolName: string;
   input: JsonValue;
 };
-export type TurnRole = "user" | "assistant" | "system" | "compaction";
+export type TurnRole = Turn["role"];
 
 /** Roles that can reserve a pending placeholder turn before its work completes. */
 export const PENDING_PLACEHOLDER_ROLES = [
@@ -103,23 +100,15 @@ export function isPendingPlaceholder<T extends Pick<Turn, "role" | "status">>(
  * this authorship to decide turn-driven thread, Work, and project activity;
  * chat visibility and rendering still key off `role`/`metadata`.
  */
-export type TurnOrigin = "writer" | "assistant" | "system";
-export type BlockType =
-  | "text"
-  | "image"
-  | "file"
-  | "reasoning"
-  | "thinking"
-  | "tool_use"
-  | "tool_result"
-  | "custom";
-export type BlockStatus = "complete" | "partial";
-export type ExecutionSide = "server" | "client" | "hosted";
-export type FinishReason = "end_turn" | "tool_use" | "max_tokens" | "stop_sequence" | "error";
-export type ThreadKind = "primary" | "subagent";
-export type ThreadOriginType = "spawn" | "handoff" | "fork";
-export type SpawnStatus = "running" | "succeeded" | "failed" | "cancelled";
-export type PriceSource = "computed" | "provider_reported" | "configured_rate" | "unknown";
+export type TurnOrigin = Turn["origin"];
+export type BlockType = Block["blockType"];
+export type BlockStatus = NonNullable<Block["status"]>;
+export type ExecutionSide = NonNullable<Block["executionSide"]>;
+export type FinishReason = NonNullable<Turn["finishReason"]>;
+export type ThreadKind = Thread["kind"];
+export type ThreadOriginType = NonNullable<Thread["originType"]>;
+export type SpawnStatus = NonNullable<Thread["spawnStatus"]>;
+export type PriceSource = NonNullable<ModelResponse["priceSource"]>;
 
 /** One live-or-recent direct child thread. Derived; never persisted as a block. */
 export type ThreadActivityNode = {
@@ -290,140 +279,10 @@ export type JournalEventType =
   | "file.written";
 
 /** JSON-natural thread — survives JSON.parse/stringify unchanged. */
-export interface Thread {
-  id: string;
-  /** Project this thread belongs to. */
-  projectId: string;
-  /** Work item this thread belongs to; null when ungrouped. */
-  workId: string | null;
-  /** The chat's own write mode, copied at creation from the request or its Work's default. */
-  aiWriteMode: AiWriteMode;
-  /** The mode the chat writes in next: a queued mode switch's mode, else `aiWriteMode`. */
-  effectiveAiWriteMode: AiWriteMode;
-  userId: string;
-  kind: ThreadKind;
-  status: ThreadLifecycleStatus;
-  title: string | null;
-  /** Server-assigned handle: `cN` for primaries, `pN` for subagents; null before persist. */
-  ref: string | null;
-  /** First immutable bake for this thread; null until the first request is assembled. */
-  initialPromptBakeId: PromptBakeId | null;
-  agentDefinitionRevisionId: string | null;
-  /** Display name from the retained Agent definition. */
-  agentName: string | null;
-  nextSeq?: string;
-  /** Canonical logical head of the active conversation branch. */
-  activeLeafTurnId: string | null;
-  /**
-   * Spawn-tree parent: null for a root, the spawning thread for a subagent.
-   * A fork/handoff derivation is a SIBLING of its source, not the source's
-   * child, so it takes the source's own `parentThreadId` (null when the
-   * source is itself a root) rather than pointing at the source.
-   */
-  parentThreadId: string | null;
-  /** Set when this thread was derived via handoff or fork. */
-  originType?: ThreadOriginType | null;
-  /**
-   * Fork/handoff anchor turn on the SOURCE thread (not necessarily
-   * `parentThreadId`); resolving its owning thread recovers the fork-source
-   * edge, since `parentThreadId` never carries it.
-   */
-  originTurnId?: string | null;
-  /**
-   * Identifies the run tree this thread belongs to. An organic root equals its
-   * own id; a subagent takes its spawning parent's root; a fork/handoff
-   * derivation takes its SOURCE's root (sharing lineage with it instead of
-   * starting a new tree). Used for run-scoped project workspace paths such as
-   * `runs/<rootThreadId>/input/…`.
-   */
-  rootThreadId: string;
-  spawnDepth: number;
-  spawnStatus: SpawnStatus | null;
-  totalCostUsd: string;
-  turnCount: number;
-  createdAt: string;
-  updatedAt: string;
-  lastActivityAt: string;
-  deletedAt: string | null;
-}
-
-export type TurnUsage = {
-  /** Provider-normalized prompt total, including cache-read and cache-write token subsets. */
-  inputTokens: number;
-  outputTokens: number;
-  reasoningTokens?: number | null;
-  cacheReadTokens?: number | null;
-  cacheWriteTokens?: number | null;
-  totalCostUsd: string;
-  totalMillicredits?: string;
-  responseCount: number;
-};
-
-/** A delivered message's acknowledgement; write-once. */
-export type TurnDelivery = { byTurnId: string | null };
-
-/** JSON-natural turn with nested blocks for snapshots and UI. */
-export interface Turn {
-  id: string;
-  threadId: string;
-  /** Write-once insertion order within its thread, assigned by persistence. */
-  position: number;
-  prevTurnId?: string | null;
-  parentTurnId?: string | null;
-  role: TurnRole;
-  /** Who authored this turn; see {@link TurnOrigin}. */
-  origin: TurnOrigin;
-  /** Write policy frozen when this turn began; null identifies pre-contract turns. */
-  writeMode: AiWriteMode | null;
-  status: TurnStatus;
-  /**
-   * The execution (one run-lease hold) that reserved this turn. Null on turns no
-   * execution reserves (user, switch, notice, handoff seed) and on turns
-   * reserved before run identity.
-   */
-  executionId: string | null;
-  /**
-   * The messages (= user turn ids) this turn was reserved to handle; a Retry
-   * carries its failed reply's. A binding and Stop hint, never proof of delivery.
-   */
-  reservedForUserTurnIds: string[];
-  /**
-   * On a user turn whose inbox message was delivered: the delivering turn, or
-   * null when unknown (delivered before run identity, or by no reserved turn).
-   * Null while undelivered and on every other turn.
-   */
-  delivery: TurnDelivery | null;
-  /**
-   * The turn that retried this failed attempt or moved the chat past it; write-once. A forgotten turn
-   * stays in the graph but has left the conversation. Null on every turn the chat still holds, and on
-   * local and optimistic turns. A reader applies it only when the forgetting turn is inside the span it reads.
-   */
-  forgottenBy: string | null;
-  /** Set once on a completed prompt-epoch boundary. */
-  promptBakeId: PromptBakeId | null;
-  compactionModel?: string | null;
-  finishReason: FinishReason | null;
-  model?: string | null;
-  provider?: string | null;
-  inputTokens: number;
-  outputTokens: number;
-  reasoningTokens?: number | null;
-  cacheReadTokens?: number | null;
-  cacheWriteTokens?: number | null;
-  totalCostUsd: string;
-  totalMillicredits?: string;
-  responseCount: number;
-  usage: TurnUsage | null;
-  error: string | null;
-  requestParams?: JsonValue | null;
-  responseMetadata?: JsonValue | null;
-  metadata?: JsonValue | null;
-  createdAt: string;
-  completedAt: string | null;
-  blocks: Block[];
-  siblingIds: string[];
-  responses: ModelResponse[];
-}
+export type { Thread } from "./thread.js";
+export { threadSchema } from "./thread.js";
+export type { Block, ModelResponse, Turn, TurnDelivery, TurnUsage } from "./turn.js";
+export { blockSchema, modelResponseSchema, turnSchema, turnUsageSchema } from "./turn.js";
 
 /** Immutable system prompt and advertised tools for one prompt epoch. */
 export interface PromptBake {
@@ -436,83 +295,9 @@ export interface PromptBake {
   createdAt: string;
 }
 
-export interface Block {
-  id: string;
-  turnId: string;
-  responseId: string | null;
-  blockType: BlockType;
-  sequence: number;
-  textContent?: string | null;
-  content: JsonValue;
-  modelText?: string;
-  compact?: string;
-  provider?: string | null;
-  providerData?: JsonValue | null;
-  executionSide?: ExecutionSide | null;
-  status?: BlockStatus;
-  collapsedContent?: string | null;
-  createdAt: string;
-}
-
 export { blockContentRecord } from "./block-content-record.js";
 export { blockPlainText } from "./block-plain-text.js";
 export { interruptIdForBlock } from "./interrupt-id-for-block.js";
-export { type ProviderErrorResponse, replyProviderError } from "./provider-error.js";
-export type {
-  HandBackRequest,
-  HandBackResponse,
-  HandBackResult,
-  RunState,
-  SendNowRequest,
-  SendNowResponse,
-  StopRequest,
-  StopResponse,
-} from "./run-state.js";
-export type { TurnStatus } from "./status.js";
-export { isTerminalTurnStatus } from "./status.js";
-export { formatThreadRef, parseThreadRef } from "./thread-ref.js";
-export * from "./turn-readers.js";
-
-export interface ModelResponse {
-  id: string;
-  turnId: string;
-  sequence: number;
-  provider: string;
-  model: string;
-  providerRequestId?: string | null;
-  inputTokens: number;
-  outputTokens: number;
-  reasoningTokens?: number | null;
-  cacheReadTokens?: number | null;
-  cacheWriteTokens?: number | null;
-  /** True when this call's reported cache read dropped below half the previous prompt after prior cache activity. */
-  cacheReset: boolean;
-  usageBreakdown?: JsonValue | null;
-  costUsd: string | null;
-  millicredits?: string | null;
-  priceSource?: PriceSource;
-  pricingSnapshot?: JsonValue | null;
-  finishReason?: FinishReason | null;
-  stopReason?: string | null;
-  requestParams?: JsonValue | null;
-  responseMetadata?: JsonValue | null;
-  /** Adapter invocation to provider stream-end arrival; excludes consumer persistence time. */
-  latencyMs: number | null;
-  /** Wall-clock start of the successful provider attempt; null means unknown. */
-  requestMessageCount: number;
-  requestStartedAt: string | null;
-  /** Adapter invocation to first text, reasoning, or tool-argument delta arrival; null if none. */
-  timeToFirstTokenMs: number | null;
-  /** First output arrival to provider stream-end arrival; null if no output delta arrived. */
-  generationMs: number | null;
-  rawUsage?: JsonValue | null;
-  predictedCacheState: PrefixCachePredictionState;
-  predictedCacheReason: PrefixCachePredictionReason;
-  createdAt: string;
-  completedAt?: string | null;
-}
-
-export * from "./golden/index.js";
 export type {
   ModelRequestDebugCapture,
   ModelRequestDebugMessage,
@@ -540,10 +325,25 @@ export type {
 } from "./prefix-cache-prediction.js";
 export * from "./project-chat-feed.js";
 export type { ThreadListItem, ThreadListWork } from "./projections.js";
+export { type ProviderErrorResponse, replyProviderError } from "./provider-error.js";
+export type {
+  HandBackRequest,
+  HandBackResponse,
+  HandBackResult,
+  RunState,
+  SendNowRequest,
+  SendNowResponse,
+  StopRequest,
+  StopResponse,
+} from "./run-state.js";
+export type { TurnStatus } from "./status.js";
+export { isTerminalTurnStatus } from "./status.js";
+export { formatThreadRef, parseThreadRef } from "./thread-ref.js";
 export type {
   TurnContextPreview,
   TurnContextPreviewFunctionTool,
 } from "./turn-context-preview.js";
+export * from "./turn-readers.js";
 
 /** Attested HTTP 404 proofs. WebSocket not_found frames are not availability proofs. */
 export type ThreadAvailabilityCode = "thread_not_found" | "thread_deleted";

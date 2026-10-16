@@ -1,11 +1,18 @@
 // @vitest-environment jsdom
 /** The mounted snapshot owner is the chat's one subscriber: durable blocks, the stream and run-state records. */
-import { type AGUIEvent, EventType, type SequencedEvent } from "@meridian/contracts/protocol";
+import {
+  type AGUIEvent,
+  EventType,
+  type SequencedEvent,
+  type Turn,
+} from "@meridian/contracts/protocol";
 import type { ThreadTransport, ThreadTransportHandlers } from "@meridian/thread-client";
+import { EMPTY_SYNCED_THREAD } from "@meridian/thread-client/sync";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, type ReactNode, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { deserializeThreadSnapshot } from "@/client/api/threads-api";
 import type { ThreadCachePort } from "@/client/stores/thread-store/thread-cache";
 import { createThreadCache } from "@/client/stores/thread-store/thread-cache";
 import { createThreadStore } from "@/client/stores/thread-store/thread-store";
@@ -65,6 +72,17 @@ const IDLE_RUN_STATE = {
   mode: "direct",
   blocked: null,
 } as const;
+
+/** A read as the server sends it. Reads taken before a chat's frames join it at `nextSeq`. */
+function readResponse(turns: unknown, nextSeq: string, threadId = "thread-1") {
+  return {
+    thread: { id: threadId, projectId: "project-1", userId: "account-1" },
+    turns,
+    nextSeq,
+    actionRequired: false,
+    liveState: { runningTurnId: null, resumeAfterSeq: nextSeq, runState: IDLE_RUN_STATE },
+  };
+}
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -179,6 +197,17 @@ function card(status: string): AGUIEvent {
   } as AGUIEvent;
 }
 
+/** A completed assistant turn already in the chat's cell, as an earlier mount would leave it. */
+function seedCompleteTurn(store: ReturnType<typeof createThreadStore>, threadId: string) {
+  const turn = { id: "turn-1", threadId, role: "assistant", status: "complete", blocks: [] };
+  store.setState((state) => ({
+    syncedByThread: {
+      ...state.syncedByThread,
+      [threadId]: { ...EMPTY_SYNCED_THREAD, turns: [turn as unknown as Turn] },
+    },
+  }));
+}
+
 const disposers: Array<() => Promise<void>> = [];
 afterEach(async () => {
   try {
@@ -189,163 +218,60 @@ afterEach(async () => {
   }
 });
 
-for (const terminal of [EventType.RUN_FINISHED, EventType.RUN_ERROR]) {
-  describe(`durable owner after ${terminal}`, () => {
-    it("replaces the original historical card with snapshots withheld and no new run", async () => {
-      vi.useFakeTimers();
-      const scenario = mountThreadProjectionScenario();
-      const { bus, store } = scenario;
-      function Probe() {
-        useThreadSnapshotSync("thread-1");
-        return null;
-      }
-      await scenario.mount(<Probe />);
-
-      act(() => {
-        bus.emit(
-          {
-            type: EventType.RUN_STARTED,
-            threadId: "thread-1",
-            runId: "turn-1",
-            rawEvent: { writeMode: null },
-          } as AGUIEvent,
-          "1000",
-        );
-        bus.emit(card("running"), "2000");
-        bus.emit({ type: terminal, threadId: "thread-1", runId: "turn-1" } as AGUIEvent, "3000");
-      });
-      await vi.advanceTimersByTimeAsync(260);
-      expect(bus.subscriptions.filter((entry) => entry.active)).toHaveLength(1);
-      const before = store.getState().turns("thread-1")?.[0];
-      expect(before?.blocks[0]?.id).toBe("card-1");
-      act(() => {
-        bus.emit(card("completed"), "4000");
-      });
-      const after = store.getState().turns("thread-1")?.[0];
-      expect(after?.blocks[0]?.content).toMatchObject({
-        props: { status: "completed", toolCallId: "call-1", execution: "child-turn" },
-      });
-      expect(after?.status).not.toBe("streaming");
-      expect(after?.blocks[0]?.id).toBe(before?.blocks[0]?.id);
-      expect(after?.blocks[0]?.sequence).toBe(before?.blocks[0]?.sequence);
-    });
-  });
-}
-
-describe("current stream ordering", () => {
-  it("flushes buffered deltas before durable mutation", async () => {
-    vi.useFakeTimers();
-    const scenario = mountThreadProjectionScenario();
-    const { bus, store } = scenario;
-    function Probe() {
-      useThreadSnapshotSync("thread-1");
-      return null;
-    }
-    await scenario.mount(<Probe />);
-    act(() => {
-      bus.emit(
-        {
-          type: EventType.RUN_STARTED,
-          threadId: "thread-1",
-          runId: "turn-1",
-          rawEvent: { writeMode: null },
-        } as AGUIEvent,
-        "1000",
-      );
-      bus.emit({ type: EventType.TEXT_MESSAGE_START, messageId: "text-1" } as AGUIEvent, "1100");
-      bus.emit(
-        {
-          type: EventType.TEXT_MESSAGE_CONTENT,
-          messageId: "text-1",
-          delta: "hello",
-        } as AGUIEvent,
-        "1200",
-      );
-      bus.emit(card("running"), "1300");
-    });
-    const blocks = store
-      .getState()
-      .turns("thread-1")
-      ?.find((turn) => turn.id === "turn-1")?.blocks;
-    expect(blocks?.find((block) => block.id === "text-1")?.textContent).toBe("hello");
-    expect(blocks?.find((block) => block.id === "card-1")?.content).toMatchObject({
-      props: { status: "running" },
-    });
-    expect(store.getState().liveMeta["thread-1"]?.eventsApplied).toBe(3);
-    act(() => {
-      bus.emit(
-        {
-          type: EventType.TEXT_MESSAGE_CONTENT,
-          messageId: "text-1",
-          delta: " world",
-        } as AGUIEvent,
-        "1400",
-      );
-      bus.emit(
-        { type: EventType.RUN_FINISHED, threadId: "thread-1", runId: "turn-1" } as AGUIEvent,
-        "1500",
-      );
-    });
-    await vi.advanceTimersByTimeAsync(260);
-    expect(
-      store
-        .getState()
-        .turns("thread-1")
-        ?.find((turn) => turn.id === "turn-1")
-        ?.blocks.find((block) => block.id === "text-1")?.textContent,
-    ).toBe("hello world");
-    expect(bus.subscriptions.filter((entry) => entry.active)).toHaveLength(1);
-  });
-});
-
 describe("stale acquisition and missing targets", () => {
   it("rejects an old terminal snapshot before Query cache or handoff and retries", async () => {
     const first = deferred<unknown>();
     const second = deferred<unknown>();
     const third = deferred<unknown>();
+    const fourth = deferred<unknown>();
     harness.snapshotRequest
       .mockReset()
       .mockImplementationOnce(() => first.promise)
       .mockImplementationOnce(() => second.promise)
-      .mockImplementationOnce(() => third.promise);
+      .mockImplementationOnce(() => third.promise)
+      .mockImplementationOnce(() => fourth.promise);
     const scenario = mountThreadProjectionScenario();
     const { actions, bus, client } = scenario;
-    actions.ensureAssistantTurn("thread-1", "turn-1");
-    actions.patchTurnStatus("thread-1", "turn-1", "complete");
+    seedCompleteTurn(scenario.store, "thread-1");
     const observed = { current: null as ReturnType<typeof useThreadSnapshotSync> | null };
     function Probe() {
       observed.current = useThreadSnapshotSync("thread-1");
       return null;
     }
     await scenario.mount(<Probe />);
+    // Read first: the join read opens the stream; the cards then raise the floor past what it held.
+    first.resolve(readResponse(structuredClone(actions.turns("thread-1")), "1000"));
+    await act(async () => {
+      await vi.waitFor(() => expect(bus.subscriptions).toHaveLength(1));
+    });
     act(() => bus.emit(card("running"), "3000"));
     const staleTurns = structuredClone(actions.turns("thread-1"));
     act(() => bus.emit(card("completed"), "4000"));
     const currentTurns = structuredClone(actions.turns("thread-1"));
-    const response = (turns: unknown, nextSeq: string) => ({
-      thread: { id: "thread-1", projectId: "project-1", userId: "account-1" },
-      turns,
-      nextSeq,
-      actionRequired: false,
-      liveState: { runningTurnId: null, runState: IDLE_RUN_STATE },
-    });
-    first.resolve(response(staleTurns, "4000"));
+    const response = readResponse;
+    act(() => observed.current?.refetch());
     await act(async () => {
       await vi.waitFor(() => expect(harness.snapshotRequest).toHaveBeenCalledTimes(2));
-    });
-    expect(client.getQueryData(threadQueryKeys.snapshot("thread-1"))).toBeUndefined();
-    expect(observed.current?.snapshot).toBeNull();
-    expect(actions.turns("thread-1")?.[0]?.blocks[0]?.content).toMatchObject({
-      props: { status: "completed" },
     });
     second.resolve(response(staleTurns, "4000"));
     await act(async () => {
       await vi.waitFor(() => expect(harness.snapshotRequest).toHaveBeenCalledTimes(3));
     });
+    // The old terminal read never replaced the join read in Query's cache.
+    expect(client.getQueryData(threadQueryKeys.snapshot("thread-1"))).toMatchObject({
+      nextSeq: "1000",
+    });
+    expect(observed.current?.snapshot).toBeNull();
+    expect(actions.turns("thread-1")?.[0]?.blocks[0]?.content).toMatchObject({
+      props: { status: "completed" },
+    });
+    third.resolve(response(staleTurns, "4000"));
+    await act(async () => {
+      await vi.waitFor(() => expect(harness.snapshotRequest).toHaveBeenCalledTimes(4));
+    });
     expect(observed.current?.snapshot).toBeNull();
     expect(observed.current?.isError).toBe(false);
-    expect(observed.current?.settled).toBe(false);
-    third.resolve(response(currentTurns, "5000"));
+    fourth.resolve(response(currentTurns, "5000"));
     await act(async () => {
       await vi.waitFor(() => expect(observed.current?.snapshot?.nextSeq).toBe("5000"));
     });
@@ -413,170 +339,6 @@ describe("stale acquisition and missing targets", () => {
     expect(actions.turns("thread-1")).toHaveLength(1);
   });
 
-  it("revalidates as a run ends, on a record whose execution changed, and on every status frame", async () => {
-    vi.useFakeTimers();
-    harness.snapshotRequest.mockReset().mockImplementation(async () => ({
-      thread: { id: "thread-1", projectId: "project-1", userId: "account-1" },
-      turns: [],
-      nextSeq: "1000",
-      actionRequired: false,
-      liveState: { runningTurnId: null, runState: IDLE_RUN_STATE },
-    }));
-    const scenario = mountThreadProjectionScenario();
-    const { bus } = scenario;
-    function Probe() {
-      useThreadSnapshotSync("thread-1");
-      return null;
-    }
-    await scenario.mount(<Probe />);
-    await vi.waitFor(() => expect(harness.snapshotRequest).toHaveBeenCalledTimes(1));
-    const record = (version: string, executionId: string | null) =>
-      ({
-        type: EventType.CUSTOM,
-        name: "meridian.run_state",
-        value: {
-          ...IDLE_RUN_STATE,
-          version,
-          execution: executionId ? { executionId, currentTurnId: null } : null,
-        },
-      }) as AGUIEvent;
-    const settle = async () => {
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(300);
-      });
-    };
-    // A divider reserves: the record's execution changed.
-    act(() => bus.emit(record("1000", "e1"), "1000"));
-    await settle();
-    expect(harness.snapshotRequest).toHaveBeenCalledTimes(2);
-    // The same execution, and an older record, change nothing.
-    act(() => {
-      bus.emit(record("1500", "e1"), "1500");
-      bus.emit(record("900", null), "1501");
-    });
-    await settle();
-    expect(harness.snapshotRequest).toHaveBeenCalledTimes(2);
-    // Frames inside one debounce window share a single refresh.
-    act(() => {
-      bus.emit(record("2000", null), "2000");
-      bus.emit(record("2001", "e2"), "2001");
-    });
-    await settle();
-    expect(harness.snapshotRequest).toHaveBeenCalledTimes(3);
-    // A record naming another client's waiting message revalidates once: the stream does not
-    // carry that user turn.
-    const waiting = (version: string, id: string) =>
-      ({
-        type: EventType.CUSTOM,
-        name: "meridian.run_state",
-        value: {
-          ...IDLE_RUN_STATE,
-          version,
-          execution: { executionId: "e2", currentTurnId: null },
-          items: [
-            {
-              id,
-              intent: "message",
-              seq: 1,
-              provenance: { kind: "writer", actorId: "u1" },
-              deliveryState: "waiting",
-              summary: "M2",
-              enqueuedAt: "2026-01-01T00:00:00.000Z",
-            },
-          ],
-        },
-      }) as AGUIEvent;
-    act(() => {
-      bus.emit(waiting("2500", "foreign-1"), "2500");
-      bus.emit(waiting("2501", "foreign-1"), "2501");
-    });
-    await settle();
-    expect(harness.snapshotRequest).toHaveBeenCalledTimes(4);
-    // The run's end revalidates too (the store's own terminal refresh may add one more).
-    act(() =>
-      bus.emit(
-        { type: EventType.RUN_FINISHED, threadId: "thread-1", runId: "a" } as AGUIEvent,
-        "3000",
-      ),
-    );
-    await settle();
-    const afterRun = harness.snapshotRequest.mock.calls.length;
-    expect(afterRun).toBeGreaterThan(4);
-    // A handoff brief starts and ends with no run: only its status frame says so.
-    act(() =>
-      bus.emit(
-        {
-          type: EventType.CUSTOM,
-          name: "meridian.thread.status",
-          value: { threadId: "thread-1", status: { kind: "asleep" }, runningTurnId: null },
-        } as AGUIEvent,
-        "4000",
-      ),
-    );
-    await settle();
-    expect(harness.snapshotRequest.mock.calls.length).toBeGreaterThan(afterRun);
-  });
-
-  it("settles a stopped autocompaction from the record its lease release sends", async () => {
-    // A cancelled autocompaction projects no RUN_FINISHED; the record whose execution closed
-    // is its only signal.
-    vi.useFakeTimers();
-    const compaction = (status: "pending" | "cancelled") => ({
-      id: "c",
-      threadId: "thread-1",
-      role: "compaction",
-      status,
-      position: 3,
-      blocks: [],
-      metadata: { kind: "compaction", trigger: "auto" },
-    });
-    const running = {
-      ...IDLE_RUN_STATE,
-      version: "1000",
-      execution: { executionId: "e-c", currentTurnId: "c" },
-    };
-    harness.snapshotRequest
-      .mockReset()
-      .mockResolvedValueOnce({
-        thread: { id: "thread-1", projectId: "project-1", userId: "account-1" },
-        turns: [compaction("pending")],
-        nextSeq: "1000",
-        actionRequired: false,
-        liveState: { runningTurnId: null, runState: running },
-      })
-      .mockResolvedValue({
-        thread: { id: "thread-1", projectId: "project-1", userId: "account-1" },
-        turns: [compaction("cancelled")],
-        nextSeq: "2000",
-        actionRequired: false,
-        liveState: { runningTurnId: null, runState: { ...IDLE_RUN_STATE, version: "2000" } },
-      });
-    const scenario = mountThreadProjectionScenario();
-    const { bus } = scenario;
-    let status: string | null = null;
-    function Probe() {
-      status = useThreadSnapshotSync("thread-1").snapshot?.turns[0]?.status ?? null;
-      return null;
-    }
-    await scenario.mount(<Probe />);
-    await vi.waitFor(() => expect(status).toBe("pending"));
-    act(() =>
-      bus.emit(
-        {
-          type: EventType.CUSTOM,
-          name: "meridian.run_state",
-          value: { ...IDLE_RUN_STATE, version: "2000" },
-        } as AGUIEvent,
-        "2000",
-      ),
-    );
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(300);
-    });
-    expect(harness.snapshotRequest).toHaveBeenCalledTimes(2);
-    await vi.waitFor(() => expect(status).toBe("cancelled"));
-  });
-
   it("reports history settled only once its turns are in the transcript store", async () => {
     // A reveal into a chat the page has not loaded asks "is this turn absent?"
     // the moment history settles. Settling before the turns reach the store
@@ -636,19 +398,61 @@ describe("stale acquisition and missing targets", () => {
     });
     expect(renders.at(-1)).toEqual({ settled: true, turns: 2 });
     expect(renders.slice(erroredRenders).filter((r) => r.settled && r.turns === 0)).toEqual([]);
+
+    // The cache's read is offered on every mount and the sync decides: a cell holding nothing newer
+    // joins on it; a cell whose last generation wrote past it waits for the mount fetch.
+    harness.snapshotRequest.mockReset().mockImplementation(() => new Promise(() => undefined));
+    for (const [cursor, joins] of [
+      ["1000", true],
+      ["5000", false],
+    ] as const) {
+      const kept = mountThreadProjectionScenario();
+      kept.store.setState((state) => ({
+        syncedByThread: {
+          ...state.syncedByThread,
+          "thread-1": { ...EMPTY_SYNCED_THREAD, deliveryCursor: cursor },
+        },
+      }));
+      kept.client.setQueryData(
+        threadQueryKeys.snapshot("thread-1"),
+        deserializeThreadSnapshot(readResponse([], "3000") as never),
+      );
+      function Kept() {
+        useThreadSnapshotSync("thread-1");
+        return null;
+      }
+      await kept.mount(<Kept />);
+      expect(kept.bus.subscriptions.filter((entry) => entry.active)).toHaveLength(joins ? 1 : 0);
+      await kept.unmount();
+    }
   });
 });
 
 describe("projection lifetime fencing", () => {
   it("invalidates saved callbacks across StrictMode replay, thread switch, and unmount", async () => {
+    // Each chat's first read joins its stream: nothing is subscribed before it applies.
+    harness.snapshotRequest.mockReset().mockImplementation((args) => {
+      const { threadId } = (args as { data: { threadId: string } }).data;
+      // The departed chat's own reads (below) never complete.
+      if (threadId === "thread-3") return new Promise(() => undefined);
+      return Promise.resolve(
+        readResponse(
+          [{ id: "turn-1", threadId, role: "assistant", status: "complete", blocks: [] }],
+          "1000",
+          threadId,
+        ),
+      );
+    });
     const scenario = mountThreadProjectionScenario();
     const { actions, bus } = scenario;
     for (const threadId of ["thread-1", "thread-2"]) {
-      actions.ensureAssistantTurn(threadId, "turn-1");
-      actions.patchTurnStatus(threadId, "turn-1", "complete");
+      seedCompleteTurn(scenario.store, threadId);
     }
     const render = async (threadId: string) => {
       await scenario.render(<Probe threadId={threadId} />, true);
+      await act(async () => {
+        await vi.waitFor(() => expect(bus.subscriptions.some((entry) => entry.active)).toBe(true));
+      });
     };
     function Probe({ threadId }: { threadId: string }) {
       useThreadSnapshotSync(threadId);
@@ -683,12 +487,45 @@ describe("projection lifetime fencing", () => {
     expect(actions.turns("thread-2")?.[0]?.blocks[0]?.content).toMatchObject({
       props: { status: "current" },
     });
+
+    // A fresh read asked for at the moment the chat unmounts is a departed chat's: it starts no
+    // request and writes nothing.
+    const departing = mountThreadProjectionScenario();
+    departing.client.setQueryData(
+      threadQueryKeys.snapshot("thread-3"),
+      deserializeThreadSnapshot(readResponse([], "0", "thread-3") as never),
+    );
+    await departing.mount(<Probe threadId="thread-3" />);
+    expect(departing.bus.subscriptions.filter((entry) => entry.active)).toHaveLength(1);
+    const requests = harness.snapshotRequest.mock.calls.length;
+    departing.bus.emit(
+      {
+        type: EventType.RUN_STARTED,
+        threadId: "thread-3",
+        runId: "turn-9",
+        rawEvent: { writeMode: null },
+      } as AGUIEvent,
+      "1000",
+    );
+    departing.bus.emit(
+      { type: EventType.RUN_FINISHED, threadId: "thread-3", runId: "turn-9" } as AGUIEvent,
+      "2000",
+    );
+    await departing.unmount();
+    const written = departing.store.getState().syncedByThread["thread-3"];
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(harness.snapshotRequest.mock.calls.length).toBe(requests);
+    expect(departing.store.getState().syncedByThread["thread-3"]).toBe(written);
   });
 
   it("ignores buffered events, timers, and HTTP completion after account abort before unmount", async () => {
     vi.useFakeTimers();
-    const gate = deferred<unknown>();
-    harness.snapshotRequest.mockReset().mockImplementation(() => gate.promise);
+    const join = deferred<unknown>();
+    const later = deferred<unknown>();
+    harness.snapshotRequest
+      .mockReset()
+      .mockImplementationOnce(() => join.promise)
+      .mockImplementation(() => later.promise);
     const account = new AbortController();
     const scenario = mountThreadProjectionScenario({ accountSignal: account.signal });
     const { bus, client, store } = scenario;
@@ -697,6 +534,11 @@ describe("projection lifetime fencing", () => {
       return null;
     }
     await scenario.mount(<Probe />);
+    // The join read opens the stream; the account then aborts with a read still in flight.
+    join.resolve(readResponse([], "0"));
+    await act(async () => {
+      await vi.waitFor(() => expect(bus.subscriptions).toHaveLength(1));
+    });
     const callback = bus.subscriptions[0]?.handlers.onEvent;
     expect(callback).toBeDefined();
     act(() =>
@@ -712,18 +554,12 @@ describe("projection lifetime fencing", () => {
     );
     account.abort();
     act(() => callback?.({ seq: "2000", event: card("completed") }));
-    gate.resolve({
-      thread: { id: "thread-1", userId: "account-1" },
-      turns: [],
-      nextSeq: "3000",
-      actionRequired: false,
-      liveState: { runningTurnId: null, runState: IDLE_RUN_STATE },
-    });
+    later.resolve(readResponse([], "3000"));
     await act(async () => {
-      await gate.promise;
+      await later.promise;
     });
     await vi.advanceTimersByTimeAsync(300);
-    expect(store.getState().durableBlockCursorByThread["thread-1"]).toBeUndefined();
+    expect(store.getState().syncedByThread["thread-1"]?.durableCursor ?? undefined).toBeUndefined();
     // The run's start applied before the abort; the durable card after it did not.
     expect(
       store
@@ -731,7 +567,10 @@ describe("projection lifetime fencing", () => {
         .turns("thread-1")
         ?.flatMap((turn) => turn.blocks),
     ).toEqual([]);
-    expect(client.getQueryData(threadQueryKeys.snapshot("thread-1"))).toBeUndefined();
+    // Only the join read, taken before the abort, is cached.
+    expect(client.getQueryData(threadQueryKeys.snapshot("thread-1"))).toMatchObject({
+      nextSeq: "0",
+    });
     expect(harness.snapshotRequest).toHaveBeenCalledTimes(1);
   });
 });

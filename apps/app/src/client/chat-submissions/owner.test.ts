@@ -66,9 +66,6 @@ async function mount(scenario: ThreadRunScenario, paused = false) {
     actions: scenario.store.getState(),
     queryClient: client,
     changed: () => {},
-    failed: () => {},
-    failedSwitch: () => {},
-    clear: () => {},
     focusComposer: focused,
     dissolveChat: dissolved,
   });
@@ -199,15 +196,42 @@ it("Edit dissolves every never-created message in order before newer New chat wr
   expect(scenario.retireRequests).toHaveLength(0);
 });
 
-it("a cross-tab retirement removes an unresolved optimistic row, not just rejected rows", async () => {
-  const gate = scenarioGate<never>();
+it("cross-tab updates preserve failure identity and retire failed or pending writer rows", async () => {
   recordChatSubmission(account, { ...entry(), state: undefined });
-  const scenario = new ThreadRunScenario({ lookup: () => gate.promise });
+  const scenario = new ThreadRunScenario({
+    append: async () => {
+      throw new TypeError("Lost send");
+    },
+  });
   const mounted = await mount(scenario);
   expect(scenario.turns()).toHaveLength(1);
+  const row = scenario.turns()[0];
+  if (!row) throw new Error("No row");
+  await mounted.read().driver.drive("thread_1");
+  await vi.waitFor(() => expect(mounted.read().presentation.get(row.id)?.failure).toBeDefined());
+  const before = mounted.read().presentation.get(row.id)?.failure;
   const key = chatSubmissionStorageKey(account, "one");
+  const raw = JSON.parse(window.localStorage.getItem(key) ?? "{}");
+  raw.payload.occurrence = { requestId: "other-tab", attempt: (before?.attempt ?? 0) + 1 };
+  window.localStorage.setItem(key, JSON.stringify(raw));
+  window.dispatchEvent(new StorageEvent("storage", { key, storageArea: window.localStorage }));
+  expect(mounted.read().presentation.get(row.id)?.failure).toEqual(before);
+  recordChatSubmission(account, {
+    ...entry(),
+    recordId: "two",
+    submissionId: "two",
+    state: undefined,
+  });
+  expect(scenario.turns()).toHaveLength(2);
+  expect(scenario.turns().some((turn) => turn.status === "pending")).toBe(true);
   window.localStorage.removeItem(key);
   window.dispatchEvent(new StorageEvent("storage", { key, storageArea: window.localStorage }));
+  expect(scenario.turns()).toHaveLength(1);
+  const pendingKey = chatSubmissionStorageKey(account, "two");
+  window.localStorage.removeItem(pendingKey);
+  window.dispatchEvent(
+    new StorageEvent("storage", { key: pendingKey, storageArea: window.localStorage }),
+  );
   expect(scenario.turns()).toEqual([]);
   expect(mounted.dissolved).not.toHaveBeenCalled();
 });
@@ -348,7 +372,10 @@ it("a refused Retry rewrite retains an actionable row but does not authorize Edi
     write.call(this, key, value);
   });
   try {
+    const first = mounted.read().presentation.get(row.id)?.failure;
     await mounted.read().driver.retry("one");
+    expect(first?.attempt).toBe(1);
+    expect(mounted.read().presentation.get(row.id)?.failure?.attempt).toBe(2);
     expect(scenario.turns()[0]?.status).toBe("error");
     expect(mounted.read().presentation.get(row.id)?.onRetry).toBeTypeOf("function");
     expect(mounted.read().presentation.get(row.id)?.onEdit).toBeUndefined();
@@ -573,4 +600,37 @@ it("disposing a sibling does not abandon the invoking pane's in-flight Edit", as
   expect(draft && serializeComposerDraft(draft.doc).text).toBe("First rejected");
   await vi.waitFor(() => expect(first.focused).toHaveBeenCalledOnce());
   expect(second.focused).not.toHaveBeenCalled();
+});
+
+it("retains an unsaved switch with distinct failed retry occurrences and local withdrawal", async () => {
+  const scenario = new ThreadRunScenario();
+  const mounted = await mount(scenario);
+  const write = Storage.prototype.setItem;
+  const intercept = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (
+    this: Storage,
+    key,
+    value,
+  ) {
+    if (key.startsWith("meridian:chat-submissions:")) throw new Error("write refused");
+    write.call(this, key, value);
+  });
+  try {
+    const owner = mounted.read();
+    expect(owner.submitSwitch("unsaved", "draft")).toBe(false);
+    expect(owner.switches).toMatchObject([
+      {
+        id: "unsaved",
+        failed: true,
+        posted: false,
+        failure: { requestId: expect.any(String), attempt: 1, kind: "unsaved" },
+      },
+    ]);
+    owner.retrySwitch("unsaved");
+    expect(owner.switches[0]?.failure?.attempt).toBe(2);
+    expect(readChatSubmissions(account)).toEqual([]);
+    expect(await owner.withdrawSwitch("unsaved")).toBe("removed");
+    expect(owner.switches).toEqual([]);
+  } finally {
+    intercept.mockRestore();
+  }
 });

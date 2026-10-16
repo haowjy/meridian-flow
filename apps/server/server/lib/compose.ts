@@ -43,6 +43,8 @@ import {
   createDocumentAddressResolver,
   createDocumentLinkResolver,
   createDocumentRevisions,
+  createDraftUploadVerifier,
+  createDrizzleChatUploadsOwners,
   createDrizzleContextCatalog,
   createDrizzleDocumentAddressStore,
   createDrizzleDocumentArrivals,
@@ -228,6 +230,7 @@ import { readThreadActivity } from "../domains/threads/domain/thread-activity.js
 import {
   type ActiveDocumentResolver,
   createActiveDocumentResolver,
+  createDrizzleTopPrimaryChatResolver,
   createInMemoryEventJournalWriter,
 } from "../domains/threads/index.js";
 import type {
@@ -597,6 +600,7 @@ export async function createProductionAppPorts(input: {
     content: createContextUploadContentPort(contextPorts),
     objectStore,
     eventSink,
+    catalog: contextCatalog,
   });
   const uploadIdentity = createDrizzleUploadIdentityPort(db);
   // Upload creates the asset as a context document, so the service needs the
@@ -684,6 +688,7 @@ export async function createProductionAppPorts(input: {
       workAuthorityResolver,
       history: createDrizzleDocumentLinkHistory(db),
       lineages: createDrizzleScratchLineages(db),
+      chats: createDrizzleChatUploadsOwners(db),
     }),
     linkScopes: documentLinks,
     projects,
@@ -755,6 +760,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     threads: ports.threadRepos.threads,
     works: ports.workRepo,
     threadWorks: ports.threadRepos.threadWorks,
+    topPrimaryChats: createDrizzleTopPrimaryChatResolver(ports.db),
     readChainPermission: ports.readChainPermission,
   });
   const toolRegistry = createToolRegistry();
@@ -833,6 +839,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     repos: ports.threadRepos,
     statusReader: ports.statusReader,
     registry: toolRegistry,
+    chatFiles: ports.contextPorts.chatFiles,
     async tokenizer(caller) {
       const binding = await ports.agentRevisions.readThreadBinding(caller.id);
       const modelId = binding?.configuration.model ?? ports.gateway.getDefaultModel();
@@ -922,6 +929,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     objects: ports.objectStore,
     eventSink: ports.eventSink,
   });
+  const topChats = createDrizzleTopPrimaryChatResolver(ports.db);
   const admissionProducer = createWriterTurnProducer({
     inbox,
     persistence: {
@@ -936,7 +944,10 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     records: admissionRecords,
     requireWritableThread: (threadId) =>
       requireWritableThread((id) => lockThreadAndWorks(ports.db, id), threadId),
-    consumeUploads: (documentIds) => ports.uploadIntake.consume(documentIds),
+    async consumeUploads(documentIds, threadId) {
+      const chat = await topChats.resolveTopPrimaryChat(threadId as ThreadId);
+      if (chat) await ports.uploadIntake.consume(documentIds, chat.chatId);
+    },
     attachDocument: (threadId, documentId, relationship) =>
       ports.threadRepos.threadDocuments.attach(threadId as never, documentId, relationship),
   });
@@ -947,10 +958,10 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     async threadProject(threadId) {
       return (await ports.threadRepos.threads.findById(threadId as never))?.projectId ?? null;
     },
-    async verifyDraftUpload(reference) {
-      const identity = await ports.uploadIdentity.lookupUpload(reference.documentId);
-      return identity?.intakeId === reference.intakeId && identity.uri === reference.uri;
-    },
+    verifyDraftUpload: createDraftUploadVerifier({
+      identities: ports.uploadIdentity,
+      chats: topChats,
+    }),
     async authorizeActivatedSkills({ threadId, slugs }) {
       const thread = await ports.threadRepos.threads.findById(threadId as never);
       if (!thread) throw new InvalidAdmissionError("thread is unavailable");

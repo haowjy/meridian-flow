@@ -14,14 +14,12 @@ const api = vi.hoisted(() => ({ withdrawThreadControl: vi.fn() }));
 vi.mock("@/client/api/threads-api", () => api);
 const announcements = vi.hoisted(() => ({ announce: vi.fn(), announceError: vi.fn() }));
 const slices = vi.hoisted(() => ({
-  feed: (_action: unknown) => undefined as void,
-  reset: () => undefined as void,
+  feed: (_action: unknown): void => undefined,
+  reset: (): void => undefined,
 }));
 // The chat's slice is the thread store's; here a one-chat stand-in over the real reducer.
 vi.mock("@/client/stores", async () => {
-  const { INITIAL_RUN_STATE_SLICE, reduceRunState } = await import(
-    "@/client/run-state/run-state-slice"
-  );
+  const { INITIAL_RUN_STATE_SLICE, reduceRunState } = await import("@meridian/thread-client");
   const { useSyncExternalStore } = await import("react");
   let slice = INITIAL_RUN_STATE_SLICE;
   const listeners = new Set<() => void>();
@@ -128,7 +126,7 @@ afterEach(async () => {
   client.clear();
 });
 
-it("announces a Stop only once its outcome is known", async () => {
+it("announces a Stop only once its outcome is known, and a failed one only as a card", async () => {
   await act(async () =>
     root.render(
       <QueryClientProvider client={client}>
@@ -178,7 +176,7 @@ it("announces a Stop only once its outcome is known", async () => {
     ],
     ["w4", "admitted", new HttpResponseError("gone", 404, null), []],
     ["w5", "kept", undefined, []],
-    ["w6", "admitted", new Error("offline"), ["error:Couldn't stop the switch."]],
+    ["w6", "admitted", new Error("offline"), []],
   ];
   for (const [id, outcome, server, expected] of cases) {
     vi.clearAllMocks();

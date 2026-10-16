@@ -7,6 +7,16 @@ import { apiThreadSendNowPath, sendNowResponseSchema } from "@meridian/contracts
 import type { RunState, SendNowRequest } from "@meridian/contracts/threads";
 import { classifyAnswer, type FrozenRequest, type HttpPort, postFrozen } from "./classify";
 
+/** A Send now that did not succeed. The host holds it; it is not a hand-back command. */
+export type FailedSendNow = {
+  kind: "send-now";
+  status: "ambiguous" | "refused";
+  /** The frozen body, re-sent unchanged by Try again. */
+  request: SendNowRequest;
+  /** How many times this body has been posted: the card's occurrence, after its execution. */
+  attempt: number;
+};
+
 export type SendNowOutcome =
   /** `cancelledExecutionId: null` means this attempt requested no cancellation, nothing about the reply's fate. */
   | { kind: "confirmed"; cancelledExecutionId: string | null; runState: RunState }

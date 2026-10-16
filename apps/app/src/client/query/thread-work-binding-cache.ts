@@ -47,6 +47,8 @@ export type ThreadProjectionInvalidation = {
   refreshLists: boolean;
   workIds: ReadonlySet<string> | "all";
   contextTrees: "work-scoped" | "all";
+  /** The thread's own snapshot is refreshed by whoever asked, so this leaves it alone. */
+  skipSnapshot?: boolean;
 };
 
 const compareSeq = (left: string, right: string) => {
@@ -55,12 +57,27 @@ const compareSeq = (left: string, right: string) => {
   return a < b ? -1 : a > b ? 1 : 0;
 };
 
+/** Every cache rooted at the thread, optionally except its snapshot. */
+export function invalidateThreadKeys(
+  client: QueryClient,
+  threadId: string,
+  skipSnapshot: boolean,
+): Promise<void> {
+  const snapshotKey = threadQueryKeys.snapshot(threadId);
+  return client.invalidateQueries({
+    queryKey: threadQueryKeys.thread(threadId),
+    predicate: skipSnapshot
+      ? ({ queryKey }) => queryKey.join("/") !== snapshotKey.join("/")
+      : undefined,
+  });
+}
+
 export function invalidateThreadProjectionDependencies(
   client: QueryClient,
   input: ThreadProjectionInvalidation,
 ): void {
   const ids = input.workIds === "all" ? undefined : input.workIds;
-  void client.invalidateQueries({ queryKey: threadQueryKeys.thread(input.threadId) });
+  void invalidateThreadKeys(client, input.threadId, input.skipSnapshot === true);
   void invalidateProjectChatFeed(client, input.projectId);
   if (input.refreshLists) {
     void client.invalidateQueries({

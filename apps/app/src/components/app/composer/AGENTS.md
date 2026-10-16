@@ -28,9 +28,9 @@ selection and upload ownership.
   Stop is pending, stopping or failed); once the writer types it is Send, with
   the running ring while a reply runs, and it queues a steer. Stopping is the
   button's spinning ring and its label, with no text beside it. A failed Stop is
-  an error card in the notice stack, "Couldn't stop the reply." with Try again,
-  which replays the same request. The chat draws it (`HandBackCards`, from
-  `handBackCards`) through `notices`, not the composer. It shows while the reply still
+  an error card in the card stack, "Couldn't stop the reply." with Try again,
+  which replays the same request. The chat draws it (a `FailureCard` from
+  `chatCards`) through `cards`, not the composer. It shows while the reply still
   runs, even once the writer types, and goes when the Stop is confirmed (Try again
   re-posts it, and the card stays until that succeeds) or on Dismiss after a refusal.
   Once the reply it targeted ends, a Stop that was taking back queued messages changes its
@@ -44,7 +44,7 @@ selection and upload ownership.
   not. Confirmed uploads retain ownership, while in-memory bytes do not persist.
 - Send records the exact structured fingerprint before clearing unchanged words.
   If local recording fails, retain the live draft and show the shared
-  `NoticeCard`; Send again is retry. Host notices and composer failure form one
+  `FailureCard`; Send again is retry. Host cards and composer failure form one
   stack above attached strips, never between a strip and the box.
 - Usage waiting comes from the chat's `RunState` (`blocked: credits_exhausted`),
   not a client balance guess. The box remains editable and the client does not poll.

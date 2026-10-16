@@ -1,9 +1,9 @@
 /**
- * Populated-upgrade proof for the review-base conversion and the subtractive migrations (0058 to 0063).
+ * Populated-upgrade proof for the review-base conversion and the subtractive migrations (0062 to 0067).
  *
- * Builds the train's database (the foundation fixture through 0057) with every row kind the upgrade must carry,
+ * Builds the train's database (the foundation fixture through 0061) with every row kind the upgrade must carry,
  * then proves, each on its own scratch database cloned from that train: one `db:migrate` invocation converts
- * every base and keeps the rest; a conversion and every no-transaction statement of 0062 survive interruption;
+ * every base and keeps the rest; a conversion and every no-transaction statement of 0066 survive interruption;
  * the preflight refuses before any migration applies; the B3 guards fire when the step is bypassed; an
  * unconvertible draft stops the run with ids; fresh and upgraded schemas are equal and a second migrate is a no-op.
  *
@@ -356,7 +356,7 @@ async function main(): Promise<void> {
   await stage(trainUrl, dir, journalIndex(journal, "0047_d62_chat_write_mode_online") + 1);
   await seedTrainRows(train);
   // Main's run state and forgetting migrations run over the seeded rows before the review upgrade.
-  const trainHead = journalIndex(journal, "0057_forgotten_by_turn_online") + 1;
+  const trainHead = journalIndex(journal, "0061_chat_uploads_reset_online") + 1;
   await stage(trainUrl, dir, trainHead);
   // The seeds carry explicit ids and revisions: the product's next write must draw above them (R5c U1).
   const advanced = await advanceSeededSequences(train);
@@ -371,7 +371,7 @@ async function main(): Promise<void> {
     await train`SELECT count(*)::int AS n FROM drizzle.__drizzle_migrations`
   )[0].n;
   check(
-    `the train database stands at 0057 (${appliedAtTrain} migrations applied)`,
+    `the train database stands at 0061 (${appliedAtTrain} migrations applied)`,
     appliedAtTrain === trainHead,
   );
   check(
@@ -465,7 +465,7 @@ async function main(): Promise<void> {
         ...realStep,
         run: async (session, context) => {
           observed.calls += 1;
-          // After 0062 (B2) and before 0063: the dirty-log volume, the index definitions, the checks.
+          // After 0066 (B2) and before 0067: the dirty-log volume, the index definitions, the checks.
           observed.dirtyAtStep = Number(
             (await session`SELECT count(*) AS n FROM change_trail_dirty_log`)[0].n,
           );
@@ -481,13 +481,13 @@ async function main(): Promise<void> {
     outcome.ok,
     outcome,
   );
-  check("the data step ran once, between 0062 and 0063", observed.calls === 1);
+  check("the data step ran once, between 0066 and 0067", observed.calls === 1);
   const appliedReview = await upgraded<{ created_at: string }[]>`
     SELECT created_at FROM drizzle.__drizzle_migrations
     WHERE created_at > ${journal.entries[trainHead - 1].when} ORDER BY created_at
   `;
   check(
-    "all six review migrations run after main's 0057 (none skipped by the applied timestamp)",
+    "all six review migrations run after main's 0061 (none skipped by the applied timestamp)",
     appliedReview.length === 6 &&
       appliedReview.every(
         (row, index) => Number(row.created_at) === journal.entries[trainHead + index].when,
@@ -635,7 +635,7 @@ async function main(): Promise<void> {
   );
   const b2Rows = (observed.dirtyAtStep ?? 0) - dirtyBefore;
   console.log(
-    `report - dirty-log volume of the B2 rewrite on the populated fixture: ${b2Rows} rows for ${partsBefore} rewritten parts (${dirtyBefore} before, ${observed.dirtyAtStep} after 0062, ${dirtyAfter} after the run)`,
+    `report - dirty-log volume of the B2 rewrite on the populated fixture: ${b2Rows} rows for ${partsBefore} rewritten parts (${dirtyBefore} before, ${observed.dirtyAtStep} after 0066, ${dirtyAfter} after the run)`,
   );
 
   // Writer flow: restore the soft-deleted Work, then rebase on the converted base: the deleted paragraph stays deleted.
@@ -738,7 +738,7 @@ async function main(): Promise<void> {
       await sql`SELECT count(*)::int AS n FROM document_branches WHERE base_revision IS NOT NULL`
     )[0].n;
     check(
-      `a conversion interrupted after ${convertedSoFar} rows stops the run before 0063`,
+      `a conversion interrupted after ${convertedSoFar} rows stops the run before 0067`,
       !interrupted.ok &&
         convertedSoFar === 2 &&
         (
@@ -749,7 +749,7 @@ async function main(): Promise<void> {
     check(
       "the failure names the migration and the step",
       !interrupted.ok &&
-        interrupted.message.includes("0063_dbr_drop_branch_generation_columns.sql") &&
+        interrupted.message.includes("0067_dbr_drop_branch_generation_columns.sql") &&
         interrupted.message.includes("review-base-conversion@1"),
       interrupted,
     );
@@ -765,14 +765,14 @@ async function main(): Promise<void> {
     await sql.end();
   }
 
-  // -- 5. Interruption between the no-transaction statements of 0062 ------------------------------
+  // -- 5. Interruption between the no-transaction statements of 0066 ------------------------------
   const cutUrl = await createDatabase(proofDatabase("cuts"), proofDatabase("train"));
   {
     const sql = open(cutUrl);
     await drainBatches(sql);
     const directory = path.join(work, "cuts");
     await cp(MIGRATIONS, directory, { recursive: true });
-    const file = path.join(directory, "0062_dbr_drop_generation_from_indexes_and_parts.sql");
+    const file = path.join(directory, "0066_dbr_drop_generation_from_indexes_and_parts.sql");
     const original = await readFile(file, "utf8");
     const statements = original.split("--> statement-breakpoint");
     let enforced = 0;
@@ -784,13 +784,13 @@ async function main(): Promise<void> {
       const failed = await migrate(cutUrl, { directory });
       if (
         failed.ok ||
-        !failed.message.includes("0062_dbr_drop_generation_from_indexes_and_parts.sql")
+        !failed.message.includes("0066_dbr_drop_generation_from_indexes_and_parts.sql")
       )
-        check(`cut ${cutAt} fails in 0062`, false, failed);
+        check(`cut ${cutAt} fails in 0066`, false, failed);
       if (await refusesBadPlacement(sql, 9100 + cutAt)) enforced += 1;
     }
     check(
-      `placement check enforcement held after every one of ${statements.length - 1} cuts in 0062`,
+      `placement check enforcement held after every one of ${statements.length - 1} cuts in 0066`,
       enforced === statements.length - 1,
     );
     await writeFile(file, original);
@@ -813,7 +813,7 @@ async function main(): Promise<void> {
     const noop = { ...realStep, preflight: async () => {}, run: async () => {} };
     const bypassed = await migrate(bypassUrl, { dataSteps: [noop] });
     check(
-      "with the step bypassed the branch guard fires in 0063 and names branch ids",
+      "with the step bypassed the branch guard fires in 0067 and names branch ids",
       !bypassed.ok &&
         bypassed.message.includes(
           "review-base-conversion guard: draft branches have no review base",
@@ -859,7 +859,7 @@ async function main(): Promise<void> {
     check(
       "an unconvertible draft stops the run, naming migration, step, branch and document ids",
       !stuck.ok &&
-        message.includes("0063_dbr_drop_branch_generation_columns.sql") &&
+        message.includes("0067_dbr_drop_branch_generation_columns.sql") &&
         message.includes("review-base-conversion@1") &&
         message.includes("branch-unresolved") &&
         message.includes(DOCS.unresolved),

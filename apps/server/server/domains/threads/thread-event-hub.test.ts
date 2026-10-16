@@ -6,9 +6,9 @@
  */
 
 import type { ThreadId } from "@meridian/contracts/runtime";
+import { goldenAssistantTurn } from "@meridian/contracts/test-support";
 import type { OrchestratorEvent, ThreadActivity } from "@meridian/contracts/threads";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { goldenAssistantTurn } from "../../../../../packages/contracts/src/threads/golden/turn-fixture.js";
 import { noTransactionOwner } from "../../shared/in-memory-transaction.js";
 import { createNoopEventSink } from "../observability/index.js";
 import {

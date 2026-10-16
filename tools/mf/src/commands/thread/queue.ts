@@ -9,7 +9,7 @@ import {
   apiThreadSnapshotPath,
   handBackRequestSchema,
   sendNowRequestSchema,
-  type ThreadSnapshotResponse,
+  threadSnapshotSchema,
 } from "@meridian/contracts/protocol";
 import type { SendNowRequest } from "@meridian/contracts/threads";
 import { postSendNow, sendNowRequest, waitingWriterMessages } from "@meridian/thread-client";
@@ -22,6 +22,7 @@ import {
   requirePositional,
   stringOption,
 } from "../../core/command";
+import { jsonResponse } from "../../core/session";
 import {
   ambiguousError,
   printFrozenRequest,
@@ -88,10 +89,9 @@ export const threadQueueHandBackCommand: CommandSpec = {
       };
     } else {
       if (all) {
-        const snapshot = await session.request<ThreadSnapshotResponse>(
-          "GET",
-          apiThreadSnapshotPath(threadId),
-        );
+        const snapshot = await session.request("GET", apiThreadSnapshotPath(threadId), undefined, {
+          decode: jsonResponse(threadSnapshotSchema),
+        });
         requested = waitingWriterMessages(viewOfSnapshot(snapshot)).map((item) => item.id);
         if (requested.length === 0) {
           const nothing = terminalResult(
@@ -185,10 +185,9 @@ export const threadQueueSendNowCommand: CommandSpec = {
       if (!parsed.success) throw usageError("--replay is not a printed Send now body");
       body = parsed.data;
     } else {
-      const snapshot = await session.request<ThreadSnapshotResponse>(
-        "GET",
-        apiThreadSnapshotPath(threadId),
-      );
+      const snapshot = await session.request("GET", apiThreadSnapshotPath(threadId), undefined, {
+        decode: jsonResponse(threadSnapshotSchema),
+      });
       body = sendNowRequest(viewOfSnapshot(snapshot));
     }
     if (!body) {

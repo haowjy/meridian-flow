@@ -30,7 +30,7 @@ A divider does not end a reply. `continuesResponse` and response grouping look
 past compaction rows, so a mid-response autocompaction keeps one action row and
 one Info scope across A, C, B. Delivery rows never attach across a divider.
 
-## `endsTranscript`
+## A divider closes the chat
 
 A divider is a closing turn for the failed-reply rule (`chatMovedPast`): a failed reply followed by a
 divider is history, because the writer (or the run) moved on, and it no
@@ -47,7 +47,7 @@ complete (the icon and state label are one button, named by the full label plus
 ", summary", that opens and closes the summary; there is no separate Summary
 control; the section itself is unnamed so the state words are read once; the
 summary is the model's text alone, with no token sentence), failed, cancelled. Only a complete
-divider is a toggle: pending, stopped and failed ones have no summary. A manual failure speaks on the divider with the server's
+divider is a toggle: pending, stopped and failed ones have no summary. A manual failure is a card on the divider (`chatCards`, Try again sends `/compact` again with the same instructions) with the server's
 generic `turn.error`, or "This conversation couldn't be compacted." when it is
 null; the client owns no reason-specific copy (A10). There is no "nothing to
 compact" state: a manual `/compact` always compacts (A12). An autocompaction's
@@ -68,23 +68,27 @@ reply's, stay shown while Info's popover is open, and stay visible on touch. The
 read defensively), in every state.
 
 The divider is one line at every width, at one text size: the state label,
-Stop (a queued row's too), Retry, any status words in the row (queued rows too), and the
-instructions and failure copy under the line all use the small action size
-(`text-meta`). Only the opened summary reads at chat body size. Its section is a container: below
+Stop (a queued row's too), the anchored card's Try again, any status words in the row
+(queued rows too), and the instructions and card copy under the line all use the small action
+size (`text-meta`). Only the opened summary reads at chat body size. Its section is a container: below
 `@lg` the state label switches to a short form ("Compacted") and truncates
 last. Without a summary, the section's accessible name keeps the full label.
 With one, the toggle is named `` `${full}, summary` `` and the section drops
 its own name, so the state words are read once.
+
+A failed divider keeps the neutral “Compaction” label and fold icon. Only its
+anchored `chatCards` card reports failure; when a replacement is queued, no
+failure label or styling survives independently on the divider.
 
 ## Composer during a run
 
 `composerRun(turns)` decides what the composer's Stop acts on. Work is active
 while a reply streams and while a placeholder with no stream is pending: a
 compaction divider, or a handoff brief being written (a pending seed, with no
-lease or phase). Stop on a divider goes through `useThreadControls.stop`, and
-on a seed through `useHandoffBrief.stop`; both share `useTurnStop`, the same
-path as the divider's and the card's own Stop, so each shows Stopping and
-announces in its own words. A send meanwhile queues like any send during a
+lease or phase). Stop on a divider goes through `useChatStop`, the same
+hand-back operation as the composer's Stop. A seed goes through
+`useHandoffBrief.stop`. Failed Stops are facts for `chatCards`; the one card
+announcer speaks and clears their failures. A send meanwhile queues like any send during a
 run. Turns, not the snapshot's status, carry this: the status can trail the
 turn.
 

@@ -9,6 +9,7 @@ import {
   stringOption,
 } from "../../core/command";
 import { oneLine, truncate } from "../../core/output";
+import { unknownJsonResponse } from "../../core/session";
 
 const FILTERS: Record<string, string> = {
   event: "eventId",
@@ -100,7 +101,9 @@ export const logCommand: CommandSpec = {
     const query = async (cursor?: string) => {
       const params = new URLSearchParams(search);
       if (cursor) params.set("sinceEventId", cursor);
-      return session.request<EventQueryResponse>("GET", `/api/debug/events?${params}`);
+      return session.request("GET", `/api/debug/events?${params}`, undefined, {
+        decode: unknownJsonResponse,
+      }) as Promise<EventQueryResponse>;
     };
 
     const first = await query();
