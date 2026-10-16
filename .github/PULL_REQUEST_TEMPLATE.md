@@ -116,8 +116,11 @@
 ## Verification
 
 <!-- What you ran and what you saw: each probe and the workflow it drove,
-     the gates, and expected against observed. A browser run is evidence;
-     ./mf output is not. Steps belong in Walkthrough. For a performance
+     the gates, and expected against observed. Verification is a browser
+     run driven by a prober (agent-browser), with screenshots, for every change
+     a writer's experience runs through, server-only included. ./mf output is
+     debugging context, not verification. A PR with no writer-reachable change
+     says "Browser: none" with the reason. Steps belong in Walkthrough. For a performance
      change, give comparable numbers: metric, method, environment and
      workload, baseline and result. -->
 

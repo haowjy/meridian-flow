@@ -2,6 +2,7 @@
 
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createQuietDrizzleJournalWriter } from "../../../test-support/journal-writer.js";
 import { releaseLeaseUnderLock } from "../../../test-support/release-lease.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import { createDrizzleRunClaim } from "../adapters/drizzle-run-claim.js";
@@ -90,7 +91,7 @@ else
         shutdown: { started: false },
         backgroundTasks: processDetachedWork,
         repos: options.repos ?? repos,
-        eventWriter: createDrizzleEventJournalWriter(db),
+        eventWriter: createQuietDrizzleJournalWriter(db),
         eventSink: createInMemoryEventSink(),
         threadLock: createDrizzleThreadLock(db),
         runClaim,
@@ -135,7 +136,7 @@ else
     ) {
       const backgroundTasks = createDetachedWorkTracker();
       const runClaim = createDrizzleRunClaim(db, { holderId: "brief-wake-runner" });
-      const eventWriter = createDrizzleEventJournalWriter(db);
+      const eventWriter = createQuietDrizzleJournalWriter(db);
       const creditLedger = createDrizzleCreditLedger(db);
       await creditLedger.grant({
         userId: fixture.ids.user,
@@ -214,7 +215,7 @@ else
         .select()
         .from(schema.threadInboxMessages)
         .where(eq(schema.threadInboxMessages.threadId, source.id));
-      const eventWriter = createDrizzleEventJournalWriter(db);
+      const eventWriter = createQuietDrizzleJournalWriter(db);
       const statusReader = (
         await import("../adapters/drizzle-handoff-status-reader.js")
       ).createDrizzleHandoffStatusReader(db, runClaim);
@@ -317,7 +318,7 @@ else
         shutdown: { started: false },
         backgroundTasks,
         repos: fixture.repos,
-        eventWriter: createDrizzleEventJournalWriter(db),
+        eventWriter: createQuietDrizzleJournalWriter(db),
         eventSink: createInMemoryEventSink(),
         threadLock: createDrizzleThreadLock(db),
         runClaim,
@@ -473,7 +474,7 @@ else
         shutdown: { started: false },
         backgroundTasks: processDetachedWork,
         repos: fixture.repos,
-        eventWriter: createDrizzleEventJournalWriter(db),
+        eventWriter: createQuietDrizzleJournalWriter(db),
         eventSink: createInMemoryEventSink(),
         threadLock: createDrizzleThreadLock(db),
         runClaim,
@@ -655,7 +656,11 @@ else
           await loadForgettingFacts(deps, fixture.destination.id, fixture.seed.id),
           closing,
         ),
-      ).toEqual({ forget: [], passed: [fixture.seed.id], reason: null });
+      ).toEqual({
+        forget: [],
+        ends: [{ turnId: fixture.seed.id, end: "moved_on" }],
+        reason: null,
+      });
 
       const runner = await destinationRunner(fixture);
       await runner.delivery.enqueue({
@@ -807,7 +812,7 @@ else
       const repair = createTestOrphanRepair(db, {
         repos: fixture.repos,
         inbox: createLockedDrizzleInbox(db),
-        eventWriter: createDrizzleEventJournalWriter(db),
+        eventWriter: createQuietDrizzleJournalWriter(db),
         authority,
         async publishStatus(threadId) {
           expect(threadId).toBe(fixture.destination.id);

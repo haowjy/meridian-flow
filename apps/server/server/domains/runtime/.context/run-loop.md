@@ -30,6 +30,45 @@ foreign key, and both occur in one transaction. Tool dispatch persists typed
 `tool_result` values and delegates policy to the per-turn gate. return-result
 settlement remains spawn-owned.
 
+**Failure records.** `projectAndAppendEvents` (`loop/persistence.ts`) is the one seam
+every live durable event passes through inside its transaction, so it is also
+where a failure is detected (`loop/failure-detection.ts`). A `turn.error`
+becomes `failure.recorded` (the occurrence is the turn id, classified by
+`classifyReplyFailure` from `@meridian/contracts/failures`), plus an immediate
+`failure.ended { moved_on }` when a closing row already follows the turn (the
+carried case), naming the first closing row after it on the active chain (`firstClosingRowAfter`),
+not the latest: a reply that fails after the writer sent U then V ends `moved_on` by U. `turns.forgotten` says which content leaves the model's history and ends
+nothing. A failure ends at the first boundary that follows it (a closing row, a Retry, or a
+same-run continuation), and only there. `decideForgetting` owns that: its `ends` lists every
+failure that ends at the boundary (the latest failed row, forgotten or kept, and the newest
+failed handoff seed) with how it ends (`retried`, `forgotten`, `moved_on`). Older members of a
+failed chain ended at the boundaries that followed them. The append primitive records exactly
+that list (run start decides the same, and only the commit records). The recorder records what
+it is given and keeps no memory of earlier ends. A failed handoff seed's Retry records `retried` in
+`brief-service.ts`, because the Retry seed's `turn.created` names no seed. A usage
+block records `failure.recorded` and its clear `failure.ended { resolved }`
+from `setBlockedReason`, with occurrence `usage:${threadId}:${episode}`, where the
+episode is the journal seq of the chat's last unblocked `run_state.changed`
+record (no column holds it). `interrupts.ts` projects directly and calls the same
+detector. The projector itself never logs.
+
+Records go to the `recordFailure` a `LiveEventWriter` carries (required by
+`PersistenceDeps`; `noFailureRecorder` is the explicit opt-out; the raw journal stays
+append-only), which queues them on the
+`FailureRecord` transaction participant (`shared/failure-records.ts`): own
+state, forked and merged across savepoints, emitted through `recordFailure` over
+`emitEvent` after the outermost commit. Within one Drizzle transaction a repeated
+`(occurrenceId, phase)` emits once; across transactions uniqueness comes from the
+transition decision, not from the participant. A rolled-back transition emits
+nothing on Drizzle. The in-memory repositories do the same per `InMemoryTransactionOwner`: the
+journal writer takes the owner of the repositories it serves (required; a fixture with no
+transactions passes `noTransactionOwner`, and `createRuntimeHarness` reads the owner off the
+repositories it is given), and `owner.afterCommit` runs a
+record when that owner commits and drops it when that owner rolls back. A nested `run` on the
+same owner joins the outer transaction (it is not a savepoint); another owner's transaction
+neither emits nor discards it. Outside any transaction a record emits at once. The journal row is the durable
+record; the log entry is its classified, best-effort view.
+
 `POST /api/threads/:threadId/turns/:turnId/retry` is available only for the
 latest failed assistant reply on an idle primary or subagent thread; a repeated
 client ID is answered with the same execution from durable facts, and once

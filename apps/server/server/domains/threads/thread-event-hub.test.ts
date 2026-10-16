@@ -4,10 +4,12 @@
  * append time, not only on journal replay. Background lifecycle events remain
  * journal-only; `subagent.activity` projects the recomputed direct-child activity.
  */
+
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { OrchestratorEvent, ThreadActivity } from "@meridian/contracts/threads";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { goldenAssistantTurn } from "../../../../../packages/contracts/src/threads/golden/turn-fixture.js";
+import { noTransactionOwner } from "../../shared/in-memory-transaction.js";
 import { createNoopEventSink } from "../observability/index.js";
 import {
   createInMemoryEventJournalReader,
@@ -83,7 +85,7 @@ function createCappedHub(
 }
 
 function createHub() {
-  const journal = createInMemoryEventJournalWriter();
+  const journal = createInMemoryEventJournalWriter(noTransactionOwner);
   const hub = createThreadEventHub({
     journalWriter: journal,
     journalReader: createInMemoryEventJournalReader(journal),
@@ -141,7 +143,7 @@ describe("thread event hub committed invalidations", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
   it("evicts idle state after a journal read rejects beyond the grace window", async () => {
-    const journal = createInMemoryEventJournalWriter();
+    const journal = createInMemoryEventJournalWriter(noTransactionOwner);
     let entered!: () => void;
     let rejectRead!: (error: Error) => void;
     const started = new Promise<void>((resolve) => (entered = resolve));
@@ -169,7 +171,7 @@ describe("thread event hub committed invalidations", () => {
   });
 
   it("retains a requested follow-up drain after rejection, then evicts after its failure", async () => {
-    const journal = createInMemoryEventJournalWriter();
+    const journal = createInMemoryEventJournalWriter(noTransactionOwner);
     let firstEntered!: () => void;
     let secondEntered!: () => void;
     let rejectFirst!: (error: Error) => void;
@@ -210,7 +212,7 @@ describe("thread event hub committed invalidations", () => {
   });
 
   it("keeps one state owner while an unsubscribed thread drain is in flight", async () => {
-    const journal = createInMemoryEventJournalWriter();
+    const journal = createInMemoryEventJournalWriter(noTransactionOwner);
     const callbacks: Array<() => void | Promise<void>> = [];
     let readStarted!: () => void;
     let releaseRead!: () => void;
@@ -259,7 +261,7 @@ describe("thread event hub committed invalidations", () => {
   });
 
   it("keeps delayed text and tool projection on one side of the replay boundary", async () => {
-    const journal = createInMemoryEventJournalWriter();
+    const journal = createInMemoryEventJournalWriter(noTransactionOwner);
     const reader = createInMemoryEventJournalReader(journal);
     await journal.appendEvent(THREAD_ID, {
       type: "turn.created",
@@ -342,7 +344,7 @@ describe("thread event hub committed invalidations", () => {
   });
 
   it("serializes reversed and duplicate invalidations through journal order", async () => {
-    const journal = createInMemoryEventJournalWriter();
+    const journal = createInMemoryEventJournalWriter(noTransactionOwner);
     const callbacks: Array<() => void | Promise<void>> = [];
     const hub = createThreadEventHub({
       journalWriter: journal,
@@ -374,7 +376,7 @@ describe("thread event hub committed invalidations", () => {
   });
 
   it("keeps a committed append made during cold replay in the live handoff", async () => {
-    const journal = createInMemoryEventJournalWriter();
+    const journal = createInMemoryEventJournalWriter(noTransactionOwner);
     const reader = createInMemoryEventJournalReader(journal);
     const firstEvent: OrchestratorEvent = {
       type: "subagent.activity",

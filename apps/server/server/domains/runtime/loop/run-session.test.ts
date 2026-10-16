@@ -14,10 +14,11 @@ import { DEFAULT_LEASE_TTL_MS } from "./ports.js";
 import { sweepWakes } from "./sweep-wakes.js";
 
 async function fixture(configure?: (deps: OrchestratorDeps) => void) {
-  const journal = createInMemoryEventJournalWriter();
+  const repos = createInMemoryRepositories();
+  const journal = createInMemoryEventJournalWriter(repos.transactionOwner);
   const sink = createInMemoryEventSink();
   let calls = 0;
-  const repos = createInMemoryRepositories();
+  const requests: string[] = [];
   const thread = await repos.threads.create({
     aiWriteMode: "direct",
     userId: "user-1",
@@ -41,8 +42,9 @@ async function fixture(configure?: (deps: OrchestratorDeps) => void) {
   });
   deps.gateway = {
     ...deps.gateway,
-    async *stream() {
+    async *stream(request) {
       calls++;
+      requests.push(JSON.stringify(request.messages));
       yield {
         type: "end",
         result: {
@@ -68,6 +70,7 @@ async function fixture(configure?: (deps: OrchestratorDeps) => void) {
     journal,
     sink,
     calls: () => calls,
+    requests,
     prepare: () => runtime.prepare({ threadId: thread.id, userText: "hello" }),
   };
 }
@@ -230,6 +233,11 @@ describe("RunSession", () => {
     await (await f.prepare()).execute();
     expect(await f.repos.turns.findById(run.executionTurnId)).toMatchObject({ status: "error" });
     expect(await f.deps.runClaim.readOpenExecutionId(f.thread.id)).toBeNull();
+    // The failed turn's `turn.error` copy is the writer's, never the model's.
+    const failed = await f.repos.turns.findById(run.executionTurnId);
+    expect(failed?.error).toEqual(expect.any(String));
+    expect(f.requests.length).toBeGreaterThan(0);
+    for (const request of f.requests) expect(request).not.toContain(failed?.error as string);
   });
 
   it("terminalizes admitted setup when post-setup cursor capture fails", async () => {
