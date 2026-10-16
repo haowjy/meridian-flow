@@ -1,5 +1,5 @@
 /** URI → project context route inputs and live document identity, via the app's own address route. */
-import { parseContextUri } from "@meridian/contracts/context-uri";
+import { formatParsedContextUri, parseContextUri } from "@meridian/contracts/context-uri";
 import {
   apiProjectDocumentAddressPath,
   type ContextOwner,
@@ -40,7 +40,7 @@ export async function resolveUri(
 ): Promise<ResolvedUri> {
   const parsed = parseContextUri(raw);
   if (!parsed.ok) throw usageError(`Invalid URI ${raw}: ${parsed.error.reason}`);
-  const { scheme, authority, path, normalized } = parsed.value;
+  const { scheme, authority, path } = parsed.value;
   if (!path) throw usageError(`URI ${raw} has no path`);
   let workId: string | null = null;
   let chatRef: string | null = null;
@@ -72,12 +72,19 @@ export async function resolveUri(
   if (!parsedName.ok) throw usageError(parsedName.error.message);
   const canonicalPath =
     path.slice(0, slash + 1) + renderFilename(parsedName.value.name, parsedName.value.extension);
-  const prefix =
-    chatRef !== null
-      ? `uploads://@/${chatRef}/`
-      : normalized.slice(0, normalized.length - path.length);
   const chatId = chatRef === null ? null : await resolveThreadId(session, chatRef, projectId);
-  return { scheme, path: canonicalPath, uri: prefix + canonicalPath, workId, chatRef, chatId };
+  return {
+    scheme,
+    path: canonicalPath,
+    uri: formatParsedContextUri(
+      scheme,
+      canonicalPath,
+      chatRef !== null ? { kind: "chat", chatRef } : authority,
+    ),
+    workId,
+    chatRef,
+    chatId,
+  };
 }
 
 /** Live documentId for a URI, or a not_found CliError. */
