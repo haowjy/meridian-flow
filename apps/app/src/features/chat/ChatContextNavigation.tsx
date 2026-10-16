@@ -58,6 +58,8 @@ export type ChatDoors = {
   canOpen: CanOpenContextUri;
   /** Begins a door intent. Null when the address needs no question (the shell already routed it). */
   prepare(uri: string, passage?: ContextPassageAnchor): PreparedDoor | null;
+  /** Another intent began (a transcript click): a passage still landing is no longer the writer's. */
+  retire(): void;
 };
 
 const ChatDoorsContext = createContext<ChatDoors | null>(null);
