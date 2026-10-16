@@ -552,7 +552,7 @@
     "packages/prosemirror-schema/src/schema-shape.test.ts": 3,
     "packages/resource-replica/src/canonical-freshness.test.ts": 10,
     "packages/resource-replica/src/catalog-acquisition.test.ts": 9,
-    "packages/resource-replica/src/catalog-installation.test.ts": 9,
+    "packages/resource-replica/src/catalog-installation.test.ts": 8,
     "packages/resource-replica/src/catalog.test.ts": 4,
     "packages/resource-replica/src/cross-owner-placement.test.ts": 2,
     "packages/resource-replica/src/deletion-supersession.test.ts": 11,
