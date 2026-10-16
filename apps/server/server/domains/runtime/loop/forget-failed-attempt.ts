@@ -65,19 +65,25 @@ export interface ForgettingFacts {
   summaryProtectedWriterIds: ReadonlySet<string>;
 }
 
+/** A failure that ends at a boundary: how it ends. The append primitive adds the closing turn's id. */
+export interface FailureEnd {
+  turnId: string;
+  end: "retried" | "forgotten" | "moved_on";
+}
+
 export interface ForgettingDecision {
-  /** Turn ids to stamp, the attempt first. */
+  /** Turn ids to stamp, the attempt first. Leaving the conversation says nothing about a failure's end. */
   forget: readonly string[];
   /**
-   * Failed turns whose failure ends at this boundary without being forgotten: the kept attempt's newest
-   * member, a continuation, or the failed seed. Older members of a kept chain ended at the boundary that
-   * followed them, so they are never listed again.
+   * Every failure whose end happens at this boundary, forgotten or kept alike. A failure ends at the first
+   * boundary that follows it and only there, so this lists the latest failed row and the newest failed
+   * handoff seed; older members of a failed chain ended at the boundaries that followed them.
    */
-  passed: readonly string[];
+  ends: readonly FailureEnd[];
   reason: "retried" | "forgotten" | null;
 }
 
-const NOTHING: ForgettingDecision = { forget: [], passed: [], reason: null };
+const NOTHING: ForgettingDecision = { forget: [], ends: [], reason: null };
 
 function isHandoffSeed(turn: Turn): boolean {
   const metadata = turn.metadata;
@@ -102,43 +108,50 @@ export function decideForgetting(
   // 1. No closing row appended: the boundary doesn't end anything.
   if (!appended.closes) return NOTHING;
   // 9. A failed seed's failure ends here whatever follows; its model text states a fact, so it is never forgotten.
-  const passed: string[] = facts.failedSeeds.map((seed) => seed.id);
+  const seedEnds: FailureEnd[] = facts.failedSeeds.map((seed) => ({
+    turnId: seed.id,
+    end: "moved_on",
+  }));
   const attempt = facts.members.map((member) => member.turn);
   const { latest } = facts;
   // 2. Only the latest row, when it is a settled failed reply or compaction, can be forgotten.
   if (!latest || !isFailedAttemptTurn(latest) || attempt.length === 0)
-    return { forget: [], passed, reason: null };
+    return { forget: [], ends: seedEnds, reason: null };
   const pending = facts.members.filter((member) => member.turn.forgottenBy == null);
-  const ends = (): ForgettingDecision => ({
+  // The latest row's failure ends here, once; a forgotten latest row ended at the boundary that forgot it.
+  const latestEnds = (end: FailureEnd["end"]): FailureEnd[] =>
+    latest.forgottenBy == null ? [{ turnId: latest.id, end }] : [];
+  const kept = (): ForgettingDecision => ({
     forget: [],
-    passed: [
-      ...passed,
-      ...pending.filter((member) => member === facts.members[0]).map((member) => member.turn.id),
-    ],
+    ends: [...seedEnds, ...latestEnds("moved_on")],
     reason: null,
   });
   // 3. Continuation: the same execution carries on past the failure. A null id never matches.
-  if (latest.executionId && appended.reservationExecutionId === latest.executionId) return ends();
+  if (latest.executionId && appended.reservationExecutionId === latest.executionId) return kept();
   // 5. Tool calls stay: a write may have landed, and the model keeps the call and its result.
   if (pending.some((member) => member.turn.blocks.some((block) => block.blockType === "tool_use")))
-    return ends();
+    return kept();
   // 6. Retry: forget the failed attempt; its messages stay, because the Retry answers them.
   if (appended.retries === latest.id)
-    return { forget: pending.map((member) => member.turn.id), passed, reason: "retried" };
+    return {
+      forget: pending.map((member) => member.turn.id),
+      ends: [...seedEnds, ...latestEnds("retried")],
+      reason: "retried",
+    };
   // 7. Moving on: forget the attempt and the messages it answered, but only if it drew nothing. A compaction
   // draws nothing but its failure; an already-forgotten member counts as drawing nothing.
   const drawsNothing = pending.every(
     (member) =>
       member.turn.role === "compaction" || replyDrawsNothing(member.turn, member.delivered),
   );
-  if (!drawsNothing) return ends();
+  if (!drawsNothing) return kept();
   const messages = facts.answered
     .filter((message) => !facts.summaryProtectedWriterIds.has(message.id))
     .map((message) => message.id);
   const forget = [...pending.map((member) => member.turn.id), ...messages];
   return forget.length === 0
-    ? { forget, passed, reason: null }
-    : { forget, passed, reason: "forgotten" };
+    ? { forget, ends: [...seedEnds, ...latestEnds("moved_on")], reason: null }
+    : { forget, ends: [...seedEnds, ...latestEnds("forgotten")], reason: "forgotten" };
 }
 
 export interface ForgettingDeps {

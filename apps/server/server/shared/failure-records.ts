@@ -13,7 +13,7 @@ import {
   enlistDrizzleTransactionParticipant,
   isInDrizzleTransaction,
 } from "./drizzle-transaction.js";
-import { deferUntilInMemoryCommit } from "./in-memory-transaction.js";
+import type { InMemoryTransactionOwner } from "./in-memory-transaction.js";
 
 type Pending = { record: FailureRecord; emit: (record: FailureRecord) => void };
 type FailureState = { pending: Map<string, Pending> };
@@ -35,13 +35,17 @@ const participant: DrizzleTransactionParticipant<FailureState> = {
   },
 };
 
-/** Queues `record` for emission after the outermost commit, or emits it at once outside a transaction. */
+/**
+ * Queues `record` for emission after the outermost commit, or emits it at once outside a transaction.
+ * In-memory repositories pass the owner of their data: the record follows that owner's commit or rollback.
+ */
 export function recordFailureAfterCommit(
   record: FailureRecord,
   emit: (record: FailureRecord) => void,
+  inMemoryOwner?: InMemoryTransactionOwner,
 ): void {
   if (!isInDrizzleTransaction()) {
-    if (!deferUntilInMemoryCommit(() => emit(record))) emit(record);
+    if (!inMemoryOwner?.afterCommit(() => emit(record))) emit(record);
     return;
   }
   const state = enlistDrizzleTransactionParticipant(participant);

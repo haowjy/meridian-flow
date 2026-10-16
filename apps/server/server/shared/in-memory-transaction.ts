@@ -1,25 +1,31 @@
 /** Shared snapshot transactions for hermetic adapters; direct concurrent writes are conflict-checked. */
 import { AsyncLocalStorage } from "node:async_hooks";
 
-/** Callbacks queued by the outermost in-memory transaction, run after it commits and dropped if it throws. */
-const commitQueue = new AsyncLocalStorage<Array<() => void>>();
-
-/** Runs `callback` after the outermost in-memory transaction commits; returns false outside one. */
-export function deferUntilInMemoryCommit(callback: () => void): boolean {
-  const queue = commitQueue.getStore();
-  if (!queue) return false;
-  queue.push(callback);
-  return true;
-}
-
 type Participant = { version: number; data: Map<unknown, unknown> };
 type Snapshot = { version: number; data: Map<unknown, unknown>; dirty: boolean; read: boolean };
-type Frame = { active: boolean; snapshots: Map<Participant, Snapshot> };
+type Frame = {
+  active: boolean;
+  snapshots: Map<Participant, Snapshot>;
+  /** Run after this owner's outermost transaction commits; dropped if it throws, like the snapshots. */
+  afterCommit: Array<() => void>;
+};
 
 export class InMemoryTransactionOwner {
   private readonly context = new AsyncLocalStorage<Frame>();
   private readonly participants = new Set<Participant>();
   private tail = Promise.resolve();
+
+  /**
+   * Runs `callback` after this owner's transaction commits, or drops it if that transaction rolls back.
+   * A nested `run` on the same owner joins the outer transaction, so its callbacks follow the outer
+   * outcome; another owner's transactions neither commit nor discard them. Returns false outside one.
+   */
+  afterCommit(callback: () => void): boolean {
+    const frame = this.context.getStore();
+    if (!frame?.active) return false;
+    frame.afterCommit.push(callback);
+    return true;
+  }
 
   async run<T>(operation: () => Promise<T>): Promise<T> {
     if (this.context.getStore()?.active) return operation();
@@ -29,7 +35,7 @@ export class InMemoryTransactionOwner {
       release = resolve;
     });
     await previous;
-    const frame: Frame = { active: true, snapshots: new Map() };
+    const frame: Frame = { active: true, snapshots: new Map(), afterCommit: [] };
     try {
       for (const participant of this.participants) {
         frame.snapshots.set(participant, {
@@ -39,9 +45,7 @@ export class InMemoryTransactionOwner {
           read: false,
         });
       }
-      const queue = commitQueue.getStore() ?? [];
-      const owned = !commitQueue.getStore();
-      const result = await commitQueue.run(queue, () => this.context.run(frame, operation));
+      const result = await this.context.run(frame, operation);
       const writes = [...frame.snapshots.values()].some((snapshot) => snapshot.dirty);
       for (const [participant, snapshot] of frame.snapshots) {
         if (writes && snapshot.read && participant.version !== snapshot.version)
@@ -53,7 +57,7 @@ export class InMemoryTransactionOwner {
           participant.version++;
         }
       }
-      if (owned) for (const callback of queue) callback();
+      for (const callback of frame.afterCommit) callback();
       return result;
     } finally {
       frame.active = false;

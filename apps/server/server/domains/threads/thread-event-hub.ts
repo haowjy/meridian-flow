@@ -15,6 +15,7 @@ import {
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
 import { recordFailureAfterCommit } from "../../shared/failure-records.js";
+import type { InMemoryTransactionOwner } from "../../shared/in-memory-transaction.js";
 import {
   type EventSink,
   emitEvent,
@@ -47,6 +48,8 @@ type ThreadEventHubDeps = {
   journalReader: EventJournalReader;
   eventSink: EventSink;
   scheduleAfterCommit?: (callback: () => void | Promise<void>) => void;
+  /** In-memory composition: failure records follow this owner's commit instead of a Drizzle transaction's. */
+  inMemoryTransactionOwner?: InMemoryTransactionOwner;
 };
 
 export type ThreadEventHubOptions = {
@@ -265,7 +268,11 @@ export function createThreadEventHub(
   return {
     invalidateCommittedJournal,
     recordFailure(record: FailureRecord): void {
-      recordFailureAfterCommit(record, (emitted) => recordFailure(eventSink, emitted));
+      recordFailureAfterCommit(
+        record,
+        (emitted) => recordFailure(eventSink, emitted),
+        deps.inMemoryTransactionOwner,
+      );
     },
     async appendEvent(threadId: ThreadId, orchestratorEvent: OrchestratorEvent): Promise<bigint> {
       const journalSeq = await deps.journalWriter.appendEvent(threadId, orchestratorEvent);
