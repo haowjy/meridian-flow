@@ -105,7 +105,7 @@ deferred, not rejected: 64px is 21% of a 360px docked chat.
 holds one exhaustive table of what the timeline does with it, including both
 tenses, the glyph, the failure verb, and the expand shape. Renderers consume the table; nothing derives past tense inline, and
 adding a command is one entry. The same vocabulary feeds
-`useLiveTurnAnnouncements`, so the visible row and the announced string cannot
+`useLiveTurnAnnouncements` (non-failure announcements), so the visible row and the announced string cannot
 drift — they had, for `ls`.
 
 Tense is a pure function of protocol state (`status === "complete"`), never of

@@ -32,8 +32,8 @@ and says what it left out. The decision and its rejected alternatives are in the
   the newest failure.
 - **A failure shows only while it can be acted on.** A failed reply that is not
   the latest row (a write-mode line after it does not close it), with no items
-  and no deliveries, has no row. The app passes `refused` (ids whose Retry the
-  server refused) to keep that row for the refusal card; `./mf` passes none.
+  and no deliveries, has no row. The caller passes `anchoredTurnIds` from `chatCards` to keep that row for
+  a card anchored on it (a refused Retry's, say); `./mf` passes the same projection's set.
 - **Stand-ins and the opening seed** are placed after their `prevTurnId`; the
   opening seed goes first, which equals placing stand-ins first because no
   producer anchors a stand-in to it. A row's `identity` is the server turn id,
@@ -185,8 +185,8 @@ One framework-free operation runs Stop, the queue's x and Cancel queue for the a
   (`ambiguous`, `unwritten`, `unsaved`, `refused`); the first two stay in the store, the last two
   live in page memory. `reconcile()` (host-called) drops entries whose command left the store.
   `subscribe` fires after every change to `unresolved()` or `stopFacts()` from any call, so hosts
-  never wrap calls to redraw. `handBackCards(unresolved, view)` projects the notice-stack cards (copy,
-  count, retry or dismiss) from them plus a failed Send now, with no dependence on rows.
+  never wrap calls to redraw. `chatCards` folds them (with a failed Send now) into the composer's card stack (copy,
+  count, try again or dismiss), with no dependence on rows; `attempt` counts posts per request.
 - **Send now** is not a hand-back command: `postSendNow(ports, threadId, body)` shares the
   classifier and returns confirmed (`cancelledExecutionId`; null means this attempt requested no
   cancellation), refused, or ambiguous with the frozen body. `sendNowRequest(view)` builds the body.

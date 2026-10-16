@@ -27,8 +27,9 @@ A queued `/compact` needs a completed reply first (`compact_requires_completed_r
 and wait, then hold the next reply, then type `/compact` and press Enter twice.
 
 Selectors: `[data-queued]` (the article), `[data-queue-control=move-to-box|cancel-queue|send-now]`,
-`[data-hand-back-card=<copy>]` and `[data-hand-back-card-retry]`, `[data-queued-control-card]`
-(the row card), `[data-composer-stop]`, and the box at `[data-composer] .ProseMirror`.
+`[data-chat-card=<copy>]` (a card's sentence) and `[data-chat-card-action=<try_again|retry|dismiss>]`
+(its button; Dismiss on a refused card is the X, "Dismiss"), `[data-composer-stop]`, and the box at
+`[data-composer] .ProseMirror`. A queued command's card sits in its row.
 
 ## Fault injection
 
@@ -121,7 +122,7 @@ ordinary message the reply answers, the box is empty, and no card shows.
 
 ## QC-08: failure cards
 
-Each is an error `NoticeCard` above the box, except the last row. None announces itself.
+Each is an error `FailureCard` above the box, except the last row. None announces itself.
 
 - **Committed, answer lost:** as QC-05 without reloading. Rows gone, card with Try again. Restore
   `fetch`, Try again: the words arrive once, the card clears.
