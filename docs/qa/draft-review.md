@@ -907,3 +907,23 @@ browser acceptance still checks the controls and bylines above.
 4. With 25 known-empty files and the dock collapsed, verify 25 room acquisitions, metadata reads and
    attribution reads (no file-count cap). The dock disappears once all 25 resolve empty. Readers are flat,
    not a recursive prefix-copy chain; batching unopened files is not implemented.
+
+
+### Typing is not an AI arrival (KF28)
+
+Seed a mock Work draft with `red → blue` and `old → young`. Open its review and let the initial
+attribution read settle: initial changes must not pulse. Observe the editor's `set-review` and
+`set-pulse` transactions, review DOM child/attribute mutations, `animationstart`, and
+`GET …/draft/attribution`.
+
+Type three keys separately, waiting 700 ms per key, inside green, immediately beside green, elsewhere
+in that changed paragraph, and in an unchanged paragraph. Restore with native Ctrl+Z between locations.
+Then press Enter inside green. Each key/Enter must have one debounced projection, zero animation starts,
+and zero attribution GETs. DOM add/remove counts may be nonzero: decoration identity is unchanged.
+
+While continuing to type, deliver a new mock AI write in another paragraph. Its affected change must
+receive exactly one nonempty pulse command (one animation per red/green element), and attribution must
+fetch the new peer evidence. Keep typing after that pulse expires: no replay and no writer-only fetch.
+The runtime regression also exercises local Enter deletions, which require a local deletion witness
+rather than weakening the server payload fence. Repeat the existing held-response and Retry recipe to
+check that unresolved peer evidence still drains and fails/retries normally.

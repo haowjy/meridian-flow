@@ -13,11 +13,14 @@ import type { DraftAttribution } from "@meridian/contracts/drafts";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { QueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
+import { act, createElement, useSyncExternalStore } from "react";
+import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import * as draftsApi from "@/client/api/drafts-api";
 import { draftAttributionQueryOptions } from "@/client/query/useDraftAttribution";
 import { createReviewRuntime, type ReviewRuntime } from "@/features/draft-review/review-runtime";
+import { useArrivedChanges } from "@/features/draft-review/useArrivedChanges";
 import {
   attachReviewRuntime,
   createReviewEditor,
@@ -48,6 +51,7 @@ afterEach(() => {
   for (const projector of projectors.splice(0)) projector.destroy();
   destroyReviewEditors();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   vi.useRealTimers();
 });
 
@@ -403,6 +407,127 @@ it("drains a cold read overtaken by a peer revision, and makes an uncovered fenc
     runtime.destroy();
     client.clear();
     peer.destroy();
+    doc.destroy();
+  }
+});
+
+it("writer typing and Enter neither arrive nor fetch, while a concurrent AI write arrives once", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const schema = buildDocumentSchema();
+  const p = (text: string) => schema.nodes.paragraph.create(null, schema.text(text));
+  const doc = new Y.Doc({ gc: false });
+  doc.clientID = 1;
+  writeBlocks(doc.getXmlFragment("prosemirror"), schema, [p("The red door stays.")]);
+  seedReviewBase(doc, ["The red door stays."]);
+  doc.clientID = 200000;
+  writeBlocks(doc.getXmlFragment("prosemirror"), schema, [p("The blue door stays.")]);
+  const part = (client: number, turnId: string) => ({
+    threadId: "chat",
+    turnId,
+    toolCallId: turnId,
+    title: "Chat",
+    at: "2026",
+    owner: { threadId: "chat", title: "Chat", reveal: { threadId: "chat", turnId } },
+    inserted: [[client, 0, Y.getState(doc.store, client)]] as [number, number, number][],
+    deleted: [...Y.snapshot(doc).ds.clients].flatMap(([c, ranges]) =>
+      ranges.map(({ clock, len }) => [c, clock, len] as [number, number, number]),
+    ),
+  });
+  let payload: DraftAttribution = {
+    itemKey: "typing",
+    userId: "u",
+    revision: [...Y.encodeSnapshot(Y.snapshot(doc))],
+    edits: [part(200000, "initial")],
+  };
+  doc.clientID = 900;
+  const api = vi.spyOn(draftsApi, "getDraftAttribution").mockImplementation(async () => payload);
+  const { editor } = createReviewEditor([], doc);
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+  });
+  const runtime = createReviewRuntime(
+    {
+      document: doc,
+      subscribe: () => () => {},
+      getSnapshot: () => ({ status: "synced" }),
+      whenSynced: () => Promise.resolve(),
+      hasUnacknowledgedEdits: () => false,
+    } as never,
+    {
+      draft: { projectId: "p", workId: "w", documentId: "typing", itemKey: "typing" },
+      queryClient: client,
+    },
+  );
+  let arrived: ReadonlySet<string> = new Set();
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  function ArrivalReader() {
+    const state = useSyncExternalStore(runtime.subscribe, runtime.state);
+    arrived = useArrivedChanges(state.changes, state.ready, "typing");
+    return null;
+  }
+  await act(async () => {
+    root.render(createElement(ArrivalReader));
+  });
+  const peer = new Y.Doc({ gc: false });
+  const settle = () =>
+    act(async () => {
+      await vi.advanceTimersByTimeAsync(180);
+    });
+  try {
+    runtime.attachEditor(editor);
+    await settle();
+    expect(arrived.size).toBe(0);
+    api.mockClear();
+    act(() => {
+      editor.commands.insertContentAt(7, "X");
+    });
+    await settle();
+    expect.soft(arrived.size).toBe(0);
+    expect.soft(api).not.toHaveBeenCalled();
+    act(() => {
+      editor.commands.setTextSelection(8);
+      editor.commands.splitBlock();
+    });
+    await settle();
+    expect.soft(arrived.size).toBe(0);
+    expect.soft(api).not.toHaveBeenCalled();
+    Y.applyUpdate(peer, Y.encodeStateAsUpdate(doc));
+    peer.clientID = 400000;
+    const last = peer.getXmlFragment("prosemirror").get(1) as Y.XmlElement;
+    const text = last.get(0) as Y.XmlText;
+    text.insert(text.length, " A visitor arrives.");
+    Y.applyUpdate(doc, Y.encodeStateAsUpdate(peer));
+    payload = {
+      ...payload,
+      revision: [...Y.encodeSnapshot(Y.snapshot(doc))],
+      edits: [part(400000, "next"), ...payload.edits],
+    };
+    act(() => {
+      editor.commands.insertContentAt(2, "Y");
+    });
+    await settle();
+    expect(arrived.size).toBe(1);
+    const reads = api.mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+    });
+    expect(arrived.size).toBe(0);
+    act(() => {
+      editor.commands.insertContentAt(3, "Z");
+    });
+    await settle();
+    expect(arrived.size).toBe(0);
+    expect(api).toHaveBeenCalledTimes(reads);
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    runtime.destroy();
+    client.clear();
+    peer.destroy();
+    editor.destroy();
     doc.destroy();
   }
 });

@@ -53,7 +53,7 @@
     "apps/app/src/core/editor/document-session.test.ts": 9,
     "apps/app/src/core/editor/extensions/at-reference/at-reference-enter.test.ts": 2,
     "apps/app/src/core/editor/extensions/auto-pair/AutoPairExtension.test.ts": 7,
-    "apps/app/src/core/editor/extensions/inline-review/decorations.test.ts": 9,
+    "apps/app/src/core/editor/extensions/inline-review/decorations.test.ts": 10,
     "apps/app/src/core/editor/extensions/MarkdownAutoformatExtension.test.ts": 4,
     "apps/app/src/core/editor/extensions/slash/slash-insertion.test.ts": 2,
     "apps/app/src/core/editor/extensions/TabKeymapExtension.test.ts": 1,

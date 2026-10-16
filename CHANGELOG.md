@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 - A change row never hides its author. With a long chat title, the editor's change list, the phone's Changes sheet and the Work row show "You", then the first chat truncated with an ellipsis (full title in its tooltip and accessible name), then "+N" for the other chats. The red and green text gets its width first; the byline keeps a floor of about six letters. The change bar truncates its first chat the same way instead of folding it into "+1".
+- Typing or pressing Enter in a draft no longer replays AI arrival highlights or fetches attribution. New AI writes still pulse once; the initial review stays quiet.
 
 - Recreate the unmerged review migration sequence as `0058`–`0063` after main’s `0056` and `0057`, with later timestamps, so an existing database applies every review upgrade.
 

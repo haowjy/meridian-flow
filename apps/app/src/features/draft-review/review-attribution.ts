@@ -13,8 +13,9 @@ import type { ChangeAttribution, ChatRef, ReviewChange } from "./review-model";
 
 type Thread = Extract<Author, { kind: "thread" }>;
 
-const writeKey = (threadId: string, turnId: string, toolCallId?: string) =>
-  `${threadId}\u0000${turnId}\u0000${toolCallId ?? ""}`;
+/** The AI operation identity used by both links and arrival detection. */
+export const writeKey = (part: Pick<DraftAttributionEdit, "threadId" | "turnId" | "toolCallId">) =>
+  JSON.stringify([part.threadId, part.turnId, part.toolCallId ?? null]);
 
 const resolvers = new WeakMap<readonly DraftAttributionEdit[], (author: Thread) => ChatRef>();
 
@@ -33,12 +34,12 @@ function chatResolver(edits: readonly DraftAttributionEdit[]) {
       ...(owner.threadId !== edit.threadId ? { subagentTitle: edit.title } : {}),
     };
     // Parts are listed latest first, so the first write of a key is the one a byline links to.
-    const key = writeKey(edit.threadId, edit.turnId, edit.toolCallId);
+    const key = writeKey(edit);
     if (!exact.has(key)) exact.set(key, chat);
     if (!byThread.has(edit.threadId)) byThread.set(edit.threadId, chat);
   }
   const resolve = (author: Thread): ChatRef =>
-    exact.get(writeKey(author.threadId, author.turnId, author.toolCallId)) ??
+    exact.get(writeKey(author)) ??
     byThread.get(author.threadId) ?? { chatId: author.threadId, title: "" };
   resolvers.set(edits, resolve);
   return resolve;
@@ -70,12 +71,21 @@ export function classifyRoom(
   doc: Y.Doc,
   frame: ReviewFrame,
   data: Pick<DraftAttribution, "userId" | "edits" | "revision">,
-): ReadonlyMap<string, ChangeAttribution & { unresolved: boolean }> {
+  localDeletions?: Y.Snapshot["ds"],
+): ReadonlyMap<
+  string,
+  ChangeAttribution & {
+    unresolved: boolean;
+    unresolvedItems: readonly (readonly number[])[];
+    writes: string[];
+  }
+> {
   const classified = classifyChanges(doc, frame, {
     userId: data.userId,
     parts: data.edits,
     snapshot: Y.decodeSnapshot(Uint8Array.from(data.revision)),
     localClientId: doc.clientID,
+    localDeletions,
   });
   const resolve = chatResolver(data.edits);
   return new Map(
@@ -84,6 +94,9 @@ export function classifyRoom(
       {
         byline: c.byline,
         unresolved: c.unresolved,
+        unresolvedItems: c.unresolvedItems,
+        // Unresolved membership includes every candidate; only resolved footprints prove a write.
+        writes: c.unresolved ? [] : c.members.map((i) => writeKey(data.edits[i])),
         chats: chatsOf(c.byline, resolve),
         members: [...new Set(c.members.map((i) => data.edits[i].owner.threadId))],
       },
