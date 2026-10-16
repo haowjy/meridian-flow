@@ -4,6 +4,7 @@
 // names the document `path`, and the engine command names it `file` and adds the
 // host-only `documentId` and `tool_use_id`. Neither projection renames fields.
 import { z } from "zod";
+import { parseEditHandle } from "../ports/update-journal.js";
 import { type CopySourceFields, copySourceIssues } from "./copy-rules.js";
 import { type SelectorCommand, type SelectorFields, selectorIssues } from "./selector-rules.js";
 
@@ -44,10 +45,12 @@ const FindAroundSchema = z
 
 const FindAllSchema = z.boolean().describe("Every match of `find`. Needs `find`.");
 
+const EDIT_HANDLE_MESSAGE = "Expected an edit handle such as e5.";
+
 const READ_FIELDS = {
   before: z
     .string()
-    .regex(/^w[1-9]\d*$/)
+    .refine((value) => parseEditHandle(value) !== undefined, EDIT_HANDLE_MESSAGE)
     .optional()
     .describe("With `edits` only: list edits older than this handle."),
   in: BlockSelectorSchema.optional(),
@@ -64,7 +67,9 @@ const READ_FIELDS = {
     .optional(),
 };
 
-const WRITE_HANDLE = z.string().regex(/^w[1-9]\d*$/, "Expected an edit handle such as w5");
+const WRITE_HANDLE = z
+  .string()
+  .refine((value) => parseEditHandle(value) !== undefined, EDIT_HANDLE_MESSAGE);
 const INVERSE_COUNT = z
   .int()
   .min(1)

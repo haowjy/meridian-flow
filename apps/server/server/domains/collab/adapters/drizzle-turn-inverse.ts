@@ -1,5 +1,9 @@
 /** Durable multi-document inverse admission; publishes only after the transaction commits. */
-import type { DocumentCoordinator, UpdateJournal } from "@meridian/agent-edit/integration";
+import {
+  type DocumentCoordinator,
+  editHandle,
+  type UpdateJournal,
+} from "@meridian/agent-edit/integration";
 import { captureMutationUpdates, textInRanges } from "@meridian/agent-edit/yjs-mutation";
 import type { DocumentId } from "@meridian/contracts";
 import {
@@ -293,7 +297,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
               ? await input.journal.reserveWriteOrdinal(document.documentId, query.threadId)
               : undefined;
             if (wId !== undefined) {
-              handles.push(`w${wId}`);
+              handles.push(editHandle(wId));
               for (const receipt of receipts)
                 if (receipt.origin.kind === "pending")
                   await db()
