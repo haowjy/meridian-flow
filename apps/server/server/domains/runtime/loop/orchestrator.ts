@@ -1242,6 +1242,7 @@ async function persistCommittedWriteResult(input: {
   const { output, result } = writeResultContent({
     ...input.result,
     ...(staged?.path ? { path: staged.path } : {}),
+    ...(staged?.notice ? { notice: staged.notice } : {}),
     ...(staged?.destination ? { destination: staged.destination } : {}),
     ...(staged?.draftWork !== undefined ? { draftWork: staged.draftWork } : {}),
   });
