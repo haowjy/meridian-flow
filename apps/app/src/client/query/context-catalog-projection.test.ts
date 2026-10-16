@@ -21,10 +21,10 @@ it("compares the actual Scratch owner, not the selected Work", () => {
   const work: ParentRef = {
     kind: "root",
     scheme: "scratch",
-    owner: { workId: "work", workHandle: "notes" },
+    owner: { workId: "work", workHandle: "w1" },
   };
   const other: ResourceDestination = {
-    parent: { kind: "root", scheme: "scratch", owner: { workId: "other", workHandle: "other" } },
+    parent: { kind: "root", scheme: "scratch", owner: { workId: "other", workHandle: "w2" } },
     name: "note.md",
   };
   expect(refusedMoveDestination(other, work)).toEqual(other);
