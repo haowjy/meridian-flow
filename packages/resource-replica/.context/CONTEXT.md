@@ -42,8 +42,9 @@ identity, gain remote authority or restart after acknowledgement. Namespace
 dispatch waits until the content adapter establishes the exact database marker and
 clears the reservation.
 
-A Work-scoped location (Scratch, Uploads) retains its Work row id and slug;
-the locked No Work row uses a null slug and URI authority `@/`.
+A Work-scoped location (Scratch) retains its Work row id and slug; an upload's
+location retains its chat id and handle (`chatId`, `chatRef`);
+the locked No Work row uses a null slug.
 `resourceWorkAuthorityFor` checks command construction against the known project
 Works snapshot and its separate locked No Work id. Link Create, tree Create and
 Editor identity commits use this boundary. `resourceContextAuthority` is the
