@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- Apply drafts without repeatedly hashing every block for every journal row; rebase move matching skips untouched deletions and indexes matching text.
+- Apply drafts without repeatedly hashing every block for every journal row; rebase move matching indexes matching text while preserving the original longest-match choice, so repeated moved words are not dropped.
 
 - Draft review keeps existing red widgets and green highlights while typing. Focus, removal folds and arrival pulses update in place; composing text defers review repaint until composition ends.
 

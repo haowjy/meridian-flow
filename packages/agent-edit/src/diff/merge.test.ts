@@ -63,6 +63,16 @@ const isSafety = (f: string) =>
   !/^(order|blocks|block type|em on|strong on|conflict on blocks)/.test(f);
 
 describe("rebase", () => {
+  it("keeps an untouched first move match when a later equal source was edited", () => {
+    const [base, live, draft] = ["p:a b z a", "p:b a z", "p:a b z X"].map((text) =>
+      parseDoc(schema, text),
+    );
+    const result = rebase(schema, base, live, draft);
+    expect(render(result.blocks)).toBe("p:b a z X");
+    expect(result.conflicts).toEqual([]);
+    expect(result.orderConflict).toBe(false);
+  });
+
   it.each(CASES.map((c) => [c.name, c] as const))("case table: %s", (_name, c) => {
     const [B, L, D] = [c.base, c.live, c.draft].map((x) => parseDoc(schema, x));
     const r = rebase(schema, B, L, D);
