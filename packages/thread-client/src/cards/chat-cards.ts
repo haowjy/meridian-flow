@@ -21,7 +21,7 @@ import type { FailedSendNow } from "../hand-back/send-now";
 import { usageBlockedMessages } from "../run-state/fold-messages";
 import type { RunStateView } from "../run-state/run-state-view";
 import { latestRow } from "../view/latest-row";
-import { normalizeTurns, type TurnFacts } from "../view/normalize-turns";
+import { type NormalizedTurns, normalizeTurns, type TurnFacts } from "../view/normalize-turns";
 import { classifyTurn } from "../view/transcript-model";
 import { handBackCards } from "./hand-back-cards";
 import type { BriefStopFailure, ChatCard, ChatCardAnchor, ChatCards, RetryOutcome } from "./types";
@@ -40,6 +40,8 @@ export type ChatCardsInput = {
   threadId: string;
   /** The same turn facts `viewTranscript` takes, so both read one normalized sequence. */
   turns: TurnFacts;
+  /** Reuse the host's normalization across cards, run selectors and transcript rows. */
+  normalized?: NormalizedTurns;
   runState: RunStateView;
   handBack: readonly (UnresolvedHandBack | FailedSendNow)[];
   retries: readonly RetryOutcome[];
@@ -74,7 +76,7 @@ function card(
 }
 
 export function chatCards(input: ChatCardsInput): ChatCards {
-  const normalized = normalizeTurns(input.turns);
+  const normalized = input.normalized ?? normalizeTurns(input.turns);
   const { turns } = normalized;
   const latest = latestRow(turns);
   const cards: ChatCard[] = [];
@@ -103,10 +105,10 @@ export function chatCards(input: ChatCardsInput): ChatCards {
   cards.push(...handBackCards(input.handBack, input.runState));
 
   // A failure shows only while the writer can act on it: no closing row follows it.
-  const current = (turn: Turn) => {
-    const at = turns.indexOf(turn);
-    return at >= 0 && (latest === null || at >= latest.index);
-  };
+  const eligible = new Set(turns.slice(latest?.index ?? 0));
+  const current = (turn: Turn) => eligible.has(turn);
+  const placedById = new Map(normalized.placed.map((turn) => [turn.id, turn]));
+  const turnsById = new Map(turns.map((turn) => [turn.id, turn]));
   const newestSeed = [...turns].reverse().find((turn) => isHandoffSeed(turn)) ?? null;
   const compactQueued = input.controls.some(
     (control) => control.control.kind === "compact" && control.status !== "failed",
@@ -158,7 +160,7 @@ export function chatCards(input: ChatCardsInput): ChatCards {
   // A Retry that did not start. A refusal stays on its reply even once another reply landed below it
   // (the writer's action still failed); a lost request is a card only while its reply is still the one to retry.
   for (const outcome of input.retries) {
-    const target = normalized.placed.find((turn) => turn.id === outcome.turnId);
+    const target = placedById.get(outcome.turnId);
     if (!target) continue;
     const key = `${outcome.requestId}:${outcome.attempt}`;
     if (outcome.kind === "refused") {
@@ -194,7 +196,7 @@ export function chatCards(input: ChatCardsInput): ChatCards {
   }
 
   for (const stop of input.briefStops) {
-    const seed = turns.find((turn) => turn.id === stop.turnId);
+    const seed = turnsById.get(stop.turnId);
     if (!seed || (seed.status !== "pending" && seed.status !== "streaming")) continue;
     cards.push(
       card({

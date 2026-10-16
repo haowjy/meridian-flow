@@ -63,7 +63,7 @@ card (the failed reply under the newest message carries it).
 
 ## FC-05: the handoff brief
 
-Hand off from a reply with the same two scripts queued. The brief card shows "Handoff brief unavailable"
+Hand off from a reply with the same two scripts queued. The brief card shows "Handoff brief"
 with Retry in its header and a card with the server's words ("This handoff brief couldn't be
 generated. Try again."). Replace the scripts with a delayed brief (`"delayMs":60000`), wrap `fetch` to
 throw on `/cancel`, press Retry then Stop: "Couldn't stop the brief." with Try again sits on the

@@ -24,6 +24,7 @@ import {
   type DeliveryEvent,
   durableControls,
   type FoldDigest,
+  normalizeTurns,
   type RowIdentity,
   switchState,
   type TranscriptView,
@@ -199,9 +200,11 @@ export function chatSnapshot(
 ): { view: TranscriptView; cards: ChatCards } {
   const runState = viewOfLive(snapshot.liveState);
   const controls = durableControls(runState.record?.items ?? []);
+  const normalized = normalizeTurns({ turns });
   const cards = chatCards({
     threadId: snapshot.thread?.id ?? "",
     turns: { turns },
+    normalized,
     runState,
     handBack: [],
     retries: [],
@@ -210,6 +213,7 @@ export function chatSnapshot(
   });
   const view = viewTranscript({
     turns,
+    normalized,
     activity: { awaitingSubagents: false },
     queued: new Set(waitingWriterMessages(runState).map((item) => item.id)),
     anchoredTurnIds: cards.anchoredTurnIds,

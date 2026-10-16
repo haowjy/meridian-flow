@@ -81,10 +81,10 @@ its own name, so the state words are read once.
 `composerRun(turns)` decides what the composer's Stop acts on. Work is active
 while a reply streams and while a placeholder with no stream is pending: a
 compaction divider, or a handoff brief being written (a pending seed, with no
-lease or phase). Stop on a divider goes through `useThreadControls.stop`, and
-on a seed through `useHandoffBrief.stop`; both share `useTurnStop`, the same
-path as the divider's and the card's own Stop, so each shows Stopping and
-announces in its own words. A send meanwhile queues like any send during a
+lease or phase). Stop on a divider goes through `useChatStop`, the same
+hand-back operation as the composer's Stop. A seed goes through
+`useHandoffBrief.stop`. Failed Stops are facts for `chatCards`; the one card
+announcer speaks and clears their failures. A send meanwhile queues like any send during a
 run. Turns, not the snapshot's status, carry this: the status can trail the
 turn.
 

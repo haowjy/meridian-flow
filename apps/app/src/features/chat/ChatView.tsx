@@ -239,7 +239,8 @@ export function ChatView({
     }),
     [hiddenTurnIds, opening, retriedReplies, standIns, storedTurns],
   );
-  const turns = useMemo(() => normalizeTurns(turnFacts).turns, [turnFacts]);
+  const normalized = useMemo(() => normalizeTurns(turnFacts), [turnFacts]);
+  const { turns } = normalized;
   // Live announcements follow the server's replies: a Retry's stand-in speaks
   // for itself.
   const latestAssistantTurn =
@@ -379,6 +380,7 @@ export function ChatView({
       chatCards({
         threadId,
         turns: turnFacts,
+        normalized,
         runState,
         handBack: [...handBack.unresolved, ...(sendNow.failed ? [sendNow.failed] : [])],
         retries: [...replyRetry.outcomes, ...brief.outcomes],
@@ -403,6 +405,7 @@ export function ChatView({
       sendNow.failed,
       threadId,
       turnFacts,
+      normalized,
     ],
   );
   useChatCardAnnouncer(threadId, failureCards.cards, historySettled);
@@ -479,6 +482,7 @@ export function ChatView({
     () =>
       viewTranscript({
         ...turnFacts,
+        normalized,
         inherited: inheritedTranscript,
         activity: { awaitingSubagents },
         queued: queuedWriterTurnIds,
@@ -493,6 +497,7 @@ export function ChatView({
       queuedWriterTurnIds,
       switchAwaitsRun,
       turnFacts,
+      normalized,
     ],
   );
 
