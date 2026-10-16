@@ -25,6 +25,7 @@ import {
   replyFailedCopy,
   type ThreadRepositories,
 } from "../../threads/index.js";
+import { detectFailures } from "./failure-detection.js";
 
 export const EXPIRED_INTERRUPT_VALUE = "__expired__";
 
@@ -234,6 +235,11 @@ export function createInterruptRegistry(): InterruptRegistry {
         for (const event of events) {
           await deps.journalWriter.appendEvent(deps.threadId, event);
           await projectReadModelEvent(deps.repos, event);
+          await detectFailures(
+            { repos: deps.repos, eventWriter: deps.journalWriter },
+            deps.threadId,
+            event,
+          );
         }
         recoveryEvents.push(...events);
       });

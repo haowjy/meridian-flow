@@ -8,6 +8,7 @@
  * record in a transaction follows its last input write. A mark on a chat whose lock the transaction
  * does not hold throws, so a missing lock fails tests instead of shipping a stale record.
  */
+import { usageFailure } from "@meridian/contracts/failures";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { RunState } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
@@ -28,7 +29,7 @@ import { toInboxMessage } from "./drizzle-inbox.js";
 /** Where a chat's record goes: the connection it is read on and the writer that appends it. */
 export type RunStatePublisher = {
   db: DrizzleDatabase;
-  events: Pick<EventJournalWriter, "appendEvent">;
+  events: Pick<EventJournalWriter, "appendEvent" | "recordFailure">;
 };
 
 type PublicationState = {
@@ -220,4 +221,46 @@ export async function readRunStateAtHead(
     return { ...body, version: cursorSeqForJournalHead(row?.nextSeq ?? 0n).toString() };
   };
   return isInDrizzleTransaction() ? read() : runInRootDrizzleReadSnapshot(db, read);
+}
+
+/**
+ * Logs a usage block going up or clearing as a failure occurrence, from the write that changed
+ * `RunState.blocked` (`was` and `now` are its values around the write). The occurrence is
+ * `usage:${threadId}:${episode}`, where the episode is the journal seq of the chat's last unblocked
+ * run-state record: no record of the block exists before commit, every record during the block is
+ * blocked, and the clearing record is appended last, so the episode reads the same at the block and at
+ * its clear without a column to hold it.
+ */
+export async function recordUsageTransition(
+  threadId: ThreadId,
+  was: "credits_exhausted" | null,
+  now: "credits_exhausted" | null,
+) {
+  const publisher = lockedState(threadId).publisher;
+  if (!publisher?.events.recordFailure || (was === null) === (now === null)) return;
+  const [row] = await currentDrizzleDb(publisher.db)
+    .select({ seq: sql<string | null>`max(${schema.eventJournal.seq})` })
+    .from(schema.eventJournal)
+    .where(
+      and(
+        eq(schema.eventJournal.threadId, threadId),
+        eq(schema.eventJournal.eventType, "run_state.changed"),
+        sql`${schema.eventJournal.payload}->'runState'->>'blocked' IS NULL`,
+      ),
+    );
+  const base = {
+    occurrenceId: `usage:${threadId}:${row?.seq ?? "0"}`,
+    threadId,
+    failure: usageFailure(now ?? was ?? "credits_exhausted"),
+  };
+  publisher.events.recordFailure(
+    now
+      ? { ...base, phase: "recorded" }
+      : {
+          ...base,
+          phase: "ended",
+          end: "resolved",
+          failure: { ...base.failure, actionable: false },
+        },
+  );
 }

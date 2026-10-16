@@ -34,6 +34,7 @@ import {
   projectReadModelEvent,
   type ThreadRepositories,
 } from "../../threads/index.js";
+import { detectFailures, recordPassed } from "./failure-detection.js";
 import {
   appendedTurns,
   decideForgetting,
@@ -101,11 +102,14 @@ export async function persistAndAppendTurnStartEvents<T>(
     );
     if (options?.expectedForgetting && !sameForgotten(options.expectedForgetting, decision))
       throw new ForgettingMismatchError(threadId);
-    if (decision.forget.length === 0 || decision.reason === null) return persisted;
     const first = persisted.events.findIndex(
       (event) => event.type === "turn.created" && isClosingRow(event.turn),
     );
     const closing = persisted.events[first];
+    // Only the commit's decision logs the passes: run start decided the same, and one record each.
+    if (closing?.type === "turn.created")
+      await recordPassed(deps, threadId, decision.passed, closing.turn.id);
+    if (decision.forget.length === 0 || decision.reason === null) return persisted;
     if (closing?.type !== "turn.created") return persisted;
     const events = [...persisted.events];
     events.splice(first + 1, 0, {
@@ -150,6 +154,7 @@ async function projectAndAppendEvents<T>(
       createdTurns.push(created);
     }
     await deps.eventWriter.appendEvent(threadId, event);
+    await detectFailures(deps, threadId, event);
   }
   await options?.afterEvents?.(persisted.result);
   return { ...persisted, createdTurns };

@@ -1285,6 +1285,7 @@ export function createInMemoryAppServices(): AppServices {
   };
   const inMemoryThreadEventHub: ThreadEventHub = {
     invalidateCommittedJournal() {},
+    recordFailure() {},
     async appendEvent() {
       return 0n;
     },

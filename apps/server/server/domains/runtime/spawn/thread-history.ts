@@ -309,8 +309,8 @@ async function readHistoryPage(p: Projection, input: ThreadHistoryInput) {
     toolPairs: ReadonlyMap<string, Block>,
   ): Promise<RowPart | null> {
     const part = await rowPart(entry, block, toolPairs);
-    // A failed or cancelled turn shows its status even when every row is hidden.
-    return part ?? (entry.heading.failure && !entry.shown && !hiddenTurn(entry) ? {} : null);
+    // A cancelled turn shows its marker even when every row is hidden; a failed one with nothing left is skipped.
+    return part ?? (entry.heading.cancelled && !entry.shown && !hiddenTurn(entry) ? {} : null);
   }
 
   const hiddenTurn = (entry: PageTurn) => entry.heading.system && !include.has("system_messages");
@@ -396,7 +396,7 @@ async function readHistoryPage(p: Projection, input: ThreadHistoryInput) {
 
   function costOf(entry: PageTurn, part: RowPart) {
     let cost = 0;
-    if (!entry.shown) cost += 10 + (entry.heading.failure ? 30 : 0);
+    if (!entry.shown) cost += 10 + (entry.heading.cancelled ? 30 : 0);
     if (part.item) cost += tokens(JSON.stringify(part.item)) + 5;
     if (part.hidden && entry.hiddenCount === 0) cost += 30;
     if (part.report) cost += tokens(part.report.content) + 20;
@@ -532,7 +532,7 @@ async function readHistoryPage(p: Projection, input: ThreadHistoryInput) {
       hiddenCount: entry.hiddenCount,
       ...(entry.report ? { report: entry.report } : {}),
       ...(summarizedBefore ? { summarizedBefore: true } : {}),
-      ...(entry.heading.failure ? { failure: entry.heading.failure } : {}),
+      ...(entry.heading.cancelled ? { cancelled: true as const } : {}),
     });
   }
   const ref = target.ref as string;
@@ -596,7 +596,7 @@ async function expandHistory(p: Projection, expand: number | string) {
     items,
     hiddenCount: 0,
     ...(report ? { report } : {}),
-    ...(heading.failure ? { failure: heading.failure } : {}),
+    ...(heading.cancelled ? { cancelled: true as const } : {}),
   });
   const ref = target.ref as string;
   let budget = EXPAND_TOKENS - 200;
