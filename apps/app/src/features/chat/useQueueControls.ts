@@ -7,7 +7,7 @@
 import { t } from "@lingui/core/macro";
 import { waitingWriterMessages } from "@meridian/thread-client";
 import { useCallback, useRef } from "react";
-import { announce, announceError, useRunState } from "@/client/stores";
+import { announce, useRunState } from "@/client/stores";
 import type { ChatHandBack } from "./useHandBack";
 
 export type QueueControls = {
@@ -28,9 +28,9 @@ export function useQueueControls(input: { threadId: string; handBack: ChatHandBa
     (ids: readonly string[]) => {
       if (ids.length === 0) return;
       void operation.press({ kind: "queue", ids }).then((outcome) => {
-        if (outcome.kind === "confirmed") {
-          if (outcome.result.handedBack.length > 0) announce(t`Moved to the message box`);
-        } else announceError(t`Couldn't move your queued message to the message box.`);
+        // A failure is a card (`chatCards`); only the success is announced here.
+        if (outcome.kind === "confirmed" && outcome.result.handedBack.length > 0)
+          announce(t`Moved to the message box`);
       });
     },
     [operation],

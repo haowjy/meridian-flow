@@ -5,15 +5,16 @@
  * asks the server to write it. The server's turn replaces the stand-in by id,
  * first from the response and then from the snapshot. A refusal (409: the chat
  * moved on first; or the server is shutting down) wrote nothing: the stand-in
- * goes, the turn the writer pressed gets a temporary "Couldn't retry." error card,
- * and the snapshot refreshes to show the true state. The card clears at the writer's next
- * Retry or send, or when a reply completes that wasn't complete at the refusal (read from
- * the stored turns' status; a reply that fails or is cancelled leaves it). A lost
- * request keeps the stand-in, failed, and its Retry re-sends under the same
- * id: the lost request may have arrived. The server answers that replay with
- * the execution the first request started, or `retry_pending` (503) while it
- * can't tell yet: the same id goes again after the server's `Retry-After`, a
- * bounded number of times, then waits for the writer's Retry like a lost request.
+ * goes and the snapshot refreshes to show the true state. The refusal is a fact this hook
+ * holds (`outcomes`); `chatCards` makes it the temporary "Couldn't retry." card on the pressed
+ * turn. It clears at the writer's next Retry or send, or when a reply completes that wasn't
+ * complete at the refusal (read from the stored turns' status; a reply that fails or is
+ * cancelled leaves it). A lost request is the same kind of fact: the entry is kept, failed,
+ * but is no stand-in (the pressed turn shows again, with a "Couldn't start the retry." card),
+ * and Try again re-sends under the same id: the lost request may have arrived. The server
+ * answers that replay with the execution the first request started, or `retry_pending` (503)
+ * while it can't tell yet: the same id goes again after the server's `Retry-After`, a bounded
+ * number of times, then waits for the writer's Try again like a lost request.
  *
  * Which entries remain, which stand in as turns and which failed replies they hide is the
  * package's one decision (`reconcileRetries`): a stand-in whose reservation ended without
@@ -25,16 +26,21 @@
  * The handoff brief's Retry (`useHandoffBrief`) and a failed reply's Retry
  * (`useReplyRetry`) supply what to post and how the stand-in looks.
  */
-import { t } from "@lingui/core/macro";
 import { REPLY_RETRY_PENDING_CODE, type Turn } from "@meridian/contracts/protocol";
 import type { RunState } from "@meridian/contracts/threads";
-import { placeStandIns, type RetryEntry, reconcileRetries } from "@meridian/thread-client";
+import {
+  placeStandIns,
+  type RetryEntry,
+  type RetryOutcome,
+  type RetryRefusal,
+  reconcileRetries,
+} from "@meridian/thread-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HttpResponseError, httpErrorStatus, retryAfterMs } from "@/client/api/http-client";
 import { isMeridianApiError } from "@/client/api/meridian-error";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
-import { announce, announceError, useRunState, useThreadActions } from "@/client/stores";
+import { useRunState, useThreadActions } from "@/client/stores";
 import { reportRetryRefused } from "./error-telemetry";
 
 export type StandInRequest = "sending" | "sent" | "failed";
@@ -43,6 +49,8 @@ type StandIn = RetryEntry & {
   /** The stand-in, then the server's turn once the response lands. */
   turn: Turn;
   request: StandInRequest;
+  /** Writer presses of this request: the card's occurrence (`${id}:${attempt}`). */
+  attempt: number;
 };
 
 /**
@@ -60,8 +68,11 @@ export type RetryStandIns = {
   standIns: readonly Turn[];
   /** Where a stand-in's request is; null once the store has it, or for any other turn. */
   requestOf: (turnId: string) => StandInRequest | null;
-  /** Turns whose Retry the server refused and no reply has completed since; nothing was written. */
-  refused: ReadonlyMap<string, RetryRefusal>;
+  /**
+   * Retries that did not start a reply, for `chatCards`: a refusal (nothing was written, and no
+   * reply has completed since) or a lost request (Try again re-sends it).
+   */
+  outcomes: readonly RetryOutcome[];
   /**
    * Failed replies whose Retry is pending or accepted but no stored turn names it yet
    * (`metadata.retryOf`): `viewTranscript` leaves them out, so the Retry stands in their place.
@@ -76,10 +87,7 @@ export type RetryStandIns = {
   retry: (from: Turn, build: (input: { id: string; leaf: Turn | null }) => Turn | null) => void;
 };
 
-/** Why the server refused a Retry, when it said: another reply took the chat first (409), or no cause worth naming. */
-export type RetryRefusal = "another-reply" | "other";
-
-type Refusal = { before: ReadonlySet<string>; cause: RetryRefusal };
+type Refusal = { before: ReadonlySet<string>; cause: RetryRefusal; id: string; attempt: number };
 
 const NO_REFUSALS: ReadonlyMap<string, Refusal> = new Map();
 
@@ -120,8 +128,6 @@ export function useRetryStandIns(input: {
    * A null turn: accepted, but the server has no turn to show yet.
    */
   post: (id: string, from: string) => Promise<StandInAnswer>;
-  /** On the failed stand-in and announced, when the request never answered. */
-  lostCopy: string;
   /**
    * The Retry replaces the turn it retries in the transcript (a failed reply's Retry), so the
    * pressed turn stays out of view while the Retry is pending and until a stored turn carries
@@ -135,13 +141,13 @@ export function useRetryStandIns(input: {
   // Refused turn → the replies complete when it was refused. The refusal is temporary: it ends
   // when a reply completes that is not in that set (durable turn status, not timers).
   const [refusals, setRefusals] = useState(NO_REFUSALS);
-  const refused = useMemo<ReadonlyMap<string, RetryRefusal>>(() => {
-    const open = new Map<string, RetryRefusal>();
-    for (const [from, { before, cause }] of refusals) {
+  const refused = useMemo<readonly RetryOutcome[]>(() => {
+    const open: RetryOutcome[] = [];
+    for (const [turnId, { before, cause, id, attempt }] of refusals) {
       const answered = storedTurns.some(
         (turn) => turn.role === "assistant" && turn.status === "complete" && !before.has(turn.id),
       );
-      if (!answered) open.set(from, cause);
+      if (!answered) open.push({ kind: "refused", turnId, requestId: id, attempt, cause });
     }
     return open;
   }, [refusals, storedTurns]);
@@ -163,13 +169,25 @@ export function useRetryStandIns(input: {
   }, []);
 
   const runState = useRunState(threadId);
+  // A lost request is no stand-in: it hides nothing and draws nothing, and waits for Try again.
+  const sending = useMemo(() => local.filter((entry) => entry.request !== "failed"), [local]);
+  const lost = useMemo(() => local.filter((entry) => entry.request === "failed"), [local]);
   const reconciled = useMemo(
-    () => reconcileRetries({ entries: local, storedTurns, view: runState, supersedes }),
-    [local, runState, storedTurns, supersedes],
+    () => reconcileRetries({ entries: sending, storedTurns, view: runState, supersedes }),
+    [sending, runState, storedTurns, supersedes],
   );
   useEffect(() => {
-    if (reconciled.remaining !== local) setLocal([...reconciled.remaining]);
-  }, [local, reconciled.remaining]);
+    // A lost request the store now has by id did land: it is a stored turn's story, not a failure.
+    const stored = new Set(storedTurns.map((turn) => turn.id));
+    const landed = lost.some((entry) => stored.has(entry.id));
+    if (reconciled.remaining === sending && !landed) return;
+    const keep = new Set(reconciled.remaining.map((entry) => entry.id));
+    setLocal((current) =>
+      current.filter((entry) =>
+        entry.request === "failed" ? !stored.has(entry.id) : keep.has(entry.id),
+      ),
+    );
+  }, [lost, reconciled.remaining, sending, storedTurns]);
 
   const patch = useCallback((id: string, change: (entry: StandIn) => StandIn) => {
     setLocal((current) => current.map((entry) => (entry.turn.id === id ? change(entry) : entry)));
@@ -210,25 +228,21 @@ export function useRetryStandIns(input: {
           // goes to diagnostics.
           if (isRetryRefusal(error)) {
             reportRetryRefused({ threadId, from, status: httpErrorStatus(error), error });
+            const attempt = localRef.current.find((entry) => entry.turn.id === id)?.attempt ?? 1;
             setLocal((current) => current.filter((entry) => entry.turn.id !== id));
             setRefusals((current) =>
               new Map(current).set(from, {
                 before: completedReplies(storedRef.current),
                 cause: httpErrorStatus(error) === 409 ? "another-reply" : "other",
+                id,
+                attempt,
               }),
             );
-            announce(t`Couldn't retry.`);
             refresh();
             return;
           }
-          const copy = optionsRef.current.lostCopy;
-          announceError(copy);
-          // The stand-in reads its failure from its status, as a server failure does.
-          patch(id, (entry) => ({
-            ...entry,
-            request: "failed",
-            turn: { ...entry.turn, status: "error", error: copy },
-          }));
+          // Lost: the failure is a fact `chatCards` turns into a card on the pressed turn.
+          patch(id, (entry) => ({ ...entry, request: "failed" }));
         },
       );
     },
@@ -241,17 +255,17 @@ export function useRetryStandIns(input: {
     (from, build) => {
       // One clearing rule: any next action of the writer drops every "Couldn't retry." card.
       setRefusals(NO_REFUSALS);
-      const lost = localRef.current.find(
-        (entry) => entry.turn.id === from.id && entry.request === "failed",
+      const lostEntry = localRef.current.find(
+        (entry) => entry.from === from.id && entry.request === "failed",
       );
-      if (lost) {
+      if (lostEntry) {
         // Same id: if the lost request did reach the server, this replays it.
-        patch(from.id, (entry) => ({
+        patch(lostEntry.turn.id, (entry) => ({
           ...entry,
           request: "sending",
-          turn: { ...entry.turn, status: "pending", error: null },
+          attempt: entry.attempt + 1,
         }));
-        send(from.id, lost.from);
+        send(lostEntry.turn.id, lostEntry.from);
         return;
       }
       const id = crypto.randomUUID();
@@ -271,6 +285,7 @@ export function useRetryStandIns(input: {
           from: from.id,
           executionId: null,
           answerVersion: null,
+          attempt: 1,
         },
       ]);
       send(id, from.id);
@@ -290,6 +305,20 @@ export function useRetryStandIns(input: {
     [reconciled.standIns],
   );
   const retried = reconciled.hidden;
+  const outcomes = useMemo<readonly RetryOutcome[]>(
+    () => [
+      ...refused,
+      ...lost.map(
+        (entry): RetryOutcome => ({
+          kind: "lost",
+          turnId: entry.from,
+          requestId: entry.id,
+          attempt: entry.attempt,
+        }),
+      ),
+    ],
+    [lost, refused],
+  );
 
-  return { standIns, requestOf, refused, retried, clearRefused, retry };
+  return { standIns, requestOf, outcomes, retried, clearRefused, retry };
 }

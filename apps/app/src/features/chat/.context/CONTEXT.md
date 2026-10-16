@@ -21,7 +21,7 @@ draft-control changes can be understood independently.
 - [Draft review](../../draft-review/.context/draft-review.md) — inline review session, pending projection,
   freshness, and draft-only tabs (owned by `features/draft-review`).
 - [Compaction surfaces](compaction-surfaces.md) — divider rows, R4 shells that
-  never render, `endsTranscript` with a divider, and optimistic writer
+  never render, a divider as a closing row, and optimistic writer
   controls (`/compact`, withdrawal).
 - [Fork and handoff](fork-and-handoff.md) — the turn actions, navigate-first
   creation and its failure, the brief card, a fork's inherited view, and

@@ -33,8 +33,8 @@ and says what it left out. The decision and its rejected alternatives are in the
   the newest failure.
 - **A failure shows only while it can be acted on.** A failed reply that is not
   the latest row (a write-mode line after it does not close it), with no items
-  and no deliveries, has no row. The app passes `refused` (ids whose Retry the
-  server refused) to keep that row for the refusal card; `./mf` passes none.
+  and no deliveries, has no row. The caller passes `anchoredTurnIds` from `chatCards` to keep that row for
+  a card anchored on it (a refused Retry's, say); `./mf` passes the same projection's set.
 - **Stand-ins and the opening seed** are placed after their `prevTurnId`; the
   opening seed goes first, which equals placing stand-ins first because no
   producer anchors a stand-in to it. A row's `identity` is the server turn id,
@@ -222,7 +222,8 @@ One framework-free operation runs Stop, the queue's x and Cancel queue for the a
   version)` carries the record's version. `store` is the pending-command store (`pending`,
   `record`, `accept`, `drop`; each write says whether it took). `accept` retires the command and
   stores the receipt in one write, so a command never outlives its receipt.
-- **Order.** Save the command (a refusal sends nothing: `unsaved`), add the intent so rows hide,
+- **Order.** Save the command and occurrence (a refused first save is `unsaved`; a refused Retry
+  save keeps an already stored command's status; neither posts), add the intent so rows hide,
   post, classify, and only then change state. Confirmed: receive the record, remove `handedBack`
   and `gone` turns at its version, `accept` the content once (or `drop` on a lost race, writing
   nothing), answer the intent. A failed `accept` is `unwritten`: the command stays and a replay
@@ -236,8 +237,15 @@ One framework-free operation runs Stop, the queue's x and Cancel queue for the a
   (`ambiguous`, `unwritten`, `unsaved`, `refused`); the first two stay in the store, the last two
   live in page memory. `reconcile()` (host-called) drops entries whose command left the store.
   `subscribe` fires after every change to `unresolved()` or `stopFacts()` from any call, so hosts
-  never wrap calls to redraw. `handBackCards(unresolved, view)` projects the notice-stack cards (copy,
-  count, retry or dismiss) from them plus a failed Send now, with no dependence on rows.
+  never wrap calls to redraw. `chatCards` folds them (with a failed Send now) into the composer's card stack (copy,
+  count, try again or dismiss), with no dependence on rows. Each command carries an `occurrence: { requestId, attempt }`,
+  allocated before any save or post. Retry mints a new occurrence and saves it, including when the
+  previous save failed; the stable outer command id still replays the same server decision.
+  Joining an in-flight attempt and reload's resume retain the saved occurrence.
+  If saving a Retry occurrence fails, nothing new is posted: an already durable command keeps
+  its unresolved status and recovery card, not the never-saved classification. Reload can only
+  recover the last occurrence whose save succeeded. The attempt returns `unsaved`, while its
+  card still describes the durable command's unresolved status.
 - **Send now** is not a hand-back command: `postSendNow(ports, threadId, body)` shares the
   classifier and returns confirmed (`cancelledExecutionId`; null means this attempt requested no
   cancellation), refused, or ambiguous with the frozen body. `sendNowRequest(view)` builds the body.
