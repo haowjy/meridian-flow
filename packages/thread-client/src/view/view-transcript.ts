@@ -8,7 +8,7 @@ import type { Turn } from "@meridian/contracts/protocol";
 import { retryTargetOf } from "@meridian/contracts/threads";
 import { type AssistantView, viewAssistantTurn } from "./assistant-view";
 import { groupDeliveryEvents } from "./delivery-groups";
-import { normalizeTurns, type TurnFacts } from "./normalize-turns";
+import { type NormalizedTurns, normalizeTurns, type TurnFacts } from "./normalize-turns";
 import { isOptimisticTurnId } from "./optimistic-turn-id";
 import { replyDrawsNothing } from "./reply-draws-nothing";
 import {
@@ -22,6 +22,8 @@ import { type TurnStats, turnStats } from "./turn-stats";
 import { projectWriterText, type WriterText } from "./writer";
 
 export type TranscriptViewInput = TurnFacts & {
+  /** The same normalization used by the host's cards and run selectors. */
+  normalized?: NormalizedTurns;
   /** A fork's frozen prefix from its source, or omitted when none is known. */
   inherited?: InheritedTranscript | null;
   activity: {
@@ -105,7 +107,7 @@ const NO_DELIVERIES: readonly (readonly DeliveryEvent[])[] = [];
 
 export function viewTranscript(input: TranscriptViewInput): TranscriptView {
   const standIns = input.standIns ?? [];
-  const normalized = normalizeTurns(input);
+  const normalized = input.normalized ?? normalizeTurns(input);
   const { placed } = normalized;
   // A card needs its turn's row, so an anchored turn outranks Retry suppression and forgetting
   // (a refused Retry's reply is stamped by the competing Retry that won). Inherited rows are never

@@ -49,7 +49,9 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
   whose `inputs` states what the view was computed from (no local records,
   stand-ins, opening seed or live activity, inherited history omitted, background
   report bodies and change trails not fetched). `--full --json` is the inspectable
-  form. A reply's `finalText` reads the same view model's visible text items.
+  form. Outside `cards`, raw `row.error`, failure reasons and provider errors are
+  diagnostics, not the app's failure text or evidence of which failure the writer sees.
+  A reply's `finalText` reads the same view model's visible text items.
 - **`liveView` is a lead, not proof.** `send` and `tail --until-idle` compare each
   followed turn's reduced `status` and `finalText` with the confirming snapshot's:
   `matches`, `differs` (with a compact `liveDiff`) or `not_observed` (a replay gap,
