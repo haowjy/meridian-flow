@@ -1109,6 +1109,14 @@ export function createInMemoryRepositories(
         .filter((b) => b.turnId === turnId)
         .sort((a, b) => a.sequence - b.sequence);
     },
+    async listByTurnIds(turnIds: readonly TurnId[]) {
+      const wanted = new Set<string>(turnIds);
+      return [...blocks.values()]
+        .filter((b) => wanted.has(b.turnId as string))
+        .sort((a, b) =>
+          a.turnId === b.turnId ? a.sequence - b.sequence : a.turnId < b.turnId ? -1 : 1,
+        );
+    },
     async listByThread(threadId: ThreadId) {
       const orderedTurns = orderTurnsByPosition(
         [...turns.values()].filter((t) => t.threadId === threadId),
