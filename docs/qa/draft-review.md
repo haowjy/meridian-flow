@@ -207,6 +207,18 @@ token budget shows whole red/green
 replacement rather than cross-paragraph word noise. Repeat the move, cut/paste
 and Discard Undo checks below; retained and fresh-node diffs must agree.
 
+For whole-draft Apply, seed 100 or 500 paragraphs of 100 words, rewrite them through
+block-range remove plus insert, and type a distinctive sentence into the middle.
+Run both directly and after one-change Discard then Ctrl+Z: the latter fragments
+retained Yjs items and exercises different journal costs. Wait for writer
+acknowledgement, then press **Apply draft** with the edited review loaded (not an
+early snapshot-less click). Record HTTP status and request duration, poll
+`/readyz` independently during Apply, and use a separate live read to confirm the
+writer sentence survived. Include `uptime` with timings. The 50k Apply should
+answer in seconds without starving readiness; a fast failed response is not a
+pass. If profiling Nitro dev, attach to its request-carrying worker, not its idle
+launcher.
+
 ## Probe C: moves, Ctrl+Z and view handoff
 
 1. In an Editor review, select the first paragraph including its break with a native DOM
