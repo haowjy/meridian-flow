@@ -152,9 +152,6 @@ describe("project recovery context-port resolution", () => {
 it("names a chat's Scratch by its named Work, or in No Work by its lineage's first chat", async () => {
   const lookup = createChatFileLookup({
     chats: { byRef: async (_p, ref) => ({ chatId: `id-${ref}`, chatRef: ref, live: true }) },
-    topPrimaryChats: {
-      resolveTopPrimaryChat: async (id) => ({ chatId: id, chatRef: String(id).slice(3) }),
-    },
     lineages: {
       byId: async () => null,
       byRef: async () => null,

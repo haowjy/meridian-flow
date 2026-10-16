@@ -372,7 +372,6 @@ function buildUnifiedContextPort(input: {
       const lineage = await storeResolvers.lineages.byRef(scope.projectId, ref);
       return lineage ? lineageSource(lineage) : null;
     },
-    rootForThreadRef: (ref) => storeResolvers.lineages.rootForThreadRef(scope.projectId, ref),
     listLineages: () => storeResolvers.lineages.list(scope.projectId),
     workAuthorities,
     primaryWorkAuthority: scope.kind === "work" ? scope.authority : undefined,
@@ -633,7 +632,6 @@ export function createProductionUnifiedContextPortFactory(options: {
   );
   const chatFiles = createDrizzleChatFileLookup(options.db, {
     chats: storeResolvers.chats,
-    topPrimaryChats,
     lineages: storeResolvers.lineages,
   });
   storeResolvers.chatFiles = chatFiles;

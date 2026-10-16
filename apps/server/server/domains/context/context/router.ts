@@ -72,7 +72,6 @@ export interface ContextPortRouterDeps {
     ref: string,
   ) => Promise<import("../chat-file-addresses.js").ChatFileAddresses | null>;
   resolveLineageSource?: (ref: string) => Promise<ContextSourceBinding | null>;
-  rootForThreadRef?: (ref: string) => Promise<import("../scratch-owner.js").ScratchLineage | null>;
   listLineages?: () => Promise<import("../scratch-owner.js").ScratchLineage[]>;
   moveLinks?: ConstructorParameters<typeof ContextTreeMover>[2];
   operationReceipts?: import("./context-operation-receipts.js").ContextOperationReceipts;
@@ -430,12 +429,12 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     } else if (scheme === "scratch" && authority.kind === "lineage") {
       const lineageSource = await deps.resolveLineageSource?.(authority.rootThreadRef);
       if (!lineageSource) {
-        const owner = await deps.rootForThreadRef?.(authority.rootThreadRef);
+        const files = await deps.chatFiles?.(authority.rootThreadRef);
         return Err({
           code: "invalid_uri",
           uri,
-          reason: owner
-            ? `This chat's notes are at scratch://@/${owner.rootThreadRef}/. Use its first chat handle, or scratch://x in that chat.`
+          reason: files
+            ? `Chat ${authority.rootThreadRef}'s scratch notes are at ${files.scratch}. scratch://x in that chat reaches the same notes.`
             : "Scratch requires a first chat handle. Use scratch://x in a chat, or scratch://@/c12/x. List chats with ls scratch://@/.",
         });
       }
