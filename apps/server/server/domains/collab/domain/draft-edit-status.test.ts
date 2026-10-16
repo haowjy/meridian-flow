@@ -199,7 +199,12 @@ it.each([
   expect(before.groups).toHaveLength(2);
   expect(partsInChanges(doc, effects)).toEqual([true, true]);
   const retained = [
-    ...classifyChanges(doc, before, { userId: "u", parts }, { record: true }).values(),
+    ...classifyChanges(
+      doc,
+      before,
+      { userId: "u", parts, snapshot: Y.snapshot(doc) },
+      { record: true },
+    ).values(),
   ][1];
   doc.clientID = 300;
   doc.transact(() =>
@@ -224,7 +229,12 @@ it.each([
     expect(partsInChanges(reload, effects)[1]).toBe(true);
     if (shape !== "block type") expect(partsInChanges(reload, effects)[0]).toBe(false);
     const after = [
-      ...classifyChanges(reload, projection(), { userId: "u", parts }, { record: true }).values(),
+      ...classifyChanges(
+        reload,
+        projection(),
+        { userId: "u", parts, snapshot: Y.snapshot(reload) },
+        { record: true },
+      ).values(),
     ];
     expect(after).toHaveLength(1);
     expect(after[0].members).toContain(1);

@@ -866,3 +866,17 @@ Use two chats editing one paragraph: an inline image followed by
 The editor/status regression tables exercise GC-on/off reloads, real sync and
 undo plugins, exact retained Apply evidence, and single-update delivery. Live
 browser acceptance still checks the controls and bylines above.
+
+### Revision-fenced membership and failed reads
+
+1. Open a chat's existing text draft. Hold the next attribution HTTP response, then deliver another AI
+   edit. Its unresolved byline must not say “You”; its file remains in the dock and summary commands wait.
+2. Repeat with a same-prose replacement (replace a suffix, then restore its spelling under new Yjs IDs).
+   Verify another attribution request occurs despite the unchanged change ID. Release each response:
+   the chat byline returns and commands become available.
+3. In a two-file chat dock, fail one attribution request with HTTP 503. Its file opens with
+   “Changes couldn’t load” and “Retry changes”; the dock is not endlessly busy. Summary Apply/Discard
+   stay disabled, but ready-file change commands work. Retry recovers the failed file and summary commands.
+4. With 25 known-empty files and the dock collapsed, verify 25 room acquisitions, metadata reads and
+   attribution reads (no file-count cap). The dock disappears once all 25 resolve empty. Readers are flat,
+   not a recursive prefix-copy chain; batching unopened files is not implemented.

@@ -149,7 +149,11 @@ it.each(
     const reloaded = new Y.Doc({ gc: true });
     Y.applyUpdate(reloaded, Y.encodeStateAsUpdate(doc));
     for (const read of [doc, reloaded]) {
-      const classified = classifyChanges(read, projectRoom(read), { userId: "u", parts: [part] });
+      const classified = classifyChanges(read, projectRoom(read), {
+        userId: "u",
+        parts: [part],
+        snapshot: Y.snapshot(read),
+      });
       const members = [...classified.values()].flatMap((c) => c.members);
       expect(members.length > 0 && members.every((m) => m === 0)).toBe(true);
       expect([...classified.values()].flatMap((c) => c.byline)).not.toContainEqual({
@@ -181,7 +185,8 @@ it.each([
   };
   Y.applyUpdate(doc, Y.encodeStateAsUpdate(peer));
   const provenance = { userId: "u", parts: [part] };
-  const classify = (read: Y.Doc) => classifyChanges(read, projectRoom(read), provenance);
+  const classify = (read: Y.Doc) =>
+    classifyChanges(read, projectRoom(read), { ...provenance, snapshot: Y.snapshot(read) });
   const deleteBlue = () => {
     const text = (fragment.get(0) as Y.XmlElement).get(0) as Y.XmlText;
     text.delete(text.toString().indexOf("blue"), 4);
@@ -190,7 +195,12 @@ it.each([
   const chat = { kind: "thread", threadId: "chat", turnId: "turn" };
   try {
     if (applied) {
-      const classified = classifyChanges(doc, projectRoom(doc), provenance, { record: true });
+      const classified = classifyChanges(
+        doc,
+        projectRoom(doc),
+        { ...provenance, snapshot: Y.snapshot(doc) },
+        { record: true },
+      );
       const client = doc.clientID;
       doc.clientID = 1;
       doc.transact(() => {

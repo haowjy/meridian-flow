@@ -58,6 +58,8 @@ export interface DraftAttribution {
   itemKey: DraftItemKey;
   userId: string;
   edits: DraftAttributionEdit[];
+  /** Encoded Yjs snapshot (state vector and delete set) covered by this read. */
+  revision: number[];
 }
 
 /** `GET /api/threads/:threadId/draft-files`: the listed items whose pending AI edits include this chat. */

@@ -51,6 +51,12 @@ const draft = (id: string, extra: object = {}) => ({
   ...extra,
 });
 
+function roomDoc(id: string) {
+  const room = fixture.rooms.get(`room-${id}`);
+  if (!room) throw new Error(`No room for ${id}`);
+  return room.document;
+}
+
 /** Give a draft room text: its draft paragraphs and the base they are measured against. */
 function fillRoom(roomName: string, draftText: string[], baseText: string[]) {
   const room = fixture.rooms.get(roomName);
@@ -106,7 +112,8 @@ it("an expanded file lists its room's changes; Apply sends the id with the snaps
   fixture.network.listWorkDrafts.mockResolvedValue({ items: [file] });
   fixture.network.getThreadDraftFiles.mockResolvedValue({ drafts: [file] });
   // Every item this room's peer wrote is this chat's edit.
-  fixture.network.getDraftAttribution.mockImplementation(async () => ({
+  fixture.network.getDraftAttribution.mockImplementation(async (_p, _w, id) => ({
+    revision: [...Y.encodeSnapshot(Y.snapshot(roomDoc(id)))],
     itemKey: "draft-a",
     userId: "user-1",
     edits: [
@@ -233,14 +240,20 @@ it("an expanded file lists its room's changes; Apply sends the id with the snaps
 });
 
 it.each([
-  1, 2,
+  25,
 ])("%s files where the chat has no change after the writer's own edits leaves the dock, not a summary with commands and no rows", async (count) => {
   const file = draft("chapter", { itemKey: "draft-a" });
-  const files = count === 1 ? [file] : [file, draft("chapter2", { itemKey: "draft-b" })];
+  const files = [
+    file,
+    ...Array.from({ length: count - 1 }, (_, i) =>
+      draft(`chapter${i + 2}`, { itemKey: `draft-${i + 2}` }),
+    ),
+  ];
   fixture.network.listWorkDrafts.mockResolvedValue({ items: files });
   fixture.network.getThreadDraftFiles.mockResolvedValue({ drafts: files });
   // The chat's only write sits in ids nothing in the room holds: every change in the room is the writer's.
-  fixture.network.getDraftAttribution.mockImplementation(async () => ({
+  fixture.network.getDraftAttribution.mockImplementation(async (_p, _w, id) => ({
+    revision: [...Y.encodeSnapshot(Y.snapshot(roomDoc(id)))],
     itemKey: "draft-a",
     userId: "user-1",
     edits: [
@@ -261,18 +274,20 @@ it.each([
   }));
   fixture.network.getDraftMeta.mockImplementation(async (_p, _w, id) => ({
     ...meta,
-    itemKey: id === "chapter" ? "draft-a" : "draft-b",
+    itemKey: id === "chapter" ? "draft-a" : `draft-${id.slice("chapter".length)}`,
     roomName: `room-${id}`,
   }));
   await fixture.render(
     async () => {
       expect(document.body.textContent).not.toContain("Apply");
       await settleReact(() => expect(fixture.rooms.has("room-chapter")).toBe(true));
-      if (count === 2)
-        await settleReact(() => expect(fixture.rooms.has("room-chapter2")).toBe(true));
+      await settleReact(() => expect(fixture.rooms.has(`room-chapter${count}`)).toBe(true));
+      expect(fixture.network.getDraftAttribution).toHaveBeenCalledTimes(count);
       await act(async () => fillRoom("room-chapter", ["It was green."], ["It was red."]));
-      if (count === 2)
-        await act(async () => fillRoom("room-chapter2", ["It was green."], ["It was red."]));
+      await act(async () => {
+        for (let i = 2; i <= count; i++)
+          fillRoom(`room-chapter${i}`, ["It was green."], ["It was red."]);
+      });
       await settleReact(() => expect(document.querySelector("[data-draft-dock-file]")).toBeNull());
       expect(document.querySelector("[data-draft-dock]")).toBeNull();
       expect(document.body.textContent).not.toContain("Apply");
@@ -315,6 +330,70 @@ it("a new document has no live text to return to, so Discard closes its draft on
         itemKey: created.itemKey,
       });
       expect(open).not.toHaveBeenCalled();
+    },
+    { chatSurface: <Strip />, host },
+  );
+});
+
+it("a failed membership read shows Retry on its file, blocks summary Apply, and recovers", async () => {
+  const files = [
+    draft("chapter", { itemKey: "draft-a" }),
+    draft("chapter2", { itemKey: "draft-b" }),
+  ];
+  fixture.network.listWorkDrafts.mockResolvedValue({ items: files });
+  fixture.network.getThreadDraftFiles.mockResolvedValue({ drafts: files });
+  fixture.network.getDraftMeta.mockImplementation(async (_p, _w, id) => ({
+    ...meta,
+    itemKey: id === "chapter" ? "draft-a" : "draft-b",
+    roomName: `room-${id}`,
+  }));
+  let failed = true;
+  fixture.network.getDraftAttribution.mockImplementation(async (_p, _w, id) => {
+    if (id === "chapter" && failed) throw new Error("attribution HTTP 503");
+    const doc = roomDoc(id);
+    return {
+      itemKey: id === "chapter" ? "draft-a" : "draft-b",
+      userId: "u",
+      revision: [...Y.encodeSnapshot(Y.snapshot(doc))],
+      edits: [
+        {
+          threadId: "thread-a",
+          turnId: "turn",
+          title: "Chat",
+          at: "2026",
+          owner: {
+            threadId: "thread-a",
+            title: "Chat",
+            reveal: { threadId: "thread-a", turnId: "turn" },
+          },
+          inserted: [[doc.clientID, 0, Y.getState(doc.store, doc.clientID)]],
+          deleted: [],
+        },
+      ],
+    };
+  });
+  await fixture.render(
+    async () => {
+      await settleReact(() => expect(fixture.rooms.has("room-chapter2")).toBe(true));
+      await act(async () => {
+        fillRoom("room-chapter", ["green"], ["red"]);
+        fillRoom("room-chapter2", ["green"], ["red"]);
+      });
+      await settleReact(() =>
+        expect(
+          document.querySelector('[data-draft-dock-file="chapter"] [role=alert]'),
+        ).not.toBeNull(),
+      );
+      expect(document.querySelector("[data-draft-dock]")?.getAttribute("aria-busy")).toBe("false");
+      const apply = () =>
+        [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+          (button) => button.textContent === "Apply",
+        );
+      await settleReact(() => expect(apply()?.disabled).toBe(true));
+      failed = false;
+      await clickText("Retry changes");
+      await settleReact(() => expect(document.querySelector("[role=alert]")).toBeNull());
+      expect(apply()?.disabled).toBe(false);
     },
     { chatSurface: <Strip />, host },
   );

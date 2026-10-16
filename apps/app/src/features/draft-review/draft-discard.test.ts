@@ -275,7 +275,11 @@ it("move, cut across a paragraph break, paste and Undo keep the chat, atomically
   const { editor, history } = createReviewEditor([], doc);
   const original = editor.getJSON();
   const classification = (read: Y.Doc) => [
-    ...classifyChanges(read, projectRoom(read), { userId: "u", parts: [part] }).values(),
+    ...classifyChanges(read, projectRoom(read), {
+      userId: "u",
+      parts: [part],
+      snapshot: Y.snapshot(read),
+    }).values(),
   ];
   const check = () => {
     const reload = new Y.Doc({ gc: true });

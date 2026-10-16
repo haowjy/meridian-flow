@@ -1,8 +1,6 @@
 /**
- * The attribution query: the AI edit parts pending in a draft with their owning conversations, the
- * project's user and the Undo-restoration links, which the classifier joins to the room's text. One query
- * per draft; the review runtime asks again when the set of review changes moves (a chat's new write adds a
- * change). A missing or stale answer only drops a name.
+ * AI edit parts with their owning conversations and the room revision they cover. The runtime refreshes
+ * on item/deletion identity and provenance changes, not content hashes. Missing evidence is unresolved.
  */
 import type { QueryFunctionContext } from "@tanstack/react-query";
 import { getDraftAttribution } from "@/client/api/drafts-api";

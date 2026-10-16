@@ -139,7 +139,7 @@ export function appliedRecord(input: {
     const classified = classifyChanges(
       seen,
       projectReview(diffBlocks(base, draft)),
-      { userId: "", parts: input.parts },
+      { userId: "", parts: input.parts, snapshot: Y.snapshot(seen) },
       { record: true },
     );
     return applyRecordOf(

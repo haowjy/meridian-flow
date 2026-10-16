@@ -4,7 +4,15 @@ import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
 import { ChevronRight } from "lucide-react";
-import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   dismissOverrode,
   draftOverrode,
@@ -33,49 +41,70 @@ type DockView = {
   actionable: boolean;
 };
 
-/** Read collapsed files too: a SQL list cannot tell whether this chat still owns any text.
- * The reader chain composes dynamic hooks without copying room state into a second store. */
-function ReadDockFiles({
-  dock,
-  index = 0,
-  views = [],
-  children,
-}: {
-  dock: DraftDockModel;
-  index?: number;
-  views?: readonly DockView[];
-  children: (views: readonly DockView[]) => ReactNode;
-}) {
-  const file = dock.files[index];
-  return file ? (
-    <ReadDockFile dock={dock} file={file} index={index} views={views}>
-      {children}
-    </ReadDockFile>
-  ) : (
-    children(views)
-  );
+/** One keyed owner for the dock's summary, rows and command targets. Readers never copy prefixes. */
+function createMembershipSummary() {
+  const views = new Map<string, DockView>();
+  const listeners = new Set<() => void>();
+  let revision = 0;
+  const notify = () => {
+    revision++;
+    for (const listener of listeners) listener();
+  };
+  return {
+    views,
+    snapshot: () => revision,
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    publish(key: string, next: DockView) {
+      const previous = views.get(key);
+      views.set(key, next);
+      // Command callbacks follow the latest binding without making every render a membership change.
+      if (
+        !previous ||
+        previous.file !== next.file ||
+        previous.visible !== next.visible ||
+        previous.actionable !== next.actionable ||
+        previous.overrode !== next.overrode ||
+        previous.view.items !== next.view.items ||
+        previous.view.discarded !== next.view.discarded ||
+        previous.view.status !== next.view.status ||
+        previous.view.wholeDocument !== next.view.wholeDocument ||
+        previous.view.membership.status !== next.view.membership.status ||
+        previous.view.completing !== next.view.completing ||
+        previous.view.locked !== next.view.locked
+      )
+        notify();
+    },
+    remove(key: string) {
+      if (views.delete(key)) notify();
+    },
+  };
 }
 
 function ReadDockFile({
   dock,
   file,
-  index,
-  views,
-  children,
+  summary,
 }: {
   dock: DraftDockModel;
   file: DockFile;
-  index: number;
-  views: readonly DockView[];
-  children: (views: readonly DockView[]) => ReactNode;
+  summary: ReturnType<typeof createMembershipSummary>;
 }) {
-  const draft = {
-    projectId: dock.projectId,
-    workId: dock.workId,
-    documentId: file.row.documentId,
-    itemKey: file.row.draft.itemKey,
-  };
-  const overrode = draftOverrode(useDraftCommandRecords(), draft);
+  const draft = useMemo(
+    () => ({
+      projectId: dock.projectId,
+      workId: dock.workId,
+      documentId: file.row.documentId,
+      itemKey: file.row.draft.itemKey,
+    }),
+    [dock.projectId, dock.workId, file.row.documentId, file.row.draft.itemKey],
+  );
+  const records = useDraftCommandRecords();
+  const overrode = useMemo(() => draftOverrode(records, draft), [records, draft]);
   const read = useDraftView(draft, {
     controller: dock.controller,
     file: file.row,
@@ -89,41 +118,44 @@ function ReadDockFile({
     [read.items, read.wholeDocument, dock.threadId],
   );
   const view = { ...read, items };
-  const actionable = view.membershipReady && items.length > 0;
+  const actionable = view.membership.status === "ready" && items.length > 0;
   const visible =
     actionable ||
-    !view.membershipReady ||
+    view.membership.status !== "ready" ||
     !!view.completing ||
     !!view.discarded?.length ||
     overrode.length > 0 ||
     dock.fileFailures(file).length > 0;
-  return (
-    <ReadDockFiles
-      dock={dock}
-      index={index + 1}
-      views={[...views, { file, draft, view, overrode, visible, actionable }]}
-    >
-      {children}
-    </ReadDockFiles>
-  );
+  useLayoutEffect(() => {
+    summary.publish(draft.itemKey, { file, draft, view, overrode, visible, actionable });
+  });
+  useLayoutEffect(() => () => summary.remove(draft.itemKey), [summary, draft.itemKey]);
+  return null;
 }
 
 export function DraftDock({ dock }: { dock: DraftDockModel }) {
   const [expanded, setExpanded] = useState(false);
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+  const summary = useMemo(createMembershipSummary, [dock.projectId, dock.workId, dock.threadId]);
+  useSyncExternalStore(summary.subscribe, summary.snapshot, summary.snapshot);
+  const views = dock.files.flatMap((file) => {
+    const view = summary.views.get(file.row.draft.itemKey);
+    return view ? [view] : [];
+  });
   return (
-    <ReadDockFiles dock={dock}>
-      {(views) => (
-        <DraftDockContent
-          dock={dock}
-          views={views}
-          expanded={expanded}
-          setExpanded={setExpanded}
-          confirmingDiscard={confirmingDiscard}
-          setConfirmingDiscard={setConfirmingDiscard}
-        />
-      )}
-    </ReadDockFiles>
+    <>
+      {dock.files.map((file) => (
+        <ReadDockFile key={file.row.draft.itemKey} dock={dock} file={file} summary={summary} />
+      ))}
+      <DraftDockContent
+        dock={dock}
+        views={views}
+        expanded={expanded}
+        setExpanded={setExpanded}
+        confirmingDiscard={confirmingDiscard}
+        setConfirmingDiscard={setConfirmingDiscard}
+      />
+    </>
   );
 }
 
@@ -154,7 +186,10 @@ function DraftDockContent({
   const files = views.filter((view) => view.visible);
   const commandsFor = views.filter((view) => view.actionable).map((view) => view.file);
   const showCommands = commandsFor.length > 0;
-  const canCommand = dock.canCommand && files.every(({ view }) => view.membershipReady);
+  const canCommand =
+    dock.canCommand &&
+    views.length === dock.files.length &&
+    files.every(({ view }) => view.membership.status === "ready");
   if (!dock.mounted || (files.length === 0 && dock.discardedFiles.length === 0)) return null;
 
   const multi = files.length > 1;
@@ -262,10 +297,7 @@ function DraftDockContent({
     <div
       className="@container/dock rounded-t-lg bg-dock-surface"
       data-draft-dock="settled"
-      aria-busy={files.some(
-        ({ view }) =>
-          view.status === "loading" || (view.status === "ready" && !view.membershipReady),
-      )}
+      aria-busy={files.some(({ view }) => view.membership.status === "loading")}
     >
       {multi ? summary() : null}
       <div className={cn(expanded && multi && "app-scroll max-h-[min(40svh,20rem)]")}>
@@ -349,11 +381,15 @@ function DockFileLine({
         touch={touch}
         className="px-2"
       />
-      {expanded && !(summary && wholeDocument) ? (
+      {expanded && (!(summary && wholeDocument) || view.status === "error") ? (
         <div className={cn(summary && "app-scroll max-h-[min(40svh,20rem)]")}>
           <DocumentChangeRows
             documentName={file.name}
-            view={{ ...view, items, locked: view.locked || dock.generating }}
+            view={{
+              ...view,
+              items,
+              locked: view.locked || dock.generating || view.membership.status !== "ready",
+            }}
             touch={touch}
             onSelect={(change) => dock.review(file, change.id)}
           />

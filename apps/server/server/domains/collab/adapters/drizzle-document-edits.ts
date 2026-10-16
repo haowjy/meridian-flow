@@ -21,7 +21,10 @@ import {
 } from "@meridian/database";
 import { and, desc, eq, sql } from "drizzle-orm";
 import * as Y from "yjs";
-import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
+import {
+  currentDrizzleDb,
+  runInRootDrizzleReadSnapshot,
+} from "../../../shared/drizzle-transaction.js";
 import type { DraftAttributionStore } from "../domain/ports/draft-attribution-store.js";
 import { resolveEditOwners } from "./drizzle-edit-owners.js";
 
@@ -203,6 +206,20 @@ async function projectUserOfBranch(db: Pick<Database, "select">, branchId: strin
 export function createDrizzleDraftAttributionStore(db: Database): DraftAttributionStore {
   return {
     pendingAgentEdits: (branchId) => listPendingAgentEdits(currentDrizzleDb(db), branchId),
-    projectUserId: (branchId) => projectUserOfBranch(currentDrizzleDb(db), branchId),
+    read: (branchId) =>
+      runInRootDrizzleReadSnapshot(db, async () => {
+        const tx = currentDrizzleDb(db);
+        const [branch] = await tx
+          .select({ state: documentBranches.state })
+          .from(documentBranches)
+          .where(eq(documentBranches.id, branchId))
+          .limit(1);
+        if (!branch) return null;
+        const [edits, userId] = await Promise.all([
+          listPendingAgentEdits(tx, branchId),
+          projectUserOfBranch(tx, branchId),
+        ]);
+        return { state: branch.state, edits, userId };
+      }),
   };
 }
