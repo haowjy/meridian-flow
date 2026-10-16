@@ -5,6 +5,8 @@
 - Recreate the unmerged review migration sequence as `0058`–`0063` after main’s `0056` and `0057`, with later timestamps, so an existing database applies every review upgrade.
 
 - Draft membership reads catch up when a peer edit overtakes an in-flight response, with Retry if the read stays stale. Closed files no longer leave the chat's ready drafts waiting to Apply or Discard.
+- The chat's draft dock lists files, not changes: each row is the file's name, this chat's +/− word diff in it, and Discard (✕) and Apply (✓) icon buttons with tooltips. Hovering washes the row and clicking it opens the file's review. A single file is the summary row itself. Per-change review stays in the editor, the dock pane, the phone sheet and the Work row. Word counts use the turn receipt's counter, now shared from `@meridian/agent-edit/diff`.
+
 - Discarding one change keeps the other chat's attribution, including paragraphs with inline images and large rewrites. Undo carries its text and provenance together, and restored chat attribution survives garbage-collected reloads.
 - Draft review no longer calls new AI text “You” while attribution catches up, including rewrites that leave the prose unchanged. Attribution reads carry a room revision; unresolved membership stays included.
 - A failed draft-dock membership read shows an error and Retry on its file. Summary Apply and Discard wait for every file, while ready files retain their individual change commands. The dock uses one keyed summary instead of recursive file readers.

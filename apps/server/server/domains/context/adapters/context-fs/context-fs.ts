@@ -5,6 +5,7 @@
  * the injected ContextTreeMutationStore for location CAS semantics.
  */
 
+import { countWords } from "@meridian/agent-edit/diff";
 import { type CanonicalContextAuthority, canonicalContextUri } from "@meridian/contracts";
 import {
   classifyFiletype,
@@ -29,7 +30,7 @@ import type {
   MarkdownDocumentStore,
   SyncError,
 } from "../../../collab/index.js";
-import { countWords, createDocumentCreationAggregate } from "../../../collab/index.js";
+import { createDocumentCreationAggregate } from "../../../collab/index.js";
 import { sourceDestination } from "../../../file-policy/index.js";
 import { WorkLifecycleUnavailableError } from "../../../projects/domain/work-lifecycle.js";
 import { writeCollabMarkdown } from "../../context/collab-document-sync.js";

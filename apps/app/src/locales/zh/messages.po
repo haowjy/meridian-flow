@@ -838,6 +838,7 @@ msgstr ""
 msgid "Changes"
 msgstr ""
 
+#: src/features/chat/DraftDock.tsx
 #: src/features/draft-review/DocumentChangeRows.tsx
 msgid "Changes couldn’t load"
 msgstr ""
@@ -1038,11 +1039,15 @@ msgid "Collaborator"
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
-msgid "Collapse changes"
-msgstr ""
+#~ msgid "Collapse changes"
+#~ msgstr ""
 
 #: src/features/project/dock/DockHeader.tsx
 msgid "Collapse dock"
+msgstr ""
+
+#: src/features/chat/DraftDock.tsx
+msgid "Collapse files"
 msgstr ""
 
 #: src/features/project/shell/LeftSidebar.tsx
@@ -2010,8 +2015,8 @@ msgid "epigraph"
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
-msgid "Expand changes"
-msgstr ""
+#~ msgid "Expand changes"
+#~ msgstr ""
 
 #: src/features/project/ProjectView.tsx
 msgid "Expand chat"
@@ -2019,6 +2024,10 @@ msgstr ""
 
 #: src/features/project/ProjectView.tsx
 msgid "Expand context"
+msgstr ""
+
+#: src/features/chat/DraftDock.tsx
+msgid "Expand files"
 msgstr ""
 
 #: src/features/project/ProjectView.tsx
@@ -3454,6 +3463,7 @@ msgstr "在任何设备上继续处理我的文档"
 #: src/core/editor/images/ImageNodeView.tsx
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
+#: src/features/chat/DraftDock.tsx
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/thread-controls/QueuedControlRows.tsx
 #: src/features/chat/UserTurn.tsx
