@@ -1,7 +1,7 @@
 /**
  * The attribution classifier's named risks, one table: a writer-only change credited to a chat, a chat
  * named for text it did not write, a chat dropped from a change it did write, and an AI part read as
- * applied while a change still holds it. Every row asserts all three outputs: byline, members, status.
+ * applied while a change still holds it. Every row asserts byline and membership; the server suite checks real status.
  * Each row also runs on a gc-on reload of the draft, which has only what the draft itself carries (the
  * restoration links Undo recorded into it), and must give the same answer.
  */
@@ -128,20 +128,20 @@ function room(blocks: Array<string | PMNode>) {
     read(options: { budget?: number; slide?: number } = {}) {
       const view = projection();
       const read = (doc: Y.Doc) => {
-        const out = classifyChanges(doc, view, provenance(), options);
+        const out = classifyChanges(doc, view, provenance(), { ...options, record: true });
+        const footprint = (result: ReturnType<typeof classifyChanges>) =>
+          [...result.values()].map(({ members, applied }) => ({ members, applied }));
+        expect(
+          footprint(
+            classifyChanges(doc, view, provenance(), { budget: 0, slide: 0, record: true }),
+          ),
+        ).toEqual(footprint(out));
         const names = (a: Author) => (a.kind === "user" ? "user" : a.threadId);
         return [...out.values()].map((c) => ({ byline: c.byline.map(names), members: c.members }));
       };
       const server = read(draft);
       expect(read(peer(draft, 50, true))).toEqual(server);
-      return {
-        groups: server,
-        byline: [...new Set(server.flatMap((c) => c.byline))],
-        members: [...new Set(server.flatMap((c) => c.members))].sort(),
-        status: parts.map((_, i) =>
-          server.some((c) => c.members.includes(i)) ? "pending" : "applied",
-        ),
-      };
+      return server;
     },
   };
   return room;
@@ -160,7 +160,6 @@ interface Row {
   /** "user" and chat names, in byline order. */
   byline: string[];
   members: number[];
-  status: Array<"pending" | "applied">;
 }
 
 const T = (n = 0) => `chat${n}`;
@@ -192,7 +191,6 @@ const ROWS: Row[] = [
     run: (r) => r.ai((d) => textOf(d).delete(5, 5)),
     byline: [T()],
     members: [0],
-    status: ["pending"],
   },
   {
     name: "an insertion before a space the AI wrote",
@@ -200,7 +198,6 @@ const ROWS: Row[] = [
     run: (r) => r.ai((d) => textOf(d).insert(5, " MAGIC")),
     byline: [T()],
     members: [0],
-    status: ["pending"],
   },
   {
     name: "the writer types beside an applied AI space: the writer's, and the part may still be in the change",
@@ -212,7 +209,6 @@ const ROWS: Row[] = [
     },
     byline: ["user"],
     members: [0],
-    status: ["pending"],
   },
   {
     name: "the same with the Apply record: the space is the base's, so no chat is in it",
@@ -224,7 +220,6 @@ const ROWS: Row[] = [
     },
     byline: ["user"],
     members: [],
-    status: ["applied"],
   },
   {
     name: "the writer deletes beside an applied AI deletion, without a record: no name, the chat stays in",
@@ -236,7 +231,6 @@ const ROWS: Row[] = [
     },
     byline: [],
     members: [0],
-    status: ["pending"],
   },
   {
     name: "the writer deletes beside an applied AI deletion, with the record",
@@ -248,7 +242,6 @@ const ROWS: Row[] = [
     },
     byline: ["user"],
     members: [],
-    status: ["applied"],
   },
   {
     name: "the writer deletes an applied AI word",
@@ -260,7 +253,6 @@ const ROWS: Row[] = [
     },
     byline: ["user"],
     members: [],
-    status: ["applied"],
   },
   {
     name: "a letter the writer types inside an applied AI word",
@@ -272,7 +264,6 @@ const ROWS: Row[] = [
     },
     byline: ["user"],
     members: [],
-    status: ["applied"],
   },
   {
     name: "a block the writer deletes next to an applied AI block deletion, without a record",
@@ -284,7 +275,6 @@ const ROWS: Row[] = [
     },
     byline: [],
     members: [0],
-    status: ["pending"],
   },
   {
     name: "the same with the record",
@@ -296,10 +286,9 @@ const ROWS: Row[] = [
     },
     byline: ["user"],
     members: [],
-    status: ["applied"],
   },
   {
-    name: "a mixed change: two chats and the writer, each named once",
+    name: "mixed changes: the first chat shares a group with the writer, the second owns another",
     text: "alpha beta gamma delta epsilon zeta",
     run: (r) => {
       r.ai((d) => textOf(d).insert(0, "AI "));
@@ -308,18 +297,10 @@ const ROWS: Row[] = [
     },
     byline: ["user", T(0), T(1)],
     members: [0, 1],
-    status: ["pending", "pending"],
-  },
-  {
-    name: "Discard then Undo of an insertion keeps its chat",
-    text: "alpha beta gamma delta",
-    run: (r) => {
-      r.ai((d) => textOf(d).insert(0, "zeta "));
-      r.discardUndo((d) => textOf(d).delete(0, 5));
-    },
-    byline: [T()],
-    members: [0],
-    status: ["pending"],
+    groups: [
+      { byline: ["user", T(0)], members: [0] },
+      { byline: [T(1)], members: [1] },
+    ],
   },
   {
     name: "Discard then Undo of text at the end of a run keeps its chat (no right neighbor to infer from)",
@@ -330,23 +311,28 @@ const ROWS: Row[] = [
     },
     byline: [T()],
     members: [0],
-    status: ["pending"],
   },
-  {
-    name: "red to blue, Apply, then the writer deletes blue: the writer's, and nothing is left pending",
-    text: "red",
-    run: (r) => {
-      r.ai((d) => {
-        textOf(d).delete(0, 3);
-        textOf(d).insert(0, "blue");
-      });
-      r.apply();
-      r.writer((d) => textOf(d).delete(0, 4));
-    },
-    byline: ["user"],
-    members: [],
-    status: ["applied"],
-  },
+  ...(
+    [
+      ["red", "bed"],
+      ["young", "younger"],
+      ["red", "reed"],
+    ] as const
+  ).map(
+    ([was, now]): Row => ({
+      name: `${was} to ${now}, Apply, writer deletion: all raw word items became base`,
+      text: `The ${was} gate opens beside the tower.`,
+      run: (r) => {
+        r.ai((d) =>
+          writeBlocks(frag(d), schema, [para(`The ${now} gate opens beside the tower.`)]),
+        );
+        r.apply();
+        r.writer((d) => textOf(d).delete(4, now.length));
+      },
+      byline: ["user"],
+      members: [],
+    }),
+  ),
   {
     name: "33 Discard and Undo rounds of an insertion still name its chat",
     text: "alpha beta gamma delta",
@@ -356,7 +342,6 @@ const ROWS: Row[] = [
     },
     byline: [T()],
     members: [0],
-    status: ["pending"],
   },
   {
     name: "Discard then Undo of a replacement keeps its chat",
@@ -374,7 +359,6 @@ const ROWS: Row[] = [
     },
     byline: [T()],
     members: [0],
-    status: ["pending"],
   },
   {
     name: "a second Discard and Undo of a deletion",
@@ -385,7 +369,6 @@ const ROWS: Row[] = [
     },
     byline: [T()],
     members: [0],
-    status: ["pending"],
   },
   {
     name: "Discard then Undo of a block deletion keeps its chat",
@@ -396,7 +379,6 @@ const ROWS: Row[] = [
     },
     byline: [T()],
     members: [0],
-    status: ["pending"],
   },
   {
     name: "the writer types inside a restored AI insertion: both are named, the part stays pending",
@@ -408,7 +390,6 @@ const ROWS: Row[] = [
     },
     byline: ["user", T()],
     members: [0],
-    status: ["pending"],
   },
   {
     name: "NEW typed beside an OLD the AI deleted is the writer's, never the AI's (the probe's accepted reading)",
@@ -420,8 +401,7 @@ const ROWS: Row[] = [
       Y.applyUpdate(r.draft, Y.encodeStateAsUpdate(stale));
     },
     byline: ["user"],
-    members: [],
-    status: ["applied"],
+    members: [0],
   },
   {
     name: "a writer replaces a 3-letter AI word with another 3-letter word",
@@ -435,25 +415,26 @@ const ROWS: Row[] = [
     },
     byline: ["user"],
     members: [],
-    status: ["applied"],
   },
-  {
-    name: "a deletion in the middle of a long repeat names its chat",
-    text: `${"echo ".repeat(250)}tail words`,
-    run: (r) => r.ai((d) => textOf(d).delete(500, 5)),
-    byline: [T()],
-    members: [0],
-    status: ["pending"],
-  },
-  {
-    name: "the same when the slide gives up: no name, the chat stays a member",
-    text: `${"echo ".repeat(250)}tail words`,
-    slide: 64,
-    run: (r) => r.ai((d) => textOf(d).insert(500, "echo ")),
-    byline: [],
-    members: [0],
-    status: ["pending"],
-  },
+  ...(["insert", "delete"] as const).map(
+    (operation): Row => ({
+      name: `budget exhausted before an ambiguous ${operation}: footprint keeps both parts`,
+      blocks: ["first tail words", "unchanged separator words here", `${"echo ".repeat(250)}tail`],
+      budget: 8,
+      run: (r) => {
+        r.ai((d) => textOf(d).insert(0, "12345678"));
+        r.ai((d) =>
+          operation === "insert" ? textOf(d, 2).insert(500, "echo ") : textOf(d, 2).delete(500, 5),
+        );
+      },
+      byline: [T()],
+      members: [0, 1],
+      groups: [
+        { byline: [T()], members: [0] },
+        { byline: [], members: [1] },
+      ],
+    }),
+  ),
   {
     name: "two chats, each in its own change: neither is credited with the other's",
     text: "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu",
@@ -467,7 +448,6 @@ const ROWS: Row[] = [
       { byline: [T(0)], members: [0] },
       { byline: [T(1)], members: [1] },
     ],
-    status: ["pending", "pending"],
   },
   {
     name: "Discard then Undo of an AI paragraph keeps its chat",
@@ -478,7 +458,6 @@ const ROWS: Row[] = [
     },
     byline: [T()],
     members: [0],
-    status: ["pending"],
   },
   {
     name: "Discard then Undo of AI bold keeps its chat",
@@ -489,7 +468,6 @@ const ROWS: Row[] = [
     },
     byline: [T()],
     members: [0],
-    status: ["pending"],
   },
   {
     name: "Discard then Undo of an AI heading level keeps its chat",
@@ -500,7 +478,6 @@ const ROWS: Row[] = [
     },
     byline: [T()],
     members: [0],
-    status: ["pending"],
   },
   {
     name: "an AI that turns a bullet list into a numbered one is still in the change",
@@ -513,7 +490,6 @@ const ROWS: Row[] = [
       ),
     byline: [T()],
     members: [0],
-    status: ["pending"],
   },
   {
     name: "an AI that removes bold is still in the change",
@@ -521,16 +497,6 @@ const ROWS: Row[] = [
     run: (r) => r.ai((d) => textOf(d).format(0, 22, { strong: null })),
     byline: [],
     members: [0],
-    status: ["pending"],
-  },
-  {
-    name: "a past-budget span names no one and keeps its members",
-    text: "alpha beta gamma delta",
-    budget: 1,
-    run: (r) => r.ai((d) => textOf(d).insert(6, "MAGIC ")),
-    byline: [],
-    members: [0],
-    status: ["pending"],
   },
   {
     name: "an AI insertion into a list, never touched by the writer",
@@ -538,19 +504,21 @@ const ROWS: Row[] = [
     run: (r) => r.ai((d) => listText(d).insert(0, "AI ")),
     byline: [T()],
     members: [0],
-    status: ["pending"],
   },
   {
-    name: "a list the writer appends to after Apply",
+    name: "list type change, Apply, writer deletes a word: rebuilt text became base",
     blocks: [list],
     run: (r) => {
-      r.ai((d) => listText(d).insert(0, "AI "));
+      r.ai((d) =>
+        writeBlocks(frag(d), schema, [
+          schema.nodes.ordered_list.create(null, list.firstChild as PMNode),
+        ]),
+      );
       r.apply();
-      r.writer((d) => listText(d).insert(listText(d).length, " WRITER"));
+      r.writer((d) => listText(d).delete(6, 4));
     },
     byline: ["user"],
     members: [],
-    status: ["applied"],
   },
   {
     name: "a heading the AI aligns and the writer re-levels: each owns its own attribute",
@@ -562,7 +530,6 @@ const ROWS: Row[] = [
     },
     byline: ["user"],
     members: [],
-    status: ["applied"],
   },
   {
     name: "an AI that only bolds a word",
@@ -570,7 +537,6 @@ const ROWS: Row[] = [
     run: (r) => r.ai((d) => textOf(d).format(6, 4, { strong: true })),
     byline: [T()],
     members: [0],
-    status: ["pending"],
   },
   {
     name: "a rebase that rebuilds a paragraph with an inline image names no one",
@@ -583,7 +549,6 @@ const ROWS: Row[] = [
     },
     byline: [],
     members: [],
-    status: ["applied"],
   },
 ];
 
@@ -592,13 +557,7 @@ describe("attribution", () => {
     const r = room(row.blocks ?? [row.text ?? ""]);
     row.run(r);
     const read = r.read({ budget: row.budget, slide: row.slide });
-    if (row.groups) expect(read.groups).toEqual(row.groups);
-    expect({ ...read, groups: undefined }).toEqual({
-      groups: undefined,
-      byline: row.byline,
-      members: row.members,
-      status: row.status,
-    });
+    expect(read).toEqual(row.groups ?? [{ byline: row.byline, members: row.members }]);
   });
 
   it("the Apply record holds what the applied change moved into the base, and only that", () => {

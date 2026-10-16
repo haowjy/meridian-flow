@@ -31,6 +31,21 @@ decorates (`inserted`, `anchor`), the base content drawn red (`removed`) and a
 short excerpt. The projection is pure and retains nothing, so a caller that
 keeps PM nodes between edits pays only for the changed region.
 
+## Attribution footprint and names
+
+Classification has two phases over raw word/structural boundaries. The mandatory
+footprint collects live item IDs, tombstones over the entire repeated-text slide
+envelope, format items and changed attribute keys. Token-edge whitespace belongs
+to the raw boundary; neighbouring unchanged words do not. Rebuilt blocks include
+their recreated text. Membership and the Apply record are derived only here.
+
+Optional character refinement can name fewer authors, but cannot mutate the
+footprint. A diff budget, slide cap or alignment-work limit silences names, not
+membership or Apply evidence. The room's Apply records establish accepted items
+as base, and Undo-time restoration links resolve recreated IDs to their original
+parts. Without an Apply record, surviving AI items inside a later raw-word change
+remain conservatively pending even if the character edit touches only writer text.
+
 ## Apply and local Discard are the same operation on two sides
 
 `composeGroups` selects hunks by group id and returns block-range patches, each
