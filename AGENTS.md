@@ -81,6 +81,11 @@ hidden constraints, surprising invariants, and workarounds.
 parentheses, never `·`, `•`, `—`, or `|`. See the
 [copy separation decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/writer-copy-separation.md).
 
+**Offer only what applies.** Show a control only while its action can succeed.
+Feedback never displaces content already on screen: it uses blank space, or the
+end of a surface that grows downward, like a chat's latest turn. See the
+[offer-only-what-applies decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/offer-only-what-applies.md).
+
 **Debugging.** Follow [docs/debugging.md](docs/debugging.md).
 
 ## Knowledge and structure
