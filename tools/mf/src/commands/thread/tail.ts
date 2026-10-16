@@ -160,10 +160,11 @@ async function untilIdleTail(
     const frozen = proof as Proof | null;
     if (!frozen) throw new Error("Tail finished without a confirming snapshot");
     const { read: proving, claimed, outcome, immediate } = frozen;
+    const turns = new Map(proving.turns.map((turn) => [turn.id, turn]));
     if (!immediate) {
       try {
         await observer.until(
-          () => !observer.behind(proving) && observer.pending(claimed, proving).length === 0,
+          () => observer.pending(claimed, turns).length === 0,
           Math.min(deadlineAt, Date.now() + CATCH_UP_MS),
         );
       } catch (error) {

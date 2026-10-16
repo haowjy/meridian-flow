@@ -130,8 +130,8 @@ contains. It carries no run identity: `turn.started` has only the turn id.
   starts, the one in flight is aborted, and the last applied read is classified
   (`snapshotStale`, or `snapshotUnavailable`). The result is the chain's last reply (`turnId`),
   the reply that took the message (`answeredBy`) and `userTurnId`. A settled claim gives the
-  stream a bounded 1.5 s to reach the proving read's position and for the claimed turns' checks
-  to happen (the stream ending a turn makes the sync ask for a read, which checks it); the
+  stream a bounded 1.5 s for claimed terminal turns to be stream-ended and checked
+  (no delivery-cursor barrier) (the stream ending a turn makes the sync ask for a read, which checks it); the
   printed log is best-effort. A timeout, transport or protocol error in catch-up never changes
   the claim and leaves `liveView` `not_observed`; the command ends within the catch-up even if a
   read is still pending.

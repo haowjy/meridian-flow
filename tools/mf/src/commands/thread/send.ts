@@ -299,7 +299,7 @@ async function followToOutcome(
     if (!claim) throw new Error("Send stopped without a proving read");
     try {
       await observer.until(
-        () => settled(observer, claim),
+        () => observer.pending(claim.claimed, claim.turns).length === 0,
         Math.min(deadlineAt, Date.now() + CATCH_UP_MS),
       );
     } catch (error) {
@@ -319,16 +319,11 @@ async function followToOutcome(
   }
 }
 
-/** The stream has reached the proving read's position, and every claimed turn it ended is checked. */
-function settled(observer: Observer, { snapshot, claimed }: Proven): boolean {
-  return !observer.behind(snapshot) && observer.pending(claimed, snapshot).length === 0;
-}
-
 /**
  * A result frozen with the read that proved it; `claimed` is the assistant turns of the message's
  * chain in that read, which `liveView` checks.
  */
-type Proven = { outcome: SendOutcome; snapshot: ThreadSnapshotResponse; claimed: string[] };
+type Proven = { outcome: SendOutcome; turns: ReadonlyMap<string, Turn>; claimed: string[] };
 
 /** The CLI's final result for what `messageFate` proved, or null to keep following. */
 function finalResult(
@@ -347,7 +342,7 @@ function finalResult(
     });
   const done = (outcome: SendOutcome, claimed: string[] = []): Proven => ({
     outcome,
-    snapshot,
+    turns: new Map(snapshot.turns.map((turn) => [turn.id, turn])),
     claimed,
   });
   switch (fate.kind) {
