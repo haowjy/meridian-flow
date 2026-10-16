@@ -95,13 +95,15 @@ branch it merged into. Containment proves preservation, not completion: the work
 survives in the named ref, and the plan, the readiness gate, and the human
 confirmation are what judge the lane finished. Containment is revalidated
 against its ref before every action, symbolic refs never count as containers (an
-alias can point at the deleted branch), and a remote-tracking candidate counts
-only while its upstream branch still exists, so a deleted integration branch
+alias can point at the deleted branch), and a remote-tracking candidate must
+still exist upstream and still contain the commit when planning checks it (a
+branch that moved is refreshed once), so a deleted or reset integration branch
 cannot be cited. PR evidence rests on
 GitHub's merge record rather than a local ref. Cleanup executes one run at a
 time per repository: a second run refuses while one is executing, because two
 runs' containment refs can be each other's branches, and a stale lock refuses
-too rather than risking two owners. Batch cleanup needs explicit risk
+too rather than risking two owners; an interrupted run can leave a stale lock
+that the refusal's message names for deletion. Batch cleanup needs explicit risk
 acknowledgement and an exact merged PR into the base branch, and keeps refusing
 duplicate exact records (ancestry alone is not enough).
 Target-only `--force` permits managed dev-stack and Nx shutdown despite cwd

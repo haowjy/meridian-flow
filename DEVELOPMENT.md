@@ -122,8 +122,8 @@ the detected base branch and keeps refusing duplicate exact records. Executing
 cleanups are serialized per repository, so two runs cannot each treat the other's
 branch as the surviving ref; a stale lock refuses rather than being taken over.
 The resolver refuses primary/current or locked worktrees, the detected base
-branch, commits no other ref contains, dirty worktrees, and refs that move after
-planning.
+branch, commits no other ref contains (unless an exact merged PR or manual
+evidence covers them), dirty worktrees, and refs that move after planning.
 
 Batch cleanup is advanced and not yet trusted for routine use. It requires an
 explicit acknowledgement:

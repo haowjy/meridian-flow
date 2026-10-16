@@ -292,6 +292,10 @@ describe("selectContainedByRef", () => {
     expect(selectContainedByRef(["refs/remotes/team/origin/lane"], "lane", "main", ["team"])).toBe(
       "refs/remotes/team/origin/lane",
     );
+    // An unresolved remote-tracking ref (no configured remote) never counts.
+    expect(selectContainedByRef(["refs/remotes/ghost/lane"], "lane", "main", ["origin"])).toBe(
+      undefined,
+    );
   });
 
   it("prefers the trunk, then local branches, then remote-tracking refs", () => {
