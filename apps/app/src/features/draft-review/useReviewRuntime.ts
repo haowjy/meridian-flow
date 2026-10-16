@@ -50,11 +50,11 @@ export type RoomReview = {
   wholeItem: boolean;
   /** The item has no text branch (a created image or blank create): nothing to project, one item-level change. */
   branchless: boolean;
-  retry: (() => void) | undefined;
 } & (
-  | { status: "ready"; roomName: string }
-  | { status: "ready"; roomName: null; branchless: true }
-  | { status: Exclude<RoomReviewStatus, "ready">; roomName: null }
+  | { status: "ready"; roomName: string; retry: undefined }
+  | { status: "ready"; roomName: null; branchless: true; retry: undefined }
+  | { status: "error"; roomName: null; retry: () => void }
+  | { status: Exclude<RoomReviewStatus, "ready" | "error">; roomName: null; retry: undefined }
 );
 
 /**
@@ -94,8 +94,9 @@ export function useRoomReview(
   const common = {
     wholeItem: meta !== null && meta.kind !== "gone" && meta.wholeItem,
     branchless,
-    retry: failed || roomFault ? retryAll : undefined,
+    retry: undefined,
   };
+  if (status === "error") return { ...common, status, roomName: null, retry: retryAll };
   if (status !== "ready") return { ...common, status, roomName: null };
   return roomName
     ? { ...common, status, roomName }

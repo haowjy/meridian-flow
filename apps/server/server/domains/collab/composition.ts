@@ -545,7 +545,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     publication,
     discard,
     commands: draftCommands,
-    attribution: createDraftAttribution(draftAttributionStore),
+    attribution: createDraftAttribution(draftAttributionStore, branchCoordinator),
     resolveThreadTitles: lookups.resolveThreadTitles,
     pending: workDraftPendingStore,
   });

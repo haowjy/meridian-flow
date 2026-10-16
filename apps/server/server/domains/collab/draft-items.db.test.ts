@@ -5,7 +5,7 @@
 import { randomUUID } from "node:crypto";
 import type { DocumentId } from "@meridian/contracts";
 import { expect, it } from "vitest";
-import type * as Y from "yjs";
+import * as Y from "yjs";
 import {
   handleApplyWorkDraftChangesRequest,
   handleApplyWorkDraftRequest,
@@ -220,6 +220,15 @@ describeDraftTreeDb("review items (postgres)", (start, db) => {
     expect(hint.itemKey).toBe(item.itemKey);
     expect(hint.edits).toHaveLength(1);
     expect(hint.edits[0]?.inserted.length).toBeGreaterThan(0);
+    const revision = Y.decodeSnapshot(Uint8Array.from(hint.revision));
+    for (const edit of hint.edits) {
+      for (const [client, clock, length] of edit.inserted)
+        expect(revision.sv.get(client)).toBeGreaterThanOrEqual(clock + length);
+      for (const [client, clock, length] of edit.deleted) {
+        expect(Y.isDeleted(revision.ds, Y.createID(client, clock))).toBe(true);
+        expect(Y.isDeleted(revision.ds, Y.createID(client, clock + length - 1))).toBe(true);
+      }
+    }
     await expect(
       handleDraftAttributionRequest(deps, { ...scope, documentId: chapter, itemKey: "nope" }),
     ).rejects.toMatchObject({ statusCode: 404 });

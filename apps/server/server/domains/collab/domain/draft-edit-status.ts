@@ -12,7 +12,7 @@ import {
   readBlocks,
 } from "@meridian/agent-edit/diff";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
-import type * as Y from "yjs";
+import * as Y from "yjs";
 
 let schema: ReturnType<typeof buildDocumentSchema> | null = null;
 
@@ -32,6 +32,7 @@ export function partsInChanges(draft: Y.Doc, parts: readonly PartEffect[]): bool
     [r.client, r.clock, r.len] as [number, number, number];
   const classified = classifyChanges(draft, projectReview(diffBlocks(base, text)), {
     userId: "",
+    snapshot: Y.snapshot(draft),
     parts: parts.map(({ effect }) => ({
       threadId: "",
       turnId: "",

@@ -10,11 +10,13 @@ import {
   recordRestorations,
   writeBlocks,
 } from "@meridian/agent-edit/diff";
+import type { DraftAttribution } from "@meridian/contracts/drafts";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { QueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
+import * as draftsApi from "@/client/api/drafts-api";
 import { draftAttributionQueryOptions } from "@/client/query/useDraftAttribution";
 import { createReviewRuntime, type ReviewRuntime } from "@/features/draft-review/review-runtime";
 import {
@@ -46,6 +48,7 @@ const removals = (editor: Editor) => [
 afterEach(() => {
   for (const projector of projectors.splice(0)) projector.destroy();
   destroyReviewEditors();
+  vi.restoreAllMocks();
   vi.useRealTimers();
 });
 
@@ -138,6 +141,7 @@ it("an attached runtime republishes delayed Undo provenance and Apply records wi
   const inserted = [[200000, 0, Y.getState(doc.store, 200000)]] as [number, number, number][];
   const payload = {
     itemKey: "draft:provenance",
+    revision: [...Y.encodeSnapshot(Y.snapshot(doc))],
     userId: "u",
     edits: [
       {
@@ -174,6 +178,7 @@ it("an attached runtime republishes delayed Undo provenance and Apply records wi
     documentId: "provenance",
     itemKey: "draft:provenance",
   };
+  vi.spyOn(draftsApi, "getDraftAttribution").mockReturnValue(new Promise(() => {}));
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: Infinity } },
   });
@@ -193,8 +198,8 @@ it("an attached runtime republishes delayed Undo provenance and Apply records wi
       Y.applyUpdate(doc, x.update);
     await vi.advanceTimersByTimeAsync(180);
     expect(runtime.state().changes[0]).toMatchObject({
-      byline: [{ kind: "user", userId: "u" }],
-      members: [],
+      byline: [],
+      members: ["chat"],
     });
     const frame = runtime.state().frame;
     for (const x of updates.filter((x) => x.origin === RESTORED_ORIGIN))
@@ -214,6 +219,11 @@ it("an attached runtime republishes delayed Undo provenance and Apply records wi
     appendApplyRecord(doc, { base: inserted, settled: [] });
     await vi.advanceTimersByTimeAsync(0);
     expect(runtime.state().frame?.doc).toBe(frame?.doc);
+    // The old read cannot settle the deletion until its revision catches up.
+    client.setQueryData(draftAttributionQueryOptions(draft).queryKey, {
+      ...payload,
+      revision: [...Y.encodeSnapshot(Y.snapshot(doc))],
+    });
     expect(runtime.state().changes[0]).toMatchObject({ byline: [], members: [] });
   } finally {
     runtime.destroy();
@@ -222,6 +232,102 @@ it("an attached runtime republishes delayed Undo provenance and Apply records wi
     client.clear();
     history.destroy();
     peer.destroy();
+    doc.destroy();
+  }
+});
+
+it.each([
+  "changed prose",
+  "same prose",
+])("new item IDs refresh attribution even with %s", async (kind) => {
+  vi.useFakeTimers();
+  const schema = buildDocumentSchema();
+  const p = (text: string) => schema.nodes.paragraph.create(null, schema.text(text));
+  const doc = new Y.Doc({ gc: false });
+  doc.clientID = 1;
+  writeBlocks(doc.getXmlFragment("prosemirror"), schema, [p("alpha tail")]);
+  seedReviewBase(doc, ["alpha tail"]);
+  doc.clientID = 200000;
+  writeBlocks(doc.getXmlFragment("prosemirror"), schema, [p("alpha tail END")]);
+  const payload = (client: number): DraftAttribution => ({
+    itemKey: "stale",
+    userId: "u",
+    revision: [...Y.encodeSnapshot(Y.snapshot(doc))],
+    edits: [
+      {
+        threadId: "chat",
+        turnId: "turn",
+        title: "Chat",
+        at: "2026",
+        owner: { threadId: "chat", title: "Chat", reveal: { threadId: "chat", turnId: "turn" } },
+        inserted: [
+          [200000, 0, Y.getState(doc.store, 200000)],
+          [client, 0, Y.getState(doc.store, client)],
+        ],
+        deleted: [...Y.snapshot(doc).ds.clients].flatMap(([c, ranges]) =>
+          ranges.map(({ clock, len }) => [c, clock, len] as [number, number, number]),
+        ),
+      },
+    ],
+  });
+  const old = payload(200000);
+  let resolve!: (value: DraftAttribution) => void;
+  const held = new Promise<DraftAttribution>((done) => {
+    resolve = done;
+  });
+  const api = vi
+    .spyOn(draftsApi, "getDraftAttribution")
+    .mockResolvedValueOnce(old)
+    .mockReturnValue(held);
+  const { editor } = createReviewEditor([], doc);
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+  });
+  const room = {
+    document: doc,
+    subscribe: () => () => {},
+    getSnapshot: () => ({ status: "synced" }),
+    whenSynced: () => Promise.resolve(),
+    hasUnacknowledgedEdits: () => false,
+  };
+  const runtime = createReviewRuntime(room as never, {
+    draft: { projectId: "p", workId: "w", documentId: "stale", itemKey: "stale" },
+    queryClient: client,
+  });
+  const peer = new Y.Doc({ gc: false });
+  try {
+    runtime.attachEditor(editor);
+    await vi.advanceTimersByTimeAsync(180);
+    expect(runtime.state().changes[0].byline).toEqual([
+      { kind: "thread", threadId: "chat", turnId: "turn" },
+    ]);
+    const group = runtime.state().changes[0].id;
+    Y.applyUpdate(peer, Y.encodeStateAsUpdate(doc));
+    peer.clientID = 400000;
+    peer.transact(() => {
+      writeBlocks(peer.getXmlFragment("prosemirror"), schema, [p("alpha tail JUNK")]);
+      writeBlocks(peer.getXmlFragment("prosemirror"), schema, [
+        p(kind === "same prose" ? "alpha tail END" : "alpha tail NEW"),
+      ]);
+    });
+    Y.applyUpdate(doc, Y.encodeStateAsUpdate(peer));
+    await vi.advanceTimersByTimeAsync(180);
+    expect(api).toHaveBeenCalledTimes(2);
+    expect(runtime.state().changes[0].byline).toEqual([]);
+    expect(runtime.state().changes[0].members).toEqual(["chat"]);
+    expect(runtime.state().membership.status).toBe("loading");
+    if (kind === "same prose") expect(runtime.state().changes[0].id).toBe(group);
+    resolve(payload(400000));
+    await vi.advanceTimersByTimeAsync(180);
+    expect(runtime.state().changes[0].byline).toEqual([
+      { kind: "thread", threadId: "chat", turnId: "turn" },
+    ]);
+    expect(runtime.state().membership.status).toBe("ready");
+  } finally {
+    runtime.destroy();
+    client.clear();
+    peer.destroy();
+    editor.destroy();
     doc.destroy();
   }
 });

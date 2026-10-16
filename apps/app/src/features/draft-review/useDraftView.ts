@@ -4,13 +4,16 @@ import { useMemo } from "react";
 import type { DraftRef } from "@/client/query/draft-command-record";
 import { discardSubjectOf, type ReviewFileTarget } from "@/client/query/work-draft-files";
 import { isSameChange } from "@/core/editor/extensions/inline-review";
-import { type DraftChangesView, useChangeItems } from "./draft-changes";
+import { type DraftChangesView, type ReviewChangeItem, useChangeItems } from "./draft-changes";
 import { baseKeyOf } from "./review-frame";
 import { itemChange, type ReviewChange } from "./review-model";
+import type { MembershipRead } from "./review-runtime";
 import { prepareFromFrame } from "./useDraftApply";
 import type { HeadlessDiscards } from "./useHeadlessDiscards";
 import { useRoomReview } from "./useReviewRuntime";
 import type { WorkDraftCommands } from "./useWorkDraftCommands";
+
+const NO_ITEMS: readonly ReviewChangeItem[] = [];
 
 /**
  * A listed draft's changes, read from the draft's review state: the same frames the manuscript paints when
@@ -35,7 +38,7 @@ export function useDraftView(
     file: ReviewFileTarget;
     discards: HeadlessDiscards;
   },
-): DraftChangesView & { membershipReady: boolean } {
+): DraftChangesView & { membership: MembershipRead } {
   const room = useRoomReview(draft, { enabled });
   const wholeDocument = room.wholeItem;
   const read = useChangeItems(draft, { wholeDocument, read: enabled && !room.branchless });
@@ -47,9 +50,19 @@ export function useDraftView(
   );
   // A shared runtime can be ready before this reader holds the room: no row is drawn without its capability.
   const ready = room.branchless ? room.status === "ready" : read.ready && room.status === "ready";
-  const discarded = discards.entries.filter(
-    (entry) => entry.subject.itemKey === draft.itemKey && entry.change,
+  const discarded = useMemo(
+    () =>
+      discards.entries.filter((entry) => entry.subject.itemKey === draft.itemKey && entry.change),
+    [discards.entries, draft.itemKey],
   );
+  const membership: MembershipRead =
+    room.status === "error"
+      ? { status: "failed", retry: room.retry }
+      : !ready
+        ? { status: "loading" }
+        : wholeDocument
+          ? { status: "ready" }
+          : read.membership;
   const ref = { documentId: draft.documentId, itemKey: draft.itemKey };
   const send = async (change: ReviewChange) => {
     const { frame } = change;
@@ -68,13 +81,17 @@ export function useDraftView(
   return {
     documentId: draft.documentId,
     itemKey: draft.itemKey,
-    status: room.status,
-    membershipReady: ready && (wholeDocument || read.attributionReady),
-    items: ready ? items : [],
+    status: membership.status === "failed" ? "error" : room.status,
+    membership,
+    items: ready ? items : NO_ITEMS,
     wholeDocument,
-    finished: ready && items.length === 0 && completing === null && discarded.length === 0,
+    finished:
+      membership.status === "ready" &&
+      items.length === 0 &&
+      completing === null &&
+      discarded.length === 0,
     completing,
-    ...(room.retry ? { retry: room.retry } : {}),
+    ...(membership.status === "failed" ? { retry: membership.retry } : {}),
     focused: null,
     locked: controller.changesLocked,
     apply: send,

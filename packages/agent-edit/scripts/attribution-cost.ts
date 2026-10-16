@@ -62,6 +62,7 @@ function chapter(words: number, perParagraph: number, changed: number) {
     diffBlocks(base, readBlocks(draft.getXmlFragment(NAME), schema)),
   );
   const provenance = {
+    snapshot: Y.snapshot(draft),
     userId: "u",
     parts: [
       {
@@ -113,6 +114,7 @@ function alternating(paragraphs: number, words: number) {
   });
   Y.applyUpdate(draft, Y.encodeStateAsUpdate(ai));
   const provenance = {
+    snapshot: Y.snapshot(draft),
     userId: "u",
     parts: [
       {

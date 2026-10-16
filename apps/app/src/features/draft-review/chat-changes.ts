@@ -33,6 +33,8 @@ export async function chatChangeTargets(
   });
   const frame = projectRoom(doc);
   const classified = classifyRoom(doc, frame, attribution);
+  if ([...classified.values()].some((change) => change.unresolved))
+    throw new Error("Changes are still loading. Try again.");
   const targets = frame.groups
     .filter((group) => classified.get(group.id)?.members.includes(threadId))
     .map((group) => ({ id: group.id, pin: frame.pins.get(group.id) as Y.RelativePosition }));

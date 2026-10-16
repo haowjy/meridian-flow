@@ -28,6 +28,7 @@ import { type QueryClient, QueryObserver } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import type { Node as PMNode, Schema } from "@tiptap/pm/model";
 import { absolutePositionToRelativePosition } from "@tiptap/y-tiptap";
+import * as Y from "yjs";
 import {
   currentDraftCommandRecords,
   type DraftRef,
@@ -62,8 +63,14 @@ export type ReviewState = ReviewVisible & {
   /** The room has synced, so an empty frame means "No changes left", not "not loaded yet". */
   ready: boolean;
   /** The payload needed to distinguish unknown membership from a known-empty chat. */
-  attributionReady: boolean;
+  membership: MembershipRead;
 };
+
+export type MembershipRead =
+  | { status: "loading" | "ready" }
+  | { status: "failed"; retry: () => void };
+const MEMBERSHIP_LOADING: MembershipRead = { status: "loading" };
+const MEMBERSHIP_READY: MembershipRead = { status: "ready" };
 
 /** Where an editor is mounted: the center pane or the dock beside the chat. The phone's one editor is "editor". */
 export type ReviewSurface = "editor" | "dock";
@@ -74,7 +81,7 @@ export type EditorRef = Editor | ReviewSurface;
 /** One attached editor: what the room paints and what a command issued in it is authored through. */
 type Attachment = { editor: Editor; surface: ReviewSurface; handle: ReviewEditorHandle };
 
-type Attribution = NonNullable<Parameters<typeof reviewChanges>[1]>;
+type Attribution = ReturnType<typeof classifyRoom>;
 const NO_ATTRIBUTION: Attribution = new Map();
 const NO_EDITS: DraftAttribution | null = null;
 
@@ -102,7 +109,7 @@ const EMPTY: ReviewState = {
   frame: null,
   changes: NO_CHANGES,
   ready: false,
-  attributionReady: false,
+  membership: MEMBERSHIP_LOADING,
 };
 
 /**
@@ -141,6 +148,7 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
   const listeners = new Set<() => void>();
   let state: ReviewState = EMPTY;
   let edits: DraftAttribution | null = NO_EDITS;
+  let attributionFailed = false;
   let provenanceRevision = 0;
   let matched: {
     frame: ReviewFrame;
@@ -174,7 +182,7 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
     return matched.value;
   };
 
-  // The chats' edit parts: one observer per room, asked again when the set of changes moves.
+  // Item identity and deletion-only writes matter even when prose and group IDs stay equal.
   const attributionQuery = source
     ? new QueryObserver(source.queryClient, {
         ...draftAttributionQueryOptions(source.draft),
@@ -183,13 +191,27 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
     : null;
   const useAttribution = (frame: ReviewFrame) => {
     if (!attributionQuery || !source) return;
-    const now = frame.groups.map((group) => group.id).join(",");
+    const now = [...Y.encodeSnapshot(frame.snapshot)].join(",");
     const first = revision === null;
     if (revision === now) return;
     revision = now;
-    if (first)
+    if (first) {
       attributionQuery.setOptions({ ...draftAttributionQueryOptions(source.draft), enabled: true });
-    else void attributionQuery.refetch();
+      // A freshly cached payload may predate this room, even before its first projection.
+      if (
+        edits &&
+        !attributionQuery.getCurrentResult().isFetching &&
+        !Y.equalSnapshots(frame.snapshot, Y.decodeSnapshot(Uint8Array.from(edits.revision)))
+      )
+        void attributionQuery.refetch();
+    } else void attributionQuery.refetch();
+  };
+
+  const failedMembership: MembershipRead = {
+    status: "failed",
+    retry: () => {
+      void attributionQuery?.refetch();
+    },
   };
 
   /** The frame the attached painters were last handed (state follows it by at most one microtask). */
@@ -226,6 +248,11 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
           ? reviewChanges(frame, attributionOf(frame))
           : NO_CHANGES;
     const ready = frame !== null && (synced || changes.length > 0);
+    const membership = attributionFailed
+      ? failedMembership
+      : edits && frame && ![...attributionOf(frame).values()].some((c) => c.unresolved)
+        ? MEMBERSHIP_READY
+        : MEMBERSHIP_LOADING;
     if (ready && frame && draft) {
       reconciling = true;
       try {
@@ -243,6 +270,7 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
     if (
       frame === state.frame &&
       ready === state.ready &&
+      membership === state.membership &&
       record === seenRecord &&
       edits === settledEdits &&
       settledProvenanceRevision === provenanceRevision
@@ -255,7 +283,7 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
       frame && draft
         ? deriveVisible(frame, changes, currentDraftCommandRecords(), draft)
         : NO_VISIBLE;
-    state = { ...visible, frame, changes, ready, attributionReady: edits !== null };
+    state = { ...visible, frame, changes, ready, membership };
     if (frame) useAttribution(frame);
     for (const listener of listeners) listener();
   };
@@ -298,8 +326,10 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
     : () => {};
   const unwatchAttribution = attributionQuery?.subscribe((result) => {
     const next = result.data ?? NO_EDITS;
-    if (next === edits) return;
+    const failed = result.isError && !result.isFetching;
+    if (next === edits && failed === attributionFailed) return;
     edits = next;
+    attributionFailed = failed;
     if (latest() && !destroyed) publish(latest());
   });
   if (attributionQuery) edits = attributionQuery.getCurrentResult().data ?? NO_EDITS;
@@ -364,7 +394,7 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
   };
   baseFragment.observeDeep(onBaseChange);
 
-  // Undo's provenance can arrive separately from its prose. Neither it nor Apply's record produces
+  // Neither restoration provenance nor Apply's record necessarily produces
   // an editor transaction, but both change membership even when the frame/payload stay identical.
   const provenanceRoots = [yDoc.getArray(RESTORED_ROOT), yDoc.getArray(APPLY_RECORD_ROOT)];
   const onProvenanceChange = () => {

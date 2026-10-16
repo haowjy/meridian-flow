@@ -13,6 +13,7 @@ import {
 import { isSameChange } from "@/core/editor/extensions/inline-review";
 import type { ReviewFrame } from "./review-frame";
 import type { ReviewChange } from "./review-model";
+import type { MembershipRead } from "./review-runtime";
 import type { VisibleChange } from "./review-visible";
 import type { DiscardedEntry } from "./useHeadlessDiscards";
 import { useReviewState } from "./useReviewRuntime";
@@ -111,12 +112,12 @@ export function useChangeItems(
   changes: readonly ReviewChange[];
   frame: ReviewFrame | null;
   ready: boolean;
-  attributionReady: boolean;
+  membership: MembershipRead;
   /** The applied entries in force: the manuscript stops painting the changes they name. */
   applied: readonly AppliedChange[];
   completing: "apply" | "discard" | null;
 } {
-  const { frame, changes, ready, attributionReady, visible, applied, unplaced } = useReviewState(
+  const { frame, changes, ready, membership, visible, applied, unplaced } = useReviewState(
     read ? draft : null,
   );
   const records = useDraftCommandSlice(draft);
@@ -132,7 +133,7 @@ export function useChangeItems(
     changes,
     frame,
     ready,
-    attributionReady,
+    membership,
     applied,
     completing:
       pending?.mode ?? ((items.length === 0 && sent > 0) || unplaced > 0 ? "apply" : null),

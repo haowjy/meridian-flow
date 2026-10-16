@@ -40,12 +40,18 @@ export interface Provenance {
   /** The human who owns the draft's browser clients (`projects.user_id` while a project has one user). */
   userId: string;
   parts: readonly AttributionPart[];
+  /** The room revision whose AI parts have been read, including deletion-only writes. */
+  snapshot: Y.Snapshot;
+  /** Only this browser can positively identify its own unacknowledged insertions. */
+  localClientId?: number;
 }
 export interface ChangeClassification {
   /** The user first, then each writing thread once (linking to its latest write). */
   byline: Author[];
   /** Indexes of `parts` that are in the change under any alignment. */
   members: number[];
+  /** Some footprint evidence lies beyond the provenance read. */
+  unresolved: boolean;
   /** With `record`: what Apply moves into the base if this change is applied. */
   applied?: ApplyEntry;
 }
@@ -159,6 +165,7 @@ function segments(toks: readonly Tok[], lo: number, hi: number): Array<[number, 
 /** The names a change has gathered so far; thread names keep the index of their latest part. */
 interface Footprint {
   members: Set<number>;
+  unresolved: boolean;
   base: ItemRange[];
   settled: ItemRange[];
 }
@@ -304,7 +311,7 @@ class Classifier {
     clock: number,
     memo: IdMemo,
     end: (client: number, clock: number) => number | undefined,
-    unlinked: number,
+    unlinked: (client: number, clock: number) => number,
   ): number {
     let c = client;
     let k = clock;
@@ -318,7 +325,7 @@ class Classifier {
       }
       const to = this.link(c, k);
       if (!to) {
-        who = unlinked;
+        who = unlinked(c, k);
         break;
       }
       if (hops > this.linkList.length) {
@@ -347,7 +354,10 @@ class Classifier {
         if (part >= 0) return part;
         return c === DRAFT_SERVER_CLIENT_ID ? BASE : undefined;
       },
-      USER,
+      (c, k) =>
+        c === this.provenance.localClientId || k < (this.provenance.snapshot.sv.get(c) ?? 0)
+          ? USER
+          : UNKNOWN,
     );
   }
 
@@ -361,7 +371,7 @@ class Classifier {
         const part = this.deleted.get(c, k);
         return part >= 0 ? part : undefined;
       },
-      USER,
+      (c, k) => (Y.isDeleted(this.provenance.snapshot.ds, Y.createID(c, k)) ? USER : UNKNOWN),
     );
   }
 
@@ -413,11 +423,18 @@ class Classifier {
 
   /** Phase 1: collect the complete footprint before any bounded name work. */
   private footprint(changes: readonly Boundary[]): Footprint {
-    const footprint: Footprint = { members: new Set(), base: [], settled: [] };
+    const footprint: Footprint = { members: new Set(), unresolved: false, base: [], settled: [] };
+    const include = (who: number) => {
+      if (who >= 0) footprint.members.add(who);
+      if (who === UNKNOWN) {
+        footprint.unresolved = true;
+        for (let i = 0; i < this.parts.length; i++) footprint.members.add(i);
+      }
+    };
     const live = (client: number, clock: number) => {
       const who = this.origin(client, clock);
       if (who === BASE) return;
-      if (who >= 0) footprint.members.add(who);
+      include(who);
       if (this.options.record) pushRange(footprint.base, client, clock);
     };
     const dead = (item: Y.Item) => {
@@ -427,7 +444,7 @@ class Classifier {
         if (this.settled.get(c, clock) >= 0) continue;
         if (this.options.record) pushRange(footprint.settled, c, clock);
         const who = this.deleter(c, clock);
-        if (who >= 0) footprint.members.add(who);
+        include(who);
       }
     };
     const item = (value: Y.Item) => {
@@ -930,6 +947,7 @@ class Classifier {
       }
       out.set(group.id, {
         byline,
+        unresolved: footprint.unresolved,
         members: [...footprint.members].sort((x, y) => x - y),
         ...(this.options.record
           ? { applied: { base: joined(footprint.base), settled: joined(footprint.settled) } }

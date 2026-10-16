@@ -7,7 +7,7 @@
  */
 import { type Author, classifyChanges } from "@meridian/agent-edit/diff";
 import type { DraftAttribution, DraftAttributionEdit } from "@meridian/contracts/drafts";
-import type * as Y from "yjs";
+import * as Y from "yjs";
 import type { ReviewFrame } from "./review-frame";
 import type { ChangeAttribution, ChatRef, ReviewChange } from "./review-model";
 
@@ -69,11 +69,13 @@ export const writerIn = (change: Pick<ReviewChange, "byline">) =>
 export function classifyRoom(
   doc: Y.Doc,
   frame: ReviewFrame,
-  data: Pick<DraftAttribution, "userId" | "edits">,
-): ReadonlyMap<string, ChangeAttribution> {
+  data: Pick<DraftAttribution, "userId" | "edits" | "revision">,
+): ReadonlyMap<string, ChangeAttribution & { unresolved: boolean }> {
   const classified = classifyChanges(doc, frame, {
     userId: data.userId,
     parts: data.edits,
+    snapshot: Y.decodeSnapshot(Uint8Array.from(data.revision)),
+    localClientId: doc.clientID,
   });
   const resolve = chatResolver(data.edits);
   return new Map(
@@ -81,6 +83,7 @@ export function classifyRoom(
       id,
       {
         byline: c.byline,
+        unresolved: c.unresolved,
         chats: chatsOf(c.byline, resolve),
         members: [...new Set(c.members.map((i) => data.edits[i].owner.threadId))],
       },

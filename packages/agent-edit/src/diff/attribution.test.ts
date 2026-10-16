@@ -72,7 +72,7 @@ function room(blocks: Array<string | PMNode>) {
   let base = readBlocks(frag(seed), schema);
   let writers = 100;
   const projection = () => projectReview(diffBlocks(base, readBlocks(frag(draft), schema)));
-  const provenance = () => ({ userId: "u1", parts });
+  const provenance = () => ({ userId: "u1", parts, snapshot: Y.snapshot(draft) });
   const room = {
     draft,
     parts,
@@ -568,7 +568,7 @@ describe("attribution", () => {
       const classified = classifyChanges(
         r.draft,
         r.projection(),
-        { userId: "u", parts: r.parts },
+        { userId: "u", parts: r.parts, snapshot: Y.snapshot(r.draft) },
         { record: true, budget },
       );
       return applyRecordOf(classified, classified.keys());
@@ -583,4 +583,39 @@ describe("attribution", () => {
     r.draft.transact(() => appendApplyRecord(r.draft, entry));
     expect(readApplyRecord(r.draft)).toEqual([entry]);
   });
+});
+
+it("unlisted item IDs need a covered revision or this browser's client, never absence alone", () => {
+  const r = room(["red"]);
+  r.ai((doc) => {
+    textOf(doc).delete(0, 3);
+    textOf(doc).insert(0, "blue");
+  });
+  const pending = { userId: "u", parts: r.parts, snapshot: Y.snapshot(r.draft) };
+  r.writer((doc) => {
+    textOf(doc).delete(0, 4);
+    textOf(doc).insert(0, "green");
+  });
+  const read = (snapshot: Y.Snapshot, localClientId?: number) =>
+    [
+      ...classifyChanges(r.draft, r.projection(), { ...pending, snapshot, localClientId }).values(),
+    ][0];
+  expect(read(pending.snapshot)).toMatchObject({ byline: [], members: [0], unresolved: true });
+  expect(read(Y.snapshot(r.draft))).toMatchObject({
+    byline: [{ kind: "user", userId: "u" }],
+    unresolved: false,
+  });
+  // With no AI writes or deletions in play, this browser can name its own fresh typing.
+  const local = room(["base"]);
+  textOf(local.draft).insert(0, "writer ");
+  expect(
+    [
+      ...classifyChanges(local.draft, local.projection(), {
+        userId: "u",
+        parts: [],
+        snapshot: Y.emptySnapshot,
+        localClientId: local.draft.clientID,
+      }).values(),
+    ][0].byline,
+  ).toEqual([{ kind: "user", userId: "u" }]);
 });

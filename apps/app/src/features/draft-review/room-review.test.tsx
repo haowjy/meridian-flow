@@ -111,6 +111,7 @@ function fixture(rooms: ReturnType<typeof fakeRoom>[] = [fakeRoom()]) {
   client.setQueryData(draftAttributionQueryOptions(draft).queryKey, {
     itemKey: "draft:doc",
     userId: "user-1",
+    revision: [...Y.encodeSnapshot(Y.snapshot(doc))],
     edits: [],
   });
   return { doc, room, client, pool };
@@ -254,7 +255,12 @@ it("a cold collapsed chat Discard survives the row's metadata observer unmountin
         );
       }),
   );
-  api.attribution.mockResolvedValue({ itemKey: "draft:doc", userId: "user-1", edits: [] });
+  api.attribution.mockResolvedValue({
+    itemKey: "draft:doc",
+    userId: "user-1",
+    revision: [...Y.encodeSnapshot(Y.snapshot(room.document))],
+    edits: [],
+  });
   let discards!: ReturnType<typeof useHeadlessDiscards>;
   // The collapsed dock row holds an idle observer on the metadata query and is replaced by the Discard's entry.
   function Row() {
