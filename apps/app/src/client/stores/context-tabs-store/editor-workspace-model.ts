@@ -123,8 +123,8 @@ export type ProjectTabsSlice = {
 };
 
 /**
- * The one scheme the Editor never opens: a Work's uploads live on its Files
- * tab and open in their resource view.
+ * The one scheme the Editor never opens: uploads belong to a chat and open in
+ * their resource view.
  */
 export function isEditorScheme(scheme: ProjectContextTreeScheme): boolean {
   return scheme !== "uploads";
