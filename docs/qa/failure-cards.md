@@ -98,6 +98,9 @@ generating brief. Restore `fetch` and press Try again: the brief stops and the c
   reply failure and lost Retry). Both sentences must reach the assertive region
   together. Ending one card must not rewrite the region to the surviving
   sentence and announce it again. Reloaded cards stay silent.
+- **Hand-back occurrences:** follow [QC-08](queue-controls.md#qc-08-failure-cards)
+  for refused Retry saves and reload. Hand-back resume keeps the last saved occurrence; it does
+  not use the send journal's new-attempt-on-replay policy.
 - **Occurrences across reload:** lose a message send and its Retry. Read the
   journal's `occurrence` before reload; re-drive after reload and fail again.
   The saved attempt increases and the new card key differs. The idempotent

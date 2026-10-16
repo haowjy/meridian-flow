@@ -222,7 +222,8 @@ One framework-free operation runs Stop, the queue's x and Cancel queue for the a
   version)` carries the record's version. `store` is the pending-command store (`pending`,
   `record`, `accept`, `drop`; each write says whether it took). `accept` retires the command and
   stores the receipt in one write, so a command never outlives its receipt.
-- **Order.** Save the command (a refusal sends nothing: `unsaved`), add the intent so rows hide,
+- **Order.** Save the command and occurrence (a refused first save is `unsaved`; a refused Retry
+  save keeps an already stored command's status; neither posts), add the intent so rows hide,
   post, classify, and only then change state. Confirmed: receive the record, remove `handedBack`
   and `gone` turns at its version, `accept` the content once (or `drop` on a lost race, writing
   nothing), answer the intent. A failed `accept` is `unwritten`: the command stays and a replay
@@ -243,7 +244,8 @@ One framework-free operation runs Stop, the queue's x and Cancel queue for the a
   Joining an in-flight attempt and reload's resume retain the saved occurrence.
   If saving a Retry occurrence fails, nothing new is posted: an already durable command keeps
   its unresolved status and recovery card, not the never-saved classification. Reload can only
-  recover the last occurrence whose save succeeded.
+  recover the last occurrence whose save succeeded. The attempt returns `unsaved`, while its
+  card still describes the durable command's unresolved status.
 - **Send now** is not a hand-back command: `postSendNow(ports, threadId, body)` shares the
   classifier and returns confirmed (`cancelledExecutionId`; null means this attempt requested no
   cancellation), refused, or ambiguous with the frozen body. `sendNowRequest(view)` builds the body.
