@@ -1,6 +1,6 @@
 /**
  * Unified context-port factory: composes project-scoped (manuscript/kb/user) and
- * work-scoped (scratch/uploads) ContextFS adapters into one router per scope.
+ * Work-scoped (scratch) ContextFS adapters, and chat-scoped (uploads) ones into one router per scope.
  *
  * Contracts owns the scheme taxonomy; adapter assembly lives here as one deep
  * module. Source provisioning is delegated to context-source-provisioning.ts;
@@ -11,7 +11,6 @@ import type { CanonicalContextAuthority, DraftId } from "@meridian/contracts";
 import {
   canonicalContextUri,
   PROJECT_SCOPED_CONTEXT_URI_SCHEMES,
-  WORK_SCOPED_CONTEXT_URI_SCHEMES,
 } from "@meridian/contracts/context-uri";
 import type { ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { ResolvedWorkAuthority, WorkSlug } from "@meridian/contracts/works";
@@ -83,10 +82,7 @@ import type { HiddenNodeRepair } from "./tree/hidden-node-repair.js";
 const PROJECT_CONTEXTFS_SCHEMES: readonly ProjectContextFsScheme[] =
   PROJECT_SCOPED_CONTEXT_URI_SCHEMES;
 /** Uploads belong to a chat, so a Work provisions Scratch only. */
-const WORK_SCOPED_CONTEXTFS_SCHEMES: readonly WorkScopedContextFsScheme[] =
-  WORK_SCOPED_CONTEXT_URI_SCHEMES.filter(
-    (scheme): scheme is WorkScopedContextFsScheme => scheme !== "uploads",
-  );
+const WORK_SCOPED_CONTEXTFS_SCHEMES: readonly WorkScopedContextFsScheme[] = ["scratch"];
 
 export interface UnifiedContextPortFactory {
   lineages: ScratchLineages;
@@ -218,7 +214,7 @@ function buildWorkScopedContextFsAdapters(
   authority: CanonicalContextAuthority,
 ): Map<ContextScheme, ContextSchemeAdapter> {
   const { storeResolvers, commandTransaction } = assembly;
-  // Scratch/uploads are canonical live documents even though their storage is Work-scoped.
+  // Scratch is a canonical live document even though its storage is Work-scoped.
   const mutationStore = storeResolvers.resolveMutationStore();
   const adapters = new Map<ContextScheme, ContextSchemeAdapter>();
   for (const scheme of WORK_SCOPED_CONTEXTFS_SCHEMES) {

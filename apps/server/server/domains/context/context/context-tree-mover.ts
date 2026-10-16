@@ -7,12 +7,15 @@
  */
 
 import { validateContextEntryName } from "@meridian/contracts/context-entry-validation";
-import { formatParsedContextUri, parseContextUri } from "@meridian/contracts/context-uri";
+import {
+  formatParsedContextUri,
+  isWorkScopedScheme,
+  parseContextUri,
+} from "@meridian/contracts/context-uri";
 import {
   type ContextDestinationParent,
   type DeleteContextEntryResult,
   type Filetype,
-  isWorkScopedProjectContextScheme,
   storedFilename,
 } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../shared/result.js";
@@ -186,7 +189,7 @@ export class ContextTreeMover {
     const destinationResolver = policy.target === "exact" ? policy.resolveDestination : undefined;
     const scopeOf = (dispatch: ContextTreeDispatch) => ({
       scheme: dispatch.scheme,
-      workId: isWorkScopedProjectContextScheme(dispatch.scheme) ? dispatch.workScopeId : null,
+      workId: isWorkScopedScheme(dispatch.scheme) ? dispatch.workScopeId : null,
     });
     return this.commandExecutor
       .run(
@@ -321,7 +324,7 @@ export class ContextTreeMover {
         [
           {
             scheme: target.scheme,
-            workId: isWorkScopedProjectContextScheme(target.scheme) ? target.workScopeId : null,
+            workId: isWorkScopedScheme(target.scheme) ? target.workScopeId : null,
           },
         ],
       )

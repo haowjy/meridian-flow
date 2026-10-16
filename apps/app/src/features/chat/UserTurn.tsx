@@ -6,7 +6,10 @@ import { memo, useMemo } from "react";
 import type { UserTurnRecovery } from "@/client/chat-submissions/presentation";
 import { NoticeCard } from "@/components/app/NoticeCard";
 import { Button } from "@/components/ui/button";
-import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
+import {
+  useCanOpenChatReference,
+  useOpenChatDocument,
+} from "@/features/project/context/open-chat-document";
 import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
 import { Markdown } from "@/rich-content/Markdown";
 import { HandoffTurnAction, useTurnDerivation } from "./derivation/DeriveTurnActions";
@@ -33,6 +36,7 @@ function UserTurnComponent({
   const handoff = useTurnDerivation() !== null && !queued && turn.status === "complete";
   const projectId = useProjectDocumentNavigationProjectId();
   const openDocument = useOpenChatDocument(projectId ?? undefined);
+  const canOpenReference = useCanOpenChatReference();
   const resolutions = useReferenceAvailability(
     useMemo(
       () => [...new Set(projected.references.map(({ documentId }) => documentId))],
@@ -53,6 +57,7 @@ function UserTurnComponent({
           references={projected.references}
           skills={projected.skills}
           referenceResolutions={resolutions}
+          canOpenReference={canOpenReference}
           onOpenReference={(documentId) =>
             void openDocument({ documentId, disposition: "current" })
           }

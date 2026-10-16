@@ -30,7 +30,8 @@ import type { DocumentCreationMetadata } from "../document-metadata.js";
  * Registered context URI schemes.
  *
  * Project-scoped: `manuscript`/`kb`/`user` (bare paths default to `manuscript`).
- * Work-scoped: `scratch`/`uploads` (wire qualifiers use `scheme://@<work-slug>/...`).
+ * Owned: `scratch` (a Work's, `scratch://@<work-slug>/...`, or a lineage's, `scratch://@/c12/...`)
+ * and `uploads` (a chat's, `uploads://@/c15/...`). Only Scratch belongs to a Work.
  */
 export type { ContextError, ContextMoveResult } from "@meridian/contracts/protocol";
 export type ContextScheme = ContextUriScheme;
@@ -65,7 +66,7 @@ export interface UploadsOwner {
 export type ProjectContextFsScheme = ProjectScopedContextUriScheme;
 
 /** Schemes provisioned per Work in the unified context port. */
-export type WorkScopedContextFsScheme = Exclude<WorkScopedContextUriScheme, "uploads">;
+export type WorkScopedContextFsScheme = WorkScopedContextUriScheme;
 
 export interface ContextReadResult {
   /** Stable identity resolved by the router for this successful operation. */

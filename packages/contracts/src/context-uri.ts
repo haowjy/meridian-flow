@@ -22,8 +22,12 @@ export function isDraftedScheme(scheme: ContextUriScheme): boolean {
 export const PROJECT_SCOPED_CONTEXT_URI_SCHEMES = ["manuscript", "kb", "user", "unfiled"] as const;
 export type ProjectScopedContextUriScheme = (typeof PROJECT_SCOPED_CONTEXT_URI_SCHEMES)[number];
 
-export const WORK_SCOPED_CONTEXT_URI_SCHEMES = ["scratch", "uploads"] as const;
-export type WorkScopedContextUriScheme = (typeof WORK_SCOPED_CONTEXT_URI_SCHEMES)[number];
+/** Schemes whose address takes an owner authority (`@slug`, `@/c12/`, `@/`): Scratch and chat uploads. */
+export const OWNED_CONTEXT_URI_SCHEMES = ["scratch", "uploads"] as const;
+export type OwnedContextUriScheme = (typeof OWNED_CONTEXT_URI_SCHEMES)[number];
+
+/** The one scheme a Work owns. Uploads belong to a chat, never to a Work. */
+export type WorkScopedContextUriScheme = "scratch";
 
 /** A URI already serialized with stable authority rather than contextual shorthand. */
 export type CanonicalContextUri = string;
@@ -51,7 +55,7 @@ export type ParsedContextAuthority =
 /** The owners a holder's authority supplies, independently for each owned scheme. */
 export function holderAuthorities(
   authority: ParsedContextAuthority,
-): Record<WorkScopedContextUriScheme, ParsedContextAuthority | null> {
+): Record<OwnedContextUriScheme, ParsedContextAuthority | null> {
   switch (authority.kind) {
     case "work":
       return { scratch: authority, uploads: null };
@@ -116,7 +120,7 @@ export function canonicalContextUri(
   authority?: Extract<CanonicalContextAuthority, { kind: "contextual" }>,
 ): string;
 export function canonicalContextUri(
-  scheme: WorkScopedContextUriScheme,
+  scheme: OwnedContextUriScheme,
   path: string,
   authority?: CanonicalContextAuthority,
 ): string;
@@ -150,8 +154,12 @@ export function canonicalContextUri(
   if (scheme === "scratch" && normalizedPath && authorityQualifier(authority) === "@") {
     throw new RangeError(missingScratchHandle);
   }
-  if (scheme === "uploads" && normalizedPath && authorityQualifier(authority) === "@") {
-    throw new RangeError(missingUploadsHandle);
+  if (
+    scheme === "uploads" &&
+    authorityQualifier(authority) &&
+    !("kind" in authority && authority.kind === "chat")
+  ) {
+    throw new RangeError(uploadsBelongToChat);
   }
   const qualifier = authorityQualifier(authority);
   if (qualifier)
@@ -276,13 +284,17 @@ function parseAuthorityPrefix(
       `Authority qualifier chains are not yet supported for scheme "${scheme}"`,
     );
   }
-  if (!(WORK_SCOPED_CONTEXT_URI_SCHEMES as readonly string[]).includes(scheme)) {
+  if (!isOwnedContextScheme(scheme)) {
     return invalidContextUri(
       rawUri,
       `Scheme "${scheme}" does not yet support authority qualifiers`,
     );
   }
   const qualifier = qualifiers[0] ?? "";
+  // Uploads belong to a chat: the only owner they take is a chat's handle.
+  if (scheme === "uploads" && !(qualifier === "@" && segments.length)) {
+    return invalidContextUri(rawUri, uploadsBelongToChat);
+  }
   if (qualifier === "@" && scheme === "scratch" && segments.length) {
     const rootThreadRef = segments.shift() ?? "";
     if (!/^c[1-9][0-9]*$/.test(rootThreadRef))
@@ -316,6 +328,16 @@ function parseAuthorityPrefix(
     ok: true,
     value: { authority: { kind: "work", workSlug }, rawPath: segments.join("/") },
   };
+}
+
+/** Schemes whose address takes an owner authority; the complement of the project-scoped ones. */
+export function isOwnedContextScheme(scheme: ContextUriScheme): scheme is OwnedContextUriScheme {
+  return (OWNED_CONTEXT_URI_SCHEMES as readonly string[]).includes(scheme);
+}
+
+/** Whether a Work (not a chat) may own documents in this scheme: Scratch only. */
+export function isWorkScopedScheme(scheme: ContextUriScheme): scheme is WorkScopedContextUriScheme {
+  return scheme === "scratch";
 }
 
 /** Schemes whose documents belong to the project (or, for `user://`, the user), never to a Work. */
@@ -382,5 +404,7 @@ export function documentTitleFromUri(uri: string | null | undefined): string | n
 
 const missingUploadsHandle =
   "Uploads under @/ require the chat handle. Use uploads://x for this chat’s files, or uploads://@/c12/x for a specific chat.";
+const uploadsBelongToChat =
+  "Uploads belong to a chat. Use uploads://x for this chat’s files, or uploads://@/c12/x for another chat’s.";
 const missingScratchHandle =
   "Scratch under @/ requires the first chat handle. Use scratch://x for this chat’s notes, or scratch://@/c12/x for a specific chat. List chats with ls scratch://@/.";

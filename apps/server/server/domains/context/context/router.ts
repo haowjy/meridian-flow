@@ -446,14 +446,6 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
           workSlug: authority.workSlug,
         });
       }
-      if (scheme === "uploads") {
-        return Err({
-          code: "invalid_uri",
-          uri: parsed.value.normalized,
-          reason:
-            "Uploads belong to a chat, not a Work. Use uploads://x for this chat's files, or uploads://@/c12/x for another chat's.",
-        });
-      }
       try {
         adapter = deps.resolveWorkAdapters
           ? deps.resolveWorkAdapters(resolvedAuthority).get(scheme)
@@ -469,13 +461,6 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       }
     }
 
-    if (scheme === "uploads" && authority.kind === "none")
-      return Err({
-        code: "invalid_uri",
-        uri,
-        reason:
-          "Uploads belong to a chat. Use uploads://x for this chat's files, or uploads://@/c12/x for another chat's.",
-      });
     if (scheme === "uploads" && authority.kind === "contextual" && !adapter)
       return Err({
         code: "invalid_uri",

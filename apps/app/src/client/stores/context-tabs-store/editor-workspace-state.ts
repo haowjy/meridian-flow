@@ -1,9 +1,9 @@
 /** Pure Editor workspace transitions and browser-local restoration codec. */
+import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import {
   classifyFiletype,
   type DocumentFileType,
   isProjectContextTreeScheme,
-  isWorkScopedProjectContextScheme,
 } from "@meridian/contracts/protocol";
 import { isRecord } from "@/client/storage/browser-record";
 import { sameServerContextTabLocator } from "./context-tab-locator";
@@ -112,13 +112,11 @@ export function parseContextTab(value: unknown): ContextTab | null {
     // A chat's Scratch names its lineage and handle instead of a Work.
     (tab.rootThreadId !== undefined &&
       (tab.scheme !== "scratch" || tab.workId !== undefined || !tab.rootThreadRef)) ||
-    // A chat's uploads name the chat and handle instead of a Work.
+    // A chat's uploads name the chat and handle instead of a Work, and have no other owner.
     (tab.chatId !== undefined &&
       (tab.scheme !== "uploads" || tab.workId !== undefined || !tab.chatRef)) ||
-    (isWorkScopedProjectContextScheme(tab.scheme) &&
-      !tab.workId &&
-      !tab.rootThreadId &&
-      !tab.chatId)
+    (tab.scheme === "uploads" && tab.chatId === undefined) ||
+    (isWorkScopedScheme(tab.scheme) && !tab.workId && !tab.rootThreadId)
   )
     return null;
   if (tab.kind === "tracked" && tab.editable === true) {

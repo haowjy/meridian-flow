@@ -1,9 +1,9 @@
 /** Validates this browser tab's persisted Editor membership against current resources. */
 
+import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import {
   type ContextOwner,
   isProjectContextTreeScheme,
-  isWorkScopedProjectContextScheme,
   type ProjectContextIdentityResolution,
   type WorkingSetRoute,
 } from "@meridian/contracts/protocol";
@@ -57,11 +57,11 @@ function availableTab(
 ): ContextTab {
   const scheme = resolution.entry.uri.slice(0, resolution.entry.uri.indexOf(":"));
   if (!isProjectContextTreeScheme(scheme)) throw new TypeError("Invalid available route scheme");
+  const authorityKind = resolution.authority.kind;
   if (
-    isWorkScopedProjectContextScheme(scheme) &&
-    resolution.authority.kind !== "work" &&
-    resolution.authority.kind !== "lineage" &&
-    resolution.authority.kind !== "chat"
+    scheme === "uploads"
+      ? authorityKind !== "chat"
+      : isWorkScopedScheme(scheme) && authorityKind !== "work" && authorityKind !== "lineage"
   ) {
     throw new TypeError("Invalid available route authority");
   }

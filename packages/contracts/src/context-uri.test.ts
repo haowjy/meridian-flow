@@ -56,13 +56,12 @@ describe("parseContextUri", () => {
       ok: true,
       value: { authority: { kind: "contextual" }, normalized: "uploads://draft.png" },
     });
-    expect(parseContextUri("uploads://@revision-pass/draft.png")).toMatchObject({
-      ok: true,
-      value: {
-        authority: { kind: "work", workSlug: "revision-pass" },
-        normalized: "uploads://@revision-pass/draft.png",
-      },
-    });
+    // No Work's `@/` and a Work's `@slug` name no chat, so they are not uploads addresses.
+    for (const uri of ["uploads://@revision-pass/draft.png", "uploads://@/"])
+      expect(parseContextUri(uri)).toMatchObject({
+        ok: false,
+        error: { reason: expect.stringContaining("belong to a chat") },
+      });
     // Uploads belong to a chat: `@/` plus the chat's handle, never `@/` alone.
     expect(parseContextUri("uploads://@/c15/draft.png")).toMatchObject({
       ok: true,
