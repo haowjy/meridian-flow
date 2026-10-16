@@ -232,8 +232,12 @@ export type DraftItemMeta =
 // Strict command bodies. Unknown fields answer 400, so an old tab's per-change Discard can never
 // be read as item Discard. Request types are the schemas' inference.
 
-/** Base64 `Y.snapshot` of the text branch's room at the review frame the writer acted on. */
-const SnapshotSchema = z.string().max(64 * 1024);
+/**
+ * Base64 `Y.snapshot` of the text branch's room at the review frame the writer acted on. It grows with the
+ * delete set's fragmentation and the number of clients, not with the words: a 50k-word full rewrite with
+ * some typing measured 260 KB, so the cap sits an order of magnitude above that (#867).
+ */
+const SnapshotSchema = z.string().max(4 * 1024 * 1024);
 const ItemBody = {
   draftId: z.string().uuid(),
   itemKey: z.string().max(80),

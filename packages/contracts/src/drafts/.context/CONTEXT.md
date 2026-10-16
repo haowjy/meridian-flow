@@ -53,7 +53,7 @@ exactly the 200 body), `blocked` (terminal; show the failure on the item), or
   `apply_changes` sends `{ draftId, itemKey, commandId, changeIds, snapshot }`;
   `apply_items` (an item, or Apply all's items) sends the item with an optional
   `snapshot` and an optional `locationToken`. `snapshot` is the base64
-  `Y.snapshot` of the room frame the writer acted on, capped at 64 KiB. Apply
+  `Y.snapshot` of the room frame the writer acted on, capped at 4 MiB (a 50k-word rewrite measured 260 KB; #867). Apply
   never closes the draft, and never closes an edited item, even when it empties.
 - **Results** (`DraftItemOutcome`, one per item): `applied` (with `notes`,
   `overrode`, `hasChanges`, and `itemClosed` when the Apply dropped a created
