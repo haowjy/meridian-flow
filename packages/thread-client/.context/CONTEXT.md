@@ -131,7 +131,7 @@ the optional `invalidateThreadSnapshot` an adapter may supply.
   transition (`applyRead`), and returns `stale` (changing nothing) when the read is below the
   floor. **Reads arrive validated.** Each host parses the snapshot with the contracts'
   `threadSnapshotSchema` at its HTTP read boundary (the app's `threads-api.ts`, the CLI's
-  `Session.request` `parse`) before calling `receive`, so an invalid response is a read failure
+  `Session.request` with `decode: jsonResponse(threadSnapshotSchema)`) before calling `receive`, so an invalid response is a read failure
   there. The sync neither validates nor catches: an exception inside it is a programming error
   and propagates. **The join:** `start()` asks for a read (`requestSnapshot("any")`) and subscribes nothing.
   While a started generation has no handler, a read applies only if it passes the floor *and* its
