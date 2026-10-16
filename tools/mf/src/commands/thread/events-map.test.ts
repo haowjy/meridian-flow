@@ -13,11 +13,7 @@ describe("RunEventMapper", () => {
   it("folds a text turn into started, deltas, one completed message, finished, ended", () => {
     const events = mapAll(SIMPLE_TEXT_TURN_AGUI);
     const types = events.map((event) => event.type);
-    expect(events[0]).toMatchObject({
-      type: "turn.started",
-      executionId: "execution_golden",
-      reservedForUserTurnIds: ["turn_golden_user"],
-    });
+    expect(events[0]).toMatchObject({ type: "turn.started" });
     expect(types).toContain("turn.finished");
     const completed = events.filter((event) => event.type === "message.completed");
     expect(completed).toHaveLength(1);

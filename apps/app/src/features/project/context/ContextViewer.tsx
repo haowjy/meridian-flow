@@ -29,8 +29,7 @@ import { PanelToggleButton } from "../shell/PanelToggleButton";
 import { ContextEditorMountHost } from "./ContextEditorMountHost";
 import { ContextTabBar } from "./ContextTabBar";
 import { ContextViewerHost } from "./ContextViewerHost";
-import type { ContextPaneState, MissingDestination } from "./context-pane-state";
-import { schemeLabel } from "./context-schemes";
+import type { ContextPaneState } from "./context-pane-state";
 import { DocumentPaneChrome } from "./DocumentPaneChrome";
 import { PendingDocumentPath } from "./PendingDocumentPath";
 import { RecentDocumentsLanding } from "./RecentDocumentsLanding";
@@ -243,9 +242,6 @@ export function ContextViewer({
               />
             </div>
           ) : null}
-          {paneState.kind === "dead-route" ? (
-            <MissingDocumentState destination={paneState.destination} />
-          ) : null}
           {paneState.kind === "empty-workspace" ? (
             <RecentDocumentsLanding
               projectId={projectId}
@@ -253,31 +249,8 @@ export function ContextViewer({
               onNewDocument={onNewDocument}
             />
           ) : null}
-          {paneState.kind === "route-error" ? <RouteErrorState /> : null}
         </PaintHold>
       </ProjectRouteBoundary>
-    </div>
-  );
-}
-
-/** Where a timeline door lands when its document is gone. */
-function MissingDocumentState({ destination }: { destination: MissingDestination }) {
-  const section = schemeLabel(destination.scheme);
-  return (
-    <div className="grid h-full place-items-center px-6 text-center">
-      <div className="flex max-w-sm flex-col gap-2">
-        <p className="font-medium text-prose-foreground">
-          <Trans>
-            {destination.name} isn't in {section}.
-          </Trans>
-        </p>
-        <p className="text-xs text-muted-foreground">
-          <Trans>
-            The assistant referred to this document, but it isn't there now. It may have been
-            renamed, deleted, or never finished being created.
-          </Trans>
-        </p>
-      </div>
     </div>
   );
 }
@@ -289,21 +262,6 @@ function railToggleNode(
   if (!toggle || toggle.open) return null;
   const Icon = side === "left" ? PanelLeftOpen : PanelRightOpen;
   return <PanelToggleButton icon={Icon} label={toggle.label} onClick={toggle.onExpand} />;
-}
-
-function RouteErrorState() {
-  return (
-    <div className="grid h-full place-items-center px-6 text-center">
-      <div className="flex max-w-sm flex-col gap-2">
-        <p className="font-medium text-prose-foreground">
-          <Trans>This destination couldn't load.</Trans>
-        </p>
-        <p className="text-xs text-muted-foreground">
-          <Trans>Refresh to try again.</Trans>
-        </p>
-      </div>
-    </div>
-  );
 }
 
 // Re-export the tab-keyed type for callers (notably the controller and

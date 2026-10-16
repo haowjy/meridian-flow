@@ -309,6 +309,16 @@ export function apiThreadStopPath(threadId: string): string {
   return `${API_THREADS_PATH}/${threadId}/stop`;
 }
 
+/** Hand back waiting writer messages by id (the queue's x and Cancel queue). Never cancels a reply. */
+export function apiThreadHandBackPath(threadId: string): string {
+  return `${API_THREADS_PATH}/${threadId}/hand-back`;
+}
+
+/** Send now: cancels the reply the writer saw so the waiting queue runs next. */
+export function apiThreadSendNowPath(threadId: string): string {
+  return `${API_THREADS_PATH}/${threadId}/send-now`;
+}
+
 /** Writer `/compact` commands queued on a thread's inbox. */
 export function apiThreadControlsPath(threadId: string): string {
   return `${API_THREADS_PATH}/${threadId}/controls`;

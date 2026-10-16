@@ -23,6 +23,9 @@ import type { DeliveryLeaseStore, DeliveryStore } from "./delivery-ports.js";
 /** The turn current when an execution acknowledges messages; acknowledgement records its id. */
 export type Deliverer = { turn: Pick<Turn, "id"> };
 
+/** Who retires acknowledged rows: the turn that delivered them, a hand-back request that took them back, or no one (controls, notices). */
+export type Retirement = Deliverer | { handedBackBy: string } | null;
+
 export type ExecutionSettlementDeps = PersistenceDeps & {
   repos: import("../../threads/index.js").ThreadRepositories;
   toolRegistry?: Pick<import("../tools/types.js").ToolRegistry, "getRegistration">;
@@ -53,13 +56,19 @@ export function createExecutionSettlement(deps: ExecutionSettlementDeps) {
 
   /**
    * The one acknowledgement path. Message rows this call actually delivers record their
-   * deliverer; controls and notices record nothing. The inbox write marks the chat, so the
-   * transaction publishes the record. Every retirement path goes through here under the
-   * caller's thread lock, so a usage block is cleared the moment no message or control waits
-   * behind it.
+   * deliverer, or the hand-back request that took them back; controls and notices record
+   * nothing. The inbox write marks the chat, so the transaction publishes the record. Every
+   * retirement path, deliveries and hand-backs alike, goes through here under the caller's
+   * thread lock, so a usage block is cleared the moment no message or control waits behind it.
    */
-  async function ack(threadId: ThreadId, ids: readonly string[], by: Deliverer | null = null) {
-    if (ids.length > 0) await inbox.ack(threadId, [...ids], (by?.turn.id as TurnId) ?? null);
+  async function ack(threadId: ThreadId, ids: readonly string[], by: Retirement = null) {
+    if (ids.length > 0)
+      await inbox.ack(
+        threadId,
+        [...ids],
+        by && "turn" in by ? (by.turn.id as TurnId) : null,
+        by && "handedBackBy" in by ? { handedBackBy: by.handedBackBy } : undefined,
+      );
     await clearBlockWhenIdle(threadId);
   }
 
@@ -264,7 +273,6 @@ export function createExecutionSettlement(deps: ExecutionSettlementDeps) {
   return {
     deliveredBy,
     ack,
-    clearBlockWhenIdle,
     endExecution,
     settleTerminal,
     closeCause,

@@ -5,15 +5,16 @@ the copied runtime orchestrator streams over `/api/threads/ws`, and the turn row
 settle in Postgres.
 
 For non-visual checks (admission, streaming, turn settlement, tool calls), use
-`./mf` for setup and durable reads. Until
-[#768](https://github.com/haowjy/meridian-flow/issues/768)'s second phase lands,
-`./mf thread send` exiting 0 does not prove which reply answered your message
-(exit 6 means `./mf` could not tell; see
-[what each exit means](../../../../docs/debugging.md#set-up-and-verify-with-the-cli)).
-After sending with `./mf thread send <id> "browser smoke $(date +%s)"`, check
-which reply answered with `./mf thread view <id>` (the durable transcript) or in
-the browser. Use this runbook when the rendered composer and stream are what you
-are verifying.
+`./mf` for setup and durable reads. `./mf thread send` proves its own message's
+fate from one snapshot (`messageFate`,
+[#861](https://github.com/haowjy/meridian-flow/pull/861)): exit 0 means the reply
+that answered your message settled, exit 5 means it was handed back or cancelled,
+and exit 6 means `./mf` could not tell (see
+[what each exit means](../../../../docs/debugging.md#set-up-and-debug-with-the-cli)).
+After `./mf thread send <id> "browser smoke $(date +%s)"`, `./mf thread view <id>`
+prints the durable transcript. That is evidence for the shared client code and the
+server, not for what the writer sees: the browser is the evidence for app behavior.
+Use this runbook when the rendered composer and stream are what you are verifying.
 
 ## Preconditions
 

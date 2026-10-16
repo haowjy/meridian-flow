@@ -136,6 +136,7 @@ import {
 } from "./compaction-phase.js";
 import { failCompactionSuccessor } from "./compaction-successor.js";
 import type { TerminalCause } from "./execution-finalizer.js";
+import { decideForgetting, loadForgettingFacts } from "./forget-failed-attempt.js";
 import { type drainInbox, planMessageTurns } from "./inbox-context.js";
 import { createInterruptSession, type InterruptArtifactFlushPort } from "./interrupt-session.js";
 import {
@@ -534,8 +535,27 @@ async function runDrainTurn(
       if (selection.next.kind === "none" && !input.replyTurnId) return null;
       const ctx = await loadRunStartContext(deps, setupThread);
       preparationError = ctx.contextError;
+      // Decide what this boundary forgets before anything is built over the history: the request, the
+      // compaction plan and any summary leave those turns out. The append primitive decides again from the
+      // events it commits and asserts the two agree.
+      const forgetting = decideForgetting(
+        await loadForgettingFacts(deps.repos, input.threadId, selection.activeLeafTurnId),
+        {
+          closes: true,
+          reservationExecutionId: input.lease.executionId,
+          retries: input.retryOf ?? null,
+        },
+      );
+      const forgotten = new Set(forgetting.forget);
+      const stays = <T extends { id: string }>(turns: readonly T[]) =>
+        turns.filter((turn) => !forgotten.has(turn.id));
+      const staysBlocks = (blocks: readonly Block[]) =>
+        blocks.filter((block) => !forgotten.has(block.turnId));
       // `priorTurns` is the graph (the leaf, positions, known ids); `localTurns` the conversation.
-      const { priorTurns, localTurns, inheritedTurns, inheritedBlocks, prevTurnId } = ctx;
+      const { priorTurns, prevTurnId } = ctx;
+      const localTurns = stays(ctx.localTurns);
+      const inheritedTurns = stays(ctx.inheritedTurns);
+      const inheritedBlocks = staysBlocks(ctx.inheritedBlocks);
       const existingTurns = [...inheritedTurns, ...priorTurns];
       const previousTurn = prevTurnId
         ? (existingTurns.find((turn) => turn.id === prevTurnId) ?? null)
@@ -596,7 +616,7 @@ async function runDrainTurn(
       let preflight: Awaited<ReturnType<typeof prepareRequestContext>> | null = null;
       if (!preparationError) {
         try {
-          const previousBlocks = await deps.repos.blocks.listByThread(input.threadId);
+          const previousBlocks = staysBlocks(ctx.localBlocks);
           const prepareInput = {
             deps,
             thread: setupThread,
@@ -604,7 +624,11 @@ async function runDrainTurn(
             referenceTurnId: referenceUserTurnId,
             currentTurnId: input.replyTurnId ?? reservedTurnId,
             control,
-            pinnedRequestTurnIds: new Set(selection.outstanding.map((row) => row.id)),
+            // A Retry-led compaction pins what it retries: those messages are not in the summary's words.
+            pinnedRequestTurnIds: new Set([
+              ...selection.outstanding.map((row) => row.id),
+              ...retryReservedFor,
+            ]),
             turns: [
               ...inheritedTurns,
               ...localTurns,
@@ -726,6 +750,7 @@ async function runDrainTurn(
               };
             },
             {
+              expectedForgetting: forgetting,
               afterEvents: async () => {
                 if (selection.outstanding.length > 0 || input.replyTurnId)
                   await admitRunExecution(
@@ -808,6 +833,8 @@ async function loadRunStartContext(
   priorTurns: Turn[];
   /** The local conversation: the graph minus handed-back writer messages. */
   localTurns: Turn[];
+  /** The conversation's own blocks, intersected with `localTurns`. */
+  localBlocks: Block[];
   inheritedTurns: Turn[];
   inheritedBlocks: Block[];
   prevTurnId: TurnId | null;
@@ -837,6 +864,7 @@ async function loadRunStartContext(
     return {
       priorTurns,
       localTurns: await repos.turns.listByThread(thread.id),
+      localBlocks: await repos.blocks.listByThread(thread.id),
       inheritedTurns: [],
       inheritedBlocks: [],
       prevTurnId: thread.activeLeafTurnId ?? priorTurns.at(-1)?.id ?? null,
@@ -850,6 +878,7 @@ async function loadRunStartContext(
   return {
     priorTurns,
     localTurns: local.turns,
+    localBlocks: local.blocks,
     inheritedTurns: inherited.turns,
     inheritedBlocks: inherited.blocks,
     prevTurnId,
@@ -1705,9 +1734,13 @@ async function executeLoop({
   }
   let responseScope: ReturnType<typeof createResponseScope> | undefined;
   const allTurns: Turn[] = [...initialTurns, reservedTurn];
+  // Only the blocks of the turns the request holds: a forgotten turn's blocks stay in the table.
+  const requestTurnIds = new Set(allTurns.map((turn) => turn.id));
   const allBlocks: Block[] = [
     ...inheritedBlocks,
-    ...(await repos.blocks.listByThread(input.threadId)),
+    ...(await repos.blocks.listByThread(input.threadId)).filter((block) =>
+      requestTurnIds.has(block.turnId),
+    ),
   ];
   // The reservation already prepared this request, so its first generation is
   // not another boundary.

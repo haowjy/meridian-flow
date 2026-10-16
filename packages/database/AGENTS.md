@@ -28,7 +28,7 @@ domain persistence and transaction propagation live in the server.
 - **Data steps.** Code that must run between two SQL migrations is a versioned
   data step (implementation in `src/migration-steps/`). `pnpm db:migrate` alone
   runs it; changing its semantics means a new version, marker and migration.
-  The review-base conversion runs this way (`0050`–`0055`). Details in
+  The review-base conversion runs this way (`0058`–`0063`). Details in
   `.context/CONTEXT.md`.
 - Rollup columns are maintained by application repositories/projectors, not
   database triggers, except for the documented thread activity projection.

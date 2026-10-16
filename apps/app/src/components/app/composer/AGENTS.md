@@ -29,10 +29,15 @@ selection and upload ownership.
   the running ring while a reply runs, and it queues a steer. Stopping is the
   button's spinning ring and its label, with no text beside it. A failed Stop is
   an error card in the notice stack, "Couldn't stop the reply." with Try again,
-  which re-posts the same request. It shows while the reply still runs, even once
-  the writer types, and goes when the Stop succeeds, Try again is pressed or the
-  reply ends. Escape stops only while Stop shows. Stopping and sending at once belongs to
-  the queue's controls.
+  which replays the same request. The chat draws it (`HandBackCards`, from
+  `handBackCards`) through `notices`, not the composer. It shows while the reply still
+  runs, even once the writer types, and goes when the Stop is confirmed (Try again
+  re-posts it, and the card stays until that succeeds) or on Dismiss after a refusal.
+  Once the reply it targeted ends, a Stop that was taking back queued messages changes its
+  copy to "Couldn't move your queued message to the message box." (or "Couldn't move your
+  queued message." when refused); a Stop with nothing queued is moot (`failedStopIsMoot`),
+  so its card goes and the button is no longer failed. Escape stops only while Stop shows. Stopping and sending at once
+  lives in the queue: Send now is on the last queued row, not in the composer.
 - Hosts own session persistence through `initialDraft`/`onDraftChange`; apply an
   initial snapshot once. A successful catalog acquisition removes restored
   reference atoms whose resources are gone; offline or unavailable catalogs do

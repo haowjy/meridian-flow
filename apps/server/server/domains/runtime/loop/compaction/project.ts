@@ -78,6 +78,7 @@ function summaryTurn(
       executionId: null,
       reservedForUserTurnIds: [],
       delivery: null,
+      forgottenBy: null,
       promptBakeId: null,
       finishReason: null,
       inputTokens: 0,

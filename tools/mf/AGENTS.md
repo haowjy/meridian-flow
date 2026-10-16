@@ -3,7 +3,8 @@
 Agent-facing dev CLI for this worktree's app API, not application runtime code.
 Read [`.context/CONTEXT.md`](.context/CONTEXT.md) first.
 
-- **`./mf` is evidence about the browser only for code both run.** It drives the
+- **`./mf` debugs; it does not verify the browser.** Verification is a prober's
+  browser run. `./mf` shares code with the app so its debugging is faithful: it drives the
   shared client core (`@meridian/thread-client`: socket, turn reducer, transcript
   view model), so never reimplement that logic here; `thread view` prints the
   view model and never words or decides a row itself. Where a feature has no shared core yet, `./mf`
@@ -11,7 +12,8 @@ Read [`.context/CONTEXT.md`](.context/CONTEXT.md) first.
   behind the debug gate, not a CLI-side database query or business logic.
 - **Share a rule's inputs and recovery, not only its reducer.** When a shared
   rule needs a snapshot to finish (a divider waiting for its anchor turn), use
-  the package's waiting list and recover as the app does. A CLI-only fallback,
+  the package's waiting list and recover as the app does. (Not yet true: `./mf` still has its own follow and
+  recovery code, which the planned shared sync replaces.) A CLI-only fallback,
   or none, diverges from the browser without failing any check.
 - **Imports:** only `@meridian/contracts` and `@meridian/thread-client` from
   workspace packages. From `tools/dev`, only the Portless route contract:

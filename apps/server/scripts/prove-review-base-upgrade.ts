@@ -1,9 +1,9 @@
 /**
- * Populated-upgrade proof for the review-base conversion and the subtractive migrations (0050 to 0055).
+ * Populated-upgrade proof for the review-base conversion and the subtractive migrations (0058 to 0063).
  *
- * Builds the train's database (the foundation fixture through 0049) with every row kind the upgrade must carry,
+ * Builds the train's database (the foundation fixture through 0057) with every row kind the upgrade must carry,
  * then proves, each on its own scratch database cloned from that train: one `db:migrate` invocation converts
- * every base and keeps the rest; a conversion and every no-transaction statement of 0054 survive interruption;
+ * every base and keeps the rest; a conversion and every no-transaction statement of 0062 survive interruption;
  * the preflight refuses before any migration applies; the B3 guards fire when the step is bypassed; an
  * unconvertible draft stops the run with ids; fresh and upgraded schemas are equal and a second migrate is a no-op.
  *
@@ -355,8 +355,8 @@ async function main(): Promise<void> {
   await seedEditLedger(train);
   await stage(trainUrl, dir, journalIndex(journal, "0047_d62_chat_write_mode_online") + 1);
   await seedTrainRows(train);
-  // The train's own last two migrations (#847's run state) run over the seeded rows before the upgrade.
-  const trainHead = journalIndex(journal, "0049_run_state_hand_back_online") + 1;
+  // Main's run state and forgetting migrations run over the seeded rows before the review upgrade.
+  const trainHead = journalIndex(journal, "0057_forgotten_by_turn_online") + 1;
   await stage(trainUrl, dir, trainHead);
   // The seeds carry explicit ids and revisions: the product's next write must draw above them (R5c U1).
   const advanced = await advanceSeededSequences(train);
@@ -371,7 +371,7 @@ async function main(): Promise<void> {
     await train`SELECT count(*)::int AS n FROM drizzle.__drizzle_migrations`
   )[0].n;
   check(
-    `the train database stands at 0049 (${appliedAtTrain} migrations applied)`,
+    `the train database stands at 0057 (${appliedAtTrain} migrations applied)`,
     appliedAtTrain === trainHead,
   );
   check(
@@ -465,7 +465,7 @@ async function main(): Promise<void> {
         ...realStep,
         run: async (session, context) => {
           observed.calls += 1;
-          // After 0054 (B2) and before 0055: the dirty-log volume, the index definitions, the checks.
+          // After 0062 (B2) and before 0063: the dirty-log volume, the index definitions, the checks.
           observed.dirtyAtStep = Number(
             (await session`SELECT count(*) AS n FROM change_trail_dirty_log`)[0].n,
           );
@@ -481,7 +481,19 @@ async function main(): Promise<void> {
     outcome.ok,
     outcome,
   );
-  check("the data step ran once, between 0054 and 0055", observed.calls === 1);
+  check("the data step ran once, between 0062 and 0063", observed.calls === 1);
+  const appliedReview = await upgraded<{ created_at: string }[]>`
+    SELECT created_at FROM drizzle.__drizzle_migrations
+    WHERE created_at > ${journal.entries[trainHead - 1].when} ORDER BY created_at
+  `;
+  check(
+    "all six review migrations run after main's 0057 (none skipped by the applied timestamp)",
+    appliedReview.length === 6 &&
+      appliedReview.every(
+        (row, index) => Number(row.created_at) === journal.entries[trainHead + index].when,
+      ),
+    appliedReview,
+  );
 
   for (const branch of [BRANCHES.cutDraft, BRANCHES.sameAsCut, BRANCHES.fixtureDeleted]) {
     const was = draftCuts.get(branch);
@@ -594,7 +606,7 @@ async function main(): Promise<void> {
       await upgraded`SELECT 1 FROM information_schema.columns WHERE table_name = ${table} AND column_name = ${column}`;
     if (rows.length > 0) check(`${table}.${column} is dropped`, false);
   }
-  check("the six columns are dropped", true);
+  check("the seven columns are dropped", true);
   check(
     "reviewed_by, reviewed_at, pushed_at and journal_ids stay",
     (
@@ -623,7 +635,7 @@ async function main(): Promise<void> {
   );
   const b2Rows = (observed.dirtyAtStep ?? 0) - dirtyBefore;
   console.log(
-    `report - dirty-log volume of the B2 rewrite on the populated fixture: ${b2Rows} rows for ${partsBefore} rewritten parts (${dirtyBefore} before, ${observed.dirtyAtStep} after 0052, ${dirtyAfter} after the run)`,
+    `report - dirty-log volume of the B2 rewrite on the populated fixture: ${b2Rows} rows for ${partsBefore} rewritten parts (${dirtyBefore} before, ${observed.dirtyAtStep} after 0062, ${dirtyAfter} after the run)`,
   );
 
   // Writer flow: restore the soft-deleted Work, then rebase on the converted base: the deleted paragraph stays deleted.
@@ -726,7 +738,7 @@ async function main(): Promise<void> {
       await sql`SELECT count(*)::int AS n FROM document_branches WHERE base_revision IS NOT NULL`
     )[0].n;
     check(
-      `a conversion interrupted after ${convertedSoFar} rows stops the run before 0055`,
+      `a conversion interrupted after ${convertedSoFar} rows stops the run before 0063`,
       !interrupted.ok &&
         convertedSoFar === 2 &&
         (
@@ -737,7 +749,7 @@ async function main(): Promise<void> {
     check(
       "the failure names the migration and the step",
       !interrupted.ok &&
-        interrupted.message.includes("0055_dbr_drop_branch_generation_columns.sql") &&
+        interrupted.message.includes("0063_dbr_drop_branch_generation_columns.sql") &&
         interrupted.message.includes("review-base-conversion@1"),
       interrupted,
     );
@@ -753,14 +765,14 @@ async function main(): Promise<void> {
     await sql.end();
   }
 
-  // -- 5. Interruption between the no-transaction statements of 0054 ------------------------------
+  // -- 5. Interruption between the no-transaction statements of 0062 ------------------------------
   const cutUrl = await createDatabase(proofDatabase("cuts"), proofDatabase("train"));
   {
     const sql = open(cutUrl);
     await drainBatches(sql);
     const directory = path.join(work, "cuts");
     await cp(MIGRATIONS, directory, { recursive: true });
-    const file = path.join(directory, "0054_dbr_drop_generation_from_indexes_and_parts.sql");
+    const file = path.join(directory, "0062_dbr_drop_generation_from_indexes_and_parts.sql");
     const original = await readFile(file, "utf8");
     const statements = original.split("--> statement-breakpoint");
     let enforced = 0;
@@ -772,13 +784,13 @@ async function main(): Promise<void> {
       const failed = await migrate(cutUrl, { directory });
       if (
         failed.ok ||
-        !failed.message.includes("0054_dbr_drop_generation_from_indexes_and_parts.sql")
+        !failed.message.includes("0062_dbr_drop_generation_from_indexes_and_parts.sql")
       )
-        check(`cut ${cutAt} fails in 0054`, false, failed);
+        check(`cut ${cutAt} fails in 0062`, false, failed);
       if (await refusesBadPlacement(sql, 9100 + cutAt)) enforced += 1;
     }
     check(
-      `placement check enforcement held after every one of ${statements.length - 1} cuts in 0054`,
+      `placement check enforcement held after every one of ${statements.length - 1} cuts in 0062`,
       enforced === statements.length - 1,
     );
     await writeFile(file, original);
@@ -801,7 +813,7 @@ async function main(): Promise<void> {
     const noop = { ...realStep, preflight: async () => {}, run: async () => {} };
     const bypassed = await migrate(bypassUrl, { dataSteps: [noop] });
     check(
-      "with the step bypassed the branch guard fires in 0055 and names branch ids",
+      "with the step bypassed the branch guard fires in 0063 and names branch ids",
       !bypassed.ok &&
         bypassed.message.includes(
           "review-base-conversion guard: draft branches have no review base",
@@ -847,7 +859,7 @@ async function main(): Promise<void> {
     check(
       "an unconvertible draft stops the run, naming migration, step, branch and document ids",
       !stuck.ok &&
-        message.includes("0055_dbr_drop_branch_generation_columns.sql") &&
+        message.includes("0063_dbr_drop_branch_generation_columns.sql") &&
         message.includes("review-base-conversion@1") &&
         message.includes("branch-unresolved") &&
         message.includes(DOCS.unresolved),

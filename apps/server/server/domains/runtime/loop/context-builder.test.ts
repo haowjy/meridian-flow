@@ -71,6 +71,7 @@ function turn(role: Turn["role"], id = TURN_ID): Turn {
     executionId: null,
     reservedForUserTurnIds: [],
     delivery: null,
+    forgottenBy: null,
     siblingIds: [],
     responses: [],
   };
@@ -140,7 +141,7 @@ it("keeps a durable mode switch in model context when later undo and redo cancel
     position: 1,
     mode: "draft",
     controlMessageId: "switch-1",
-    notice: writeModeSwitchNotice({ archivedAt: null }, "draft", false),
+    notice: writeModeSwitchNotice({ archivedAt: null, isNoWork: false }, "draft", false),
   });
   const reversals = planMessageTurns({
     threadId: THREAD_ID as never,

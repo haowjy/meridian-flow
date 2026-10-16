@@ -51,7 +51,7 @@
             "patterns": [
               {
                 "group": ["**/turn-graph.js"],
-                "message": "The turn graph includes writer messages a hand-back took out of the chat. Read turns and blocks through TurnRepository and BlockRepository, which return the conversation. Only the graph modules listed in biome.json may import turn-graph."
+                "message": "The turn graph includes the turns that left the conversation: writer messages a hand-back took out of the chat, and failed attempts the writer retried or the chat moved past. Read turns and blocks through TurnRepository and BlockRepository, which return the conversation. Only the graph modules listed in biome.json may import turn-graph."
               }
             ]
           }
@@ -69,6 +69,8 @@
         "apps/server/server/domains/threads/domain/transcript-page.ts",
         "apps/server/server/domains/threads/thread-snapshot.ts",
         "apps/server/server/domains/runtime/loop/orchestrator.ts",
+        "apps/server/server/domains/runtime/loop/latest-row.ts",
+        "apps/server/server/domains/runtime/loop/forget-failed-attempt.ts",
         "apps/server/server/domains/runtime/loop/run-session.ts",
         "apps/server/server/domains/runtime/loop/inbox-context.ts",
         "apps/server/server/domains/runtime/handoff/brief-service.ts",

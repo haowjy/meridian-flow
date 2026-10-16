@@ -7,7 +7,7 @@
  * writer provenance. A switch, or a control row, never counts toward busy, the tray or Stop.
  */
 
-import type { HandBackScope, PendingInboxItem, StopRequest } from "@meridian/contracts/threads";
+import type { PendingInboxItem, SendNowRequest, StopRequest } from "@meridian/contracts/threads";
 import type { RunStateView } from "./run-state-view";
 
 const isWriterMessage = (item: PendingInboxItem) =>
@@ -114,18 +114,28 @@ export function stopRequest(view: RunStateView, requestId: string): StopRequest 
   };
 }
 
-/** Cancel queue's scope: Stop's press set without the execution. */
-export function cancelQueueScope(view: RunStateView): HandBackScope {
-  return { kind: "seen", seenThrough: view.record?.sentThrough ?? 0, mine: messageIntentIds(view) };
+/**
+ * Send now's body: the open execution the writer saw and every writer message the record shows
+ * waiting. Null when there is nothing to send now (no open reply, or nothing queued).
+ */
+export function sendNowRequest(view: RunStateView): SendNowRequest | null {
+  const record = view.record;
+  const executionId = record?.execution?.executionId;
+  const waiting = waitingWriterMessages(view).map((item) => item.id);
+  if (!record || !executionId || waiting.length === 0) return null;
+  return { seenThrough: record.sentThrough, seenExecutionId: executionId, waiting };
 }
 
 /**
- * The messages a request hides while it is in flight, frozen at the press: the x's ids; for a
- * `seen` scope, the waiting writer messages at or below `seenThrough` plus `mine`. Delivered
- * history under the watermark and a message sent after the press are never in it.
+ * The messages Stop hides while its request is in flight, frozen at the press: the waiting writer
+ * messages at or below `seenThrough` plus `mine`. Delivered history under the watermark and a
+ * message sent after the press are never in it. (The queue's x and Cancel queue hide the ids
+ * they were pressed over.)
  */
-export function handBackCandidates(view: RunStateView, scope: HandBackScope): string[] {
-  if (scope.kind === "ids") return [...scope.ids];
+export function handBackCandidates(
+  view: RunStateView,
+  scope: { seenThrough: number; mine: readonly string[] },
+): string[] {
   const ids = waitingWriterMessages(view)
     .filter((item) => item.seq <= scope.seenThrough)
     .map((item) => item.id);
@@ -135,16 +145,35 @@ export function handBackCandidates(view: RunStateView, scope: HandBackScope): st
 /** Where this tab's Stop control stands. Other tabs never see Stopping: they see the record. */
 export type StopStatus = "idle" | "pending" | "stopping" | "failed";
 
+/** A Stop that failed: the execution it targeted and how many queued messages it was taking back. */
+export type FailedStop = { targetExecutionId: string | null; candidates: number };
+
 /**
- * Stop's control state for the tab that pressed it. A request in flight or a failed one stands
- * as it is. Once answered, an answer that named a cancelled execution reads Stopping while the
+ * A failed Stop that was taking back nothing owes the writer nothing once its reply ends: no
+ * card, no failed Stop control. The one rule every reader of a failed Stop calls.
+ */
+export function failedStopIsMoot(view: RunStateView, stop: FailedStop): boolean {
+  if (stop.candidates > 0) return false;
+  const running = view.record?.execution?.executionId ?? null;
+  return stop.targetExecutionId === null || running !== stop.targetExecutionId;
+}
+
+/**
+ * Stop's control state for the tab that pressed it. A request in flight, or a failed Stop that is
+ * not moot, stands as it is. Once answered, an answer that named a cancelled execution reads Stopping while the
  * held record still shows that execution; any other answer is already idle.
  */
 export function stopStatus(
   view: RunStateView,
-  command: { request: "idle" | "pending" | "failed"; cancelledExecutionId: string | null },
+  command: {
+    request: "idle" | "pending";
+    cancelledExecutionId: string | null;
+    /** Every Stop that failed; one that is not moot makes the control failed. */
+    failedStops: readonly FailedStop[];
+  },
 ): StopStatus {
-  if (command.request !== "idle") return command.request;
+  if (command.request === "pending") return "pending";
+  if (command.failedStops.some((stop) => !failedStopIsMoot(view, stop))) return "failed";
   const cancelled = command.cancelledExecutionId;
   return cancelled !== null && view.record?.execution?.executionId === cancelled
     ? "stopping"

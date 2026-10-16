@@ -13,12 +13,7 @@ import {
   workLifecycleState,
 } from "@meridian/contracts/works";
 import type { WorkRepository } from "../../projects/index.js";
-import {
-  isWriteModeSwitchTurn,
-  type ThreadWorksRepository,
-  type TurnRepository,
-  writeModeSwitchMetadata,
-} from "../../threads/index.js";
+import { type ThreadWorksRepository, writeModeSwitchMetadata } from "../../threads/index.js";
 import { contentForBlockInput } from "./block-helpers.js";
 import { createLocalTurn } from "./local-turn.js";
 import { mayChangeWorks } from "./permissions/action-policy.js";
@@ -33,7 +28,7 @@ export interface WriteModeSwitchPort {
 
 /** One sentence, then the same instructions the Work context gives for that mode. */
 export function writeModeSwitchNotice(
-  work: Pick<Work, "archivedAt">,
+  work: Pick<Work, "archivedAt" | "isNoWork">,
   mode: AiWriteMode,
   mayUnarchive: boolean,
 ): string {
@@ -41,9 +36,10 @@ export function writeModeSwitchNotice(
     mode,
     archived: isWorkArchived(work),
     mayUnarchive,
+    noWork: work.isNoWork,
   }).instructions.join(" ");
   return mode === "direct"
-    ? `The writer switched this chat to auto-apply. ${modeText} Changes already in this Work's draft stay there for the writer to review.`
+    ? `The writer switched this chat to auto-apply. ${modeText} Drafts you already wrote stay for the writer to review.`
     : `The writer switched this chat to draft mode. ${modeText}`;
 }
 
@@ -102,15 +98,4 @@ export function writeModeSwitchTurn(input: {
     status: "complete",
   });
   return { turn, block };
-}
-
-/** The turn behind any trailing switch turns: a switch applied after a failed reply must not take Retry away. */
-export async function pastTrailingSwitches(
-  turns: Pick<TurnRepository, "findById">,
-  turn: Turn,
-): Promise<Turn | null> {
-  let current: Turn | null = turn;
-  while (current && isWriteModeSwitchTurn(current) && current.prevTurnId)
-    current = await turns.findById(current.prevTurnId as TurnId);
-  return current;
 }

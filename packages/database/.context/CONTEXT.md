@@ -55,12 +55,12 @@ so no frozen copy exists.
   runner's, owned by [`tools/dev/.context/CONTEXT.md`](../../../tools/dev/.context/CONTEXT.md).
   Steps are restartable, and failures name ids, never prose.
 
-One `pnpm db:migrate` upgrades a database that ran the old review model: `0050`
-to `0055` add `base_revision` and the content-Apply trail arm, drop the
+One `pnpm db:migrate` upgrades a database that ran the old review model: `0058`
+to `0063` add `base_revision` and the content-Apply trail arm, drop the
 `document_edits` action columns, rewrite `document_edit_parts`, and drop the
-generation columns and `live_cut`. `0055` is the anchor
-(`-- data-step: review-base-conversion@1`) and begins with `DO` guards. `0053`,
-`0054` and `0055` destroy data, so read their SQL before changing them.
+generation columns and `live_cut`. `0063` is the anchor
+(`-- data-step: review-base-conversion@1`) and begins with `DO` guards. `0061`,
+`0062` and `0063` destroy data, so read their SQL before changing them.
 
 The `review-base-conversion@1` step converts every active `work_draft` branch
 with a NULL `base_revision`: the base is the `live_cut` text, or the branch's own

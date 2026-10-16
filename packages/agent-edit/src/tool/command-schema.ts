@@ -73,7 +73,7 @@ const WRITE_HANDLE = z.string().regex(/^w[1-9]\d*$/, "Expected an edit handle su
 export const DocumentVersionSchema = z
   .enum(["draft", "live"])
   .describe(
-    "Omit for the version your writes change (your Work's draft in draft mode; scratch and other Works are live). `live` reads the text as the user sees it, without draft changes.",
+    "Omit for the version your writes change (the document's draft in draft mode; scratch and other Works are live). `live` reads the text as the user sees it, without draft changes.",
   );
 export type DocumentVersion = z.output<typeof DocumentVersionSchema>;
 

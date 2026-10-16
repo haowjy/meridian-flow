@@ -16,7 +16,6 @@
  * Retry, Withdraw and the chat's mode come from there and are listed after the
  * compaction rows.
  */
-import { t } from "@lingui/core/macro";
 import type { PendingInboxItem } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
@@ -25,7 +24,12 @@ import { httpErrorStatus } from "@/client/api/http-client";
 import { enqueueThreadControl, withdrawThreadControl } from "@/client/api/threads-api";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { announce, announceError, useThreadActions } from "@/client/stores";
-import { controlAlreadyStartedCopy, controlStatusCopy, controlStoppedCopy } from "./control-copy";
+import {
+  controlAlreadyStartedCopy,
+  controlStatusCopy,
+  controlStoppedCopy,
+  controlWithdrawFailedCopy,
+} from "./control-copy";
 import {
   type CompactControl,
   controlsReducer,
@@ -156,7 +160,7 @@ export function useThreadControls(input: {
             return dispatch({ type: "withdraw_not_found", id: queued.id });
           }
           dispatch({ type: "withdraw_failed", id: queued.id });
-          announceError(t`Couldn't stop. Try again.`);
+          announceError(controlWithdrawFailedCopy(queued.control));
         }
       };
       void (inflight.current.get(queued.id) ?? Promise.resolve()).then(withdrawOnServer);
