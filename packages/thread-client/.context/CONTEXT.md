@@ -260,8 +260,22 @@ sorted by `seq`, and delivered through the cursor rule. Handlers already current
 keep receiving live frames meanwhile. One replay is in flight per thread; a
 request made meanwhile is sent when `subscribed` arrives. The subscription keeps the
 cursor the wire request in flight carried (`requestedAfter`, cleared when the replay
-ends). A handler added during a replay with `after` at or above it waits behind that
-replay's fence, so the catch-up reaches it before any live frame moves its cursor.
+ends). A handler added during a replay is judged against that request's coverage `R`,
+never against the subscription's `lastSeq`: at `after >= R` it waits behind the
+replay's fence, so the catch-up reaches it before any live frame moves its cursor; at
+`after < R` it gets its own replay from `after`, queued behind the one in flight. A
+handler with no `after` joins "from the current position", which during a replay is
+`R`, so it waits and gets the catch-up above `R` in order before live frames.
+
+A replay always ends: by `subscribed`, by a thread-scoped error for it, by the
+connection's loss, or by the replay deadline (20 seconds, `DEFAULT_WS_REPLAY_DEADLINE_MS`,
+which server pings do not reset; a 5,000-frame replay measured 52 ms in process). A
+failed replay (a scoped error while it is in flight, an unscoped server error while any
+is, or the deadline) has one recovery, the connection's: the client drops the socket,
+and the usual reconnect (backoff, the "Connection lost. Retrying…" state) resumes every
+handler from its cursor. Dropping clears the replay state and the fence's held frames,
+so nothing from the dead replay outlives it. The backoff is kept across a dropped
+replay until a `subscribed` arrives, so a server that keeps failing is not hammered.
 
 A `gap` means the server could not replay from the client's cursor. Its frame
 carries `fromSeq`/`toSeq`; after notifying `onGap` consumers, the transport moves

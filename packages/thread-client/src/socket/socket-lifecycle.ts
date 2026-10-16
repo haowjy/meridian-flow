@@ -64,6 +64,8 @@ export class SocketLifecycleController {
   private phase: SocketPhase = "idle";
   private handshakeTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempt = 0;
+  /** A dropped replay keeps its backoff until a replay settles, so a failing server is not hammered. */
+  private backoffHeld = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private pingTimer: ReturnType<typeof setTimeout> | null = null;
   private connectionState: ConnectionState = { kind: "disconnected" };
@@ -108,12 +110,24 @@ export class SocketLifecycleController {
     if (!this.isSocketOpen()) return;
     this.phase = "connected";
     this.clearHandshakeTimer();
-    this.resetBackoff();
+    if (!this.backoffHeld) this.resetBackoff();
     this.publishConnectionState({ kind: "connected" });
   }
 
   private resetBackoff(): void {
     this.reconnectAttempt = 0;
+  }
+
+  /** Drop the connection because a replay on it failed; the usual reconnect resumes from cursors. */
+  dropConnection(reason: string): void {
+    this.backoffHeld = true;
+    this.closeCurrentSocket(reason);
+  }
+
+  /** The connection proved itself (a replay settled): backoff starts over. */
+  releaseBackoff(): void {
+    this.backoffHeld = false;
+    this.resetBackoff();
   }
 
   /** Open a socket if one isn't already live. No-op after a terminal close. */
@@ -131,7 +145,7 @@ export class SocketLifecycleController {
     this.clearReconnectTimer();
     this.clearPingTimer();
     if (this.isSocketLive()) this.closeCurrentSocket("manual_reconnect");
-    this.resetBackoff();
+    this.releaseBackoff();
     this.startSocket();
   }
 
@@ -143,6 +157,7 @@ export class SocketLifecycleController {
     this.clearPingTimer();
     this.clearHandshakeTimer();
     this.phase = "idle";
+    this.backoffHeld = false;
     this.reconnectAttempt = 0;
     const socket = this.socket;
     this.socket = null;

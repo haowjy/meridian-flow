@@ -170,9 +170,9 @@ once each, in that order, with no stop button, and it equals `./mf thread view "
 
 ### SY-03a: leave and come back with the cached read stale
 
-- **Setup:** as SY-03, but the script's first step carries a tool call and the second does too, so a durable
+- **Setup:** as SY-03, but the script's first and second steps each carry a tool call (a text-only step ends the mock's reply, so the later steps would never run), so a durable
   block lands while the chat is open and raises the floor past the read Query keeps:
-  `S3='[{"text":"Part one: the gate opens onto a courtyard of grey stone."},{"delayMs":3000,"text":"Part two: Lin Feng crosses it slowly.","toolCalls":[{"name":"thread_ls","args":{"depth":1}}]},{"delayMs":50000,"text":"Part three: the lanterns bend toward him."}]'`.
+  `S3='[{"text":"Part one: the gate opens onto a courtyard of grey stone.","toolCalls":[{"name":"thread_ls","args":{"depth":1}}]},{"delayMs":3000,"text":"Part two: Lin Feng crosses it slowly.","toolCalls":[{"name":"thread_ls","args":{"depth":1}}]},{"delayMs":50000,"text":"Part three: the lanterns bend toward him."}]'`.
   Send it with `--no-wait`, open `T` and wait for "Part two…" and its fold, then switch to a second chat.
 - **Steps:** once the second chat has drawn, come back to `T`.
 - **Expect:** on return "Part one…", "Part two…" and the fold at once; "Part three…" arrives after the delay;

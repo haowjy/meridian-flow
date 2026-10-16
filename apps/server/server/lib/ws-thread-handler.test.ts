@@ -160,3 +160,28 @@ it.each([
   expect(frames.filter((frame) => frame.type === "error")).toEqual([expected, expected]);
   session.onClose();
 });
+
+// The client ends its replay on this error: it must name the thread whose read failed.
+it("names the thread when a subscribe's read fails", async () => {
+  const frames: WsServerMessage[] = [];
+  const app = {
+    eventSink: createNoopEventSink(),
+    threadEventHub: { catchupAndSubscribe: async () => ({ catchup: [], unsubscribe() {} }) },
+    threadRuntime: {
+      requireOwnedThread: async () => {},
+      liveState: async () => {
+        throw new Error("read failed");
+      },
+    },
+  } as unknown as AppServices;
+  const session = createThreadWebSocketSession({
+    request: new Request("https://app.localhost/api/threads/ws"),
+    context: { app, userId: USER_ID, traceId: "read-failure" },
+    send: (data) => frames.push(JSON.parse(data) as WsServerMessage),
+    close() {},
+  });
+  await session.onMessage(JSON.stringify({ type: "subscribe", threadId: THREAD_ID }));
+  expect(frames).toEqual([
+    expect.objectContaining({ type: "error", threadId: THREAD_ID, error: expect.any(Object) }),
+  ]);
+});

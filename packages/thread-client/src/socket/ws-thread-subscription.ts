@@ -6,7 +6,13 @@
  * receives every sequenced event after its own cursor, exactly once and in
  * `seq` order, whatever the timing between live frames and a replay. A handler
  * waiting on a replay (a rewind, a reconnect) is held behind a fence that the
- * server's `subscribed` frame releases. The transport owns the socket.
+ * server's `subscribed` frame releases, or that the connection's loss voids.
+ * The transport owns the socket and ends every replay.
+ *
+ * A joining handler registers at its `after` cursor; with none it joins "from the current
+ * position". While a replay is in flight at cursor `R`, a handler at `A >= R` waits on it and one
+ * at `A < R` gets its own replay from `A`; a cursorless one joins at `R`, so it gets the catch-up
+ * above `R` in order before live frames.
  */
 import { compareSeq, type SequencedEvent } from "@meridian/contracts/protocol";
 
@@ -125,26 +131,34 @@ export class WsThreadSubscriptionRegistry {
     const wasServerSubscribed = subscription.serverSubscribed;
     const position = subscription.lastSeq;
     const requested = subscription.requestedAfter;
-    if (
-      wasServerSubscribed &&
-      subscription.replayInFlight &&
-      after !== undefined &&
-      requested !== undefined &&
-      compareSeq(after, requested) >= 0
-    ) {
-      // The replay in flight carries everything above `after`: wait for it with the live frames
-      // held, so the catch-up reaches this handler before any live frame moves its cursor.
+
+    if (subscription.replayInFlight && requested !== undefined) {
+      // Coverage decides, against the request in flight and never against `lastSeq`. A cursorless
+      // handler joins at that request's cursor: it takes the catch-up above it, in order.
+      const cursor = after ?? requested;
       subscription.handlers.add(handlers);
-      subscription.cursors.set(handlers, after);
-      const fence = subscription.fence ?? {
-        waiting: new Set(),
-        deferred: new Set(),
-        held: new Map(),
+      subscription.cursors.set(handlers, cursor);
+      if (compareSeq(cursor, requested) >= 0) {
+        // The replay in flight carries everything above `cursor`: wait for it with the live frames
+        // held, so the catch-up reaches this handler before any live frame moves its cursor.
+        const fence = subscription.fence ?? {
+          waiting: new Set(),
+          deferred: new Set(),
+          held: new Map(),
+        };
+        subscription.fence = fence;
+        fence.waiting.add(handlers);
+        return { subscription, sendSubscribe: false, forceSubscribe: false, waiters: [] };
+      }
+      // Below what the request carries: its own replay, queued behind the one in flight.
+      return {
+        subscription,
+        sendSubscribe: true,
+        forceSubscribe: true,
+        waiters: [handlers],
       };
-      subscription.fence = fence;
-      fence.waiting.add(handlers);
-      return { subscription, sendSubscribe: false, forceSubscribe: false, waiters: [] };
     }
+
     const rewinding =
       after !== undefined && (position === undefined || compareSeq(after, position) < 0);
     subscription.handlers.add(handlers);
@@ -244,21 +258,6 @@ export class WsThreadSubscriptionRegistry {
     return resend;
   }
 
-  /** The replay will never arrive (thread error): release held frames. */
-  abortReplay(threadId: string): void {
-    const subscription = this.subscriptions.get(threadId);
-    if (!subscription) return;
-    subscription.replayInFlight = false;
-    subscription.resendQueued = false;
-    subscription.requestedAfter = undefined;
-    const fence = subscription.fence;
-    subscription.fence = undefined;
-    if (!fence) return;
-    for (const frame of [...fence.held.values()].sort((a, b) => compareSeq(a.seq, b.seq))) {
-      this.deliver(subscription, frame);
-    }
-  }
-
   /** A gap: events before `toSeq` are unreplayable; every cursor jumps to it. */
   skipTo(subscription: ActiveThreadSubscription, toSeq: string): void {
     for (const handler of subscription.handlers) {
@@ -267,7 +266,10 @@ export class WsThreadSubscriptionRegistry {
     subscription.lastSeq = selectNewestSeq(subscription.lastSeq, toSeq);
   }
 
-  /** The connection is gone: in-flight replays are void; the resume replays for everyone. */
+  /**
+   * The connection is gone, or dropped because a replay failed: the in-flight replay is void, its
+   * held frames are dropped, and the resume replays for everyone from their cursors.
+   */
   connectionLost(subscription: ActiveThreadSubscription): void {
     subscription.serverSubscribed = false;
     subscription.replayInFlight = false;
@@ -277,6 +279,9 @@ export class WsThreadSubscriptionRegistry {
     if (fence) {
       for (const handler of fence.deferred) fence.waiting.add(handler);
       fence.deferred.clear();
+      // The resume replays everything above each cursor: held frames are not kept past this
+      // connection, or a replay that never settles would grow them without end.
+      fence.held.clear();
     }
   }
 
