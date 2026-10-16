@@ -63,7 +63,7 @@ export function parseContextUri(uri: string): ContextUri | null {
  * The context URI a tool path names: bare paths are manuscript paths. `null`
  * for a path under a scheme that addresses no writer document (`skills://`),
  * which must never be filed under the manuscript, and for a path that parses
- * to no address (`uploads://@c1/notes`, `a/../b`). Never throws.
+ * to no address (`uploads://@/c1/notes`, `a/../b`). Never throws.
  */
 export function contextUriFromWritePath(path: string): string | null {
   const parsed = parseUnifiedContextUri(path);
