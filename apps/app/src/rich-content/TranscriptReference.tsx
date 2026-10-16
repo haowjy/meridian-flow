@@ -37,6 +37,7 @@ import {
   linkTargetHref,
   referenceChip,
 } from "@/core/editor/links";
+import { parseContextUri } from "@/lib/context-uri";
 
 /**
  * How the hosting surface follows a link written as syntax (a Context URI or
@@ -71,6 +72,19 @@ export const TranscriptReferenceContext = createContext<{
   canOpen?: (uri: string) => boolean;
 }>({});
 
+/**
+ * An upload never moves, but its spelling does: a message sent from a New chat names it bare
+ * (`uploads://x`) until the server names the chat, then `uploads://@/c12/x`. Same document, so
+ * the two spellings agree.
+ */
+function sameReferencedUri(answered: string, referenced: string | undefined): boolean {
+  if (answered === referenced) return true;
+  if (!referenced) return false;
+  const left = parseContextUri(answered);
+  const right = parseContextUri(referenced);
+  return left?.scheme === "uploads" && right?.scheme === "uploads" && left.path === right.path;
+}
+
 export function TranscriptReference({
   children,
   "data-document-id": documentId,
@@ -95,7 +109,7 @@ export function TranscriptReference({
   const resolution =
     candidate &&
     candidate.documentId === documentId &&
-    (!candidate.available || candidate.uri === uri)
+    (!candidate.available || sameReferencedUri(candidate.uri, uri))
       ? candidate
       : null;
   const syntax = !documentId && target ? target : null;
