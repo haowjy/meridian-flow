@@ -121,6 +121,15 @@ diff of the new base (live) against the draft. The server writes the result into
 both fragments as `DRAFT_SERVER_CLIENT_ID` (1) in one transaction. The same
 function plans a content Apply's live update, with the patch as the draft side.
 
+Move-text matching indexes the complete deleted-content stream by token key,
+extends only matching seeds at the start of a diagonal run, and keeps the
+first-inserted then first-deleted tie rule. Only after selecting the globally
+longest run does it check whether the other side touched that source or pasted
+the same text. Filtering sources first would change the winner and can silently
+lose moved words. Both the modifying and report-only passes use this ordering.
+Work depends on token counts and matching seeds, never elapsed time; repeated
+suffixes are not extended again.
+
 ## Late peers
 
 A peer update authored before it received a rebase can type into, or delete

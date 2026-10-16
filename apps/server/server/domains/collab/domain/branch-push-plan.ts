@@ -4,7 +4,6 @@ import {
   deleteRanges,
   rangeCovers,
   suppliedRanges,
-  toDocHandle,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import * as Y from "yjs";
@@ -80,13 +79,6 @@ export function publicationBlockChanges(input: {
     .sort((a, b) => a.blockId.localeCompare(b.blockId));
 }
 
-export function blockTextMap(model: YProsemirrorDocumentModel, doc: Y.Doc): Map<string, string> {
-  const result = new Map<string, string>();
-  for (const block of model.getBlocks(toDocHandle(doc))) {
-    result.set(model.getBlockId(block), model.getText(block));
-  }
-  return result;
-}
 export class BranchPeerIntegrationError extends Error {
   constructor(
     readonly operation: string,

@@ -64,6 +64,12 @@ resolves to available, deleted, or denied before any manuscript-bearing title
 or prose is read. Denied occurrences disappear; authorized deleted anchors
 keep their evidence under an explicit `anchorState`.
 
+Journal replay takes one identity/hash snapshot per state and reuses each row's
+output as the next row's input. Display hashes resolve sibling collisions in one
+`getDocumentBlockIds` batch, not once per block. Rich live snapshots already carry
+those hashes; push preparation reuses them for its block lookup. Do not serialize
+journal prose just to compare block identities.
+
 Trail rows persist every edit without classification. Missing sweep evidence
 suppresses a live editor's elevation and never blocks Apply. Elevation goes
 only to an authenticated connected editor, for their own overwritten
@@ -100,6 +106,11 @@ trail refinement, and fenced completion. Journal and staged-push admissions
 join post-cut updates through one SQL seam inside the document-mutation
 transaction. Root-effect materialization failure yields no swept elevation and
 never becomes settlement authority.
+
+Claims renew at the start of each settlement attempt, not on a heartbeat. The
+SQL expiry clock keeps advancing while synchronous replan work blocks JavaScript;
+completion and the next renewal both reject an expired claim even if no recovery
+worker has taken it. Keep journal replay bounded by the states and blocks it reads.
 
 Settlement takes the completion transaction's locks again before certification.
 It rejects retired generations, stale ownership, and unexplained post-cut
