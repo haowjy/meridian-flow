@@ -46,9 +46,12 @@ it reveals the outermost spawn row. The draft dock, chat-scoped Apply and Discar
 draft-files list read `members` through `owner.threadId`. The arrival pulse reads the byline: a pulse says
 an AI wrote this, so an ambiguous author arrives quietly.
 
-Undo of a Discard keeps the chat through restoration links (`restorations.ts`): an item Undo re-created from
-a deleted one, proven by equal text over the whole run, the server computing them where tombstone text
-exists and the browser adding its own undo stacks'. An Apply appends an Apply record to a server-owned root
+Undo of a Discard keeps the chat through restoration links (`restorations.ts`): every UndoManager that can
+restore draft text (the editor's surface history, `room-discard`) registers `recordRestorations`, which on each
+`stack-item-popped` copies Yjs's `redone` pointers (`restored range → original id`, for text, elements,
+descendants, formats and attributes) into the draft's `__meridian_review_restored_v1` root under an origin no
+UndoManager tracks. The root is writer-writable, syncs and persists with the draft, and the classifier follows it
+through chains with light validation (the original is deleted, the same kind of content). An Apply appends an Apply record to a server-owned root
 of the draft doc in the same write that moves `review_base`, naming the items Apply moved into the base, so
 applied AI text reads as base and a stale AI deletion no longer blurs a later point.
 

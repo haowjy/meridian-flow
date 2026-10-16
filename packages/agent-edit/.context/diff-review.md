@@ -20,7 +20,7 @@ view of the review is a function of those two block lists.
 | What does Apply or local Discard write? | `composeGroups(schema, projection, ids, "apply" \| "discard")` giving `SpanPatch[]`, then `applySpanPatches` (`compose.ts`) |
 | How does live's newer text reach a draft? | `rebase(schema, base, live, draft)` (`merge.ts`) |
 | How do the fragments get written? | `writeBlocks` (`writer.ts`): per-word Yjs edits so untouched items keep their identity |
-| Who wrote this change, and which AI writes are in it? | `classifyChanges` (`attribution.ts`): byline and members per change; `restorationLinks`, the Apply record (`apply-record.ts`) |
+| Who wrote this change, and which AI writes are in it? | `classifyChanges` (`attribution.ts`): byline and members per change; the restoration links Undo records (`restorations.ts`), the Apply record (`apply-record.ts`) |
 
 A **change** is one `ReviewGroup` (type name; `changeId` on the wire is its
 content-derived `id`): hunks join when fewer than `CHANGE_MARGIN` (3) unchanged
