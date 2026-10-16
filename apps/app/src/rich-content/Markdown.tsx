@@ -49,6 +49,8 @@ export type MarkdownProps = {
   skills?: readonly MarkdownSkillOccurrence[];
   referenceResolutions?: ReadonlyMap<string, TranscriptReferenceResolution>;
   onOpenReference?: (documentId: string) => void;
+  /** A reference the host has no way to open is drawn without its link. */
+  canOpenReference?: (uri: string) => boolean;
 };
 
 const SHIKI_THEME: NonNullable<StreamdownProps["shikiTheme"]> = ["github-light", "github-dark"];
@@ -92,6 +94,7 @@ export function Markdown({
   skills = NO_SKILLS,
   referenceResolutions,
   onOpenReference,
+  canOpenReference,
 }: MarkdownProps) {
   const streaming = mode === "streaming";
   const exactSource = references.length > 0 || skills.length > 0;
@@ -106,7 +109,11 @@ export function Markdown({
 
   return (
     <TranscriptReferenceContext.Provider
-      value={{ resolutions: referenceResolutions, onOpen: onOpenReference }}
+      value={{
+        resolutions: referenceResolutions,
+        onOpen: onOpenReference,
+        canOpen: canOpenReference,
+      }}
     >
       <Streamdown
         key={JSON.stringify({ references, skills })}

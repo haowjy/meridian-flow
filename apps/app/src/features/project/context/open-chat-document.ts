@@ -45,6 +45,15 @@ export function useOpenChatResource(
   return useContext(BesideChatContext) ? open : null;
 }
 
+/** Whether a reference to `uri` can be opened here: an upload only where its viewer is. */
+export function useCanOpenChatReference(): (uri: string) => boolean {
+  const hasResourceViewer = useContext(BesideChatContext) !== null;
+  return useCallback(
+    (uri) => hasResourceViewer || !uri.startsWith("uploads://"),
+    [hasResourceViewer],
+  );
+}
+
 export function useOpenChatDocument(
   projectId: string | undefined,
 ): (request: ChatDocumentRequest) => ReturnType<OpenProjectDocument> {

@@ -219,6 +219,9 @@ export function projectResourceTab(
     } as Extract<ContextTab, { kind: "tracked" | "viewer" }>;
     return { kind: "projected", resourceHandle: record.resource.handle, tab: projected };
   }
+  // A chat's upload cached before its chat had a handle names no tab owner: the tab keeps its own.
+  const located = placement.resourceLocation(record);
+  if (located && !tabOwnerOf(located)) return { kind: "none" };
   const projected = contextTabFromResource(projectId, record, placement);
   // The projection re-describes the resource, not the open: the instance id is the open's own.
   return projected
