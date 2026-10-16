@@ -18,11 +18,11 @@ import {
   type Turn,
 } from "@meridian/contracts/threads";
 import {
-  type CardControl,
   type ChatCard,
   type ChatCards,
   chatCards,
   type DeliveryEvent,
+  durableControls,
   type FoldDigest,
   type RowIdentity,
   switchState,
@@ -198,11 +198,7 @@ export function chatSnapshot(
   turns: Turn[],
 ): { view: TranscriptView; cards: ChatCards } {
   const runState = viewOfLive(snapshot.liveState);
-  const controls: CardControl[] = (switchState(runState)?.rows ?? []).map((row) => ({
-    id: row.id,
-    control: { kind: "write_mode", mode: row.mode },
-    status: row.status,
-  }));
+  const controls = durableControls(runState.record?.items ?? []);
   const cards = chatCards({
     threadId: snapshot.thread?.id ?? "",
     turns: { turns },

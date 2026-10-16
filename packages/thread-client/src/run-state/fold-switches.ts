@@ -9,6 +9,7 @@
  * queued one.
  */
 import type { AiWriteMode } from "@meridian/contracts/works";
+import { durableControls } from "./durable-controls";
 import type { RunStateIntent, RunStateView } from "./run-state-view";
 
 export type SwitchRowStatus = "sending" | "queued" | "failed" | "withdraw_failed";
@@ -46,14 +47,14 @@ export function switchState(view: RunStateView): { mode: AiWriteMode; rows: Swit
     if (intent.kind === "withdraw") withdrawals.set(intent.id, intent.failed === true);
 
   let queued: Queued | null = null;
-  for (const item of view.record.items) {
-    if (item.intent !== "control" || item.control?.kind !== "write_mode") continue;
+  for (const item of durableControls(view.record.items)) {
+    if (item.control.kind !== "write_mode") continue;
     if (withdrawals.get(item.id) === false) continue;
     queued = {
       id: item.id,
       mode: item.control.mode,
       from: "server",
-      awaitsRun: item.deliveryState === "awaiting_run",
+      awaitsRun: item.awaitsRun,
     };
     break;
   }

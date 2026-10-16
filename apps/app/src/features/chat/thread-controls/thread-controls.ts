@@ -21,6 +21,8 @@
 import { compareSeq } from "@meridian/contracts/protocol";
 import type { ControlBody, PendingInboxItem } from "@meridian/contracts/threads";
 
+import { durableControls } from "@meridian/thread-client";
+
 export type CompactControl = Extract<ControlBody, { kind: "compact" }>;
 
 export type LocalSend = {
@@ -127,8 +129,8 @@ export function mergeQueuedControls(input: MergeInput): QueuedControl[] {
   const { local, items } = input;
   const result: QueuedControl[] = [];
   const listed = new Set<string>();
-  for (const item of items) {
-    if (item.intent !== "control" || item.control?.kind !== "compact") continue;
+  for (const item of durableControls(items)) {
+    if (item.control.kind !== "compact") continue;
     listed.add(item.id);
     // A withdrawal response is fresher than the inbox frame that follows it.
     const withdrawal = local.withdrawals.get(item.id);
