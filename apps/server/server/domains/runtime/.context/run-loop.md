@@ -36,7 +36,8 @@ where a failure is detected (`loop/failure-detection.ts`). A `turn.error`
 becomes `failure.recorded` (the occurrence is the turn id, classified by
 `classifyReplyFailure` from `@meridian/contracts/failures`), plus an immediate
 `failure.ended { moved_on }` when a closing row already follows the turn (the
-carried case). `turns.forgotten` says which content leaves the model's history and ends
+carried case), naming the first closing row after it on the active chain (`firstClosingRowAfter`),
+not the latest: a reply that fails after the writer sent U then V ends `moved_on` by U. `turns.forgotten` says which content leaves the model's history and ends
 nothing. A failure ends at the first boundary that follows it (a closing row, a Retry, or a
 same-run continuation), and only there. `decideForgetting` owns that: its `ends` lists every
 failure that ends at the boundary (the latest failed row, forgotten or kept, and the newest
@@ -60,7 +61,9 @@ state, forked and merged across savepoints, emitted through `recordFailure` over
 `(occurrenceId, phase)` emits once; across transactions uniqueness comes from the
 transition decision, not from the participant. A rolled-back transition emits
 nothing on Drizzle. The in-memory repositories do the same per `InMemoryTransactionOwner`: the
-journal writer and hub take the owner of the data they serve, and `owner.afterCommit` runs a
+journal writer takes the owner of the repositories it serves (required; a fixture with no
+transactions passes `noTransactionOwner`, and `createRuntimeHarness` reads the owner off the
+repositories it is given), and `owner.afterCommit` runs a
 record when that owner commits and drops it when that owner rolls back. A nested `run` on the
 same owner joins the outer transaction (it is not a savepoint); another owner's transaction
 neither emits nor discards it. Outside any transaction a record emits at once. The journal row is the durable
