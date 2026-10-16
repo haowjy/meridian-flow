@@ -57,9 +57,15 @@ Nitro/httpxy path cannot safely return a non-101 upgrade response. Every
 classifier-referenced Meridian close pair is registered in `WS_CLOSE`;
 transport-local lifecycle closes remain with their transport.
 
-The thread-events WS owns authenticated subscribe/resume, ordered catchup/live
-handoff, and cleanup. One per-thread slot admits the newest subscribe by arrival
-order; a failed replacement leaves the active lease intact. Pending callbacks
+The thread-events WS owns authenticated subscribe, ordered catchup/live
+handoff, and cleanup. Every client message but `pong` carries a `requestId`, and
+`subscribed`, `gap` and `error` echo it (`subscribed` also states `after`, the
+cursor the lease starts above); a message that fails to parse has none to echo.
+Messages for different threads proceed concurrently (there is no `resume`). One
+per-thread slot admits the newest subscribe by arrival order; a failed replacement
+leaves the active lease intact. A failed read after the lease is acquired disposes
+it and answers `internal` with `retryable: true`; `not_found`, `bad_request` and
+auth stay non-retryable. Pending callbacks
 wait until catchup succeeds and are flushed above the delivered watermark;
 unsubscribe, replacement, close, and send failure invalidate stale work.
 Journal sequence values become strings at the HTTP/WS boundary.
