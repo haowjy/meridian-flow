@@ -19,7 +19,12 @@ import {
   stopResponseSchema,
 } from "@meridian/contracts/protocol";
 import type { HandBackResult, RunState, StopRequest } from "@meridian/contracts/threads";
-import { handBackCandidates, stopRequest } from "../run-state/fold-messages";
+import {
+  type FailedStop,
+  failedStopIsMoot,
+  handBackCandidates,
+  stopRequest,
+} from "../run-state/fold-messages";
 import {
   addIntent,
   answerIntent,
@@ -105,7 +110,7 @@ export type UnresolvedHandBack = {
   requestId: string;
   commandKind: HandBackCommand["kind"];
   status: UnresolvedStatus;
-  /** How many messages the press covered. */
+  /** How many messages the press covered (a Stop with nothing queued covers none). */
   count: number;
   /** Stop only: the execution the writer saw when pressing (the command's target); else null. */
   targetExecutionId: string | null;
@@ -117,8 +122,10 @@ export type UnresolvedHandBack = {
  * folds these with the held record.
  */
 export type StopFacts = {
-  request: "idle" | "pending" | "failed";
+  request: "idle" | "pending";
   cancelledExecutionId: string | null;
+  /** Every Stop still held; `stopStatus` reads "failed" when any one is not moot. */
+  failedStops: readonly FailedStop[];
 };
 
 export type HandBackOperation = {
@@ -145,6 +152,11 @@ export type HandBackOperation = {
 
 type Held = { command: HandBackCommand; candidates: readonly string[] };
 type Entry = Held & { status: UnresolvedStatus };
+
+const failedStopOf = (e: Held): FailedStop => ({
+  targetExecutionId: e.command.kind === "stop" ? e.command.body.seenExecutionId : null,
+  candidates: e.candidates.length,
+});
 
 const idsOf = (command: HandBackCommand): readonly string[] =>
   command.kind === "queue" ? command.ids : command.body.mine;
@@ -283,6 +295,12 @@ export function createHandBackOperation(options: {
         // A Stop already in flight is the press; an unresolved one is replayed, never doubled.
         const flying = [...running.values()].find((a) => a.kind === "stop");
         if (flying) return flying.done;
+        // A moot Stop (refused included) targeted a reply that ended and owes nothing: forget it.
+        for (const [id, e] of entries)
+          if (e.command.kind === "stop" && failedStopIsMoot(input.view, failedStopOf(e))) {
+            entries.delete(id);
+            store.drop(id);
+          }
         const owed = [...entries.values()].find(
           (e) => e.command.kind === "stop" && e.status !== "refused",
         );
@@ -359,17 +377,19 @@ export function createHandBackOperation(options: {
         requestId: e.command.requestId,
         commandKind: e.command.kind,
         status: e.status,
-        count: Math.max(1, e.candidates.length),
+        count: e.candidates.length,
         targetExecutionId: e.command.kind === "stop" ? e.command.body.seenExecutionId : null,
       }));
     },
 
     stopFacts() {
       const pending = [...running.values()].some((a) => a.kind === "stop");
-      const owed = [...entries.values()].some((e) => e.command.kind === "stop");
       return {
-        request: pending ? "pending" : owed ? "failed" : "idle",
+        request: pending ? "pending" : "idle",
         cancelledExecutionId: cancelledByStop,
+        failedStops: [...entries.values()]
+          .filter((e) => e.command.kind === "stop")
+          .map(failedStopOf),
       };
     },
 

@@ -130,7 +130,9 @@ when it does not have the command. A confirmed answer (`withdrawn` or
 state; the announcer says "This compaction already started." A 404 only drops
 the local send: the enqueue may still have been committing, so if the record
 lists the id later the row shows again, queued, with Stop. A failed
-withdrawal brings the row back with "Couldn't withdraw. Try again." A queued
+withdrawal keeps the row and shows a card in it, "Couldn't stop the
+compaction." (or "Couldn't stop the switch." for a write-mode row), with Try
+again in place of Stop (`QueuedControlRows.tsx`, `control-copy.ts`). A queued
 command's row, compaction or write-mode switch, leaves by one rule
 (`retainControls` in `thread-controls.ts`, applied in `useThreadControls` to both row
 sources): it stays until a transcript turn carries its control id
