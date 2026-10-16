@@ -72,6 +72,7 @@ function createMembershipSummary() {
         previous.view.items !== next.view.items ||
         previous.view.discarded !== next.view.discarded ||
         previous.view.status !== next.view.status ||
+        previous.view.wholeDocument !== next.view.wholeDocument ||
         previous.view.membership.status !== next.view.membership.status ||
         previous.view.completing !== next.view.completing ||
         previous.view.locked !== next.view.locked

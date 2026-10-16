@@ -189,8 +189,12 @@ AI writes in it (inclusive under doubt); the draft dock, chat-scoped Apply and D
 (`draft-edit-status.ts`) read it. Status: an AI part reads applied only when no change has it as a member.
 The browser classifies the AI edit parts pending in the branch (`…/draft/attribution`, each with its `owner`:
 the nearest primary ancestor conversation, and the spawn row to reveal for a subagent's write) against the
-room; the payload also carries the project's `userId` and the server's Undo-restoration links. Writer edits are
-never listed as edit parts: a browser client's items are the user's. Apply appends the Apply record (a
+room. The payload carries the project's `userId` and an encoded Yjs snapshot fence (`revision`).
+State and parts come from one read-only repeatable-read database snapshot, not a process-local lock.
+Undo links live in the room's restoration root. Writer edits are never listed as edit parts: unlisted IDs
+are the user's only within the fence or from the browser's explicitly identified own client. Unlisted
+deletions require coverage in the snapshot's delete set. Otherwise provenance is unresolved, unnamed
+and inclusive for membership. Apply appends the Apply record (a
 server-owned root, `__meridian_review_applied_v1`, client 1) in the same write that moves `review_base`. A text branch's effect is base-versus-draft equality; manifest changes have their
 own operations and never become prose hunks.
 

@@ -6,8 +6,8 @@
 import {
   appendApplyRecord,
   RESTORED_ORIGIN,
+  RESTORED_ROOT,
   readRestorations,
-  recordRestorations,
   writeBlocks,
 } from "@meridian/agent-edit/diff";
 import type { DraftAttribution } from "@meridian/contracts/drafts";
@@ -162,7 +162,6 @@ it("an attached runtime republishes delayed Undo provenance and Apply records wi
   const history = new Y.UndoManager(peer.getXmlFragment("prosemirror"), {
     trackedOrigins: new Set([origin]),
   });
-  recordRestorations(history);
   peer.transact(() => {
     const t = (peer.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(0) as Y.XmlText;
     t.delete(10, 4);
@@ -171,6 +170,13 @@ it("an attached runtime republishes delayed Undo provenance and Apply records wi
   const updates: Array<{ update: Uint8Array; origin: unknown }> = [];
   peer.on("update", (update, origin) => updates.push({ update, origin }));
   history.undo();
+  // Deliberately withhold provenance to exercise an unresolved read independently of Undo's wire framing.
+  const original = Y.getItem(peer.store, Y.createID(200000, 0));
+  const restored = original.redone;
+  if (!restored) throw new Error("Undo did not restore the AI insertion");
+  peer.transact(() => {
+    peer.getArray(RESTORED_ROOT).push([[restored.client, restored.clock, 4, 200000, 0]]);
+  }, RESTORED_ORIGIN);
   const { editor, history: surfaceHistory } = createReviewEditor([], doc);
   const draft = {
     projectId: "p",

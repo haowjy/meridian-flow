@@ -842,3 +842,18 @@ draft mode. Desktop 1440x900, check 1 also at 390x844.
   and the late invisible write passed. Probe C step 3 (view handoff undo), Probe A step 6 and Probe E
   step 4 (route repair and unlisted dock reload) failed; the #838 idle 1005 closes reproduced. Evidence
   in the diff-based-review work item's `k2/` directory in the docs repo.
+
+
+### Revision-fenced membership and failed reads
+
+1. Open a chat's existing text draft. Hold the next attribution HTTP response, then deliver another AI
+   edit. Its unresolved byline must not say “You”; its file remains in the dock and summary commands wait.
+2. Repeat with a same-prose replacement (replace a suffix, then restore its spelling under new Yjs IDs).
+   Verify another attribution request occurs despite the unchanged change ID. Release each response:
+   the chat byline returns and commands become available.
+3. In a two-file chat dock, fail one attribution request with HTTP 503. Its file opens with
+   “Changes couldn’t load” and “Retry changes”; the dock is not endlessly busy. Summary Apply/Discard
+   stay disabled, but ready-file change commands work. Retry recovers the failed file and summary commands.
+4. With 25 known-empty files and the dock collapsed, verify 25 room acquisitions, metadata reads and
+   attribution reads (no file-count cap). The dock disappears once all 25 resolve empty. Readers are flat,
+   not a recursive prefix-copy chain; batching unopened files is not implemented.

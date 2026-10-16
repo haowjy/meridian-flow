@@ -426,10 +426,7 @@ class Classifier {
     const footprint: Footprint = { members: new Set(), unresolved: false, base: [], settled: [] };
     const include = (who: number) => {
       if (who >= 0) footprint.members.add(who);
-      if (who === UNKNOWN) {
-        footprint.unresolved = true;
-        for (let i = 0; i < this.parts.length; i++) footprint.members.add(i);
-      }
+      if (who === UNKNOWN) footprint.unresolved = true;
     };
     const live = (client: number, clock: number) => {
       const who = this.origin(client, clock);
@@ -522,6 +519,7 @@ class Classifier {
       },
     };
     for (const change of changes) visit(change, boundaries);
+    if (footprint.unresolved) for (let i = 0; i < this.parts.length; i++) footprint.members.add(i);
     return footprint;
   }
 

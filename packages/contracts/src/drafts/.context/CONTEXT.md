@@ -31,8 +31,11 @@ room name. The server alone maps an `itemKey` to a branch (collab
   only item-level actions. A 404 `{ code: "gone" }` means the item is closed.
   The review itself is computed in the browser from the room: there is no
   preview body, no server-vended hunks, and no refusal state.
-- `DraftAttribution` is a hint that names chats on changes by Yjs item ranges.
-  Nothing gates on it.
+- `DraftAttribution` supplies AI item ranges, owners, the project's user and an
+  encoded snapshot fence (`revision`: state vector plus delete set). Bylines are
+  best-effort; membership drives chat-scoped commands. Evidence outside the fence
+  is unresolved, not the writer. Membership reads distinguish loading, ready
+  (including known-empty), and failed with Retry.
 - A draft keeps one text branch per item until that item closes; a closed item
   that is written again gets a new branch and so a new `roomName`. There is no
   branch generation on the wire or in the store.

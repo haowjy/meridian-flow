@@ -62,14 +62,21 @@ while Undo-restored AI text keeps its chat.
 
 The runtime observes both provenance roots even with editors attached. Its attribution cache and
 settlement reuse include a room provenance revision: a separately delivered restoration link or Apply
-record republishes names and membership without a text transaction. Attribution-payload readiness is
-explicit, so the dock cannot confuse unloaded membership with a known-empty conversation.
+record republishes names and membership without a text transaction. Attribution reads carry an encoded Yjs snapshot (state vector plus delete set), captured with its pending AI parts in one read-only repeatable-read database snapshot. The classifier names unlisted inserted IDs as the
+writer only inside that fence or from this browser's own client. Unlisted deletions require the delete
+set fence, since deletion-only updates do not advance a state vector. Unknown evidence retains inclusive
+membership and does not name the writer. Runtime refresh keys include snapshot identity, not group
+content hashes, so equal-prose rewrites still refetch. Membership is loading, ready, or failed with Retry;
+a cached payload alone is not proof of readiness.
 
-The chat dock reads its files' rooms even while collapsed. One effective view per file determines rows,
-summary count and command targets. Unknown membership shows a neutral summary without commands;
+The chat dock reads its files' rooms even while collapsed. Flat file readers publish into one keyed membership-summary owner; rows,
+summary count and command targets read that owner. Unknown membership shows a neutral summary without commands;
 known-empty files disappear unless they hold a failure, an in-flight command, Discard/Undo or an
 overrode notice. Loading and read failures are not empty membership. A known-empty retained notice
-never offers commands.
+never offers commands. A failed read opens the file's existing error/Retry row. Summary commands wait
+until every listed file is ready, avoiding a silent partial chat Apply; individual ready-file changes
+remain actionable. No file-count cap is used. A cold collapsed dock still acquires one room, metadata
+read and attribution read per file; the SQL list is not a membership projection.
 
 Every `ReviewChange` carries the frame it was listed from. A click acts on that
 frame: Apply sends its snapshot, Discard finds its pin and content hash in the

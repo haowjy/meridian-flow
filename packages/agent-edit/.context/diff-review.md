@@ -48,6 +48,11 @@ original parts and take precedence over write-back records; the exact write-back
 ranges never include later Undo insertions. Without an Apply record, surviving AI items inside a later raw-word change
 remain conservatively pending even if the character edit touches only writer text.
 
+Provenance includes the snapshot its parts cover. An unlisted ID is the writer only within that state
+vector or from the caller's explicitly identified local browser client; an unlisted deletion requires
+coverage in the snapshot's delete set. Otherwise it is unresolved: its footprint keeps all candidate
+parts, and uncertain naming contributes no author. A state vector alone cannot fence deletion-only writes.
+
 ## Apply and local Discard are the same operation on two sides
 
 `composeGroups` selects hunks by group id and returns block-range patches, each
