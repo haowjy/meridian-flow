@@ -952,3 +952,11 @@ maps with editing but is not rebuilt until compositionend; committed prose and r
 Check ordinary text input and auto-pairs inside and at the edge of green, then move a paragraph,
 Undo, native cut/paste and Undo twice. Discard and Undo must restore exact text and red/green marks;
 Apply must publish exactly the reviewed text. Reload has fresh render keys but identical semantics.
+
+### Headless identity reuse
+
+With a large rewritten draft closed, let an AI write change one paragraph while
+its Work/dock review is visible. Reopen it: counts, red/green marks and pins must
+match a fresh load. The headless refresh must retain all other paragraph nodes;
+projection should re-diff one unit, and resolving an existing pin must not rebuild
+the document. Repeat after Undo and a remote paragraph deletion.

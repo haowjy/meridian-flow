@@ -135,7 +135,10 @@ identity in anchors or holds.
   view never undoes the other's typing. The history belongs to
   `DocumentSession.historyFor(surface)`, so a presenter handoff keeps it. The
   stamp comes from an exact-version `pnpm patch` of `@tiptap/y-tiptap`; bumping
-  it fails the install until the patch is re-ported.
+  it fails the install until the patch is re-ported. The same patch exports the
+  binding's `refreshProseMirrorDoc` invalidation/reuse path for headless draft
+  review. Keep both ESM/CJS exports and declarations when re-porting it; headless
+  and attached readers must preserve unchanged node identities by the same rule.
 - Slash is one spec over the shared suggestion lane. Its predicate is the whole
   trigger envelope; insertion strategy determines target, schema availability,
   and caret placement. A pick in a table cell remains in that cell. Image picks

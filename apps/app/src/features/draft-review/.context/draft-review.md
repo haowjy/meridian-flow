@@ -21,10 +21,22 @@ editor `useRoomReview` retains the room headlessly (Work page, strip) and the
 runtime reads its Yjs text. Surfaces read the state with `useReviewState`;
 nothing copies it into the controller.
 
+The headless source retains one conversion meta (node mapping and mark metadata) per
+Yjs room, shared by runtime projection and headless Discard/pin lookup. Its deep
+observer calls the patched `@tiptap/y-tiptap` `refreshProseMirrorDoc`: the same
+function the editor binding uses to invalidate changed types, ancestors and
+deleted structs, then rebuild only missing nodes. Unchanged paragraphs keep their
+identity whether a write is local, remote, AI or Undo. The room owns the observer;
+it is removed on document destruction. Do not infer changed paragraphs from PM
+transaction steps: remote and Undo updates replace the whole document in one step
+while preserving the untouched nodes inside it.
+
 Attaching an editor reuses the headless frame for paint when its base generation,
 complete Yjs snapshot and document content still match. Commands still project
 through their own editor schema before composing a Discard: equal content does
-not make nodes from different ProseMirror schemas interchangeable.
+not make nodes from different ProseMirror schemas interchangeable. `Node.eq`
+compares node-type identity, so this cross-schema check uses the existing
+`sameContent` structural comparison (type names, attributes, marks and text).
 
 Who wrote a change is one classifier (`classifyChanges`, `@meridian/agent-edit/diff`, `attribution.ts`)
 over the room's Yjs items and the attribution payload (`review-attribution.ts` joins its answer to

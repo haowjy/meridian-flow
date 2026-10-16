@@ -9,7 +9,8 @@
  * Readers select from that state; none of them recomputes it.
  *
  * Two sources, one stream. With no editor the runtime reads the room's Yjs text on a 120 ms trailing
- * debounce (the draft dock and the Work page). With editors attached (`attachEditor`) it projects the first
+ * debounce (the draft dock and the Work page), retaining unchanged nodes with the binding's Yjs
+ * mapping invalidation rule. With editors attached (`attachEditor`) it projects the first
  * attached editor's state, whose unchanged top-level nodes hit the diff core's node caches: a recompute runs 120 ms after
  * the writer's edits, at once for a peer's write or a `review_base` change, and the previous frame stays
  * painted (mapped through the writer's edits by the painter) until the next is ready.
