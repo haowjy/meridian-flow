@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Another chat's uploads are at `uploads://@c15/name`, and a No Work chat's Scratch is at `scratch://@c12/`: `@` followed directly by the chat's handle, with no `/` between. The old `@/c15/` spelling is an error that names the new one, a Work slug never takes the shape `c` plus digits, and `uploads://@tea-notes/` says Works own no uploads.
 - Files attached to a Work, or to No Work, before uploads moved to chats are deleted, and a message that attached one shows the file as no longer available. Uploads without a chat handle (`uploads://@/name`) are no longer an address.
 - A chat's top bar lists the files attached in that chat (a paperclip and the count, once it has one). A row adds the file to the message as an `@` reference, opens it beside the chat, or deletes it while no sent message has used it. A fork or handoff names the chat it continues from. A chat upload's dock tab comes back after a reload.
 - Stop hands the messages still waiting behind the reply back to the composer, above any draft, in send order with a blank line between them. They never reach the model, a fork or a summary, and a lost Stop answer can be retried without duplicating the returned text.
