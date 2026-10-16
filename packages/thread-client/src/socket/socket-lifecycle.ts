@@ -205,6 +205,19 @@ export class SocketLifecycleController {
     this.clearHandshakeTimer();
     this.clearPingTimer();
 
+    // A CLOSING socket still holds `this.socket`; report its close now, because
+    // bumping the generation makes its native close event stale.
+    const replaced = this.socket;
+    if (replaced) {
+      this.socket = null;
+      this.consumer.onClose?.({ code: 4000, reason: "replaced", wasClean: false });
+      try {
+        replaced.close(4000, "replaced");
+      } catch {
+        // already closing
+      }
+    }
+
     const generation = this.socketGeneration + 1;
     this.socketGeneration = generation;
 
