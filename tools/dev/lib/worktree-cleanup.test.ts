@@ -24,7 +24,7 @@ function makeContext(overrides?: { eligible?: boolean; baseBranch?: string }): C
       kind: "pull-request",
       branch: "feature",
       plannedOid: "2222222222222222222222222222222222222222",
-      baseBranch,
+      pullRequestBase: baseBranch,
       repositoryOwner: "haowjy",
       pullRequestNumber: 42,
     });
@@ -191,7 +191,7 @@ describe("worktree cleanup resolver", () => {
             kind: "ancestry",
             branch: "feature",
             plannedOid: "2222222222222222222222222222222222222222",
-            baseBranch: "main",
+            containedBy: "refs/heads/main",
           },
         ],
       ]),
@@ -201,10 +201,10 @@ describe("worktree cleanup resolver", () => {
     expect(resolveTarget(context, { kind: "direct", value: "feature" }).branch).toBe("feature");
   });
 
-  it("refuses an unmerged branch with a base-agnostic, PR-aware message", () => {
+  it("refuses an unmerged branch with a containment-aware message", () => {
     const context = makeContext({ eligible: false });
     expect(() => resolveTarget(context, { kind: "direct", value: "feature" })).toThrow(
-      /current commit is not merged into 'main'.*exact merged pull request/s,
+      /current commit is not contained in another branch.*exact merged pull request/s,
     );
   });
 
@@ -227,7 +227,7 @@ describe("worktree cleanup resolver", () => {
             kind: "ancestry" as const,
             branch: "trunk",
             plannedOid: "2222222222222222222222222222222222222222",
-            baseBranch: "trunk",
+            containedBy: "refs/heads/mainline",
           },
         ],
       ]),

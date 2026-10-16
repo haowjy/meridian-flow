@@ -347,8 +347,8 @@ export function resolveTarget(context: CleanupContext, reference: TargetReferenc
   const eligibility = context.eligibilityByBranch.get(worktree.branch);
   if (!eligibility) {
     throw new CleanupResolverError(
-      `Refusing to clean branch '${worktree.branch}': its current commit is not merged into ` +
-        `'${context.baseBranch}' and has no exact merged pull request.`,
+      `Refusing to clean branch '${worktree.branch}': its current commit is not ` +
+        "contained in another branch and has no exact merged pull request.",
     );
   }
   return createCleanupTarget(context, worktree, eligibility);
