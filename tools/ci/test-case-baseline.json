@@ -199,7 +199,7 @@
     "apps/app/src/features/project/work/work-file-names.test.ts": 5,
     "apps/app/src/features/project/work/WorkMetadata.test.tsx": 2,
     "apps/app/src/lib/account-settings-cache.test.ts": 7,
-    "apps/app/src/lib/context-uri.test.ts": 3,
+    "apps/app/src/lib/context-uri.test.ts": 4,
     "apps/app/src/lib/send-project-chat.test.ts": 1,
     "apps/app/src/rich-content/code-block.test.tsx": 2,
     "apps/app/src/router-search.test.ts": 2,
