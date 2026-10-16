@@ -80,8 +80,8 @@ export interface OwnerLookup {
   /** The Work a handle names (deleted ones included), or the handle its name answers to. */
   workReference(projectId: string, ref: string): Promise<WorkReference>;
   /**
-   * The line to put first in a read or write result, or null when the address means what it
-   * says: a handle that is also a live Work's name, or a dropped sigil.
+   * The line to put first in a read or write result: a collision or dropped-sigil notice, else, for
+   * an explicit owner address, the owner's current label. Null for bare addresses.
    */
   notice(projectId: string, requestedPath: string, canonicalUri: string): Promise<string | null>;
   scratchOwners(projectId: string): Promise<OwnerRow[]>;
@@ -126,6 +126,10 @@ export function findWorkNamed<T extends { name: string; state?: WorkOwnerState }
   const key = workNameKey(name);
   const similar = key ? live.filter((work) => workNameKey(work.name) === key) : [];
   return similar.length === 1 ? (similar[0] ?? null) : null;
+}
+
+function quotedTitle(title: string | null): string {
+  return `("${(title ?? "").replace(/\s+/g, " ").trim() || "New chat"}")`;
 }
 
 function chatLabel(title: string | null, detail: string): string {
@@ -227,16 +231,36 @@ export function createOwnerLookup(deps: OwnerLookupDeps): OwnerLookup {
     canonicalUri: string,
   ): Promise<string | null> {
     const requested = parseUnifiedContextUri(requestedPath.replace(/#.*$/, ""));
-    if (!requested.ok || requested.value.scheme !== "scratch") return null;
+    if (!requested.ok) return null;
     const { authority, path } = requested.value;
+    if (requested.value.scheme === "uploads") {
+      if (authority.kind !== "chat") return null;
+      const owner = await deps.chats.byRef(projectId, authority.chatRef);
+      return owner?.live
+        ? `${formatParsedContextUri("uploads", "", authority)} is chat ${authority.chatRef} ${quotedTitle(owner.title ?? null)}.`
+        : null;
+    }
+    if (requested.value.scheme !== "scratch") return null;
     const workAddress = (handle: string) =>
       formatParsedContextUri("scratch", "", { kind: "work", workHandle: handle as WorkHandle });
 
     if (authority.kind === "work" || authority.kind === "lineage") {
       const handle = authority.kind === "work" ? authority.workHandle : authority.rootThreadRef;
       const named = await workNamed(projectId, handle);
-      if (!named || named.handle === handle) return null;
       const address = formatParsedContextUri("scratch", "", authority);
+      // No collision: the receipt still names the owner beside its handle.
+      if (!named || named.handle === handle) {
+        if (authority.kind === "work") {
+          const work = await deps.workByHandle(projectId, handle);
+          return work && work.state !== "deleted"
+            ? `${address} is Work ${handle} "${work.name}".`
+            : null;
+        }
+        const lineage = await deps.lineages.byRef(projectId, handle);
+        return lineage
+          ? `${address} is chat ${handle}'s notes ${quotedTitle(lineage.title ?? null)}.`
+          : null;
+      }
       const reached =
         authority.kind === "work"
           ? `Work ${handle} "${(await deps.workByHandle(projectId, handle))?.name ?? ""}"`
