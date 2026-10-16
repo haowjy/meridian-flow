@@ -230,6 +230,10 @@ msgstr ""
 msgid "{count, plural, one {# change} other {# changes}}"
 msgstr ""
 
+#: src/features/chat/ChatUploadsMenu.tsx
+msgid "{count, plural, one {# file} other {# files}}"
+msgstr ""
+
 #: src/features/chat/tool-result-preview.ts
 msgid "{count, plural, one {# match} other {# matches}}"
 msgstr ""
@@ -247,8 +251,8 @@ msgid "{count} changes"
 msgstr ""
 
 #: src/features/chat/ChatUploadsMenu.tsx
-msgid "{count} files"
-msgstr ""
+#~ msgid "{count} files"
+#~ msgstr ""
 
 #: src/features/chat/chat-upload-display.ts
 msgid "{days, plural, one {# day ago} other {# days ago}}"

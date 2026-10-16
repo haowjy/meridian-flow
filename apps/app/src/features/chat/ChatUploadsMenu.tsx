@@ -7,7 +7,7 @@
  * control appears once the chat has a file (or a source to point back to), so a chat with
  * nothing to show carries no extra control.
  */
-import { t } from "@lingui/core/macro";
+import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Thread } from "@meridian/contracts/protocol";
 import { isHandoffSeed, readHandoffSeed } from "@meridian/contracts/threads";
@@ -176,7 +176,7 @@ function UploadsDropdown({
   };
 
   const count = rows.length;
-  const label = count > 0 ? t`${count} files` : t`Files`;
+  const label = count > 0 ? plural(count, { one: "# file", other: "# files" }) : t`Files`;
   return (
     <Popover open={open} onOpenChange={(next) => (next ? setOpen(true) : close(false))}>
       <PopoverTrigger asChild>
