@@ -6,7 +6,7 @@
  */
 import { t } from "@lingui/core/macro";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   type DraftCommandFailure,
   draftCommandFailure,
@@ -23,6 +23,7 @@ import {
 } from "@/features/draft-review/DraftImagePreview";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import { useHeadlessDiscards } from "@/features/draft-review/useHeadlessDiscards";
+import { useRetainedFiles } from "@/features/draft-review/useRetainedFiles";
 import { useBoundWorkDraftCommands } from "@/features/draft-review/useWorkDraftCommands";
 import { useLiveDocumentSessionRegistry } from "@/features/project/context/account-feature-context";
 import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
@@ -51,25 +52,34 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
   );
   // A file stays in the draft dock while one of its Discards can still be undone, even once it lists no
   // changes. The row is the dock's own last view of it.
-  const seen = useRef(new Map<string, DockFile>());
-  for (const file of chatFiles) seen.current.set(file.row.draft.itemKey, file);
-  const discardedFiles = discards.entries.filter((entry) => entry.change === null);
-  const files = useMemo(() => {
-    const whole = new Set(discardedFiles.map((entry) => entry.subject.itemKey));
-    const kept = chatFiles.filter((file) => !whole.has(file.row.draft.itemKey));
-    const listed = new Set(kept.map((file) => file.row.draft.itemKey));
-    const unlisted = [
-      ...new Set(
+  const discardedFiles = useMemo(
+    () => discards.entries.filter((entry) => entry.change === null),
+    [discards.entries],
+  );
+  const whole = useMemo(
+    () => new Set(discardedFiles.map((entry) => entry.subject.itemKey)),
+    [discardedFiles],
+  );
+  const undoable = useMemo(
+    () =>
+      new Set(
         discards.entries
           .filter((entry) => entry.change && !whole.has(entry.subject.itemKey))
           .map((entry) => entry.subject.itemKey),
       ),
-    ].flatMap((itemKey) => {
-      const file = seen.current.get(itemKey);
-      return file && !listed.has(itemKey) ? [file] : [];
-    });
-    return [...kept, ...unlisted];
-  }, [chatFiles, discards.entries, discardedFiles]);
+    [discards.entries, whole],
+  );
+  const kept = useMemo(
+    () => chatFiles.filter((file) => !whole.has(file.row.draft.itemKey)),
+    [chatFiles, whole],
+  );
+  const unlisted = useRetainedFiles(
+    `${projectId}:${workId}`,
+    chatFiles,
+    (file) => file.row.draft.itemKey,
+    (file) => undoable.has(file.row.draft.itemKey),
+  );
+  const files = useMemo(() => [...kept, ...unlisted], [kept, unlisted]);
 
   const review = useCallback(
     (file: DockFile, changeId?: string) => {

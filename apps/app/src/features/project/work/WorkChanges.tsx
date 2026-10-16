@@ -14,14 +14,13 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
 import { MoreHorizontal } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   draftCommandFailure,
   draftOverrode,
   useDraftCommandRecords,
 } from "@/client/query/draft-command-record";
 import { useWorkDrafts } from "@/client/query/useWorkDrafts";
-import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,6 +30,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useHeadlessDiscards } from "@/features/draft-review/useHeadlessDiscards";
+import { useRetainedFiles } from "@/features/draft-review/useRetainedFiles";
 import { useWorkDraftCommands } from "@/features/draft-review/useWorkDraftCommands";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { RuledList } from "../RuledList";
@@ -54,26 +54,26 @@ export function WorkChanges({
   const touch = usePhoneShell() === true;
   const listed = drafts.files ?? [];
   const records = useDraftCommandRecords();
-  const seen = useRef<{ workId: string; files: Map<string, ReviewFileTarget> }>({
-    workId,
-    files: new Map(),
-  });
-  if (seen.current.workId !== workId) seen.current = { workId, files: new Map() };
-  for (const file of listed) seen.current.files.set(file.draft.itemKey, file);
-  const heldByUndo = (file: ReviewFileTarget) =>
-    discards.entries.some((entry) => entry.subject.itemKey === file.draft.itemKey);
   // A file the server stops listing stays while it holds a failure or an overwrite notice, until that is
   // dismissed or resolved (the writer must not see a refused Apply vanish as if it had succeeded), and while
   // one of its Discards can still be undone. The row is the list's own last view of it.
-  const noticed = [...seen.current.files.values()].filter((file) => {
-    const draft = { projectId, workId, documentId: file.documentId, itemKey: file.draft.itemKey };
-    return (
-      !listed.some((other) => other.draft.itemKey === file.draft.itemKey) &&
-      (draftCommandFailure(records, draft) !== null ||
+  const undoable = useMemo(
+    () => new Set(discards.entries.map((entry) => entry.subject.itemKey)),
+    [discards.entries],
+  );
+  const noticed = useRetainedFiles(
+    `${projectId}:${workId}`,
+    listed,
+    (file) => file.draft.itemKey,
+    (file) => {
+      const draft = { projectId, workId, documentId: file.documentId, itemKey: file.draft.itemKey };
+      return (
+        draftCommandFailure(records, draft) !== null ||
         draftOverrode(records, draft).length > 0 ||
-        heldByUndo(file))
-    );
-  });
+        undoable.has(file.draft.itemKey)
+      );
+    },
+  );
   const files = [...listed, ...noticed];
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const hasFiles = files.length > 0;
