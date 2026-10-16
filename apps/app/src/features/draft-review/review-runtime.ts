@@ -22,7 +22,7 @@
  * frame its row was drawn from (`ReviewChange.frame`), never "whatever the runtime holds now".
  */
 
-import { REVIEW_BASE_FRAGMENT } from "@meridian/agent-edit/diff";
+import { APPLY_RECORD_ROOT, RESTORED_ROOT, REVIEW_BASE_FRAGMENT } from "@meridian/agent-edit/diff";
 import type { DraftAttribution } from "@meridian/contracts/drafts";
 import { type QueryClient, QueryObserver } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
@@ -61,6 +61,8 @@ export type ReviewState = ReviewVisible & {
   changes: readonly ReviewChange[];
   /** The room has synced, so an empty frame means "No changes left", not "not loaded yet". */
   ready: boolean;
+  /** The payload needed to distinguish unknown membership from a known-empty chat. */
+  attributionReady: boolean;
 };
 
 /** Where an editor is mounted: the center pane or the dock beside the chat. The phone's one editor is "editor". */
@@ -95,7 +97,13 @@ export interface ReviewRuntime {
 }
 
 const NO_CHANGES: readonly ReviewChange[] = [];
-const EMPTY: ReviewState = { ...NO_VISIBLE, frame: null, changes: NO_CHANGES, ready: false };
+const EMPTY: ReviewState = {
+  ...NO_VISIBLE,
+  frame: null,
+  changes: NO_CHANGES,
+  ready: false,
+  attributionReady: false,
+};
 
 /**
  * How long Apply waits for the server to hold the room's local edits. Past it the Apply fails on the change
@@ -133,7 +141,13 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
   const listeners = new Set<() => void>();
   let state: ReviewState = EMPTY;
   let edits: DraftAttribution | null = NO_EDITS;
-  let matched: { frame: ReviewFrame; edits: DraftAttribution; value: Attribution } | null = null;
+  let provenanceRevision = 0;
+  let matched: {
+    frame: ReviewFrame;
+    edits: DraftAttribution;
+    provenanceRevision: number;
+    value: Attribution;
+  } | null = null;
   let reconciling = false;
   /** The draft's command record the state was derived from. */
   let seenRecord: unknown;
@@ -150,8 +164,13 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
   const attributionOf = (frame: ReviewFrame): Attribution => {
     // Until the chats' writes have loaded, a change is not the writer's: nothing is said.
     if (!edits) return NO_ATTRIBUTION;
-    if (!matched || matched.frame !== frame || matched.edits !== edits)
-      matched = { frame, edits, value: classifyRoom(yDoc, frame, edits) };
+    if (
+      !matched ||
+      matched.frame !== frame ||
+      matched.edits !== edits ||
+      matched.provenanceRevision !== provenanceRevision
+    )
+      matched = { frame, edits, provenanceRevision, value: classifyRoom(yDoc, frame, edits) };
     return matched.value;
   };
 
@@ -178,6 +197,7 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
   let settleQueued = false;
   let settleFrame: ReviewFrame | null = null;
   let settledEdits = edits;
+  let settledProvenanceRevision = provenanceRevision;
 
   /**
    * Hand one editor the room's frame, bound to that editor's own document: the frame's positions address
@@ -197,7 +217,10 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
   /** Bookkeeping: join the frame with attribution and command records, derive what is visible, tell readers. */
   const settle = (frame: ReviewFrame | null) => {
     const changes =
-      frame && frame === state.frame && edits === settledEdits
+      frame &&
+      frame === state.frame &&
+      edits === settledEdits &&
+      settledProvenanceRevision === provenanceRevision
         ? state.changes
         : frame
           ? reviewChanges(frame, attributionOf(frame))
@@ -221,16 +244,18 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
       frame === state.frame &&
       ready === state.ready &&
       record === seenRecord &&
-      edits === settledEdits
+      edits === settledEdits &&
+      settledProvenanceRevision === provenanceRevision
     )
       return;
     seenRecord = record;
     settledEdits = edits;
+    settledProvenanceRevision = provenanceRevision;
     const visible =
       frame && draft
         ? deriveVisible(frame, changes, currentDraftCommandRecords(), draft)
         : NO_VISIBLE;
-    state = { ...visible, frame, changes, ready };
+    state = { ...visible, frame, changes, ready, attributionReady: edits !== null };
     if (frame) useAttribution(frame);
     for (const listener of listeners) listener();
   };
@@ -339,6 +364,17 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
   };
   baseFragment.observeDeep(onBaseChange);
 
+  // Undo's provenance can arrive separately from its prose. Neither it nor Apply's record produces
+  // an editor transaction, but both change membership even when the frame/payload stay identical.
+  const provenanceRoots = [yDoc.getArray(RESTORED_ROOT), yDoc.getArray(APPLY_RECORD_ROOT)];
+  const onProvenanceChange = () => {
+    provenanceRevision++;
+    // The next row must carry a snapshot containing this evidence too: Apply reconstructs that
+    // snapshot on the server, not merely the prose that happens to be unchanged.
+    flushSoon();
+  };
+  for (const root of provenanceRoots) root.observeDeep(onProvenanceChange);
+
   // Without an editor the room's own updates drive the frame; with one, its transactions do.
   const onUpdate = () => {
     if (attachments.length === 0) schedule();
@@ -413,6 +449,7 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
       unwatchRecords();
       unwatchAttribution?.();
       baseFragment.unobserveDeep(onBaseChange);
+      for (const root of provenanceRoots) root.unobserveDeep(onProvenanceChange);
       for (const { editor } of attachments) editor.off("transaction", onTransaction);
       attachments.length = 0;
       listeners.clear();

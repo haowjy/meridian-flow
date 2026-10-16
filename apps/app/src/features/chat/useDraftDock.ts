@@ -1,6 +1,6 @@
 /**
  * The chat's pending changes and creation-bound Work commands. The draft dock lists the drafts the chat wrote
- * into (the server's SQL-only list), projects a file's changes only when it is expanded, applies only the
+ * into (the server's SQL-only list), reads membership even while collapsed, applies only the
  * changes that belong to this chat (membership), and never navigates on Apply. Discard in the draft dock happens
  * in place: the row reads "Discarded" with Undo until the writer leaves.
  */
@@ -104,29 +104,40 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
 
   // A whole item (created, binary, live-deleted) applies as the item; a text item applies the changes this
   // chat's edits overlap, never another chat's changes in the same file.
-  const apply = useCallback(() => {
-    for (const file of chatFiles) {
-      const selection = { documentId: file.row.documentId, itemKey: file.row.draft.itemKey };
-      if (file.row.draft.wholeItem) void controller.applyDraft(selection).outcome;
-      else
-        void controller.applyChatChanges(selection, () =>
-          acquireChatChanges(registry, queryClient, { projectId, workId, ...selection }, threadId),
-        );
-    }
-  }, [controller, chatFiles, registry, queryClient, projectId, workId, threadId]);
+  const apply = useCallback(
+    (files: readonly DockFile[]) => {
+      for (const file of files) {
+        const selection = { documentId: file.row.documentId, itemKey: file.row.draft.itemKey };
+        if (file.row.draft.wholeItem) void controller.applyDraft(selection).outcome;
+        else
+          void controller.applyChatChanges(selection, () =>
+            acquireChatChanges(
+              registry,
+              queryClient,
+              { projectId, workId, ...selection },
+              threadId,
+            ),
+          );
+      }
+    },
+    [controller, registry, queryClient, projectId, workId, threadId],
+  );
 
   // A text item's Discard is an edit of its room with Undo on the row, of this chat's changes only; a
   // whole item has no base to return to and closes (item Discard).
-  const discard = useCallback(() => {
-    for (const file of chatFiles) {
-      if (file.row.draft.wholeItem)
-        void controller.discardDraft({
-          documentId: file.row.documentId,
-          itemKey: file.row.draft.itemKey,
-        }).outcome;
-      else discards.discardFile(discardSubjectOf(file.row), threadId);
-    }
-  }, [controller, chatFiles, discards, threadId]);
+  const discard = useCallback(
+    (files: readonly DockFile[]) => {
+      for (const file of files) {
+        if (file.row.draft.wholeItem)
+          void controller.discardDraft({
+            documentId: file.row.documentId,
+            itemKey: file.row.draft.itemKey,
+          }).outcome;
+        else discards.discardFile(discardSubjectOf(file.row), threadId);
+      }
+    },
+    [controller, discards, threadId],
+  );
 
   const fileFailures = (file: DockFile): DockFileFailure[] => {
     const held = draftCommandFailure(records, {
@@ -147,7 +158,6 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
     imagePreview,
     closeImagePreview: () => setImagePreview(null),
     mounted: files.length + discardedFiles.length > 0,
-    showCommands: chatFiles.length > 0,
     /** A whole-draft command in flight on any of the chat's files, said on the draft dock while it is collapsed. */
     pendingMode:
       chatFiles

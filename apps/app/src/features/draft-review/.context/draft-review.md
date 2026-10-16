@@ -34,8 +34,8 @@ conversations). Three rules, each one sentence:
 
 An alignment is one place the text allows an edit to sit (a repeated word or a boundary space can slide).
 Byline is the intersection over an edit's alignments; membership and status are the union. The classifier
-works on the character edit of each hunk, never its word tokens, and reads only lengths, ids and
-restoration links, so the browser (gc on) and the server (gc off) agree. Authors are identities:
+collects membership and Apply evidence from raw word/structural footprints first; bounded character
+refinement chooses only names. It reads lengths, ids and restoration links, so the browser (gc on) and the server (gc off) agree. Authors are identities:
 `user(userId)` (the card says "You" while a project has one user) and `thread(threadId, turnId, toolCallId?)`.
 
 Consumers read one answer. The card renders the byline: "You" first (outside the collapsible names, so
@@ -54,6 +54,17 @@ UndoManager tracks. The root is writer-writable, syncs and persists with the dra
 through chains with light validation (the original is deleted, the same kind of content). An Apply appends an Apply record to a server-owned root
 of the draft doc in the same write that moves `review_base`, naming the items Apply moved into the base, so
 applied AI text reads as base and a stale AI deletion no longer blurs a later point.
+
+The runtime observes both provenance roots even with editors attached. Its attribution cache and
+settlement reuse include a room provenance revision: a separately delivered restoration link or Apply
+record republishes names and membership without a text transaction. Attribution-payload readiness is
+explicit, so the dock cannot confuse unloaded membership with a known-empty conversation.
+
+The chat dock reads its files' rooms even while collapsed. One effective view per file determines rows,
+summary count and command targets. Unknown membership shows a neutral summary without commands;
+known-empty files disappear unless they hold a failure, an in-flight command, Discard/Undo or an
+overrode notice. Loading and read failures are not empty membership. A known-empty retained notice
+never offers commands.
 
 Every `ReviewChange` carries the frame it was listed from. A click acts on that
 frame: Apply sends its snapshot, Discard finds its pin and content hash in the
