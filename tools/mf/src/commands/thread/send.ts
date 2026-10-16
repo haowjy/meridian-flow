@@ -21,6 +21,7 @@ import {
   messageFate,
   serializeMessageDoc,
 } from "@meridian/thread-client";
+import { acknowledgeAdmission, EMPTY_SYNCED_THREAD } from "@meridian/thread-client/sync";
 import { CliError, usageError } from "../../core/cli-error";
 import {
   type CommandSpec,
@@ -36,8 +37,8 @@ import type { Output } from "../../core/output";
 import type { Session } from "../../core/session";
 import { resolveDocument, resolveUri } from "../doc/uri";
 import { enqueueMockScript, removeMockScript } from "../mock/queue";
-import type { CliEvent } from "./events-map";
-import { type LiveDiff, ReducedThread } from "./reduced-thread";
+import type { LiveDiff, LiveReason } from "./live-view";
+import { createObserver, type Observer } from "./observe";
 import { replyText } from "./reply-text";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
 import {
@@ -48,8 +49,6 @@ import {
   type TerminalResult,
   terminalResult,
 } from "./result";
-import { followThread } from "./stream";
-import { createThreadClient } from "./transport";
 
 export type SendFields = {
   submissionId?: string;
@@ -63,9 +62,10 @@ export type SendFields = {
   finalText: string | null;
   error: string | null;
   interrupt?: { turnId: string; interruptId: string };
-  /** This CLI follower's reduced status and text against the stored turn (`reduced-thread.ts`); absent when nothing was followed. */
+  /** The end-of-turn check of this follower's client state against the next read (`live-view.ts`); absent when nothing was followed. */
   liveView?: "matches" | "differs" | "not_observed";
   liveDiff?: LiveDiff[];
+  liveReason?: LiveReason;
 };
 
 export type SendOutcome = TerminalResult<SendFields>;
@@ -227,102 +227,108 @@ async function followToOutcome(
   admitted: SendMessageResponse,
 ): Promise<SendOutcome> {
   const { threadId } = input;
-  // The stream only decides when to look. Every claim comes from a confirming snapshot read
-  // through the shared `messageFate`; a frame is never an input to it.
+  // The stream only decides when to look. Every claim comes from an applied read, through the
+  // shared `messageFate`; a frame is never an input to it.
   let lastAnswering: string | null = null;
-  // The newest snapshot that completed; the deadline classifies it and never reads another.
-  let lastSnapshot: ThreadSnapshotResponse | null = null;
   let proven: Proven | null = null;
-  // Once a snapshot settles the claim, the stream gets a short bounded time to reach that
-  // snapshot's position, so the printed log and the live view are whole. It never changes the claim.
-  let catchUpUntil = Infinity;
+  // Once a read settles the claim, the stream gets a short bounded time to end the claimed turns
+  // and be checked, so the printed log and the live view are whole. It never changes the claim.
   const CATCH_UP_MS = 1500;
-  const reduced = new ReducedThread(threadId);
-  const transport = createThreadClient(session);
   const deadlineAt = Date.now() + input.timeoutMs;
-  let followed: Awaited<ReturnType<typeof followThread>>;
-  try {
-    followed = await followThread({
-      session,
-      transport,
-      threadId,
-      lastSeq: admitted.resumeAfterSeq,
-      deadlineAt,
-      out,
-      full: input.full,
-      textStream: "err",
-      reduced,
-      wakeOnGap: true,
-      currentDeadline: () => catchUpUntil,
-      shouldStop: (event: CliEvent) =>
-        proven !== null ||
+  const observer: Observer = createObserver({
+    session,
+    threadId,
+    out,
+    full: input.full,
+    textStream: "err",
+    deadlineAt,
+    cursor: admitted.resumeAfterSeq,
+    // The admission answer states the floor: no read older than the admitted message applies.
+    cell: acknowledgeAdmission(
+      EMPTY_SYNCED_THREAD,
+      admitted.userTurnId,
+      admitted.userTurnId,
+      admitted.snapshotFloorNextSeq,
+      new Date().toISOString(),
+    ),
+    onFrame(event) {
+      const wantsLook =
         event.type === "interrupt.requested" ||
         (event.type === "event" &&
-          (event.name === RUN_STATE_EVENT || event.name === MESSAGES_HANDED_BACK_EVENT)),
-      shouldStopState: () => true,
-      async confirmStop(_turnIds, seenSeq) {
-        const behind = (snapshot: ThreadSnapshotResponse) =>
-          BigInt(seenSeq) < BigInt(snapshot.liveState.resumeAfterSeq);
-        if (proven) return !behind(proven.snapshot);
-        const remaining = deadlineAt - Date.now();
-        if (remaining <= 0) throw new CliError("timeout", "Send deadline reached");
-        const snapshot = await session.request<ThreadSnapshotResponse>(
-          "GET",
-          apiThreadSnapshotPath(threadId),
-          undefined,
-          { timeoutMs: remaining },
+          (event.name === RUN_STATE_EVENT || event.name === MESSAGES_HANDED_BACK_EVENT));
+      if (wantsLook) observer.refresh();
+    },
+    onLive: () => observer.refresh(),
+    onGap: () => observer.refresh(),
+    onRead(read) {
+      const fate = messageFate({
+        messageId: admitted.userTurnId,
+        admittedVersion: admitted.runStateVersion,
+        read,
+      });
+      if (fate.kind === "answering") lastAnswering = fate.last.id;
+      proven ??= finalResult(fate, read, threadId, admitted.userTurnId);
+    },
+  });
+  try {
+    observer.start();
+    try {
+      await observer.until(() => proven !== null, deadlineAt);
+    } catch (error) {
+      if (error instanceof CliError && error.code === "timeout") {
+        const last = observer.lastRead;
+        const { reason, ...report } = classifyDeadline(last, threadId);
+        return terminalResult(
+          "thread.send",
+          { outcome: "timeout", reason },
+          {
+            ...report,
+            ...(last ? { snapshotStale: true } : { snapshotUnavailable: true }),
+            threadId,
+            userTurnId: admitted.userTurnId,
+            turnId: lastAnswering,
+            status: "timeout",
+            finalText: null,
+            error: `Run did not finish within ${input.timeoutMs}ms`,
+          },
         );
-        lastSnapshot = snapshot;
-        const fate = messageFate({
-          messageId: admitted.userTurnId,
-          admittedVersion: admitted.runStateVersion,
-          read: snapshot,
-        });
-        if (fate.kind === "answering") lastAnswering = fate.last.id;
-        proven = finalResult(fate, snapshot, threadId, admitted.userTurnId);
-        if (!proven) return false;
-        if (!behind(snapshot)) return true;
-        catchUpUntil = Math.min(deadlineAt, Date.now() + CATCH_UP_MS);
-        return false;
-      },
-    });
-  } catch (error) {
-    if (
-      proven &&
-      error instanceof CliError &&
-      (error.code === "timeout" || error.code === "unavailable" || error.code === "protocol")
-    ) {
-      // The claim stands. The catch-up only feeds the printed log and `liveView`: an incomplete
-      // log, so `liveView` is `not_observed`; a failure here never replaces a proven claim.
-      return withLiveView(proven, reduced, true);
+      }
+      throw error;
     }
-    if (error instanceof CliError && error.code === "timeout") {
-      const { reason, ...report } = classifyDeadline(lastSnapshot, threadId);
-      return terminalResult(
-        "thread.send",
-        { outcome: "timeout", reason },
-        {
-          ...report,
-          ...(lastSnapshot ? { snapshotStale: true } : { snapshotUnavailable: true }),
-          threadId,
-          userTurnId: admitted.userTurnId,
-          turnId: lastAnswering,
-          status: "timeout",
-          finalText: null,
-          error: `Run did not finish within ${input.timeoutMs}ms`,
-        },
+    const claim = proven as Proven | null;
+    if (!claim) throw new Error("Send stopped without a proving read");
+    try {
+      await observer.until(
+        () => settled(observer, claim),
+        Math.min(deadlineAt, Date.now() + CATCH_UP_MS),
       );
+    } catch (error) {
+      // The claim stands. A catch-up that ran out, or a transport failure during it, only leaves
+      // the log and `liveView` incomplete; it never replaces a proven claim.
+      if (
+        !(
+          error instanceof CliError &&
+          (error.code === "timeout" || error.code === "unavailable" || error.code === "protocol")
+        )
+      )
+        throw error;
     }
-    throw error;
+    return withLiveView(claim, observer);
   } finally {
-    transport.disconnect();
+    observer.close();
   }
-  if (!proven) throw new Error("Send stopped without a confirming snapshot");
-  return withLiveView(proven, reduced, followed.truncated);
 }
 
-/** A result frozen with the snapshot that proved it; `compared` is the turn `liveView` checks. */
-type Proven = { outcome: SendOutcome; snapshot: ThreadSnapshotResponse; compared: string | null };
+/** The stream has reached the proving read's position, and every claimed turn it ended is checked. */
+function settled(observer: Observer, { snapshot, claimed }: Proven): boolean {
+  return !observer.behind(snapshot) && observer.pending(claimed, snapshot).length === 0;
+}
+
+/**
+ * A result frozen with the read that proved it; `claimed` is the assistant turns of the message's
+ * chain in that read, which `liveView` checks.
+ */
+type Proven = { outcome: SendOutcome; snapshot: ThreadSnapshotResponse; claimed: string[] };
 
 /** The CLI's final result for what `messageFate` proved, or null to keep following. */
 function finalResult(
@@ -333,10 +339,16 @@ function finalResult(
 ): Proven | null {
   const base = { threadId, userTurnId };
   const none = { turnId: null, finalText: null, error: null };
-  const done = (outcome: SendOutcome, compared: string | null = null): Proven => ({
+  // The assistant turns of the message's chain, in the proving read: what the check is asked about.
+  const assistantTurns = (chain: readonly string[]) =>
+    chain.filter((id) => {
+      const role = snapshot.turns.find((turn) => turn.id === id)?.role;
+      return role === undefined || role === "assistant";
+    });
+  const done = (outcome: SendOutcome, claimed: string[] = []): Proven => ({
     outcome,
     snapshot,
-    compared,
+    claimed,
   });
   switch (fate.kind) {
     case "waiting":
@@ -408,7 +420,7 @@ function finalResult(
             ],
           },
         ),
-        last.id,
+        assistantTurns(fate.chain),
       );
     }
     case "answered": {
@@ -430,23 +442,15 @@ function finalResult(
           finalText: replyText(snapshot.turns, last.id),
           error: last.error,
         }),
-        last.id,
+        assistantTurns(fate.chain),
       );
     }
   }
 }
 
-/** The frozen result plus this follower's `liveView`, read after the bounded catch-up. */
-function withLiveView(
-  { outcome, snapshot, compared }: Proven,
-  reduced: ReducedThread,
-  truncated: boolean,
-): SendOutcome {
-  if (!compared) return outcome;
-  return {
-    ...outcome,
-    result: { ...outcome.result, ...reduced.compare(snapshot, [compared], truncated) },
-  };
+/** The frozen result plus `liveView` from the checks, read after the bounded catch-up. */
+function withLiveView({ outcome, claimed }: Proven, observer: Observer): SendOutcome {
+  return { ...outcome, result: { ...outcome.result, ...observer.liveView(claimed) } };
 }
 
 /** Writes the terminal envelope (always the last NDJSON line) and returns the exit code. */

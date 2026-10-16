@@ -29,18 +29,20 @@ describe("tail --until-idle", () => {
     wire.publish(frames.started("B"));
     wire.publish(frames.finished("B"));
     const cancelledB = replyTurn("B", 2, { status: "cancelled" });
+    // The first read, taken before the evidence frames, sees A open; the join's catch-up delivers
+    // the frames above its cursor, and every later read sees the chat idle.
     wire.snapshot = (read) =>
       read === 1
         ? snapshotOf({
-            seq: 5,
-            turns: [replyTurn("A", 1, { status: "streaming" }), cancelledB],
+            seq: 0,
+            turns: [replyTurn("A", 1, { status: "streaming" })],
             record: { execution: { executionId: "exec-A", currentTurnId: "A" } },
           })
         : snapshotOf({
             seq: 5,
             turns: [replyTurn("A", 1, { status: "error", error: "boom" }), cancelledB],
           });
-    const result = await tail("--since", "0", "--until-idle", "--timeout", "1s", "--json");
+    const result = await tail("--until-idle", "--timeout", "1s", "--json");
     expect(result.code).toBe(EXIT.failed);
     expect(lastRecord(result.stdout)).toMatchObject({
       outcome: "failed",
@@ -129,16 +131,16 @@ describe("tail --until-idle", () => {
             }
           : undefined;
     const B = replyTurn("B", 2, failure ? { status: "error", error: "B failed" } : {});
-    // The initial read sees A open; the subscription and every later read see the chat idle.
+    // The first read, taken before the evidence, sees A open; every later read sees the chat idle.
     wire.snapshot = (read) =>
       read === 1
         ? snapshotOf({
-            seq: wire.head,
-            turns: [replyTurn("A", 1, { status: "streaming" }), B],
+            seq: 0,
+            turns: [replyTurn("A", 1, { status: "streaming" })],
             record: { execution: { executionId: "exec-A", currentTurnId: "A" } },
           })
         : snapshotOf({ seq: wire.head, turns: [replyTurn("A", 1), B] });
-    const result = await tail("--since", "0", "--until-idle", "--timeout", "1s", "--json");
+    const result = await tail("--until-idle", "--timeout", "1s", "--json");
     expect(result.code).toBe(code);
     const records = ndjson(result.stdout);
     expect(records.some((record) => record.type === "gap")).toBe(gap);

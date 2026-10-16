@@ -53,20 +53,19 @@ function runningReply() {
 
 describe("thread send", () => {
   it("uses the snapshot's outcome rather than an obsolete usage block in the replay", async () => {
-    replyScenario(wire, { stored: "Recovered reply" });
-    // The journal carries a blocked record from before the usage returned. It lands after the
-    // admission's cursor is taken, so the client really replays it.
-    const admit = wire.admit;
-    wire.admit = (body) => {
-      const resumeAfterSeq = String(wire.head);
-      publishRecord(wire, {
-        items: [inboxItem("u1", 1)],
-        sentThrough: 1,
-        blocked: { reason: "credits_exhausted" },
-      });
-      publishRecord(wire, { sentThrough: 1 });
-      return { ...admit(body), resumeAfterSeq };
-    };
+    // The journal carries a blocked record from before the usage returned. It sits above the join
+    // read's cursor, so the client really replays it.
+    replyScenario(wire, {
+      stored: "Recovered reply",
+      lead: () => {
+        publishRecord(wire, {
+          items: [inboxItem("u1", 1)],
+          sentThrough: 1,
+          blocked: { reason: "credits_exhausted" },
+        });
+        publishRecord(wire, { sentThrough: 1 });
+      },
+    });
     const result = await send("recovered before admission returns", "--timeout", "2s", "--json");
     // The obsolete blocked record did reach the CLI, and the newer snapshot still decides.
     expect(result.stdout).toContain('"blocked":{"reason":"credits_exhausted"}');
@@ -87,7 +86,9 @@ describe("thread send", () => {
       outcome: "complete",
       finalText: DIVERGED_STORED_TEXT,
       liveView: "differs",
-      liveDiff: [{ field: "finalText", live: "Hello there", server: DIVERGED_STORED_TEXT }],
+      liveDiff: [
+        { turnId: "a1", field: "finalText", live: "Hello there", server: DIVERGED_STORED_TEXT },
+      ],
     });
     const text = await send("diverge");
     expect(text.code).toBe(EXIT.ok);
@@ -463,6 +464,50 @@ describe("thread send", () => {
       reason,
     });
     expect(wire.requestsOf("admit")).toHaveLength(1);
+  });
+
+  it("a proven send does not wait on an abandoned read", async () => {
+    // The first read joins with the reply running; the next shows it complete and proves the claim
+    // while the stream has not yet ended the turn. Then a frame makes the sync start one more read,
+    // which the harness holds for 5 s.
+    wire.snapshot = (read) => {
+      if (read === 1)
+        return snapshotOf({
+          seq: 0,
+          turns: [
+            userTurn("u1", 1, "hold", "a1"),
+            replyTurn("a1", 2, { prevTurnId: "u1", status: "streaming" }),
+          ],
+          record: { execution: { executionId: "exec-a1", currentTurnId: "a1" } },
+        });
+      return snapshotOf({
+        seq: wire.head,
+        turns: [
+          userTurn("u1", 1, "hold", "a1"),
+          replyTurn("a1", 2, { prevTurnId: "u1", text: "Hello there" }),
+        ],
+      });
+    };
+    wire.play(async () => {
+      await wire.until(() => wire.subscriptions >= 1);
+      wire.publish(frames.started("a1"));
+      publishRecord(wire);
+      await wire.until(() => wire.reads >= 2);
+      // Let the proving answer leave, so the held fault is for the read after it.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      wire.fail("snapshot", { delayMs: 5000 });
+      wire.publish(frames.finished("a1"));
+    });
+    const started = Date.now();
+    const result = await send("hold", "--timeout", "10s", "--json");
+    expect(Date.now() - started).toBeLessThan(2000);
+    expect(result.code).toBe(EXIT.ok);
+    expect(lastRecord(result.stdout)).toMatchObject({
+      outcome: "complete",
+      finalText: "Hello there",
+    });
+    // The command ended with a read still open: the harness saw the client close it.
+    await wire.until(() => wire.aborted.some((request) => request.kind === "snapshot"));
   });
 
   it("--no-wait proves admission only, never complete", async () => {

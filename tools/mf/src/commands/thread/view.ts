@@ -9,7 +9,6 @@ import {
 } from "../../core/command";
 import { blockTimings, renderBlocks } from "./block-timing";
 import { projectChatView, renderChatView, selectRows, viewSnapshot } from "./chat-view";
-import { ReducedThread } from "./reduced-thread";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
 
 export const threadViewCommand: CommandSpec = {
@@ -51,11 +50,8 @@ export const threadViewCommand: CommandSpec = {
       "GET",
       apiThreadSnapshotPath(threadId),
     );
-    // Turns come from the shared reducer's store, as the app builds them; the shared
-    // view model then decides the rows, as the app does.
-    const reduced = new ReducedThread(threadId);
-    reduced.hydrate(snapshot);
-    const view = viewSnapshot(snapshot, reduced.turns());
+    // One authoritative read, no socket and no sync: the shared view model decides the rows, as the app does.
+    const view = viewSnapshot(snapshot, snapshot.turns);
     const selection = {
       full: flag(ctx, "full"),
       turnId: stringOption(ctx, "turn"),
