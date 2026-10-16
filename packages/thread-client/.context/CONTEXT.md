@@ -95,7 +95,7 @@ the optional `invalidateThreadSnapshot` an adapter may supply.
   `Date`, and the package touches no browser or Node global at module load.
 - **One store semantics.** `turn-ops.ts` owns turn creation, block upsert by
   sequence (sorted, identical writes are no-ops) and status patching. The app's
-  Zustand adapter and `InMemoryTurnStore` both call it. `InMemoryTurnStore` adds
+  store (through `syncedTurnStore`) and `InMemoryTurnStore` both call it. `InMemoryTurnStore` adds
   `hydrate(threadId, turns, nextSeq)` (rejects a snapshot older than the accepted
   floor, like `acceptsThreadSnapshot`). The floor is snapshot freshness only; it
   never filters events. Replay coverage is the caller's subscription cursor
@@ -103,10 +103,26 @@ the optional `invalidateThreadSnapshot` an adapter may supply.
 - **Parity rule.** `apps/app/.../turn-store-parity.test.ts` runs one fixture
   (`test-support/turn-events.ts`) through the app store and `InMemoryTurnStore` and
   requires equal turns. A new event family goes into that fixture; a store change
-  that the other store does not share fails there.
-- **Stays in the host.** Optimistic rows and `reconcileSnapshotTurns`, cache
-  invalidation, thread-list patches, `liveMeta`, account checks, durable-seq
-  cursors, and the interrupt response UI. Visible-turn and transcript partition
+  that the other store does not share fails there. (L1c retires `InMemoryTurnStore` and this test.)
+- **One value per chat (`sync/synced-thread.ts`).** `SyncedThread` is the plain value a host
+  holds per chat: turns, tombstones, held dividers, forgotten stamps, the snapshot floor, the
+  durable-block cursor, the reducer's event counter and the run-state slice. Pure transitions
+  change it (`applyRead`, `acceptDurableBlockSeq`, `acknowledgeAdmission`, `removeTurns`,
+  `markForgotten`, ...), each returning the same value when nothing changed. `applyRead` runs
+  `applySnapshotTo` then `reconcileSnapshotTurns` (server turns are the spine; optimistic rows
+  and the running turn survive; a terminal read is authoritative), moves the cursor and the
+  floor, and keeps covered tombstones while an optimistic row awaits its answer.
+  `syncedTurnStore({ cell, now, ...callbacks })` is the `TurnStore` the reducer writes through,
+  over the host's cell (`get`/`set` for one chat); callbacks are the host's effects and run
+  after the write. The app's Zustand store holds one value per chat (`syncedByThread`) and
+  runs the thread-list, cache and interrupt-response effects in those callbacks. The
+  admission answer raises the floor whether or not the local row is still there: the server
+  stated it, and the floor only rises.
+- **Moved here from the app:** `reconcileSnapshotTurns` (`turns/`), the run-state slice
+  (`run-state/run-state-slice.ts`, with `JournalSwitch`) and `StreamDeltaCoalescer`
+  with `frameScheduler` (`sync/`, subpath `@meridian/thread-client/sync`).
+- **Stays in the host.** Optimistic-row construction, cache invalidation, thread-list
+  patches, account checks and the interrupt response UI. Visible-turn and transcript partition
   policy is also the app's.
 - **A new server CUSTOM name** needs a decision in `reduce-turn-event.ts` (apply,
   leave to the snapshot, or ignore) and a reducer test.
