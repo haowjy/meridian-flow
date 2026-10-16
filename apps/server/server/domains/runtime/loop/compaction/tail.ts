@@ -13,17 +13,26 @@ export interface CompactionCut {
 }
 
 /**
+ * The cut of a compaction whose whole prefix has left the conversation (a hand-back or a forgotten
+ * attempt took every turn it covered): nothing before the compaction is covered, so its summary stands
+ * alone and the turns after the missing cut are all retained.
+ */
+export const EMPTY_CUT = { turnId: null } as const;
+export type ResolvedCut = CompactionCut | typeof EMPTY_CUT;
+
+/**
  * Finds where a complete compaction cut, among the turns the conversation still has. A compaction
- * can cut at (or pin) a writer message that a hand-back later took out of the chat; that turn is
- * not in `turns`. Its place is then read from the chain: the cut becomes the last turn before the
- * cut's successor (the first turn whose `prevTurnId` is the missing turn, else the compaction
- * itself), which is everything the cut covered. Null when no cut exists before the compaction.
+ * can cut at (or pin) a writer message that a hand-back or a forgetting later took out of the chat; that
+ * turn is not in `turns`. Its place is then read from the chain: the cut becomes the last turn before the
+ * cut's successor (the first turn whose `prevTurnId` is the missing turn, else the compaction itself),
+ * which is everything the cut covered, or the empty cut when nothing remains of it. Null only when the
+ * cut turn sits at or after the compaction itself, which is invalid.
  */
 export function resolveCut(
   turns: readonly Turn[],
   compaction: Pick<Turn, "position">,
   compactedThrough: CompactionCut,
-): CompactionCut | null {
+): ResolvedCut | null {
   const own = turns.find((turn) => turn.id === compactedThrough.turnId);
   if (own) return own.position < compaction.position ? compactedThrough : null;
   const successor = turns
@@ -33,19 +42,21 @@ export function resolveCut(
       compaction,
     );
   const before = turns.filter((turn) => turn.position < successor.position).at(-1);
-  return before ? { turnId: before.id } : null;
+  return before ? { turnId: before.id } : EMPTY_CUT;
 }
 
 export function retainedTail(input: {
   turns: readonly Turn[];
   blocksByTurn: ReadonlyMap<string, readonly Block[]>;
-  cut: CompactionCut;
+  cut: ResolvedCut;
   pinnedRequests: readonly Turn[];
   canRetain: (turn: Turn) => boolean;
 }): RetainedTurnSlice[] {
   const { turns, blocksByTurn, cut, pinnedRequests, canRetain } = input;
-  const cutIndex = turns.findIndex((turn) => turn.id === cut.turnId);
-  if (cutIndex < 0) throw new Error(`Compaction cut turn not found: ${cut.turnId}`);
+  const cutBlockSequence = cut.turnId === null ? undefined : cut.blockSequence;
+  const cutIndex = cut.turnId === null ? -1 : turns.findIndex((turn) => turn.id === cut.turnId);
+  if (cutIndex < 0 && cut.turnId !== null)
+    throw new Error(`Compaction cut turn not found: ${cut.turnId}`);
 
   const pins = new Set(pinnedRequests.map((turn) => turn.id));
   const lifted = turns
@@ -57,13 +68,13 @@ export function retainedTail(input: {
     blocks: [...(blocksByTurn.get(turn.id) ?? [])],
   }));
 
-  for (let index = cutIndex; index < turns.length; index++) {
+  for (let index = Math.max(cutIndex, 0); index < turns.length; index++) {
     const turn = turns[index];
     if (!turn || !canRetain(turn) || liftedIds.has(turn.id)) continue;
-    if (index === cutIndex && cut.blockSequence === undefined) continue;
+    if (index === cutIndex && cutBlockSequence === undefined) continue;
 
     const turnBlocks = [...(blocksByTurn.get(turn.id) ?? [])];
-    const blockSequence = cut.blockSequence;
+    const blockSequence = cutBlockSequence;
     const selectedBlocks =
       index === cutIndex && blockSequence !== undefined
         ? turnBlocks.filter((block) => block.sequence > blockSequence)

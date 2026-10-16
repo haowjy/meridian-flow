@@ -351,6 +351,20 @@
       "when": 1791960207423,
       "tag": "0049_run_state_hand_back_online",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1792099508333,
+      "tag": "0056_forgotten_by_turn",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1792099511333,
+      "tag": "0057_forgotten_by_turn_online",
+      "breakpoints": true
     }
   ]
 }

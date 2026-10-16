@@ -20,6 +20,7 @@ import {
   RUN_STATE_EVENT,
   readRunState,
   readWriteModeSwitched,
+  TURNS_FORGOTTEN_EVENT,
   WRITE_MODE_SWITCHED_EVENT,
 } from "@meridian/contracts/protocol";
 import type { RunState } from "@meridian/contracts/threads";
@@ -198,6 +199,12 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
             if (event.type === EventType.CUSTOM && event.name === MESSAGES_HANDED_BACK_EVENT) {
               flush();
               if (parseSeq(seq) !== null) actions.applyTurnEvent(threadId, event, seq);
+              return;
+            }
+            // Failed turns the chat left behind are stamped wherever they are held.
+            if (event.type === EventType.CUSTOM && event.name === TURNS_FORGOTTEN_EVENT) {
+              flush();
+              actions.applyTurnEvent(threadId, event, seq);
               return;
             }
             // A handoff brief holds the chat with no lease or run, so its start and end reach

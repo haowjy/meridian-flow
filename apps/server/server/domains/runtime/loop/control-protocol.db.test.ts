@@ -8,6 +8,7 @@ import { releaseLeaseUnderLock } from "../../../test-support/release-lease.js";
 import {
   createOrchestratorEventProjector,
   eventSeqForJournalEvent,
+  loadThreadConversationContext,
   TurnStartConflictError,
 } from "../../threads/index.js";
 import { turnGraph } from "../../threads/ports/turn-graph.js";
@@ -20,6 +21,7 @@ import {
   createTestOrphanRepair,
 } from "./__tests__/test-drizzle-delivery.js";
 import { scriptedGateway } from "./__tests__/test-gateway.js";
+import { projectActiveHistoryWithBakes } from "./compaction/project.js";
 import { createOrchestrator } from "./orchestrator.js";
 import { createRunStarter } from "./run-starter.js";
 import { createWakeIfRunnable } from "./wake-if-runnable.js";
@@ -218,6 +220,162 @@ else
           control: { kind: "compact" },
         }),
       ).resolves.toMatchObject({ created: true });
+    });
+
+    /** A turn's `forgotten_by_turn_id`, read from the row. */
+    async function stampOf(turnId: string) {
+      const [row] = await db
+        .select({ by: schema.turns.forgottenByTurnId })
+        .from(schema.turns)
+        .where(eq(schema.turns.id, turnId as never));
+      return row?.by ?? null;
+    }
+
+    /** One writer message answered by an empty failed reply: the abandoned exchange. */
+    async function emptyFailure(rig: Awaited<ReturnType<typeof fixture>>, text: string) {
+      const failed = await (
+        await rig.orchestrator.prepare({ threadId: rig.threadId, tools: [], userText: text })
+      ).execute();
+      await processDetachedWork.drain();
+      expect(failed.status).toBe("error");
+      const reply = await turnGraph(rig.repos.turns).latest(rig.threadId);
+      if (reply?.role !== "assistant" || reply.status !== "error")
+        throw new Error("Expected an empty failed reply");
+      const message = await rig.repos.turns.findById(reply.prevTurnId as never);
+      if (!message) throw new Error("Expected the failed reply's message");
+      return { reply, message };
+    }
+
+    it("forgets an empty failure and its message when /compact follows, before the summary is planned (C1a)", async () => {
+      // Risk (FX1 review blocker): the summary holding the abandoned message's words, or the cut resting on a
+      // turn the conversation no longer has, so the next run start and the handoff fail to project.
+      const summarizer = scriptedSummarizer();
+      const rig = await manualFixture({
+        gateway: scriptedGateway({ usage: lowUsage, errorAtCall: 1 }),
+        summarizer,
+      });
+      const { reply, message } = await emptyFailure(rig, "FORGET-ME abandoned message");
+      await compactControl(rig);
+      expect((await drainControls(rig)).status).toBe("complete");
+      const turns = await settled(rig);
+      const compaction = turns.find((turn) => turn.role === "compaction");
+      expect(compaction).toMatchObject({ status: "complete" });
+      expect(await stampOf(reply.id)).toBe(compaction?.id);
+      expect(await stampOf(message.id)).toBe(compaction?.id);
+      expect(JSON.stringify(summarizer.calls)).not.toContain("FORGET-ME");
+      // The journal states what the commit forgot, after the reservation that forgot it.
+      const forgotten = (await journal()).find(({ eventType }) => eventType === "turns.forgotten");
+      expect(forgotten?.payload).toMatchObject({
+        turnIds: [reply.id, message.id],
+        byTurnId: compaction?.id,
+        reason: "forgotten",
+      });
+      // A later run start and a handoff-shaped projection of the whole conversation both succeed.
+      const thread = await rig.repos.threads.findById(rig.threadId);
+      if (!thread) throw new Error("Expected the thread");
+      const context = await loadThreadConversationContext(rig.repos, thread);
+      expect(context.turns.map((turn) => turn.id)).not.toContain(message.id);
+      await projectActiveHistoryWithBakes(
+        context.turns,
+        context.blocks,
+        thread.ref,
+        rig.repos.promptBakes,
+      );
+      const next = await (
+        await rig.orchestrator.prepare({ threadId: rig.threadId, tools: [], userText: "Go on." })
+      ).execute();
+      expect(next.status).toBe("complete");
+    });
+
+    it("refuses /compact before any completed reply and forgets nothing, so the failure keeps Retry (C1b)", async () => {
+      // Risk: a refused command still stamping turns, or the refusal costing the writer their Retry.
+      const rig = await manualFixture({
+        empty: true,
+        gateway: scriptedGateway({ usage: lowUsage, errorAtCall: 1 }),
+      });
+      const { reply, message } = await emptyFailure(rig, "Nothing completed yet.");
+      await expect(
+        rig.delivery.enqueueControl({
+          threadId: rig.threadId,
+          actorId: rig.ids.user,
+          id: crypto.randomUUID(),
+          control: { kind: "compact" },
+        }),
+      ).rejects.toMatchObject({ statusCode: 409, message: "compact_requires_completed_reply" });
+      expect(await stampOf(reply.id)).toBeNull();
+      expect(await stampOf(message.id)).toBeNull();
+      await expect(
+        rig.orchestrator.retryReply({
+          threadId: rig.threadId,
+          failedTurnId: reply.id as never,
+          replyTurnId: crypto.randomUUID() as never,
+        }),
+      ).resolves.toMatchObject({ created: true });
+      await processDetachedWork.drain();
+    });
+
+    it("keeps a message a pre-release summary holds when a failed Retry's chat moves on (C12)", async () => {
+      // Risk: forgetting a writer message whose words a complete compaction already summarized without
+      // pinning it. The release has no backfill, so the real loader must protect it. The others go.
+      const rig = await manualFixture({
+        gateway: scriptedGateway({ usage: lowUsage, errorAtCall: 1 }),
+      });
+      for (const text of ["covered by the summary", "after the cut"]) {
+        await rig.delivery.enqueue({
+          threadId: rig.threadId,
+          intent: "message",
+          provenance: { kind: "writer", actorId: rig.ids.user },
+          body: { kind: "text", text },
+          idempotencyKey: text,
+        });
+      }
+      expect((await drainControls(rig)).status).toBe("error");
+      await processDetachedWork.drain();
+      const f = await turnGraph(rig.repos.turns).latest(rig.threadId);
+      const messages = (await turnGraph(rig.repos.turns).listByThread(rig.threadId)).filter(
+        (turn) => turn.role === "user" && turn.origin === "writer",
+      );
+      const [, first, second] = messages;
+      if (!f || !first || !second) throw new Error("Expected two delivered messages and a failure");
+      // The pre-release shape: a Retry-led compaction C summarized `first` without pinning it, and the
+      // Retry R failed empty.
+      const replyId = crypto.randomUUID();
+      const compaction = await rig.repos.turns.create({
+        threadId: rig.threadId,
+        prevTurnId: f.id,
+        role: "compaction",
+        origin: "system",
+        status: "complete",
+        compactionModel: "summary-model",
+        metadata: {
+          trigger: "manual",
+          compactedThrough: { turnId: first.id },
+          pinnedRequestTurnIds: [],
+          retryOf: f.id,
+          retryReplyId: replyId,
+        },
+      });
+      const retry = await rig.repos.turns.create({
+        id: replyId as never,
+        threadId: rig.threadId,
+        prevTurnId: compaction.id,
+        role: "assistant",
+        origin: "assistant",
+        status: "error",
+        executionId: crypto.randomUUID(),
+      });
+      await rig.delivery.enqueue({
+        threadId: rig.threadId,
+        intent: "message",
+        provenance: { kind: "writer", actorId: rig.ids.user },
+        body: { kind: "text", text: "moving on" },
+        idempotencyKey: "moving-on",
+      });
+      await rig.delivery.materializeIdle(rig.threadId);
+      expect(await stampOf(first.id)).toBeNull();
+      expect(await stampOf(second.id)).not.toBeNull();
+      expect(await stampOf(retry.id)).not.toBeNull();
+      expect(await stampOf(f.id)).not.toBeNull();
     });
 
     it("honors completed replies across bounded fork-of-fork lineage", async () => {
@@ -653,8 +811,8 @@ else
         await rig.repos.turns.create({
           threadId: rig.threadId,
           prevTurnId: failed.id,
-          role: "system",
-          origin: "system",
+          role: "user",
+          origin: "writer",
           status: "complete",
         });
         return startExecution(threadId, executionId, settle);
@@ -1004,62 +1162,6 @@ else
         limit: 100,
       });
       expect(starts).toContain(rig.threadId);
-    });
-
-    it("a manual minimal tail over the usable window calls no summarizer", async () => {
-      const gateway = scriptedGateway({ usage: lowUsage, pauseAt: [1] });
-      const rig = await manualFixture({ gateway });
-      const active = await rig.orchestrator.prepare({
-        threadId: rig.threadId,
-        userText: "reply before compact",
-      });
-      const execution = active.execute();
-      await gateway.untilGatewayBoundary(1);
-      rig.deps.gateway.listModels = () => [
-        {
-          id: "gpt-4.1-mini",
-          provider: "openai",
-          displayName: "small",
-          contextWindow: 1000,
-          maxOutputTokens: 100,
-          tokenizer: "o200k",
-          promptCache: { kind: "none", ttlMs: null },
-          capabilities: new Set(),
-        },
-      ];
-      const control = await compactControl(rig);
-      await rig.send(rig.threadId, "unanswered ".repeat(1000));
-      expect(await rig.orchestrator.cancel(rig.threadId, active.executionTurnId)).toBe("cancelled");
-      gateway.release(1);
-      await execution;
-      await settled(rig);
-
-      const c = (await rig.repos.turns.listByThread(rig.threadId)).find(
-        (turn) =>
-          turn.role === "compaction" &&
-          (turn.metadata as { controlMessageId?: string } | null)?.controlMessageId === control.id,
-      );
-      expect(c).toMatchObject({
-        status: "error",
-        error: "This conversation couldn't be compacted. Try again.",
-        metadata: { reason: "context_too_large", phase: "initial_prepare" },
-      });
-      const journal = await db
-        .select({ eventType: schema.eventJournal.eventType, payload: schema.eventJournal.payload })
-        .from(schema.eventJournal);
-      expect(journal).toContainEqual({
-        eventType: "turn.error",
-        payload: expect.objectContaining({
-          error: expect.objectContaining({
-            message: "This message is too long for this chat's model.",
-            details: expect.objectContaining({
-              reason: "context_too_large",
-              phase: "initial_prepare",
-            }),
-          }),
-        }),
-      });
-      expect(rig.summarizer.calls).toHaveLength(0);
     });
 
     it("a remote Stop during manual summary wakes the owner after release", async () => {

@@ -102,6 +102,18 @@ end-to-end as one suite.
   (a row with no text is gone). Before this fix, the current
   provider-declined reply had no Retry. An inherited read-only failure must
   still have no Retry.
+- **Forgetting variant (a failed attempt is one stored fact):** with a sticky
+  failure matched to a marker, check four cases in a browser and read
+  `./mf thread view` and `thread context` after each. (1) Moving on: send the
+  marker, then another message. The failed exchange and its message are gone
+  from the screen, the view and the next request, and the journal has
+  `turns.forgotten` with reason `forgotten`. (2) Retry: the writer's message
+  stays and appears once in the next request, with no failure trace
+  (reason `retried`). (3) `/compact` after an empty failure with an earlier
+  reply: the summary and context lack the abandoned message, and the next
+  reply works. (4) Forks: a fork cut before the failure holds nothing from it;
+  a fork cut after the move-on inherits the forgetting. A failed reply that
+  made a tool call, or one carried into a continuation, stays.
 - **Last run:** not recorded for this exact wall-clock recipe. Automated
   sweep-boundary coverage is not a substitute for running it.
 
@@ -117,7 +129,8 @@ end-to-end as one suite.
   on a fresh thread. After each process exits, inspect the durable thread and
   billing rows from a newly started server.
 - **Expect (production):** exit occurs after the in-flight paid response is
-  persisted and debited once; the reply is `error` with `This response failed.`
+  persisted and debited once. Its partial text means the reply draws something,
+  so a later message does not forget it. The reply is `error` with `This response failed.`
   and internal shutdown reason, its adopted inbox message is acknowledged,
   no successor starts during shutdown, and Retry works after restart.
 - **Expect (dev):** Ctrl+C and SIGTERM exit promptly. After restart, orphan

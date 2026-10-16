@@ -25,6 +25,7 @@ function turn(
     id,
     threadId: "t",
     role,
+    origin: role === "user" ? "writer" : role === "assistant" ? "assistant" : "system",
     status: "complete",
     prevTurnId: prev,
     blocks: [text],
@@ -183,6 +184,95 @@ it("draws one failure for a chain of failed retries, the newest, and none for a 
   expect(
     ids(viewTranscript({ turns: turns.slice(0, 2), activity: { awaitingSubagents: false } })),
   ).toEqual(["u1", "f"]);
+
+  // Risk (F1): a forgotten turn drawn again, or a refused Retry's card losing the reply it sits on. The
+  // stamp hides a local row; an anchored (refused) one keeps it; a fork's inherited rows are never filtered.
+  const forgotten = turns.map((held) =>
+    held.id === "u1" || held.id === "f" ? { ...held, forgottenBy: "u2" } : held,
+  );
+  const rowsAmong = (refused?: ReadonlySet<string>) =>
+    ids(viewTranscript({ turns: forgotten, refused, activity: { awaitingSubagents: false } }));
+  expect(rowsAmong()).toEqual(["u2", "p", "u3", "a3"]);
+  expect(rowsAmong(new Set(["f"]))).toEqual(["f", "u2", "p", "u3", "a3"]);
+  // The anchor also outranks Retry suppression: the Retry that won stamps and supersedes the reply the
+  // refused Retry was aimed at, and the refusal's card still needs that reply's row.
+  const competing = turn("r2", "assistant", "f", { status: "error", metadata: { retryOf: "f" } });
+  const raced = viewTranscript({
+    turns: [turn("u1", "user", null), { ...emptyFailed, forgottenBy: "r2" }, competing],
+    refused: new Set(["f"]),
+    activity: { awaitingSubagents: false },
+  });
+  expect(ids(raced)).toEqual(["u1", "f", "r2"]);
+  const inheritedRows = viewTranscript({
+    turns: [turn("l1", "user", "a3")],
+    inherited: {
+      turns: [forgotten[0] as Turn, { ...partial, forgottenBy: "beyond-the-cutoff" }],
+      ownerByTurnId: new Map([
+        ["u1", "src"],
+        ["p", "src"],
+      ]),
+    },
+    activity: { awaitingSubagents: false },
+  });
+  expect(ids(inheritedRows)).toEqual(["u1", "p", "l1"]);
+
+  // Risk (F1): the three ways a failure stops being the latest reply must all hide it. An optimistic send
+  // closes it at once, a carried failure had a message admitted while it ran, and a continuation is a
+  // failed compaction the same execution carried on past. Each draws nothing, so each has no row.
+  const failedCompaction = turn("c", "compaction", "u1", { status: "error", blocks: [] });
+  const continued = viewTranscript({
+    turns: [turn("u1", "user", null), failedCompaction, turn("r", "assistant", "c")],
+    activity: { awaitingSubagents: false },
+  });
+  expect(ids(continued)).toEqual(["u1", "r"]);
+  const optimistic = viewTranscript({
+    turns: [
+      turn("u1", "user", null),
+      emptyFailed,
+      turn(`${OPTIMISTIC_TURN_ID_PREFIX}9`, "user", "f"),
+    ],
+    activity: { awaitingSubagents: false },
+  });
+  expect(ids(optimistic)).toEqual(["u1", `${OPTIMISTIC_TURN_ID_PREFIX}9`]);
+
+  // Risk (F1): a failed handoff brief keeps its failure and Retry only while no closing row follows it.
+  const seed = turn("s", "system", null, {
+    status: "error",
+    blocks: [],
+    metadata: {
+      kind: "derivation_seed",
+      derivation: "handoff",
+      sourceThreadId: "x",
+      cutoffTurnId: "y",
+    },
+  });
+  const seedLatest = (more: Turn[]) =>
+    viewTranscript({ turns: [seed, ...more], activity: { awaitingSubagents: false } }).rows.find(
+      (row) => row.kind === "handoff-seed",
+    );
+  expect(seedLatest([])).toMatchObject({ latest: true });
+  expect(seedLatest([turn("w", "user", "s")])).toMatchObject({ latest: false });
+  // An agent's message closes on the server but draws no row, so the rows alone would keep the Retry alive.
+  const agentMessage = turn("m", "user", "s", {
+    origin: "system",
+    metadata: { kind: "inbox_message" },
+  });
+  expect(seedLatest([agentMessage])).toMatchObject({ latest: false });
+
+  // Risk (F1): a failed reply that kept its content still offers Retry after an agent's message, which
+  // closes the chat on the server but draws no row. The reply stays, its failure ends, and an empty one goes.
+  const afterAgent = (reply: Turn) =>
+    viewTranscript({
+      turns: [turn("u", "user", null), reply, { ...agentMessage, prevTurnId: reply.id }],
+      activity: { awaitingSubagents: false },
+    });
+  expect(afterAgent(turn("k", "assistant", "u", { status: "error" })).rows[1]).toMatchObject({
+    turn: { id: "k" },
+    movedPast: true,
+  });
+  expect(ids(afterAgent(turn("e", "assistant", "u", { status: "error", blocks: [] })))).toEqual([
+    "u",
+  ]);
 });
 
 it("leaves a handed-back message out and keeps history and later sends", () => {

@@ -18,6 +18,7 @@ import {
 } from "../../threads/index.js";
 import { turnGraph } from "../../threads/ports/turn-graph.js";
 import type { DetachedWorkTracker } from "../detached-work.js";
+import { latestRowAt } from "./latest-row.js";
 import { createLocalTurn } from "./local-turn.js";
 import { type CurrentTurn, DEFAULT_LEASE_TTL_MS, type Lease, type RunClaim } from "./ports.js";
 import {
@@ -33,7 +34,6 @@ import {
   UnsettledPlaceholderError,
 } from "./run-turn-port.js";
 import type { RuntimeDelivery } from "./runtime-delivery.js";
-import { pastTrailingSwitches } from "./write-mode-switch.js";
 
 type RunSession = {
   controller: AbortController;
@@ -328,8 +328,9 @@ export function createRunSessions(deps: {
         throw refusal;
       };
 
-      const [failedTurn, latestTurn, runState] = await Promise.all([
+      const [failedTurn, leafThread, latestTurn, runState] = await Promise.all([
         deps.repos.turns.findById(input.failedTurnId),
+        deps.repos.threads.findById(input.threadId),
         turnGraph(deps.repos.turns).latest(input.threadId),
         authority.read(input.threadId),
       ]);
@@ -346,7 +347,8 @@ export function createRunSessions(deps: {
         failedTurn.role !== "assistant" ||
         failedTurn.status !== "error" ||
         !latestTurn ||
-        (await pastTrailingSwitches(deps.repos.turns, latestTurn))?.id !== failedTurn.id
+        (await latestRowAt(deps.repos.turns, leafThread?.activeLeafTurnId ?? null)).latest?.id !==
+          failedTurn.id
       )
         return refuse();
 

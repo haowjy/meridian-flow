@@ -124,6 +124,32 @@ describe("messageFate", () => {
     });
   });
 
+  it("keeps a forgotten deliverer findable so a successful Retry still proves the Retry", () => {
+    // Risk: filtering forgotten turns would lose the Retry chain after the failed reply was stamped.
+    const turns = [
+      user("m", 1, "f"),
+      { ...reply("f", 2, "e1", "error"), forgottenBy: "r" } as Turn,
+      reply("r", 3, "e2", "complete", "f"),
+    ];
+    expect(fate(turns, record("20", null))).toMatchObject({
+      kind: "answered",
+      answeredBy: "f",
+      last: { id: "r", status: "complete" },
+    });
+  });
+
+  it("reads a stamped writer message as forgotten, never answered by the reply that moved on", () => {
+    // Risk: after moving on, a later reply was attributed to the forgotten message (live shape in
+    // the FF2 verification's move-on snapshot: writer and failed reply stamped, then a later success).
+    const turns = [
+      { ...user("m", 1, "f"), forgottenBy: "n" } as Turn,
+      { ...reply("f", 2, "e1", "error"), forgottenBy: "n" } as Turn,
+      user("n", 3, "g"),
+      reply("g", 4, "e2", "complete"),
+    ];
+    expect(fate(turns, record("20", null))).toEqual({ kind: "forgotten", forgottenBy: "n" });
+  });
+
   it("reads absence as a hand-back only at a record that covers the admission", () => {
     // Risk: a stale record read as a hand-back.
     expect(fate([], record("5", null))).toEqual({ kind: "waiting", blocked: false });

@@ -54,12 +54,15 @@ export {
   type EnsureAssistantTurnOptions,
   ensureAssistantTurnIn,
   ensureSwitchTurnIn,
+  type ForgottenStamps,
   type HeldDividers,
+  markForgottenIn,
   patchTurnStatusIn,
   removeTurnsIn,
   type SwitchTurnFacts,
   type Tombstones,
   type TurnStatusPatch,
+  type TurnsWithForgotten,
   type TurnsWithTombstones,
   upsertBlockIn,
 } from "./turns/turn-ops";
@@ -73,6 +76,7 @@ export {
 } from "./view/group-delivery-segments";
 export type { DirectInvocationResult } from "./view/invocation-direct-result";
 export { isOptimisticTurnId, OPTIMISTIC_TURN_ID_PREFIX } from "./view/optimistic-turn-id";
+export { replyDrawsNothing } from "./view/reply-draws-nothing";
 export { placeStandIns } from "./view/retry-stand-ins";
 export { type FoldDigest, foldDigest } from "./view/thinking-digest";
 export { threadMessageRow } from "./view/thread-message-result";

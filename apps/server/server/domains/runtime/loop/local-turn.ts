@@ -39,6 +39,7 @@ export function createLocalTurn(input: {
     executionId: input.executionId ?? null,
     reservedForUserTurnIds: [...(input.reservedForUserTurnIds ?? [])],
     delivery: null,
+    forgottenBy: null,
     promptBakeId: null,
     finishReason: null,
     model: null,

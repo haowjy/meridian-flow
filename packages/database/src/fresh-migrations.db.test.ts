@@ -82,6 +82,10 @@ if (!enabled || !databaseUrl) {
             trigger_name: "recompute_thread_chat_activity_on_block_update",
           },
           {
+            event_object_table: "turns",
+            trigger_name: "recompute_thread_chat_activity_on_forget",
+          },
+          {
             event_object_table: "thread_inbox_messages",
             trigger_name: "recompute_thread_chat_activity_on_hand_back",
           },
@@ -111,6 +115,7 @@ if (!enabled || !databaseUrl) {
           "recompute_thread_chat_activity",
           "recompute_thread_chat_activity_from_block_insert",
           "recompute_thread_chat_activity_from_block_update",
+          "recompute_thread_chat_activity_from_forget",
           "recompute_thread_chat_activity_from_hand_back",
           "recompute_thread_chat_activity_from_thread",
           "recompute_thread_chat_activity_from_turn",

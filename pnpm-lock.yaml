@@ -419,6 +419,9 @@ importers:
       '@meridian/prosemirror-schema':
         specifier: workspace:*
         version: link:../../packages/prosemirror-schema
+      '@meridian/thread-client':
+        specifier: workspace:*
+        version: link:../../packages/thread-client
       '@sanity/diff-match-patch':
         specifier: ^3.2.0
         version: 3.2.0

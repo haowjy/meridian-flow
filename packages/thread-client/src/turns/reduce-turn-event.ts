@@ -12,7 +12,9 @@ import {
   RUN_STATE_EVENT,
   readMessagesHandedBack,
   readRunStartedMeta,
+  readTurnsForgotten,
   readWriteModeSwitched,
+  TURNS_FORGOTTEN_EVENT,
   WRITE_MODE_SWITCHED_EVENT,
 } from "@meridian/contracts/protocol";
 import { isTerminalTurnStatus } from "@meridian/contracts/threads";
@@ -77,6 +79,11 @@ export type TurnStore = {
    * `seq`, so a snapshot read before the removal cannot bring them back.
    */
   removeTurns(threadId: string, ids: readonly string[], seq: string): void;
+  /**
+   * Stamps failed turns that left the conversation (`meridian.turns.forgotten`) and remembers every id, so
+   * a stamp that arrives before its turn is hydrated still applies, and an older snapshot can't clear it.
+   */
+  markForgotten(threadId: string, ids: readonly string[], byTurnId: string): void;
   bumpEventsApplied(threadId: string): number;
   settleInterruptResponse(identity: {
     threadId: string;
@@ -1094,6 +1101,12 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
         if (event.name === MESSAGES_HANDED_BACK_EVENT) {
           const handedBack = readMessagesHandedBack(event.value);
           if (handedBack) store.removeTurns(threadId, handedBack.userTurnIds, seq ?? "0");
+          return;
+        }
+        // Failed turns the chat left behind: stamped, never removed, so the graph still chains through them.
+        if (event.name === TURNS_FORGOTTEN_EVENT) {
+          const forgotten = readTurnsForgotten(event.value);
+          if (forgotten) store.markForgotten(threadId, forgotten.turnIds, forgotten.byTurnId);
           return;
         }
         // The switch turn is not announced by a turn event, so its frame is how a follower gets

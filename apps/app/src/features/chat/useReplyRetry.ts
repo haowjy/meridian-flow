@@ -56,6 +56,7 @@ export function optimisticRetryReply(input: { id: string; failed: Turn; createdA
     executionId: null,
     reservedForUserTurnIds: [],
     delivery: null,
+    forgottenBy: null,
     siblingIds: [],
     responses: [],
   };
