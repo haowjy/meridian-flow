@@ -39,7 +39,7 @@ const record = (version: string, items: PendingInboxItem[] = []): RunState => ({
 const handedBack = (ids: string[]): HandBackResult["handedBack"] =>
   ids.map((userTurnId) => ({ userTurnId, blocks: [{ type: "text", text: userTurnId }] }));
 
-function rig(options: { saveFails?: boolean; acceptFails?: boolean } = {}) {
+function rig(options: { saveFails?: boolean; acceptFails?: boolean; newId?: () => string } = {}) {
   const calls: string[] = [];
   let view: RunStateView = receiveRecord(
     INITIAL_RUN_STATE_VIEW,
@@ -91,7 +91,7 @@ function rig(options: { saveFails?: boolean; acceptFails?: boolean } = {}) {
         return stored.delete(id);
       },
     },
-    newId: () => REQ,
+    newId: options.newId ?? (() => REQ),
   };
   return {
     ports,
@@ -115,7 +115,9 @@ const answerBody = (ids: string[], version = "1001") => ({
 
 describe("hand-back operation", () => {
   it("allocates failures before saving, gives Retry a new occurrence, and preserves it on reload", async () => {
-    const r = rig({ saveFails: true });
+    // Risk: Retry identities must differ from wire identity without losing a durable command's debt.
+    let nextId = 0;
+    const r = rig({ saveFails: true, newId: () => (nextId++ === 0 ? REQ : `occ-${nextId}`) });
     const key = (op = r.op) => handBackCards(op.unresolved(), r.view())[0]?.key;
     await r.op.press({ kind: "queue", ids: [M1] });
     const first = key();
@@ -139,7 +141,6 @@ describe("hand-back operation", () => {
     expect(r.sent.every((sent) => JSON.stringify(sent) === JSON.stringify(r.sent[0]))).toBe(true);
 
     // A refused Retry metadata write must not turn an already durable command into page memory.
-    let nextId = 0;
     const resumed = createHandBackOperation({
       threadId: "t1",
       ports: { ...r.ports, newId: () => `retry-${++nextId}` },
