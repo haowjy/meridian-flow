@@ -5,6 +5,7 @@
 ### Fixed
 
 - Draft edit-status reads release document locks before review projection and reuse exact-state status pages, reducing contention with writer acknowledgements.
+- Rich-only draft changes show their affected text in the change list and red/green editor paint, including heading-level changes.
 
 - Draft review waits for a 300 ms typing pause before recomputing, updates review chrome at lower priority, and keeps unchanged readiness and focus readers asleep. Remote edits and explicit commands still project promptly.
 
