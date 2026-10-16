@@ -126,11 +126,13 @@ describe("message folds", () => {
     );
     expect(stopRequest(seen, "req2")).toMatchObject({ seenThrough: 4, seenExecutionId: "e1" });
 
-    // Stop's control: a request out or failed stands as it is; an answer that cancelled an
+    // Stop's control: a request out or a failed Stop stands as it is; an answer that cancelled an
     // execution reads Stopping while the record still shows it, and any other answer is idle.
-    const idle = { request: "idle", cancelledExecutionId: null } as const;
+    const idle = { request: "idle", cancelledExecutionId: null, failedStops: [] } as const;
     expect(stopStatus(seen, { ...idle, request: "pending" })).toBe("pending");
-    expect(stopStatus(seen, { ...idle, request: "failed" })).toBe("failed");
+    expect(
+      stopStatus(seen, { ...idle, failedStops: [{ targetExecutionId: null, candidates: 1 }] }),
+    ).toBe("failed");
     expect(stopStatus(seen, { ...idle, cancelledExecutionId: "e1" })).toBe("stopping");
     expect(stopStatus(seen, idle)).toBe("idle");
     expect(
