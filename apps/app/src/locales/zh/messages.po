@@ -171,11 +171,6 @@ msgstr ""
 msgid "{0} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 msgstr ""
 
-#. placeholder {0}: destination.name
-#: src/features/project/context/ContextViewer.tsx
-#~ msgid "{0} isn't in {section}."
-#~ msgstr ""
-
 #. placeholder {0}: children.length
 #: src/features/chat/RunningSubagentsStrip.tsx
 msgid "{0} running"
@@ -249,10 +244,6 @@ msgstr ""
 #: src/features/draft-review/ReviewStepper.tsx
 msgid "{count} changes"
 msgstr ""
-
-#: src/features/chat/ChatUploadsMenu.tsx
-#~ msgid "{count} files"
-#~ msgstr ""
 
 #: src/features/chat/chat-upload-display.ts
 msgid "{days, plural, one {# day ago} other {# days ago}}"
@@ -445,10 +436,6 @@ msgstr ""
 #: src/core/editor/images/image-uploads.ts
 #: src/core/editor/images/ImageIngressExtension.ts
 msgid "A picture cannot go there."
-msgstr ""
-
-#: src/features/chat/ChatUploadsMenu.tsx
-msgid "A sent message used this file, so it can’t be deleted."
 msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
@@ -1579,10 +1566,6 @@ msgstr ""
 #: src/features/chat/derivation/useHandoffBrief.ts
 msgid "Couldn't start a new brief. Try again."
 msgstr ""
-
-#: src/features/chat/ErrorBlock.tsx
-#~ msgid "Couldn't start the retry."
-#~ msgstr ""
 
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/useReplyRetry.ts
@@ -3266,10 +3249,6 @@ msgstr ""
 msgid "Put the caret in a table first."
 msgstr ""
 
-#: src/features/chat/UserTurn.tsx
-#~ msgid "Queued"
-#~ msgstr ""
-
 #: src/features/chat/thread-controls/QueuedControlRows.tsx
 msgid "Queued commands"
 msgstr ""
@@ -3391,10 +3370,6 @@ msgstr ""
 #: src/components/app/ConnectionBanner.tsx
 msgid "Refresh"
 msgstr ""
-
-#: src/features/project/context/ContextViewer.tsx
-#~ msgid "Refresh to try again."
-#~ msgstr ""
 
 #: src/features/billing/UsageCard.tsx
 msgid "remaining"
@@ -4230,10 +4205,6 @@ msgstr ""
 msgid "The AI provider turned this request down."
 msgstr ""
 
-#: src/features/project/context/ContextViewer.tsx
-#~ msgid "The assistant referred to this document, but it isn't there now. It may have been renamed, deleted, or never finished being created."
-#~ msgstr ""
-
 #: src/features/editor/surfaces/objects/verb-feedback.tsx
 msgid "The browser blocked the clipboard. Check this site's permissions."
 msgstr ""
@@ -4467,10 +4438,6 @@ msgstr ""
 msgid "This conversation couldn't be compacted."
 msgstr ""
 
-#: src/features/project/context/ContextViewer.tsx
-#~ msgid "This destination couldn't load."
-#~ msgstr ""
-
 #: src/features/project/routing/ProjectRouteBoundary.tsx
 msgid "This destination couldn’t load."
 msgstr ""
@@ -4522,10 +4489,6 @@ msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "This draft is no longer here. It may have been applied or discarded elsewhere."
-msgstr ""
-
-#: src/features/chat/ChatUploadsMenu.tsx
-msgid "This file changed, so it wasn’t deleted. Try again."
 msgstr ""
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
@@ -4909,10 +4872,6 @@ msgstr ""
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "Wait for this response to finish, then try again."
 msgstr ""
-
-#: src/features/chat/UserTurn.tsx
-#~ msgid "Waiting for usage"
-#~ msgstr ""
 
 #: src/features/draft-review/DraftImagePreview.tsx
 msgid "Waiting for your review"
