@@ -1,15 +1,13 @@
 import {
   type CanonicalContextAuthority,
+  isOwnedContextScheme,
+  isWorkScopedScheme,
   parseUnifiedContextUri,
 } from "@meridian/contracts/context-uri";
 import type { ContextReadResponse, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
-import {
-  isWorkScopedBrowseScheme,
-  projectBrowseContextUri,
-  workScopedBrowseUri,
-} from "../domains/context/browse-layer-scheme.js";
+import { ownedBrowseUri, projectBrowseContextUri } from "../domains/context/browse-layer-scheme.js";
 import {
   contextPortForProjectBrowse,
   type UnifiedContextPortFactory,
@@ -78,11 +76,11 @@ export function resolveContextReadPath(
       throw createError({ statusCode: 400, message: "Context path scheme does not match route" });
     const parsed = parseUnifiedContextUri(trimmed);
     if (!parsed.ok) throw createError({ statusCode: 400, message: parsed.error.reason });
-    if (isWorkScopedBrowseScheme(scheme)) {
+    if (isOwnedContextScheme(scheme)) {
       if ("kind" in authority && authority.kind === "contextual")
         throw createError({ statusCode: 500, message: "Missing resolved context authority" });
       if (parsed.value.authority.kind === "contextual") {
-        uri = workScopedBrowseUri(scheme, authority, parsed.value.path);
+        uri = ownedBrowseUri(scheme, authority, parsed.value.path);
       } else {
         const sameAuthority =
           "workSlug" in authority
@@ -100,16 +98,16 @@ export function resolveContextReadPath(
         if (!sameAuthority) {
           throw createError({ statusCode: 400, message: "Context authority does not match route" });
         }
-        uri = workScopedBrowseUri(scheme, authority, parsed.value.path);
+        uri = ownedBrowseUri(scheme, authority, parsed.value.path);
       }
     } else uri = parsed.value.normalized;
   } else if (/^[a-z][a-z0-9+.-]*:/.test(trimmed)) {
     throw createError({ statusCode: 400, message: 'Malformed URI: expected "scheme://path"' });
-  } else if (isWorkScopedBrowseScheme(scheme)) {
+  } else if (isOwnedContextScheme(scheme)) {
     if ("kind" in authority && authority.kind === "contextual") {
       throw createError({ statusCode: 500, message: "Missing resolved context authority" });
     }
-    uri = workScopedBrowseUri(scheme, authority, trimmed);
+    uri = ownedBrowseUri(scheme, authority, trimmed);
   } else {
     uri = normalizeSchemePath(scheme, trimmed);
   }
@@ -141,7 +139,9 @@ export async function handleContextReadRequest(
     );
     if (!chat) throw createError({ statusCode: 404, message: "Chat not found" });
     authority = { kind: "chat", chatRef: chat.chatRef };
-  } else if (isWorkScopedBrowseScheme(input.scheme)) {
+  } else if (input.scheme === "uploads") {
+    throw createError({ statusCode: 400, message: "Uploads belong to a chat" });
+  } else if (isWorkScopedScheme(input.scheme)) {
     if (!input.workId) authority = { kind: "none" };
     else {
       const resolved = await deps.workAuthorityResolver.byId(input.projectId, input.workId);

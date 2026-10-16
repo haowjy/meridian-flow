@@ -1,10 +1,8 @@
 /** Plain-data orchestration for committing a writer-visible context identity. */
 
+import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { MoveContextEntryRequest, MoveContextEntryResult } from "@meridian/contracts/protocol";
-import {
-  isProjectContextTreeScheme,
-  isWorkScopedProjectContextScheme,
-} from "@meridian/contracts/protocol";
+import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { ResolvedWorkAuthority } from "@meridian/contracts/works";
 import { createError } from "nitro/h3";
@@ -128,7 +126,7 @@ function parseLocator(input: {
       rootThreadId: requireRequestId(input.rootThreadId, "rootThreadId"),
     };
   }
-  if (isWorkScopedProjectContextScheme(input.scheme)) {
+  if (isWorkScopedScheme(input.scheme)) {
     if (!input.workId) {
       return { scope: "none", scheme: input.scheme, path: input.path };
     }

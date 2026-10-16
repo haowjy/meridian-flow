@@ -1,11 +1,14 @@
 /** Durable namespace reconciliation: pure record transitions around an account-bound transport. */
-import { type ParsedContextAuthority, parseContextUri } from "@meridian/contracts/context-uri";
 import {
-  type ContextOperationReceipt,
-  type CreateUntitledContextDocumentResponse,
-  type CreateUntitledDestination,
-  isWorkScopedProjectContextScheme,
-  type ProjectContextTreeScheme,
+  isOwnedContextScheme,
+  type ParsedContextAuthority,
+  parseContextUri,
+} from "@meridian/contracts/context-uri";
+import type {
+  ContextOperationReceipt,
+  CreateUntitledContextDocumentResponse,
+  CreateUntitledDestination,
+  ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import { canonicalRefreshObservation } from "./canonical-observation";
 import {
@@ -575,17 +578,20 @@ export function installCanonicalRefresh(input: {
     obligation.observationVersion,
   );
   if (!newer && !completes) return null;
-  const workScoped = isWorkScopedProjectContextScheme(input.location.scheme);
   // A catalog observation names its Work by id with its slug, null for No Work
   // (`@/`), exactly as catalog installation derives it from the entry's URI.
-  // A lineage's Scratch names its first chat instead. Only a Work-scoped
-  // location with neither owner is incomplete.
-  const owned = input.location.workId != null || input.location.rootThreadId !== undefined;
+  // A lineage's Scratch names its first chat, and chat uploads name their chat.
+  // Only an owned scheme's location with no owner is incomplete.
+  const hasOwner =
+    input.location.workId != null ||
+    input.location.rootThreadId !== undefined ||
+    input.location.chatId !== undefined;
   if (
-    (workScoped && !owned) ||
-    (!workScoped && (owned || input.location.workId !== null || input.location.workSlug != null))
+    (isOwnedContextScheme(input.location.scheme) && !hasOwner) ||
+    (!isOwnedContextScheme(input.location.scheme) &&
+      (hasOwner || input.location.workId !== null || input.location.workSlug != null))
   )
-    throw new Error("Canonical observation has incomplete Work authority");
+    throw new Error("Canonical observation has incomplete owner authority");
   const { canonicalRefresh: _completed, ...obligations } = input.record.resource.obligations;
   return {
     expectedRevision: input.record.resource.revision,

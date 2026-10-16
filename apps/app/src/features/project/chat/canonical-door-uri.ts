@@ -5,8 +5,7 @@
  * `scratch://x` in a chat means that chat's lineage or its Work, and the catalog
  * only knows the explicit spelling. Null when the owner's handle is not known yet.
  */
-import { parseContextUri } from "@meridian/contracts/context-uri";
-import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
+import { isOwnedContextScheme, parseContextUri } from "@meridian/contracts/context-uri";
 import { resourceContextAuthority, resourceUriQualifier } from "@meridian/resource-replica";
 
 export function canonicalDoorUri(
@@ -25,7 +24,7 @@ export function canonicalDoorUri(
     workSlug?: string | null;
   },
 ): string | null {
-  if (!isWorkScopedProjectContextScheme(target.scheme))
+  if (!isOwnedContextScheme(target.scheme))
     return `${target.scheme}://${target.path.replace(/^\/+/, "")}`;
   try {
     const authority = resourceContextAuthority(target.scheme, {
