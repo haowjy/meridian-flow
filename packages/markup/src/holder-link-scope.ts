@@ -19,6 +19,8 @@ import {
   type LinkHolder,
   type LinkResolution,
   mintAheadRef,
+  qualifyContextUriByHolder,
+  resolveDocumentHref,
   resolveStoredLink,
   type SpelledHref,
   spellStoredLink,
@@ -182,17 +184,36 @@ export function assignFreshLink(input: {
 }
 
 /**
+ * A written href as it is bound: a bare `uploads://name` means the writing chat's file only while
+ * read from that chat, and a document outlives it, so a freshly written one is qualified to that
+ * chat (`uploads://@/<chat>/name`). Preparation (`writtenAddresses`) and assignment
+ * (`assignFreshLink` callers) both read the href through here, so the address loaded is the
+ * address bound.
+ */
+export function qualifyWrittenHref(href: string, uploadsChat: string | undefined): string {
+  if (!uploadsChat) return href;
+  const resolved = resolveDocumentHref(href, null);
+  if (!resolved) return href;
+  const uri = qualifyContextUriByHolder(resolved.uri, `uploads://@/${uploadsChat}/_`);
+  return uri === resolved.uri ? href : storedHref(uri, resolved.suffix);
+}
+
+/**
  * The decoded addresses written links and sources in `blocks` may resolve to:
  * what a host must load before assigning their refs. Links resolve against the
- * holder, sources under the manuscript-root grammar.
+ * holder, sources under the manuscript-root grammar; both after
+ * `qualifyWrittenHref`.
  */
-export function writtenAddresses(blocks: readonly PMNode[], holderUri: string | null): string[] {
+export function writtenAddresses(
+  blocks: readonly PMNode[],
+  holderUri: string | null,
+  uploadsChat?: string,
+): string[] {
   const out = new Set<string>();
   for (const { kind, attrs } of walkLinkOccurrences(blocks)) {
+    const href = qualifyWrittenHref(attrs.href, uploadsChat);
     const uri =
-      kind === "link"
-        ? internalUri(classifyWrittenLink(attrs.href, holderUri))
-        : writtenSourceUri(attrs.href);
+      kind === "link" ? internalUri(classifyWrittenLink(href, holderUri)) : writtenSourceUri(href);
     if (uri) out.add(uri);
   }
   return [...out];
