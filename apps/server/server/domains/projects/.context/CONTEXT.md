@@ -7,15 +7,14 @@ this page keeps the invariants that routes and context/collab must share.
 ## Bootstrap and project identity
 
 `ProjectBootstrapRepository.ensureDefaultBootstrap(userId)` converges the
-personal project, its Manuscript source, `chapter-1.md`, locked No Work row,
-and No Work Uploads source. It creates no thread or membership. Ordinary
+personal project, its Manuscript source, `chapter-1.md`, and locked No Work row. It creates no thread or membership. Ordinary
 project creation creates its project-scoped Manuscript source, locked No Work,
 and catalog lifecycle state, but does not seed the chapter document or
 Work-owned sources. The canonical bootstrap URI is
 `manuscript://chapter-1.md`.
 
 Personal bootstrap and ordinary creation serialize allocation under the owner
-lock. The project, initial source/document state, No Work, seed, Uploads source,
+lock. The project, initial source/document state, No Work, seed,
 and readiness flag commit atomically. Chapter seeding is initialize-only and
 uses canonical journal state, never the Markdown projection. Readiness is true
 only after document authority is durable. Repeated bootstrap returns the same

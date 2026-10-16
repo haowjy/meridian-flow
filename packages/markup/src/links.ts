@@ -10,6 +10,7 @@ export {
   type FreshAssignment,
   type HolderCatalog,
   type HolderLinkScope,
+  qualifyWrittenHref,
   UNSPELLED_UPLOAD,
   type WrittenGrammar,
   writtenAddresses,

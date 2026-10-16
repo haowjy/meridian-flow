@@ -19,19 +19,25 @@ export type ResourceKey = Readonly<{ handle: string }>;
  * Durable owner identity asserted by a scoped catalog or checked command constructor.
  * Project-scoped schemes have no owner (`workId: null`). A Work-scoped location
  * names a Work (id and slug, slug null for No Work) or, for Scratch, a lineage
- * (the first chat's id and its handle, as in `scratch://@/c12/`). The type
+ * (the first chat's id and its handle, as in `scratch://@/c12/`); uploads are held by a chat
+ * (its id and handle, as in `uploads://@/c15/`; no handle, and a bare `uploads://` URI, until the chat exists). The type
  * preserves each pair; only a known project snapshot can establish which row is
  * No Work. Use resourceWorkAuthorityFor when constructing writer commands.
  */
 export type ResourceOwner =
-  | { workId: null; workSlug?: undefined; rootThreadId?: undefined; rootThreadRef?: undefined }
-  | { workId: string; workSlug: string | null; rootThreadId?: undefined; rootThreadRef?: undefined }
-  | { workId: null; workSlug?: undefined; rootThreadId: string; rootThreadRef: string };
+  | ({ workId: null; workSlug?: undefined } & NoLineage & NoChat)
+  | ({ workId: string; workSlug: string | null } & NoLineage & NoChat)
+  | ({ workId: null; workSlug?: undefined; rootThreadId: string; rootThreadRef: string } & NoChat)
+  | ({ workId: null; workSlug?: undefined; chatId: string; chatRef: string | null } & NoLineage);
+type NoLineage = { rootThreadId?: undefined; rootThreadRef?: undefined };
+type NoChat = { chatId?: undefined; chatRef?: undefined };
 export type ResourceLocation = Readonly<
   { scheme: ProjectContextTreeScheme; path: string; name: string } & ResourceOwner
 >;
 /** A location's owner alone, without its other fields. */
 export function ownerOf(location: ResourceOwner): ResourceOwner {
+  if (location.chatId !== undefined)
+    return { workId: null, chatId: location.chatId, chatRef: location.chatRef };
   if (location.rootThreadId !== undefined)
     return {
       workId: null,
@@ -47,13 +53,15 @@ export type ResourceOwnerKey = {
   workId: string | null;
   workSlug?: string | null;
   rootThreadId?: string | null;
+  chatId?: string | null;
 };
 /** Whether two locations are held by the same owner. */
 export function sameOwner(left: ResourceOwnerKey, right: ResourceOwnerKey): boolean {
   return (
     left.workId === right.workId &&
     (left.workSlug ?? null) === (right.workSlug ?? null) &&
-    (left.rootThreadId ?? null) === (right.rootThreadId ?? null)
+    (left.rootThreadId ?? null) === (right.rootThreadId ?? null) &&
+    (left.chatId ?? null) === (right.chatId ?? null)
   );
 }
 /** A picked folder identity or a qualified area's root. Paths are observations, not edges. */

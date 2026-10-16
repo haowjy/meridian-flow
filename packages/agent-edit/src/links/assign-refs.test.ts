@@ -881,3 +881,51 @@ const doors: DoorCase[] = [
 it("A1-5: no write door loses or churns refs", async () => {
   for (const door of doors) await door.run();
 });
+
+it("binds a freshly written bare uploads link or picture to the writing chat's existing file and leaves code and prose alone", async () => {
+  const MAP = uuid(40);
+  const EXACT = uuid(41);
+  const PIC = uuid(42);
+  const NOTE = uuid(43);
+  const at = (name: string) => `uploads://@/c3/${name}`;
+  const ctx = linkHarness({
+    holder: { id: H, uri: HOLDER },
+    documents: [
+      catalogDocument(MAP, at("map.png")),
+      catalogDocument(EXACT, at("exact.png")),
+      catalogDocument(PIC, at("my pic.png")),
+      catalogDocument(NOTE, at("name.md")),
+    ],
+    blocks: [paragraph("Plain prose.")],
+  });
+  const content = [
+    "Use `uploads://name` for this chat.",
+    "",
+    "```text",
+    "uploads://sample.png",
+    "```",
+    "",
+    "[bare](uploads://map) [qualified](<uploads://@/c3/map>) [exact](uploads://exact.png)",
+    "",
+    "![](uploads://my%20pic.png) and [file](uploads://name.md#top)",
+  ].join("\n");
+  const outcome = await ctx.core.write(
+    { file: "holder", documentId: H, command: "replace", in: [1, 1], content } as never,
+    { sessionId: "session-a", threadId: "thread-a", uploadsChat: "c3" },
+  );
+  expect(outcome.status).toBe("success");
+  const stored = await ctx.markdown();
+  expect(stored).toContain("`uploads://name`");
+  expect(stored).toContain("uploads://sample.png\n```");
+  const bound = extractStoredLinks(ctx.live().getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)).map(
+    ({ ref, href }) => [ref, href],
+  );
+  expect(bound).toEqual([
+    [`doc:${MAP}`, at("map.png")],
+    [`doc:${MAP}`, at("map.png")],
+    [`doc:${EXACT}`, at("exact.png")],
+    [`doc:${PIC}`, at("my pic.png")],
+    [`doc:${NOTE}`, `${at("name.md")}#top`],
+  ]);
+  expect(ctx.links.minted).toEqual([]);
+});

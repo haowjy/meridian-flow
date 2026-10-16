@@ -10,6 +10,7 @@ export type DocumentAddressInput = {
   scheme: ProjectContextTreeScheme;
   workId: string | null;
   rootThreadId?: string | null;
+  chatThreadId?: string | null;
   path: string;
   view?: TreeView;
 };

@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { type ContextTab, useContextTabs } from "@/client/stores";
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
+import { ChatUploadsMenu } from "@/features/chat/ChatUploadsMenu";
 import { DraftReviewBoundary } from "@/features/draft-review/DraftReviewProvider";
 import { WorkDraftCommandsBoundary } from "@/features/draft-review/useWorkDraftCommands";
 import { ChatSurface } from "../chat/ChatSurface";
@@ -111,18 +112,23 @@ export function MobileProject(props: MobileProjectProps) {
           ) : undefined
         }
         actions={
-          onWorkDetail
-            ? work.actions
-            : props.contextLive
-              ? trailingAction(props, (kind) => {
-                  if (!props.activeContextScheme) return;
-                  setCreating({
-                    scheme: props.activeContextScheme,
-                    kind,
-                    parentPath: props.activeContextFolder ?? "",
-                  });
-                })
-              : undefined
+          props.activeScreen === "chat" ? (
+            <ChatUploadsMenu
+              projectId={props.projectId}
+              threadId={displayedChatThreadId(props.chatDisplay)}
+            />
+          ) : onWorkDetail ? (
+            work.actions
+          ) : props.contextLive ? (
+            trailingAction(props, (kind) => {
+              if (!props.activeContextScheme) return;
+              setCreating({
+                scheme: props.activeContextScheme,
+                kind,
+                parentPath: props.activeContextFolder ?? "",
+              });
+            })
+          ) : undefined
         }
       />
       <main className="main-pane flex min-h-0 flex-1 flex-col overflow-hidden">

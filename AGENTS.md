@@ -47,7 +47,8 @@ explicit null binds the thread to that row. After creation, the writer may
 explicitly rebind the chat through one canonical operation; Work management
 and navigation never invoke it implicitly. The model can't rebind; see the
 [model's `work switch`][model-work-switch]. Named-Work URIs use `@slug`;
-No Work Uploads use `@/`. No Work owns no Scratch: a No Work chat's Scratch
+uploads belong to the chat they were attached in and use `uploads://@/c15/`
+(`c15` is the chat's handle; Works and No Work own no uploads). No Work owns no Scratch: a No Work chat's Scratch
 belongs to its lineage (the first chat, its forks and subagents) at
 `scratch://@/c12/`, named by the first chat's handle. Internal IDs never
 appear in URI authority. The schema is `works` + `thread_works`.
@@ -76,6 +77,11 @@ hidden constraints, surprising invariants, and workarounds.
 **Writer-facing copy.** Separate facts with layout, typography, sentences, or
 parentheses, never `·`, `•`, `—`, or `|`. See the
 [copy separation decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/writer-copy-separation.md).
+
+**Offer only what applies.** Show a control only while its action can succeed.
+Feedback never displaces content already on screen: it uses blank space, or the
+end of a surface that grows downward, like a chat's latest turn. See the
+[offer-only-what-applies decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/offer-only-what-applies.md).
 
 **Debugging.** Follow [docs/debugging.md](docs/debugging.md).
 

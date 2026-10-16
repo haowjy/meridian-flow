@@ -122,10 +122,13 @@ export function createDrizzleWorkPurger(deps: {
       }
 
       const [uploads, results, binaries] = await Promise.all([
-        activeDb
-          .select({ objectKey: uploadIntakes.objectKey })
-          .from(uploadIntakes)
-          .where(eq(uploadIntakes.workId, workId)),
+        // The Work owns no uploads; its threads' chats do.
+        lockedTree.threadIds.length
+          ? activeDb
+              .select({ objectKey: uploadIntakes.objectKey })
+              .from(uploadIntakes)
+              .where(inArray(uploadIntakes.ownerThreadId, lockedTree.threadIds))
+          : Promise.resolve([] as { objectKey: string }[]),
         activeDb
           .select({ storageUrl: projectResults.storageUrl })
           .from(projectResults)
@@ -139,6 +142,9 @@ export function createDrizzleWorkPurger(deps: {
               eq(contextSources.workId, workId),
               lockedTree.threadIds.length
                 ? inArray(contextSources.rootThreadId, lockedTree.threadIds)
+                : sql`false`,
+              lockedTree.threadIds.length
+                ? inArray(contextSources.chatThreadId, lockedTree.threadIds)
                 : sql`false`,
             ),
           ),
@@ -163,7 +169,12 @@ export function createDrizzleWorkPurger(deps: {
       if (lockedTree.threadIds.length > 0) {
         await activeDb
           .delete(contextSources)
-          .where(inArray(contextSources.rootThreadId, lockedTree.threadIds));
+          .where(
+            or(
+              inArray(contextSources.rootThreadId, lockedTree.threadIds),
+              inArray(contextSources.chatThreadId, lockedTree.threadIds),
+            ),
+          );
         await activeDb
           .delete(eventJournal)
           .where(inArray(eventJournal.threadId, lockedTree.threadIds));

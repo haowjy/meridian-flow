@@ -216,12 +216,6 @@ describe("planCatalogInstallation", () => {
       expected: { scheme: "user", workId: null },
     },
     {
-      scope: { kind: "work", projectId, workId: "no-work-id" } as const,
-      scheme: "uploads" as const,
-      uri: "uploads://@/notes.md",
-      expected: { scheme: "uploads", workId: "no-work-id" },
-    },
-    {
       scope: { kind: "lineage", projectId, rootThreadId: "root-id" } as const,
       scheme: "scratch" as const,
       uri: "scratch://@/c12/notes.md",

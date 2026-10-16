@@ -62,6 +62,9 @@ function atAddress(address: Address) {
     address.rootThreadId
       ? eq(linkAheadRefs.rootThreadId, address.rootThreadId)
       : isNull(linkAheadRefs.rootThreadId),
+    address.chatThreadId
+      ? eq(linkAheadRefs.chatThreadId, address.chatThreadId)
+      : isNull(linkAheadRefs.chatThreadId),
     // The index keys the path's md5 (unbounded paths overflow a B-tree tuple); exact recheck.
     sql`md5(${linkAheadRefs.path}) = md5(${address.path})`,
     eq(linkAheadRefs.path, address.path),
@@ -123,7 +126,8 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
               projectId: address.projectId,
               scheme: address.scheme,
               workId: address.workId,
-              rootThreadId: address.rootThreadId ?? null,
+              rootThreadId: address.rootThreadId,
+              chatThreadId: address.chatThreadId,
               path: address.path,
             })),
           )

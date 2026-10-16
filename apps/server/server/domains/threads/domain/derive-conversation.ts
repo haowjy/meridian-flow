@@ -1,5 +1,6 @@
 /** Domain operations for explicit agent handoff/fork into a new primary thread. */
 import type { AgentSelection } from "@meridian/contracts/agents";
+import { formatParsedContextUri } from "@meridian/contracts/context-uri";
 import type { Thread } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { AiWriteMode } from "@meridian/contracts/works";
@@ -273,7 +274,15 @@ export async function forkThreadAgent(
       await deps.eventWriter.appendEvent(target.id as ThreadId, event);
     }
     await inheritEditingDocuments(deps, lockedSource, target);
-    await seedSystemTurn(deps, target, `Forked conversation through turn ${cutoff.turn.id}.`);
+    // The files of the inherited turns sit with the chat that owns the cutoff turn, which is
+    // the source's ancestor when the fork was cut inside inherited history.
+    const owner =
+      (await deps.threads.findByIdIncludingDeleted(cutoff.turn.threadId)) ?? lockedSource;
+    await seedSystemTurn(
+      deps,
+      target,
+      `Forked conversation through turn ${cutoff.turn.id}.\n${continuesFromLine(owner.ref ?? owner.id)}`,
+    );
     await deps.eventWriter.appendEvent(source.id as ThreadId, {
       type: "agent.fork",
       sourceThreadId: source.id,
@@ -456,6 +465,12 @@ async function inheritEditingDocuments(
         deps.threadDocuments.attach(target.id as ThreadId, document.documentId, "editing"),
       ),
   );
+}
+
+/** Tells a derived chat which chat it continues and where that chat's files are. */
+export function continuesFromLine(sourceRef: string): string {
+  const uploads = formatParsedContextUri("uploads", "", { kind: "chat", chatRef: sourceRef });
+  return `This chat continues from ${sourceRef}. Its uploads are at ${uploads}.`;
 }
 
 async function seedSystemTurn(deps: ThreadAgentSwapDeps, thread: Thread, text: string) {

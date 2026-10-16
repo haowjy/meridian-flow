@@ -65,7 +65,8 @@ export type {
 } from "./composer-document";
 export { serializeComposerDraft } from "./composer-document";
 
-export type ComposerUploadScope = { kind: "work"; projectId: string; workId: string };
+/** Uploads belong to the chat; a New chat's id is minted before its row exists. */
+export type ComposerUploadScope = { kind: "chat"; projectId: string; chatId: string };
 
 function authorityForUpload(
   scope: ComposerUploadScope,
@@ -73,11 +74,11 @@ function authorityForUpload(
 ): StableReferenceAuthority {
   const parsed = parseContextUri(uri);
   return {
-    kind: "work",
+    kind: "chat",
     projectId: scope.projectId,
-    workId: scope.workId,
-    workSlug:
-      parsed.ok && parsed.value.authority.kind === "work" ? parsed.value.authority.workSlug : null,
+    chatId: scope.chatId,
+    chatRef:
+      parsed.ok && parsed.value.authority.kind === "chat" ? parsed.value.authority.chatRef : null,
   };
 }
 export type ComposerUploadPort = Readonly<{
@@ -127,6 +128,10 @@ export type ComposerProps = {
 };
 export type ComposerHandle = {
   focus: () => void;
+  /** Adds a file the writer picked outside the `@` menu (the chat's uploads list) at the caret. */
+  insertReference: (reference: AuthoritativeReference, fileKind: "document" | "asset") => void;
+  /** Drops every chip that references the document (a file the writer deleted elsewhere). */
+  removeReferences: (documentId: string) => void;
   getDraft: () => string;
   /**
    * Whether the composer holds anything the writer authored, including a
@@ -137,6 +142,32 @@ export type ComposerHandle = {
   snapshot: () => ComposerDraftSnapshot;
   restoreSnapshot: (snapshot: ComposerDraftSnapshot, expectedRevision?: number) => boolean;
 };
+
+/**
+ * The chip the `@` picker and the uploads list both insert for a file the writer chose. A file
+ * of the chat still being created has no handle yet (`chatRef` null), and its scope is this
+ * draft's own chat, so the chip keeps the intake identity admission verifies, as an attached one
+ * does. Any other pick is an ordinary reference, which the server admits by its catalog address.
+ */
+function pickedReferenceContent(
+  { intake, ...reference }: AuthoritativeReference,
+  fileKind: "document" | "asset",
+) {
+  const ownDraftUpload =
+    intake && reference.authority.kind === "chat" && reference.authority.chatRef === null;
+  return composerReferenceContent({
+    ...reference,
+    imageCapable: fileKind === "asset" && imageCapable(reference.fileType),
+    upload: ownDraftUpload
+      ? {
+          intakeId: intake.intakeId,
+          documentId: reference.documentId,
+          uri: reference.uri,
+          locationRevision: intake.locationRevision,
+        }
+      : null,
+  });
+}
 
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(props, ref) {
   const {
@@ -220,18 +251,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           return {
             ...catalog,
             insertReference: (current, range, row) => {
-              const reference = row.action.reference;
               return current
                 .chain()
                 .focus()
-                .insertContentAt(
-                  range,
-                  composerReferenceContent({
-                    ...reference,
-                    imageCapable: row.fileKind === "asset" && imageCapable(reference.fileType),
-                    upload: null,
-                  }),
-                )
+                .insertContentAt(range, pickedReferenceContent(row.action.reference, row.fileKind))
                 .run();
             },
           };
@@ -367,6 +390,25 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       focus: () => {
         if (!editor || editor.isDestroyed) return;
         editor.commands.focus(undefined, { scrollIntoView: false });
+      },
+      insertReference: (reference, fileKind) => {
+        if (!editor || editor.isDestroyed) return;
+        editor.chain().focus().insertContent(pickedReferenceContent(reference, fileKind)).run();
+      },
+      removeReferences: (documentId) => {
+        if (!editor || editor.isDestroyed) return;
+        const ranges: { from: number; to: number }[] = [];
+        editor.state.doc.descendants((node, pos) => {
+          if (
+            node.type.name === "composerReference" &&
+            (node.attrs.reference as AuthoritativeReference).documentId === documentId
+          )
+            ranges.push({ from: pos, to: pos + node.nodeSize });
+        });
+        if (ranges.length === 0) return;
+        const tr = editor.state.tr;
+        for (const { from, to } of ranges.reverse()) tr.delete(from, to);
+        editor.view.dispatch(tr);
       },
       getDraft: () =>
         editor && !editor.isDestroyed ? serializeComposerDraft(editor.getJSON()).text : "",

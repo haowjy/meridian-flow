@@ -1,10 +1,7 @@
 /** Account-lifetime effect shell for exact context removal transitions. */
 
-import {
-  isWorkScopedProjectContextScheme,
-  type LiveDocumentSessionAuthority,
-  type WorkingSetRoute,
-} from "@meridian/contracts/protocol";
+import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
+import type { LiveDocumentSessionAuthority, WorkingSetRoute } from "@meridian/contracts/protocol";
 import {
   type ContextTab,
   commitContextAvailability,
@@ -951,7 +948,7 @@ export class ContextRemovalCoordinator {
         (tab): tab is ServerContextTab =>
           tab.kind !== "new" &&
           (tab.kind !== "tracked" || tab.origin !== "local-resource") &&
-          isWorkScopedProjectContextScheme(tab.scheme) &&
+          isWorkScopedScheme(tab.scheme) &&
           // A chat's Scratch belongs to no Work, so changing the Editor's Work never prunes it.
           tab.rootThreadId === undefined &&
           tab.workId !== activeWorkId,
@@ -960,7 +957,7 @@ export class ContextRemovalCoordinator {
     if (
       selection.status === "bound" &&
       selection.identity.kind === "server" &&
-      isWorkScopedProjectContextScheme(selection.locator.scheme) &&
+      isWorkScopedScheme(selection.locator.scheme) &&
       selection.locator.rootThreadId === undefined &&
       selection.locator.workId !== activeWorkId &&
       !this.workspace
@@ -981,7 +978,7 @@ export class ContextRemovalCoordinator {
         .readRecentRoutes(projectId)
         .filter(
           (route) =>
-            isWorkScopedProjectContextScheme(route.scheme) &&
+            isWorkScopedScheme(route.scheme) &&
             route.rootThreadId === undefined &&
             route.workId !== activeWorkId,
         ),

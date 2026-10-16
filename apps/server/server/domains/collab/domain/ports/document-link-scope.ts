@@ -54,6 +54,8 @@ export interface ScopePrepareRequest {
    * against the first holder, so they load after it.
    */
   written?: readonly PMNode[];
+  /** The writing chat: a bare written `uploads://` is loaded at the address it will be bound to. */
+  uploadsChat?: string;
   /** Views a `reader` will resolve in, beside the holders' (their drafts' settlements load too). */
   views?: readonly LinkView[];
 }

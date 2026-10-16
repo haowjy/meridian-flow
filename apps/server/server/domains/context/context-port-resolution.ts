@@ -4,12 +4,18 @@
  */
 
 import type { DocumentVersion } from "@meridian/agent-edit";
+import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
 import type { ResolvedWorkAuthority, WorkSlug } from "@meridian/contracts/works";
 import type { WorkRef } from "../file-policy/index.js";
 import type { ProjectWorkAuthorityResolver, WorkRepository } from "../projects/index.js";
-import type { ThreadRepository, ThreadWorksRepository } from "../threads/index.js";
-import type { ContextPort } from "./ports/context-port.js";
+import type {
+  ThreadRepository,
+  ThreadWorksRepository,
+  TopPrimaryChatResolver,
+} from "../threads/index.js";
+import type { ChatUploadsOwners } from "./chat-uploads-owners.js";
+import type { ContextPort, UploadsOwner } from "./ports/context-port.js";
 import { scratchOwnerFor } from "./scratch-owner.js";
 import type { UnifiedContextPortFactory } from "./unified-context-port-factory.js";
 
@@ -22,10 +28,17 @@ export interface ThreadContextResolution {
   primaryDraftWork: WorkRef | null;
   scratchLineages?: import("./scratch-owner.js").ScratchLineages;
   scratchOwner?: import("./scratch-owner.js").ScratchOwner;
+  /** The chat whose uploads this thread's bare `uploads://` names; null for an unknown chat. */
+  uploadsOwner: UploadsOwner | null;
+  /** Finds another chat by its handle, for `uploads://@/c12/` addresses. */
+  uploadChats?: ChatUploadsOwners;
 }
 
 export interface ThreadContextResolutionDeps {
   scratchLineages?: import("./scratch-owner.js").ScratchLineages;
+  /** Absent only in fixtures that never read uploads. */
+  topPrimaryChats?: TopPrimaryChatResolver;
+  uploadChats?: ChatUploadsOwners;
   threads: Pick<ThreadRepository, "findById">;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary">;
   works: Pick<WorkRepository, "listByProject" | "findById">;
@@ -59,8 +72,11 @@ export async function resolveThreadContext(
   const primaryWork = primaryMembership
     ? await deps.works.findById(primaryMembership.workId)
     : null;
+  const topChat = await deps.topPrimaryChats?.resolveTopPrimaryChat(thread.id);
   return {
     thread,
+    uploadChats: deps.uploadChats,
+    uploadsOwner: topChat ? { chatId: topChat.chatId, chatRef: topChat.chatRef } : null,
     scratchLineages: deps.scratchLineages,
     ...(primaryWork ? { scratchOwner: scratchOwnerFor(thread, primaryWork) } : {}),
     primaryWorkId: primaryMembership?.workId ?? null,
@@ -96,6 +112,7 @@ export function contextPortForThread(
         id: resolution.primaryWorkAuthority.workId,
         isNoWork: resolution.primaryWorkAuthority.workSlug === null,
       }),
+      ...(resolution.uploadsOwner ? { uploadsOwner: resolution.uploadsOwner } : {}),
       threadId: resolution.thread.id,
       responseId: options.responseId,
       draftWork: options.liveWrites ? null : resolution.primaryDraftWork,
@@ -204,7 +221,23 @@ export async function contextPortForProjectBrowse(input: {
   userId: string;
   workId?: string | null;
   rootThreadId?: string | null;
+  /** A chat's id, possibly before its row exists: bare `uploads://` names its files. */
+  chatId?: string | null;
 }): Promise<ContextPort | null> {
+  if (input.chatId) {
+    if (input.workId || input.rootThreadId) return null;
+    const works = await input.deps.works.listByProject(input.projectId, { lifecycle: "all" });
+    const chat = await input.deps.contextPorts.topPrimaryChats.resolveTopPrimaryChat(
+      input.chatId as ThreadId,
+    );
+    return input.deps.contextPorts.forProject(
+      input.projectId,
+      input.userId,
+      await resolvedAuthorities(input.deps, input.projectId, works),
+      undefined,
+      { chatId: input.chatId, chatRef: chat?.chatRef ?? null },
+    );
+  }
   if (input.rootThreadId) {
     if (input.workId) return null;
     const lineage = await input.deps.contextPorts.lineages.byId(

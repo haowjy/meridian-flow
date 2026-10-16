@@ -25,9 +25,10 @@ import {
   contextSources,
   projects,
   threads,
+  uploadIntakes,
   works,
 } from "@meridian/database/schema";
-import { and, asc, eq, gt, inArray, isNull, lt, lte, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, lt, lte, ne, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   runAfterDrizzleCommit,
@@ -98,6 +99,7 @@ function scopeForSource(row: {
   sourceProjectId: string | null;
   sourceWorkId: string | null;
   sourceRootThreadId: string | null;
+  sourceChatThreadId: string | null;
   projectUserId: string | null;
   projectIsPersonal: boolean | null;
   workProjectId: string | null;
@@ -109,6 +111,8 @@ function scopeForSource(row: {
       projectId: row.sourceProjectId,
       rootThreadId: row.sourceRootThreadId,
     };
+  if (row.sourceChatThreadId && row.sourceProjectId)
+    return { kind: "chat", projectId: row.sourceProjectId, chatId: row.sourceChatThreadId };
   if (row.sourceWorkId && row.workProjectId) {
     return { kind: "work", projectId: row.workProjectId, workId: row.sourceWorkId };
   }
@@ -131,6 +135,7 @@ async function sourceScopes(db: CatalogDb, sourceId: string): Promise<readonly C
       sourceProjectId: contextSources.projectId,
       sourceWorkId: contextSources.workId,
       sourceRootThreadId: contextSources.rootThreadId,
+      sourceChatThreadId: contextSources.chatThreadId,
       sourceSlug: contextSources.slug,
       projectUserId: projects.userId,
       projectIsPersonal: projects.isPersonal,
@@ -152,21 +157,27 @@ async function sourcesForScope(db: CatalogDb, scope: CatalogScope) {
           eq(contextSources.projectId, scope.projectId),
           isNull(contextSources.deletedAt),
         )
-      : scope.kind === "work"
-        ? and(eq(contextSources.workId, scope.workId), isNull(contextSources.deletedAt))
-        : scope.kind === "user"
-          ? and(
-              eq(projects.userId, scope.userId),
-              eq(projects.isPersonal, true),
-              eq(contextSources.slug, "user"),
-              isNull(projects.deletedAt),
-              isNull(contextSources.deletedAt),
-            )
-          : and(
-              eq(contextSources.projectId, scope.projectId),
-              inArray(contextSources.slug, ["manuscript", "kb", "unfiled"]),
-              isNull(contextSources.deletedAt),
-            );
+      : scope.kind === "chat"
+        ? and(
+            eq(contextSources.chatThreadId, scope.chatId),
+            eq(contextSources.projectId, scope.projectId),
+            isNull(contextSources.deletedAt),
+          )
+        : scope.kind === "work"
+          ? and(eq(contextSources.workId, scope.workId), isNull(contextSources.deletedAt))
+          : scope.kind === "user"
+            ? and(
+                eq(projects.userId, scope.userId),
+                eq(projects.isPersonal, true),
+                eq(contextSources.slug, "user"),
+                isNull(projects.deletedAt),
+                isNull(contextSources.deletedAt),
+              )
+            : and(
+                eq(contextSources.projectId, scope.projectId),
+                inArray(contextSources.slug, ["manuscript", "kb", "unfiled"]),
+                isNull(contextSources.deletedAt),
+              );
   return db
     .select({
       id: contextSources.id,
@@ -174,12 +185,16 @@ async function sourcesForScope(db: CatalogDb, scope: CatalogScope) {
       slug: contextSources.slug,
       workId: contextSources.workId,
       workSlug: works.slug,
-      rootThreadRef: threads.ref,
+      chatThreadId: contextSources.chatThreadId,
+      ownerThreadRef: threads.ref,
     })
     .from(contextSources)
     .leftJoin(projects, eq(contextSources.projectId, projects.id))
     .leftJoin(works, eq(contextSources.workId, works.id))
-    .leftJoin(threads, eq(threads.id, contextSources.rootThreadId))
+    .leftJoin(
+      threads,
+      eq(threads.id, sql`coalesce(${contextSources.rootThreadId}, ${contextSources.chatThreadId})`),
+    )
     .where(conditions)
     .orderBy(asc(contextSources.sortOrder), asc(contextSources.id));
 }
@@ -260,6 +275,40 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
     db as Database,
     documentRows.map((document) => document.id as DocumentId),
   );
+  const chatSourceIds = new Set(sourceRows.filter((r) => r.chatThreadId !== null).map((r) => r.id));
+  const chatDocumentIds = documentRows
+    .filter((document) => chatSourceIds.has(document.contextSourceId))
+    .map((document) => document.id);
+  // `used` is the intake's `already_used` rule: a sent message consumed the upload.
+  const uploadFacts = new Map(
+    chatDocumentIds.length === 0
+      ? []
+      : (
+          await db
+            .select({
+              documentId: uploadIntakes.documentId,
+              createdAt: uploadIntakes.createdAt,
+              consumedAt: uploadIntakes.consumedAt,
+              intakeId: uploadIntakes.intakeId,
+              locationRevision: uploadIntakes.locationRevision,
+            })
+            .from(uploadIntakes)
+            .where(
+              and(
+                inArray(uploadIntakes.documentId, chatDocumentIds as DocumentId[]),
+                ne(uploadIntakes.state, "deleted"),
+              ),
+            )
+        ).map((row) => [
+          row.documentId as string,
+          {
+            attachedAt: row.createdAt,
+            consumed: row.consumedAt !== null,
+            intakeId: row.intakeId,
+            locationRevision: row.locationRevision,
+          },
+        ]),
+  );
   const foldersById = new Map(folderRows.map((folder) => [folder.id, folder]));
   const childCounts = new Map<string, number>();
   for (const folder of folderRows) {
@@ -291,7 +340,8 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
       scheme,
       source.workId,
       source.workSlug,
-      source.rootThreadRef,
+      source.ownerThreadRef,
+      source.chatThreadId !== null,
     );
     entries.push({
       kind: "source",
@@ -328,7 +378,9 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
           scheme,
           workId: source.workId,
           workSlug: source.workSlug,
-          rootThreadRef: source.rootThreadRef,
+          ownerThreadRef: source.ownerThreadRef,
+          chatOwned: source.chatThreadId !== null,
+          upload: uploadFacts.get(document.id),
           parentPath,
         }),
       );
