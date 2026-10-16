@@ -131,7 +131,7 @@ msgstr "{0}"
 msgid "{0} additional balance"
 msgstr ""
 
-#. placeholder {0}: dock.files.length
+#. placeholder {0}: files.length
 #: src/features/chat/DraftDock.tsx
 msgid "{0} documents"
 msgstr ""

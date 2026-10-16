@@ -176,3 +176,19 @@ for (const [name, words, per, changed, target] of shapes) {
     `${name}: ${ms.toFixed(2)} ms, ${projection.groups.length} changes, ${named} named${target ? (ms <= target ? ", within target" : ", OVER target") : ""}`,
   );
 }
+
+// The footprint is mandatory even when no precision work is allowed.
+{
+  const { draft, projection, provenance } = chapter(50_000, 100, 500);
+  const run = () => classifyChanges(draft, projection, provenance, { budget: 0, record: true });
+  const ms = median(run);
+  const results = [...run().values()];
+  const named = results.filter((change) => change.byline.length).length;
+  const members = results.filter((change) => change.members.length).length;
+  const recorded = results.filter(
+    (change) => change.applied?.base.length && change.applied.settled.length,
+  ).length;
+  console.log(
+    `50,000 words, every paragraph changed, budget 0: ${ms.toFixed(2)} ms, ${results.length} changes, ${named} named, ${members} members, ${recorded} recorded`,
+  );
+}

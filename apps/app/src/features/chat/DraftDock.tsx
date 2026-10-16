@@ -24,21 +24,142 @@ import { DockFailureText } from "./DraftDockMessages";
 import type { DockFile } from "./draft-dock-files";
 import type { DockFileFailure, DraftDockModel } from "./useDraftDock";
 
+type DockView = {
+  file: DockFile;
+  draft: Parameters<typeof useDraftView>[0];
+  view: ReturnType<typeof useDraftView>;
+  overrode: ReturnType<typeof draftOverrode>;
+  visible: boolean;
+  actionable: boolean;
+};
+
+/** Read collapsed files too: a SQL list cannot tell whether this chat still owns any text.
+ * The reader chain composes dynamic hooks without copying room state into a second store. */
+function ReadDockFiles({
+  dock,
+  index = 0,
+  views = [],
+  children,
+}: {
+  dock: DraftDockModel;
+  index?: number;
+  views?: readonly DockView[];
+  children: (views: readonly DockView[]) => ReactNode;
+}) {
+  const file = dock.files[index];
+  return file ? (
+    <ReadDockFile dock={dock} file={file} index={index} views={views}>
+      {children}
+    </ReadDockFile>
+  ) : (
+    children(views)
+  );
+}
+
+function ReadDockFile({
+  dock,
+  file,
+  index,
+  views,
+  children,
+}: {
+  dock: DraftDockModel;
+  file: DockFile;
+  index: number;
+  views: readonly DockView[];
+  children: (views: readonly DockView[]) => ReactNode;
+}) {
+  const draft = {
+    projectId: dock.projectId,
+    workId: dock.workId,
+    documentId: file.row.documentId,
+    itemKey: file.row.draft.itemKey,
+  };
+  const overrode = draftOverrode(useDraftCommandRecords(), draft);
+  const read = useDraftView(draft, {
+    controller: dock.controller,
+    file: file.row,
+    discards: dock.discards,
+  });
+  const items = useMemo(
+    () =>
+      read.wholeDocument
+        ? read.items
+        : read.items.filter((item) => item.change.members.includes(dock.threadId)),
+    [read.items, read.wholeDocument, dock.threadId],
+  );
+  const view = { ...read, items };
+  const actionable = view.membershipReady && items.length > 0;
+  const visible =
+    actionable ||
+    !view.membershipReady ||
+    !!view.completing ||
+    !!view.discarded?.length ||
+    overrode.length > 0 ||
+    dock.fileFailures(file).length > 0;
+  return (
+    <ReadDockFiles
+      dock={dock}
+      index={index + 1}
+      views={[...views, { file, draft, view, overrode, visible, actionable }]}
+    >
+      {children}
+    </ReadDockFiles>
+  );
+}
+
 export function DraftDock({ dock }: { dock: DraftDockModel }) {
-  const touch = useCoarsePointer();
   const [expanded, setExpanded] = useState(false);
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
-  const troubledFileCount = dock.files.filter((file) => dock.fileFailures(file).length > 0).length;
+  return (
+    <ReadDockFiles dock={dock}>
+      {(views) => (
+        <DraftDockContent
+          dock={dock}
+          views={views}
+          expanded={expanded}
+          setExpanded={setExpanded}
+          confirmingDiscard={confirmingDiscard}
+          setConfirmingDiscard={setConfirmingDiscard}
+        />
+      )}
+    </ReadDockFiles>
+  );
+}
+
+function DraftDockContent({
+  dock,
+  views,
+  expanded,
+  setExpanded,
+  confirmingDiscard,
+  setConfirmingDiscard,
+}: {
+  dock: DraftDockModel;
+  views: readonly DockView[];
+  expanded: boolean;
+  setExpanded: (value: boolean | ((previous: boolean) => boolean)) => void;
+  confirmingDiscard: boolean;
+  setConfirmingDiscard: (value: boolean) => void;
+}) {
+  const touch = useCoarsePointer();
+  const troubledFileCount = views.filter(
+    ({ file, view }) => dock.fileFailures(file).length > 0 || view.status === "error",
+  ).length;
   // A refusal opens the draft dock so the writer sees it.
   useEffect(() => {
     if (troubledFileCount > 0) setExpanded(true);
   }, [troubledFileCount]);
 
-  if (!dock.mounted) return null;
+  const files = views.filter((view) => view.visible);
+  const commandsFor = views.filter((view) => view.actionable).map((view) => view.file);
+  const showCommands = commandsFor.length > 0;
+  const canCommand = dock.canCommand && files.every(({ view }) => view.membershipReady);
+  if (!dock.mounted || (files.length === 0 && dock.discardedFiles.length === 0)) return null;
 
-  const multi = dock.files.length > 1;
-  const only = dock.files[0];
-  const confirming = confirmingDiscard && dock.showCommands;
+  const multi = files.length > 1;
+  const only = files[0]?.file;
+  const confirming = confirmingDiscard && showCommands;
   const commands = (
     // biome-ignore lint/a11y/useKeyWithClickEvents: pure click fence so verb buttons don't also toggle the row.
     // biome-ignore lint/a11y/noStaticElementInteractions: same — stopPropagation fence only, no interaction of its own.
@@ -54,22 +175,22 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           <QuietButton
             onClick={() => {
               setConfirmingDiscard(false);
-              dock.discard();
+              dock.discard(commandsFor);
             }}
-            disabled={!dock.canCommand}
+            disabled={!canCommand}
           >
             <Trans>Discard</Trans>
           </QuietButton>
         </>
-      ) : dock.showCommands ? (
+      ) : showCommands ? (
         <>
           <QuietButton
-            onClick={() => (multi ? setConfirmingDiscard(true) : dock.discard())}
-            disabled={!dock.canCommand}
+            onClick={() => (multi ? setConfirmingDiscard(true) : dock.discard(commandsFor))}
+            disabled={!canCommand}
           >
             <Trans>Discard</Trans>
           </QuietButton>
-          <QuietButton onClick={dock.apply} disabled={!dock.canCommand}>
+          <QuietButton onClick={() => dock.apply(commandsFor)} disabled={!canCommand}>
             <Trans>Apply</Trans>
           </QuietButton>
         </>
@@ -116,10 +237,12 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
                 />
               </button>
             }
-            <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
+            {showCommands ? (
+              <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
+            ) : null}
             {multi ? (
               <span className="min-w-[10ch] shrink truncate">
-                <Trans>{dock.files.length} documents</Trans>
+                <Trans>{files.length} documents</Trans>
               </span>
             ) : only ? (
               <DockFileName file={only} onReview={() => dock.review(only)} />
@@ -136,14 +259,21 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
   );
 
   return (
-    <div className="@container/dock rounded-t-lg bg-dock-surface" data-draft-dock="settled">
+    <div
+      className="@container/dock rounded-t-lg bg-dock-surface"
+      data-draft-dock="settled"
+      aria-busy={files.some(
+        ({ view }) =>
+          view.status === "loading" || (view.status === "ready" && !view.membershipReady),
+      )}
+    >
       {multi ? summary() : null}
       <div className={cn(expanded && multi && "app-scroll max-h-[min(40svh,20rem)]")}>
-        {dock.files.map((file) => (
+        {files.map((read) => (
           <DockFileLine
-            key={file.row.documentId}
+            key={read.file.row.documentId}
             dock={dock}
-            file={file}
+            read={read}
             expanded={expanded}
             summary={multi ? undefined : summary}
           />
@@ -170,38 +300,18 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
 /** The chat's changes, with file headers only when the summary names multiple documents. */
 function DockFileLine({
   dock,
-  file,
+  read,
   expanded,
   summary,
 }: {
   dock: DraftDockModel;
-  file: DockFile;
+  read: DockView;
   expanded: boolean;
   summary?: (trouble: ReactNode) => ReactNode;
 }) {
   const touch = useCoarsePointer();
-  const draft = {
-    projectId: dock.projectId,
-    workId: dock.workId,
-    documentId: file.row.documentId,
-    itemKey: file.row.draft.itemKey,
-  };
-  const overrode = draftOverrode(useDraftCommandRecords(), draft);
-  const view = useDraftView(draft, {
-    controller: dock.controller,
-    enabled: expanded,
-    file: file.row,
-    discards: dock.discards,
-  });
-  // The draft dock shows this chat's changes: those some of whose AI writes belong to it (its own or a
-  // subagent's it spawned), under any alignment the classifier cannot rule out.
-  const items = useMemo(
-    () =>
-      view.wholeDocument
-        ? view.items
-        : view.items.filter((item) => item.change.members.includes(dock.threadId)),
-    [view.items, view.wholeDocument, dock.threadId],
-  );
+  const { file, draft, view, overrode } = read;
+  const { items } = view;
   const wholeDocument = isWholeDocumentChange({ ...view, items });
   // A failure shows on the row that will render it, else on the file.
   const renderedItems =
@@ -219,10 +329,6 @@ function DockFileLine({
       </>
     ) : null;
   if (!summary && !expanded) return null;
-  // A file stays listed only for a chat that has a change in it: the server's list can be a step behind
-  // the writer's own edits (typing after an Apply), and a summary with commands and no rows is a lie.
-  const noChanges = view.status === "ready" && !wholeDocument && items.length === 0;
-  if (noChanges && !trouble && !view.discarded?.length && overrode.length === 0) return null;
   return (
     <div
       data-draft-dock-file={file.row.documentId}

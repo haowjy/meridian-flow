@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The draft dock lists the drafts a chat wrote into and projects a file's changes only when it is expanded,
+ * The draft dock lists the drafts a chat wrote into and reads membership even while collapsed,
  * from that draft's room. Apply sends the group ids with the snapshot of the room they came from; Discard
  * is in place: a prose draft's room is edited and the row reads "Discarded" with Undo, a new document's draft closes.
  */
@@ -138,18 +138,16 @@ it("an expanded file lists its room's changes; Apply sends the id with the snaps
   } as never);
   await fixture.render(
     async () => {
-      await settleReact(() => expect(document.querySelector("[data-draft-dock]")).not.toBeNull());
-      expect(document.querySelectorAll("[data-review-change-row]")).toHaveLength(0);
-      await click('[aria-label="Expand changes"]');
       await settleReact(() => expect(fixture.rooms.has("room-chapter")).toBe(true));
       await act(async () =>
         fillRoom("room-chapter", ["It was green.", "Fine."], ["It was red.", "Fine."]),
       );
+      await settleReact(() => expect(document.querySelector("[data-draft-dock]")).not.toBeNull());
+      expect(document.querySelectorAll("[data-review-change-row]")).toHaveLength(0);
+      await click('[aria-label="Expand changes"]');
       await settleReact(() =>
         expect(document.querySelectorAll("[data-review-change-row]")).toHaveLength(1),
       );
-      const id = document.querySelector<HTMLElement>("[data-review-change-row]")?.dataset
-        .reviewChangeRow;
 
       const room = fixture.rooms.get("room-chapter") as NonNullable<
         ReturnType<typeof fixture.rooms.get>
@@ -187,6 +185,11 @@ it("an expanded file lists its room's changes; Apply sends the id with the snaps
       expect(fixture.network.discardDraft).not.toHaveBeenCalled();
       expect(document.querySelector("[data-discarded-row]")).toBeNull();
 
+      // Undo provenance can publish its frame immediately, before the subsequent writer edit's
+      // debounce. Wait for that edit's projection, not merely for the already-visible row count.
+      await act(async () => vi.advanceTimersByTime(200));
+      const id = document.querySelector<HTMLElement>("[data-review-change-row]")?.dataset
+        .reviewChangeRow;
       const clicked = encodeSnapshot(Y.snapshot(room.document));
       // A peer writes after the projection the row shows, before the next one is computed.
       await act(async () => fillRoom("room-chapter", ["A peer's paragraph."], []));
@@ -213,6 +216,13 @@ it("an expanded file lists its room's changes; Apply sends the id with the snaps
       run.insert(0, "Another chat's line.");
       other.getXmlFragment("prosemirror").insert(0, [foreign]);
       await act(async () => Y.applyUpdate(room.document, Y.encodeStateAsUpdate(other)));
+      await settleReact(() =>
+        expect(
+          [...document.querySelectorAll<HTMLButtonElement>("button")].some(
+            (button) => button.textContent === "Discard" && !button.disabled,
+          ),
+        ).toBe(true),
+      );
       await clickText("Discard");
       await settleReact(() =>
         expect(text()).toEqual(["Another chat's line.", "It was red.", "Fine."]),
@@ -222,10 +232,13 @@ it("an expanded file lists its room's changes; Apply sends the id with the snaps
   );
 });
 
-it("a file where the chat has no change after the writer's own edits leaves the dock, not a summary with commands and no rows", async () => {
+it.each([
+  1, 2,
+])("%s files where the chat has no change after the writer's own edits leaves the dock, not a summary with commands and no rows", async (count) => {
   const file = draft("chapter", { itemKey: "draft-a" });
-  fixture.network.listWorkDrafts.mockResolvedValue({ items: [file] });
-  fixture.network.getThreadDraftFiles.mockResolvedValue({ drafts: [file] });
+  const files = count === 1 ? [file] : [file, draft("chapter2", { itemKey: "draft-b" })];
+  fixture.network.listWorkDrafts.mockResolvedValue({ items: files });
+  fixture.network.getThreadDraftFiles.mockResolvedValue({ drafts: files });
   // The chat's only write sits in ids nothing in the room holds: every change in the room is the writer's.
   fixture.network.getDraftAttribution.mockImplementation(async () => ({
     itemKey: "draft-a",
@@ -246,20 +259,22 @@ it("a file where the chat has no change after the writer's own edits leaves the 
       },
     ],
   }));
-  fixture.network.getDraftMeta.mockResolvedValue({
+  fixture.network.getDraftMeta.mockImplementation(async (_p, _w, id) => ({
     ...meta,
-    itemKey: "draft-a",
-    roomName: "room-chapter",
-  });
+    itemKey: id === "chapter" ? "draft-a" : "draft-b",
+    roomName: `room-${id}`,
+  }));
   await fixture.render(
     async () => {
-      await settleReact(() =>
-        expect(document.querySelector("[data-draft-dock-file]")).not.toBeNull(),
-      );
-      await click('[aria-label="Expand changes"]');
+      expect(document.body.textContent).not.toContain("Apply");
       await settleReact(() => expect(fixture.rooms.has("room-chapter")).toBe(true));
+      if (count === 2)
+        await settleReact(() => expect(fixture.rooms.has("room-chapter2")).toBe(true));
       await act(async () => fillRoom("room-chapter", ["It was green."], ["It was red."]));
+      if (count === 2)
+        await act(async () => fillRoom("room-chapter2", ["It was green."], ["It was red."]));
       await settleReact(() => expect(document.querySelector("[data-draft-dock-file]")).toBeNull());
+      expect(document.querySelector("[data-draft-dock]")).toBeNull();
       expect(document.body.textContent).not.toContain("Apply");
     },
     { chatSurface: <Strip />, host },

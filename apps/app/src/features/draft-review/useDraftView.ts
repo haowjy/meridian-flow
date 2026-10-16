@@ -35,7 +35,7 @@ export function useDraftView(
     file: ReviewFileTarget;
     discards: HeadlessDiscards;
   },
-): DraftChangesView {
+): DraftChangesView & { membershipReady: boolean } {
   const room = useRoomReview(draft, { enabled });
   const wholeDocument = room.wholeItem;
   const read = useChangeItems(draft, { wholeDocument, read: enabled && !room.branchless });
@@ -69,6 +69,7 @@ export function useDraftView(
     documentId: draft.documentId,
     itemKey: draft.itemKey,
     status: room.status,
+    membershipReady: ready && (wholeDocument || read.attributionReady),
     items: ready ? items : [],
     wholeDocument,
     finished: ready && items.length === 0 && completing === null && discarded.length === 0,

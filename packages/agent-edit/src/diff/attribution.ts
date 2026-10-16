@@ -9,7 +9,7 @@
  * - Status: an AI part reads applied only when no change has it as a member.
  *
  * An alignment is one place the text allows an edit to sit (a repeated word or a boundary space can
- * slide). The classifier works on the character edit of each hunk, never on its word tokens, and reads
+ * slide). The footprint uses raw word/structural boundaries; only names use character edits. It reads
  * only lengths, ids and restoration links, so a browser (gc on) and the server (gc off) agree.
  */
 
@@ -157,11 +157,47 @@ function segments(toks: readonly Tok[], lo: number, hi: number): Array<[number, 
 }
 
 /** The names a change has gathered so far; thread names keep the index of their latest part. */
-interface Acc {
-  names: Map<string, number>;
+interface Footprint {
   members: Set<number>;
   base: ItemRange[];
   settled: ItemRange[];
+}
+
+/** Phase 2 cannot mutate the footprint. Any unfinished precision work silences the byline. */
+interface Names {
+  names: Map<string, number>;
+  incomplete: boolean;
+}
+
+/** Raw projection boundaries, shared by footprint collection and name refinement. */
+interface Boundaries {
+  text(
+    b: number,
+    raw: { at: number; text: string },
+    was: string,
+    wide: { at: number; text: string },
+    before: string,
+  ): void;
+  items(items: readonly Y.Item[], name?: boolean): void;
+  subtree(item: Y.Item): void;
+  removed(points: Array<readonly Y.Item[]>, weight: number): void;
+}
+
+type Boundary = {
+  [K in keyof Boundaries]: { kind: K; args: Parameters<Boundaries[K]> };
+}[keyof Boundaries];
+
+function visit(boundary: Boundary, rules: Boundaries) {
+  switch (boundary.kind) {
+    case "text":
+      return rules.text(...boundary.args);
+    case "items":
+      return rules.items(...boundary.args);
+    case "subtree":
+      return rules.subtree(...boundary.args);
+    case "removed":
+      return rules.removed(...boundary.args);
+  }
 }
 
 /** Sorted, with overlapping and touching ranges joined (the same item is reached by several alignments). */
@@ -326,11 +362,10 @@ class Classifier {
 
   private keyOf = (who: number) => (who === USER ? "user" : `thread:${this.parts[who].threadId}`);
 
-  private name(acc: Acc, who: number) {
+  private name(acc: Names, who: number) {
     const key = this.keyOf(who);
     const seen = acc.names.get(key);
     acc.names.set(key, seen === undefined ? who : Math.min(seen, who));
-    if (who >= 0) acc.members.add(who);
   }
 
   // ---- layout ----
@@ -371,74 +406,146 @@ class Classifier {
     }
   }
 
-  // ---- evidence ----
-  //
-  // One route. Every item a change touches goes through `touch` (live items) or `tombs` (deleted ones):
-  // that is where membership and the Apply record grow, and neither depends on how exactly the edit could
-  // be placed. Only the names are exact, and they come from the alignments that were affordable.
-
-  /** A live item of the change: its part is a member, Apply moves it, and `named` lets it name its author. */
-  private touch(acc: Acc, who: number, client: number, clock: number, named: boolean) {
-    if (who === BASE) return;
-    if (who >= 0) acc.members.add(who);
-    if (this.options.record) pushRange(acc.base, client, clock);
-    if (named && !isUnknown(who)) this.name(acc, who);
-  }
-
-  /** A single-unit item that is the change itself (an element, a format, an attribute): it names its author. */
-  private evidence(acc: Acc, item: Y.Item) {
-    const { client, clock } = item.id;
-    this.touch(acc, this.origin(client, clock), client, clock, true);
-  }
-
-  /** Tombstones of the change: the parts that deleted them are members and Apply settles them. */
-  private tombs(acc: Acc, items: readonly Y.Item[], deleters?: number[]) {
-    for (const item of items)
+  /** Phase 1: collect the complete footprint before any bounded name work. */
+  private footprint(changes: readonly Boundary[]): Footprint {
+    const footprint: Footprint = { members: new Set(), base: [], settled: [] };
+    const live = (client: number, clock: number) => {
+      const who = this.origin(client, clock);
+      if (who === BASE) return;
+      if (who >= 0) footprint.members.add(who);
+      if (this.options.record) pushRange(footprint.base, client, clock);
+    };
+    const dead = (item: Y.Item) => {
       for (let k = 0; k < item.length; k++) {
         const c = item.id.client;
         const clock = item.id.clock + k;
         if (this.settled.get(c, clock) >= 0) continue;
-        if (this.options.record) pushRange(acc.settled, c, clock);
-        const part = this.deleted.get(c, clock);
-        if (part >= 0) acc.members.add(part);
-        if (deleters && this.origin(c, clock) === BASE && this.superseded.get(c, clock) < 0)
-          deleters.push(this.deleter(c, clock));
+        if (this.options.record) pushRange(footprint.settled, c, clock);
+        const who = this.deleter(c, clock);
+        if (who >= 0) footprint.members.add(who);
       }
+    };
+    const item = (value: Y.Item) => {
+      if (value.deleted) dead(value);
+      else for (let k = 0; k < value.length; k++) live(value.id.client, value.id.clock + k);
+    };
+    const subtree = (value: Y.Item) => {
+      item(value);
+      // A deleted container's children are GC'd on peers. Its own item represents the removal.
+      if (value.deleted || !(value.content instanceof Y.ContentType)) return;
+      for (const attr of value.content.type._map.values()) item(attr);
+      for (let child = value.content.type._start; child; child = child.right) subtree(child);
+    };
+    const boundaries: Boundaries = {
+      text: (b, now, was) => {
+        const ix = this.index(b);
+        let lo = now.at;
+        let hi = lo + now.text.length;
+        // Scan the whole slide envelope once, not once per candidate alignment. No precision cap
+        // may choose which items Apply accepts, even when Phase 2 never runs.
+        let head = 0;
+        let tail = 0;
+        // Token whitespace is context when present on both sides, not an inserted/deleted word.
+        while (
+          head < now.text.length &&
+          head < was.length &&
+          /\s/u.test(now.text[head]) &&
+          now.text[head] === was[head]
+        )
+          head++;
+        while (
+          tail < now.text.length - head &&
+          tail < was.length - head &&
+          /\s/u.test(now.text[now.text.length - 1 - tail]) &&
+          now.text[now.text.length - 1 - tail] === was[was.length - 1 - tail]
+        )
+          tail++;
+        const start = now.at + head;
+        const added = now.text.slice(head, now.text.length - tail);
+        const removed = was.slice(head, was.length - tail);
+        if (!ix.bad && added.length) {
+          const slide = slideInsert(ix.text, start, added.length, Infinity);
+          lo = Math.min(lo, slide.lo);
+          hi = Math.max(hi, slide.hi + added.length);
+        }
+        if (!ix.bad && removed.length) {
+          for (const at of [start, start + added.length]) {
+            const slide = slideDelete(ix.text, at, removed, Infinity);
+            lo = Math.min(lo, slide.lo);
+            hi = Math.max(hi, slide.hi);
+          }
+        }
+        if (ix.bad) {
+          // A payload can arrive before the editor's debounced projection catches up. Its old
+          // offsets no longer address this block: retain the block's footprint, but name nobody.
+          const last = ix.units.at(-1);
+          lo = 0;
+          hi = last ? last.at + last.item.length : 0;
+        }
+        this.eachChar(ix, lo, hi, live);
+        for (let i = lowerBound(ix.dead, lo); i < ix.dead.length && ix.dead[i].at <= hi; i++)
+          dead(ix.dead[i].item);
+      },
+      items: (items) => {
+        for (const current of items) {
+          item(current);
+          // Attribute overwrites form a left chain; changed keys own its deleted items too.
+          if (current.parentSub !== null)
+            for (let previous = current.left; previous; previous = previous.left) item(previous);
+        }
+      },
+      subtree,
+      removed: (points) => {
+        for (const items of points) for (const item of items) dead(item);
+      },
+    };
+    for (const change of changes) visit(change, boundaries);
+    return footprint;
   }
 
-  /** Everything in offsets `[from, to]` of block `b`: the span nobody could place exactly. */
-  private region(
-    acc: Acc,
-    b: number,
-    from: number,
-    to: number,
-    what: { live: boolean; dead: boolean },
-  ) {
-    const ix = this.index(b);
-    if (what.live)
-      this.eachChar(ix, from, to, (c, k) => this.touch(acc, this.origin(c, k), c, k, false));
-    if (!what.dead) return;
-    const dead: Y.Item[] = [];
-    for (let i = lowerBound(ix.dead, from); i < ix.dead.length && ix.dead[i].at <= to; i++)
-      dead.push(ix.dead[i].item);
-    this.tombs(acc, dead);
+  /** Phase 2: optional precision. Its only writable output is the byline. */
+  private names(changes: readonly Boundary[]): Names {
+    const acc: Names = { names: new Map(), incomplete: false };
+    const boundaries: Boundaries = {
+      text: (b, _raw, _was, now, before) => this.chars(acc, b, now.at, before, now.text),
+      items: (items, name = true) => {
+        if (!name) return;
+        for (const item of items) {
+          const who = item.deleted
+            ? this.deleter(item.id.client, item.id.clock)
+            : this.origin(item.id.client, item.id.clock);
+          if (who !== BASE && !isUnknown(who) && (!item.deleted || who >= 0)) this.name(acc, who);
+        }
+      },
+      subtree: () => {},
+      removed: (points, weight) => this.red(acc, points, weight),
+    };
+    for (const change of changes) {
+      visit(change, boundaries);
+      if (acc.incomplete) break;
+    }
+    if (acc.incomplete) acc.names.clear();
+    return acc;
   }
 
   /** Green: `n` characters at `start` of draft block `b` are new. */
-  private green(acc: Acc, b: number, start: number, n: number) {
+  private green(acc: Names, b: number, start: number, n: number) {
     const ix = this.index(b);
-    if (ix.bad) return this.region(acc, b, start, start + n, { live: true, dead: false });
+    if (ix.bad) {
+      acc.incomplete = true;
+      return;
+    }
     const { lo, hi, cut } = slideInsert(ix.text, start, n, this.slide);
-    if (cut) return this.region(acc, b, 0, ix.text.length, { live: true, dead: false });
-    if ((hi - lo + 1) * n > SLIDE_WORK)
-      return this.region(acc, b, lo, hi + n, { live: true, dead: false });
+    if (cut || (hi - lo + 1) * n > SLIDE_WORK) {
+      acc.incomplete = true;
+      return;
+    }
     const all: Array<Set<number>> = [];
     for (let p = lo; p <= hi; p++) {
       const origins = new Set<number>();
       this.eachChar(ix, p, p + n, (c, k) => {
         const who = this.origin(c, k);
         origins.add(who);
-        this.touch(acc, who, c, k, false);
       });
       all.push(origins);
     }
@@ -451,11 +558,21 @@ class Classifier {
   }
 
   /** Red: `weight` characters (or blocks) were removed; each point is the tombstones where they may sit. */
-  private red(acc: Acc, points: Array<readonly Y.Item[]>, weight: number) {
+  private red(acc: Names, points: Array<readonly Y.Item[]>, weight: number) {
     const valid: Array<Map<string, number>> = [];
     for (const tombs of points) {
       const deleters: number[] = [];
-      this.tombs(acc, tombs, deleters);
+      for (const item of tombs)
+        for (let k = 0; k < item.length; k++) {
+          const c = item.id.client;
+          const clock = item.id.clock + k;
+          if (
+            this.settled.get(c, clock) < 0 &&
+            this.origin(c, clock) === BASE &&
+            this.superseded.get(c, clock) < 0
+          )
+            deleters.push(this.deleter(c, clock));
+        }
       if (deleters.length === weight) valid.push(this.keyed(deleters));
     }
     this.nameCommon(acc, valid);
@@ -470,7 +587,7 @@ class Classifier {
   }
 
   /** The authors every alignment agrees on. */
-  private nameCommon(acc: Acc, alignments: Array<Map<string, number>>) {
+  private nameCommon(acc: Names, alignments: Array<Map<string, number>>) {
     if (!alignments.length) return;
     for (const key of alignments[0].keys())
       if (alignments.every((m) => m.has(key)))
@@ -486,7 +603,7 @@ class Classifier {
   }
 
   /** `removed` was deleted from the draft at one of `starts` of block `b`'s text. */
-  private deletion(acc: Acc, b: number, starts: number[], removed: string) {
+  private deletion(acc: Names, b: number, starts: number[], removed: string) {
     const ix = this.index(b);
     const spans: Array<[number, number]> = [];
     let cut = false;
@@ -498,15 +615,12 @@ class Classifier {
         cut ||= slid.cut;
       }
     }
-    const lo = Math.min(...spans.map(([x]) => x));
-    const hi = Math.max(...spans.map(([, y]) => y));
     const points = new Set<number>();
     if (!cut) for (const [x, y] of spans) for (let p = x; p <= y; p++) points.add(p);
-    if (cut || points.size * removed.length > SLIDE_WORK)
-      return this.region(acc, b, cut ? 0 : lo, cut ? ix.text.length : hi, {
-        live: false,
-        dead: true,
-      });
+    if (cut || points.size * removed.length > SLIDE_WORK) {
+      acc.incomplete = true;
+      return;
+    }
     this.red(
       acc,
       [...points].map((p) => this.deadAt(b, p)),
@@ -520,10 +634,7 @@ class Classifier {
    * The character edit between two spans. What the two share at both ends is trimmed first, so a one-word
    * edit never reaches diff-match-patch, and only what is left counts against the budget.
    */
-  private diff(
-    a: string,
-    b: string,
-  ): { ops: Array<[number, string]>; head: number; tail: number } | null {
+  private diff(a: string, b: string): Array<[number, string]> | null {
     let lo = 0;
     while (lo < a.length && lo < b.length && a[lo] === b[lo]) lo++;
     let hi = 0;
@@ -545,22 +656,24 @@ class Classifier {
             ...(now ? [[DIFF_INSERT, now] as [number, string]] : []),
           ]
         : (makeDiff(was, now, DIFF_OPTS) as Array<[number, string]>);
-    return {
-      ops: [
-        ...(lo ? [[DIFF_EQUAL, a.slice(0, lo)] as [number, string]] : []),
-        ...middle,
-        ...(hi ? [[DIFF_EQUAL, a.slice(a.length - hi)] as [number, string]] : []),
-      ],
-      head: lo,
-      tail: hi,
-    };
+    return [
+      ...(lo ? [[DIFF_EQUAL, a.slice(0, lo)] as [number, string]] : []),
+      ...middle,
+      ...(hi ? [[DIFF_EQUAL, a.slice(a.length - hi)] as [number, string]] : []),
+    ];
   }
 
   /** The character edit of one span, `draft` starting at offset `ds` of draft block `b`. */
-  private chars(acc: Acc, b: number, ds: number, base: string, draft: string) {
-    const diffed = this.diff(base, draft);
-    if (!diffed) return this.region(acc, b, ds, ds + draft.length, { live: true, dead: true });
-    const { ops, head, tail } = diffed;
+  private chars(acc: Names, b: number, ds: number, base: string, draft: string) {
+    if (this.index(b).bad) {
+      acc.incomplete = true;
+      return;
+    }
+    const ops = this.diff(base, draft);
+    if (!ops) {
+      acc.incomplete = true;
+      return;
+    }
     let at = 0;
     ops.forEach(([op, txt], k) => {
       if (op === DIFF_INSERT) {
@@ -577,32 +690,15 @@ class Classifier {
           txt,
         );
       } else if (op === DIFF_EQUAL) {
-        // Items count, not characters the diff calls new: an equal character inside the edit ("e" of
-        // red to blue) can still be a pending item, and the change owns it.
-        if (at >= head && at + txt.length <= draft.length - tail)
-          this.region(acc, b, ds + at, ds + at + txt.length, { live: true, dead: false });
         at += txt.length;
       }
     });
   }
 
-  /** A removed attribute: Apply settles it, and the part that deleted it is a member and names itself. */
-  private removed(acc: Acc, item: Y.Item) {
-    this.tombs(acc, [item]);
-    const who = this.deleter(item.id.client, item.id.clock);
-    if (who >= 0) this.name(acc, who);
-  }
-
   /** The mark rule: a hunk that only changed marks is evidenced by the format items it changed or removed. */
-  private marks(
-    acc: Acc,
-    b: number,
-    ds: number,
-    de: number,
-    rem: readonly Tok[],
-    ins: readonly Tok[],
-  ) {
-    if (!rem.some(marked) && !ins.some(marked)) return;
+  private marks(b: number, ds: number, de: number, rem: readonly Tok[], ins: readonly Tok[]) {
+    const items: Y.Item[] = [];
+    if (!rem.some(marked) && !ins.some(marked)) return items;
     const names = (toks: readonly Tok[]) =>
       new Map(
         toks.flatMap((t) =>
@@ -615,38 +711,20 @@ class Classifier {
       );
     const was = names(rem);
     const now = names(ins);
-    if (!was.size && !now.size) return;
+    if (!was.size && !now.size) return items;
     const changed = new Set(
       [...was, ...now].filter(([k]) => !(was.has(k) && now.has(k))).map(([, n]) => n),
     );
-    if (!changed.size || !rem.length || !ins.length) return;
-    const { formats, dead } = this.index(b);
+    if (!changed.size) return items;
+    const { formats } = this.index(b);
     for (let i = lowerBound(formats, ds); i < formats.length && formats[i].at <= de; i++) {
       const { item } = formats[i];
       const key = (item.content as Y.ContentFormat).key;
-      if ([...changed].some((n) => key === n || key.startsWith(`${n}--`))) this.evidence(acc, item);
+      if ([...changed].some((n) => key === n || key.startsWith(`${n}--`))) items.push(item);
     }
-    // A removed mark is a deleted unit the draft no longer shows: whatever was deleted in the span is in the change.
-    for (let i = lowerBound(dead, ds); i < dead.length && dead[i].at <= de; i++)
-      this.tombs(acc, [dead[i].item]);
-  }
-
-  /** Every pending item of `item`'s subtree that is structure (elements, formats, attributes), and with `text` its characters. */
-  private subtree(acc: Acc, item: Y.Item, text: boolean, named = false) {
-    if (item.deleted) return;
-    if (!(item.content instanceof Y.ContentString) || text)
-      for (let k = 0; k < item.length; k++)
-        this.touch(
-          acc,
-          this.origin(item.id.client, item.id.clock + k),
-          item.id.client,
-          item.id.clock + k,
-          named,
-        );
-    if (!(item.content instanceof Y.ContentType)) return;
-    const type = item.content.type;
-    for (const attribute of type._map.values()) this.subtree(acc, attribute, text);
-    for (let c = type._start; c; c = c.right) this.subtree(acc, c, text);
+    // Deleted formats lose their content kind under GC. Include dead units consistently; they
+    // belong to the footprint but cannot name an exact removed mark.
+    return items;
   }
 
   // ---- hunks ----
@@ -670,6 +748,14 @@ class Classifier {
     const start = (side ? this.projection.diff.draft : this.projection.diff.base).starts[b];
     const from = t.offsets[lo - start];
     return { text: t.text.slice(from, t.offsets[hi - start]), at: from };
+  }
+
+  /** Leading whitespace is carried by the next token, but a changed word owns its trailing
+   * separator too. Include that edge, never the unchanged next word. */
+  private rawSpan(side: 0 | 1, b: number, lo: number, hi: number) {
+    const span = this.span(side, b, lo, hi);
+    const next = (side ? this.projection.diff.draft : this.projection.diff.base).toks[hi];
+    return { ...span, text: span.text + (next?.kind === "text" ? next.ws : "") };
   }
 
   /** The word-level hunks a cleaned hunk was built from: small spans, so the character diff stays small. */
@@ -696,7 +782,7 @@ class Classifier {
   }
   private split?: Map<Hunk, Hunk[]>;
 
-  private hunk(acc: Acc, h: Hunk) {
+  private hunk(boundaries: Boundaries, h: Hunk) {
     const { base: B, draft: D } = this.projection.diff;
     const q0 = h.sfrom;
     const q1 = q0 + h.ins.length;
@@ -715,14 +801,17 @@ class Classifier {
         const [dl, dh] = this.widen(D, i[0], i[1], true, si.length === 1);
         const was = this.span(0, bb, bl, bh);
         const now = this.span(1, db, dl, dh);
-        this.chars(acc, db, now.at, was.text, now.text);
-        this.marks(
-          acc,
-          db,
-          now.at,
-          now.at + now.text.length,
-          B.toks.slice(r[0], r[1]),
-          D.toks.slice(i[0], i[1]),
+        const raw = this.rawSpan(1, db, i[0], i[1]);
+        boundaries.text(db, raw, this.rawSpan(0, bb, r[0], r[1]).text, now, was.text);
+        boundaries.items(
+          this.marks(
+            db,
+            raw.at,
+            raw.at + raw.text.length,
+            B.toks.slice(r[0], r[1]),
+            D.toks.slice(i[0], i[1]),
+          ),
+          r[0] < r[1] && i[0] < i[1],
         );
         continue;
       }
@@ -734,25 +823,32 @@ class Classifier {
         if (rAtom) {
           // The text may be unchanged while the structure is not (a bullet list made ordered): the
           // structure's items are the evidence, and an element the draft re-created replaced the old one.
-          this.chars(acc, db, 0, this.text(0, bb).text, this.text(1, db).text);
+          const now = { at: 0, text: this.text(1, db).text };
+          const was = this.text(0, bb).text;
+          boundaries.text(db, now, was, now, was);
           const element = this.blocks.items[db];
-          this.subtree(acc, element, false);
+          boundaries.subtree(element);
           if (this.origin(element.id.client, element.id.clock) !== BASE) removed++;
           continue;
         }
-        this.blockRule(acc, db, B.toks[r[0]], D.toks[i[0]]);
+        const changed = this.blockItems(db, B.toks[r[0]], D.toks[i[0]]);
+        boundaries.items(changed);
+        if (changed.includes(this.blocks.items[db])) boundaries.subtree(this.blocks.items[db]);
         const [, bh] = this.widen(B, r[0] + 1, r[1], false, k === sr.length - 1);
         const [, dh] = this.widen(D, i[0] + 1, i[1], false, k === si.length - 1);
         const was = this.span(0, bb, r[0] + 1, bh);
         const now = this.span(1, db, i[0] + 1, dh);
-        this.chars(acc, db, now.at, was.text, now.text);
-        this.marks(
-          acc,
-          db,
-          now.at,
-          now.at + now.text.length,
-          B.toks.slice(r[0] + 1, r[1]),
-          D.toks.slice(i[0] + 1, i[1]),
+        const raw = this.rawSpan(1, db, i[0] + 1, i[1]);
+        boundaries.text(db, raw, this.rawSpan(0, bb, r[0] + 1, r[1]).text, now, was.text);
+        boundaries.items(
+          this.marks(
+            db,
+            raw.at,
+            raw.at + raw.text.length,
+            B.toks.slice(r[0] + 1, r[1]),
+            D.toks.slice(i[0] + 1, i[1]),
+          ),
+          r[0] + 1 < r[1] && i[0] + 1 < i[1],
         );
         continue;
       }
@@ -760,12 +856,12 @@ class Classifier {
       if (i) {
         const db = D.blockOf[i[0]];
         const item = this.blocks.items[db];
-        this.evidence(acc, item);
-        if (iAtom) this.subtree(acc, item, true);
-        else {
+        boundaries.items([item]);
+        boundaries.subtree(item);
+        if (!iAtom) {
           const [, dh] = this.widen(D, i[0] + 1, i[1], false, false);
           const now = this.span(1, db, i[0] + 1, dh);
-          this.chars(acc, db, now.at, "", now.text);
+          boundaries.text(db, now, "", now, "");
         }
       }
     }
@@ -778,34 +874,49 @@ class Classifier {
             : D.blockOf[q] + 1;
       const points: Y.Item[][] = [];
       for (let g = gap(q0); g <= gap(q1); g++) points.push(this.blocks.gaps[g] ?? []);
-      this.red(acc, points, removed);
+      boundaries.removed(points, removed);
     }
   }
 
   /** A paired block whose type or attributes changed: the items that made the change are the evidence. */
-  private blockRule(acc: Acc, db: number, was: Tok, now: Tok) {
-    if (was.kind !== "block" || now.kind !== "block" || was.key === now.key) return;
+  private blockItems(db: number, was: Tok, now: Tok): Y.Item[] {
+    if (was.kind !== "block" || now.kind !== "block" || was.key === now.key) return [];
     const item = this.blocks.items[db];
-    // A type change re-creates the element: its own origin is the evidence.
-    if (this.origin(item.id.client, item.id.clock) !== BASE) return this.evidence(acc, item);
+    if (this.origin(item.id.client, item.id.clock) !== BASE) return [item];
     const a = was.node.attrs as Record<string, unknown>;
     const b = now.node.attrs as Record<string, unknown>;
     const type = (item.content as Y.ContentType).type;
+    const items: Y.Item[] = [];
     for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
       if (JSON.stringify(a[key]) === JSON.stringify(b[key])) continue;
       const attr = type._map.get(key);
-      if (!attr) continue;
-      if (attr.deleted) this.removed(acc, attr);
-      else this.evidence(acc, attr);
+      if (attr) items.push(attr);
     }
+    return items;
   }
 
   classify(): Map<string, ChangeClassification> {
     const out = new Map<string, ChangeClassification>();
     for (const group of this.projection.groups) {
-      const acc: Acc = { names: new Map(), members: new Set(), base: [], settled: [] };
-      for (const h of group.hunks)
-        for (const piece of this.pieces(this.projection.diff.hunks[h.index])) this.hunk(acc, piece);
+      const hunks = group.hunks.flatMap((h) => this.pieces(this.projection.diff.hunks[h.index]));
+      const changes: Boundary[] = [];
+      const boundaries: Boundaries = {
+        text: (...args) => {
+          changes.push({ kind: "text", args });
+        },
+        items: (...args) => {
+          changes.push({ kind: "items", args });
+        },
+        subtree: (...args) => {
+          changes.push({ kind: "subtree", args });
+        },
+        removed: (...args) => {
+          changes.push({ kind: "removed", args });
+        },
+      };
+      for (const hunk of hunks) this.hunk(boundaries, hunk);
+      const footprint = this.footprint(changes);
+      const acc = this.names(changes);
       const byline: Author[] = [];
       if (acc.names.has("user")) byline.push({ kind: "user", userId: this.provenance.userId });
       for (const who of [...acc.names.values()].filter((w) => w >= 0).sort((x, y) => x - y)) {
@@ -814,9 +925,9 @@ class Classifier {
       }
       out.set(group.id, {
         byline,
-        members: [...acc.members].sort((x, y) => x - y),
+        members: [...footprint.members].sort((x, y) => x - y),
         ...(this.options.record
-          ? { applied: { base: joined(acc.base), settled: joined(acc.settled) } }
+          ? { applied: { base: joined(footprint.base), settled: joined(footprint.settled) } }
           : {}),
       });
     }

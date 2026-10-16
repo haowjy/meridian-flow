@@ -1,35 +1,113 @@
-/** An AI edit reads pending while any review change holds it, even where its place in the text is ambiguous. */
-import { REVIEW_BASE_FRAGMENT } from "@meridian/agent-edit/diff";
-import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
-import { describe, expect, it } from "vitest";
-import { prosemirrorToYXmlFragment } from "y-prosemirror";
+/** Server status must survive wire/GC boundaries, precision exhaustion, Apply and Undo. */
+import {
+  type AttributionPart,
+  appendApplyRecord,
+  type ItemRange,
+  REVIEW_BASE_FRAGMENT,
+  readBlocks,
+  recordRestorations,
+  writeBlocks,
+} from "@meridian/agent-edit/diff";
+import { buildDocumentSchema } from "@meridian/prosemirror-schema";
+import { expect, it } from "vitest";
 import * as Y from "yjs";
+import { appliedRecord } from "./draft-apply.js";
 import { partsInChanges } from "./draft-edit-status.js";
 
 const schema = buildDocumentSchema();
+const paragraph = (text: string) => schema.nodes.paragraph.create(null, schema.text(text));
+const fragment = (doc: Y.Doc) => doc.getXmlFragment("prosemirror");
+const text = (doc: Y.Doc, block = 0) =>
+  (fragment(doc).get(block) as Y.XmlElement).get(0) as Y.XmlText;
 
-describe("partsInChanges", () => {
-  it("keeps an AI deletion in the middle of a long repeat pending", () => {
-    const text = `${"echo ".repeat(250)}tail words`;
-    const doc = new Y.Doc({ gc: false });
-    doc.clientID = 1;
-    const paragraph = schema.nodes.paragraph.create(null, schema.text(text));
-    const top = schema.topNodeType.create(null, [paragraph]);
-    prosemirrorToYXmlFragment(top, doc.getXmlFragment(REVIEW_BASE_FRAGMENT));
-    prosemirrorToYXmlFragment(top, doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME));
-    const ai = new Y.Doc({ gc: false });
-    ai.clientID = 2;
-    Y.applyUpdate(ai, Y.encodeStateAsUpdate(doc));
-    const deleted: Array<{ client: number; clock: number; len: number }> = [];
-    ai.on("afterTransaction", (tr: Y.Transaction) => {
-      for (const [client, items] of tr.deleteSet.clients)
-        for (const d of items) deleted.push({ client, clock: d.clock, len: d.len });
+it.each([
+  "budget insert",
+  "budget delete",
+  "Apply",
+  "restoration",
+])("%s status uses encoded and reloaded room evidence", (scenario) => {
+  const doc = new Y.Doc({ gc: false });
+  doc.clientID = 1;
+  const budget = scenario.startsWith("budget");
+  const blocks = (
+    budget
+      ? ["first tail words", "unchanged separator words here", `${"echo ".repeat(2000)}tail`]
+      : ["The red gate opens beside the tower."]
+  ).map(paragraph);
+  writeBlocks(fragment(doc), schema, blocks);
+  writeBlocks(doc.getXmlFragment(REVIEW_BASE_FRAGMENT), schema, blocks);
+  const parts: AttributionPart[] = [];
+  const ai = (run: () => void) => {
+    doc.clientID = 200000 + parts.length;
+    const client = doc.clientID;
+    const from = Y.getState(doc.store, client);
+    const deleted: ItemRange[] = [];
+    const capture = (tr: Y.Transaction) => {
+      for (const [client, ranges] of tr.deleteSet.clients)
+        for (const { clock, len } of ranges) deleted.push([client, clock, len]);
+    };
+    doc.on("afterTransaction", capture);
+    run();
+    doc.off("afterTransaction", capture);
+    const length = Y.getState(doc.store, client) - from;
+    parts.push({
+      threadId: `chat${parts.length}`,
+      turnId: "turn",
+      inserted: length ? [[client, from, length]] : [],
+      deleted,
     });
-    const body = (ai.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).get(0) as Y.XmlElement).get(
-      0,
-    ) as Y.XmlText;
-    body.delete(500, 5);
-    Y.applyUpdate(doc, Y.encodeStateAsUpdate(ai));
-    expect(partsInChanges(doc, [{ effect: { inserted: [], deleted } }])).toEqual([true]);
-  });
+  };
+  if (budget) {
+    ai(() => text(doc).insert(0, `${"X".repeat(63999)} `));
+    ai(() =>
+      scenario === "budget insert"
+        ? text(doc, 2).insert(5000, "echo ")
+        : text(doc, 2).delete(5000, 5),
+    );
+  } else {
+    ai(() =>
+      writeBlocks(fragment(doc), schema, [paragraph("The bed gate opens beside the tower.")]),
+    );
+    if (scenario === "Apply") {
+      const entry = appliedRecord({
+        input: {
+          scope: "item",
+          snapshot: Buffer.from(Y.encodeSnapshot(Y.snapshot(doc))).toString("base64"),
+        },
+        branchState: Y.encodeStateAsUpdate(doc),
+        parts,
+      });
+      if (!entry) throw new Error("Apply did not produce a record");
+      doc.clientID = 1;
+      doc.transact(() => {
+        appendApplyRecord(doc, entry);
+        writeBlocks(
+          doc.getXmlFragment(REVIEW_BASE_FRAGMENT),
+          schema,
+          readBlocks(fragment(doc), schema),
+        );
+      });
+      doc.clientID = 300000;
+      text(doc).delete(4, 3);
+    } else {
+      doc.clientID = 300000;
+      const origin = Symbol("discard");
+      const history = new Y.UndoManager(fragment(doc), { trackedOrigins: new Set([origin]) });
+      recordRestorations(history);
+      doc.transact(() => writeBlocks(fragment(doc), schema, blocks), origin);
+      history.undo();
+      history.destroy();
+    }
+  }
+  const objectRange = ([client, clock, len]: ItemRange) => ({ client, clock, len });
+  const effects = parts.map((part) => ({
+    effect: { inserted: part.inserted.map(objectRange), deleted: part.deleted.map(objectRange) },
+  }));
+  for (const gc of [false, true]) {
+    const reload = new Y.Doc({ gc });
+    Y.applyUpdate(reload, Y.encodeStateAsUpdate(doc));
+    expect(partsInChanges(reload, effects)).toEqual(parts.map(() => scenario !== "Apply"));
+    reload.destroy();
+  }
+  doc.destroy();
 });

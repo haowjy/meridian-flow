@@ -111,11 +111,14 @@ export function useChangeItems(
   changes: readonly ReviewChange[];
   frame: ReviewFrame | null;
   ready: boolean;
+  attributionReady: boolean;
   /** The applied entries in force: the manuscript stops painting the changes they name. */
   applied: readonly AppliedChange[];
   completing: "apply" | "discard" | null;
 } {
-  const { frame, changes, ready, visible, applied, unplaced } = useReviewState(read ? draft : null);
+  const { frame, changes, ready, attributionReady, visible, applied, unplaced } = useReviewState(
+    read ? draft : null,
+  );
   const records = useDraftCommandSlice(draft);
   const pending = draft ? pendingDraftCommand(records, draft) : null;
   const held = draft && wholeDocument ? draftCommandFailure(records, draft) : null;
@@ -129,6 +132,7 @@ export function useChangeItems(
     changes,
     frame,
     ready,
+    attributionReady,
     applied,
     completing:
       pending?.mode ?? ((items.length === 0 && sent > 0) || unplaced > 0 ? "apply" : null),

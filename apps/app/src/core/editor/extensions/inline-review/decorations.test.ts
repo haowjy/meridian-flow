@@ -3,9 +3,20 @@
  * The review's paint: where a hunk's green and red land in the editor, and the two risks that make the
  * review lie: a removal drawn at the wrong block boundary, and a review repainted from a stale base.
  */
+import {
+  appendApplyRecord,
+  RESTORED_ORIGIN,
+  readRestorationLinks,
+  recordRestorations,
+  writeBlocks,
+} from "@meridian/agent-edit/diff";
+import { buildDocumentSchema } from "@meridian/prosemirror-schema";
+import { QueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ReviewRuntime } from "@/features/draft-review/review-runtime";
+import * as Y from "yjs";
+import { draftAttributionQueryOptions } from "@/client/query/useDraftAttribution";
+import { createReviewRuntime, type ReviewRuntime } from "@/features/draft-review/review-runtime";
 import {
   attachReviewRuntime,
   createReviewEditor,
@@ -111,4 +122,106 @@ describe("a repaint after the writer's edit", () => {
     editor.commands.setReviewActiveChange("c0");
     expect(added(editor)).toEqual(["green"]);
   });
+});
+
+// Root-only updates do not generate editor document transactions.
+it("an attached runtime republishes delayed Undo provenance and Apply records without a prose change", async () => {
+  vi.useFakeTimers();
+  const schema = buildDocumentSchema();
+  const p = (s: string) => schema.nodes.paragraph.create(null, schema.text(s));
+  const doc = new Y.Doc({ gc: false });
+  doc.clientID = 1;
+  writeBlocks(doc.getXmlFragment("prosemirror"), schema, [p("alpha tail")]);
+  seedReviewBase(doc, ["alpha tail"]);
+  doc.clientID = 200000;
+  writeBlocks(doc.getXmlFragment("prosemirror"), schema, [p("alpha tail END")]);
+  const inserted = [[200000, 0, Y.getState(doc.store, 200000)]] as [number, number, number][];
+  const payload = {
+    itemKey: "draft:provenance",
+    userId: "u",
+    edits: [
+      {
+        threadId: "chat",
+        turnId: "turn",
+        title: "Chat",
+        at: "2026",
+        owner: { threadId: "chat", title: "Chat", reveal: { threadId: "chat", turnId: "turn" } },
+        inserted,
+        deleted: [],
+      },
+    ],
+  };
+  const peer = new Y.Doc({ gc: false });
+  Y.applyUpdate(peer, Y.encodeStateAsUpdate(doc));
+  peer.clientID = 300000;
+  const origin = Symbol("discard");
+  const history = new Y.UndoManager(peer.getXmlFragment("prosemirror"), {
+    trackedOrigins: new Set([origin]),
+  });
+  recordRestorations(history);
+  peer.transact(() => {
+    const t = (peer.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(0) as Y.XmlText;
+    t.delete(10, 4);
+  }, origin);
+  Y.applyUpdate(doc, Y.encodeStateAsUpdate(peer));
+  const updates: Array<{ update: Uint8Array; origin: unknown }> = [];
+  peer.on("update", (update, origin) => updates.push({ update, origin }));
+  history.undo();
+  const { editor, history: surfaceHistory } = createReviewEditor([], doc);
+  const draft = {
+    projectId: "p",
+    workId: "w",
+    documentId: "provenance",
+    itemKey: "draft:provenance",
+  };
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+  });
+  client.setQueryData(draftAttributionQueryOptions(draft).queryKey, payload);
+  const room = {
+    document: doc,
+    subscribe: () => () => {},
+    getSnapshot: () => ({ status: "synced" }),
+    whenSynced: () => Promise.resolve(),
+    hasUnacknowledgedEdits: () => false,
+  };
+  const runtime = createReviewRuntime(room as never, { draft, queryClient: client });
+  try {
+    runtime.attachEditor(editor);
+    await vi.advanceTimersByTimeAsync(180);
+    for (const x of updates.filter((x) => x.origin !== RESTORED_ORIGIN))
+      Y.applyUpdate(doc, x.update);
+    await vi.advanceTimersByTimeAsync(180);
+    expect(runtime.state().changes[0]).toMatchObject({
+      byline: [{ kind: "user", userId: "u" }],
+      members: [],
+    });
+    const frame = runtime.state().frame;
+    for (const x of updates.filter((x) => x.origin === RESTORED_ORIGIN))
+      Y.applyUpdate(doc, x.update);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(runtime.state().frame?.doc).toBe(frame?.doc);
+    const restoredFrame = runtime.state().frame;
+    if (!restoredFrame) throw new Error("Restored frame was not published");
+    const seen = Y.createDocFromSnapshot(doc, restoredFrame.snapshot, new Y.Doc({ gc: false }));
+    expect(readRestorationLinks(seen)).toHaveLength(1);
+    seen.destroy();
+    expect(runtime.state().changes[0]).toMatchObject({
+      byline: [{ kind: "thread", threadId: "chat", turnId: "turn" }],
+      members: ["chat"],
+    });
+    doc.clientID = 1;
+    appendApplyRecord(doc, { base: inserted, settled: [] });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(runtime.state().frame?.doc).toBe(frame?.doc);
+    expect(runtime.state().changes[0]).toMatchObject({ byline: [], members: [] });
+  } finally {
+    runtime.destroy();
+    editor.destroy();
+    surfaceHistory.undoManager.destroy();
+    client.clear();
+    history.destroy();
+    peer.destroy();
+    doc.destroy();
+  }
 });
