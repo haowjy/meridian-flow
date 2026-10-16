@@ -92,6 +92,17 @@ describe("gateCaretPresence", () => {
     expect(state()?.cursor).toEqual({ anchor: 4, head: 4 });
   });
 
+  it("does not let a late retire clear an equal caret the front view published first", () => {
+    const { tab, dock, caret, state, bring } = twoViews();
+    caret(tab, { anchor: 4, head: 4 });
+    bring("dock");
+    caret(dock, { anchor: 4, head: 4 });
+
+    tab.retire();
+
+    expect(state()?.cursor).toEqual({ anchor: 4, head: 4 });
+  });
+
   it("lets an upload announcement clear while its view is in the back", () => {
     const { tab, bring, state } = twoViews();
     tab.presence.setField("imageUploads", ["token"]);

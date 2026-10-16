@@ -36,6 +36,15 @@ __mergedSuite("draft-tree.apply-placement.db.test.ts", () => {
       expect
         .soft(refusal(hiddenFolder, "manuscript://characters"))
         .toEqual(refusal(missing, "manuscript://missing"));
+      expect.soft(missing).toMatchObject({ isError: true, result: { code: "not_found" } });
+      expect.soft(missing.output).toContain("Writing a file under this path creates the folder.");
+      expect
+        .soft((await s.model(ascension).now("ls", { path: "kb://" })).output)
+        .toBe("kb://\n  (empty)");
+      await s.writer.mkdir("empty");
+      expect
+        .soft((await s.model(beacon).now("ls", { path: "manuscript://empty/" })).output)
+        .toBe("manuscript://empty/\n  (empty)");
       const hidden = await s.review(ascension);
       expect.soft(itemFor(hidden.items, kael), "new while hidden").toMatchObject({
         origin: "created",

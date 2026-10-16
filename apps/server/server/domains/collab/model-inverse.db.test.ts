@@ -217,7 +217,7 @@ describe("model document stack", () => {
     }
   });
   it.each([
-    ["draft", "count"],
+    ["live", "count"],
     ["live", "stepwise"],
     ["draft", "stepwise"],
     ["draft", "short"],

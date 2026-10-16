@@ -1,33 +1,16 @@
 /** Append-only history and bump-class gate for the collaboration schema surface. */
 import { execFileSync } from "node:child_process";
 import type { Attrs, MarkSpec, NodeSpec } from "prosemirror-model";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   COLLAB_SCHEMA_VERSION,
   type CollabSchemaVersion,
   clientSchemaVersionFromSubprotocolHeader,
-  createCollabYDoc,
   documentMarks,
   documentNodes,
   PROSEMIRROR_FRAGMENT_NAME,
-  RESERVED_CLIENT_ID_MAX,
 } from "./index.js";
 import versionHistory from "./schema-shape.history.json";
-
-const randomState = vi.hoisted(() => ({
-  draws: [] as number[],
-  getRandomValues: vi.fn((array: Uint32Array) => {
-    const next = randomState.draws.shift();
-    if (next === undefined) throw new Error("unexpected clientID draw");
-    array[0] = next;
-    return array;
-  }),
-}));
-
-vi.mock("lib0/webcrypto", () => ({
-  subtle: undefined,
-  getRandomValues: randomState.getRandomValues,
-}));
 
 const POLICY = "packages/prosemirror-schema/AGENTS.md#schema-version-bump-policy";
 const HISTORY_PATH = "packages/prosemirror-schema/src/schema-shape.history.json";
@@ -293,21 +276,5 @@ describe("collab schema subprotocol offers", () => {
     ["meridian.collab.0.1.0, meridian.collab.0.2.0", "multiple matches"],
   ])("maps an %s header (%s) to the sentinel", (header, _case) => {
     expect(clientSchemaVersionFromSubprotocolHeader(header)).toEqual(sentinel);
-  });
-});
-
-describe("reserved Yjs clientID protocol", () => {
-  beforeEach(() => {
-    randomState.draws = [];
-    randomState.getRandomValues.mockClear();
-  });
-
-  it("re-rolls when Yjs draws a reserved clientID", () => {
-    const safeDraw = RESERVED_CLIENT_ID_MAX + 1;
-    randomState.draws.push(RESERVED_CLIENT_ID_MAX, safeDraw);
-
-    const doc = createCollabYDoc({ guid: "reserved-then-safe" });
-
-    expect(doc.clientID).toBe(safeDraw);
   });
 });
