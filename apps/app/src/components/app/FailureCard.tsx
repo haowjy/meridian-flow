@@ -7,7 +7,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 
-export type NoticeCardProps = {
+export type FailureCardProps = {
   /** `error` is destructive-tinted with an alert icon; `info` is quiet with an info icon. */
   tone: "error" | "info";
   /** The sentence and its controls, laid out on one row (Retry, Edit). */
@@ -35,14 +35,14 @@ export type NoticeCardProps = {
   onDismiss?: () => void;
 };
 
-export function NoticeCard({
+export function FailureCard({
   tone,
   children,
   note,
   inline = false,
   announce = true,
   onDismiss,
-}: NoticeCardProps) {
+}: FailureCardProps) {
   const Icon = tone === "error" ? CircleAlert : Info;
   return (
     <Alert

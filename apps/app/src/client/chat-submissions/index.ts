@@ -18,6 +18,7 @@ export {
   type ChatSubmission,
   chatSubmissionStorageKey,
   type NewChatSubmission,
+  submissionReplayChanged,
 } from "./store";
 
 let journal: DeviceChatSubmissionJournal | null = null;

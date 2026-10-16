@@ -9,6 +9,8 @@
  * queued one.
  */
 import type { AiWriteMode } from "@meridian/contracts/works";
+import type { CommandFailure } from "../commands";
+import { durableControls } from "./durable-controls";
 import type { RunStateIntent, RunStateView } from "./run-state-view";
 
 export type SwitchRowStatus = "sending" | "queued" | "failed" | "withdraw_failed";
@@ -16,7 +18,6 @@ export type SwitchRowStatus = "sending" | "queued" | "failed" | "withdraw_failed
 export type SwitchRow = {
   id: string;
   mode: AiWriteMode;
-  status: SwitchRowStatus;
   /** The server may hold it and hasn't answered: Retry only, no Withdraw. */
   awaitingServer?: boolean;
   /**
@@ -25,7 +26,10 @@ export type SwitchRow = {
    * one a reply holds the chat for (`waiting`): those stay at the tail.
    */
   awaitsRun?: boolean;
-};
+} & (
+  | { status: "sending" | "queued"; failure?: never }
+  | { status: "failed" | "withdraw_failed"; failure: CommandFailure }
+);
 
 type Switch = Extract<RunStateIntent, { kind: "switch" }>;
 type Queued = { id: string; mode: AiWriteMode; from: "server" | Switch; awaitsRun?: boolean };
@@ -41,19 +45,19 @@ const byOrder = (a: Switch, b: Switch) =>
 export function switchState(view: RunStateView): { mode: AiWriteMode; rows: SwitchRow[] } | null {
   if (!view.record) return null;
   const applied = view.record.mode;
-  const withdrawals = new Map<string, boolean>();
+  const withdrawals = new Map<string, Extract<RunStateIntent, { kind: "withdraw" }>>();
   for (const intent of view.intents)
-    if (intent.kind === "withdraw") withdrawals.set(intent.id, intent.failed === true);
+    if (intent.kind === "withdraw") withdrawals.set(intent.id, intent);
 
   let queued: Queued | null = null;
-  for (const item of view.record.items) {
-    if (item.intent !== "control" || item.control?.kind !== "write_mode") continue;
-    if (withdrawals.get(item.id) === false) continue;
+  for (const item of durableControls(view.record.items)) {
+    if (item.control.kind !== "write_mode") continue;
+    if (withdrawals.has(item.id) && !withdrawals.get(item.id)?.failed) continue;
     queued = {
       id: item.id,
       mode: item.control.mode,
       from: "server",
-      awaitsRun: item.deliveryState === "awaiting_run",
+      awaitsRun: item.awaitsRun,
     };
     break;
   }
@@ -61,12 +65,13 @@ export function switchState(view: RunStateView): { mode: AiWriteMode; rows: Swit
   const failedRows: SwitchRow[] = [];
   const switches = view.intents.filter((i): i is Switch => i.kind === "switch").sort(byOrder);
   for (const intent of switches) {
-    if (withdrawals.get(intent.id) === false) continue;
+    if (withdrawals.has(intent.id) && !withdrawals.get(intent.id)?.failed) continue;
     if (intent.failed) {
       failedRows.push({
         id: intent.id,
         mode: intent.mode,
         status: "failed",
+        failure: intent.failure,
         ...(intent.awaitingServer ? { awaitingServer: true } : {}),
       });
       continue;
@@ -78,21 +83,24 @@ export function switchState(view: RunStateView): { mode: AiWriteMode; rows: Swit
   const rows = [...failedRows];
   if (queued) {
     const { id, mode, from, awaitsRun } = queued;
-    rows.push(
-      from === "server"
-        ? {
-            id,
-            mode,
-            status: withdrawals.get(id) === true ? "withdraw_failed" : "queued",
-            ...(awaitsRun ? { awaitsRun: true } : {}),
-          }
-        : {
-            id,
-            mode,
-            status: "sending",
-            ...(from.awaitingServer ? { awaitingServer: true } : {}),
-          },
-    );
+    if (from === "server") {
+      const withdrawal = withdrawals.get(id);
+      rows.push({
+        id,
+        mode,
+        ...(awaitsRun ? { awaitsRun: true } : {}),
+        ...(withdrawal?.failed
+          ? { status: "withdraw_failed", failure: { ...withdrawal.occurrence, kind: "lost" } }
+          : { status: "queued" }),
+      });
+    } else {
+      rows.push({
+        id,
+        mode,
+        status: "sending",
+        ...(from.awaitingServer ? { awaitingServer: true } : {}),
+      });
+    }
   }
   return { mode: queued?.mode ?? applied, rows };
 }

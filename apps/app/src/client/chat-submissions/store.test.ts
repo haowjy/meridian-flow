@@ -12,6 +12,7 @@ import {
   type ChatSubmission,
   type ChatSubmissionStorage,
   DeviceChatSubmissionJournal,
+  submissionReplayChanged,
 } from "./store";
 
 function memory(): ChatSubmissionStorage & { raw(): Map<string, string> } {
@@ -36,6 +37,7 @@ function existingThread(overrides: Partial<ChatSubmission> = {}): ChatSubmission
   return {
     recordId: "sub-1",
     submissionId: "sub-1",
+    occurrence: { requestId: "sub-1", attempt: 1 },
     threadId: "thread-1",
     projectId: "project-1",
     createdAt: "2026-09-22T12:00:00.000Z",
@@ -164,6 +166,11 @@ it("rewrites a reminted submission in its stable key, retaining the draft and cr
   // One record, and the chat's seq counter.
   expect(storage.length).toBe(2);
   expect(journal.get(entry.recordId)).toEqual({ ...entry, submissionId: "reminted" });
+  const retried = { ...entry, occurrence: { requestId: "retry-request", attempt: 2 } };
+  journal.record("account", retried);
+  const reloaded = new DeviceChatSubmissionJournal(storage);
+  reloaded.setUser("account");
+  expect(reloaded.get(entry.recordId)?.occurrence).toEqual(retried.occurrence);
   // A new record takes the chat's next place in order; a rewrite keeps its own.
   journal.record("account", { ...entry, recordId: "later", submissionId: "later", seq: 99 });
   journal.record("account", { ...entry, submissionId: "again" });
@@ -184,6 +191,15 @@ it("notifies subscribers on writes, retirement and matching cross-tab storage ch
   const unsubscribe = journal.subscribe(() => {
     notifications += 1;
   });
+  const envelope = (entry: ChatSubmission) => JSON.stringify({ payload: entry });
+  const before = envelope(existingThread());
+  const replay = envelope(existingThread({ occurrence: { requestId: "retry", attempt: 2 } }));
+  expect(submissionReplayChanged(before, replay)).toBe(false);
+  expect(submissionReplayChanged(null, before)).toBe(true);
+  expect(submissionReplayChanged(before, null)).toBe(true);
+  expect(submissionReplayChanged(before, envelope(existingThread({ state: "rejected" })))).toBe(
+    true,
+  );
   journal.record("account", existingThread());
   journal.notifyStorageChange(`${CHAT_SUBMISSIONS_STORAGE_PREFIX}account:another-record`);
   journal.notifyStorageChange(`${CHAT_SUBMISSIONS_STORAGE_PREFIX}account-other:record`);

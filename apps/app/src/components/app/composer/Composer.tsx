@@ -18,7 +18,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { NoticeCard } from "@/components/app/NoticeCard";
+import { FailureCard } from "@/components/app/FailureCard";
 import { Button } from "@/components/ui/button";
 import type { AuthoritativeReference, StableReferenceAuthority } from "@/core/completion";
 import { ChromeKernelExtension, getEditorChrome } from "@/core/editor/chrome";
@@ -121,8 +121,8 @@ export type ComposerProps = {
   availableSkills?: readonly ComposerAvailableSkill[] | null;
   /** Chat verbs (`/compact`) the owning surface can run on its thread. */
   commands?: readonly ComposerChatCommand[] | null;
-  /** The host's own notes (`NoticeCard`s), stacked above the box with the Composer's failure. */
-  notices?: ReactNode;
+  /** The host's own cards (`FailureCard`s), the card stack, stacked above the box with the Composer's failure. */
+  cards?: ReactNode;
   /** Strips joined to the box's top edge (the draft dock); the notes sit above them. */
   attached?: ReactNode;
 };
@@ -188,7 +188,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     referenceCatalog = null,
     availableSkills = null,
     commands = null,
-    notices,
+    cards,
     attached,
   } = props;
   const rotatingPlaceholder = useComposerPlaceholder(running);
@@ -569,7 +569,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     }
   };
   const failureCard = submitFailure ? (
-    <NoticeCard
+    <FailureCard
       tone="error"
       onDismiss={() => {
         setSubmitFailure(false);
@@ -577,15 +577,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       }}
     >
       <p className="min-w-0 flex-1">{t`Couldn't send.`}</p>
-    </NoticeCard>
+    </FailureCard>
   ) : null;
   return (
     <>
-      {notices || failureCard ? (
+      {cards || failureCard ? (
         // Above the box and its strips, as wide as the box: every note above the box is the
         // same card in the same place, whoever raised it. Send is the failure's retry.
         <div className="mb-[var(--chat-space-inline)] flex flex-col gap-[var(--chat-space-inline)]">
-          {notices}
+          {cards}
           {failureCard}
         </div>
       ) : null}

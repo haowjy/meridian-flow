@@ -8,21 +8,22 @@
  * a reply's actions. A finished
  * divider's state words (icon and label, one button) open and close its
  * summary; a running compaction's Stop lives on the same line. The writer's `/compact <instructions>` sit under the line, verbatim. A
- * manual compaction's failure speaks on the divider it belongs to. An
- * autocompaction's failure stays quiet (R3): the failed reply under the
- * writer's newest message already says so. State changes are spoken by the
+ * manual compaction's failure is a card on the divider it belongs to
+ * (`chatCards`), with Try again. An autocompaction's failure stays quiet (R3):
+ * the failed reply under the writer's newest message already says so. State changes are spoken by the
  * global polite announcer, never a live region on the row.
  */
 import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Turn } from "@meridian/contracts/protocol";
-import { CircleAlert, FoldVertical } from "lucide-react";
+import { FoldVertical } from "lucide-react";
 import { useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useStatsForNerds } from "@/hooks/use-stats-for-nerds";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
+import { AnchoredCards } from "../ChatCards";
 import { ForkTurnAction } from "../derivation/DeriveTurnActions";
 import { TurnInfoButton, TurnInfoRow } from "../TurnInfoButton";
 import { CompactionInstructions } from "./CompactionInstructions";
@@ -55,9 +56,7 @@ function stateLabel(view: DividerView, stopping: boolean): StateLabel {
         ? { full: t`Conversation compacted`, short: t`Compacted` }
         : { full: t`Conversation compacted automatically`, short: t`Compacted` };
     case "failed":
-      return view.trigger === "manual"
-        ? same(t`Couldn't compact`)
-        : { full: t`Conversation not compacted`, short: t`Not compacted` };
+      return same(t`Compaction`);
     case "cancelled":
       return same(t`Compaction stopped`);
   }
@@ -70,7 +69,6 @@ export function CompactionDivider({ turn, stopping, onStop }: CompactionDividerP
   const sectionRef = useRef<HTMLElement>(null);
   const focusWithin = useFocusWithinRow(sectionRef);
   const label = stateLabel(view, stopping);
-  const loud = view.state === "failed" && view.failureCopy !== null;
   const { full } = label;
 
   return (
@@ -105,16 +103,13 @@ export function CompactionDivider({ turn, stopping, onStop }: CompactionDividerP
             // the edge every other divider state and the instructions align to.
             className="focus-ring -mx-1 flex min-w-0 items-center gap-[var(--chat-space-block)] rounded-md px-1 py-1 text-ink-muted transition-colors hover:bg-sidebar-accent hover:text-foreground aria-expanded:text-foreground"
           >
-            <DividerMark state={view.state} loud={loud} />
+            <DividerMark state={view.state} />
             <DividerLabel label={label} className="text-inherit" />
           </button>
         ) : (
           <span className="flex min-w-0 items-center gap-[var(--chat-space-block)]">
-            <DividerMark state={view.state} loud={loud} />
-            <DividerLabel
-              label={label}
-              className={view.state === "failed" && !loud ? "text-ink-subtle" : "text-ink-muted"}
-            />
+            <DividerMark state={view.state} />
+            <DividerLabel label={label} className="text-ink-muted" />
           </span>
         )}
 
@@ -150,7 +145,7 @@ export function CompactionDivider({ turn, stopping, onStop }: CompactionDividerP
 
       {view.instructions ? <CompactionInstructions instructions={view.instructions} /> : null}
 
-      {view.failureCopy ? <p className="text-meta text-destructive">{view.failureCopy}</p> : null}
+      <AnchoredCards anchor={{ turn: turn.id }} />
 
       {view.summary ? (
         <div
@@ -216,9 +211,8 @@ export function DividerRule() {
   return <span aria-hidden className="h-px min-w-3 flex-1 bg-border" />;
 }
 
-export function DividerMark({ state, loud }: { state: DividerView["state"]; loud: boolean }) {
+function DividerMark({ state }: { state: DividerView["state"] }) {
   if (state === "pending") return <span aria-hidden className="streaming-dot mx-1" />;
-  if (loud) return <CircleAlert aria-hidden className="size-3.5 shrink-0 text-destructive" />;
   return <FoldVertical aria-hidden className="size-3.5 shrink-0 text-ink-subtle" />;
 }
 

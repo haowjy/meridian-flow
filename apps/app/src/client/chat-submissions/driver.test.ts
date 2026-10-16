@@ -252,7 +252,7 @@ it.each([
     state: transition === "retry" ? ("rejected" as const) : undefined,
   };
   r.records.set("record-1", original);
-  const statuses: Array<{ status: string; local?: boolean }> = [];
+  const statuses: Array<{ status: string; local?: "unsaved" | "lost" }> = [];
   try {
     const owner = r.mount({
       journal: { entries: () => [...r.records.values()], record: () => false, retire: () => false },
@@ -269,7 +269,7 @@ it.each([
     }).owner;
     if (transition === "retry" || transition === "remint") await owner.retry("sub-1");
     else await owner.drive("thread_1");
-    expect(statuses.at(-1)).toEqual({ status: "error", local: true });
+    expect(statuses.at(-1)).toEqual({ status: "error", local: "unsaved" });
     expect(r.records.get("record-1")).toEqual(original);
     expect(r.scenario.appendRequests).toHaveLength(0);
   } finally {
@@ -383,7 +383,7 @@ it("a failed successor creation rewrite also fails its attempted predecessor", a
   expect(status).toHaveBeenCalledWith(
     expect.objectContaining({ recordId: "record-1" }),
     "error",
-    true,
+    "unsaved",
   );
   test.dispose();
 });

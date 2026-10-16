@@ -20,6 +20,7 @@
 import { compareSeq } from "@meridian/contracts/protocol";
 import type { ControlBody, PendingInboxItem, RunState } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
+import { type FailedCommand, nextOccurrence } from "../commands";
 import { switchState } from "./fold-switches";
 import {
   addIntent,
@@ -42,11 +43,9 @@ export type JournalSwitch = {
   posted: boolean;
   /** The server refused it: nothing is held there, so Withdraw is local. */
   refused: boolean;
-  /** The last attempt did not succeed (refused, or lost in this tab). */
-  failed: boolean;
   /** The server's answer, stamped by whichever tab drove the record: the whole record, and when (ms). */
   answer: { runState: RunState; at: number } | null;
-};
+} & FailedCommand;
 
 export const isWriteModeControl = (item: PendingInboxItem) =>
   item.intent === "control" && item.control?.kind === "write_mode";
@@ -144,7 +143,7 @@ export type RunStateAction =
   | { type: "journal"; switches: readonly JournalSwitch[] }
   /** The view told the writer of the news through these counts. */
   | { type: "spoken"; queued: number; applied: number }
-  | { type: "withdraw"; id: string; failed?: boolean }
+  | { type: "withdraw"; id: string; requestId: string; failed?: boolean }
   | { type: "withdrawn"; id: string; runState: RunState }
   | { type: "dropWithdraw"; id: string };
 
@@ -251,9 +250,10 @@ function reduceView(view: RunStateView, action: RunStateAction): RunStateView {
           order: entry.seq,
           mode: entry.mode,
           answer: entry.answer?.runState.version ?? null,
-          ...(entry.answer
-            ? {}
-            : { failed: entry.failed, awaitingServer: entry.posted && !entry.refused }),
+          awaitingServer: !entry.answer && entry.posted && !entry.refused,
+          ...(!entry.answer && entry.failed
+            ? { failed: true as const, failure: entry.failure }
+            : { failed: false as const }),
         });
       }
       // An entry that left the journal was withdrawn or refused here, or pruned while this
@@ -263,14 +263,21 @@ function reduceView(view: RunStateView, action: RunStateAction): RunStateView {
           next = dropIntent(next, "switch", intent.id);
       return next;
     }
-    case "withdraw":
+    case "withdraw": {
+      const held = view.intents.find(
+        (intent) => intent.kind === "withdraw" && intent.id === action.id,
+      );
+      const before =
+        held?.kind === "withdraw" ? held.occurrence : { requestId: action.requestId, attempt: 0 };
       return addIntent(view, {
         kind: "withdraw",
         id: action.id,
         order: 0,
         answer: null,
         failed: action.failed,
+        occurrence: action.failed ? before : nextOccurrence(before.attempt, action.requestId),
       });
+    }
     case "withdrawn":
       // The answer's record, then the intent's answer at its version.
       return answerIntent(

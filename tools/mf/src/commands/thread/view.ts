@@ -9,12 +9,13 @@ import {
 } from "../../core/command";
 import { jsonResponse } from "../../core/session";
 import { blockTimings, renderBlocks } from "./block-timing";
-import { projectChatView, renderChatView, selectRows, viewSnapshot } from "./chat-view";
+import { chatSnapshot, projectChatView, renderChatView, selectRows } from "./chat-view";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
 
 export const threadViewCommand: CommandSpec = {
   path: ["thread", "view"],
-  summary: "Chat transcript as the app draws it: rows, replies' items, status, usage",
+  summary:
+    "Chat transcript as the app draws it: rows, replies' items, status, usage, and the failure cards the durable facts give (the latest failed reply, usage; ./mf holds no local command state, so a lost Retry or an unsent message never appears)",
   args: "<thread>",
   route: "GET /api/threads/:threadId/snapshot",
   options: {
@@ -51,7 +52,8 @@ export const threadViewCommand: CommandSpec = {
       decode: jsonResponse(threadSnapshotSchema),
     });
     // One authoritative read, no socket and no sync: the shared view model decides the rows, as the app does.
-    const view = viewSnapshot(snapshot, snapshot.turns);
+    const shown = chatSnapshot(snapshot, snapshot.turns);
+    const { view } = shown;
     const selection = {
       full: flag(ctx, "full"),
       turnId: stringOption(ctx, "turn"),
@@ -67,7 +69,7 @@ export const threadViewCommand: CommandSpec = {
         renderBlocks,
       );
     } else {
-      ctx.out.result(projectChatView(snapshot, view, selection), renderChatView);
+      ctx.out.result(projectChatView(snapshot, shown, selection), renderChatView);
     }
     return undefined;
   },
