@@ -23,7 +23,6 @@ import {
   apiThreadRecentDocumentsPath,
   apiThreadSkillsPath,
   apiThreadSnapshotPath,
-  apiThreadStopPath,
   apiThreadTitlePath,
   apiThreadTranscriptPath,
   apiThreadTurnContextPreviewDebugPath,
@@ -31,6 +30,7 @@ import {
   apiThreadUserStatePath,
   apiThreadWorkPath,
   type CancelTurnResponse,
+  deserializeTransport,
   type ForkThreadRequest,
   type HandoffBriefRetryRequest,
   type HandoffThreadRequest,
@@ -57,13 +57,20 @@ import {
 import type {
   EnqueueThreadControlRequest,
   EnqueueThreadControlResponse,
-  StopRequest,
-  StopResponse,
   WithdrawThreadControlResponse,
 } from "@meridian/contracts/threads";
 import type { RebindThreadWorkRequest, RebindThreadWorkResponse } from "@meridian/contracts/works";
 
-import { deleteJson, deleteRequest, getJson, patchJson, postJson, putJson } from "./http-client";
+import type { HttpResult } from "@meridian/thread-client";
+import {
+  deleteJson,
+  deleteRequest,
+  getJson,
+  patchJson,
+  postJson,
+  putJson,
+  readResponsePayload,
+} from "./http-client";
 
 export type AppendUserMessageInput = {
   threadId: string;
@@ -190,13 +197,25 @@ export function cancelTurn({ data }: { data: CancelTurnInput }): Promise<CancelT
 }
 
 /**
- * Chat Stop. The server decides it once under the thread lock and stores the decision by request
- * id, so a repeat of the same request answers the same result.
+ * A hand-back command's POST (Stop, the x, Cancel queue, Send now) for the shared operation: the
+ * status and decoded body, never a typed error. A transport failure is `status: null`.
  */
-export function stopThread(threadId: string, request: StopRequest): Promise<StopResponse> {
-  return postJson(apiThreadStopPath(threadId), request);
+export async function postCommand(path: string, body: unknown): Promise<HttpResult> {
+  try {
+    const response = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const payload = await readResponsePayload(response);
+    return {
+      status: response.status,
+      body: response.ok ? deserializeTransport(payload) : payload,
+    };
+  } catch {
+    return { status: null };
+  }
 }
-
 /**
  * Queue a writer control. The id is client-minted, so a retry with the same id
  * is a no-op on the server (201 new, 200 existing).

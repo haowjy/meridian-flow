@@ -462,8 +462,9 @@ export type {
   HandBackRequest,
   HandBackResponse,
   HandBackResult,
-  HandBackScope,
   RunState,
+  SendNowRequest,
+  SendNowResponse,
   StopRequest,
   StopResponse,
 } from "./run-state.js";
