@@ -17,7 +17,7 @@ Editor-eligible project binary/custom metadata still opens a viewer tab and rout
 Scratch documents open Editor tabs owned by their resolved Work, or by their lineage
 (`rootThreadId` and the handle its URI spells) when they are a No Work chat's notes.
 Uploads route to the deferred-viewing notice without opening a tab. The resolved file's
-Work/no-Work authority overrides the invoking surface's Work; only project-scoped
+Work authority overrides the invoking surface's Work; only project-scoped
 files retain host Work context. Never add upload-specific navigation in Composer.
 
 Availability command admission rejects while removal is suspended or disposed;

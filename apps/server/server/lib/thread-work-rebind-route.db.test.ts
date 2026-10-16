@@ -72,6 +72,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         "../domains/threads/index.js"
       );
       const { persistWriterEnqueue } = await import("../domains/runtime/loop/writer-enqueue.js");
+      const { createDrizzleTopPrimaryChatResolver } = await import(
+        "../domains/threads/adapters/drizzle/top-primary-chat.js"
+      );
       const { createWorkContextReader } = await import("../domains/runtime/loop/work-context.js");
       await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
       const untouchedAt = new Date("2000-01-01T00:00:00.000Z");
@@ -82,6 +85,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           threads: threads.threads,
           threadWorks: threads.threadWorks,
           works,
+          topPrimaryChats: createDrizzleTopPrimaryChatResolver(db),
           readChainPermission: async () => "edit" as const,
         }),
       });

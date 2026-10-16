@@ -41,6 +41,11 @@ import { guardWorkContextRestore } from "./document-locations.js";
  */
 async function migrate(db: import("@meridian/database").Database) {
   await db.execute(sql`ALTER TABLE documents ADD COLUMN kind text NOT NULL DEFAULT 'content'`);
+  // 0037 also rewrote `upload_intakes.canonical_uri`, which 0060 retired.
+  await db.execute(
+    sql`ALTER TABLE upload_intakes ADD COLUMN canonical_uri text NOT NULL DEFAULT ''`,
+  );
+  await db.execute(sql`UPDATE upload_intakes SET canonical_uri = 'uploads://@/' || final_path`);
   const migration = readFileSync(
     fileURLToPath(
       new URL(
@@ -54,6 +59,7 @@ async function migrate(db: import("@meridian/database").Database) {
     if (statement.trim()) await db.execute(sql.raw(statement));
   }
   await db.execute(sql`ALTER TABLE documents DROP COLUMN kind`);
+  await db.execute(sql`ALTER TABLE upload_intakes DROP COLUMN canonical_uri`);
 }
 
 const enabled = process.env.RUN_DB_TESTS === "1" && process.env.DATABASE_URL;
@@ -205,6 +211,7 @@ else
         projectId,
         intakeId: "historical",
         actorUserId: userId,
+        ownerThreadId: crypto.randomUUID(),
         contextSourceId: sourceId,
         documentId: chapter.id,
         fingerprint: "fixture",
@@ -214,7 +221,6 @@ else
         finalPath: "chapter.md",
         objectKey: "fixture",
         fileType: "markdown",
-        canonicalUri: "manuscript://chapter.md",
         locationRevision: crypto.randomUUID(),
         state: "finalized",
       });
@@ -330,7 +336,6 @@ else
         (await db.select().from(uploadIntakes).where(eq(uploadIntakes.documentId, chapter.id)))[0],
       ).toMatchObject({
         finalPath: "chapter",
-        canonicalUri: "manuscript://chapter",
         filename: "chapter.md",
       });
       expect(
@@ -364,14 +369,14 @@ else
         projectId = crypto.randomUUID(),
         sourceId = crypto.randomUUID(),
         documentId = crypto.randomUUID(),
-        workId = crypto.randomUUID();
+        chatId = crypto.randomUUID();
       const bytes = new TextEncoder().encode("# Pending upload\n");
       const digest = createHash("sha256").update(bytes).digest("hex");
       const fingerprint = createHash("sha256")
         .update(
           JSON.stringify([
             userId,
-            `work:${projectId}:${workId}`,
+            `chat:${projectId}:${chatId}`,
             "upload.md",
             "text/markdown",
             digest,
@@ -380,17 +385,14 @@ else
         .digest("hex");
       await db.insert(users).values(conformanceUserValues(userId, `pending-${scenario}`));
       await db.insert(projects).values({ id: projectId, userId, name: "Pending", slug: "pending" });
-      await db.insert(works).values({
-        id: workId,
+      await db.insert(contextSources).values({
+        id: sourceId,
         projectId,
-        createdByUserId: userId,
-        name: "No Work",
-        slug: null,
-        isNoWork: true,
+        chatThreadId: chatId,
+        name: "Uploads",
+        slug: "uploads",
+        scope: "chat",
       });
-      await db
-        .insert(contextSources)
-        .values({ id: sourceId, workId, name: "Uploads", slug: "uploads", scope: "work" });
       if (scenario !== "no-clash")
         await db.insert(documents).values({
           contextSourceId: sourceId,
@@ -405,7 +407,7 @@ else
         actorUserId: userId,
         contextSourceId: sourceId,
         documentId,
-        workId,
+        ownerThreadId: chatId,
         fingerprint,
         byteDigest: digest,
         filename: "upload.md",
@@ -413,7 +415,6 @@ else
         finalPath: oldPath,
         objectKey: documentId,
         fileType: "markdown",
-        canonicalUri: `uploads://@/${oldPath}`,
         locationRevision: crypto.randomUUID(),
         state: "reserved",
       });
@@ -423,7 +424,6 @@ else
         .from(uploadIntakes)
         .where(eq(uploadIntakes.documentId, documentId));
       expect(reservation?.finalPath).toBe(scenario === "clash" ? "upload (2)" : "upload");
-      expect(reservation?.canonicalUri).toBe(`uploads://@/${reservation?.finalPath}`);
       expect(reservation?.filename).toBe("upload.md");
       expect(reservation?.state).toBe("reserved");
       const collab = createInMemoryCollabDomain();
@@ -439,11 +439,12 @@ else
         content: createContextUploadContentPort(contextPorts),
         objectStore: createInMemoryObjectStore(),
         eventSink: createNoopEventSink(),
+        catalog: { refreshSources: async () => "1" },
       });
       const request = {
         intakeId: "pending",
         actorUserId: userId,
-        owner: { kind: "work" as const, projectId, workId },
+        owner: { kind: "chat" as const, projectId, chatId },
         filename: "upload.md",
         mimeType: "text/markdown",
         byteDigest: digest,
@@ -452,7 +453,7 @@ else
       for (let attempt = 0; attempt < 2; attempt++) {
         expect(await service.intake(request)).toMatchObject({
           ok: true,
-          value: { documentId, uri: reservation?.canonicalUri },
+          value: { documentId },
         });
       }
       const [committed] = await db.select().from(documents).where(eq(documents.id, documentId));
@@ -466,14 +467,20 @@ else
       const db = database.current;
       const userId = crypto.randomUUID(),
         projectId = crypto.randomUUID(),
+        chatId = crypto.randomUUID(),
         sourceId = crypto.randomUUID();
       await db.insert(users).values(conformanceUserValues(userId, `migration-upload-${scenario}`));
       await db
         .insert(projects)
         .values({ id: projectId, userId, name: "Uploads", slug: `uploads-${scenario}` });
-      await db
-        .insert(contextSources)
-        .values({ id: sourceId, projectId, name: "Uploads", slug: "uploads", scope: "project" });
+      await db.insert(contextSources).values({
+        id: sourceId,
+        projectId,
+        chatThreadId: chatId,
+        name: "Uploads",
+        slug: "uploads",
+        scope: "chat",
+      });
       const ids = [crypto.randomUUID(), crypto.randomUUID()];
       const paths = scenario === "pending" ? ["upload.md", "upload"] : ["Report.md", "report.txt"];
       const firstName = scenario === "pending" ? "upload" : "Report";
@@ -497,6 +504,7 @@ else
           projectId,
           intakeId: `intake-${index}`,
           actorUserId: userId,
+          ownerThreadId: chatId,
           contextSourceId: sourceId,
           documentId: id,
           fingerprint: "fixture",
@@ -506,7 +514,6 @@ else
           finalPath: paths[index] ?? "",
           objectKey: id,
           fileType: "markdown",
-          canonicalUri: `uploads://@/${paths[index]}`,
           locationRevision: crypto.randomUUID(),
           state: index === 1 && scenario === "pending" ? "reserved" : "finalized",
         })),
@@ -524,7 +531,6 @@ else
       for (const row of migrated) {
         const intake = intakes.find((intake) => intake.documentId === row.id);
         expect(intake?.finalPath).toBe(row.name);
-        expect(intake?.canonicalUri).toBe(`uploads://@/${row.name}`);
       }
       if (scenario === "pending") {
         expect(migrated[0]?.name).toBe("upload (2)");

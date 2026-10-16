@@ -174,7 +174,12 @@ export async function resolveContextPort(
   version?: DocumentVersion,
 ): Promise<ResolvedModelContextPort | ToolErrorOutput> {
   const resolution = await resolveThreadContext(
-    { ...deps, scratchLineages: deps.contextPorts.lineages },
+    {
+      ...deps,
+      scratchLineages: deps.contextPorts.lineages,
+      topPrimaryChats: deps.contextPorts.topPrimaryChats,
+      uploadChats: deps.contextPorts.chats,
+    },
     threadId,
   );
   if (!resolution) return toolError({ message: `Thread not found: ${threadId}` });

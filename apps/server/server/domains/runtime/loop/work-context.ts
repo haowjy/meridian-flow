@@ -1,18 +1,21 @@
 /** Renders and resolves the frozen model-facing Work context block. */
 
 import type { AgentPermission } from "@meridian/contracts/agents";
+import { formatParsedContextUri } from "@meridian/contracts/context-uri";
 import type { ProjectId, ThreadId } from "@meridian/contracts/runtime";
 import {
   type AiWriteMode,
   isWorkArchived,
   type ThreadExecutionContext,
   type Work,
+  type WorkSlug,
   workLifecycleState,
 } from "@meridian/contracts/works";
 import type { WorkRepository } from "../../projects/index.js";
 import {
   type ThreadRepository,
   type ThreadWorksRepository,
+  type TopPrimaryChatResolver,
   threadExecutionContext,
 } from "../../threads/index.js";
 import { mayChangeWorks } from "./permissions/action-policy.js";
@@ -142,6 +145,15 @@ function currentLines(work: ContextWork, writes: string[]): string[] {
   return [`current: ${identity}`, ...writes, ...detailLines];
 }
 
+function lineageScratch(rootThreadRef: string): string {
+  return formatParsedContextUri("scratch", "", { kind: "lineage", rootThreadRef });
+}
+
+/** Only called for a named Work, whose slug is always set. */
+function workScratch(slug: Work["slug"]): string {
+  return formatParsedContextUri("scratch", "", { kind: "work", workSlug: slug as WorkSlug });
+}
+
 export function renderWorkContext(input: {
   current: ContextWork;
   /** The chat's write mode (D62). */
@@ -149,6 +161,8 @@ export function renderWorkContext(input: {
   /** Whether the thread's agent chain may unarchive (D39). */
   mayUnarchive: boolean;
   rootThreadRef?: string;
+  /** The chat whose uploads bare `uploads://` names: this thread's top primary chat. */
+  chatRef?: string;
 }): string {
   const writes = writeModeLines({
     mode: input.aiWriteMode,
@@ -162,9 +176,14 @@ export function renderWorkContext(input: {
     ...(input.rootThreadRef
       ? [
           input.current.isNoWork
-            ? `  scratch: bare scratch:// is this chat's notes at scratch://@/${input.rootThreadRef}/, shared with its forks and subagents. A handoff starts fresh notes.`
-            : `  scratch: bare scratch:// is this Work's notes at scratch://@${input.current.slug}/. Earlier chat notes remain at scratch://@/${input.rootThreadRef}/.`,
+            ? `  scratch: bare scratch:// is this chat's notes at ${lineageScratch(input.rootThreadRef)}, shared with its forks and subagents. A handoff starts fresh notes.`
+            : `  scratch: bare scratch:// is this Work's notes at ${workScratch(input.current.slug)}. Earlier chat notes remain at ${lineageScratch(input.rootThreadRef)}.`,
           "  Move notes to kb:// or manuscript:// to keep them for the project. Rebinding never moves notes.",
+        ]
+      : []),
+    ...(input.chatRef
+      ? [
+          `  uploads: bare uploads:// is this chat's files at ${formatParsedContextUri("uploads", "", { kind: "chat", chatRef: input.chatRef })}.`,
         ]
       : []),
     "</work_context>",
@@ -175,6 +194,7 @@ export function createWorkContextReader(deps: {
   threads: Pick<ThreadRepository, "findById" | "findByIdIncludingDeleted">;
   works: Pick<WorkRepository, "findById">;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary">;
+  topPrimaryChats: TopPrimaryChatResolver;
   readChainPermission(threadId: ThreadId): Promise<AgentPermission>;
 }): WorkContextReader {
   return {
@@ -187,6 +207,7 @@ export function createWorkContextReader(deps: {
       if (!current || workLifecycleState(current) === "deleted") {
         throw new Error(`Thread primary Work is unavailable: ${threadId}`);
       }
+      const chat = await deps.topPrimaryChats.resolveTopPrimaryChat(threadId);
       const root = await deps.threads.findByIdIncludingDeleted(thread.rootThreadId);
       const execution: ThreadExecutionContext = threadExecutionContext(current, thread.aiWriteMode);
       return {
@@ -194,6 +215,7 @@ export function createWorkContextReader(deps: {
           current,
           aiWriteMode: thread.aiWriteMode,
           rootThreadRef: root?.ref ?? undefined,
+          chatRef: chat?.chatRef,
           mayUnarchive: mayChangeWorks(await deps.readChainPermission(threadId)),
         }),
         current: { projectId: thread.projectId, execution },

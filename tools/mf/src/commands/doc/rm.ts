@@ -7,7 +7,7 @@ import {
 import { type CommandSpec, requirePositional, stringOption } from "../../core/command";
 import type { Session } from "../../core/session";
 import { resolveProjectId } from "../project/resolve";
-import { PROJECT_OPTION, type ResolvedUri, resolveDocumentId, resolveUri } from "./uri";
+import { ownerOf, PROJECT_OPTION, type ResolvedUri, resolveDocumentId, resolveUri } from "./uri";
 
 export async function deleteDocument(session: Session, projectId: string, target: ResolvedUri) {
   const documentId = await resolveDocumentId(session, projectId, target);
@@ -18,7 +18,7 @@ export async function deleteDocument(session: Session, projectId: string, target
   };
   await session.request(
     "POST",
-    apiProjectContextDeletePath(projectId, target.scheme, { workId: target.workId }),
+    apiProjectContextDeletePath(projectId, target.scheme, ownerOf(target)),
     body,
   );
   return documentId;
@@ -39,6 +39,7 @@ export const docRmCommand: CommandSpec = {
       projectId,
       requirePositional(ctx, 0, "<uri>"),
       stringOption(ctx, "work"),
+      stringOption(ctx, "chat"),
     );
     const documentId = await deleteDocument(session, projectId, target);
     ctx.out.result(

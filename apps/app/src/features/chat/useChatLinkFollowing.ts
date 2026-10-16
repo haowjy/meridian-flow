@@ -48,6 +48,7 @@ import type { Thread, Work } from "@meridian/contracts/protocol";
 import { type ComponentProps, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
+import { useTopChat } from "@/client/query/useTopChat";
 import { useWorks } from "@/client/query/useWorks";
 import { createLinkAnswerCache, createLinkRequester } from "@/core/editor/links";
 import {
@@ -71,6 +72,7 @@ function chatLinkScope({
   activeWork,
   thread,
   rootThreadId,
+  chatId,
   noWorkId,
   worksSettled,
 }: {
@@ -80,17 +82,20 @@ function chatLinkScope({
   thread: Pick<Thread, "workId"> | null;
   /** The chat's lineage while it is on No Work: a bare `scratch://` is the lineage's. */
   rootThreadId: string | null;
+  /** The chat that owns the uploads a bare `uploads://` names. */
+  chatId: string | null;
   noWorkId: string | null;
   /** The Works snapshot has loaded or failed; it will not name more Works by waiting. */
   worksSettled: boolean;
 }): LinkResolutionScope | "pending" {
-  if (activeWork) return { projectId, workId: activeWork.id, rootThreadId, baseUri: null };
+  if (activeWork) return { projectId, workId: activeWork.id, rootThreadId, chatId, baseUri: null };
   if (!worksSettled || !thread?.workId) return "pending";
   // A thread whose Work the snapshot lacks asks with its own binding; No Work is still its lineage.
   return {
     projectId,
     workId: thread.workId,
     rootThreadId: thread.workId === noWorkId ? rootThreadId : null,
+    chatId,
     baseUri: null,
   };
 }
@@ -122,6 +127,9 @@ export function useChatLinkFollowing({
   const noWorkId = noWork?.id ?? null;
   // The first chat's id: a No Work chat's Scratch is its lineage's.
   const lineageId = activeThread?.rootThreadId ?? null;
+  const chatId =
+    useTopChat(projectId, activeThread)?.chatId ??
+    (activeThread?.kind === "subagent" ? null : (activeThread?.id ?? null));
   const scope = useMemo(
     () =>
       chatLinkScope({
@@ -129,10 +137,11 @@ export function useChatLinkFollowing({
         activeWork,
         thread: threadKnown ? { workId: threadWorkId } : null,
         rootThreadId: activeWork?.isNoWork || threadWorkId === noWorkId ? lineageId : null,
+        chatId,
         noWorkId,
         worksSettled: worksStatus !== "loading" && worksStatus !== "disabled",
       }),
-    [activeWork, projectId, threadKnown, threadWorkId, noWorkId, lineageId, worksStatus],
+    [activeWork, projectId, threadKnown, threadWorkId, noWorkId, lineageId, chatId, worksStatus],
   );
   const index = useLinkableDocuments(
     scope === "pending" ? { projectId: null, workId: null } : scope,
@@ -178,6 +187,12 @@ export function useChatLinkFollowing({
     seen.current.revision = index.revision;
     references.refresh();
   }, [index.complete, index.revision, references]);
+
+  const held = useMemo(
+    () => new Map(index.documents.map((document) => [document.documentId, document.uri])),
+    [index.documents],
+  );
+  useEffect(() => references.reconcile(held), [references, held]);
 
   const shellDoors = useChatDoors();
   const doors = useMemo(

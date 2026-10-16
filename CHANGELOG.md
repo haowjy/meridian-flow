@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- A file attached in a New chat opens from the sent message as soon as the chat is named, in No Work as in a Work, instead of staying unclickable until a reload.
+- A bare `[map](uploads://map)` the model writes into a document binds to the chat's existing `map.png`, the same as the full `uploads://@/c3/map` spelling, instead of minting a link to a file that does not exist.
+- Files attached to a Work, or to No Work, before uploads moved to chats are deleted, and a message that attached one shows the file as no longer available. Uploads without a chat handle (`uploads://@/name`) are no longer an address.
+- A chat's top bar lists the files attached in that chat (a paperclip and the count, once it has one). A row adds the file to the message as an `@` reference, opens it beside the chat, or deletes it while no sent message has used it. A fork or handoff names the chat it continues from. A chat upload's dock tab comes back after a reload.
 - The AI never sees a failure. `thread_history` no longer prints `error:` or `failure reason:` lines or marks failed turns: a failed turn shows the text and tool calls it kept, and is skipped when it kept none. Stop keeps its `cancelled` marker. A tool call that a failed reply never finished now reads "did not finish" instead of "interrupted by an error".
 - The server logs each failure once where it is classified and once where it ends, as `failure.recorded` and `failure.ended` in `./mf log` (a failed reply, compaction or handoff brief; a usage block and its clear). Each carries the occurrence id, a category and source, and how it ended (`retried`, `forgotten`, `moved_on` or `resolved`). They are emitted after the transaction commits. The event hub's `turn.error` log line is replaced by `failure.recorded`.
 - New `@meridian/contracts/failures` holds the failure types and `classifyReplyFailure`, the one place a failed reply's source is chosen.

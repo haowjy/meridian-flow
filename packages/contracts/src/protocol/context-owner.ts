@@ -14,6 +14,7 @@ export type WorkOwnerRef = {
   workId?: string | null;
   rootThreadId?: undefined;
   rootThreadRef?: undefined;
+  chatThreadId?: undefined;
 };
 
 /** A chat's Scratch, by the first chat's id and, when known, the handle its URI spells. */
@@ -21,19 +22,34 @@ export type LineageOwnerRef = {
   workId?: undefined;
   rootThreadId: string;
   rootThreadRef?: string;
+  chatThreadId?: undefined;
+};
+
+/** A chat's uploads, by the chat's thread id (a primary thread) and, once it has one, its handle. */
+export type ChatOwnerRef = {
+  workId?: undefined;
+  rootThreadId?: undefined;
+  rootThreadRef?: undefined;
+  chatThreadId: string;
+  chatRef?: string;
 };
 
 /** Enough to ask for a catalog, a document or a request. */
-export type ContextOwner = WorkOwnerRef | LineageOwnerRef;
+export type ContextOwner = WorkOwnerRef | LineageOwnerRef | ChatOwnerRef;
 
 /** Complete owner of a resolved document (No Work's persisted id included). */
-export type ResolvedContextOwner = (WorkOwnerRef & { workId: string | null }) | LineageOwnerRef;
+export type ResolvedContextOwner =
+  | (WorkOwnerRef & { workId: string | null })
+  | LineageOwnerRef
+  | ChatOwnerRef;
 
-/** The owner two separate nullable pieces name: the lineage when there is one, else the Work. */
+/** The owner separate nullable pieces name: the chat, else the lineage, else the Work. */
 export function contextOwner(
   workId: string | null | undefined,
   rootThreadId?: string | null,
+  chatThreadId?: string | null,
 ): ResolvedContextOwner {
+  if (chatThreadId) return { chatThreadId };
   return rootThreadId ? { rootThreadId } : { workId: workId ?? null };
 }
 

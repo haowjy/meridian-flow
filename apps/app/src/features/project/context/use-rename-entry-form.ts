@@ -9,11 +9,8 @@
  */
 
 import { t } from "@lingui/core/macro";
-import {
-  isWorkScopedProjectContextScheme,
-  type ProjectContextTreeScheme,
-  storedFilename,
-} from "@meridian/contracts/protocol";
+import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
+import { type ProjectContextTreeScheme, storedFilename } from "@meridian/contracts/protocol";
 import { useMutation } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 import { useWorks } from "@/client/query/useWorks";
@@ -74,7 +71,7 @@ export function useRenameEntryForm({
             : t`This file is unavailable. Refresh and try again.`,
         );
       const authority = destinationOwner(
-        { scheme, ...(isWorkScopedProjectContextScheme(scheme) ? owner : {}) },
+        { scheme, ...(isWorkScopedScheme(scheme) ? owner : {}) },
         works,
         noWork,
       );

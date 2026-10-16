@@ -68,7 +68,7 @@ else
       domain.bindHocuspocus(hocuspocus);
       return { domain, hocuspocus };
     }
-    it("converges project, manuscript, locked No Work, and No Work uploads without a thread", async () => {
+    it("converges project, manuscript and locked No Work, with no uploads source and no thread", async () => {
       const repository = createDrizzleProjectBootstrapRepository({ db, documents: collab() });
       const first = await repository.ensureDefaultBootstrap(USER_ID as never);
       const second = await repository.ensureDefaultBootstrap(USER_ID as never);
@@ -117,12 +117,7 @@ else
         .from(schema.contextSources)
         .where(eq(schema.contextSources.workId, noWorkId));
       expect(manuscript).toEqual([{ slug: "manuscript", workId: null, scope: "project" }]);
-      expect(workSources).toEqual(
-        expect.arrayContaining([
-          { slug: "uploads", workId: noWorkId, scope: "work", projectId: null },
-        ]),
-      );
-      expect(workSources).toHaveLength(1);
+      expect(workSources).toEqual([]);
       expect(threadRows).toEqual([]);
       expect(docs).toHaveLength(1);
       expect(docs[0]).toMatchObject({ name: "Chapter 1", extension: "", fileType: "markdown" });
