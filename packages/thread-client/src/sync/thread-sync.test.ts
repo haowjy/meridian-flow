@@ -235,6 +235,54 @@ describe("the join", () => {
 });
 
 describe("frame order", () => {
+  it("keeps tool identity and arguments across a staged-result checkpoint and commit", () => {
+    const h = harness();
+    h.emit(runStarted("turn-1"), "1000");
+    h.emit(
+      { type: EventType.TOOL_CALL_START, toolCallId: "write-1", toolCallName: "doc_write" },
+      "1100",
+    );
+    h.emit(
+      { type: EventType.TOOL_CALL_ARGS, toolCallId: "write-1", delta: '{"uri":"kb://notes.md"}' },
+      "1200",
+    );
+    h.emit({ type: EventType.TOOL_CALL_END, toolCallId: "write-1" }, "1300");
+    h.emit({ type: EventType.TOOL_CALL_RESULT, toolCallId: "write-1", content: "staged" }, "1400");
+    const staged = h.turn("turn-1");
+    expect(staged?.blocks[0]?.content).toMatchObject({
+      toolName: "doc_write",
+      input: '{"uri":"kb://notes.md"}',
+      output: "staged",
+    });
+    // A real applied read lands between the two results; no reducer reset may lose the call.
+    expect(h.sync.receive(read([structuredClone(staged) as Turn], "1500"))).toBe("applied");
+    h.emit(
+      { type: EventType.TOOL_CALL_RESULT, toolCallId: "write-1", content: "committed" },
+      "1600",
+    );
+    expect(h.turn("turn-1")?.blocks).toHaveLength(1);
+    expect(h.turn("turn-1")?.blocks[0]?.content).toMatchObject({
+      toolName: "doc_write",
+      input: '{"uri":"kb://notes.md"}',
+      output: "committed",
+    });
+    h.sync.stop();
+  });
+
+  it("keeps one complete message across a prefix checkpoint and suffix", () => {
+    const h = harness();
+    h.emit(runStarted("turn-1"), "1000");
+    h.emit(textStart("m1"), "1100");
+    h.emit(textDelta("m1", "Hello "), "1200");
+    expect(h.sync.receive(read([reply("turn-1", "streaming", "Hello ")], "1500"))).toBe("applied");
+    h.emit(textDelta("m1", "there"), "1600");
+    h.emit({ type: EventType.TEXT_MESSAGE_END, messageId: "m1" }, "1700");
+    h.emit(runFinished("turn-1"), "1800");
+    expect(h.turn("turn-1")?.blocks.map((block) => block.textContent)).toEqual(["Hello there"]);
+    expect(h.turn("turn-1")?.status).toBe("complete");
+    h.sync.stop();
+  });
+
   it("flushes buffered deltas before a durable block, and before a read lands", () => {
     const h = harness();
     h.emit(runStarted("turn-1"), "1000");
