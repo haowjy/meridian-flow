@@ -49,8 +49,8 @@ Record the commit, date and the printed assertions in the active work directory.
 
 ## Last run
 
-2026-10-15, branch `integrate/dbr-main4` (review tip `ca781b7ca` merged with main `0a7e5d633e`):
-exit 0, **51 assertions passed**. The populated train database first applied main through `0061`
-(52 migrations), then all six review migrations `0062`–`0067` (58 total). A fresh install produced
-an identical schema. Interruption/restart, preflight refusal and data preservation checks all passed.
+2026-10-16, branch `feat/dbr-relanding` at `c3326bc328` (merged with main `43d6e60946`, review migrations
+renumbered after main's chat-uploads `0058`–`0061`): exit 0, **51 assertions passed**. The populated train database
+first applied main through `0061` (56 migrations), then all six review migrations `0062`–`0067` (62 total). A fresh
+install produced an identical schema. Interruption/restart, preflight refusal and data preservation checks all passed.
 The script dropped its own `r4b_proof_*` databases at completion.
