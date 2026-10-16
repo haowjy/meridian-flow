@@ -585,8 +585,8 @@ restart smoke check.
   and no text from the earlier reply. In every case `thread view` agrees with the claim.
   A claim that `view` contradicts is a failure of the probe, not of the view.
 - **Evidence:** each command, stdout, stderr and exit code, and the `thread view` after it.
-- **Last run:** 2026-10-15 on the `feat/mf-send-fate` branch, mock; all four cases passed.
-  Evidence: `work/mf-client-unification/evidence/B1/` in the docs repository.
+- **Last run:** 2026-10-15 on `fa1040e86` (`feat/mf-send-fate`, the final code), mock; all four cases
+  passed. Evidence: `work/mf-client-unification/evidence/B6/` in the docs repository.
 
 [c6a]: https://github.com/haowjy/meridian-flow-docs/blob/683395ca9b084cee0196ec9c9070755930d38329/work/agents-milestone-4/evidence/c6a-probe/report.md
 [merge]: https://github.com/haowjy/meridian-flow-docs/blob/a4b1dddbd615bbab334dc6fa7b700245f768d288/work/agents-milestone-4/evidence/merge-gate/REPORT.md

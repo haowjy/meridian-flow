@@ -189,3 +189,16 @@ export function dropIntent(
   answers.delete(key);
   return { ...view, intents, answers };
 }
+
+/**
+ * The last attempt at a hand-back request did not succeed: its rows show again. Only an intent
+ * already held can fail; there is nothing to reconstruct when it is absent.
+ */
+export function failIntent(view: RunStateView, id: string): RunStateView {
+  const held = view.intents.find((known) => same(known, "handBack", id));
+  if (held?.kind !== "handBack" || held.failed) return view;
+  return {
+    ...view,
+    intents: view.intents.map((known) => (known === held ? { ...held, failed: true } : known)),
+  };
+}

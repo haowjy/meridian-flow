@@ -1,5 +1,6 @@
 /** Platform-neutral client behavior shared by the app and ./mf. */
 
+export * from "./hand-back";
 export { buildMessageDoc } from "./message/build";
 export {
   type ChatReferenceScope,
