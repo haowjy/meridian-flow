@@ -126,13 +126,13 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
   useLayoutEffect(() => {
     if (isPendingCreation) return;
     binding.sync.start();
-    // The store was recreated under a kept QueryClient: the cache holds a read the cell lacks.
+    // A read the cache already holds never runs the queryFn, so it is received here: it joins
+    // the stream, so replay from 0 cannot append to turns the kept cell already holds.
     const cached = latest.current;
     if (
       cached &&
       cached.thread.id === threadId &&
       cached.thread.userId === accountId &&
-      binding.state.get().runState.history === null &&
       binding.sync.receive(cached) === "applied"
     ) {
       rerender();
