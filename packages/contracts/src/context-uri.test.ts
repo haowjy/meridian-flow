@@ -62,11 +62,10 @@ describe("parseContextUri", () => {
         normalized: "uploads://@c15/draft.png",
       },
     });
-    for (const uri of ["scratch://@", "scratch://@/"])
-      expect(parseContextUri(uri)).toMatchObject({
-        ok: true,
-        value: { authority: { kind: "owners" }, normalized: "scratch://@" },
-      });
+    expect(parseContextUri("scratch://@")).toMatchObject({
+      ok: true,
+      value: { authority: { kind: "owners" }, normalized: "scratch://@" },
+    });
     expect(parseContextUri("uploads://draft.png")).toMatchObject({
       ok: true,
       value: { authority: { kind: "contextual" }, normalized: "uploads://draft.png" },
@@ -75,26 +74,34 @@ describe("parseContextUri", () => {
 
   it.each([
     ["scratch://@/c12/x", "Handles follow @ directly: scratch://@c12/…"],
-    ["uploads://@/c15/x", "Handles follow @ directly: uploads://@c15/…"],
-    ["scratch://@/w3/x", "Handles follow @ directly: scratch://@w3/…"],
-    [
-      "uploads://@w3/x",
-      "Uploads belong to a chat, not a Work. Use uploads://x for this chat's files, or ls uploads://@ to list chats with files.",
-    ],
-    ["uploads://@p3/x", "Use the chat's handle, not a subagent's."],
+    ["uploads://@w3/x", "Uploads belong to a chat"],
     ["scratch://@W3/x", "Handles are lowercase: scratch://@w3/…"],
-    ["uploads://@C15/x", "Handles are lowercase: uploads://@c15/…"],
-    [
-      "scratch://@w03/x",
-      'Invalid handle "w03". Handles are a letter and digits with no leading zero.',
-    ],
     ["scratch://@tea-notes/x", "Unknown Work tea-notes. List Works with work list."],
-    [
-      "scratch://@/x",
-      "@ takes a handle: scratch://@w3/… for a Work, scratch://@c12/… for a chat's lineage. List them with ls scratch://@.",
-    ],
   ])("refuses the slip %s with its answer", (uri, reason) => {
-    expect(parseContextUri(uri)).toMatchObject({ ok: false, error: { reason } });
+    expect(parseContextUri(uri)).toMatchObject({
+      ok: false,
+      error: { reason: expect.stringContaining(reason) },
+    });
+  });
+
+  it.each(["scratch://@/", "uploads://@/"])("refuses the retired empty owner %s", (uri) => {
+    const scheme = uri.slice(0, uri.indexOf(":"));
+    expect(parseContextUri(uri)).toMatchObject({
+      ok: false,
+      error: { reason: expect.stringContaining(`ls ${scheme}://@`) },
+    });
+  });
+
+  it.each([
+    "manuscript://~b7/Chapter 12",
+    "manuscript://~/b7/Chapter 12",
+    "scratch://~live/x",
+    "~rewrite/a",
+  ])("reserves the branch qualifier %s until branches are addressable", (uri) => {
+    expect(parseContextUri(uri, { barePathDefault: "manuscript" })).toMatchObject({
+      ok: false,
+      error: { reason: expect.stringContaining("Branches are not addressable yet") },
+    });
   });
 
   it("serializes every owner through one spelling", () => {

@@ -230,6 +230,9 @@ export function parseContextUri(
   if (segments.some((segment) => segment.startsWith("@"))) {
     return invalidContextUri(raw, 'Path segments beginning with "@" are reserved');
   }
+  if (segments.some((segment) => segment.startsWith(BRANCH_SIGIL))) {
+    return invalidContextUri(raw, BRANCH_NOT_ADDRESSABLE);
+  }
 
   const path = segments.join("/");
   const normalized = formatParsedContextUri(scheme, path, authorityResult.value.authority);
@@ -272,6 +275,8 @@ function parseAuthorityPrefix(
   if (!rawPath) return { ok: true, value: { authority: { kind: "contextual" }, rawPath } };
 
   const segments = rawPath.split("/").filter((segment) => segment !== "" && segment !== ".");
+  if (segments[0]?.startsWith(BRANCH_SIGIL))
+    return invalidContextUri(rawUri, BRANCH_NOT_ADDRESSABLE);
   const qualifiers: string[] = [];
   while (segments[0]?.startsWith(OWNER_SIGIL)) qualifiers.push(segments.shift() ?? "");
   if (qualifiers.length === 0) {
@@ -290,7 +295,13 @@ function parseAuthorityPrefix(
     );
   }
   const token = (qualifiers[0] ?? "").slice(OWNER_SIGIL.length);
-  if (token === "") return parseBareSigil(scheme, segments, rawUri);
+  if (token === "") {
+    // `@/` (the retired empty-owner spelling) differs from the listing token `@` only by its slash.
+    if (segments.length === 0 && rawPath.replace(/^\/+/, "").startsWith("@/")) {
+      return invalidContextUri(rawUri, retiredEmptyOwner(scheme));
+    }
+    return parseBareSigil(scheme, segments, rawUri);
+  }
   return parseOwnerToken(scheme, token, segments, rawUri);
 }
 
@@ -388,6 +399,10 @@ function noHandleError(scheme: OwnedContextUriScheme, rawUri: string): ContextUr
   return invalidContextUri(rawUri, unknownOwnerHandle(scheme), { kind: "no-handle", scheme });
 }
 
+function retiredEmptyOwner(scheme: OwnedContextUriScheme): string {
+  return `"@/" is not an address. List owners with ls ${scheme}://@.`;
+}
+
 function unknownOwnerHandle(scheme: OwnedContextUriScheme): string {
   return scheme === "scratch"
     ? "@ takes a handle: scratch://@w3/… for a Work, scratch://@c12/… for a chat's lineage. List them with ls scratch://@."
@@ -413,6 +428,10 @@ export function isProjectScopedScheme(
 
 /** The sigil before an owner's handle. */
 export const OWNER_SIGIL = "@";
+/** Reserved for branch qualifiers (#699); refused until branch routing exists. */
+export const BRANCH_SIGIL = "~";
+const BRANCH_NOT_ADDRESSABLE =
+  'Branches are not addressable yet: names beginning with "~" are reserved. Use the bare address for this chat\'s branch.';
 
 /** The one serializer for addresses. Spells parsed syntax; it does not resolve or grant authority. */
 export function formatParsedContextUri(
