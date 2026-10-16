@@ -98,13 +98,13 @@ export function catalogEntryLocation(
     };
   }
   if (view.scope.kind === "chat") {
-    if (scheme !== "uploads" || authority.kind !== "chat")
+    if (scheme !== "uploads" || (authority.kind !== "chat" && authority.kind !== "contextual"))
       throw new Error("Catalog file URI has invalid chat uploads authority");
     return {
       scheme,
       path: displayedPath(path),
       name: entry.name,
-      ...resourceChatOwner(view.scope, authority.chatRef),
+      ...resourceChatOwner(view.scope, authority.kind === "chat" ? authority.chatRef : null),
     };
   }
   if (authority.kind !== "work") throw new Error("Catalog file URI has invalid Work authority");
