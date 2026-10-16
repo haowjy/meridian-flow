@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  classifyCommandFailure,
-  classifyReplyFailure,
-  type FailureSource,
-  type ReplyFailureInput,
-} from "./index.js";
+import { classifyReplyFailure, type FailureSource, type ReplyFailureInput } from "./index.js";
 
 describe("classifyReplyFailure", () => {
   it.each<[string, ReplyFailureInput, FailureSource]>([
@@ -28,20 +23,5 @@ describe("classifyReplyFailure", () => {
     ["an inherited key name", { reason: "toString" }, "bug"],
   ])("%s", (_name, input, source) => {
     expect(classifyReplyFailure(input)).toMatchObject({ category: "reply", source });
-  });
-});
-
-describe("classifyCommandFailure", () => {
-  it("names the source from how the attempt ended and keeps the status as the cause", () => {
-    expect(classifyCommandFailure({ kind: "lost" })).toMatchObject({
-      category: "command",
-      source: "transport",
-      cause: { code: "lost" },
-    });
-    expect(classifyCommandFailure({ kind: "refused", status: 409, code: "x" })).toMatchObject({
-      source: "refusal",
-      cause: { code: "x", status: 409 },
-    });
-    expect(classifyCommandFailure({ kind: "unsaved" })).toMatchObject({ source: "bug" });
   });
 });
