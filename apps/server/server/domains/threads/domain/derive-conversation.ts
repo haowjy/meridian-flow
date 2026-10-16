@@ -467,10 +467,10 @@ async function inheritEditingDocuments(
   );
 }
 
-/** Tells a derived chat where its source chat's files are and how to read its history. */
+/** Tells a derived chat which chat it continues and where that chat's files are. */
 export function continuesFromLine(sourceRef: string): string {
   const uploads = formatParsedContextUri("uploads", "", { kind: "chat", chatRef: sourceRef });
-  return `This chat continues from ${sourceRef}. Its uploads are at ${uploads}, and its history is readable with thread_history.`;
+  return `This chat continues from ${sourceRef}. Its uploads are at ${uploads}.`;
 }
 
 async function seedSystemTurn(deps: ThreadAgentSwapDeps, thread: Thread, text: string) {

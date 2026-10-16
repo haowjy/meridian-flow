@@ -3,6 +3,7 @@
  * the generic omitted/empty-agent subagent inheriting caller config, and the
  * pre-create depth refusal. Runs exercise the unified `runChild` entrypoint.
  */
+
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createDefaultTreeBudget, type SpawnResult } from "@meridian/contracts/spawn";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
@@ -18,10 +19,11 @@ import {
 } from "../../packages/index.js";
 import {
   createInMemoryRepositories,
-  type EventJournalWriter,
+  type LiveEventWriter,
   readThreadActivity,
   TurnStartConflictError,
 } from "../../threads/index.js";
+import { noFailureRecorder } from "../../threads/ports/event-journal.js";
 import {
   createInMemoryInbox,
   createInMemoryRunClaim,
@@ -131,7 +133,7 @@ async function fixture(
     orchestrator?:
       | RunTurnPort
       | ((repos: ReturnType<typeof createInMemoryRepositories>) => RunTurnPort);
-    eventWriter?: EventJournalWriter;
+    eventWriter?: LiveEventWriter;
     realRuntime?: boolean;
     gateway?: ReturnType<typeof scriptedGateway>;
     parentAiWriteMode?: AiWriteMode;
@@ -220,7 +222,8 @@ async function fixture(
   const abortedChildren: string[] = [];
   const turns: RecordedTurn[] = [];
   const runClaim = createInMemoryRunClaim();
-  const eventWriter: EventJournalWriter = options.eventWriter ?? {
+  const eventWriter: LiveEventWriter = options.eventWriter ?? {
+    ...noFailureRecorder,
     async appendEvent(threadId, event) {
       journal.push({
         threadId,
@@ -356,7 +359,7 @@ const budget = createDefaultTreeBudget();
 
 function transcriptFor(
   threadId: ThreadId,
-  deps: { repos: ReturnType<typeof createInMemoryRepositories>; eventWriter: EventJournalWriter },
+  deps: { repos: ReturnType<typeof createInMemoryRepositories>; eventWriter: LiveEventWriter },
   turnId = "turn-1",
 ): SpawnTranscript & { journal: OrchestratorEvent[] } {
   const journal: OrchestratorEvent[] = [];
@@ -364,6 +367,7 @@ function transcriptFor(
     persistence: {
       repos: deps.repos,
       eventWriter: {
+        ...noFailureRecorder,
         async appendEvent(id, event) {
           const seq = await deps.eventWriter.appendEvent(id, event);
           journal.push(event);
@@ -810,7 +814,8 @@ describe("ChildRunCoordinator direct-parent activity journal", () => {
   it("keeps a successful foreground run successful when the terminal activity append throws", async () => {
     const appended: Array<{ type: string; outcome?: string }> = [];
     let activityAppends = 0;
-    const eventWriter: EventJournalWriter = {
+    const eventWriter: LiveEventWriter = {
+      ...noFailureRecorder,
       async appendEvent(_threadId, event) {
         const typed = event as unknown as { type: string; outcome?: string };
         if (typed.type === "subagent.activity") {
@@ -852,7 +857,8 @@ describe("ChildRunCoordinator direct-parent activity journal", () => {
   it("writes no contradictory terminal event when a background run's terminal append throws", async () => {
     const appended: Array<{ type: string; outcome?: string }> = [];
     let activityAppends = 0;
-    const eventWriter: EventJournalWriter = {
+    const eventWriter: LiveEventWriter = {
+      ...noFailureRecorder,
       async appendEvent(_threadId, event) {
         const typed = event as unknown as { type: string; outcome?: string };
         if (typed.type === "subagent.activity") {

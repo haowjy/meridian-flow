@@ -136,7 +136,7 @@ describe("smoke: in-process turn", () => {
       amountMillicredits: "1000000000",
       reason: "smoke",
     });
-    const journal = createInMemoryEventJournalWriter();
+    const journal = createInMemoryEventJournalWriter(repos.transactionOwner);
     const orchestrator = createRuntimeHarness({
       boundThreads: () => [thread.id],
       gateway,

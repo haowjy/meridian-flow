@@ -111,10 +111,14 @@ export async function resolveDocumentAddress(
         path: canonicalPath,
       });
     }
-    // A URI naming no Work or no scheme addresses no document; the reason lists the valid ones.
+    // A URI naming no Work, no scheme or no live chat addresses no document; the reason says
+    // what is valid. A read never reports a write status.
     const unknownAddress =
       ref.error.code === "invalid_uri" &&
-      (ref.error.workHandle !== undefined || ref.error.unknownScheme !== undefined);
+      (command === "read" ||
+        ref.error.workHandle !== undefined ||
+        ref.error.unknownScheme !== undefined ||
+        ref.error.slip !== undefined);
     if (ref.error.code === "invalid_operation" && ref.error.reason === "ambiguous_path") {
       return writeToolError(command, contextErrorMessage(ref.error), "ambiguous_path", {
         path: canonicalPath,

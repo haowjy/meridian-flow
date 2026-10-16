@@ -1,12 +1,19 @@
 import { describe, expect, it } from "vitest";
 
-import { contextRouteTargetFromUri } from "@/lib/context-uri";
+import { contextRouteTargetFromUri, contextUriFromWritePath } from "@/lib/context-uri";
 
 const WORK_ID = "123e4567-e89b-12d3-a456-426614174000";
 const NO_WORK = { id: "no-work", handle: null };
 const ACTIVE_WORK = { id: WORK_ID, handle: "w1" };
 
 describe("contextRouteTargetFromUri", () => {
+  it("names no address for a malformed model path instead of throwing", () => {
+    for (const path of ["uploads://@c1/notes", "scratch://@/x", "a/@b/c", "a/../b", "#/#x#"])
+      expect(() => contextUriFromWritePath(path)).not.toThrow();
+    expect(contextUriFromWritePath("uploads://@c1/notes")).toBeNull();
+    expect(contextUriFromWritePath("chapter.md")).toBe("manuscript://chapter.md");
+  });
+
   it("degrades when an explicit work authority does not belong to the active work", () => {
     expect(
       contextRouteTargetFromUri(

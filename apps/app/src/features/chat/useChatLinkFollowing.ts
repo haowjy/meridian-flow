@@ -188,6 +188,12 @@ export function useChatLinkFollowing({
     references.refresh();
   }, [index.complete, index.revision, references]);
 
+  const held = useMemo(
+    () => new Map(index.documents.map((document) => [document.documentId, document.uri])),
+    [index.documents],
+  );
+  useEffect(() => references.reconcile(held), [references, held]);
+
   const shellDoors = useChatDoors();
   const doors = useMemo(
     () =>

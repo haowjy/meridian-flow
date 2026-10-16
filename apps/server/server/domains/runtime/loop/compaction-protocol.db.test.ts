@@ -1216,6 +1216,13 @@ else
         expect.arrayContaining(failedReply.reservedForUserTurnIds),
       );
       expect(compactions[1]?.id).not.toBe(replyTurnId);
+      // The failed compaction's `turn.error` copy is the writer's: no summary input carries it.
+      const failedCompaction = compactions[0];
+      expect(failedCompaction?.error).toEqual(expect.any(String));
+      expect(summarizer.calls.length).toBeGreaterThan(1);
+      for (const input of summarizer.calls)
+        for (const copy of [failedCompaction?.error, failedReply.error])
+          if (copy) expect(JSON.stringify(input)).not.toContain(copy);
       expect(retriedReply).toMatchObject({
         id: replyTurnId,
         role: "assistant",

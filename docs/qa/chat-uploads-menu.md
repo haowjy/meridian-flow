@@ -7,7 +7,7 @@ the composer's Attach file input (`agent-browser upload`), since the files must
 come in through the real intake.
 
 1. In a New chat, attach `outline.txt` and send. The chat's top bar now shows a
-   paperclip and "1 files" beside the subagents control. A chat with no files
+   paperclip and "1 file" beside the subagents control. A chat with no files
    shows no control.
 2. Attach two more files without sending. The trigger reads "3 files". Open it
    (Enter or Space on the trigger): rows are newest first, each with the name, the
@@ -34,5 +34,16 @@ come in through the real intake.
    trigger stays on the top bar's row and the menu fits the screen.
 
 The phone shell needs a coarse pointer, which `agent-browser set device` does not
-give; check its two hosts (the Chat screen's top bar and the chat sheet header) on
-a touch device.
+give (it sets the width but `matchMedia('(pointer: coarse)')` stays false). Get it by
+holding a CDP session open against the browser (`agent-browser get cdp-url`) that sends
+`Emulation.setDeviceMetricsOverride {width: 390, height: 844, deviceScaleFactor: 2,
+mobile: true}` and `Emulation.setTouchEmulationEnabled {enabled: true, maxTouchPoints: 5}`
+for the page target, then reload the chat. The override ends when that session closes, so
+leave the script running while you drive. The Chat screen's top bar then shows the files
+menu fitting 390 px (light and dark); rows offer no Open there. Check the chat sheet header
+host the same way.
+
+`agent-browser upload "input[type=file]"` is unreliable here: with a dock open the page has
+two hidden file inputs (the dock editor's figure input and the composer's), and the first
+match may attach to another chat's composer draft. Upload with the ref of the composer's
+"Choose File" button, one file per call.
