@@ -1,8 +1,8 @@
 /**
  * Where a failed turn becomes a `FailureRecord`. `projectAndAppendEvents` calls it for every live durable
  * event, inside the transaction that persists the event, so one seam covers every terminal writer (the
- * execution finalizer, compaction completion, handoff seeds, orphan repair) and every end (a Retry or a
- * move-on forgetting the attempt, a pass that keeps it). Records ride the writer's `recordFailure`, which
+ * execution finalizer, compaction completion, handoff seeds, orphan repair) and every end
+ * a boundary decides (`decideForgetting`'s `ends`: a Retry, a move-on, or a pass that keeps the attempt). Records ride the writer's `recordFailure`, which
  * emits after the outermost commit.
  */
 import {
@@ -101,22 +101,13 @@ export async function recordEnded(
   }
 }
 
-/** Turns whose failure ends at this closing row, as the transition's decision lists them, end as moved on. */
-export async function recordPassed(
-  deps: Detector,
-  passedIds: readonly string[],
-  byTurnId: string | undefined,
-): Promise<void> {
-  await recordEnded(deps, passedIds, "moved_on", byTurnId);
-}
-
 /** The detection for one durable event, run inside the transaction that projected it. */
 export async function detectFailures(
   deps: Detector,
   threadId: ThreadId,
   event: OrchestratorEvent,
 ): Promise<void> {
+  // Ends are not derived from `turns.forgotten`: forgetting content is not ending a failure. The boundary
+  // decision lists the ends (`decideForgetting`), and the append primitive records them.
   if (event.type === "turn.error") await recordSettled(deps, threadId, event);
-  else if (event.type === "turns.forgotten")
-    await recordEnded(deps, event.turnIds, event.reason, event.byTurnId);
 }

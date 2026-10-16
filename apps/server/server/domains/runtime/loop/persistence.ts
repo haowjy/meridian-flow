@@ -35,8 +35,7 @@ import {
   projectReadModelEvent,
   type ThreadRepositories,
 } from "../../threads/index.js";
-import type { FailureRecorder } from "../../threads/ports/event-journal.js";
-import { detectFailures, recordPassed } from "./failure-detection.js";
+import { detectFailures, recordEnded } from "./failure-detection.js";
 import {
   appendedTurns,
   decideForgetting,
@@ -108,9 +107,10 @@ export async function persistAndAppendTurnStartEvents<T>(
       (event) => event.type === "turn.created" && isClosingRow(event.turn),
     );
     const closing = persisted.events[first];
-    // Only the commit's decision logs the passes: run start decided the same, and one record each.
+    // Only the commit's decision records the ends: run start decided the same, and one record each.
     if (closing?.type === "turn.created")
-      await recordPassed(deps, decision.passed, closing.turn.id);
+      for (const { turnId, end } of decision.ends)
+        await recordEnded(deps, [turnId], end, closing.turn.id);
     if (decision.forget.length === 0 || decision.reason === null) return persisted;
     if (closing?.type !== "turn.created") return persisted;
     const events = [...persisted.events];

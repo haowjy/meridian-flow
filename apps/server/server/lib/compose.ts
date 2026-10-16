@@ -1220,7 +1220,7 @@ export function createInMemoryAppServices(): AppServices {
   const inbox = createInMemoryInbox();
   const runClaim = createInMemoryRunClaim();
   const runStarter = createInMemoryRunStarter();
-  const journal = createInMemoryEventJournalWriter();
+  const journal = createInMemoryEventJournalWriter(transactionOwner);
   const delivery = createInMemoryRuntimeDelivery({
     backgroundTasks,
     workContext: {

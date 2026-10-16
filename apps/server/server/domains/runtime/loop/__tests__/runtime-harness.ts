@@ -101,7 +101,7 @@ export function createRuntimeHarness(
   const creditLedger = suppliedLedger ?? createInMemoryCreditLedger();
   const gateway = overrides.gateway ?? createInertGateway();
 
-  const journal = createInMemoryEventJournalWriter();
+  const journal = createInMemoryEventJournalWriter(transactionOwner);
   const eventWriter = overrides.eventWriter ?? journal;
   const toolRegistry = overrides.toolRegistry ?? createToolRegistry();
   const notices = suppliedNotices ?? createTestNoticePort();
@@ -338,9 +338,14 @@ export async function runtimeScenario(
     userId,
     projectId: project.id,
   });
-  const journal = createInMemoryEventJournalWriter();
+  const journal = createInMemoryEventJournalWriter(transactionOwner);
   const eventSink = options.eventSink ?? createInMemoryEventSink();
-  const hub = createThreadEventHub({ journalWriter: journal, journalReader: journal, eventSink });
+  const hub = createThreadEventHub({
+    journalWriter: journal,
+    journalReader: journal,
+    eventSink,
+    inMemoryTransactionOwner: transactionOwner,
+  });
   const gatewaySignal = runtimeGate();
   const gateway: Gateway = {
     ...options.gateway,
