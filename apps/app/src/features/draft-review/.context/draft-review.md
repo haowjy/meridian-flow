@@ -70,12 +70,18 @@ writer only inside that fence or from this browser's own client. Unlisted deleti
 set fence, since deletion-only updates do not advance a state vector. Unknown evidence retains inclusive
 membership and does not name the writer. Runtime refresh keys include snapshot identity, not group
 content hashes, so equal-prose rewrites still refetch. Membership is loading, ready, or failed with Retry;
-a cached payload alone is not proof of readiness.
+a cached payload alone is not proof of readiness. The requested room revision is separate from the
+revision actually covered by the classifier. One read joins in-flight work and drains again if its
+response leaves the latest frame unresolved. Three uncovered reads for a revision stop at failed;
+Retry or a new room revision starts a fresh attempt budget. This bounds stale-success responses,
+not just network errors, without relaxing the attribution fence.
 
 The chat dock reads its files' rooms even while collapsed. Flat file readers publish into one keyed membership-summary owner; rows,
 summary count and command targets read that owner. Unknown membership shows a neutral summary without commands;
 known-empty files disappear unless they hold a failure, an in-flight command, Discard/Undo or an
-overrode notice. Loading and read failures are not empty membership. A known-empty retained notice
+overrode notice. Loading and read failures are not empty membership. Authoritative metadata `gone` is settled empty
+membership immediately, even while the thread list still includes the file; it does not settle
+commands or erase Discard/Undo and failure notices. A known-empty retained notice
 never offers commands. A failed read opens the file's existing error/Retry row. Summary commands wait
 until every listed file is ready, avoiding a silent partial chat Apply; individual ready-file changes
 remain actionable. No file-count cap is used. A cold collapsed dock still acquires one room, metadata

@@ -45,8 +45,13 @@ export function useDraftView(
   const { completing } = read;
   // A branchless item (an image, an empty create) has no text: its one change is the item, by file name.
   const items = useMemo(
-    () => (room.branchless ? [{ change: itemChange(file.draft), failure: null }] : read.items),
-    [room.branchless, file.draft, read.items],
+    () =>
+      room.status === "gone"
+        ? NO_ITEMS
+        : room.branchless
+          ? [{ change: itemChange(file.draft), failure: null }]
+          : read.items,
+    [room.status, room.branchless, file.draft, read.items],
   );
   // A shared runtime can be ready before this reader holds the room: no row is drawn without its capability.
   const ready = room.branchless ? room.status === "ready" : read.ready && room.status === "ready";
@@ -56,13 +61,15 @@ export function useDraftView(
     [discards.entries, draft.itemKey],
   );
   const membership: MembershipRead =
-    room.status === "error"
-      ? { status: "failed", retry: room.retry }
-      : !ready
-        ? { status: "loading" }
-        : wholeDocument
-          ? { status: "ready" }
-          : read.membership;
+    room.status === "gone"
+      ? { status: "ready" }
+      : room.status === "error"
+        ? { status: "failed", retry: room.retry }
+        : !ready
+          ? { status: "loading" }
+          : wholeDocument
+            ? { status: "ready" }
+            : read.membership;
   const ref = { documentId: draft.documentId, itemKey: draft.itemKey };
   const send = async (change: ReviewChange) => {
     const { frame } = change;

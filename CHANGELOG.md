@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Draft membership reads catch up when a peer edit overtakes an in-flight response, with Retry if the read stays stale. Closed files no longer leave the chat's ready drafts waiting to Apply or Discard.
 - Discarding one change keeps the other chat's attribution, including paragraphs with inline images and large rewrites. Undo carries its text and provenance together, and restored chat attribution survives garbage-collected reloads.
 - Draft review no longer calls new AI text “You” while attribution catches up, including rewrites that leave the prose unchanged. Attribution reads carry a room revision; unresolved membership stays included.
 - A failed draft-dock membership read shows an error and Retry on its file. Summary Apply and Discard wait for every file, while ready files retain their individual change commands. The dock uses one keyed summary instead of recursive file readers.

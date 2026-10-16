@@ -159,7 +159,10 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
   let reconciling = false;
   /** The draft's command record the state was derived from. */
   let seenRecord: unknown;
-  let revision: string | null = null;
+  let desiredRevision: string | null = null;
+  let coveredRevision: string | null = null;
+  let readingAttribution = false;
+  let readAttempts = 0;
   /** Attached editors in attachment order; the first is the one the room projects from. */
   const attachments: Attachment[] = [];
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -189,28 +192,82 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
         enabled: false,
       })
     : null;
+  const covers = (frame: ReviewFrame | null) =>
+    !!edits && !!frame && ![...attributionOf(frame).values()].some((c) => c.unresolved);
+
+  const refreshAttribution = () => {
+    if (
+      !attributionQuery ||
+      destroyed ||
+      readingAttribution ||
+      attributionFailed ||
+      desiredRevision === null ||
+      coveredRevision === desiredRevision
+    )
+      return;
+    readingAttribution = true;
+    // Query notifications can arrive inside settle. Drain outside that publication, and join any
+    // existing read rather than cancelling it. Its response may predate the latest projected frame.
+    queueMicrotask(async () => {
+      while (!destroyed) {
+        readAttempts++;
+        const result = await attributionQuery.refetch({ cancelRefetch: false });
+        if (destroyed) break;
+        if (result.isError) {
+          attributionFailed = true;
+          break;
+        }
+        if (covers(latest())) {
+          coveredRevision = desiredRevision;
+          readAttempts = 0;
+          break;
+        }
+        // A successful HTTP response is not necessarily a read that covers this room. Bound the
+        // catch-up work even if the server repeatedly returns the same structurally shared payload.
+        if (readAttempts >= 3) {
+          attributionFailed = true;
+          break;
+        }
+      }
+      readingAttribution = false;
+      if (!destroyed) publish(latest());
+    });
+  };
   const useAttribution = (frame: ReviewFrame) => {
     if (!attributionQuery || !source) return;
     const now = [...Y.encodeSnapshot(frame.snapshot)].join(",");
-    const first = revision === null;
-    if (revision === now) return;
-    revision = now;
-    if (first) {
-      attributionQuery.setOptions({ ...draftAttributionQueryOptions(source.draft), enabled: true });
-      // A freshly cached payload may predate this room, even before its first projection.
-      if (
-        edits &&
-        !attributionQuery.getCurrentResult().isFetching &&
-        !Y.equalSnapshots(frame.snapshot, Y.decodeSnapshot(Uint8Array.from(edits.revision)))
-      )
-        void attributionQuery.refetch();
-    } else void attributionQuery.refetch();
+    if (desiredRevision !== now) {
+      const first = desiredRevision === null;
+      desiredRevision = now;
+      readAttempts = 0;
+      attributionFailed = false;
+      if (first) {
+        if (
+          edits &&
+          Y.equalSnapshots(frame.snapshot, Y.decodeSnapshot(Uint8Array.from(edits.revision)))
+        )
+          coveredRevision = now;
+        queueMicrotask(() => {
+          if (!destroyed)
+            attributionQuery.setOptions({
+              ...draftAttributionQueryOptions(source.draft),
+              enabled: true,
+            });
+        });
+      }
+    }
+    if (!covers(frame)) coveredRevision = null;
+    refreshAttribution();
   };
 
   const failedMembership: MembershipRead = {
     status: "failed",
     retry: () => {
-      void attributionQuery?.refetch();
+      attributionFailed = false;
+      coveredRevision = null;
+      readAttempts = 0;
+      refreshAttribution();
+      publish(latest());
     },
   };
 
@@ -238,6 +295,7 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
 
   /** Bookkeeping: join the frame with attribution and command records, derive what is visible, tell readers. */
   const settle = (frame: ReviewFrame | null) => {
+    if (frame) useAttribution(frame);
     const changes =
       frame &&
       frame === state.frame &&
@@ -250,7 +308,7 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
     const ready = frame !== null && (synced || changes.length > 0);
     const membership = attributionFailed
       ? failedMembership
-      : edits && frame && ![...attributionOf(frame).values()].some((c) => c.unresolved)
+      : covers(frame)
         ? MEMBERSHIP_READY
         : MEMBERSHIP_LOADING;
     if (ready && frame && draft) {
@@ -284,7 +342,6 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
         ? deriveVisible(frame, changes, currentDraftCommandRecords(), draft)
         : NO_VISIBLE;
     state = { ...visible, frame, changes, ready, membership };
-    if (frame) useAttribution(frame);
     for (const listener of listeners) listener();
   };
 

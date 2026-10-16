@@ -322,3 +322,87 @@ it.each([
     doc.destroy();
   }
 });
+
+it("drains a cold read overtaken by a peer revision, and makes an uncovered fence retryable", async () => {
+  vi.useFakeTimers();
+  const schema = buildDocumentSchema();
+  const p = (text: string) => schema.nodes.paragraph.create(null, schema.text(text));
+  const doc = new Y.Doc({ gc: false });
+  doc.clientID = 1;
+  writeBlocks(doc.getXmlFragment("prosemirror"), schema, [p("alpha tail")]);
+  seedReviewBase(doc, ["alpha tail"]);
+  doc.clientID = 900;
+  const stale: DraftAttribution = {
+    itemKey: "cold",
+    userId: "u",
+    revision: [...Y.encodeSnapshot(Y.snapshot(doc))],
+    edits: [],
+  };
+  let resolve!: (value: DraftAttribution) => void;
+  const held = new Promise<DraftAttribution>((done) => {
+    resolve = done;
+  });
+  const current = () => ({ ...stale, revision: [...Y.encodeSnapshot(Y.snapshot(doc))] });
+  const api = vi
+    .spyOn(draftsApi, "getDraftAttribution")
+    .mockReturnValueOnce(held)
+    .mockImplementation(async () => current());
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+  });
+  const runtime = createReviewRuntime(
+    {
+      document: doc,
+      subscribe: () => () => {},
+      getSnapshot: () => ({ status: "synced" }),
+      whenSynced: () => Promise.resolve(),
+      hasUnacknowledgedEdits: () => false,
+    } as never,
+    {
+      draft: { projectId: "p", workId: "w", documentId: "cold", itemKey: "cold" },
+      queryClient: client,
+    },
+  );
+  const peer = new Y.Doc({ gc: false });
+  try {
+    await vi.advanceTimersByTimeAsync(180);
+    expect(api).toHaveBeenCalledTimes(1);
+    Y.applyUpdate(peer, Y.encodeStateAsUpdate(doc));
+    peer.clientID = 901;
+    writeBlocks(peer.getXmlFragment("prosemirror"), schema, [p("alpha tail WRITER")]);
+    Y.applyUpdate(doc, Y.encodeStateAsUpdate(peer));
+    await vi.advanceTimersByTimeAsync(180);
+    expect(runtime.state().membership.status).toBe("loading");
+    expect(runtime.state().changes[0].byline).toEqual([]);
+    resolve(stale);
+    await vi.advanceTimersByTimeAsync(180);
+    expect(api).toHaveBeenCalledTimes(2);
+    expect(runtime.state().membership.status).toBe("ready");
+    expect(runtime.state().changes[0].byline).toEqual([{ kind: "user", userId: "u" }]);
+
+    // The next revision can never be covered by this response. Stop refreshing and offer Retry.
+    const behind = current();
+    api.mockResolvedValue(behind);
+    writeBlocks(peer.getXmlFragment("prosemirror"), schema, [p("alpha tail WRITER AGAIN")]);
+    Y.applyUpdate(doc, Y.encodeStateAsUpdate(peer));
+    await vi.advanceTimersByTimeAsync(180);
+    const failed = runtime.state().membership;
+    expect(failed.status).toBe("failed");
+    const attempts = api.mock.calls.length;
+    expect(attempts).toBeLessThanOrEqual(5);
+    runtime.projectNow();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(api).toHaveBeenCalledTimes(attempts);
+    api.mockImplementation(async () => current());
+    if (failed.status !== "failed") throw new Error("Expected retryable membership");
+    failed.retry();
+    await vi.advanceTimersByTimeAsync(180);
+    expect(runtime.state().membership.status).toBe("ready");
+    expect(api).toHaveBeenCalledTimes(attempts + 1);
+  } finally {
+    runtime.destroy();
+    client.clear();
+    peer.destroy();
+    doc.destroy();
+  }
+});

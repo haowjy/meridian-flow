@@ -553,6 +553,16 @@ loading, its summary has no commands; a failed read offers Retry, not an empty
 success. A retained Discard/Undo or overrode notice stays without commands for
 a known-empty file.
 
+Hold the initial attribution response before opening the chat, make a peer edit,
+and deliver the held response with its pre-edit revision. PASS: a follow-up read
+catches up without another edit or reload. If every response keeps the old
+revision, the file stops loading and offers Retry; releasing a current response
+on Retry restores membership. Unknown evidence never acquires a "You" byline.
+With two listed files, close one in another client before its metadata arrives.
+Let that metadata return 404 while the thread list remains unchanged. PASS: only
+the ready sibling counts, the summary is not busy, and its commands work. A
+retained Undo or failure notice for the closed file remains separate.
+
 With the Editor attached in one tab, Discard and Undo the AI text from another
 surface. PASS: once synced, the attached editor's byline and the collapsed chat
 dock recover the chat's membership without a prose keystroke or reload. The

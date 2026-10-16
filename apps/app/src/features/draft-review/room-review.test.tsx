@@ -11,6 +11,7 @@ import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-quer
 import { act, useState } from "react";
 import { expect, it, vi } from "vitest";
 import * as Y from "yjs";
+import { HttpResponseError } from "@/client/api/http-client";
 import { draftAttributionQueryOptions } from "@/client/query/useDraftAttribution";
 import { draftMetaQueryOptions } from "@/client/query/useDraftMeta";
 import { BranchRoomPool } from "@/core/editor/branch-room-pool";
@@ -291,5 +292,37 @@ it("a cold collapsed chat Discard survives the row's metadata observer unmountin
   } finally {
     pool.invalidate();
     client.clear();
+  }
+});
+
+it("authoritative metadata 404 settles membership empty without erasing Discard notices", async () => {
+  const { client, pool, doc } = fixture();
+  client.removeQueries();
+  api.meta.mockRejectedValue(new HttpResponseError("closed", 404, null));
+  const entry = { id: "discarded", subject: { itemKey: draft.itemKey }, change: {} };
+  const discards = { entries: [entry], undo: vi.fn() } as never;
+  let view!: ReturnType<typeof useDraftView>;
+  function Probe() {
+    view = useDraftView(draft, { controller: { changesLocked: false } as never, file, discards });
+    return null;
+  }
+  try {
+    await withReactRoot(
+      <QueryClientProvider client={client}>
+        <Probe />
+      </QueryClientProvider>,
+      async () => {
+        await settleReact(() => expect(view.status).toBe("gone"));
+        expect(view.membership.status).toBe("ready");
+        expect(view.items).toEqual([]);
+        expect(view.discarded).toEqual([entry]);
+        expect(view.finished).toBe(false);
+        expect(pool.peek(ROOM)).toBeUndefined();
+      },
+    );
+  } finally {
+    pool.invalidate();
+    client.clear();
+    doc.destroy();
   }
 });
