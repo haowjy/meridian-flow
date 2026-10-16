@@ -68,7 +68,7 @@ async function recordSettled(
 ): Promise<void> {
   const { turn } = event;
   const code = event.error.code;
-  deps.eventWriter.recordFailure?.({
+  deps.eventWriter.recordFailure({
     ...base(turn),
     phase: "recorded",
     failure: failureOfTurn(turn, code),
@@ -80,7 +80,7 @@ async function recordSettled(
   );
   const followed =
     latest !== null && latest.id !== turn.id && !walkedOver.some((walked) => walked.id === turn.id);
-  if (followed) deps.eventWriter.recordFailure?.(ended(turn, "moved_on", latest.id, code));
+  if (followed) deps.eventWriter.recordFailure(ended(turn, "moved_on", latest.id, code));
 }
 
 /**
@@ -93,7 +93,6 @@ export async function recordEnded(
   end: Extract<FailureRecord, { phase: "ended" }>["end"],
   byTurnId: string | undefined,
 ): Promise<void> {
-  if (!deps.eventWriter.recordFailure) return;
   const graph = turnGraph(deps.repos.turns);
   for (const id of turnIds) {
     const turn = await graph.findById(id as never);
@@ -117,7 +116,6 @@ export async function detectFailures(
   threadId: ThreadId,
   event: OrchestratorEvent,
 ): Promise<void> {
-  if (!deps.eventWriter.recordFailure) return;
   if (event.type === "turn.error") await recordSettled(deps, threadId, event);
   else if (event.type === "turns.forgotten")
     await recordEnded(deps, event.turnIds, event.reason, event.byTurnId);

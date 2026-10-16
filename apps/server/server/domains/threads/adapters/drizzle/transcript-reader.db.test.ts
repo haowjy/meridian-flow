@@ -2,6 +2,7 @@
 
 import type { ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { createQuietDrizzleJournalWriter } from "../../../../test-support/journal-writer.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -381,7 +382,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await finalizeOrphanedTurns(
           {
             repos: observedRepos,
-            eventWriter: createDrizzleEventJournalWriter(db),
+            eventWriter: createQuietDrizzleJournalWriter(db),
           },
           { threadId: THREAD_ID },
         );

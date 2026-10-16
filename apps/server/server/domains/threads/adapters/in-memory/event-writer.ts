@@ -1,13 +1,15 @@
 /** In-memory event journal: append-only array of orchestrator events implementing both writer and reader ports, with per-thread sequencing. For tests/local dev; depends inward on the event-journal port. */
-import type { ThreadId } from "@meridian/contracts/runtime";
 
+import type { FailureRecord } from "@meridian/contracts/failures";
+import type { ThreadId } from "@meridian/contracts/runtime";
+import { recordFailureAfterCommit } from "../../../../shared/failure-records.js";
 import { toIsoString } from "../../domain/contract-serialization.js";
 import { deriveJournalTurnId } from "../../domain/journal-turn-id.js";
 import type {
   EventJournalReader,
-  EventJournalWriter,
   JournalEntry,
   JournalEventEnvelope,
+  LiveEventWriter,
 } from "../../ports/event-journal.js";
 import { JOURNAL_ONLY_EVENT_TYPES as journalOnlyEventTypes } from "../../ports/event-journal.js";
 
@@ -20,7 +22,9 @@ export interface RecordedEvent {
   createdAt: string;
 }
 
-export interface InMemoryEventJournalWriter extends EventJournalWriter, EventJournalReader {
+export interface InMemoryEventJournalWriter extends LiveEventWriter, EventJournalReader {
+  /** Failure records emitted so far, after the outermost in-memory commit. */
+  getFailureRecords(): ReadonlyArray<FailureRecord>;
   getEvents(threadId: ThreadId): ReadonlyArray<RecordedEvent>;
   getAllEvents(): ReadonlyArray<RecordedEvent>;
 }
@@ -28,6 +32,7 @@ export interface InMemoryEventJournalWriter extends EventJournalWriter, EventJou
 export function createInMemoryEventJournalWriter(): InMemoryEventJournalWriter {
   const seqByThread = new Map<string, bigint>();
   const events: RecordedEvent[] = [];
+  const failures: FailureRecord[] = [];
   const journalOnlyEventTypeSet = new Set<string>(journalOnlyEventTypes);
 
   function toEntry(e: RecordedEvent): JournalEntry {
@@ -43,6 +48,10 @@ export function createInMemoryEventJournalWriter(): InMemoryEventJournalWriter {
   }
 
   return {
+    recordFailure(record) {
+      recordFailureAfterCommit(record, (emitted) => failures.push(emitted));
+    },
+    getFailureRecords: () => failures,
     async appendEvent(threadId, event) {
       const key = threadId as string;
       const prev = seqByThread.get(key) ?? 0n;

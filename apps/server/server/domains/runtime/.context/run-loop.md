@@ -39,7 +39,10 @@ becomes `failure.recorded` (the occurrence is the turn id, classified by
 carried case). A `turns.forgotten` becomes `failure.ended` for each failed id
 with the event's own reason and `byTurnId`. The append primitive records the
 commit's `passed` turns as `moved_on` (run start decides the same, and only the
-commit logs). A failed handoff seed's Retry records `retried` in
+commit logs). `decideForgetting` owns which failures end at a boundary: only the
+newest member of a kept Retry chain and the newest failed handoff seed, since an older
+one ended at the boundary that followed it. The recorder records what it is given
+and keeps no memory of earlier ends. A failed handoff seed's Retry records `retried` in
 `brief-service.ts`, because the Retry seed's `turn.created` names no seed. A usage
 block records `failure.recorded` and its clear `failure.ended { resolved }`
 from `setBlockedReason`, with occurrence `usage:${threadId}:${episode}`, where the
@@ -47,12 +50,16 @@ episode is the journal seq of the chat's last unblocked `run_state.changed`
 record (no column holds it). `interrupts.ts` projects directly and calls the same
 detector. The projector itself never logs.
 
-Records go to the writer's `recordFailure`, which queues them on the
+Records go to the `recordFailure` a `LiveEventWriter` carries (required by
+`PersistenceDeps`; `noFailureRecorder` is the explicit opt-out; the raw journal stays
+append-only), which queues them on the
 `FailureRecord` transaction participant (`shared/failure-records.ts`): own
-state, forked and merged across savepoints, deduped on `(occurrenceId, phase)`,
-emitted through `recordFailure` over `emitEvent` after the outermost commit. A
-rolled-back transition emits nothing, and without a Drizzle transaction (the
-in-memory repositories) a record emits at once. The journal row is the durable
+state, forked and merged across savepoints, emitted through `recordFailure` over
+`emitEvent` after the outermost commit. Within one Drizzle transaction a repeated
+`(occurrenceId, phase)` emits once; across transactions uniqueness comes from the
+transition decision, not from the participant. A rolled-back transition emits
+nothing, on Drizzle and on the in-memory repositories (their transaction defers
+through `deferUntilInMemoryCommit`); outside any transaction a record emits at once. The journal row is the durable
 record; the log entry is its classified, best-effort view.
 
 `POST /api/threads/:threadId/turns/:turnId/retry` is available only for the

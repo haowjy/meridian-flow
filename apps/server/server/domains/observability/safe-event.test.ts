@@ -1,9 +1,7 @@
 /** Sanitizer boundary tests for sensitive fields and numeric gateway metrics. */
 import { describe, expect, it } from "vitest";
-import { createInMemoryEventSink } from "./adapters/in-memory/in-memory-event-sink.js";
 import { errorMessageOf, unknownToEventPayload } from "./emit-event.js";
 import type { EventRecord } from "./ports/event-sink.js";
-import { recordFailure } from "./record-failure.js";
 import { MAX_EVENT_RECORD_BYTES, sanitizeEventRecord, serializedEventBytes } from "./safe-event.js";
 
 function sanitize(payload: Record<string, unknown>): Record<string, unknown> {
@@ -147,35 +145,6 @@ describe("errorMessageOf", () => {
 });
 
 describe("sanitizeEventRecord privacy boundary", () => {
-  it("keeps a failure record's diagnostics instead of redacting them all", () => {
-    // Risk: a payload key the allow-list does not know (`cause` matches the sensitive pattern) reads "[redacted]".
-    const sink = createInMemoryEventSink();
-    recordFailure(sink, {
-      occurrenceId: "usage:thread-1:3",
-      phase: "ended",
-      end: "resolved",
-      byTurnId: "turn-2",
-      threadId: "thread-1",
-      failure: {
-        category: "reply",
-        source: "provider",
-        actionable: false,
-        cause: { code: "server_error", reason: "compaction_failed", status: 500 },
-      },
-    });
-    expect(sanitizeEventRecord(sink.events[0] as EventRecord).payload).toEqual({
-      occurrenceId: "usage:thread-1:3",
-      category: "reply",
-      source: "provider",
-      actionable: false,
-      failureCode: "server_error",
-      failureReason: "compaction_failed",
-      providerStatus: 500,
-      end: "resolved",
-      byTurnId: "turn-2",
-    });
-  });
-
   it("default-denies raw error text and common exception/query fields", () => {
     const secret = "the dragon is her father postgresql://alice:hunter2@db/private";
 

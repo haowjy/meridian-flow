@@ -21,6 +21,7 @@ import { toIsoString } from "../../threads/domain/contract-serialization.js";
 import {
   type EventJournalReader,
   type EventJournalWriter,
+  type LiveEventWriter,
   projectReadModelEvent,
   replyFailedCopy,
   type ThreadRepositories,
@@ -307,7 +308,7 @@ export function extractInterruptHints(
 export type InterruptRecoveryDeps = {
   repos: ThreadRepositories;
   journalReader: EventJournalReader;
-  journalWriter: EventJournalWriter;
+  journalWriter: LiveEventWriter;
   threadId: ThreadId;
   /**
    * Recovery is destructive: it turns an unresolved interrupt into a terminal

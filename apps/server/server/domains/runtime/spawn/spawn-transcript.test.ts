@@ -1,4 +1,5 @@
 /** Return-result capture and tool settlement share one repository transaction. */
+
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
 import { createInMemoryProjectRepository } from "../../projects/index.js";
@@ -6,6 +7,7 @@ import {
   createInMemoryEventJournalWriter,
   createInMemoryRepositories,
 } from "../../threads/index.js";
+import { noFailureRecorder } from "../../threads/ports/event-journal.js";
 import { finalizeExecution } from "../loop/execution-finalizer.js";
 import { persistReturnResult, type SpawnTranscript } from "./spawn-transcript.js";
 
@@ -87,6 +89,7 @@ describe("persistReturnResult", () => {
   it("rolls the candidate back when tool-result publication fails", async () => {
     const { repos, child, turn, transcript } = await setup();
     transcript.persistence.eventWriter = {
+      ...noFailureRecorder,
       async appendEvent() {
         throw new Error("journal failed");
       },

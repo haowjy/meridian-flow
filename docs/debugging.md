@@ -493,7 +493,7 @@ stops applying. `./mf log --name failure.recorded` and `--name failure.ended` re
 Both carry `occurrenceId` (the failed turn's id, or `usage:<threadId>:<episode>`),
 `category`, `source` (`transport`, `refusal`, `provider`, `usage`, `validation` or `bug`),
 `actionable`, `failureCode` (the typed reason; an untyped provider code is a `bug`),
-`failureReason` (the error code, when it differs), `providerStatus` and `executionId`
+`failureReason` (the error code, on `recorded` and on an immediate end, when it differs), `providerStatus` and `executionId`
 where known. `failure.ended` adds `end` (`retried`, `forgotten`, `moved_on` or
 `resolved`) and `byTurnId`, the turn that ended it. They are emitted after the
 transaction commits, so a rolled-back settlement leaves none.
