@@ -271,7 +271,7 @@ describe("current stream ordering", () => {
     expect(blocks?.find((block) => block.id === "card-1")?.content).toMatchObject({
       props: { status: "running" },
     });
-    expect(store.getState().liveMeta["thread-1"]?.eventsApplied).toBe(3);
+    expect(store.getState().syncedByThread["thread-1"]?.eventsApplied).toBe(3);
     act(() => {
       bus.emit(
         {
@@ -723,7 +723,7 @@ describe("projection lifetime fencing", () => {
       await gate.promise;
     });
     await vi.advanceTimersByTimeAsync(300);
-    expect(store.getState().durableBlockCursorByThread["thread-1"]).toBeUndefined();
+    expect(store.getState().syncedByThread["thread-1"]?.durableCursor ?? undefined).toBeUndefined();
     // The run's start applied before the abort; the durable card after it did not.
     expect(
       store

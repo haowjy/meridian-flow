@@ -32,6 +32,7 @@ import {
   receiveRecord,
   unheldWriterMessages,
 } from "@meridian/thread-client";
+import { StreamDeltaCoalescer } from "@meridian/thread-client/sync";
 import { useQuery } from "@tanstack/react-query";
 import { useLayoutEffect, useMemo, useState } from "react";
 import { toThreadSnapshotApplyOptions } from "@/client/api/threads-api";
@@ -41,7 +42,6 @@ import {
   useAccountEpochSignal,
   useAccountId,
 } from "@/features/project/context/account-feature-context";
-import { StreamDeltaCoalescer } from "./stream-delta-coalescer";
 import {
   type DeserializedThreadSnapshot,
   StaleThreadSnapshot,

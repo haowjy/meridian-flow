@@ -24,7 +24,7 @@ const MERGEABLE_TYPES = new Set<EventType>([
   EventType.REASONING_MESSAGE_CHUNK,
 ]);
 
-type ScheduleFlush = (flush: () => void) => () => void;
+export type ScheduleFlush = (flush: () => void) => () => void;
 
 /** Coalesce on the frame boundary; fall back to a macrotask where rAF is absent. */
 export const frameScheduler: ScheduleFlush = (flush) => {
