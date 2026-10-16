@@ -188,6 +188,15 @@ follows it. Use a Work with two changes in Chapter A and one in Chapter B.
 7. Phone (no typing, no Ctrl+Z). Discard happens in place and offers its own Undo; see
    [Probe I.9](#probe-i-the-change-list-on-both-shells).
 
+## Large rewrites
+
+On 10k- and 50k-word full rewrites, time open and native typing through the next
+paint (including a paused key after the 120 ms review debounce). Check that attach
+paints the headless frame without a second projection, unchanged paragraphs reuse
+their diff work, and a paragraph above the token budget shows whole red/green
+replacement rather than cross-paragraph word noise. Repeat the move, cut/paste
+and Discard Undo checks below; retained and fresh-node diffs must agree.
+
 ## Probe C: moves, Ctrl+Z and view handoff
 
 1. In an Editor review, select the first paragraph including its break with a native DOM

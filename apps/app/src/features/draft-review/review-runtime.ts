@@ -175,6 +175,7 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
   let synced = room.getSnapshot().status === "synced";
   /** The base blocks, parsed once per schema (an editor's own, or the headless one) until `review_base` changes. */
   let baseBlocks = new Map<Schema | null, PMNode[]>();
+  let projectedBase: typeof baseBlocks | null = null;
 
   const attributionOf = (frame: ReviewFrame): Attribution => {
     // Until the chats' writes have loaded, a change is not the writer's: nothing is said.
@@ -443,6 +444,7 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
     if (!from && !synced) return state.frame;
     const frame = from ? projectEditor(from) : projectHeadless();
     if (!frame) return state.frame;
+    projectedBase = baseBlocks;
     publish(frame, deferred);
     return frame;
   };
@@ -536,7 +538,17 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
       attached.on("transaction", onTransaction);
       // A second editor joins a frame already published: it is painted now, not at the next change.
       paintAttachment(attached, painted);
-      flushSoon();
+      // A headless frame already describes this text. Paint can bind its positions across schemas;
+      // commands still project in their own editor schema before composing Discard's replacement.
+      if (
+        painted &&
+        projectedBase === baseBlocks &&
+        Y.equalSnapshots(painted.snapshot, Y.snapshot(yDoc)) &&
+        sameContent(painted.doc, attached.state.doc)
+      ) {
+        if (timer) clearTimeout(timer);
+        timer = null;
+      } else flushSoon();
       return () => {
         attached.off("transaction", onTransaction);
         const at = attachments.indexOf(attachment);

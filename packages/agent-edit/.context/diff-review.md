@@ -31,6 +31,30 @@ decorates (`inserted`, `anchor`), the base content drawn red (`removed`) and a
 short excerpt. The projection is pure and retains nothing, so a caller that
 keeps PM nodes between edits pays only for the changed region.
 
+## Deterministic cost bounds
+
+Alignment never uses a wall-clock timeout (`DIFF_OPTS.timeout = 0`). A gap of
+at most 1,000 tokens on each side retains content-first word alignment, including
+small paragraph splits and joins. Larger gaps first use ordered 80%-similar
+paragraph anchors. Unequal residual runs try 40% anchors; remaining paragraphs
+pair in order, with excess paragraphs inserted or deleted. Position bounds the
+search, not whether text is equal. A paragraph still over budget is one whole
+replacement, with no later refinement back into word-level noise.
+
+The 1,000-token budget keeps the quadratic token search below chapter size:
+disjoint paragraph probes took 18–29 ms around 1,000 words, versus up to 128 ms
+around 1,500. Node-pair WeakMaps retain paragraph-local hunks; publication adds
+current offsets to copies, so moving a paragraph or editing before it cannot
+mutate cached coordinates. Strong diagonal matches avoid the paragraph matching
+table for dense in-place edits. Caches change cost, never output.
+
+Pure character-refinement scripts also reuse retained draft nodes and the base
+array, keyed by their exact input strings. Their cache is bounded to the 64k
+character budget per node, and hits consume the same naming budget as misses.
+No Yjs evidence, membership or author result is cached: those still read the
+current room on every classification. Incremental attribution and publication
+remain separate work (#900).
+
 ## Attribution footprint and names
 
 Classification has two phases over raw word/structural boundaries. The mandatory

@@ -21,6 +21,11 @@ editor `useRoomReview` retains the room headlessly (Work page, strip) and the
 runtime reads its Yjs text. Surfaces read the state with `useReviewState`;
 nothing copies it into the controller.
 
+Attaching an editor reuses the headless frame for paint when its base generation,
+complete Yjs snapshot and document content still match. Commands still project
+through their own editor schema before composing a Discard: equal content does
+not make nodes from different ProseMirror schemas interchangeable.
+
 Who wrote a change is one classifier (`classifyChanges`, `@meridian/agent-edit/diff`, `attribution.ts`)
 over the room's Yjs items and the attribution payload (`review-attribution.ts` joins its answer to
 conversations). Three rules, each one sentence:

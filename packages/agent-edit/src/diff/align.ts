@@ -14,6 +14,7 @@ import { type Hunk, posMap } from "./hunks.js";
 import {
   blockKey,
   blockWords,
+  buildSide,
   coreKey,
   diffKeys,
   isBlockTok,
@@ -41,7 +42,7 @@ export function align(B: Side, S: Side): Alignment {
     if (gb === bi && gs === si) return;
     for (const [b0, b1, s0, s1] of anchorGap(B, gb, bi, S, gs, si)) {
       if (b0 === b1 && s0 === s1) continue;
-      tokenHunks(B, B.starts[b0], B.starts[b1], S, S.starts[s0], S.starts[s1], hunks);
+      boundedGap(B, b0, b1, S, s0, s1, hunks);
     }
   };
   for (const [op, n] of diffKeys(B.blocks.map(blockKey), S.blocks.map(blockKey))) {
@@ -72,13 +73,18 @@ export function align(B: Side, S: Side): Alignment {
  * near the same position), so each token diff stays paragraph-sized. Small gaps stay whole: the
  * content-first diff over a gap is what reads a split or a join as one.
  */
-const ANCHOR_GAP_TOKENS = 1500;
+// 1,000 tokens preserves ordinary split/join gaps while capping Myers' quadratic search.
+// Disjoint 1,000-word paragraphs measured 18–29 ms; 1,500 reached 128 ms (KF30 probe).
+// Chapter-sized rewrites pair paragraphs instead, and oversized paragraphs stay whole replacements.
+const ANCHOR_GAP_TOKENS = 1000;
 const ANCHOR_SIMILAR = 0.8;
 const ANCHOR_BAND = 40;
 
 // Repeated recomputes over retained nodes ask the same pairs again; nodes are immutable.
 const similarityMemo = new WeakMap<PMNode, WeakMap<PMNode, number>>();
 function cachedSimilarity(a: PMNode, b: PMNode): number {
+  if (blockWords(a).length > ANCHOR_GAP_TOKENS || blockWords(b).length > ANCHOR_GAP_TOKENS)
+    return 0;
   let row = similarityMemo.get(a);
   if (!row) {
     row = new WeakMap();
@@ -98,6 +104,7 @@ function anchorGap(
   S: Side,
   gs: number,
   si: number,
+  threshold = ANCHOR_SIMILAR,
 ): Array<[number, number, number, number]> {
   const whole: Array<[number, number, number, number]> = [[gb, bi, gs, si]];
   if (
@@ -106,6 +113,20 @@ function anchorGap(
   )
     return whole;
   if (bi - gb < 2 || si - gs < 2) return whole;
+  // Dense in-place edits need no quadratic paragraph search. This is the same maximal matching
+  // the ordered matcher returns when every diagonal pair qualifies.
+  if (
+    bi - gb === si - gs &&
+    B.blocks
+      .slice(gb, bi)
+      .every(
+        (a, k) =>
+          a.type === S.blocks[gs + k].type &&
+          a.isTextblock &&
+          cachedSimilarity(a, S.blocks[gs + k]) >= threshold,
+      )
+  )
+    return Array.from({ length: bi - gb }, (_, k) => [gb + k, gb + k + 1, gs + k, gs + k + 1]);
   const sets = new Map<PMNode, Set<string>>();
   const setOf = (n: PMNode) => {
     let x = sets.get(n);
@@ -123,11 +144,11 @@ function anchorGap(
     if (a.type !== b.type || !a.isTextblock) return 0;
     const sa = setOf(a);
     const sb = setOf(b);
-    if (Math.min(sa.size, sb.size) < ANCHOR_SIMILAR * Math.max(sa.size, sb.size)) return 0;
+    if (Math.min(sa.size, sb.size) < threshold * Math.max(sa.size, sb.size)) return 0;
     let common = 0;
     for (const t of sa) if (sb.has(t)) common++;
-    if (common < ANCHOR_SIMILAR * Math.max(sa.size, sb.size)) return 0;
-    return cachedSimilarity(a, b) >= ANCHOR_SIMILAR ? 1 : 0;
+    if (common < threshold * Math.max(sa.size, sb.size)) return 0;
+    return cachedSimilarity(a, b) >= threshold ? 1 : 0;
   };
   const m = weightedOrderedMatches(w, gb, bi, gs, si, 4_000_000);
   if (!m?.length) return whole;
@@ -141,6 +162,81 @@ function anchorGap(
   }
   out.push([pb, bi, ps, si]);
   return out;
+}
+
+// Offsets in the cache belong to these two nodes alone, never to their current document positions.
+const pairHunks = new WeakMap<PMNode, WeakMap<PMNode, Hunk[]>>();
+function pairedHunks(a: PMNode, b: PMNode): Hunk[] {
+  let row = pairHunks.get(a);
+  if (!row) {
+    row = new WeakMap();
+    pairHunks.set(a, row);
+  }
+  let hunks = row.get(b);
+  if (!hunks) {
+    const B = buildSide([a]);
+    const S = buildSide([b]);
+    hunks = [];
+    boundedTokens(B, 0, B.toks.length, S, 0, S.toks.length, hunks);
+    row.set(b, hunks);
+  }
+  return hunks;
+}
+
+function boundedTokens(
+  B: Side,
+  b0: number,
+  b1: number,
+  S: Side,
+  s0: number,
+  s1: number,
+  out: Hunk[],
+) {
+  if (b1 - b0 > ANCHOR_GAP_TOKENS || s1 - s0 > ANCHOR_GAP_TOKENS) {
+    out.push({ from: b0, to: b1, sfrom: s0, ins: S.toks.slice(s0, s1) });
+  } else tokenHunks(B, b0, b1, S, s0, s1, out);
+}
+
+/** Keep small split/join gaps whole. Large unmatched runs pair in order, not by token search. */
+function boundedGap(B: Side, b0: number, b1: number, S: Side, s0: number, s1: number, out: Hunk[]) {
+  const pair = (b: number, s: number) => {
+    for (const h of pairedHunks(B.blocks[b], S.blocks[s]))
+      out.push({
+        ...h,
+        from: h.from + B.starts[b],
+        to: h.to + B.starts[b],
+        sfrom: h.sfrom + S.starts[s],
+      });
+  };
+  if (b1 - b0 === 1 && s1 - s0 === 1) {
+    pair(b0, s0);
+    return;
+  }
+  if (
+    B.starts[b1] - B.starts[b0] <= ANCHOR_GAP_TOKENS &&
+    S.starts[s1] - S.starts[s0] <= ANCHOR_GAP_TOKENS
+  ) {
+    tokenHunks(B, B.starts[b0], B.starts[b1], S, S.starts[s0], S.starts[s1], out);
+    return;
+  }
+  if (b1 - b0 !== s1 - s0) {
+    const paired = anchorGap(B, b0, b1, S, s0, s1, 0.4);
+    if (paired.length > 1) {
+      for (const [b, be, s, se] of paired)
+        if (b < be || s < se) boundedGap(B, b, be, S, s, se, out);
+      return;
+    }
+  }
+  // No strong anchors survived. Position is only a boundary for work, not evidence of equal text:
+  // every token still participates in either a bounded diff or a whole-paragraph replacement.
+  while (b0 < b1 && s0 < s1) pair(b0++, s0++);
+  if (b0 < b1 || s0 < s1)
+    out.push({
+      from: B.starts[b0],
+      to: B.starts[b1],
+      sfrom: S.starts[s0],
+      ins: S.toks.slice(S.starts[s0], S.starts[s1]),
+    });
 }
 
 /**
@@ -318,7 +414,7 @@ function refine(bt: Tok[], hunks: Hunk[]): Hunk[] {
   for (const h of hunks) {
     const n = h.to - h.from;
     const m = h.ins.length;
-    if (!n || !m) {
+    if (!n || !m || n > ANCHOR_GAP_TOKENS || m > ANCHOR_GAP_TOKENS) {
       out.push(h);
       continue;
     }

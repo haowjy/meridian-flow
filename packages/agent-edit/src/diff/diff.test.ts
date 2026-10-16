@@ -4,7 +4,7 @@ The diff core's named risks: word salad in review and partial
  */
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Mark, Node as PMNode } from "prosemirror-model";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { applySpanPatches, composeHunks, type SpanPatch } from "./compose.js";
 import { blocksEqual } from "./equal.js";
 import { diffBlocks, type Hunk, hunkKind } from "./hunks.js";
@@ -302,4 +302,50 @@ describe("partial Apply and Discard never corrupt text", () => {
     );
     expect(discardSecond[0].textContent).toBe("RED one two three four blue");
   });
+});
+
+// A deadline used to turn the same rewrite into different hunks under machine load.
+it("large rewrites have identical hunks with a slow clock and fresh nodes", () => {
+  const baseText = Array.from({ length: 24 }, (_, i) =>
+    `Scene ${i} The patient traveller followed the narrow river toward the western hills. `.repeat(
+      5,
+    ),
+  );
+  const draftText = Array.from({ length: 25 }, (_, i) =>
+    `Scene ${i} The impatient messenger hurried along the flooded road toward the eastern port. `.repeat(
+      5,
+    ),
+  );
+  const run = () => {
+    const base = plain(...baseText);
+    const draft = plain(...draftText);
+    const diff = diffBlocks(base, draft);
+    expect(
+      blocksEqual(
+        applySpanPatches(base, composeHunks(schema, diff, diff.hunks, "apply"), "base"),
+        draft,
+      ),
+    ).toBe(true);
+    expect(
+      blocksEqual(
+        applySpanPatches(draft, composeHunks(schema, diff, diff.hunks, "discard"), "draft"),
+        base,
+      ),
+    ).toBe(true);
+    return diff.hunks.map((h) => ({
+      from: h.from,
+      to: h.to,
+      sfrom: h.sfrom,
+      ins: h.ins.map((t) => t.key),
+    }));
+  };
+  const expected = run();
+  expect(run()).toEqual(expected);
+  let now = 0;
+  const clock = vi.spyOn(Date, "now").mockImplementation(() => (now += 60_000));
+  try {
+    expect(run()).toEqual(expected);
+  } finally {
+    clock.mockRestore();
+  }
 });
