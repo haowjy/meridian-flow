@@ -6,24 +6,20 @@ import { expect, it, vi } from "vitest";
 import { getProjectContextRead } from "@/client/api/projects-api";
 import { contextCatalogScope } from "@/client/query/useContextCatalog";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { openContextRouteSearch } from "../routing/project-route";
 import { ContextViewerHost } from "./ContextViewerHost";
 import { contextTabFromFile } from "./context-tab-from-file";
-import { contextTabMatchesRoute } from "./context-tab-identity";
 
 vi.mock("@/client/api/projects-api", async (original) => ({
   ...(await original<typeof import("@/client/api/projects-api")>()),
   getProjectContextRead: vi.fn(),
 }));
 
-it("reads an explicit no-Work image without inheriting the selected chat Work", async () => {
-  const search = openContextRouteSearch(
-    {},
-    { scheme: "uploads", path: "/Map.png", workId: "no-work" },
-  );
-  expect(search.work).toBe("no-work");
-  const scope = { status: "ready", workId: "no-work" } as const;
-  expect(contextCatalogScope("project", "uploads", { workId: scope.workId })).not.toBeNull();
+it("reads a chat's image with the chat, not the selected Work", async () => {
+  expect(contextCatalogScope("project", "uploads", { chatId: "chat-1" })).toEqual({
+    kind: "chat",
+    projectId: "project",
+    chatId: "chat-1",
+  });
   const tab = contextTabFromFile(
     "uploads",
     {
@@ -33,18 +29,15 @@ it("reads an explicit no-Work image without inheriting the selected chat Work", 
       parentId: "source",
       name: "Map.png",
       path: "/Map.png",
-      uri: "uploads://@/Map.png",
+      uri: "uploads://@/c15/Map.png",
       provisionalName: false,
       editable: false,
       disposition: "binary",
       fileType: "image",
       mimeType: "image/png",
     },
-    { workId: scope.workId },
+    { chatThreadId: "chat-1" },
   );
-  expect(
-    contextTabMatchesRoute(tab, { scheme: "uploads", path: "/Map.png", workId: scope.workId }),
-  ).toBe(true);
   if (tab.kind !== "viewer") throw new Error("expected binary viewer");
   vi.mocked(getProjectContextRead).mockResolvedValue({
     kind: "binary",
@@ -65,7 +58,7 @@ it("reads an explicit no-Work image without inheriting the selected chat Work", 
         await new Promise((resolve) => setTimeout(resolve, 20));
       });
       expect(getProjectContextRead).toHaveBeenCalledWith("project", "uploads", "/Map.png", {
-        workId: "no-work",
+        chatThreadId: "chat-1",
       });
       expect(document.querySelector('img[alt="Map.png"]')?.getAttribute("src")).toBe(
         "/signed-map.png",

@@ -6,7 +6,10 @@ import { memo, useMemo } from "react";
 import type { UserTurnRecovery } from "@/client/chat-submissions/presentation";
 import { NoticeCard } from "@/components/app/NoticeCard";
 import { Button } from "@/components/ui/button";
-import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
+import {
+  useCanOpenChatReference,
+  useOpenChatDocument,
+} from "@/features/project/context/open-chat-document";
 import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
 import { Markdown } from "@/rich-content/Markdown";
 import { HandoffTurnAction, useTurnDerivation } from "./derivation/DeriveTurnActions";
@@ -26,6 +29,8 @@ export type UserTurnProps = {
   queuedCount?: number;
   /** Retry and, after a durable server refusal, Edit on the unadmitted writer row. */
   submissionRecovery?: UserTurnRecovery | null;
+  /** This chat's handle, for a message that still names an upload bare. */
+  uploadsChat?: string;
 };
 
 function UserTurnComponent({
@@ -36,12 +41,14 @@ function UserTurnComponent({
   queueControls = null,
   lastQueued = false,
   queuedCount = 0,
+  uploadsChat,
 }: UserTurnProps) {
   // Hand off from a message the model has. A queued one sits beyond the
   // cutoff the server would use, so it offers none.
   const handoff = useTurnDerivation() !== null && !queued && turn.status === "complete";
   const projectId = useProjectDocumentNavigationProjectId();
   const openDocument = useOpenChatDocument(projectId ?? undefined);
+  const canOpenReference = useCanOpenChatReference();
   const resolutions = useReferenceAvailability(
     useMemo(
       () => [...new Set(projected.references.map(({ documentId }) => documentId))],
@@ -56,6 +63,8 @@ function UserTurnComponent({
       references={projected.references}
       skills={projected.skills}
       referenceResolutions={resolutions}
+      canOpenReference={canOpenReference}
+      uploadsChat={uploadsChat}
       onOpenReference={(documentId) => void openDocument({ documentId, disposition: "current" })}
     >
       {projected.text}
@@ -193,15 +202,5 @@ function UserTurnComponent({
   );
 }
 
-export const UserTurn = memo(
-  UserTurnComponent,
-  (prev, next) =>
-    prev.turn === next.turn &&
-    prev.writer === next.writer &&
-    prev.submissionRecovery === next.submissionRecovery &&
-    prev.queued === next.queued &&
-    prev.queueControls === next.queueControls &&
-    prev.lastQueued === next.lastQueued &&
-    prev.queuedCount === next.queuedCount,
-);
+export const UserTurn = memo(UserTurnComponent);
 UserTurn.displayName = "UserTurn";

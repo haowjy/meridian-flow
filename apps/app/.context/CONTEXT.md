@@ -155,8 +155,8 @@ and slug edits. The first child segment is `chats`, `works`, or `editor`;
 the bare project route canonicalizes to chats. Chat, Work, and project identities
 are UUID-addressed. Work slugs belong to context URIs, not browser URLs.
 Editor documents/folders live under `/editor/…`; `?work=` supplies explicit
-Work context, required for Scratch and Uploads because the Work is the file's
-identity. Recognized query keys are `work`, `settings`, `results`, and `view`;
+Work context, required for Scratch because the Work is the file's identity.
+Uploads belong to a chat and have no Editor route. Recognized query keys are `work`, `settings`, `results`, and `view`;
 omitted, explicit No Work, valid Work, and malformed values remain distinct, and
 duplicate keys or malformed encodings are invalid rather than normalized.
 Slug-shaped project routes and older shapes (`/project/<UUID>`, `screen`/`thread`/

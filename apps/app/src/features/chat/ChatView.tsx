@@ -42,6 +42,7 @@ import { uploadIntakePort } from "@/client/api/upload-intake-api";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
 import { useLineage } from "@/client/query/useLineageTitle";
+import { useTopChat } from "@/client/query/useTopChat";
 import {
   useIsThreadPendingCreation,
   useRunStateSlice,
@@ -60,7 +61,10 @@ import {
   useAccountEpochSignal,
   useAccountId,
 } from "@/features/project/context/account-feature-context";
-import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
+import {
+  useCanOpenChatReference,
+  useOpenChatDocument,
+} from "@/features/project/context/open-chat-document";
 import {
   displayedChatThreadId,
   useChatNavigation,
@@ -74,6 +78,7 @@ import { useOpenChatThread } from "./ChatThreadNavigation";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { chatLineageId } from "./chat-scratch-owner";
 import { useControlTurnAnnouncements } from "./compaction/useControlTurnAnnouncements";
+import { useRegisterChatComposer } from "./composer-insertion";
 import { composerRun } from "./composer-run";
 import { DraftDock } from "./DraftDock";
 import {
@@ -162,9 +167,11 @@ export function ChatView({
   active = true,
 }: ChatViewProps) {
   const openReferenceDocument = useOpenChatDocument(projectId);
+  const canOpenReference = useCanOpenChatReference();
   const actions = useThreadActions();
   const { changeTrails } = useThreadDurableProjections({ threadId, projectId });
   const composerRef = useRef<ComposerHandle>(null);
+  useRegisterChatComposer(threadId, composerRef);
   const chatSurfaceRef = useRef<HTMLDivElement>(null);
   const [tailFollowRevision, requestTailFollow] = useReducer((value: number) => value + 1, 0);
 
@@ -277,11 +284,15 @@ export function ChatView({
   const composerAgentName = activeThread?.agentName ?? "General";
 
   const pageTitle = activeThread?.title ? displayThreadTitle(activeThread.title) : t`New chat`;
+  // Uploads belong to the chat; a thread not in the list yet is a New chat's own.
+  const listedChat = useTopChat(projectId, activeThread);
+  const topChat = listedChat ?? { chatId: threadId, chatRef: null };
   const referenceCatalog = useReferenceBrowserCatalog(
     projectId,
     activeWork?.id,
     t`Reference a file`,
     chatLineageId({ thread: activeThread, work: activeWork }),
+    topChat.chatId,
   );
   const availableSkills = useThreadAvailableSkills(threadId);
   const submissions = useChatSubmissions(
@@ -460,9 +471,19 @@ export function ChatView({
             work: { id: activeWork.id, slug: activeWork.slug },
             rootThreadId: activeThread.rootThreadId,
             rootThreadRef: lineage?.rootThreadRef ?? null,
+            chatId: topChat.chatId,
+            chatRef: topChat.chatRef,
           }
         : null,
-    [accountId, activeThread, activeWork, lineage?.rootThreadRef, projectId],
+    [
+      accountId,
+      activeThread,
+      activeWork,
+      lineage?.rootThreadRef,
+      projectId,
+      topChat.chatId,
+      topChat.chatRef,
+    ],
   );
   const handBack = useHandBack({ threadId, accountId, scope: stopScope });
   const chatStop = useChatStop({ threadId, handBack });
@@ -538,6 +559,7 @@ export function ChatView({
                   initialDraft={draft.initialDraft}
                   onDraftChange={draft.updateDraft}
                   onOpenReference={(reference) => {
+                    if (!canOpenReference(reference.uri)) return;
                     void openReferenceDocument({
                       documentId: reference.documentId,
                       disposition: "current",
@@ -567,9 +589,7 @@ export function ChatView({
                   availableSkills={availableSkills.skills}
                   commands={chatCommands}
                   uploadPort={uploadIntakePort}
-                  uploadScope={
-                    activeWork ? { kind: "work", projectId, workId: activeWork.id } : undefined
-                  }
+                  uploadScope={{ kind: "chat", projectId, chatId: topChat.chatId }}
                   onSubmit={handleSubmit}
                   onStop={handleStop}
                   toolbarLeft={
@@ -595,6 +615,7 @@ export function ChatView({
                     <RunningSubagentsStrip threadId={threadId} />
                     <TurnList
                       threadId={threadId}
+                      uploadsChat={topChat.chatRef ?? undefined}
                       view={view}
                       historySettled={historySettled}
                       tailFollowRevision={tailFollowRevision}

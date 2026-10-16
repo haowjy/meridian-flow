@@ -5,13 +5,11 @@
  * Editor's Work is that file's Work. Archiving here freezes them at once; the
  * server's own read-only scope follows.
  */
+
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import {
-  type ContextOwner,
-  isWorkScopedProjectContextScheme,
-  type ProjectContextTreeScheme,
-} from "@meridian/contracts/protocol";
+import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
+import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import { PanelLeftOpen, PanelRightOpen } from "lucide-react";
 import { type ReactNode, useEffect, useRef } from "react";
@@ -137,7 +135,7 @@ export function ContextViewer({
   const activeFileInWork =
     activeTab &&
     activeTab.kind !== "new" &&
-    isWorkScopedProjectContextScheme(activeTab.scheme) &&
+    isWorkScopedScheme(activeTab.scheme) &&
     activeTab.rootThreadId === undefined;
 
   // Draft review state: the review's controls live in the identity bar.

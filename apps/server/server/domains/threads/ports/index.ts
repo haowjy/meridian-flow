@@ -46,3 +46,4 @@ export type {
   WorkThreadSummary,
 } from "./repositories.js";
 export { ThreadWorkProjectMismatchError } from "./repositories.js";
+export type { TopPrimaryChat, TopPrimaryChatResolver } from "./top-primary-chat.js";

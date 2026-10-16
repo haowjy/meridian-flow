@@ -133,6 +133,7 @@ export async function handleDocumentLinkResolveRequest(
         userId,
         workId,
         rootThreadId: request.rootThreadId,
+        chatId: request.chatId,
         target: target.target,
         // Chat alone may follow a vacated path to the document that left it.
         previousLocations: baseUri === null,
@@ -152,6 +153,7 @@ export async function handleDocumentLinkResolveRequest(
           uri: resolved.uri,
           workId: resolved.workId,
           rootThreadId: resolved.rootThreadId,
+          chatThreadId: resolved.chatThreadId,
         },
       });
     }
@@ -258,6 +260,7 @@ function describeDocument(document: CatalogDocument): DocumentAnswer | null {
     id: document.documentId,
     workId: document.owner.workId ?? null,
     ...(document.owner.rootThreadId ? { rootThreadId: document.owner.rootThreadId } : {}),
+    ...(document.owner.chatThreadId ? { chatThreadId: document.owner.chatThreadId } : {}),
     title: documentTitleFromUri(document.uri) ?? path,
     scheme,
     path,
