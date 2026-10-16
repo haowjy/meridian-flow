@@ -78,9 +78,9 @@ parentheses, never `·`, `•`, `—`, or `|`. See the
 [copy separation decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/writer-copy-separation.md).
 
 **Offer only what applies.** Show a control only while its action can succeed;
-don't offer it and then explain why it can't. Feedback never adds a line that
-changes a list's, menu's, row's or control's height: a failure replaces content
-in place or goes in a notice card. See the
+don't offer it and then explain why it can't. Feedback uses space a component already
+has, blank space first, and never grows it. The chat is the exception: a
+failure appears at the end of the conversation, below what was already read. See the
 [offer-only-what-applies decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/offer-only-what-applies.md).
 
 **Debugging.** Follow [docs/debugging.md](docs/debugging.md).
