@@ -975,6 +975,13 @@ browser acceptance still checks the controls and bylines above.
 2. Repeat with a same-prose replacement (replace a suffix, then restore its spelling under new Yjs IDs).
    Verify another attribution request occurs despite the unchanged change ID. Release each response:
    the chat byline returns and commands become available.
+   Also cover a deletion-only edit after Discard/Undo: start with `red fox runs`, have Chat A
+   replace `red` with `blue`, Discard, then Undo and cache attribution. Hold the next attribution
+   response while Chat B deletes restored `blue`. The cached classification must be unresolved
+   for the restored IDs (not covered by their source tombstones); B's Discard must report
+   “Changes are still loading” rather than silently succeeding with no targets. Release the fresh
+   attribution: B becomes a member, Discard restores `red fox runs`, and Undo restores ` fox runs`.
+   Repeat after reload with garbage collection on; locally witnessed writer deletions still resolve.
 3. In a two-file chat dock, fail one attribution request with HTTP 503. Its file opens with
    “Changes couldn’t load” and “Retry changes”; the dock is not endlessly busy. Summary Apply/Discard
    stay disabled, but ready-file change commands work. Retry recovers the failed file and summary commands.

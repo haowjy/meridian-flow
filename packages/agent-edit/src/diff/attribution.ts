@@ -289,7 +289,6 @@ class Classifier {
   private readonly indexes = new Map<number, BlockIx>();
   private readonly texts = [new Map<number, SideText>(), new Map<number, SideText>()] as const;
   private readonly originMemo = new IdMemo();
-  private readonly deleterMemo = new IdMemo();
   private readonly writeBackMemo = new IdMemo();
 
   constructor(
@@ -414,23 +413,15 @@ class Classifier {
     );
   }
 
-  /** The AI part that deleted the tombstone, else the user. */
+  /** Deletion evidence belongs to this item, never to its restored insertion's source. */
   private deleter(client: number, clock: number): number {
-    return this.chase(
-      client,
-      clock,
-      this.deleterMemo,
-      (c, k) => {
-        const part = this.deleted.get(c, k);
-        return part >= 0 ? part : undefined;
-      },
-      (c, k) =>
-        Y.isDeleted(this.provenance.snapshot.ds, Y.createID(c, k)) ||
-        (this.provenance.localDeletions &&
-          Y.isDeleted(this.provenance.localDeletions, Y.createID(c, k)))
-          ? USER
-          : UNKNOWN,
-    );
+    const part = this.deleted.get(client, clock);
+    if (part >= 0) return part;
+    const id = Y.createID(client, clock);
+    return Y.isDeleted(this.provenance.snapshot.ds, id) ||
+      (this.provenance.localDeletions && Y.isDeleted(this.provenance.localDeletions, id))
+      ? USER
+      : UNKNOWN;
   }
 
   private keyOf = (who: number) => (who === USER ? "user" : `thread:${this.parts[who].threadId}`);

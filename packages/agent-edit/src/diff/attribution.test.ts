@@ -609,6 +609,31 @@ it("unlisted item IDs need a covered revision or this browser's client, never ab
     ],
     unresolved: false,
   });
+  // An ancestor's covered tombstone cannot cover a new deletion of its Undo-restored copy.
+  const restored = room(["red fox runs"]);
+  restored.ai((doc) => {
+    textOf(doc).delete(0, 3);
+    textOf(doc).insert(0, "blue");
+  });
+  restored.discardUndo((doc) => textOf(doc).delete(0, 4));
+  const cached = { userId: "u", parts: [...restored.parts], snapshot: Y.snapshot(restored.draft) };
+  restored.ai((doc) => textOf(doc).delete(0, 4));
+  for (const doc of [restored.draft, peer(restored.draft, 50, true)]) {
+    const classify = (provenance: Parameters<typeof classifyChanges>[2]) =>
+      [...classifyChanges(doc, restored.projection(), provenance).values()][0];
+    expect(classify(cached)).toMatchObject({
+      members: [0],
+      unresolved: true,
+      unresolvedItems: restored.parts[1].deleted,
+    });
+    expect(classify({ ...cached, parts: restored.parts, snapshot: Y.snapshot(doc) })).toMatchObject(
+      {
+        members: [0, 1],
+        unresolved: false,
+      },
+    );
+    expect(classify({ ...cached, localDeletions: Y.snapshot(doc).ds }).unresolved).toBe(false);
+  }
   // With no AI writes or deletions in play, this browser can name its own fresh typing.
   const local = room(["base"]);
   textOf(local.draft).insert(0, "writer ");

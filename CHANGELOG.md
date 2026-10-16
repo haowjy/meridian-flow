@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Discard waits for attribution when another chat deletes Undo-restored text, instead of silently missing that chat’s change.
+
 - Draft Apply indexes fragmented journal ownership once and reconstructs prior deletions with a linear scan, avoiding repeated full-range sorting after Discard and Undo.
 - Discarding a large full-rewrite draft avoids redundant word matching and repeated Yjs text-split work, while preserving exact edits and Undo.
 
