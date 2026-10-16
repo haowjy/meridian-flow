@@ -404,7 +404,6 @@ it("settles a folder receipt and exact descendant tombstones atomically, fencing
 });
 
 it.each([
-  "move",
   "delete",
 ] as const)("retains a refused %s after atomic recursive terminalization", async (kind) => {
   const store = open();

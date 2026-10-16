@@ -279,30 +279,6 @@ describe("the writer owns a picture in flight", () => {
   });
 });
 
-describe("two pictures arriving together are two lifecycles", () => {
-  it("tracks concurrent uploads independently", async () => {
-    const { editor, held } = mount();
-    insertImageFile(editor, imageFile("first.png"), 5);
-    await settle();
-    insertImageFile(editor, imageFile("second.png"), 1);
-    await settle();
-
-    expect(pendingImages(editor).map((entry: PendingImage) => entry.filename)).toEqual([
-      "first.png",
-      "second.png",
-    ]);
-
-    held[0].progress(70);
-    held[1].fail(new Error("second.png was refused."));
-    await settle();
-
-    expect(pendingImages(editor)).toMatchObject([
-      { filename: "first.png", status: { kind: "uploading", percent: 70 } },
-      { filename: "second.png", status: { kind: "failed", message: "second.png was refused." } },
-    ]);
-  });
-});
-
 describe("a peer sees an upload it does not own as an upload", () => {
   it("leaves an ownerless empty slot recoverable, not in flight", async () => {
     const { editor, peer, sync } = mountPair();

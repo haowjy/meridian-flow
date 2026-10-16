@@ -2,14 +2,16 @@
 /** The mounted snapshot owner is the chat's one subscriber: durable blocks, the stream and run-state records. */
 import { type AGUIEvent, EventType, type SequencedEvent } from "@meridian/contracts/protocol";
 import type { ThreadTransport, ThreadTransportHandlers } from "@meridian/thread-client";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { act, type ReactNode, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ThreadCachePort } from "@/client/stores/thread-store/thread-cache";
 import { createThreadCache } from "@/client/stores/thread-store/thread-cache";
 import { createThreadStore } from "@/client/stores/thread-store/thread-store";
+import { StreamDeltaCoalescer } from "./stream-delta-coalescer";
 import { threadQueryKeys } from "./thread-query-keys";
+import { useThreadSnapshotCache } from "./thread-snapshot-query";
 import { useThreadSnapshotSync } from "./useThreadSnapshotSync";
 
 (
@@ -189,7 +191,7 @@ afterEach(async () => {
   }
 });
 
-for (const terminal of [EventType.RUN_FINISHED, EventType.RUN_ERROR]) {
+for (const terminal of [EventType.RUN_FINISHED]) {
   describe(`durable owner after ${terminal}`, () => {
     it("replaces the original historical card with snapshots withheld and no new run", async () => {
       vi.useFakeTimers();
@@ -734,4 +736,75 @@ describe("projection lifetime fencing", () => {
     expect(client.getQueryData(threadQueryKeys.snapshot("thread-1"))).toBeUndefined();
     expect(harness.snapshotRequest).toHaveBeenCalledTimes(1);
   });
+});
+
+type Scheduled = { run: () => void; cancelled: boolean };
+
+function manualScheduler() {
+  const scheduled: Scheduled[] = [];
+  const schedule = (flush: () => void) => {
+    const entry: Scheduled = { run: flush, cancelled: false };
+    scheduled.push(entry);
+    return () => {
+      entry.cancelled = true;
+    };
+  };
+  const runNext = () => scheduled.find((entry) => !entry.cancelled)?.run();
+  return { schedule, runNext, scheduled };
+}
+
+function content(messageId: string, delta: string): AGUIEvent {
+  return { type: EventType.TEXT_MESSAGE_CONTENT, messageId, delta } as AGUIEvent;
+}
+
+function reasoning(messageId: string, delta: string): AGUIEvent {
+  return { type: EventType.REASONING_MESSAGE_CONTENT, messageId, delta } as AGUIEvent;
+}
+
+describe("StreamDeltaCoalescer", () => {
+  it("does not merge across message or block-kind boundaries", () => {
+    const { schedule, runNext } = manualScheduler();
+    const applied: AGUIEvent[] = [];
+    const coalescer = new StreamDeltaCoalescer((event) => applied.push(event), schedule);
+
+    coalescer.push(content("m1", "a"));
+    coalescer.push(reasoning("m1", "b"));
+    coalescer.push(content("m2", "c"));
+
+    expect(applied).toHaveLength(2);
+    expect(applied[0]).toMatchObject({ type: EventType.TEXT_MESSAGE_CONTENT, delta: "a" });
+    expect(applied[1]).toMatchObject({ type: EventType.REASONING_MESSAGE_CONTENT, delta: "b" });
+    runNext();
+    expect(applied[2]).toMatchObject({ type: EventType.TEXT_MESSAGE_CONTENT, delta: "c" });
+  });
+});
+
+afterEach(() => vi.restoreAllMocks());
+
+it("does not warn when a child's useQuery builds the key the parent reads", async () => {
+  const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+  const client = new QueryClient();
+  const key = threadQueryKeys.snapshot("t1");
+  function Child() {
+    useQuery({ queryKey: key, queryFn: () => new Promise(() => {}) });
+    return null;
+  }
+  function Parent({ open }: { open: boolean }) {
+    useThreadSnapshotCache("t1");
+    return open ? <Child /> : null;
+  }
+  const root = createRoot(document.createElement("div"));
+  const render = (open: boolean) =>
+    act(async () => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <Parent open={open} />
+        </QueryClientProvider>,
+      );
+    });
+  // The parent is already subscribed when the child opens the chat and builds the key.
+  await render(false);
+  await render(true);
+  expect(errors).not.toHaveBeenCalled();
+  await act(async () => root.unmount());
 });

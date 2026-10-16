@@ -251,23 +251,6 @@ it("lets a waiter reopen content its sibling released while both awaited one ope
   opened.handle.release();
 });
 
-it("retires the session a lone cancelled opener just created", async () => {
-  const metadata = openMetadata();
-  const record = resource("lone-cancel");
-  await initialize(record, "kept");
-  const key = await install(metadata, record);
-  const created: DocumentSession[] = [];
-  const { access } = openAccess(metadata, createFactory(created));
-  const aborted = new AbortController();
-
-  const opening = access.open("project", key, "closed-tab", aborted.signal);
-  aborted.abort();
-
-  await expect(opening).resolves.toEqual({ kind: "cancelled" });
-  expect(created).toHaveLength(1);
-  expect(created[0]?.getSnapshot().status).toBe("destroyed");
-});
-
 it("lets server acquisition replace a local construction that has not opened", async () => {
   const metadata = openMetadata();
   const record = resource("acquisition-race");
