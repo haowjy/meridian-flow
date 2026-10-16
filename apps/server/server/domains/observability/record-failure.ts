@@ -20,7 +20,11 @@ export function recordFailure(sink: EventSink, record: FailureRecord): void {
       category: record.failure.category,
       source: record.failure.source,
       actionable: record.failure.actionable,
-      cause: record.failure.cause,
+      failureCode: record.failure.cause.code,
+      ...(record.failure.cause.reason ? { failureReason: record.failure.cause.reason } : {}),
+      ...(record.failure.cause.status !== undefined
+        ? { providerStatus: record.failure.cause.status }
+        : {}),
       ...(record.executionId ? { executionId: record.executionId } : {}),
       ...(record.phase === "ended"
         ? { end: record.end, ...(record.byTurnId ? { byTurnId: record.byTurnId } : {}) }
