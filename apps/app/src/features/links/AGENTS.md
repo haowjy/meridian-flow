@@ -21,6 +21,12 @@ Markdown link to an address; `[[name]]` is text and never reaches here.
 - Surfaces call only the single follow procedure and injected `open`; they do
   not inspect resolution to decide navigation. Aborts stop before opening;
   newer current follows replace older ones, while new-tab follows are retained.
+- One follower per surface. A follow that needs its own destination or its own
+  answer to "nothing there" passes a `FollowPolicy` (`open`, `missing`) to that
+  follower; it never builds a second one. Chat doors (tool-card names, receipt
+  rows, passage doors) follow through chat's one follower this way, so doors
+  and transcript links share one latest click, one dialog and the chat's
+  lifetime ([link-following decision][link-following]).
 - Reporter ownership is per follow. Dismiss and Retry operate through its
   verbs, not by branching on outcome state. Pending answers claim nothing.
 - Missing creatable manuscript/kb/user documents offer Create at the exact
@@ -33,3 +39,5 @@ Markdown link to an address; `[[name]]` is text and never reaches here.
 
 Read [`.context/CONTEXT.md`](.context/CONTEXT.md) for scope, answer, creation,
 and document-index contracts.
+
+[link-following]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/documents/identity/link-following.md
