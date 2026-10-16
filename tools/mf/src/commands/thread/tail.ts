@@ -1,6 +1,5 @@
 import {
   apiThreadSnapshotPath,
-  RUN_STATE_EVENT,
   type ThreadLiveState,
   type ThreadSnapshotResponse,
 } from "@meridian/contracts/protocol";
@@ -15,8 +14,10 @@ import {
 import { type LiveViewReport, ReducedThread } from "./reduced-thread";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
 import { type Claim, classifyDeadline, finishResult, terminalResult } from "./result";
-import { currentTurnId, recordIsIdle } from "./run-state";
+import { recordIsIdle, runStateOfEvent } from "./run-state";
 import { followThread } from "./stream";
+
+const STATUS_EVENT = "meridian.thread.status";
 
 export const threadTailCommand: CommandSpec = {
   path: ["thread", "tail"],
@@ -66,7 +67,7 @@ export const threadTailCommand: CommandSpec = {
       const initial = since === undefined || untilIdle ? await readSnapshot() : null;
       if (initial) reduced.hydrate(initial);
       since ??= initial?.liveState.resumeAfterSeq ?? "0";
-      const initialTurn = initial ? currentTurnId(initial.liveState.runState) : null;
+      const initialTurn = initial?.liveState.runState.execution?.currentTurnId;
       if (initialTurn) turnIds.add(initialTurn);
       if (untilIdle && initial && isIdle(initial.liveState))
         return finishResult(ctx.out, tailResult(threadId, initial, new Set()));
@@ -82,20 +83,19 @@ export const threadTailCommand: CommandSpec = {
         shouldStop: (event) => {
           if ("turnId" in event) turnIds.add(event.turnId);
           if (event.type === "turn.failed") observedFailure = true;
-          return (
-            untilIdle &&
-            (event.type === "turn.finished" ||
-              event.type === "turn.failed" ||
-              (event.type === "event" &&
-                ["meridian.thread.status", RUN_STATE_EVENT].includes(event.name)))
-          );
+          // A turn event only precedes the closing record in the same commit; the record and the
+          // status frame are what can show the chat idle.
+          if (!untilIdle || event.type !== "event") return false;
+          if (event.name === STATUS_EVENT) return true;
+          const record = runStateOfEvent(event);
+          return record !== null && recordIsIdle({ runState: record });
         },
         ...(untilIdle
           ? {
               shouldStopState(state) {
-                const turn = currentTurnId(state.runState);
+                const turn = state.runState.execution?.currentTurnId;
                 if (turn) turnIds.add(turn);
-                return isIdle(state);
+                return recordIsIdle(state);
               },
               async confirmStop(observed: readonly string[]) {
                 for (const id of observed) turnIds.add(id);

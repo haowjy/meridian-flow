@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- New `./mf thread queue hand-back <thread> --id <turn>... | --all` takes queued messages back the way the queue's x and Cancel queue do, and never cancels the reply. New `./mf thread queue send-now <thread>` cancels the running reply so the queue runs next; a null answer prints "this attempt requested no cancellation". Both print the frozen request and a `--replay` command before posting, exit 4 on a lost answer, and `thread stop` now runs on the same shared operation.
 - Stop hands the messages still waiting behind the reply back to the composer, above any draft, in send order with a blank line between them. They never reach the model, a fork or a summary, and a lost Stop answer can be retried without duplicating the returned text.
 - The composer's one button is Stop while a reply runs and the box is empty, and Send (with the running ring, queuing a steer) once you type. Stop shows a spinning ring and disables at once, and a failed one is a red `Couldn't stop the reply.` card above the box with Try again, which retries the same request and goes when the Stop succeeds or the reply ends. A compaction divider's Stop does the same and ends on `Compaction stopped`.
 - Retry replaces a failed reply in place, and a chain of failed retries shows only the latest failure. A failed reply shows its failure only while it can be retried: once the chat moves on, the grey `This response failed.` line goes, and a failed reply with nothing to read leaves no row (one with partial text keeps its text). A refused Retry shows a red `Couldn't retry.` card (`Couldn't retry. Another reply started first.` when another reply took the chat) on that reply, with no failure line above it, until Retry or Send clears it, or the next reply completes.
@@ -10,6 +11,11 @@
 - The usage notice shows only while a writer message is actually blocked, not for an empty record.
 - A failed-send Edit puts the returned text above the existing draft with a blank line, like Stop's hand-back.
 - `./mf` follows run state through the same `@meridian/thread-client` module as the app, including recovering a held switch divider. `./mf thread view` shows the mode and handed-back messages.
+- `./mf thread send` proves what happened to its own message from one snapshot. Its result is the last reply in the message's chain (continuations and Retries included), so a failed or cancelled successor is never reported as an earlier success, and a case it can't prove exits 6 with a reason.
+- `./mf thread send` reports a message a Stop handed back as `handed_back` (exit 5) instead of timing out.
+- New `./mf thread stop <thread>` stops the chat the way the app does. It prints its request, and a lost answer exits 4 with a `--replay` command that resends the same request instead of pressing Stop again. `--full` prints the handed-back text. `./mf thread cancel` now needs `--turn`.
+- `./mf thread stop` keeps its `--replay` request when the answer is a 5xx or unreadable, including under `--json`. A `thread send` that times out reports its last completed snapshot as `snapshotStale` (or `snapshotUnavailable`) instead of reading again, and `liveView` is `not_observed` for turns a snapshot recovery overwrote.
+- API: the stream's `RUN_STARTED` no longer carries `executionId`, `reservedForUserTurnIds` or `position`; the `runState` record and the snapshot's turns carry run identity.
 - API: a chat's run state is one whole `runState` record (waiting messages, open execution, write mode, sent watermark, usage block) on the snapshot, the stream (`meridian.run_state`) and the control, Retry, Stop and send answers. It replaces `inbox.changed`, the delivered-message events and `execution.ended`, which are removed.
 - New `POST /api/threads/:id/stop` cancels the reply the writer saw and hands back the waiting writer messages. It is decided once under the thread lock and stored by request id, so a resend returns the same answer. See `docs/api/thread-stop.md`.
 
