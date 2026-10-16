@@ -1,13 +1,10 @@
 /**
  * ThreadSocketClient — the production `ThreadTransport` over `/api/threads/ws`.
  *
- * Owns the thread-domain control plane: one `subscribe` request per thread
- * (named by `requestId`, ended by its `subscribed`, `gap`, error, deadline or
- * the connection's loss), connection-state fan-out and request routing. The socket lifecycle
- * (handshake readiness/deadline, connect/reconnect/backoff, ping-timeout,
- * generation tracking, terminal-close policy) lives in `SocketLifecycleController`;
- * message routing in `dispatch-ws-server-message`; subscription requests, retries and delivery in
- * `ws-thread-subscription`. The single live agent-event transport.
+ * Routes thread-domain messages and connection notifications. Per-thread
+ * replay requests, outcomes, retries and delivery belong to the subscription registry.
+ * `SocketLifecycleController` owns handshake readiness, reconnect, ping timeout
+ * and generation fencing; `dispatch-ws-server-message` owns message routing.
  */
 import {
   type AGUIEvent,
@@ -69,12 +66,8 @@ export class ThreadSocketClient implements ThreadTransport {
           for (const listener of this.socketGenerationClosedListeners) {
             listener(closedGeneration);
           }
-          for (const subscription of this.subscriptions.values()) {
-            this.subscriptions.connectionLost(subscription);
-            for (const handler of subscription.handlers) {
-              handler.onClose?.(event);
-            }
-          }
+          this.subscriptions.connectionLost();
+          for (const handler of this.subscriptions.handlers()) handler.onClose?.(event);
         },
         onSocketError: () => this.publishError(new Error("WebSocket error")),
         publishConnectionState: (state) => this.publishConnectionState(state),
@@ -92,9 +85,7 @@ export class ThreadSocketClient implements ThreadTransport {
   disconnect(_reason?: "logout" | "app_unmount"): void {
     this.wantsConnection = false;
     this.socket.teardown();
-    for (const subscription of this.subscriptions.values()) {
-      this.subscriptions.connectionLost(subscription);
-    }
+    this.subscriptions.connectionLost();
   }
 
   reconnect(): void {
@@ -116,28 +107,10 @@ export class ThreadSocketClient implements ThreadTransport {
     handlers: ThreadTransportHandlers,
     opts?: ThreadTransportSubscribeOptions,
   ): () => void {
-    const connected = this.socket.isServerConnected();
-    const { subscription, sendRequest } = this.subscriptions.join(
-      threadId,
-      handlers,
-      opts?.after,
-      connected,
-    );
-
-    if (handlers.onConnectionState) {
-      handlers.onConnectionState(this.socket.state);
-    }
-
+    this.subscriptions.join(threadId, handlers, opts?.after);
+    handlers.onConnectionState?.(this.socket.state);
     this.ensureConnected();
-    if (sendRequest && connected) this.subscriptions.sendRequest(threadId, subscription);
-
-    return () => {
-      const removed = this.subscriptions.remove(threadId, handlers);
-      if (removed && this.socket.isSocketOpen()) {
-        // Whether or not a lease is active: a pending request's lease must be disposed too.
-        this.send({ type: "unsubscribe", requestId: this.nextRequestId(), threadId });
-      }
-    };
+    return () => this.subscriptions.remove(threadId, handlers);
   }
 
   respondInterrupt(input: InterruptRespondInput): InterruptRespondReceipt {
@@ -219,24 +192,20 @@ export class ThreadSocketClient implements ThreadTransport {
       toError: this.options.toError,
       dispatchSequencedEvent: (threadId, seq, aguiEvent, error, sourceThreadId) =>
         this.dispatchSequencedEvent(threadId, seq, aguiEvent, error, sourceThreadId),
-      onSubscribed: (subscribed) => this.handleSubscribed(subscribed),
+      onSubscribed: (subscribed) => this.subscriptions.handleSubscribed(subscribed),
       handleGap: (gap) => this.subscriptions.handleGap(gap),
       send: (payload) => this.send(payload),
       onConnected: () => {
         this.socket.markConnected();
-        // A reconnect replays for every handler, one request per thread.
-        for (const [threadId, subscription] of this.subscriptions.entries()) {
-          subscription.waiting = new Set(subscription.handlers);
-          this.subscriptions.sendRequest(threadId, subscription);
-        }
+        this.subscriptions.connected();
         for (const projectId of this.catalogSubscriptions.keys()) {
           this.send({ type: "catalog.subscribe", requestId: this.nextRequestId(), projectId });
         }
       },
       onRequestError: (requestId, error, retryable) =>
-        this.handleRequestError(requestId, error, retryable),
+        this.subscriptions.handleRequestError(requestId, error, retryable),
       onThreadError: (threadId, error) => {
-        for (const handler of this.subscriptions.get(threadId)?.handlers ?? []) {
+        for (const handler of this.subscriptions.handlers(threadId)) {
           handler.onError?.(error);
         }
       },
@@ -247,42 +216,6 @@ export class ThreadSocketClient implements ThreadTransport {
       },
       onGlobalError: (error) => this.publishError(error),
     });
-  }
-
-  private handleSubscribed(message: Extract<WsServerMessage, { type: "subscribed" }>): void {
-    const subscription = this.subscriptions.get(message.threadId);
-    if (!subscription) return;
-    const catchup = message.catchup.map((next) => ({
-      seq: next.seq,
-      event: next.event,
-      error: next.error,
-      sourceThreadId: next.sourceThreadId ?? message.threadId,
-    }));
-    if (subscription.request?.id === message.requestId) {
-      this.subscriptions.settle(subscription, message.after, catchup);
-      // After catch-up: a replayed frame is frozen at emit time, so the
-      // server-computed live state wins over any stale replayed value.
-      for (const handler of subscription.handlers) handler.onLiveState?.(message.state);
-    } else if (subscription.superseded.delete(message.requestId)) {
-      this.subscriptions.applySuperseded(subscription, catchup);
-    }
-  }
-
-  /** A correlated error ends the request it names; any other id (a catalog request, a retired one) ends nothing. */
-  private handleRequestError(requestId: string, error: Error, retryable: boolean): void {
-    const found = this.subscriptions.findRequest(requestId);
-    if (!found) return;
-    const [threadId, subscription] = found;
-    if (retryable) {
-      this.subscriptions.failRequest(threadId, subscription, requestId, error);
-      return;
-    }
-    // Refused: an old lease that survived a failed auth must not stream into `held` without end.
-    this.subscriptions.voidLease(subscription);
-    if (this.socket.isSocketOpen()) {
-      this.send({ type: "unsubscribe", requestId: this.nextRequestId(), threadId });
-    }
-    for (const handler of subscription.handlers) handler.onError?.(error);
   }
 
   private send(payload: unknown): boolean {
@@ -308,18 +241,10 @@ export class ThreadSocketClient implements ThreadTransport {
     for (const listener of this.connectionListeners) {
       listener(state);
     }
-    for (const subscription of this.subscriptions.values()) {
-      for (const handler of subscription.handlers) {
-        handler.onConnectionState?.(state);
-      }
-    }
+    for (const handler of this.subscriptions.handlers()) handler.onConnectionState?.(state);
   }
 
   private publishError(error: Error): void {
-    for (const subscription of this.subscriptions.values()) {
-      for (const handler of subscription.handlers) {
-        handler.onError?.(error);
-      }
-    }
+    for (const handler of this.subscriptions.handlers()) handler.onError?.(error);
   }
 }

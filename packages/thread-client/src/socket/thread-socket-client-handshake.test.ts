@@ -1,5 +1,5 @@
 /** Thread socket deadlines preserve delivered cursors through restart recovery. */
-import { EventType, type SequencedEvent } from "@meridian/contracts/protocol";
+import { EventType, type SequencedEvent, type WsServerMessage } from "@meridian/contracts/protocol";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { FakeThreadSocket } from "../test-support/fake-thread-socket";
 import { ThreadSocketClient } from "./thread-socket-client";
@@ -403,7 +403,7 @@ it("fails one thread's request alone: its lease voids, it retries at its own bac
     const a2 = h.join("thread-1", "50");
     h.fail("thread-1", true);
 
-    // Both of thread-1's handlers hear it once; thread-2 and the socket are unaffected.
+    // Both of thread-1's handlers hear it once; thread-2 still awaits its own replay.
     expect(a1.errors).toHaveLength(1);
     expect(a2.errors).toHaveLength(1);
     expect(b1.errors).toHaveLength(0);
@@ -421,7 +421,6 @@ it("fails one thread's request alone: its lease voids, it retries at its own bac
       if (delay < 1_000) h.fail("thread-1", true);
       if (delay === 250) {
         // A sibling acknowledgement and an unrelated catalog failure must not reset this retry.
-        h.answer("thread-2", "10", []);
         h.transport.subscribeCatalog("project-1", () => {});
         const catalog = h
           .socket()
@@ -438,6 +437,7 @@ it("fails one thread's request alone: its lease voids, it retries at its own bac
             source: "system",
           },
         });
+        h.answer("thread-2", "10", []);
         h.live("thread-2", "30");
         expect(b1.seqs).toEqual(["20", "30"]);
         expect(b1.errors).toHaveLength(0);
@@ -530,12 +530,13 @@ it("removing the last waiter unsubscribes and leaves no timer to fire", () => {
 
     for (const outcome of ["error", "gap"] as const) {
       let leave = () => {};
+      const onGap = vi.fn(() => leave());
       leave = h.transport.subscribe(
         "thread-1",
         {
           onEvent: () => {},
           onError: () => leave(),
-          onGap: () => leave(),
+          onGap,
         },
         { after: "0" },
       );
@@ -544,11 +545,13 @@ it("removing the last waiter unsubscribes and leaves no timer to fire", () => {
         h.socket().deliver({
           type: "gap",
           threadId: "thread-1",
-          requestId: h.asks("thread-1").at(-1)?.requestId,
-          cause: "buffer_evicted",
+          requestId: h.asks("thread-1").at(-1)?.requestId as string,
+          cause: "replay_limit_exceeded",
           fromSeq: "0",
           toSeq: "100",
-        });
+        } satisfies Extract<WsServerMessage, { type: "gap" }>);
+      if (outcome === "gap") expect(onGap).toHaveBeenCalledOnce();
+      expect(JSON.parse(h.socket().sent.at(-1) as string).type).toBe("unsubscribe");
       const replacement = h.join("thread-1", "100");
       h.answer("thread-1", "100", ["150"]);
       const before = h.asks("thread-1").length;

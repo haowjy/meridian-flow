@@ -2,9 +2,10 @@
 
 ## Thread socket
 
-`ThreadSocketClient` owns connect, server-`connected` gating, one named
-`subscribe` request per thread, sequenced dispatch and deduplication, gap
-recovery before consumer notification, reconnect and backoff, catalog subscriptions, and interrupt answers.
+`ThreadSocketClient` composes the connection lifecycle with the subscription
+registry. The lifecycle owns handshake readiness and reconnect; the registry owns
+replay requests, outcomes, timers and sequenced delivery. The client routes wire
+messages, connection notifications, catalog subscriptions and interrupt answers.
 Socket generations fence stale product callbacks; close observation precedes
 that fence so controlled closes remain visible. Gap consumers recover truncated
 history through snapshots. Cancellation uses the injected HTTP operation.
@@ -254,6 +255,18 @@ deadline, or the connection's loss.
 - **Connection loss:** requests, held frames and retry state clear, every lease is
   void, and cursors and positions stay; `connected` sends one request per thread.
 
+Request and retry transitions, including timers, belong to the subscription
+registry, including joins, reconnect, refusal and acknowledgement classification. Failure and gap recovery are installed before notifying consumers:
+callbacks may unsubscribe or replace a subscription. Every request send checks
+registry identity and nonempty handlers, so detached work cannot replace a
+new handler's server lease.
+Superseded ids belong to the pending request, not the subscription: a matching settlement, failure, gap,
+removal or connection loss retires them before callbacks. Before settlement, an
+older acknowledgement still contributes frames; socket ordering prevents a
+valid older acknowledgement first arriving after the newer one settles. A deadline
+voids every handler's lease, so a later retry recovers any discarded older batch.
+
+
 A `gap` answers the request in flight in place of `subscribed`: every cursor and
 the position jump to `toSeq`, and a new request goes out before `onGap` (the server
 answered, so no backoff). Consumers recover missing history through snapshots; each
@@ -315,13 +328,3 @@ visible. The guard still fences every product callback, state transition, and
 reconnect decision for stale socket generations. Lifecycle observers receive
 only the socket epoch, numeric close code, and `wasClean`; URL and raw close
 reason text do not cross the core observer contract.
-
-Request and retry transitions, including timers, belong to the subscription
-registry. Failure and gap recovery are installed before notifying consumers:
-callbacks may unsubscribe or replace a subscription. Every request send checks
-registry identity and nonempty handlers, so detached work cannot replace a
-new handler's server lease.
-Superseded ids describe pending work only: a matching settlement, failure, gap,
-removal or connection loss retires them before callbacks. Before settlement, an
-older acknowledgement still contributes frames; socket ordering prevents a
-valid older acknowledgement first arriving after the newer one settles.
