@@ -94,3 +94,10 @@ cache counters, so each gateway adapter normalizes provider output before
 project-relative `assetPath`; signed URLs are render-time details only.
 Blocks describe the writer transcript. Model-only document-text elisions belong
 in compaction metadata.
+
+## Snapshot read boundary
+
+Thread snapshots compose the canonical `threadSchema` and `turnSchema` (including
+blocks, usage and model responses). Their DTO types are inferred from the schemas;
+the app and `./mf` consume the parsed result, not a widened partial check. Identity
+lookups remain explicit projections and cannot stand in for full DTO validation.

@@ -1,48 +1,49 @@
 /** Stored chat identity and its HTTP response validator. Run state lives on the live record. */
 import { z } from "zod";
-import type { PromptBakeId } from "../runtime/ids.js";
-import { type AiWriteMode, aiWriteModeSchema } from "../works/ai-write-mode.js";
-import type { SpawnStatus, ThreadKind, ThreadLifecycleStatus, ThreadOriginType } from "./index.js";
+import { aiWriteModeSchema } from "../works/ai-write-mode.js";
 
-export interface Thread {
-  id: string;
+export const threadSchema = z.object({
+  id: z.string().min(1),
   /** Project this thread belongs to. */
-  projectId: string;
+  projectId: z.string().min(1),
   /** Work item this thread belongs to; null when ungrouped. */
-  workId: string | null;
+  workId: z.string().nullable(),
   /** The chat's own write mode, copied at creation from the request or its Work's default. */
-  aiWriteMode: AiWriteMode;
+  aiWriteMode: aiWriteModeSchema,
   /** The mode the chat writes in next: a queued mode switch's mode, else `aiWriteMode`. */
-  effectiveAiWriteMode: AiWriteMode;
-  userId: string;
-  kind: ThreadKind;
-  status: ThreadLifecycleStatus;
-  title: string | null;
+  effectiveAiWriteMode: aiWriteModeSchema,
+  userId: z.string().min(1),
+  kind: z.enum(["primary", "subagent"]),
+  status: z.enum(["idle", "archived"]),
+  title: z.string().nullable(),
   /** Server-assigned handle: `cN` for primaries, `pN` for subagents; null before persist. */
-  ref: string | null;
+  ref: z.string().nullable(),
   /** First immutable bake for this thread; null until the first request is assembled. */
-  initialPromptBakeId: PromptBakeId | null;
-  agentDefinitionRevisionId: string | null;
+  initialPromptBakeId: z.string().nullable(),
+  agentDefinitionRevisionId: z.string().nullable(),
   /** Display name from the retained Agent definition. */
-  agentName: string | null;
-  nextSeq?: string;
+  agentName: z.string().nullable(),
+  nextSeq: z
+    .string()
+    .regex(/^(0|[1-9]\d*)$/)
+    .optional(),
   /** Canonical logical head of the active conversation branch. */
-  activeLeafTurnId: string | null;
+  activeLeafTurnId: z.string().nullable(),
   /**
    * Spawn-tree parent: null for a root, the spawning thread for a subagent.
    * A fork/handoff derivation is a SIBLING of its source, not the source's
    * child, so it takes the source's own `parentThreadId` (null when the
    * source is itself a root) rather than pointing at the source.
    */
-  parentThreadId: string | null;
+  parentThreadId: z.string().nullable(),
   /** Set when this thread was derived via handoff or fork. */
-  originType?: ThreadOriginType | null;
+  originType: z.enum(["spawn", "handoff", "fork"]).nullable().optional(),
   /**
    * Fork/handoff anchor turn on the SOURCE thread (not necessarily
    * `parentThreadId`); resolving its owning thread recovers the fork-source
    * edge, since `parentThreadId` never carries it.
    */
-  originTurnId?: string | null;
+  originTurnId: z.string().nullable().optional(),
   /**
    * Identifies the run tree this thread belongs to. An organic root equals its
    * own id; a subagent takes its spawning parent's root; a fork/handoff
@@ -50,39 +51,6 @@ export interface Thread {
    * starting a new tree). Used for run-scoped project workspace paths such as
    * `runs/<rootThreadId>/input/…`.
    */
-  rootThreadId: string;
-  spawnDepth: number;
-  spawnStatus: SpawnStatus | null;
-  totalCostUsd: string;
-  turnCount: number;
-  createdAt: string;
-  updatedAt: string;
-  lastActivityAt: string;
-  deletedAt: string | null;
-}
-
-export const threadSchema = z.looseObject({
-  id: z.string().min(1),
-  projectId: z.string().min(1),
-  workId: z.string().nullable(),
-  aiWriteMode: aiWriteModeSchema,
-  effectiveAiWriteMode: aiWriteModeSchema,
-  userId: z.string().min(1),
-  kind: z.enum(["primary", "subagent"]),
-  status: z.enum(["idle", "archived"]),
-  title: z.string().nullable(),
-  ref: z.string().nullable(),
-  initialPromptBakeId: z.string().nullable(),
-  agentDefinitionRevisionId: z.string().nullable(),
-  agentName: z.string().nullable(),
-  nextSeq: z
-    .string()
-    .regex(/^(0|[1-9]\d*)$/)
-    .optional(),
-  activeLeafTurnId: z.string().nullable(),
-  parentThreadId: z.string().nullable(),
-  originType: z.enum(["spawn", "handoff", "fork"]).nullable().optional(),
-  originTurnId: z.string().nullable().optional(),
   rootThreadId: z.string().min(1),
   spawnDepth: z.number().int().nonnegative(),
   spawnStatus: z.enum(["running", "succeeded", "failed", "cancelled"]).nullable(),
@@ -92,4 +60,6 @@ export const threadSchema = z.looseObject({
   updatedAt: z.string(),
   lastActivityAt: z.string(),
   deletedAt: z.string().nullable(),
-}) satisfies z.ZodType<Thread>;
+});
+
+export type Thread = z.infer<typeof threadSchema>;

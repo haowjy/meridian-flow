@@ -610,6 +610,20 @@ describe("thread send", () => {
 });
 
 describe("thread view, cancel, events, respond", () => {
+  it("rejects an object-valued reply error instead of printing it as text", async () => {
+    const snapshot = snapshotOf({ turns: [replyTurn("a1", 1, { status: "error" })] });
+    wire.fail("snapshot", {
+      body: {
+        ...snapshot,
+        turns: [{ ...snapshot.turns[0], error: { message: "not a string" } }],
+      },
+    });
+    const result = await wire.mf(["thread", "view", THREAD_ID]);
+    expect(result.code).toBe(EXIT.failed);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain("invalid response");
+  });
+
   it("rejects a malformed cancel answer without claiming completion", async () => {
     wire.fail("cancel", { status: 200, body: {} });
     const result = await wire.mf(["thread", "cancel", THREAD_ID, "--turn", "a1", "--json"]);
