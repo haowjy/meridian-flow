@@ -1,4 +1,4 @@
-/** Chat lookup for `uploads://@/c12/` addresses. */
+/** Chat lookup for `uploads://@[c12]/` addresses. */
 import type { Database } from "@meridian/database";
 import { threads } from "@meridian/database/schema";
 import { and, eq } from "drizzle-orm";

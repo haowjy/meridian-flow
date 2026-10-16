@@ -21,7 +21,7 @@ describe("documentDisplayName", () => {
   it("shows the stored name as it is", () => {
     expect(documentDisplayName("manuscript://Chapter 13")).toBe("Chapter 13");
     expect(documentDisplayName("manuscript://Book/Vol. 2")).toBe("Vol. 2");
-    expect(documentDisplayName("scratch://@/c12/outline.json")).toBe("outline.json");
+    expect(documentDisplayName("scratch://@[c12]/outline.json")).toBe("outline.json");
     expect(documentDisplayName("kb://maps/map.png")).toBe("map.png");
   });
 

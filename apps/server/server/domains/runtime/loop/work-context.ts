@@ -1,7 +1,9 @@
 /** Renders and resolves the frozen model-facing Work context block. */
 
 import type { AgentPermission } from "@meridian/contracts/agents";
+import { formatParsedContextUri } from "@meridian/contracts/context-uri";
 import type { ProjectId, ThreadId } from "@meridian/contracts/runtime";
+import type { WorkSlug } from "@meridian/contracts/works";
 import {
   type AiWriteMode,
   isWorkArchived,
@@ -159,19 +161,24 @@ export function renderWorkContext(input: {
     mayUnarchive: input.mayUnarchive,
     noWork: input.current.isNoWork,
   });
+  const lineageScratch = input.rootThreadRef
+    ? formatParsedContextUri("scratch", "", { kind: "lineage", rootThreadRef: input.rootThreadRef })
+    : "";
   return [
     "<work_context>",
     ...currentLines(input.current, writes),
     ...(input.rootThreadRef
       ? [
           input.current.isNoWork
-            ? `  scratch: bare scratch:// is this chat's notes at scratch://@/${input.rootThreadRef}/, shared with its forks and subagents. A handoff starts fresh notes.`
-            : `  scratch: bare scratch:// is this Work's notes at scratch://@${input.current.slug}/. Earlier chat notes remain at scratch://@/${input.rootThreadRef}/.`,
+            ? `  scratch: bare scratch:// is this chat's notes at ${lineageScratch}, shared with its forks and subagents. A handoff starts fresh notes.`
+            : `  scratch: bare scratch:// is this Work's notes at ${formatParsedContextUri("scratch", "", { kind: "work", workSlug: input.current.slug as WorkSlug })}. Earlier chat notes remain at ${lineageScratch}.`,
           "  Move notes to kb:// or manuscript:// to keep them for the project. Rebinding never moves notes.",
         ]
       : []),
     ...(input.chatRef
-      ? [`  uploads: bare uploads:// is this chat's files at uploads://@/${input.chatRef}/.`]
+      ? [
+          `  uploads: bare uploads:// is this chat's files at ${formatParsedContextUri("uploads", "", { kind: "chat", chatRef: input.chatRef })}.`,
+        ]
       : []),
     "</work_context>",
   ].join("\n");

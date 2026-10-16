@@ -29,7 +29,7 @@ it("reads a chat's image with the chat, not the selected Work", async () => {
       parentId: "source",
       name: "Map.png",
       path: "/Map.png",
-      uri: "uploads://@/c15/Map.png",
+      uri: "uploads://@[c15]/Map.png",
       provisionalName: false,
       editable: false,
       disposition: "binary",

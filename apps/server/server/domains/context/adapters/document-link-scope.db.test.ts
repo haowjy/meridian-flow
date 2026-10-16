@@ -328,7 +328,7 @@ if (!RUN) {
         // spells where it was, so rewriting its holder never drops the `asset:` id (S-L1).
         expect
           .soft(scope.spellSource({ src: `asset:${RETIRED_IMAGE}`, ref: null }), "retired source")
-          .toEqual({ href: "scratch://@/c1/sketch.png", address: "scratch://@/c1/sketch.png" });
+          .toEqual({ href: "scratch://@[c1]/sketch.png", address: "scratch://@[c1]/sketch.png" });
         // A written path outside assets/ binds to the picture there; an unknown one stays literal.
         expect.soft(scope.assetFor("part1/map.png"), "known path").toBe(MAP);
         expect.soft(scope.assetFor("part1/nowhere.png"), "unknown path").toBeNull();

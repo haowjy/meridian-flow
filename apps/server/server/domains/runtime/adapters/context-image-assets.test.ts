@@ -14,7 +14,7 @@ const context = {
 const reference = {
   type: "image_reference" as const,
   documentId: "document-1",
-  uri: "uploads://@/c1/image.png",
+  uri: "uploads://@[c1]/image.png",
 };
 
 function assetPort(input: {
@@ -82,7 +82,7 @@ describe("context image resolution", () => {
   it("treats a changed URI as a definite loss", async () => {
     await expect(
       assetPort({
-        availability: { kind: "available", entry: { uri: "uploads://@/c1/renamed.png" } },
+        availability: { kind: "available", entry: { uri: "uploads://@[c1]/renamed.png" } },
       }).resolve(context, reference, { maxBytes: 1024 }),
     ).resolves.toBeNull();
     // A chat's upload matches by document identity, not by how its address was spelled.
@@ -90,7 +90,7 @@ describe("context image resolution", () => {
       assetPort({
         availability: {
           kind: "available",
-          entry: { uri: "uploads://@/c15/image.png", scope: { kind: "chat" } },
+          entry: { uri: "uploads://@[c15]/image.png", scope: { kind: "chat" } },
         },
       }).resolve(context, reference, { maxBytes: 1024 }),
     ).resolves.toMatchObject({ mediaType: "image/png" });

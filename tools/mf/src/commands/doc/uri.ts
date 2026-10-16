@@ -1,5 +1,5 @@
 /** URI → project context route inputs and live document identity, via the app's own address route. */
-import { parseContextUri } from "@meridian/contracts/context-uri";
+import { formatParsedContextUri, parseContextUri } from "@meridian/contracts/context-uri";
 import {
   apiProjectDocumentAddressPath,
   type ContextOwner,
@@ -59,7 +59,7 @@ export async function resolveUri(
     }
     if (chatRef === null) {
       throw usageError(
-        `uploads belong to a chat: use uploads://@/<c-handle>/… or --chat <c-handle>`,
+        `uploads belong to a chat: use uploads://@[<c-handle>]/… or --chat <c-handle>`,
       );
     }
   } else if (scheme === "scratch") {
@@ -74,7 +74,7 @@ export async function resolveUri(
     path.slice(0, slash + 1) + renderFilename(parsedName.value.name, parsedName.value.extension);
   const prefix =
     chatRef !== null
-      ? `uploads://@/${chatRef}/`
+      ? formatParsedContextUri("uploads", "", { kind: "chat", chatRef })
       : normalized.slice(0, normalized.length - path.length);
   const chatId = chatRef === null ? null : await resolveThreadId(session, chatRef, projectId);
   return { scheme, path: canonicalPath, uri: prefix + canonicalPath, workId, chatRef, chatId };

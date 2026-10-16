@@ -887,7 +887,7 @@ it("binds a freshly written bare uploads link or picture to the writing chat's e
   const EXACT = uuid(41);
   const PIC = uuid(42);
   const NOTE = uuid(43);
-  const at = (name: string) => `uploads://@/c3/${name}`;
+  const at = (name: string) => `uploads://@[c3]/${name}`;
   const ctx = linkHarness({
     holder: { id: H, uri: HOLDER },
     documents: [
@@ -905,7 +905,7 @@ it("binds a freshly written bare uploads link or picture to the writing chat's e
     "uploads://sample.png",
     "```",
     "",
-    "[bare](uploads://map) [qualified](<uploads://@/c3/map>) [exact](uploads://exact.png)",
+    "[bare](uploads://map) [qualified](<uploads://@[c3]/map>) [exact](uploads://exact.png)",
     "",
     "![](uploads://my%20pic.png) and [file](uploads://name.md#top)",
   ].join("\n");

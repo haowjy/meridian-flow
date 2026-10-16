@@ -28,6 +28,7 @@ export type ContextError =
       workSlug?: string;
       unknownScheme?: string;
       chatHandle?: string;
+      scheme?: "scratch" | "uploads";
     }
   | { code: "io_error"; uri: string; message: string };
 

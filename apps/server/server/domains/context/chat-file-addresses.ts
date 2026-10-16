@@ -11,9 +11,9 @@ import type { ChatUploadsOwners } from "./chat-uploads-owners.js";
 import type { ScratchLineages } from "./scratch-owner.js";
 
 export interface ChatFileAddresses {
-  /** The chat's top primary chat's uploads, `uploads://@/c15/`. */
+  /** The chat's top primary chat's uploads, `uploads://@[c15]/`. */
   uploads: string;
-  /** Its named Work's Scratch (`scratch://@tea-notes/`), or in No Work its lineage's (`scratch://@/c12/`). */
+  /** Its named Work's Scratch (`scratch://@tea-notes/`), or in No Work its lineage's (`scratch://@[c12]/`). */
   scratch: string;
 }
 

@@ -22,7 +22,7 @@ export function isDraftedScheme(scheme: ContextUriScheme): boolean {
 export const PROJECT_SCOPED_CONTEXT_URI_SCHEMES = ["manuscript", "kb", "user", "unfiled"] as const;
 export type ProjectScopedContextUriScheme = (typeof PROJECT_SCOPED_CONTEXT_URI_SCHEMES)[number];
 
-/** Schemes whose address takes an owner authority (`@slug`, `@/c12/`, `@/`): Scratch and chat uploads. */
+/** Schemes whose address takes an owner authority (`@slug`, `@[c12]/`, `@/`): Scratch and chat uploads. */
 export const OWNED_CONTEXT_URI_SCHEMES = ["scratch", "uploads"] as const;
 export type OwnedContextUriScheme = (typeof OWNED_CONTEXT_URI_SCHEMES)[number];
 
@@ -102,9 +102,16 @@ type ContextUriParseError = {
   ok: false;
   /**
    * `unknownScheme` marks a URI that names no context scheme, so it addresses no document.
-   * `chatHandle` marks `uploads://@c1/…`, a chat's handle spelled straight after `@`.
+   * `chatHandle` marks a chat's handle spelled without brackets (`uploads://@c1/…`, `scratch://@[c1]/…`);
+   * `scheme` is the scheme it was spelled under.
    */
-  error: { uri: string; reason: string; unknownScheme?: string; chatHandle?: string };
+  error: {
+    uri: string;
+    reason: string;
+    unknownScheme?: string;
+    chatHandle?: string;
+    scheme?: OwnedContextUriScheme;
+  };
 };
 export type ContextUriParseResult = { ok: true; value: ParsedContextUri } | ContextUriParseError;
 type AuthorityParseResult =
@@ -155,14 +162,14 @@ export function canonicalContextUri(
     throw new RangeError("Only uploads support a chat qualifier");
   }
   if (scheme === "scratch" && normalizedPath && authorityQualifier(authority) === "@") {
-    throw new RangeError(missingScratchHandle);
+    throw new RangeError(missingScratchHandle());
   }
   if (
     scheme === "uploads" &&
     authorityQualifier(authority) &&
     !("kind" in authority && authority.kind === "chat")
   ) {
-    throw new RangeError(uploadsBelongToChat);
+    throw new RangeError(uploadsBelongToChat());
   }
   const qualifier = authorityQualifier(authority);
   if (qualifier)
@@ -176,11 +183,11 @@ function authorityQualifier(authority: CanonicalContextAuthority): string | null
   if ("kind" in authority && authority.kind === "lineage") {
     if (!/^c[1-9][0-9]*$/.test(authority.rootThreadRef))
       throw new RangeError("Invalid first-chat handle");
-    return `@/${authority.rootThreadRef}`;
+    return bracketedHandle(authority.rootThreadRef);
   }
   if ("kind" in authority && authority.kind === "chat") {
     if (!/^c[1-9][0-9]*$/.test(authority.chatRef)) throw new RangeError("Invalid chat handle");
-    return `@/${authority.chatRef}`;
+    return bracketedHandle(authority.chatRef);
   }
   if ("workSlug" in authority) return authority.workSlug ? `@${authority.workSlug}` : "@";
   return authority.kind === "none" ? "@" : null;
@@ -294,33 +301,55 @@ function parseAuthorityPrefix(
     );
   }
   const qualifier = qualifiers[0] ?? "";
-  // Uploads belong to a chat: the only owner they take is a chat's handle.
-  if (scheme === "uploads" && !(qualifier === "@" && segments.length)) {
-    const chatHandle = /^@(c[1-9][0-9]*)$/.exec(qualifier)?.[1];
-    const error = invalidContextUri(rawUri, uploadsBelongToChat);
-    return chatHandle ? { ok: false, error: { ...error.error, chatHandle } } : error;
+  const bracketed = /^@\[([^\]]*)\]$/.exec(qualifier)?.[1];
+  if (bracketed === undefined && /[[\]]/.test(qualifier)) {
+    const handle = /c[1-9][0-9]*/.exec(qualifier)?.[0] ?? "c12";
+    return invalidContextUri(
+      rawUri,
+      `Unmatched bracket in "${qualifier}". Chat handles go in brackets: ${chatAddress(scheme, handle)}.`,
+    );
   }
-  if (qualifier === "@" && scheme === "scratch" && segments.length) {
-    const rootThreadRef = segments.shift() ?? "";
-    if (!/^c[1-9][0-9]*$/.test(rootThreadRef))
-      return invalidContextUri(rawUri, missingScratchHandle);
-    return {
-      ok: true,
-      value: { authority: { kind: "lineage", rootThreadRef }, rawPath: segments.join("/") },
-    };
-  }
-  if (qualifier === "@" && scheme === "uploads" && segments.length) {
-    const chatRef = segments.shift() ?? "";
-    if (/^p[1-9][0-9]*$/.test(chatRef)) {
-      return invalidContextUri(rawUri, "Use the chat's handle (c…), not a subagent's (p…).");
-    }
-    if (/^c[1-9][0-9]*$/.test(chatRef)) {
+  // A chat's handle spelled without brackets: `@c15` after the scheme, or `@/c15` as the old path form.
+  const bareHandle = /^@(c[1-9][0-9]*)$/.exec(qualifier)?.[1];
+  const slashedHandle =
+    qualifier === "@" && /^c[1-9][0-9]*$/.test(segments[0] ?? "") ? segments[0] : undefined;
+  if (bracketed !== undefined) {
+    if (/^c[1-9][0-9]*$/.test(bracketed)) {
+      const rest = segments.join("/");
       return {
         ok: true,
-        value: { authority: { kind: "chat", chatRef }, rawPath: segments.join("/") },
+        value: {
+          authority:
+            scheme === "uploads"
+              ? { kind: "chat", chatRef: bracketed }
+              : { kind: "lineage", rootThreadRef: bracketed },
+          rawPath: rest,
+        },
       };
     }
-    return invalidContextUri(rawUri, missingUploadsHandle);
+    if (/^p[1-9][0-9]*$/.test(bracketed)) {
+      return invalidContextUri(rawUri, "Use the chat's handle (c…), not a subagent's (p…).");
+    }
+    return invalidContextUri(
+      rawUri,
+      scheme === "uploads" ? uploadsBelongToChat() : bracketsHoldChatHandle(bracketed),
+    );
+  }
+  if (scheme === "uploads") {
+    const handle = bareHandle ?? slashedHandle;
+    if (handle) {
+      const error = invalidContextUri(rawUri, chatHandlesGoInBrackets(scheme, handle));
+      return { ok: false, error: { ...error.error, chatHandle: handle, scheme } };
+    }
+    return invalidContextUri(rawUri, uploadsBelongToChat());
+  }
+  if (qualifier === "@" && segments.length) {
+    const handle = slashedHandle;
+    const error = invalidContextUri(
+      rawUri,
+      handle ? chatHandlesGoInBrackets(scheme, handle) : missingScratchHandle(),
+    );
+    return handle ? { ok: false, error: { ...error.error, chatHandle: handle, scheme } } : error;
   }
   if (qualifier === "@") {
     return { ok: true, value: { authority: { kind: "none" }, rawPath: segments.join("/") } };
@@ -352,24 +381,29 @@ export function isProjectScopedScheme(
   return (PROJECT_SCOPED_CONTEXT_URI_SCHEMES as readonly string[]).includes(scheme);
 }
 
+/** An authority's spelling in front of a path: `@[c12]/`, `@arc/`, `@/`, or nothing for contextual. */
+export function contextUriAuthorityPrefix(authority: ParsedContextAuthority): string {
+  switch (authority.kind) {
+    case "lineage":
+      return `${bracketedHandle(authority.rootThreadRef)}/`;
+    case "chat":
+      return `${bracketedHandle(authority.chatRef)}/`;
+    case "work":
+      return `@${authority.workSlug}/`;
+    case "none":
+      return "@/";
+    case "contextual":
+      return "";
+  }
+}
+
 /** Spell parsed address syntax; this does not resolve or grant Work authority. */
 export function formatParsedContextUri(
   scheme: ContextUriScheme,
   path: string,
   authority: ParsedContextAuthority,
 ): string {
-  const qualifier =
-    authority.kind === "lineage"
-      ? `@/${authority.rootThreadRef}`
-      : authority.kind === "chat"
-        ? `@/${authority.chatRef}`
-        : authority.kind === "work"
-          ? `@${authority.workSlug}`
-          : authority.kind === "none"
-            ? "@"
-            : null;
-  if (qualifier) return path ? `${scheme}://${qualifier}/${path}` : `${scheme}://${qualifier}/`;
-  return path ? `${scheme}://${path}` : `${scheme}://`;
+  return `${scheme}://${contextUriAuthorityPrefix(authority)}${path}`;
 }
 
 function invalidContextUri(uri: string, reason: string): ContextUriParseError {
@@ -407,9 +441,35 @@ export function documentTitleFromUri(uri: string | null | undefined): string | n
   return parsed.ok ? renderFilename(parsed.value.name, parsed.value.extension) : segment;
 }
 
-const missingUploadsHandle =
-  "Uploads under @/ require the chat handle. Use uploads://x for this chat’s files, or uploads://@/c12/x for a specific chat.";
-const uploadsBelongToChat =
-  "Uploads belong to a chat. Use uploads://x for this chat’s files, or uploads://@/c12/x for another chat’s.";
-const missingScratchHandle =
-  "Scratch under @/ requires the first chat handle. Use scratch://x for this chat’s notes, or scratch://@/c12/x for a specific chat. List chats with ls scratch://@/.";
+/** A chat's handle in the one spelling an address takes it: `@[c15]`. */
+function bracketedHandle(handle: string): string {
+  return `@[${handle}]`;
+}
+
+/** An example chat address (chat c12) for error text, spelled by the serializer. */
+export function exampleChatAddress(scheme: OwnedContextUriScheme): string {
+  return chatAddress(scheme, "c12");
+}
+
+/** The serializer's spelling of a chat's area, ending in `…` for the model to fill. */
+function chatAddress(scheme: OwnedContextUriScheme, handle: string): string {
+  return scheme === "uploads"
+    ? formatParsedContextUri("uploads", "…", { kind: "chat", chatRef: handle })
+    : formatParsedContextUri("scratch", "…", { kind: "lineage", rootThreadRef: handle });
+}
+
+function chatHandlesGoInBrackets(scheme: OwnedContextUriScheme, handle: string): string {
+  return `Chat handles go in brackets: ${chatAddress(scheme, handle)}`;
+}
+
+function uploadsBelongToChat(): string {
+  return `Uploads belong to a chat. Use uploads://x for this chat’s files, or ${chatAddress("uploads", "c12")} for another chat’s.`;
+}
+
+function bracketsHoldChatHandle(inner: string): string {
+  return `Brackets hold a chat handle (c…), not "${inner}". Use ${chatAddress("scratch", "c12")} for a chat’s notes, or ${formatParsedContextUri("scratch", "…", { kind: "work", workSlug: decodeWorkSlug(inner) ?? ("tea-notes" as WorkSlug) })} for a Work’s.`;
+}
+
+function missingScratchHandle(): string {
+  return `Scratch under @/ requires the first chat handle in brackets. Use scratch://x for this chat’s notes, or ${chatAddress("scratch", "c12")} for a specific chat. List chats with ls scratch://@/.`;
+}

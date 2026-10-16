@@ -37,6 +37,7 @@ describe("markdown codec round-trip corpus", () => {
     "a(b.md",
     "folder\\ notes.md",
     "a\\<b> c.md",
+    "uploads://@[c15]/map.png",
   ])("carries destination %j through the wire unchanged", (href) => {
     const doc = [paragraph(t("x", [m("link", { href, title: null })]))];
     const wire = codec.serialize(doc, UNSCOPED_DOCUMENT_LINKS);

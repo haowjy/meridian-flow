@@ -63,41 +63,64 @@ describe("parseContextUri", () => {
         error: { reason: expect.stringContaining("belong to a chat") },
       });
     // Uploads belong to a chat: `@/` plus the chat's handle, never `@/` alone.
-    expect(parseContextUri("uploads://@/c15/draft.png")).toMatchObject({
+    expect(parseContextUri("uploads://@[c15]/draft.png")).toMatchObject({
       ok: true,
       value: {
         authority: { kind: "chat", chatRef: "c15" },
-        normalized: "uploads://@/c15/draft.png",
+        normalized: "uploads://@[c15]/draft.png",
       },
     });
     expect(canonicalContextUri("uploads", "./a//b.png", { kind: "chat", chatRef: "c15" })).toBe(
-      "uploads://@/c15/a/b.png",
+      "uploads://@[c15]/a/b.png",
     );
-    expect(parseContextUri("uploads://@/p3/draft.png")).toMatchObject({
+    expect(parseContextUri("uploads://@[p3]/draft.png")).toMatchObject({
       ok: false,
       error: { reason: expect.stringContaining("not a subagent") },
+    });
+    // Unbracketed handles and unmatched brackets name the corrected address.
+    for (const uri of [
+      "uploads://@c15/x",
+      "uploads://@/c15/x",
+      "uploads://@[c15/x",
+      "uploads://@c15]/x",
+    ])
+      expect(parseContextUri(uri)).toMatchObject({
+        ok: false,
+        error: { reason: expect.stringContaining("uploads://@[c15]/…") },
+      });
+    expect(parseContextUri("scratch://@/c12/x")).toMatchObject({
+      ok: false,
+      error: { reason: expect.stringContaining("scratch://@[c12]/…"), chatHandle: "c12" },
+    });
+    expect(parseContextUri("uploads://@[tea-notes]/x")).toMatchObject({
+      ok: false,
+      error: { reason: expect.stringContaining("belong to a chat") },
+    });
+    expect(parseContextUri("scratch://@c12/x")).toMatchObject({
+      ok: true,
+      value: { authority: { kind: "work", workSlug: "c12" } },
     });
     expect(() =>
       canonicalContextUri("scratch", "a.png", { kind: "chat", chatRef: "c1" }),
     ).toThrow();
     // A chat holder supplies uploads; a Work holder does not.
-    expect(qualifyContextUriByHolder("uploads://a.png", "uploads://@/c15/b.png")).toBe(
-      "uploads://@/c15/a.png",
+    expect(qualifyContextUriByHolder("uploads://a.png", "uploads://@[c15]/b.png")).toBe(
+      "uploads://@[c15]/a.png",
     );
     expect(qualifyContextUriByHolder("uploads://a.png", "scratch://@revision/b.md")).toBe(
       "uploads://a.png",
     );
     // A chat's Scratch is named by its first chat's handle: `@/` plus the handle, never `@/` alone.
-    expect(parseContextUri("scratch://@/c12/notes/a.md")).toMatchObject({
+    expect(parseContextUri("scratch://@[c12]/notes/a.md")).toMatchObject({
       ok: true,
       value: {
         authority: { kind: "lineage", rootThreadRef: "c12" },
-        normalized: "scratch://@/c12/notes/a.md",
+        normalized: "scratch://@[c12]/notes/a.md",
       },
     });
     expect(
       canonicalContextUri("scratch", "./notes//a.md", { kind: "lineage", rootThreadRef: "c12" }),
-    ).toBe("scratch://@/c12/notes/a.md");
+    ).toBe("scratch://@[c12]/notes/a.md");
     expect(() => canonicalContextUri("scratch", "a.md", { kind: "none" })).toThrow();
   });
 
@@ -122,7 +145,7 @@ describe("documentTitleFromUri", () => {
   it("is the stored name, with no extension stripped on its own", () => {
     expect(documentTitleFromUri("manuscript://Chapter 13")).toBe("Chapter 13");
     expect(documentTitleFromUri("manuscript://Book/Vol. 2")).toBe("Vol. 2");
-    expect(documentTitleFromUri("scratch://@/c12/outline.json")).toBe("outline.json");
+    expect(documentTitleFromUri("scratch://@[c12]/outline.json")).toBe("outline.json");
     expect(documentTitleFromUri("kb://maps/map.png")).toBe("map.png");
     expect(documentTitleFromUri("user://config.toml")).toBe("config.toml");
   });

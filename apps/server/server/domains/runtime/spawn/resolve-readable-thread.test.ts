@@ -67,7 +67,7 @@ describe("resolveReadableThread", () => {
     ).toMatchObject({ ok: false, error: { code: "thread_not_connected" } });
     const chatFiles = {
       byRef: async (_project: string, ref: string) =>
-        ref === "c2" ? { uploads: "uploads://@/c2/", scratch: "scratch://@/c2/" } : null,
+        ref === "c2" ? { uploads: "uploads://@[c2]/", scratch: "scratch://@[c2]/" } : null,
     };
     expect(
       await resolveReadableThread({
@@ -80,7 +80,7 @@ describe("resolveReadableThread", () => {
     ).toMatchObject({
       error: {
         message:
-          "Thread is not connected to this conversation. Its uploads are at uploads://@/c2/ and its scratch notes at scratch://@/c2/.",
+          "Thread is not connected to this conversation. Its uploads are at uploads://@[c2]/ and its scratch notes at scratch://@[c2]/.",
       },
     });
   });

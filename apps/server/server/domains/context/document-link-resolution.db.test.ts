@@ -109,7 +109,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
         },
       };
-      for (const baseUri of [null, "scratch://@/c1/holder"]) {
+      for (const baseUri of [null, "scratch://@[c1]/holder"]) {
         viewed.length = 0;
         const response = await handleDocumentLinkResolveRequest(deps, {
           projectId: p,
@@ -194,9 +194,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ...(chat ? { chatId: chat } : {}),
           target: { kind: "scheme", uri },
         });
-      expect(await resolveUpload("uploads://@/c9/Gate")).toMatchObject({
+      expect(await resolveUpload("uploads://@[c9]/Gate")).toMatchObject({
         documentId: upload,
-        uri: "uploads://@/c9/Gate",
+        uri: "uploads://@[c9]/Gate",
         chatThreadId: chatId,
       });
       // A bare name means the holder chat's file; a document holder has no chat, so it names nothing.
@@ -361,7 +361,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         extension: "",
       });
       const rows = [
-        { id: note, uri: "scratch://@/c1/note", workId: null, rootThreadId: root },
+        { id: note, uri: "scratch://@[c1]/note", workId: null, rootThreadId: root },
         { id: await add("scratch", "named", b), uri: "scratch://@work-b/named", workId: b },
         { id: await add("manuscript", "chapter"), uri: "manuscript://chapter", workId: null },
         { id: await add("user", "personal"), uri: "user://personal", workId: null },

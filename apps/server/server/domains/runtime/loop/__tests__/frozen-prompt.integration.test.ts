@@ -241,7 +241,7 @@ describe("frozen prompt provider requests", () => {
     const image = {
       type: "image" as const,
       documentId: "44444444-4444-4444-8444-000000000101",
-      uri: "uploads://@/c1/asset-lost-before-fork.png",
+      uri: "uploads://@[c1]/asset-lost-before-fork.png",
     };
 
     await rig.send(rig.thread.id, "remember this image", {
@@ -325,7 +325,7 @@ describe("frozen prompt provider requests", () => {
       await run.execute();
       return run;
     }
-    const originalImage = image("uploads://@/c1/original.png");
+    const originalImage = image("uploads://@[c1]/original.png");
     const original = await sendAndRun(rig.thread.id, "original", [originalImage]);
     const originalImageBlock = (await rig.repos.blocks.listByThread(rig.thread.id)).find(
       (block) => block.blockType === "image",
@@ -350,8 +350,8 @@ describe("frozen prompt provider requests", () => {
     });
 
     await sendAndRun(rig.thread.id, "source eviction", [
-      image("uploads://@/c1/source-large-1.png"),
-      image("uploads://@/c1/source-large-2.png"),
+      image("uploads://@[c1]/source-large-1.png"),
+      image("uploads://@[c1]/source-large-2.png"),
     ]);
     const sourceImages = (await rig.repos.blocks.listByThread(rig.thread.id)).filter(
       (block) => block.blockType === "image",
@@ -405,8 +405,8 @@ describe("frozen prompt provider requests", () => {
     ).not.toContain("Image context changed.");
 
     await sendAndRun(firstFork.id, "first fork eviction", [
-      image("uploads://@/c1/fork-large-1.png"),
-      image("uploads://@/c1/fork-large-2.png"),
+      image("uploads://@[c1]/fork-large-1.png"),
+      image("uploads://@[c1]/fork-large-2.png"),
     ]);
     const firstForkDecisions = await rig.repos.imageInclusions.findByThread(firstFork.id);
     expect(
@@ -434,7 +434,7 @@ describe("frozen prompt provider requests", () => {
       )?.included,
     ).toBe(false);
 
-    const reverseImage = image("uploads://@/c1/reverse-source.png");
+    const reverseImage = image("uploads://@[c1]/reverse-source.png");
     const reverseSourceRun = await sendAndRun(rig.thread.id, "fresh source image", [reverseImage]);
     const reverseImageBlock = (await rig.repos.blocks.listByThread(rig.thread.id)).find((block) => {
       const content = block.content as { uri?: string } | null;
@@ -448,8 +448,8 @@ describe("frozen prompt provider requests", () => {
       originTurnId: reverseSourceRun.executionTurnId,
     });
     await sendAndRun(reverseFork.thread.id, "fork evicts image", [
-      image("uploads://@/c1/reverse-fork-large-1.png"),
-      image("uploads://@/c1/reverse-fork-large-2.png"),
+      image("uploads://@[c1]/reverse-fork-large-1.png"),
+      image("uploads://@[c1]/reverse-fork-large-2.png"),
     ]);
     expect(
       (await rig.repos.imageInclusions.findByThread(reverseFork.thread.id)).find(

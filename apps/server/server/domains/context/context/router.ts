@@ -5,7 +5,11 @@
  */
 
 import { validateContextEntryPath } from "@meridian/contracts/context-entry-validation";
-import type { CanonicalContextAuthority } from "@meridian/contracts/context-uri";
+import {
+  type CanonicalContextAuthority,
+  exampleChatAddress,
+  formatParsedContextUri,
+} from "@meridian/contracts/context-uri";
 import {
   type DeleteContextEntryResult,
   filenameForBinary,
@@ -61,7 +65,7 @@ export interface ContextPortRouterDeps {
   resolveDestinationFolder?: (folderId: string) => Promise<string | null>;
   /** The document a device's create id was forwarded to (a join), within this project. */
   resolveForward?: (documentId: string) => Promise<string | null>;
-  /** A chat's uploads by handle (`uploads://@/c12/`): found, trashed, or no such chat. */
+  /** A chat's uploads by handle (`uploads://@[c12]/`): found, trashed, or no such chat. */
   resolveChatSource?: (
     ref: string,
   ) => Promise<
@@ -394,7 +398,13 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
           ? await deps.chatFiles?.(error.chatHandle)
           : null;
       return files && error.code === "invalid_uri"
-        ? Err({ ...error, reason: `Another chat's uploads are at ${files.uploads}…` })
+        ? Err({
+            ...error,
+            reason:
+              error.scheme === "scratch"
+                ? `Chat ${error.chatHandle}'s notes are at ${files.scratch}…`
+                : `Chat handles go in brackets: ${files.uploads}…`,
+          })
         : parsed;
     }
     const { scheme, authority, path } = parsed.value;
@@ -435,8 +445,8 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
           code: "invalid_uri",
           uri,
           reason: owner
-            ? `This chat's notes are at scratch://@/${owner.rootThreadRef}/. Use its first chat handle, or scratch://x in that chat.`
-            : "Scratch requires a first chat handle. Use scratch://x in a chat, or scratch://@/c12/x. List chats with ls scratch://@/.",
+            ? `This chat's notes are at ${formatParsedContextUri("scratch", "", { kind: "lineage", rootThreadRef: owner.rootThreadRef })}. Use its first chat handle, or scratch://x in that chat.`
+            : `Scratch requires a first chat handle. Use scratch://x in a chat, or ${exampleChatAddress("scratch")}. List chats with ls scratch://@/.`,
         });
       }
       adapter = lineageSource.adapter;
@@ -460,7 +470,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
           code: "invalid_uri",
           uri: parsed.value.normalized,
           reason: chatFiles
-            ? `${unknownWorkMessage(authority.workSlug)} Chat ${authority.workSlug}'s scratch notes are at ${chatFiles.scratch}`
+            ? `No Work is named @${authority.workSlug}. Chat ${authority.workSlug}'s notes are at ${chatFiles.scratch}…`
             : unknownWorkMessage(authority.workSlug),
           workSlug: authority.workSlug,
         });
@@ -484,14 +494,13 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       return Err({
         code: "invalid_uri",
         uri,
-        reason: "Bare uploads:// needs a chat. Use uploads://@/c12/x to name one.",
+        reason: `Bare uploads:// needs a chat. Use ${exampleChatAddress("uploads")} to name one.`,
       });
     if (scheme === "scratch" && authority.kind === "contextual" && !adapter)
       return Err({
         code: "invalid_uri",
         uri,
-        reason:
-          "Bare scratch:// requires a chat or named Work. Use scratch://@/c12/x for another lineage.",
+        reason: `Bare scratch:// requires a chat or named Work. Use ${exampleChatAddress("scratch")} for another lineage.`,
       });
     const canonical = toCanonical(scheme, path, canonicalAuthority);
 
@@ -917,7 +926,10 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
           uri,
           entries: ((await deps.listLineages?.()) ?? []).map((lineage) => ({
             kind: "directory" as const,
-            uri: `scratch://@/${lineage.rootThreadRef}/`,
+            uri: formatParsedContextUri("scratch", "", {
+              kind: "lineage",
+              rootThreadRef: lineage.rootThreadRef,
+            }),
             title: lineage.title,
             readonly: false,
           })),
