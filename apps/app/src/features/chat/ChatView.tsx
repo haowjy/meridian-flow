@@ -36,6 +36,7 @@ import {
   viewTranscript,
   waitingWriterMessages,
 } from "@meridian/thread-client";
+import { chatMovedPast } from "@meridian/thread-client/view";
 import { type ReactNode, useCallback, useMemo, useReducer, useRef } from "react";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
@@ -420,7 +421,13 @@ export function ChatView({
     isStreaming,
   });
 
-  useLiveTurnAnnouncements(threadId, latestAssistantTurn, composerRef, chatSurfaceRef);
+  useLiveTurnAnnouncements(
+    threadId,
+    latestAssistantTurn,
+    latestAssistantTurn !== null && chatMovedPast(turns)(latestAssistantTurn),
+    composerRef,
+    chatSurfaceRef,
+  );
 
   // Generating signal: the latest assistant turn is streaming AND it started in
   // draft mode. A reply keeps the mode it started with while the chat's mode may

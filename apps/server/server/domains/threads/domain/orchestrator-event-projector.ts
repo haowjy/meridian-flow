@@ -17,6 +17,8 @@ import {
   type MessagesHandedBackValue,
   RUN_STATE_EVENT,
   type RunStartedMeta,
+  TURNS_FORGOTTEN_EVENT,
+  type TurnsForgottenValue,
   WRITE_MODE_SWITCHED_EVENT,
   type WriteModeSwitchedValue,
 } from "@meridian/contracts/protocol";
@@ -518,6 +520,20 @@ export function createOrchestratorEventProjector() {
             type: EventType.CUSTOM,
             name: MESSAGES_HANDED_BACK_EVENT,
             value: { userTurnIds: event.userTurnIds } satisfies MessagesHandedBackValue,
+          }),
+        ];
+
+      // Failed turns left the conversation: clients stamp them at this seq.
+      case "turns.forgotten":
+        return [
+          parseAguiEvent({
+            type: EventType.CUSTOM,
+            name: TURNS_FORGOTTEN_EVENT,
+            value: {
+              turnIds: event.turnIds,
+              byTurnId: event.byTurnId,
+              reason: event.reason,
+            } satisfies TurnsForgottenValue,
           }),
         ];
 

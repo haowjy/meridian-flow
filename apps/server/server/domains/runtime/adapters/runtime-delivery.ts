@@ -9,6 +9,7 @@ import { turnGraph } from "../../threads/ports/turn-graph.js";
 import type { DetachedWorkTracker } from "../detached-work.js";
 import { finalizeExecution } from "../loop/execution-finalizer.js";
 import { drainInbox, planMessageTurns } from "../loop/inbox-context.js";
+import { latestRowAt } from "../loop/latest-row.js";
 import { currentTurnKind, reservationTurn } from "../loop/local-turn.js";
 import {
   type InboxWorkSelection,
@@ -29,11 +30,7 @@ import type {
   RuntimeDelivery,
 } from "../loop/runtime-delivery.js";
 import { createThreadControls } from "../loop/thread-controls.js";
-import {
-  pastTrailingSwitches,
-  type WriteModeSwitchPort,
-  writeModeSwitchTurn,
-} from "../loop/write-mode-switch.js";
+import { type WriteModeSwitchPort, writeModeSwitchTurn } from "../loop/write-mode-switch.js";
 import type { HandBackStore } from "./delivery-ports.js";
 import { createExecutionSettlement, type ExecutionSettlementDeps } from "./execution-settlement.js";
 import { createThreadCommands } from "./thread-commands.js";
@@ -285,14 +282,13 @@ export function createDeliveryAdapter(
     }
   }
   /**
-   * Retry's compare-and-swap: only switch turns may trail the failed reply. A
-   * newer message or another Retry moved the leaf, so the Retry is refused.
+   * Retry's compare-and-swap: only turns that don't close the failed reply (a switch, a Work refresh, a
+   * notice) may trail it. A newer message or another Retry moved the leaf, so the Retry is refused.
    */
   async function assertRetryLeaf(threadId: ThreadId, leaf: TurnId | null, retryOf?: TurnId) {
     if (!retryOf) return;
-    const leafTurn = leaf ? await deps.repos.turns.findById(leaf) : null;
-    const past = leafTurn ? await pastTrailingSwitches(deps.repos.turns, leafTurn) : null;
-    if (past?.id !== retryOf) throw new ReplyRetryUnavailableError(threadId);
+    const { latest } = await latestRowAt(deps.repos.turns, leaf);
+    if (latest?.id !== retryOf) throw new ReplyRetryUnavailableError(threadId);
   }
   /** Runs under the thread lock the run's reservation also commits in. */
   async function applyDueSwitch(

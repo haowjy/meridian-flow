@@ -167,7 +167,7 @@ messages. Plain `tail` and `send`'s live output don't draw queued rows.
   **0 complete**, **1 failed**, **5 cancelled** and
   **5 handed_back** (`outcome` tells them apart), **6 unproven**, **8 interrupt**, **124 timeout**. Other exits: **2 usage**,
   **3 not found**, **4 unavailable** (stack, login, terminal socket close).
-  `reason` is null for a proven outcome. A timeout's reason names the first
+  `reason` is null for a proven outcome, except a `failed` send whose message the chat moved past (`forgotten`: no reply answers it). A timeout's reason names the first
   thing its last snapshot still showed: `running` (a running turn), `owed` (a
   pending writer message), `lease_awake` (the chat still awake with neither,
   as when a restart orphans a reply and the server keeps its run lease until
@@ -253,6 +253,7 @@ messages. Plain `tail` and `send`'s live output don't draw queued rows.
   | message waiting | keeps following (blocked for usage: exit 1 `credits_exhausted`) |
   | answering, interrupt raised | exit 8 with `interrupt` |
   | answered | the last reply in the chain sets the outcome: complete 0, failed 1, cancelled 5; `turnId` is that reply, `answeredBy` the reply that took the message |
+  | forgotten (the turn carries `forgottenBy`) | exit 1 `forgotten`, `turnId` null: the chat moved past its failed reply, so nothing answers it |
   | handed back (not in the snapshot) | exit 5 `handed_back`, `turnId` null |
   | no deliverer | exit 6 `deliverer_unknown` |
   | snapshot inconsistent | exit 6 `unconfirmed` |

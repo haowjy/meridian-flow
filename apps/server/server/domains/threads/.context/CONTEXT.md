@@ -242,7 +242,13 @@ ports rather than adapter details.
   recompute, which only a trigger closes. A handed-back writer message
   (`thread_inbox_messages.handed_back_by`) never anchors the head or its preview:
   the function carries that predicate, and an `AFTER UPDATE OF handed_back_by`
-  trigger recomputes the chat.
+  trigger recomputes the chat. A forgotten turn (`turns.forgotten_by_turn_id`)
+  is never the head or preview either, and the lineage walks through forgotten
+  assistants; an `AFTER UPDATE OF forgotten_by_turn_id` trigger recomputes.
+  Readers apply a stamp only when the forgetting turn is inside the span they
+  read (`inConversationSql(alias, throughPosition)`); the snapshot keeps
+  forgotten turns, stamped `forgottenBy`, and the client hides them
+  ([delivery](../../runtime/.context/delivery.md#forgetting-a-failed-attempt)).
 - `actionRequired` is derived from the nearest assistant turn in the active
   lineage. A visible writer turn may be the head while an ancestor assistant is
   still parked on `waiting_interrupt`; that still needs the writer's answer.

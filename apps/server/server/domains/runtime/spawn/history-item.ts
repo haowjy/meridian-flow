@@ -9,7 +9,8 @@ import {
   referenceOccurrenceContent,
 } from "@meridian/contracts/protocol";
 import type { Block, JsonObject, JsonValue, Turn } from "@meridian/contracts/threads";
-import { classifyHistoryItem, isConversationTurn } from "../../threads/index.js";
+import { isConversationTurn } from "@meridian/contracts/threads";
+import { classifyHistoryItem } from "../../threads/index.js";
 import type { BlockRepository } from "../../threads/ports/repositories.js";
 import { componentHistoryText } from "../loop/component-model-text.js";
 import { elideReferenceRead } from "../loop/reference-context.js";

@@ -105,6 +105,7 @@ function turnOf(over: TurnOver): Turn {
     blocks: [],
     siblingIds: [],
     responses: [],
+    forgottenBy: null,
     ...over,
   };
 }

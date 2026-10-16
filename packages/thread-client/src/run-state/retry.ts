@@ -12,6 +12,7 @@
  */
 import type { Turn } from "@meridian/contracts/protocol";
 import { compareSeq } from "@meridian/contracts/protocol";
+import { retryTargetOf } from "@meridian/contracts/threads";
 import type { RunStateView } from "./run-state-view";
 
 /** What a Retry entry is known by: its turn id, the failed reply it retries, and its answer. */
@@ -25,14 +26,6 @@ export type RetryEntry = {
   /** The version of the record the answer carried; null until it answers (or for none). */
   answerVersion: string | null;
 };
-
-/** The failed reply a turn is the Retry of, from its `metadata.retryOf` (a stored turn's or a stand-in's). */
-export function retryTargetOf(turn: Turn): string | null {
-  const { metadata } = turn;
-  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
-  const target = (metadata as { retryOf?: unknown }).retryOf;
-  return typeof target === "string" ? target : null;
-}
 
 /**
  * Whether the held record, at or after the Retry answer's version, shows an execution other than
