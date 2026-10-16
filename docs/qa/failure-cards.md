@@ -29,7 +29,7 @@ shows a lost Retry or a failed Stop).
 ## FC-01: the failed reply
 
 `./mf thread send "$T" "write" --mock '[{"error":{"status":500,"message":"boom"}}]'`. The latest
-reply shows "This response failed." with Retry (a provider decline reads "The AI provider turned this
+reply has a card anchored on it, "This response failed." with Retry (a provider decline reads "The AI provider turned this
 request down."). Send another message: the card and the failed row are gone, and the live region is
 empty. `./mf thread view` printed `card reply-failed on turn <id> [retry] <id>` before.
 

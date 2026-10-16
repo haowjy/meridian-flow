@@ -8,7 +8,7 @@ reply itself.
 
 | Failed reply | Row |
 |---|---|
-| Latest turn | Tinted block: "This response failed." with **Retry** beside it |
+| Latest turn | A projected `FailureCard` anchored on the reply: "This response failed." with **Retry** |
 | Not the latest turn, never retried | No failure line. With no text or items it has no row at all (no grey line, no empty icons row); with partial text it keeps the text and items |
 | Retried (accepted or pending) | Not drawn: the Retry's row takes its place |
 | A retry that failed too | One failure, the newest, in that same place |
@@ -24,7 +24,7 @@ row, does too. `chatMovedPast` in `@meridian/thread-client/view` is the one read
 busy: a failed reply is followed at once by whatever runs next, which takes
 its Retry away, and the server refuses a Retry that races a run (409), which
 shows the refused card below. An unadmitted message keeps its "Couldn't send."
-Retry on the writer row, not here, drawn in the same `ErrorCard` shell as an
+Retry on the writer row, not here, drawn as a `FailureCard`, an
 inline, one-line card that is not itself an alert (the chat announces it once
 through its own region). An inherited failed reply stays read-only.
 
@@ -35,8 +35,9 @@ that declined the request when the gateway ruled out an automatic retry
 `isProviderDeclined`): it reads as `provider-declined`, with Retry under
 the same conditions as other failed replies. A writer's explicit Retry is not
 blocked by that verdict: it may succeed once the cause is fixed.
-`replyErrorKind` in `AssistantTurn.tsx` picks the kind from turn status, the local Retry state and that verdict, never from `turn.error`
-text; the provider's own message stays in turn metadata for diagnostics.
+`chatCards` picks the failure and recovery from turn facts and Retry outcomes;
+`chat-card-copy.ts` words its copy key. Provider classification never depends on
+`turn.error` text; the provider's own message stays in metadata for diagnostics.
 "Refused" in this component means only the server refusing a Retry.
 
 ## Retry, optimistically
