@@ -270,7 +270,7 @@ export function createReadHandler(deps: ToolWiringDeps) {
       address.uri,
     );
     return {
-      output: notice ? { ...outcome.result, notice } : outcome.result,
+      output: notice ? { ...outcome.result, ...notice } : outcome.result,
       metadata: documentRevisionMetadata(address, outcome.revision),
       shown: showingOf(address.documentId, outcome),
     };
@@ -417,7 +417,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       address.uri,
     );
     return {
-      output: notice ? { ...outcome.result, notice } : outcome.result,
+      output: notice ? { ...outcome.result, ...notice } : outcome.result,
       metadata: {
         ...documentRevisionMetadata(address, outcome.revision),
         ...(stagedWrite

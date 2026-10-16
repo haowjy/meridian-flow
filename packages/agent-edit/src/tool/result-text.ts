@@ -44,7 +44,7 @@ export function renderAgentEditResult(result: AgentEditResultV1): string {
 function statusLine(result: AgentEditResultV1): string {
   const facts = [`status: ${result.status}`];
   if (result.reason) facts.push(`reason: ${result.reason}`);
-  if (result.path) facts.push(`path: ${result.path}`);
+  if (result.path) facts.push(`path: ${result.path}${result.owner ? ` (${result.owner})` : ""}`);
   if (result.write?.id) facts.push(`write: ${result.write.id}`);
   const version = writeVersion(result);
   if (version) facts.push(`version: ${version}`);
