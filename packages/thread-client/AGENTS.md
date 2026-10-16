@@ -30,7 +30,9 @@ never into `apps/app`; the chat session moves the rest.
   (refused or lost), unadmitted sends, queued commands and the brief's failed Stop. A card's
   `key` is its occurrence id (`${requestId}:${attempt}`, the turn id for a reply,
   `usage:${threadId}:${seq}`); its copy is a closed key set the app words. React draws cards
-  by anchor and decides nothing; `./mf thread view` prints the same cards.
+  by anchor and decides nothing. `./mf thread view` prints the same cards for what a snapshot
+  holds; a host's local command state (a lost Retry, a failed Stop, an unadmitted send) isn't in a
+  snapshot, so `thread view` passes none and never prints those cards.
 - `partitionTurn` (`view/partition-turn.ts`) reads only the turn's ordered
   blocks, never transient stream state. Hidden tool protocol is not rendered
   twice: a call whose card is in the turn shows as that card alone
