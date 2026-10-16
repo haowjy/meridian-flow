@@ -17,7 +17,8 @@ import type * as Y from "yjs";
 import type { DraftRef } from "@/client/query/draft-command-record";
 import { draftMetaQueryOptions } from "@/client/query/useDraftMeta";
 import type { DiscardSubject } from "@/client/query/work-draft-files";
-import { type BranchRoomRead, readBranchRoom } from "@/core/editor/branch-room-read";
+import { type BranchRoomRead, readBranchRoom, withLiveRoom } from "@/core/editor/branch-room-read";
+import type { DocumentSession } from "@/core/editor/document-session";
 import { isSameChange } from "@/core/editor/extensions/inline-review";
 import { useLiveDocumentSessionRegistry } from "@/features/project/context/account-feature-context";
 import { chatChangeTargets } from "./chat-changes";
@@ -93,12 +94,15 @@ export function useHeadlessDiscards(
   const histories = useRef(new Map<string, Held>());
   /** The room each entry's history writes into, held for as long as the entry is. */
   const reads = useRef(new Map<string, BranchRoomRead>());
+  /** Ends each entry's watch on the session its history was written into. */
+  const watches = useRef(new Map<string, () => void>());
   /** Bumps whenever the scope ends; work begun under an earlier epoch must not publish. */
   const epoch = useRef(0);
 
   useEffect(() => {
     const held = histories.current;
     const leased = reads.current;
+    const watching = watches.current;
     return () => {
       epoch.current += 1;
       for (const done of held.values()) {
@@ -108,14 +112,45 @@ export function useHeadlessDiscards(
       held.clear();
       for (const read of leased.values()) read.dispose();
       leased.clear();
+      for (const stop of watching.values()) stop();
+      watching.clear();
     };
   }, [scope]);
 
   /** Let go of the room this entry holds, keeping every other entry's room. */
   const release = useCallback((entryId: string) => {
+    watches.current.get(entryId)?.();
+    watches.current.delete(entryId);
     reads.current.get(entryId)?.dispose();
     reads.current.delete(entryId);
   }, []);
+
+  /**
+   * An entry's Undo is the history of one session. When that session retires (the server refused its
+   * edits and the room was rebuilt, or the draft closed) the Discard never reached the current room:
+   * the entry reads failed and its Undo is gone. The refused edit is never replayed into the replacement.
+   */
+  const bindToSession = useCallback(
+    (entryId: string, read: BranchRoomRead, session: DocumentSession) => {
+      const check = () => {
+        if (read.usable() === session) return;
+        watches.current.get(entryId)?.();
+        watches.current.delete(entryId);
+        const history = histories.current.get(entryId);
+        histories.current.delete(entryId);
+        if (history && !(history instanceof Promise)) history.release();
+        setEntries((held) =>
+          held.map((entry) =>
+            entry.id === entryId && entry.phase === "discarded"
+              ? { ...entry, phase: "failed" }
+              : entry,
+          ),
+        );
+      };
+      watches.current.set(entryId, read.subscribe(check));
+    },
+    [setEntries],
+  );
 
   const write = useCallback(
     (
@@ -127,19 +162,19 @@ export function useHeadlessDiscards(
     ) => {
       const id = `${subject.itemKey}:${++sequence}`;
       let result: RoomDiscard | null = null;
-      let read: BranchRoomRead | null = null;
+      const read = readBranchRoom(registry, roomName);
+      // The expanded row's reader holds this room, so it is usable now; this entry's read keeps it so for Undo.
+      const session = read.usable();
       try {
-        // The expanded row's reader holds this room, so it is live now; this entry's read keeps it so for Undo.
-        read = readBranchRoom(registry, roomName);
-        const session = read.session();
         if (session) result = edit(session.document);
       } catch {
         // A failed write leaves the failed entry below.
       }
-      if (result && read) {
+      if (result && session) {
         histories.current.set(id, result);
         reads.current.set(id, read);
-      } else read?.dispose();
+        bindToSession(id, read, session);
+      } else read.dispose();
       setEntries((held) => [
         ...held,
         {
@@ -151,7 +186,7 @@ export function useHeadlessDiscards(
         },
       ]);
     },
-    [registry, setEntries],
+    [registry, setEntries, bindToSession],
   );
 
   const discardFile = useCallback(
@@ -173,16 +208,21 @@ export function useHeadlessDiscards(
         if (!histories.current.has(id)) return NOTHING;
         const read = readBranchRoom(registry, meta.roomName);
         reads.current.set(id, read);
-        const room = await read.synced();
-        const { targets } = await chatChangeTargets(queryClient, draft, room.document, threadId);
-        // Cancelled while preparing: nothing is written.
-        if (!histories.current.has(id)) return NOTHING;
-        // The hint misses this file: nothing of this chat's to discard, so the row never flips.
-        if (targets.length === 0) return NOTHING;
-        return discardInRoom(
-          room.document,
-          targets.map((target) => target.id),
-        );
+        // The room is checked again after each await: a session that retired meanwhile is not written into.
+        return withLiveRoom(read, async (room) => {
+          const { targets } = await chatChangeTargets(queryClient, draft, room.document, threadId);
+          // Cancelled while preparing: nothing is written.
+          if (!histories.current.has(id)) return NOTHING;
+          // The hint misses this file: nothing of this chat's to discard, so the row never flips.
+          if (targets.length === 0) return NOTHING;
+          read.assertLive(room);
+          const result = discardInRoom(
+            room.document,
+            targets.map((target) => target.id),
+          );
+          if (result) bindToSession(id, read, room);
+          return result;
+        });
       })().catch(() => null);
       histories.current.set(id, done);
       void done.then((result) => {
@@ -193,12 +233,16 @@ export function useHeadlessDiscards(
           setEntries((held) => held.filter((entry) => entry.id !== id));
           return;
         }
-        const phase: DiscardPhase = result ? "discarded" : "failed";
-        if (result) histories.current.set(id, result);
+        // The room retired between the edit and this settling: the Discard is not in the current room.
+        const stale = result !== null && reads.current.get(id)?.usable() === null;
+        if (stale) result.release();
+        const phase: DiscardPhase = result && !stale ? "discarded" : "failed";
+        if (result && !stale) histories.current.set(id, result);
+        else histories.current.delete(id);
         setEntries((held) => held.map((entry) => (entry.id === id ? { ...entry, phase } : entry)));
       });
     },
-    [projectId, workId, queryClient, registry, release, setEntries],
+    [projectId, workId, queryClient, registry, release, setEntries, bindToSession],
   );
 
   const undo = useCallback(

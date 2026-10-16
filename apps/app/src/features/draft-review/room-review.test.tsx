@@ -14,9 +14,12 @@ import * as Y from "yjs";
 import { draftAttributionQueryOptions } from "@/client/query/useDraftAttribution";
 import { draftMetaQueryOptions } from "@/client/query/useDraftMeta";
 import { BranchRoomPool } from "@/core/editor/branch-room-pool";
+import { readBranchRoom } from "@/core/editor/branch-room-read";
 import { DocumentSessionTeardownOwner } from "@/core/editor/document-session-teardown-owner";
 import { seedReviewBase } from "@/test-support/inline-review-editor";
 import { settleReact, withReactRoot } from "@/test-support/react-dom-harness";
+import { projectRoom } from "./review-frame";
+import { reviewChanges } from "./review-model";
 import { retainReviewRuntime, reviewRuntimeOf } from "./review-runtime";
 import { useDraftView } from "./useDraftView";
 import { useHeadlessDiscards } from "./useHeadlessDiscards";
@@ -33,7 +36,7 @@ const file = { documentId: "doc", draft: { itemKey: "draft:doc" } } as never;
 const text = (doc: Y.Doc) =>
   (doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).get(0) as Y.XmlElement).toString();
 
-function fixture() {
+function seededDoc() {
   const doc = new Y.Doc({ gc: false });
   const paragraph = new Y.XmlElement("paragraph");
   const run = new Y.XmlText();
@@ -41,24 +44,51 @@ function fixture() {
   run.insert(0, "green");
   doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).insert(0, [paragraph]);
   seedReviewBase(doc, ["red"]);
-  const room = {
-    document: doc,
-    getSnapshot: () => ({ status: "synced" }) as never,
-    subscribe: () => () => {},
-    whenSynced: () => Promise.resolve(),
+  return doc;
+}
+
+/** A session stand-in: tells a subscriber its current snapshot at once, as a real one does, and can be reset. */
+function fakeRoom(options: { synced?: Promise<void>; destroy?: () => Promise<void> } = {}) {
+  const listeners = new Set<(snapshot: unknown) => void>();
+  let snapshot: Record<string, unknown> = { status: "synced" };
+  // Like a real session, a pending sync ends when destruction begins.
+  let ended!: () => void;
+  const lifecycle = new Promise<void>((resolve) => (ended = resolve));
+  return {
+    document: seededDoc(),
+    getSnapshot: () => snapshot as never,
+    subscribe: (listener: (snapshot: unknown) => void) => {
+      listeners.add(listener);
+      listener(snapshot);
+      return () => listeners.delete(listener);
+    },
+    whenSynced: () => Promise.race([options.synced ?? Promise.resolve(), lifecycle]),
     hasUnacknowledgedEdits: () => false,
-    destroy: vi.fn(async () => {}),
+    destroy: vi.fn(() => {
+      ended();
+      return (options.destroy ?? (async () => {}))();
+    }),
+    refuse() {
+      snapshot = { status: "synced", connectionState: { kind: "reset", disposition: "refused" } };
+      for (const listener of [...listeners]) listener(snapshot);
+    },
   };
+}
+
+function fixture(rooms: ReturnType<typeof fakeRoom>[] = [fakeRoom()]) {
+  const doc = rooms[0].document;
+  const room = rooms[0];
   // The real pool: a room lives while any owner retains it and is destroyed after the grace once none does.
   const pool = new BranchRoomPool({
     teardownGraceMs: 1,
     teardownOwner: new DocumentSessionTeardownOwner(() => new Error("unavailable")),
-    openSession: () => room as never,
+    openSession: () => rooms.shift() as never,
   });
   registry.port = {
-    retainBranchRooms: (owner: string, rooms: readonly string[]) => pool.retain(owner, rooms),
+    retainBranchRooms: (owner: string, keys: readonly string[]) => pool.retain(owner, keys),
     releaseBranchRooms: (owner: string) => pool.release(owner),
     getBranchRoom: (roomKey: string) => pool.get(roomKey),
+    rebuildBranchRoom: (roomKey: string) => pool.rebuild(roomKey),
   };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   client.setQueryData(draftMetaQueryOptions(draft).queryKey, {
@@ -137,5 +167,59 @@ it("a row another surface's runtime made ready is actionable only once its room 
     pool.invalidate();
     client.clear();
     doc.destroy();
+  }
+});
+
+it("a reader joins a room's rebuild instead of throwing, and a pending read or landed Discard never outlives its refused session", async () => {
+  let finishTeardown!: () => void;
+  const held = new Promise<void>((resolve) => (finishTeardown = resolve));
+  let firstSynced!: () => void;
+  const pending = new Promise<void>((resolve) => (firstSynced = resolve));
+  const first = fakeRoom({ synced: pending, destroy: () => held });
+  const second = fakeRoom();
+  const { client, pool } = fixture([first, second]);
+  const reader = readBranchRoom(registry.port as never, ROOM);
+  const waiting = reader.synced();
+  let discards!: ReturnType<typeof useHeadlessDiscards>;
+  function Probe() {
+    discards = useHeadlessDiscards("p", "w");
+    return null;
+  }
+  try {
+    await withReactRoot(
+      <QueryClientProvider client={client}>
+        <Probe />
+      </QueryClientProvider>,
+      async () => {
+        // The server refuses the first session's edits while its teardown is held open.
+        first.refuse();
+        expect(reader.state().kind).toBe("rebuilding");
+        // Another reader arriving during the quarantine joins the rebuild; it does not throw.
+        const joiner = readBranchRoom(registry.port as never, ROOM);
+        expect(joiner.state().kind).toBe("rebuilding");
+        finishTeardown();
+        // The pending read resolves with the replacement, never the retired session.
+        await expect(waiting).resolves.toBe(second);
+        await expect(joiner.synced()).resolves.toBe(second);
+        // The retired transport is destroyed once, though every reader asked.
+        expect(first.destroy).toHaveBeenCalledTimes(1);
+        firstSynced();
+
+        // A landed Discard is the history of its session: once refused, it reads failed with no Undo.
+        const file = { documentId: "doc", draft: { itemKey: "draft:doc" } } as never;
+        const change = reviewChanges(projectRoom(second.document))[0];
+        await act(async () => discards.discardChange(file, change, 0, ROOM));
+        expect(discards.entries[0].phase).toBe("discarded");
+        second.refuse();
+        await settleReact(() => expect(discards.entries[0].phase).toBe("failed"));
+        act(() => discards.undo(discards.entries[0].id));
+        expect(text(second.document)).toContain("red");
+        joiner.dispose();
+      },
+    );
+  } finally {
+    reader.dispose();
+    pool.invalidate();
+    client.clear();
   }
 });

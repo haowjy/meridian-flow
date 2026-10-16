@@ -9,7 +9,11 @@ import type * as Y from "yjs";
 import type { ChatApplyPlan } from "@/client/query/draft-command-executor";
 import { draftAttributionQueryOptions } from "@/client/query/useDraftAttribution";
 import { draftMetaQueryOptions } from "@/client/query/useDraftMeta";
-import { type BranchRoomRegistry, readBranchRoom } from "@/core/editor/branch-room-read";
+import {
+  type BranchRoomRegistry,
+  readBranchRoom,
+  withLiveRoom,
+} from "@/core/editor/branch-room-read";
 import { classifyRoom } from "./review-attribution";
 import { projectRoom } from "./review-frame";
 import { whenAcknowledged } from "./review-runtime";
@@ -46,25 +50,28 @@ export async function acquireChatChanges(
   const read = readBranchRoom(registry, meta.roomName);
   const release = read.dispose;
   try {
-    const session = await read.synced();
-    const { frame, targets } = await chatChangeTargets(
-      queryClient,
-      draft,
-      session.document,
-      threadId,
-    );
-    if (targets.length === 0) {
-      release();
-      return null;
-    }
-    return {
-      targets,
-      prepared: {
-        snapshot: encodeSnapshot(frame.snapshot),
-        synced: () => whenAcknowledged(session),
-        release,
-      },
-    };
+    // The attribution fetch is an await: the room is checked again before its frame is read.
+    return await withLiveRoom(read, async (session): Promise<ChatApplyPlan | null> => {
+      const { frame, targets } = await chatChangeTargets(
+        queryClient,
+        draft,
+        session.document,
+        threadId,
+      );
+      read.assertLive(session);
+      if (targets.length === 0) {
+        release();
+        return null;
+      }
+      return {
+        targets,
+        prepared: {
+          snapshot: encodeSnapshot(frame.snapshot),
+          synced: () => whenAcknowledged(session),
+          release,
+        },
+      };
+    });
   } catch (error) {
     release();
     throw error;

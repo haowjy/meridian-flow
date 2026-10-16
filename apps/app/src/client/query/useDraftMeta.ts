@@ -57,7 +57,7 @@ export function draftMetaQueryOptions(draft: DraftMetaRef) {
 export function useDraftMeta(
   draft: Partial<DraftMetaRef> | null,
   options?: { enabled?: boolean },
-): { meta: DraftMeta | null; failed: boolean; retry: () => void } {
+): { meta: DraftMeta | null; failed: boolean; fetching: boolean; retry: () => void } {
   const ref = {
     projectId: draft?.projectId ?? "",
     workId: draft?.workId ?? "",
@@ -67,8 +67,11 @@ export function useDraftMeta(
   const enabled =
     (options?.enabled ?? true) &&
     Boolean(ref.projectId && ref.workId && ref.documentId && ref.itemKey);
-  const { data, isError, refetch } = useQuery({ ...draftMetaQueryOptions(ref), enabled });
-  return { meta: data ?? null, failed: isError, retry: () => void refetch() };
+  const { data, isError, isFetching, refetch } = useQuery({
+    ...draftMetaQueryOptions(ref),
+    enabled,
+  });
+  return { meta: data ?? null, failed: isError, fetching: isFetching, retry: () => void refetch() };
 }
 
 /**

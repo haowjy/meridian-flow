@@ -78,18 +78,23 @@ export function useReviewRoomOwner({
   ]);
 
   // Closed or replaced rooms ask for the draft's metadata again; a schema reset keeps its session for the notice.
-  const session = useBranchRoom(
+  const room = useBranchRoom(
     roomName && documentId && itemKey ? roomName : null,
     () => void queryClient.invalidateQueries({ queryKey: draftMetaQueryOptions(draft).queryKey }),
   );
+  // A room that could not be opened fails the review like a failed metadata read; its Retry asks the room again.
+  const roomFailed = room.state === "error";
+  useEffect(() => {
+    if (!review) return;
+    if (roomFailed) dispatch({ type: "roomFailed", documentId, itemKey });
+  }, [review !== null, roomFailed, documentId, itemKey, dispatch]);
+  useEffect(() => {
+    if (!retry && room.state === "error") room.retry();
+  }, [retry]);
   return {
-    session,
+    session: room.session,
     roomName,
-    inputEligible:
-      session !== null &&
-      session.getSnapshot().connectionState?.kind !== "reset" &&
-      review !== null &&
-      !review.roomError,
+    inputEligible: room.usable !== null && review !== null && !review.roomError,
   } as const;
 }
 

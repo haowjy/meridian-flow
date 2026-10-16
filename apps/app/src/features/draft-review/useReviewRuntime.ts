@@ -67,17 +67,25 @@ export function useRoomReview(
   { enabled }: { enabled: boolean },
 ): RoomReview {
   const active = enabled && draft !== null;
-  const { meta, failed, retry } = useDraftMeta(draft, { enabled: active });
+  const { meta, failed, fetching, retry } = useDraftMeta(draft, { enabled: active });
   const roomName = metaRoomName(meta);
-  const session = useBranchRoom(active ? roomName : null, retry);
-  useReviewRuntime(active ? draft : null, session);
+  const room = useBranchRoom(active ? roomName : null, retry);
+  const session = room.usable;
+  useReviewRuntime(active ? draft : null, room.session);
+  // A room that failed to open, or that the metadata still names after it ended, is a recoverable error:
+  // never an endless first load. Once the refresh settles with the same room, only Retry reopens it.
+  const roomFault = room.state === "error" || (room.state === "unavailable" && !fetching);
+  const retryAll = () => {
+    room.retry();
+    retry();
+  };
   const { ready } = useReviewState(active ? draft : null);
 
   const status: RoomReviewStatus = !active
     ? "idle"
     : meta?.kind === "gone"
       ? "gone"
-      : failed
+      : failed || roomFault
         ? "error"
         : meta?.kind === "branchless" || (ready && session)
           ? "ready"
@@ -86,7 +94,7 @@ export function useRoomReview(
   const common = {
     wholeItem: meta !== null && meta.kind !== "gone" && meta.wholeItem,
     branchless,
-    retry: failed ? retry : undefined,
+    retry: failed || roomFault ? retryAll : undefined,
   };
   if (status !== "ready") return { ...common, status, roomName: null };
   return roomName
