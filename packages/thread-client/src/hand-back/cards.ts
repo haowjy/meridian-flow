@@ -4,6 +4,7 @@
  * nothing; they depend on the commands, never on rows a hand-back may already have removed.
  */
 import type { SendNowRequest } from "@meridian/contracts/threads";
+import { failedStopIsMoot } from "../run-state/fold-messages";
 import type { RunStateView } from "../run-state/run-state-view";
 import type { UnresolvedHandBack } from "./operation";
 
@@ -54,6 +55,14 @@ export function handBackCards(
       });
       continue;
     }
+    if (
+      entry.commandKind === "stop" &&
+      failedStopIsMoot(view, {
+        targetExecutionId: entry.targetExecutionId,
+        candidates: entry.count,
+      })
+    )
+      continue;
     const refused = entry.status === "refused";
     cards.push({
       key: entry.requestId,
