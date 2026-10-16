@@ -15,6 +15,7 @@ import {
   stringOption,
 } from "../../core/command";
 import type { Session } from "../../core/session";
+import { jsonResponse } from "../../core/session";
 import { createObserver, type Observer } from "./observe";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
 import { type Claim, classifyDeadline, finishResult, terminalResult } from "./result";
@@ -65,7 +66,7 @@ export const threadTailCommand: CommandSpec = {
         (
           await session.request("GET", apiThreadSnapshotPath(threadId), undefined, {
             timeoutMs: deadlineAt - Date.now(),
-            parse: threadSnapshotSchema.safeParse,
+            decode: jsonResponse(threadSnapshotSchema),
           })
         ).liveState.resumeAfterSeq;
       await followThread({

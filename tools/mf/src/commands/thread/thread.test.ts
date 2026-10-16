@@ -545,7 +545,10 @@ describe("thread send", () => {
     expect(wire.requestsOf("admit")).toHaveLength(1);
   });
 
-  it("a proven send does not wait on an abandoned read", async () => {
+  it.each([
+    "delayed",
+    "empty",
+  ] as const)("keeps a proven send when its diagnostic read is %s", async (fault) => {
     // The first read joins with the reply running; the next shows it complete and proves the claim
     // while the stream has not yet ended the turn. Then a frame makes the sync start one more read,
     // which the harness holds for 5 s.
@@ -574,7 +577,7 @@ describe("thread send", () => {
       await wire.until(() => wire.reads >= 2);
       // Let the proving answer leave, so the held fault is for the read after it.
       await new Promise((resolve) => setTimeout(resolve, 50));
-      wire.fail("snapshot", { delayMs: 5000 });
+      wire.fail("snapshot", fault === "delayed" ? { delayMs: 5000 } : { status: 204, text: "" });
       wire.publish(frames.finished("a1"));
     });
     const started = Date.now();
@@ -586,41 +589,11 @@ describe("thread send", () => {
       finalText: "Hello there",
     });
     // The command ended with a read still open: the harness saw the client close it.
-    await wire.until(() => wire.aborted.some((request) => request.kind === "snapshot"));
-  });
-
-  it("keeps a proven reply when its diagnostic snapshot has an empty body", async () => {
-    wire.snapshot = (read) =>
-      snapshotOf({
-        seq: read === 1 ? 0 : wire.head,
-        turns: [
-          userTurn("u1", 1, "hold", "a1"),
-          replyTurn("a1", 2, {
-            prevTurnId: "u1",
-            ...(read === 1 ? { status: "streaming" } : { text: "Hello there" }),
-          }),
-        ],
-        ...(read === 1
-          ? { record: { execution: { executionId: "exec-a1", currentTurnId: "a1" } } }
-          : {}),
-      });
-    wire.play(async () => {
-      await wire.until(() => wire.subscriptions >= 1);
-      wire.publish(frames.started("a1"));
-      publishRecord(wire);
-      await wire.until(() => wire.reads >= 2);
-      // Deliver the proving answer before the fault for the diagnostic read.
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      wire.fail("snapshot", { status: 204, text: "" });
-      wire.publish(frames.finished("a1"));
-    });
-    const result = await send("hold", "--timeout", "10s", "--json");
-    expect(result.code).toBe(EXIT.ok);
-    expect(lastRecord(result.stdout)).toMatchObject({
-      outcome: "complete",
-      finalText: "Hello there",
-      observationIncomplete: true,
-    });
+    if (fault === "delayed") {
+      await wire.until(() => wire.aborted.some((request) => request.kind === "snapshot"));
+    } else {
+      expect(lastRecord(result.stdout)).toMatchObject({ observationIncomplete: true });
+    }
     expect(result.stderr).toBe("");
   });
 

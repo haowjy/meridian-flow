@@ -17,6 +17,7 @@ import {
   requirePositional,
   stringOption,
 } from "../../core/command";
+import { unknownJsonResponse } from "../../core/session";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
 
 type ContextView = "readable" | "raw" | "summary";
@@ -68,6 +69,8 @@ export const threadContextCommand: CommandSpec = {
         gatewayCallId,
         latest: !narrowed,
       }),
+      undefined,
+      { decode: unknownJsonResponse },
     )) as ModelRequestDebugListResponse;
     const views = deriveModelRequestDebugViews(response.records).filter(
       ({ record }) =>
