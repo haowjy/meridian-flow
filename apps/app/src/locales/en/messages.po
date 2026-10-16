@@ -171,11 +171,6 @@ msgstr "{0} is not an image. Choose a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 msgid "{0} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 msgstr "{0} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 
-#. placeholder {0}: destination.name
-#: src/features/project/context/ContextViewer.tsx
-#~ msgid "{0} isn't in {section}."
-#~ msgstr "{0} isn't in {section}."
-
 #. placeholder {0}: children.length
 #: src/features/chat/RunningSubagentsStrip.tsx
 msgid "{0} running"
@@ -249,10 +244,6 @@ msgstr "{count, plural, one {# paragraph removed} other {# paragraphs removed}}"
 #: src/features/draft-review/ReviewStepper.tsx
 msgid "{count} changes"
 msgstr "{count} changes"
-
-#: src/features/chat/ChatUploadsMenu.tsx
-#~ msgid "{count} files"
-#~ msgstr "{count} files"
 
 #: src/features/chat/chat-upload-display.ts
 msgid "{days, plural, one {# day ago} other {# days ago}}"
@@ -446,10 +437,6 @@ msgstr "A folder named {name} already exists in this location."
 #: src/core/editor/images/ImageIngressExtension.ts
 msgid "A picture cannot go there."
 msgstr "A picture cannot go there."
-
-#: src/features/chat/ChatUploadsMenu.tsx
-msgid "A sent message used this file, so it can’t be deleted."
-msgstr "A sent message used this file, so it can’t be deleted."
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "A table keeps at least one column."
@@ -1579,10 +1566,6 @@ msgstr "Couldn't send."
 #: src/features/chat/derivation/useHandoffBrief.ts
 msgid "Couldn't start a new brief. Try again."
 msgstr "Couldn't start a new brief. Try again."
-
-#: src/features/chat/ErrorBlock.tsx
-#~ msgid "Couldn't start the retry."
-#~ msgstr "Couldn't start the retry."
 
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/useReplyRetry.ts
@@ -2788,10 +2771,6 @@ msgstr "Names cannot be empty"
 msgid "Names cannot begin with '@' or '~'. Those prefixes are reserved for authority qualifiers"
 msgstr "Names cannot begin with '@' or '~'. Those prefixes are reserved for authority qualifiers"
 
-#: src/features/project/context/context-entry-name.ts
-#~ msgid "Names cannot begin with '@'. That prefix is reserved for authority qualifiers"
-#~ msgstr "Names cannot begin with '@'. That prefix is reserved for authority qualifiers"
-
 #. placeholder {0}: error.character ?? ""
 #: src/features/project/context/context-entry-name.ts
 msgid "Names cannot contain “{0}”"
@@ -3270,10 +3249,6 @@ msgstr "Purchase confirmed."
 msgid "Put the caret in a table first."
 msgstr "Put the caret in a table first."
 
-#: src/features/chat/UserTurn.tsx
-#~ msgid "Queued"
-#~ msgstr "Queued"
-
 #: src/features/chat/thread-controls/QueuedControlRows.tsx
 msgid "Queued commands"
 msgstr "Queued commands"
@@ -3395,10 +3370,6 @@ msgstr "Reference a file"
 #: src/components/app/ConnectionBanner.tsx
 msgid "Refresh"
 msgstr "Refresh"
-
-#: src/features/project/context/ContextViewer.tsx
-#~ msgid "Refresh to try again."
-#~ msgstr "Refresh to try again."
 
 #: src/features/billing/UsageCard.tsx
 msgid "remaining"
@@ -4234,10 +4205,6 @@ msgstr "The AI asked you a question"
 msgid "The AI provider turned this request down."
 msgstr "The AI provider turned this request down."
 
-#: src/features/project/context/ContextViewer.tsx
-#~ msgid "The assistant referred to this document, but it isn't there now. It may have been renamed, deleted, or never finished being created."
-#~ msgstr "The assistant referred to this document, but it isn't there now. It may have been renamed, deleted, or never finished being created."
-
 #: src/features/editor/surfaces/objects/verb-feedback.tsx
 msgid "The browser blocked the clipboard. Check this site's permissions."
 msgstr "The browser blocked the clipboard. Check this site's permissions."
@@ -4471,10 +4438,6 @@ msgstr "This compaction already started."
 msgid "This conversation couldn't be compacted."
 msgstr "This conversation couldn't be compacted."
 
-#: src/features/project/context/ContextViewer.tsx
-#~ msgid "This destination couldn't load."
-#~ msgstr "This destination couldn't load."
-
 #: src/features/project/routing/ProjectRouteBoundary.tsx
 msgid "This destination couldn’t load."
 msgstr "This destination couldn’t load."
@@ -4527,10 +4490,6 @@ msgstr "This document was deleted from your project after the draft started. Che
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "This draft is no longer here. It may have been applied or discarded elsewhere."
 msgstr "This draft is no longer here. It may have been applied or discarded elsewhere."
-
-#: src/features/chat/ChatUploadsMenu.tsx
-msgid "This file changed, so it wasn’t deleted. Try again."
-msgstr "This file changed, so it wasn’t deleted. Try again."
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "This file holds code only."
@@ -4913,10 +4872,6 @@ msgstr "Viewing chat resources is not available yet. These files remain availabl
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "Wait for this response to finish, then try again."
 msgstr "Wait for this response to finish, then try again."
-
-#: src/features/chat/UserTurn.tsx
-#~ msgid "Waiting for usage"
-#~ msgstr "Waiting for usage"
 
 #: src/features/draft-review/DraftImagePreview.tsx
 msgid "Waiting for your review"

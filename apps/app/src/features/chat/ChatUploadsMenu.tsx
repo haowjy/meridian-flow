@@ -78,15 +78,18 @@ function UploadsDropdown({
   const densityPopoverCollisionProps = useDensityPopoverCollisionProps();
   const now = useThreadStore((state) => state.now);
   const [open, setOpen] = useState(false);
-  // Rows the writer deleted stay gone at once; a refused delete brings its row back with the reason.
+  // Rows the writer deleted stay gone at once. A refused delete brings its row back: a file a sent
+  // message used loses its delete action (the catalog catches up), a failed one says so in the
+  // row's own second line.
   const [deleted, setDeleted] = useState<ReadonlySet<string>>(new Set());
-  const [refusals, setRefusals] = useState<ReadonlyMap<string, string>>(new Map());
+  const [used, setUsed] = useState<ReadonlySet<string>>(new Set());
+  const [failed, setFailed] = useState<ReadonlySet<string>>(new Set());
   const contentRef = useRef<HTMLDivElement>(null);
   const focusHandoff = useRef(false);
 
-  // A refusal belongs to one opening of the menu.
+  // A failure belongs to one opening of the menu.
   useEffect(() => {
-    if (open) setRefusals(new Map());
+    if (open) setFailed(new Set());
   }, [open]);
 
   const rows = uploads.filter((upload) => !deleted.has(upload.documentId));
@@ -106,13 +109,11 @@ function UploadsDropdown({
     const { deletion } = upload;
     if (!deletion) return;
     setDeleted((current) => new Set(current).add(upload.documentId));
-    const bringBack = (reason: string) => {
-      setDeleted((current) => {
-        const next = new Set(current);
-        next.delete(upload.documentId);
-        return next;
-      });
-      setRefusals((current) => new Map(current).set(upload.documentId, reason));
+    setFailed((current) => without(current, upload.documentId));
+    const bringBack = (reason: "used" | "failed") => {
+      setDeleted((current) => without(current, upload.documentId));
+      const mark = reason === "used" ? setUsed : setFailed;
+      mark((current) => new Set(current).add(upload.documentId));
     };
     void deleteChatUpload(
       { projectId, chatId },
@@ -129,13 +130,9 @@ function UploadsDropdown({
           removeFromChatComposer(threadId, upload.documentId);
           return;
         }
-        bringBack(
-          result.kind === "already_used"
-            ? t`A sent message used this file, so it can’t be deleted.`
-            : t`This file changed, so it wasn’t deleted. Try again.`,
-        );
+        bringBack(result.kind === "already_used" ? "used" : "failed");
       },
-      () => bringBack(t`Couldn’t delete this file. Try again.`),
+      () => bringBack("failed"),
     );
   };
 
@@ -226,7 +223,8 @@ function UploadsDropdown({
                   key={upload.documentId}
                   upload={upload}
                   now={now}
-                  refusal={refusals.get(upload.documentId) ?? null}
+                  canDelete={upload.deletion !== null && !used.has(upload.documentId)}
+                  failed={failed.has(upload.documentId)}
                   onInsert={() => insert(upload)}
                   onOpen={
                     openResource
@@ -253,14 +251,16 @@ function UploadsDropdown({
 function UploadRow({
   upload,
   now,
-  refusal,
+  canDelete,
+  failed,
   onInsert,
   onOpen,
   onDelete,
 }: {
   upload: ChatUpload;
   now: number;
-  refusal: string | null;
+  canDelete: boolean;
+  failed: boolean;
   onInsert: () => void;
   /** Null where this host has no viewer for an upload. */
   onOpen: (() => void) | null;
@@ -268,9 +268,9 @@ function UploadRow({
 }) {
   const Icon = iconFor(upload);
   const name = upload.name;
-  const errorId = `upload-error-${upload.documentId}`;
+  const failure = failed ? t`Couldn’t delete this file. Try again.` : null;
   return (
-    <li data-upload-item className="flex flex-col">
+    <li data-upload-item className="relative flex flex-col">
       <div
         className={cn(
           dropdownRowContainerClass,
@@ -282,7 +282,6 @@ function UploadRow({
           type="button"
           onClick={onInsert}
           aria-label={t`Add ${name} to your message`}
-          aria-describedby={refusal ? errorId : undefined}
           className={cn(
             dropdownRowVariants({ kind: "descriptive", interactive: false }),
             "h-auto min-h-10 flex-1 py-1.5",
@@ -291,13 +290,19 @@ function UploadRow({
           <Icon aria-hidden className="text-muted-foreground" />
           <span className="flex min-w-0 flex-1 flex-col">
             <span className="truncate">{upload.name}</span>
-            <span className="flex min-w-0 justify-between gap-3 text-meta text-ink-subtle">
-              <span className="truncate">{uploadTypeLabel(upload.fileType)}</span>
-              <span className="shrink-0 tabular-nums">{attachedAgo(upload.attachedAt, now)}</span>
-            </span>
+            {failure ? (
+              <span aria-hidden="true" className="truncate text-meta text-destructive">
+                {failure}
+              </span>
+            ) : (
+              <span className="flex min-w-0 justify-between gap-3 text-meta text-ink-subtle">
+                <span className="truncate">{uploadTypeLabel(upload.fileType)}</span>
+                <span className="shrink-0 tabular-nums">{attachedAgo(upload.attachedAt, now)}</span>
+              </span>
+            )}
           </span>
         </button>
-        {upload.deletion === null ? null : (
+        {canDelete ? (
           <IconButton
             size="xs"
             aria-label={t`Delete ${name}`}
@@ -307,7 +312,7 @@ function UploadRow({
           >
             <Trash2 className="size-3.5" aria-hidden />
           </IconButton>
-        )}
+        ) : null}
         {onOpen ? (
           <IconButton
             size="xs"
@@ -320,13 +325,18 @@ function UploadRow({
           </IconButton>
         ) : null}
       </div>
-      {refusal ? (
-        <p id={errorId} role="alert" className="px-2 pt-1 pb-0.5 text-meta text-destructive">
-          {refusal}
-        </p>
-      ) : null}
+      {/* The failure replaces the row's second line; this announces it without adding layout. */}
+      <span role="status" className="sr-only">
+        {failure}
+      </span>
     </li>
   );
+}
+
+function without(set: ReadonlySet<string>, id: string): ReadonlySet<string> {
+  const next = new Set(set);
+  next.delete(id);
+  return next;
 }
 
 function iconFor(upload: ChatUpload) {
