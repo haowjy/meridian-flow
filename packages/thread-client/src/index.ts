@@ -36,7 +36,6 @@ export * from "./run-state";
 export type * from "./socket/socket-ports";
 export { ThreadSocketClient, type ThreadSocketClientOptions } from "./socket/thread-socket-client";
 export type * from "./socket/thread-transport";
-export { isDurableBlockEvent, isWellFormedDurableBlockEvent } from "./turns/reduce-turn-event";
 export { baseTurnFields } from "./turns/state-helpers";
 export {
   type AwaitingDivider,
