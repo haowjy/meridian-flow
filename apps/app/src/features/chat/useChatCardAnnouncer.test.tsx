@@ -60,6 +60,12 @@ describe("useChatCardAnnouncer", () => {
     expect(alert).toBe("Couldn't move your queued message to the message box.");
     await view.show([]);
     expect(alert).toBe("");
+    await view.show([card("a", "reply-failed"), card("b", "retry-lost")]);
+    expect(alert).toBe("This response failed. Couldn't start the retry.");
+    await view.show([card("b", "retry-lost")]);
+    expect(alert).toBe("Couldn't start the retry.");
+    await view.show([]);
+    expect(alert).toBe("");
     // An unrelated alert is left alone when another card ends.
     await view.show([card("f", "reply-failed")]);
     await act(async () => announceError("Something else."));
