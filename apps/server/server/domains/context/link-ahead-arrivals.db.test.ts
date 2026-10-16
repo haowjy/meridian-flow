@@ -218,7 +218,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
         ["delete-target.toml", "application/toml"],
         ["delete-target.png", "image/png"],
       ] as const) {
-        const deletedRef = await register(`uploads://@/c1/${filename}`);
+        const deletedRef = await register(`uploads://@c1/${filename}`);
         const bytes = new TextEncoder().encode(`Upload ${filename}`);
         const uploadOnce = async () => {
           const uploaded = await intake.intake({

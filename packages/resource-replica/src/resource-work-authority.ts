@@ -70,7 +70,7 @@ export function resourceContextAuthority(
   return owner.workSlug === null ? { kind: "none" } : { kind: "work", workSlug: owner.workSlug };
 }
 
-/** The authority's spelling in a URI: nothing for contextual, `@arc/`, `@/` or `@/c12/`. */
+/** The authority's spelling in a URI: nothing for contextual, `@arc/`, `@/`, `@c12/`. */
 export function resourceUriQualifier(authority: ResourceContextAuthority): string {
   switch (authority.kind) {
     case "contextual":
@@ -80,9 +80,9 @@ export function resourceUriQualifier(authority: ResourceContextAuthority): strin
     case "work":
       return `@${authority.workSlug}/`;
     case "lineage":
-      return `@/${authority.rootThreadRef}/`;
+      return `@${authority.rootThreadRef}/`;
     case "chat":
-      return authority.chatRef === null ? "" : `@/${authority.chatRef}/`;
+      return authority.chatRef === null ? "" : `@${authority.chatRef}/`;
   }
 }
 

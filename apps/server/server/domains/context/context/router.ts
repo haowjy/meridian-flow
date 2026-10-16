@@ -61,7 +61,7 @@ export interface ContextPortRouterDeps {
   resolveDestinationFolder?: (folderId: string) => Promise<string | null>;
   /** The document a device's create id was forwarded to (a join), within this project. */
   resolveForward?: (documentId: string) => Promise<string | null>;
-  /** A chat's uploads by handle (`uploads://@/c12/`): found, trashed, or no such chat. */
+  /** A chat's uploads by handle (`uploads://@c12/`): found, trashed, or no such chat. */
   resolveChatSource?: (
     ref: string,
   ) => Promise<
@@ -422,8 +422,8 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
           code: "invalid_uri",
           uri,
           reason: owner
-            ? `This chat's notes are at scratch://@/${owner.rootThreadRef}/. Use its first chat handle, or scratch://x in that chat.`
-            : "Scratch requires a first chat handle. Use scratch://x in a chat, or scratch://@/c12/x. List chats with ls scratch://@/.",
+            ? `This chat's notes are at scratch://@${owner.rootThreadRef}/. Use its first chat handle, or scratch://x in that chat.`
+            : "Scratch requires a first chat handle. Use scratch://x in a chat, or scratch://@c12/x. List chats with ls scratch://@/.",
         });
       }
       adapter = lineageSource.adapter;
@@ -451,7 +451,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
           code: "invalid_uri",
           uri: parsed.value.normalized,
           reason:
-            "Uploads belong to a chat, not a Work. Use uploads://x for this chat's files, or uploads://@/c12/x for another chat's.",
+            "Uploads belong to a chat, not a Work. Use uploads://x for this chat's files, or uploads://@c12/x for another chat's.",
         });
       }
       try {
@@ -474,20 +474,20 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         code: "invalid_uri",
         uri,
         reason:
-          "Uploads belong to a chat. Use uploads://x for this chat's files, or uploads://@/c12/x for another chat's.",
+          "Uploads belong to a chat. Use uploads://x for this chat's files, or uploads://@c12/x for another chat's.",
       });
     if (scheme === "uploads" && authority.kind === "contextual" && !adapter)
       return Err({
         code: "invalid_uri",
         uri,
-        reason: "Bare uploads:// needs a chat. Use uploads://@/c12/x to name one.",
+        reason: "Bare uploads:// needs a chat. Use uploads://@c12/x to name one.",
       });
     if (scheme === "scratch" && authority.kind === "contextual" && !adapter)
       return Err({
         code: "invalid_uri",
         uri,
         reason:
-          "Bare scratch:// requires a chat or named Work. Use scratch://@/c12/x for another lineage.",
+          "Bare scratch:// requires a chat or named Work. Use scratch://@c12/x for another lineage.",
       });
     const canonical = toCanonical(scheme, path, canonicalAuthority);
 
@@ -913,7 +913,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
           uri,
           entries: ((await deps.listLineages?.()) ?? []).map((lineage) => ({
             kind: "directory" as const,
-            uri: `scratch://@/${lineage.rootThreadRef}/`,
+            uri: `scratch://@${lineage.rootThreadRef}/`,
             title: lineage.title,
             readonly: false,
           })),

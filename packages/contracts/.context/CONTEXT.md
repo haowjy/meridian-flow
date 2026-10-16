@@ -46,7 +46,7 @@ contract owns a rule and where it is consumed.
 `context-uri.ts` owns scheme classification and address syntax. Draft-mode
 Works own manuscript, KB, user, and unfiled content; Scratch and uploads are
 not drafted. A leading `@` in each path segment is reserved for Work authority;
-other `@` characters are valid. `uploads://@/c15/x` names a chat's upload
+other `@` characters are valid. `uploads://@c15/x` names a chat's upload
 (`{ kind: "chat" }`); `@/` without a handle, `@slug` and a subagent handle
 (`p…`) are refused for uploads. Bare `uploads://x` and `scratch://x` remain
 contextual.

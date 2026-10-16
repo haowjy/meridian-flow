@@ -468,7 +468,7 @@ async function inheritEditingDocuments(
 
 /** Tells a derived chat where its source chat's files are and how to read its history. */
 export function continuesFromLine(sourceRef: string): string {
-  return `This chat continues from ${sourceRef}. Its uploads are at uploads://@/${sourceRef}/, and its history is readable with thread_history.`;
+  return `This chat continues from ${sourceRef}. Its uploads are at uploads://@${sourceRef}/, and its history is readable with thread_history.`;
 }
 
 async function seedSystemTurn(deps: ThreadAgentSwapDeps, thread: Thread, text: string) {

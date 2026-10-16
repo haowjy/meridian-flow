@@ -30,7 +30,7 @@ export interface ThreadContextResolution {
   scratchOwner?: import("./scratch-owner.js").ScratchOwner;
   /** The chat whose uploads this thread's bare `uploads://` names; null for an unknown chat. */
   uploadsOwner: UploadsOwner | null;
-  /** Finds another chat by its handle, for `uploads://@/c12/` addresses. */
+  /** Finds another chat by its handle, for `uploads://@c12/` addresses. */
   uploadChats?: ChatUploadsOwners;
 }
 

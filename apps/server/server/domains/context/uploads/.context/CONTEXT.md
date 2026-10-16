@@ -20,7 +20,7 @@ Filename validation runs after upload normalization and before reservation or
 storage. It uses the shared Context entry-name validator and returns typed
 client errors; intake does not relax ContextFS naming rules.
 
-A chat's uploads serialize as `uploads://@/c12/name`; bare `uploads://name` is
+A chat's uploads serialize as `uploads://@c12/name`; bare `uploads://name` is
 the asking chat's. The Work and No Work own none, and `uploads://@/name`
 without a handle, `uploads://@slug/`, and a subagent handle (`p…`) are errors.
 A New-chat upload has no address until its chat exists. A fork or handoff owns

@@ -8,7 +8,7 @@ describe("a chat door's catalog address", () => {
         { scheme: "scratch", path: "/duel/beats.md", workId: null, rootThreadId: "root" },
         { ownerRef: "c2" },
       ),
-    ).toBe("scratch://@/c2/duel/beats.md");
+    ).toBe("scratch://@c2/duel/beats.md");
   });
 
   it("spells a named Work's Scratch with its slug, not left bare", () => {
@@ -26,7 +26,7 @@ describe("a chat door's catalog address", () => {
         { scheme: "uploads", path: "/map.png", workId: null, chatId: "chat-id" },
         { ownerRef: "c15" },
       ),
-    ).toBe("uploads://@/c15/map.png");
+    ).toBe("uploads://@c15/map.png");
     expect(canonicalDoorUri({ scheme: "manuscript", path: "/ch.md", workId: null }, {})).toBe(
       "manuscript://ch.md",
     );

@@ -89,7 +89,7 @@ if (!RUN) {
     });
 
     async function seedUpload(documentId: string, suffix: string) {
-      const uri = `uploads://@/c1/map-${suffix}.png`;
+      const uri = `uploads://@c1/map-${suffix}.png`;
       await firstDb.insert(schema.documents).values({
         id: documentId as never,
         contextSourceId: SOURCE,

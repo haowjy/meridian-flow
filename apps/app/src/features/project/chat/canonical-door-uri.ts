@@ -1,7 +1,7 @@
 /**
  * The address a chat door's document is filed under in its catalog: the resolved
- * owner's handle spelled out (`scratch://@/c2/x`, `scratch://@arc-one/x`,
- * `uploads://@/c15/x`), whatever shorthand the door was written with. A bare
+ * owner's handle spelled out (`scratch://@c2/x`, `scratch://@arc-one/x`,
+ * `uploads://@c15/x`), whatever shorthand the door was written with. A bare
  * `scratch://x` in a chat means that chat's lineage or its Work, and the catalog
  * only knows the explicit spelling. Null when the owner's handle is not known yet.
  */

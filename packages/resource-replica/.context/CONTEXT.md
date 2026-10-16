@@ -69,7 +69,7 @@ commands must use the checked snapshot constructor, not manufacture a nullable
 slug. This is a trusted-input boundary, not a type-only identity guarantee.
 No Work link Create and Editor identity rename use the same namespace journal
 as named Works. The server's No Work row owns no Scratch: a No Work chat's
-Scratch belongs to its lineage (`scratch://@/c12/`), and a lineage catalog scope
+Scratch belongs to its lineage (`scratch://@c12/`), and a lineage catalog scope
 installs locations owned by that lineage. Never map a lineage location onto the
 No Work row.
 

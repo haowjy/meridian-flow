@@ -218,7 +218,7 @@ describe("planCatalogInstallation", () => {
     {
       scope: { kind: "lineage", projectId, rootThreadId: "root-id" } as const,
       scheme: "scratch" as const,
-      uri: "scratch://@/c12/notes.md",
+      uri: "scratch://@c12/notes.md",
       expected: { scheme: "scratch", workId: null, rootThreadId: "root-id", rootThreadRef: "c12" },
     },
     {

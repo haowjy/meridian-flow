@@ -259,7 +259,7 @@ describe("context router scheme creation capabilities", () => {
       }),
     ).resolves.toEqual({
       ok: true,
-      value: { documentId: "document-new", uri: "uploads://@/c12/notes" },
+      value: { documentId: "document-new", uri: "uploads://@c12/notes" },
     });
     expect(uploads.createTrackedDocument).toHaveBeenCalledWith("notes", "notes", {
       documentId: "00000000-0000-4000-8000-000000000001",
@@ -274,7 +274,7 @@ describe("context router scheme creation capabilities", () => {
         ok: false,
         error: {
           code: "invalid_operation",
-          uri: "uploads://@/c12/old.md",
+          uri: "uploads://@c12/old.md",
           message: expect.stringContaining("scratch://"),
         },
       },
@@ -283,7 +283,7 @@ describe("context router scheme creation capabilities", () => {
       port.commitWriterLocation(`scratch://@current/old.md`, `uploads://old.md`),
     ).resolves.toMatchObject({
       ok: false,
-      error: { code: "invalid_operation", uri: "uploads://@/c12/old.md" },
+      error: { code: "invalid_operation", uri: "uploads://@c12/old.md" },
     });
     await expect(port.move(`uploads://old.md`, `uploads://renamed.md`)).resolves.toEqual({
       ok: true,
@@ -307,18 +307,18 @@ it("reads another chat's uploads by handle and refuses a trashed, unknown or Wor
 
   await expect(port.list("uploads://")).resolves.toMatchObject({
     ok: true,
-    value: { uri: "uploads://@/c1/" },
+    value: { uri: "uploads://@c1/" },
   });
-  await expect(port.list("uploads://@/c2/")).resolves.toMatchObject({
+  await expect(port.list("uploads://@c2/")).resolves.toMatchObject({
     ok: true,
-    value: { uri: "uploads://@/c2/" },
+    value: { uri: "uploads://@c2/" },
   });
   expect(other.list).toHaveBeenCalledOnce();
-  await expect(port.list("uploads://@/c3/")).resolves.toMatchObject({
+  await expect(port.list("uploads://@c3/")).resolves.toMatchObject({
     ok: false,
     error: { code: "invalid_uri", reason: expect.stringContaining("unavailable") },
   });
-  await expect(port.list("uploads://@/c4/")).resolves.toMatchObject({
+  await expect(port.list("uploads://@c4/")).resolves.toMatchObject({
     ok: false,
     error: { code: "invalid_uri" },
   });
@@ -342,7 +342,7 @@ it("guards both tracked creation doors by lineage actor while binding remains pr
       authority: { kind: "lineage", rootThreadRef: "c12" },
     }),
   });
-  const uri = "scratch://@/c12/note.md";
+  const uri = "scratch://@c12/note.md";
   const origin = { type: "human" as const, userId: "writer" };
   const bound = await port.bindTrackedDocument(uri, "prepared");
   expect(bound.ok).toBe(true);

@@ -165,13 +165,13 @@ export function renderWorkContext(input: {
     ...(input.rootThreadRef
       ? [
           input.current.isNoWork
-            ? `  scratch: bare scratch:// is this chat's notes at scratch://@/${input.rootThreadRef}/, shared with its forks and subagents. A handoff starts fresh notes.`
-            : `  scratch: bare scratch:// is this Work's notes at scratch://@${input.current.slug}/. Earlier chat notes remain at scratch://@/${input.rootThreadRef}/.`,
+            ? `  scratch: bare scratch:// is this chat's notes at scratch://@${input.rootThreadRef}/, shared with its forks and subagents. A handoff starts fresh notes.`
+            : `  scratch: bare scratch:// is this Work's notes at scratch://@${input.current.slug}/. Earlier chat notes remain at scratch://@${input.rootThreadRef}/.`,
           "  Move notes to kb:// or manuscript:// to keep them for the project. Rebinding never moves notes.",
         ]
       : []),
     ...(input.chatRef
-      ? [`  uploads: bare uploads:// is this chat's files at uploads://@/${input.chatRef}/.`]
+      ? [`  uploads: bare uploads:// is this chat's files at uploads://@${input.chatRef}/.`]
       : []),
     "</work_context>",
   ].join("\n");

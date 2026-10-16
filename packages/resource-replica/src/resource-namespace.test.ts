@@ -607,7 +607,7 @@ describe("a chat's Scratch owner", () => {
         submitted.next,
         "delete",
         "attempt",
-        receipt("scratch://@/c12/duel/beats"),
+        receipt("scratch://@c12/duel/beats"),
       ),
     ).not.toThrow();
     expect(() =>
@@ -615,7 +615,7 @@ describe("a chat's Scratch owner", () => {
         submitted.next,
         "delete",
         "attempt",
-        receipt("scratch://@/c40/duel/beats"),
+        receipt("scratch://@c40/duel/beats"),
       ),
     ).toThrow("does not match current attempt");
   });

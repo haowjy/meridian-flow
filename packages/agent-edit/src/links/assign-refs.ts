@@ -347,7 +347,7 @@ function qualifyBareUploads(href: string, chatRef: string | undefined): string {
   if (!chatRef) return href;
   const resolved = resolveDocumentHref(href, null);
   if (!resolved) return href;
-  const uri = qualifyContextUriByHolder(resolved.uri, `uploads://@/${chatRef}/_`);
+  const uri = qualifyContextUriByHolder(resolved.uri, `uploads://@${chatRef}/_`);
   return uri === resolved.uri ? href : storedHref(uri, resolved.suffix);
 }
 

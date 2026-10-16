@@ -84,7 +84,7 @@ export async function handleRebindThreadWorkRequest(
           throw new Error("Scratch requires the first chat's assigned handle");
         const previousScratchUri =
           rebound.before.slug === null
-            ? `scratch://@/${root?.ref}/`
+            ? `scratch://@${root?.ref}/`
             : `scratch://@${rebound.before.slug}/`;
         await recordWriterWorkSwitchNotice(deps.notices, rebound, previousScratchUri);
         return rebound;

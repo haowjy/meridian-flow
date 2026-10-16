@@ -905,5 +905,5 @@ it("qualifies a freshly written bare uploads link or picture to the writing chat
   const stored = await ctx.markdown();
   expect(stored).toContain("`uploads://name`");
   expect(stored).toContain("uploads://sample.png\n```");
-  expect(stored).toContain("![](<uploads://@/c3/my pic.png>) and [file](uploads://@/c3/name#top)");
+  expect(stored).toContain("![](<uploads://@c3/my pic.png>) and [file](uploads://@c3/name#top)");
 });

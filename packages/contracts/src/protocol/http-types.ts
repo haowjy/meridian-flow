@@ -248,7 +248,7 @@ export function isProjectContextTreeScheme(value: unknown): value is ProjectCont
   );
 }
 
-/** Context tree schemes supporting contextual, `@slug`, and explicit `@/` authority. */
+/** Context tree schemes supporting contextual, `@slug`, and explicit `@/` or `@c12` authority. */
 export const WORK_SCOPED_PROJECT_CONTEXT_TREE_SCHEMES = new Set<ProjectContextTreeScheme>([
   ...WORK_SCOPED_CONTEXT_URI_SCHEMES,
 ]);

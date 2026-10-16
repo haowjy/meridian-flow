@@ -21,7 +21,8 @@ export function workSlugBase(name: string): WorkSlug {
 export function nextWorkSlug(name: string, existingSlugs: Iterable<string | null>): WorkSlug {
   const base = workSlugBase(name);
   const taken = new Set([...existingSlugs].filter((slug): slug is string => slug != null));
-  if (!taken.has(base)) return base;
+  // `c` plus digits is a chat handle in `@c12`, so a Work slug never takes that shape.
+  if (!taken.has(base) && !/^c[1-9][0-9]*$/.test(base)) return base;
   for (let suffix = 2; ; suffix += 1) {
     const candidate = `${base}-${suffix}`;
     if (!taken.has(candidate)) {

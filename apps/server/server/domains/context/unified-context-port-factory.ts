@@ -91,7 +91,7 @@ const WORK_SCOPED_CONTEXTFS_SCHEMES: readonly WorkScopedContextFsScheme[] =
 export interface UnifiedContextPortFactory {
   lineages: ScratchLineages;
   topPrimaryChats: TopPrimaryChatResolver;
-  /** Chats by handle, for `uploads://@/c12/` addresses. */
+  /** Chats by handle, for `uploads://@c12/` addresses. */
   chats: ChatUploadsOwners;
   forProject(
     projectId: string,

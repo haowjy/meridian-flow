@@ -159,7 +159,7 @@ export async function handleContextReadRequest(
     throw createError({
       statusCode: 400,
       message:
-        "Scratch requires a chat lineage or named Work. Use scratch://x in a chat, or scratch://@/c12/x.",
+        "Scratch requires a chat lineage or named Work. Use scratch://x in a chat, or scratch://@c12/x.",
     });
   }
   const path = resolveContextReadPath(input.scheme, input.rawPath, authority);
