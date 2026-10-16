@@ -276,8 +276,7 @@ async function followToOutcome(
         const fate = messageFate({
           messageId: admitted.userTurnId,
           admittedVersion: admitted.runStateVersion,
-          record: snapshot.liveState.runState,
-          turns: snapshot.turns,
+          read: snapshot,
         });
         if (fate.kind === "answering") lastAnswering = fate.last.id;
         proven = finalResult(fate, snapshot, threadId, admitted.userTurnId);
