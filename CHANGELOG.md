@@ -4,6 +4,9 @@
 
 - Every chat failure is a card drawn from one place (`chatCards`), announced once when you watched it appear and cleared from the screen reader's live region when the card ends. A failed compaction's card now has Try again (it sends `/compact` again), a hidden "Couldn't stop the reply." no longer lingers in the page after its card goes, and a Retry whose request was lost is a "Couldn't start the retry." card with Try again on the failed reply instead of a fake failed reply. `./mf thread view` prints the same cards (`cards` in its JSON).
 ### Fixed
+- Production contracts imports no longer load golden test fixtures; tests use a separate test-support entry point.
+- Snapshot reads in the app and `./mf` validate the whole declared chat and turn shape, rejecting malformed reply errors before rendering.
+- Every `./mf` HTTP request now chooses one response decoder; contradictory options can no longer bypass validation while promising a validated result.
 - Hand-back failures have distinct Retry identities even when saving fails, and retain the saved identity on reload.
 - Failed compaction dividers stay neutral when a queued replacement suppresses their failure card.
 - `./mf api` preserves raw text responses again; domain command outcomes now require

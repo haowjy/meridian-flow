@@ -40,7 +40,8 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
   transitive `tools/dev` imports are Node-only. Never import `apps/`.
 - **Success claims require validated evidence.** Every domain-success claim printed by
   `./mf` comes from a contracts-validated response or shared-client protocol evidence.
-  `Session.request` returns unknown without `parse`; structured requests reject empty,
+  `Session.request` requires one decoder: contracts JSON, raw text, or intentionally
+  unknown JSON. Structured requests reject empty,
   non-JSON and schema-invalid answers as classified read errors. Send admission and
   recovery, creation, cancellation, document reads/writes and mock commands pass contracts
   schemas. Stop and queue pass unknown bodies to the shared hand-back operation, which

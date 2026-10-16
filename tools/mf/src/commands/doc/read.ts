@@ -1,6 +1,7 @@
 import { apiProjectContextReadPath, contextReadResponseSchema } from "@meridian/contracts/protocol";
 import { type CommandSpec, flag, requirePositional, stringOption } from "../../core/command";
 import { truncate } from "../../core/output";
+import { jsonResponse } from "../../core/session";
 import { resolveProjectId } from "../project/resolve";
 import { ownerOf, PROJECT_OPTION, resolveUri } from "./uri";
 
@@ -28,7 +29,7 @@ export const docReadCommand: CommandSpec = {
       "GET",
       apiProjectContextReadPath(projectId, target.scheme, target.path, ownerOf(target)),
       undefined,
-      { parse: contextReadResponseSchema.safeParse },
+      { decode: jsonResponse(contextReadResponseSchema) },
     );
     const full = flag(ctx, "full");
     ctx.out.result({ uri: target.uri, ...response }, (value) =>

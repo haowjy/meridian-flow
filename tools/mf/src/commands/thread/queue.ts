@@ -22,6 +22,7 @@ import {
   requirePositional,
   stringOption,
 } from "../../core/command";
+import { jsonResponse } from "../../core/session";
 import {
   ambiguousError,
   printFrozenRequest,
@@ -89,7 +90,7 @@ export const threadQueueHandBackCommand: CommandSpec = {
     } else {
       if (all) {
         const snapshot = await session.request("GET", apiThreadSnapshotPath(threadId), undefined, {
-          parse: threadSnapshotSchema.safeParse,
+          decode: jsonResponse(threadSnapshotSchema),
         });
         requested = waitingWriterMessages(viewOfSnapshot(snapshot)).map((item) => item.id);
         if (requested.length === 0) {
@@ -185,7 +186,7 @@ export const threadQueueSendNowCommand: CommandSpec = {
       body = parsed.data;
     } else {
       const snapshot = await session.request("GET", apiThreadSnapshotPath(threadId), undefined, {
-        parse: threadSnapshotSchema.safeParse,
+        decode: jsonResponse(threadSnapshotSchema),
       });
       body = sendNowRequest(viewOfSnapshot(snapshot));
     }

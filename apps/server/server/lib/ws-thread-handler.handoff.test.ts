@@ -2,8 +2,8 @@
 
 import type { WsServerMessage } from "@meridian/contracts/protocol";
 import type { ThreadId, UserId } from "@meridian/contracts/runtime";
+import { goldenAssistantTurn } from "@meridian/contracts/test-support";
 import { describe, expect, it, vi } from "vitest";
-import { goldenAssistantTurn } from "../../../../packages/contracts/src/threads/golden/turn-fixture.js";
 import { createNoopEventSink } from "../domains/observability/index.js";
 import { createInMemoryEventJournalWriter } from "../domains/threads/adapters/in-memory/index.js";
 import type { EventJournalReader } from "../domains/threads/ports/index.js";

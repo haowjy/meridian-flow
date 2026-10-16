@@ -3,7 +3,10 @@
  * for durable block lifecycle facts. Pins the names the app reducer reads.
  */
 import { EventType } from "@meridian/contracts/protocol";
-import { SIMPLE_TEXT_TURN_AGUI, SIMPLE_TEXT_TURN_ORCHESTRATOR } from "@meridian/contracts/threads";
+import {
+  SIMPLE_TEXT_TURN_AGUI,
+  SIMPLE_TEXT_TURN_ORCHESTRATOR,
+} from "@meridian/contracts/test-support";
 import { describe, expect, it } from "vitest";
 import {
   createOrchestratorEventProjector,
