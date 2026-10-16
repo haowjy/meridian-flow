@@ -1,6 +1,8 @@
 /** PostgreSQL terminal A: turn, report, journal, and publication share one commit. */
+import type { FailureRecord } from "@meridian/contracts/failures";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { recordFailureAfterCommit } from "../../../shared/failure-records.js";
 import { executionScenario } from "../../../test-support/execution-scenario.js";
 import { processDetachedWork } from "../detached-work.js";
 import { createTestDrizzleDelivery } from "./__tests__/test-drizzle-delivery.js";
@@ -337,13 +339,21 @@ else
     });
 
     it("rolls terminal turn and report obligation back together, then retries idempotently", async () => {
+      // Risk: a failure logged for a settlement that never committed, or logged twice for one that retried.
+      const emitted: FailureRecord[] = [];
+      const logged = {
+        appendEvent: (...args: Parameters<typeof eventWriter.appendEvent>) =>
+          eventWriter.appendEvent(...args),
+        recordFailure: (record: FailureRecord) =>
+          recordFailureAfterCommit(record, (out) => emitted.push(out)),
+      };
       await repos.executionReports.captureOnce(ids.child, ids.execution, "return-1", {
         summary: "candidate",
       });
       await expect(
         repos.transaction(async () => {
           await finalizeExecution(
-            { repos, eventWriter },
+            { repos, eventWriter: logged },
             {
               threadId: ids.child,
               turnId: ids.execution,
@@ -358,6 +368,7 @@ else
         }),
       ).rejects.toThrow("outer rollback");
       expect((await repos.turns.findById(ids.execution))?.status).toBe("streaming");
+      expect(emitted).toEqual([]);
       expect(await repos.executionReports.findByExecution(ids.child, ids.execution)).toMatchObject({
         capture: { summary: "candidate" },
         outcome: null,
@@ -365,7 +376,7 @@ else
       });
 
       const first = await finalizeExecution(
-        { repos, eventWriter },
+        { repos, eventWriter: logged },
         {
           threadId: ids.child,
           turnId: ids.execution,
@@ -388,7 +399,7 @@ else
         publication: "pending",
       });
       const replay = await finalizeExecution(
-        { repos, eventWriter },
+        { repos, eventWriter: logged },
         {
           threadId: ids.child,
           turnId: ids.execution,
@@ -400,6 +411,13 @@ else
         },
       );
       expect(replay.events).toEqual([]);
+      expect(emitted).toEqual([
+        expect.objectContaining({
+          occurrenceId: ids.execution,
+          phase: "recorded",
+          failure: expect.objectContaining({ category: "reply", source: "bug" }),
+        }),
+      ]);
       expect(replay.report).toMatchObject({ outcome: "failed", publication: "pending" });
     });
 

@@ -20,6 +20,7 @@ import type {
 } from "../../threads/ports/handoff-brief-launcher.js";
 import { turnGraph } from "../../threads/ports/turn-graph.js";
 import type { DetachedWorkTracker } from "../detached-work.js";
+import { recordEnded } from "../loop/failure-detection.js";
 import { historyReadableAt } from "../loop/history-tool-availability.js";
 import { createLocalTurn } from "../loop/local-turn.js";
 import type { PersistenceDeps } from "../loop/persistence.js";
@@ -467,6 +468,8 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
           leafId,
           async () => ({ result: seed, events: [{ type: "turn.created", turn: seed }] }),
         );
+        // The Retry seed's `turn.created` names no seed, so the failed seed's end is recorded here.
+        await recordEnded(persistence, [latest.id], "retried", seed.id);
         return { turn: saved.createdTurns[0] ?? seed, created: true };
       });
       if (result.created)
