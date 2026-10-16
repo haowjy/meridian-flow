@@ -20,8 +20,14 @@ come in through the real intake.
 5. Delete an unused file: its row goes at once, the trigger count drops, and its
    chip leaves the composer. Reload: the count stays. Intercept the DELETE with
    `agent-browser network route "**/context/uploads/upload*" --body '{"kind":"already_used"}'`
-   and delete another: the row returns with "A sent message used this file, so it
-   can’t be deleted."
+   and delete another: the row returns without its delete action and with no message.
+   Measure the menu content's height (`getBoundingClientRect().height`) before and
+   after: it does not change. Replace the route with
+   `agent-browser network unroute`, then `network route "**/context/uploads/upload*" --abort`
+   (a failed request), and delete another: the row returns, its second line reads
+   "Couldn’t delete this file. Try again." in place of the type and time, and the height
+   is unchanged. The line clears
+   when the menu closes or on the next delete of that row.
 6. "Open" on a row opens the file in the dock beside the chat (Chat screen with the
    right rail expanded). Reload: the dock tab comes back. This also holds for a chat
    created with its first attachment. On the Work and Editor screens, where the chat is
