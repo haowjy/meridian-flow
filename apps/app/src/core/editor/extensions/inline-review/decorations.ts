@@ -106,7 +106,7 @@ export function paintDecorations(
           block,
           // An inline widget cannot hold paragraphs: a removal that crossed blocks reads as one run.
           paragraphs: block ? paragraphs : [paragraphs.join(" ")],
-          tight: endsBeforePunctuation(doc, hunk.anchor),
+          tight: needsNoAir(doc, hunk.anchor),
           // A token carries the space before it, so a removed word brings its own, drawn unstruck.
           spaceBefore: !block && removed[0]?.type === "text" && /^\s/u.test(removed[0].text ?? ""),
           changeId: group.id,
@@ -165,13 +165,13 @@ function slotPosition(doc: PMNode, position: number): number {
   return $position.parent.inlineContent ? $position.after() : position;
 }
 
-/** Closing punctuation never takes a space before it, so a removal ahead of it keeps none. */
-const CLOSING_PUNCTUATION = /^[,.;:!?)\]}…’”]/;
+/** Closing punctuation never takes a space before it, and a real space already separates. */
+const NO_AIR_BEFORE = /^[\s,.;:!?)\]}…’”]/u;
 
-/** The removal sits at the end of its line, or right before punctuation. */
-function endsBeforePunctuation(doc: PMNode, position: number): boolean {
+/** The removal sits at the end of its line, or right before a space or punctuation. */
+function needsNoAir(doc: PMNode, position: number): boolean {
   const next = doc.textBetween(position, Math.min(position + 1, doc.content.size), "", "");
-  return next === "" || CLOSING_PUNCTUATION.test(next);
+  return next === "" || NO_AIR_BEFORE.test(next);
 }
 
 interface AddedMark {

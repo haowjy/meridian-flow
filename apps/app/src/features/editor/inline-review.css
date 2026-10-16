@@ -44,8 +44,9 @@
 
 /* A struck removal beside the text that replaced it must read as two things,
    not "his" fused into "one". The air is a margin on the widget, never a space
-   character, so it is not text and cannot be selected or saved. Before
-   punctuation or a line end there is none: a gap before "," reads as a typo.
+   character, so it is not text and cannot be selected or saved. Before a
+   space there is none (the space separates), and before punctuation or a line
+   end there is none either: a gap before "," reads as a typo.
    Inline removals only; a block removal is its own paragraph. */
 .meridian-editor .ProseMirror span.meridian-review-removal:not(.meridian-review-removal-block) {
   margin-inline-end: 0.12em;

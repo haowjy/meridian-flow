@@ -29,7 +29,7 @@ export interface RemovalPlan {
   position: number;
   /** Sits between blocks and renders as paragraphs, rather than inside a text block. */
   block: boolean;
-  /** Followed by punctuation or the end of the line: no gap after the struck text. */
+  /** Followed by a space, punctuation or the end of the line: no added gap after the struck text. */
   tight: boolean;
   paragraphs: string[];
   /** The removed text began with a space: the widget draws it before the strike, unstruck. */
