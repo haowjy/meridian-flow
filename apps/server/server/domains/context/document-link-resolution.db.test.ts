@@ -22,6 +22,7 @@ import { deleteDrizzleRows, useRollbackTestDatabase } from "../../test-support/d
 import { createLinkScopeObserver } from "../collab/index.js";
 import { createNoopEventSink } from "../observability/index.js";
 import { createDrizzleProjectWorkAuthorityResolver } from "../projects/index.js";
+import { createDrizzleChatUploadsOwners } from "./adapters/chat-uploads-owners.js";
 import { createDrizzleContextCatalog } from "./adapters/context-catalog.js";
 import { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-tree-mutation-store.js";
 import { createDrizzleDocumentLinkHistory } from "./adapters/document-link-history.js";
@@ -130,9 +131,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         catalog: createDrizzleContextCatalog(db),
         history: createDrizzleDocumentLinkHistory(db),
         workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
+        chats: createDrizzleChatUploadsOwners(db),
       });
     }
-    async function add(scheme: string, name: string, workId: string | null = null) {
+    async function add(
+      scheme: string,
+      name: string,
+      workId: string | null = null,
+      chatThreadId: string | null = null,
+    ) {
       const db = database.current;
       const sourceId = crypto.randomUUID();
       const documentId = crypto.randomUUID();
@@ -140,9 +147,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: sourceId,
         slug: scheme,
         name: scheme,
-        scope: workId ? "work" : "project",
+        scope: chatThreadId ? "chat" : workId ? "work" : "project",
         projectId: workId ? null : scheme === "user" ? personal : p,
         workId,
+        chatThreadId,
       });
       await db
         .insert(documents)
@@ -157,8 +165,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ["unfiled", null, ""],
         ["user", null, ""],
         ["scratch", b, "@work-b/"],
-        ["uploads", b, "@work-b/"],
-        ["uploads", noWork, "@/"],
       ] as const) {
         const id = await add(scheme, "Gate", workId);
         const uri = `${scheme}://${qualifier}Gate`;
@@ -170,6 +176,34 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           workId,
         });
       }
+      // An upload belongs to the chat that received it, spelled by that chat's handle.
+      const chatId = crypto.randomUUID();
+      await database.current.insert(threads).values({
+        id: chatId,
+        projectId: p,
+        rootThreadId: chatId,
+        createdByUserId: u,
+        ref: "c9",
+      });
+      const upload = await add("uploads", "Gate", null, chatId);
+      const resolveUpload = (uri: string, chat?: string) =>
+        r.resolve({
+          projectId: p,
+          userId: u,
+          workId: a,
+          ...(chat ? { chatId: chat } : {}),
+          target: { kind: "scheme", uri },
+        });
+      expect(await resolveUpload("uploads://@/c9/Gate")).toMatchObject({
+        documentId: upload,
+        uri: "uploads://@/c9/Gate",
+        chatThreadId: chatId,
+      });
+      // A bare name means the holder chat's file; a document holder has no chat, so it names nothing.
+      expect(await resolveUpload("uploads://Gate", chatId)).toMatchObject({ documentId: upload });
+      expect(await resolveUpload("uploads://Gate")).toBeNull();
+      // A Work owns no uploads.
+      expect(await resolveUpload("uploads://@work-b/Gate")).toBeNull();
     });
     it("canonicalizes prose aliases before exact-first non-prose omission", async () => {
       const r = resolver();
@@ -329,7 +363,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const rows = [
         { id: note, uri: "scratch://@/c1/note", workId: null, rootThreadId: root },
         { id: await add("scratch", "named", b), uri: "scratch://@work-b/named", workId: b },
-        { id: await add("uploads", "seal", noWork), uri: "uploads://@/seal", workId: noWork },
         { id: await add("manuscript", "chapter"), uri: "manuscript://chapter", workId: null },
         { id: await add("user", "personal"), uri: "user://personal", workId: null },
       ];

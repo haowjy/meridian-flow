@@ -15,6 +15,7 @@ current: none
   writes: auto-apply. Your changes are written straight into the writer's documents.
   scratch: bare scratch:// is this chat's notes at scratch://@/c1/, shared with its forks and subagents. A handoff starts fresh notes.
   Move notes to kb:// or manuscript:// to keep them for the project. Rebinding never moves notes.
+  uploads: bare uploads:// is this chat's files at uploads://@/c1/.
 </work_context>
 
 # Meridian Markdown
@@ -32,7 +33,7 @@ Documents are Markdown with a few Meridian forms. You will see them when you rea
 - \`kb://\` is the project knowledge base: characters, places, canon.
 - \`unfiled://\` holds project documents not yet filed anywhere; renaming one does not file it.
 - \`scratch://\` is this chat’s working notes, never the manuscript. In a named Work it means the Work’s shared Scratch. With No Work it means notes shared with this chat’s forks and subagents at \`scratch://@/c12/…\` (use the first chat handle from Work context). A handoff starts fresh notes. \`scratch://@<slug>/…\` is a Work’s Scratch. \`scratch://@/x\` without a first chat handle is refused. Move notes you want to keep for the project into \`kb://\` or \`manuscript://\`.
-- \`uploads://\` holds files the user attached to this Work; \`uploads://@/…\` is No Work intake, not chat Scratch.
+- \`uploads://\` holds files the user attached to this chat. Another chat’s are at \`uploads://@/c12/…\`; you can read them but not change them.
 - \`user://\` is the user's personal files.
 - File and folder names cannot start with \`@\`.",
             "type": "text",
@@ -87,6 +88,7 @@ current: none
   writes: auto-apply. Your changes are written straight into the writer's documents.
   scratch: bare scratch:// is this chat's notes at scratch://@/c1/, shared with its forks and subagents. A handoff starts fresh notes.
   Move notes to kb:// or manuscript:// to keep them for the project. Rebinding never moves notes.
+  uploads: bare uploads:// is this chat's files at uploads://@/c1/.
 </work_context>
 
 # Meridian Markdown
@@ -104,7 +106,7 @@ Documents are Markdown with a few Meridian forms. You will see them when you rea
 - \`kb://\` is the project knowledge base: characters, places, canon.
 - \`unfiled://\` holds project documents not yet filed anywhere; renaming one does not file it.
 - \`scratch://\` is this chat’s working notes, never the manuscript. In a named Work it means the Work’s shared Scratch. With No Work it means notes shared with this chat’s forks and subagents at \`scratch://@/c12/…\` (use the first chat handle from Work context). A handoff starts fresh notes. \`scratch://@<slug>/…\` is a Work’s Scratch. \`scratch://@/x\` without a first chat handle is refused. Move notes you want to keep for the project into \`kb://\` or \`manuscript://\`.
-- \`uploads://\` holds files the user attached to this Work; \`uploads://@/…\` is No Work intake, not chat Scratch.
+- \`uploads://\` holds files the user attached to this chat. Another chat’s are at \`uploads://@/c12/…\`; you can read them but not change them.
 - \`user://\` is the user's personal files.
 - File and folder names cannot start with \`@\`.",
             "type": "text",
@@ -139,6 +141,7 @@ Documents are Markdown with a few Meridian forms. You will see them when you rea
             "providerOptions": undefined,
             "text": "<system_update>
 Forked conversation through turn 00000000-0000-4000-8000-000000000012.
+This chat continues from c1. Its uploads are at uploads://@/c1/.
 </system_update>",
             "type": "text",
           },
@@ -150,6 +153,7 @@ current: none
   writes: auto-apply. Your changes are written straight into the writer's documents.
   scratch: bare scratch:// is this chat's notes at scratch://@/c1/, shared with its forks and subagents. A handoff starts fresh notes.
   Move notes to kb:// or manuscript:// to keep them for the project. Rebinding never moves notes.
+  uploads: bare uploads:// is this chat's files at uploads://@/c2/.
 </work_context>
 </system_update>",
             "type": "text",
@@ -199,6 +203,7 @@ current: none
   writes: auto-apply. Your changes are written straight into the writer's documents.
   scratch: bare scratch:// is this chat's notes at scratch://@/c1/, shared with its forks and subagents. A handoff starts fresh notes.
   Move notes to kb:// or manuscript:// to keep them for the project. Rebinding never moves notes.
+  uploads: bare uploads:// is this chat's files at uploads://@/c1/.
 </work_context>
 
 # Meridian Markdown
@@ -216,7 +221,7 @@ Documents are Markdown with a few Meridian forms. You will see them when you rea
 - \`kb://\` is the project knowledge base: characters, places, canon.
 - \`unfiled://\` holds project documents not yet filed anywhere; renaming one does not file it.
 - \`scratch://\` is this chat’s working notes, never the manuscript. In a named Work it means the Work’s shared Scratch. With No Work it means notes shared with this chat’s forks and subagents at \`scratch://@/c12/…\` (use the first chat handle from Work context). A handoff starts fresh notes. \`scratch://@<slug>/…\` is a Work’s Scratch. \`scratch://@/x\` without a first chat handle is refused. Move notes you want to keep for the project into \`kb://\` or \`manuscript://\`.
-- \`uploads://\` holds files the user attached to this Work; \`uploads://@/…\` is No Work intake, not chat Scratch.
+- \`uploads://\` holds files the user attached to this chat. Another chat’s are at \`uploads://@/c12/…\`; you can read them but not change them.
 - \`user://\` is the user's personal files.
 - File and folder names cannot start with \`@\`.",
             "type": "text",
@@ -251,6 +256,7 @@ Documents are Markdown with a few Meridian forms. You will see them when you rea
             "providerOptions": undefined,
             "text": "<system_update>
 Forked conversation through turn 00000000-0000-4000-8000-000000000012.
+This chat continues from c1. Its uploads are at uploads://@/c1/.
 </system_update>",
             "type": "text",
           },
@@ -262,6 +268,7 @@ current: none
   writes: auto-apply. Your changes are written straight into the writer's documents.
   scratch: bare scratch:// is this chat's notes at scratch://@/c1/, shared with its forks and subagents. A handoff starts fresh notes.
   Move notes to kb:// or manuscript:// to keep them for the project. Rebinding never moves notes.
+  uploads: bare uploads:// is this chat's files at uploads://@/c3/.
 </work_context>
 </system_update>",
             "type": "text",

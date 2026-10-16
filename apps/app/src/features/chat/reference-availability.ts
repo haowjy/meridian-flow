@@ -41,6 +41,12 @@ export type ReferenceAvailability = {
   watch(documentIds: readonly string[]): () => void;
   /** Ask about everything watched again: the documents changed. */
   refresh(): void;
+  /**
+   * The addresses the chat's own catalogs hold, by document id. An answer drawn at another
+   * address was asked before the catalog respelled it (a New chat's upload gains its handle
+   * once the server names the chat): ask again, once per address the catalog holds.
+   */
+  reconcile(held: ReadonlyMap<string, string>): void;
   subscribe(listener: () => void): () => void;
   /** Every answer so far, keyed by document id. A new map after each change. */
   snapshot(): ReadonlyMap<string, TranscriptReferenceResolution>;
@@ -102,6 +108,8 @@ export function createReferenceAvailability(lookup: Lookup): ReferenceAvailabili
   const asked = new Map<string, number>();
   /** Ids whose answer is current or on its way: never asked again on watch. */
   const current = new Set<string>();
+  /** The catalog address each id was last re-asked for, so a disagreeing server cannot loop. */
+  const reconciled = new Map<string, string>();
   let answers: ReadonlyMap<string, TranscriptReferenceResolution> = NOTHING;
   let scheduled = false;
   let sequence = 0;
@@ -195,6 +203,19 @@ export function createReferenceAvailability(lookup: Lookup): ReferenceAvailabili
       // it is shown again.
       current.clear();
       ask(watched.keys());
+    },
+    reconcile(held) {
+      const stale: string[] = [];
+      for (const id of watched.keys()) {
+        const answer = answers.get(id);
+        const uri = held.get(id);
+        if (!answer?.available || !uri || answer.uri === uri) continue;
+        if (reconciled.get(id) === uri) continue;
+        reconciled.set(id, uri);
+        current.delete(id);
+        stale.push(id);
+      }
+      ask(stale);
     },
     subscribe(listener) {
       listeners.add(listener);

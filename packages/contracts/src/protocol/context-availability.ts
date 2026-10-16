@@ -72,7 +72,9 @@ export type ProjectContextAuthority =
   | { kind: "project"; projectId: ProjectId }
   | { kind: "user"; userId: UserId }
   | { kind: "work"; projectId: ProjectId; workId: WorkId; workSlug: WorkSlug | null }
-  | { kind: "lineage"; projectId: ProjectId; rootThreadId: string; rootThreadRef: string };
+  | { kind: "lineage"; projectId: ProjectId; rootThreadId: string; rootThreadRef: string }
+  /** `chatRef` is null while the chat's row does not exist yet (a New chat's first uploads). */
+  | { kind: "chat"; projectId: ProjectId; chatId: string; chatRef: string | null };
 
 export type ProjectContextIdentityResolution =
   | {
@@ -94,7 +96,7 @@ export type ProjectContextIdentityResolution =
       documentId: DocumentId;
       generation: AvailabilityGeneration;
       authority: ProjectContextAuthority;
-      reason: "work_deleted" | "project_deleted" | "lineage_hidden";
+      reason: "work_deleted" | "project_deleted" | "lineage_hidden" | "chat_hidden";
     }
   | {
       kind: "not-visible";

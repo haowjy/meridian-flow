@@ -3,6 +3,7 @@
 export type { DrizzleDatabase } from "../../shared/drizzle-transaction.js";
 export { createDrizzleEventJournalReader } from "./adapters/drizzle/event-reader.js";
 export { createDrizzleEventJournalWriter } from "./adapters/drizzle/event-writer.js";
+export { createDrizzleTopPrimaryChatResolver } from "./adapters/drizzle/top-primary-chat.js";
 export {
   createInMemoryEventJournalReader,
   createInMemoryEventJournalWriter,
@@ -16,6 +17,7 @@ export {
 export { createBoundConversation } from "./domain/bound-conversation.js";
 export { ForkCutoffOwnerNotFoundError, findCutoffOwnerThreadId } from "./domain/cutoff-owner.js";
 export {
+  continuesFromLine,
   DerivedSourceNotFoundError,
   DerivedThreadConflictError,
   ForkCutoffError,

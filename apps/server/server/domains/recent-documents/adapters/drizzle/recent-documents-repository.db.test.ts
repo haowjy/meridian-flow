@@ -99,8 +99,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { id: WORK_SCRATCH, workId: WORK, scope: "work", name: "Work scratch", slug: "scratch" },
         {
           id: NO_WORK_SCRATCH,
-          workId: NO_WORK,
-          scope: "work",
+          projectId: PROJECT,
+          chatThreadId: "00000000-0000-4000-8000-000000000bb9",
+          scope: "chat",
           name: "Uploads",
           slug: "uploads",
         },

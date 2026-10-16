@@ -18,6 +18,8 @@ export type DocumentLinkTarget =
 
 export interface ResolvedDocumentLink {
   rootThreadId?: string | null;
+  /** The chat whose uploads hold the document. */
+  chatThreadId?: string | null;
   documentId: string;
   title: string;
   scheme: ContextUriScheme;

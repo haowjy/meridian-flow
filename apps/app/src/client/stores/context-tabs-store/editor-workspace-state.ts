@@ -1,9 +1,9 @@
 /** Pure Editor workspace transitions and browser-local restoration codec. */
+import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import {
   classifyFiletype,
   type DocumentFileType,
   isProjectContextTreeScheme,
-  isWorkScopedProjectContextScheme,
 } from "@meridian/contracts/protocol";
 import { isRecord } from "@/client/storage/browser-record";
 import { sameServerContextTabLocator } from "./context-tab-locator";
@@ -105,12 +105,18 @@ export function parseContextTab(value: unknown): ContextTab | null {
     !optionalString(tab.workId) ||
     !optionalString(tab.rootThreadId) ||
     !optionalString(tab.rootThreadRef) ||
+    !optionalString(tab.chatId) ||
+    !optionalString(tab.chatRef) ||
     tab.workId === "" ||
     tab.rootThreadId === "" ||
     // A chat's Scratch names its lineage and handle instead of a Work.
     (tab.rootThreadId !== undefined &&
       (tab.scheme !== "scratch" || tab.workId !== undefined || !tab.rootThreadRef)) ||
-    (isWorkScopedProjectContextScheme(tab.scheme) && !tab.workId && !tab.rootThreadId)
+    // A chat's uploads name the chat and handle instead of a Work, and have no other owner.
+    (tab.chatId !== undefined &&
+      (tab.scheme !== "uploads" || tab.workId !== undefined || !tab.chatRef)) ||
+    (tab.scheme === "uploads" && tab.chatId === undefined) ||
+    (isWorkScopedScheme(tab.scheme) && !tab.workId && !tab.rootThreadId)
   )
     return null;
   if (tab.kind === "tracked" && tab.editable === true) {
@@ -176,7 +182,14 @@ function parseProjectWorkspace(value: unknown): ProjectTabsSlice | null {
 
 function withoutOwner(tab: ContextTab): ContextTab {
   if (tab.kind === "new") return tab;
-  const { workId: _work, rootThreadId: _lineage, rootThreadRef: _handle, ...rest } = tab;
+  const {
+    workId: _work,
+    rootThreadId: _lineage,
+    rootThreadRef: _handle,
+    chatId: _chat,
+    chatRef: _chatHandle,
+    ...rest
+  } = tab;
   return rest as ContextTab;
 }
 
@@ -212,7 +225,8 @@ function sameTabIdentity(left: ContextTab, right: ContextTab): boolean {
         left.scheme === right.scheme &&
         left.path === right.path &&
         left.workId === right.workId &&
-        left.rootThreadId === right.rootThreadId))
+        left.rootThreadId === right.rootThreadId &&
+        left.chatId === right.chatId))
   );
 }
 

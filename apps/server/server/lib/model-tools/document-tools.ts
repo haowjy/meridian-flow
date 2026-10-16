@@ -109,10 +109,14 @@ export async function resolveDocumentAddress(
         path: canonicalPath,
       });
     }
-    // A URI naming no Work or no scheme addresses no document; the reason lists the valid ones.
+    // A URI naming no Work, no scheme or no live chat addresses no document; the reason says
+    // what is valid. A read never reports a write status.
     const unknownAddress =
       ref.error.code === "invalid_uri" &&
-      (ref.error.workSlug !== undefined || ref.error.unknownScheme !== undefined);
+      (command === "read" ||
+        ref.error.workSlug !== undefined ||
+        ref.error.unknownScheme !== undefined ||
+        ref.error.chatHandle !== undefined);
     if (ref.error.code === "invalid_operation" && ref.error.reason === "ambiguous_path") {
       return writeToolError(command, contextErrorMessage(ref.error), "ambiguous_path", {
         path: canonicalPath,
@@ -197,6 +201,7 @@ async function writeUnderGrant(
   address: ResolvedDocumentAddress,
   copied: CopiedSource | undefined,
   ctx: ToolHandlerContext,
+  uploadsChat: string | null | undefined,
 ): Promise<
   | (WriteOutcome & { isError: false; shown: ShownLinkShowing[] })
   | (WriteToolErrorOutput & { shown?: ShownLinkShowing[] })
@@ -214,6 +219,7 @@ async function writeUnderGrant(
         responseIdentity: ctx.responseIdentity,
         tool_use_id: ctx.toolCallId,
         createdDocument: address.created === true,
+        ...(uploadsChat ? { uploadsChat } : {}),
         grant,
         shownLinks: threadShownLinks(deps, ctx.threadId),
         ...(copied ? { copiedNodes: copied.nodes } : {}),
@@ -345,7 +351,15 @@ export function createWriteHandler(deps: ToolWiringDeps) {
     );
     if (isToolError(address)) return address;
 
-    const outcome = await writeUnderGrant(deps, principal, parsed, address, copied, ctx);
+    const outcome = await writeUnderGrant(
+      deps,
+      principal,
+      parsed,
+      address,
+      copied,
+      ctx,
+      context.resolution.uploadsOwner?.chatRef,
+    );
     const stagedCreate =
       creates && ctx.responseIdentity?.editScopeId !== undefined && address.created === true;
     if (outcome.isError) {

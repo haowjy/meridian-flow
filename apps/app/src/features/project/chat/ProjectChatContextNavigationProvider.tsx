@@ -8,7 +8,7 @@
  * visibility and thread lifetime. This file prepares each door as a question plus a policy:
  * a live answer opens by the document id the resolver named, where this door opens documents
  * (the Editor, or the dock beside the chat); a hidden document goes to its Work's review by
- * item identity; a missing one routes by address, so the route says so in place.
+ * item identity; a missing one routes by address (route-backed doors only), so the route says so in place; an upload door keeps the follower's shared missing outcome.
  *
  * Every door (and, through `retire`, every transcript click) retires a passage still landing.
  * A passage door's answer hands the resolved id to passage navigation, which opens that
@@ -28,8 +28,11 @@ import {
 import type { LinkDestination, LinkDocumentRef } from "@/features/links";
 import {
   type ChatLineages,
+  type ChatUploadOwners,
+  chatIdForUploadsUri,
   contextRouteTargetFromUri,
   canOpenContextUri as isContextUriRoutable,
+  parseContextUri,
 } from "@/lib/context-uri";
 import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
 import { BesideChatContext, useOpenChatDocument } from "../context/open-chat-document";
@@ -44,10 +47,14 @@ const reviewOnly: LinkDestination = async () => undefined;
 
 type OpenContextTarget = (target: ContextRouteRequest) => void;
 
-/** The door being followed: what the follower's destination needs besides the answer. */
-type DoorIntent = {
-  target: NonNullable<ReturnType<typeof contextRouteTargetFromUri>>;
-  uri: string;
+type RouteTarget = NonNullable<ReturnType<typeof contextRouteTargetFromUri>>;
+
+/**
+ * Where a door's answer goes, whatever kind of door it is. Passage intent lives here, apart
+ * from whether a route holds the document: an upload has no route and still has an anchor.
+ */
+type Placement = {
+  workId: string | null;
   passage?: ContextPassageAnchor;
   /** The dock claim a beside-chat door took when it was clicked. */
   claim: number | null;
@@ -58,6 +65,7 @@ export function ProjectChatContextNavigationProvider({
   activeWork,
   availableWorks,
   rootThreadId,
+  chat,
   onOpenContextTarget,
   children,
 }: {
@@ -66,6 +74,8 @@ export function ProjectChatContextNavigationProvider({
   availableWorks: readonly { id: string; slug: string | null }[];
   /** The displayed chat's lineage: where its bare `scratch://` points while it is on No Work. */
   rootThreadId: string | null;
+  /** The chat that owns the displayed thread's uploads: a subagent's top chat. */
+  chat: { chatId: string; chatRef: string | null } | null;
   onOpenContextTarget?: OpenContextTarget;
   children: ReactNode;
 }) {
@@ -87,11 +97,22 @@ export function ProjectChatContextNavigationProvider({
     }),
     [ownHandle, rootThreadId, threads],
   );
+  const chats = useMemo<ChatUploadOwners>(
+    () => ({
+      own: chat?.chatId ?? null,
+      idForRef: (ref) =>
+        ref === chat?.chatRef
+          ? chat.chatId
+          : (threads?.find((thread) => thread.ref === ref && thread.kind !== "subagent")?.id ??
+            null),
+    }),
+    [chat, threads],
+  );
   const passages = usePassageDoors(projectId, activeWork?.id ?? null);
   const besideChat = useContext(BesideChatContext);
   const openChatDocument = useOpenChatDocument(projectId);
   const route = useCallback(
-    ({ target }: Pick<DoorIntent, "target">) =>
+    (target: RouteTarget) =>
       onOpenContextTarget?.({ ...target, workId: target.workId ?? undefined }),
     [onOpenContextTarget],
   );
@@ -99,18 +120,18 @@ export function ProjectChatContextNavigationProvider({
   // A live answer opens the document the resolver named, by identity: never by address, which
   // could be held by a hidden sibling's review.
   const openLive = useCallback(
-    (door: DoorIntent, document: LinkDocumentRef) => {
+    (door: Placement, document: LinkDocumentRef) => {
       if (door.claim !== null && !useDockDocumentStore.getState().isCurrent(door.claim)) return;
       if (door.passage) {
         // The passage door opens the document itself, once, and lands on the passage.
-        passages.land(door.target.workId, door.passage, {
+        passages.land(door.workId, door.passage, {
           documentId: document.documentId,
           claim: door.claim ?? undefined,
         });
       } else {
         void openChatDocument({
           documentId: document.documentId,
-          workId: door.target.workId ?? undefined,
+          workId: door.workId ?? undefined,
           claim: door.claim ?? undefined,
         });
       }
@@ -122,7 +143,7 @@ export function ProjectChatContextNavigationProvider({
   // A hidden document is a review. Beside the chat it opens in the dock, as everything
   // beside the chat does; elsewhere the review handoff opens it in the Editor.
   const openFound = useCallback(
-    (door: DoorIntent, document: LinkDocumentRef, gesture: Parameters<LinkDestination>[1]) => {
+    (door: Placement, document: LinkDocumentRef, gesture: Parameters<LinkDestination>[1]) => {
       const { review } = document;
       if (!review) return Promise.resolve(openLive(door, document));
       if (door.claim !== null && !useDockDocumentStore.getState().isCurrent(door.claim))
@@ -144,11 +165,12 @@ export function ProjectChatContextNavigationProvider({
     },
     [besideChat, openLive, openReviewing],
   );
-  // Nothing at the address is not this door's to announce: the route says so in place.
+  // Only a route-backed door overrides the follower's missing outcome: its route says so in
+  // place. A resource door has no route, so it keeps the follower's shared outcome.
   const openMissing = useCallback(
-    (door: DoorIntent) => {
+    (door: Placement, target: RouteTarget) => {
       if (door.claim !== null && !useDockDocumentStore.getState().isCurrent(door.claim)) return;
-      route(door);
+      route(target);
     },
     [route],
   );
@@ -156,6 +178,38 @@ export function ProjectChatContextNavigationProvider({
   const prepare = useCallback(
     (uri: string, passage?: ContextPassageAnchor): PreparedDoor | null => {
       if (!onOpenContextTarget || !activeWork || !noWorkId) return null;
+      const uploadsChatId = chatIdForUploadsUri(uri, chats);
+      if (uploadsChatId) {
+        // An upload is found in its chat's catalog by its explicit spelling, and opens only
+        // where the host has a viewer for it (beside the centered chat).
+        if (!besideChat) return null;
+        const ownerRef =
+          uploadsChatId === chat?.chatId
+            ? chat.chatRef
+            : threads?.find((thread) => thread.id === uploadsChatId)?.ref;
+        const catalogUri =
+          canonicalDoorUri(
+            {
+              scheme: "uploads",
+              path: parseContextUri(uri)?.path ?? "",
+              workId: null,
+              chatId: uploadsChatId,
+            },
+            { ownerRef },
+          ) ?? uri;
+        const link = classifyLinkTarget(catalogUri);
+        if (!link) return null;
+        passages.retire();
+        const door: Placement = {
+          workId: null,
+          passage,
+          claim: useDockDocumentStore.getState().claim(),
+        };
+        return {
+          link,
+          policy: { open: (document, gesture) => openFound(door, document, gesture) },
+        };
+      }
       const target = contextRouteTargetFromUri(uri, activeWork, availableWorks, noWorkId, lineages);
       if (!target) return null;
       // The catalog knows a document only by its canonical spelling, whoever owns it: a bare
@@ -174,17 +228,17 @@ export function ProjectChatContextNavigationProvider({
       passages.retire();
       const link = classifyLinkTarget(catalogUri);
       if (!link) {
-        route({ target });
+        route(target);
         return null;
       }
       // The dock is claimed now, so whatever answers later is inside the claim.
       const claim = besideChat ? useDockDocumentStore.getState().claim() : null;
-      const door: DoorIntent = { target, uri: catalogUri, passage, claim };
+      const door: Placement = { workId: target.workId, passage, claim };
       return {
         link,
         policy: {
           open: (document, gesture) => openFound(door, document, gesture),
-          missing: () => openMissing(door),
+          missing: () => openMissing(door, target),
         },
       };
     },
@@ -193,6 +247,8 @@ export function ProjectChatContextNavigationProvider({
       availableWorks,
       noWorkId,
       lineages,
+      chats,
+      chat,
       onOpenContextTarget,
       besideChat,
       passages,
@@ -208,8 +264,11 @@ export function ProjectChatContextNavigationProvider({
     (uri: string) =>
       !!activeWork &&
       !!noWorkId &&
-      isContextUriRoutable(uri, activeWork, availableWorks, noWorkId, lineages),
-    [activeWork, availableWorks, noWorkId, lineages],
+      // An upload opens only where the host has a viewer for it (beside the centered chat).
+      (chatIdForUploadsUri(uri, chats) !== null
+        ? besideChat !== null
+        : isContextUriRoutable(uri, activeWork, availableWorks, noWorkId, lineages)),
+    [activeWork, availableWorks, noWorkId, lineages, chats, besideChat],
   );
   const doors = useMemo(
     () => (onOpenContextTarget ? { prepare, canOpen, retire: passages.retire } : null),
