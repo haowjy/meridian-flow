@@ -41,6 +41,8 @@ export interface ReviewHunk {
   inserted: { from: number; to: number } | null; // positions in the draft doc, drawn green
   anchor: number; // draft position where the red widget sits
   kind: HunkKind;
+  /** Unchanged block text that illustrates an attribute-only change, excluding all other hunks. */
+  formatContext?: { removed: ProseMirrorJSON[]; inserted: BlockSpan[] };
 }
 export interface ReviewGroup {
   id: string;
@@ -118,7 +120,7 @@ export function projectReview(diff: BlockDiff): ReviewProjection {
   for (const members of byGroup.values()) {
     const contents = members.map((i) => hunkContent(diff, diff.hunks[i]));
     const memo = descend(groupContents, contents);
-    memo.value ??= { id: groupHash(diff, members), excerpt: excerpt(diff, members) };
+    memo.value ??= { id: groupHash(diff, members), excerpt: excerpt(diff, members, contents) };
     const rhunks = members.map((i, n) => reviewHunk(diff, i, positions, contents[n]));
     groups.push({
       id: memo.value.id,
@@ -359,7 +361,9 @@ function descend<T>(root: ContentMemo<T>, keys: Iterable<object>): ContentMemo<T
   }
   return memo;
 }
-type HunkContent = Pick<ReviewHunk, "removed" | "kind">;
+type HunkContent = Pick<ReviewHunk, "removed" | "kind"> & {
+  context?: { removed: ProseMirrorJSON[]; ranges: BlockSpan[]; text: string };
+};
 const hunkContents: ContentMemo<Map<string, HunkContent>> = { next: new WeakMap() };
 const groupContents: ContentMemo<Pick<ReviewGroup, "id" | "excerpt">> = { next: new WeakMap() };
 const contentBoundary = {};
@@ -377,13 +381,20 @@ function hunkContent(diff: BlockDiff, h: Hunk): HunkContent {
   const draft = range(diff.draft, h.sfrom, h.sfrom + h.ins.length);
   const memo = descend(hunkContents, keys);
   memo.value ??= new Map();
-  const key = `${base}/${draft}`;
+  const ranges = formattingRanges(diff, h);
+  const key = `${base}/${draft}/${JSON.stringify(ranges)}`;
   let content = memo.value.get(key);
   if (!content) {
-    const kind = hunkKind(diff.base.toks, h);
+    const tokens = ranges?.flatMap(({ from, to, baseFrom }) =>
+      diff.base.toks.slice(h.from + baseFrom, h.from + baseFrom + to - from),
+    );
     content = {
-      removed: tokensToJSON(diff.base.toks.slice(h.from, reviewEnd(diff.base, h.from, h.to, kind))),
-      kind,
+      removed: tokensToJSON(diff.base.toks.slice(h.from, h.to)),
+      kind: hunkKind(diff.base.toks, h),
+      ...(ranges &&
+        tokens && {
+          context: { removed: tokensToJSON(tokens), ranges, text: plain(tokens) },
+        }),
     };
     memo.value.set(key, content);
   }
@@ -398,8 +409,7 @@ function reviewHunk(
 ): ReviewHunk {
   const h = diff.hunks[index];
   const end = h.sfrom + h.ins.length;
-  const paintedEnd = reviewEnd(diff.draft, h.sfrom, end, content.kind);
-  const inserted = h.ins.length ? { from: pos.start(h.sfrom), to: pos.end(paintedEnd - 1) } : null;
+  const inserted = h.ins.length ? { from: pos.start(h.sfrom), to: pos.end(end - 1) } : null;
   const continues = h.to > h.from && !isBlockTok(diff.base.toks[h.from]);
   return {
     index,
@@ -409,15 +419,54 @@ function reviewHunk(
     inserted,
     anchor: inserted ? inserted.from : pos.gap(h.sfrom, continues),
     kind: content.kind,
+    ...(content.context && {
+      formatContext: {
+        removed: content.context.removed,
+        inserted: content.context.ranges.map(({ from, to }) => ({
+          from: pos.start(h.sfrom + from),
+          to: pos.end(h.sfrom + to - 1),
+        })),
+      },
+    }),
   };
 }
 
 // ---------- content ----------
-/** A block-attribute token names the whole block visually, but never widens the actionable hunk. */
-function reviewEnd(side: Side, from: number, to: number, kind: HunkKind): number {
-  return kind === "format" && to === from + 1 && side.toks[from]?.kind === "block"
-    ? side.starts[side.blockOf[from] + 1]
-    : to;
+/** Only aligned, unchanged text illustrates block formatting; another hunk owns every gap. */
+function formattingRanges(
+  diff: BlockDiff,
+  h: Hunk,
+): Array<BlockSpan & { baseFrom: number }> | undefined {
+  if (
+    h.to !== h.from + 1 ||
+    diff.base.toks[h.from].kind !== "block" ||
+    hunkKind(diff.base.toks, h) !== "format"
+  )
+    return undefined;
+  const baseEnd = diff.base.starts[diff.base.blockOf[h.from] + 1];
+  const draftEnd = diff.draft.starts[diff.draft.blockOf[h.sfrom] + 1];
+  // Relative token ranges keep the memo independent of preceding blocks' positions.
+  const ranges = [{ from: 0, to: 1, baseFrom: 0 }];
+  for (let b = h.to; b < baseEnd; b++) {
+    const d = diff.pos[b];
+    if (d <= h.sfrom || d >= draftEnd) continue;
+    const offset = d - h.sfrom;
+    const baseFrom = b - h.from;
+    const last = ranges[ranges.length - 1];
+    if (last.to === offset && last.baseFrom + last.to - last.from === baseFrom) last.to++;
+    else ranges.push({ from: offset, to: offset + 1, baseFrom });
+  }
+  // With another edit in this block, paint inline: a whole-node mark would also wrap its red widget.
+  if (
+    ranges.length !== 1 ||
+    ranges[0].to !== baseEnd - h.from ||
+    ranges[0].to !== draftEnd - h.sfrom
+  ) {
+    ranges[0].from++;
+    ranges[0].baseFrom++;
+    if (ranges[0].from === ranges[0].to) ranges.shift();
+  }
+  return ranges;
 }
 
 function tokensToJSON(toks: readonly Tok[]): ProseMirrorJSON[] {
@@ -463,7 +512,11 @@ const plain = (toks: readonly Tok[]) => {
   return s;
 };
 
-function excerpt(diff: BlockDiff, members: number[]): { removed: string; inserted: string } {
+function excerpt(
+  diff: BlockDiff,
+  members: number[],
+  contents: HunkContent[],
+): { removed: string; inserted: string } {
   const clip = (parts: string[]) => {
     const s = parts
       .map((p) => p.replace(/\s+/g, " ").trim())
@@ -473,19 +526,12 @@ function excerpt(diff: BlockDiff, members: number[]): { removed: string; inserte
   };
   const removed: string[] = [];
   const inserted: string[] = [];
-  for (const i of members) {
+  members.forEach((i, n) => {
     const h = diff.hunks[i];
-    const kind = hunkKind(diff.base.toks, h);
-    removed.push(plain(diff.base.toks.slice(h.from, reviewEnd(diff.base, h.from, h.to, kind))));
-    inserted.push(
-      plain(
-        diff.draft.toks.slice(
-          h.sfrom,
-          reviewEnd(diff.draft, h.sfrom, h.sfrom + h.ins.length, kind),
-        ),
-      ),
-    );
-  }
+    const context = contents[n].context;
+    removed.push(context ? context.text : plain(diff.base.toks.slice(h.from, h.to)));
+    inserted.push(context ? context.text : plain(h.ins));
+  });
   return { removed: clip(removed), inserted: clip(inserted) };
 }
 

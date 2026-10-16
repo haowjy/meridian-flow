@@ -81,6 +81,15 @@ export function mapReview(
       hunks: group.hunks.map((hunk) => ({
         ...hunk,
         anchor: mapping.map(hunk.anchor, -1),
+        ...(hunk.formatContext && {
+          formatContext: {
+            ...hunk.formatContext,
+            inserted: hunk.formatContext.inserted.map(({ from, to }) => ({
+              from: mapping.map(from, 1),
+              to: mapping.map(to, -1),
+            })),
+          },
+        }),
         inserted: hunk.inserted
           ? { from: mapping.map(hunk.inserted.from, 1), to: mapping.map(hunk.inserted.to, -1) }
           : null,

@@ -57,8 +57,10 @@ export function useReconcileReviewFocus(
       caret === undefined || !reviewAtCaret
         ? null
         : reviewAtCaret.groups.find((group) =>
-            group.hunks.some(
-              (hunk) => hunk.inserted && caret >= hunk.inserted.from && caret <= hunk.inserted.to,
+            group.hunks.some((hunk) =>
+              (hunk.formatContext?.inserted ?? (hunk.inserted ? [hunk.inserted] : [])).some(
+                (range) => caret >= range.from && caret <= range.to,
+              ),
             ),
           );
     reportFocusedChange(review, here?.id ?? null);

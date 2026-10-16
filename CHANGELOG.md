@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Formatting-only draft review rows exclude separate text edits from their excerpts and red/green paint.
+
 - Draft edit-status reads release document locks before review projection and reuse exact-state status pages, reducing contention with writer acknowledgements.
 - Rich-only draft changes show their affected text in the change list and red/green editor paint, including heading-level changes.
 
