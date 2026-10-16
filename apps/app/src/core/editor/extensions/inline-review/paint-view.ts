@@ -12,6 +12,7 @@ export function createReviewPaintView(
   relocalize: () => void,
 ) {
   let consumedPulse = 0;
+  const arrivals = new Set<string>();
   // PM's observer must not parse decoration-only DOM writes as manuscript edits.
   // stop() preserves pending native mutations; start() observes again after our paint.
   const observer = (view as EditorView & { domObserver: { stop(): void; start(): void } })
@@ -26,12 +27,20 @@ export function createReviewPaintView(
   };
   const update = () => {
     const state = read(view.state);
-    if (!state || state.composing) return;
+    if (!state) return;
+    // Remember arrival render keys even while composition defers DOM writes. Subsequent
+    // composing text can change its command hash without losing or replaying that arrival.
+    if (state.pulseRevision !== consumedPulse) {
+      consumedPulse = state.pulseRevision;
+      for (const group of state.review?.groups ?? []) {
+        if (!state.arrivals.has(group.id)) continue;
+        for (const hunk of group.hunks) arrivals.add(state.renderKeys.get(hunk.index) ?? "");
+      }
+    }
+    if (state.composing) return;
     const changes = new Map<string, string>();
     for (const group of state.review?.groups ?? [])
       for (const hunk of group.hunks) changes.set(state.renderKeys.get(hunk.index) ?? "", group.id);
-    const pulse = state.pulseRevision !== consumedPulse;
-    consumedPulse = state.pulseRevision;
     paintDOM(() => {
       for (const element of view.dom.querySelectorAll<HTMLElement>(`[${RENDER_ATTR}]`)) {
         const key = element.getAttribute(RENDER_ATTR) ?? "";
@@ -39,12 +48,13 @@ export function createReviewPaintView(
         if (!id) continue;
         if (element.getAttribute(CHANGE_ATTR) !== id) element.setAttribute(CHANGE_ATTR, id);
         element.classList.toggle(inlineReviewClassNames.emphasized, id === state.activeChangeId);
-        if (pulse && state.arrivals.has(id)) element.classList.add(inlineReviewClassNames.arrived);
+        if (arrivals.has(key)) element.classList.add(inlineReviewClassNames.arrived);
         const plan = state.removals.get(key);
         if (plan && element.classList.contains(inlineReviewClassNames.removal))
           updateRemovalElement(element, plan, state.expandedRemovals.has(key));
       }
     });
+    arrivals.clear();
   };
   const endAnimation = (event: AnimationEvent) => {
     const element = event.target;
