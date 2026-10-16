@@ -222,7 +222,9 @@ and Discard Undo checks below; retained and fresh-node diffs must agree.
    change; return to the Editor and press Ctrl+Z twice, then return to the dock and press it
    twice. PASS: each view undoes only its own typing and Discards. Exclude the retained
    `[inert]` and `aria-hidden` editor DOM from the typing target. Control: type " CONTROL",
-   Ctrl+Z (it disappears); type " SURVIVE_SWAP", switch hosts and Ctrl+Z (it must also undo).
+   Ctrl+Z (it disappears); type " SURVIVE_SWAP" in the Editor, switch to the dock and back, then
+   Ctrl+Z in the Editor (it must undo: a host's own history survives the swap). Ctrl+Z in the
+   dock does not undo the Editor's typing; that is the per-surface rule, not a failure.
 4. Both hosts paint at once. Open the same draft in the Editor tab and in the chat's document
    dock, side by side. PASS: both show the same red and green marks. Type in the dock: both
    repaint within the review debounce. Close the dock: the Editor still paints, and typing there
@@ -540,9 +542,11 @@ Continue with Probe H's fixture (recreate proposals between actions).
    (its room is superseded and the tab asks the server again). PASS: live is unchanged, the
    console is clean, and nothing stays pending. Control with no held writing: record the same.
 
-8. A refused row. Press **Apply** on a row and, while it is in flight, have a peer undo that change so
-   the Apply is refused. PASS: the file **stays listed with an alert saying why**, even after the
-   list stops returning it.
+8. A refused row. Apply publishes the frame the writer clicked, so a peer undoing the change while
+   the Apply is in flight does **not** refuse it: the clicked text applies and the peer's later
+   state stays pending in the draft (final acceptance on `34cc267c4`). To see a refusal, make the
+   item's address collide instead (another document already at its path): PASS: the file **stays
+   listed with an alert saying why**, even after the list stops returning it.
 
 ## Probe K: chat links from change rows
 
