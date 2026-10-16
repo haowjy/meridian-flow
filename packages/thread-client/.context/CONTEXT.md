@@ -237,7 +237,10 @@ One framework-free operation runs Stop, the queue's x and Cancel queue for the a
   live in page memory. `reconcile()` (host-called) drops entries whose command left the store.
   `subscribe` fires after every change to `unresolved()` or `stopFacts()` from any call, so hosts
   never wrap calls to redraw. `chatCards` folds them (with a failed Send now) into the composer's card stack (copy,
-  count, try again or dismiss), with no dependence on rows; `attempt` counts posts per request.
+  count, try again or dismiss), with no dependence on rows. Each command carries an `occurrence: { requestId, attempt }`,
+  allocated before any save or post. Retry mints a new occurrence and saves it, including when the
+  previous save failed; the stable outer command id still replays the same server decision.
+  Joining an in-flight attempt and reload's resume retain the saved occurrence.
 - **Send now** is not a hand-back command: `postSendNow(ports, threadId, body)` shares the
   classifier and returns confirmed (`cancelledExecutionId`; null means this attempt requested no
   cancellation), refused, or ambiguous with the frozen body. `sendNowRequest(view)` builds the body.

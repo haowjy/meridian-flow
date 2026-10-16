@@ -12,9 +12,15 @@ import {
 const command: PendingHandBack = {
   kind: "stop",
   requestId: "request-1",
+  occurrence: { requestId: "request-1", attempt: 1 },
   body: { requestId: "request-1", seenThrough: 4, seenExecutionId: null, mine: [] },
 };
-const queueCommand: PendingHandBack = { kind: "queue", requestId: "request-q", ids: ["m1", "m2"] };
+const queueCommand: PendingHandBack = {
+  kind: "queue",
+  requestId: "request-q",
+  ids: ["m1", "m2"],
+  occurrence: { requestId: "request-q", attempt: 1 },
+};
 const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const resolve = chatReferenceResolver({
   projectId: uuid(1),

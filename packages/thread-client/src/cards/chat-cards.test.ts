@@ -208,7 +208,7 @@ it("stacks usage before commands, keeps a writer's unsent words, and anchors a q
           status: "ambiguous",
           count: 1,
           targetExecutionId: null,
-          attempt: 3,
+          occurrence: { requestId: "h", attempt: 3 },
         },
       ],
       controls: [

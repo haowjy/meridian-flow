@@ -4,6 +4,7 @@
  * may already have removed, so they sit in the composer's card stack.
  */
 import { classifyCommandFailure } from "@meridian/contracts/failures";
+import { occurrenceKey } from "../commands";
 import type { UnresolvedHandBack } from "../hand-back/operation";
 import type { FailedSendNow } from "../hand-back/send-now";
 import { failedStopIsMoot } from "../run-state/fold-messages";
@@ -42,7 +43,7 @@ export function handBackCards(
       continue;
     const refused = entry.status === "refused";
     cards.push({
-      key: `${entry.requestId}:${entry.attempt}`,
+      key: occurrenceKey(entry.occurrence),
       failure: classifyCommandFailure({
         kind: refused ? "refused" : entry.status === "unsaved" ? "unsaved" : "lost",
       }),

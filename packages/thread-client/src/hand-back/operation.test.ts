@@ -94,6 +94,7 @@ function rig(options: { saveFails?: boolean; acceptFails?: boolean } = {}) {
     newId: () => REQ,
   };
   return {
+    ports,
     op: createHandBackOperation({ threadId: "t1", ports }),
     calls,
     sent,
@@ -113,6 +114,31 @@ const answerBody = (ids: string[], version = "1001") => ({
 });
 
 describe("hand-back operation", () => {
+  it("allocates failures before saving, gives Retry a new occurrence, and preserves it on reload", async () => {
+    const r = rig({ saveFails: true });
+    const key = (op = r.op) => handBackCards(op.unresolved(), r.view())[0]?.key;
+    await r.op.press({ kind: "queue", ids: [M1] });
+    const first = key();
+    await r.op.retry(REQ);
+    const second = key();
+    expect(second).not.toBe(first);
+    expect(r.sent).toHaveLength(0);
+
+    r.state.saveFails = false;
+    await r.op.retry(REQ);
+    const third = key();
+    expect(new Set([first, second, third]).size).toBe(3);
+    const persisted = JSON.stringify([...r.stored]);
+    r.stored.clear();
+    for (const [id, command] of JSON.parse(persisted)) r.stored.set(id, command);
+    const reloaded = createHandBackOperation({ threadId: "t1", ports: r.ports });
+    await reloaded.resume();
+    expect(key(reloaded)).toBe(third);
+    await reloaded.retry(REQ);
+    expect(key(reloaded)).not.toBe(third);
+    expect(r.sent.every((sent) => JSON.stringify(sent) === JSON.stringify(r.sent[0]))).toBe(true);
+  });
+
   it.each([
     {
       row: "a validated 2xx hands the content back, removes the turns at the record's version, and retires the intent",
@@ -226,7 +252,7 @@ describe("hand-back operation", () => {
       commandKind: "queue" as const,
       count: 2,
       targetExecutionId: null,
-      attempt: 1,
+      occurrence: { requestId: REQ, attempt: 1 },
     };
     expect(handBackCards([{ ...base, status: "ambiguous" }], rowsGone)).toMatchObject([
       { copy: "hand-back-failed", action: "try_again", count: 2 },
