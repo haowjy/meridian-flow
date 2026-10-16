@@ -6,7 +6,7 @@
  * A card present when the history settles (a reload, a restored command, a failure first seen on
  * load) is the baseline and stays silent. Every key that appears after it is announced once. A card
  * that leaves (the chat moved past it, the turn was forgotten, the command was answered) takes its
- * alert down, leaving any other alert alone. A card whose sentence changes while it lives (a Stop's
+ * published batch down without re-speaking its surviving cards. A card whose sentence changes while it lives (a Stop's
  * failure that becomes the queue's once its reply ended) is spoken again, so the region never keeps
  * words the card no longer says.
  */
