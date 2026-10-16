@@ -2,7 +2,13 @@
  * Discard outside the editor. It protects: removing a different change than the one clicked, eating the
  * writer's later typing, and an Undo that reverts more than its own Discard (two rows, one draft).
  */
-import { classifyChanges, type ItemRange, writeBlocks } from "@meridian/agent-edit/diff";
+import {
+  appendApplyRecord,
+  applyRecordOf,
+  classifyChanges,
+  type ItemRange,
+  writeBlocks,
+} from "@meridian/agent-edit/diff";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { expect, it } from "vitest";
 import * as Y from "yjs";
@@ -130,5 +136,74 @@ it.each(
         userId: "u",
       });
     }
+  }
+});
+
+it.each([
+  ["Apply, delete, Discard, delete again", true],
+  ["Discard then Undo", false],
+] as const)("%s retains the author after reload", (_name, applied) => {
+  const { doc, fragment } = room(["The red gate."], ["The red gate."]);
+  const peer = new Y.Doc({ gc: false });
+  peer.clientID = 77;
+  Y.applyUpdate(peer, Y.encodeStateAsUpdate(doc));
+  writeBlocks(peer.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema, [
+    schema.nodes.paragraph.create(null, schema.text("The blue gate.")),
+  ]);
+  const part = {
+    threadId: "chat",
+    turnId: "turn",
+    inserted: [[77, 0, Y.getState(peer.store, 77)]] as ItemRange[],
+    deleted: [...Y.snapshot(peer).ds.clients].flatMap(([client, ranges]) =>
+      ranges.map(({ clock, len }) => [client, clock, len] as ItemRange),
+    ),
+  };
+  Y.applyUpdate(doc, Y.encodeStateAsUpdate(peer));
+  const provenance = { userId: "u", parts: [part] };
+  const classify = (read: Y.Doc) => classifyChanges(read, projectRoom(read), provenance);
+  const deleteBlue = () => {
+    const text = (fragment.get(0) as Y.XmlElement).get(0) as Y.XmlText;
+    text.delete(text.toString().indexOf("blue"), 4);
+  };
+  const writer = { kind: "user", userId: "u" };
+  const chat = { kind: "thread", threadId: "chat", turnId: "turn" };
+  try {
+    if (applied) {
+      const classified = classifyChanges(doc, projectRoom(doc), provenance, { record: true });
+      const client = doc.clientID;
+      doc.clientID = 1;
+      doc.transact(() => {
+        appendApplyRecord(doc, applyRecordOf(classified, classified.keys()));
+        seedReviewBase(doc, ["The blue gate."]);
+      });
+      doc.clientID = client;
+      deleteBlue();
+      expect([...classify(doc).values()].map((c) => c.byline)).toEqual([[writer]]);
+    }
+    const discarded = discardInRoom(doc, "all");
+    expect(discarded).not.toBeNull();
+    expect(projectRoom(doc).groups).toHaveLength(0);
+    if (applied) {
+      discarded?.release();
+      deleteBlue();
+    } else {
+      discarded?.undo();
+    }
+    for (const gc of [false, true]) {
+      const reloaded = new Y.Doc({ gc });
+      try {
+        Y.applyUpdate(reloaded, Y.encodeStateAsUpdate(doc));
+        for (const read of [doc, reloaded]) {
+          expect(
+            [...classify(read).values()].map(({ byline, members }) => ({ byline, members })),
+          ).toEqual([{ byline: [applied ? writer : chat], members: applied ? [] : [0] }]);
+        }
+      } finally {
+        reloaded.destroy();
+      }
+    }
+  } finally {
+    peer.destroy();
+    doc.destroy();
   }
 });

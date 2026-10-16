@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Deleting text restored by Discard keeps the writer’s "You" byline, including after a reload. Undo of a discarded AI change still credits its chat.
+
 - Draft attribution collects a complete word-and-structure footprint before refining author names. Shared word ends, rebuilt list text and repeated-text changes keep their chat membership and full Apply evidence even when naming exhausts its budget.
 - An open editor refreshes attribution when Undo restoration links or Apply records arrive separately from the text. The chat draft dock derives its summary, file count and commands from the same ready membership as its rows, including while collapsed. An attribution refresh during the editor’s projection debounce cannot stall on offsets from the previous text.
 

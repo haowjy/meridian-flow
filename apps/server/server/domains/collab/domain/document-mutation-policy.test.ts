@@ -76,12 +76,15 @@ describe("document mutation policy operations", () => {
     expect(target.getText("deleted").toString()).toBe("");
   });
 
-  it("admits a writer's restoration links and still refuses the server's Apply record", () => {
+  it("admits a writer's restoration links and Discard write-backs but refuses the server's Apply record", () => {
     const reference = new Y.Doc({ gc: false });
     const writer = (root: string) => {
       const doc = new Y.Doc({ gc: false });
       doc.clientID = 1_000_000;
-      doc.getArray(root).push([[1_000_000, 0, 4, 7, 0]]);
+      doc.getArray(root).push([
+        [1_000_000, 0, 4, 7, 0],
+        [1_000_000, 5, 4],
+      ]);
       return Y.encodeStateAsUpdate(doc);
     };
     expect(validateClientUpdateAdmission(reference, writer(RESTORED_ROOT))).toEqual({

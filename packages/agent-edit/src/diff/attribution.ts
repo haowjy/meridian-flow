@@ -21,7 +21,7 @@ import { type ApplyEntry, readApplyRecord } from "./apply-record.js";
 import { DRAFT_SERVER_CLIENT_ID } from "./draft-base.js";
 import type { Hunk } from "./hunks.js";
 import { IdIndex, type ItemRange, indexRanges } from "./id-index.js";
-import { type RestorationLink, readRestorationLinks } from "./restorations.js";
+import { type RestorationLink, readRestorations } from "./restorations.js";
 import type { ReviewProjection } from "./review.js";
 import { DIFF_OPTS, isBlockTok, type Side, type Tok } from "./tokens.js";
 
@@ -237,6 +237,7 @@ class Classifier {
   private readonly inserted: IdIndex;
   private readonly deleted: IdIndex;
   private readonly applied: IdIndex;
+  private readonly writeBack: IdIndex;
   private readonly settled: IdIndex;
   private readonly links: IdIndex;
   private readonly superseded: IdIndex;
@@ -263,7 +264,9 @@ class Classifier {
     const record = readApplyRecord(doc);
     this.applied = indexRanges([record.flatMap((e) => e.base)]);
     this.settled = indexRanges([record.flatMap((e) => e.settled)]);
-    this.linkList = readRestorationLinks(doc);
+    const restored = readRestorations(doc);
+    this.writeBack = indexRanges([restored.base]);
+    this.linkList = restored.links;
     this.links = new IdIndex(this.linkList.map((l, i) => [l[0], l[1], l[2], i] as const));
     this.superseded = indexRanges([this.linkList.map((l) => [l[3], l[4], l[2]] as const)]);
     const items: Y.Item[] = [];
@@ -338,6 +341,8 @@ class Classifier {
       this.originMemo,
       (c, k) => {
         if (this.applied.get(c, k) >= 0) return BASE;
+        // A restoration link takes precedence over a write-back record: Undo keeps its source.
+        if (this.links.get(c, k) < 0 && this.writeBack.get(c, k) >= 0) return BASE;
         const part = this.inserted.get(c, k);
         if (part >= 0) return part;
         return c === DRAFT_SERVER_CLIENT_ID ? BASE : undefined;

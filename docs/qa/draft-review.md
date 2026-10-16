@@ -541,7 +541,10 @@ Use a change two chats wrote. Run both shells.
 For step 4, use AI replacements **red → bed**, **young → younger** and **red → reed**,
 Apply, then delete the accepted word as the writer. Also change a bullet list to a
 numbered list, Apply, then delete one word inside it. PASS: each later deletion says
-"You", with no old chat link or chat membership.
+"You", with no old chat link or chat membership. Discard that writer deletion,
+then delete the restored word again. PASS: the second deletion still says "You"
+before and after reload. Separately Discard a pending AI replacement, then Undo:
+PASS: its byline and membership still name the chat after reload.
 
 Repeat with two files from the same chat and leave its draft dock collapsed.
 Once only writer changes remain, PASS: no stale document count or Apply/Discard

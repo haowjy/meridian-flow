@@ -38,8 +38,9 @@ export {
   RESTORED_ORIGIN,
   RESTORED_ROOT,
   type RestorationLink,
-  readRestorationLinks,
+  readRestorations,
   recordRestorations,
+  recordWriteBack,
 } from "./restorations.js";
 export {
   composeGroups,

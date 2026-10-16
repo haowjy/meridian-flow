@@ -6,7 +6,7 @@
 import {
   appendApplyRecord,
   RESTORED_ORIGIN,
-  readRestorationLinks,
+  readRestorations,
   recordRestorations,
   writeBlocks,
 } from "@meridian/agent-edit/diff";
@@ -204,7 +204,7 @@ it("an attached runtime republishes delayed Undo provenance and Apply records wi
     const restoredFrame = runtime.state().frame;
     if (!restoredFrame) throw new Error("Restored frame was not published");
     const seen = Y.createDocFromSnapshot(doc, restoredFrame.snapshot, new Y.Doc({ gc: false }));
-    expect(readRestorationLinks(seen)).toHaveLength(1);
+    expect(readRestorations(seen).links).toHaveLength(1);
     seen.destroy();
     expect(runtime.state().changes[0]).toMatchObject({
       byline: [{ kind: "thread", threadId: "chat", turnId: "turn" }],

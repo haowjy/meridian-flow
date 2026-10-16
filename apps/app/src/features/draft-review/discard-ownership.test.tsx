@@ -154,6 +154,11 @@ it("a phone Discard binds to its open review: with the document absent from the 
         await click(/^Undo$/);
         expect(rows()).toBe(0);
         expect(fragment.toString()).toContain("green");
+        // Discard removed the selected change. Select its restored row, as a tap in the manuscript does.
+        const [restored] = reviewChanges(projectRoom(room.document));
+        await act(async () =>
+          read().presented.controller.focusReviewChange(draftA, restored.id, { scroll: false }),
+        );
         await click(/^Discard$/);
         expect(rows()).toBe(1);
         expect(fragment.toString()).toContain("red");

@@ -18,12 +18,13 @@ import {
   composeGroups,
   type ReviewGroup,
   type ReviewProjection,
+  recordWriteBack,
   writeBlocks,
 } from "@meridian/agent-edit/diff";
 import type { Editor } from "@tiptap/core";
 import type { Schema } from "@tiptap/pm/model";
 import { yUndoPluginKey } from "@tiptap/y-tiptap";
-import type * as Y from "yjs";
+import * as Y from "yjs";
 import { contentHashOf } from "@/core/editor/extensions/inline-review";
 import { undoOriginOf } from "@/core/editor/extensions/UndoOwnershipExtension";
 import {
@@ -60,7 +61,9 @@ export function writeDiscard(
   const { origin } = target;
   undo?.stopCapturing();
   target.doc.transact(() => {
+    const clock = Y.getState(target.doc.store, target.doc.clientID);
     writeBlocks(target.fragment, target.schema, blocks);
+    recordWriteBack(target.doc, clock);
   }, origin);
   undo?.stopCapturing();
 }

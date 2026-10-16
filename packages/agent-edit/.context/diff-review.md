@@ -42,8 +42,10 @@ their recreated text. Membership and the Apply record are derived only here.
 Optional character refinement can name fewer authors, but cannot mutate the
 footprint. A diff budget, slide cap or alignment-work limit silences names, not
 membership or Apply evidence. The room's Apply records establish accepted items
-as base, and Undo-time restoration links resolve recreated IDs to their original
-parts. Without an Apply record, surviving AI items inside a later raw-word change
+as base. Discard records its newly inserted IDs as base write-backs in the same
+writer-writable root as Undo links. Undo-time links resolve recreated IDs to their
+original parts and take precedence over write-back records; the exact write-back
+ranges never include later Undo insertions. Without an Apply record, surviving AI items inside a later raw-word change
 remain conservatively pending even if the character edit touches only writer text.
 
 ## Apply and local Discard are the same operation on two sides

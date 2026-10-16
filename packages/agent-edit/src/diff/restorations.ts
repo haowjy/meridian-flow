@@ -1,5 +1,5 @@
 /**
- * Restoration links: which items an Undo re-created from deleted ones, recorded at the moment of Undo.
+ * Restoration provenance: Discard write-back ranges are base; Undo links re-created items to their source.
  *
  * Yjs never undeletes. `redoItem` creates a new item at a new id with a copy of the old content and sets
  * `original.redone` to it, for every kind of item (text, element, descendant, format, map attribute). Only
@@ -13,7 +13,9 @@
  * writer's own text in their own draft.
  */
 import * as Y from "yjs";
+import type { ItemRange } from "./id-index.js";
 
+/** Three-number ranges record base write-backs; five-number tuples record Undo links. */
 export const RESTORED_ROOT = "__meridian_review_restored_v1";
 /** The origin of the recording transaction. No UndoManager tracks it, so a record never lands on an undo stack. */
 export const RESTORED_ORIGIN = "meridian:review-restored";
@@ -26,6 +28,18 @@ export type RestorationLink = readonly [
   toClient: number,
   toClock: number,
 ];
+
+/**
+ * Record exactly the items Discard just inserted, before appending provenance consumes another clock.
+ * The caller owns the transaction; its UndoManager scopes the prose fragment, not this root.
+ */
+export function recordWriteBack(doc: Y.Doc, startClock: number): void {
+  const length = Y.getState(doc.store, doc.clientID) - startClock;
+  if (length > 0)
+    doc
+      .getArray<ItemRange | RestorationLink>(RESTORED_ROOT)
+      .push([[doc.clientID, startClock, length]]);
+}
 
 /** Copies an UndoManager's restorations into its doc as each undo or redo pops, for the manager's life. */
 export function recordRestorations(history: Y.UndoManager): void {
@@ -89,18 +103,30 @@ function sound(doc: Y.Doc, [client, clock, len, toClient, toClock]: RestorationL
   return was.content instanceof Y.ContentDeleted || kindOf(was.content) === kindOf(now.content);
 }
 
-/** The draft's recorded restoration links that pass validation. */
-export function readRestorationLinks(doc: Y.Doc): RestorationLink[] {
+/** The draft's positive base write-backs and Undo links, validated without reading tombstone text. */
+export function readRestorations(doc: Y.Doc): { base: ItemRange[]; links: RestorationLink[] } {
   const root = doc.share.get(RESTORED_ROOT);
-  if (!root) return [];
-  const out: RestorationLink[] = [];
+  const out: { base: ItemRange[]; links: RestorationLink[] } = { base: [], links: [] };
+  if (!root) return out;
   for (let item = (root as Y.Array<unknown>)._start; item; item = item.right) {
     if (item.deleted || !(item.content instanceof Y.ContentAny)) continue;
-    for (const raw of item.content.getContent() as unknown[])
-      if (Array.isArray(raw) && raw.length === 5 && raw.every(Number.isSafeInteger)) {
+    for (const raw of item.content.getContent() as unknown[]) {
+      if (!Array.isArray(raw) || !raw.every(Number.isSafeInteger)) continue;
+      if (raw.length === 5) {
         const link = raw as unknown as RestorationLink;
-        if (sound(doc, link)) out.push(link);
+        if (sound(doc, link)) out.links.push(link);
+      } else if (raw.length === 3) {
+        const range = raw as unknown as ItemRange;
+        const [client, clock, length] = range;
+        if (
+          client >= 0 &&
+          clock >= 0 &&
+          length > 0 &&
+          Y.getState(doc.store, client) >= clock + length
+        )
+          out.base.push(range);
       }
+    }
   }
   return out;
 }

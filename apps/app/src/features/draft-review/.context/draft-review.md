@@ -54,6 +54,11 @@ UndoManager tracks. The root is writer-writable, syncs and persists with the dra
 through chains with light validation (the original is deleted, the same kind of content). An Apply appends an Apply record to a server-owned root
 of the draft doc in the same write that moves `review_base`, naming the items Apply moved into the base, so
 applied AI text reads as base and a stale AI deletion no longer blurs a later point.
+Discard appends its inserted IDs as three-number base ranges to the writer-writable
+restoration root, in its text transaction. The fragment-scoped history does not
+undo those records. Undo links (five-number tuples) take precedence and follow
+their original source; deleting Discard's write-back later reads as a base deletion,
+while Undo-restored AI text keeps its chat.
 
 The runtime observes both provenance roots even with editors attached. Its attribution cache and
 settlement reuse include a room provenance revision: a separately delivered restoration link or Apply
