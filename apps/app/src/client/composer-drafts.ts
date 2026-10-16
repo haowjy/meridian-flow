@@ -9,7 +9,7 @@ import { browserRecord, isRecord, type StorageSource } from "./storage/browser-r
 
 export type ComposerDraftScope = { kind: "chat" | "new-chat"; id: string };
 
-export type DeletedChatNotice = { threadId: string; title: string | null; count: number };
+export type DeletedChatCard = { threadId: string; title: string | null; count: number };
 
 /**
  * A hand-back request the writer pressed whose answer has not been written to the composer: kept
@@ -21,7 +21,7 @@ export type PendingHandBack = HandBackCommand;
 
 type StoredComposerDraft = (ComposerDraftSnapshot | { doc: null }) & {
   received?: string[];
-  notices?: DeletedChatNotice[];
+  notices?: DeletedChatCard[];
   handBacks?: PendingHandBack[];
   /** A New chat's thread id, minted before its first attach so its uploads and Send share it. */
   chatId?: string;
@@ -41,6 +41,14 @@ export const handBackReceipt = (requestId: string) => `handBack:${requestId}`;
 
 function isPendingHandBack(value: unknown): value is PendingHandBack {
   if (!isRecord(value) || typeof value.requestId !== "string") return false;
+  const occurrence = value.occurrence;
+  if (
+    !isRecord(occurrence) ||
+    typeof occurrence.requestId !== "string" ||
+    !Number.isSafeInteger(occurrence.attempt) ||
+    Number(occurrence.attempt) < 1
+  )
+    return false;
   if (value.kind === "queue")
     return Array.isArray(value.ids) && value.ids.every((id) => typeof id === "string");
   if (value.kind !== "stop") return false;
@@ -61,7 +69,7 @@ export class ComposerSessionDraft {
   private current: ComposerDraftSnapshot | null;
   private received = new Set<string>();
   private handBacksPending: PendingHandBack[] = [];
-  notices: DeletedChatNotice[] = [];
+  notices: DeletedChatCard[] = [];
   /**
    * The thread id a New chat will be created with. Uploads attached before Send belong to it, so
    * it is minted here, kept with the draft, and reused by Send. A sent draft mints the next one.
@@ -128,7 +136,7 @@ export class ComposerSessionDraft {
   prependSnapshots(
     snapshots: ComposerDraftSnapshot[],
     recordIds: string[] = [],
-    notice?: DeletedChatNotice,
+    notice?: DeletedChatCard,
   ): boolean {
     const pending = snapshots.filter(
       (_, index) => !recordIds[index] || !this.hasReceived(recordIds[index]),
@@ -172,11 +180,15 @@ export class ComposerSessionDraft {
    * False when the write failed: the caller must not send.
    */
   recordHandBack(command: PendingHandBack): boolean {
-    if (this.handBacksPending.some((known) => known.requestId === command.requestId)) return true;
+    const held = this.handBacksPending.some((known) => known.requestId === command.requestId);
     return this.commit(this.current, {
       received: this.received,
       notices: this.notices,
-      handBacks: [...this.handBacksPending, command],
+      handBacks: held
+        ? this.handBacksPending.map((known) =>
+            known.requestId === command.requestId ? command : known,
+          )
+        : [...this.handBacksPending, command],
     });
   }
 
@@ -224,7 +236,7 @@ export class ComposerSessionDraft {
     draft: ComposerDraftSnapshot | null,
     next: {
       received: Set<string>;
-      notices: DeletedChatNotice[];
+      notices: DeletedChatCard[];
       handBacks: PendingHandBack[];
     },
   ): boolean {
@@ -296,7 +308,7 @@ export class ComposerSessionDraft {
           : {
               ...(draft ?? { doc: null }),
               received,
-              notices: notices as DeletedChatNotice[],
+              notices: notices as DeletedChatCard[],
               handBacks,
               ...(typeof value.chatId === "string" ? { chatId: value.chatId } : {}),
               ...(Array.isArray(value.parked)

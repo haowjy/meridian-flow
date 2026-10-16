@@ -93,6 +93,31 @@ export function classifyReplyFailure(input: ReplyFailureInput): Failure {
   };
 }
 
+/**
+ * What a command's failed attempt says about itself, the way `classifyAnswer` reads an answer:
+ * `lost` is no usable answer (transport, a 5xx or a body that does not validate), `refused` is a
+ * definite 4xx the server will give again, and `unsaved` is a command the browser could not keep.
+ */
+export type CommandFailureInput = {
+  kind: "lost" | "refused" | "unsaved";
+  /** The HTTP status when there was one. */
+  status?: number | null;
+  /** The server's error code when it named one. */
+  code?: string | null;
+};
+
+/** The only place a command failure's source is chosen. A refused command is the writer's to dismiss or redo. */
+export function classifyCommandFailure(input: CommandFailureInput): Failure {
+  const source: FailureSource = input.kind === "refused" ? "refusal" : "transport";
+  const code = input.code ?? (input.kind === "unsaved" ? "unsaved" : input.kind);
+  return {
+    category: "command",
+    source,
+    actionable: true,
+    cause: { code, ...(typeof input.status === "number" ? { status: input.status } : {}) },
+  };
+}
+
 /** Usage is a category of its own: `RunState.blocked` needs no classifier. */
 export function usageFailure(reason: string): Failure {
   return { category: "usage", source: "usage", actionable: true, cause: { code: reason } };

@@ -23,13 +23,8 @@ import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import { httpErrorStatus } from "@/client/api/http-client";
 import { enqueueThreadControl, withdrawThreadControl } from "@/client/api/threads-api";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
-import { announce, announceError, useThreadActions } from "@/client/stores";
-import {
-  controlAlreadyStartedCopy,
-  controlStatusCopy,
-  controlStoppedCopy,
-  controlWithdrawFailedCopy,
-} from "./control-copy";
+import { announce, useThreadActions } from "@/client/stores";
+import { controlAlreadyStartedCopy, controlStatusCopy, controlStoppedCopy } from "./control-copy";
 import {
   type CompactControl,
   controlsReducer,
@@ -99,10 +94,8 @@ export function useThreadControls(input: {
           revalidate();
         },
         () => {
+          // The failed row is a card (`chatCards`); a command the writer already withdrew has none.
           dispatch({ type: "enqueue_failed", id });
-          // A command the writer already withdrew has no failure to show.
-          if (!localRef.current.withdrawals.has(id))
-            announceError(controlStatusCopy(control, "failed"));
         },
       );
       inflight.current.set(id, request);
@@ -143,7 +136,7 @@ export function useThreadControls(input: {
       // The writer's own Stop is the server being told it won't run: the row goes at once.
       held.current.controls.delete(queued.id);
       if (queued.control.kind === "write_mode") return withdrawSwitch(queued);
-      dispatch({ type: "withdraw", id: queued.id });
+      dispatch({ type: "withdraw", id: queued.id, requestId: crypto.randomUUID() });
       announce(controlStoppedCopy(queued.control));
       const withdrawOnServer = async () => {
         try {
@@ -160,7 +153,6 @@ export function useThreadControls(input: {
             return dispatch({ type: "withdraw_not_found", id: queued.id });
           }
           dispatch({ type: "withdraw_failed", id: queued.id });
-          announceError(controlWithdrawFailedCopy(queued.control));
         }
       };
       void (inflight.current.get(queued.id) ?? Promise.resolve()).then(withdrawOnServer);

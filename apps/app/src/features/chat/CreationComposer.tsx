@@ -15,7 +15,7 @@ import {
   useCanOpenChatReference,
   useOpenChatDocument,
 } from "@/features/project/context/open-chat-document";
-import { DeletedChatNotice } from "./DeletedChatNotice";
+import { DeletedChatCard } from "./DeletedChatCard";
 import { useCreationComposer } from "./useCreationComposer";
 
 export function CreationComposer({
@@ -118,10 +118,10 @@ export function CreationComposer({
   return (
     <>
       <Composer
-        notices={
+        cards={
           creation.draft.notices.length > 0
             ? creation.draft.notices.map((notice) => (
-                <DeletedChatNotice
+                <DeletedChatCard
                   key={notice.threadId}
                   notice={notice}
                   onDismiss={() => creation.draft.dismissNotice(notice.threadId)}

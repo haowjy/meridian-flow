@@ -6,7 +6,7 @@
  * each `meridian.run_state` frame, the `switched` frame. This hook reads that slice and folds
  * it for the toolbar's mode and the queued rows. It carries the journal's switches and the
  * writer's Withdraw into the slice, speaks a switch when it becomes pending (the one announcer
- * for a switch; a failure stays with the journal owner's keyed announcement), and marks the
+ * for pending switches; failures are facts for chatCards), and marks the
  * Works and project thread lists stale when a switch applies.
  *
  * An applied switch is silent and has no row here: it was spoken when it became pending, and its
@@ -28,13 +28,8 @@ import {
   invalidateWriteModeReads,
 } from "@/client/query/project-invalidation";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
-import { announce, announceError, useRunStateSlice, useThreadActions } from "@/client/stores";
-import {
-  controlAlreadyStartedCopy,
-  controlStatusCopy,
-  controlStoppedCopy,
-  controlWithdrawFailedCopy,
-} from "./control-copy";
+import { announce, useRunStateSlice, useThreadActions } from "@/client/stores";
+import { controlAlreadyStartedCopy, controlStatusCopy, controlStoppedCopy } from "./control-copy";
 import type { QueuedControl } from "./thread-controls";
 
 /** What the chat's submission journal offers the view: its switches, stamped once answered. */
@@ -138,8 +133,7 @@ export function useSwitchView(input: {
   );
 
   const switchWriteMode = useCallback((mode: AiWriteMode) => {
-    if (!latest.current.journal.submit(crypto.randomUUID(), mode))
-      announceError(controlStatusCopy({ kind: "write_mode", mode }, "failed"));
+    latest.current.journal.submit(crypto.randomUUID(), mode);
   }, []);
 
   const retry = useCallback((id: string) => latest.current.journal.retry(id), []);
@@ -148,7 +142,8 @@ export function useSwitchView(input: {
     (row: QueuedControl) => {
       const { id } = row;
       // The row goes at once, whichever side owns it.
-      dispatch(threadId, { type: "withdraw", id });
+      const requestId = crypto.randomUUID();
+      dispatch(threadId, { type: "withdraw", id, requestId });
       const onServer = async () => {
         try {
           const answer = await withdrawThreadControl(threadId, id);
@@ -164,8 +159,7 @@ export function useSwitchView(input: {
           // The server never had it: nothing to withdraw.
           if (httpErrorStatus(error) === 404)
             return dispatch(threadId, { type: "dropWithdraw", id });
-          dispatch(threadId, { type: "withdraw", id, failed: true });
-          announceError(controlWithdrawFailedCopy(row.control));
+          dispatch(threadId, { type: "withdraw", id, requestId, failed: true });
         }
       };
       // A switch the journal holds that the server can't have (never posted, or refused):
@@ -186,7 +180,9 @@ export function useSwitchView(input: {
       folded.rows.map((row) => ({
         id: row.id,
         control: { kind: "write_mode" as const, mode: row.mode },
-        status: row.status,
+        ...(row.status === "failed" || row.status === "withdraw_failed"
+          ? { status: row.status, failure: row.failure }
+          : { status: row.status }),
         ...(row.awaitingServer ? { awaitingServer: true } : {}),
         // The server's `deliveryState` decides "queued": a switch waits only for a reply that
         // already held the chat. Before it lists the switch, a running reply is the only fact.

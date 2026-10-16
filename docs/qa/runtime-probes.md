@@ -295,8 +295,11 @@ restart smoke check.
   S cancelled; claim release starts the queued reply. Retry after Stop appends
   S2 and returns before its brief ends; replaying S2 returns the same seed with
   200. Destination context contains the brief/source ref, never source transcript
-  text. The brief has no fallback: a failed attempt shows `No brief is
-  available.` and Retry is the next attempt.
+  text. The brief has no fallback: a failed attempt is a card on the
+  brief ("This handoff brief couldn't be generated. Try again.", the server's `turn.error`) and the
+  header's Retry is the next attempt. A failed Stop on a generating brief is a second card on it
+  ("Couldn't stop the brief." with Try again), and a refused or lost Retry is a card too
+  ("Couldn't retry." / "Couldn't start a new brief."); see [failure cards](failure-cards.md).
 - **Crash variant:** start a second delayed handoff, kill the app process while
   its brief is in flight, restart it, and wait one orphan-repair interval. S
   settles with generic failure copy, internal `interrupted` reason, an
@@ -313,7 +316,7 @@ restart smoke check.
 - **Last run:** merge-gate §21–24 mock PASS; original real warm/cold run blocked
   by billing settlement. 2026-09-28 (source commit not recorded).
 
-## RP-9: Fork prefix remains frozen as source grows and compacts
+## RP-18: Fork prefix remains frozen as source grows and compacts
 
 - **Protects:** inherited cutoff/bake ownership (`compaction-protocol`).
 - **Stack:** mock.
@@ -385,7 +388,7 @@ restart smoke check.
   ```
 
   Follow returned cursors where the history exceeds one page. Repeat on the
-  compacted source and fork from RP-9.
+  compacted source and fork from RP-18.
 - **Expect:** child's first request has the reference/read instruction without
   source history. Invalid `from` fails before creating a child or charging a
   child run. Default inspection omits hidden tool payloads; explicit includes

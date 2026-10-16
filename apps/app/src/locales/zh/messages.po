@@ -112,12 +112,12 @@ msgid "{0, plural, one {Changes in # more document did not apply} other {Changes
 msgstr ""
 
 #. placeholder {0}: card.count
-#: src/features/chat/HandBackCards.tsx
+#: src/features/chat/chat-card-copy.ts
 msgid "{0, plural, one {Couldn't move your queued message to the message box.} other {Couldn't move your queued messages to the message box.}}"
 msgstr ""
 
 #. placeholder {0}: card.count
-#: src/features/chat/HandBackCards.tsx
+#: src/features/chat/chat-card-copy.ts
 msgid "{0, plural, one {Couldn't move your queued message.} other {Couldn't move your queued messages.}}"
 msgstr ""
 
@@ -380,7 +380,7 @@ msgstr ""
 msgid "<0>{0}</0> will be permanently deleted."
 msgstr ""
 
-#: src/features/chat/DeletedChatNotice.tsx
+#: src/features/chat/DeletedChatCard.tsx
 msgid "<0>{title}</0> was deleted."
 msgstr ""
 
@@ -402,7 +402,7 @@ msgstr ""
 msgid "3 by 3, header row"
 msgstr ""
 
-#: src/features/chat/DeletedChatNotice.tsx
+#: src/features/chat/DeletedChatCard.tsx
 msgid "A chat you had open was deleted."
 msgstr ""
 
@@ -520,7 +520,7 @@ msgstr ""
 msgid "Add to favorites"
 msgstr ""
 
-#: src/features/chat/UsageBlockedNotice.tsx
+#: src/features/chat/ChatCards.tsx
 msgid "Add usage"
 msgstr ""
 
@@ -1140,8 +1140,8 @@ msgid "Conversation compacted automatically"
 msgstr ""
 
 #: src/features/chat/compaction/CompactionDivider.tsx
-msgid "Conversation not compacted"
-msgstr ""
+#~ msgid "Conversation not compacted"
+#~ msgstr ""
 
 #: src/components/app/CopyTextButton.tsx
 #: src/features/chat/AssistantTurnActions.tsx
@@ -1244,8 +1244,8 @@ msgid "Couldn't check Work"
 msgstr ""
 
 #: src/features/chat/compaction/CompactionDivider.tsx
-msgid "Couldn't compact"
-msgstr ""
+#~ msgid "Couldn't compact"
+#~ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
@@ -1435,8 +1435,8 @@ msgid "Couldn't move to {failedFolder}. Use Move… in the file list to try agai
 msgstr ""
 
 #: src/features/chat/useQueueControls.ts
-msgid "Couldn't move your queued message to the message box."
-msgstr ""
+#~ msgid "Couldn't move your queued message to the message box."
+#~ msgstr ""
 
 #: src/features/editor/EditorView.tsx
 msgid "Couldn't open review mode."
@@ -1507,12 +1507,11 @@ msgstr ""
 msgid "Couldn’t restore this Work"
 msgstr ""
 
-#: src/features/chat/ErrorBlock.tsx
-#: src/features/chat/useRetryStandIns.ts
+#: src/features/chat/chat-card-copy.ts
 msgid "Couldn't retry."
 msgstr ""
 
-#: src/features/chat/ErrorBlock.tsx
+#: src/features/chat/chat-card-copy.ts
 msgid "Couldn't retry. Another reply started first."
 msgstr ""
 
@@ -1545,8 +1544,7 @@ msgstr ""
 msgid "Couldn't send a message to {line}"
 msgstr ""
 
-#: src/features/chat/HandBackCards.tsx
-#: src/features/chat/useSendNow.ts
+#: src/features/chat/chat-card-copy.ts
 msgid "Couldn't send now."
 msgstr ""
 
@@ -1555,38 +1553,49 @@ msgid "Couldn't send your answer."
 msgstr ""
 
 #: src/features/chat/useChatSubmissions.ts
-msgid "Couldn't send your message."
-msgstr "未能发送你的消息。"
+#~ msgid "Couldn't send your message."
+#~ msgstr "未能发送你的消息。"
 
 #: src/components/app/composer/Composer.tsx
-#: src/features/chat/UserTurn.tsx
+#: src/features/chat/chat-card-copy.ts
 msgid "Couldn't send."
 msgstr ""
 
+#: src/features/chat/chat-card-copy.ts
+msgid "Couldn't start a new brief."
+msgstr ""
+
 #: src/features/chat/derivation/useHandoffBrief.ts
-msgid "Couldn't start a new brief. Try again."
+#~ msgid "Couldn't start a new brief. Try again."
+#~ msgstr ""
+
+#: src/features/chat/chat-card-copy.ts
+msgid "Couldn't start the retry."
 msgstr ""
 
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/useReplyRetry.ts
-msgid "Couldn't start the retry. Try again."
-msgstr ""
+#~ msgid "Couldn't start the retry. Try again."
+#~ msgstr ""
 
 #: src/features/chat/derivation/derive-conversation.ts
 msgid "Couldn't start this handoff."
 msgstr ""
 
+#: src/features/chat/chat-card-copy.ts
+msgid "Couldn't stop the brief."
+msgstr ""
+
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 #: src/features/chat/derivation/useHandoffBrief.ts
-msgid "Couldn't stop the brief. Try again."
-msgstr ""
+#~ msgid "Couldn't stop the brief. Try again."
+#~ msgstr ""
 
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "Couldn't stop the compaction."
 msgstr ""
 
-#: src/features/chat/HandBackCards.tsx
-#: src/features/chat/useChatStop.ts
+#: src/features/chat/chat-card-copy.ts
 msgid "Couldn't stop the reply."
 msgstr ""
 
@@ -1843,8 +1852,8 @@ msgstr ""
 msgid "Discarding"
 msgstr ""
 
+#: src/components/app/FailureCard.tsx
 #: src/components/app/InlineErrorRow.tsx
-#: src/components/app/NoticeCard.tsx
 #: src/features/editor/SchemaRepairNotice.tsx
 #: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkCommandFailureRow.tsx
@@ -1929,7 +1938,7 @@ msgstr ""
 msgid "Earlier notes"
 msgstr ""
 
-#: src/features/chat/UserTurn.tsx
+#: src/features/chat/ChatCards.tsx
 msgid "Edit"
 msgstr ""
 
@@ -2233,8 +2242,8 @@ msgstr ""
 
 #: src/features/chat/compaction/useControlTurnAnnouncements.ts
 #: src/features/chat/derivation/HandoffBriefCard.tsx
-msgid "Handoff brief unavailable"
-msgstr ""
+#~ msgid "Handoff brief unavailable"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Header row"
@@ -2955,8 +2964,8 @@ msgid "No Work yet."
 msgstr ""
 
 #: src/features/chat/compaction/CompactionDivider.tsx
-msgid "Not compacted"
-msgstr ""
+#~ msgid "Not compacted"
+#~ msgstr ""
 
 #: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
@@ -3492,11 +3501,9 @@ msgstr "在任何设备上继续处理我的文档"
 #: src/core/editor/FigureNodeView.tsx
 #: src/core/editor/images/ImageNodeView.tsx
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
+#: src/features/chat/ChatCards.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 #: src/features/chat/DraftDock.tsx
-#: src/features/chat/ErrorBlock.tsx
-#: src/features/chat/thread-controls/QueuedControlRows.tsx
-#: src/features/chat/UserTurn.tsx
 #: src/features/editor/EditorView.tsx
 #: src/features/project/chat-index/ChatIndex.tsx
 #: src/features/project/context/ContextDocumentHost.tsx
@@ -3523,8 +3530,8 @@ msgid "Retry Pending drafts"
 msgstr ""
 
 #: src/features/chat/thread-controls/control-copy.ts
-msgid "Retry queueing"
-msgstr ""
+#~ msgid "Retry queueing"
+#~ msgstr ""
 
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Retry save"
@@ -3535,8 +3542,8 @@ msgid "Retry sign-in"
 msgstr ""
 
 #: src/features/chat/thread-controls/control-copy.ts
-msgid "Retry switching"
-msgstr ""
+#~ msgid "Retry switching"
+#~ msgstr ""
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "Retry the handoff brief"
@@ -3837,8 +3844,8 @@ msgid "Some typing inside a discarded change couldn't be kept."
 msgstr "已丢弃改动中的部分输入未能保留。"
 
 #: src/features/chat/useLiveTurnAnnouncements.ts
-msgid "Something went wrong generating a response."
-msgstr ""
+#~ msgid "Something went wrong generating a response."
+#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Something went wrong while changing {name}."
@@ -4201,7 +4208,7 @@ msgstr ""
 msgid "The AI asked you a question"
 msgstr ""
 
-#: src/features/chat/ErrorBlock.tsx
+#: src/features/chat/chat-card-copy.ts
 msgid "The AI provider turned this request down."
 msgstr ""
 
@@ -4228,6 +4235,10 @@ msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "The entry changed. Refresh the tree and try again."
+msgstr ""
+
+#: src/features/chat/chat-card-copy.ts
+msgid "The handoff brief failed."
 msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
@@ -4309,8 +4320,8 @@ msgid "Thinking out loud?"
 msgstr "边想边说？"
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
-msgid "This brief failed."
-msgstr ""
+#~ msgid "This brief failed."
+#~ msgstr ""
 
 #: src/features/project/context/viewers/PdfViewer.tsx
 msgid "This browser cannot display the PDF inline."
@@ -4434,7 +4445,7 @@ msgstr ""
 msgid "This compaction already started."
 msgstr ""
 
-#: src/features/chat/compaction/compaction-model.ts
+#: src/features/chat/chat-card-copy.ts
 msgid "This conversation couldn't be compacted."
 msgstr ""
 
@@ -4572,7 +4583,7 @@ msgstr ""
 msgid "This report is from its previous run. It's running again now."
 msgstr ""
 
-#: src/features/chat/ErrorBlock.tsx
+#: src/features/chat/chat-card-copy.ts
 msgid "This response failed."
 msgstr ""
 
@@ -4659,8 +4670,7 @@ msgstr ""
 msgid "Top up any time. Extra usage carries over month to month."
 msgstr ""
 
-#: src/features/chat/HandBackCards.tsx
-#: src/features/chat/thread-controls/QueuedControlRows.tsx
+#: src/features/chat/ChatCards.tsx
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "Try again"
@@ -5022,7 +5032,7 @@ msgstr ""
 msgid "You left checkout. No purchase was confirmed."
 msgstr ""
 
-#: src/features/chat/UsageBlockedNotice.tsx
+#: src/features/chat/chat-card-copy.ts
 msgid "You're out of usage. Your messages will send when you add more."
 msgstr ""
 
@@ -5034,7 +5044,7 @@ msgstr ""
 msgid "Your message"
 msgstr ""
 
-#: src/features/chat/DeletedChatNotice.tsx
+#: src/features/chat/DeletedChatCard.tsx
 msgid "Your message is below."
 msgstr ""
 
@@ -5042,7 +5052,7 @@ msgstr ""
 msgid "Your message, queued"
 msgstr ""
 
-#: src/features/chat/DeletedChatNotice.tsx
+#: src/features/chat/DeletedChatCard.tsx
 msgid "Your messages are below."
 msgstr ""
 

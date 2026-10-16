@@ -1,13 +1,13 @@
 /** The hand-back operation over in-memory ports: the state transitions the app and ./mf share. */
 import type { HandBackResult, PendingInboxItem, RunState } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
+import { handBackCards } from "../cards/hand-back-cards";
 import { stopStatus } from "../run-state/fold-messages";
 import {
   INITIAL_RUN_STATE_VIEW,
   type RunStateView,
   receiveRecord,
 } from "../run-state/run-state-view";
-import { handBackCards } from "./cards";
 import {
   createHandBackOperation,
   type HandBackCommand,
@@ -39,7 +39,7 @@ const record = (version: string, items: PendingInboxItem[] = []): RunState => ({
 const handedBack = (ids: string[]): HandBackResult["handedBack"] =>
   ids.map((userTurnId) => ({ userTurnId, blocks: [{ type: "text", text: userTurnId }] }));
 
-function rig(options: { saveFails?: boolean; acceptFails?: boolean } = {}) {
+function rig(options: { saveFails?: boolean; acceptFails?: boolean; newId?: () => string } = {}) {
   const calls: string[] = [];
   let view: RunStateView = receiveRecord(
     INITIAL_RUN_STATE_VIEW,
@@ -91,9 +91,10 @@ function rig(options: { saveFails?: boolean; acceptFails?: boolean } = {}) {
         return stored.delete(id);
       },
     },
-    newId: () => REQ,
+    newId: options.newId ?? (() => REQ),
   };
   return {
+    ports,
     op: createHandBackOperation({ threadId: "t1", ports }),
     calls,
     sent,
@@ -113,6 +114,55 @@ const answerBody = (ids: string[], version = "1001") => ({
 });
 
 describe("hand-back operation", () => {
+  it("allocates failures before saving, gives Retry a new occurrence, and preserves it on reload", async () => {
+    // Risk: Retry identities must differ from wire identity without losing a durable command's debt.
+    let nextId = 0;
+    const r = rig({ saveFails: true, newId: () => (nextId++ === 0 ? REQ : `occ-${nextId}`) });
+    const key = (op = r.op) => handBackCards(op.unresolved(), r.view())[0]?.key;
+    await r.op.press({ kind: "queue", ids: [M1] });
+    const first = key();
+    await r.op.retry(REQ);
+    const second = key();
+    expect(second).not.toBe(first);
+    expect(r.sent).toHaveLength(0);
+
+    r.state.saveFails = false;
+    await r.op.retry(REQ);
+    const third = key();
+    expect(new Set([first, second, third]).size).toBe(3);
+    const persisted = JSON.stringify([...r.stored]);
+    r.stored.clear();
+    for (const [id, command] of JSON.parse(persisted)) r.stored.set(id, command);
+    const reloaded = createHandBackOperation({ threadId: "t1", ports: r.ports });
+    await reloaded.resume();
+    expect(key(reloaded)).toBe(third);
+    await reloaded.retry(REQ);
+    expect(key(reloaded)).not.toBe(third);
+    expect(r.sent.every((sent) => JSON.stringify(sent) === JSON.stringify(r.sent[0]))).toBe(true);
+
+    // A refused Retry metadata write must not turn an already durable command into page memory.
+    const resumed = createHandBackOperation({
+      threadId: "t1",
+      ports: { ...r.ports, newId: () => `retry-${++nextId}` },
+    });
+    await resumed.resume();
+    r.state.saveFails = true;
+    const beforeSaveFailure = key(resumed);
+    const postsBeforeSaveFailure = r.sent.length;
+    await resumed.retry(REQ);
+    expect(r.sent).toHaveLength(postsBeforeSaveFailure);
+    const failedSaveKey = key(resumed);
+    expect(failedSaveKey).not.toBe(beforeSaveFailure);
+    expect(resumed.unresolved()[0]?.status).toBe("ambiguous");
+    await resumed.press({ kind: "queue", ids: [M2] });
+    expect(handBackCards(resumed.unresolved(), r.view()).map((card) => card.key)).toContain(
+      failedSaveKey,
+    );
+    r.stored.delete(REQ);
+    resumed.reconcile();
+    expect(resumed.unresolved().map((entry) => entry.requestId)).not.toContain(REQ);
+  });
+
   it.each([
     {
       row: "a validated 2xx hands the content back, removes the turns at the record's version, and retires the intent",
@@ -226,12 +276,13 @@ describe("hand-back operation", () => {
       commandKind: "queue" as const,
       count: 2,
       targetExecutionId: null,
+      occurrence: { requestId: REQ, attempt: 1 },
     };
     expect(handBackCards([{ ...base, status: "ambiguous" }], rowsGone)).toMatchObject([
-      { copy: "hand-back-failed", action: "retry", count: 2 },
+      { copy: "hand-back-failed", action: "try_again", count: 2 },
     ]);
     expect(handBackCards([{ ...base, status: "unsaved" }], rowsGone)).toMatchObject([
-      { copy: "hand-back-failed", action: "retry" },
+      { copy: "hand-back-failed", action: "try_again" },
     ]);
     expect(handBackCards([{ ...base, status: "refused" }], rowsGone)).toMatchObject([
       { copy: "hand-back-refused", action: "dismiss" },

@@ -20,6 +20,7 @@
 import { compareSeq } from "@meridian/contracts/protocol";
 import type { RunState } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
+import type { FailedCommand, Occurrence } from "../commands";
 
 export type RunStateIntent =
   /** An admitted writer message. `id` is the user turn id; `answer` is the admission's `runStateVersion`. */
@@ -36,7 +37,7 @@ export type RunStateIntent =
       failed: boolean;
       answer: string | null;
     }
-  | {
+  | ({
       kind: "switch";
       id: string;
       /** The local journal's per-chat order: unique and monotonic. */
@@ -44,11 +45,9 @@ export type RunStateIntent =
       mode: AiWriteMode;
       /** The version of the server's answer, once it has answered. */
       answer: string | null;
-      /** The last attempt did not succeed: shown with Retry, and the fold leaves it out. */
-      failed?: boolean;
       /** Posted and not refused: the server may hold it, so Retry only. */
       awaitingServer?: boolean;
-    }
+    } & FailedCommand)
   | {
       kind: "withdraw";
       /** The control withdrawn. */
@@ -57,6 +56,7 @@ export type RunStateIntent =
       answer: string | null;
       /** The request failed: the row stays, with the failure on it. */
       failed?: boolean;
+      occurrence: Occurrence;
     };
 
 export type RunStateView = {

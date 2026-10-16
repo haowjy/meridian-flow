@@ -55,16 +55,20 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
   empty responses print null. It prints arbitrary server data, not validated domain outcomes,
   and exit 0 means only HTTP 2xx. Parser exceptions and exceptions inside sync remain
   programming errors, not read failures.
-- **Views derive from the shared view model.** `thread view` runs `viewTranscript`
-  over one authoritative snapshot read (`viewSnapshot(snapshot, snapshot.turns)`: no socket, no
-  `ThreadSync`, no store) and only prints the rows; `chat-view.ts` decides no row
-  and words no visible text. Text mode summarizes (a card's kind only, tool names,
+- **Views derive from the shared projections.** `thread view` runs `chatCards` and
+  `viewTranscript` over one contracts-validated snapshot read (`chatSnapshot(snapshot,
+  snapshot.turns)`: no socket, no `ThreadSync`, no store). It prints rows and the cards
+  durable facts give, with their copy keys, anchors and actions. Local command failures
+  (a lost Retry, a failed Stop, an unadmitted send) are not in that snapshot and cannot
+  appear here. `chat-view.ts` decides no row or card and words no visible text. Text mode summarizes (a card's kind only, tool names,
   one `delivery:` line per group) and omits tool inputs and results, card props,
   Work receipts and occurrences; `--json` is the versioned `chatView: 2` envelope
   whose `inputs` states what the view was computed from (no local records,
   stand-ins, opening seed or live activity, inherited history omitted, background
   report bodies and change trails not fetched). `--full --json` is the inspectable
-  form. A reply's `finalText` reads the same view model's visible text items.
+  form. Outside `cards`, raw `row.error`, failure reasons and provider errors are
+  diagnostics, not the app's failure text or evidence of which failure the writer sees.
+  A reply's `finalText` reads the same view model's visible text items.
 - **`send` and `tail --until-idle` follow through the app's thread sync.**
   `observe.ts` composes one `createThreadSync` (`@meridian/thread-client/sync`) with Node
   ports: the chat's `SyncedThread` in a variable, one HTTP read at a time (`"fresh"` while one is

@@ -2,10 +2,13 @@
 
 ## [Unreleased]
 
+- Every chat failure is a card drawn from one place (`chatCards`), announced once when you watched it appear and cleared from the screen reader's live region when the card ends. A failed compaction's card now has Try again (it sends `/compact` again), a hidden "Couldn't stop the reply." no longer lingers in the page after its card goes, and a Retry whose request was lost is a "Couldn't start the retry." card with Try again on the failed reply instead of a fake failed reply. `./mf thread view` prints the same cards (`cards` in its JSON).
 ### Fixed
 - Production contracts imports no longer load golden test fixtures; tests use a separate test-support entry point.
 - Snapshot reads in the app and `./mf` validate the whole declared chat and turn shape, rejecting malformed reply errors before rendering.
 - Every `./mf` HTTP request now chooses one response decoder; contradictory options can no longer bypass validation while promising a validated result.
+- Hand-back failures have distinct Retry identities even when saving fails, and retain the saved identity on reload.
+- Failed compaction dividers stay neutral when a queued replacement suppresses their failure card.
 - `./mf api` preserves raw text responses again; domain command outcomes now require
   validated response bodies, including cancellation, admission, creation and document deletion.
 
@@ -23,6 +26,7 @@
 
 - Leaving a chat from a stream-error or history-gap callback now cancels its recovery; an abandoned retry can no longer replace the next chat subscription and lose reply text.
 
+- `pnpm dev:prune-worktrees` targeted cleanup accepts a branch whose planned commit is contained in another local or remote-tracking ref (its own refs never count), or whose exact merged pull request went into any base branch, stacked PRs included. Batch cleanup's evidence requirements are unchanged: an exact merged PR into the repository base branch, with duplicate exact records still refused. Cleanup runs execute one at a time per repository, and a stale lock refuses rather than being taken over.
 - A file attached in a New chat opens from the sent message as soon as the chat is named, in No Work as in a Work, instead of staying unclickable until a reload.
 - A bare `[map](uploads://map)` the model writes into a document binds to the chat's existing `map.png`, the same as the full `uploads://@/c3/map` spelling, instead of minting a link to a file that does not exist.
 - Files attached to a Work, or to No Work, before uploads moved to chats are deleted, and a message that attached one shows the file as no longer available. Uploads without a chat handle (`uploads://@/name`) are no longer an address.
