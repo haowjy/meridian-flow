@@ -23,10 +23,10 @@ export const docReadCommand: CommandSpec = {
       requirePositional(ctx, 0, "<uri>"),
       stringOption(ctx, "work"),
     );
-    const response = await session.request<ContextReadResponse>(
+    const response = (await session.request(
       "GET",
       apiProjectContextReadPath(projectId, target.scheme, target.path, { workId: target.workId }),
-    );
+    )) as ContextReadResponse;
     const full = flag(ctx, "full");
     ctx.out.result({ uri: target.uri, ...response }, (value) =>
       value.kind === "tracked"

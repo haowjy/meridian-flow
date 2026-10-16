@@ -8,10 +8,10 @@ type BootstrapResult = { projectId: string };
 /** `--project <id>`; omitted or `default` ensures and returns the writer's default project. */
 export async function resolveProjectId(session: Session, raw: string | undefined): Promise<string> {
   if (raw && raw !== "default") return raw;
-  const bootstrap = await session.request<BootstrapResult>(
+  const bootstrap = (await session.request(
     "POST",
     "/api/projects/bootstrap-default",
-  );
+  )) as BootstrapResult;
   return bootstrap.projectId;
 }
 
@@ -24,7 +24,10 @@ export async function resolveWorkId(
   if (raw === undefined || raw === "@/" || raw === "@") return null;
   if (!raw.startsWith("@")) return raw;
   const slug = raw.slice(1);
-  const snapshot = await session.request<ListWorksResponse>("GET", apiProjectWorksPath(projectId));
+  const snapshot = (await session.request(
+    "GET",
+    apiProjectWorksPath(projectId),
+  )) as ListWorksResponse;
   const work = snapshot.works.find((entry) => entry.slug === slug);
   if (!work) {
     throw new CliError("not_found", `No Work with slug @${slug} in project ${projectId}`, {

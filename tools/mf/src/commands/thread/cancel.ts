@@ -23,10 +23,10 @@ export const threadCancelCommand: CommandSpec = {
       requirePositional(ctx, 0, "<thread>"),
       stringOption(ctx, "project"),
     );
-    const response = await session.request<CancelTurnResponse>(
+    const response = (await session.request(
       "POST",
       apiThreadCancelPath(threadId, turnId),
-    );
+    )) as CancelTurnResponse;
     const terminal = terminalResult(
       "thread.cancel",
       {

@@ -587,6 +587,41 @@ describe("thread send", () => {
     await wire.until(() => wire.aborted.some((request) => request.kind === "snapshot"));
   });
 
+  it("keeps a proven reply when its diagnostic snapshot has an empty body", async () => {
+    wire.snapshot = (read) =>
+      snapshotOf({
+        seq: read === 1 ? 0 : wire.head,
+        turns: [
+          userTurn("u1", 1, "hold", "a1"),
+          replyTurn("a1", 2, {
+            prevTurnId: "u1",
+            ...(read === 1 ? { status: "streaming" } : { text: "Hello there" }),
+          }),
+        ],
+        ...(read === 1
+          ? { record: { execution: { executionId: "exec-a1", currentTurnId: "a1" } } }
+          : {}),
+      });
+    wire.play(async () => {
+      await wire.until(() => wire.subscriptions >= 1);
+      wire.publish(frames.started("a1"));
+      publishRecord(wire);
+      await wire.until(() => wire.reads >= 2);
+      // Deliver the proving answer before the fault for the diagnostic read.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      wire.fail("snapshot", { status: 204, text: "" });
+      wire.publish(frames.finished("a1"));
+    });
+    const result = await send("hold", "--timeout", "10s", "--json");
+    expect(result.code).toBe(EXIT.ok);
+    expect(lastRecord(result.stdout)).toMatchObject({
+      outcome: "complete",
+      finalText: "Hello there",
+      observationIncomplete: true,
+    });
+    expect(result.stderr).toBe("");
+  });
+
   it("--no-wait proves admission only, never complete", async () => {
     const result = await send("hi", "--no-wait", "--json");
     expect(result.code).toBe(EXIT.ok);

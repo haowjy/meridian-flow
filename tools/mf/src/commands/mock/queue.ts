@@ -25,11 +25,11 @@ export async function enqueueMockScript(
     ...(parsed.value.match === undefined && defaultMatch ? { match: defaultMatch } : {}),
   };
   try {
-    return await session.request<MockModelScriptEnqueued>(
+    return (await session.request(
       "POST",
       API_DEBUG_MOCK_MODEL_SCRIPT_PATH,
       script,
-    );
+    )) as MockModelScriptEnqueued;
   } catch (error) {
     if (error instanceof CliError && error.code === "not_found") {
       throw new CliError("unavailable", "The server has no scriptable mock model", {

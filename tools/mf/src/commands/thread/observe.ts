@@ -13,6 +13,7 @@ import {
   compareSeq,
   type ThreadLiveState,
   type ThreadSnapshotResponse,
+  threadSnapshotSchema,
 } from "@meridian/contracts/protocol";
 import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/threads";
 import {
@@ -125,12 +126,11 @@ export function createObserver(options: ObserverOptions): Observer {
     if (closed || remaining <= 0) return;
     inflight = true;
     try {
-      const read = await session.request<ThreadSnapshotResponse>(
-        "GET",
-        apiThreadSnapshotPath(threadId),
-        undefined,
-        { timeoutMs: remaining, signal: abort.signal },
-      );
+      const read = await session.request("GET", apiThreadSnapshotPath(threadId), undefined, {
+        timeoutMs: remaining,
+        signal: abort.signal,
+        parse: threadSnapshotSchema.safeParse,
+      });
       if (closed) return;
       if (sync.receive(read) === "stale") {
         retry = setTimeout(() => {

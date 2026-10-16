@@ -26,7 +26,7 @@ export const apiCommand: CommandSpec = {
     const data = stringOption(ctx, "data");
     const session = await ctx.session();
     const body = data === undefined ? undefined : readJsonArg(data, "--data");
-    const response = await session.request(method, path, body);
+    const response = await session.request(method, path, body, { allowEmpty: true });
     ctx.out.result(response ?? null, (value) =>
       typeof value === "string" ? value : JSON.stringify(value, null, 2),
     );

@@ -38,6 +38,12 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
   identity rather than the current branch). Duplicating that discovery here would
   drift from `pnpm dev`, so the allowed list was widened deliberately; its
   transitive `tools/dev` imports are Node-only. Never import `apps/`.
+- **HTTP reads are unknown unless parsed.** `Session.request` rejects empty and non-JSON
+  answers as read failures; only explicit `allowEmpty` callers accept an absent body.
+  A typed result requires a `parse` validator. Snapshot consumers in both hosts use
+  the contracts' `threadSnapshotSchema` before the sync sees a read. Other CLI routes
+  retain explicit caller-side contract assertions; they do not gain snapshot validation.
+  Parser exceptions and exceptions inside the sync remain programming errors, not read failures.
 - **Views derive from the shared view model.** `thread view` runs `viewTranscript`
   over one authoritative snapshot read (`viewSnapshot(snapshot, snapshot.turns)`: no socket, no
   `ThreadSync`, no store) and only prints the rows; `chat-view.ts` decides no row

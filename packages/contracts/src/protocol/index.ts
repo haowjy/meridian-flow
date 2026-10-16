@@ -58,6 +58,7 @@ export * from "./paths.js";
 export * from "./recent-documents.js";
 export * from "./run-boundary.js";
 export * from "./thread-documents.js";
+export * from "./thread-snapshot.js";
 export * from "./transport-serializer.js";
 export * from "./upload-intake.js";
 export * from "./user-turn-admission.js";

@@ -27,13 +27,13 @@ export const threadListCommand: CommandSpec = {
     let workId: string | null | undefined;
     if (projectRaw !== undefined || workRaw !== undefined) {
       const projectId = await resolveProjectId(session, projectRaw);
-      ({ threads } = await session.request<ListThreadsResponse>(
+      ({ threads } = (await session.request(
         "GET",
         apiProjectThreadsPath(projectId),
-      ));
+      )) as ListThreadsResponse);
       if (workRaw !== undefined) workId = await resolveWorkId(session, projectId, workRaw);
     } else {
-      ({ threads } = await session.request<ListThreadsResponse>("GET", API_THREADS_PATH));
+      ({ threads } = (await session.request("GET", API_THREADS_PATH)) as ListThreadsResponse);
     }
     const rows: ThreadListRow[] = threads
       .filter((thread) => workId === undefined || thread.workId === workId)

@@ -20,16 +20,26 @@ export type RequestOptions = {
   signal?: AbortSignal;
 };
 
+export type ResponseParser<T> = (
+  value: unknown,
+) => { success: true; data: T } | { success: false; error: unknown };
+
 export interface Session {
   readonly serverUrl: string;
   readonly cookie: string;
   readonly ca: string[] | undefined;
-  request<T = unknown>(
+  request<T>(
+    method: HttpMethod,
+    requestPath: string,
+    body: unknown,
+    options: RequestOptions & { parse: ResponseParser<T> },
+  ): Promise<T>;
+  request(
     method: HttpMethod,
     requestPath: string,
     body?: unknown,
-    options?: RequestOptions,
-  ): Promise<T>;
+    options?: RequestOptions & { allowEmpty?: boolean },
+  ): Promise<unknown>;
 }
 
 type RawResponse = { status: number; headers: IncomingHttpHeaders; body: string };
@@ -158,40 +168,59 @@ export function createSession(input: {
   cookie: string;
   ca: string[] | undefined;
 }): Session {
-  return {
-    serverUrl: input.serverUrl,
-    cookie: input.cookie,
-    ca: input.ca,
-    async request<T>(
-      method: HttpMethod,
-      requestPath: string,
-      body?: unknown,
-      options?: RequestOptions,
-    ): Promise<T> {
-      const response = await rawRequest({
-        url: new URL(requestPath, input.serverUrl).toString(),
-        method,
-        headers: input.cookie ? { cookie: input.cookie } : {},
-        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-        ca: input.ca,
-        timeoutMs: options?.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-        maxResponseBytes: options?.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
-        ...(options?.signal ? { signal: options.signal } : {}),
+  function request<T>(
+    method: HttpMethod,
+    requestPath: string,
+    body: unknown,
+    options: RequestOptions & { parse: ResponseParser<T> },
+  ): Promise<T>;
+  function request(
+    method: HttpMethod,
+    requestPath: string,
+    body?: unknown,
+    options?: RequestOptions & { allowEmpty?: boolean },
+  ): Promise<unknown>;
+  async function request(
+    method: HttpMethod,
+    requestPath: string,
+    body?: unknown,
+    options?: RequestOptions & { parse?: ResponseParser<unknown>; allowEmpty?: boolean },
+  ) {
+    const response = await rawRequest({
+      url: new URL(requestPath, input.serverUrl).toString(),
+      method,
+      headers: input.cookie ? { cookie: input.cookie } : {},
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      ca: input.ca,
+      timeoutMs: options?.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+      maxResponseBytes: options?.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
+      ...(options?.signal ? { signal: options.signal } : {}),
+    });
+    if (response.status < 200 || response.status >= 300) {
+      throw httpError(method, requestPath, response);
+    }
+    if (!response.body) {
+      if (options?.allowEmpty) return undefined;
+      throw new CliError("http_error", `${method} ${requestPath}: empty JSON response`);
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(response.body);
+    } catch {
+      throw new CliError("http_error", `${method} ${requestPath}: invalid JSON response`);
+    }
+    // Many routes answer through serializeTransport; callers always see the bare value.
+    const value = deserializeTransport(parsed);
+    if (!options?.parse) return value;
+    const result = options.parse(value);
+    if (!result.success) {
+      throw new CliError("http_error", `${method} ${requestPath}: invalid response`, {
+        details: result.error,
       });
-      if (response.status < 200 || response.status >= 300) {
-        throw httpError(method, requestPath, response);
-      }
-      if (!response.body) return undefined as T;
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(response.body);
-      } catch {
-        return response.body as T;
-      }
-      // Many routes answer through serializeTransport; callers always see the bare value.
-      return deserializeTransport(parsed) as T;
-    },
-  };
+    }
+    return result.data;
+  }
+  return { serverUrl: input.serverUrl, cookie: input.cookie, ca: input.ca, request };
 }
 
 function sessionCookie(headers: IncomingHttpHeaders): string {
