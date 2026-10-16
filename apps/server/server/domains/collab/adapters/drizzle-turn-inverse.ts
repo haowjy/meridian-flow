@@ -19,6 +19,7 @@ import {
   currentDrizzleDb,
   deferUntilDrizzleCommit,
   runInDrizzleTransaction,
+  runInRootDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
 import { confirmScopedEdits } from "../../../shared/edit-confirmation.js";
 import { lockDraftBranchWorks } from "../../../shared/work-draft-lifecycle.js";
@@ -80,99 +81,130 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       wId: edit.wId,
     }));
   }
-  async function materialize(documentId: DocumentId): Promise<Y.Doc> {
-    const snapshot = await input.journal.read(documentId);
-    const doc = new Y.Doc({ gc: false });
-    if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint);
-    for (const row of snapshot.updates) Y.applyUpdate(doc, row.update);
-    return doc;
+  type CapturedDraft = Omit<
+    InverseDocument["drafts"] extends ReadonlyMap<string, infer D> ? D : never,
+    "doc"
+  >;
+  type CapturedDocument = Omit<InverseDocument, "live" | "drafts"> & {
+    live: Uint8Array[];
+    drafts: Map<string, CapturedDraft>;
+  };
+  async function withMaterialized<T>(
+    captured: CapturedDocument[],
+    run: (documents: InverseDocument[]) => Promise<T>,
+  ): Promise<T> {
+    const owned: Y.Doc[] = [];
+    const materialize = (updates: Uint8Array[]) => {
+      const doc = new Y.Doc({ gc: false });
+      owned.push(doc);
+      for (const update of updates) Y.applyUpdate(doc, update);
+      return doc;
+    };
+    try {
+      return await run(
+        captured.map((document) => ({
+          ...document,
+          live: materialize(document.live),
+          drafts: new Map(
+            [...document.drafts].map(([id, draft]) => [
+              id,
+              { ...draft, doc: materialize([draft.branch.state]) },
+            ]),
+          ),
+        })),
+      );
+    } finally {
+      for (const doc of owned) doc.destroy();
+    }
+  }
+  async function withCapturedDocuments<T>(
+    query: TurnInverseQuery,
+    run: (documents: CapturedDocument[]) => Promise<T>,
+  ): Promise<T> {
+    return runInDrizzleTransaction(input.db, async () => {
+      const ids = await selectedDocuments(query);
+      // Only inverse policies take this lock. Apply never waits on it.
+      for (const id of ids)
+        await db().execute(
+          sql`select pg_advisory_xact_lock(hashtextextended(${`document-inverse:${id}`},0::bigint))`,
+        );
+      const parts = await history(ids);
+      const branchIds = [
+        ...new Set([
+          ...(query.branchId ? [query.branchId] : []),
+          ...parts
+            .filter(
+              (part) =>
+                (part.threadId === query.threadId &&
+                  (query.model || !query.turnId || part.turnId === query.turnId) &&
+                  (query.model ||
+                    !query.responseIdentity ||
+                    part.editScopeId === query.responseIdentity.editScopeId)) ||
+                (part.kind !== "write" && part.placement.kind === "pending"),
+            )
+            .flatMap((part) =>
+              [part.origin, part.placement].flatMap((placement) =>
+                placement.kind === "pending" ? [placement.branchId] : [],
+              ),
+            ),
+        ]),
+      ].sort();
+      return input.criticalSections.withBranches(branchIds, async () => {
+        const lockLive = async (index: number): Promise<T> => {
+          const id = ids[index];
+          if (id) return input.coordinator.withDocument(id, () => lockLive(index + 1));
+          const frozen = await lockDraftBranchWorks(input.db, branchIds);
+          for (const key of [...ids, ...branchIds].sort()) await lockDocumentMutation(db(), key);
+          if (query.model) await confirmScopedEdits();
+          const currentParts = await history(ids);
+          const documents: CapturedDocument[] = [];
+          for (const documentId of ids) {
+            const live = await input.journal.read(documentId);
+            const drafts: CapturedDocument["drafts"] = new Map();
+            for (const branchId of branchIds) {
+              const branch = await input.branches.getBranch(branchId);
+              if (!branch || branch.documentId !== documentId || branch.status !== "active")
+                continue;
+              const [name] = branch.workId
+                ? await db()
+                    .select({ slug: works.slug })
+                    .from(works)
+                    .where(eq(works.id, branch.workId))
+                : [];
+              drafts.set(branchId, {
+                branch,
+                name: name?.slug ? `@${name.slug}` : "@/",
+                frozen: frozen.has(branchId),
+              });
+            }
+            documents.push({
+              documentId,
+              uri: (await input.resolveDocumentUri(documentId)) ?? documentId,
+              live: [
+                ...(live.checkpoint ? [live.checkpoint] : []),
+                ...live.updates.map((row) => row.update),
+              ],
+              history: currentParts.filter((part) => part.documentId === documentId),
+              drafts,
+            });
+          }
+          return run(documents);
+        };
+        return lockLive(0);
+      });
+    });
   }
   const store: TurnInverseStore = {
-    async withLockedDocuments(query, run) {
-      return runInDrizzleTransaction(input.db, async () => {
-        const ids = await selectedDocuments(query);
-        // Only inverse policies take this lock. Apply never waits on it.
-        for (const id of ids)
-          await db().execute(
-            sql`select pg_advisory_xact_lock(hashtextextended(${`document-inverse:${id}`},0::bigint))`,
-          );
-        const parts = await history(ids);
-        const branchIds = [
-          ...new Set([
-            ...(query.branchId ? [query.branchId] : []),
-            ...parts
-              .filter(
-                (part) =>
-                  (part.threadId === query.threadId &&
-                    (query.model || !query.turnId || part.turnId === query.turnId) &&
-                    (query.model ||
-                      !query.responseIdentity ||
-                      part.editScopeId === query.responseIdentity.editScopeId)) ||
-                  (part.kind !== "write" && part.placement.kind === "pending"),
-              )
-              .flatMap((part) =>
-                [part.origin, part.placement].flatMap((placement) =>
-                  placement.kind === "pending" ? [placement.branchId] : [],
-                ),
-              ),
-          ]),
-        ].sort();
-        return input.criticalSections.withBranches(branchIds, async () => {
-          const lockLive = async (index: number): Promise<Awaited<ReturnType<typeof run>>> => {
-            const id = ids[index];
-            if (id) return input.coordinator.withDocument(id, () => lockLive(index + 1));
-            const frozen = await lockDraftBranchWorks(input.db, branchIds);
-            for (const key of [...ids, ...branchIds].sort()) await lockDocumentMutation(db(), key);
-            if (query.model) await confirmScopedEdits();
-            const currentParts = await history(ids);
-            const documents: InverseDocument[] = [];
-            try {
-              for (const documentId of ids) {
-                const live = await materialize(documentId);
-                const document: InverseDocument = {
-                  documentId,
-                  uri: (await input.resolveDocumentUri(documentId)) ?? documentId,
-                  live,
-                  history: currentParts.filter((part) => part.documentId === documentId),
-                  drafts: new Map(),
-                };
-                documents.push(document);
-                const drafts = new Map<
-                  string,
-                  InverseDocument["drafts"] extends ReadonlyMap<string, infer D> ? D : never
-                >();
-                for (const branchId of branchIds) {
-                  const branch = await input.branches.getBranch(branchId);
-                  if (!branch || branch.documentId !== documentId || branch.status !== "active")
-                    continue;
-                  const doc = new Y.Doc({ gc: false });
-                  Y.applyUpdate(doc, branch.state);
-                  const [name] = branch.workId
-                    ? await db()
-                        .select({ slug: works.slug })
-                        .from(works)
-                        .where(eq(works.id, branch.workId))
-                    : [];
-                  drafts.set(branchId, {
-                    branch,
-                    doc,
-                    name: name?.slug ? `@${name.slug}` : "@/",
-                    frozen: frozen.has(branchId),
-                  });
-                }
-                document.drafts = drafts;
-              }
-              return await run(documents);
-            } finally {
-              for (const document of documents) {
-                document.live.destroy();
-                for (const draft of document.drafts.values()) draft.doc.destroy();
-              }
-            }
-          };
-          return lockLive(0);
-        });
-      });
+    withLockedDocuments(query, run) {
+      return withCapturedDocuments(query, (documents) => withMaterialized(documents, run));
+    },
+    async withReadDocuments(query, run) {
+      // Keep the DB's encoded cuts; materialize this read only after releasing the locks.
+      // A root transaction also releases SQL locks before the read-only projection runs.
+      const documents = await runInRootDrizzleTransaction(input.db, () =>
+        withCapturedDocuments(query, async (documents) => documents),
+      );
+      return withMaterialized(documents, run);
     },
     async markBlocking(branchIds) {
       if (!branchIds.length) return;

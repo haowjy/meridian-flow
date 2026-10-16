@@ -62,6 +62,11 @@ export interface TurnInverseStore {
     query: TurnInverseQuery,
     run: (documents: InverseDocument[]) => Promise<T>,
   ): Promise<T>;
+  /** Captures durable bytes under lock; materializes and runs after releasing all read locks. */
+  withReadDocuments<T>(
+    query: TurnInverseQuery,
+    run: (documents: InverseDocument[]) => Promise<T>,
+  ): Promise<T>;
   commit(input: {
     plans: PreparedDocumentInverse[];
     kind: "revert" | "rollback";

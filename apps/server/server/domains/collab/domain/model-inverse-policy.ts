@@ -1,5 +1,5 @@
 // Model `revert` planning and `read(format: "edits")` over immutable edits.
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type {
   DocumentEditResult,
   InverseSelection,
@@ -64,6 +64,7 @@ function inspectionContext(index: PreparedEditRoots, facts: ReturnType<typeof ro
 type Inspection = ReturnType<typeof inspectionContext>;
 
 export function createModelInversePolicy(store: TurnInverseStore) {
+  const statusCache = new Map<string, string>();
   function planner(document: InverseDocument, query: Query) {
     const context = prepareHolds([document]).get(document.documentId);
     if (!context) throw new Error("Missing inverse hold context");
@@ -213,13 +214,41 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       return store.withLockedDocuments(query, (documents) => revert(documents[0], query, command));
     },
     async modelEdits(query: Query, before?: string): Promise<DocumentEditResult> {
-      return store.withLockedDocuments(query, async (documents) => {
+      return store.withReadDocuments(query, async (documents) => {
         const document = documents[0];
         if (!document)
           return {
             status: "document_not_found",
             message: "File not found. Check the path with ls.",
           };
+        // Within each branch lineage Yjs structs are immutable. A complete snapshot names
+        // every struct clock AND tombstone, including base patches and restoration-root writes.
+        // Part IDs cover immutable receipts; placements and nullable thread/turn FKs can change.
+        const snapshot = (doc: Y.Doc) =>
+          Buffer.from(Y.encodeSnapshot(Y.snapshot(doc))).toString("base64");
+        const key = JSON.stringify([
+          query.threadId,
+          query.turnId,
+          query.branchId,
+          before,
+          document.documentId,
+          document.uri,
+          snapshot(document.live),
+          [...document.drafts].map(([id, draft]) => [
+            id,
+            draft.name,
+            draft.frozen,
+            snapshot(draft.doc),
+          ]),
+          document.history.map((part) => [part.id, part.placement, part.threadId, part.turnId]),
+        ]);
+        const hit = statusCache.get(key);
+        if (hit !== undefined) {
+          statusCache.delete(key);
+          statusCache.set(key, hit);
+          return { status: "success", actionId: randomUUID(), message: hit };
+        }
+        const revision = createHash("sha256").update(key).digest("base64url");
         const policy = planner(document, query),
           own = policy.own,
           inspection = policy.inspect();
@@ -299,15 +328,20 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                 : `− ${JSON.stringify(excerpt.before)}`;
           return `${entry.handle}  ${entry.parts[0].turnId === query.turnId ? "this turn" : "earlier turn"}  ${state}  ${summary}${entry.parts.length > 1 ? ` and ${entry.parts.length - 1} more` : ""}  ${command}`;
         });
-        return {
-          status: "success",
-          actionId: randomUUID(),
-          message: [
-            `your edits to ${document.uri}, newest first (version: ${policy.version(query.branchId)})`,
-            ...lines,
-            ...(older.length > 20 ? [`more: before ${page.at(-1)?.handle}`] : []),
-          ].join("\n"),
-        };
+        const message = [
+          `your edits to ${document.uri}, newest first (version: ${policy.version(query.branchId)}; revision: ${revision})`,
+          ...lines,
+          ...(older.length > 20 ? [`more: before ${page.at(-1)?.handle}`] : []),
+        ].join("\n");
+        // Bound entries AND retained key/message size. Large histories still read correctly uncached.
+        if (key.length + message.length <= 65_536) {
+          statusCache.set(key, message);
+          if (statusCache.size > 16) {
+            const oldest = statusCache.keys().next().value;
+            if (oldest !== undefined) statusCache.delete(oldest);
+          }
+        }
+        return { status: "success", actionId: randomUUID(), message };
       });
     },
   };
