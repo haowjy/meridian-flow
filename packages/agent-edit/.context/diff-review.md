@@ -28,11 +28,13 @@ words separate them, across paragraph breaks, and a block removed in one place
 and added in another joins both places as a `move` group so Apply and Discard
 can never take half of one. A group carries the draft positions the editor
 decorates (`inserted`, `anchor`), the base content drawn red (`removed`) and a
-short excerpt. A block-attribute-only hunk carries separate `formatContext`: unchanged text from the
-same block on both sides, split around every other hunk. Its row repeats only that
-context, never another hunk's text replacement. The painter uses the context's
-disjoint ranges, with a whole-block mark only when the block has no other edit;
-its raw token range, identity and composition stay attribute-only. Formatting
+short excerpt. A hunk containing changed block attributes carries expanded `formatContext` paint:
+its own replacement plus aligned unchanged text from the affected block, split
+around every other hunk. This also covers a combined heading and leading inline
+edit. Its row includes its own replacement and context in document order, never
+another hunk's replacement. The painter uses disjoint ranges, with a whole-block
+mark only for a standalone attribute change with no other edit in the block;
+raw token ranges, identity and composition never expand. Formatting
 has red before-text and green after-text just like prose replacements. The projection is pure and retains nothing, so a caller that
 keeps PM nodes between edits pays only for the changed region.
 

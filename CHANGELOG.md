@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Draft review paints the full heading scope when a heading-level change and a leading inline edit combine, without claiming another change's text.
 - Draft review no longer names a chat whose edit was replaced when the final change only inserts text. Shared replacements still name the chat that removed the base text.
 - Formatting-only draft review rows exclude separate text edits from their excerpts and red/green paint.
 

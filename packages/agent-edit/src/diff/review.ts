@@ -41,7 +41,7 @@ export interface ReviewHunk {
   inserted: { from: number; to: number } | null; // positions in the draft doc, drawn green
   anchor: number; // draft position where the red widget sits
   kind: HunkKind;
-  /** Unchanged block text that illustrates an attribute-only change, excluding all other hunks. */
+  /** Expanded paint for changed block attributes: this replacement plus unchanged context, excluding other hunks. */
   formatContext?: { removed: ProseMirrorJSON[]; inserted: BlockSpan[] };
 }
 export interface ReviewGroup {
@@ -393,7 +393,10 @@ function hunkContent(diff: BlockDiff, h: Hunk): HunkContent {
       kind: hunkKind(diff.base.toks, h),
       ...(ranges &&
         tokens && {
-          context: { removed: tokensToJSON(tokens), ranges },
+          context: {
+            removed: tokensToJSON([...diff.base.toks.slice(h.from, h.to), ...tokens]),
+            ranges,
+          },
         }),
     };
     memo.value.set(key, content);
@@ -410,6 +413,16 @@ function reviewHunk(
   const h = diff.hunks[index];
   const end = h.sfrom + h.ins.length;
   const inserted = h.ins.length ? { from: pos.start(h.sfrom), to: pos.end(end - 1) } : null;
+  const context = content.context;
+  // A whole-node highlight would also wrap another hunk's red widget, including a deletion gap.
+  const wholeBlock =
+    h.to === h.from + 1 &&
+    h.ins.length === 1 &&
+    context?.ranges.length === 1 &&
+    context.ranges[0].from === 1 &&
+    context.ranges[0].baseFrom === 1 &&
+    context.ranges[0].to === diff.base.starts[diff.base.blockOf[h.from] + 1] - h.from &&
+    context.ranges[0].to === diff.draft.starts[diff.draft.blockOf[h.sfrom] + 1] - h.sfrom;
   const continues = h.to > h.from && !isBlockTok(diff.base.toks[h.from]);
   return {
     index,
@@ -422,51 +435,56 @@ function reviewHunk(
     ...(content.context && {
       formatContext: {
         removed: content.context.removed,
-        inserted: content.context.ranges.map(({ from, to }) => ({
-          from: pos.start(h.sfrom + from),
-          to: pos.end(h.sfrom + to - 1),
-        })),
+        inserted: wholeBlock
+          ? [{ from: pos.start(h.sfrom), to: pos.end(h.sfrom + content.context.ranges[0].to - 1) }]
+          : [
+              ...(inserted ? [inserted] : []),
+              ...content.context.ranges.map(({ from, to }) => ({
+                from: pos.start(h.sfrom + from),
+                to: pos.end(h.sfrom + to - 1),
+              })),
+            ],
       },
     }),
   };
 }
 
 // ---------- content ----------
-/** Only aligned, unchanged text illustrates block formatting; another hunk owns every gap. */
+/** Only the hunk's trailing block can have unchanged text outside its replacement. */
 function formattingRanges(
   diff: BlockDiff,
   h: Hunk,
 ): Array<BlockSpan & { baseFrom: number }> | undefined {
+  if (h.from === h.to || !h.ins.length) return undefined;
+  const { base: B, draft: D } = diff;
+  const baseBlock = B.blockOf[h.to - 1];
+  const draftBlock = D.blockOf[h.sfrom + h.ins.length - 1];
+  const bStart = B.starts[baseBlock];
+  const dStart = D.starts[draftBlock];
+  const before = B.toks[bStart];
+  const after = D.toks[dStart];
   if (
-    h.to !== h.from + 1 ||
-    diff.base.toks[h.from].kind !== "block" ||
-    hunkKind(diff.base.toks, h) !== "format"
+    bStart < h.from ||
+    dStart < h.sfrom ||
+    before.kind !== "block" ||
+    after.kind !== "block" ||
+    before.key === after.key
   )
     return undefined;
-  const baseEnd = diff.base.starts[diff.base.blockOf[h.from] + 1];
-  const draftEnd = diff.draft.starts[diff.draft.blockOf[h.sfrom] + 1];
+  const baseEnd = B.starts[baseBlock + 1];
+  const draftEnd = D.starts[draftBlock + 1];
   // Relative token ranges keep the memo independent of preceding blocks' positions.
-  const ranges = [{ from: 0, to: 1, baseFrom: 0 }];
+  const ranges: Array<BlockSpan & { baseFrom: number }> = [];
   for (let b = h.to; b < baseEnd; b++) {
     const d = diff.pos[b];
-    if (d <= h.sfrom || d >= draftEnd) continue;
+    if (d <= dStart || d >= draftEnd) continue;
     const offset = d - h.sfrom;
     const baseFrom = b - h.from;
-    const last = ranges[ranges.length - 1];
-    if (last.to === offset && last.baseFrom + last.to - last.from === baseFrom) last.to++;
+    const last = ranges.at(-1);
+    if (last && last.to === offset && last.baseFrom + last.to - last.from === baseFrom) last.to++;
     else ranges.push({ from: offset, to: offset + 1, baseFrom });
   }
-  // With another edit in this block, paint inline: a whole-node mark would also wrap its red widget.
-  if (
-    ranges.length !== 1 ||
-    ranges[0].to !== baseEnd - h.from ||
-    ranges[0].to !== draftEnd - h.sfrom
-  ) {
-    ranges[0].from++;
-    ranges[0].baseFrom++;
-    if (ranges[0].from === ranges[0].to) ranges.shift();
-  }
-  return ranges;
+  return ranges.length ? ranges : undefined;
 }
 
 function tokensToJSON(toks: readonly Tok[]): ProseMirrorJSON[] {
@@ -530,6 +548,8 @@ function excerpt(
   members.forEach((i, n) => {
     const h = diff.hunks[i];
     const context = contents[n].context;
+    removed.push({ at: h.from, text: plain(diff.base.toks.slice(h.from, h.to)) });
+    inserted.push({ at: h.sfrom, text: plain(h.ins) });
     if (context) {
       for (const { from, to, baseFrom } of context.ranges) {
         const at = h.from + baseFrom;
@@ -537,9 +557,6 @@ function excerpt(
         removed.push(part);
         inserted.push({ at: h.sfrom + from, text: part.text });
       }
-    } else {
-      removed.push({ at: h.from, text: plain(diff.base.toks.slice(h.from, h.to)) });
-      inserted.push({ at: h.sfrom, text: plain(h.ins) });
     }
   });
   return { removed: clip(removed), inserted: clip(inserted) };

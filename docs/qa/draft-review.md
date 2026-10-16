@@ -660,6 +660,15 @@ With only two unchanged words before the edit (`Scene one OLD three four five`),
 formatting and text share a row: its excerpts preserve the original word order
 (`Scene one OLD three four five` → `Scene one NEW three four five`), without duplicates.
 
+Also combine the heading change with a leading inline edit:
+`## Scene one two three four five six seven` →
+`### **Scene** one two three four five six seven`. PASS: one row repeats the
+whole heading; red old text and green new text cover the whole affected scope,
+with the actual bold replacement still painted. Discard restores H2 without bold;
+Ctrl+Z restores H3 with bold and the same review. Repeat with leading `OLD` → `NEW`,
+and with a distant independent replacement: the combined row keeps its own
+replacement, excludes the distant change, and its paint never overlaps that row.
+
 ## Reply commands against a replying model (browser, mock stack)
 
 The draft dock is disabled while a reply is still writing. Discard draft in the Editor and the
