@@ -10,6 +10,9 @@ type Frame = {
   afterCommit: Array<() => void>;
 };
 
+/** The explicit choice for a fixture whose persistence has no transactions: failure records emit at once. */
+export const noTransactionOwner: unique symbol = Symbol("noTransactionOwner");
+
 export class InMemoryTransactionOwner {
   private readonly context = new AsyncLocalStorage<Frame>();
   private readonly participants = new Set<Participant>();

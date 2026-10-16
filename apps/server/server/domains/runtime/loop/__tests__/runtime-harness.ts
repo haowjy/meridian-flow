@@ -2,7 +2,10 @@
 
 import type { ProjectPreferences } from "@meridian/contracts/preferences";
 import { type AGUIEvent, EventType, type UserMessageBlock } from "@meridian/contracts/protocol";
-import { InMemoryTransactionOwner } from "../../../../shared/in-memory-transaction.js";
+import {
+  InMemoryTransactionOwner,
+  noTransactionOwner,
+} from "../../../../shared/in-memory-transaction.js";
 import { testWorkSlug } from "../../../../test-support/work-slug.js";
 import {
   type CreditLedger,
@@ -21,6 +24,7 @@ import {
   createInMemoryEventJournalWriter,
   createInMemoryRepositories,
   createThreadEventHub,
+  type InMemoryRepositories,
   type SequencedEventInternal,
   type ThreadRepositories,
 } from "../../../threads/index.js";
@@ -60,9 +64,8 @@ function noopChildRunCoordinator(): ChildRunCoordinator {
 export function createRuntimeHarness(
   overrides: Omit<Partial<OrchestratorDeps>, "backgroundTasks"> & {
     backgroundTasks?: DetachedWorkTracker;
-    repos?: ThreadRepositories;
-    /** The owner supplied `repos` commit through; the in-memory shown-link store joins it. */
-    transactionOwner?: InMemoryTransactionOwner;
+    /** In-memory repositories carry their transaction owner; the harness's journal and shown-link store join it. */
+    repos?: ThreadRepositories | InMemoryRepositories;
     inbox?: import("../../adapters/delivery-ports.js").DeliveryStore;
     threadLock?: import("../thread-lock.js").ThreadLock;
     creditLedger?: CreditLedger;
@@ -82,14 +85,15 @@ export function createRuntimeHarness(
     backgroundTasks: suppliedBackgroundTasks,
     creditLedger: suppliedLedger,
     notices: suppliedNotices,
-    transactionOwner: suppliedOwner,
     ...dependencies
   } = overrides;
   const backgroundTasks = suppliedBackgroundTasks ?? createDetachedWorkTracker();
   const projects = createInMemoryProjectRepository();
   // Shown-link evidence commits through the repositories' transactions.
-  const transactionOwner = suppliedOwner ?? new InMemoryTransactionOwner();
-  const repos = overrides.repos ?? createInMemoryRepositories({ projects, transactionOwner });
+  const repos = overrides.repos ?? createInMemoryRepositories({ projects });
+  // Repositories that are not in-memory (Drizzle) commit through the database transaction, not an owner.
+  const transactionOwner =
+    "transactionOwner" in repos ? repos.transactionOwner : noTransactionOwner;
   const activeDocuments = createActiveDocumentResolver(repos);
   const preferences = createInMemoryProjectPreferencesRepository();
   const projectPreferences = {
@@ -215,7 +219,8 @@ export function createRuntimeHarness(
       async rollbackResponse() {},
     },
     shownLinks: createInMemoryShownLinkStore({
-      transactionOwner,
+      transactionOwner:
+        transactionOwner === noTransactionOwner ? new InMemoryTransactionOwner() : transactionOwner,
       threads: repos.threads,
       turns: repos.turns,
     }),
@@ -372,7 +377,6 @@ export async function runtimeScenario(
     ...ports,
     gateway,
     repos,
-    transactionOwner,
     eventWriter: hub,
     headSeq: (id) => hub.headSeq(id),
     boundThreads: () => [thread.id],

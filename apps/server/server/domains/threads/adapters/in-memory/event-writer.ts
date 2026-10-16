@@ -3,7 +3,10 @@
 import type { FailureRecord } from "@meridian/contracts/failures";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { recordFailureAfterCommit } from "../../../../shared/failure-records.js";
-import type { InMemoryTransactionOwner } from "../../../../shared/in-memory-transaction.js";
+import {
+  type InMemoryTransactionOwner,
+  noTransactionOwner,
+} from "../../../../shared/in-memory-transaction.js";
 import { toIsoString } from "../../domain/contract-serialization.js";
 import { deriveJournalTurnId } from "../../domain/journal-turn-id.js";
 import type {
@@ -30,9 +33,12 @@ export interface InMemoryEventJournalWriter extends LiveEventWriter, EventJourna
   getAllEvents(): ReadonlyArray<RecordedEvent>;
 }
 
-/** `owner` is the transaction owner of the repositories the journal serves; records follow its commit. */
+/**
+ * `owner` is the transaction owner of the repositories the journal serves; records follow its commit.
+ * It is required: a fixture with no transactions passes `noTransactionOwner`.
+ */
 export function createInMemoryEventJournalWriter(
-  owner?: InMemoryTransactionOwner,
+  owner: InMemoryTransactionOwner | typeof noTransactionOwner,
 ): InMemoryEventJournalWriter {
   const seqByThread = new Map<string, bigint>();
   const events: RecordedEvent[] = [];
@@ -53,7 +59,11 @@ export function createInMemoryEventJournalWriter(
 
   return {
     recordFailure(record) {
-      recordFailureAfterCommit(record, (emitted) => failures.push(emitted), owner);
+      recordFailureAfterCommit(
+        record,
+        (emitted) => failures.push(emitted),
+        owner === noTransactionOwner ? undefined : owner,
+      );
     },
     getFailureRecords: () => failures,
     async appendEvent(threadId, event) {

@@ -14,11 +14,11 @@ import { DEFAULT_LEASE_TTL_MS } from "./ports.js";
 import { sweepWakes } from "./sweep-wakes.js";
 
 async function fixture(configure?: (deps: OrchestratorDeps) => void) {
-  const journal = createInMemoryEventJournalWriter();
+  const repos = createInMemoryRepositories();
+  const journal = createInMemoryEventJournalWriter(repos.transactionOwner);
   const sink = createInMemoryEventSink();
   let calls = 0;
   const requests: string[] = [];
-  const repos = createInMemoryRepositories();
   const thread = await repos.threads.create({
     aiWriteMode: "direct",
     userId: "user-1",
