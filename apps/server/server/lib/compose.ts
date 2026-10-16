@@ -850,6 +850,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     repos: ports.threadRepos,
     statusReader: ports.statusReader,
     registry: toolRegistry,
+    chatFiles: ports.contextPorts.chatFiles,
     async tokenizer(caller) {
       const binding = await ports.agentRevisions.readThreadBinding(caller.id);
       const modelId = binding?.configuration.model ?? ports.gateway.getDefaultModel();

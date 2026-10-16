@@ -14,6 +14,7 @@ import {
   type Turn,
 } from "@meridian/contracts/threads";
 import { z } from "zod";
+import type { ChatFileLookup } from "../../context/index.js";
 import {
   countConversationTurnsBefore,
   cursorAfter,
@@ -228,6 +229,7 @@ export async function readThreadHistory(input: {
   caller: Thread;
   input: ThreadHistoryInput;
   tokenizer: TokenizerFamily;
+  chatFiles?: ChatFileLookup;
 }) {
   const { repos, caller } = input;
   return repos.readSnapshot(async () => {
@@ -236,6 +238,7 @@ export async function readThreadHistory(input: {
       ref: input.input.ref,
       threads: repos.threads,
       turns: repos.turns,
+      chatFiles: input.chatFiles,
     });
     if (!resolved.ok) return resolved;
     const projection: Projection = {
