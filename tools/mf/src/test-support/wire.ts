@@ -235,7 +235,8 @@ export class Wire {
     ws.on("message", (raw) => {
       const message = JSON.parse(String(raw)) as Record<string, unknown> & {
         type: string;
-        requestId?: string;
+        requestId: string;
+        threadId: string;
         lastSeq?: string;
       };
       this.clientMessages.push(message);
@@ -244,8 +245,8 @@ export class Wire {
         message.type === "subscribe"
           ? [
               {
-                requestId: message.requestId ?? "",
-                threadId: THREAD_ID,
+                requestId: message.requestId,
+                threadId: message.threadId,
                 lastSeq: message.lastSeq ?? "0",
               },
             ]

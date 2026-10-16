@@ -2,7 +2,9 @@
 
 ## [Unreleased]
 
-- A chat no longer sits connected but silent when its catch-up fails or hangs: the app and `./mf` drop the connection after a server error or 20 seconds, and the usual reconnect resumes every open view from where it was. A view opened while the catch-up was already under way gets the events it was owed.
+- The app and `./mf` now follow replies through one thread sync. CLI results require a confirming snapshot; live checks remain diagnostics, and retryable replay errors recover through the shared transport without ending the command.
+
+- Failed or unanswered replay requests recover one chat at a time on the existing connection, using request ids and a 20-second deadline that pings do not extend. Healthy chats remain live, and a view joining an in-flight replay receives its missing events in order.
 - A socket replaced while still closing now reports its close once (handler callbacks, generation-closed listeners and subscription cleanup) instead of silently skipping them.
 
 - A disconnected or unsubscribed client no longer acquires a catalog listener when a pending project ownership read finishes.

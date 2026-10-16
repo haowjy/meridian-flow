@@ -122,9 +122,8 @@ reason. The stream only decides when to look: no frame is an input to the claim.
 `tail --until-idle` confirms idle at its final snapshot; it does not attribute replies to
 messages. Plain `tail` and `send`'s live output don't draw queued rows.
 
-- Content comes from the app's own event processing. `thread view` hydrates the
-  snapshot into the shared `@meridian/thread-client` turn store, runs the shared
-  `viewTranscript` over it, and prints that view model's rows (`you:`,
+- Content comes from the app's own event processing. `thread view` runs the shared
+  `viewTranscript` directly over a snapshot, and prints that view model's rows (`you:`,
   `reply: 3 steps, read 2 docs`, `compaction:`, `queued:`), or `--json` as the
   versioned `chatView: 2` envelope with row identity, kind and items (`--full --json` adds
   tool inputs, results and metadata, Work receipts, raw card content, report payloads, the
@@ -134,28 +133,22 @@ messages. Plain `tail` and `send`'s live output don't draw queued rows.
   and background report bodies and change trails not fetched. Card wording and failure
   copy are drawn by React, so compare cards as raw props only. The app draws
   the same function's output, so compare a chat in the browser by row identity, row
-  kind, item kinds and visible text with [the chat-session recipe](qa/chat-session.md). `send` and `tail --until-idle` reduce every followed event through the
-  same shared reducer, then compare this CLI follower's reduced status and final
-  text for the followed turns with the confirming snapshot. The result gains
-  `liveView`: `matches`, `differs` with a compact `liveDiff` of `{ turnId, field,
-  live, server }` rows (text mode prints one line), or `not_observed` when the
-  follow had a replay gap, a compared turn's events were not seen from its
-  start, or anchor recovery overwrote them with a snapshot (a recovered turn is the
-  server's data, so comparing it would measure the server against itself). It is absent when nothing was followed.
-  - It compares only the status and final text of the followed turns, so it
-    can't catch a missing write-mode divider, a misplaced row or a missing
-    queued row. Read those from `thread view` (the snapshot) and in the browser.
-    The follow does guarantee that a divider whose anchor turn the stream never
-    carried is recovered from a bounded snapshot, as the app recovers it.
-  - It is not a certificate of any browser screen. It leaves out tools,
-    reasoning, interrupts, the optimistic UI and the visible-turn policy, and the
-    app reconciles to the server at turn end.
-  - `differs` is a lead to investigate, and `matches` does not prove the screen
-    was right. Neither changes the outcome or exit code (the claim is the
-    server's stored state).
-  - The owner has ruled that once the chat session's sync is shared, a live
-    disagreement will fail with exit 6 (`live_disagrees`). That is not true
-    yet ([`./mf`'s claims][mf-claims]).
+  kind, item kinds and visible text with [the chat-session recipe](qa/chat-session.md). `send` and `tail --until-idle` run the app's
+  `ThreadSync`: the same read-first join, read application, frame ordering and missing-row recovery.
+  Each result is proved by one applied snapshot, not by the mixed-version client value.
+  `liveView` is a separate end-of-turn diagnostic: when stream frames end a turn, its next applied
+  read compares that turn's status and text. The result is `matches`, `differs` (with `liveDiff`),
+  or `not_observed` with `liveReason`. A read that seeded text, rewrote a streaming turn or ended
+  it first permanently prevents a stream claim for that turn; a tail joining mid-reply commonly
+  reports `rewritten`. An empty claimed assistant set reports `no_turn`.
+  - These checks do not certify browser rendering, tools, reasoning, interrupts, optimistic UI,
+    row placement, queued rows or dividers. Verify the screen with [the browser recipes](qa/chat-session.md).
+  - Neither `matches` nor `differs` changes the proven outcome or exit code. A disagreement is
+    a debugging lead, not an automatic exit 6. The current conservative guarantee and possible
+    per-block provenance refinement are recorded in the [L1 design][l1-design].
+  - Retryable replay errors and replay deadlines recover through the shared transport until
+    the command deadline. A refused replay ends the command; terminal/auth socket closes remain
+    exit 4. The CLI owns no replay retry loop.
 
   `thread events` stays an event log and prints both `tool.completed` and
   `tool.settled`.
@@ -205,8 +198,10 @@ messages. Plain `tail` and `send`'s live output don't draw queued rows.
   following until a snapshot confirms idle or the deadline exits 124 with the
   timeout report. Durable `thread.status` alone is not evidence of idle.
   One subscription and event mapper stay alive through checkpoints, including
-  frames queued during HTTP confirmation. Its `turns` list covers the initially
-  running turn and every stream-named turn with their snapshot statuses.
+  frames arriving during HTTP confirmation. At the proving read it freezes its `turns` list:
+  unfinished assistants at join, assistants first stored during the follow, and pre-proof
+  stream-named turns. Result, pending checks and `liveView` use exactly that set; later turns
+  cannot join the proof.
   Any observed failure or covered turn error produces failed; otherwise any
   cancellation produces cancelled, missing or non-terminal turns produce 6
   `unconfirmed`, and all complete produces complete.
@@ -266,13 +261,11 @@ messages. Plain `tail` and `send`'s live output don't draw queued rows.
   success. When later messages join the same execution, the execution's last reply answers
   all of them. A Retry pressed after `send` reported failed isn't waited for; use
   `tail --until-idle`. A gap marks `liveView` `not_observed` and never weakens the claim.
-  After a claim settles, the stream gets a short catch-up (1.5 s, one deadline for stream
-  reads, anchor recovery and snapshot reads) so the printed log is whole. That log is
-  best-effort: a timeout, transport or protocol error during catch-up keeps the claim and marks
-  `liveView` `not_observed`.
-  Anchor recovery (a snapshot hydrated mid-follow) ends the standing of every turn it
-  overwrote for the rest of that follow: a later `RUN_STARTED` for one of them does not restore
-  it, so those turns stay `not_observed`.
+  After a claim settles, observation gets up to 1.5 s within the command deadline to collect
+  pending shared-sync checks. This is not a journal-watermark wait or a complete-log guarantee.
+  Expected HTTP, transport or protocol failures during this diagnostic phase preserve the
+  proven result and set `observationIncomplete: true`; existing checks still determine `liveView`.
+  A later replay cannot restore a rewritten turn's standing as stream evidence.
 - Write tools emit `tool.completed` for the staged result, then `tool.settled`
   for the committed receipt, in both JSON and text. There is no `settled` flag.
   The staged result alone does not prove a committed write.
@@ -630,3 +623,5 @@ pnpm dev:prune-worktrees -- --target <work-id|path|branch|pr>
 ```
 
 [mf-claims]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/dev-cli/mf-claims-are-proofs.md
+
+[l1-design]: https://github.com/haowjy/meridian-flow-docs/blob/main/work/mf-client-unification/design-l1-session.md#5-liveview-becomes-an-end-of-turn-check

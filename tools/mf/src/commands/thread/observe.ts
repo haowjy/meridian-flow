@@ -227,7 +227,7 @@ export function createObserver(options: ObserverOptions): Observer {
         checks.set(observation.turnId, observation);
         break;
       case "error":
-        // Network errors belong to the shared reconnect policy, not the command outcome.
+        // Retryable replay/network errors stay with the transport; only refusals end the command.
         if (observation.error instanceof CliError) failure ??= observation.error;
         break;
       case "interruptSettled":

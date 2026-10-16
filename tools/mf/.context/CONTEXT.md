@@ -104,7 +104,14 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
 
 `transport.ts` composes one `ThreadSocketClient` per command with the session's
 cookie and Portless CA. The shared client owns connected gating, replay, dedupe,
-gaps and reconnect with the package's default socket deadlines. A CLI queue bounds
+gaps and reconnect with the package's default socket deadlines. Each subscribe names a
+request id, and its acknowledgement echoes that id and the accepted `after` cursor. Replay
+failures retry that thread alone without dropping healthy subscriptions. `toError` keeps
+retryable server errors as ordinary errors (like connection errors and replay deadlines),
+while refusals become `CliError("protocol")`. Both `createObserver` and `subscribeThread`
+leave the former with shared recovery until the command deadline and terminate on the latter;
+there is no CLI retry loop. Actual terminal/auth socket closes still end pre-proof observation
+with exit 4. A failure after proof cannot erase it (`observationIncomplete: true`). A CLI queue bounds
 waits by the command deadline; never add CLI socket timers or tune the package's
 deadlines to `--timeout` (see the
 [deadline contract](../../../packages/thread-client/.context/CONTEXT.md)). Terminal
