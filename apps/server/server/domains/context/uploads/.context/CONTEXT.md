@@ -27,7 +27,7 @@ A New-chat upload has no address until its chat exists. A fork or handoff owns
 its own uploads, and its seed names the source chat's address. Admission
 refuses an upload whose owner is not the sending chat. A model-written bare
 `uploads://` link in a document is stored qualified with the writing chat
-(`lib/model-tools/qualify-uploads.ts`), because a document has no chat to
+(agent-edit's link assignment, `links/assign-refs.ts`, from `WriteContext.uploadsChat`), because a document has no chat to
 resolve a bare form against. Uploads are flat and
 cannot be created through general ContextFS operations. A same-key retry returns the original result only when
 the complete normalized owner/name/MIME/digest fingerprint matches.
