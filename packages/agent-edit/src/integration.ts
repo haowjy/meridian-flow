@@ -109,7 +109,7 @@ export type {
   JournalReadOptions,
   UpdateJournal,
 } from "./ports/update-journal.js";
-export { parseWriteHandle, writeHandle } from "./ports/update-journal.js";
+export { editHandle, parseEditHandle } from "./ports/update-journal.js";
 export type {
   MappedContinuation,
   PmSourceContinuation,

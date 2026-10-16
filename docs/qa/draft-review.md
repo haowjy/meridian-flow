@@ -643,7 +643,7 @@ on refusal, without a navigation change.
 
 These are server-seam integrity checks, not browser remount verification. Use an
 owned database and the production preview/selection API. Record exact paragraphs
-and every staged result's settlement ID, not only its grouped `wN` handle.
+and every staged result's settlement ID, not only its grouped `eN` handle.
 
 - Stage `green → lime` over pending `gold / azure / green`. Discard gold,
   write `red → pink` in the new generation, and read from the open reply.
@@ -827,12 +827,12 @@ to read the file and issue two independent `write replace` calls, changing
 `./mf thread view --full`, not only the send command's streamed result.
 
 1. Send `write` with `command: "undo", count: 2`. Both original paragraphs
-   return, and the result names `undone: w2, w1`.
+   return, and the result names `undone: e2, e1`.
 2. Send `write` with `command: "redo", count: 3`. It refuses with
    `insufficient_redo`, names the two available edits, and leaves text unchanged.
    In Chat, this row says **Couldn't redo**, not **Redid**.
 3. Send `write` with `command: "redo", count: 2`. Both replacements return,
-   with `redone: w1, w2`. The successful Chat row says **Redid**.
+   with `redone: e1, e2`. The successful Chat row says **Redid**.
 4. Undo both again, then send two individual Redo calls. The first restores
    `blade` only; the second restores `buckler`. Check exact paragraphs with
    `./mf doc read` after every call. Repeat in Draft mode using its draft read.
