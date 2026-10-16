@@ -17,7 +17,6 @@ import {
   documentRef,
   mintAheadRef,
   parseLinkRef,
-  qualifyContextUriByHolder,
   resolveDocumentHref,
   type SpelledHref,
   splitDocumentHrefSuffix,
@@ -29,6 +28,7 @@ import {
   type HolderLinkScope,
   type LinkOccurrence,
   occurrenceIdentity,
+  qualifyWrittenHref,
   type WrittenGrammar,
   walkLinkOccurrences,
   writtenSourceUri,
@@ -315,7 +315,7 @@ function fresh(
 ): OccurrenceAttrs {
   const { grammar, scope } = input;
   const { title } = occurrence.attrs;
-  const href = qualifyBareUploads(occurrence.attrs.href, input.uploadsChat);
+  const href = qualifyWrittenHref(occurrence.attrs.href, input.uploadsChat);
   if (grammar.kind === "source") {
     const asset = assetFor(scope, href);
     if (asset) return { ref: null, href: `asset:${asset}`, title };
@@ -336,19 +336,6 @@ function fresh(
       view: scope.holder.view,
     });
   return { ref: assigned.ref, title, href: assigned.href };
-}
-
-/**
- * A bare `uploads://name` means the reading chat's file only while read from that chat, and a
- * document outlives it: a link or picture freshly written by a chat is stored as that chat's
- * address. Only a real occurrence reaches here; code, prose and copied nodes never do.
- */
-function qualifyBareUploads(href: string, chatRef: string | undefined): string {
-  if (!chatRef) return href;
-  const resolved = resolveDocumentHref(href, null);
-  if (!resolved) return href;
-  const uri = qualifyContextUriByHolder(resolved.uri, `uploads://@/${chatRef}/_`);
-  return uri === resolved.uri ? href : storedHref(uri, resolved.suffix);
 }
 
 /**

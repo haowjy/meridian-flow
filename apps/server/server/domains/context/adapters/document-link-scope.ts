@@ -206,7 +206,8 @@ export function createDrizzleDocumentLinkScopes(deps: {
     const holder = request.holders[0];
     if (holder && request.written?.length) {
       const holderUri = await holderAddress(snapshot, holder);
-      for (const uri of writtenAddresses(request.written, holderUri)) addresses.add(uri);
+      for (const uri of writtenAddresses(request.written, holderUri, request.uploadsChat))
+        addresses.add(uri);
     }
     // A deleted picture keeps its path only while no other image holds it. Loading by the
     // row's own deleted flag is a superset of the view's rule: presence is still decided
