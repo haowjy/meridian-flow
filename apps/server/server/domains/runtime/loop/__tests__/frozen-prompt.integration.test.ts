@@ -577,8 +577,7 @@ describe("frozen prompt provider requests", () => {
           (message) =>
             message.role === "user" &&
             message.content.some(
-              (part) =>
-                part.type === "text" && part.text.includes('current: later-work: "Later Work"'),
+              (part) => part.type === "text" && part.text.includes('current: w1 "Later Work"'),
             ),
         ),
       ).toBe(true);

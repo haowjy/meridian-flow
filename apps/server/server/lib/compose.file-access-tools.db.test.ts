@@ -137,11 +137,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const scratchCall = await call("ls", { path: "scratch://" });
       const scratch = listed(scratchCall);
       expect(scratch).toEqual([
-        expect.objectContaining({ uri: "scratch://@rewrite/notes", readonly: true }),
+        expect.objectContaining({ uri: "scratch://@w1/notes", readonly: true }),
       ]);
       expect(scratch[0]).not.toHaveProperty("editable");
       expect(scratch[0]).not.toHaveProperty("documentId");
-      expect(scratchCall.output).toBe("scratch://@rewrite/\n  notes (read-only)");
+      expect(scratchCall.output).toBe("scratch://@w1/\n  notes (read-only)");
       const search = await call("search", { pattern: "Writer" });
       expect(search.output).toContain("manuscript://chapter");
       expect(search.output).not.toContain(".md");
@@ -181,14 +181,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       // D65: a refusal reaches the model as its message and code.
       expect(await switchTo("ghost")).toBe(
-        'Unknown Work @ghost. List Works with work({"command":"list"}). (work_not_found)',
+        "Unknown Work ghost. List Works with work list. (work_not_found)",
       );
-      expect(await switchTo("frozen")).toBe(
-        "Work @frozen is archived, so this chat can't switch to it until the user unarchives it. (work_archived)",
+      expect(await switchTo("w3")).toBe(
+        "Work w3 is archived, so this chat can't switch to it until the user unarchives it. (work_archived)",
       );
-      expect(await switchTo("@rewrite")).toBe("This chat is already in @rewrite.");
-      expect(await switchTo("other")).toBe(
-        "Switching this chat's Work needs the user's approval. Ask them to switch it to @other from the chat. (permission_denied)",
+      expect(await switchTo("@w1")).toBe("This chat is already in w1.");
+      expect(await switchTo("w2")).toBe(
+        "Switching this chat's Work needs the user's approval. Ask them to switch it to w2 from the chat. (permission_denied)",
       );
     });
 
@@ -263,7 +263,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await script.text("scratch://ideas")).toContain("Agent ideas.");
       const { call: next } = await script.begin();
       expect(listed(await next("ls", { path: "scratch://", verbose: true }))).toContainEqual(
-        expect.objectContaining({ uri: "scratch://@rewrite/ideas", wordCount: 2 }),
+        expect.objectContaining({ uri: "scratch://@w1/ideas", wordCount: 2 }),
       );
     });
   });

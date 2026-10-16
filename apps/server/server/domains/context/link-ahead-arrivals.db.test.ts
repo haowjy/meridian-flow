@@ -279,11 +279,11 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
       expect(await settlement(vacated)).toBe(moved);
 
       // Work restore: the hidden document reappears at its address and settles the waiting ref.
-      const notes = await create("scratch://@draft/notes.toml");
+      const notes = await create("scratch://@w1/notes.toml");
       await ports.workRepo.softDelete(workId as WorkId);
       // Registered while the Work is deleted: it keeps its identity, so the ref registers
       // against it and stays unsettled until the restore makes the address live again.
-      const waiting = await register("scratch://@draft/notes.toml");
+      const waiting = await register("scratch://@w1/notes.toml");
       expect(await settlement(waiting)).toBeNull();
       await ports.workRepo.restore(workId as WorkId);
       expect(await settlement(waiting)).toBe(notes);

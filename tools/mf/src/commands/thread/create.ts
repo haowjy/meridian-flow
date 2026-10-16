@@ -59,10 +59,7 @@ export const threadCreateCommand: CommandSpec = {
     work: { type: "string", description: "Bind to a Work by handle, such as w3; omit for No Work" },
     title: { type: "string", description: "Thread title" },
   },
-  examples: [
-    "./mf thread create",
-    "./mf thread create --work @draft-2 --title 'Arc 3 planning' --json",
-  ],
+  examples: ["./mf thread create", "./mf thread create --work w2 --title 'Arc 3 planning' --json"],
   async run(ctx) {
     const session = await ctx.session();
     const thread = await createThread(session, {

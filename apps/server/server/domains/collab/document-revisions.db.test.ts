@@ -308,7 +308,7 @@ describe("document revisions (postgres and collab)", () => {
       projectId: PROJECT_ID,
       createdByUserId: USER_ID,
       name: "Other draft",
-      handle: "w1",
+      handle: "w2",
     });
     await createDrizzleThreadWorksRepository(db).rebindPrimary(THREAD_ID, workB);
     expect(await f.current()).not.toBe(before.revision);

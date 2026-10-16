@@ -119,7 +119,7 @@ it.each([
       threadId: otherThread as never,
       turnId: otherTurn as never,
       responseIdentity: { providerResponseId: otherResponse, editScopeId: otherResponse },
-      grant: testFileGrant({ kind: "draft", workId: otherWork, workHandle: "holding" }),
+      grant: testFileGrant({ kind: "draft", workId: otherWork, workHandle: "w2" }),
     };
     expect(
       await view.collab.agentEdit().write(
@@ -194,7 +194,7 @@ it.each([
     expect(partial).toMatchObject({
       status: "partial",
       acceptedParts: 1,
-      skips: [{ before: "Beta", after: "Gamma", reason: expect.stringContaining("@holding") }],
+      skips: [{ before: "Beta", after: "Gamma", reason: expect.stringContaining("w2") }],
     });
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Gamma.\n\nBlue.\n");
     expect(await holdingReview.discardItem(ALPHA_ID)).toMatchObject({ status: "discarded" });

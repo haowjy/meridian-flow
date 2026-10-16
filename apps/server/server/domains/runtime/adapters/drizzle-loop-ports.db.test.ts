@@ -62,6 +62,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
         title: "Thread A",
+        ref: "c1",
       });
       await db.insert(schema.threads).values({
         rootThreadId: THREAD_B,
@@ -69,6 +70,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
         title: "Thread B",
+        ref: "c2",
       });
     });
 
@@ -158,7 +160,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           kind: "derivation_seed",
           derivation: "handoff",
           sourceThreadId: THREAD_B,
-          sourceRef: "p1",
+          sourceRef: "c9",
           sourceTitle: "Source",
           cutoffTurnId: crypto.randomUUID(),
         },

@@ -81,7 +81,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const scratchNote = await facts.load({ target: { kind: "document", documentId: note } });
       expect(scratchNote?.ownerWork).toEqual({
         id: a,
-        slug: "arc-a",
+        handle: "w1",
         isNoWork: false,
         archived: false,
         deleted: false,

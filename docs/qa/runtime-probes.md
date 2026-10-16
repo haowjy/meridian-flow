@@ -19,7 +19,7 @@ Publish a private probe Agent and create a thread (the response uses `threadId`)
 
 ```bash
 ./mf api POST /api/agents --data '{"slug":"runtime-probe","content":"---\nname: Runtime Probe\nmode: primary\nmodel: mock-llm-v1\nautocompact: 100000\n---\nFollow the writer."}' --json > "$E/agent.json"
-./mf thread create --agent runtime-probe --work @/ --title 'Runtime probe' --json > "$E/thread.json"
+./mf thread create --agent runtime-probe --work none --title 'Runtime probe' --json > "$E/thread.json"
 T=$(jq -r .threadId "$E/thread.json")
 ```
 

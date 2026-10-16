@@ -58,6 +58,7 @@ export async function resetThreadWorkRaceFixture(db: Database): Promise<void> {
     projectId: ids.projectId,
     createdByUserId: ids.userId,
     title: "Race thread",
+    ref: "c900",
     kind: "primary",
     status: "idle",
   });
