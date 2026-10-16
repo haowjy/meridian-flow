@@ -100,8 +100,11 @@ export interface ParsedContextUri {
 
 type ContextUriParseError = {
   ok: false;
-  /** `unknownScheme` marks a URI that names no context scheme, so it addresses no document. */
-  error: { uri: string; reason: string; unknownScheme?: string };
+  /**
+   * `unknownScheme` marks a URI that names no context scheme, so it addresses no document.
+   * `chatHandle` marks `uploads://@c1/…`, a chat's handle spelled straight after `@`.
+   */
+  error: { uri: string; reason: string; unknownScheme?: string; chatHandle?: string };
 };
 export type ContextUriParseResult = { ok: true; value: ParsedContextUri } | ContextUriParseError;
 type AuthorityParseResult =
@@ -293,7 +296,9 @@ function parseAuthorityPrefix(
   const qualifier = qualifiers[0] ?? "";
   // Uploads belong to a chat: the only owner they take is a chat's handle.
   if (scheme === "uploads" && !(qualifier === "@" && segments.length)) {
-    return invalidContextUri(rawUri, uploadsBelongToChat);
+    const chatHandle = /^@(c[1-9][0-9]*)$/.exec(qualifier)?.[1];
+    const error = invalidContextUri(rawUri, uploadsBelongToChat);
+    return chatHandle ? { ok: false, error: { ...error.error, chatHandle } } : error;
   }
   if (qualifier === "@" && scheme === "scratch" && segments.length) {
     const rootThreadRef = segments.shift() ?? "";

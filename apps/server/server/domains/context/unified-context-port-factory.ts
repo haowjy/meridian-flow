@@ -27,6 +27,7 @@ import { sourceDestination } from "../file-policy/index.js";
 import type { EventSink } from "../observability/index.js";
 import { createDrizzleTopPrimaryChatResolver } from "../threads/adapters/drizzle/top-primary-chat.js";
 import type { TopPrimaryChatResolver } from "../threads/index.js";
+import { createDrizzleChatFileLookup } from "./adapters/chat-file-lookup.js";
 import { createDrizzleChatUploadsOwners } from "./adapters/chat-uploads-owners.js";
 import { createDrizzleContextCatalog } from "./adapters/context-catalog.js";
 import { ContextFS, type ContextFSDeps } from "./adapters/context-fs/context-fs.js";
@@ -40,6 +41,7 @@ import {
   resolveActiveFolderUri,
 } from "./adapters/project-context-availability.js";
 import { createDrizzleScratchLineages } from "./adapters/scratch-lineages.js";
+import type { ChatFileLookup } from "./chat-file-addresses.js";
 import type { ChatUploadsOwners } from "./chat-uploads-owners.js";
 import { ContextOperationReceipts } from "./context/context-operation-receipts.js";
 import { type ContextSourceBinding, createContextPortRouter } from "./context/router.js";
@@ -89,6 +91,8 @@ export interface UnifiedContextPortFactory {
   topPrimaryChats: TopPrimaryChatResolver;
   /** Chats by handle, for `uploads://@/c12/` addresses. */
   chats: ChatUploadsOwners;
+  /** Where a chat's uploads and Scratch live, for errors and pointers. */
+  chatFiles: ChatFileLookup;
   forProject(
     projectId: string,
     userId: string,
@@ -109,6 +113,8 @@ export interface UnifiedContextPortFactory {
 interface ContextStoreResolvers {
   lineages: ScratchLineages;
   chats: ChatUploadsOwners;
+  /** Absent in the in-memory factory, which has no threads to ask. */
+  chatFiles?: ChatFileLookup;
   resolveLineageStore(projectId: string, rootThreadId: string): ContextDocumentStore;
   /** The chat's uploads; `chatId` is a top primary thread id (`resolveTopPrimaryChat`). */
   resolveChatStore(projectId: string, chatId: string, scheme: "uploads"): ContextDocumentStore;
@@ -361,6 +367,7 @@ function buildUnifiedContextPort(input: {
         ? { kind: "found", binding: chatSource({ chatId: chat.chatId, chatRef: chat.chatRef }) }
         : { kind: "unavailable" };
     },
+    chatFiles: async (ref) => (await storeResolvers.chatFiles?.byRef(scope.projectId, ref)) ?? null,
     resolveLineageSource: async (ref) => {
       const lineage = await storeResolvers.lineages.byRef(scope.projectId, ref);
       return lineage ? lineageSource(lineage) : null;
@@ -484,6 +491,7 @@ export function createInMemoryUnifiedContextPortFactory(
     lineages?: ScratchLineages;
     chats?: ChatUploadsOwners;
     topPrimaryChats?: TopPrimaryChatResolver;
+    chatFiles?: ChatFileLookup;
   } = {},
 ): UnifiedContextPortFactory {
   const registry = options.storeRegistry ?? createInMemoryUnifiedContextStoreRegistry();
@@ -510,6 +518,8 @@ export function createInMemoryUnifiedContextPortFactory(
       },
     },
   );
+
+  if (options.chatFiles) storeResolvers.chatFiles = options.chatFiles;
 
   const resolveFolder =
     (
@@ -560,6 +570,7 @@ export function createInMemoryUnifiedContextPortFactory(
     lineages: storeResolvers.lineages,
     chats: storeResolvers.chats,
     topPrimaryChats: options.topPrimaryChats ?? { resolveTopPrimaryChat: async () => null },
+    chatFiles: options.chatFiles ?? { byRef: async () => null },
     forProject(projectId, userId, workAuthorities, lineage, chat) {
       return buildUnifiedContextPort({
         scope: { kind: "project", projectId, userId, workAuthorities, lineage, chat },
@@ -620,6 +631,12 @@ export function createProductionUnifiedContextPortFactory(options: {
     options.arrivals,
     options.hiddenNodeRepair,
   );
+  const chatFiles = createDrizzleChatFileLookup(options.db, {
+    chats: storeResolvers.chats,
+    topPrimaryChats,
+    lineages: storeResolvers.lineages,
+  });
+  storeResolvers.chatFiles = chatFiles;
 
   const placements: DraftPlacements = {
     drafts: options.drafts,
@@ -692,6 +709,7 @@ export function createProductionUnifiedContextPortFactory(options: {
     lineages: storeResolvers.lineages,
     chats: storeResolvers.chats,
     topPrimaryChats,
+    chatFiles,
     forProject(projectId, userId, workAuthorities, lineage, chat) {
       return buildUnifiedContextPort({
         scope: { kind: "project", projectId, userId, workAuthorities, lineage, chat },
