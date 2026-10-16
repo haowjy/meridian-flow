@@ -13,7 +13,8 @@ import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT } from "@sanity/diff-match-patch";
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import * as Y from "yjs";
 import { readBlocks } from "./fragments.js";
-import { blockKey, diffKeys, similarity, wordDiff } from "./tokens.js";
+import { type RestorationLink, recordWriteBack } from "./restorations.js";
+import { blockKey, diffKeys, similarity, splitWords, wordDiff } from "./tokens.js";
 
 type Attrs = Record<string, unknown>;
 
@@ -61,13 +62,7 @@ export interface WriteStats {
 const flat = (b: PMNode) => b.isTextblock && b.content.size === b.textContent.length;
 
 /** Edits one flat Y.XmlText into the target block's text and marks, touching only what changed. */
-function editText(el: Y.XmlElement, target: PMNode) {
-  let xt = el.length ? (el.get(0) as Y.XmlText) : null;
-  if (!xt) {
-    xt = new Y.XmlText();
-    el.insert(0, [xt]);
-  }
-  const text = xt;
+function editText(text: Y.XmlText, target: readonly PMNode[]) {
   const cur = (text.toDelta() as Array<{ insert: string }>).map((d) => d.insert).join("");
   const segs: Array<{ from: number; to: number; attrs: Attrs }> = [];
   let off = 0;
@@ -76,7 +71,7 @@ function editText(el: Y.XmlElement, target: PMNode) {
     segs.push({ from: off, to: off + len, attrs: markAttrs(n) });
     off += len;
   });
-  const want = target.textContent;
+  const want = target.map((n) => n.textContent).join("");
   const insertRange = (at: number, tFrom: number, tTo: number) => {
     for (const s of segs) {
       const a = Math.max(s.from, tFrom);
@@ -150,7 +145,9 @@ export function writeBlocks(
   frag: Y.XmlFragment,
   schema: Schema,
   target: readonly PMNode[],
+  copies?: RestorationLink[],
 ): WriteStats {
+  const preserve = copies !== undefined;
   const stats: WriteStats = { kept: 0, edited: 0, replaced: 0, inserted: 0, deleted: 0 };
   const current = readBlocks(frag, schema);
   // Gaps between equal blocks, as [curFrom, curTo, tgtFrom, tgtTo].
@@ -179,7 +176,7 @@ export function writeBlocks(
     let from = c0;
     for (let t = t0; t < t1; t++) {
       let best = -1;
-      let bestSim = 0.3;
+      let bestSim = preserve ? -1 : 0.3;
       for (let c = from; c < c1; c++) {
         const sim =
           current[c].type === target[t].type ? similarity(current[c], target[t], true) : 0;
@@ -199,6 +196,15 @@ export function writeBlocks(
         from = best + 1;
       }
     }
+    const rebuilt =
+      preserve &&
+      (pairs.length !== c1 - c0 ||
+        pairs.length !== t1 - t0 ||
+        pairs.some(([c, t]) => !sameShape(frag.get(c) as Y.XmlElement, target[t])));
+    // Ordinary text Discards never scan or copy the chapter's content. Only a structural gap needs
+    // a source map; capture it before deleting containers can collect their descendants.
+    const before = rebuilt ? copyUnits(frag.toArray().slice(c0, c1) as Y.XmlElement[]) : null;
+    const clock = Y.getState((frag.doc as Y.Doc).store, (frag.doc as Y.Doc).clientID);
     const pairedC = new Map(pairs);
     const pairedT = new Set(pairs.map(([, t]) => t));
     // Walk the gap backwards: delete unpaired old blocks, edit paired ones, insert new ones.
@@ -223,7 +229,15 @@ export function writeBlocks(
       const tgt = target[t];
       if (el.nodeName === tgt.type.name && flat(tgt) && flat(current[c]) && el.length <= 1) {
         editAttrs(el, tgt);
-        editText(el, tgt);
+        let text = el.get(0) as Y.XmlText | undefined;
+        if (!text) {
+          text = new Y.XmlText();
+          el.insert(0, [text]);
+        }
+        editText(text, children(tgt));
+        stats.edited++;
+      } else if (preserve && sameShape(el, tgt)) {
+        editContent(el, tgt);
         stats.edited++;
       } else {
         frag.delete(c, 1);
@@ -231,6 +245,174 @@ export function writeBlocks(
         stats.replaced++;
       }
     }
+    if (before && copies)
+      copies.push(
+        ...copiedUnits(
+          before,
+          copyUnits(frag.toArray().slice(c0, c0 + t1 - t0) as Y.XmlElement[]),
+          (frag.doc as Y.Doc).clientID,
+          clock,
+        ),
+      );
   }
   return stats;
+}
+
+const children = (node: PMNode): PMNode[] => {
+  const out: PMNode[] = [];
+  node.forEach((child) => {
+    out.push(child);
+  });
+  return out;
+};
+
+/** Adjacent marked PM text nodes share one XmlText. Atoms split runs, not whole paragraphs. */
+function runs(node: PMNode): Array<PMNode | PMNode[]> {
+  const out: Array<PMNode | PMNode[]> = [];
+  node.forEach((child) => {
+    const last = out.at(-1);
+    if (!child.isText) out.push(child);
+    else if (Array.isArray(last)) last.push(child);
+    else out.push([child]);
+  });
+  return out;
+}
+
+function sameShape(el: Y.XmlElement, target: PMNode): boolean {
+  const content = runs(target);
+  return (
+    el.nodeName === target.type.name &&
+    el.length === content.length &&
+    content.every((node, i) => {
+      const child = el.get(i);
+      return Array.isArray(node)
+        ? child instanceof Y.XmlText
+        : child instanceof Y.XmlElement && sameShape(child, node);
+    })
+  );
+}
+
+function editContent(el: Y.XmlElement, target: PMNode): void {
+  editAttrs(el, target);
+  runs(target).forEach((node, i) => {
+    if (Array.isArray(node)) editText(el.get(i) as Y.XmlText, node);
+    else editContent(el.get(i) as Y.XmlElement, node);
+  });
+}
+
+interface CopyUnit {
+  key: string;
+  client: number;
+  clock: number;
+}
+
+/** Capture live item content before a structural rewrite can collect it. One UTF-16 unit per clock. */
+function copyUnits(roots: Y.XmlElement[]): CopyUnit[] {
+  const out: CopyUnit[] = [];
+  const add = (item: Y.Item) => {
+    if (item.deleted) return;
+    const { client, clock } = item.id;
+    const content = item.content;
+    if (content instanceof Y.ContentType) {
+      const child = content.type;
+      const kind = child instanceof Y.XmlElement ? child.nodeName : "text";
+      out.push({ key: `type:${kind}`, client, clock });
+      visit(child);
+      // Closing boundaries keep equal text in distinct structural contexts aligned.
+      out.push({ key: `end:${kind}`, client: -1, clock: -1 });
+    } else if (content instanceof Y.ContentString) {
+      for (let i = 0; i < content.str.length; i++)
+        out.push({ key: `text:${content.str[i]}`, client, clock: clock + i });
+    } else {
+      out.push({
+        key: JSON.stringify([
+          item.parentSub,
+          content.constructor.name,
+          content instanceof Y.ContentFormat ? [content.key, content.value] : content.getContent(),
+        ]),
+        client,
+        clock,
+      });
+    }
+  };
+  const visit = (type: Y.AbstractType<unknown>) => {
+    for (const key of [...type._map.keys()].sort()) add(type._map.get(key) as Y.Item);
+    for (let item = type._start; item; item = item.right) add(item);
+  };
+  for (const root of roots) add(root._item as Y.Item);
+  return out;
+}
+
+/** Link only equal spans in a gap whose containers had to be rebuilt. */
+function copiedUnits(
+  before: CopyUnit[],
+  after: CopyUnit[],
+  client: number,
+  clock: number,
+): RestorationLink[] {
+  // Match whole words, as editText does. Character matching would falsely link the shared letters
+  // of a reverted word ("blue" -> "red") to the rejected AI write.
+  const tokens = (units: CopyUnit[]) => {
+    const out: Array<{ key: string; units: CopyUnit[] }> = [];
+    for (let i = 0; i < units.length; ) {
+      if (!units[i].key.startsWith("text:")) {
+        out.push({ key: units[i].key, units: [units[i++]] });
+        continue;
+      }
+      let end = i;
+      let text = "";
+      while (end < units.length && units[end].key.startsWith("text:"))
+        text += units[end++].key.slice(5);
+      for (const word of splitWords(text)) {
+        out.push({ key: `text:${word}`, units: units.slice(i, i + word.length) });
+        i += word.length;
+      }
+    }
+    return out;
+  };
+  const left = tokens(before);
+  const right = tokens(after);
+  const copies: RestorationLink[] = [];
+  let from = 0;
+  let to = 0;
+  for (const [op, length] of diffKeys(
+    left.map((u) => u.key),
+    right.map((u) => u.key),
+    UNBOUNDED,
+  )) {
+    if (op === DIFF_EQUAL) {
+      for (let i = 0; i < length; i++) {
+        for (let j = 0; j < left[from + i].units.length; j++) {
+          const source = left[from + i].units[j];
+          const copy = right[to + i].units[j];
+          if (copy.client !== client || copy.clock < clock) continue;
+          const last = copies.at(-1);
+          if (
+            last &&
+            last[1] + last[2] === copy.clock &&
+            last[3] === source.client &&
+            last[4] + last[2] === source.clock
+          )
+            copies[copies.length - 1] = [last[0], last[1], last[2] + 1, last[3], last[4]];
+          else copies.push([copy.client, copy.clock, 1, source.client, source.clock]);
+        }
+      }
+    }
+    if (op !== DIFF_INSERT) from += length;
+    if (op !== DIFF_DELETE) to += length;
+  }
+  return copies;
+}
+
+/** Discard-only identity preservation; AI and rebase allocation policies are unchanged. */
+export function writeDiscardBlocks(
+  frag: Y.XmlFragment,
+  schema: Schema,
+  target: readonly PMNode[],
+): void {
+  const doc = frag.doc as Y.Doc;
+  const clock = Y.getState(doc.store, doc.clientID);
+  const copies: RestorationLink[] = [];
+  writeBlocks(frag, schema, target, copies);
+  recordWriteBack(doc, clock, copies);
 }

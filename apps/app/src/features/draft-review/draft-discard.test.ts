@@ -3,12 +3,19 @@
  * Local Discard on a real review editor. It protects the ways a Discard can go wrong without an error:
  * eating the typing around it, taking a different change than the one clicked, and undoing a peer's work.
  */
+import { classifyChanges, readRestorations, writeBlocks } from "@meridian/agent-edit/diff";
+import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Editor } from "@tiptap/core";
+import { TextSelection } from "@tiptap/pm/state";
 import { yUndoPluginKey } from "@tiptap/y-tiptap";
 import { afterEach, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { draftInlineReviewPluginKey } from "@/core/editor/extensions/inline-review";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@/core/editor/schema";
+import {
+  blockForSelection,
+  moveBlockStepTransaction,
+} from "@/features/editor/surfaces/blocks/block-targets";
 import {
   createReviewEditor,
   createRoomRuntime,
@@ -17,6 +24,7 @@ import {
   seedReviewBase,
 } from "@/test-support/inline-review-editor";
 import { discardChange } from "./draft-discard";
+import { projectRoom } from "./review-frame";
 import { REVIEW_DEBOUNCE_MS, type ReviewRuntime, type ReviewSurface } from "./review-runtime";
 
 afterEach(() => destroyReviewEditors());
@@ -246,4 +254,95 @@ it("a typing frame reaches the painter before the runtime derives state or wakes
   } finally {
     vi.useRealTimers();
   }
+});
+
+it("move, cut across a paragraph break, paste and Undo keep the chat, atomically through GC reload", () => {
+  const doc = new Y.Doc({ gc: true });
+  const schema = buildDocumentSchema();
+  const p = (text: string) => schema.nodes.paragraph.create(null, schema.text(text));
+  doc.clientID = 1;
+  writeBlocks(doc.getXmlFragment("prosemirror"), schema, [
+    p("The red gate."),
+    p("Beyond the river waits a guard."),
+  ]);
+  seedReviewBase(doc, ["The red gate.", "Beyond the river waits a guard."]);
+  doc.clientID = 77;
+  const t = (doc.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(0) as Y.XmlText;
+  t.delete(4, 3);
+  t.insert(4, "blue");
+  const part = { threadId: "chat", turnId: "turn", inserted: [[77, 0, 4]] as const, deleted: [] };
+  doc.clientID = 99;
+  const { editor, history } = createReviewEditor([], doc);
+  const original = editor.getJSON();
+  const classification = (read: Y.Doc) => [
+    ...classifyChanges(read, projectRoom(read), { userId: "u", parts: [part] }).values(),
+  ];
+  const check = () => {
+    const reload = new Y.Doc({ gc: true });
+    Y.applyUpdate(reload, Y.encodeStateAsUpdate(doc));
+    for (const read of [doc, reload]) {
+      expect(classification(read).map((c) => c.byline)).toEqual([
+        [{ kind: "thread", threadId: "chat", turnId: "turn" }],
+      ]);
+      expect(classification(read).map((c) => c.members)).toEqual([[0]]);
+    }
+    reload.destroy();
+  };
+  const frames: Uint8Array[] = [];
+  doc.on("update", (update: Uint8Array) => frames.push(update));
+  const undoStep = () => {
+    const remote = new Y.Doc({ gc: true });
+    Y.applyUpdate(remote, Y.encodeStateAsUpdate(doc));
+    frames.length = 0;
+    history.undoManager.undo();
+    expect(frames).toHaveLength(1);
+    Y.applyUpdate(remote, frames[0]);
+    expect(readRestorations(remote)).toEqual(readRestorations(doc));
+    expect(classification(remote)).toEqual(classification(doc));
+    remote.destroy();
+  };
+  editor.commands.setTextSelection(1);
+  const source = blockForSelection(editor.state);
+  const move = source && moveBlockStepTransaction(editor.state, source, "down");
+  expect(move).toBeTruthy();
+  editor.view.dispatch(move as NonNullable<typeof move>);
+  history.undoManager.stopCapturing();
+  expect(classification(doc).flatMap((c) => c.byline)).toContainEqual({
+    kind: "user",
+    userId: "u",
+  });
+  undoStep();
+  expect(editor.getJSON()).toEqual(original);
+  check();
+  const end = editor.state.doc.firstChild?.nodeSize as number;
+  const slice = editor.state.doc.slice(1, end + 1);
+  editor.view.dispatch(
+    editor.state.tr
+      .setSelection(TextSelection.create(editor.state.doc, 1, end + 1))
+      .deleteSelection(),
+  );
+  history.undoManager.stopCapturing();
+  const at = posOf(editor, "river");
+  editor.view.dispatch(
+    editor.state.tr
+      .setSelection(TextSelection.create(editor.state.doc, at))
+      .replaceSelection(slice),
+  );
+  history.undoManager.stopCapturing();
+  expect(classification(doc).flatMap((c) => c.byline)).toContainEqual({
+    kind: "user",
+    userId: "u",
+  });
+  undoStep();
+  undoStep();
+  expect(editor.getJSON()).toEqual(original);
+  expect(readRestorations(doc).links.length).toBeGreaterThan(0);
+  check();
+  // Exercise Redo too: the wrapper must keep Yjs's direction flags through transaction cleanup.
+  history.undoManager.redo();
+  undoStep();
+  check();
+  editor.destroy();
+  history.undoManager.destroy();
+  doc.destroy();
 });

@@ -5,7 +5,6 @@
  */
 import {
   appendApplyRecord,
-  RESTORED_ORIGIN,
   readRestorations,
   recordRestorations,
   writeBlocks,
@@ -125,7 +124,7 @@ describe("a repaint after the writer's edit", () => {
 });
 
 // Root-only updates do not generate editor document transactions.
-it("an attached runtime republishes delayed Undo provenance and Apply records without a prose change", async () => {
+it("an attached runtime receives atomic Undo provenance and refreshes a later Apply record", async () => {
   vi.useFakeTimers();
   const schema = buildDocumentSchema();
   const p = (s: string) => schema.nodes.paragraph.create(null, schema.text(s));
@@ -189,18 +188,10 @@ it("an attached runtime republishes delayed Undo provenance and Apply records wi
   try {
     runtime.attachEditor(editor);
     await vi.advanceTimersByTimeAsync(180);
-    for (const x of updates.filter((x) => x.origin !== RESTORED_ORIGIN))
-      Y.applyUpdate(doc, x.update);
+    expect(updates).toHaveLength(1);
+    Y.applyUpdate(doc, updates[0].update);
     await vi.advanceTimersByTimeAsync(180);
-    expect(runtime.state().changes[0]).toMatchObject({
-      byline: [{ kind: "user", userId: "u" }],
-      members: [],
-    });
     const frame = runtime.state().frame;
-    for (const x of updates.filter((x) => x.origin === RESTORED_ORIGIN))
-      Y.applyUpdate(doc, x.update);
-    await vi.advanceTimersByTimeAsync(0);
-    expect(runtime.state().frame?.doc).toBe(frame?.doc);
     const restoredFrame = runtime.state().frame;
     if (!restoredFrame) throw new Error("Restored frame was not published");
     const seen = Y.createDocFromSnapshot(doc, restoredFrame.snapshot, new Y.Doc({ gc: false }));

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Discarding one change keeps the other chat's attribution, including paragraphs with inline images and large rewrites. Undo carries its text and provenance together, and restored chat attribution survives garbage-collected reloads.
+
 - Deleting text restored by Discard keeps the writer’s "You" byline, including after a reload. Undo of a discarded AI change still credits its chat.
 
 - Draft attribution collects a complete word-and-structure footprint before refining author names. Shared word ends, rebuilt list text and repeated-text changes keep their chat membership and full Apply evidence even when naming exhausts its budget.

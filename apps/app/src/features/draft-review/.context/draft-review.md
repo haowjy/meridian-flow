@@ -49,13 +49,16 @@ an AI wrote this, so an ambiguous author arrives quietly.
 Undo of a Discard keeps the chat through restoration links (`restorations.ts`): every UndoManager that can
 restore draft text (the editor's surface history, `room-discard`) registers `recordRestorations`, which on each
 `stack-item-popped` copies Yjs's `redone` pointers (`restored range → original id`, for text, elements,
-descendants, formats and attributes) into the draft's `__meridian_review_restored_v1` root under an origin no
-UndoManager tracks. The root is writer-writable, syncs and persists with the draft, and the classifier follows it
-through chains with light validation (the original is deleted, the same kind of content). An Apply appends an Apply record to a server-owned root
+descendants, formats and attributes) into the draft's `__meridian_review_restored_v1` root.
+Registration also wraps Undo/Redo in the manager's own transaction, keeping its direction flag set
+through cleanup so the opposite history stack is filled. Prose and links travel together. The root is
+outside the fragment-scoped history, is writer-writable, and persists with the draft. The classifier
+follows chains with ID-range validation; neither source nor intermediate tombstones need survive GC. An Apply appends an Apply record to a server-owned root
 of the draft doc in the same write that moves `review_base`, naming the items Apply moved into the base, so
 applied AI text reads as base and a stale AI deletion no longer blurs a later point.
-Discard appends its inserted IDs as three-number base ranges to the writer-writable
-restoration root, in its text transaction. The fragment-scoped history does not
+Discard preserves compatible text runs in place, including inline-atom paragraphs and low-similarity
+reverts. Structural copies carry source links; only the remaining inserted IDs become three-number
+base ranges in the restoration root, in the same text transaction. The fragment-scoped history does not
 undo those records. Undo links (five-number tuples) take precedence and follow
 their original source; deleting Discard's write-back later reads as a base deletion,
 while Undo-restored AI text keeps its chat.

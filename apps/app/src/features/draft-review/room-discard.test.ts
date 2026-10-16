@@ -7,6 +7,7 @@ import {
   applyRecordOf,
   classifyChanges,
   type ItemRange,
+  REVIEW_BASE_FRAGMENT,
   writeBlocks,
 } from "@meridian/agent-edit/diff";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
@@ -106,8 +107,13 @@ const proposals: Array<[string, (text: string) => ReturnType<typeof schema.node>
     ],
   ],
   [
-    "bold",
-    (t) => [schema.nodes.paragraph.create(null, schema.text(t, [schema.marks.strong.create()]))],
+    "an inline-atom paragraph",
+    (t) => [
+      schema.nodes.paragraph.create(null, [
+        schema.nodes.image.create({ src: "asset:test" }),
+        schema.text(`${t} ENDING`),
+      ]),
+    ],
   ],
 ];
 
@@ -115,10 +121,25 @@ it.each(
   proposals,
 )("Discard then Undo through the room's history keeps the chat after a reload (%s)", (_name, propose) => {
   const { doc } = room(["alpha tail"], ["alpha tail"]);
+  if (_name === "an inline-atom paragraph") {
+    const base = [
+      schema.nodes.paragraph.create(null, [
+        schema.nodes.image.create({ src: "asset:test" }),
+        schema.text("alpha tail"),
+      ]),
+    ];
+    writeBlocks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema, base);
+    writeBlocks(doc.getXmlFragment(REVIEW_BASE_FRAGMENT), schema, base);
+  }
   const peer = new Y.Doc({ gc: false });
   peer.clientID = 77;
   Y.applyUpdate(peer, Y.encodeStateAsUpdate(doc));
-  writeBlocks(peer.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema, propose("alpha tail"));
+  if (_name === "an inline-atom paragraph") {
+    const text = (peer.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).get(0) as Y.XmlElement).get(
+      1,
+    ) as Y.XmlText;
+    text.insert(text.length, " ENDING");
+  } else writeBlocks(peer.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema, propose("alpha tail"));
   const inserted: ItemRange[] = [[77, 0, Y.getState(peer.store, 77)]];
   Y.applyUpdate(doc, Y.encodeStateAsUpdate(peer));
   const part = { threadId: "chat", turnId: "turn", inserted, deleted: [] };

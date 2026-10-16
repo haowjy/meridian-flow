@@ -35,7 +35,6 @@ export {
 } from "./late-peer-recovery.js";
 export { type Conflict, type RebaseResult, rebase } from "./merge.js";
 export {
-  RESTORED_ORIGIN,
   RESTORED_ROOT,
   type RestorationLink,
   readRestorations,
@@ -52,4 +51,4 @@ export {
   type ReviewSpan,
 } from "./review.js";
 export type { Tok } from "./tokens.js";
-export { pmToY, type WriteStats, writeBlocks } from "./writer.js";
+export { pmToY, type WriteStats, writeBlocks, writeDiscardBlocks } from "./writer.js";

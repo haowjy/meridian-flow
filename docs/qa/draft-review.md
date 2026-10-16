@@ -842,3 +842,27 @@ draft mode. Desktop 1440x900, check 1 also at 390x844.
   and the late invisible write passed. Probe C step 3 (view handoff undo), Probe A step 6 and Probe E
   step 4 (route repair and unlisted dock reload) failed; the #838 idle 1005 closes reproduced. Evidence
   in the diff-based-review work item's `k2/` directory in the docs repo.
+
+
+### Partial Discard provenance and atomic Undo
+
+Use two chats editing one paragraph: an inline image followed by
+`alpha beta gamma delta epsilon zeta eta theta iota kappa`. Chat A changes
+`alpha` to `ALPHA`; Chat B changes `kappa` to `KAPPA`.
+
+1. Discard only ALPHA. KAPPA stays green, names Chat B, remains in Chat B's
+   dock and remains pending. Reload both editor and Work row; they agree.
+2. Undo. Both changes name their chats, including after reload. Repeat from
+   the dock, Work row and phone sheet's own Undo.
+3. Repeat with 50 changed words before the unchanged middle and KAPPA, then
+   with a heading-to-paragraph Discard that leaves KAPPA unselected.
+4. Move the first paragraph down (Alt+ArrowDown), then Ctrl+Z. Cut a selection
+   across its paragraph break, paste before `river` in another paragraph,
+   then Ctrl+Z twice. Text, marks and chat attribution return exactly, locally
+   and after reload. Before Undo, moved/pasted prose reads You.
+5. With a second peer watching, each Undo arrives with its restoration links
+   in one Yjs update. There is no intermediate restored prose without its links.
+
+The editor/status regression tables exercise GC-on/off reloads, real sync and
+undo plugins, exact retained Apply evidence, and single-update delivery. Live
+browser acceptance still checks the controls and bylines above.
