@@ -73,11 +73,11 @@ describe("thread WS handler subscribe handoff", () => {
     const { session, frames, deliverLive } = createDelayedDeliveryHarness();
     session.open();
     await session.onMessage(
-      JSON.stringify({ type: "subscribe", threadId: THREAD_ID, lastSeq: "0" }),
+      JSON.stringify({ type: "subscribe", requestId: "r1", threadId: THREAD_ID, lastSeq: "0" }),
     );
 
     const subscribed = frames.find((frame) => frame.type === "subscribed");
-    expect(subscribed).toMatchObject({ catchup: [] });
+    expect(subscribed).toMatchObject({ requestId: "r1", after: "0", catchup: [] });
     expect(subscribed).not.toHaveProperty("nextSeq");
 
     // The separately sampled durable head may lead the live listener. The
@@ -101,7 +101,9 @@ it("preserves typed errors in catchup and live envelopes", async () => {
     error,
   };
   const { session, frames, deliverEntry } = createDelayedDeliveryHarness([entry]);
-  await session.onMessage(JSON.stringify({ type: "subscribe", threadId: THREAD_ID }));
+  await session.onMessage(
+    JSON.stringify({ type: "subscribe", requestId: "r1", threadId: THREAD_ID }),
+  );
   expect(frames.at(-1)).toMatchObject({ catchup: [{ seq: "1000", error }] });
   deliverEntry({ ...entry, seq: 2000n });
   expect(frames.at(-1)).toMatchObject({ type: "event", seq: "2000", error });
@@ -136,18 +138,22 @@ it.each([
     close() {},
   });
   session.open();
-  await session.onMessage(JSON.stringify({ type: "subscribe", threadId: THREAD_ID, lastSeq: "0" }));
+  await session.onMessage(
+    JSON.stringify({ type: "subscribe", requestId: "r1", threadId: THREAD_ID, lastSeq: "0" }),
+  );
   await session.onMessage(
     JSON.stringify({
       type: "interrupt.respond",
+      requestId: "r2",
       threadId: THREAD_ID,
       turnId: "00000000-0000-4000-8000-000000000902",
       interruptId: "ask-1",
       value: "yes",
     }),
   );
-  const expected = {
+  const expected = (requestId: string) => ({
     type: "error",
+    requestId,
     threadId: THREAD_ID,
     kind: "error",
     error: {
@@ -156,7 +162,109 @@ it.each([
       retryable: false,
       source: "system",
     },
-  };
-  expect(frames.filter((frame) => frame.type === "error")).toEqual([expected, expected]);
+  });
+  expect(frames.filter((frame) => frame.type === "error")).toEqual([
+    expected("r1"),
+    expected("r2"),
+  ]);
   session.onClose();
+});
+
+function createRequestHarness(options: {
+  liveState: (threadId: ThreadId) => Promise<ThreadLiveState>;
+  projectRepo?: unknown;
+}) {
+  const unsubscribed: ThreadId[] = [];
+  const app = {
+    eventSink: createNoopEventSink(),
+    threadEventHub: {
+      async catchupAndSubscribe(threadId: ThreadId) {
+        return { catchup: [], unsubscribe: () => unsubscribed.push(threadId) };
+      },
+    },
+    projectRepo: options.projectRepo,
+    threadRuntime: {
+      async requireOwnedThread() {},
+      liveState: options.liveState,
+    },
+  } as unknown as AppServices;
+  const frames: WsServerMessage[] = [];
+  const session = createThreadWebSocketSession({
+    request: new Request("https://app.localhost/api/threads/ws"),
+    context: { app, userId: USER_ID, traceId: "request-test" },
+    send: (data) => frames.push(JSON.parse(data) as WsServerMessage),
+    close() {},
+  });
+  session.open();
+  return { session, frames, unsubscribed };
+}
+
+describe("thread WS handler request ids", () => {
+  it("answers a failed read with a retryable error naming the request, and disposes the lease", async () => {
+    const { session, frames, unsubscribed } = createRequestHarness({
+      liveState: async () => {
+        throw new Error("db down");
+      },
+    });
+    await session.onMessage(
+      JSON.stringify({ type: "subscribe", requestId: "r9", threadId: THREAD_ID }),
+    );
+    expect(frames.at(-1)).toMatchObject({
+      type: "error",
+      requestId: "r9",
+      threadId: THREAD_ID,
+      error: { retryable: true },
+    });
+    expect(unsubscribed).toEqual([THREAD_ID]);
+  });
+
+  it("echoes the request id from the outer catch", async () => {
+    const { session, frames } = createRequestHarness({
+      liveState: async () => LIVE_STATE,
+      projectRepo: {
+        findById: async () => {
+          throw new Error("db down");
+        },
+      },
+    });
+    await session.onMessage(
+      JSON.stringify({
+        type: "catalog.subscribe",
+        requestId: "r4",
+        projectId: "00000000-0000-4000-8000-000000000777",
+      }),
+    );
+    expect(frames.at(-1)).toMatchObject({
+      type: "error",
+      requestId: "r4",
+      error: { code: "internal" },
+    });
+  });
+
+  it("serves two threads' subscribes concurrently", async () => {
+    const other = "00000000-0000-4000-8000-000000000902" as ThreadId;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { session, frames } = createRequestHarness({
+      liveState: async (threadId) => {
+        if (threadId === THREAD_ID) await gate;
+        return { ...LIVE_STATE, threadId };
+      },
+    });
+    const slow = session.onMessage(
+      JSON.stringify({ type: "subscribe", requestId: "r1", threadId: THREAD_ID }),
+    );
+    await session.onMessage(
+      JSON.stringify({ type: "subscribe", requestId: "r2", threadId: other }),
+    );
+    expect(frames.filter((frame) => frame.type === "subscribed")).toMatchObject([
+      { requestId: "r2", threadId: other },
+    ]);
+    release();
+    await slow;
+    expect(frames.filter((frame) => frame.type === "subscribed")).toHaveLength(2);
+    session.onClose();
+  });
 });
