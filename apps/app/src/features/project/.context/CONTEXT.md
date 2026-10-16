@@ -122,8 +122,9 @@ owner; it does not create a second scroll owner.
 
 ## Document admission and lifetime
 
-The Editor destination is owned by `ContextPaneController` and the context
-route/document owners. A bare Editor route shows the recent-document chooser;
+The Editor destination is admitted by the route (`ReadableProjectRoute`) and
+presented by `ContextPaneController`, which shows the route's verdict and never
+re-asks the live catalog (see `editor-document-lifecycle.md`, who decides what). A bare Editor route shows the recent-document chooser;
 selecting a row navigates and never seeds a tab. The document host owns live
 session binding. The registry owns browser-local warm tabs and the removal
 coordinator owns close fallback, route repair, and continuity.
