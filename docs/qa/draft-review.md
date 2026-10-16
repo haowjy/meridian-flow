@@ -543,8 +543,12 @@ Use a change two chats wrote. Run both shells.
    list it under the chat.
 5. Mixed card: type next to a pending AI change. PASS: one card whose byline reads "You" first, then a
    link to the chat.
-6. Hide-mode overflow: narrow the document change list until the chat names do not fit. PASS: the
-   names hide whole and "You" stays visible; "You" is never the part that hides.
+6. Long chat titles: give the writing chats long titles, then open the change list, the phone sheet
+   and the Work row at their narrowest. PASS: every row with an author shows it. "You" comes first,
+   then the first chat truncated with an ellipsis (hover shows the full title; it is also the link's
+   accessible name), then "+N" for the other chats. The red and green text keeps its full width
+   until the byline is at its floor (about six letters of the name), and only then truncates. The
+   link and each "+N" item open that chat at the write; neither focuses the change.
 7. Subagent: have a chat spawn a subagent that writes the same document, and open the parent chat's
    draft dock. PASS: the subagent's change is listed under the parent chat (and Apply or Discard from
    that dock acts on it). Its card link is labelled with the parent chat's title, with the subagent's
@@ -747,10 +751,10 @@ a remote Apply, the dock's draft-only review is released to live.
 ## Compact review checks
 
 - A one-change review has a list button but no stepper.
-- Work rows retain whole chat names at wide widths and hide attribution at narrow container
-  widths.
-- The change bar never abbreviates a chat name. "+N" opens the remaining chat links. Check desktop
-  and phone.
+- Work rows, like the change list, keep the author at every width: the first chat's name
+  truncates and the rest are behind "+N".
+- The change bar shows whole names while they fit and never hides the first: a long one truncates
+  with an ellipsis. "+N" opens the remaining chat links. Check desktop and phone.
 - With the 320px dock open, and at narrower editor widths, the bar and both commands stay within
   the manuscript pane (under-change placement when needed).
 - Before screenshot capture, assert the intended surface is visible, no Loading project text or

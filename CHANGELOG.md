@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- A change row never hides its author. With a long chat title, the editor's change list, the phone's Changes sheet and the Work row show "You", then the first chat truncated with an ellipsis (full title in its tooltip and accessible name), then "+N" for the other chats. The red and green text gets its width first; the byline keeps a floor of about six letters. The change bar truncates its first chat the same way instead of folding it into "+1".
+
 - Recreate the unmerged review migration sequence as `0058`–`0063` after main’s `0056` and `0057`, with later timestamps, so an existing database applies every review upgrade.
 
 - Draft membership reads catch up when a peer edit overtakes an in-flight response, with Retry if the read stays stale. Closed files no longer leave the chat's ready drafts waiting to Apply or Discard.

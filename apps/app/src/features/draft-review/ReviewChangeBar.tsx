@@ -48,7 +48,7 @@ export function ReviewChangeBar({
         <div className="flex min-w-0 flex-1 items-center">
           <ChangeAuthor
             touch={touch}
-            overflow="menu"
+            fit="names"
             change={change}
             className={touch ? "min-h-11" : undefined}
           />

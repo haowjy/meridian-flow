@@ -38,8 +38,11 @@ collects membership and Apply evidence from raw word/structural footprints first
 refinement chooses only names. It reads lengths, ids and restoration links, so the browser (gc on) and the server (gc off) agree. Authors are identities:
 `user(userId)` (the card says "You" while a project has one user) and `thread(threadId, turnId, toolCallId?)`.
 
-Consumers read one answer. The card renders the byline: "You" first (outside the collapsible names, so
-hide-mode overflow keeps it), then a link per writing thread. A primary thread's link reveals the write's
+Consumers read one answer. The card renders the byline: "You" first, then a link per writing thread. A
+byline never hides its author: the first chat is always drawn and truncates with an ellipsis (full title in
+its tooltip and accessible name), and later chats go behind "+N", a menu of the same links. The focused bar
+fits whole names after the first; a list row shows the first alone and gives its width to the change's
+red and green text first, keeping the byline at a floor ("You", about six letters, "+N"). A primary thread's link reveals the write's
 turn and tool call; a subagent's write belongs to its nearest primary ancestor conversation (`owner`), the
 link carries the parent conversation's title (the subagent's task title is in its label and tooltip), and
 it reveals the outermost spawn row. The draft dock, chat-scoped Apply and Discard and the thread

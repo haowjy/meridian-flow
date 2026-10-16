@@ -1,4 +1,8 @@
-/** A change's excerpt, attribution and commands on one line. The excerpt truncates first; touch controls retain 44px targets. Failures stay inline. */
+/**
+ * A change's excerpt, attribution and commands on one line; touch controls retain 44px targets and failures stay inline.
+ * The red and green text claims its width first: when the line is full the byline truncates before it, but only down
+ * to its floor ("You", a few letters of the first chat, "+N"), and then the excerpt truncates.
+ */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Check, X } from "lucide-react";
@@ -76,7 +80,9 @@ export function ReviewChangeRow({
             <ChangeDot change={change} />
           </span>
         )}
-        <div className="flex min-w-0 flex-1 items-center gap-x-2">
+        {/* Two tracks: the excerpt grows to its full width before the byline takes the rest, and the
+            byline's track never drops below its floor (the byline's own min-width). */}
+        <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,max-content)_minmax(auto,1fr)] items-center gap-x-2">
           <button
             type="button"
             aria-current={focused ? "true" : undefined}
@@ -85,7 +91,7 @@ export function ReviewChangeRow({
               onFocus();
             }}
             className={cn(
-              "focus-ring flex min-w-0 flex-1 items-center rounded-sm text-left text-caption",
+              "focus-ring flex min-w-0 items-center rounded-sm text-left text-caption",
               firstLine,
               touch && "text-sm",
             )}
@@ -113,7 +119,7 @@ export function ReviewChangeRow({
             </span>
           </button>
           {showAttribution ? (
-            <ChangeAuthor overflow="hide" change={change} className="shrink-0" />
+            <ChangeAuthor fit="first" change={change} touch={touch} className="justify-end" />
           ) : null}
         </div>
         <span className="flex shrink-0 items-center">
