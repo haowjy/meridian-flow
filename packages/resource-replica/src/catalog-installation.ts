@@ -1,12 +1,11 @@
 /** Atomic installation policy from a server catalog view into durable local resources. */
 
-import { parseContextUri } from "@meridian/contracts/context-uri";
+import { isOwnedContextScheme, parseContextUri } from "@meridian/contracts/context-uri";
 import type {
   CatalogFileClassification,
   CatalogFileEntry,
   CatalogFolderEntry,
 } from "@meridian/contracts/protocol";
-import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { newerCanonicalObservation } from "./canonical-observation";
 import { type CatalogCacheView, catalogFiles, indexCatalogView } from "./catalog";
 import { catalogScopeBelongsToProject, sameCatalogScope } from "./catalog-scope";
@@ -76,7 +75,7 @@ export function catalogEntryLocation(
 
   const { authority, scheme, path } = parsed.value;
   if (view.scope.kind === "project") {
-    if (authority.kind !== "contextual" || isWorkScopedProjectContextScheme(scheme))
+    if (authority.kind !== "contextual" || isOwnedContextScheme(scheme))
       throw new Error("Catalog file URI has invalid project authority");
     return { scheme, path: displayedPath(path), name: entry.name, workId: null };
   }
@@ -85,8 +84,6 @@ export function catalogEntryLocation(
       throw new Error("Catalog file URI has invalid User authority");
     return { scheme, path: displayedPath(path), name: entry.name, workId: null };
   }
-  if (!isWorkScopedProjectContextScheme(scheme))
-    throw new Error("Catalog file URI is not Work scoped");
   if (view.scope.kind === "lineage") {
     if (scheme !== "scratch" || authority.kind !== "lineage")
       throw new Error("Catalog file URI has invalid chat authority");
@@ -107,7 +104,8 @@ export function catalogEntryLocation(
       ...resourceChatOwner(view.scope, authority.kind === "chat" ? authority.chatRef : null),
     };
   }
-  if (authority.kind !== "work") throw new Error("Catalog file URI has invalid Work authority");
+  if (scheme !== "scratch" || authority.kind !== "work")
+    throw new Error("Catalog file URI has invalid Work authority");
   return {
     scheme,
     path: displayedPath(path),

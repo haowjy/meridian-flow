@@ -13,12 +13,9 @@
  */
 
 import { t } from "@lingui/core/macro";
+import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
-import {
-  isWorkScopedProjectContextScheme,
-  type ProjectContextTreeScheme,
-  type Work,
-} from "@meridian/contracts/protocol";
+import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -145,9 +142,7 @@ function availabilityWatchRecord(
 ): AvailabilityWatchRecord {
   return {
     documentId: value.documentId,
-    ...(isWorkScopedProjectContextScheme(value.scheme) && value.workId
-      ? { sourceWorkId: value.workId }
-      : {}),
+    ...(isWorkScopedScheme(value.scheme) && value.workId ? { sourceWorkId: value.workId } : {}),
   };
 }
 

@@ -1,7 +1,7 @@
 /** Canonical device-local working-set state and its pure mutation rules. */
 
+import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import {
-  isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
   parseWorkingSetRouteList,
   type WorkingSetRoute,
@@ -52,18 +52,20 @@ export function buildWorkingSetRoute(
   documentId: DocumentId,
   scheme: ProjectContextTreeScheme,
   path: string,
-  workId: string | null | undefined,
-  rootThreadId?: string | null,
-  chatId?: string | null,
+  owner: { workId?: string | null; rootThreadId?: string | null; chatId?: string | null },
 ): WorkingSetRoute | null {
   if (path.length === 0) return null;
-  if (scheme === "uploads" && chatId) return { documentId, scheme, path, chatId };
-  if (scheme === "scratch" && rootThreadId) return { documentId, scheme, path, rootThreadId };
-  if (isWorkScopedProjectContextScheme(scheme)) {
-    if (workId === undefined) {
-      throw new TypeError("Work-capable working-set routes require resolved authority");
+  if (scheme === "uploads") {
+    // A chat's upload is held by its chat; an Editor target names none.
+    if (!owner.chatId) return null;
+    return { documentId, scheme, path, chatId: owner.chatId };
+  }
+  if (isWorkScopedScheme(scheme)) {
+    if (owner.rootThreadId) return { documentId, scheme, path, rootThreadId: owner.rootThreadId };
+    if (owner.workId === undefined) {
+      throw new TypeError("Scratch working-set routes require resolved authority");
     }
-    return { documentId, scheme, path, workId: workId as string | null };
+    return { documentId, scheme, path, workId: owner.workId };
   }
   return { documentId, scheme, path };
 }

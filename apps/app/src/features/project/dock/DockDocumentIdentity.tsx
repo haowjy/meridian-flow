@@ -5,7 +5,7 @@
  * wrap under it (DocumentIdentityBar). It takes the place a tab strip has in
  * the Editor, so the document's name shows once.
  */
-import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
+import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import type { ReactNode } from "react";
 import { useWorks } from "@/client/query/useWorks";
@@ -93,8 +93,7 @@ function DockIdentityBody({
 /** The archived Work that freezes a dock document, if any. */
 export function useDockArchivedWork(projectId: string, tab: ContextTab): Work | null {
   const { works } = useWorks(projectId);
-  if (tab.kind === "new" || !tab.workId || !isWorkScopedProjectContextScheme(tab.scheme))
-    return null;
+  if (tab.kind === "new" || !tab.workId || !isWorkScopedScheme(tab.scheme)) return null;
   const work = works?.find((candidate) => candidate.id === tab.workId);
   return work && isWorkArchived(work) ? work : null;
 }

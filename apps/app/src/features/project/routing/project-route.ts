@@ -1,8 +1,6 @@
 /** Stable-ID navigation commands and normalized context-removal CAS snapshots, not browser grammar. */
-import {
-  isWorkScopedProjectContextScheme,
-  type ProjectContextTreeScheme,
-} from "@meridian/contracts/protocol";
+import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
+import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import type { AddressableWork } from "@/client/query/useWorks";
 import type { ScreenKey } from "../shell/screens";
@@ -105,7 +103,7 @@ export type ContextRouteTarget = {
 /** Whether the Editor of `activeWorkId` shows this target: a Work's Scratch only in its own Editor. */
 export function targetInEditorOf(target: ContextRouteTarget, activeWorkId: string): boolean {
   return (
-    !isWorkScopedProjectContextScheme(target.scheme) ||
+    !isWorkScopedScheme(target.scheme) ||
     target.rootThreadId !== undefined ||
     target.workId === activeWorkId
   );

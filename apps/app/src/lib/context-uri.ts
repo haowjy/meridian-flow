@@ -3,11 +3,11 @@
  */
 import {
   canonicalContextUri,
+  isWorkScopedScheme,
   type ParsedContextUri,
   parseUnifiedContextUri,
 } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 
 export type ContextUri = Omit<ParsedContextUri, "path"> & {
   path: string;
@@ -81,11 +81,11 @@ export function contextRouteTargetFromUri(
   const parsed = parseContextUri(uri);
   if (!parsed) return null;
 
-  if (!isWorkScopedProjectContextScheme(parsed.scheme)) {
-    return { scheme: parsed.scheme, path: parsed.path, workId: null };
-  }
   // Uploads belong to a chat; no Work or lineage route holds one (see `chatIdForUploadsUri`).
   if (parsed.scheme === "uploads") return null;
+  if (!isWorkScopedScheme(parsed.scheme)) {
+    return { scheme: parsed.scheme, path: parsed.path, workId: null };
+  }
 
   const inLineage = (rootThreadId: string | null | undefined): ParsedContextUriTarget | null =>
     rootThreadId ? { scheme: parsed.scheme, path: parsed.path, workId: null, rootThreadId } : null;

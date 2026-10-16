@@ -1,5 +1,5 @@
 /** Document commands normalize preparation failures and install tabs before any transfer effect. */
-import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
+import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import { parseRequestId } from "@meridian/contracts/request-id";
 import {
   type ContextTab,
@@ -125,7 +125,7 @@ export function createEditorDocumentCommand({
             .getState()
             .selectTab(
               projectId,
-              selected.kind !== "new" && isWorkScopedProjectContextScheme(selected.scheme)
+              selected.kind !== "new" && isWorkScopedScheme(selected.scheme)
                 ? routeTargetForTab(selected, resolvedWorkId).workId
                 : resolvedWorkId,
               selected.documentId,

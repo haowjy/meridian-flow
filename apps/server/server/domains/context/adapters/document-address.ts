@@ -7,8 +7,11 @@
  *
  */
 import { type DocumentId, isAheadFilename, type ProjectId } from "@meridian/contracts";
-import { isProjectScopedScheme, parseContextUri } from "@meridian/contracts/context-uri";
-import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
+import {
+  isOwnedContextScheme,
+  isProjectScopedScheme,
+  parseContextUri,
+} from "@meridian/contracts/context-uri";
 import type { Database } from "@meridian/database";
 import { documentPreviousLocations, projects, threads, works } from "@meridian/database/schema";
 import { and, eq, isNull } from "drizzle-orm";
@@ -144,6 +147,12 @@ export async function resolveCanonicalAddress(
   let chatThreadId: string | null = null;
   if (authority.kind === "none")
     throw new RangeError(`${scheme} needs a chat handle or named Work authority`);
+  if (
+    (authority.kind === "chat") !== (scheme === "uploads") ||
+    ((authority.kind === "lineage" || authority.kind === "work") && scheme !== "scratch")
+  ) {
+    throw new UnresolvableAddressError(input.address, `Address owner does not fit ${scheme}://`);
+  }
   if (authority.kind === "lineage") {
     const [root] = await tx
       .select({ id: threads.id })
@@ -216,14 +225,14 @@ export function createDrizzleDocumentAddressStore(db: Database): DocumentAddress
           )
           .limit(1);
         if (!project) return null;
-        const workScoped = isWorkScopedProjectContextScheme(input.scheme);
         if (input.rootThreadId && (input.workId || input.scheme !== "scratch")) return null;
         if (
           input.chatThreadId &&
           (input.workId || input.rootThreadId || input.scheme !== "uploads")
         )
           return null;
-        if (!workScoped && input.workId !== null) return null;
+        if (input.scheme === "uploads" && !input.chatThreadId) return null;
+        if (!isOwnedContextScheme(input.scheme) && input.workId !== null) return null;
         const sourceId = await presentSourceId(db, {
           scheme: input.scheme,
           workId: input.workId,
