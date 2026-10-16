@@ -3,12 +3,11 @@
  * Discard is a local edit of the draft text, so a reply still writing lands inside text that is gone: the
  * reply commits (no refusal), the discarded text stays discarded, and the writer and the model are told.
  */
-import { invisibleInsertions } from "@meridian/agent-edit/diff";
+import { countWords, invisibleInsertions } from "@meridian/agent-edit/diff";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
 import type { NoticePort } from "../../notices/index.js";
 import type { ReversalNoticeDiagnostics } from "./reversal-notices.js";
-import { countWords } from "./word-count.js";
 
 export type ReplyDraftWrite = { writeId: string; partIds: number[]; updates: Uint8Array[] };
 

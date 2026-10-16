@@ -51,4 +51,5 @@ export {
   type ReviewSpan,
 } from "./review.js";
 export type { Tok } from "./tokens.js";
+export { countWords, groupWordDelta, type WordDelta, wordDeltaBetweenTexts } from "./word-count.js";
 export { pmToY, type WriteStats, writeBlocks, writeDiscardBlocks } from "./writer.js";

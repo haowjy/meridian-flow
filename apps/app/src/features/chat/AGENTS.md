@@ -53,7 +53,7 @@ adapter only.
   edit of the draft text that the editor's Ctrl+Z restores (in the Editor only).
   A draft-only tab is the document's one tab and settles in place.
 - The draft dock is this chat's changes (`useDraftDock`), and a chat with none
-  shows no draft dock. Collapsed files still read their rooms; unknown membership is neutral and has no commands. Summary counts and commands use the same effective file views as rows. Which changes are this chat's is the classifier's
+  shows no draft dock. It lists files, never changes: each row is a file's name, this chat's word diff in it (the receipt's counter, `groupWordDelta`) and its own Discard and Apply; a single file is the summary row itself. Per-change review stays in the editor, the dock pane, the phone sheet and the Work row. Collapsed files still read their rooms; unknown membership is neutral and has no commands. Summary counts, word totals and commands use the same effective file views as rows. Which changes are this chat's is the classifier's
   membership (inclusive under doubt; a subagent's changes belong to the chat that spawned it). Apply sends this chat's changes per file; Discard
   is instant and in place: the row reads "Discarded" with Undo on that row, and Ctrl+Z
   does not reach it;

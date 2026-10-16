@@ -824,6 +824,7 @@ msgstr "Changed 1 Work"
 msgid "Changes"
 msgstr "Changes"
 
+#: src/features/chat/DraftDock.tsx
 #: src/features/draft-review/DocumentChangeRows.tsx
 msgid "Changes couldn’t load"
 msgstr "Changes couldn’t load"
@@ -1024,12 +1025,16 @@ msgid "Collaborator"
 msgstr "Collaborator"
 
 #: src/features/chat/DraftDock.tsx
-msgid "Collapse changes"
-msgstr "Collapse changes"
+#~ msgid "Collapse changes"
+#~ msgstr "Collapse changes"
 
 #: src/features/project/dock/DockHeader.tsx
 msgid "Collapse dock"
 msgstr "Collapse dock"
+
+#: src/features/chat/DraftDock.tsx
+msgid "Collapse files"
+msgstr "Collapse files"
 
 #: src/features/project/shell/LeftSidebar.tsx
 msgid "Collapse sidebar  ["
@@ -1982,8 +1987,8 @@ msgid "epigraph"
 msgstr "epigraph"
 
 #: src/features/chat/DraftDock.tsx
-msgid "Expand changes"
-msgstr "Expand changes"
+#~ msgid "Expand changes"
+#~ msgstr "Expand changes"
 
 #: src/features/project/ProjectView.tsx
 msgid "Expand chat"
@@ -1992,6 +1997,10 @@ msgstr "Expand chat"
 #: src/features/project/ProjectView.tsx
 msgid "Expand context"
 msgstr "Expand context"
+
+#: src/features/chat/DraftDock.tsx
+msgid "Expand files"
+msgstr "Expand files"
 
 #: src/features/project/ProjectView.tsx
 msgid "Expand sidebar"
@@ -3418,6 +3427,7 @@ msgstr "Resume my documents on any device"
 #: src/core/editor/images/ImageNodeView.tsx
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
+#: src/features/chat/DraftDock.tsx
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/thread-controls/QueuedControlRows.tsx
 #: src/features/chat/UserTurn.tsx

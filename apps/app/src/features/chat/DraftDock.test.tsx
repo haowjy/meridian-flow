@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /**
- * The draft dock lists the drafts a chat wrote into and reads membership even while collapsed,
- * from that draft's room. Apply sends the group ids with the snapshot of the room they came from; Discard
- * is in place: a prose draft's room is edited and the row reads "Discarded" with Undo, a new document's draft closes.
+ * The draft dock lists the drafts a chat wrote into, one row per file, and reads membership even while
+ * collapsed, from that draft's room. Apply sends this chat's group ids in the file; Discard is in place: a
+ * prose draft's room is edited and the row reads "Discarded" with Undo, a new document's draft closes.
  */
 
 import { i18n } from "@lingui/core";
@@ -15,7 +15,6 @@ import * as Y from "yjs";
 import * as projectsApi from "@/client/api/projects-api";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { encodeSnapshot } from "@/features/draft-review/useDraftApply";
 import * as handoff from "@/features/project/dock/editor-review-handoff";
 import { ProjectNavigationProvider } from "@/features/project/routing/ProjectNavigationContext";
 import { createReviewScopeFixture, listed, meta } from "@/test-support/draft-review-scope";
@@ -107,14 +106,18 @@ const clickText = (name: string) =>
       ?.click();
   });
 
-it("an expanded file lists its room's changes; Apply sends the id with the snapshot of the projection clicked (not a room that moved since) and reports what it overrode, and Discard is in place with Undo on the row", async () => {
-  const file = draft("chapter", { itemKey: "draft-a" });
-  fixture.network.listWorkDrafts.mockResolvedValue({ items: [file] });
-  fixture.network.getThreadDraftFiles.mockResolvedValue({ drafts: [file] });
-  // Every item this room's peer wrote is this chat's edit.
+it("an expanded dock lists each file once with this chat's word diff; a file's Discard edits only its room with Undo, its Apply sends only its changes, and the summary Discard leaves another chat's change", async () => {
+  const files = [
+    draft("chapter", { itemKey: "draft-a" }),
+    draft("chapter2", { itemKey: "draft-b" }),
+  ];
+  const itemKeyOf = (id: string) => (id === "chapter" ? "draft-a" : "draft-b");
+  fixture.network.listWorkDrafts.mockResolvedValue({ items: files });
+  fixture.network.getThreadDraftFiles.mockResolvedValue({ drafts: files });
+  // Every item a room's own peer wrote is this chat's edit.
   fixture.network.getDraftAttribution.mockImplementation(async (_p, _w, id) => ({
     revision: [...Y.encodeSnapshot(Y.snapshot(roomDoc(id)))],
-    itemKey: "draft-a",
+    itemKey: itemKeyOf(id),
     userId: "user-1",
     edits: [
       {
@@ -127,113 +130,98 @@ it("an expanded file lists its room's changes; Apply sends the id with the snaps
           reveal: { threadId: "thread-a", turnId: "turn-1" },
         },
         at: "2026-10-13T10:00:00Z",
-        inserted: [[fixture.rooms.get("room-chapter")?.document.clientID ?? 0, 0, 100_000]],
+        inserted: [[roomDoc(id).clientID, 0, 100_000]],
         deleted: [],
       },
     ],
   }));
-  fixture.network.getDraftMeta.mockResolvedValue({
+  fixture.network.getDraftMeta.mockImplementation(async (_p, _w, id) => ({
     ...meta,
-    itemKey: "draft-a",
-    roomName: "room-chapter",
-  });
+    itemKey: itemKeyOf(id),
+    roomName: `room-${id}`,
+  }));
   fixture.network.applyDraftChanges.mockResolvedValue({
     status: "applied",
-    itemKey: "draft-a",
+    itemKey: "draft-b",
     itemClosed: false,
     overrode: [{ live: "dawn", applied: "dusk" }],
   } as never);
+  const text = (id: string) =>
+    roomDoc(id)
+      .getXmlFragment("prosemirror")
+      .toArray()
+      .map((node) => (node as Y.XmlElement).toString().replace(/<[^>]+>/g, ""));
+  const row = (id: string) => `[data-draft-dock-file="${id}"]`;
   await fixture.render(
     async () => {
-      await settleReact(() => expect(fixture.rooms.has("room-chapter")).toBe(true));
-      await act(async () =>
-        fillRoom("room-chapter", ["It was green.", "Fine."], ["It was red.", "Fine."]),
-      );
-      await settleReact(() => expect(document.querySelector("[data-draft-dock]")).not.toBeNull());
-      expect(document.querySelectorAll("[data-review-change-row]")).toHaveLength(0);
-      await click('[aria-label="Expand changes"]');
+      await settleReact(() => expect(fixture.rooms.has("room-chapter2")).toBe(true));
+      await act(async () => {
+        fillRoom("room-chapter", ["It was green.", "Fine."], ["It was red.", "Fine."]);
+        fillRoom("room-chapter2", ["Night falls fast."], ["Night falls."]);
+      });
+      // Collapsed, the summary counts the files and their words; no file or change row is drawn.
       await settleReact(() =>
-        expect(document.querySelectorAll("[data-review-change-row]")).toHaveLength(1),
+        expect(document.querySelector("[data-draft-dock]")?.textContent).toContain("+2 −1 words"),
       );
+      expect(document.querySelector(row("chapter"))).toBeNull();
+      await click('[aria-label="Expand files"]');
+      await settleReact(() =>
+        expect(document.querySelector(row("chapter"))?.textContent).toContain("+1 −1 words"),
+      );
+      expect(document.querySelector(row("chapter2"))?.textContent).toContain("+1 words");
+      expect(document.querySelectorAll("[data-review-change-row]")).toHaveLength(0);
 
-      const room = fixture.rooms.get("room-chapter") as NonNullable<
-        ReturnType<typeof fixture.rooms.get>
-      >;
-      const text = () =>
-        room.document
-          .getXmlFragment("prosemirror")
-          .toArray()
-          .map((node) => (node as Y.XmlElement).toString().replace(/<[^>]+>/g, ""));
-
-      // Discard removes exactly this change, leaves the writer's later typing, and Undo reverts only it.
-      await click('[data-review-change-row] [aria-label="Discard"]');
-      // The edit exists the moment "Discarded" shows, and the original row never stands beside it.
-      expect(text()).toEqual(["It was red.", "Fine."]);
+      // A file's Discard edits that file's room at the click, and Undo reverts only it.
+      await click(`${row("chapter")} [aria-label="Discard"]`);
+      expect(text("chapter")).toEqual(["It was red.", "Fine."]);
+      expect(text("chapter2")).toEqual(["Night falls fast."]);
       expect(document.querySelector("[data-discarded-row]")?.textContent).toContain("Discarded");
-      expect(document.querySelectorAll("[data-review-change-row]")).toHaveLength(0);
-      await act(async () => vi.advanceTimersByTime(200));
-      expect(document.querySelectorAll("[data-review-change-row]")).toHaveLength(0);
-      await act(async () =>
-        (
-          (room.document.getXmlFragment("prosemirror").get(1) as Y.XmlElement).get(0) as Y.XmlText
-        ).insert(5, "!"),
-      );
       await clickText("Undo");
-      await settleReact(() => expect(text()).toEqual(["It was green.", "Fine.!"]));
-      await act(async () =>
-        (
-          (room.document.getXmlFragment("prosemirror").get(1) as Y.XmlElement).get(0) as Y.XmlText
-        ).delete(5, 1),
-      );
+      await settleReact(() => expect(text("chapter")).toEqual(["It was green.", "Fine."]));
+      await settleReact(() => expect(document.querySelector("[data-discarded-row]")).toBeNull());
+
+      // A file's Apply sends that file's changes only, and says what it overrode on the file.
       await settleReact(() =>
-        expect(document.querySelectorAll("[data-review-change-row]")).toHaveLength(1),
+        expect(
+          document.querySelector<HTMLButtonElement>(`${row("chapter2")} [aria-label="Apply"]`)
+            ?.disabled,
+        ).toBe(false),
       );
-      expect(fixture.network.applyDraftChanges).not.toHaveBeenCalled();
-      expect(fixture.network.discardDraft).not.toHaveBeenCalled();
-      expect(document.querySelector("[data-discarded-row]")).toBeNull();
-
-      // Undo provenance can publish its frame immediately, before the subsequent writer edit's
-      // debounce. Wait for that edit's projection, not merely for the already-visible row count.
-      await act(async () => vi.advanceTimersByTime(200));
-      const id = document.querySelector<HTMLElement>("[data-review-change-row]")?.dataset
-        .reviewChangeRow;
-      const clicked = encodeSnapshot(Y.snapshot(room.document));
-      // A peer writes after the projection the row shows, before the next one is computed.
-      await act(async () => fillRoom("room-chapter", ["A peer's paragraph."], []));
-      expect(encodeSnapshot(Y.snapshot(room.document))).not.toBe(clicked);
-
-      await click('[data-review-change-row] [aria-label="Apply"]');
+      await click(`${row("chapter2")} [aria-label="Apply"]`);
       await settleReact(() => expect(fixture.network.applyDraftChanges).toHaveBeenCalledOnce());
       expect(fixture.network.applyDraftChanges.mock.calls[0][3]).toMatchObject({
-        itemKey: "draft-a",
-        changeIds: [id],
-        snapshot: clicked,
+        itemKey: "draft-b",
       });
+      expect(fixture.network.applyDraftChanges.mock.calls[0][3].changeIds).toHaveLength(1);
       await settleReact(() =>
-        expect(document.body.textContent).toContain("Applied over a newer edit in live"),
+        expect(document.querySelector(row("chapter2"))?.textContent).toContain(
+          "Applied over a newer edit in live",
+        ),
       );
 
-      // The draft dock's Discard all takes this chat's changes only: another chat's change in the file stays.
+      // The summary's Discard takes this chat's changes only: another chat's change in the file stays.
+      const room = roomDoc("chapter");
       const other = new Y.Doc({ gc: false });
-      Y.applyUpdate(other, Y.encodeStateAsUpdate(room.document));
-      other.clientID = room.document.clientID + 1;
+      Y.applyUpdate(other, Y.encodeStateAsUpdate(room));
+      other.clientID = room.clientID + 1;
       const foreign = new Y.XmlElement("paragraph");
       const run = new Y.XmlText();
       foreign.insert(0, [run]);
       run.insert(0, "Another chat's line.");
       other.getXmlFragment("prosemirror").insert(0, [foreign]);
-      await act(async () => Y.applyUpdate(room.document, Y.encodeStateAsUpdate(other)));
-      await settleReact(() =>
-        expect(
-          [...document.querySelectorAll<HTMLButtonElement>("button")].some(
-            (button) => button.textContent === "Discard" && !button.disabled,
-          ),
-        ).toBe(true),
-      );
+      await act(async () => Y.applyUpdate(room, Y.encodeStateAsUpdate(other)));
+      const enabledDiscard = () =>
+        [...document.querySelectorAll<HTMLButtonElement>("button")].some(
+          (button) => button.textContent === "Discard" && !button.disabled,
+        );
+      await settleReact(() => expect(enabledDiscard()).toBe(true));
+      await clickText("Discard");
+      await settleReact(() => expect(enabledDiscard()).toBe(true));
       await clickText("Discard");
       await settleReact(() =>
-        expect(text()).toEqual(["Another chat's line.", "It was red.", "Fine."]),
+        expect(text("chapter")).toEqual(["Another chat's line.", "It was red.", "Fine."]),
       );
+      expect(fixture.network.discardDraft).not.toHaveBeenCalled();
     },
     { chatSurface: <Strip />, host },
   );
@@ -391,7 +379,7 @@ it("a failed membership read shows Retry on its file, blocks summary Apply, and 
         );
       await settleReact(() => expect(apply()?.disabled).toBe(true));
       failed = false;
-      await clickText("Retry changes");
+      await clickText("Retry");
       await settleReact(() => expect(document.querySelector("[role=alert]")).toBeNull());
       expect(apply()?.disabled).toBe(false);
     },

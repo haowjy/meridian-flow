@@ -101,9 +101,12 @@ Verify these against the screen before judging a probe; they are the strings the
   names them, with Dismiss.
 - Live document with a pending draft: a "Live" chip with the same version menu; Draft opens
   the review. A failed launch says so on the chip and Draft retries.
-- draft dock: the document name (one document) or "N documents" (several), Collapse changes or
-  Expand changes, Discard and Apply. Several documents ask "Discard this chat's changes?"
-  with Keep and Discard.
+- draft dock: one row per file, never per change. One document: its name, this chat's word diff
+  in it ("+5 −1 words"; narrow docks drop "words") and the chat's Discard and Apply on the same
+  row, with nothing to expand. Several documents: "N documents" with the summed word diff,
+  Expand files or Collapse files, Discard and Apply; each listed file has its name, word diff and
+  icon buttons named "Discard" and "Apply" by tooltip. Several documents ask "Discard this
+  chat's changes?" with Keep and Discard.
 - Work page, Files tab: the group "Changes to review" with an "All changes" menu holding Apply
   all changes and Discard all changes. Discard all asks "Discard all changes?" and "This
   removes pending changes from every document in this Work." with Keep and Discard.
@@ -124,9 +127,11 @@ in B, insert a paragraph into Blank, and create a new document. Verify with `./m
 that the writes are durably `phase: committed` and that the new file is absent from the live
 tree before any Apply.
 
-1. Expand the draft dock. PASS: it says "4 documents" and names them on expansion; Chapter A
-   shows two red and green changes, B one, Blank one, and the new file a single whole-item row
-   (its name, with Discard and Apply). No numeric badge appears on any surface.
+1. Expand the draft dock. PASS: it says "4 documents" and lists one row per file on expansion,
+   each with its word diff and Discard and Apply icon buttons; no per-change row appears. The
+   per-change review (Chapter A's two red and green changes, B's one, Blank's one, the new file
+   as one whole-item change) is in the editor and on the Work page. No numeric badge appears on
+   any surface.
 2. Open the Work's Files tab. PASS: Changes to review lists the same four files in stable
    name or id order, whatever the journal recency. Expand Chapter A: its two changes load from
    the room (a failed read shows Retry on that file, never an empty list).
@@ -164,9 +169,10 @@ follows it. Use a Work with two changes in Chapter A and one in Chapter B.
    Discard: one Ctrl+Z restores that change.
 2. On the Work page, expand Chapter A and click one change's Discard. PASS: the row reads
    "Discarded" with Undo only after the draft already holds the discarded text; Undo restores
-   the change. Repeat from the draft dock's expanded row.
+   the change. Repeat with a file's Discard (✕) in the draft dock's expanded list: only that
+   file's and this chat's changes leave the draft, and Undo restores them.
 3. Prove ordering offline: set the browser offline, click Discard on a Work row, then on a
-   draft dock row. Record a browser-side `Y.Doc` transaction observer (its origin is the room
+   draft dock file row. Record a browser-side `Y.Doc` transaction observer (its origin is the room
    discard origin) and a MutationObserver on the receipt. PASS: the fragment change is
    observed no later than the "Discarded" row (K2: 8078.6 ms vs 8085.0 ms), Undo restores the
    text, and after reconnect the durable draft agrees. Do not take screenshots through a new
@@ -356,13 +362,14 @@ then use the browser only to exercise and inspect the surfaces.
 
 ### Checks
 
-1. Open Pacing pass. PASS: the draft dock shows Chapter A and only the change this chat's writes
-   overlap (sword to sabre), not Lore pass's shield change and not Chapter B. Summary and
-   controls share one line.
+1. Open Pacing pass. PASS: the draft dock shows Chapter A with the word diff of only the change
+   this chat's writes overlap (sword to sabre: "+1 −1 words"), not Lore pass's shield change and
+   not Chapter B. Summary and controls share one line, and there is no chevron.
 2. Click the single-document draft dock's document name (Tab and Enter also work). PASS: the name
-   opens review without toggling expansion, and there is no summary Review button. A failed
-   review launch keeps the name available to retry and shows its error beside it. The chevron and the remaining summary area toggle expansion. On the phone the
-   name has a 44px touch target and commands are visible without hover. The Editor opens on the
+   opens review, and there is no summary Review button. Hovering washes the whole row and a click
+   anywhere on it but the verbs opens the same review. A failed review launch keeps the name
+   available to retry and shows its error beside it. On the phone the name has a 44px touch
+   target and commands are visible without hover. The Editor opens on the
    shared change, while its marks, stepper and change list still show the whole document's
    changes. The change bar names both chats (overflow names are in "+N", with the "More chats"
    menu); each name opens that chat beside the review without acting on the change (the chat
@@ -372,14 +379,17 @@ then use the browser only to exercise and inspect the surfaces.
    remaining changes stay pending. The draft dock never navigates. Recreate and repeat with Discard:
    the shared change leaves both draft docks (the Discard is a local edit; the row reads "Discarded"
    with Undo), live keeps `sword`, and Lore pass's separate changes remain.
-4. Open Lore pass before disposition. PASS: the draft dock shows "2 documents"; expanding groups
-   this chat's changes under one-line file headers. Each file name opens its own review, never an
-   arbitrary first document. A new document (one whole-item change) has ONE named review row
-   with Discard and Apply, not a header followed by the same name; the Work page's expanded file
-   follows the same rule and its chevron still collapses it. A real single per-change edit keeps
-   its file header and excerpt. The document change list popover and the phone sheet have no file
-   header. Discard asks "Discard this chat's changes?" with Keep and Discard; Keep sends nothing;
-   confirming takes only Lore pass's changes, including the shared one.
+4. Open Lore pass before disposition. PASS: the draft dock shows "2 documents" with the summed
+   word diff; expanding lists one row per file (name, this chat's word diff, ✕ and ✓) and nothing
+   else. Expanding moves no focus, and Tab draws the focus ring on one control (a file name hugs
+   its text, never an input-wide box). Each row, or its name, opens its own review, never an
+   arbitrary first document. Hovering ✕ shows "Discard" and ✓ "Apply". A file's ✕ reads
+   "Discarded" with Undo and takes only that file's changes from this chat; its ✓ sends only that
+   file's changes (one `apply-changes` request naming that document). The Work page's expanded
+   file keeps its per-change rows; a new document there has ONE named review row. The document
+   change list popover and the phone sheet have no file header. The summary's Discard asks
+   "Discard this chat's changes?" with Keep and Discard; Keep sends nothing; confirming takes only
+   Lore pass's changes, including the shared one.
 5. Open Dialogue pass. Its new document is one change with Apply, Discard and Review (the name).
    Apply publishes it; Discard removes it (item Discard on the server). Review opens it without
    publishing.
@@ -391,15 +401,18 @@ then use the browser only to exercise and inspect the surfaces.
    draft dock's Apply and Discard are disabled and click sends no request; the page states no reason.
    After the reply finishes they enable. Hold one preview or list read for a new-document-only
    chat: commands stay unavailable until the list arrives.
-9. Fail one owned read: a file shows Retry on that file, not an empty list; retry restores it.
+9. Fail one owned read (fulfil that file's `/draft/attribution` with 503): the dock expands, that
+   file's row says "Changes couldn’t load" with Retry instead of its word diff and verbs, not an
+   empty list, and the summary shows no word total and disabled commands; Retry restores it.
    With two files, Keep in the draft dock's Discard confirmation sends nothing; confirming handles
    both files. With one remaining file, Discard sends at once and affects only that file and chat.
    Verify the foreign chat's live and draft content.
 
 ### Narrow draft dock failures and confirmation
 
-With one existing document, retain a failed Review launch or whole-item command: the automatic
-expansion leaves exactly one visible error owner. Whole-item rows carry their own failures.
+With one existing document, retain a failed Review launch or whole-item command: the single row
+shows exactly one visible error owner, in place of its word diff. Every file row carries its own
+failures.
 With several documents, Discard replaces the summary with its question and Keep and Discard
 rather than overlapping the filename. Probe 390px touch and a 320px dock (256px inner draft dock),
 including a long translated question: all controls stay inside the row with disjoint bounds and
