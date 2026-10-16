@@ -13,7 +13,7 @@ import {
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { OrchestratorEvent, Turn } from "@meridian/contracts/threads";
 import { turnGraph } from "../../threads/ports/turn-graph.js";
-import { latestRowAt } from "./latest-row.js";
+import { firstClosingRowAfter } from "./latest-row.js";
 import type { PersistenceDeps } from "./persistence.js";
 
 type Detector = Pick<PersistenceDeps, "repos" | "eventWriter">;
@@ -60,7 +60,7 @@ function ended(
   };
 }
 
-/** A turn settles as failed; if a closing row already follows it, no later walk reaches it, so it ends now. */
+/** A turn settles as failed; if a closing row already follows it, no later walk reaches it, so it ends now, by the first one. */
 async function recordSettled(
   deps: Detector,
   threadId: ThreadId,
@@ -74,13 +74,12 @@ async function recordSettled(
     failure: failureOfTurn(turn, code),
   });
   const thread = await deps.repos.threads.findById(threadId);
-  const { latest, walkedOver } = await latestRowAt(
+  const closing = await firstClosingRowAfter(
     deps.repos.turns,
     thread?.activeLeafTurnId ?? null,
+    turn.id,
   );
-  const followed =
-    latest !== null && latest.id !== turn.id && !walkedOver.some((walked) => walked.id === turn.id);
-  if (followed) deps.eventWriter.recordFailure(ended(turn, "moved_on", latest.id, code));
+  if (closing) deps.eventWriter.recordFailure(ended(turn, "moved_on", closing.id, code));
 }
 
 /**
