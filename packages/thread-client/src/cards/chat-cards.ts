@@ -104,9 +104,7 @@ export function chatCards(input: ChatCardsInput): ChatCards {
   };
   const newestSeed = [...turns].reverse().find((turn) => isHandoffSeed(turn)) ?? null;
   const compactQueued = input.controls.some(
-    (control) =>
-      control.control.kind === "compact" &&
-      (control.status === "sending" || control.status === "queued"),
+    (control) => control.control.kind === "compact" && control.status !== "failed",
   );
   for (const turn of turns) {
     if (turn.status !== "error" || !current(turn)) continue;
