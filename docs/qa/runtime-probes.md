@@ -353,7 +353,8 @@ restart smoke check.
   ./mf thread context "$T" --all --view raw --json
   ```
 
-- **Expect:** the post-C request excludes `RP10_OLD_SENTINEL`; retained stale
+- **Expect:** the second `doc put --overwrite --json` reports `previousDocumentId`
+  equal to the first put's `documentId`; the post-C request excludes `RP10_OLD_SENTINEL`; retained stale
   reads use the re-read stub. Historical debug captures may still contain old
   text: inspect the successor request, not every captured request concatenated.
 - **Evidence:** read result, document overwrite, elision metadata, successor request.
@@ -584,9 +585,48 @@ restart smoke check.
   the message is absent from `thread view`. 4 exits 1 with `turnId` the failed successor
   and no text from the earlier reply. In every case `thread view` agrees with the claim.
   A claim that `view` contradicts is a failure of the probe, not of the view.
+  Every `--json` run ends in exactly one `result` record, after its `message.delta` and
+  `message.completed` records (record order), and `./mf mock list` is empty after case 1 (`--mock`
+  removes its own script) and after the final `./mf mock clear`. The `tools/mf` cases deleted in L1c
+  (usage-block, failed-successor, NDJSON shape, `--mock` cleanup, idle `tail`) have their risks here and in
+  `message-fate.test.ts`.
 - **Evidence:** each command, stdout, stderr and exit code, and the `thread view` after it.
 - **Last run:** 2026-10-15 on `fa1040e86` (`feat/mf-send-fate`, the final code), mock; all four cases
   passed. Evidence: `work/mf-client-unification/evidence/B6/` in the docs repository.
+
+## RP-17: `./mf` beside the browser
+
+- **Protects:** `./mf thread send` and `thread tail --until-idle` follow a chat through the same
+  `createThreadSync` the app runs, and never claim more than they proved. A `./mf` run is evidence for the
+  sync's rules (join, read application, frame order, the end-of-turn check), not for what the browser paints.
+- **Stack:** mock, an owned worktree stack with the browser showing the chat (`agent-browser`, one named session).
+- **Steps:** (`T` is a fresh thread per case; `E` holds the evidence)
+
+  ```bash
+  S='[{"text":"Part one.","toolCalls":[{"name":"thread_ls","args":{"depth":1}}]},{"delayMs":4000,"text":"Part two."}]'
+  # SY-01 setup: open the chat in the browser, then follow it from ./mf
+  ./mf thread send "$T" 'rp17 follow' --mock "$S" --json > "$E/sy01.ndjson"
+  # SY-04 setup: the browser has the chat open; a second send from ./mf
+  ./mf thread send "$T" 'rp17 other client' --mock '[{"text":"Reply to the other client."}]' --json > "$E/sy04.ndjson"
+  # SY-05 setup: stop a streaming reply while tailing
+  ./mf thread send "$T" 'rp17 stop' --no-wait --mock '[{"text":"Held.","delayMs":30000}]' --json
+  ./mf thread tail "$T" --until-idle --json > "$E/sy05.ndjson" & sleep 4
+  ./mf thread stop "$T" --json; wait
+  # Checkpoint step: a tool call and partial text, a read lands while it runs, then the result and the rest
+  ./mf thread send "$T" 'rp17 checkpoint' --no-wait --mock '[{"toolCalls":[{"name":"doc_write","args":{"uri":"manuscript://rp17.md","content":"x"}}]},{"delayMs":3000,"text":"Hello there"}]' --json
+  ./mf thread tail "$T" --until-idle --json > "$E/checkpoint.ndjson"
+  ```
+
+- **Expect:** every claim is as the scenario says (complete, handed back or cancelled, with the exit code), and
+  `thread view "$T"` agrees with each claim. The checkpoint run prints one `tool.settled` with result
+  `committed` and one `message.completed` whose text is the whole text. Record every `liveView` and, for
+  each `not_observed`, its reason: `matches` is the expected case; `not_observed` is acceptable when its
+  reason holds (a rewritten turn, a turn a read ended first, a gap); a `differs` is classified (a true
+  disagreement is a defect in the shared rules, filed with its `liveDiff`; a false one is a defect in the check).
+  `liveView` is a diagnostic over client state: it never changes the claim or the exit code.
+- **Evidence:** each command, stdout, stderr and exit code, the `thread view`, the browser's chat text, and the
+  table of `liveView` records with their classes.
+- **Last run:** not yet recorded.
 
 [c6a]: https://github.com/haowjy/meridian-flow-docs/blob/683395ca9b084cee0196ec9c9070755930d38329/work/agents-milestone-4/evidence/c6a-probe/report.md
 [merge]: https://github.com/haowjy/meridian-flow-docs/blob/a4b1dddbd615bbab334dc6fa7b700245f768d288/work/agents-milestone-4/evidence/merge-gate/REPORT.md
