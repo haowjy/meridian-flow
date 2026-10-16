@@ -538,6 +538,7 @@
     "packages/contracts/src/works/receipts.test.ts": 1,
     "packages/database/src/consume-credit-lots-fifo.db.test.ts": 4,
     "packages/database/src/fresh-migrations.db.test.ts": 5,
+    "packages/database/src/owner-handles-migration.db.test.ts": 1,
     "packages/database/src/saved-subagent-contracts-migration.db.test.ts": 1,
     "packages/database/src/settlement-dirty-signal.db.test.ts": 1,
     "packages/markup/src/codec-hard-break.test.ts": 10,
