@@ -101,6 +101,45 @@ frame: Apply sends its snapshot, Discard finds its pin and content hash in the
 current text and refuses when it cannot. Painting may be newer than chrome; that
 never changes what a click on older chrome means.
 
+## Inline paint continuity
+
+Semantic IDs remain content hashes plus occurrence ranks, used by commands and navigation.
+Render keys are editor-local, disposable hunk identities, never command authority. Match a
+new hunk only to an unambiguous previous hunk at its mapped range, with block and ordinal
+context; ambiguous splits/merges get new keys. The projection remains text-only.
+Focus, pulse and fold state belong to the view, outside decoration equality. Stable widgets
+update their text and labels in place. A consumed arrival never restarts on a repaint.
+
+| Event | Semantic ID | Render key | Transient paint state |
+| --- | --- | --- | --- |
+| Typing inside / beside a change | Recomputed from text | Retain on unambiguous mapped overlap | Focus follows current semantic change; no arrival |
+| Typing away from a change | Unchanged except occurrence ranks | Retain mapped hunk | Unchanged; no arrival |
+| Enter / paste | Recomputed; may split or merge | Retain only proven matches; new keys for new shapes | No arrival from writer edits |
+| Backspace empties a change | Change disappears | Retire | Retire its focus/fold paint |
+| Remote AI write | Recomputed | Retain proven matches; new keys otherwise | Provenance arrival pulses once, consumed at DOM |
+| Remote writer edit | Recomputed | Same mapping/matching rule; broad replacements may lose identity | No arrival |
+| Undo / Redo | Determined only by resulting text | Match surviving hunks; resurrected hunks may get new keys | No synthetic arrival; retired fold state is not history |
+| Discard / Undo Discard | Removed / restored by resulting text | Retire / match or mint | No arrival; Undo restores text, not paint history |
+| Apply | Clicked snapshot/hash remains authority; base eventually advances | Retire applied paint | No animation or identity authority from optimistic hide |
+| Caret / click / stepper focus | Unchanged | Unchanged | Toggle emphasis in existing DOM; slot may move independently |
+| Arrival pulse | Unchanged | Unchanged | Consume without a class under reduced motion; otherwise add once and remove on animationend/cancel; rebuild does not replay |
+| Fold / expand removal | Unchanged | Unchanged | Toggle existing widget and accessible label in place |
+| Locale | Unchanged | Unchanged | Refresh widget labels; redraw permitted |
+| Show changes off / on | Unchanged | Retain while hidden | DOM unmount/remount allowed; consumed pulse never replays |
+| IME / mobile composition | Runtime may recompute | Map existing paint; defer replacement until compositionend | Defer view updates during composition |
+| Reload | Recomputed from base and draft | Fresh editor-local keys | Reset focus/folds; initial attribution is quiet |
+
+Mapped decoration sets survive ordinary transactions. On projection, retain equal mapped
+decorations and remove/add only changed descriptors, rather than recreating the full set.
+Composition deferral is a paint constraint, not a delay to editing or the review runtime.
+PM can rebuild decorated wrappers during final composition cleanup with an unchanged EditorState;
+the view hydrates these updates too, restoring semantic click targets and emphasis.
+The view brackets DOM-only updates with ProseMirror's observer stop/start so they cannot be parsed
+as manuscript edits. Ordinary cancelable `insertText` at a painted range uses the existing PM
+`handleTextInput` chain before native DOM mutation: PM otherwise dirties/replaces a decorated text
+wrapper even with equal decorations. Composition, paste, deletion, replacement input and a target
+range different from the PM selection remain native. No input history decides review semantics.
+
 ## Discard
 
 `draft-discard.ts` composes the clicked group, applies it to the draft blocks and

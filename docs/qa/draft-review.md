@@ -919,7 +919,10 @@ attribution read settle: initial changes must not pulse. Observe the editor's `s
 Type three keys separately, waiting 700 ms per key, inside green, immediately beside green, elsewhere
 in that changed paragraph, and in an unchanged paragraph. Restore with native Ctrl+Z between locations.
 Then press Enter inside green. Each key/Enter must have one debounced projection, zero animation starts,
-and zero attribution GETs. DOM add/remove counts may be nonzero: decoration identity is unchanged.
+and zero attribution GETs. Keep references to existing red widgets and green spans: unchanged hunks
+must retain their DOM (zero adds/removes), even when their command hash changes. Enter can split the
+edited paragraph and add a new structural mark; unrelated changes must stay untouched. Count
+attribute mutations separately: semantic IDs and focus can update without replacing DOM.
 
 While continuing to type, deliver a new mock AI write in another paragraph. Its affected change must
 receive exactly one nonempty pulse command (one animation per red/green element), and attribution must
@@ -927,3 +930,25 @@ fetch the new peer evidence. Keep typing after that pulse expires: no replay and
 The runtime regression also exercises local Enter deletions, which require a local deletion witness
 rather than weakening the server payload fence. Repeat the existing held-response and Retry recipe to
 check that unresolved peer evidence still drains and fails/retries normally.
+
+
+### Paint identity and composition (KF29)
+
+Click a green mark and its red removal, use the change stepper, and fold/unfold a long removal with
+pointer and keyboard: emphasis and fold labels update in place, with keyboard focus retained. End an
+arrival animation, reproject, then hide/show changes: the consumed animation must not restart.
+With reduced motion enabled, deliver a real AI write and wait for the pulse command to expire:
+no element keeps `meridian-review-arrived`. Turn reduced motion off without another write:
+no animation starts. Also enable reduced motion during an active arrival; cancellation must
+remove its class, and turning motion back on must not replay it.
+
+During an IME composition in a changed block, deliver a projection and a focus change. Existing paint
+maps with editing but is not rebuilt until compositionend; committed prose and review must agree.
+Use native IME (Chromium CDP `Input.imeSetComposition`, not only synthetic composition events) to
+compose `山` after green `young`. Blur by clicking outside, wait for the DOM to settle after PM
+composition cleanup, then click green `young山`: its `data-review-change` must match the current
+change, focus must select it, and its action bar must open. Repeat with a change already focused:
+emphasis survives the settled DOM. Undo restores the original prose and review.
+Check ordinary text input and auto-pairs inside and at the edge of green, then move a paragraph,
+Undo, native cut/paste and Undo twice. Discard and Undo must restore exact text and red/green marks;
+Apply must publish exactly the reviewed text. Reload has fresh render keys but identical semantics.

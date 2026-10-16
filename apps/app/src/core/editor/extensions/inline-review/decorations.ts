@@ -8,9 +8,8 @@
  * replaced it. It is DOM only: the editor document never contains it. Only
  * red and green exist; who wrote a change is not painted.
  */
-import { i18n } from "@lingui/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
-import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
+import { Decoration, type DecorationSet, type EditorView } from "@tiptap/pm/view";
 import { type ProjectedReview, removedParagraphs } from "./model";
 import {
   BAR_SLOT_CLASS,
@@ -21,6 +20,7 @@ import {
   REMOVAL_CLASS,
   type RemovalHandlers,
   type RemovalInput,
+  type RemovalPlan,
 } from "./removal-widget";
 
 const ADDED_CLASS = "meridian-review-added";
@@ -32,54 +32,66 @@ const BLOCK_CLASS = "meridian-review-block";
 /** Written on every mark and removal so a click, and the bar, find their change. */
 export const CHANGE_ATTR = "data-review-change";
 
-/** What the painter needs besides the review: which change is selected and which folds are open. */
-export interface ReviewPaintState {
-  activeChangeId: string | null;
-  /** Changes that just arrived; their marks carry the pulse class. */
-  pulsedChangeIds: ReadonlySet<string>;
-  expandedRemovals: ReadonlySet<string>;
-  /** The removal whose fold the writer just used from the keyboard; its rebuilt widget takes focus. */
-  refocusRemoval: string | null;
-  /** Open a block for the focused change's bar after the paragraph the change ends in. */
-  barSlot: boolean;
-}
+/** Stable identity in decoration equality; semantic IDs are attached by the view owner. */
+export const RENDER_ATTR = "data-review-render";
 
 export function paintDecorations(
   review: ProjectedReview,
-  paint: ReviewPaintState,
+  keys: ReadonlyMap<number, string>,
+  previous: DecorationSet,
+  activeChangeId: string | null,
+  barSlot: boolean,
   handlersFor: (view: EditorView) => RemovalHandlers,
-): DecorationSet {
+): { decorations: DecorationSet; removals: ReadonlyMap<string, RemovalPlan> } {
   const { doc, groups } = review;
-  if (groups.length === 0) return DecorationSet.empty;
-  const decorations: Decoration[] = [];
+  const before = previous.find();
+  const identity = (key: string, from: number, to: number) => `${key}:${from}:${to}`;
+  const retained = new Set<Decoration>();
+  const added: Decoration[] = [];
+  const reusable = new Map(
+    before.map((decoration) => [
+      identity(
+        decoration.spec.key ?? `${decoration.spec.renderKey}:added:${decoration.spec.node}`,
+        decoration.from,
+        decoration.to,
+      ),
+      decoration,
+    ]),
+  );
+  // All equality inputs are structural: identity and range prove reuse before allocating a decoration.
+  // Widget copy and transient state are updated separately by the view owner.
+  const retainOrAdd = (key: string, from: number, to: number, create: () => Decoration) => {
+    const old = reusable.get(identity(key, from, to));
+    if (old) retained.add(old);
+    else added.push(create());
+  };
   const removals: RemovalInput[] = [];
   /** Where the focused change ends: the bar's block goes after the paragraph holding this. */
   let focusedEnd: number | null = null;
 
   for (const group of groups) {
-    const focused = group.id === paint.activeChangeId;
-    const pulsed = paint.pulsedChangeIds.has(group.id);
+    const focused = group.id === activeChangeId;
     for (const hunk of group.hunks) {
+      const key = keys.get(hunk.index) ?? "";
       if (focused) focusedEnd = Math.max(focusedEnd ?? 0, hunk.inserted?.to ?? hunk.anchor);
       if (hunk.inserted) {
         for (const mark of addedMarks(doc, hunk.inserted.from, hunk.inserted.to)) {
-          const attrs = {
-            class: [
-              ADDED_CLASS,
-              mark.node && BLOCK_CLASS,
-              focused && EMPHASIS_CLASS,
-              pulsed && ARRIVED_CLASS,
-            ]
-              .filter(Boolean)
-              .join(" "),
-            [CHANGE_ATTR]: group.id,
-          };
-          const spec = { [CHANGE_ATTR]: group.id };
-          decorations.push(
-            mark.node
+          retainOrAdd(`${key}:added:${mark.node}`, mark.from, mark.to, () => {
+            const attrs = {
+              class: [ADDED_CLASS, mark.node && BLOCK_CLASS].filter(Boolean).join(" "),
+              [RENDER_ATTR]: key,
+            };
+            const spec = {
+              renderKey: key,
+              node: mark.node,
+              side: "added",
+              inclusiveStart: true,
+              inclusiveEnd: true,
+            };
+            return mark.node
               ? Decoration.node(mark.from, mark.to, attrs, spec)
-              : Decoration.inline(mark.from, mark.to, attrs, spec),
-          );
+              : Decoration.inline(mark.from, mark.to, attrs, spec);
+          });
         }
       }
       // Format and whitespace hunks keep their text: the green mark says it, a struck copy would not.
@@ -93,57 +105,53 @@ export function paintDecorations(
           paragraphs: block ? paragraphs : [paragraphs.join(" ")],
           tight: endsBeforePunctuation(doc, hunk.anchor),
           changeId: group.id,
+          identity: key,
         });
       }
     }
   }
 
   removals.sort((a, b) => a.position - b.position);
+  const plans = new Map<string, RemovalPlan>();
   for (const plan of planRemovals(removals)) {
-    const focused = plan.changeId === paint.activeChangeId;
-    const pulsed = paint.pulsedChangeIds.has(plan.changeId);
-    const expanded = paint.expandedRemovals.has(plan.identity);
-    decorations.push(
+    plans.set(plan.identity, plan);
+    const key = `removal:${plan.identity}:${plan.block ? "block" : "inline"}`;
+    retainOrAdd(key, plan.position, plan.position, () =>
       Decoration.widget(
         plan.position,
         (view) =>
           createRemovalElement(view.dom.ownerDocument, plan, {
-            focused,
-            pulsed,
-            expanded,
-            refocusToggle: paint.refocusRemoval === plan.identity,
             handlers: handlersFor(view),
             changeAttr: CHANGE_ATTR,
+            renderAttr: RENDER_ATTR,
           }),
         {
-          // The locale is part of the key: the fold's label is copy, redrawn when it changes.
-          key: `removal:${plan.identity}:${JSON.stringify([plan.block, plan.tight])}:${focused ? "focused" : "idle"}:${pulsed ? "arrived" : "settled"}:${expanded ? "open" : "folded"}:${i18n.locale}`,
+          key,
+          renderKey: plan.identity,
           side: -1,
-          // The widget owns its pointer events; ProseMirror must not move the
-          // caret or start a drag from them.
           stopEvent: () => true,
         },
       ),
     );
   }
 
-  if (paint.barSlot && focusedEnd !== null) {
-    decorations.push(
-      Decoration.widget(
-        slotPosition(doc, focusedEnd),
-        (view) => createBarSlotElement(view.dom.ownerDocument),
-        {
-          // One slot per focused change, so the bar's DOM survives recomputes.
-          key: `bar-slot:${paint.activeChangeId}`,
-          side: 1,
-          stopEvent: () => true,
-          ignoreSelection: true,
-        },
-      ),
+  if (barSlot && focusedEnd !== null) {
+    const position = slotPosition(doc, focusedEnd);
+    retainOrAdd("bar-slot", position, position, () =>
+      Decoration.widget(position, (view) => createBarSlotElement(view.dom.ownerDocument), {
+        // The one slot follows focus without replacing its DOM.
+        key: "bar-slot",
+        side: 1,
+        stopEvent: () => true,
+        ignoreSelection: true,
+      }),
     );
   }
 
-  return DecorationSet.create(doc, decorations);
+  return {
+    decorations: previous.remove(before.filter((old) => !retained.has(old))).add(doc, added),
+    removals: plans,
+  };
 }
 
 /** After the paragraph a position is in, or the position itself when it is already between blocks. */
