@@ -173,6 +173,7 @@ it.each([
 function createRequestHarness(options: {
   liveState: (threadId: ThreadId) => Promise<ThreadLiveState>;
   projectRepo?: unknown;
+  contextCatalogWakeHub?: unknown;
 }) {
   const unsubscribed: ThreadId[] = [];
   const app = {
@@ -183,6 +184,7 @@ function createRequestHarness(options: {
       },
     },
     projectRepo: options.projectRepo,
+    contextCatalogWakeHub: options.contextCatalogWakeHub,
     threadRuntime: {
       async requireOwnedThread() {},
       liveState: options.liveState,
@@ -267,4 +269,43 @@ describe("thread WS handler request ids", () => {
     expect(frames.filter((frame) => frame.type === "subscribed")).toHaveLength(2);
     session.onClose();
   });
+});
+
+it.each([
+  "close",
+  "unsubscribe",
+])("cancels catalog acquisition when %s wins the ownership read", async (outcome) => {
+  let resolve!: (project: unknown) => void;
+  const ownership = new Promise((done) => {
+    resolve = done;
+  });
+  let listeners = 0;
+  const { session } = createRequestHarness({
+    liveState: async () => LIVE_STATE,
+    projectRepo: { findById: () => ownership },
+    contextCatalogWakeHub: {
+      subscribe: () => {
+        listeners++;
+        return () => {
+          listeners--;
+        };
+      },
+    },
+  });
+  const projectId = "00000000-0000-4000-8000-000000000777";
+  const pending = session.onMessage(
+    JSON.stringify({ type: "catalog.subscribe", requestId: "r1", projectId }),
+  );
+  if (outcome === "close") session.onClose();
+  else
+    await session.onMessage(
+      JSON.stringify({ type: "catalog.unsubscribe", requestId: "r2", projectId }),
+    );
+  resolve({ userId: USER_ID, deletedAt: null });
+  try {
+    await pending;
+    expect(listeners).toBe(0);
+  } finally {
+    session.onClose();
+  }
 });

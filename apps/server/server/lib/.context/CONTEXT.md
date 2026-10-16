@@ -68,6 +68,9 @@ it and answers `internal` with `retryable: true`; `not_found`, `bad_request` and
 auth stay non-retryable. Pending callbacks
 wait until catchup succeeds and are flushed above the delivered watermark;
 unsubscribe, replacement, close, and send failure invalidate stale work.
+Catalog subscriptions also claim a request slot before reading project ownership.
+Close, unsubscribe and a newer request invalidate pending acquisition; only the
+current slot can install a listener after that read.
 Journal sequence values become strings at the HTTP/WS boundary.
 
 The Yjs handler asks file-policy for `edit`, then `read` for room admission.

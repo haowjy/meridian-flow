@@ -43,7 +43,7 @@ type WsPeerState = {
   closed: boolean;
   connectionToken: string;
   subscriptions: Map<ThreadId, ThreadSubscriptionSlot>;
-  catalogSubscriptions: Map<string, () => void>;
+  catalogSubscriptions: Map<string, { request: object; unsubscribe?: () => void }>;
 };
 
 type ThreadSubscriptionLease = {
@@ -303,7 +303,7 @@ function disposeSubscriptions(peer: WsPeer): void {
   state.closed = true;
   for (const slot of state.subscriptions.values()) disposeLease(slot.lease);
   state.subscriptions.clear();
-  for (const unsubscribe of state.catalogSubscriptions.values()) unsubscribe();
+  for (const slot of state.catalogSubscriptions.values()) slot.unsubscribe?.();
   state.catalogSubscriptions.clear();
 }
 
@@ -373,28 +373,43 @@ export function createThreadWebSocketSession(peer: WsPeer) {
                 });
                 return;
               }
-              const project = await peer.context.app.projectRepo.findById(projectId as never);
-              if (!project || project.userId !== peer.context.userId || project.deletedAt) {
-                sendError(peer, meridianError("not_found", "Project not found"), {
-                  requestId: message.requestId,
-                });
-                return;
-              }
               const state = getPeerState(peer);
-              state.catalogSubscriptions.get(projectId)?.();
-              state.catalogSubscriptions.set(
-                projectId,
-                peer.context.app.contextCatalogWakeHub.subscribe({
+              if (state.closed) return;
+              let slot = state.catalogSubscriptions.get(projectId);
+              if (!slot) {
+                slot = { request: {} };
+                state.catalogSubscriptions.set(projectId, slot);
+              }
+              const request = {};
+              slot.request = request;
+              const currentRequest = () =>
+                !state.closed &&
+                state.catalogSubscriptions.get(projectId) === slot &&
+                slot.request === request;
+              try {
+                const project = await peer.context.app.projectRepo.findById(projectId as never);
+                if (!currentRequest()) return;
+                if (!project || project.userId !== peer.context.userId || project.deletedAt) {
+                  sendError(peer, meridianError("not_found", "Project not found"), {
+                    requestId: message.requestId,
+                  });
+                  return;
+                }
+                slot.unsubscribe?.();
+                slot.unsubscribe = peer.context.app.contextCatalogWakeHub.subscribe({
                   projectId,
                   userId: peer.context.userId,
                   listener: (hint) => sendFrame(peer, hint),
-                }),
-              );
+                });
+              } finally {
+                if (currentRequest() && !slot.unsubscribe)
+                  state.catalogSubscriptions.delete(projectId);
+              }
               return;
             }
             case "catalog.unsubscribe": {
               const state = getPeerState(peer);
-              state.catalogSubscriptions.get(message.projectId)?.();
+              state.catalogSubscriptions.get(message.projectId)?.unsubscribe?.();
               state.catalogSubscriptions.delete(message.projectId);
               return;
             }
