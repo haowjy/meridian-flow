@@ -1,5 +1,8 @@
 // Response-staging lifecycle and commit/rollback contracts.
 import { describe, expect, it, vi } from "vitest";
+import { encodeStateAsUpdate, encodeStateVector } from "yjs";
+import { createAgentEditCore } from "../index.js";
+import { createStaticDocumentLinks } from "../ports/static-document-links.js";
 import { renderAgentEditResult } from "./result-text.js";
 import {
   blockTexts,
@@ -8,7 +11,13 @@ import {
   outcomeText,
   renderedBlockBodies,
 } from "./test-support/assertions.js";
-import { context, harness, model, THREAD_ID } from "./test-support/write-tool-harness.js";
+import {
+  codecFactory,
+  context,
+  harness,
+  model,
+  THREAD_ID,
+} from "./test-support/write-tool-harness.js";
 
 describe("response staging", () => {
   it("retains an accepted staged write when echo summarization fails", async () => {
@@ -359,4 +368,74 @@ it("keeps segmented writes logical across rollback, retry and live destinations"
   const live = harness({ "chapter.md": "She did what she wanted.\n\nShe climbed the road." });
   expect((await live.core.write(command, context)).result.status).toBe("success");
   expect((await live.journal.read("chapter.md")).updates).toHaveLength(2);
+});
+
+describe("runtime store", () => {
+  it("invalidates a thread runtime and rebuilds the next edit from recovered live state", async () => {
+    const ctx = harness({ "chapter.md": "Alpha sword." }, {});
+    await ctx.core.read({ file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
+      { ...context, turnId: "turn-before-invalidate" },
+    );
+
+    const live = ctx.liveDoc("chapter.md");
+    const beforeVector = encodeStateVector(live);
+    humanText(live, 0, { from: 0, to: 0 }, "Human ");
+    await ctx.journal.append("chapter.md", encodeStateAsUpdate(live, beforeVector), {
+      origin: "human:user-a",
+      seq: 0,
+    });
+
+    await ctx.core.invalidateThreadDocument("chapter.md", THREAD_ID);
+
+    const edit = await ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "blade", content: "saber" },
+      context,
+    );
+
+    expect(outcomeText(edit)).toContain("status: success");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Human Alpha saber."]);
+  });
+
+  it("commits a fresh-process destructive write without calling its own edit a sweep", async () => {
+    const ctx = harness({ "chapter.md": "Alpha sword." });
+    const responseContext = {
+      ...context,
+      turnId: "turn-before-fresh-process",
+      responseIdentity: {
+        providerResponseId: "response-before-fresh-process",
+        editScopeId: "response-before-fresh-process",
+      },
+    };
+    const staged = await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta shield." },
+      responseContext,
+    );
+    expect(outcomeText(staged)).toContain("status: success");
+    await ctx.core.commitResponse("response-before-fresh-process");
+
+    const freshCore = createAgentEditCore({
+      journal: ctx.journal,
+      coordinator: ctx.coordinator,
+      lifecycle: ctx.lifecycle,
+      codec: codecFactory,
+      links: createStaticDocumentLinks(),
+      model: model,
+    });
+
+    const edit = await freshCore.write(
+      { command: "replace", file: "chapter.md", find: "sword", content: "blade" },
+      { ...context, turnId: "turn-fresh-process-no-read" },
+    );
+
+    expect(outcomeText(edit)).toContain("status: success");
+    expect(outcomeText(edit)).not.toContain("swept");
+    expect(
+      edit.result.blocks?.some((group) =>
+        group.items.some((block) => block.body === "Beta shield."),
+      ),
+    ).toBe(true);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade.", "Beta shield."]);
+  });
 });

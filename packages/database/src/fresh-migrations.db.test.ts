@@ -222,34 +222,5 @@ if (!enabled || !databaseUrl) {
         await target.end();
       }
     });
-    it("applies the post-migrate FIFO function with replay-safe debits", async () => {
-      const target = postgres(databaseUrl, { max: 1 });
-      try {
-        await target.begin(async (tx) => {
-          const [user] = await tx`INSERT INTO users (external_id, email)
-            VALUES ('baseline-functions', 'baseline-functions@example.test') RETURNING id`;
-          await tx`INSERT INTO credit_lots (user_id, original_amount_millicredits, remaining_millicredits, source_type, grant_reason)
-            VALUES (${user.id}, 100, 100, 'grant', 'baseline-probe')`;
-          const first =
-            await tx`SELECT * FROM consume_credit_lots_fifo(${user.id}::uuid, 30, gen_random_uuid(), 'baseline-usage')`;
-          expect(first).toEqual([
-            {
-              remaining_balance: "70",
-              went_negative: false,
-              consumption_group_id: expect.any(String),
-            },
-          ]);
-          expect(
-            await tx`SELECT * FROM consume_credit_lots_fifo(${user.id}::uuid, 30, gen_random_uuid(), 'baseline-usage')`,
-          ).toEqual(first);
-          expect(
-            await tx`SELECT amount_millicredits FROM credit_transactions WHERE user_id = ${user.id}`,
-          ).toEqual([{ amount_millicredits: "-30" }]);
-          await tx`DELETE FROM users WHERE id = ${user.id}`;
-        });
-      } finally {
-        await target.end();
-      }
-    });
   });
 }

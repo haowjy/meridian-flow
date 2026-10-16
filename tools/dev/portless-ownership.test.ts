@@ -3,8 +3,9 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { readDevSessionMetadata, writeDevSessionMetadata } from "./dev-session-state";
+import { routeContractFailure } from "./lib/app-boot-contract";
 import { resolveCheckoutSessionIdentity } from "./lib/dev-env";
 import { pidBelongsToCheckout } from "./lib/route-ownership";
 import { resolveCheckoutPortlessPrefix } from "./portless-prefix";
@@ -90,4 +91,18 @@ it("rejects a foreign PID or wrong backend even when all expected hosts exist", 
   ).toBe(true);
   expect(pidBelongsToCheckout(process.pid, process.cwd())).toBe(true);
   expect(pidBelongsToCheckout(0, process.cwd())).toBe(false);
+});
+
+describe("routeContractFailure", () => {
+  it("requires the app-specific login marker", () => {
+    expect(
+      routeContractFailure({
+        path: "/login",
+        expectedStatus: 200,
+        actualStatus: 200,
+        body: "<html>foreign listener</html>",
+        bodyMarker: "Meridian",
+      }),
+    ).toMatch(/did not contain app marker/);
+  });
 });

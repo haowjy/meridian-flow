@@ -1,8 +1,8 @@
 // End-to-end write(command=...) coverage with in-memory port fakes.
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
-
 import type { UpdateJournal } from "../ports/update-journal.js";
+import { isAgentEditResultEnvelope } from "./model-result.js";
 import {
   blockTexts,
   expectOutcome,
@@ -582,3 +582,23 @@ function appendLiveBlock(doc: Y.Doc, markdown: string): void {
     { type: "human" },
   );
 }
+
+describe("agent-edit model result", () => {
+  it("rejects states whose phase disagrees with status", () => {
+    expect(
+      isAgentEditResultEnvelope({
+        schema: "meridian.agent-edit.v1",
+        command: "read",
+        status: "success",
+      }),
+    ).toBe(false);
+    expect(
+      isAgentEditResultEnvelope({
+        schema: "meridian.agent-edit.v1",
+        command: "remove",
+        status: "not_found",
+        phase: "staged",
+      }),
+    ).toBe(false);
+  });
+});

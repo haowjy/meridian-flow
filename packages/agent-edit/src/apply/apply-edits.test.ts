@@ -1,3 +1,11 @@
+import { applyConcurrentRenderBudget } from "../concurrent-render-budget.js";
+import { weightedOrderedMatches } from "../ordered-matching.js";
+import {
+  classifyDestructiveEffect,
+  type VisibleProseOccurrence,
+} from "./destructive-classification.js";
+import { type BlockSnapshot, renderConcurrentRuns } from "./echo.js";
+
 // Behavioral coverage for inline replacement, update replay fidelity, and echo.
 
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
@@ -435,4 +443,116 @@ function inlineText(markup: string): Fragment {
   return markup.length === 0
     ? Fragment.empty
     : (codec.parse(markup).blocks[0]?.content ?? Fragment.empty);
+}
+
+{
+  function blocks(count: number): BlockSnapshot[] {
+    return Array.from({ length: count }, (_, index) => ({
+      hash: `h${index}`,
+      clientID: 1,
+      clock: index,
+      renderedContent: `paragraph|block ${index}`,
+      body: `block ${index}`,
+      serialized: `h${index}|block ${index}`,
+      lineage: [{ clientID: 1, clock: index, length: 1 }],
+    }));
+  }
+
+  describe("concurrent run rendering", () => {
+    it("omits indivisible overflowing runs and exposes the typed marker", () => {
+      const info = {
+        human: ["h2"],
+        agent: [],
+        runs: renderConcurrentRuns({
+          after: blocks(5),
+          human: new Set(["h2"]),
+          agent: new Set(),
+        }),
+      };
+
+      const bounded = applyConcurrentRenderBudget(info, {
+        remainingBytes: 1,
+      });
+
+      expect(bounded.runs).toEqual([]);
+      expect(bounded.syncOverflow).toBe(true);
+    });
+  });
+}
+
+describe("weighted ordered matching", () => {
+  it("maximizes weight, not pair count, with absolute index bounds", () => {
+    const weights = [
+      [0, 5],
+      [1, 0],
+    ];
+    expect(weightedOrderedMatches((i, j) => weights[i - 2][j - 3], 2, 4, 3, 5, 9)).toEqual([
+      [2, 4],
+    ]);
+  });
+  it("prefers matching then skipping old on ties", () => {
+    expect(weightedOrderedMatches(() => 1, 0, 2, 0, 1, 6)).toEqual([[0, 0]]);
+    expect(weightedOrderedMatches((i, j) => (i !== j ? 1 : 0), 0, 2, 0, 2, 9)).toEqual([[1, 0]]);
+  });
+  it("leaves over-limit fallback to the caller and never pairs zero scores", () => {
+    expect(weightedOrderedMatches(() => 1, 0, 2, 0, 2, 8)).toBeNull();
+    expect(weightedOrderedMatches(() => 0, 0, 2, 0, 2, 9)).toEqual([]);
+    expect(weightedOrderedMatches(() => 1, 0, 0, 0, 2, 0)).toEqual([]);
+  });
+});
+
+{
+  const occurrence = (input: {
+    targetClock: number;
+    rootClock?: number;
+    length: number;
+    rendering: string;
+    provenance?: "writer_protected" | "agent";
+  }): VisibleProseOccurrence => ({
+    target: { clientID: 1, clock: input.targetClock, length: input.length },
+    root: { clientID: 9, clock: input.rootClock ?? input.targetClock, length: input.length },
+    provenance: input.provenance ?? "writer_protected",
+    finalRendering: input.rendering,
+  });
+
+  describe("classifyDestructiveEffect", () => {
+    it("reports only removed protected root units and projects pointwise to final rendering", () => {
+      const before = [occurrence({ targetClock: 0, length: 4, rendering: "block-a" })];
+      const afterCandidate = [
+        occurrence({ targetClock: 10, rootClock: 0, length: 2, rendering: "new" }),
+      ];
+      expect(
+        classifyDestructiveEffect({
+          before,
+          afterCandidate,
+        }),
+      ).toEqual({
+        eligibleRanges: [{ clientID: 1, clock: 2, length: 2 }],
+        finalRenderingProjections: [
+          { finalRendering: "block-a", ranges: [{ clientID: 1, clock: 2, length: 2 }] },
+        ],
+      });
+    });
+
+    it("reports every removed writer root", () => {
+      const observed = occurrence({ targetClock: 0, length: 2, rendering: "mixed" });
+      const postCut = occurrence({ targetClock: 2, rootClock: 2, length: 2, rendering: "mixed" });
+      const result = classifyDestructiveEffect({
+        before: [observed, postCut],
+        afterCandidate: [],
+      });
+      expect(result.eligibleRanges).toEqual([{ clientID: 1, clock: 0, length: 4 }]);
+    });
+
+    it("rejects non-length-preserving continuation input", () => {
+      const bad = occurrence({ targetClock: 0, length: 2, rendering: "bad" });
+      bad.root.length = 1;
+      expect(() =>
+        classifyDestructiveEffect({
+          before: [bad],
+          afterCandidate: [],
+        }),
+      ).toThrow(/length-preserving/);
+    });
+  });
 }

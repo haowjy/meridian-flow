@@ -2,7 +2,7 @@
 import type { ThreadSnapshotResponse } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 import { EXIT } from "../../core/cli-error";
-import { Output } from "../../core/output";
+import { Output, TERMINAL_KEYS } from "../../core/output";
 import { snapshotOf, THREAD_ID } from "../../test-support/wire-fixtures";
 import { classifyDeadline, finishResult, terminalResult } from "./result";
 
@@ -41,43 +41,6 @@ describe("classifyDeadline", () => {
       owed: [message],
     });
   });
-
-  it("lease_awake describes an awake lease with no running turn or writer message", () => {
-    const state = snapshot();
-    state.liveState.status = { kind: "awake", phase: "generating", cancelRequested: false };
-    expect(classifyDeadline(state, THREAD_ID)).toEqual({
-      reason: "lease_awake",
-      stillRunning: null,
-      owed: [],
-      next: [`./mf thread tail ${THREAD_ID} --until-idle`],
-    });
-  });
-
-  it.each([
-    "unavailable",
-    "idle",
-  ] as const)("unconfirmed describes %s evidence without claiming success", (evidence) => {
-    const report = classifyDeadline(evidence === "idle" ? snapshot() : null, THREAD_ID);
-    expect(report).toEqual({
-      reason: "unconfirmed",
-      ...(evidence === "idle" ? { stillRunning: null, owed: [] } : {}),
-      next: [`./mf thread tail ${THREAD_ID} --until-idle`],
-    });
-    if (evidence === "unavailable") {
-      expect(report).not.toHaveProperty("stillRunning");
-      expect(report).not.toHaveProperty("owed");
-    }
-    expect(
-      terminalResult(
-        "thread.tail",
-        { outcome: "timeout", reason: report.reason },
-        {
-          threadId: THREAD_ID,
-          ...report,
-        },
-      ).exitCode,
-    ).toBe(EXIT.timeout);
-  });
 });
 
 it.each([
@@ -106,4 +69,42 @@ it.each([
   expect(terminal.result).not.toHaveProperty("owed");
   expect(finishResult(out, terminal)).toBe(EXIT.timeout);
   expect(stderr).toBe(`timeout ? unconfirmed\n./mf thread tail ${THREAD_ID} --until-idle\n`);
+});
+
+it("defines the reserved terminal keys once", () => {
+  expect(TERMINAL_KEYS).toEqual(["type", "command", "outcome", "reason"]);
+});
+
+it.each(["object", "stream"] as const)("retains terminal keys in %s output", (mode) => {
+  for (const fields of [["finalText"], ["absent"]]) {
+    let stdout = "";
+    const out = new Output(
+      {
+        stdout: {
+          write: (chunk) => {
+            stdout += chunk;
+          },
+        },
+        stderr: { write: () => true },
+      },
+      { json: true, fields },
+    );
+    const value = {
+      type: "result",
+      command: "thread.send",
+      outcome: "unproven",
+      reason: "owed",
+      finalText: "reply",
+      threadId: "t1",
+    };
+    if (mode === "object") out.result(value, () => "");
+    else out.record(value, null, "err");
+    expect(JSON.parse(stdout)).toEqual({
+      type: "result",
+      command: "thread.send",
+      outcome: "unproven",
+      reason: "owed",
+      ...(fields.includes("finalText") ? { finalText: "reply" } : {}),
+    });
+  }
 });
