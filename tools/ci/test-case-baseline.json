@@ -580,7 +580,7 @@
     "packages/thread-client/src/socket/thread-socket-client.gap.test.ts": 2,
     "packages/thread-client/src/sync/stream-delta-coalescer.test.ts": 1,
     "packages/thread-client/src/sync/synced-thread.test.ts": 3,
-    "packages/thread-client/src/sync/thread-sync.test.ts": 7,
+    "packages/thread-client/src/sync/thread-sync.test.ts": 9,
     "packages/thread-client/src/turns/reduce-turn-event.test.ts": 5,
     "packages/thread-client/src/view/invocation-direct-result.test.ts": 2,
     "packages/thread-client/src/view/retry-stand-ins.test.ts": 1,
@@ -605,7 +605,7 @@
     "tools/mf/src/commands/thread/events-map.test.ts": 1,
     "tools/mf/src/commands/thread/result.test.ts": 1,
     "tools/mf/src/commands/thread/tail.test.ts": 5,
-    "tools/mf/src/commands/thread/thread.test.ts": 18,
+    "tools/mf/src/commands/thread/thread.test.ts": 19,
     "tools/mf/src/core/output.test.ts": 1,
     "tools/mf/src/main.test.ts": 2
   }
