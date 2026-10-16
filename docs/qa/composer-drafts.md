@@ -32,6 +32,16 @@ dev-login. Seed a document and chat with `./mf seed tools/mf/fixtures/basic.json
    existed only in memory. A completed upload reference survives.
 9. Deny sessionStorage access. The composer still accepts typing and sends
    through the submission journal (localStorage is a separate boundary).
+10. Refused first Send in New chat with an attachment. In New chat attach a PNG
+    and type a message, then refuse the chat-creation POST (wrap `fetch` to
+    return 400). The message stays on its failed row. Choose Edit, then Send:
+    the creation request carries the same chat id, and the transcript shows the
+    model reading the attachment at its `uploads://@/c<N>/` address.
+    Variant: after the refusal, start a newer New-chat draft with its own upload
+    and words. Edit puts only the refused message back in the composer, and the
+    newer draft is parked. Send creates the refused chat with its attachment;
+    New chat then shows the parked draft, and its Send creates a second chat
+    with its own upload. Neither attachment is lost.
 
 Browser Duplicate tab/Restore closed tab may copy sessionStorage by browser
 policy. This feature intentionally has no cross-tab store or close/reopen seed.
