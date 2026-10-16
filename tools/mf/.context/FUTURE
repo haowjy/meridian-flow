@@ -9,3 +9,10 @@
   Per-block provenance could distinguish read-owned prefixes from stream-owned suffixes if
   that diagnostic limitation becomes costly. Do not add a shadow transcript; the shared sync
   would own the refinement (L1 design §5 in the mf-client-unification work item).
+
+- `Session.request` returns `unknown` unless the caller passes a `parse` option. Only the snapshot read is validated,
+  through the contracts' snapshot validator. The ~30 other callers in `tools/mf/src/commands/` cast the `unknown`
+  explicitly (`as SendMessageResponse`, `as AdmissionLookup`, ...). None of those casts can produce a false success,
+  because send and tail prove from the validated snapshot, but a malformed response fails with a `TypeError`
+  instead of a classified read error. Pass `parse` with a contracts schema as each route gains one; don't add a
+  CLI-only schema.
