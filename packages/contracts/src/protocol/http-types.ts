@@ -35,6 +35,7 @@ import type {
 import type { AiWriteMode, Work, WorkSlug, WorksSnapshot } from "../works/index.js";
 import type { Filetype, YjsTrackedSchemaType } from "./filetype.js";
 import type { SubmittedReference } from "./user-turn-admission.js";
+import { runStateSchema } from "./ws-protocol.js";
 
 export type { JsonValue } from "../threads/index.js";
 export type {
@@ -520,6 +521,68 @@ export const stopRequestSchema = z.strictObject({
   seenThrough: z.number().int().min(0),
   seenExecutionId: z.string().min(1).nullable(),
   mine: z.array(z.uuid()).max(500),
+});
+
+/** The queue's x and Cancel queue: these waiting messages, by user turn id. Types: `HandBackRequest`. */
+export const handBackRequestSchema = z.strictObject({
+  requestId: z.uuid(),
+  ids: z.array(z.uuid()).min(1).max(500),
+});
+
+/** Send now: the record the writer saw, and every writer message it showed waiting. Types: `SendNowRequest`. */
+export const sendNowRequestSchema = z.strictObject({
+  seenThrough: z.number().int().min(0),
+  seenExecutionId: z.string().min(1),
+  waiting: z.array(z.uuid()).min(1).max(500),
+});
+
+const userMessageBlockSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("text"), text: z.string() }),
+  z.object({
+    type: z.literal("reference"),
+    text: z.string(),
+    documentId: z.string(),
+    uri: z.string(),
+  }),
+  z.object({
+    type: z.literal("skill"),
+    text: z.string(),
+    slug: z.string(),
+    name: z.string(),
+    description: z.string(),
+  }),
+  z.object({ type: z.literal("image"), documentId: z.string(), uri: z.string() }),
+]);
+
+const handBackResultShape = {
+  handedBack: z.array(
+    z.object({ userTurnId: z.string(), blocks: z.array(userMessageBlockSchema) }),
+  ),
+  answered: z.array(z.string()),
+  gone: z.array(z.string()),
+};
+
+/**
+ * The command answers, shape-checked in full: the hand-back content (blocks), the id arrays and the whole
+ * canonical run-state record (`runStateSchema`). A client confirms a command only from an answer its schema
+ * accepts. Types: `StopResponse`, `HandBackResponse`, `SendNowResponse`.
+ */
+export const stopResponseSchema = z.object({
+  threadId: z.string(),
+  ...handBackResultShape,
+  cancelledExecutionId: z.string().nullable(),
+  runState: runStateSchema,
+});
+
+export const handBackResponseSchema = z.object({
+  ...handBackResultShape,
+  runState: runStateSchema,
+});
+
+export const sendNowResponseSchema = z.object({
+  threadId: z.string(),
+  cancelledExecutionId: z.string().nullable(),
+  runState: runStateSchema,
 });
 
 /**

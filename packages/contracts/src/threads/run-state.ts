@@ -26,16 +26,13 @@ export type RunState = {
   blocked: { reason: "credits_exhausted" } | null;
 };
 
-/** Which waiting writer messages a hand-back request covers. */
-export type HandBackScope =
-  /** The queue's x: these messages, by user turn id. */
-  | { kind: "ids"; ids: string[] }
-  /** Stop and Cancel queue: the press set, from the record the writer saw plus this device's message intents. */
-  | { kind: "seen"; seenThrough: number; mine: string[] };
+/**
+ * Hand back these waiting writer messages, by user turn id. The queue's x sends one id; Cancel queue sends every
+ * id the client drew as queued, frozen at the press. Never cancels a reply.
+ */
+export type HandBackRequest = { requestId: string; ids: string[] };
 
-export type HandBackRequest = { requestId: string; scope: HandBackScope };
-
-/** One request's outcome for every message its scope names, decided once under the thread lock and stored. A replay returns it unchanged. */
+/** One request's outcome for every message it names, decided once under the thread lock and stored. A replay returns it unchanged. */
 export type HandBackResult = {
   /** Handed back by this request, in send order, with their content. The acting tab's composer receives these. */
   handedBack: { userTurnId: string; blocks: UserMessageBlock[] }[];
@@ -59,5 +56,23 @@ export type StopResponse = HandBackResult & {
   /** The execution this press cancelled, or null. */
   cancelledExecutionId: string | null;
   /** The record after this press, from `answerRunState`. */
+  runState: RunState;
+};
+
+/**
+ * Send now: cancel the reply the writer saw so the waiting queue runs next. `waiting` is every writer message the
+ * record showed waiting. No request id: `seenExecutionId` makes a repeat of the same body safe.
+ */
+export type SendNowRequest = {
+  seenThrough: number;
+  seenExecutionId: string;
+  waiting: string[];
+};
+
+export type SendNowResponse = {
+  threadId: string;
+  /** The execution this attempt cancelled, or null: this attempt requested no cancellation. */
+  cancelledExecutionId: string | null;
+  /** The record after this attempt, from `answerRunState`. */
   runState: RunState;
 };

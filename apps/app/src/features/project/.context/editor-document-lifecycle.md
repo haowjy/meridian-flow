@@ -160,4 +160,26 @@ Review-only document admission uses the existing address request. Only a route
 with `itemKey` and a resolved Work sends its Work and per-document branch
 selector, both included in the address query key. The server alone maps that
 branch to the whole draft tree after validating the review item. A plain
-manuscript address remains live-only; `gateLiveView` is unchanged.
+manuscript address remains live-only; `gateLiveView` is unchanged, and no
+caller guesses a review selector from a path or a Work's draft list.
+
+### Who decides what
+
+- **A chat door's document** (a tool card's name, a receipt row, a passage door;
+  `chat/ProjectChatContextNavigationProvider.tsx`) is asked of the scoped link
+  follower a transcript link uses (`features/links`). A live answer opens where the
+  door opens documents (the Editor route, or the dock beside the chat). A hidden
+  document answers with its Work and item key (the server resolves an address the
+  live tree leaves empty in the request Work's draft view, as it does a ref) and
+  goes through the review handoff by identity. A missing answer routes the plain
+  address so the route says so in place. The Editor command only navigates explicit destinations and keeps the
+  review identity it already holds (caller, addressed tab, current address).
+- **Whether the destination is admitted** is the route's alone
+  (`ReadableProjectRoute`: address binding, local and remote resolution, draft
+  gating, tab admission), reported as the Editor mask's `issue`.
+- **The pane waits; the boundary presents** (`context/context-pane-state.ts`). `loading`
+  and an admitted address still waiting for its tab render the destination's
+  pending tab and a neutral body. A terminal verdict (`unavailable` or `error`) is
+  `ProjectRouteBoundary`'s alone, so one verdict never has two presentations. The pane never reads the live catalog to decide existence,
+  because a draft-only document is never in it. Retained documents and the removal
+  fence are separate inputs. The route installs tabs; the pane has no auto-open.

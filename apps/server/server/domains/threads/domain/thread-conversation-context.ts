@@ -13,8 +13,11 @@ export interface ThreadConversationContextDeps {
 
 /**
  * The conversation: every turn and block the model, a page, a fork, a summary or a snapshot may see.
- * A handed-back writer message is not in it; its turn stays in the graph (`turnGraph(turns)`), which
- * this loader reads to resolve fork cutoffs and then filters.
+ * A handed-back writer message and a forgotten turn are not in it; they stay in the graph
+ * (`turnGraph(turns)`), which this loader reads to resolve fork cutoffs and then filters. A forgotten
+ * turn's stamp applies only when its forgetting turn is inside the span read: a fork keeps what its
+ * source forgot after the cutoff. Blocks are intersected with the turns kept, so no consumer sees an
+ * orphan block.
  */
 export interface ThreadConversationContext {
   turns: Turn[];
@@ -33,7 +36,7 @@ interface Part {
 interface Loaded {
   inherited: Part;
   local: Part;
-  /** User turns handed back anywhere in the lineage. */
+  /** Turns that left the conversation anywhere in the lineage: handed back, or forgotten inside their span. */
   hidden: ReadonlySet<string>;
 }
 
@@ -70,10 +73,13 @@ export async function loadThreadConversationContext(
   throughTurnId?: TurnId,
 ): Promise<ThreadConversationContext> {
   const loaded = await loadGraph(deps, thread, throughTurnId, new Set());
-  const keep = (turns: Turn[]) => turns.filter((turn) => !loaded.hidden.has(turn.id));
-  // Blocks come from the conversation read, so only the graph's turns need the filter.
-  const inherited = { turns: keep(loaded.inherited.turns), blocks: loaded.inherited.blocks };
-  const local = { turns: keep(loaded.local.turns), blocks: loaded.local.blocks };
+  const keep = (part: Part): Part => {
+    const turns = part.turns.filter((turn) => !loaded.hidden.has(turn.id));
+    const kept = new Set(turns.map((turn) => turn.id));
+    return { turns, blocks: part.blocks.filter((block) => kept.has(block.turnId)) };
+  };
+  const inherited = keep(loaded.inherited);
+  const local = keep(loaded.local);
   return {
     turns: orderTurnsByPosition([...inherited.turns, ...local.turns]),
     blocks: [...inherited.blocks, ...local.blocks],
@@ -87,6 +93,8 @@ async function loadGraph(
   thread: Thread,
   throughTurnId: TurnId | undefined,
   visiting: ReadonlySet<ThreadId>,
+  /** The last position a forgetting turn may hold for its stamp to apply: the span's cutoff. */
+  stampsThrough = Number.POSITIVE_INFINITY,
 ): Promise<Loaded> {
   const threadId = thread.id as ThreadId;
   if (visiting.has(threadId)) {
@@ -100,6 +108,14 @@ async function loadGraph(
     blocks: await deps.blocks.listByThread(threadId),
   };
   const hidden = new Set(await deps.turns.listHandedBackIds(threadId));
+  // This thread's own cutoff is the read's (a local turn at `throughTurnId`) or the span's (a fork's cutoff).
+  const cutoff = throughTurnId ? local.turns.find((turn) => turn.id === throughTurnId) : undefined;
+  const throughPosition = Math.min(stampsThrough, cutoff?.position ?? Number.POSITIVE_INFINITY);
+  const positionById = new Map(local.turns.map((turn) => [turn.id as string, turn.position]));
+  for (const turn of local.turns) {
+    const by = turn.forgottenBy ? positionById.get(turn.forgottenBy) : undefined;
+    if (by !== undefined && by <= throughPosition) hidden.add(turn.id);
+  }
   const none: Part = { turns: [], blocks: [] };
 
   if (thread.originType !== "fork")
@@ -122,7 +138,7 @@ async function loadGraph(
 
   // The cutoff is a graph position: a fork cut at a turn handed back later still resolves.
   const source = throughCutoff(
-    await loadGraph(deps, sourceThread, undefined, nextVisiting),
+    await loadGraph(deps, sourceThread, undefined, nextVisiting, originTurn.position),
     thread,
     originTurnId,
   );

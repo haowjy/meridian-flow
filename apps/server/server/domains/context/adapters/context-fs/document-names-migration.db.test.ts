@@ -41,7 +41,7 @@ import { guardWorkContextRestore } from "./document-locations.js";
  */
 async function migrate(db: import("@meridian/database").Database) {
   await db.execute(sql`ALTER TABLE documents ADD COLUMN kind text NOT NULL DEFAULT 'content'`);
-  // 0037 also rewrote `upload_intakes.canonical_uri`, which 0052 retired.
+  // 0037 also rewrote `upload_intakes.canonical_uri`, which 0060 retired.
   await db.execute(
     sql`ALTER TABLE upload_intakes ADD COLUMN canonical_uri text NOT NULL DEFAULT ''`,
   );

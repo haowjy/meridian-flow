@@ -1,5 +1,5 @@
 -- migration: no-transaction
--- Online half of 0050_chat_uploads_owner. Re-runnable.
+-- Online half of 0058_chat_uploads_owner. Re-runnable.
 -- The project-source unique index must exclude chat sources (slug `uploads`), so it is rebuilt: the
 -- replacement is valid before the old one goes, so uniqueness is never unguarded.
 CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS "context_sources_project_scope_slug_v2" ON "context_sources" USING btree ("project_id","slug") WHERE "work_id" IS NULL AND "root_thread_id" IS NULL AND "chat_thread_id" IS NULL AND "deleted_at" IS NULL;

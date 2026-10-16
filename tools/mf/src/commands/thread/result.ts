@@ -1,16 +1,16 @@
 /** Terminal claims and deadline reports, independent of the interim follow predicates. */
-import { apiThreadSnapshotPath, type ThreadSnapshotResponse } from "@meridian/contracts/protocol";
+import type { ThreadSnapshotResponse } from "@meridian/contracts/protocol";
+import { writerMessages } from "@meridian/thread-client";
 import { EXIT, type ExitCode } from "../../core/cli-error";
 import type { Output } from "../../core/output";
-import type { Session } from "../../core/session";
 import { type LiveDiff, renderLiveDiff } from "./reduced-thread";
-import { currentTurnId, owedWriterMessages } from "./run-state";
 
 export type Outcome =
   | "accepted"
   | "complete"
   | "failed"
   | "cancelled"
+  | "handed_back"
   | "interrupt"
   | "timeout"
   | "unproven";
@@ -22,13 +22,17 @@ export type Reason =
   | "replay_truncated"
   | "unconfirmed"
   | "deliverer_unknown"
-  | "snapshot_disagrees"
-  | "credits_exhausted";
+  | "credits_exhausted"
+  | "not_a_message"
+  | "forgotten";
 /** `accepted` is admission only and is built solely by `thread send --no-wait`; no wait produces it. */
 export type Claim =
-  | { outcome: "accepted" | "complete" | "cancelled" | "interrupt"; reason: null }
-  | { outcome: "failed"; reason: null | "credits_exhausted" }
-  | { outcome: "unproven" | "timeout"; reason: Exclude<Reason, "credits_exhausted"> };
+  | { outcome: "accepted" | "complete" | "cancelled" | "handed_back" | "interrupt"; reason: null }
+  | { outcome: "failed"; reason: null | "credits_exhausted" | "not_a_message" | "forgotten" }
+  | {
+      outcome: "unproven" | "timeout";
+      reason: Exclude<Reason, "credits_exhausted" | "not_a_message" | "forgotten">;
+    };
 export type Result = Claim & {
   type: "result";
   command: string;
@@ -36,7 +40,7 @@ export type Result = Claim & {
   turnId?: string | null;
   finalText?: string | null;
   next?: string[];
-  liveView?: "matches" | "differs";
+  liveView?: "matches" | "differs" | "not_observed";
   liveDiff?: LiveDiff[];
 };
 export type TerminalResult<T extends Record<string, unknown> = Record<string, unknown>> = {
@@ -48,6 +52,7 @@ const EXITS: Record<Outcome, ExitCode> = {
   complete: EXIT.ok,
   failed: EXIT.failed,
   cancelled: EXIT.cancelled,
+  handed_back: EXIT.cancelled,
   interrupt: EXIT.interrupt,
   timeout: EXIT.timeout,
   unproven: EXIT.unproven,
@@ -90,26 +95,20 @@ export function finishResult(
   out.note(
     emptyIdleTail
       ? "complete: chat idle, no turn ran during the wait"
-      : running && result.outcome === "timeout"
-        ? result.snapshotStale
-          ? `timeout: last snapshot showed turn ${running.turnId} ${running.status}; current state is unconfirmed`
-          : `timeout: turn ${running.turnId} still ${running.status} on the server (stop it with ./mf thread cancel ${result.threadId} --turn ${running.turnId})`
-        : result.outcome === "timeout" && result.reason === "lease_awake"
-          ? "timeout: last snapshot showed no running turn or owed message, but the chat was awake; idle is unconfirmed"
-          : `${result.outcome} ${result.turnId ?? "?"}${result.reason ? ` ${result.reason}` : ""}`,
+      : result.outcome === "handed_back"
+        ? `handed_back ${result.userTurnId} (a Stop returned this message before any reply took it)`
+        : running && result.outcome === "timeout"
+          ? result.snapshotStale
+            ? `timeout: last snapshot showed turn ${running.turnId} ${running.status}; current state is unconfirmed`
+            : `timeout: turn ${running.turnId} still ${running.status} on the server (stop it with ./mf thread stop ${result.threadId})`
+          : result.outcome === "timeout" && result.reason === "lease_awake"
+            ? "timeout: last snapshot showed no running turn or owed message, but the chat was awake; idle is unconfirmed"
+            : `${result.outcome} ${result.turnId ?? "?"}${result.reason ? ` ${result.reason}` : ""}`,
   );
   if (result.liveView === "differs" && result.liveDiff)
     out.note(renderLiveDiff(result.liveDiff, options.full ?? false));
   for (const next of result.next ?? []) out.note(next);
   return terminal.exitCode;
-}
-
-export async function timeoutReport(session: Session, threadId: string) {
-  const snapshot = await session.request<ThreadSnapshotResponse>(
-    "GET",
-    apiThreadSnapshotPath(threadId),
-  );
-  return classifyDeadline(snapshot, threadId);
 }
 
 type UnavailableDeadlineReport = { reason: "unconfirmed"; next: string[] };
@@ -143,9 +142,7 @@ export function classifyDeadline(
     reason,
     ...activity,
     next: [
-      ...(activity.stillRunning
-        ? [`./mf thread cancel ${threadId} --turn ${activity.stillRunning.turnId}`]
-        : []),
+      ...(activity.stillRunning ? [`./mf thread stop ${threadId}`] : []),
       `./mf thread tail ${threadId} --until-idle`,
     ],
   };
@@ -154,10 +151,10 @@ export function classifyDeadline(
 /** Obligations from the mandatory live-state projection, never durable thread.status. */
 export function snapshotActivity(snapshot: ThreadSnapshotResponse) {
   const { runState } = snapshot.liveState;
-  const turnId = currentTurnId(runState);
+  const turnId = runState.execution?.currentTurnId ?? null;
   const turn = snapshot.turns.find((candidate) => candidate.id === turnId);
   return {
     stillRunning: turnId ? { turnId, status: turn?.status ?? "unknown" } : null,
-    owed: owedWriterMessages(runState),
+    owed: writerMessages(runState),
   };
 }

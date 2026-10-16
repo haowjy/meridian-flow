@@ -217,7 +217,7 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
       expect(chapter.value).toContain(
         "[Unfiled note](<unfiled://Scratch (2)/nested/deep/jade-map>)",
       );
-      // 0052 resets Work-owned upload intakes (#875); the document they were filed under stays.
+      // 0060 resets Work-owned upload intakes (#875); the document they were filed under stays.
       expect(await target`SELECT 1 FROM upload_intakes`).toEqual([]);
       const catalog = createDrizzleContextCatalog(db);
       const snapshot = await catalog.snapshot({ kind: "project", projectId: id(2) as never });

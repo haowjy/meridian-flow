@@ -33,6 +33,11 @@
  * be: `destroy()` drops listeners, and a StrictMode remount keeps the
  * instance.
  *
+ * Doors: a URI door (a written-document name, a passage row) follows through this same
+ * follower, carrying its shell's placement policy. One chat, one latest click: a door
+ * and a transcript link cancel each other, and a hidden chat or a switched thread
+ * cancels both.
+ *
  * Exact `@` references in writer messages ask by identity rather than through
  * the resolver, from the chat's `ReferenceAvailability` store. The catalog
  * revision that re-registers the resolver also refreshes that store, so a
@@ -58,6 +63,7 @@ import { useOpenChatDocument } from "@/features/project/context/open-chat-docume
 import { useReviewingLinkDestination } from "@/features/project/dock/useAiDraftLauncher";
 import type { TranscriptLinkNavigation } from "@/rich-content/TranscriptReference";
 
+import { type ChatDoors, type ContextPassageAnchor, useChatDoors } from "./ChatContextNavigation";
 import { createReferenceAvailability, type ReferenceAvailability } from "./reference-availability";
 
 /** What a chat link is resolved against, or pending while that is still loading. */
@@ -109,6 +115,11 @@ export function useChatLinkFollowing({
   navigation: TranscriptLinkNavigation;
   references: ReferenceAvailability;
   dialog: ComponentProps<typeof LinkFollowDialog>;
+  /** The shell's URI doors, following through this same follower; null without a shell. */
+  doors: {
+    open: (uri: string, passage?: ContextPassageAnchor) => void;
+    canOpen: ChatDoors["canOpen"];
+  } | null;
 } {
   const { status: worksStatus, noWork } = useWorks(projectId);
   const threadKnown = activeThread !== null;
@@ -177,19 +188,38 @@ export function useChatLinkFollowing({
     references.refresh();
   }, [index.complete, index.revision, references]);
 
+  const shellDoors = useChatDoors();
+  const doors = useMemo(
+    () =>
+      shellDoors
+        ? {
+            canOpen: shellDoors.canOpen,
+            open: (uri: string, passage?: ContextPassageAnchor) => {
+              const door = shellDoors.prepare(uri, passage);
+              if (door) follower.follow(door.link, "current", null, door.policy);
+            },
+          }
+        : null,
+    [follower, shellDoors],
+  );
+
   const navigation = useMemo<TranscriptLinkNavigation>(
     () => ({
-      follow: (target) => follower.follow(target),
+      follow: (target) => {
+        shellDoors?.retire();
+        follower.follow(target);
+      },
       canFollow: follower.canFollow,
       resolution,
       watch: requester.watch,
     }),
-    [follower, requester, resolution],
+    [follower, requester, resolution, shellDoors],
   );
 
   return {
     navigation,
     references,
+    doors,
     dialog: {
       outcome,
       projectId,

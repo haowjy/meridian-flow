@@ -1644,6 +1644,12 @@ export function createInMemoryAppServices(): AppServices {
       async stop() {
         throw new Error("in-memory chat Stop is not implemented");
       },
+      async handBack() {
+        throw new Error("in-memory hand-back is not implemented");
+      },
+      async sendNow() {
+        throw new Error("in-memory Send now is not implemented");
+      },
       async cancel() {
         return "not_found" as const;
       },

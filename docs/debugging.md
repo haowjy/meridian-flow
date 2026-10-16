@@ -38,9 +38,8 @@ Start from your symptom in [Strategies](#strategies), or scan the
   A `./mf` run is evidence for the code it shares with the app, and for the
   server. Confirm what the writer sees in the browser (`agent-browser`), at least
   once at the end. Read the durable transcript with `./mf thread view` to check
-  which reply answered your message (a send's exit 0 does not prove that until
-  [#768](https://github.com/haowjy/meridian-flow/issues/768)'s second phase lands),
-  then `./mf log --thread <id>` or
+  what the writer's transcript holds (a `send` already proves which reply answered
+  its message), then `./mf log --thread <id>` or
   `./mf log --trace <id>`. Add `--full` only when compact metadata is
   insufficient. Use `./mf thread context` when the question is what the model
   received rather than what the runtime did.
@@ -85,6 +84,9 @@ the existing server wake retry it.
 ./mf thread send <id> "go" --mock @tools/mf/fixtures/mock-write.json --json | tail -1
 ./mf thread view c3                                # chat rows as the app draws them (ref, id, or id prefix)
 ./mf thread tail <id> --until-idle                 # follow a run started elsewhere
+./mf thread stop <id>                              # the chat's Stop (hands waiting messages back)
+./mf thread queue hand-back <id> --all             # take every queued message back (never cancels the reply)
+./mf thread queue send-now <id>                    # ask the server to cancel the reply the snapshot shows (the queue can then run)
 ./mf thread events <id> --child p2                 # one direct child's status, phase, tool, and target per activity frame
 ./mf thread view <id> --blocks                     # persisted blocks with created time, gaps, tool name, size
 ./mf doc read manuscript://mf-scene.md
@@ -93,15 +95,29 @@ the existing server wake retry it.
 
 Contract:
 
-Until [#768](https://github.com/haowjy/meridian-flow/issues/768)'s second phase lands,
-`./mf thread send` cannot prove which reply answered its message. It no longer
-reports complete while its own message remains pending, but absence from pending
-alone is not reply binding. Check the reported reply against `./mf thread view`
-(the durable transcript) or in the browser. `tail --until-idle` now confirms idle
-at its final snapshot; it does not attribute replies to messages. A `send` whose
-message a Stop handed back, or whose reply a Stop cancelled, can report `timeout`
-(exit 124) rather than `cancelled`; read `thread view` instead. Plain `tail` and
-`send`'s live output don't draw queued rows.
+`./mf thread stop`, `thread queue hand-back` and `thread queue send-now` run the same operation the
+app runs (`@meridian/thread-client`'s hand-back operation and `postSendNow`), each over a fresh
+snapshot. They print the frozen request and its exact `--replay` command to stderr before posting,
+even under `--json`. A 2xx counts only when the whole answer validates; a lost or malformed answer
+exits 4 with the request in the error, and `--replay` re-sends it unchanged (a plain re-run is a new
+press built from a newer record). A 400, 404 or 409 exits 1.
+- `queue hand-back --id <turn>... | --all` proves what the *server* did with each id: `handedBack`,
+  `answered` (the reply took it first) or `gone` (another request took it). An id in none of them is
+  `ignored` (exit 1, reason `not_a_message`). `--all` sends every message the snapshot shows queued,
+  browser messages included; with none it posts nothing and says only that the snapshot showed none.
+- `queue send-now` exit 0 means the server confirmed its control answer, not that the queue was
+  answered: follow with `thread tail --until-idle` or `thread view`. A null `cancelledExecutionId`
+  prints "this attempt requested no cancellation". It says nothing about the reply's fate (a replay
+  of a Send now that already cancelled also answers null), so never read null as "the reply kept
+  running". These commands read state; the browser is where the queue's behavior is checked.
+
+`./mf thread send` proves, from one snapshot read through the shared `messageFate`,
+whether its own message is waiting, was handed back, or was answered, and by which reply.
+Its result is the status and text of the last reply in that message's chain,
+continuations and Retries included. When it can't prove that, it exits non-zero with a
+reason. The stream only decides when to look: no frame is an input to the claim.
+`tail --until-idle` confirms idle at its final snapshot; it does not attribute replies to
+messages. Plain `tail` and `send`'s live output don't draw queued rows.
 
 - Content comes from the app's own event processing. `thread view` hydrates the
   snapshot into the shared `@meridian/thread-client` turn store, runs the shared
@@ -120,8 +136,9 @@ message a Stop handed back, or whose reply a Stop cancelled, can report `timeout
   text for the followed turns with the confirming snapshot. The result gains
   `liveView`: `matches`, `differs` with a compact `liveDiff` of `{ turnId, field,
   live, server }` rows (text mode prints one line), or `not_observed` when the
-  follow had a replay gap or a compared turn's events were not seen from its
-  start. It is absent when nothing was followed.
+  follow had a replay gap, a compared turn's events were not seen from its
+  start, or anchor recovery overwrote them with a snapshot (a recovered turn is the
+  server's data, so comparing it would measure the server against itself). It is absent when nothing was followed.
   - It compares only the status and final text of the followed turns, so it
     can't catch a missing write-mode divider, a misplaced row or a missing
     queued row. Read those from `thread view` (the snapshot) and in the browser.
@@ -140,38 +157,45 @@ message a Stop handed back, or whose reply a Stop cancelled, can report `timeout
   `thread events` stays an event log and prints both `tool.completed` and
   `tool.settled`.
 - Compact text by default. `--json` prints one object, or NDJSON for streams.
-  Every live claim (`send`, `tail --until-idle`, `respond`, `cancel`, and each seed send)
+  Every live claim (`send`, `tail --until-idle`, `respond`, `stop`, `cancel`, and each seed send)
   and `events` ends in a `result` envelope. Seed embeds its sends' envelopes in
   `messages` and reports the worst exit among all sends in its final result.
   `--fields a,b` keeps `type` on every stream line and always keeps `type`,
   `command`, `outcome`, and `reason` on terminal results. CLI errors (usage,
   not found, unavailable) remain on stderr (`{error, code, hint}` under `--json`).
 - Outcomes map to exits: **0 accepted** (`send --no-wait`, admission only) and
-  **0 complete**, **1 failed**, **5 cancelled**,
-  **6 unproven**, **8 interrupt**, **124 timeout**. Other exits: **2 usage**,
+  **0 complete**, **1 failed**, **5 cancelled** and
+  **5 handed_back** (`outcome` tells them apart), **6 unproven**, **8 interrupt**, **124 timeout**. Other exits: **2 usage**,
   **3 not found**, **4 unavailable** (stack, login, terminal socket close).
-  `reason` is null for a proven outcome. A timeout's reason names the first
+  `reason` is null for a proven outcome, except a `failed` send whose message the chat moved past (`forgotten`: no reply answers it). A timeout's reason names the first
   thing its last snapshot still showed: `running` (a running turn), `owed` (a
   pending writer message), `lease_awake` (the chat still awake with neither,
   as when a restart orphans a reply and the server keeps its run lease until
   expiry, [#799](https://github.com/haowjy/meridian-flow/issues/799)), else
   `unconfirmed` (no snapshot, or one that looked idle but proved nothing).
   `send` and `tail --until-idle` share this rule.
-  Unproven reasons today are `admission_unknown`, `replay_truncated`,
-  `unconfirmed`, and `owed`. A complete send still does not prove which reply
-  answered, as explained above.
+  Unproven reasons are `admission_unknown`, `deliverer_unknown` (the message
+  left its queue with no reply that took it), `unconfirmed` (the snapshot
+  contradicts itself, such as a last reply neither running nor finished), and
+  `replay_truncated` (tail and events). `owed` survives only as a timeout reason.
 - In text mode, a final answer goes to stdout only for complete or failed.
-  Stderr reports `<outcome> <turn> [reason]` and any follow-up commands.
+  Stderr reports `<outcome> <turn> [reason]` and any follow-up commands. A
+  `handed_back` send prints nothing on stdout and
+  `handed_back <userTurnId> (a Stop returned this message before any reply took it)` on stderr.
   A failed or cancelled run is a `result`, never a terminal `error` record.
-- A send deadline reads one final snapshot. Its result
+- A send deadline classifies the last snapshot that completed and starts no new read, as
+  `tail --until-idle` does: the result says `snapshotStale: true`, or
+  `snapshotUnavailable: true` (reason `unconfirmed`) when no snapshot had completed. It
   reports `stillRunning` (turn id and status, or null), `owed` (pending writer
   messages), and `next` commands. The run-state record (`liveState.runState`) is
   a mandatory live-state field. Text says when the server is
-  still running and how to stop it. **Timeout never cancels a run.** Plain
+  still running and how to stop it (`./mf thread stop <thread>`). **Timeout never cancels a run.** Plain
   `tail` remains a bounded live view and exits 0 when its wait expires.
 - `tail --until-idle` returns immediately if the initial snapshot is idle.
-  Otherwise it follows from the last sequence and checks a snapshot after each
-  turn finish/failure, a journaled `meridian.run_state` record or idle subscription state. Idle means
+  Otherwise it follows from the last sequence and checks a snapshot when a
+  `meridian.run_state` record or the subscribed state shows no open execution and no
+  writer message, or a `meridian.thread.status` frame arrives (turn events alone don't
+  trigger: the closing record follows them in the same commit). Idle means
   the shared run-state module's `isBusy` is false for the snapshot's `liveState.runState` (no open
   `execution`, no writer-provenance message in `items`) and `liveState.status.kind` is `asleep`
   (no awake lease). A successor run or owed writer message keeps it
@@ -190,10 +214,26 @@ message a Stop handed back, or whose reply a Stop cancelled, can report `timeout
   or `snapshotUnavailable: true` if no snapshot succeeded. Without a snapshot
   the result carries no `stillRunning` or `owed`: absent means unknown, never
   none. No post-deadline snapshot request extends the wait.
-- `cancel`'s complete envelope proves the server acknowledged cancellation
-  or reported the target already finished, not that a particular reply was
-  answered. Its `status` carries that acknowledgement. A missing target keeps
-  exit 3; the target-selection logic is unchanged.
+- `stop` is the chat's Stop: it builds the app's body with `stopRequest` from a snapshot's
+  record (`seenThrough`, `seenExecutionId`, `mine: []`) and posts it to the Stop route. Before
+  posting it prints the request (id and frozen body) to stderr in text mode; the complete
+  envelope carries it as `request`. The envelope proves the server's answer:
+  `cancelledExecutionId`, `handedBack` (user turn ids; the blocks with `--full`), `answered`,
+  `gone`. `--full` text mode also prints each handed-back message's text in send order, blank
+  lines between. The envelope is printed only for an answer that passes the contract's
+  `stopResponseSchema` in full (hand-back blocks and id arrays included). Anything else leaves
+  the Stop possibly landed: timeout, connection failure, a 5xx, an answer over the 20 MiB
+  response limit, a body that is not JSON, or a malformed one (such as a null block). It exits 4,
+  and the error says how to replay and carries the request (`details.request` under `--json`).
+  Only a 4xx refusal is reported as one, with no replay. **Never re-run it plain**: that
+  is a new press, takes a new snapshot and request id, and can cancel the next reply while the
+  first press's handed-back text is lost. `--replay <request.json|@file|->` posts exactly the
+  printed request, no new snapshot; the server returns its stored decision with the
+  handed-back content. Follow it with `./mf thread tail <thread> --until-idle`. The text comes
+  back in this output, not in a browser's composer.
+- `cancel --turn <id>` (required) serves a handoff brief's Stop. Its complete envelope proves
+  the server acknowledged cancellation or reported the target already finished, not that a
+  reply was answered. Its `status` carries that acknowledgement. A missing target keeps exit 3.
 - `respond` exits 0 only after the journal records `meridian.interrupt`
   resolved for that interrupt id. A rejecting error frame exits 1; its
   confirmation deadline (`--timeout`, default 15s) exits 6 `unconfirmed`.
@@ -204,24 +244,35 @@ message a Stop handed back, or whose reply a Stop cancelled, can report `timeout
   once through the app's admission route. Accepted resumes following; rejected
   or not seen exits 1; a failed lookup or still-pending admission exits 6
   `admission_unknown`. `send --no-wait` proves admission only and reports `outcome: "accepted"`, never `complete`.
-- Before reporting complete, `send` reads a snapshot. If its admitted user turn
-  id is still in `liveState.runState.items`, it exits 6 `unproven` with reason
-  `owed`, `stillRunning`, the pending writer messages, and
-  `./mf thread tail <thread> --until-idle` as the next command. It prints no
-  answer for this unproven result. Absence from the record's items does not yet prove
-  which reply answered the message; that binding remains phase 2.
+- A `send` follows one subscription and, on each trigger (the subscribed state, a
+  `meridian.run_state` or `meridian.messages.handed_back` frame, `interrupt.requested`, a
+  gap), reads a snapshot and runs `messageFate` on it. What the fate means:
+
+  | Fate | `send` |
+  | --- | --- |
+  | message waiting | keeps following (blocked for usage: exit 1 `credits_exhausted`) |
+  | answering, interrupt raised | exit 8 with `interrupt` |
+  | answered | the last reply in the chain sets the outcome: complete 0, failed 1, cancelled 5; `turnId` is that reply, `answeredBy` the reply that took the message |
+  | forgotten (the turn carries `forgottenBy`) | exit 1 `forgotten`, `turnId` null: the chat moved past its failed reply, so nothing answers it |
+  | handed back (not in the snapshot) | exit 5 `handed_back`, `turnId` null |
+  | no deliverer | exit 6 `deliverer_unknown` |
+  | snapshot inconsistent | exit 6 `unconfirmed` |
+  | deadline | exit 124, `turnId` from the last answering fate |
+
+  Only the last reply sets status and text, so a failed successor never borrows an earlier
+  success. When later messages join the same execution, the execution's last reply answers
+  all of them. A Retry pressed after `send` reported failed isn't waited for; use
+  `tail --until-idle`. A gap marks `liveView` `not_observed` and never weakens the claim.
+  After a claim settles, the stream gets a short catch-up (1.5 s, one deadline for stream
+  reads, anchor recovery and snapshot reads) so the printed log is whole. That log is
+  best-effort: a timeout, transport or protocol error during catch-up keeps the claim and marks
+  `liveView` `not_observed`.
+  Anchor recovery (a snapshot hydrated mid-follow) ends the standing of every turn it
+  overwrote for the rest of that follow: a later `RUN_STARTED` for one of them does not restore
+  it, so those turns stay `not_observed`.
 - Write tools emit `tool.completed` for the staged result, then `tool.settled`
   for the committed receipt, in both JSON and text. There is no `settled` flag.
   The staged result alone does not prove a committed write.
-- `send` currently follows a steer or a compaction split with an interim rule:
-  reservation hints on a reply's start (the user turns it was reserved for) and
-  successor following within one execution, plus ancestry in recovery. It does
-  not bind to `Turn.delivery`, so the result is the
-  reply the follower selected, not proof that this reply answered your message.
-  The binding is #768's second phase. A `send` that joined a running reply and
-  sees the record show no open execution while its message is still waiting
-  follows for a short grace for the reply that takes it, then exits 6 `unproven`
-  with reason `owed`; it never reports that message answered.
 - `thread view` (`chatView: 2`) prints a compaction row as its trigger, control
   ID, summary and model, and token counts before and after; `--json` carries the
   same facts under `compaction`. It does not print a failed compaction's reason
@@ -240,7 +291,7 @@ message a Stop handed back, or whose reply a Stop cancelled, can report `timeout
 Terminal record example (command-specific fields follow the reserved keys):
 
 ```json
-{"type":"result","command":"thread.send","threadId":"…","outcome":"timeout","reason":"running","stillRunning":{"turnId":"B","status":"streaming"},"owed":[],"next":["./mf thread cancel … --turn B","./mf thread tail … --until-idle"]}
+{"type":"result","command":"thread.send","threadId":"…","outcome":"timeout","reason":"running","stillRunning":{"turnId":"B","status":"streaming"},"owed":[],"next":["./mf thread stop …","./mf thread tail … --until-idle"]}
 ```
 
 

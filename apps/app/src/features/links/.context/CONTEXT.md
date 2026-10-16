@@ -185,6 +185,14 @@ registers. A dismissal is never
 inferred from the store clearing, because the procedure clears right before it
 opens.
 
+A follow may carry a `FollowPolicy`. Its `open` replaces the surface's default
+destination for that follow, and its `missing` runs instead of reporting a
+missing answer (the follow clears any outcome it owns first). Everything else
+stays the surface's: the scope, the cancellation rules above, outcome ownership,
+and the checking and failure dialogs. Retry keeps the policy. Chat's doors use
+this to open on their shell's placement rules and route a missing address to the
+destination, which says so in place ([link-following decision][link-following]).
+
 `gesture` comes from the click: `current` or `new-tab` (middle click,
 Ctrl/Cmd+click). The Editor maps `new-tab` to a background tab on its strip;
 chat only ever follows `current`. There is no browser-tab disposition: the
@@ -248,3 +256,5 @@ on remount and claim a change that never happened.
 
 Catalog URIs remain canonical. Nothing here rewrites schemes or derives identity
 from a path or label.
+
+[link-following]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/documents/identity/link-following.md

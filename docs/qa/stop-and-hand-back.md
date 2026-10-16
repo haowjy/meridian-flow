@@ -49,14 +49,17 @@ Substitute the thread id for `<T>`. `DATABASE_URL` is the one in the dev server'
 (`/proc/<pid>/environ` of the `run-state.server` owner), not necessarily the shell's. A handed-back row has
 `delivered` true (it left the queue), `delivered_by_turn_id` null and `handed_back_by` set; a message a
 run answered has `delivered_by_turn_id` set. Join every background `send` with `wait`, but do not use its
-exit code or result as evidence: after a Stop it can report `timeout` (exit 124). Read the `turns` rows.
+exit code or result as evidence: it runs unattended and a Stop races it. After a Stop a queued `send`
+reports `handed_back` or `cancelled` (exit 5), not `timeout`. Read the `turns` rows.
 
 For each step, confirm in the browser last: open the thread, repeat the action with the Stop button, and
 check that the composer and the rows match `thread view --json`.
 
 The composer has one button (owner ruling). With the box empty and a reply running it is Stop (Stopping
 is its spinning ring; a failed Stop is the red "Couldn't stop the reply." card above the box with Try again, which
-re-posts the same request and goes when the Stop succeeds or the reply ends); once you type it is Send with the
+re-posts the same request and stays until the Stop is confirmed; once its reply ends it reads "Couldn't move your
+queued message to the message box.", plural for several, and a refused one reads "Couldn't move your queued
+message." with Dismiss); once you type it is Send with the
 running ring, the card stays, and clearing the text brings Stop back. Escape stops only while Stop shows. After a
 Stop hands a steer back, the box holds it and the button is Send.
 

@@ -48,9 +48,12 @@ body is a 409. Each message the press covers is in exactly one of
 `StopResponse.handedBack` (with its `UserMessageBlock`s, in send order),
 `answered` or `gone`; a message is never both handed back and answered. `gone`
 lists every message another request handed back at or below `seenThrough`, so
-clients treat it as idempotent. `HandBackScope` (`ids` for the queue's x, `seen`
-for Stop and Cancel queue) is the same decision without a cancel; its route lands
-with the queue controls. A handed-back message leaves every conversation read
+clients treat it as idempotent. `HandBackRequest { requestId, ids }`
+(`POST .../hand-back`, the queue's x and Cancel queue) is the same decision for
+exactly those messages, without a cancel. `SendNowRequest { seenThrough,
+seenExecutionId, waiting }` (`POST .../send-now`) cancels the seen reply only
+while it has taken on none of the waiting messages; it hands nothing back and has
+no request id. A handed-back message leaves every conversation read
 and is removed live by `meridian.messages.handed_back { userTurnIds }` at its
 journal seq. See the [Stop API](../../../../docs/api/thread-stop.md).
 

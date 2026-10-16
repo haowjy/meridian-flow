@@ -161,7 +161,6 @@ export type ProjectViewProps = {
   editorRouteWork: Exclude<RouteWorkResolution, { status: "new" | "absent" }>;
   activeLocalDocumentId?: string;
   entryHydration: WorkingSetHydrationPlan;
-  addressOwnsDocumentAdmission?: boolean;
   routeLocationKey?: string;
   routeIssues?: { main?: ProjectRouteIssue; editor?: ProjectRouteIssue };
   /** Re-read what a failed Editor address was waiting on. */
@@ -763,7 +762,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
                   ? props.editorWork
                   : (mountedEditor?.editorWork ?? null)
               }
-              addressOwnsDocumentAdmission={props.addressOwnsDocumentAdmission}
               active={editorActive}
               sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
               dockToggle={surfaceToggle("chat", t`Expand chat`)}

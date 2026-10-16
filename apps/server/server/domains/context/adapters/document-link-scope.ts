@@ -486,6 +486,10 @@ export function createDrizzleDocumentLinkScopes(deps: {
         miss,
       );
     },
+    draftCreatedAt({ view, uri }) {
+      const snapshot = storage.getStore();
+      return snapshot?.open ? snapshotCatalog(snapshot, view, () => {}).draftCreatedAt(uri) : null;
+    },
     async pinHolder({ view, documentId, uri }) {
       // Pinning answers for the snapshot's reader: no open snapshot, no authority to pin in.
       const snapshot = storage.getStore();
@@ -568,7 +572,7 @@ function snapshotCatalog(
   snapshot: Snapshot,
   view: LinkView,
   miss: (key: string) => void,
-): HolderCatalog {
+): HolderCatalog & { draftCreatedAt(uri: string): CatalogDocument | null } {
   const key = viewKey(view);
   /** This view's identity status for a row; a status it never loaded is a miss, never an absence. */
   const statusOf = (row: Row) => {
@@ -642,6 +646,25 @@ function snapshotCatalog(
       : undefined;
   };
   return {
+    /**
+     * What this draft view created at an address a typed link names: the exact address, else
+     * the one extension-omitted match. Only the view's own draft counts (`documentAt` shows
+     * an ahead ref any draft's creation), and only a document the reader may name and read.
+     */
+    draftCreatedAt(uri) {
+      if (view.kind !== "draft" || !snapshot.addresses.has(uri)) return null;
+      const statuses = snapshot.views.get(key)?.statuses;
+      const created = [...(statuses ?? [])].flatMap(([id, status]) => {
+        const row = snapshot.rows.get(id);
+        const own =
+          (status.kind === "hidden" || (status.kind === "visible" && status.hidden)) &&
+          status.draft?.draftId === view.draftId;
+        return row && own ? [{ row, address: status.address.uri }] : [];
+      });
+      const match = matchDocumentPath(created, uri, (entry) => entry.address);
+      const document = match ? toDocument(match.row) : null;
+      return document && document !== UNLOADED && reachable(document) ? document : null;
+    },
     document(id) {
       const row = snapshot.rows.get(snapshot.forwards.get(id) ?? id);
       if (row === undefined) return undefined;

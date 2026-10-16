@@ -2,7 +2,7 @@
 -- (`context_sources.chat_thread_id`) and on each intake (`upload_intakes.owner_thread_id`), with no
 -- FK, like lineage Scratch's root id: the chat row may not exist at attach time and trashing or
 -- purging it must not cascade. No data moves here (the move is a later migration).
--- The widened CHECKs are added NOT VALID and validated by 0051, which also swaps the project-source
+-- The widened CHECKs are added NOT VALID and validated by 0059, which also swaps the project-source
 -- unique index (it must now exclude chat sources) and builds the intake owner index.
 SET LOCAL lock_timeout = '2s';
 --> statement-breakpoint

@@ -1,6 +1,5 @@
 /** Tab-local authoring owner for pane continuity, journal hand-off, Edit and hand-backs. */
-import type { StopRequest } from "@meridian/contracts/threads";
-import { type MessageDoc, prependMessageDoc } from "@meridian/thread-client";
+import { type HandBackCommand, type MessageDoc, prependMessageDoc } from "@meridian/thread-client";
 import type { ComposerDraftChange, ComposerDraftSnapshot } from "@/components/app/composer";
 import {
   parseRestorableComposerDraft,
@@ -15,9 +14,10 @@ export type DeletedChatNotice = { threadId: string; title: string | null; count:
 /**
  * A hand-back request the writer pressed whose answer has not been written to the composer: kept
  * with the draft so a reload re-posts the same body (the server replays its stored decision) and
- * the content still arrives exactly once. Q adds the x and Cancel queue kinds beside Stop.
+ * the content still arrives exactly once. The package owns the shape: Stop's stored format, and
+ * the x / Cancel queue's ids.
  */
-export type PendingHandBack = { kind: "stop"; requestId: string; body: StopRequest };
+export type PendingHandBack = HandBackCommand;
 
 type StoredComposerDraft = (ComposerDraftSnapshot | { doc: null }) & {
   received?: string[];
@@ -40,8 +40,10 @@ const isParkedDraft = (value: unknown): value is ParkedDraft =>
 export const handBackReceipt = (requestId: string) => `handBack:${requestId}`;
 
 function isPendingHandBack(value: unknown): value is PendingHandBack {
-  if (!isRecord(value) || value.kind !== "stop" || typeof value.requestId !== "string")
-    return false;
+  if (!isRecord(value) || typeof value.requestId !== "string") return false;
+  if (value.kind === "queue")
+    return Array.isArray(value.ids) && value.ids.every((id) => typeof id === "string");
+  if (value.kind !== "stop") return false;
   const body = value.body;
   return (
     isRecord(body) &&

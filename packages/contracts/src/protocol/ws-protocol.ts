@@ -167,7 +167,8 @@ const pendingInboxItemSchema: z.ZodType<import("../threads/index.js").PendingInb
   enqueuedAt: z.string().min(1),
 });
 
-const runStateSchema: z.ZodType<RunState> = z.object({
+/** The canonical whole-record schema; `readRunState` and the command response schemas use it. */
+export const runStateSchema: z.ZodType<RunState> = z.object({
   version: wsEventSeqSchema,
   items: z.array(pendingInboxItemSchema),
   sentThrough: z.number().int().nonnegative(),
