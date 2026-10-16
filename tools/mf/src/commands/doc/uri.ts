@@ -3,7 +3,7 @@ import { formatParsedContextUri, parseContextUri } from "@meridian/contracts/con
 import {
   apiProjectDocumentAddressPath,
   type ContextOwner,
-  type DocumentAddressResult,
+  documentAddressReferenceSchema,
   type ProjectContextTreeScheme,
   parseDocumentFilename,
   renderFilename,
@@ -89,10 +89,12 @@ export async function resolveUri(
 
 /** Live documentId for a URI, or a not_found CliError. */
 export async function resolveDocument(session: Session, projectId: string, target: ResolvedUri) {
-  const address = (await session.request(
+  const address = await session.request(
     "GET",
     apiProjectDocumentAddressPath(projectId, target.scheme, target.path, ownerOf(target)),
-  )) as DocumentAddressResult;
+    undefined,
+    { parse: documentAddressReferenceSchema.safeParse },
+  );
   if (address.kind === "unavailable") {
     throw new CliError("not_found", `No live document at ${target.uri}`, {
       hint: `Create it with \`./mf doc put ${target.uri} --text "..."\`.`,

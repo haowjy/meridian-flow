@@ -2,6 +2,7 @@
 import { randomUUID } from "node:crypto";
 import {
   type AdmissionLookup,
+  admissionLookupSchema,
   apiThreadAdmissionPath,
   apiThreadMessagePath,
   apiThreadSkillsPath,
@@ -10,8 +11,9 @@ import {
   RUN_STATE_EVENT,
   type SendMessageRequest,
   type SendMessageResponse,
-  type ThreadAvailableSkillsResponse,
+  sendMessageResponseSchema,
   type ThreadSnapshotResponse,
+  threadAvailableSkillsResponseSchema,
   threadSnapshotSchema,
 } from "@meridian/contracts/protocol";
 import { interruptIdForBlock, type Turn } from "@meridian/contracts/threads";
@@ -107,10 +109,9 @@ async function resolveReferences(session: Session, threadId: string, refs: strin
 
 async function resolveSkills(session: Session, threadId: string, slugs: string[]) {
   if (!slugs.length) return [];
-  const available = (await session.request(
-    "GET",
-    apiThreadSkillsPath(threadId),
-  )) as ThreadAvailableSkillsResponse;
+  const available = await session.request("GET", apiThreadSkillsPath(threadId), undefined, {
+    parse: threadAvailableSkillsResponseSchema.safeParse,
+  });
   return slugs.map((slug) => {
     const skill = available.skills.find((entry) => entry.slug === slug);
     if (!skill) {
@@ -135,12 +136,17 @@ export async function admitMessage(session: Session, input: Omit<SendInput, "tim
   try {
     let admitted: SendMessageResponse;
     try {
-      admitted = (await session.request("POST", apiThreadMessagePath(input.threadId), {
-        submissionId,
-        ...message,
-        references: [...message.references],
-        activatedSkillSlugs: [...message.activatedSkillSlugs],
-      } satisfies SendMessageRequest)) as SendMessageResponse;
+      admitted = await session.request(
+        "POST",
+        apiThreadMessagePath(input.threadId),
+        {
+          submissionId,
+          ...message,
+          references: [...message.references],
+          activatedSkillSlugs: [...message.activatedSkillSlugs],
+        } satisfies SendMessageRequest,
+        { parse: sendMessageResponseSchema.safeParse },
+      );
     } catch (error) {
       if (
         !(error instanceof CliError) ||
@@ -150,10 +156,12 @@ export async function admitMessage(session: Session, input: Omit<SendInput, "tim
         throw error;
       let lookup: AdmissionLookup;
       try {
-        lookup = (await session.request(
+        lookup = await session.request(
           "GET",
           apiThreadAdmissionPath(input.threadId, submissionId),
-        )) as AdmissionLookup;
+          undefined,
+          { parse: admissionLookupSchema.safeParse },
+        );
       } catch {
         throw new CliError("unproven", "Admission lookup failed", {
           details: { submissionId, reason: "admission_unknown" },

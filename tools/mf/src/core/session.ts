@@ -1,6 +1,6 @@
 /**
  * Authenticated session against this worktree's running dev stack: origin discovery,
- * dev-login cookie (memory only), and bounded JSON requests to the app's own API.
+ * dev-login cookie (memory only), and bounded requests to the app's own API.
  */
 import { execFileSync } from "node:child_process";
 import http, { type IncomingHttpHeaders } from "node:http";
@@ -28,6 +28,12 @@ export interface Session {
   readonly serverUrl: string;
   readonly cookie: string;
   readonly ca: string[] | undefined;
+  request(
+    method: HttpMethod,
+    requestPath: string,
+    body: unknown,
+    options: RequestOptions & { responseType: "text" },
+  ): Promise<string>;
   request<T>(
     method: HttpMethod,
     requestPath: string,
@@ -168,6 +174,12 @@ export function createSession(input: {
   cookie: string;
   ca: string[] | undefined;
 }): Session {
+  function request(
+    method: HttpMethod,
+    requestPath: string,
+    body: unknown,
+    options: RequestOptions & { responseType: "text" },
+  ): Promise<string>;
   function request<T>(
     method: HttpMethod,
     requestPath: string,
@@ -184,7 +196,11 @@ export function createSession(input: {
     method: HttpMethod,
     requestPath: string,
     body?: unknown,
-    options?: RequestOptions & { parse?: ResponseParser<unknown>; allowEmpty?: boolean },
+    options?: RequestOptions & {
+      parse?: ResponseParser<unknown>;
+      allowEmpty?: boolean;
+      responseType?: "text";
+    },
   ) {
     const response = await rawRequest({
       url: new URL(requestPath, input.serverUrl).toString(),
@@ -199,6 +215,7 @@ export function createSession(input: {
     if (response.status < 200 || response.status >= 300) {
       throw httpError(method, requestPath, response);
     }
+    if (options?.responseType === "text") return response.body;
     if (!response.body) {
       if (options?.allowEmpty) return undefined;
       throw new CliError("http_error", `${method} ${requestPath}: empty JSON response`);

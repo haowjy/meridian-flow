@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+- `./mf api` preserves raw text responses again; domain command outcomes now require
+  validated response bodies, including cancellation, admission, creation and document deletion.
+
+
 - Invalid snapshot responses are rejected before reaching the shared thread sync. A failed diagnostic read no longer erases a proven `./mf send` or `tail --until-idle` result; it marks observation incomplete.
 
 - The app and `./mf` now follow replies through one thread sync. Followed send/tail outcomes require a confirming snapshot; live checks remain diagnostics, and retryable replay errors recover through the shared transport without ending the command.

@@ -1,17 +1,18 @@
 /** Project and Work resolution shared by thread, doc, and seed commands. */
-import { apiProjectWorksPath, type ListWorksResponse } from "@meridian/contracts/protocol";
+import {
+  apiProjectWorksPath,
+  projectBootstrapResponseSchema,
+  workCatalogIdentitySchema,
+} from "@meridian/contracts/protocol";
 import { CliError } from "../../core/cli-error";
 import type { Session } from "../../core/session";
-
-type BootstrapResult = { projectId: string };
 
 /** `--project <id>`; omitted or `default` ensures and returns the writer's default project. */
 export async function resolveProjectId(session: Session, raw: string | undefined): Promise<string> {
   if (raw && raw !== "default") return raw;
-  const bootstrap = (await session.request(
-    "POST",
-    "/api/projects/bootstrap-default",
-  )) as BootstrapResult;
+  const bootstrap = await session.request("POST", "/api/projects/bootstrap-default", undefined, {
+    parse: projectBootstrapResponseSchema.safeParse,
+  });
   return bootstrap.projectId;
 }
 
@@ -24,10 +25,9 @@ export async function resolveWorkId(
   if (raw === undefined || raw === "@/" || raw === "@") return null;
   if (!raw.startsWith("@")) return raw;
   const slug = raw.slice(1);
-  const snapshot = (await session.request(
-    "GET",
-    apiProjectWorksPath(projectId),
-  )) as ListWorksResponse;
+  const snapshot = await session.request("GET", apiProjectWorksPath(projectId), undefined, {
+    parse: workCatalogIdentitySchema.safeParse,
+  });
   const work = snapshot.works.find((entry) => entry.slug === slug);
   if (!work) {
     throw new CliError("not_found", `No Work with slug @${slug} in project ${projectId}`, {
