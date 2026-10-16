@@ -6,7 +6,7 @@
  * only knows the explicit spelling. Null when the owner's handle is not known yet.
  */
 import { isOwnedContextScheme, parseContextUri } from "@meridian/contracts/context-uri";
-import { resourceContextAuthority, resourceUriQualifier } from "@meridian/resource-replica";
+import { resourceContextAuthority, resourceContextUri } from "@meridian/resource-replica";
 
 export function canonicalDoorUri(
   target: {
@@ -35,10 +35,9 @@ export function canonicalDoorUri(
       chatId: target.chatId,
       chatRef: handles.ownerRef,
     });
-    const parsed = parseContextUri(
-      `${target.scheme}://${resourceUriQualifier(authority)}${target.path.replace(/^\/+/, "")}`,
-    );
-    return parsed.ok ? parsed.value.normalized : null;
+    const uri = resourceContextUri(target.scheme, target.path, authority);
+    const parsed = uri ? parseContextUri(uri) : null;
+    return parsed?.ok ? parsed.value.normalized : null;
   } catch {
     return null;
   }

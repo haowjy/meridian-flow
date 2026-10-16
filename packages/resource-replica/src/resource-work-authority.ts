@@ -1,6 +1,11 @@
 /** Checked owner construction at command boundaries and one durable URI authority rule. */
-import { isOwnedContextScheme, type ParsedContextAuthority } from "@meridian/contracts/context-uri";
+import {
+  formatParsedContextUri,
+  isOwnedContextScheme,
+  type ParsedContextAuthority,
+} from "@meridian/contracts/context-uri";
 import type { CatalogScope, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import { decodeWorkSlug } from "@meridian/contracts/works";
 import type { ResourceOwner } from "./resource-records";
 
 /** The locked row is separate from named Works in the project's authoritative snapshot. */
@@ -66,19 +71,32 @@ export function resourceContextAuthority(
   return owner.workSlug === null ? { kind: "none" } : { kind: "work", workSlug: owner.workSlug };
 }
 
-/** The authority's spelling in a URI: nothing for contextual, `@arc/`, `@/` or `@/c12/`. */
-export function resourceUriQualifier(authority: ResourceContextAuthority): string {
+/**
+ * A location's URI, spelled by the contracts serializer from its owner's authority. A chat that
+ * does not exist yet has no handle, so its uploads take the contextual form. Null when the
+ * authority names no valid Work.
+ */
+export function resourceContextUri(
+  scheme: ProjectContextTreeScheme,
+  path: string,
+  authority: ResourceContextAuthority,
+): string | null {
+  const bare = path.replace(/^\/+/, "");
   switch (authority.kind) {
-    case "contextual":
-      return "";
-    case "none":
-      return "@/";
-    case "work":
-      return `@${authority.workSlug}/`;
-    case "lineage":
-      return `@/${authority.rootThreadRef}/`;
+    case "work": {
+      const workSlug = decodeWorkSlug(authority.workSlug);
+      return workSlug ? formatParsedContextUri(scheme, bare, { kind: "work", workSlug }) : null;
+    }
     case "chat":
-      return authority.chatRef === null ? "" : `@/${authority.chatRef}/`;
+      return formatParsedContextUri(
+        scheme,
+        bare,
+        authority.chatRef === null
+          ? { kind: "contextual" }
+          : { kind: "chat", chatRef: authority.chatRef },
+      );
+    default:
+      return formatParsedContextUri(scheme, bare, authority);
   }
 }
 

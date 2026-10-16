@@ -25,7 +25,7 @@ import {
   type ResourcePlacement,
   type ResourceRecord,
   resourceContextAuthority,
-  resourceUriQualifier,
+  resourceContextUri,
   sameCatalogProjectionScope,
 } from "@meridian/resource-replica";
 import {
@@ -157,9 +157,13 @@ function locationBelongsToScope(location: ResourceLocation, scope: CatalogScope)
 }
 
 function catalogUri(location: ResourceLocation, path: string): string {
-  const prefix = resourceUriQualifier(resourceContextAuthority(location.scheme, location));
-  const parsed = parseContextUri(`${location.scheme}://${prefix}${path}`);
-  if (!parsed.ok) throw new Error("Invalid local catalog URI");
+  const uri = resourceContextUri(
+    location.scheme,
+    path,
+    resourceContextAuthority(location.scheme, location),
+  );
+  const parsed = uri ? parseContextUri(uri) : null;
+  if (!parsed?.ok) throw new Error("Invalid local catalog URI");
   return parsed.value.normalized;
 }
 

@@ -15,6 +15,7 @@ import {
   classifyWrittenSource,
   type DocumentRef,
   documentRef,
+  formatParsedContextUri,
   type LinkCatalog,
   type LinkHolder,
   type LinkResolution,
@@ -194,7 +195,10 @@ export function qualifyWrittenHref(href: string, uploadsChat: string | undefined
   if (!uploadsChat) return href;
   const resolved = resolveDocumentHref(href, null);
   if (!resolved) return href;
-  const uri = qualifyContextUriByHolder(resolved.uri, `uploads://@/${uploadsChat}/_`);
+  const uri = qualifyContextUriByHolder(
+    resolved.uri,
+    formatParsedContextUri("uploads", "_", { kind: "chat", chatRef: uploadsChat }),
+  );
   return uri === resolved.uri ? href : storedHref(uri, resolved.suffix);
 }
 

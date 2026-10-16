@@ -17,7 +17,7 @@ import {
   catalogEntryOwner,
   ownerListedInScope,
   resourceContextAuthority,
-  resourceUriQualifier,
+  resourceContextUri,
 } from "./resource-work-authority";
 
 /** Supply all destination sources/parents, including other Work catalogs for cross-Work moves. */
@@ -338,11 +338,13 @@ export function projectFolderCatalog(
 }
 
 function namespaceUri(location: ResourceLocation): string | null {
-  const qualifier = resourceUriQualifier(resourceContextAuthority(location.scheme, location));
-  const parsed = parseContextUri(
-    `${location.scheme}://${qualifier}${location.path.replace(/^\/+/, "")}`,
+  const uri = resourceContextUri(
+    location.scheme,
+    location.path,
+    resourceContextAuthority(location.scheme, location),
   );
-  if (!parsed.ok) return null;
+  const parsed = uri ? parseContextUri(uri) : null;
+  if (!parsed?.ok) return null;
   return parsed.value.normalized;
 }
 
