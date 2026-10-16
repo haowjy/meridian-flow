@@ -22,7 +22,7 @@ import type {
   DraftItemOutcome,
   ThreadDraftListItem,
 } from "@meridian/contracts/drafts";
-import { onlineManager, type QueryClient } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import {
   applyAllDrafts,
   discardAllDrafts,
@@ -55,7 +55,7 @@ import {
 import { classifyDraftCommandRejection } from "./draft-command-rejection";
 import { settleCommand } from "./draft-command-transport";
 import { bumpDraftLinkEpoch } from "./draft-link-epoch";
-import { fetchForCommand } from "./fetch-for-command";
+import { fetchForCommand, isOnline } from "./fetch-for-command";
 import { isProjectContextCatalogKey, projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
 import { draftMetaQueryOptions, isWholeItem } from "./useDraftMeta";
@@ -93,10 +93,6 @@ export type ApplyCommand = {
   draft: DraftRef;
   prepare: () => Promise<PreparedApply>;
 } & ({ scope: "change"; targets: readonly ChangeTarget[]; baseKey: string } | { scope: "item" });
-
-function canSend(): boolean {
-  return navigator.onLine && onlineManager.isOnline();
-}
 
 /** Lists, the item's metadata and the chat caches that show what an item holds. */
 function refresh(
@@ -338,7 +334,7 @@ export async function applyChanges(
   const { draft, targets } = command;
   if (targets.length === 0) return { kind: "blocked" };
   const claim = beginChangeApply(draft, targets, command.baseKey);
-  if (!canSend()) {
+  if (!isOnline()) {
     failChangeApply(claim, { code: "offline" });
     return { kind: "blocked" };
   }
@@ -485,7 +481,7 @@ async function applyUnderDraftClaim(
 ): Promise<DraftCommandOutcome> {
   const claim = beginDraftCommand(draft, "apply");
   if (!claim) return { kind: "blocked" };
-  if (!canSend()) {
+  if (!isOnline()) {
     failDraftCommand(claim, { code: "apply-offline" });
     return { kind: "blocked" };
   }
@@ -578,7 +574,7 @@ export async function discardDraftItem(
 ): Promise<DraftCommandOutcome> {
   const claim = beginDraftCommand(draft, "discard");
   if (!claim) return { kind: "blocked" };
-  if (!canSend()) {
+  if (!isOnline()) {
     failDraftCommand(claim, { code: "discard-offline" });
     return { kind: "blocked" };
   }
@@ -654,7 +650,7 @@ export function runWorkWideCommand(
     return row ? [{ draft: { ...scope, ...draft }, row }] : [];
   });
   if (!draftId || targets.length === 0) return Promise.resolve(drafts.map(() => blocked));
-  if (!canSend()) {
+  if (!isOnline()) {
     const failure: DraftCommandFailure = { code: `${mode}-offline` };
     for (const { draft } of targets) {
       const claim = beginDraftCommand(draft, mode);

@@ -7,6 +7,7 @@
  */
 import {
   isCancelledError,
+  onlineManager,
   type QueryClient,
   type QueryFunctionContext,
   type QueryKey,
@@ -53,4 +54,9 @@ export async function fetchForCommand<T>(
 export function cachedForCommand<T>(queryClient: QueryClient, options: Options<T>): Promise<T> {
   const cached = queryClient.getQueryData<T>(options.queryKey);
   return cached === undefined ? fetchForCommand(queryClient, options) : Promise.resolve(cached);
+}
+
+/** Whether a command can reach the server now: the browser and TanStack's online manager both say so. */
+export function isOnline(): boolean {
+  return navigator.onLine && onlineManager.isOnline();
 }

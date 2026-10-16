@@ -7,7 +7,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type * as Y from "yjs";
 import type { ChatApplyPlan } from "@/client/query/draft-command-executor";
-import { cachedForCommand, fetchForCommand } from "@/client/query/fetch-for-command";
+import { cachedForCommand, fetchForCommand, isOnline } from "@/client/query/fetch-for-command";
 import { draftAttributionQueryOptions } from "@/client/query/useDraftAttribution";
 import { draftMetaQueryOptions } from "@/client/query/useDraftMeta";
 import {
@@ -23,7 +23,8 @@ import { encodeSnapshot } from "./useDraftApply";
 /**
  * The room's changes that belong to this chat: those some of whose AI writes are the chat's (or a subagent's it
  * spawned). `read: "cached"` (a local Discard) classifies against the attribution already loaded, so an offline
- * Discard never waits for the network; a write the cached payload lacks reads as unresolved and is refused.
+ * Discard never waits for the network. When that payload leaves a change unresolved, an online command reads
+ * fresh and classifies again; offline, or still unresolved, it is refused rather than guessed.
  */
 export async function chatChangeTargets(
   queryClient: QueryClient,
@@ -33,13 +34,20 @@ export async function chatChangeTargets(
   read: "fresh" | "cached" = "fresh",
 ) {
   const options = { ...draftAttributionQueryOptions(draft), staleTime: 0 };
-  const attribution = await (read === "cached"
-    ? cachedForCommand(queryClient, options)
-    : fetchForCommand(queryClient, options));
-  const frame = projectRoom(doc);
-  const classified = classifyRoom(doc, frame, attribution);
-  if ([...classified.values()].some((change) => change.unresolved))
-    throw new Error("Changes are still loading. Try again.");
+  // The frame is read after each await, so a write that landed during the fetch is classified too.
+  const classify = async (fresh: boolean) => {
+    const attribution = await (fresh
+      ? fetchForCommand(queryClient, options)
+      : cachedForCommand(queryClient, options));
+    const frame = projectRoom(doc);
+    const classified = classifyRoom(doc, frame, attribution);
+    const unresolved = [...classified.values()].some((change) => change.unresolved);
+    return { frame, classified, unresolved };
+  };
+  let result = await classify(read === "fresh");
+  if (result.unresolved && read === "cached" && isOnline()) result = await classify(true);
+  if (result.unresolved) throw new Error("Changes are still loading. Try again.");
+  const { frame, classified } = result;
   const targets = frame.groups
     .filter((group) => classified.get(group.id)?.members.includes(threadId))
     .map((group) => ({ id: group.id, pin: frame.pins.get(group.id) as Y.RelativePosition }));
