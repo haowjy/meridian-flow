@@ -147,7 +147,7 @@ describe("failure cards by anchor", () => {
   });
 
   it("gives a failed manual compaction a Try again that sends /compact again", async () => {
-    // Risk: the old divider drew the failure as a bare red line with no action.
+    // Risk: the divider must offer the projected recovery, never restore a suppressed failure.
     const compaction = turn("c", "compaction", {
       status: "error",
       error: "Couldn't compact this conversation.",
@@ -170,8 +170,10 @@ describe("failure cards by anchor", () => {
       () => createElement(CompactionDivider, { turn: compaction, stopping: false }),
     );
     expect({
-      failureWords: /couldn't|not compacted|failed/i.test(replacement.host.textContent ?? ""),
+      identity: replacement.host.querySelector('section[aria-label="Compaction"]') !== null,
+      instructions: replacement.host.textContent?.includes("Keep names"),
+      failureWords: /couldn['’]t|not compacted|failed/i.test(replacement.host.textContent ?? ""),
       failure: replacement.host.querySelector("[data-chat-card], .text-destructive"),
-    }).toEqual({ failureWords: false, failure: null });
+    }).toEqual({ identity: true, instructions: true, failureWords: false, failure: null });
   });
 });

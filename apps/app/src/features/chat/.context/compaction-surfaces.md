@@ -68,9 +68,9 @@ reply's, stay shown while Info's popover is open, and stay visible on touch. The
 read defensively), in every state.
 
 The divider is one line at every width, at one text size: the state label,
-Stop (a queued row's too), Retry, any status words in the row (queued rows too), and the
-instructions and failure copy under the line all use the small action size
-(`text-meta`). Only the opened summary reads at chat body size. Its section is a container: below
+Stop (a queued row's too), the anchored card's Try again, any status words in the row
+(queued rows too), and the instructions and card copy under the line all use the small action
+size (`text-meta`). Only the opened summary reads at chat body size. Its section is a container: below
 `@lg` the state label switches to a short form ("Compacted") and truncates
 last. Without a summary, the section's accessible name keeps the full label.
 With one, the toggle is named `` `${full}, summary` `` and the section drops
