@@ -14,7 +14,7 @@ import {
   type ThreadLiveState,
   type ThreadSnapshotResponse,
 } from "@meridian/contracts/protocol";
-import { isTerminalTurnStatus } from "@meridian/contracts/threads";
+import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/threads";
 import {
   createThreadSync,
   EMPTY_SYNCED_THREAD,
@@ -79,10 +79,8 @@ export type Observer = {
   readonly truncated: boolean;
   /** The newest applied read. */
   readonly lastRead: ThreadSnapshotResponse | null;
-  /** The stream has not yet reached the position `read` was taken at. */
-  behind(read: ThreadSnapshotResponse): boolean;
-  /** Claimed turns the stream ended but no applied read has checked yet. */
-  pending(claimed: readonly string[], proving: ThreadSnapshotResponse): string[];
+  /** Claimed terminal turns still awaiting a stream end and its applied-read check. */
+  pending(claimed: readonly string[], proving: ReadonlyMap<string, Turn>): string[];
   /** `liveView` for the claimed assistant turns, from the checks. */
   liveView(claimed: readonly string[]): LiveViewReport;
 };
@@ -101,8 +99,6 @@ export function createObserver(options: ObserverOptions): Observer {
   let lastRead: ThreadSnapshotResponse | null = null;
   let cursor = options.cursor ?? null;
   let counted: string | null = null;
-  /** Where the stream is: the join read's position, then the highest frame or gap seen. */
-  let streamPos: string | null = null;
   const streamed = new Set<string>();
   const readEnded = new Set<string>();
   const checks = new Map<string, Extract<SyncObservation, { kind: "check" }>>();
@@ -123,10 +119,6 @@ export function createObserver(options: ObserverOptions): Observer {
   };
 
   const above = (seq: string, floor: string | null) => floor === null || compareSeq(seq, floor) > 0;
-  const raise = (seq: string | undefined) => {
-    if (seq !== undefined && above(seq, streamPos)) streamPos = seq;
-  };
-
   /** One read at a time. A read that starts after the deadline never starts. */
   async function readOnce(): Promise<void> {
     const remaining = deadline - Date.now();
@@ -170,7 +162,6 @@ export function createObserver(options: ObserverOptions): Observer {
     switch (observation.kind) {
       case "event": {
         const { seq } = observation.event;
-        raise(seq);
         if (!above(seq, cursor) || !above(seq, counted)) break;
         counted = seq;
         for (const event of mapper.map(observation.event)) {
@@ -193,7 +184,6 @@ export function createObserver(options: ObserverOptions): Observer {
       }
       case "gap": {
         const { gap } = observation;
-        raise(gap.toSeq);
         out.record(
           {
             type: "gap",
@@ -212,12 +202,11 @@ export function createObserver(options: ObserverOptions): Observer {
       case "read": {
         if (!observation.applied) break;
         const { read } = observation;
+        const first = lastRead === null;
         lastRead = read;
         if (cursor === null) cursor = read.liveState.resumeAfterSeq;
-        // The first applied read joins the stream at its position, so that is where the stream is,
-        // and the turn it shows running is one this run follows.
-        if (streamPos === null) {
-          streamPos = read.liveState.resumeAfterSeq;
+        // The turn running at join belongs to this follow.
+        if (first) {
           const running = read.liveState.runState.execution?.currentTurnId;
           if (running) turnIds.add(running);
         }
@@ -313,13 +302,10 @@ export function createObserver(options: ObserverOptions): Observer {
       return lastRead;
     },
 
-    behind: (read) =>
-      streamPos === null || compareSeq(streamPos, read.liveState.resumeAfterSeq) < 0,
-
     pending: (claimed, proving) =>
       claimed.filter((id) => {
-        const turn = proving.turns.find((candidate) => candidate.id === id);
-        return turn && isTerminalTurnStatus(turn.status) && streamed.has(id) && !checks.has(id);
+        const turn = proving.get(id);
+        return turn && isTerminalTurnStatus(turn.status) && !checks.has(id);
       }),
 
     liveView(claimed) {
