@@ -15,7 +15,7 @@ import { registerImageIngressHost } from "../images/image-ingress-runtime";
 import { insertImageFile } from "../images/image-uploads";
 import { markdownClipboardSerializer } from "../markdown-paste";
 import { sanitizePastedHTML } from "../sanitize-paste";
-import { clipboardLinkScope, LINK_KEPT_REF_ATTRIBUTE, linkClipboardPlugin } from "./link-clipboard";
+import { LINK_KEPT_REF_ATTRIBUTE, linkClipboardPlugin } from "./link-clipboard";
 import { createLinkAnswerCache, type LinkAnswer } from "./link-resolution";
 import { LINK_SURFACE_NAME } from "./link-storage";
 
@@ -558,35 +558,4 @@ it.each([
       "manuscript://base.md",
     ),
   ).toBe('<a data-meridian-link="original.md">x</a>');
-});
-
-it("qualifies plain-text Scratch and Uploads without confusing their owners", () => {
-  const state = EditorState.create({ schema, plugins: [clipboard("scratch://@/c12/holder.md")] });
-  const scope = clipboardLinkScope(state);
-  expect(scope.spellLink({ ref: null, href: "scratch://note.md#gate" }).href).toBe(
-    "scratch://@/c12/note.md#gate",
-  );
-  expect(scope.spellLink({ ref: null, href: "uploads://seal.md" }).href).toBe(
-    "uploads://@/seal.md",
-  );
-});
-
-it("copies contextual links through the plugin's plain-text scope by applicable owner", () => {
-  const rows = [
-    ["uploads://@/holder.md", "scratch://note.md#gate", "scratch://note.md#gate"],
-    ["uploads://@/holder.md", "uploads://seal.md", "uploads://@/seal.md"],
-    ["scratch://@/c12/holder.md", "scratch://note.md#gate", "scratch://@/c12/note.md#gate"],
-    ["scratch://@/c12/holder.md", "uploads://seal.md", "uploads://@/seal.md"],
-    [
-      "uploads://@arc/holder.md",
-      "scratch://note%23one.md#gate",
-      "scratch://@arc/note%23one.md#gate",
-    ],
-    ["uploads://@arc/holder.md", "uploads://seal.md", "uploads://@arc/seal.md"],
-    ["manuscript://holder.md", "scratch://note.md", "scratch://note.md"],
-  ];
-  for (const [holder, href, expected] of rows) {
-    const state = EditorState.create({ schema, plugins: [clipboard(holder)] });
-    expect(clipboardLinkScope(state).spellLink({ ref: null, href }).href, holder).toBe(expected);
-  }
 });

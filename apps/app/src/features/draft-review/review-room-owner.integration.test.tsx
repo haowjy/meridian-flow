@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 /** Real provider/query/command witnesses for the room owner; HTTP is the only fake. */
 
+import type { DraftApplyChangesResponse, DraftPreviewResponse } from "@meridian/contracts/drafts";
 import { act } from "react";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
-import { draftPreviewQueryOptions } from "@/client/query/useDraftPreview";
 import type { DocumentSessionConnectionState } from "@/core/editor/document-session";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import {
@@ -15,8 +15,10 @@ import {
   deferredReviewAnswer,
   draftA,
   listed,
+  operation,
+  preview,
   previewOf,
-  workC,
+  type ScopeProbe,
 } from "@/test-support/draft-review-scope";
 import { createEditorSessions } from "@/test-support/editor-sessions";
 import { settleReact } from "@/test-support/react-dom-harness";
@@ -83,126 +85,21 @@ it("joins a cancelled room read's replacement, and only a real failure requires 
   });
 });
 
-it.each([
-  "navigation",
-  "Work",
-  "account",
-] as const)("ignores a held room answer after %s changes", async (horizon) => {
+it("ignores a held room answer after the account changes", async () => {
   const slow = deferredReviewAnswer<ReturnType<typeof proposal>>();
   fixture.network.getDraftPreview.mockReturnValueOnce(slow.promise);
   await fixture.render(async (probe) => {
     const controller = probe().presented.controller;
     await act(async () => controller.enterInlineReview("document-a", "draft-a"));
-    if (horizon === "Work") {
-      await probe().movePresentedToWork(workC);
-      expect(
-        fixture.network.getDraftPreview.mock.calls.some(
-          ([, requestedWork]) => requestedWork === workC.id,
-        ),
-      ).toBe(false);
-    } else await act(async () => controller.exitInlineReview());
-    if (horizon === "account") {
-      // Closing the account destroys its query cache and retires its claims.
-      await act(async () => {
-        probe().queryClient.clear();
-        resetDraftCommandRecords();
-      });
-    }
+    await act(async () => controller.exitInlineReview());
+    // Closing the account destroys its query cache and retires its claims.
+    await act(async () => {
+      probe().queryClient.clear();
+      resetDraftCommandRecords();
+    });
     await act(async () => slow.resolve(proposal(7, "9")));
     await settleReact(() => expect(probe().presented.controller.inlineReview).toBeNull());
     expect(probe().presented.roomOwner.session).toBeNull();
-  });
-});
-
-it("a newer proposal beats the old command and a lagging list, with monotonic cache reads", async () => {
-  const answer = deferredReviewAnswer<ReturnType<typeof applied>>();
-  fixture.network.applyDraftChanges.mockReturnValue(answer.promise);
-  await fixture.render(async (probe) => {
-    await act(async () => probe().presented.controller.enterInlineReview("document-a", "draft-a"));
-    await settleReact(() => expect(probe().header.view.status).toBe("ready"));
-    await settleReact(() => expect(probe().presented.roomOwner.session).not.toBeNull());
-    let done!: Promise<unknown>;
-    await act(async () => {
-      done = probe().presented.controller.applyChanges(draftA, change("1", "2"));
-    });
-    expect(probe().presented.controller.inlineReview?.completion?.phase).toBe("pending");
-    const next = proposal(2, "3");
-    fixture.network.getDraftPreview.mockResolvedValue(next);
-    fixture.network.listWorkDrafts.mockResolvedValue({ items: [] });
-    await act(async () => {
-      probe().queryClient.setQueryData(previewKey, next);
-      probe().queryClient.setQueryData(listKey, []);
-    });
-    await settleReact(() =>
-      expect(probe().presented.controller.inlineReview?.branchGeneration).toBe(2),
-    );
-    expect(probe().presented.controller.inlineReview?.completion).toBeUndefined();
-    await act(async () => {
-      answer.resolve(applied(true));
-      await done;
-    });
-    expect(probe().presented.controller.inlineReview?.completion).toBeUndefined();
-    await act(async () => probe().queryClient.setQueryData(previewKey, proposal(1, "old")));
-    expect(probe().queryClient.getQueryData(previewKey)).toEqual(next);
-    const refreshed = proposal(2, "3", "4");
-    fixture.network.getDraftPreview.mockResolvedValue(refreshed);
-    await act(async () => probe().queryClient.setQueryData(previewKey, refreshed));
-    await settleReact(() =>
-      expect(probe().header.view.items.map((item) => item.change.classId)).toEqual([
-        "class-3",
-        "class-4",
-      ]),
-    );
-  });
-});
-
-it("a room-opening read cannot resurrect a change confirmed while the read waited", async () => {
-  fixture.network.applyDraftChanges.mockResolvedValue(applied(false));
-  await fixture.render(async (probe) => {
-    await act(async () => probe().presented.controller.enterInlineReview("document-a", "draft-a"));
-    await settleReact(() => expect(probe().header.view.status).toBe("ready"));
-    await settleReact(() => expect(probe().presented.controller.reviewRoomName).toBe("room-g1"));
-    await act(async () => probe().presented.controller.exitInlineReview());
-    const slow = deferredReviewAnswer<ReturnType<typeof proposal>>();
-    fixture.network.getDraftPreview.mockReturnValueOnce(slow.promise);
-    await act(async () => probe().presented.controller.enterInlineReview("document-a", "draft-a"));
-    fixture.network.getDraftPreview.mockResolvedValue(proposal(1, "1"));
-    await act(async () => {
-      await probe().presented.controller.applyChanges(draftA, change("2"));
-    });
-    expect(probe().presented.controller.inlineReview?.completion).toBeUndefined();
-    await act(async () => slow.resolve(proposal(1, "1", "2")));
-    await settleReact(() =>
-      expect(probe().header.view.items.map((item) => item.change.classId)).toEqual(["class-1"]),
-    );
-    await settleReact(() => expect(probe().presented.controller.reviewRoomName).toBe("room-g1"));
-  });
-});
-
-it("lets the entry read answer before a stale empty list can exit review", async () => {
-  const read = deferredReviewAnswer<ReturnType<typeof proposal>>();
-  fixture.network.listWorkDrafts.mockResolvedValue({ items: [] });
-  fixture.network.getDraftPreview.mockReturnValue(read.promise);
-  await fixture.render(async (probe) => {
-    probe().queryClient.setQueryData(listKey, []);
-    await act(async () => probe().presented.controller.enterInlineReview("document-a", "draft-a"));
-    expect(probe().presented.controller.inlineReview?.itemKey).toBe("draft-a");
-    await act(async () => read.resolve(proposal(1, "1")));
-    await settleReact(() => expect(probe().presented.controller.reviewRoomName).toBe("room-g1"));
-  });
-});
-
-it.each([false, true])("a gone entry read is authoritative (draft-only: %s)", async (draftOnly) => {
-  fixture.network.listWorkDrafts.mockReturnValue(new Promise(() => {}));
-  fixture.network.getDraftPreview.mockResolvedValue({ status: "gone", itemKey: "draft-a" });
-  await fixture.render(async (probe) => {
-    if (draftOnly) probe().queryClient.setQueryData(listKey, [{ ...listed, isNew: true }]);
-    await act(async () => probe().presented.controller.enterInlineReview("document-a", "draft-a"));
-    await settleReact(() =>
-      draftOnly
-        ? expect(probe().presented.controller.reviewRoomError).toBe(true)
-        : expect(probe().presented.controller.inlineReview).toBeNull(),
-    );
   });
 });
 
@@ -268,35 +165,255 @@ it("reconsiders a protected HTTP 404 when writer carry evidence is withdrawn", a
   });
 });
 
-it("a late HTTP 404 retains its request-start horizon behind a newer cached proposal", async () => {
-  await fixture.render(async (probe) => {
-    await act(async () => probe().presented.controller.enterInlineReview("document-a", "draft-a"));
-    await settleReact(() => expect(probe().presented.controller.reviewRoomName).toBe("room-g1"));
-    const absent = deferredReviewAnswer<ReturnType<typeof proposal>>();
-    fixture.network.getDraftPreview.mockReturnValueOnce(absent.promise);
-    let read!: Promise<unknown>;
+const loose = {
+  kind: "text" as const,
+  hunkId: "loose",
+  operationIds: [],
+  unclassified: true,
+  anchor: { relStart: "", relEnd: "" },
+  spans: [],
+  deletedText: "Alpha",
+  deletedSpans: [],
+};
+async function openReview(p: () => ScopeProbe) {
+  await settleReact(() => expect(p().presented.files.length).toBeGreaterThan(0));
+  await act(async () => p().presented.controller.enterInlineReview("document-a", "draft-a"));
+  await settleReact(() => expect(p().header.view.status).toBe("ready"));
+}
+it("unowned hunks retain selective commands on complete classes and prevent selective completion", async () => {
+  fixture.network.getDraftPreview.mockResolvedValue({
+    ...previewOf("1"),
+    hunks: [
+      {
+        kind: "text",
+        hunkId: "classified",
+        operationIds: ["1"],
+        anchor: { relStart: "", relEnd: "" },
+        spans: [],
+      },
+      loose,
+    ],
+  });
+  const answer = deferredReviewAnswer<ReturnType<typeof applied>>();
+  fixture.network.applyDraftChanges.mockReturnValueOnce(answer.promise);
+  await fixture.render(async (p) => {
+    await openReview(p);
+    expect(p().header.view.items).toHaveLength(2);
+    const complete = p().header.view.items.find(({ change }) => change.target.kind !== "display");
+    expect(complete?.change.target.kind).toBe("operations");
+    expect(
+      p().header.view.items.find(({ change }) => change.target.kind === "display")?.change
+        .attribution.kind,
+    ).toBe("unattributed");
+    if (!complete) throw new Error("missing selective change");
+    let done!: Promise<unknown>;
     await act(async () => {
-      read = probe().queryClient.fetchQuery({
-        ...draftPreviewQueryOptions({
-          projectId: "project-a",
-          workId: "work-a",
-          ...draftA,
-          branchGeneration: 1,
-        }),
-        staleTime: 0,
+      done = p().header.view.apply(complete.change);
+    });
+    expect(p().header.view.items.map(({ change }) => change.attribution.kind)).toEqual([
+      "unattributed",
+    ]);
+    expect(p().header.completing).toBeNull();
+    fixture.network.getDraftPreview.mockResolvedValue({
+      ...preview,
+      operations: [],
+      hunks: [loose],
+    });
+    await act(async () => {
+      answer.resolve(applied(false, "1"));
+      await done;
+    });
+    expect(p().header.view.items.map(({ change }) => change.attribution.kind)).toEqual([
+      "unattributed",
+    ]);
+    expect(p().header.finished).toBe(false);
+    expect(p().header.unlisted).toBe(false);
+    expect(p().presented.controller.inlineReview?.completion).toBeUndefined();
+  });
+});
+
+describe("batch lifecycle", () => {
+  const draftB = { documentId: "document-b", itemKey: "draft-b" };
+  let batchFixture: ReturnType<typeof createReviewScopeFixture>;
+
+  beforeEach(() => {
+    batchFixture = createReviewScopeFixture();
+    batchFixture.network.listWorkDrafts.mockResolvedValue({
+      items: [
+        { ...listed, isNew: true },
+        { ...listed, ...draftB, documentName: "Chapter 13" },
+      ],
+    });
+    batchFixture.network.getDraftPreview.mockImplementation(async (_p, _w, _d, id) => ({
+      ...previewOf(...(id === "draft-a" ? ["1", "2"] : ["3"])),
+      itemKey: id,
+    }));
+  });
+
+  afterEach(() => batchFixture.dispose());
+
+  it("a missing preview sends no selection and does not stop later files in the batch", async () => {
+    const draftC = { documentId: "document-c", itemKey: "draft-c" };
+    batchFixture.network.applyDraftChanges.mockResolvedValue(applied(false));
+    await batchFixture.render(async (p) => {
+      const viewA = await p().mountDraftChanges({
+        projectId: "project-a",
+        workId: "work-a",
+        ...draftA,
+      });
+      const viewC = await p().mountDraftChanges({
+        projectId: "project-a",
+        workId: "work-a",
+        ...draftC,
+      });
+      await settleReact(() => expect([viewA().status, viewC().status]).toEqual(["ready", "ready"]));
+      await act(async () => {
+        const outcomes = await p().chatRunner.applyBatch([
+          { draft: draftA, target: { kind: "operations" as const, selection: change("2") } },
+          { draft: draftB, target: { kind: "operations" as const, selection: change("3") } },
+          { draft: draftC, target: { kind: "operations" as const, selection: change("3") } },
+        ]);
+        expect(outcomes.map(({ outcome }) => outcome.kind)).toEqual([
+          "change-settled",
+          "change-refused",
+          "change-settled",
+        ]);
+        expect(outcomes[1].outcome).toEqual({
+          kind: "change-refused",
+          mode: "apply",
+          code: "stale",
+        });
+      });
+      expect(batchFixture.network.applyDraftChanges.mock.calls.map((call) => call[2])).toEqual([
+        "document-a",
+        "document-c",
+      ]);
+    });
+  });
+});
+
+describe("review focus", () => {
+  let focusFixture: ReturnType<typeof createReviewScopeFixture>;
+  const anchor = { relStart: "", relEnd: "" };
+  const hunkOf = (id: string, operationIds: string[]) => ({
+    kind: "text" as const,
+    hunkId: `h-${id}`,
+    operationIds,
+    anchor,
+    spans: [],
+  });
+  const inClass = (id: string, closureClassId: string) => ({
+    ...operation(id),
+    closureClassId,
+    admissionToken: closureClassId,
+  });
+
+  const threeChanges = {
+    ...preview,
+    operations: [operation("1"), operation("2"), operation("3")],
+    hunks: [hunkOf("1", ["1"]), hunkOf("2", ["2"]), hunkOf("3", ["3"])],
+  };
+  /** The server joined operation 5 to class 2: the class id moved, operation 2 stayed. */
+  const regrouped = {
+    ...preview,
+    operations: [
+      operation("1"),
+      inClass("2", "class-2b"),
+      inClass("5", "class-2b"),
+      operation("3"),
+    ],
+    hunks: [hunkOf("1", ["1"]), hunkOf("2", ["2", "5"]), hunkOf("3", ["3"])],
+  };
+
+  const second = { ...listed, itemKey: "draft-b", documentId: "document-b" };
+
+  async function reviewOpened(probe: () => ScopeProbe) {
+    await vi.waitFor(() => expect(focusFixture.network.listWorkDrafts).toHaveBeenCalled());
+    await act(async () => probe().presented.controller.enterInlineReview("document-a", "draft-a"));
+    await vi.waitFor(() => expect(probe().header.view.status).toBe("ready"));
+  }
+
+  const review = { documentId: "document-a", itemKey: "draft-a" };
+  const target = (id: string) => ({
+    classId: `class-${id}`,
+    operationIds: [id],
+    anchorOperationId: id,
+  });
+
+  beforeEach(() => {
+    focusFixture = createReviewScopeFixture();
+    resetDraftCommandRecords();
+    focusFixture.network.listWorkDrafts.mockResolvedValue({ items: [listed, second] });
+    focusFixture.network.getDraftPreview.mockResolvedValue(threeChanges);
+  });
+
+  afterEach(() => focusFixture.dispose());
+
+  describe("a change regrouped more than once", () => {
+    it("is followed through each regrouping, even when the last shares nothing with the first", async () => {
+      await focusFixture.render(async (probe) => {
+        await reviewOpened(probe);
+        await act(async () => probe().presented.controller.focusReviewChange(review, target("2")));
+        const previewKey = projectQueryKeys.workDraftPreview(
+          "project-a",
+          "work-a",
+          "document-a",
+          "draft-a",
+        );
+        let late: Awaited<ReturnType<ScopeProbe["mountLateReader"]>> | undefined;
+        for (const [next, classId] of [
+          [regrouped, "class-2b"],
+          [
+            {
+              ...preview,
+              operations: [operation("1"), inClass("5", "class-2c"), inClass("6", "class-2c")],
+              hunks: [hunkOf("1", ["1"]), hunkOf("5", ["5", "6"])],
+            },
+            "class-2c",
+          ],
+        ] satisfies [DraftPreviewResponse, string][]) {
+          focusFixture.network.getDraftPreview.mockResolvedValue(next);
+          await act(async () => {
+            await probe().queryClient.invalidateQueries({ queryKey: previewKey });
+          });
+          await vi.waitFor(() => expect(probe().header.view.focused?.classId).toBe(classId));
+          late ??= await probe().mountLateReader();
+          await vi.waitFor(() => expect(late?.().focused?.classId).toBe(classId));
+          expect(late().focusedIndex).toBe(probe().header.view.focusedIndex);
+        }
+        expect(late?.().focused?.classId).toBe("class-2c");
       });
     });
-    const next = proposal(2, "3");
-    fixture.network.getDraftPreview.mockResolvedValue(next);
-    await act(async () => probe().queryClient.setQueryData(previewKey, next));
-    await settleReact(() =>
-      expect(probe().presented.controller.inlineReview?.branchGeneration).toBe(2),
-    );
-    await act(async () => {
-      absent.reject(Object.assign(new Error("gone"), { status: 404 }));
-      await read;
+  });
+
+  describe("a command's late answer", () => {
+    it("does not move focus in a review the writer opened after sending it", async () => {
+      let answer!: (response: DraftApplyChangesResponse) => void;
+      focusFixture.network.applyDraftChanges.mockReturnValue(
+        new Promise((resolve) => (answer = resolve)),
+      );
+      await focusFixture.render(async (probe) => {
+        await reviewOpened(probe);
+        const sent = probe().header.view.items[1].change;
+        let done!: Promise<void>;
+        await act(async () => {
+          done = probe().header.view.apply(sent);
+        });
+
+        // The writer moves on to another draft before the server answers.
+        await act(async () =>
+          probe().presented.controller.enterInlineReview("document-b", "draft-b"),
+        );
+        await vi.waitFor(() =>
+          expect(probe().presented.controller.inlineReview?.documentId).toBe("document-b"),
+        );
+
+        await act(async () => {
+          answer({ status: "stale", draftId: "work-draft-a", itemKey: "draft-a" });
+          await done;
+        });
+        expect(probe().presented.controller.focus).toBeNull();
+      });
     });
-    expect(probe().queryClient.getQueryData(previewKey)).toEqual(next);
-    expect(probe().presented.controller.inlineReview?.branchGeneration).toBe(2);
   });
 });

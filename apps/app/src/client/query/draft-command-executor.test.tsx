@@ -4,7 +4,7 @@ import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { HttpResponseError } from "@/client/api/http-client";
+import { HttpResponseError, MeridianApiError } from "@/client/api/http-client";
 import { ThreadStoreProvider } from "@/client/stores";
 import { listed } from "@/test-support/draft-review-scope";
 import { settleReact, withReactRoot } from "@/test-support/react-dom-harness";
@@ -23,6 +23,7 @@ import {
   pendingDraftCommand,
   resetDraftCommandRecords,
 } from "./draft-command-record";
+import { classifyDraftCommandRejection } from "./draft-command-rejection";
 import { projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
 import { useWorkDrafts } from "./useWorkDrafts";
@@ -721,6 +722,49 @@ describe("command-record outcome matrix", () => {
       commandId: expect.any(String),
       draftId: "draft-id-x",
       itemKey: input.itemKey,
+    });
+  });
+});
+
+const envelope = (message: string, code = "work_archived") => ({
+  code,
+  message,
+  source: "system" as const,
+  retryable: false,
+});
+
+describe("classifyDraftCommandRejection", () => {
+  it("keeps a refusal's code and the server's text as sent; the words are chosen when shown", () => {
+    const error = new MeridianApiError(envelope("This Work is archived and read-only."), 403);
+    expect(classifyDraftCommandRejection(error)).toEqual({
+      kind: "refused",
+      serverCode: "work_archived",
+      serverReason: "This Work is archived and read-only.",
+    });
+  });
+
+  it("keeps an unknown refusal that sends no reason, without inventing one", () => {
+    expect(
+      classifyDraftCommandRejection(new MeridianApiError(envelope("  ", "quota_exceeded"), 403)),
+    ).toEqual({
+      kind: "refused",
+      serverCode: "quota_exceeded",
+      serverReason: undefined,
+    });
+  });
+
+  it("reads an HTTP error with no typed envelope as a server error, whatever its message says", () => {
+    expect(
+      classifyDraftCommandRejection(new HttpResponseError("Failed to fetch", 502, null)),
+    ).toEqual({ kind: "server-error" });
+  });
+
+  it("reads a request that got no HTTP answer as offline", () => {
+    expect(classifyDraftCommandRejection(new TypeError("Failed to fetch"))).toEqual({
+      kind: "offline",
+    });
+    expect(classifyDraftCommandRejection(new Error("Draft command was not sent"))).toEqual({
+      kind: "offline",
     });
   });
 });
