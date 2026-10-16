@@ -1,5 +1,5 @@
 /** Project-final stable-document availability protocol. */
-
+import { z } from "zod";
 import type { WorkHandle } from "../handles.js";
 import type { DocumentId, ProjectId, UserId, WorkId } from "../ids.js";
 import type { CatalogFileEntry } from "./context-catalog.js";
@@ -135,6 +135,28 @@ export type ProjectContextIdentityLookupResult = {
 export const PROJECT_CONTEXT_AVAILABILITY_MAX_IDS = 128;
 
 /** Owner-scoped browser address lookup; aliases never redirect through another alias. */
+/** Address identity and presentation inputs for reference admission; not an authority grant. */
+export const documentAddressReferenceSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.enum(["current", "alias"]),
+    document: z.object({
+      kind: z.literal("available"),
+      documentId: z.string().min(1),
+      entry: z
+        .object({
+          name: z.string(),
+          editable: z.boolean(),
+          fileType: z.enum(["docx", "image", "pdf", "binary"]).optional(),
+        })
+        .refine(
+          (entry) => entry.editable || entry.fileType !== undefined,
+          "Non-editable references require a fileType",
+        ),
+    }),
+  }),
+  z.object({ kind: z.literal("unavailable") }),
+]);
+
 export type DocumentAddressResult =
   | {
       kind: "current" | "alias";

@@ -18,17 +18,16 @@
  * each announce. A dev-only registry warns when a second mounts for a chat that has one.
  */
 import type { AiWriteMode } from "@meridian/contracts/works";
+import { type JournalSwitch, queuedSwitchKey, switchDisplay } from "@meridian/thread-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { httpErrorStatus } from "@/client/api/http-client";
 import { withdrawThreadControl } from "@/client/api/threads-api";
-import type { JournalSwitch } from "@/client/chat-submissions/owner";
 import {
   invalidateProjectThreadData,
   invalidateWriteModeReads,
 } from "@/client/query/project-invalidation";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
-import { queuedSwitchKey, switchDisplay } from "@/client/run-state/run-state-slice";
 import { announce, announceError, useRunStateSlice, useThreadActions } from "@/client/stores";
 import {
   controlAlreadyStartedCopy,

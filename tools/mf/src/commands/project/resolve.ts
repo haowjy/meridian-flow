@@ -1,18 +1,19 @@
 /** Project and Work resolution shared by thread, doc, and seed commands. */
 import { decodeWorkHandle, type WorkHandle } from "@meridian/contracts/handles";
-import { apiProjectWorksPath, type ListWorksResponse } from "@meridian/contracts/protocol";
+import {
+  apiProjectWorksPath,
+  projectBootstrapResponseSchema,
+  workCatalogIdentitySchema,
+} from "@meridian/contracts/protocol";
 import { CliError } from "../../core/cli-error";
 import type { Session } from "../../core/session";
-
-type BootstrapResult = { projectId: string };
 
 /** `--project <id>`; omitted or `default` ensures and returns the writer's default project. */
 export async function resolveProjectId(session: Session, raw: string | undefined): Promise<string> {
   if (raw && raw !== "default") return raw;
-  const bootstrap = await session.request<BootstrapResult>(
-    "POST",
-    "/api/projects/bootstrap-default",
-  );
+  const bootstrap = await session.request("POST", "/api/projects/bootstrap-default", undefined, {
+    parse: projectBootstrapResponseSchema.safeParse,
+  });
   return bootstrap.projectId;
 }
 
@@ -24,7 +25,9 @@ export async function resolveWork(
 ): Promise<{ id: string; handle: WorkHandle }> {
   const text = raw.startsWith("@") ? raw.slice(1) : raw;
   const handle = decodeWorkHandle(text);
-  const snapshot = await session.request<ListWorksResponse>("GET", apiProjectWorksPath(projectId));
+  const snapshot = await session.request("GET", apiProjectWorksPath(projectId), undefined, {
+    parse: workCatalogIdentitySchema.safeParse,
+  });
   const work = snapshot.works.find((entry) =>
     handle ? entry.handle === handle : entry.id === text,
   );
@@ -33,7 +36,10 @@ export async function resolveWork(
       details: snapshot.works.map((entry) => `${entry.handle}  ${entry.name}`),
     });
   }
-  return { id: work.id, handle: work.handle };
+  const workHandle = decodeWorkHandle(work.handle);
+  if (!workHandle)
+    throw new CliError("protocol", `Server returned malformed Work handle ${work.handle}`);
+  return { id: work.id, handle: workHandle };
 }
 
 /** `--work w3` → that Work's id; omitted → No Work (null). */

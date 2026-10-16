@@ -48,7 +48,9 @@ it("shows a nondismissible usage error card with Add usage and a Queued row from
   const frame = parseWsServerMessage(
     JSON.stringify({
       type: "subscribed",
+      requestId: "r1",
       threadId: "chat",
+      after: "0",
       catchup: [],
       state: {
         threadId: "chat",

@@ -4,6 +4,8 @@ import {
   type MockModelScript,
   type MockModelScriptEnqueued,
   type MockModelScriptState,
+  mockModelScriptEnqueuedSchema,
+  mockModelScriptStateSchema,
   parseMockModelScript,
 } from "@meridian/contracts/protocol";
 import { CliError, usageError } from "../../core/cli-error";
@@ -25,11 +27,9 @@ export async function enqueueMockScript(
     ...(parsed.value.match === undefined && defaultMatch ? { match: defaultMatch } : {}),
   };
   try {
-    return await session.request<MockModelScriptEnqueued>(
-      "POST",
-      API_DEBUG_MOCK_MODEL_SCRIPT_PATH,
-      script,
-    );
+    return await session.request("POST", API_DEBUG_MOCK_MODEL_SCRIPT_PATH, script, {
+      parse: mockModelScriptEnqueuedSchema.safeParse,
+    });
   } catch (error) {
     if (error instanceof CliError && error.code === "not_found") {
       throw new CliError("unavailable", "The server has no scriptable mock model", {
@@ -55,5 +55,7 @@ export async function removeMockScript(session: Session, id: string): Promise<vo
   await session.request(
     "DELETE",
     `${API_DEBUG_MOCK_MODEL_SCRIPT_PATH}?id=${encodeURIComponent(id)}`,
+    undefined,
+    { parse: mockModelScriptStateSchema.safeParse },
   );
 }

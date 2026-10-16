@@ -172,7 +172,7 @@ const eventsPromise = waitForEventTypes(
   ]),
 );
 const subscribedPromise = waitForSubscribed(ws);
-ws.send(JSON.stringify({ type: "subscribe", threadId, lastSeq: "0" }));
+ws.send(JSON.stringify({ type: "subscribe", requestId: "r1", threadId, lastSeq: "0" }));
 await subscribedPromise;
 
 const response = await fetch(new URL(`/api/threads/${threadId}/messages`, serverUrl), {
@@ -191,7 +191,7 @@ const catchupWs = new WebSocket(wsUrlFor(serverUrl), {
 });
 await waitForOpen(catchupWs);
 const catchupPromise = waitForSubscribed(catchupWs);
-catchupWs.send(JSON.stringify({ type: "subscribe", threadId, lastSeq: "0" }));
+catchupWs.send(JSON.stringify({ type: "subscribe", requestId: "r1", threadId, lastSeq: "0" }));
 const catchupFrame = await catchupPromise;
 catchupWs.close();
 
@@ -205,7 +205,9 @@ const resumeWs = new WebSocket(wsUrlFor(serverUrl), {
 });
 await waitForOpen(resumeWs);
 const resumePromise = waitForSubscribed(resumeWs);
-resumeWs.send(JSON.stringify({ type: "subscribe", threadId, lastSeq: contentSeq }));
+resumeWs.send(
+  JSON.stringify({ type: "subscribe", requestId: "r1", threadId, lastSeq: contentSeq }),
+);
 const resumeFrame = await resumePromise;
 resumeWs.close();
 

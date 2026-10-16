@@ -160,5 +160,13 @@
 
 ## Spawn Trace
 
-<!-- The agents this work was delegated to and their roles, or "done
-     directly". -->
+<!-- Every spawn whose work this PR carries, one row each, or "done
+     directly". Name the agent profile it ran as (coder, gpt-dev, reviewer,
+     prober, investigator, kb-lead, ...) and the model it actually ran on, so
+     a reader can tell which agents reviewed and verified the change. Include
+     spawns that other spawns launched. Leave out a spawn that was cancelled
+     or failed before doing any work; name its rerun instead. -->
+
+| Spawn | Agent | Model | Role |
+|---|---|---|---|
+| <id> | <agent> | <model> | <what it did, and what it reviewed or verified> |

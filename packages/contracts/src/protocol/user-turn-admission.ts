@@ -1,4 +1,5 @@
 /** Durable writer-turn admission wire contracts. */
+import { z } from "zod";
 import { type CanonicalContextUri, parseContextUri } from "../context-uri.js";
 import type { DocumentId, UserId } from "../ids.js";
 import { parseRequestId } from "../request-id.js";
@@ -67,6 +68,31 @@ export type UserTurnAdmissionInput = {
   /** Writer-picked skill slugs for this Send. Missing or empty means none. */
   activatedSkillSlugs?: readonly string[];
 };
+
+/** Fields proving the admission and the read/replay floors that belong to it. */
+export const admissionReceiptShape = {
+  threadId: z.string().min(1),
+  userTurnId: z.string().min(1),
+  runStateVersion: z
+    .string()
+    .regex(/^(0|[1-9]\d*)$/)
+    .nullable(),
+  resumeAfterSeq: z.string().regex(/^(0|[1-9]\d*)$/),
+  snapshotFloorNextSeq: z.string().regex(/^(0|[1-9]\d*)$/),
+};
+export const admissionLookupSchema = z.discriminatedUnion("kind", [
+  z.object({
+    ...admissionReceiptShape,
+    kind: z.enum(["accepted", "already-accepted"]),
+    submissionId: z.string().min(1),
+  }),
+  z.object({ kind: z.enum(["pending", "not-seen"]), submissionId: z.string().min(1) }),
+  z.object({
+    kind: z.enum(["rejected", "retired"]),
+    submissionId: z.string().min(1),
+    code: z.string(),
+  }),
+]) satisfies z.ZodType<AdmissionLookup>;
 
 export type AcceptedAdmission = {
   kind: "accepted" | "already-accepted";

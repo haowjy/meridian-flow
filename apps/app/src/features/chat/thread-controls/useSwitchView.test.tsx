@@ -19,9 +19,7 @@ const slices = vi.hoisted(() => ({
 }));
 // The chat's slice is the thread store's; here a one-chat stand-in over the real reducer.
 vi.mock("@/client/stores", async () => {
-  const { INITIAL_RUN_STATE_SLICE, reduceRunState } = await import(
-    "@/client/run-state/run-state-slice"
-  );
+  const { INITIAL_RUN_STATE_SLICE, reduceRunState } = await import("@meridian/thread-client");
   const { useSyncExternalStore } = await import("react");
   let slice = INITIAL_RUN_STATE_SLICE;
   const listeners = new Set<() => void>();
