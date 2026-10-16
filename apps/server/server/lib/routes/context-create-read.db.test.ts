@@ -416,7 +416,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         new Map([[authority.workSlug, authority]]),
       );
 
-      await expect(port.list(`scratch://@${authority.workSlug}/`)).resolves.toMatchObject({
+      await expect(port.list(`scratch://@[${authority.workSlug}]/`)).resolves.toMatchObject({
         ok: true,
         value: { entries: [] },
       });

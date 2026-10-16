@@ -18,7 +18,7 @@ const source = (w: string): CatalogEntry => ({
   entryId: `s${w}`,
   scheme: "scratch",
   name: w,
-  uri: `scratch://@${w}/`,
+  uri: `scratch://@[${w}]/`,
   scope: scope(w),
 });
 const node = (id: string, w: string, path: string, parentId = `s${w}`): CatalogEntry => ({
@@ -30,7 +30,7 @@ const node = (id: string, w: string, path: string, parentId = `s${w}`): CatalogE
   scope: scope(w),
   name: path.split("/").at(-1)!,
   path: path.split("/"),
-  uri: `scratch://@${w}/${path}`,
+  uri: `scratch://@[${w}]/${path}`,
   hasChildren: true,
 });
 const move = (id: string, from: string, path: string, to: string, destination: string) => {

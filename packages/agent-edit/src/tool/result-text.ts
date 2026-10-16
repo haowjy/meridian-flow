@@ -1,6 +1,7 @@
 // The one renderer from a `read` or `write` result to the text the model sees (D43).
 //
 // Hosts keep the typed result beside this text; nothing parses the text back.
+import { formatWorkRef } from "@meridian/contracts/works";
 import { splitDocumentFile } from "../document-address.js";
 import { toHashline } from "../model/hashline.js";
 import type {
@@ -95,12 +96,12 @@ export function agentEditResultSummary(result: AgentEditResultV1, words?: number
 
 /**
  * The version a write changed, in `read`'s terms (D50): `live`, or `draft
- * (@work)` for a write held in a named Work's draft; No Work's draft has no
+ * (@[work])` for a write held in a named Work's draft; No Work's draft has no
  * slug to name, so it is plain `draft`. Undo and redo name none.
  */
 function writeVersion(result: Pick<AgentEditResultV1, "destination" | "draftWork">): string {
   if (result.destination === "draft" && result.draftWork !== undefined)
-    return result.draftWork === "/" ? "draft" : `draft (@${result.draftWork})`;
+    return result.draftWork === "/" ? "draft" : `draft (${formatWorkRef(result.draftWork)})`;
   return result.destination === "live" ? "live" : "";
 }
 

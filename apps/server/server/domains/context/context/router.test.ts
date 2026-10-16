@@ -155,7 +155,7 @@ describe("context router Work slug resolution", () => {
       error: {
         code: "invalid_uri",
         uri: "scratch://@[other-project-work]/notes.md",
-        reason: 'Unknown Work @other-project-work. List Works with work({"command":"list"}).',
+        reason: 'Unknown Work @[other-project-work]. List Works with work({"command":"list"}).',
         workSlug: "other-project-work",
       },
     });

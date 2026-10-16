@@ -15,6 +15,7 @@ import {
 } from "@meridian/agent-edit/integration";
 import type { DraftId, LinkView } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
+import { formatWorkRef } from "@meridian/contracts/works";
 import { runWithEditGrants } from "../../file-policy/edit-confirmation.js";
 import type { FileAccess, FileDestination, FileGrant } from "../../file-policy/index.js";
 import {
@@ -717,7 +718,7 @@ function sameView(a: { kind: string; draftId?: string }, b: LinkView): boolean {
 function versionPhrase(destination: FileDestination, preposition: "in" | "to"): string {
   return destination.kind === "live"
     ? "live"
-    : `${preposition} @${destination.workSlug ?? "/"}'s draft`;
+    : `${preposition} ${formatWorkRef(destination.workSlug ?? null)}'s draft`;
 }
 
 function documentIdFromCommand(command: { file: string; documentId?: string }): DocumentId | null {

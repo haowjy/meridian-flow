@@ -15,6 +15,7 @@ import {
   classifyWrittenSource,
   type DocumentRef,
   documentRef,
+  formatParsedContextUri,
   type LinkCatalog,
   type LinkHolder,
   type LinkResolution,
@@ -186,7 +187,7 @@ export function assignFreshLink(input: {
 /**
  * A written href as it is bound: a bare `uploads://name` means the writing chat's file only while
  * read from that chat, and a document outlives it, so a freshly written one is qualified to that
- * chat (`uploads://@/<chat>/name`). Preparation (`writtenAddresses`) and assignment
+ * chat (`uploads://@c15/name`). Preparation (`writtenAddresses`) and assignment
  * (`assignFreshLink` callers) both read the href through here, so the address loaded is the
  * address bound.
  */
@@ -194,7 +195,10 @@ export function qualifyWrittenHref(href: string, uploadsChat: string | undefined
   if (!uploadsChat) return href;
   const resolved = resolveDocumentHref(href, null);
   if (!resolved) return href;
-  const uri = qualifyContextUriByHolder(resolved.uri, `uploads://@/${uploadsChat}/_`);
+  const uri = qualifyContextUriByHolder(
+    resolved.uri,
+    formatParsedContextUri("uploads", "_", { kind: "chat", chatRef: uploadsChat }),
+  );
   return uri === resolved.uri ? href : storedHref(uri, resolved.suffix);
 }
 

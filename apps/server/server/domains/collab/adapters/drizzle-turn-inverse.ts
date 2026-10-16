@@ -2,6 +2,7 @@
 import type { DocumentCoordinator, UpdateJournal } from "@meridian/agent-edit/integration";
 import { captureMutationUpdates, textInRanges } from "@meridian/agent-edit/yjs-mutation";
 import type { DocumentId } from "@meridian/contracts";
+import { formatWorkRef } from "@meridian/contracts/works";
 import {
   branchWriteJournal,
   type Database,
@@ -160,7 +161,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                   drafts.set(branchId, {
                     branch,
                     doc,
-                    name: name?.slug ? `@${name.slug}` : "@/",
+                    name: formatWorkRef(name?.slug ?? null),
                     frozen: frozen.has(branchId),
                   });
                 }

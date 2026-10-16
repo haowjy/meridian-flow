@@ -11,6 +11,7 @@ import {
   parseDocumentFilename,
   renderFilename,
 } from "@meridian/contracts/protocol";
+import { formatWorkRef } from "@meridian/contracts/works";
 import { type CatalogCacheView, catalogChildren } from "@meridian/resource-replica";
 import {
   authoritativeReferenceForFile,
@@ -641,7 +642,7 @@ function rowForAuthority(
     matchAliases: entry.authority.workSlug === null ? ["@"] : [entry.authority.workSlug],
     action: {
       type: "navigate",
-      prefix: entry.authority.workSlug === null ? "@/" : `@${entry.authority.workSlug}/`,
+      prefix: `${formatWorkRef(entry.authority.workSlug)}/`,
       scope,
       acquire: true,
     },
