@@ -38,7 +38,7 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
   identity rather than the current branch). Duplicating that discovery here would
   drift from `pnpm dev`, so the allowed list was widened deliberately; its
   transitive `tools/dev` imports are Node-only. Never import `apps/`.
-- **Success claims require validated evidence.** Every domain success/outcome printed by
+- **Success claims require validated evidence.** Every domain-success claim printed by
   `./mf` comes from a contracts-validated response or shared-client protocol evidence.
   `Session.request` returns unknown without `parse`; structured requests reject empty,
   non-JSON and schema-invalid answers as classified read errors. Send admission and
