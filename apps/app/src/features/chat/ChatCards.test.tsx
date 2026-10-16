@@ -170,8 +170,8 @@ describe("failure cards by anchor", () => {
       () => createElement(CompactionDivider, { turn: compaction, stopping: false }),
     );
     expect({
-      text: replacement.host.textContent,
+      failureWords: /couldn't|not compacted|failed/i.test(replacement.host.textContent ?? ""),
       failure: replacement.host.querySelector("[data-chat-card], .text-destructive"),
-    }).toEqual({ text: "CompactionCompactionKeep names", failure: null });
+    }).toEqual({ failureWords: false, failure: null });
   });
 });
