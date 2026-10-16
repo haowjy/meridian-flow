@@ -16,7 +16,7 @@ const request: NamespaceRequest = {
   kind: "delete",
   scheme: "scratch",
   workId: "work",
-  workHandle: "alpha",
+  workHandle: "w1",
   body: {
     operationId: "operation",
     path: "note.md",
