@@ -48,9 +48,10 @@ worktree-slug prefixes, so a worktree database can't pass for a managed one.
 files related to changes since `origin/main`, including staged, unstaged and
 untracked files. No related DB files, or an absent or unreachable configured
 Postgres server, skips loudly. DB config, migrations, shared DB test support and
-DB-test lifecycle helpers bypass selection and run the full suite, as does
-`DB_GATE_FULL=1`. The gate provisions the same owned test databases as
-`pnpm test:db`; `pnpm test:db` and CI's `db-tests` job always run every DB file.
+DB-test lifecycle or dependency-resolution inputs bypass selection and run the
+full suite, as does `DB_GATE_FULL=1`. The gate provisions the same owned test
+databases as `pnpm test:db`; `pnpm test:db` and CI's `db-tests` job always run
+every DB file.
 
 ## Session and readiness
 
