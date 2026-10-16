@@ -74,8 +74,10 @@ export function paintDecorations(
     for (const hunk of group.hunks) {
       const key = keys.get(hunk.index) ?? "";
       if (focused) focusedEnd = Math.max(focusedEnd ?? 0, hunk.inserted?.to ?? hunk.anchor);
-      if (hunk.inserted) {
-        for (const mark of addedMarks(doc, hunk.inserted.from, hunk.inserted.to)) {
+      const ranges = hunk.formatContext?.inserted ?? (hunk.inserted ? [hunk.inserted] : []);
+      for (const range of ranges) {
+        if (focused) focusedEnd = Math.max(focusedEnd ?? 0, range.to);
+        for (const mark of addedMarks(doc, range.from, range.to)) {
           retainOrAdd(`${key}:added:${mark.node}`, mark.from, mark.to, () => {
             const attrs = {
               class: [ADDED_CLASS, mark.node && BLOCK_CLASS].filter(Boolean).join(" "),
@@ -95,9 +97,10 @@ export function paintDecorations(
         }
       }
       // Formatting has a before and after too; only whitespace needs no struck copy.
-      if (hunk.kind !== "whitespace" && hunk.removed.length > 0) {
+      const removed = hunk.formatContext?.removed ?? hunk.removed;
+      if (hunk.kind !== "whitespace" && removed.length > 0) {
         const block = !doc.resolve(hunk.anchor).parent.inlineContent;
-        const paragraphs = removedParagraphs(hunk.removed);
+        const paragraphs = removedParagraphs(removed);
         removals.push({
           position: hunk.anchor,
           block,

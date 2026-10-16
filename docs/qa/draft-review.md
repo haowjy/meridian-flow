@@ -648,6 +648,18 @@ remains. Stage the reverse formatting proposal and Discard each change separatel
 exactly unchanged and the other change survives until its own Discard. Capture the list, the
 change rows and browser errors. Stop only this worktree's stack.
 
+Also propose `## Scene one two three four five six seven OLD` →
+`### Scene one two three four five six seven NEW`. PASS: the formatting row shows
+`Scene one two three four five six seven` unchanged on both sides, and only the
+text row shows `OLD` → `NEW`. Formatting paint stops before the text group's span;
+red `OLD` appears once. Repeat with `OLD` in the middle, an insertion and a deletion:
+formatting context resumes after the independent edit without painting across it.
+Discard the formatting row: H2 with NEW remains; Ctrl+Z restores both proposals.
+Apply only formatting: live becomes H3 with OLD and the text proposal remains.
+With only two unchanged words before the edit (`Scene one OLD three four five`),
+formatting and text share a row: its excerpts preserve the original word order
+(`Scene one OLD three four five` → `Scene one NEW three four five`), without duplicates.
+
 ## Reply commands against a replying model (browser, mock stack)
 
 The draft dock is disabled while a reply is still writing. Discard draft in the Editor and the
