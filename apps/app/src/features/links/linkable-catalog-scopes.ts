@@ -10,6 +10,7 @@
  */
 
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import { aggregateCatalogScope } from "@/client/query/useContextCatalog";
 
 export const LINKABLE_SCHEMES = [
   "manuscript",
@@ -50,4 +51,15 @@ export function linkableCatalogScopes({
 }): LinkableCatalogScopes | null {
   if (!projectId || !workId) return null;
   return { projectId, workId, rootThreadId: rootThreadId ?? null, chatId: chatId ?? null };
+}
+
+/**
+ * The linkable schemes this surface owns a catalog for. An unowned one (uploads
+ * outside a chat) is absent, so it cannot hold the index's completeness hostage.
+ */
+export function ownedLinkableSchemes(scopes: LinkableCatalogScopes | null) {
+  if (!scopes) return [];
+  return LINKABLE_SCHEMES.filter((scheme) =>
+    aggregateCatalogScope(scopes.projectId, scheme, scopes),
+  );
 }

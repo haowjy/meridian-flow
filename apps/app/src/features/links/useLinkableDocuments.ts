@@ -28,7 +28,7 @@ import type { CatalogContextView } from "@/client/query/context-catalog-projecti
 import { useDraftLinkEpoch } from "@/client/query/draft-link-epoch";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 
-import { LINKABLE_SCHEMES, linkableCatalogScopes } from "./linkable-catalog-scopes";
+import { linkableCatalogScopes, ownedLinkableSchemes } from "./linkable-catalog-scopes";
 
 export type LinkableDocument = {
   /** Persisted identity, stable across reorder, move, and rename. */
@@ -71,66 +71,45 @@ export function useLinkableDocuments({
   const scopes = linkableCatalogScopes({ projectId, workId, rootThreadId, chatId });
   const catalogWorkId = scopes?.workId ?? null;
   const catalogRootThreadId = scopes?.rootThreadId ?? null;
-  const {
-    manuscript: { catalog: manuscript, isComplete: manuscriptComplete },
-    kb: { catalog: knowledgeBase, isComplete: knowledgeBaseComplete },
-    unfiled: { catalog: unfiled, isComplete: unfiledComplete },
-    user: { catalog: user, isComplete: userComplete },
-    scratch: { catalog: scratch, isComplete: scratchComplete },
-    uploads: { catalog: uploads, isComplete: uploadsComplete },
-  } = useContextCatalogViews(scopes?.projectId ?? "", LINKABLE_SCHEMES, {
+  // A surface owns only some catalogs (an Editor document has no chat, so no uploads):
+  // an unowned scheme is absent here, not a catalog that never finishes loading.
+  const schemes = useMemo(
+    () => ownedLinkableSchemes(scopes),
+    [scopes?.projectId, scopes?.workId, scopes?.rootThreadId, scopes?.chatId],
+  );
+  const views = useContextCatalogViews(scopes?.projectId ?? "", schemes, {
     enabled: scopes !== null,
     ...contextOwner(catalogWorkId, catalogRootThreadId),
     chatId: scopes?.chatId ?? null,
   });
 
   return useMemo(() => {
-    const documents = [
-      ...(manuscript ? linkableDocuments(manuscript, null) : []),
-      ...(knowledgeBase ? linkableDocuments(knowledgeBase, null) : []),
-      ...(user ? linkableDocuments(user, null) : []),
-      ...(unfiled ? linkableDocuments(unfiled, null) : []),
-      ...(scratch
-        ? linkableDocuments(
-            scratch,
-            catalogRootThreadId ? null : catalogWorkId,
-            catalogRootThreadId,
-          )
-        : []),
-      ...(uploads ? linkableDocuments(uploads, null) : []),
-    ];
+    const documents: LinkableDocument[] = [];
+    let complete = scopes !== null;
+    for (const scheme of schemes) {
+      const { catalog, isComplete } = views[scheme];
+      complete &&= isComplete;
+      if (!catalog) continue;
+      documents.push(
+        ...(scheme === "scratch"
+          ? linkableDocuments(
+              catalog,
+              catalogRootThreadId ? null : catalogWorkId,
+              catalogRootThreadId,
+            )
+          : linkableDocuments(catalog, null)),
+      );
+    }
     const next = {
       documents,
       revision: `${draftEpoch}\n${catalogRevision(documents)}`,
-      complete:
-        manuscriptComplete &&
-        knowledgeBaseComplete &&
-        userComplete &&
-        unfiledComplete &&
-        scratchComplete &&
-        uploadsComplete,
+      complete,
     };
     if (prior.current?.revision === next.revision && prior.current.complete === next.complete)
       return prior.current;
     prior.current = next;
     return next;
-  }, [
-    knowledgeBase,
-    knowledgeBaseComplete,
-    manuscript,
-    manuscriptComplete,
-    scratch,
-    scratchComplete,
-    unfiled,
-    unfiledComplete,
-    uploads,
-    uploadsComplete,
-    user,
-    userComplete,
-    catalogWorkId,
-    catalogRootThreadId,
-    draftEpoch,
-  ]);
+  }, [schemes, views, scopes, catalogWorkId, catalogRootThreadId, draftEpoch]);
 }
 
 /**
