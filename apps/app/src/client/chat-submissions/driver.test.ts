@@ -383,7 +383,7 @@ it("a failed successor creation rewrite also fails its attempted predecessor", a
   expect(status).toHaveBeenCalledWith(
     expect.objectContaining({ recordId: "record-1" }),
     "error",
-    true,
+    "unsaved",
   );
   test.dispose();
 });

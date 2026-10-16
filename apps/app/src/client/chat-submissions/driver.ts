@@ -344,7 +344,7 @@ export class ChatSubmissionDriver {
         .filter((record) => record.threadId === entry?.threadId && record.creation)) {
         if (!this.current()) return;
         if (!this.write({ ...record, creation: undefined })) {
-          this.localFailure(entry);
+          this.localFailure(entry, "unsaved");
           return;
         }
       }
@@ -510,7 +510,7 @@ export class ChatSubmissionDriver {
   private settle(entry: ChatSubmission, kind: "accepted" | "rejected" | "ambiguous") {
     if (!this.current()) return;
     if (kind === "accepted") {
-      if (!this.options.journal.retire(entry.recordId)) this.localFailure(entry);
+      if (!this.options.journal.retire(entry.recordId)) this.localFailure(entry, "unsaved");
     } else {
       if (kind === "rejected") {
         entry = { ...entry, state: "rejected" };
@@ -524,7 +524,7 @@ export class ChatSubmissionDriver {
     for (const record of cohort) {
       if (!this.current()) return;
       if (!this.options.journal.retire(record.recordId)) {
-        this.localFailure(record);
+        this.localFailure(record, "unsaved");
         return;
       }
     }
