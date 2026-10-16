@@ -468,12 +468,12 @@ const rows: Array<{
         write: async (context) => ({
           ...success("insert", [fact(94)], undefined, TARGET_URI),
           phase: "staged",
-          ...(context.responseIdentity?.editScopeId ? { writeId: "w1", settlementId: "s1" } : {}),
+          ...(context.responseIdentity?.editScopeId ? { writeId: "e1", settlementId: "s1" } : {}),
         }),
       });
       const receipt = {
         ...success("insert", [fact(95)], undefined, MOVED),
-        writeId: "w1",
+        writeId: "e1",
         settlementId: "s1",
       };
       const { threadId, results } = await runTurn(

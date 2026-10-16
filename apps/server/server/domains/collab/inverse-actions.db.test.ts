@@ -40,7 +40,7 @@ it.each([
     await core.read(address, initial);
     expect(
       await core.write({ ...address, command: "replace", find: "red", content: "gold" }, initial),
-    ).toMatchObject({ status: "success", writeId: "w1" });
+    ).toMatchObject({ status: "success", writeId: "e1" });
     await harness.commit(responseId);
     const currentTurn = randomUUID() as typeof TURN_ID;
     const currentResponse = randomUUID();
@@ -69,7 +69,7 @@ it.each([
         { ...address, command: "replace", in: [2, 3], content: "green\n\nwhite" },
         current,
       ),
-    ).toMatchObject({ status: "success", writeId: "w2" });
+    ).toMatchObject({ status: "success", writeId: "e2" });
     await view.collab.finalizeResponseCommit(current.responseIdentity, {
       threadId: THREAD_ID,
       turnId: currentTurn,
@@ -136,11 +136,11 @@ it.each([
     ).toMatchObject({ status: "partial", acceptedParts: 1 });
     expect(await text()).toBe("gold\n\npink\n\nblack\n");
     const edits = await core.read({ ...address, format: "edits" }, current);
-    expect(edits.result.message).toMatch(/w2 {2}this turn {2}changed.*undo: no \(changed\)/);
+    expect(edits.result.message).toMatch(/e2 {2}this turn {2}changed.*undo: no \(changed\)/);
     expect(edits.result.message).not.toContain("undone by the user");
     expect(await core.write({ ...address, command: "undo" }, current)).toMatchObject({
       status: "cant_undo_changed",
-      result: { message: expect.stringContaining("w2") },
+      result: { message: expect.stringContaining("e2") },
     });
     expect(await text()).toBe("gold\n\npink\n\nblack\n");
     expect(await view.collab.getTurnReceiptChip(THREAD_ID, currentTurn)).toMatchObject({
@@ -149,7 +149,7 @@ it.each([
     });
     expect(await core.write({ ...address, command: "redo" }, current)).toMatchObject({
       status: "cant_redo_users_undo",
-      result: { message: expect.stringContaining("w2") },
+      result: { message: expect.stringContaining("e2") },
     });
   } finally {
     harness.cancelScheduledPulls();
@@ -184,7 +184,7 @@ it.each([
     };
     expect(await core.write({ ...address, command: "undo" }, saved)).toMatchObject({
       status: "success",
-      result: { message: "undone: w2" },
+      result: { message: "undone: e2" },
     });
     const failed = {
       ...initial,
@@ -192,7 +192,7 @@ it.each([
     };
     expect(await core.write({ ...address, command: "undo" }, failed)).toMatchObject({
       status: "success",
-      result: { message: "undone: w1" },
+      result: { message: "undone: e1" },
     });
     const draft =
       destination === "draft"
@@ -217,7 +217,7 @@ it.each([
       });
       expect(await text()).toBe("Alpha Gamma.\n\nBlue.\n");
       const edits = await core.read({ ...address, format: "edits" }, saved);
-      expect(edits.result.message).toMatch(/w2 {2}this turn {2}undone.* {2}redo(?:\n|$)/);
+      expect(edits.result.message).toMatch(/e2 {2}this turn {2}undone.* {2}redo(?:\n|$)/);
       expect(await view.collab.getTurnReceiptChip(THREAD_ID, TURN_ID)).toMatchObject({
         state: "live-reversed",
         control: "redo",

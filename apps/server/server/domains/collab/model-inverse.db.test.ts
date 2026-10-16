@@ -94,7 +94,7 @@ describe("model document stack", () => {
         expect(
           await core.write(
             {
-              ...(kind === "revert" ? { command: kind, edit: "w1" } : { command: kind }),
+              ...(kind === "revert" ? { command: kind, edit: "e1" } : { command: kind }),
               documentId: ALPHA_ID,
               file: "alpha.md",
               tool_use_id: `model-${kind}`,
@@ -176,7 +176,7 @@ describe("model document stack", () => {
             },
             context,
           ),
-        ).toMatchObject({ status: "success", writeId: `w${index + 1}` });
+        ).toMatchObject({ status: "success", writeId: `e${index + 1}` });
       await harness.commit(responseId);
       const branchId = await draftBranchId(db, ALPHA_ID);
       let call = 0;
@@ -204,7 +204,7 @@ describe("model document stack", () => {
         }
         expect(await write("redo")).toMatchObject({
           status: "success",
-          result: { message: "redone: w1" },
+          result: { message: "redone: e1" },
         });
         expect(await view.draftMarkdown(branchId)).toBe("Alpha Gold.\n\nBlue.\n");
         expect(await write("redo", 2)).toMatchObject({ status: "success" });
@@ -250,7 +250,7 @@ describe("model document stack", () => {
         core.write({ ...address, command, count }, inverse);
       expect(await write("undo", 2)).toMatchObject({
         status: "success",
-        result: { message: "undone: w2, w1" },
+        result: { message: "undone: e2, e1" },
       });
       expect(await prose()).toBe("Alpha Beta.\n\nBlue.\n");
       if (schedule === "rollback") {
@@ -279,17 +279,17 @@ describe("model document stack", () => {
       } else if (schedule === "stepwise") {
         expect(await write("redo")).toMatchObject({
           status: "success",
-          result: { message: "redone: w1" },
+          result: { message: "redone: e1" },
         });
         expect(await prose()).toBe("Alpha Gold.\n\nBlue.\n");
         expect(await write("redo")).toMatchObject({
           status: "success",
-          result: { message: "redone: w2" },
+          result: { message: "redone: e2" },
         });
       } else {
         expect(await write("redo", 2)).toMatchObject({
           status: "success",
-          result: { message: "redone: w1, w2" },
+          result: { message: "redone: e1, e2" },
         });
       }
       expect(await prose()).toBe(
@@ -357,12 +357,12 @@ describe("model document stack", () => {
               command: "revert",
               documentId: ALPHA_ID,
               file: "alpha.md",
-              edit: "w1",
+              edit: "e1",
               tool_use_id: "revert",
             },
             context,
           ),
-        ).toMatchObject({ status: "success", writeId: "w2" });
+        ).toMatchObject({ status: "success", writeId: "e2" });
         expect(await view.draftMarkdown(branchId)).toBe("Alpha Beta.\n\nBlue.\n");
         expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Gamma.\n\nBlue.\n");
       }
@@ -422,7 +422,7 @@ it.each([
     expect(await core.write({ ...command, command: direction }, context)).toMatchObject({
       status: `cant_${direction}_changed`,
     });
-    expect(await core.write({ ...command, command: "revert", edit: "w1" }, context)).toMatchObject({
+    expect(await core.write({ ...command, command: "revert", edit: "e1" }, context)).toMatchObject({
       status: "nothing_to_revert",
     });
     expect(await view.draftMarkdown(branchId)).toBe(expected);
@@ -478,7 +478,7 @@ it("model edit pages decode immutable parts and a new revert clears redo in the 
           { ...command, command: "replace", find: previous, content: `Text${n}` },
           context,
         ),
-      ).toMatchObject({ status: "success", writeId: `w${n}` });
+      ).toMatchObject({ status: "success", writeId: `e${n}` });
       previous = `Text${n}`;
       if (n === 1) {
         await harness.commit(responseId);
@@ -491,21 +491,21 @@ it("model edit pages decode immutable parts and a new revert clears redo in the 
       turnId: TURN_ID,
     });
     const page = await core.read({ ...command, format: "edits" }, context);
-    expect(page.result.message?.split("\n").filter((line) => /^w\d+ {2}/.test(line))).toHaveLength(
+    expect(page.result.message?.split("\n").filter((line) => /^e\d+ {2}/.test(line))).toHaveLength(
       20,
     );
-    expect(page.result.message).toContain('w25  this turn  pending  "Text24" → "Text25"  undo');
-    expect(page.result.message).toContain("more: before w6");
-    const second = await core.read({ ...command, format: "edits", before: "w6" }, context);
+    expect(page.result.message).toContain('e25  this turn  pending  "Text24" → "Text25"  undo');
+    expect(page.result.message).toContain("more: before e6");
+    const second = await core.read({ ...command, format: "edits", before: "e6" }, context);
     expect(
-      second.result.message?.split("\n").filter((line) => /^w\d+ {2}/.test(line)),
+      second.result.message?.split("\n").filter((line) => /^e\d+ {2}/.test(line)),
     ).toHaveLength(5);
-    expect(second.result.message).toContain('w1  this turn  applied  "Beta" → "Text1"');
+    expect(second.result.message).toContain('e1  this turn  applied  "Beta" → "Text1"');
     expect(await core.write({ ...command, command: "undo" }, context)).toMatchObject({
       status: "success",
     });
-    expect(await core.write({ ...command, command: "revert", edit: "w24" }, context)).toMatchObject(
-      { status: "success", writeId: "w27" },
+    expect(await core.write({ ...command, command: "revert", edit: "e24" }, context)).toMatchObject(
+      { status: "success", writeId: "e27" },
     );
     expect(await core.write({ ...command, command: "redo" }, context)).toMatchObject({
       status: "nothing_to_redo",
@@ -519,14 +519,14 @@ it("model edit pages decode immutable parts and a new revert clears redo in the 
     };
     await core.read({ ...command, format: "edits" }, liveContext);
     expect(
-      await core.write({ ...command, command: "revert", edit: "w23" }, liveContext),
+      await core.write({ ...command, command: "revert", edit: "e23" }, liveContext),
     ).toMatchObject({ status: "nothing_to_revert" });
     await core.read({ ...command, format: "edits" }, context);
     await review.applyItem(ALPHA_ID);
     await core.read({ ...command, format: "edits" }, liveContext);
     expect(
-      await core.write({ ...command, command: "revert", edit: "w23" }, liveContext),
-    ).toMatchObject({ status: "success", writeId: "w28" });
+      await core.write({ ...command, command: "revert", edit: "e23" }, liveContext),
+    ).toMatchObject({ status: "success", writeId: "e28" });
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Text22.\n\nBlue.\n");
   } finally {
     harness.cancelScheduledPulls();
@@ -549,7 +549,7 @@ it.each([
         { ...address, command: "replace", in: [1, 2], content: "Alpha Gamma.\n\nSilver." },
         context,
       ),
-    ).toMatchObject({ status: "success", writeId: "w1" });
+    ).toMatchObject({ status: "success", writeId: "e1" });
     await harness.commit(responseId);
     const branchId = await draftBranchId(db, ALPHA_ID);
     if (state === "partly applied") {
@@ -587,9 +587,9 @@ it.each([
       status: state === "changed" ? "cant_undo_changed" : "cant_undo_applied",
     });
     expect(await view.draftMarkdown(branchId)).toBe(before);
-    expect(await core.write({ ...address, command: "revert", edit: "w1" }, context)).toMatchObject({
+    expect(await core.write({ ...address, command: "revert", edit: "e1" }, context)).toMatchObject({
       status: "success",
-      writeId: "w2",
+      writeId: "e2",
     });
     expect(await view.draftMarkdown(branchId)).toBe(
       state === "changed" ? "Alpha Ga!mma.\n\nBlue.\n" : "Alpha Beta.\n\nBlue.\n",
