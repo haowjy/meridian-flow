@@ -16,12 +16,11 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Turn } from "@meridian/contracts/protocol";
 import { readHandoffSeed } from "@meridian/contracts/threads";
-import { CircleAlert, Forward } from "lucide-react";
+import { Forward } from "lucide-react";
 import { useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
-import { AnchoredCards } from "../ChatCards";
+import { AnchoredCards, useCardsAt } from "../ChatCards";
 import { ClippedProse } from "../ClippedExpand";
 import { useFocusWithinRow } from "../compaction/useFocusWithinRow";
 import { type BriefCardView, briefCardView } from "./handoff-seed";
@@ -45,9 +44,8 @@ function stateTitle(view: BriefCardView) {
     case "generating":
       return t`Writing the handoff brief`;
     case "ready":
-      return t`Handoff brief`;
     case "failed":
-      return t`Handoff brief unavailable`;
+      return t`Handoff brief`;
     case "stopped":
       return t`Handoff brief stopped`;
   }
@@ -71,7 +69,11 @@ export function HandoffBriefCard({
   // The Stop flag outlives the seed: a stopped or finished brief says what it is.
   const title =
     stopping && view.state === "generating" ? t`Stopping the handoff brief` : stateTitle(view);
-  const ended = view.state === "failed" || view.state === "stopped";
+  const failures = useCardsAt({ turn: turn.id });
+  const canRetry =
+    view.state === "stopped"
+      ? view.canRetry
+      : failures.some((card) => card.copy === "brief-failed");
   // For a source that was untitled when S was created: refs are never writer copy.
   const sourceFallbackName = t`the source chat`;
 
@@ -86,17 +88,8 @@ export function HandoffBriefCard({
       className="surface-card chat-card [--chat-card-radius:var(--radius-xl)] [--chat-card-border:var(--color-border-subtle)] shadow-xs outline-none"
     >
       <div className="flex items-start gap-[var(--chat-space-inline)]">
-        <div
-          className={cn(
-            "mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-muted",
-            view.state === "failed" ? "text-destructive" : "text-muted-foreground",
-          )}
-        >
-          {view.state === "failed" ? (
-            <CircleAlert className="size-3.5" aria-hidden />
-          ) : (
-            <Forward className="size-3.5" aria-hidden />
-          )}
+        <div className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-muted text-muted-foreground">
+          <Forward className="size-3.5" aria-hidden />
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-[var(--chat-space-inline)]">
           <div className="flex min-w-0 flex-wrap items-center gap-x-[var(--chat-space-block)]">
@@ -119,7 +112,7 @@ export function HandoffBriefCard({
                 <Trans>Stop</Trans>
               </Button>
             ) : null}
-            {ended && view.canRetry && onRetry ? (
+            {canRetry && onRetry ? (
               <Button
                 type="button"
                 variant="quiet"
@@ -155,17 +148,12 @@ export function HandoffBriefCard({
             </p>
           ) : null}
           <AnchoredCards anchor={{ turn: turn.id }} />
-          {view.state === "failed" && view.superseded ? (
-            <p className="text-caption text-muted-foreground">
-              <Trans>This brief failed.</Trans>
-            </p>
-          ) : null}
           {view.state === "stopped" && !view.superseded ? (
             <p className="text-caption text-muted-foreground">
               <Trans>This chat continues without a brief.</Trans>
             </p>
           ) : null}
-          {ended && view.canRetry && onRetry && destinationBusy ? (
+          {canRetry && onRetry && destinationBusy ? (
             <p id={retryWaitId} className="text-caption text-muted-foreground">
               <Trans>You can retry when this chat is free.</Trans>
             </p>
