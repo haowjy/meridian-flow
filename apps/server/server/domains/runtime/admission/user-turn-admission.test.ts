@@ -1,6 +1,8 @@
 /** Behavioral contract for the single writer-turn admission owner. */
 
+import { spellDocumentHref } from "@meridian/contracts";
 import type { UserTurnAdmissionInput } from "@meridian/contracts/protocol";
+import { formatMarkdownLink } from "@meridian/markup/links";
 import { describe, expect, it, vi } from "vitest";
 import type { ProjectContextAvailabilityPort } from "../../context/index.js";
 import { createInMemoryRunClaim } from "../adapters/in-memory/loop-ports.js";
@@ -324,7 +326,7 @@ describe("UserTurnAdmission", () => {
     expect(h.availability.lookup).toHaveBeenCalledTimes(1);
   });
 
-  it("admits a New-chat upload by identity and records the address it now has", async () => {
+  it("admits a New-chat upload by identity and records the address it now has, whatever its name", async () => {
     const h = harness(null, [availableResolution("uploads://@/c1/moved.png")]);
     await expect(h.service.admit(input())).resolves.toMatchObject({ kind: "accepted" });
     // The stored message carries the same address as the metadata, with the label kept.
@@ -346,6 +348,26 @@ describe("UserTurnAdmission", () => {
         relationship: "created",
       },
     ]);
+
+    // Names the serializer escapes are re-spelled through it too, with the label kept.
+    for (const name of ["my seal.png", "Issue #3.png", "100% Done.png", "a (b).png"]) {
+      const chatUri = `uploads://@/c1/${name}`;
+      const spelled = (target: string) => formatMarkdownLink(name, spellDocumentHref(null, target));
+      const h = harness(null, [availableResolution(chatUri)]);
+      const bare = `uploads://${name}`;
+      await h.service.admit(
+        input({
+          text: spelled(bare),
+          blocks: [
+            { type: "reference", text: spelled(bare), documentId, uri: bare },
+            { type: "image", documentId, uri: bare },
+          ],
+          references: [{ documentId, uri: bare, purpose: "draft-upload", intakeId: "intake-1" }],
+        }),
+      );
+      expect(h.captured()?.blocks[0]).toMatchObject({ text: spelled(chatUri), uri: chatUri });
+      expect(h.captured()?.admission.text).toBe(spelled(chatUri));
+    }
   });
 
   it("rejects invalid membership, image pairing, and identity cardinality", async () => {

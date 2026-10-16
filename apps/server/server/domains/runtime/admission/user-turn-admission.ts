@@ -1,5 +1,6 @@
 /** Authoritative parsing, identity, replay, and settlement for writer turns. */
 import { createHash } from "node:crypto";
+import { spellDocumentHref } from "@meridian/contracts";
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type {
   AcceptedAdmission,
@@ -15,6 +16,7 @@ import type {
 } from "@meridian/contracts/protocol";
 import { parseRequestId } from "@meridian/contracts/request-id";
 import type { JsonValue } from "@meridian/contracts/threads";
+import { markdownLinkDestination } from "@meridian/markup/links";
 import type { ProjectContextAvailabilityPort } from "../../context/index.js";
 import type { RunClaim } from "../loop/ports.js";
 
@@ -239,9 +241,17 @@ export function parseSubmittedReferences(value: unknown): SubmittedReference[] {
   });
 }
 
+/**
+ * Re-spells an occurrence's destination through the canonical serializer (names with spaces,
+ * `#` or `%` are escaped there), keeping the label exactly as the writer's composer wrote it.
+ * Text that is not the canonical spelling of `from` is left as submitted.
+ */
 function requalifyLinkText(text: string, from: string, to: string): string {
-  const at = text.lastIndexOf(`(${from})`);
-  return at < 0 ? text : `${text.slice(0, at + 1)}${to}${text.slice(at + 1 + from.length)}`;
+  const closing = (uri: string) => `](${markdownLinkDestination(spellDocumentHref(null, uri))})`;
+  const old = closing(from);
+  return text.startsWith("[") && text.endsWith(old)
+    ? `${text.slice(0, -old.length)}${closing(to)}`
+    : text;
 }
 
 function referenceIdentity(reference: { documentId: string; uri: string }): string {
