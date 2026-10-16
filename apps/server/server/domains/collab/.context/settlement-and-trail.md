@@ -107,6 +107,11 @@ join post-cut updates through one SQL seam inside the document-mutation
 transaction. Root-effect materialization failure yields no swept elevation and
 never becomes settlement authority.
 
+Claims renew at the start of each settlement attempt, not on a heartbeat. The
+SQL expiry clock keeps advancing while synchronous replan work blocks JavaScript;
+completion and the next renewal both reject an expired claim even if no recovery
+worker has taken it. Keep journal replay bounded by the states and blocks it reads.
+
 Settlement takes the completion transaction's locks again before certification.
 It rejects retired generations, stale ownership, and unexplained post-cut
 changes. A transient failure stays pending and retries with backoff. Only a
