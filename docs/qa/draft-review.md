@@ -381,6 +381,13 @@ then use the browser only to exercise and inspect the surfaces.
    Chapter B's Lore pass alone. A fixture without a change both chats wrote cannot prove the tie
    behavior: the sword change reads `sword` to `sabre` and names both chats.
 
+4. In a separate document with base `The sword waits here.`, have Pacing pass write
+   `swords`, then Lore pass replace it with `swordfish`. The final character change
+   only inserts `fish`: its byline must name Lore pass alone, including after a
+   reload. Repeat with `longsword` then `shortsword`, and `swordS` then `XswordY`.
+   Pacing pass may remain a member of the change for draft-dock actions; membership
+   is not evidence for its byline.
+
 ### Checks
 
 1. Open Pacing pass. PASS: the draft dock shows Chapter A with the word diff of only the change

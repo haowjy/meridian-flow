@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Draft review no longer names a chat whose edit was replaced when the final change only inserts text. Shared replacements still name the chat that removed the base text.
+
 - Draft edit-status reads release document locks before review projection and reuse exact-state status pages, reducing contention with writer acknowledgements.
 - Rich-only draft changes show their affected text in the change list and red/green editor paint, including heading-level changes.
 

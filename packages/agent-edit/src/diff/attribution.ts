@@ -576,8 +576,8 @@ class Classifier {
     const acc: Names = { names: new Map(), incomplete: false };
     const boundaries: Boundaries = {
       text: (b, raw, was, now, before) => {
-        this.chars(acc, b, now.at, before, now.text);
-        if (acc.incomplete) return;
+        const deleted = this.chars(acc, b, now.at, before, now.text);
+        if (acc.incomplete || !deleted) return;
         const { head, added, removed } = replacement(raw.text, was);
         if (!added || !removed || added === removed) return;
         const start = raw.at + head;
@@ -587,9 +587,9 @@ class Classifier {
           if (who === BASE || who === UNKNOWN) replaced = false;
         });
         // Equal letters in recreated words are not retained base anchors: sword → sabre shares
-        // s/r, but its five base tombstones still prove who removed sword. Keep the exact red
-        // rule over the whole replacement, rather than matching its smaller character deletions.
-        if (replaced) this.deletion(acc, b, [start, start + added.length], removed);
+        // s/r, but its five base tombstones can still prove who made a visible deletion.
+        // Red must allow for the equal characters, not credit every historical remover.
+        if (replaced) this.deletion(acc, b, [start, start + added.length], removed, deleted);
       },
       items: (items, name = true) => {
         if (!name) return;
@@ -640,8 +640,8 @@ class Classifier {
     );
   }
 
-  /** Red: `weight` characters (or blocks) were removed; each point is the tombstones where they may sit. */
-  private red(acc: Names, points: Array<readonly Y.Item[]>, weight: number) {
+  /** Red: exact `weight` tombstones must account for a visible deletion of `deleted` characters or blocks. */
+  private red(acc: Names, points: Array<readonly Y.Item[]>, weight: number, deleted = weight) {
     const valid: Array<Map<string, number>> = [];
     for (const tombs of points) {
       const deleters: number[] = [];
@@ -657,7 +657,22 @@ class Classifier {
           )
             deleters.push(this.deleter(c, clock));
         }
-      if (deleters.length === weight) valid.push(this.keyed(deleters));
+      if (deleters.length === weight) {
+        const names = this.keyed(deleters);
+        // Whole-word evidence may include equal letters. A remover is certain only if their
+        // characters cannot all fit outside this visible deletion, regardless of alignment.
+        if (deleted < weight) {
+          const counts = new Map<string, number>();
+          for (const who of deleters) {
+            if (isUnknown(who)) continue;
+            const key = this.keyOf(who);
+            counts.set(key, (counts.get(key) ?? 0) + 1);
+          }
+          for (const key of names.keys())
+            if ((counts.get(key) ?? 0) <= weight - deleted) names.delete(key);
+        }
+        valid.push(names);
+      }
     }
     this.nameCommon(acc, valid);
   }
@@ -686,8 +701,14 @@ class Classifier {
     return out;
   }
 
-  /** `removed` was deleted from the draft at one of `starts` of block `b`'s text. */
-  private deletion(acc: Names, b: number, starts: number[], removed: string) {
+  /** Locate exact tombstones for `removed`; whole-word evidence may support a smaller visible deletion. */
+  private deletion(
+    acc: Names,
+    b: number,
+    starts: number[],
+    removed: string,
+    deleted = removed.length,
+  ) {
     const ix = this.index(b);
     const spans: Array<[number, number]> = [];
     let cut = false;
@@ -709,6 +730,7 @@ class Classifier {
       acc,
       [...points].map((p) => this.deadAt(b, p)),
       removed.length,
+      deleted,
     );
   }
 
@@ -770,7 +792,7 @@ class Classifier {
     ];
   }
 
-  /** The character edit of one span, `draft` starting at offset `ds` of draft block `b`. */
+  /** Name a span's character edits and return its largest deletion's length for whole-word evidence. */
   private chars(acc: Names, b: number, ds: number, base: string, draft: string) {
     if (this.index(b).bad) {
       acc.incomplete = true;
@@ -782,11 +804,13 @@ class Classifier {
       return;
     }
     let at = 0;
+    let deleted = 0;
     ops.forEach(([op, txt], k) => {
       if (op === DIFF_INSERT) {
         this.green(acc, b, ds + at, txt.length);
         at += txt.length;
       } else if (op === DIFF_DELETE) {
+        deleted = Math.max(deleted, txt.length);
         const starts = [at];
         if (ops[k + 1]?.[0] === DIFF_INSERT) starts.push(at + ops[k + 1][1].length);
         if (ops[k - 1]?.[0] === DIFF_INSERT) starts.push(at - ops[k - 1][1].length);
@@ -800,6 +824,7 @@ class Classifier {
         at += txt.length;
       }
     });
+    return deleted;
   }
 
   /** The mark rule: a hunk that only changed marks is evidenced by the format items it changed or removed. */

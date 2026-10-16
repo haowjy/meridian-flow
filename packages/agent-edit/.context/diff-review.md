@@ -81,10 +81,15 @@ to the raw boundary; neighbouring unchanged words do not. Rebuilt blocks include
 their recreated text. Membership and the Apply record are derived only here.
 
 Optional character refinement can name fewer authors, but cannot mutate the
-footprint. A wholly recreated replacement also checks the raw word's exact base
-tombstones: equal letters in new items are not retained base anchors. Thus
+footprint. Only a character edit containing a deletion can also check a wholly
+recreated replacement's raw word for exact base tombstones: equal letters in new
+items are not retained base anchors. Thus
 `sword → blade → sabre` names both the remover of `sword` and the writer of `sabre`,
-without turning conservative membership into a byline. Surviving base characters
+without turning conservative membership into a byline. An insertion-only result
+such as `sword → swords → swordfish` names only the writer of `fish`, not the
+historical remover of the recreated `sword`. Whole-word evidence names a remover
+only when their character count exceeds the characters outside a visible deletion;
+equal letters may account for the other removers entirely. Surviving base characters
 or unresolved inserted identities exclude this whole-replacement naming check. A diff budget, slide cap or alignment-work limit silences names, not
 membership or Apply evidence. The room's Apply records establish accepted items
 as base. Discard's `writeDiscardBlocks` preserves text-run identities even with
