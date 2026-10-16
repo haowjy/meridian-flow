@@ -32,7 +32,7 @@ one Info scope across A, C, B. Delivery rows never attach across a divider.
 
 ## `endsTranscript`
 
-A divider **is** a row for the failed-reply rule: a failed reply followed by a
+A divider is a closing turn for the failed-reply rule (`chatMovedPast`): a failed reply followed by a
 divider is history, because the writer (or the run) moved on, and it no
 longer offers Retry ([failed-reply Retry](failed-reply-retry.md)). A queued
 command is not a transcript row and never counts. R3 is untouched: an

@@ -111,6 +111,7 @@ export function optimisticHandoffSeed(
     executionId: null,
     reservedForUserTurnIds: [],
     delivery: null,
+    forgottenBy: null,
     siblingIds: [],
     responses: [],
   };

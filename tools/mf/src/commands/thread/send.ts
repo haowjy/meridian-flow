@@ -358,6 +358,19 @@ function finalResult(
           { ...base, ...none, status: "handed_back" },
         ),
       );
+    case "forgotten":
+      return done(
+        terminalResult(
+          "thread.send",
+          { outcome: "failed", reason: "forgotten" },
+          {
+            ...base,
+            ...none,
+            status: "error",
+            error: "The chat moved past this message's failed reply, so no reply answers it",
+          },
+        ),
+      );
     case "unproven":
       return done(
         terminalResult(

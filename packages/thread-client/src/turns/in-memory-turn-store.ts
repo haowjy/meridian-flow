@@ -15,7 +15,9 @@ import {
   type EnsureAssistantTurnOptions,
   ensureAssistantTurnIn,
   ensureSwitchTurnIn,
+  type ForgottenStamps,
   type HeldDividers,
+  markForgottenIn,
   patchTurnStatusIn,
   removeTurnsIn,
   type SwitchTurnFacts,
@@ -36,6 +38,7 @@ export class InMemoryTurnStore implements TurnStore {
   private readonly floors = new Map<string, string>();
   private readonly tombstonesByThread = new Map<string, Tombstones>();
   private readonly dividersByThread = new Map<string, HeldDividers>();
+  private readonly forgottenByThread = new Map<string, ForgottenStamps>();
 
   constructor(options: InMemoryTurnStoreOptions) {
     this.now = options.now;
@@ -55,6 +58,7 @@ export class InMemoryTurnStore implements TurnStore {
       {
         tombstones: this.tombstonesByThread.get(threadId) ?? new Map(),
         dividers: this.dividersByThread.get(threadId) ?? new Map(),
+        forgotten: this.forgottenByThread.get(threadId),
       },
       turns,
       nextSeq,
@@ -123,6 +127,19 @@ export class InMemoryTurnStore implements TurnStore {
     );
     this.turnsByThread.set(threadId, next.turns);
     this.tombstonesByThread.set(threadId, next.tombstones);
+  }
+
+  markForgotten(threadId: string, ids: readonly string[], byTurnId: string): void {
+    const next = markForgottenIn(
+      {
+        turns: this.turnsByThread.get(threadId) ?? [],
+        forgotten: this.forgottenByThread.get(threadId) ?? new Map(),
+      },
+      ids,
+      byTurnId,
+    );
+    this.turnsByThread.set(threadId, next.turns);
+    this.forgottenByThread.set(threadId, next.forgotten);
   }
 
   bumpEventsApplied(threadId: string): number {

@@ -62,6 +62,10 @@ adapter only.
   usage); a held row is only the queued bubble, and the usage card says why. A failure shows
   only while it can be acted on: once a turn follows a failed reply, it leaves no line,
   and with no content no row (`viewTranscript` decides; a refused Retry's card keeps it).
+  The attempt itself is forgotten server-side (`turns.forgotten_by_turn_id`): the
+  snapshot keeps the turn stamped `forgottenBy`, `viewTranscript` hides it, and the
+  `meridian.turns.forgotten` frame stamps held turns. A refused Retry keeps its failed
+  reply drawn.
 - Stop (the [composer's one button](../../components/app/composer/AGENTS.md))
   hands the waiting messages back as one editable message, in send order with
   blank lines between them, above typed text. A handed-back message never

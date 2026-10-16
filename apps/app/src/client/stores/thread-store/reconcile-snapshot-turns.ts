@@ -83,6 +83,8 @@ export function reconcileSnapshotTurns(
     if (!localTurn) return serverTurn;
     return {
       ...serverTurn,
+      // Forgetting is write-once: an older snapshot never clears a stamp the store already holds.
+      forgottenBy: localTurn.forgottenBy ?? serverTurn.forgottenBy,
       blocks: reconcileBlocks(localTurn.blocks, serverTurn.blocks, serverTurn.status),
     };
   });

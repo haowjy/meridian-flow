@@ -26,6 +26,7 @@ export function goldenAssistantTurn(
     executionId: GOLDEN_EXECUTION_ID,
     reservedForUserTurnIds,
     delivery: null,
+    forgottenBy: null,
     promptBakeId: null,
     finishReason: null,
     inputTokens: 0,

@@ -512,6 +512,49 @@ else
       ).toMatchObject({ output: expect.stringContaining("Cleared at compaction") });
     });
 
+    it("sends no image block of a forgotten message and reads no asset for it (C11)", async () => {
+      // Risk: an orphan image block, kept in the request's block array after its turn left the conversation,
+      // reaching an asset read (which can fail the reply) or producing a break notice the model never earned.
+      const rig = await imageFixture();
+      const { userTurn, resolutionCounts } = await addImagePrompt(rig, [
+        { key: "forgotten", sizeBytes: 1024, included: true },
+      ]);
+      const failed = await rig.repos.turns.create({
+        threadId: rig.threadId,
+        prevTurnId: userTurn.id,
+        role: "assistant",
+        origin: "assistant",
+        status: "error",
+      });
+      const movedOn = await rig.repos.turns.create({
+        threadId: rig.threadId,
+        prevTurnId: failed.id,
+        role: "user",
+        origin: "writer",
+        status: "complete",
+      });
+      await rig.repos.blocks.create({
+        turnId: movedOn.id,
+        blockType: "text",
+        sequence: 0,
+        content: "Never mind that.",
+        textContent: "Never mind that.",
+        status: "complete",
+      });
+      await rig.repos.turns.forgetTurns([userTurn.id, failed.id], movedOn.id);
+
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Continue.",
+      });
+      expect((await run.execute()).status).toBe("complete");
+      expect([...resolutionCounts.keys()]).toEqual([]);
+      const request = JSON.stringify(rig.gateway.requests);
+      expect(requestImageData(rig.gateway.requests[0])).toEqual([]);
+      expect(request).not.toContain("Removed scratch://");
+    });
+
     it("re-admits a retained eviction on C and makes B match its stored rebuild", async () => {
       const rig = await imageFixture();
       const { savedImages } = await addImagePrompt(rig, [
@@ -1132,6 +1175,15 @@ else
             },
       );
       const rig = await fixture({ summarizer });
+      // Two messages wait together: the planner pins the newest on its own, so only an explicit pin keeps
+      // the other out of the summary.
+      await rig.delivery.enqueue({
+        threadId: rig.threadId,
+        intent: "message",
+        provenance: { kind: "writer", actorId: rig.ids.user },
+        body: { kind: "text", text: "An earlier question." },
+        idempotencyKey: "earlier-question",
+      });
       const original = await rig.orchestrator.prepare({
         threadId: rig.threadId,
         tools: [],
@@ -1157,6 +1209,12 @@ else
       const retriedReply = await rig.repos.turns.findById(replyTurnId as never);
       expect(compactions).toHaveLength(2);
       expect(compactions[1]).toMatchObject({ status: "complete" });
+      // Risk (C5): a Retry-led compaction summarizing the messages its Retry still answers. It pins them, so
+      // forgetting the failed attempt later can never leave their words only in a summary.
+      expect(failedReply.reservedForUserTurnIds).toHaveLength(2);
+      expect(CompactionMetadataCodec.parse(compactions[1]?.metadata).pinnedRequestTurnIds).toEqual(
+        expect.arrayContaining(failedReply.reservedForUserTurnIds),
+      );
       expect(compactions[1]?.id).not.toBe(replyTurnId);
       expect(retriedReply).toMatchObject({
         id: replyTurnId,

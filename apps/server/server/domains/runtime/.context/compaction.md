@@ -53,6 +53,13 @@ handoff. `projectCompactedHistory` narrows it to the cut for rolling summaries.
 The synchronous projector is private because it can drop the bake-specific
 sentence.
 
+A compaction is a closing row for forgetting ([delivery](delivery.md#forgetting-a-failed-attempt)):
+one that follows an empty failed reply forgets that attempt and its messages.
+A cut may be empty (`EMPTY_CUT`, `turnId: null`), which `plan.ts` treats as no
+cut. A compaction led by a Retry pins the messages the retry keeps
+(`pinnedRequestTurnIds` is the outstanding messages plus `retryReservedFor`), and
+the blocks it summarizes are intersected with the kept turns.
+
 ## Trigger and estimator
 
 `request-preparation.ts` measures the assembled request against raw history.
