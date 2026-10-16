@@ -314,7 +314,7 @@
     "apps/server/server/domains/context/adapters/lineage-scratch-arrivals.db.test.ts": 2,
     "apps/server/server/domains/context/adapters/project-context-availability.db.test.ts": 16,
     "apps/server/server/domains/context/context-catalog-wake-hub.test.ts": 2,
-    "apps/server/server/domains/context/context-port-resolution.test.ts": 2,
+    "apps/server/server/domains/context/context-port-resolution.test.ts": 3,
     "apps/server/server/domains/context/context/context-tree-mover.test.ts": 3,
     "apps/server/server/domains/context/context/rename-provenance.test.ts": 12,
     "apps/server/server/domains/context/context/router.test.ts": 9,

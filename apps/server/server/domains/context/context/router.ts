@@ -67,6 +67,10 @@ export interface ContextPortRouterDeps {
   ) => Promise<
     { kind: "found"; binding: ContextSourceBinding } | { kind: "unavailable" } | { kind: "missing" }
   >;
+  /** Where a chat's uploads and Scratch live, to name them in near-miss errors. */
+  chatFiles?: (
+    ref: string,
+  ) => Promise<import("../chat-file-addresses.js").ChatFileAddresses | null>;
   resolveLineageSource?: (ref: string) => Promise<ContextSourceBinding | null>;
   rootForThreadRef?: (ref: string) => Promise<import("../scratch-owner.js").ScratchLineage | null>;
   listLineages?: () => Promise<import("../scratch-owner.js").ScratchLineage[]>;
@@ -383,7 +387,16 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
 
   async function resolve(uri: string): Promise<Result<Dispatch, ContextError>> {
     const parsed = parseContextUri(uri, parseOptions);
-    if (!parsed.ok) return parsed;
+    if (!parsed.ok) {
+      const { error } = parsed;
+      const files =
+        error.code === "invalid_uri" && error.chatHandle
+          ? await deps.chatFiles?.(error.chatHandle)
+          : null;
+      return files && error.code === "invalid_uri"
+        ? Err({ ...error, reason: `Another chat's uploads are at ${files.uploads}…` })
+        : parsed;
+    }
     const { scheme, authority, path } = parsed.value;
 
     const contextual = authority.kind === "contextual" ? sources.get(scheme) : undefined;
@@ -439,10 +452,16 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     } else if (authority.kind === "work") {
       const resolvedAuthority = deps.workAuthorities.get(authority.workSlug) ?? null;
       if (!resolvedAuthority) {
+        const chatFiles =
+          scheme === "scratch" && /^c[1-9][0-9]*$/.test(authority.workSlug)
+            ? await deps.chatFiles?.(authority.workSlug)
+            : null;
         return Err({
           code: "invalid_uri",
           uri: parsed.value.normalized,
-          reason: unknownWorkMessage(authority.workSlug),
+          reason: chatFiles
+            ? `${unknownWorkMessage(authority.workSlug)} Chat ${authority.workSlug}'s scratch notes are at ${chatFiles.scratch}`
+            : unknownWorkMessage(authority.workSlug),
           workSlug: authority.workSlug,
         });
       }
