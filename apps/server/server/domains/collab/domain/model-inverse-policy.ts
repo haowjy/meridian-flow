@@ -242,13 +242,14 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           ]),
           document.history.map((part) => [part.id, part.placement, part.threadId, part.turnId]),
         ]);
-        const hit = statusCache.get(key);
+        // The digest names the exact state, so a large draft's snapshots never bloat the cache key.
+        const revision = createHash("sha256").update(key).digest("base64url");
+        const hit = statusCache.get(revision);
         if (hit !== undefined) {
-          statusCache.delete(key);
-          statusCache.set(key, hit);
+          statusCache.delete(revision);
+          statusCache.set(revision, hit);
           return { status: "success", actionId: randomUUID(), message: hit };
         }
-        const revision = createHash("sha256").update(key).digest("base64url");
         const policy = planner(document, query),
           own = policy.own,
           inspection = policy.inspect();
@@ -333,9 +334,9 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           ...lines,
           ...(older.length > 20 ? [`more: before ${page.at(-1)?.handle}`] : []),
         ].join("\n");
-        // Bound entries AND retained key/message size. Large histories still read correctly uncached.
-        if (key.length + message.length <= 65_536) {
-          statusCache.set(key, message);
+        // Bound entries and retained message size. A longer listing still reads correctly uncached.
+        if (message.length <= 65_536) {
+          statusCache.set(revision, message);
           if (statusCache.size > 16) {
             const oldest = statusCache.keys().next().value;
             if (oldest !== undefined) statusCache.delete(oldest);
