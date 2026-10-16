@@ -9,6 +9,7 @@
  * agree. `[[name]]` is text, never a link.
  */
 import { t } from "@lingui/core/macro";
+import { qualifyWrittenHref } from "@meridian/markup/links";
 import {
   createContext,
   type ReactNode,
@@ -37,7 +38,6 @@ import {
   linkTargetHref,
   referenceChip,
 } from "@/core/editor/links";
-import { parseContextUri } from "@/lib/context-uri";
 
 /**
  * How the hosting surface follows a link written as syntax (a Context URI or
@@ -70,20 +70,13 @@ export const TranscriptReferenceContext = createContext<{
   resolutions?: ReadonlyMap<string, TranscriptReferenceResolution>;
   onOpen?: (documentId: string) => void;
   canOpen?: (uri: string) => boolean;
+  /**
+   * The transcript's own chat handle. A message sent from a New chat names an upload bare until
+   * the server names the chat and rewrites the stored text; the referenced href is qualified here
+   * to the spelling the server's answer uses.
+   */
+  uploadsChat?: string;
 }>({});
-
-/**
- * An upload never moves, but its spelling does: a message sent from a New chat names it bare
- * (`uploads://x`) until the server names the chat, then `uploads://@/c12/x`. Same document, so
- * the two spellings agree.
- */
-function sameReferencedUri(answered: string, referenced: string | undefined): boolean {
-  if (answered === referenced) return true;
-  if (!referenced) return false;
-  const left = parseContextUri(answered);
-  const right = parseContextUri(referenced);
-  return left?.scheme === "uploads" && right?.scheme === "uploads" && left.path === right.path;
-}
 
 export function TranscriptReference({
   children,
@@ -98,7 +91,7 @@ export function TranscriptReference({
   "data-target-href"?: string;
   "data-authored-label"?: string;
 }) {
-  const { resolutions, onOpen, canOpen } = useContext(TranscriptReferenceContext);
+  const { resolutions, onOpen, canOpen, uploadsChat } = useContext(TranscriptReferenceContext);
   const navigation = useContext(TranscriptLinkNavigationContext);
   const target = targetHref ? classifyLinkTarget(targetHref) : null;
   const trigger = useRef<HTMLSpanElement>(null);
@@ -109,7 +102,7 @@ export function TranscriptReference({
   const resolution =
     candidate &&
     candidate.documentId === documentId &&
-    (!candidate.available || sameReferencedUri(candidate.uri, uri))
+    (!candidate.available || candidate.uri === (uri && qualifyWrittenHref(uri, uploadsChat)))
       ? candidate
       : null;
   const syntax = !documentId && target ? target : null;

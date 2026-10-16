@@ -51,6 +51,7 @@ export type MarkdownProps = {
   onOpenReference?: (documentId: string) => void;
   /** A reference the host has no way to open is drawn without its link. */
   canOpenReference?: (uri: string) => boolean;
+  uploadsChat?: string;
 };
 
 const SHIKI_THEME: NonNullable<StreamdownProps["shikiTheme"]> = ["github-light", "github-dark"];
@@ -95,6 +96,7 @@ export function Markdown({
   referenceResolutions,
   onOpenReference,
   canOpenReference,
+  uploadsChat,
 }: MarkdownProps) {
   const streaming = mode === "streaming";
   const exactSource = references.length > 0 || skills.length > 0;
@@ -113,6 +115,7 @@ export function Markdown({
         resolutions: referenceResolutions,
         onOpen: onOpenReference,
         canOpen: canOpenReference,
+        uploadsChat,
       }}
     >
       <Streamdown
