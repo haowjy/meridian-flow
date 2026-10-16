@@ -56,7 +56,7 @@ and press Enter twice:
 ./mf mock script '[{"error":{"status":500,"message":"summary boom"}}]' --match 'Conversation transcript'
 ```
 
-The divider reads "Couldn't compact" and its card says "This conversation couldn't be compacted. Try
+The divider keeps its neutral "Compaction" label and fold icon; only its card says "This conversation couldn't be compacted. Try
 again." with a Try again button. Clear both scripts (`./mf mock clear --id`) and press Try again: a new
 compaction runs and completes, the failed one and its card go. An autocompaction's failure shows no
 card (the failed reply under the newest message carries it).

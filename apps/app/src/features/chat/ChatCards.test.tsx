@@ -161,5 +161,17 @@ describe("failure cards by anchor", () => {
     );
     await act(async () => buttons(host)[0]?.click());
     expect(spies.tryAgainCompaction).toHaveBeenCalledWith("c");
+
+    const replacement = await render(
+      {
+        turns: { turns: [compaction] },
+        controls: [{ id: "replacement", control: { kind: "compact" }, status: "queued" }],
+      },
+      () => createElement(CompactionDivider, { turn: compaction, stopping: false }),
+    );
+    expect({
+      text: replacement.host.textContent,
+      failure: replacement.host.querySelector("[data-chat-card], .text-destructive"),
+    }).toEqual({ text: "CompactionCompactionKeep names", failure: null });
   });
 });

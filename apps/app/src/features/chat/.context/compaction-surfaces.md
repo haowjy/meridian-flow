@@ -76,6 +76,10 @@ last. Without a summary, the section's accessible name keeps the full label.
 With one, the toggle is named `` `${full}, summary` `` and the section drops
 its own name, so the state words are read once.
 
+A failed divider keeps the neutral “Compaction” label and fold icon. Only its
+anchored `chatCards` card reports failure; when a replacement is queued, no
+failure label or styling survives independently on the divider.
+
 ## Composer during a run
 
 `composerRun(turns)` decides what the composer's Stop acts on. Work is active

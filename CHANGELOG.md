@@ -4,6 +4,7 @@
 
 - Every chat failure is a card drawn from one place (`chatCards`), announced once when you watched it appear and cleared from the screen reader's live region when the card ends. A failed compaction's card now has Try again (it sends `/compact` again), a hidden "Couldn't stop the reply." no longer lingers in the page after its card goes, and a Retry whose request was lost is a "Couldn't start the retry." card with Try again on the failed reply instead of a fake failed reply. `./mf thread view` prints the same cards (`cards` in its JSON).
 ### Fixed
+- Failed compaction dividers stay neutral when a queued replacement suppresses their failure card.
 - `./mf api` preserves raw text responses again; domain command outcomes now require
   validated response bodies, including cancellation, admission, creation and document deletion.
 
