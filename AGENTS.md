@@ -77,6 +77,11 @@ hidden constraints, surprising invariants, and workarounds.
 parentheses, never `·`, `•`, `—`, or `|`. See the
 [copy separation decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/writer-copy-separation.md).
 
+**Offer only what applies.** Show a control only while its action can succeed.
+Feedback never displaces content already on screen: it uses blank space, or the
+end of a surface that grows downward, like a chat's latest turn. See the
+[offer-only-what-applies decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/offer-only-what-applies.md).
+
 **Debugging.** Follow [docs/debugging.md](docs/debugging.md).
 
 ## Knowledge and structure
@@ -113,16 +118,18 @@ only when you ask: a stack belongs to whichever session started it.
 Setup: [DEVELOPMENT.md](DEVELOPMENT.md). Dev tooling rules:
 [tools/dev/AGENTS.md](tools/dev/AGENTS.md).
 
-**Verify with `./mf` while working, and in the browser at the end.** `./mf` runs the
-app's socket client, message serializer, chat event processing (the turn reducer)
-and transcript view model (`thread view` prints the rows the app draws), so a
-`./mf` run is evidence for that shared code against the real server. A command
-with no shared client code behind it is evidence of the server only. What the
-writer sees (rendering, card wording, the composer, optimistic UI, client state)
-is checked in the browser (`agent-browser`), and a PR that changes app behavior
-confirms it there at least once, at the end. `./mf` also sets up state (Works,
-threads, seeded documents, mock-model scripts, queued controls). Exit codes are in
-[docs/debugging.md](docs/debugging.md#set-up-and-verify-with-the-cli). See
+**Debug with `./mf` while working; verify in the browser at the end.** `./mf` is
+the first line of defense: reproduce and debug, set up state (Works, threads,
+seeded documents, mock-model scripts, queued controls), read durable state and
+server logs, and check shared client code against the real server quickly. It runs
+the app's socket client, message serializer, turn reducer and transcript view
+model, which keeps it a faithful debugging tool. Verification is a browser run,
+driven by a prober with `agent-browser`, of what the writer sees. Every PR that
+changes anything a writer's experience runs through ends with one, with
+screenshots in the PR. That includes server-only changes: failure, Retry,
+compaction, usage and delivery all pass through the server. `./mf` output is
+debugging evidence and never stands in for that run. Exit codes are in
+[docs/debugging.md](docs/debugging.md#set-up-and-debug-with-the-cli). See
 [`./mf` drives shared client cores][mf-shared-cores].
 
 ## Build and test

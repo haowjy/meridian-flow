@@ -4,6 +4,7 @@
  * subscribe/cursor, and projects orchestrator events into AG-UI events for
  * subscribers. Owns the realtime delivery layer over the event journal.
  */
+import type { FailureRecord } from "@meridian/contracts/failures";
 import type { MeridianError } from "@meridian/contracts/interrupt";
 import {
   type AGUIEvent,
@@ -13,7 +14,14 @@ import {
 } from "@meridian/contracts/protocol";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
-import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
+import { recordFailureAfterCommit } from "../../shared/failure-records.js";
+import type { InMemoryTransactionOwner } from "../../shared/in-memory-transaction.js";
+import {
+  type EventSink,
+  emitEvent,
+  recordFailure,
+  unknownToEventPayload,
+} from "../observability/index.js";
 import { createOrchestratorEventProjector } from "./domain/orchestrator-event-projector.js";
 import type { EventJournalReader, EventJournalWriter } from "./ports/index.js";
 
@@ -40,6 +48,8 @@ type ThreadEventHubDeps = {
   journalReader: EventJournalReader;
   eventSink: EventSink;
   scheduleAfterCommit?: (callback: () => void | Promise<void>) => void;
+  /** In-memory composition: failure records follow this owner's commit instead of a Drizzle transaction's. */
+  inMemoryTransactionOwner?: InMemoryTransactionOwner;
 };
 
 export type ThreadEventHubOptions = {
@@ -213,15 +223,6 @@ export function createThreadEventHub(
         if (entries.length === 0) break;
         for (const entry of entries) {
           const event = entry.payload as OrchestratorEvent;
-          if (event.type === "turn.error") {
-            emitEvent(eventSink, {
-              level: "error",
-              source: "threads.event-hub",
-              name: "turn.error",
-              correlation: { threadId, turnId: event.turn.id, runId: event.turn.id },
-              payload: { threadId, turnId: event.turn.id, error: event.error },
-            });
-          }
           const projected = toSequencedEvents(entry.seq, state.projector.project(event), event);
           state.journalCursor = entry.seq;
           cacheHot(state, projected);
@@ -266,6 +267,13 @@ export function createThreadEventHub(
 
   return {
     invalidateCommittedJournal,
+    recordFailure(record: FailureRecord): void {
+      recordFailureAfterCommit(
+        record,
+        (emitted) => recordFailure(eventSink, emitted),
+        deps.inMemoryTransactionOwner,
+      );
+    },
     async appendEvent(threadId: ThreadId, orchestratorEvent: OrchestratorEvent): Promise<bigint> {
       const journalSeq = await deps.journalWriter.appendEvent(threadId, orchestratorEvent);
       const invalidate = () => invalidateCommittedJournal(threadId);

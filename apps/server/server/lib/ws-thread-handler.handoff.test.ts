@@ -1,4 +1,5 @@
 /** Ordered and cancellable socket handoff over the real journal hub. */
+
 import type { WsServerMessage } from "@meridian/contracts/protocol";
 import type { ThreadId, UserId } from "@meridian/contracts/runtime";
 import { describe, expect, it, vi } from "vitest";
@@ -7,6 +8,7 @@ import { createNoopEventSink } from "../domains/observability/index.js";
 import { createInMemoryEventJournalWriter } from "../domains/threads/adapters/in-memory/index.js";
 import type { EventJournalReader } from "../domains/threads/ports/index.js";
 import { createThreadEventHub } from "../domains/threads/thread-event-hub.js";
+import { noTransactionOwner } from "../shared/in-memory-transaction.js";
 import type { AppServices } from "./app.js";
 import { createThreadWebSocketSession, type WsPeer } from "./ws-thread-handler.js";
 
@@ -41,7 +43,7 @@ async function harness(
     onFirstCatchupReady?: () => void;
   } = {},
 ) {
-  const journal = createInMemoryEventJournalWriter();
+  const journal = createInMemoryEventJournalWriter(noTransactionOwner);
   await journal.appendEvent(THREAD_ID, {
     type: "turn.created",
     turn: goldenAssistantTurn("turn-handoff", THREAD_ID),
