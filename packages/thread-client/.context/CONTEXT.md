@@ -100,10 +100,9 @@ the optional `invalidateThreadSnapshot` an adapter may supply.
   floor, like `acceptsThreadSnapshot`). The floor is snapshot freshness only; it
   never filters events. Replay coverage is the caller's subscription cursor
   (`liveState.resumeAfterSeq`, or the admission's for a send).
-- **Parity rule.** `apps/app/.../turn-store-parity.test.ts` runs one fixture
-  (`test-support/turn-events.ts`) through the app store and `InMemoryTurnStore` and
-  requires equal turns. A new event family goes into that fixture; a store change
-  that the other store does not share fails there. (L1c retires `InMemoryTurnStore` and this test.)
+- **One implementation, no parity test.** The reducer's end state is pinned by the fixture in
+  `test-support/turn-events.ts` through `reduce-turn-event.test.ts`. A new event family goes into
+  that fixture. (`InMemoryTurnStore` is `./mf`'s until L1c retires it.)
 - **One value per chat (`sync/synced-thread.ts`).** `SyncedThread` is the plain value a host
   holds per chat: turns, tombstones, held dividers, forgotten stamps, the snapshot floor, the
   durable-block cursor, the reducer's event counter and the run-state slice. Pure transitions
@@ -114,10 +113,34 @@ the optional `invalidateThreadSnapshot` an adapter may supply.
   floor, and keeps covered tombstones while an optimistic row awaits its answer.
   `syncedTurnStore({ cell, now, ...callbacks })` is the `TurnStore` the reducer writes through,
   over the host's cell (`get`/`set` for one chat); callbacks are the host's effects and run
-  after the write. The app's Zustand store holds one value per chat (`syncedByThread`) and
-  runs the thread-list, cache and interrupt-response effects in those callbacks. The
+  after the write. The app's Zustand store holds one value per chat (`syncedByThread`). The
   admission answer raises the floor whether or not the local row is still there: the server
   stated it, and the floor only rises.
+- **One driver (`sync/thread-sync.ts`).** `createThreadSync(ports)` keeps one chat's value in
+  step with the server for any host. It owns the transcript handler on the subscription (add on
+  `start()`, remove on `stop()`; a generation fence drops late callbacks), frame routing and
+  order (`StreamDeltaCoalescer`: deltas merge per frame; durable blocks, switch, hand-back and
+  forgotten frames flush first; records and the `subscribed` state bypass), the debounced
+  refresh timer (`REFRESH_DEBOUNCE_MS`; unconditional triggers win over gap-only), `missing`
+  (a held divider awaits its anchor, or the record names a waiting writer message the transcript
+  lacks, asked at timer fire), `receive(read)`, the join, and its reducer instance. It never
+  fetches: `requestSnapshot("fresh" | "any")` asks the host, and every completed read comes back
+  through `receive`, which flushes buffered deltas, applies the read and its record as one
+  transition (`applyRead`), and returns `stale` (changing nothing) when the read is below the
+  floor. Only the first applied read may rewind the subscription to its `resumeAfterSeq`, and
+  only if it shows work in progress. A stream write that ends a turn requests a `"fresh"` read at
+  once; a durable block for a turn the transcript lacks requests an `"any"` read. Host effects go
+  through `observe(observation)` after the write each follows (`event`, `live`, `gap`, `read`,
+  `check`, `turn`, `interruptSettled`, `error`).
+- **The end-of-turn check.** Per turn the sync keeps sets of ids: *stream-ended* (the reducer's
+  first not-terminal to terminal write), *checked*, and *rewritten* (a read put the turn's status
+  or text in the cell before the stream ended it, or changed a turn the reducer was writing, or
+  seeded its text before the reducer first wrote to it, or the cell already held it when the
+  sync started; never cleared, so replay reopening and re-ending a turn cannot launder it). At
+  the first applied read after a stream end the turn's status and own text (the text items of
+  `viewAssistantTurn`, not the transcript) are compared with the read's, and a `check`
+  observation carries `rewritten` and the `diffs`. `forgottenBy` is neither compared nor a
+  rewrite.
 - **Moved here from the app:** `reconcileSnapshotTurns` (`turns/`), the run-state slice
   (`run-state/run-state-slice.ts`, with `JournalSwitch`) and `StreamDeltaCoalescer`
   with `frameScheduler` (`sync/`, subpath `@meridian/thread-client/sync`).
