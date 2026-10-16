@@ -1,18 +1,21 @@
 # Manual worktree cleanup
 
 For when `pnpm dev:prune-worktrees -- --target <x> --dry-run` refuses a
-branch you believe is safe to remove. The tool only acts on proof: an exact
-merged-PR match, or the commit's ancestry of the base branch
-([`tools/dev/AGENTS.md`](AGENTS.md)). When neither holds, it refuses — correctly,
+branch you believe is safe to remove. The tool only acts on proof: the commit
+contained in another surviving ref (the branch's own local and remote-tracking
+refs never count), or an exact merged-PR match, whichever base branch it merged
+into ([`tools/dev/AGENTS.md`](AGENTS.md)). When neither holds, it refuses — correctly,
 on the evidence it has. This guide is for building better evidence by hand and
 recording that evidence in a manually verified cleanup plan, not for using a
 bare force override.
 
 ## When this applies
 
-- The branch merged into another working branch (no PR of its own), and that
-  branch was later squash-merged into `main` or `staging`. Squashing
-  discards the ancestor relationship entirely, for every branch that fed it.
+- The branch merged into another working branch that no longer exists: its
+  integration branch was squash-merged into `main` or `staging` and deleted,
+  nothing left contains the commit, and the branch had no PR of its own.
+  Squashing discards the ancestor relationship entirely, for every branch that
+  fed it.
 - The branch merged before this repo's migration-history guard or some other
   check existed, leaving no CI record.
 - Any other case where you can reconstruct the merge from history, but the
@@ -73,6 +76,35 @@ pnpm dev:prune-worktrees -- --target <branch> \
 Manual verification replaces only the automatic ancestry or PR proof; the tool
 still refuses primary, current, base, locked, dirty, or (by default) live worktrees and
 still revalidates the branch OID and readiness before destructive actions.
+
+### Verify stacked-lane acceptance
+
+Exercise both automatic proof paths on disposable refs. Only the first can be
+synthesized; the stacked-PR path needs a real merged PR, so use one whose base
+was a working branch.
+
+1. Containment: a lane whose tip is an ancestor of an integration ref.
+
+   ```bash
+   tree=$(git rev-parse origin/main^{tree})
+   lane=$(git commit-tree $tree -p origin/main -m "fixture: prune lane")
+   integration=$(git commit-tree $tree -p $lane -m "fixture: prune integration")
+   git branch fixture/prune-lane $lane
+   git branch fixture/prune-integration $integration
+   git worktree add ../meridian-flow.worktrees/prune-fixture-lane fixture/prune-lane
+   ```
+
+2. A dry run on `fixture/prune-lane` plans with evidence
+   `contained in fixture/prune-integration`; a dry run on
+   `fixture/prune-integration` refuses (only its own refs accept it).
+3. Stacked PR: list merged PRs with `gh pr list --state merged --json
+   number,baseRefName,headRefName`, pick one whose base is a working branch,
+   and create a branch at that PR's `headRefOid`. The dry run plans with
+   evidence `merged PR #N into <base>`.
+4. A branch at a commit no other ref contains and no merged PR matches still
+   refuses.
+5. Remove the fixture worktrees and branches: `git worktree remove <path>` and
+   `git update-ref -d <ref>` for each.
 
 ## Shells parked in a merged worktree
 

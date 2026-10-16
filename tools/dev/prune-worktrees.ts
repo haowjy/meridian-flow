@@ -23,12 +23,13 @@ import {
   resolveTargetWorktree,
   type TargetReference,
 } from "./lib/worktree-cleanup";
-import { resolveAncestryRef } from "./lib/worktree-cleanup-ancestry";
 import {
   type CleanupEligibility,
   decideCleanupEligibility,
   type MergedPullRequest,
   type PullRequestDiscovery,
+  selectContainedByRef,
+  shortRefName,
   validateCleanupEligibility,
 } from "./lib/worktree-cleanup-eligibility";
 import {
@@ -188,9 +189,12 @@ function printPlan(plan: CleanupPlan, force: boolean): void {
       `  evidence: ${(() => {
         switch (target.eligibility.kind) {
           case "ancestry":
-            return `ancestor of ${target.eligibility.baseBranch}`;
+            return `contained in ${shortRefName(target.eligibility.containedBy)}`;
           case "pull-request":
-            return `merged PR #${target.eligibility.pullRequestNumber}`;
+            return (
+              `merged PR #${target.eligibility.pullRequestNumber} ` +
+              `into ${target.eligibility.pullRequestBase}`
+            );
           case "manual":
             return `manually verified — ${JSON.stringify(target.eligibility.note)}`;
         }
@@ -297,23 +301,33 @@ function resolveBaseBranch(cwd: string): string {
   return "main";
 }
 
-function prepareAncestryRef(baseBranch: string, cwd: string): string {
-  // Fetch is best-effort: an existing remote-tracking ref is still better than
-  // a stale local branch when the network is unavailable.
+// Containment reads whatever refs exist locally, so a fresh origin/<baseBranch>
+// is what keeps the trunk's answer current. The fetch stays best-effort: a
+// stale remote-tracking ref still beats nothing when the network is down.
+function fetchBaseBranch(baseBranch: string, cwd: string): void {
   spawnSync("git", ["fetch", "origin", baseBranch, "--quiet"], {
     cwd,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   });
+}
 
-  return resolveAncestryRef(baseBranch, (ref) => {
-    const result = spawnSync("git", ["show-ref", "--verify", "--quiet", `refs/remotes/${ref}`], {
-      cwd,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    return result.status === 0;
-  });
+// Authorizes a targeted cleanup when the planned commit survives in a ref other
+// than the branch's own: a lane merged into a working or integration branch
+// keeps its commits reachable after its own refs are deleted. Selecting the ref
+// that reports that containment is `selectContainedByRef`'s job.
+function findContainedByRef(
+  oid: string,
+  branch: string,
+  baseBranch: string,
+  cwd: string,
+): string | undefined {
+  const refs = runText(
+    "git",
+    ["for-each-ref", `--contains=${oid}`, "--format=%(refname)", "refs/heads", "refs/remotes"],
+    cwd,
+  );
+  return selectContainedByRef(refs.split("\n").filter(Boolean), branch, baseBranch);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -351,18 +365,17 @@ function parseMergedPullRequests(output: string): MergedPullRequest[] {
   });
 }
 
-async function discoverMergedPullRequests(
-  baseBranch: string,
-  cwd: string,
-): Promise<PullRequestDiscovery> {
+// Merged PRs are discovered across every base: targeted cleanup accepts an
+// exact head commit merged into any branch, stacked PRs into integration
+// branches included, while batch cleanup filters to the trunk. The exact head
+// OID in the match keeps historical same-name PRs out.
+async function discoverMergedPullRequests(cwd: string): Promise<PullRequestDiscovery> {
   try {
     const output = await runTextAsync(
       "gh",
       [
         "pr",
         "list",
-        "--base",
-        baseBranch,
         "--state",
         "merged",
         "--limit",
@@ -385,8 +398,8 @@ async function resolveRepositoryOwner(cwd: string): Promise<string> {
   return runTextAsync("gh", ["repo", "view", "--json", "owner", "--jq", ".owner.login"], cwd);
 }
 
-function checkAncestry(oid: string, ancestryRef: string, cwd: string): boolean {
-  const result = spawnSync("git", ["merge-base", "--is-ancestor", oid, ancestryRef], {
+function checkAncestry(oid: string, ref: string, cwd: string): boolean {
+  const result = spawnSync("git", ["merge-base", "--is-ancestor", oid, ref], {
     cwd,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
@@ -396,19 +409,16 @@ function checkAncestry(oid: string, ancestryRef: string, cwd: string): boolean {
   throw new Error(
     result.stderr.trim() ||
       result.error?.message ||
-      `Could not verify whether ${oid} is an ancestor of '${ancestryRef}'.`,
+      `Could not verify whether ${oid} is an ancestor of '${ref}'.`,
   );
 }
 
 function pullRequestEvidenceKey(input: {
-  readonly baseRefName: string;
   readonly headRefName: string;
   readonly headRepositoryOwner: string;
   readonly headRefOid: string;
 }): string {
-  return [input.baseRefName, input.headRefName, input.headRepositoryOwner, input.headRefOid].join(
-    "\0",
-  );
+  return [input.headRefName, input.headRepositoryOwner, input.headRefOid].join("\0");
 }
 
 function indexMergedPullRequests(
@@ -427,16 +437,15 @@ function indexMergedPullRequests(
 async function collectCleanupEligibility(
   gitWorktreePorcelain: string,
   baseBranch: string,
-  ancestryRef: string,
   cwd: string,
-  allowAncestry: boolean,
+  targeted: boolean,
 ): Promise<Map<string, CleanupEligibility>> {
   const eligibility = new Map<string, CleanupEligibility>();
   let repositoryOwner = "";
   let pullRequestDiscovery: PullRequestDiscovery;
   try {
     repositoryOwner = await resolveRepositoryOwner(cwd);
-    pullRequestDiscovery = await discoverMergedPullRequests(baseBranch, cwd);
+    pullRequestDiscovery = await discoverMergedPullRequests(cwd);
   } catch (error) {
     pullRequestDiscovery = {
       ok: false,
@@ -458,14 +467,15 @@ async function collectCleanupEligibility(
       continue;
     }
 
-    const isAncestor = allowAncestry ? checkAncestry(plannedOid, ancestryRef, cwd) : false;
+    const containedBy = targeted
+      ? findContainedByRef(plannedOid, branch, baseBranch, cwd)
+      : undefined;
     const branchPullRequestDiscovery: PullRequestDiscovery = pullRequestDiscovery.ok
       ? {
           ok: true,
           pullRequests:
             pullRequestsByEvidence.get(
               pullRequestEvidenceKey({
-                baseRefName: baseBranch,
                 headRefName: branch,
                 headRepositoryOwner: repositoryOwner,
                 headRefOid: plannedOid,
@@ -478,8 +488,9 @@ async function collectCleanupEligibility(
       plannedOid,
       baseBranch,
       repositoryOwner,
-      isAncestor,
-      allowAncestry,
+      containedBy,
+      allowAncestry: targeted,
+      pullRequestBaseScope: targeted ? "any" : "base-branch",
       pullRequestDiscovery: branchPullRequestDiscovery,
     });
     if (decision.eligible) eligibility.set(branch, decision.evidence);
@@ -507,10 +518,7 @@ function printAutoReadinessSkips(
   }
 }
 
-async function buildPlan(
-  options: CliOptions,
-  cwd: string,
-): Promise<{ readonly plan: CleanupPlan; readonly ancestryRef: string }> {
+async function buildPlan(options: CliOptions, cwd: string): Promise<CleanupPlan> {
   console.log(
     options.mode === "target" && options.manuallyVerified
       ? "Discovering worktrees and active work items..."
@@ -519,17 +527,11 @@ async function buildPlan(
   const currentWorktreePath = runText("git", ["rev-parse", "--show-toplevel"], cwd);
   const gitWorktreePorcelain = runText("git", ["worktree", "list", "--porcelain"], cwd);
   const baseBranch = resolveBaseBranch(cwd);
-  const ancestryRef = prepareAncestryRef(baseBranch, cwd);
+  fetchBaseBranch(baseBranch, cwd);
   const [eligibilityByBranch, meridianWorkItems] = await Promise.all([
     options.mode === "target" && options.manuallyVerified
       ? Promise.resolve(new Map<string, CleanupEligibility>())
-      : collectCleanupEligibility(
-          gitWorktreePorcelain,
-          baseBranch,
-          ancestryRef,
-          cwd,
-          options.mode !== "auto",
-        ),
+      : collectCleanupEligibility(gitWorktreePorcelain, baseBranch, cwd, options.mode !== "auto"),
     collectMeridianWorkItems(cwd),
   ]);
   const worktrees = parseGitWorktreePorcelain(gitWorktreePorcelain);
@@ -601,7 +603,7 @@ async function buildPlan(
     return [target];
   })();
 
-  return { plan: createCleanupPlan(context, targets), ancestryRef };
+  return createCleanupPlan(context, targets);
 }
 
 function runAction(action: CleanupAction): { ok: boolean; output: string } {
@@ -622,7 +624,7 @@ function runAction(action: CleanupAction): { ok: boolean; output: string } {
   return { ok: result.status === 0, output: actionOutput };
 }
 
-function revalidateTarget(target: CleanupPlan["targets"][number], ancestryRef: string) {
+function revalidateTarget(target: CleanupPlan["targets"][number]) {
   const primaryCwd =
     target.actions.find((action) => action.kind === "remove-worktree")?.cwd ?? process.cwd();
   let currentOid: string | undefined;
@@ -635,11 +637,21 @@ function revalidateTarget(target: CleanupPlan["targets"][number], ancestryRef: s
   } catch {
     currentOid = undefined;
   }
-  const isAncestor =
-    target.eligibility.kind === "ancestry"
-      ? checkAncestry(target.eligibility.plannedOid, ancestryRef, primaryCwd)
-      : undefined;
-  return validateCleanupEligibility({ evidence: target.eligibility, currentOid, isAncestor });
+  let isContained: boolean | undefined;
+  if (target.eligibility.kind === "ancestry") {
+    try {
+      isContained = checkAncestry(
+        target.eligibility.plannedOid,
+        target.eligibility.containedBy,
+        primaryCwd,
+      );
+    } catch {
+      // A containing ref that vanished or is unreadable is a refusal, not an
+      // error: the commit is no longer verifiably preserved.
+      isContained = false;
+    }
+  }
+  return validateCleanupEligibility({ evidence: target.eligibility, currentOid, isContained });
 }
 
 async function revalidateCleanupReadiness(
@@ -688,14 +700,10 @@ async function revalidateCleanupReadiness(
   }
 }
 
-async function executePlan(
-  plan: CleanupPlan,
-  ancestryRef: string,
-  force: boolean,
-): Promise<number> {
+async function executePlan(plan: CleanupPlan, force: boolean): Promise<number> {
   const result = await executeCleanupPlan(
     plan,
-    (target) => revalidateTarget(target, ancestryRef),
+    (target) => revalidateTarget(target),
     (target, action) => revalidateCleanupReadiness(target, action, force),
     (action) => runAction(action),
     {
@@ -732,9 +740,8 @@ async function main(): Promise<void> {
   }
 
   let plan: CleanupPlan;
-  let ancestryRef: string;
   try {
-    ({ plan, ancestryRef } = await buildPlan(options, process.cwd()));
+    plan = await buildPlan(options, process.cwd());
   } catch (error) {
     if (error instanceof CleanupResolverError) {
       console.error(`✗ ${error.message}`);
@@ -758,7 +765,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const failures = await executePlan(plan, ancestryRef, options.force);
+  const failures = await executePlan(plan, options.force);
   if (failures > 0) {
     console.error(`\nCleanup completed with ${failures} failure(s).`);
     process.exit(1);

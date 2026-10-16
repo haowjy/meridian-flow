@@ -87,8 +87,13 @@ Worktree cleanup is target-first and commit-bound. It refuses the primary,
 current, dirty, locked, detached, live, or insufficiently evidenced target;
 revalidates ownership, liveness, and the planned ref OID before destructive
 steps; and performs targeted stop, database removal, worktree removal, work-item
-completion, and ref deletion in that order. Batch cleanup needs explicit risk
-acknowledgement and exact merged-PR evidence (ancestry alone is not enough).
+completion, and ref deletion in that order. Targeted eligibility is the planned
+commit contained in another surviving ref (the branch's own local and
+remote-tracking refs never count: a pushed branch is not merged) or one exact
+merged pull request, whichever base branch it merged into; containment is
+revalidated against its ref before every action. Batch cleanup needs explicit
+risk acknowledgement and an exact merged PR into the base branch (ancestry alone
+is not enough).
 Target-only `--force` permits managed dev-stack and Nx shutdown despite cwd
 occupants, then rechecks that only known shell/tmux executables remain before
 dropping the database and removing the checkout. It never signals those user
@@ -99,8 +104,11 @@ not bypass merge evidence, branch/HEAD revalidation or structural protections,
 and is rejected with `--auto`. Git worktree removal itself never uses `--force`.
 Never infer staleness from branch ancestry or a branch name, and add no cleanup
 script that bypasses the shared resolver in `lib/worktree-cleanup.ts`. Prune a side-lane
-branch when it merges into its integration branch: once that branch is
-squash-merged, no automatic proof survives, and
+branch when it merges into its integration branch: containment, or the lane's
+own merged PR, proves it then, and either proof survives only while the
+integration ref or the PR record does. Once the integration branch is
+squash-merged and its ref deleted, a lane with no PR of its own has no automatic
+proof left, and
 [`WORKTREE-CLEANUP.md`](../WORKTREE-CLEANUP.md) reconstructs evidence for the
 targeted `--manually-verified <reason>` path. That path replaces only automatic
 eligibility discovery; every structural, readiness, and commit-movement guard

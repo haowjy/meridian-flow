@@ -113,10 +113,12 @@ pnpm dev:prune-worktrees -- --target <value>           # clean that target after
 Targeted cleanup runs in order: stop dev stack → drop database → remove git
 worktree → optionally mark a linked Meridian work item done → delete the local
 branch. Eligibility is bound to the planned branch commit and revalidated before
-every action; exact merged-PR evidence must match the detected base, head commit,
-and repository owner. The resolver refuses primary/current or locked worktrees,
-the detected base branch, unmerged commits, dirty worktrees, ambiguous evidence,
-and refs that move after planning.
+every action. Targeted cleanup accepts the commit contained in another surviving
+local or remote-tracking ref, or an exact merged PR into any base branch; each
+matched PR's head commit and repository owner must match. Batch cleanup still
+requires an exact merged PR into the detected base branch. The resolver refuses
+primary/current or locked worktrees, the detected base branch, unmerged commits,
+dirty worktrees, ambiguous evidence, and refs that move after planning.
 
 Batch cleanup is advanced and not yet trusted for routine use. It requires an
 explicit acknowledgement:
