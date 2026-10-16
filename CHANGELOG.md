@@ -7,6 +7,7 @@
 - Draft Apply indexes fragmented journal ownership once and reconstructs prior deletions with a linear scan, avoiding repeated full-range sorting after Discard and Undo.
 - Discarding a large full-rewrite draft avoids redundant word matching and repeated Yjs text-split work, while preserving exact edits and Undo.
 
+- Draft review paints the full heading scope when a heading-level change and a leading inline edit combine, without claiming another change's text.
 - Draft review no longer names a chat whose edit was replaced when the final change only inserts text. Shared replacements still name the chat that removed the base text.
 - Formatting-only draft review rows exclude separate text edits from their excerpts and red/green paint.
 
