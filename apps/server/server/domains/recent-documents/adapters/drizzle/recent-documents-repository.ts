@@ -213,7 +213,7 @@ export function createDrizzleRecentDocumentsRepository(deps: {
         if (classification.kind !== "valid") {
           throw new Error(`Recent document ${document.id} has inconsistent identity`);
         }
-        const workSlug = work && !work.isNoWork ? work.slug : null;
+        const workHandle = work && !work.isNoWork ? work.handle : null;
         const identityScope = classification.identity.scope;
         const entry = mapAuthoritativeFile({
           observationVersion: String(
@@ -227,7 +227,7 @@ export function createDrizzleRecentDocumentsRepository(deps: {
           scope: classification.identity.scope,
           scheme: classification.identity.scheme,
           workId: work?.id ?? null,
-          workSlug,
+          workHandle,
           parentPath: classification.identity.parentPath,
           // Only the entry's path and name are read; a chat upload's address needs no handle here.
           chatOwned: source.scope === "chat",
@@ -236,7 +236,7 @@ export function createDrizzleRecentDocumentsRepository(deps: {
           documentId: document.id,
           projectId: sourceProject.id,
           projectName: sourceProject.name,
-          workSlug,
+          workHandle,
           scheme: classification.identity.scheme,
           path: `/${entry.path.join("/")}`,
           name: entry.name,

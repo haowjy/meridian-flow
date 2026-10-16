@@ -1,6 +1,11 @@
 /** In-memory WorkRepository for tests; Work child cascades are DB-only and are not modeled here. */
 import type { ProjectId, WorkId } from "@meridian/contracts/runtime";
-import type { AiWriteMode, Work } from "@meridian/contracts/works";
+import {
+  type AiWriteMode,
+  formatWorkHandle,
+  type Work,
+  type WorkHandle,
+} from "@meridian/contracts/works";
 import { WorkLifecycleUnavailableError } from "../../domain/work-lifecycle.js";
 import { decideWorkRestore } from "../../domain/work-restore.js";
 import type {
@@ -15,7 +20,7 @@ import {
   WorkNameConflictError,
   WorkRestoreConflictError,
 } from "../../ports/work-repository.js";
-import { NO_WORK_NAME, nextWorkSlug } from "./shared.js";
+import { NO_WORK_NAME } from "./shared.js";
 
 /** In-memory {@link WorkRepository} for tests. */
 export function createInMemoryWorkRepository(options: { now?: () => Date } = {}): WorkRepository {
@@ -42,6 +47,14 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
     return currentTime().toISOString();
   }
 
+  const handleCounters = new Map<ProjectId, number>();
+
+  function nextHandle(projectId: ProjectId): WorkHandle {
+    const n = (handleCounters.get(projectId) ?? 0) + 1;
+    handleCounters.set(projectId, n);
+    return formatWorkHandle(n);
+  }
+
   function build(input: CreateWorkInput): Work {
     const timestamp = now();
     return {
@@ -49,12 +62,7 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
       projectId: input.projectId,
       createdByUserId: input.createdByUserId ?? "00000000-0000-4000-8000-000000000000",
       name: input.name,
-      slug: nextWorkSlug(
-        input.name,
-        [...rows.values()]
-          .filter((work) => work.projectId === input.projectId)
-          .map((work) => work.slug),
-      ),
+      handle: nextHandle(input.projectId),
       isNoWork: false,
       goal: input.goal ?? null,
       status: null,
@@ -116,6 +124,13 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
       return row ? { ...row } : null;
     },
 
+    async findByHandle(projectId: ProjectId, handle: string): Promise<Work | null> {
+      const row = [...rows.values()].find(
+        (work) => work.projectId === projectId && work.handle === handle,
+      );
+      return row ? { ...row } : null;
+    },
+
     async findNoWork(projectId: ProjectId): Promise<Work | null> {
       const row = [...rows.values()].find(
         (work) => work.projectId === projectId && work.isNoWork && work.deletedAt === null,
@@ -145,7 +160,7 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
         projectId,
         createdByUserId: "00000000-0000-4000-8000-000000000000",
         name: NO_WORK_NAME,
-        slug: null,
+        handle: null,
         isNoWork: true,
         goal: null,
         status: null,
@@ -185,7 +200,7 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
     async update(id: WorkId, input: UpdateWorkInput): Promise<Work> {
       const row = rows.get(id);
       if (!row) throw new WorkLifecycleUnavailableError(id, "missing");
-      if (row.deletedAt) throw new WorkLifecycleUnavailableError(id, "deleted", row.slug);
+      if (row.deletedAt) throw new WorkLifecycleUnavailableError(id, "deleted", row.handle);
       if (row.isNoWork) throw new WorkLockedError();
       if (input.name !== undefined) {
         if (nameIsTaken(row.projectId, input.name, row.id)) throw new WorkNameConflictError();
@@ -203,7 +218,7 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
     async archive(id: WorkId): Promise<Work> {
       const row = rows.get(id);
       if (!row) throw new WorkLifecycleUnavailableError(id, "missing");
-      if (row.deletedAt) throw new WorkLifecycleUnavailableError(id, "deleted", row.slug);
+      if (row.deletedAt) throw new WorkLifecycleUnavailableError(id, "deleted", row.handle);
       if (row.isNoWork) throw new WorkLockedError();
       if (row.archivedAt === null) {
         row.archivedAt = now();
@@ -217,7 +232,7 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
     async unarchive(id: WorkId): Promise<Work> {
       const row = rows.get(id);
       if (!row) throw new WorkLifecycleUnavailableError(id, "missing");
-      if (row.deletedAt) throw new WorkLifecycleUnavailableError(id, "deleted", row.slug);
+      if (row.deletedAt) throw new WorkLifecycleUnavailableError(id, "deleted", row.handle);
       if (row.isNoWork) throw new WorkLockedError();
       if (row.archivedAt !== null) {
         row.archivedAt = null;
@@ -260,14 +275,6 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
         if (nameIsTaken(row.projectId, row.name, row.id)) {
           throw new WorkRestoreConflictError("name");
         }
-        const slugIsTaken = [...rows.values()].some(
-          (other) =>
-            other.id !== row.id &&
-            other.projectId === row.projectId &&
-            other.deletedAt === null &&
-            other.slug === row.slug,
-        );
-        if (slugIsTaken) throw new WorkRestoreConflictError("slug");
         const before = { ...row };
         const restoredAt = currentTime();
         row.deletedAt = null;

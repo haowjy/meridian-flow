@@ -38,7 +38,7 @@ interface WriteOutcomeBase {
   revision: string | null;
   command: AgentEditResultCommand;
   isError: boolean;
-  /** Stable model-facing write handle for successful mutating writes, e.g. w3. */
+  /** Stable model-facing write handle for successful mutating writes, e.g. e3. */
   writeId?: string;
   /** Unique host-only correlation for replacing a staged result with its settled receipt. */
   settlementId?: string;

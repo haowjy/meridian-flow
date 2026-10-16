@@ -187,7 +187,7 @@ export function assignFreshLink(input: {
 /**
  * A written href as it is bound: a bare `uploads://name` means the writing chat's file only while
  * read from that chat, and a document outlives it, so a freshly written one is qualified to that
- * chat (`uploads://@/<chat>/name`). Preparation (`writtenAddresses`) and assignment
+ * chat (`uploads://@<chat>/name`). Preparation (`writtenAddresses`) and assignment
  * (`assignFreshLink` callers) both read the href through here, so the address loaded is the
  * address bound.
  */

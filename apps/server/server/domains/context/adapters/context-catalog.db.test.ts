@@ -735,7 +735,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: PROJECT_ID,
           createdByUserId: USER_ID,
           name: "No Work",
-          slug: null,
+          handle: null,
           isNoWork: true,
         },
         {
@@ -743,7 +743,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: PROJECT_ID,
           createdByUserId: USER_ID,
           name: "Draft",
-          slug: "draft",
+          handle: "w2",
         },
       ]);
       await db.insert(contextSources).values([
@@ -764,12 +764,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .flatMap((entry) => (entry.kind === "file" ? [entry.uri] : []))
           .sort();
       expect(await fileUris({ kind: "work", projectId: PROJECT_ID, workId: NAMED })).toEqual([
-        "scratch://@draft/arc",
+        "scratch://@w2/arc",
       ]);
 
       await db.update(works).set({ archivedAt: new Date() }).where(eq(works.id, NAMED));
       expect(await fileUris({ kind: "work", projectId: PROJECT_ID, workId: NAMED })).toEqual([
-        "scratch://@draft/arc",
+        "scratch://@w2/arc",
       ]);
       const namedAddress = () =>
         createDocumentAddressResolver({
@@ -787,7 +787,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         document: {
           documentId: NAMED_FILE,
           authority: { kind: "work", projectId: PROJECT_ID, workId: NAMED },
-          entry: { uri: "scratch://@draft/arc" },
+          entry: { uri: "scratch://@w2/arc" },
         },
       });
 

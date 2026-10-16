@@ -3,7 +3,7 @@
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
 import { z } from "zod";
-import type { ChatFileLookup } from "../../context/index.js";
+import type { OwnerLookup } from "../../context/index.js";
 import type { ThreadRepositories, ThreadStatusReader } from "../../threads/ports/repositories.js";
 import { turnGraph } from "../../threads/ports/turn-graph.js";
 import { resolveReadableThread, threadReadError } from "./resolve-readable-thread.js";
@@ -55,7 +55,7 @@ export async function listReadableThreads({
   input,
   chatFiles,
 }: {
-  chatFiles?: ChatFileLookup;
+  chatFiles?: OwnerLookup;
   repos: Pick<ThreadRepositories, "threads" | "turns" | "readSnapshot">;
   statusReader: Pick<ThreadStatusReader, "readMany">;
   caller: Thread;

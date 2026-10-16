@@ -19,7 +19,7 @@ import { createThreadPeerCorePool } from "./thread-peer-core-pool.js";
 
 const THREAD_ID = "thread-1" as ThreadId;
 const live: FileDestination = { kind: "live" };
-const draftA: FileDestination = { kind: "draft", workId: "work-a" as WorkId, workSlug: "a" };
+const draftA: FileDestination = { kind: "draft", workId: "work-a" as WorkId, workHandle: "a" };
 
 /** The drafts and reply fences every pool takes, over fake branch rows. */
 function poolPorts(liveUtilityCore: ReturnType<typeof asLiveAgentEditCore>) {

@@ -19,7 +19,7 @@ Publish a private probe Agent and create a thread (the response uses `threadId`)
 
 ```bash
 ./mf api POST /api/agents --data '{"slug":"runtime-probe","content":"---\nname: Runtime Probe\nmode: primary\nmodel: mock-llm-v1\nautocompact: 100000\n---\nFollow the writer."}' --json > "$E/agent.json"
-./mf thread create --agent runtime-probe --work @/ --title 'Runtime probe' --json > "$E/thread.json"
+./mf thread create --agent runtime-probe --work none --title 'Runtime probe' --json > "$E/thread.json"
 T=$(jq -r .threadId "$E/thread.json")
 ```
 
@@ -645,7 +645,7 @@ restart smoke check.
   Also that the model never reads a failure. Run it on the first check of any change to a
   terminal writer, the append primitive, or the usage block.
 - **Stack:** mock. A usage block needs a thread's owner at zero credits.
-- **Steps:** make `mk() { ./mf thread create --agent runtime-probe --work @/ --title "$1" --json | jq -r .threadId; }`
+- **Steps:** make `mk() { ./mf thread create --agent runtime-probe --title "$1" --json | jq -r .threadId; }`
   and read each result with `./mf log --thread "$X" --name failure. --full --since 2m`.
 
   ```bash

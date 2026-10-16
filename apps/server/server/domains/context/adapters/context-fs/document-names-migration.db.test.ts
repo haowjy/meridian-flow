@@ -134,7 +134,7 @@ else
         projectId,
         createdByUserId: userId,
         name: "Upgrade",
-        slug: "upgrade",
+        handle: "w1",
         deletedAt,
       });
       await db.insert(contextSources).values({
@@ -168,7 +168,7 @@ else
         sourceDocumentId: chapter.id,
         linkKey: `ahead:${hiddenAheadId}`,
         aheadId: hiddenAheadId,
-        address: "scratch://@upgrade/Lore.md",
+        address: "scratch://@w1/Lore.md",
         occurrences: 1,
       });
       const scopeKey = `project:${projectId}`;
@@ -323,7 +323,7 @@ else
         "manuscript://chapter",
       );
       expect(links.find((link) => link.aheadId === hiddenAheadId)?.address).toBe(
-        "scratch://@upgrade/Lore (2)",
+        "scratch://@w1/Lore (2)",
       );
       expect(
         (await db.select().from(linkAheadRefs).where(eq(linkAheadRefs.aheadId, hiddenAheadId)))[0]

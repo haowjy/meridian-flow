@@ -56,7 +56,7 @@ if (!RUN) {
     } as const;
     type Scheme = keyof typeof SOURCES;
     const addressFor = (scheme: Scheme) =>
-      scheme === "manuscript" ? "manuscript://chapter.toml" : `${scheme}://@notes/chapter.toml`;
+      scheme === "manuscript" ? "manuscript://chapter.toml" : `${scheme}://@w1/chapter.toml`;
     const registrationFor = (scheme: Scheme, aheadId = AHEAD) => ({
       aheadId,
       holderProjectId: PROJECT as never,
@@ -79,7 +79,7 @@ if (!RUN) {
         projectId: PROJECT,
         createdByUserId: USER,
         name: "Notes",
-        slug: "notes",
+        handle: "w1",
         isNoWork: false,
       });
       await database
@@ -350,8 +350,8 @@ if (!RUN) {
       }
       const registry = newRegistry(database);
       await registry.register([
-        { ...registration, address: "scratch://@/c1/note.toml" },
-        { ...registration, aheadId: DOCUMENT_2, address: "scratch://@/c2/note.toml" },
+        { ...registration, address: "scratch://@c1/note.toml" },
+        { ...registration, aheadId: DOCUMENT_2, address: "scratch://@c2/note.toml" },
       ]);
       await database
         .insert(documents)
@@ -495,7 +495,7 @@ if (!RUN) {
         const [ghost, beside] = [crypto.randomUUID(), crypto.randomUUID()];
         await scenario.writer.editDraft(work, chapter, (doc) => {
           link(beside)(doc);
-          link(ghost, "scratch://@ghost-work/notes")(doc);
+          link(ghost, "scratch://@w98/notes")(doc);
         });
         await draftLinks.flush();
         expect.soft((await registryRow(beside)).registered, "the valid ref registers").toBe(true);

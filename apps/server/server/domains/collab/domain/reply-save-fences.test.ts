@@ -47,7 +47,7 @@ function scenario() {
         DOCUMENT,
         {
           core,
-          grant: fakeEditGrant({ kind: "draft", workId: WORK, workSlug: "a" }),
+          grant: fakeEditGrant({ kind: "draft", workId: WORK, workHandle: "a" }),
           linkView: { kind: "draft", draftId: FAKE_DRAFT_ID },
           pin: {
             draftId: FAKE_DRAFT_ID,

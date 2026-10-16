@@ -18,11 +18,6 @@ export {
 } from "./adapters/lineage-scratch-lifecycle.js";
 export { createDrizzleProjectContextAvailability } from "./adapters/project-context-availability.js";
 export { createDrizzleScratchLineages } from "./adapters/scratch-lineages.js";
-export {
-  type ChatFileAddresses,
-  type ChatFileLookup,
-  createChatFileLookup,
-} from "./chat-file-addresses.js";
 export { exportFilename, joinPath, renderFilename, splitPath } from "./context/paths.js";
 export { createContextPortRouter } from "./context/router.js";
 export {
@@ -50,6 +45,11 @@ export { createDocumentAddressResolver } from "./document-address.js";
 export { createDocumentLinkResolver } from "./document-link-resolution.js";
 export { createDocumentRevisions } from "./document-revisions.js";
 export * from "./figures/index.js";
+export {
+  type ChatFileAddresses,
+  createOwnerLookup,
+  type OwnerLookup,
+} from "./owner-lookup.js";
 export type {
   AdapterFault,
   AdapterFileEntry,

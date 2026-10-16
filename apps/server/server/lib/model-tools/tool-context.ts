@@ -204,7 +204,7 @@ export function contextErrorMessage(error: ContextError): string {
   if (error.code === "context_unavailable") {
     // The file policy refuses an archived Work's files first, with copy fit for
     // the agent; this storage-side refusal only follows an archive mid-call.
-    const work = error.workSlug ? `Work @${error.workSlug}` : "The requested Work";
+    const work = error.workHandle ? `Work ${error.workHandle}` : "The requested Work";
     return error.reason === "work_archived"
       ? `${work} is archived, so this change wasn't made.`
       : `${work} is unavailable.`;

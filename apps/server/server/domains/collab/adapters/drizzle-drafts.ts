@@ -96,10 +96,10 @@ export function createDrizzleDraftWriteBoundary(db: Database): DraftWriteBoundar
       return runInDrizzleTransaction(db, async () => {
         const work = (await lockWorksInIdOrder(db, [workId])).get(workId) ?? {
           state: "missing" as const,
-          slug: null,
+          handle: null,
         };
         if (work.state !== "active") {
-          throw new WorkLifecycleUnavailableError(workId, work.state, work.slug);
+          throw new WorkLifecycleUnavailableError(workId, work.state, work.handle);
         }
         return operation();
       });

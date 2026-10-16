@@ -1,7 +1,7 @@
 /** First bake persists Agent available; later account adds do not rebake. */
 
 import { describe, expect, it } from "vitest";
-import { testWorkSlug } from "../../../test-support/work-slug.js";
+import { testWorkHandle } from "../../../test-support/work-handle.js";
 import { createInMemoryAgentRevisionStore } from "../../packages/index.js";
 import { createInMemoryProjectRepository } from "../../projects/index.js";
 import { createInMemoryRepositories } from "../../threads/index.js";
@@ -19,7 +19,7 @@ function emptyWorkContext(projectId: string): WorkContextReader {
           execution: {
             scope: {
               workId: "00000000-0000-0000-0000-000000000002",
-              workSlug: testWorkSlug("test-work"),
+              workHandle: testWorkHandle("w1"),
             },
             aiWriteMode: "direct",
             draftOwner: null,

@@ -16,7 +16,7 @@ const request: NamespaceRequest = {
   kind: "delete",
   scheme: "scratch",
   workId: "work",
-  workSlug: "alpha",
+  workHandle: "w1",
   body: {
     operationId: "operation",
     path: "note.md",
@@ -28,10 +28,10 @@ const receipt: ContextOperationReceipt = {
   operationId: "operation",
   command: {
     kind: "delete",
-    uri: "scratch://@alpha/note.md",
+    uri: "scratch://@w1/note.md",
     expected: { kind: "file", documentId: "document" },
   },
-  result: { ok: false, error: { code: "conflict", uri: "scratch://@alpha/note.md" } },
+  result: { ok: false, error: { code: "conflict", uri: "scratch://@w1/note.md" } },
 };
 beforeEach(() => vi.resetAllMocks());
 

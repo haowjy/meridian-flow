@@ -393,6 +393,20 @@
       "when": 1792105167460,
       "tag": "0061_chat_uploads_reset_online",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1792121291026,
+      "tag": "0062_owner_handles",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1792121300000,
+      "tag": "0063_owner_handles_online",
+      "breakpoints": true
     }
   ]
 }

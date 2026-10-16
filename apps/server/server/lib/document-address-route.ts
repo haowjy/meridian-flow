@@ -44,7 +44,11 @@ export async function handleDocumentAddressRequest(
     if (!resolved) return { kind: "unavailable" };
     reviewDocumentId = resolved.documentId;
     view = { kind: "draft", draftId: resolved.draftId };
-    destination = { kind: "draft", workId: work.id, workSlug: work.isNoWork ? null : work.slug };
+    destination = {
+      kind: "draft",
+      workId: work.id,
+      workHandle: work.isNoWork ? null : work.handle,
+    };
   }
   const principal = { accountId: input.userId as UserId };
   if (destination && reviewDocumentId) {

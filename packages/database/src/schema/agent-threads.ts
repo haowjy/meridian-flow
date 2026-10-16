@@ -166,13 +166,22 @@ export const threads = pgTable(
   ],
 );
 
-export const projectThreadCounters = pgTable("project_thread_counters", {
-  projectId: uuid("project_id")
-    .$type<ProjectId>()
-    .primaryKey()
-    .references(() => projects.id, { onDelete: "cascade" }),
-  n: integer("n").notNull(),
-});
+/** Per-project, per-kind handle counters. `thread` is shared by chats and subagents (`c12`, `p3`). */
+export const projectHandleCounters = pgTable(
+  "project_handle_counters",
+  {
+    projectId: uuid("project_id")
+      .$type<ProjectId>()
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<"thread" | "work">().notNull(),
+    n: integer("n").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.projectId, table.kind] }),
+    check("project_handle_counters_kind_valid", sql`${table.kind} IN ('thread', 'work')`),
+  ],
+);
 
 /** M:N thread↔Work history; every live thread has one primary row. */
 export const threadWorks = pgTable(

@@ -464,24 +464,19 @@ function internal(uri: string, suffix: string) {
 }
 
 it("spells lineage links through their holder, without a chat-only spelling channel", () => {
-  const target = doc(U.cast, "scratch://@/c12/x");
+  const target = doc(U.cast, "scratch://@c12/x");
   const resolution = { kind: "document", document: target, inDraft: false } as const;
-  const link = { ref: `doc:${U.cast}`, href: "scratch://@/c12/old#gate" };
-  const ownScratch = { ...holder, uri: "scratch://@/c12/holder" };
+  const link = { ref: `doc:${U.cast}`, href: "scratch://@c12/old#gate" };
+  const ownScratch = { ...holder, uri: "scratch://@c12/holder" };
   expect(spellStoredLink(link, ownScratch, resolution, "holder").href).toBe("x#gate");
   // Contextual spelling already in the chat's own Scratch stays contextual.
   expect(
     spellStoredLink({ ref: null, href: "scratch://x" }, ownScratch, { kind: "address" }, "holder")
       .href,
   ).toBe("scratch://x");
-  for (const uri of [
-    null,
-    "scratch://@/c13/holder",
-    "scratch://@arc/holder",
-    "manuscript://holder",
-  ])
+  for (const uri of [null, "scratch://@c13/holder", "scratch://@w1/holder", "manuscript://holder"])
     expect(spellStoredLink(link, { ...holder, uri }, resolution, "holder").href).toBe(
-      "scratch://@/c12/x#gate",
+      "scratch://@c12/x#gate",
     );
 });
 

@@ -182,25 +182,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).resolves.toEqual({ status: 404, code: "work_not_found" });
     });
 
-    it("keeps UUID-shaped slugs and resolves ambiguous strings by exact field role", async () => {
-      const ambiguous = "123e4567-e89b-12d3-a456-426614174000";
-      const byIdWork = await works.create({ id: ambiguous, projectId: PROJECT_ID, name: "Alpha" });
-      const bySlugWork = await works.create({ projectId: PROJECT_ID, name: ambiguous });
-      const collision = await works.create({ projectId: PROJECT_ID, name: `${ambiguous}!` });
+    it("mints w<n> in creation order, never reuses a handle, and resolves it to its address", async () => {
+      const first = await works.create({ projectId: PROJECT_ID, name: "Alpha" });
+      const second = await works.create({ projectId: PROJECT_ID, name: "Beta" });
+      expect([first.handle, second.handle]).toEqual(["w1", "w2"]);
+      await works.softDelete(second.id);
+      const third = await works.create({ projectId: PROJECT_ID, name: "Beta" });
+      expect(third.handle).toBe("w3");
 
-      expect([bySlugWork.slug, collision.slug]).toEqual([ambiguous, `${ambiguous}-2`]);
-      const idAuthority = await authorities.byId(PROJECT_ID, byIdWork.id);
-      if (!bySlugWork.slug) throw new Error("named Work missing slug");
-      const slugAuthority = await authorities.bySlug(PROJECT_ID, bySlugWork.slug);
-      expect(idAuthority).toMatchObject({ workId: byIdWork.id, workSlug: "alpha" });
-      expect(slugAuthority).toMatchObject({ workId: bySlugWork.id, workSlug: ambiguous });
-      if (!idAuthority || !slugAuthority) throw new Error("missing resolved authority");
-      expect(canonicalContextUri("scratch", "notes.md", idAuthority)).toBe(
-        "scratch://@alpha/notes.md",
-      );
-      expect(canonicalContextUri("scratch", "notes.md", slugAuthority)).toBe(
-        `scratch://@${ambiguous}/notes.md`,
-      );
+      const authority = await authorities.byHandle(PROJECT_ID, third.handle as never);
+      expect(authority).toMatchObject({ workId: third.id, workHandle: "w3" });
+      if (!authority) throw new Error("missing resolved authority");
+      expect(canonicalContextUri("scratch", "notes.md", authority)).toBe("scratch://@w3/notes.md");
     });
 
     it("captures update and delete receipts from the locked committing transition", async () => {
@@ -448,11 +441,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
     });
 
-    it("reserves deleted Work slugs but refuses a reclaimed name", async () => {
+    it("frees a deleted Work's name, keeps its handle, and refuses a restore into a reclaimed name", async () => {
       const available = await works.create({ projectId: PROJECT_ID, name: "Available" });
       await works.softDelete(available.id);
       await expect(works.restore(available.id)).resolves.toMatchObject({
-        after: { deletedAt: null },
+        after: { deletedAt: null, handle: available.handle },
         changed: true,
       });
 
@@ -462,16 +455,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(works.restore(nameOwner.id)).rejects.toEqual(
         new WorkRestoreConflictError("name"),
       );
-
-      const slugOwner = await works.create({ projectId: PROJECT_ID, name: "Same slug!" });
-      await works.softDelete(slugOwner.id);
-      expect((await works.create({ projectId: PROJECT_ID, name: "Same slug?" })).slug).toBe(
-        "same-slug-2",
-      );
-      await expect(works.restore(slugOwner.id)).resolves.toMatchObject({
-        after: { slug: "same-slug" },
-        changed: true,
-      });
     });
 
     it("deletes content and restores only rows cascade-deleted by the Work deletion", async () => {
@@ -1016,7 +999,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: PROJECT_ID,
           createdByUserId: USER_ID,
           name: row.name,
-          slug: row.name.toLowerCase().replaceAll(" ", "-"),
+          handle: `w${retained.indexOf(row) + 100}`,
           deletedAt: expiredAt,
         })),
       );
@@ -1265,7 +1248,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: "00000000-0000-4000-8000-000000000849",
         projectId: PROJECT_ID,
         sourcePath: "reports/purge.txt",
-        resultsUri: `results://@${work.slug}/threads/root/reports/purge.txt`,
+        resultsUri: `results://@${work.handle}/threads/root/reports/purge.txt`,
         storageUrl: "memory://purged-result",
         mimeType: "text/plain",
         sizeBytes: 4,

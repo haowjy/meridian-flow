@@ -45,7 +45,7 @@ async function fixture() {
     threadId: THREAD_ID,
     turnId: TURN_ID,
     responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
-    grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" }),
+    grant: testFileGrant({ kind: "draft", workId: WORK_ID, workHandle: "atomicity-work" }),
   };
   return { harness, view, responseId, context };
 }
@@ -182,7 +182,7 @@ it("failed response rolls back immediate live and draft parts while keeping a wr
         responseIdentity: undefined,
         actor,
         grant: testFileGrant(
-          { kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" },
+          { kind: "draft", workId: WORK_ID, workHandle: "atomicity-work" },
           BETA_ID,
         ),
       },
@@ -227,7 +227,7 @@ it("failed response rolls back immediate live and draft parts while keeping a wr
               responseIdentity: undefined,
               actor,
               grant: testFileGrant(
-                { kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" },
+                { kind: "draft", workId: WORK_ID, workHandle: "atomicity-work" },
                 BETA_ID,
               ),
             },

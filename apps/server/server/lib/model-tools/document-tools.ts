@@ -3,6 +3,7 @@
  * the file policy grants the call, and the collab pool reads or writes under
  * that grant. `skills://` paths go to the skill files (D52).
  */
+
 import type {
   DocumentCommandName,
   ReadToolInput,
@@ -114,9 +115,9 @@ export async function resolveDocumentAddress(
     const unknownAddress =
       ref.error.code === "invalid_uri" &&
       (command === "read" ||
-        ref.error.workSlug !== undefined ||
+        ref.error.workHandle !== undefined ||
         ref.error.unknownScheme !== undefined ||
-        ref.error.chatHandle !== undefined);
+        ref.error.slip !== undefined);
     if (ref.error.code === "invalid_operation" && ref.error.reason === "ambiguous_path") {
       return writeToolError(command, contextErrorMessage(ref.error), "ambiguous_path", {
         path: canonicalPath,
@@ -184,7 +185,7 @@ function withDestination(outcome: WriteOutcome, destination: FileDestination): W
     result: {
       ...outcome.result,
       destination: destination.kind,
-      ...(destination.kind === "draft" ? { draftWork: destination.workSlug ?? "/" } : {}),
+      ...(destination.kind === "draft" ? { draftWork: destination.workHandle ?? "/" } : {}),
     },
   };
 }
@@ -263,8 +264,13 @@ export function createReadHandler(deps: ToolWiringDeps) {
     );
     if (outcome.isError) return { isError: true, output: outcome.result };
     recordTouchInBackground(deps, address.documentId, ctx);
+    const notice = await deps.contextPorts.chatFiles.notice(
+      call.context.resolution.thread.projectId,
+      path,
+      address.uri,
+    );
     return {
-      output: outcome.result,
+      output: notice ? { ...outcome.result, ...notice } : outcome.result,
       metadata: documentRevisionMetadata(address, outcome.revision),
       shown: showingOf(address.documentId, outcome),
     };
@@ -405,8 +411,13 @@ export function createWriteHandler(deps: ToolWiringDeps) {
         threadId: ctx.threadId,
       });
     }
+    const notice = await deps.contextPorts.chatFiles.notice(
+      context.resolution.thread.projectId,
+      parsed.path,
+      address.uri,
+    );
     return {
-      output: outcome.result,
+      output: notice ? { ...outcome.result, ...notice } : outcome.result,
       metadata: {
         ...documentRevisionMetadata(address, outcome.revision),
         ...(stagedWrite

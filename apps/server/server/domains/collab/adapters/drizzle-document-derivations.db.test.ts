@@ -862,7 +862,7 @@ describe("durable document derivations", () => {
         sourceDocumentId: documentId,
         linkKey: `ahead:${id}`,
         aheadId: id,
-        address: "scratch://@missing/later",
+        address: "scratch://@w99/later",
         occurrences: 1,
       };
     });

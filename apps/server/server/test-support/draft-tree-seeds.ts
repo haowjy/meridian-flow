@@ -20,6 +20,7 @@ import type {
   WorkId,
 } from "@meridian/contracts";
 import { parseDocumentFilename } from "@meridian/contracts/protocol";
+import { formatWorkHandle, type WorkHandle } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
@@ -49,7 +50,7 @@ export type ScenarioSource = "manuscript" | "kb" | "unfiled" | "user";
 
 export type ScenarioWork = {
   id: WorkId;
-  slug: string;
+  handle: WorkHandle;
   threadId: ThreadId;
   turnId: string;
   mode: "draft" | "direct";
@@ -277,22 +278,23 @@ export function draftTreeWorldOver(
     drafts,
     works: () => madeWorks,
     async work(name, mode) {
-      const slug = name
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-|-$/g, "");
+      const handle = formatWorkHandle(madeWorks.length + 1);
       const [work] = await db
         .insert(works)
-        .values({ projectId, createdByUserId: userId, name, slug, defaultAiWriteMode: mode })
+        .values({ projectId, createdByUserId: userId, name, handle, defaultAiWriteMode: mode })
         .returning({ id: works.id });
       if (!work) throw new Error(`Work ${name} was not inserted`);
       // As a chat made with an explicit mode: it writes that way and seeds the Work's default.
       const { threadId, turnId } = await insertThread(name, work.id, mode);
       madeWorks.push(work.id);
-      return { id: work.id, slug, threadId, turnId, mode };
+      return { id: work.id, handle, threadId, turnId, mode };
     },
     async thread(work) {
-      const { threadId, turnId } = await insertThread(`${work.slug} (second)`, work.id, work.mode);
+      const { threadId, turnId } = await insertThread(
+        `${work.handle} (second)`,
+        work.id,
+        work.mode,
+      );
       return { ...work, threadId, turnId };
     },
     draftOf,

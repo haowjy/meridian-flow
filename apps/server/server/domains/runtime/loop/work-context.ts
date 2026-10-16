@@ -8,7 +8,6 @@ import {
   isWorkArchived,
   type ThreadExecutionContext,
   type Work,
-  type WorkSlug,
   workLifecycleState,
 } from "@meridian/contracts/works";
 import type { WorkRepository } from "../../projects/index.js";
@@ -57,12 +56,13 @@ function boundedGoal(value: string | null): string | null {
     : null;
 }
 
-function workIdentity(work: Pick<Work, "slug" | "name">): string {
-  return `${promptText(work.slug ?? "none")}: ${JSON.stringify(promptText(work.name))}`;
+/** The handle beside the name, so the model copies the handle into an address instead of composing one. */
+function workIdentity(work: Pick<Work, "handle" | "name">): string {
+  return `${promptText(work.handle ?? "none")} ${JSON.stringify(promptText(work.name))}`;
 }
 
 function currentWorkLines(
-  work: Pick<Work, "slug" | "name" | "goal" | "status" | "archivedAt">,
+  work: Pick<Work, "handle" | "name" | "goal" | "status" | "archivedAt">,
 ): string[] {
   const identity = workIdentity(work);
   const status = work.status;
@@ -137,21 +137,12 @@ function writeModeLines(input: Parameters<typeof describeWriteMode>[0]): string[
   return [`  writes: ${label}. ${first}`, ...rest.map((line) => `  ${line}`)];
 }
 
-type ContextWork = Pick<Work, "slug" | "name" | "goal" | "status" | "archivedAt" | "isNoWork">;
+type ContextWork = Pick<Work, "handle" | "name" | "goal" | "status" | "archivedAt" | "isNoWork">;
 
 function currentLines(work: ContextWork, writes: string[]): string[] {
   if (work.isNoWork) return ["current: none", ...writes];
   const [identity, ...detailLines] = currentWorkLines(work);
   return [`current: ${identity}`, ...writes, ...detailLines];
-}
-
-function lineageScratch(rootThreadRef: string): string {
-  return formatParsedContextUri("scratch", "", { kind: "lineage", rootThreadRef });
-}
-
-/** Only called for a named Work, whose slug is always set. */
-function workScratch(slug: Work["slug"]): string {
-  return formatParsedContextUri("scratch", "", { kind: "work", workSlug: slug as WorkSlug });
 }
 
 export function renderWorkContext(input: {
@@ -164,6 +155,12 @@ export function renderWorkContext(input: {
   /** The chat whose uploads bare `uploads://` names: this thread's top primary chat. */
   chatRef?: string;
 }): string {
+  const lineage = input.rootThreadRef
+    ? formatParsedContextUri("scratch", "", { kind: "lineage", rootThreadRef: input.rootThreadRef })
+    : null;
+  const workScratch = input.current.handle
+    ? formatParsedContextUri("scratch", "", { kind: "work", workHandle: input.current.handle })
+    : null;
   const writes = writeModeLines({
     mode: input.aiWriteMode,
     archived: isWorkArchived(input.current),
@@ -173,11 +170,11 @@ export function renderWorkContext(input: {
   return [
     "<work_context>",
     ...currentLines(input.current, writes),
-    ...(input.rootThreadRef
+    ...(lineage
       ? [
-          input.current.isNoWork
-            ? `  scratch: bare scratch:// is this chat's notes at ${lineageScratch(input.rootThreadRef)}, shared with its forks and subagents. A handoff starts fresh notes.`
-            : `  scratch: bare scratch:// is this Work's notes at ${workScratch(input.current.slug)}. Earlier chat notes remain at ${lineageScratch(input.rootThreadRef)}.`,
+          workScratch
+            ? `  scratch: bare scratch:// is this Work's notes at ${workScratch}. Earlier chat notes remain at ${lineage}.`
+            : `  scratch: bare scratch:// is this chat's notes at ${lineage}, shared with its forks and subagents. A handoff starts fresh notes.`,
           "  Move notes to kb:// or manuscript:// to keep them for the project. Rebinding never moves notes.",
         ]
       : []),

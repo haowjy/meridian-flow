@@ -26,7 +26,11 @@ export function readCall(path: string, version?: "draft" | "live"): string {
  */
 export function renderAgentEditResult(result: AgentEditResultV1): string {
   const groups = result.blocks ?? [];
-  const sections = [[statusLine(result), ...notes(result, groups)].join("\n")];
+  const sections = [
+    [...(result.notice ? [result.notice] : []), statusLine(result), ...notes(result, groups)].join(
+      "\n",
+    ),
+  ];
   if (result.message) sections.push(result.message);
   const outline = outlineFile(result);
   if (outline) {
@@ -40,7 +44,7 @@ export function renderAgentEditResult(result: AgentEditResultV1): string {
 function statusLine(result: AgentEditResultV1): string {
   const facts = [`status: ${result.status}`];
   if (result.reason) facts.push(`reason: ${result.reason}`);
-  if (result.path) facts.push(`path: ${result.path}`);
+  if (result.path) facts.push(`path: ${result.path}${result.owner ? ` (${result.owner})` : ""}`);
   if (result.write?.id) facts.push(`write: ${result.write.id}`);
   const version = writeVersion(result);
   if (version) facts.push(`version: ${version}`);
@@ -95,12 +99,12 @@ export function agentEditResultSummary(result: AgentEditResultV1, words?: number
 
 /**
  * The version a write changed, in `read`'s terms (D50): `live`, or `draft
- * (@work)` for a write held in a named Work's draft; No Work's draft has no
- * slug to name, so it is plain `draft`. Undo and redo name none.
+ * (w3)` for a write held in a named Work's draft; No Work's draft has no
+ * handle to name, so it is plain `draft`. Undo and redo name none.
  */
 function writeVersion(result: Pick<AgentEditResultV1, "destination" | "draftWork">): string {
   if (result.destination === "draft" && result.draftWork !== undefined)
-    return result.draftWork === "/" ? "draft" : `draft (@${result.draftWork})`;
+    return result.draftWork === "/" ? "draft" : `draft (${result.draftWork})`;
   return result.destination === "live" ? "live" : "";
 }
 

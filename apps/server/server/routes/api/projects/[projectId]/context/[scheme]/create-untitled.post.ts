@@ -115,10 +115,8 @@ async function containerOfUri(
   }
   const work =
     authority.kind === "work"
-      ? await app.workAuthorityResolver.bySlug(projectId, authority.workSlug)
-      : authority.kind === "none"
-        ? await app.workAuthorityResolver.noWork(projectId)
-        : null;
+      ? await app.workAuthorityResolver.byHandle(projectId, authority.workHandle)
+      : null;
   return work ? { kind: "container", scheme, owner: { scope: "work", workId: work.workId } } : null;
 }
 
@@ -135,7 +133,8 @@ async function destinationRootUri(
     if (!lineage) throw createError({ statusCode: 404, message: "Chat not found" });
     authority = { kind: "lineage", rootThreadRef: lineage.rootThreadRef };
   } else if (isWorkScopedScheme(scheme)) {
-    if (!owner.workId) authority = { kind: "none" };
+    if (!owner.workId)
+      throw createError({ statusCode: 400, message: "Scratch belongs to a Work or a chat" });
     else {
       const resolved = await app.workAuthorityResolver.byId(projectId, owner.workId);
       if (!resolved) throwContextWorkUnavailableHttpError("work_missing");

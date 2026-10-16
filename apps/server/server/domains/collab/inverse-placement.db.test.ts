@@ -87,7 +87,7 @@ it.each([
     const [turn] = await db.select().from(schema.turns).where(eq(schema.turns.id, TURN_ID));
     await db
       .insert(schema.works)
-      .values({ ...work, id: otherWork as never, name: "Holding draft", slug: "holding" });
+      .values({ ...work, id: otherWork as never, name: "Holding draft", handle: "w2" });
     await db.insert(schema.drafts).values({
       projectId: PROJECT_ID,
       originWorkId: otherWork as never,
@@ -119,7 +119,7 @@ it.each([
       threadId: otherThread as never,
       turnId: otherTurn as never,
       responseIdentity: { providerResponseId: otherResponse, editScopeId: otherResponse },
-      grant: testFileGrant({ kind: "draft", workId: otherWork, workSlug: "holding" }),
+      grant: testFileGrant({ kind: "draft", workId: otherWork, workHandle: "w2" }),
     };
     expect(
       await view.collab.agentEdit().write(
@@ -166,7 +166,7 @@ it.each([
       expect(
         await view.collab
           .agentEdit()
-          .write({ ...address, command: "revert", edit: "w1" }, modelContext),
+          .write({ ...address, command: "revert", edit: "e1" }, modelContext),
       ).toMatchObject({ status: "nothing_to_revert" });
     }
     if (origin === "redo") {
@@ -194,7 +194,7 @@ it.each([
     expect(partial).toMatchObject({
       status: "partial",
       acceptedParts: 1,
-      skips: [{ before: "Beta", after: "Gamma", reason: expect.stringContaining("@holding") }],
+      skips: [{ before: "Beta", after: "Gamma", reason: expect.stringContaining("w2") }],
     });
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Gamma.\n\nBlue.\n");
     expect(await holdingReview.discardItem(ALPHA_ID)).toMatchObject({ status: "discarded" });

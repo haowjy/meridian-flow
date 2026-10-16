@@ -1,10 +1,10 @@
 /** Public projection and opaque server capability for exact Work authority. */
 
+import type { WorkHandle } from "../handles.js";
+import { decodeWorkHandle } from "../handles.js";
 import type { WorkId } from "../ids.js";
-import type { WorkSlug } from "./work-slug.js";
-import { decodeWorkSlug } from "./work-slug.js";
 
-export type WorkAuthorityDto = { workId: WorkId; workSlug: WorkSlug | null };
+export type WorkAuthorityDto = { workId: WorkId; workHandle: WorkHandle | null };
 
 declare const resolvedWorkAuthorityBrand: unique symbol;
 
@@ -18,7 +18,7 @@ export function decodeWorkAuthorityDto(value: unknown): WorkAuthorityDto | null 
   if (!value || typeof value !== "object") return null;
   const candidate = value as Record<string, unknown>;
   if (typeof candidate.workId !== "string") return null;
-  if (candidate.workSlug === null) return { workId: candidate.workId, workSlug: null };
-  const workSlug = decodeWorkSlug(candidate.workSlug);
-  return workSlug ? { workId: candidate.workId, workSlug } : null;
+  if (candidate.workHandle === null) return { workId: candidate.workId, workHandle: null };
+  const workHandle = decodeWorkHandle(candidate.workHandle);
+  return workHandle ? { workId: candidate.workId, workHandle } : null;
 }

@@ -18,17 +18,17 @@ export type ResourceKey = Readonly<{ handle: string }>;
 /**
  * Durable owner identity asserted by a scoped catalog or checked command constructor.
  * Project-scoped schemes have no owner (`workId: null`). A Work-scoped location
- * names a Work (id and slug, slug null for No Work) or, for Scratch, a lineage
- * (the first chat's id and its handle, as in `scratch://@/c12/`); uploads are held by a chat
- * (its id and handle, as in `uploads://@/c15/`; no handle, and a bare `uploads://` URI, until the chat exists). The type
+ * names a Work (id and handle, handle null for No Work) or, for Scratch, a lineage
+ * (the first chat's id and its handle, as in `scratch://@c12/`); uploads are held by a chat
+ * (its id and handle, as in `uploads://@c15/`; no handle, and a bare `uploads://` URI, until the chat exists). The type
  * preserves each pair; only a known project snapshot can establish which row is
  * No Work. Use resourceWorkAuthorityFor when constructing writer commands.
  */
 export type ResourceOwner =
-  | ({ workId: null; workSlug?: undefined } & NoLineage & NoChat)
-  | ({ workId: string; workSlug: string | null } & NoLineage & NoChat)
-  | ({ workId: null; workSlug?: undefined; rootThreadId: string; rootThreadRef: string } & NoChat)
-  | ({ workId: null; workSlug?: undefined; chatId: string; chatRef: string | null } & NoLineage);
+  | ({ workId: null; workHandle?: undefined } & NoLineage & NoChat)
+  | ({ workId: string; workHandle: string | null } & NoLineage & NoChat)
+  | ({ workId: null; workHandle?: undefined; rootThreadId: string; rootThreadRef: string } & NoChat)
+  | ({ workId: null; workHandle?: undefined; chatId: string; chatRef: string | null } & NoLineage);
 type NoLineage = { rootThreadId?: undefined; rootThreadRef?: undefined };
 type NoChat = { chatId?: undefined; chatRef?: undefined };
 export type ResourceLocation = Readonly<
@@ -46,12 +46,12 @@ export function ownerOf(location: ResourceOwner): ResourceOwner {
     };
   return location.workId === null
     ? { workId: null }
-    : { workId: location.workId, workSlug: location.workSlug };
+    : { workId: location.workId, workHandle: location.workHandle };
 }
-/** What decides whether two owners are the same: the Work, or the lineage. Handles and slugs follow. */
+/** What decides whether two owners are the same: the Work, or the lineage. Handles follow. */
 export type ResourceOwnerKey = {
   workId: string | null;
-  workSlug?: string | null;
+  workHandle?: string | null;
   rootThreadId?: string | null;
   chatId?: string | null;
 };
@@ -59,7 +59,7 @@ export type ResourceOwnerKey = {
 export function sameOwner(left: ResourceOwnerKey, right: ResourceOwnerKey): boolean {
   return (
     left.workId === right.workId &&
-    (left.workSlug ?? null) === (right.workSlug ?? null) &&
+    (left.workHandle ?? null) === (right.workHandle ?? null) &&
     (left.rootThreadId ?? null) === (right.rootThreadId ?? null) &&
     (left.chatId ?? null) === (right.chatId ?? null)
   );
@@ -163,8 +163,8 @@ export type NamespaceRequest =
   | {
       kind: "move";
       scheme: ProjectContextTreeScheme;
-      sourceWorkSlug: string | null;
-      destinationWorkSlug: string | null;
+      sourceWorkHandle: string | null;
+      destinationWorkHandle: string | null;
       /** Handles of the lineages named by the body's root thread ids; they identify receipt URIs. */
       sourceRootThreadRef?: string | null;
       destinationRootThreadRef?: string | null;
@@ -174,7 +174,7 @@ export type NamespaceRequest =
       kind: "delete";
       scheme: ProjectContextTreeScheme;
       workId: string | null;
-      workSlug: string | null;
+      workHandle: string | null;
       rootThreadId?: string | null;
       rootThreadRef?: string | null;
       body: DeleteContextEntryRequest;

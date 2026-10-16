@@ -40,7 +40,7 @@ dev-login. Seed a document and chat with `./mf seed tools/mf/fixtures/basic.json
     Retry and Edit, and the chat's Files menu already lists the attachment. Choose
     Edit: the text and the attachment chip come back. Lift the wrapper and Send:
     the message goes to the same chat id, and the transcript shows the model
-    reading the attachment at its `uploads://@/c<N>/` address.
+    reading the attachment at its `uploads://@c<N>/` address.
     Variant: after the refusal, start a newer New-chat draft with its own upload
     and words. Edit puts only the refused message back in the composer, and the
     newer draft is parked. Send creates the refused chat with its attachment;

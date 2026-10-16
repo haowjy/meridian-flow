@@ -279,7 +279,7 @@ export function planMessageTurns(input: {
         turnId: turn.id,
         threadId: message.threadId,
         projectId: current.projectId,
-        scope: { workId: scope.workId, workSlug: scope.workSlug },
+        scope: { workId: scope.workId, workHandle: scope.workHandle },
       });
     }
     leafTurnId = turn.id;
