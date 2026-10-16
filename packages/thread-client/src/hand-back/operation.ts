@@ -19,7 +19,12 @@ import {
   stopResponseSchema,
 } from "@meridian/contracts/protocol";
 import type { HandBackResult, RunState, StopRequest } from "@meridian/contracts/threads";
-import { handBackCandidates, stopRequest } from "../run-state/fold-messages";
+import {
+  type FailedStop,
+  failedStopIsMoot,
+  handBackCandidates,
+  stopRequest,
+} from "../run-state/fold-messages";
 import {
   addIntent,
   answerIntent,
@@ -105,7 +110,7 @@ export type UnresolvedHandBack = {
   requestId: string;
   commandKind: HandBackCommand["kind"];
   status: UnresolvedStatus;
-  /** How many messages the press covered. */
+  /** How many messages the press covered (a Stop with nothing queued covers none). */
   count: number;
   /** Stop only: the execution the writer saw when pressing (the command's target); else null. */
   targetExecutionId: string | null;
@@ -119,6 +124,8 @@ export type UnresolvedHandBack = {
 export type StopFacts = {
   request: "idle" | "pending" | "failed";
   cancelledExecutionId: string | null;
+  /** The Stop behind `request: "failed"`; `stopStatus` drops it once moot. */
+  failedStop: FailedStop | null;
 };
 
 export type HandBackOperation = {
@@ -145,6 +152,11 @@ export type HandBackOperation = {
 
 type Held = { command: HandBackCommand; candidates: readonly string[] };
 type Entry = Held & { status: UnresolvedStatus };
+
+const failedStopOf = (e: Held): FailedStop => ({
+  targetExecutionId: e.command.kind === "stop" ? e.command.body.seenExecutionId : null,
+  candidates: e.candidates.length,
+});
 
 const idsOf = (command: HandBackCommand): readonly string[] =>
   command.kind === "queue" ? command.ids : command.body.mine;
@@ -286,7 +298,12 @@ export function createHandBackOperation(options: {
         const owed = [...entries.values()].find(
           (e) => e.command.kind === "stop" && e.status !== "refused",
         );
-        if (owed) return replay(owed);
+        if (owed && !failedStopIsMoot(input.view, failedStopOf(owed))) return replay(owed);
+        // A moot Stop targeted a reply that ended: this press is a new request, not its replay.
+        if (owed) {
+          entries.delete(owed.command.requestId);
+          store.drop(owed.command.requestId);
+        }
       }
       const requestId = mint();
       let held: Held;
@@ -359,17 +376,18 @@ export function createHandBackOperation(options: {
         requestId: e.command.requestId,
         commandKind: e.command.kind,
         status: e.status,
-        count: Math.max(1, e.candidates.length),
+        count: e.candidates.length,
         targetExecutionId: e.command.kind === "stop" ? e.command.body.seenExecutionId : null,
       }));
     },
 
     stopFacts() {
       const pending = [...running.values()].some((a) => a.kind === "stop");
-      const owed = [...entries.values()].some((e) => e.command.kind === "stop");
+      const owed = [...entries.values()].find((e) => e.command.kind === "stop");
       return {
         request: pending ? "pending" : owed ? "failed" : "idle",
         cancelledExecutionId: cancelledByStop,
+        failedStop: owed ? failedStopOf(owed) : null,
       };
     },
 

@@ -145,6 +145,19 @@ export function handBackCandidates(
 /** Where this tab's Stop control stands. Other tabs never see Stopping: they see the record. */
 export type StopStatus = "idle" | "pending" | "stopping" | "failed";
 
+/** A Stop that failed: the execution it targeted and how many queued messages it was taking back. */
+export type FailedStop = { targetExecutionId: string | null; candidates: number };
+
+/**
+ * A failed Stop that was taking back nothing owes the writer nothing once its reply ends: no
+ * card, no failed Stop control. The one rule every reader of a failed Stop calls.
+ */
+export function failedStopIsMoot(view: RunStateView, stop: FailedStop): boolean {
+  if (stop.candidates > 0) return false;
+  const running = view.record?.execution?.executionId ?? null;
+  return stop.targetExecutionId === null || running !== stop.targetExecutionId;
+}
+
 /**
  * Stop's control state for the tab that pressed it. A request in flight or a failed one stands
  * as it is. Once answered, an answer that named a cancelled execution reads Stopping while the
@@ -152,9 +165,17 @@ export type StopStatus = "idle" | "pending" | "stopping" | "failed";
  */
 export function stopStatus(
   view: RunStateView,
-  command: { request: "idle" | "pending" | "failed"; cancelledExecutionId: string | null },
+  command: {
+    request: "idle" | "pending" | "failed";
+    cancelledExecutionId: string | null;
+    failedStop?: FailedStop | null;
+  },
 ): StopStatus {
-  if (command.request !== "idle") return command.request;
+  const moot =
+    command.request === "failed" &&
+    !!command.failedStop &&
+    failedStopIsMoot(view, command.failedStop);
+  if (command.request !== "idle" && !moot) return command.request;
   const cancelled = command.cancelledExecutionId;
   return cancelled !== null && view.record?.execution?.executionId === cancelled
     ? "stopping"
