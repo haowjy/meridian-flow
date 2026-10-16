@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- A disconnected or unsubscribed client no longer acquires a catalog listener when a pending project ownership read finishes.
+
 - Completed chat replay requests now release superseded request ids instead of retaining them until disconnect.
 
 - Leaving a chat from a stream-error or history-gap callback now cancels its recovery; an abandoned retry can no longer replace the next chat subscription and lose reply text.
