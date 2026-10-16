@@ -84,6 +84,8 @@ export interface BlockRepository {
   replaceExisting(input: UpsertBlockInput): Promise<Block | null>;
   findById(id: string): Promise<Block | null>;
   listByTurn(turnId: TurnId): Promise<Block[]>;
+  /** The blocks of the named turns in one bounded read, ordered by turn then sequence; a turn with none is absent. */
+  listByTurnIds(turnIds: readonly TurnId[]): Promise<Block[]>;
   /** Both sides of the requested tool calls, bounded by a transcript page's keys. */
   listToolBlocks(keys: readonly { turnId: TurnId; toolCallId: string }[]): Promise<Block[]>;
   /** All conversation blocks of a thread, ordered by turn position then block sequence. */

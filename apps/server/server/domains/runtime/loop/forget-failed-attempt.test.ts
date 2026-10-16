@@ -235,7 +235,33 @@ describe("loadForgettingFacts", () => {
       linked,
     };
   }
-  const blocks = { listByTurn: async () => [] as Block[] };
+  const blocks = { listByTurnIds: async () => [] as Block[] };
+
+  it("reads each turn's blocks once, in one query, however long the failed chain", async () => {
+    // Risk: the walk reloading a member's blocks as the next member's stop, and one read per member.
+    const graph = chain([
+      turn("u", "user"),
+      failed("f", { forgottenBy: "r" }),
+      failed("r", { metadata: { retryOf: "f" } }),
+      turn("d", "system", { metadata: { kind: "subagent_update" } }),
+    ]);
+    const reads: string[][] = [];
+    await loadForgettingFacts(
+      {
+        turns: graph as never,
+        blocks: {
+          listByTurnIds: async (ids) => {
+            reads.push([...ids]);
+            return [];
+          },
+        },
+      },
+      "t" as never,
+      "d" as never,
+    );
+    expect(reads).toHaveLength(1);
+    expect(new Set(reads[0]).size).toBe(reads[0]?.length);
+  });
 
   it("reads past a Work refresh to the failed reply, so a closing row still forgets it", async () => {
     // Risk: the app offering a Retry the server refuses, and a failure that escapes forgetting, because
@@ -297,7 +323,9 @@ describe("loadForgettingFacts", () => {
     const loaded = await loadForgettingFacts(
       {
         turns: graph as never,
-        blocks: { listByTurn: async (id) => (refs && id === "c" ? [reference] : []) },
+        blocks: {
+          listByTurnIds: async (ids) => (refs && ids.includes("c" as never) ? [reference] : []),
+        },
       },
       "t" as never,
       "f" as never,

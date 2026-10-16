@@ -134,7 +134,7 @@ export function decideForgetting(
 
 export interface ForgettingDeps {
   turns: Pick<TurnRepository, "listMessageDeliveries"> & Parameters<typeof turnGraph>[0];
-  blocks: Pick<BlockRepository, "listByTurn">;
+  blocks: Pick<BlockRepository, "listByTurnIds">;
 }
 
 /** Gathers the facts `decideForgetting` reads, from the graph at `leaf`. Cheap unless the latest row failed. */
@@ -189,32 +189,37 @@ export async function loadForgettingFacts(
   }
 
   // The delivery walk stops at the view's next row, and whether a turn is one reads its blocks (a child
-  // seed's thread references, an overflow shell's emptiness). Graph rows carry none, so the walk runs once
-  // to find the turns it visits, loads theirs, and runs again over those.
-  const deliveredUnder = async (reply: Turn): Promise<Turn[]> => {
-    const visited: Turn[] = [];
-    deliveriesUnder(reply, nextByPrev, (turn) => visited.push(turn));
-    const hydrated = new Map(nextByPrev);
-    for (const turn of visited) {
-      const blocks = (await deps.blocks.listByTurn(turn.id as TurnId)).map(toClientSafeBlock);
-      const loaded = { ...turn, blocks };
-      if (turn.prevTurnId) hydrated.set(turn.prevTurnId, loaded);
-    }
-    return deliveriesUnder(reply, hydrated);
-  };
-
-  const members: AttemptMember[] = [];
+  // seed's thread references, an overflow shell's emptiness). Graph rows carry none, so a dry walk per
+  // assistant member finds the turns it visits, then one read loads the blocks of those and of the
+  // members, and the real walks run over one shared index. Hydration can only add an earlier stop, never
+  // remove the one the dry walk found, so the dry walk visits a sufficient superset.
+  const visitedBy = new Map<string, Turn[]>();
   for (const turn of chain) {
-    // An already-forgotten member counts as drawing nothing, so its content is never read.
-    const blocks =
-      turn.forgottenBy == null
-        ? (await deps.blocks.listByTurn(turn.id as TurnId)).map(toClientSafeBlock)
-        : [];
-    members.push({
-      turn: { ...turn, blocks },
-      delivered: turn.role === "assistant" ? await deliveredUnder(turn) : [],
-    });
+    if (turn.role !== "assistant") continue;
+    const visited: Turn[] = [];
+    deliveriesUnder(turn, nextByPrev, (next) => visited.push(next));
+    visitedBy.set(turn.id, visited);
   }
+  // An already-forgotten member counts as drawing nothing, so its content is read only if a walk visits it.
+  const wanted = new Map<string, Turn>();
+  for (const turn of chain) if (turn.forgottenBy == null) wanted.set(turn.id, turn);
+  for (const visited of visitedBy.values()) for (const turn of visited) wanted.set(turn.id, turn);
+  const blocksByTurn = new Map<string, ReturnType<typeof toClientSafeBlock>[]>();
+  for (const block of await deps.blocks.listByTurnIds([...wanted.keys()] as TurnId[])) {
+    const list = blocksByTurn.get(block.turnId) ?? [];
+    list.push(toClientSafeBlock(block));
+    blocksByTurn.set(block.turnId, list);
+  }
+  const withBlocks = (turn: Turn): Turn => ({ ...turn, blocks: blocksByTurn.get(turn.id) ?? [] });
+  const hydrated = new Map(nextByPrev);
+  for (const turn of wanted.values())
+    if (turn.prevTurnId && hydrated.get(turn.prevTurnId)?.id === turn.id)
+      hydrated.set(turn.prevTurnId, withBlocks(turn));
+
+  const members: AttemptMember[] = chain.map((turn) => ({
+    turn: turn.forgottenBy == null ? withBlocks(turn) : { ...turn, blocks: [] },
+    delivered: turn.role === "assistant" ? deliveriesUnder(turn, hydrated) : [],
+  }));
 
   const memberIds = new Set(chain.map((turn) => turn.id));
   const deliveries = await deps.turns.listMessageDeliveries(threadId);
