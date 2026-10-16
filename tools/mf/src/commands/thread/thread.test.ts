@@ -551,7 +551,7 @@ describe("thread send", () => {
   ] as const)("keeps a proven send when its diagnostic read is %s", async (fault) => {
     // The first read joins with the reply running; the next shows it complete and proves the claim
     // while the stream has not yet ended the turn. Then a frame makes the sync start one more read,
-    // which the harness holds for 5 s.
+    // which the harness holds for 5 s or answers with an empty body.
     wire.snapshot = (read) => {
       if (read === 1)
         return snapshotOf({
@@ -588,8 +588,8 @@ describe("thread send", () => {
       outcome: "complete",
       finalText: "Hello there",
     });
-    // The command ended with a read still open: the harness saw the client close it.
     if (fault === "delayed") {
+      // The command ended with a read still open: the harness saw the client close it.
       await wire.until(() => wire.aborted.some((request) => request.kind === "snapshot"));
     } else {
       expect(lastRecord(result.stdout)).toMatchObject({ observationIncomplete: true });
