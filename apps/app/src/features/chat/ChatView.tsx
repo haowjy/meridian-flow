@@ -176,7 +176,9 @@ export function ChatView({
   const pendingCreation = useIsThreadPendingCreation(threadId);
   const derivation = useDerivationStatus(threadId);
   const inherited = useInheritedView(activeThread, derivation?.inherited ?? null);
-  const storedTurns = useThreadStore((state) => state.turnsByThread[threadId] ?? EMPTY_TURNS);
+  const storedTurns = useThreadStore(
+    (state) => state.syncedByThread[threadId]?.turns ?? EMPTY_TURNS,
+  );
   const brief = useHandoffBrief({ threadId, storedTurns });
   const { view: runState, history } = useRunStateSlice(threadId);
   const replyRetry = useReplyRetry({ threadId, storedTurns });

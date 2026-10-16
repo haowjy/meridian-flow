@@ -12,11 +12,12 @@ import type { JsonValue } from "@meridian/contracts/threads";
 import type {
   AwaitingDivider,
   EnsureAssistantTurnOptions,
+  RunStateAction,
   RunStateView,
   SwitchTurnFacts,
   TurnStatusPatch,
 } from "@meridian/thread-client";
-import type { RunStateAction } from "@/client/run-state/run-state-slice";
+import type { SyncedThread } from "@meridian/thread-client/sync";
 import type {
   InterruptResponseEntry,
   InterruptResponseIdentity,
@@ -25,21 +26,12 @@ import type {
 
 export type { EnsureAssistantTurnOptions, TurnStatusPatch };
 
-export type LiveTurnMeta = {
-  eventsApplied: number;
-  /**
-   * Contract `Turn.id` for the assistant turn currently streaming on this
-   * thread. `null` means no assistant turn is active.
-   */
-  runningTurnId: string | null;
-};
-
 /** Read surface — subscribe with `useThreadStore((s) => …)`. */
 export type ThreadStoreState = {
   /** Stable reference time (epoch ms) for relative-time labels in chat. */
   now: number;
-  /** Transient live-turn bookkeeping keyed by thread id. */
-  liveMeta: Record<string, LiveTurnMeta>;
+  /** One value per chat: turns, fences, positions and run state (see `SyncedThread`). */
+  syncedByThread: Record<string, SyncedThread>;
   streamingThreadId: string | null;
   streamingProjectId: string | null;
   /**
@@ -85,7 +77,7 @@ export type ThreadStoreActions = {
   removeTurns(threadId: string, ids: readonly string[], seq: string): void;
   /** Stamp failed turns that left the conversation, remembering every id (see `markForgottenIn`). */
   markForgotten(threadId: string, ids: readonly string[], byTurnId: string): void;
-  /** Take a fact about the chat's run state into its slice (`client/run-state/run-state-slice.ts`). */
+  /** Take a fact about the chat's run state into its slice (`@meridian/thread-client` `run-state-slice.ts`). */
   dispatchRunState(threadId: string, action: RunStateAction): void;
   /** Reduce one durable block event; false when it is malformed or for another thread. */
   applyDurableBlockEvent(threadId: string, event: AGUIEvent): boolean;
