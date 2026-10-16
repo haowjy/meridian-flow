@@ -129,10 +129,10 @@ threads, seeded documents, mock-model scripts, queued controls). Exit codes are 
 
 `pnpm check` is the full local gate. Its final DB step uses Vitest's module
 graph to run the DB test files related to changes since `origin/main`, including
-uncommitted and untracked files. DB test infrastructure and migrations force the
-full DB suite; `DB_GATE_FULL=1 pnpm check:db` does the same. `pnpm test:db` and
-CI's `db-tests` job always run the full DB suite. `pnpm test:all` runs unit and
-managed DB tests together.
+uncommitted and untracked files. DB test infrastructure, dependency resolution
+and migrations force the full DB suite; `DB_GATE_FULL=1 pnpm check:db` does the
+same. `pnpm test:db` and CI's `db-tests` job always run the full DB suite.
+`pnpm test:all` runs unit and managed DB tests together.
 
 There is no target case count. `tools/ci/test-budget-reporter.ts` holds the
 suite with a ratchet instead: the expanded case count per test file (including
