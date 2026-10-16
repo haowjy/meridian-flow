@@ -138,7 +138,7 @@
     "apps/app/src/features/editor/WriterHandoffLossNotice.test.tsx": 1,
     "apps/app/src/features/links/project-link-resolver.test.ts": 2,
     "apps/app/src/features/links/use-create-linked-document.test.tsx": 3,
-    "apps/app/src/features/links/use-link-follower.test.tsx": 2,
+    "apps/app/src/features/links/use-link-follower.test.tsx": 3,
     "apps/app/src/features/project/browser-editor-tab-validation.test.ts": 4,
     "apps/app/src/features/project/chat/canonical-door-uri.test.ts": 4,
     "apps/app/src/features/project/chat/usePassageDoors.test.tsx": 2,
