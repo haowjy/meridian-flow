@@ -320,9 +320,25 @@ export function dropMovedText(
 ): MovedText[] {
   const isContent = (t: Tok) => t.kind !== "block";
   const deleted: number[] = [];
-  for (const h of liveHunks)
+  for (const h of liveHunks) {
+    // A paste matters only when the other side edited its source. Keep the entire touched
+    // deletion, including unchanged words on either side of that edit, for matching the run.
+    const touched = draftHunks.some((g) =>
+      g.from === g.to
+        ? g.ins.length > 0 && h.from < g.from && g.from < h.to
+        : g.from < h.to && h.from < g.to,
+    );
+    if (!touched) continue;
     for (let i = h.from; i < h.to; i++) if (isContent(baseToks[i])) deleted.push(i);
+  }
   if (!deleted.length) return [];
+  const positions = new Map<string, number[]>();
+  for (const [index, source] of deleted.entries()) {
+    const key = baseToks[source].key;
+    const matches = positions.get(key);
+    if (matches) matches.push(index);
+    else positions.set(key, [index]);
+  }
   const draftTouches = (i: number) => draftHunks.some((h) => h.from <= i && i < h.to);
   const out: MovedText[] = [];
   for (const h of liveHunks) {
@@ -330,8 +346,17 @@ export function dropMovedText(
     if (!inserted.length) continue;
     // Longest run of inserted content equal to a run of deleted content.
     let best = { len: 0, insAt: 0, delAt: 0 };
-    for (let insAt = 0; insAt < inserted.length; insAt++)
-      for (let delAt = 0; delAt < deleted.length; delAt++) {
+    for (let insAt = 0; insAt < inserted.length - best.len; insAt++)
+      for (const delAt of positions.get(inserted[insAt][0].key) ?? []) {
+        if (deleted.length - delAt <= best.len) break;
+        // Extend each matching diagonal only from its start, not again at every suffix.
+        // Ascending seed order preserves the first-inserted, first-deleted tie rule.
+        if (
+          insAt > 0 &&
+          delAt > 0 &&
+          inserted[insAt - 1][0].key === baseToks[deleted[delAt - 1]].key
+        )
+          continue;
         let n = 0;
         while (
           insAt + n < inserted.length &&

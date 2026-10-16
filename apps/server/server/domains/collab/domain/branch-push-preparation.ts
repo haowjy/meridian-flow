@@ -72,12 +72,11 @@ export async function preparePushUnderLiveLock(
       model: input.model,
     });
     priorDoc.destroy();
-    const afterBlocks = input.model.getBlocks(toDocHandle(afterDoc));
     const afterXmlBlocks = afterDoc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).toArray();
     const afterById = new Map(
-      afterBlocks.flatMap((block, index) => {
+      after.flatMap((block, index) => {
         const xml = afterXmlBlocks[index];
-        return xml instanceof Y.XmlElement ? [[input.model.getBlockId(block), xml] as const] : [];
+        return xml instanceof Y.XmlElement ? [[block.hash, xml] as const] : [];
       }),
     );
     const blockIdentities = new Map(

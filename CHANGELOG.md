@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Apply drafts without repeatedly hashing every block for every journal row; rebase move matching skips untouched deletions and indexes matching text.
+
 - Draft review keeps existing red widgets and green highlights while typing. Focus, removal folds and arrival pulses update in place; composing text defers review repaint until composition ends.
 
 - A change row never hides its author. With a long chat title, the editor's change list, the phone's Changes sheet and the Work row show "You", then the first chat truncated with an ellipsis (full title in its tooltip and accessible name), then "+N" for the other chats. The red and green text gets its width first; the byline keeps a floor of about six letters. The change bar truncates its first chat the same way instead of folding it into "+1".

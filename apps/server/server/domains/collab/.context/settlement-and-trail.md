@@ -64,6 +64,12 @@ resolves to available, deleted, or denied before any manuscript-bearing title
 or prose is read. Denied occurrences disappear; authorized deleted anchors
 keep their evidence under an explicit `anchorState`.
 
+Journal replay takes one identity/hash snapshot per state and reuses each row's
+output as the next row's input. Display hashes resolve sibling collisions in one
+`getDocumentBlockIds` batch, not once per block. Rich live snapshots already carry
+those hashes; push preparation reuses them for its block lookup. Do not serialize
+journal prose just to compare block identities.
+
 Trail rows persist every edit without classification. Missing sweep evidence
 suppresses a live editor's elevation and never blocks Apply. Elevation goes
 only to an authenticated connected editor, for their own overwritten

@@ -14,7 +14,6 @@ import type {
   PublicationBlockChange,
   TrailContributionReplacement,
 } from "./branch-push-contracts.js";
-import { blockTextMap } from "./branch-push-plan.js";
 import { changedRangesByBlock, documentDifference } from "./document-difference.js";
 import { type IndexedDraftUpdate, indexJournalClockOwners } from "./journal-clock-owners.js";
 import type {
@@ -114,8 +113,8 @@ export function journalAttributionByChangedBlock(input: {
   }> = [];
   try {
     Y.applyUpdate(scratch, Y.encodeStateAsUpdate(input.priorDoc));
+    let before = canonicalSnapshot(input.model, scratch);
     for (const [journalRowIndex, row] of input.rows.entries()) {
-      const before = canonicalSnapshot(input.model, scratch);
       Y.applyUpdate(scratch, row.updateData);
       const after = canonicalSnapshot(input.model, scratch);
       const beforeByIdentity = new Map(before.map((block) => [block.identity, block]));
@@ -134,6 +133,7 @@ export function journalAttributionByChangedBlock(input: {
           journalRowIndex,
         });
       }
+      before = after;
     }
     const rowsById = new Map(input.rows.map((row) => [String(row.id), row]));
     const operationIdsByBlock = draftOperationIdsByChangedBlock({
@@ -197,14 +197,13 @@ export function journalAttributionByChangedBlock(input: {
 }
 
 function canonicalSnapshot(model: YProsemirrorDocumentModel, doc: Y.Doc) {
-  const text = blockTextMap(model, doc);
-  const blocks = model.getBlocks(toDocHandle(doc));
-  return [...text].map(([hash, serialized], index) => {
-    const identity = blocks[index] ? model.getCanonicalBlockIdentity(blocks[index]) : null;
+  const handle = toDocHandle(doc);
+  const hashes = model.getDocumentBlockIds(handle);
+  return model.getBlocks(handle).map((block, index) => {
+    const identity = model.getCanonicalBlockIdentity(block);
     return {
-      hash,
-      serialized,
-      identity: identity ? `${identity.clientID}:${identity.clock}` : `missing:${hash}`,
+      hash: hashes[index],
+      identity: `${identity.clientID}:${identity.clock}`,
     };
   });
 }
