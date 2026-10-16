@@ -164,7 +164,7 @@ describe("context router Work slug resolution", () => {
     await expect(port().read("scratch://@c1/notes.md")).resolves.toMatchObject({
       ok: false,
       error: {
-        reason: `Unknown Work @c1. List Works with work({"command":"list"}). Chat c1's scratch notes are at scratch://@/c1/`,
+        reason: "Chat c1's scratch notes are at scratch://@/c1/. @c1 is not a Work.",
       },
     });
     // A fork's explicit lineage spelling is answered from the chat's real owner, like the slug.
