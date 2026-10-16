@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Draft review waits for a 300 ms typing pause before recomputing, updates review chrome at lower priority, and keeps unchanged readiness and focus readers asleep. Remote edits and explicit commands still project promptly.
+
 - Draft review keeps existing red widgets and green highlights while typing. Focus, removal folds and arrival pulses update in place; composing text defers review repaint until composition ends. Green changes remain clickable after IME blur, and reduced-motion arrivals cannot replay when motion is re-enabled.
 - Large draft rewrites use deterministic paragraph-sized diffs, reuse unchanged paragraph work in both open editors and headless rooms, and warm the attached editor before the first key. Unchanged review content and pins are reused; move/Undo also clears retired review attributes.
 - Apply drafts without repeatedly hashing every block for every journal row; rebase move matching indexes matching text while preserving the original longest-match choice, so repeated moved words are not dropped.

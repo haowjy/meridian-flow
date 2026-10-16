@@ -36,7 +36,7 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
     [projectId, workId, documentId, itemKey],
   );
   useReviewRuntime(draft, session);
-  const { ready } = useReviewState(draft);
+  const ready = useReviewState(draft, (state) => state.ready);
 
   useEffect(() => {
     if (!editor || editor.isDestroyed || !session) return;

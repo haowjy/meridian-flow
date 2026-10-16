@@ -236,7 +236,8 @@ it("a typing frame reaches the painter before the runtime derives state or wakes
   vi.useFakeTimers();
   try {
     const { editor, projector } = review(["The door was green."], ["The door was red."]);
-    const first = projector.projectNow();
+    projector.projectNow();
+    const first = projector.state().frame;
     const order: string[] = [];
     projector.subscribe(() => order.push("reader"));
     editor.commands.insertContentAt(posOf(editor, "door"), "x");

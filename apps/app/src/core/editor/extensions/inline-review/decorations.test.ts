@@ -19,7 +19,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import * as draftsApi from "@/client/api/drafts-api";
 import { draftAttributionQueryOptions } from "@/client/query/useDraftAttribution";
-import { createReviewRuntime, type ReviewRuntime } from "@/features/draft-review/review-runtime";
+import {
+  createReviewRuntime,
+  REVIEW_DEBOUNCE_MS,
+  type ReviewRuntime,
+} from "@/features/draft-review/review-runtime";
 import { useArrivedChanges } from "@/features/draft-review/useArrivedChanges";
 import {
   attachReviewRuntime,
@@ -113,7 +117,7 @@ describe("recomputing while the writer types", () => {
     const { editor } = reviewing(["Alpha beta gamma delta"], ["Alpha BETA gamma delta"]);
     editor.commands.insertContentAt(1, "Oh ");
     expect(added(editor)).toEqual(["BETA"]);
-    vi.advanceTimersByTime(119);
+    vi.advanceTimersByTime(REVIEW_DEBOUNCE_MS - 1);
     expect(added(editor)).toEqual(["BETA"]);
     vi.advanceTimersByTime(2);
     expect(added(editor).join("")).toContain("Oh");

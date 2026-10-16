@@ -21,6 +21,22 @@ editor `useRoomReview` retains the room headlessly (Work page, strip) and the
 runtime reads its Yjs text. Surfaces read the state with `useReviewState`;
 nothing copies it into the controller.
 
+Local typing recomputes after a 300 ms trailing pause; remote writes and base updates
+still flush promptly. The existing painter maps the previous marks while the review
+catches up. React readers select their slice through `useReviewState`: readiness and
+focus validity do not subscribe to every frame. Notifications update a frame-bound
+view snapshot in a React transition, not `useSyncExternalStore` (whose notifications
+remain synchronous inside a transition). A draft/selector change is reconciled in a
+layout effect; deferred rows keep their own immutable command frame. This changes
+when chrome catches up, never which text Apply or Discard names.
+
+Repeated projections reuse classification and publication only when PM document and
+base identities, the Yjs snapshot, attribution payload and provenance revision are
+unchanged. Local deletion evidence also invalidates classification. Group hashes or
+equal prose alone cannot prove the same Yjs items. There is no incremental attribution
+cache or asynchronous projection scheduler here.
+
+
 The headless source retains one conversion meta (node mapping and mark metadata) per
 Yjs room, shared by runtime projection and headless Discard/pin lookup. Its deep
 observer calls the patched `@tiptap/y-tiptap` `refreshProseMirrorDoc`: the same
