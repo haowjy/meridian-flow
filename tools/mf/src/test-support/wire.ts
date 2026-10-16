@@ -109,6 +109,8 @@ export class Wire {
 
   readonly journal: SequencedEvent[] = [];
   readonly requests: Recorded[] = [];
+  /** Requests the client closed before this server answered them. */
+  readonly aborted: Recorded[] = [];
   readonly clientMessages: Record<string, unknown>[] = [];
   /** Sockets ever accepted, and subscription cursors ever answered. */
   connections = 0;
@@ -273,7 +275,11 @@ export class Wire {
     const path = url.pathname;
     const body = await readBody(req);
     const kind = classify(req.method ?? "GET", path);
-    this.requests.push({ kind, method: req.method ?? "GET", path: path + url.search, body });
+    const recorded = { kind, method: req.method ?? "GET", path: path + url.search, body };
+    this.requests.push(recorded);
+    res.on("close", () => {
+      if (!res.writableFinished) this.aborted.push(recorded);
+    });
     const reply = async (status: number, payload: unknown, enveloped = false) => {
       const fault = this.nextFault(kind);
       if (fault?.delayMs) await new Promise((resolve) => setTimeout(resolve, fault.delayMs));

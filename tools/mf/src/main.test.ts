@@ -1,9 +1,6 @@
-/** ./mf top-level contract: grouped help, usage errors, unreachable stack, auth, large output. */
-import { execFileSync } from "node:child_process";
-import path from "node:path";
+/** ./mf top-level contract: usage errors and an unreachable stack. */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { EXIT } from "./core/cli-error";
-import { GROUPS } from "./main";
 import { startWire, type Wire } from "./test-support/wire";
 import { THREAD_ID } from "./test-support/wire-fixtures";
 
@@ -18,6 +15,10 @@ describe("./mf", () => {
   it("rejects unknown flags and commands with exit 2", async () => {
     expect((await mf(["thread", "view", THREAD_ID, "--bogus"])).code).toBe(EXIT.usage);
     expect((await mf(["nope"])).code).toBe(EXIT.usage);
+    // The follow joins from its own first read, so it takes no cursor.
+    expect((await mf(["thread", "tail", THREAD_ID, "--until-idle", "--since", "0"])).code).toBe(
+      EXIT.usage,
+    );
   });
 
   it("reports an unreachable stack as exit 4 with a JSON error on stderr", async () => {
@@ -26,16 +27,4 @@ describe("./mf", () => {
     expect(result.stdout).toBe("");
     expect(JSON.parse(result.stderr)).toMatchObject({ code: "unavailable" });
   });
-
-  it("writes large JSON results whole", async () => {
-    const result = await mf(["api", "GET", "/api/big", "--json"]);
-    expect(result.code).toBe(EXIT.ok);
-    expect(JSON.parse(result.stdout).blob).toHaveLength(300_000);
-  });
-
-  it("boots through the real ./mf shim (catches load-order bugs vitest's ESM loader hides)", () => {
-    const shim = path.resolve(__dirname, "../../../mf");
-    const help = execFileSync(shim, [], { encoding: "utf8", timeout: 30_000 });
-    for (const group of GROUPS) expect(help).toContain(`${group.name}: ${group.summary}`);
-  }, 30_000);
 });

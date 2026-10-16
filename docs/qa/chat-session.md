@@ -104,6 +104,24 @@ will grow, one per command. It holds the transcript comparison and the live-sync
   history, a reasoning fallback. Report:
   [probe-pr-c-rerun.md](https://github.com/haowjy/meridian-flow-docs/blob/main/work/mf-client-unification/reports/probe-pr-c-rerun.md).
 
+## `./mf thread view` refs (`cN`)
+
+- **Protects:** a chat reference resolves through the by-ref route in the default project and in a given
+  project, and a miss names the flag that fixes it. Replaces a `tools/mf` case whose risk is the server's route,
+  not `./mf`'s logic; the view's rows are covered by `view-transcript.test.ts` and `transcript-model.test.ts`.
+- **Stack:** mock, an owned worktree stack. `T` is a chat with ref `c1` in the default project.
+- **Steps:**
+
+  ```bash
+  ./mf thread view c1 --json --fields thread        # exit 0, thread.ref == "c1"
+  ./mf thread view c1 --project "$PROJECT_ID"       # exit 0
+  ./mf thread view c1 --project other-project       # exit 3, stderr names --project
+  ./mf thread view c9                               # exit 3 (no such ref)
+  ```
+
+- **Expect:** the exit codes in the comments. `./mf thread view c1 --json` carries `chatView: 2` and rows whose
+  `identity` is `{ turnId: renderKey, kind, occurrence: 0 }`.
+
 ## Live sync (SY-01 to SY-07)
 
 Browser checks for the thread sync the app and `./mf` share: how a chat opened mid-reply joins the
