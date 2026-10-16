@@ -242,3 +242,55 @@ once each, in that order, with no stop button, and it equals `./mf thread view "
 
 A defect in a baseline is one that exists on `main`; a later lane must not make it worse. None was seen. One
 staging limit: the mock cannot pace words inside a step, so these recipes cannot show a prefix lost mid-burst.
+
+## Socket replay (SR-01)
+
+Browser checks for the thread socket's replay protocol: each `subscribe` carries a `requestId`, one request is in
+flight per thread, and a reconnect sends one `subscribe` per thread (there is no `resume`). They gate any change
+under `packages/thread-client/src/socket/` or `apps/server/server/lib/ws-thread-handler.ts`, alongside SY-01 to
+SY-07 (the live-sync recipes, written on the thread-sync branch, #883). Run at desktop width with `agent-browser`
+on a mock stack as above, look at the screenshots, and judge the screen against `./mf thread view`.
+
+### SR-01: two chats on one socket, offline past the delays, and back
+
+- **Protects:** the reconnect replays every thread, each handler's frames arrive once and in order, and the wire
+  carries one `subscribe` per thread on the new socket. A reconnect that replayed only the first thread, or sent a
+  batched frame the server handled serially, would leave one chat silent while the connection shows as connected.
+- **Setup:** two threads `A` and `B`, each mid-reply (35 000 ms delay, the script of SY-01), started together:
+
+  ```bash
+  S='[{"text":"Part one: the gate opens onto a courtyard of grey stone.","toolCalls":[{"name":"thread_ls","args":{"depth":1}}]},{"delayMs":35000,"text":"Part two: Lin Feng crosses it slowly and the lanterns bend toward him."}]'
+  ./mf thread send "$A" 'SR go A' --no-wait --mock "$S" --json
+  ./mf thread send "$B" 'SR go B' --no-wait --mock "$S" --json
+  ```
+
+  No layout subscribes two chats on one socket today (`ChatSurface` is one chat, moved between the center and the
+  dock; its three hooks, the sync, `useThreadActivity` and `useThreadDurableProjections`, share one thread's
+  subscription). So the browser holds `A` open, and `B` is subscribed through the page's own transport, the
+  instance the app created, found from the React tree:
+
+  ```js
+  // agent-browser eval, with the chat open on A
+  (() => {
+    const el = document.querySelector('[role=log]');
+    let f = el[Object.keys(el).find((k) => k.startsWith('__reactFiber'))];
+    while (f && !(f.memoizedProps?.value?.subscribeCatalog)) f = f.return;
+    window.__tr = f.memoizedProps.value;        // the ThreadSocketClient
+    window.__B = [];
+    window.__unB = window.__tr.subscribe(B_ID, { onEvent: (e) => window.__B.push(e.seq) });
+    window.__meridianTrace.clear();             // the debug wire tap
+  })()
+  ```
+- **Steps:** about 5 s after the sends, with "Part one…" showing in the browser, run the script above, then
+  `agent-browser set offline on`. Wait 37 s (past both replies' delays and several reconnect attempts; the bar reads
+  "Connection lost. Retrying…"). Then `agent-browser set offline off` and wait 5 s.
+- **Expect:**
+  - `A` shows "Part two…" once, settled, equal to `./mf thread view "$A"`.
+  - The wire tap shows two `subscribe` frames, one per thread, on the same new socket and no `resume`:
+    `window.__meridianTrace.getEvents({transport:'thread'})` filtered to the client frames and `socket.open` ends
+    `socket.open`, `subscribe` (A), `subscribe` (B), on one `socketEpoch`.
+  - `B`'s frames equal a fresh full replay: subscribe a second handler with `{ after: '0' }`, wait 3 s, and
+    `window.__R` equals `window.__B` (same length, no duplicates, in order). Then release both
+    (`window.__unB()`).
+- **Not a defect:** the handler errors a handler receives while offline (`WebSocket error`, `WebSocket closed`) are
+  connection errors; the replay request itself did not fail.

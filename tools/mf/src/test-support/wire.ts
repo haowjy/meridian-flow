@@ -61,7 +61,7 @@ export type RouteKind =
   | "mock"
   | "other";
 type Recorded = { kind: RouteKind; method: string; path: string; body: unknown };
-type Cursor = { threadId: string; lastSeq: string };
+type Cursor = { requestId: string; threadId: string; lastSeq: string };
 
 export class Wire {
   /** What the next snapshot read returns; a function sees the 1-based read number. */
@@ -233,17 +233,21 @@ export class Wire {
     ws.on("message", (raw) => {
       const message = JSON.parse(String(raw)) as Record<string, unknown> & {
         type: string;
+        requestId?: string;
         lastSeq?: string;
-        subscriptions?: Cursor[];
       };
       this.clientMessages.push(message);
       this.onClient?.(message, ws);
-      const cursors =
-        message.type === "resume"
-          ? (message.subscriptions ?? [])
-          : message.type === "subscribe"
-            ? [{ threadId: THREAD_ID, lastSeq: message.lastSeq ?? "0" }]
-            : [];
+      const cursors: Cursor[] =
+        message.type === "subscribe"
+          ? [
+              {
+                requestId: message.requestId ?? "",
+                threadId: THREAD_ID,
+                lastSeq: message.lastSeq ?? "0",
+              },
+            ]
+          : [];
       for (const cursor of cursors) {
         const override = this.onSubscribe?.(cursor);
         if (override && "close" in override) return void ws.close(override.close, "scripted");
@@ -254,7 +258,9 @@ export class Wire {
         }
         send({
           type: "subscribed",
+          requestId: cursor.requestId,
           threadId: cursor.threadId,
+          after: cursor.lastSeq,
           catchup: this.journal.filter((entry) => BigInt(entry.seq) > BigInt(cursor.lastSeq)),
           state: this.peek().liveState,
         });

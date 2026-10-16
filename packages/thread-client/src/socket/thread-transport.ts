@@ -23,7 +23,7 @@ export type ConnectionState =
 
 export type InterruptRespondInput = Omit<
   Extract<WsClientMessage, { type: "interrupt.respond" }>,
-  "type"
+  "type" | "requestId"
 >;
 
 export type ThreadGapEvent = {

@@ -42,35 +42,32 @@ const sequencedEventObjectSchema = z.object({
 
 export const sequencedEventSchema: z.ZodType<SequencedEvent> = sequencedEventObjectSchema;
 
+/** A client-chosen id naming one request; the server echoes it in the answer. */
+const wsRequestIdSchema = z.string().min(1);
+
 const wsSubscribeMessageSchema = z.object({
   type: z.literal("subscribe"),
+  requestId: wsRequestIdSchema,
   threadId: z.string().min(1),
   lastSeq: wsEventSeqSchema.optional(),
 });
 
 const wsUnsubscribeMessageSchema = z.object({
   type: z.literal("unsubscribe"),
+  requestId: wsRequestIdSchema,
   threadId: z.string().min(1),
 });
 
 const wsCatalogSubscribeMessageSchema = z.object({
   type: z.literal("catalog.subscribe"),
+  requestId: wsRequestIdSchema,
   projectId: z.string().min(1),
 });
 
 const wsCatalogUnsubscribeMessageSchema = z.object({
   type: z.literal("catalog.unsubscribe"),
+  requestId: wsRequestIdSchema,
   projectId: z.string().min(1),
-});
-
-const wsResumeMessageSchema = z.object({
-  type: z.literal("resume"),
-  subscriptions: z.array(
-    z.object({
-      threadId: z.string().min(1),
-      lastSeq: wsEventSeqSchema,
-    }),
-  ),
 });
 
 const wsPongMessageSchema = z.object({
@@ -79,6 +76,7 @@ const wsPongMessageSchema = z.object({
 
 const wsInterruptRespondMessageSchema = z.object({
   type: z.literal("interrupt.respond"),
+  requestId: wsRequestIdSchema,
   threadId: z.string().min(1),
   turnId: z.string().min(1),
   interruptId: z.string().min(1),
@@ -88,7 +86,6 @@ const wsInterruptRespondMessageSchema = z.object({
 export const wsClientMessageSchema = z.discriminatedUnion("type", [
   wsSubscribeMessageSchema,
   wsUnsubscribeMessageSchema,
-  wsResumeMessageSchema,
   wsPongMessageSchema,
   wsInterruptRespondMessageSchema,
   wsCatalogSubscribeMessageSchema,
@@ -205,13 +202,19 @@ export type WsServerMessage =
     }
   | {
       type: "subscribed";
+      /** The `subscribe` request this answers. */
+      requestId: string;
       threadId: string;
+      /** The cursor the server's lease starts above: the request's `lastSeq`, or "0". */
+      after: string;
       catchup: SequencedEvent[];
       state: ThreadLiveState;
     }
   | (SequencedEvent & { type: "event"; threadId: string })
   | {
       type: "gap";
+      /** The `subscribe` request this answers in place of `subscribed`. */
+      requestId: string;
       threadId: string;
       cause: WsGapCause;
       fromSeq?: string;
@@ -228,6 +231,8 @@ export type WsServerMessage =
       type: "error";
       kind: "error";
       error: MeridianError;
+      /** The client message this answers; absent when none could be parsed. */
+      requestId?: string;
       threadId?: string;
     };
 
@@ -244,7 +249,9 @@ export const wsServerMessageSchema: z.ZodType<WsServerMessage> = z.discriminated
   }),
   z.object({
     type: z.literal("subscribed"),
+    requestId: wsRequestIdSchema,
     threadId: z.string().min(1),
+    after: wsEventSeqSchema,
     catchup: z.array(sequencedEventSchema),
     state: threadLiveStateSchema,
   }),
@@ -254,6 +261,7 @@ export const wsServerMessageSchema: z.ZodType<WsServerMessage> = z.discriminated
   }),
   z.object({
     type: z.literal("gap"),
+    requestId: wsRequestIdSchema,
     threadId: z.string().min(1),
     cause: wsGapCauseSchema,
     fromSeq: wsEventSeqSchema.optional(),
@@ -286,6 +294,7 @@ export const wsServerMessageSchema: z.ZodType<WsServerMessage> = z.discriminated
     type: z.literal("error"),
     kind: z.literal("error"),
     error: meridianErrorSchema,
+    requestId: wsRequestIdSchema.optional(),
     threadId: z.string().min(1).optional(),
   }),
 ]);

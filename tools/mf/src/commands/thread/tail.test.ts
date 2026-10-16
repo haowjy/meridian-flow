@@ -208,6 +208,7 @@ describe("tail --until-idle", () => {
         BigInt(cursor.lastSeq) < 1n
           ? {
               type: "gap",
+              requestId: cursor.requestId,
               threadId: THREAD_ID,
               cause: "replay_limit_exceeded",
               fromSeq: cursor.lastSeq,
