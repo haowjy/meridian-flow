@@ -8,10 +8,10 @@
  * command records, which it turns into the visible changes and their failures (`review-visible.ts`).
  * Readers select from that state; none of them recomputes it.
  *
- * Two sources, one stream. With no editor the runtime reads the room's Yjs text on a 120 ms trailing
- * debounce (the draft dock and the Work page), retaining unchanged nodes with the binding's Yjs
+ * Two sources, one stream. With no editor the runtime reads the room's Yjs text (the draft dock and Work page),
+ * retaining unchanged nodes with the binding's Yjs
  * mapping invalidation rule. With editors attached (`attachEditor`) it projects the first
- * attached editor's state, whose unchanged top-level nodes hit the diff core's node caches: a recompute runs 120 ms after
+ * attached editor's state, whose unchanged top-level nodes hit the diff core's node caches: a recompute runs 300 ms after
  * the writer's edits, at once for a peer's write or a `review_base` change, and the previous frame stays
  * painted (mapped through the writer's edits by the painter) until the next is ready.
  *
@@ -55,7 +55,19 @@ import {
 import { type ReviewChange, reviewChanges } from "./review-model";
 import { deriveVisible, NO_VISIBLE, type ReviewVisible } from "./review-visible";
 
-export const REVIEW_DEBOUNCE_MS = 120;
+export const REVIEW_DEBOUNCE_MS = 300;
+
+/** Equal prose alone is insufficient: replacing Yjs items can change attribution without changing text. */
+function sameReviewInputs(a: ReviewFrame | null, b: ReviewFrame | null): boolean {
+  return (
+    a === b ||
+    (!!a &&
+      !!b &&
+      a.doc === b.doc &&
+      a.diff.base.blocks === b.diff.base.blocks &&
+      Y.equalSnapshots(a.snapshot, b.snapshot))
+  );
+}
 
 /** What the runtime needs of a draft room: its Yjs document and whether the server has synced it. */
 export type ReviewRoom = Pick<
@@ -191,7 +203,7 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
     if (!edits) return NO_ATTRIBUTION;
     if (
       !matched ||
-      matched.frame !== frame ||
+      !sameReviewInputs(matched.frame, frame) ||
       matched.edits !== edits ||
       matched.provenanceRevision !== provenanceRevision
     )
@@ -287,6 +299,7 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
   let settleFrame: ReviewFrame | null = null;
   let settledEdits = edits;
   let settledProvenanceRevision = provenanceRevision;
+  let settledLocalDeletions = localDeletions;
 
   /**
    * Hand one editor the room's frame, bound to that editor's own document: the frame's positions address
@@ -308,9 +321,10 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
     if (frame) useAttribution(frame);
     let changes =
       frame &&
-      frame === state.frame &&
+      sameReviewInputs(frame, state.frame) &&
       edits === settledEdits &&
-      settledProvenanceRevision === provenanceRevision
+      settledProvenanceRevision === provenanceRevision &&
+      settledLocalDeletions === localDeletions
         ? state.changes
         : frame
           ? reviewChanges(frame, attributionOf(frame))
@@ -353,17 +367,19 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
     const record = draft ? currentDraftCommandRecords()[draftCommandKey(draft)] : undefined;
     // Nothing a reader selects from moved: keep the state object, wake no one.
     if (
-      frame === state.frame &&
+      sameReviewInputs(frame, state.frame) &&
       ready === state.ready &&
       membership === state.membership &&
       record === seenRecord &&
       edits === settledEdits &&
-      settledProvenanceRevision === provenanceRevision
+      settledProvenanceRevision === provenanceRevision &&
+      settledLocalDeletions === localDeletions
     )
       return;
     seenRecord = record;
     settledEdits = edits;
     settledProvenanceRevision = provenanceRevision;
+    settledLocalDeletions = localDeletions;
     const visible =
       frame && draft
         ? deriveVisible(frame, changes, currentDraftCommandRecords(), draft)
@@ -502,8 +518,15 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
   };
   yDoc.on("afterTransaction", onLocalTransaction);
   // Without an editor the room's own updates drive the frame; with one, its transactions do.
-  const onUpdate = () => {
-    if (attachments.length === 0) schedule();
+  const onUpdate = (
+    _update: Uint8Array,
+    _origin: unknown,
+    _doc: Y.Doc,
+    transaction: Y.Transaction,
+  ) => {
+    if (attachments.length > 0) return;
+    if (transaction.local) schedule();
+    else flushSoon();
   };
   yDoc.on("update", onUpdate);
   /** The room's first server reconciliation happened: an empty frame is then "No changes left". Once true, it stays true. */

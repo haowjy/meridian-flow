@@ -191,9 +191,15 @@ follows it. Use a Work with two changes in Chapter A and one in Chapter B.
 ## Large rewrites
 
 On 10k- and 50k-word full rewrites, time open and native typing through the next
-paint (including the first key after opening, a paused key after the 120 ms review
-debounce, and Enter), both in the middle and inside green. Typing p95 must be
-below 100 ms at 10k and 250 ms at 50k. Check that attach warms the editor schema
+paint (including the first key after opening, a paused key after the 300 ms review
+debounce, and Enter), both in the middle and inside green. Compare live, unchanged
+review and full-rewrite review with 30 keys + 5 Enters at 125 ms, then three bursts
+of 20 keys at 70 ms with 400 ms pauses. Report p50/p95/max, the first key after each
+pause, and last-key-to-review-update lag; there is no fixed latency ratio gate.
+List requests during typing and repeat with the network unavailable: input must
+remain local. Before the trailing projection, exercise Apply, Discard and the
+stepper: each command retains the frame its row showed, and Discard validates its
+pin against fresh text. Check that attach warms the editor schema
 before typing and the detached headless source keeps that schema; report attach's
 cold projection separately. Unchanged paragraphs reuse their diff and review
 content; pins require retained Yjs as well as PM identity. A paragraph above the
@@ -931,7 +937,7 @@ attribution read settle: initial changes must not pulse. Observe the editor's `s
 
 Type three keys separately, waiting 700 ms per key, inside green, immediately beside green, elsewhere
 in that changed paragraph, and in an unchanged paragraph. Restore with native Ctrl+Z between locations.
-Then press Enter inside green. Each key/Enter must have one debounced projection, zero animation starts,
+Then press Enter inside green. Each typing burst must have one trailing projection after a 300 ms pause, zero animation starts,
 and zero attribution GETs. Keep references to existing red widgets and green spans: unchanged hunks
 must retain their DOM (zero adds/removes), even when their command hash changes. Enter can split the
 edited paragraph and add a new structural mark; unrelated changes must stay untouched. Count

@@ -4,7 +4,8 @@
  * runtime's state, not to the room: the Y.Doc is subscribed to once, by the runtime.
  */
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useSyncExternalStore } from "react";
+import { startTransition, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { type DraftRef, draftCommandKey } from "@/client/query/draft-command-record";
 import { metaRoomName, useDraftMeta } from "@/client/query/useDraftMeta";
 import {
@@ -18,14 +19,31 @@ import { useBranchRoom } from "./useBranchRoom";
 
 const NO_KEY = "";
 
-/** The draft's review state, whoever holds its runtime. Empty while none does. */
-export function useReviewState(draft: DraftRef | null): ReviewState {
+/** Select only what this reader displays; frame publication must not wake readiness/focus owners. */
+export function useReviewState(draft: DraftRef | null): ReviewState;
+export function useReviewState<T>(draft: DraftRef | null, select: (state: ReviewState) => T): T;
+export function useReviewState(
+  draft: DraftRef | null,
+  select: (state: ReviewState) => unknown = (state) => state,
+): unknown {
   const key = draft ? draftCommandKey(draft) : NO_KEY;
-  return useSyncExternalStore(
-    (listener) => watchReviewState(key, listener),
-    () => reviewStateOf(key),
-    () => reviewStateOf(NO_KEY),
-  );
+  const selected = useShallow(select);
+  // Review chrome may lag the painter. Keep its immutable, frame-bound command targets together
+  // in a transition; useSyncExternalStore notifications are synchronous even inside startTransition.
+  const [snapshot, setSnapshot] = useState(() => ({ key, value: selected(reviewStateOf(key)) }));
+  const queued = useRef(snapshot);
+  useLayoutEffect(() => {
+    const update = () => {
+      const value = selected(reviewStateOf(key));
+      if (queued.current.key === key && Object.is(queued.current.value, value)) return;
+      queued.current = { key, value };
+      setSnapshot(queued.current);
+    };
+    // Reconcile a changed draft/selector and any publication between render and subscription.
+    update();
+    return watchReviewState(key, () => startTransition(update));
+  }, [key, selected]);
+  return snapshot.key === key ? snapshot.value : selected(reviewStateOf(key));
 }
 
 /** Hold the draft's runtime while `room` is its room. */
@@ -79,7 +97,7 @@ export function useRoomReview(
     room.retry();
     retry();
   };
-  const { ready } = useReviewState(active ? draft : null);
+  const ready = useReviewState(active ? draft : null, (state) => state.ready);
 
   const status: RoomReviewStatus = !active
     ? "idle"

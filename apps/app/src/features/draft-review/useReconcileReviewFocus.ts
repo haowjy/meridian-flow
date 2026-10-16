@@ -11,14 +11,20 @@ import { currentReview, getInlineReviewPluginState } from "@/core/editor/extensi
 import type { PresentedDocument } from "@/features/project/presented-document";
 import { reviewRuntimeOf } from "./review-runtime";
 import type { DraftReviewController } from "./useDraftReviewController";
-import { useOpenReviewChanges } from "./useOpenReviewChanges";
+import { useReviewState } from "./useReviewRuntime";
 
 export function useReconcileReviewFocus(
   controller: DraftReviewController,
   presented?: PresentedDocument | null,
 ): void {
-  const { documentId, itemKey, changes, status } = useOpenReviewChanges(controller);
+  const documentId = controller.inlineReview?.documentId;
+  const itemKey = controller.inlineReview?.itemKey;
   const { focus, reportFocusedChange, projectId, workId } = controller;
+  const draft = documentId && itemKey ? { projectId, workId, documentId, itemKey } : null;
+  const { ready, focusExists } = useReviewState(draft, (state) => ({
+    ready: state.ready && !controller.inlineReview?.roomError,
+    focusExists: !focus || state.changes.some((change) => change.id === focus),
+  }));
   const restored = useRef<string | null>(null);
   useEffect(() => {
     if (!documentId || !itemKey) {
@@ -28,16 +34,18 @@ export function useReconcileReviewFocus(
     const review = { documentId, itemKey };
     const identity = `${documentId}:${itemKey}`;
     if (restored.current !== identity) {
-      if (status !== "ready") return;
+      if (!ready) return;
       restored.current = identity;
       if (presented?.review?.itemKey === itemKey && presented.review.changeId && !focus) {
         // Ids are content hashes; a handled or edited change falls back to the first silently.
+        const changes =
+          reviewRuntimeOf({ projectId, workId, documentId, itemKey })?.state().changes ?? [];
         const change = changes.find((item) => item.id === presented.review?.changeId) ?? changes[0];
         if (change) controller.focusReviewChange(review, change.id);
         return;
       }
     }
-    if (status !== "ready" || !focus || changes.some((change) => change.id === focus)) return;
+    if (!ready || !focus || focusExists) return;
     // The caret and the painted marks share the editor's coordinates; the chrome's frame may be behind them.
     const editor = reviewRuntimeOf({ projectId, workId, documentId, itemKey })?.editorHandle()
       ?.editor;
@@ -55,13 +63,13 @@ export function useReconcileReviewFocus(
           );
     reportFocusedChange(review, here?.id ?? null);
   }, [
-    changes,
+    focusExists,
     focus,
     documentId,
     itemKey,
     reportFocusedChange,
     presented,
-    status,
+    ready,
     projectId,
     workId,
     controller.focusReviewChange,
