@@ -254,10 +254,11 @@ deadline, or the connection's loss.
 - **Connection loss:** requests, held frames and retry state clear, every lease is
   void, and cursors and positions stay; `connected` sends one request per thread.
 
-A `gap` answers the request in flight in place of `subscribed`: after `onGap`, every
-cursor and the position jump to `toSeq`, and a new request goes out at once (the server
+A `gap` answers the request in flight in place of `subscribed`: every cursor and
+the position jump to `toSeq`, and a new request goes out before `onGap` (the server
 answered, so no backoff). Consumers recover missing history through snapshots; each
-client owns its resync policy.
+client owns its resync policy. A callback that removes the subscription cancels the
+replacement request just installed.
 
 A cursorless `subscribe` keeps its meaning (replay from 0; `subscribed.after` is `"0"`).
 `subscribed.state.resumeAfterSeq` is in journal units and is not a cursor.
