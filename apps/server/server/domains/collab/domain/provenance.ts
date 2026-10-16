@@ -8,6 +8,7 @@ import {
   unwrapBlock,
   unwrapDoc,
 } from "@meridian/agent-edit/integration";
+import { indexDecodedStructs } from "@meridian/agent-edit/yjs-mutation";
 import type { DocumentAuthorityId } from "@meridian/contracts";
 import { PROSEMIRROR_FRAGMENT_NAME, RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
@@ -622,8 +623,8 @@ function assertDecodedUpdateOutsideReservedNamespace(
     reserved = reservedStructRanges(referenceDocument);
     reservedNamespaceIndexes.set(referenceDocument, reserved);
   }
-  if (isPlainProseFastPath(incoming, decoded.ds.clients, reserved)) return;
-  const incomingByClient = groupStructs(incoming);
+  const incomingById = indexDecodedStructs(incoming);
+  if (isPlainProseFastPath(incoming, incomingById, decoded.ds.clients, reserved)) return;
   const ancestryMemo = new Map<DecodedStruct, boolean>();
 
   const hasReservedAncestor = (
@@ -637,7 +638,7 @@ function assertDecodedUpdateOutsideReservedNamespace(
     const parent = struct.parent;
     let result = typeof parent === "string" && isReservedName(parent);
     if (!result && isId(parent)) {
-      const incomingParent = findStruct(incomingByClient, parent);
+      const incomingParent = incomingById(parent);
       result = incomingParent
         ? hasReservedAncestor(incomingParent, visiting)
         : reserved.contains(parent);
@@ -645,7 +646,7 @@ function assertDecodedUpdateOutsideReservedNamespace(
     if (!result) {
       for (const anchor of [struct.origin, struct.rightOrigin]) {
         if (!isId(anchor)) continue;
-        const incomingAnchor = findStruct(incomingByClient, anchor);
+        const incomingAnchor = incomingById(anchor);
         if (
           (incomingAnchor && hasReservedAncestor(incomingAnchor, visiting)) ||
           reserved.contains(anchor)
@@ -688,6 +689,7 @@ function hasLiveItem(doc: Y.Doc, client: number, clock: number, length: number):
 
 function isPlainProseFastPath(
   incoming: readonly DecodedStruct[],
+  incomingById: (id: Y.ID) => DecodedStruct | undefined,
   deletes: ReadonlyMap<number, readonly { clock: number; len: number }[]>,
   reserved: ReservedRangeIndex,
 ): boolean {
@@ -700,30 +702,18 @@ function isPlainProseFastPath(
   for (const struct of incoming) {
     if (typeof struct.parent === "string") {
       if (struct.parent !== PROSEMIRROR_FRAGMENT_NAME) return false;
-    } else if (!isId(struct.parent) || incomingContains(incoming, struct.parent)) {
+    } else if (!isId(struct.parent) || incomingById(struct.parent)) {
       return false;
     } else if (reserved.contains(struct.parent)) {
       return false;
     }
     for (const anchor of [struct.origin, struct.rightOrigin]) {
-      if (isId(anchor) && (incomingContains(incoming, anchor) || reserved.contains(anchor))) {
+      if (isId(anchor) && (incomingById(anchor) || reserved.contains(anchor))) {
         return false;
       }
     }
   }
   return true;
-}
-
-function incomingContains(
-  incoming: readonly DecodedStruct[],
-  id: { client: number; clock: number },
-): boolean {
-  return incoming.some(
-    (struct) =>
-      struct.id.client === id.client &&
-      id.clock >= struct.id.clock &&
-      id.clock < struct.id.clock + struct.length,
-  );
 }
 
 function validateManifestIdentity(input: {
@@ -929,6 +919,7 @@ function reservedStructRanges(doc: Y.Doc): ReservedRangeIndex {
     const type = doc.share.get(name);
     if (type) collectTypeStructs(type, index);
   }
+  index.sort();
   return index;
 }
 
@@ -959,15 +950,23 @@ class ReservedRangeIndex {
     ranges.push(range);
     this.byClient.set(range.clientID, ranges);
   }
+  sort(): void {
+    for (const ranges of this.byClient.values()) ranges.sort((a, b) => a.clock - b.clock);
+  }
   contains(id: { client: number; clock: number }): boolean {
-    return (
-      this.byClient
-        .get(id.client)
-        ?.some((range) => id.clock >= range.clock && id.clock < end(range)) ?? false
-    );
+    return this.overlaps({ clientID: id.client, clock: id.clock, length: 1 });
   }
   overlaps(range: LineageRange): boolean {
-    return this.byClient.get(range.clientID)?.some((value) => rangesOverlap(value, range)) ?? false;
+    // Stored Yjs structs have disjoint clock ranges, regardless of tree traversal order.
+    const values = this.byClient.get(range.clientID) ?? [];
+    let lo = 0;
+    let hi = values.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (end(values[mid]) <= range.clock) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo < values.length && values[lo].clock < end(range);
   }
 }
 
@@ -1034,25 +1033,6 @@ function appendRootLineageRun(target: RootLineageRun[], unitRun: RootLineageRun)
     target: { ...unitRun.target },
     root: { ...unitRun.root },
   });
-}
-
-function groupStructs(structs: readonly DecodedStruct[]): Map<number, DecodedStruct[]> {
-  const result = new Map<number, DecodedStruct[]>();
-  for (const struct of structs) {
-    const values = result.get(struct.id.client) ?? [];
-    values.push(struct);
-    result.set(struct.id.client, values);
-  }
-  return result;
-}
-
-function findStruct(
-  structs: ReadonlyMap<number, readonly DecodedStruct[]>,
-  id: { client: number; clock: number },
-): DecodedStruct | undefined {
-  return structs
-    .get(id.client)
-    ?.find((struct) => id.clock >= struct.id.clock && id.clock < struct.id.clock + struct.length);
 }
 
 function asStruct(value: unknown): DecodedStruct {

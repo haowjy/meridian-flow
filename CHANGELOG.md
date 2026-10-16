@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Large draft Discard and Undo updates use indexed writer admission instead of scanning the whole update for every item. Apply no longer blames the connection when it is still waiting for edits to save.
+
 ### Fixed
 
 - Discard waits for attribution when another chat deletes Undo-restored text, instead of silently missing that chat’s change.

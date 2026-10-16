@@ -1227,8 +1227,13 @@ msgstr "Couldn't apply this draft. Try again."
 
 #: src/features/draft-review/ReviewChangeParts.tsx
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "Couldn't apply. Check your connection and try again."
-msgstr "Couldn't apply. Check your connection and try again."
+msgid "Couldn't apply yet. Try again in a moment."
+msgstr "Couldn't apply yet. Try again in a moment."
+
+#: src/features/draft-review/ReviewChangeParts.tsx
+#: src/features/draft-review/ReviewMessageText.tsx
+#~ msgid "Couldn't apply. Check your connection and try again."
+#~ msgstr "Couldn't apply. Check your connection and try again."
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't check Work"

@@ -31,3 +31,9 @@ reconnect after a rebase raises no refusal.
 A failed live writer admission closes the raw CrossWS peer with retryable code
 `1013 writer-journal-admission-failed`. Do not rely on a thrown Hocuspocus
 error to preserve that transport code.
+
+Writer namespace validation builds one clock-ordered index of the incoming
+structs for both the plain-prose check and ancestry validation. Reserved roots
+(including `review_base`) are indexed once per materialized document in
+clock order, not tree order. Membership and overlap lookups are logarithmic;
+a whole-draft Discard/Undo must not rescan the update or base for every item.

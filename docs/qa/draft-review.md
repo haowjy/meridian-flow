@@ -1063,3 +1063,25 @@ cached prior one. A later `write revert` must classify the current text, even
 when its availability was cached before a writer edit. On a 50k draft, run an
 ordinary chat while the writer types and clicks Apply; verify the command
 returns HTTP 200 and publishes the reviewed text without “Couldn't apply”.
+
+## Large writer-update admission
+
+On desktop, seed 500 paragraphs of 100 words and a draft replacing all 50,000
+words with disjoint vocabulary. Open its review, Discard the whole change, then
+Ctrl+Z. Confirm Discard restores the base exactly and Undo restores the draft's
+exact editor JSON and red/green review. Click Apply immediately after Undo,
+without first waiting for acknowledgement; it must succeed and preserve the
+writer's text in an independent live read.
+
+Time the active room session's `hasUnacknowledgedEdits` transition to false, not
+its `synced` status (a connected session can still have pending writes). Poll
+`/readyz` throughout: acknowledgements should take a few seconds and readiness
+should stay under one second. Record update sizes, errors, `uptime`, and the
+commit. If profiling, attach through NodeWorker to the Nitro worker that handles
+the room, not the idle supervisor. Count admission attempts and resends before
+attributing repeated work to retries. Keep profiled timings separate from
+unprofiled measurements.
+
+Hold an acknowledgement while the socket remains connected until Apply's
+existing fence expires. The failure stays on Apply and must not diagnose a
+connection failure; releasing the acknowledgement lets a fresh Apply succeed.
