@@ -34,8 +34,6 @@ export type NormalizedTurns = {
   placed: Turn[];
   /** The conversation the writer is in: `placed` less the hidden, the retried and the forgotten. */
   turns: Turn[];
-  /** Failed replies a Retry replaces, explicit or named by a placed turn's `metadata.retryOf`. */
-  retried: ReadonlySet<string>;
 };
 
 export function normalizeTurns(facts: TurnFacts): NormalizedTurns {
@@ -52,5 +50,5 @@ export function normalizeTurns(facts: TurnFacts): NormalizedTurns {
   const turns = placed.filter(
     (turn) => !facts.hidden?.has(turn.id) && !retried.has(turn.id) && inConversation(turn),
   );
-  return { facts, placed, turns, retried };
+  return { facts, placed, turns };
 }
