@@ -1,4 +1,6 @@
 /** The run-state module: the chat's newest record, this device's unanswered intents, and the folds over them. */
+
+export { durableControls } from "./durable-controls";
 export {
   type FailedStop,
   failedStopIsMoot,

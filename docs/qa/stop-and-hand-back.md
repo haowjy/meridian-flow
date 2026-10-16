@@ -69,8 +69,11 @@ Stop hands a steer back, the box holds it and the button is Send.
   `agent-browser`, make `POST /api/threads/<id>/stop` fail (`network route ... --abort`).
 - **Action:** press Stop with nothing queued; let the reply end (or `./mf thread stop` it from elsewhere).
 - **Expect:** while the reply runs, the red "Couldn't stop the reply." card with Try again. After it ends, no
-  card, and the button is no longer failed. Repeat with one queued message: the card stays, now
-  "Couldn't move your queued message to the message box." with Try again.
+  card, and the button is no longer failed. Repeat with one queued message and a *lost response*
+  (the request reaches the server, then rejects, as in QC-05) instead of an aborted request: the card stays,
+  now "Couldn't move your queued message to the message box." with Try again, and the live region follows
+  the card's new sentence. With an aborted request the server never took the message, so the next reply
+  answers it and the card goes.
 - **Pinned by:** the `operation.test.ts` case "a failed Stop with nothing queued".
 
 ## SB-26: a send in flight at the press is untouched (row 26)

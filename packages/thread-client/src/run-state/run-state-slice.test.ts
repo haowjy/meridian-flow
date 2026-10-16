@@ -115,7 +115,12 @@ function step({ state, journal }: Harness, event: Event): Harness {
         seq: event.order,
         posted: event.awaiting === true,
         refused: false,
-        failed: event.failed === true,
+        ...(event.failed
+          ? {
+              failed: true as const,
+              failure: { requestId: event.choose, attempt: 1, kind: "lost" as const },
+            }
+          : { failed: false as const }),
         answer: null,
       },
     });
@@ -146,7 +151,12 @@ function step({ state, journal }: Harness, event: Event): Harness {
     return ingest(rest);
   }
   if ("withdraw" in event)
-    return dispatch({ type: "withdraw", id: event.withdraw, failed: event.failed });
+    return dispatch({
+      type: "withdraw",
+      id: event.withdraw,
+      requestId: `withdraw:${event.withdraw}`,
+      failed: event.failed,
+    });
   return dispatch({
     type: "withdrawn",
     id: event.withdrawn,
