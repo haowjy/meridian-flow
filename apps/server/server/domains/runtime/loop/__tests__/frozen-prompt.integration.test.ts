@@ -1,7 +1,7 @@
-/** Provider-request contract: dynamic context and same-Agent derivation preserve prompt bytes. */
+/** Consolidated test contracts; each block retains its original fixture scope. */
 
 import { createHash } from "node:crypto";
-import { describe, expect, it, vi } from "vitest";
+import { describe as __mergedSuite, expect, it, vi } from "vitest";
 import {
   createBoundAgentCatalog,
   createInMemoryAccountSkillInstallStore,
@@ -22,655 +22,704 @@ import {
   type ThreadAgentSwapDeps,
 } from "../../../threads/index.js";
 import { turnGraph } from "../../../threads/ports/turn-graph.js";
-import type { Gateway, Message, ModelInfo, Tool } from "../../gateway/index.js";
+import type { Gateway, GenerateResult, Message, ModelInfo, Tool } from "../../gateway/index.js";
 import type { ImageAssetPort } from "../../ports/image-asset.js";
 import { createReportPublisher } from "../../spawn/report-publisher.js";
 import { createWorkContextReader } from "../work-context.js";
-import { createRuntimeHarness } from "./runtime-harness.js";
+import { createTestAgentBinding, createTestNoticePort } from "./runtime-fixtures.js";
+import { createRuntimeHarness, runtimeScenario } from "./runtime-harness.js";
 import { scriptedGateway } from "./test-gateway.js";
 
-function systemHash(messages: Message[]) {
-  const system = messages.filter((message) => message.role === "system");
-  expect(system).toHaveLength(1);
-  const text = system[0].content.map((part) => (part.type === "text" ? part.text : "")).join("");
-  return createHash("sha256").update(text).digest("hex");
-}
-
-async function fixture(
-  onStream?: (call: number) => Promise<void>,
-  threadId?: string,
-  gatewayOverride?: ReturnType<typeof scriptedGateway> & Pick<Gateway, "listModels">,
-  imageAssets?: ImageAssetPort,
-) {
-  const projects = createInMemoryProjectRepository();
-  const works = createInMemoryWorkRepository();
-  const repos = createInMemoryRepositories({
-    projects,
-    works,
-    boundAgent: (id) => agentRevisions.boundAgent(id),
-  });
-  const agentRevisions = createInMemoryAgentRevisionStore({
-    threadExists: async (id) => Boolean(await repos.threads.findById(id)),
-  });
-  const agentCatalog = createBoundAgentCatalog({
-    store: agentRevisions,
-    defaultModel: () => "gpt-4.1-mini",
-    unavailableReasons: () => [],
-  });
-  const original = await agentCatalog.save("user-1", {
-    slug: "writer",
-    content: "---\nname: Writer\nmode: primary\n---\n\nOriginal writer.",
-  });
-  const project = await projects.create({ userId: "user-1", title: "Serial" });
-  const noWork = await works.ensureNoWork(project.id);
-  const thread = await repos.threads.create({
-    aiWriteMode: "direct",
-    id: threadId,
-    userId: "user-1",
-    projectId: project.id,
-  });
-  await repos.threadWorks.addMembership(thread.id, noWork.id, true);
-  const binding = await agentCatalog.resolvePrimary(thread.userId, original.selection);
-  if (!binding.ok) throw new Error("Fixture binding unavailable");
-  await agentRevisions.bindThread(thread.id, binding.revision.id, binding.configuration, null);
-  const gateway =
-    gatewayOverride ??
-    scriptedGateway({ onStream, usage: { inputTokens: 1000, outputTokens: 100 } });
-  const workContext = createWorkContextReader({
-    ...repos,
-    works,
-    readChainPermission: async () => "edit" as const,
-  });
-  const accountSkillInstalls = createInMemoryAccountSkillInstallStore();
-  const rig = createRuntimeHarness({
-    repos,
-    agentRevisions,
-    gateway,
-    workContext,
-    accountSkillInstalls,
-    ...(imageAssets ? { imageAssets } : {}),
-  });
-  await rig.creditLedger.grant({
-    userId: thread.userId,
-    source: "manual",
-    amountMillicredits: "10000000",
-    reason: "fixture",
-  });
-  const derive: ThreadAgentSwapDeps & {
-    handoffBriefs: HandoffBriefLauncher;
-  } = {
-    ...repos,
-    projects,
-    works,
-    agentRevisions,
-    agentCatalog,
-    eventWriter: rig.deps.eventWriter,
-    workContextNotices: rig.delivery,
-    effectiveWriteMode: (id) => rig.delivery.effectiveWriteMode(id),
-    handoffBriefs: {
-      async hold() {
-        return {
-          async release() {},
-          onLost() {
-            return () => undefined;
-          },
-        };
-      },
-      launchAfterCommit() {},
-    },
-  };
-  async function run(threadId = thread.id, tools?: Tool[]) {
-    const run = await rig.orchestrator.prepare({ threadId, userText: "Continue.", tools });
-    const outcome = await run.execute();
-    expect(outcome.status, JSON.stringify(outcome)).toBe("complete");
-    return run;
+__mergedSuite("frozen-prompt.integration.test.ts", () => {
+  // Merged from apps/server/server/domains/runtime/loop/__tests__/frozen-prompt.integration.test.ts.
+  function systemHash(messages: Message[]) {
+    const system = messages.filter((message) => message.role === "system");
+    expect(system).toHaveLength(1);
+    const text = system[0].content.map((part) => (part.type === "text" ? part.text : "")).join("");
+    return createHash("sha256").update(text).digest("hex");
   }
-  return {
-    ...rig,
-    accountSkillInstalls,
-    repos,
-    thread,
-    works,
-    original,
-    derive,
-    run,
-    requests: gateway.requests,
-  };
-}
 
-describe("frozen prompt provider requests", () => {
-  it("pins complete requests for a plain thread, fork, and fork cut at an inherited turn", async () => {
-    let nextId = 1;
-    vi.spyOn(globalThis.crypto, "randomUUID").mockImplementation(
-      () =>
-        `00000000-0000-4000-8000-${String(nextId++).padStart(12, "0")}` as ReturnType<
-          Crypto["randomUUID"]
-        >,
-    );
-    const model: ModelInfo = {
-      id: "gpt-4.1-mini",
-      provider: "openai",
-      tokenizer: "o200k" as const,
-      displayName: "Fixture",
-      contextWindow: 100_000,
-      maxOutputTokens: 4_096,
-      promptCache: { kind: "explicit", ttlMs: 60 * 60 * 1_000 },
-      capabilities: new Set(),
-    };
-    const tools: Tool[] = [
-      {
-        type: "function",
-        name: "search",
-        description: "Search the story notes.",
-        inputSchema: {
-          type: "object",
-          properties: { query: { type: "string" } },
-          required: ["query"],
-          additionalProperties: false,
+  async function fixture(
+    onStream?: (call: number) => Promise<void>,
+    threadId?: string,
+    gatewayOverride?: ReturnType<typeof scriptedGateway> & Pick<Gateway, "listModels">,
+    imageAssets?: ImageAssetPort,
+  ) {
+    const projects = createInMemoryProjectRepository();
+    const works = createInMemoryWorkRepository();
+    const repos = createInMemoryRepositories({
+      projects,
+      works,
+      boundAgent: (id) => agentRevisions.boundAgent(id),
+    });
+    const agentRevisions = createInMemoryAgentRevisionStore({
+      threadExists: async (id) => Boolean(await repos.threads.findById(id)),
+    });
+    const agentCatalog = createBoundAgentCatalog({
+      store: agentRevisions,
+      defaultModel: () => "gpt-4.1-mini",
+      unavailableReasons: () => [],
+    });
+    const original = await agentCatalog.save("user-1", {
+      slug: "writer",
+      content: "---\nname: Writer\nmode: primary\n---\n\nOriginal writer.",
+    });
+    const project = await projects.create({ userId: "user-1", title: "Serial" });
+    const noWork = await works.ensureNoWork(project.id);
+    const thread = await repos.threads.create({
+      aiWriteMode: "direct",
+      id: threadId,
+      userId: "user-1",
+      projectId: project.id,
+    });
+    await repos.threadWorks.addMembership(thread.id, noWork.id, true);
+    const binding = await agentCatalog.resolvePrimary(thread.userId, original.selection);
+    if (!binding.ok) throw new Error("Fixture binding unavailable");
+    await agentRevisions.bindThread(thread.id, binding.revision.id, binding.configuration, null);
+    const gateway =
+      gatewayOverride ??
+      scriptedGateway({ onStream, usage: { inputTokens: 1000, outputTokens: 100 } });
+    const workContext = createWorkContextReader({
+      ...repos,
+      works,
+      readChainPermission: async () => "edit" as const,
+    });
+    const accountSkillInstalls = createInMemoryAccountSkillInstallStore();
+    const rig = createRuntimeHarness({
+      repos,
+      agentRevisions,
+      gateway,
+      workContext,
+      accountSkillInstalls,
+      ...(imageAssets ? { imageAssets } : {}),
+    });
+    await rig.creditLedger.grant({
+      userId: thread.userId,
+      source: "manual",
+      amountMillicredits: "10000000",
+      reason: "fixture",
+    });
+    const derive: ThreadAgentSwapDeps & {
+      handoffBriefs: HandoffBriefLauncher;
+    } = {
+      ...repos,
+      projects,
+      works,
+      agentRevisions,
+      agentCatalog,
+      eventWriter: rig.deps.eventWriter,
+      workContextNotices: rig.delivery,
+      effectiveWriteMode: (id) => rig.delivery.effectiveWriteMode(id),
+      handoffBriefs: {
+        async hold() {
+          return {
+            async release() {},
+            onLost() {
+              return () => undefined;
+            },
+          };
         },
+        launchAfterCommit() {},
       },
-    ];
-    const gateway = Object.assign(
-      scriptedGateway({ usage: { inputTokens: 1000, outputTokens: 100 } }),
-      { listModels: () => [model] },
-    );
-    try {
-      // Use the exact same runtime path as production, with a cache-capable
-      // model so the snapshot also captures canonical cacheBreakpoint marks.
-      const rig = await fixture(undefined, "00000000-0000-4000-8000-000000000010", gateway);
-      const plain = await rig.run(rig.thread.id, tools);
-      const { thread: fork } = await forkThreadAgent(rig.derive, {
-        id: "00000000-0000-4000-8000-000000000020",
+    };
+    async function run(threadId = thread.id, tools?: Tool[]) {
+      const run = await rig.orchestrator.prepare({ threadId, userText: "Continue.", tools });
+      const outcome = await run.execute();
+      expect(outcome.status, JSON.stringify(outcome)).toBe("complete");
+      return run;
+    }
+    return {
+      ...rig,
+      accountSkillInstalls,
+      repos,
+      thread,
+      works,
+      original,
+      derive,
+      run,
+      requests: gateway.requests,
+    };
+  }
+
+  __mergedSuite("frozen prompt provider requests", () => {
+    it("pins complete requests for a plain thread, fork, and fork cut at an inherited turn", async () => {
+      let nextId = 1;
+      vi.spyOn(globalThis.crypto, "randomUUID").mockImplementation(
+        () =>
+          `00000000-0000-4000-8000-${String(nextId++).padStart(12, "0")}` as ReturnType<
+            Crypto["randomUUID"]
+          >,
+      );
+      const model: ModelInfo = {
+        id: "gpt-4.1-mini",
+        provider: "openai",
+        tokenizer: "o200k" as const,
+        displayName: "Fixture",
+        contextWindow: 100000,
+        maxOutputTokens: 4096,
+        promptCache: { kind: "explicit", ttlMs: 60 * 60 * 1000 },
+        capabilities: new Set(),
+      };
+      const tools: Tool[] = [
+        {
+          type: "function",
+          name: "search",
+          description: "Search the story notes.",
+          inputSchema: {
+            type: "object",
+            properties: { query: { type: "string" } },
+            required: ["query"],
+            additionalProperties: false,
+          },
+        },
+      ];
+      const gateway = Object.assign(
+        scriptedGateway({ usage: { inputTokens: 1000, outputTokens: 100 } }),
+        { listModels: () => [model] },
+      );
+      try {
+        // Use the exact same runtime path as production, with a cache-capable
+        // model so the snapshot also captures canonical cacheBreakpoint marks.
+        const rig = await fixture(undefined, "00000000-0000-4000-8000-000000000010", gateway);
+        const plain = await rig.run(rig.thread.id, tools);
+        const { thread: fork } = await forkThreadAgent(rig.derive, {
+          id: "00000000-0000-4000-8000-000000000020",
+          threadId: rig.thread.id,
+          userId: rig.thread.userId,
+          originTurnId: plain.executionTurnId,
+        });
+        await rig.run(fork.id, tools);
+        const { thread: nestedFork } = await forkThreadAgent(rig.derive, {
+          id: "00000000-0000-4000-8000-000000000030",
+          threadId: fork.id,
+          userId: fork.userId,
+          originTurnId: plain.executionTurnId,
+        });
+        await rig.run(nestedFork.id, tools);
+        expect(gateway.requests).toHaveLength(3);
+        expect(gateway.requests[0]?.promptCacheKey).toBe(rig.thread.id);
+        expect(gateway.requests[1]?.promptCacheKey).toBe(rig.thread.id);
+        // The inherited cutoff is owned by the original source, not the first fork.
+        expect(gateway.requests[2]?.promptCacheKey).toBe(rig.thread.id);
+        expect(gateway.requests[0]?.tools).toEqual(tools);
+        // Correlation is observability-only metadata, not provider request bytes;
+        // storage IDs added by later implementation steps must not move this gate.
+        const providerRequests = gateway.requests.map(
+          ({ correlation: _correlation, signal: _signal, ...request }) => request,
+        );
+        expect(providerRequests).toMatchSnapshot();
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
+    it("isolates image inclusion and eviction decisions between fork and source", async () => {
+      const model: ModelInfo = {
+        id: "gpt-4.1-mini",
+        provider: "openai",
+        tokenizer: "o200k" as const,
+        displayName: "Fixture",
+        contextWindow: 100000,
+        maxOutputTokens: 4096,
+        promptCache: { kind: "none", ttlMs: null },
+        capabilities: new Set(["image_input"]),
+      };
+      const gateway = Object.assign(
+        scriptedGateway({ usage: { inputTokens: 1000, outputTokens: 100 } }),
+        { listModels: () => [model] },
+      );
+      const rig = await fixture(undefined, undefined, gateway, {
+        async resolve(_context, reference) {
+          return {
+            mediaType: "image/png",
+            data: reference.uri,
+            sizeBytes: reference.uri.includes("large") ? 10 * 1024 * 1024 : 5,
+          };
+        },
+      });
+      let imageId = 1;
+      function image(uri: string) {
+        return {
+          type: "image" as const,
+          documentId: `44444444-4444-4444-8444-${String(imageId++).padStart(12, "0")}`,
+          uri,
+        };
+      }
+      async function sendAndRun(
+        threadId: string,
+        text: string,
+        images: ReturnType<typeof image>[],
+      ) {
+        await rig.send(threadId, text, {
+          blocks: [{ type: "text", text }, ...images],
+        });
+        const run = await rig.orchestrator.prepare({ threadId, drain: true });
+        await run.execute();
+        return run;
+      }
+      const originalImage = image("uploads://@/original.png");
+      const original = await sendAndRun(rig.thread.id, "original", [originalImage]);
+      const originalImageBlock = (await rig.repos.blocks.listByThread(rig.thread.id)).find(
+        (block) => block.blockType === "image",
+      );
+      expect(originalImageBlock).toBeDefined();
+      expect(
+        (await rig.repos.imageInclusions.findByThread(rig.thread.id)).find(
+          (decision) => decision.blockId === originalImageBlock?.id,
+        )?.included,
+      ).toBe(true);
+      const { thread: firstFork } = await forkThreadAgent(rig.derive, {
+        id: crypto.randomUUID(),
         threadId: rig.thread.id,
         userId: rig.thread.userId,
-        originTurnId: plain.executionTurnId,
+        originTurnId: original.executionTurnId,
       });
-      await rig.run(fork.id, tools);
-      const { thread: nestedFork } = await forkThreadAgent(rig.derive, {
-        id: "00000000-0000-4000-8000-000000000030",
-        threadId: fork.id,
-        userId: fork.userId,
-        originTurnId: plain.executionTurnId,
+      const { thread: secondFork } = await forkThreadAgent(rig.derive, {
+        id: crypto.randomUUID(),
+        threadId: rig.thread.id,
+        userId: rig.thread.userId,
+        originTurnId: original.executionTurnId,
       });
-      await rig.run(nestedFork.id, tools);
-
-      expect(gateway.requests).toHaveLength(3);
-      expect(gateway.requests[0]?.promptCacheKey).toBe(rig.thread.id);
-      expect(gateway.requests[1]?.promptCacheKey).toBe(rig.thread.id);
-      // The inherited cutoff is owned by the original source, not the first fork.
-      expect(gateway.requests[2]?.promptCacheKey).toBe(rig.thread.id);
-      expect(gateway.requests[0]?.tools).toEqual(tools);
-      // Correlation is observability-only metadata, not provider request bytes;
-      // storage IDs added by later implementation steps must not move this gate.
-      const providerRequests = gateway.requests.map(
-        ({ correlation: _correlation, signal: _signal, ...request }) => request,
+      await sendAndRun(rig.thread.id, "source eviction", [
+        image("uploads://@/source-large-1.png"),
+        image("uploads://@/source-large-2.png"),
+      ]);
+      const sourceImages = (await rig.repos.blocks.listByThread(rig.thread.id)).filter(
+        (block) => block.blockType === "image",
       );
-      expect(providerRequests).toMatchSnapshot();
-    } finally {
-      vi.restoreAllMocks();
-    }
+      const sourceDecisions = await rig.repos.imageInclusions.findByThread(rig.thread.id);
+      expect(
+        sourceDecisions.find((decision) => decision.blockId === sourceImages[0]?.id)?.included,
+      ).toBe(false);
+      expect(
+        (await rig.repos.turns.listByThread(rig.thread.id)).filter(
+          (turn) => decodeImageInclusionMetadata(turn.metadata) !== null,
+        ),
+      ).toHaveLength(1);
+      const forkAfterSourceEviction = await forkThreadAgent(rig.derive, {
+        id: crypto.randomUUID(),
+        threadId: rig.thread.id,
+        userId: rig.thread.userId,
+        originTurnId: original.executionTurnId,
+      });
+      await sendAndRun(forkAfterSourceEviction.thread.id, "cutoff still includes image", []);
+      expect(
+        (await rig.repos.imageInclusions.findByThread(forkAfterSourceEviction.thread.id)).find(
+          (decision) => decision.blockId === originalImageBlock?.id,
+        ),
+      ).toMatchObject({ included: true, decisionTurnId: expect.any(String) });
+      expect(
+        gateway.requests
+          .at(-1)
+          ?.messages.flatMap((message) => message.content)
+          .some((part) => part.type === "image"),
+      ).toBe(true);
+      await sendAndRun(firstFork.id, "first fork retains source image", []);
+      expect(
+        (await rig.repos.imageInclusions.findByThread(firstFork.id)).find(
+          (decision) => decision.blockId === originalImageBlock?.id,
+        )?.included,
+      ).toBe(true);
+      const firstForkRequest = gateway.requests.at(-1);
+      expect(
+        firstForkRequest?.messages
+          .flatMap((message) => message.content)
+          .some((part) => part.type === "image"),
+      ).toBe(true);
+      expect(
+        firstForkRequest?.messages
+          .flatMap((message) => message.content)
+          .flatMap((part) => (part.type === "text" ? [part.text] : []))
+          .join("\n"),
+      ).not.toContain("Image context changed.");
+      await sendAndRun(firstFork.id, "first fork eviction", [
+        image("uploads://@/fork-large-1.png"),
+        image("uploads://@/fork-large-2.png"),
+      ]);
+      const firstForkDecisions = await rig.repos.imageInclusions.findByThread(firstFork.id);
+      expect(
+        firstForkDecisions.find((decision) => decision.blockId === originalImageBlock?.id)
+          ?.included,
+      ).toBe(false);
+      expect(
+        (await rig.repos.turns.listByThread(firstFork.id)).filter(
+          (turn) => decodeImageInclusionMetadata(turn.metadata) !== null,
+        ),
+      ).toHaveLength(1);
+      expect(
+        (await rig.repos.imageInclusions.findByThread(secondFork.id)).find(
+          (decision) => decision.blockId === originalImageBlock?.id,
+        )?.included,
+      ).toBe(true);
+      expect(
+        (await rig.repos.turns.listByThread(secondFork.id)).filter(
+          (turn) => decodeImageInclusionMetadata(turn.metadata) !== null,
+        ),
+      ).toHaveLength(0);
+      expect(
+        (await rig.repos.imageInclusions.findByThread(rig.thread.id)).find(
+          (decision) => decision.blockId === sourceImages[0]?.id,
+        )?.included,
+      ).toBe(false);
+      const reverseImage = image("uploads://@/reverse-source.png");
+      const reverseSourceRun = await sendAndRun(rig.thread.id, "fresh source image", [
+        reverseImage,
+      ]);
+      const reverseImageBlock = (await rig.repos.blocks.listByThread(rig.thread.id)).find(
+        (block) => {
+          const content = block.content as {
+            uri?: string;
+          } | null;
+          return block.blockType === "image" && content?.uri === reverseImage.uri;
+        },
+      );
+      if (!reverseImageBlock) throw new Error("Missing reverse-direction source image block");
+      const reverseFork = await forkThreadAgent(rig.derive, {
+        id: crypto.randomUUID(),
+        threadId: rig.thread.id,
+        userId: rig.thread.userId,
+        originTurnId: reverseSourceRun.executionTurnId,
+      });
+      await sendAndRun(reverseFork.thread.id, "fork evicts image", [
+        image("uploads://@/reverse-fork-large-1.png"),
+        image("uploads://@/reverse-fork-large-2.png"),
+      ]);
+      expect(
+        (await rig.repos.imageInclusions.findByThread(reverseFork.thread.id)).find(
+          (decision) => decision.blockId === reverseImageBlock.id,
+        )?.included,
+      ).toBe(false);
+      expect(
+        (await rig.repos.imageInclusions.findByThread(rig.thread.id)).find(
+          (decision) => decision.blockId === reverseImageBlock.id,
+        )?.included,
+      ).toBe(true);
+    });
+    it("keeps one hash through steer, child notice, request-only notice, skill and Work switch across runs", async () => {
+      const rig = await fixture(async (call) => {
+        if (call === 1) {
+          await rig.send(rig.thread.id, "Tighten the dialogue.", {
+            activatedSkillSlugs: ["craft"],
+          });
+          await rig.delivery.enqueue({
+            threadId: rig.thread.id,
+            intent: "notice",
+            provenance: { kind: "system", source: "probe" },
+            body: { kind: "text", text: "Request-only reminder." },
+            idempotencyKey: "reminder",
+          });
+        }
+      });
+      await rig.accountSkillInstalls.insert({
+        ownerUserId: rig.thread.userId,
+        slug: "craft",
+        name: "Craft",
+        description: "Dialogue craft",
+        body: "Use distinctive dialogue.",
+      });
+      const first = await rig.run();
+      expect(rig.requests).toHaveLength(2);
+      const child = await rig.repos.threads.createSubagent({
+        aiWriteMode: "direct",
+        userId: rig.thread.userId,
+        projectId: rig.thread.projectId,
+        parentThreadId: rig.thread.id,
+        rootThreadId: rig.thread.id,
+        originTurnId: first.executionTurnId,
+        spawnDepth: 1,
+      });
+      const execution = await rig.repos.turns.create({
+        threadId: child.id,
+        role: "assistant",
+        origin: "assistant",
+        status: "complete",
+      });
+      await rig.repos.executionReports.admit({
+        childThreadId: child.id,
+        executionTurnId: execution.id,
+        handle: child.ref ?? "",
+        origin: "spawn",
+        deliveryMode: "background_notification",
+        callerThreadId: rig.thread.id,
+        callerTurnId: first.executionTurnId,
+        toolCallId: "spawn-1",
+        cardBlockId: null,
+      });
+      await rig.repos.executionReports.finalizeOnce({
+        childThreadId: child.id,
+        executionTurnId: execution.id,
+        outcome: "succeeded",
+        reason: null,
+        source: "return_result",
+        summary: "Private report body",
+      });
+      await createReportPublisher({
+        repos: rig.repos,
+        eventWriter: rig.deps.eventWriter,
+        eventSink: rig.deps.eventSink,
+        delivery: rig.delivery,
+      }).publish(child.id, execution.id);
+      const work = await rig.works.create({ projectId: rig.thread.projectId, name: "Revision" });
+      await rebindThreadWork(
+        {
+          ...rig.repos,
+          works: rig.works,
+          workContextNotices: rig.delivery,
+        },
+        { threadId: rig.thread.id, workId: work.id },
+      );
+      await rig.run();
+      await rig.run();
+      expect(rig.requests).toHaveLength(4);
+      const rendered = rig.requests.map((request) => JSON.stringify(request.messages));
+      expect(rendered[1]).toContain("Request-only reminder.");
+      expect(rendered[1]).toContain("Use distinctive dialogue.");
+      expect(rendered[2]).toContain(`Subagent ${child.ref} finished`);
+      expect(rendered[2]).toContain("Revision");
+      expect(rendered[2]).not.toContain("Private report body");
+      expect(new Set(rig.requests.map((request) => systemHash(request.messages))).size).toBe(1);
+    });
+    it("keeps the source Agent and frozen prompt on forks and same-Agent handoff", async () => {
+      const rig = await fixture();
+      await rig.run();
+      const parent = await rig.repos.threads.findById(rig.thread.id);
+      // The source's current Work differs from the Work captured by its first bake.
+      const work = await rig.works.create({
+        projectId: rig.thread.projectId,
+        name: "Later Work",
+      });
+      await rig.repos.threadWorks.rebindPrimary(rig.thread.id, work.id);
+      await rig.derive.agentCatalog.save(rig.thread.userId, {
+        slug: "writer",
+        content: "---\nname: Writer\nmode: primary\n---\n\nAdvanced writer.",
+        expectedRevisionId: rig.original.selection.definitionRevisionId,
+      });
+      const sourceCutoff = await turnGraph(rig.repos.turns).latest(rig.thread.id);
+      if (!sourceCutoff) throw new Error("Expected source cutoff turn");
+      for (let index = 0; index < 2; index += 1) {
+        const { thread: fork } = await forkThreadAgent(rig.derive, {
+          id: crypto.randomUUID(),
+          threadId: rig.thread.id,
+          userId: rig.thread.userId,
+          originTurnId: sourceCutoff.id,
+        });
+        expect(fork.initialPromptBakeId).toBe(parent?.initialPromptBakeId);
+        expect(fork.agentDefinitionRevisionId).toBe(rig.original.selection.definitionRevisionId);
+        expect(fork.agentName).toBe("Writer");
+        await rig.run(fork.id);
+        const request = rig.requests[rig.requests.length - 1];
+        expect(
+          request.messages.some(
+            (message) =>
+              message.role === "user" &&
+              message.content.some(
+                (part) =>
+                  part.type === "text" && part.text.includes('current: later-work: "Later Work"'),
+              ),
+          ),
+        ).toBe(true);
+        expect(systemHash(request.messages)).toBe(systemHash(rig.requests[0].messages));
+        expect(
+          request.messages.some(
+            (message) =>
+              message.role === "user" &&
+              JSON.stringify(message.content).includes("<system_update>") &&
+              JSON.stringify(message.content).includes("Forked conversation"),
+          ),
+        ).toBe(true);
+      }
+      const { thread: handoff } = await handoffThreadAgent(rig.derive, {
+        id: crypto.randomUUID(),
+        originTurnId: sourceCutoff.id,
+        threadId: rig.thread.id,
+        userId: rig.thread.userId,
+        agentSelection: rig.original.selection,
+      });
+      expect(handoff.initialPromptBakeId).toBe(parent?.initialPromptBakeId);
+      expect((await rig.repos.turns.listByThread(handoff.id))[0]).toMatchObject({
+        role: "system",
+        status: "pending",
+      });
+    });
+    it("starts a different-Agent handoff without carrying the source bake", async () => {
+      const rig = await fixture();
+      await rig.run();
+      const nextAgent = await rig.derive.agentCatalog.save(rig.thread.userId, {
+        slug: "new-writer",
+        content: "---\nname: New Writer\nmode: primary\n---\n\nNew writer prompt.",
+      });
+      const sourceCutoff = await turnGraph(rig.repos.turns).latest(rig.thread.id);
+      if (!sourceCutoff) throw new Error("Expected source cutoff turn");
+      const { thread: handoff } = await handoffThreadAgent(rig.derive, {
+        id: crypto.randomUUID(),
+        originTurnId: sourceCutoff.id,
+        threadId: rig.thread.id,
+        userId: rig.thread.userId,
+        agentSelection: nextAgent.selection,
+      });
+      expect(handoff.agentDefinitionRevisionId).toBe(nextAgent.selection.definitionRevisionId);
+      expect(handoff.initialPromptBakeId).toBeNull();
+    });
+    it("refuses forking or handing off a subagent thread", async () => {
+      const rig = await fixture();
+      const agent = await rig.derive.agentCatalog.save(rig.thread.userId, {
+        slug: "helper",
+        content: "---\nname: Helper\nmode: subagent\n---\n\nHelper.",
+      });
+      const parentTurn = await rig.repos.turns.create({
+        threadId: rig.thread.id,
+        role: "assistant",
+        origin: "assistant",
+        status: "complete",
+      });
+      const child = await rig.repos.threads.createSubagent({
+        aiWriteMode: "direct",
+        userId: rig.thread.userId,
+        projectId: rig.thread.projectId,
+        parentThreadId: rig.thread.id,
+        rootThreadId: rig.thread.id,
+        originTurnId: parentTurn.id,
+        spawnDepth: 1,
+      });
+      await rig.derive.agentRevisions.bindThread(
+        child.id,
+        agent.selection.definitionRevisionId,
+        {
+          model: "gpt-4.1-mini",
+          skills: { load: [], available: [] },
+          namedTargets: [],
+          permission: "edit",
+        },
+        null,
+      );
+      await expect(
+        forkThreadAgent(rig.derive, {
+          id: crypto.randomUUID(),
+          threadId: child.id,
+          userId: child.userId,
+          originTurnId: parentTurn.id,
+        }),
+      ).rejects.toBeInstanceOf(SubagentDerivationError);
+      await expect(
+        handoffThreadAgent(rig.derive, {
+          id: crypto.randomUUID(),
+          originTurnId: parentTurn.id,
+          threadId: child.id,
+          userId: child.userId,
+          agentSelection: rig.original.selection,
+        }),
+      ).rejects.toBeInstanceOf(SubagentDerivationError);
+    });
   });
+});
 
-  it("forks the latest image decision at the cutoff after the source loses its asset", async () => {
-    const gateway = Object.assign(
-      scriptedGateway({ usage: { inputTokens: 1000, outputTokens: 100 } }),
-      {
+__mergedSuite("notice-prefix-stability.test.ts", () => {
+  // Merged from apps/server/server/domains/runtime/loop/__tests__/notice-prefix-stability.test.ts.
+  function textResult(text: string): GenerateResult {
+    return {
+      content: [{ type: "text", text }],
+      toolCalls: [],
+      finishReason: "end_turn",
+      usage: { inputTokens: 100, outputTokens: 100 },
+      model: "gpt-4.1-mini",
+      provider: "openai",
+      timing: {
+        requestStartedAt: new Date().toISOString(),
+        latencyMs: 1,
+        timeToFirstTokenMs: 1,
+        generationMs: 0,
+      },
+    };
+  }
+
+  /** Strips the ephemeral prompt-cache marks so marks-only diffs don't fail the comparison. */
+  function stripCacheMarks(messages: readonly Message[]): unknown {
+    return messages.map((message) => ({
+      ...message,
+      content: message.content.map((part) => {
+        const { providerOptions, cacheBreakpoint, ...rest } = part as {
+          providerOptions?: unknown;
+          cacheBreakpoint?: unknown;
+        } & typeof part;
+        return rest;
+      }),
+    }));
+  }
+
+  async function setup() {
+    const gateway = scriptedGateway({
+      results: [textResult("first"), textResult("second")],
+    });
+    const notices = createTestNoticePort();
+    // `agentRevisions` closes over `threadId`, resolved lazily once the thread
+    // exists: `runtimeScenario` creates it before any run reads the binding.
+    let threadId = "";
+    const rig = await runtimeScenario({
+      gateway: {
+        ...gateway,
         listModels: () => [
           {
             id: "gpt-4.1-mini",
-            provider: "openai" as const,
+            provider: "openai",
             tokenizer: "o200k" as const,
-            displayName: "Fixture",
-            contextWindow: 100_000,
-            maxOutputTokens: 4_096,
-            promptCache: { kind: "none" as const, ttlMs: null },
-            capabilities: new Set(["image_input" as const]),
+            timing: {
+              requestStartedAt: new Date().toISOString(),
+              latencyMs: 1,
+              timeToFirstTokenMs: 1,
+              generationMs: 0,
+            },
+            displayName: "Test model",
+            contextWindow: 128000,
+            maxOutputTokens: 16384,
+            promptCache: { kind: "explicit", ttlMs: 60 * 60 * 1000 },
+            capabilities: new Set(),
           },
         ],
       },
-    );
-    let assetAvailable = true;
-    const rig = await fixture(undefined, undefined, gateway, {
-      async resolve() {
-        return assetAvailable ? { mediaType: "image/png", data: "aW1hZ2U=", sizeBytes: 5 } : null;
-      },
+      notices,
+      agentRevisions: createTestAgentBinding("gpt-4.1-mini", "", () => [threadId]),
     });
-    const image = {
-      type: "image" as const,
-      documentId: "44444444-4444-4444-8444-000000000101",
-      uri: "uploads://@/asset-lost-before-fork.png",
-    };
+    threadId = rig.thread.id;
+    return { ...rig, notices, requests: gateway.requests };
+  }
 
-    await rig.send(rig.thread.id, "remember this image", {
-      blocks: [{ type: "text", text: "remember this image" }, image],
-    });
-    const original = await rig.orchestrator.prepare({ threadId: rig.thread.id, drain: true });
-    await original.execute();
-    const originalImage = (await rig.repos.blocks.listByThread(rig.thread.id)).find(
-      (block) => block.blockType === "image",
-    );
-    if (!originalImage) throw new Error("Missing original image block");
-    expect(
-      (await rig.repos.imageInclusions.findByThread(rig.thread.id)).find(
-        (decision) => decision.blockId === originalImage.id,
-      )?.included,
-    ).toBe(true);
-
-    assetAvailable = false;
-    await rig.run(rig.thread.id);
-    expect(
-      (await rig.repos.imageInclusions.findByThread(rig.thread.id)).find(
-        (decision) => decision.blockId === originalImage.id,
-      )?.included,
-    ).toBe(false);
-    expect(
-      (await rig.repos.turns.listByThread(rig.thread.id)).filter(
-        (turn) => decodeImageInclusionMetadata(turn.metadata) !== null,
-      ),
-    ).toHaveLength(1);
-
-    const { thread: fork } = await forkThreadAgent(rig.derive, {
-      id: crypto.randomUUID(),
-      threadId: rig.thread.id,
-      userId: rig.thread.userId,
-      originTurnId: original.executionTurnId,
-    });
-    expect(
-      (await rig.repos.imageInclusions.findByThread(fork.id)).find(
-        (decision) => decision.blockId === originalImage.id,
-      ),
-    ).toMatchObject({ included: true });
-  });
-
-  it("isolates image inclusion and eviction decisions between fork and source", async () => {
-    const model: ModelInfo = {
-      id: "gpt-4.1-mini",
-      provider: "openai",
-      tokenizer: "o200k" as const,
-      displayName: "Fixture",
-      contextWindow: 100_000,
-      maxOutputTokens: 4_096,
-      promptCache: { kind: "none", ttlMs: null },
-      capabilities: new Set(["image_input"]),
-    };
-    const gateway = Object.assign(
-      scriptedGateway({ usage: { inputTokens: 1000, outputTokens: 100 } }),
-      { listModels: () => [model] },
-    );
-    const rig = await fixture(undefined, undefined, gateway, {
-      async resolve(_context, reference) {
-        return {
-          mediaType: "image/png",
-          data: reference.uri,
-          sizeBytes: reference.uri.includes("large") ? 10 * 1024 * 1024 : 5,
-        };
-      },
-    });
-    let imageId = 1;
-    function image(uri: string) {
-      return {
-        type: "image" as const,
-        documentId: `44444444-4444-4444-8444-${String(imageId++).padStart(12, "0")}`,
-        uri,
-      };
-    }
-    async function sendAndRun(threadId: string, text: string, images: ReturnType<typeof image>[]) {
-      await rig.send(threadId, text, {
-        blocks: [{ type: "text", text }, ...images],
+  __mergedSuite("request-only notice byte-stability across requests", () => {
+    it("reproduces a drained undo notice identically on the next run's request", async () => {
+      const { thread, notices, orchestrator, requests, deps } = await setup();
+      await notices.record({
+        kind: "awareness_degraded",
+        scope: { kind: "thread", threadId: thread.id },
+        message: "Awareness degraded for chapter-3.md.",
+        data: { documentIds: ["chapter-3"], documentNames: ["chapter-3.md"] },
       });
-      const run = await rig.orchestrator.prepare({ threadId, drain: true });
-      await run.execute();
-      return run;
-    }
-    const originalImage = image("uploads://@/original.png");
-    const original = await sendAndRun(rig.thread.id, "original", [originalImage]);
-    const originalImageBlock = (await rig.repos.blocks.listByThread(rig.thread.id)).find(
-      (block) => block.blockType === "image",
-    );
-    expect(originalImageBlock).toBeDefined();
-    expect(
-      (await rig.repos.imageInclusions.findByThread(rig.thread.id)).find(
-        (decision) => decision.blockId === originalImageBlock?.id,
-      )?.included,
-    ).toBe(true);
-    const { thread: firstFork } = await forkThreadAgent(rig.derive, {
-      id: crypto.randomUUID(),
-      threadId: rig.thread.id,
-      userId: rig.thread.userId,
-      originTurnId: original.executionTurnId,
-    });
-    const { thread: secondFork } = await forkThreadAgent(rig.derive, {
-      id: crypto.randomUUID(),
-      threadId: rig.thread.id,
-      userId: rig.thread.userId,
-      originTurnId: original.executionTurnId,
-    });
-
-    await sendAndRun(rig.thread.id, "source eviction", [
-      image("uploads://@/source-large-1.png"),
-      image("uploads://@/source-large-2.png"),
-    ]);
-    const sourceImages = (await rig.repos.blocks.listByThread(rig.thread.id)).filter(
-      (block) => block.blockType === "image",
-    );
-    const sourceDecisions = await rig.repos.imageInclusions.findByThread(rig.thread.id);
-    expect(
-      sourceDecisions.find((decision) => decision.blockId === sourceImages[0]?.id)?.included,
-    ).toBe(false);
-    expect(
-      (await rig.repos.turns.listByThread(rig.thread.id)).filter(
-        (turn) => decodeImageInclusionMetadata(turn.metadata) !== null,
-      ),
-    ).toHaveLength(1);
-
-    const forkAfterSourceEviction = await forkThreadAgent(rig.derive, {
-      id: crypto.randomUUID(),
-      threadId: rig.thread.id,
-      userId: rig.thread.userId,
-      originTurnId: original.executionTurnId,
-    });
-    await sendAndRun(forkAfterSourceEviction.thread.id, "cutoff still includes image", []);
-    expect(
-      (await rig.repos.imageInclusions.findByThread(forkAfterSourceEviction.thread.id)).find(
-        (decision) => decision.blockId === originalImageBlock?.id,
-      ),
-    ).toMatchObject({ included: true, decisionTurnId: expect.any(String) });
-    expect(
-      gateway.requests
-        .at(-1)
-        ?.messages.flatMap((message) => message.content)
-        .some((part) => part.type === "image"),
-    ).toBe(true);
-
-    await sendAndRun(firstFork.id, "first fork retains source image", []);
-    expect(
-      (await rig.repos.imageInclusions.findByThread(firstFork.id)).find(
-        (decision) => decision.blockId === originalImageBlock?.id,
-      )?.included,
-    ).toBe(true);
-    const firstForkRequest = gateway.requests.at(-1);
-    expect(
-      firstForkRequest?.messages
-        .flatMap((message) => message.content)
-        .some((part) => part.type === "image"),
-    ).toBe(true);
-    expect(
-      firstForkRequest?.messages
-        .flatMap((message) => message.content)
-        .flatMap((part) => (part.type === "text" ? [part.text] : []))
-        .join("\n"),
-    ).not.toContain("Image context changed.");
-
-    await sendAndRun(firstFork.id, "first fork eviction", [
-      image("uploads://@/fork-large-1.png"),
-      image("uploads://@/fork-large-2.png"),
-    ]);
-    const firstForkDecisions = await rig.repos.imageInclusions.findByThread(firstFork.id);
-    expect(
-      firstForkDecisions.find((decision) => decision.blockId === originalImageBlock?.id)?.included,
-    ).toBe(false);
-    expect(
-      (await rig.repos.turns.listByThread(firstFork.id)).filter(
-        (turn) => decodeImageInclusionMetadata(turn.metadata) !== null,
-      ),
-    ).toHaveLength(1);
-
-    expect(
-      (await rig.repos.imageInclusions.findByThread(secondFork.id)).find(
-        (decision) => decision.blockId === originalImageBlock?.id,
-      )?.included,
-    ).toBe(true);
-    expect(
-      (await rig.repos.turns.listByThread(secondFork.id)).filter(
-        (turn) => decodeImageInclusionMetadata(turn.metadata) !== null,
-      ),
-    ).toHaveLength(0);
-    expect(
-      (await rig.repos.imageInclusions.findByThread(rig.thread.id)).find(
-        (decision) => decision.blockId === sourceImages[0]?.id,
-      )?.included,
-    ).toBe(false);
-
-    const reverseImage = image("uploads://@/reverse-source.png");
-    const reverseSourceRun = await sendAndRun(rig.thread.id, "fresh source image", [reverseImage]);
-    const reverseImageBlock = (await rig.repos.blocks.listByThread(rig.thread.id)).find((block) => {
-      const content = block.content as { uri?: string } | null;
-      return block.blockType === "image" && content?.uri === reverseImage.uri;
-    });
-    if (!reverseImageBlock) throw new Error("Missing reverse-direction source image block");
-    const reverseFork = await forkThreadAgent(rig.derive, {
-      id: crypto.randomUUID(),
-      threadId: rig.thread.id,
-      userId: rig.thread.userId,
-      originTurnId: reverseSourceRun.executionTurnId,
-    });
-    await sendAndRun(reverseFork.thread.id, "fork evicts image", [
-      image("uploads://@/reverse-fork-large-1.png"),
-      image("uploads://@/reverse-fork-large-2.png"),
-    ]);
-    expect(
-      (await rig.repos.imageInclusions.findByThread(reverseFork.thread.id)).find(
-        (decision) => decision.blockId === reverseImageBlock.id,
-      )?.included,
-    ).toBe(false);
-    expect(
-      (await rig.repos.imageInclusions.findByThread(rig.thread.id)).find(
-        (decision) => decision.blockId === reverseImageBlock.id,
-      )?.included,
-    ).toBe(true);
-  });
-
-  it("keeps one hash through steer, child notice, request-only notice, skill and Work switch across runs", async () => {
-    const rig = await fixture(async (call) => {
-      if (call === 1) {
-        await rig.send(rig.thread.id, "Tighten the dialogue.", { activatedSkillSlugs: ["craft"] });
-        await rig.delivery.enqueue({
-          threadId: rig.thread.id,
-          intent: "notice",
-          provenance: { kind: "system", source: "probe" },
-          body: { kind: "text", text: "Request-only reminder." },
-          idempotencyKey: "reminder",
-        });
-      }
-    });
-    await rig.accountSkillInstalls.insert({
-      ownerUserId: rig.thread.userId,
-      slug: "craft",
-      name: "Craft",
-      description: "Dialogue craft",
-      body: "Use distinctive dialogue.",
-    });
-    const first = await rig.run();
-    expect(rig.requests).toHaveLength(2);
-    const child = await rig.repos.threads.createSubagent({
-      aiWriteMode: "direct",
-      userId: rig.thread.userId,
-      projectId: rig.thread.projectId,
-      parentThreadId: rig.thread.id,
-      rootThreadId: rig.thread.id,
-      originTurnId: first.executionTurnId,
-      spawnDepth: 1,
-    });
-    const execution = await rig.repos.turns.create({
-      threadId: child.id,
-      role: "assistant",
-      origin: "assistant",
-      status: "complete",
-    });
-    await rig.repos.executionReports.admit({
-      childThreadId: child.id,
-      executionTurnId: execution.id,
-      handle: child.ref ?? "",
-      origin: "spawn",
-      deliveryMode: "background_notification",
-      callerThreadId: rig.thread.id,
-      callerTurnId: first.executionTurnId,
-      toolCallId: "spawn-1",
-      cardBlockId: null,
-    });
-    await rig.repos.executionReports.finalizeOnce({
-      childThreadId: child.id,
-      executionTurnId: execution.id,
-      outcome: "succeeded",
-      reason: null,
-      source: "return_result",
-      summary: "Private report body",
-    });
-    await createReportPublisher({
-      repos: rig.repos,
-      eventWriter: rig.deps.eventWriter,
-      eventSink: rig.deps.eventSink,
-      delivery: rig.delivery,
-    }).publish(child.id, execution.id);
-    const work = await rig.works.create({ projectId: rig.thread.projectId, name: "Revision" });
-    await rebindThreadWork(
-      {
-        ...rig.repos,
-        works: rig.works,
-        workContextNotices: rig.delivery,
-      },
-      { threadId: rig.thread.id, workId: work.id },
-    );
-    await rig.run();
-    await rig.run();
-    expect(rig.requests).toHaveLength(4);
-    const rendered = rig.requests.map((request) => JSON.stringify(request.messages));
-    expect(rendered[1]).toContain("Request-only reminder.");
-    expect(rendered[1]).toContain("Use distinctive dialogue.");
-    expect(rendered[2]).toContain(`Subagent ${child.ref} finished`);
-    expect(rendered[2]).toContain("Revision");
-    expect(rendered[2]).not.toContain("Private report body");
-    expect(new Set(rig.requests.map((request) => systemHash(request.messages))).size).toBe(1);
-  });
-
-  it("keeps the source Agent and frozen prompt on forks and same-Agent handoff", async () => {
-    const rig = await fixture();
-    await rig.run();
-    const parent = await rig.repos.threads.findById(rig.thread.id);
-    // The source's current Work differs from the Work captured by its first bake.
-    const work = await rig.works.create({ projectId: rig.thread.projectId, name: "Later Work" });
-    await rig.repos.threadWorks.rebindPrimary(rig.thread.id, work.id);
-    await rig.derive.agentCatalog.save(rig.thread.userId, {
-      slug: "writer",
-      content: "---\nname: Writer\nmode: primary\n---\n\nAdvanced writer.",
-      expectedRevisionId: rig.original.selection.definitionRevisionId,
-    });
-    const sourceCutoff = await turnGraph(rig.repos.turns).latest(rig.thread.id);
-    if (!sourceCutoff) throw new Error("Expected source cutoff turn");
-    for (let index = 0; index < 2; index += 1) {
-      const { thread: fork } = await forkThreadAgent(rig.derive, {
-        id: crypto.randomUUID(),
-        threadId: rig.thread.id,
-        userId: rig.thread.userId,
-        originTurnId: sourceCutoff.id,
-      });
-      expect(fork.initialPromptBakeId).toBe(parent?.initialPromptBakeId);
-      expect(fork.agentDefinitionRevisionId).toBe(rig.original.selection.definitionRevisionId);
-      expect(fork.agentName).toBe("Writer");
-      await rig.run(fork.id);
-      const request = rig.requests[rig.requests.length - 1];
+      const first = await orchestrator.prepare({ threadId: thread.id, userText: "hello" });
+      await first.execute();
+      expect(requests).toHaveLength(1);
+      const second = await orchestrator.prepare({ threadId: thread.id, userText: "world" });
+      await second.execute();
+      expect(requests).toHaveLength(2);
       expect(
-        request.messages.some(
-          (message) =>
-            message.role === "user" &&
-            message.content.some(
-              (part) =>
-                part.type === "text" && part.text.includes('current: later-work: "Later Work"'),
-            ),
-        ),
-      ).toBe(true);
-      expect(systemHash(request.messages)).toBe(systemHash(rig.requests[0].messages));
-      expect(
-        request.messages.some(
-          (message) =>
-            message.role === "user" &&
-            JSON.stringify(message.content).includes("<system_update>") &&
-            JSON.stringify(message.content).includes("Forked conversation"),
-        ),
-      ).toBe(true);
-    }
-    const { thread: handoff } = await handoffThreadAgent(rig.derive, {
-      id: crypto.randomUUID(),
-      originTurnId: sourceCutoff.id,
-      threadId: rig.thread.id,
-      userId: rig.thread.userId,
-      agentSelection: rig.original.selection,
+        (await deps.repos.modelResponses.listByThread(thread.id)).map((response) => ({
+          predictedCacheState: response.predictedCacheState,
+          predictedCacheReason: response.predictedCacheReason,
+        })),
+      ).toEqual([
+        { predictedCacheState: "cold", predictedCacheReason: "no_response" },
+        { predictedCacheState: "warm", predictedCacheReason: "reusable_prefix" },
+      ]);
+      const firstMessages = requests[0]?.messages ?? [];
+      const secondMessages = requests[1]?.messages ?? [];
+      // The undo notice must actually have reached the first request; otherwise
+      // this test would pass for the wrong reason.
+      const firstHasNotice = firstMessages.some((message) =>
+        message.content.some((part) => part.type === "text" && part.text.includes("chapter-3.md")),
+      );
+      expect(firstHasNotice).toBe(true);
+      // Every message before the new run's own trailing message must be a
+      // byte-identical (modulo cache marks) prefix of the previous request.
+      expect(secondMessages.length).toBeGreaterThan(firstMessages.length);
+      const strippedFirst = stripCacheMarks(firstMessages);
+      const strippedSecond = stripCacheMarks(secondMessages.slice(0, firstMessages.length));
+      expect(strippedSecond).toEqual(strippedFirst);
     });
-    expect(handoff.initialPromptBakeId).toBe(parent?.initialPromptBakeId);
-    expect((await rig.repos.turns.listByThread(handoff.id))[0]).toMatchObject({
-      role: "system",
-      status: "pending",
-    });
-  });
-
-  it("starts a different-Agent handoff without carrying the source bake", async () => {
-    const rig = await fixture();
-    await rig.run();
-    const nextAgent = await rig.derive.agentCatalog.save(rig.thread.userId, {
-      slug: "new-writer",
-      content: "---\nname: New Writer\nmode: primary\n---\n\nNew writer prompt.",
-    });
-    const sourceCutoff = await turnGraph(rig.repos.turns).latest(rig.thread.id);
-    if (!sourceCutoff) throw new Error("Expected source cutoff turn");
-    const { thread: handoff } = await handoffThreadAgent(rig.derive, {
-      id: crypto.randomUUID(),
-      originTurnId: sourceCutoff.id,
-      threadId: rig.thread.id,
-      userId: rig.thread.userId,
-      agentSelection: nextAgent.selection,
-    });
-    expect(handoff.agentDefinitionRevisionId).toBe(nextAgent.selection.definitionRevisionId);
-    expect(handoff.initialPromptBakeId).toBeNull();
-  });
-
-  it("refuses forking or handing off a subagent thread", async () => {
-    const rig = await fixture();
-    const agent = await rig.derive.agentCatalog.save(rig.thread.userId, {
-      slug: "helper",
-      content: "---\nname: Helper\nmode: subagent\n---\n\nHelper.",
-    });
-    const parentTurn = await rig.repos.turns.create({
-      threadId: rig.thread.id,
-      role: "assistant",
-      origin: "assistant",
-      status: "complete",
-    });
-    const child = await rig.repos.threads.createSubagent({
-      aiWriteMode: "direct",
-      userId: rig.thread.userId,
-      projectId: rig.thread.projectId,
-      parentThreadId: rig.thread.id,
-      rootThreadId: rig.thread.id,
-      originTurnId: parentTurn.id,
-      spawnDepth: 1,
-    });
-    await rig.derive.agentRevisions.bindThread(
-      child.id,
-      agent.selection.definitionRevisionId,
-      {
-        model: "gpt-4.1-mini",
-        skills: { load: [], available: [] },
-        namedTargets: [],
-        permission: "edit",
-      },
-      null,
-    );
-    await expect(
-      forkThreadAgent(rig.derive, {
-        id: crypto.randomUUID(),
-        threadId: child.id,
-        userId: child.userId,
-        originTurnId: parentTurn.id,
-      }),
-    ).rejects.toBeInstanceOf(SubagentDerivationError);
-    await expect(
-      handoffThreadAgent(rig.derive, {
-        id: crypto.randomUUID(),
-        originTurnId: parentTurn.id,
-        threadId: child.id,
-        userId: child.userId,
-        agentSelection: rig.original.selection,
-      }),
-    ).rejects.toBeInstanceOf(SubagentDerivationError);
   });
 });

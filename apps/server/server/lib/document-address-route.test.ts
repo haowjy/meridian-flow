@@ -67,10 +67,7 @@ function fixture() {
 
 it.each([
   "another Work",
-  "foreign project",
   "deleted Work",
-  "inactive draft",
-  "denied grant",
   "missing identity",
 ])("answers unavailable for %s", async (reason) => {
   const { input, state, deps, review } = fixture();

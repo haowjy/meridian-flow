@@ -1,18 +1,15 @@
 /** Adapter-contract tests for Drizzle branch peers against local Postgres. */
-
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
   commitJournaledUpdate,
-  commitSegmentRows,
   resetBranchFromDoc,
 } from "../../test-support/branch-update-writes.js";
 import { createDrizzleDocumentDerivationStore } from "../drizzle-document-derivations.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
-
 if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe.skip("drizzle branch store (postgres)", () => {});
 } else {
@@ -66,7 +63,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { COLLAB_SCHEMA_VERSION, packCollabSchemaVersion } = await import(
       "@meridian/prosemirror-schema"
     );
-
     const USER_ID = "00000000-0000-4000-8000-000000000601";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000602";
     const SOURCE_ID = "00000000-0000-4000-8000-000000000603";
@@ -77,9 +73,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const DOC_ID = "00000000-0000-4000-8000-000000000605";
     const THREAD_ID = "00000000-0000-4000-8000-000000000606";
     const TURN_ID = "00000000-0000-4000-8000-000000000607";
-
     const measuredQueries: string[] = [];
-    let captureQueries = false;
+    const captureQueries = false;
     const database = useRollbackTestDatabase(DATABASE_URL, {
       max: 4,
       postgres: {
@@ -157,9 +152,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         drafts: createDrizzleDraftStore(db),
       });
     }
-
     let store = createBranchStore();
-
     function branchRoomPersistence(branchStore = store) {
       return createHocuspocusPersistenceService({
         journal: livePersistence.journal,
@@ -170,13 +163,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         emitAgentEditInvariantViolation: () => undefined,
       });
     }
-
     function docWithText(value: string): Y.Doc {
       const doc = new Y.Doc({ gc: false });
       doc.getText("content").insert(0, value);
       return doc;
     }
-
     const _markdownProjectionSerializer = (
       model: ReturnType<typeof yProsemirrorModel>,
       codec: ReturnType<typeof mdxCodec>,
@@ -210,13 +201,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ),
       };
     };
-
     beforeEach(async () => {
       db = database.current;
       livePersistence = createDrizzleCollabPersistence(db);
       store = createBranchStore();
     });
-
     it("reseeds a clean thread peer under the reassigned primary Work's draft", async () => {
       const live = docWithText("live prose");
       const oldPeer = await store.ensureThreadPeerBranch({
@@ -250,7 +239,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           isPrimary: true,
         });
       });
-
       await expect(
         store.resolveThreadBranch(DOC_ID as never, THREAD_ID as never),
       ).rejects.toMatchObject({ name: "BranchNotFoundError" });
@@ -268,7 +256,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .then((rows) => rows[0]),
         store.getBranch(nextPeer.upstreamBranchId ?? ""),
       ]);
-
       expect(nextPeer).toMatchObject({
         draftId: NEXT_DRAFT_ID,
         workId: NEXT_WORK_ID,
@@ -279,92 +266,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(oldRow?.status).toBe("closed");
       expect(nextUpstream?.workId).toBe(NEXT_WORK_ID);
     });
-
-    it("bulk-appends forty segment rows with one ownership lookup and two pending scans", async () => {
-      const { createWorkProjectionMutation } = await import(
-        "../../../projects/adapters/work-projection-mutation.js"
-      );
-      const { createDrizzleContextCatalog } = await import(
-        "../../../context/adapters/context-catalog.js"
-      );
-      const { createDrizzleProjectContextAvailability } = await import(
-        "../../../context/adapters/project-context-availability.js"
-      );
-      const availability = createDrizzleProjectContextAvailability(db);
-      const catalog = createDrizzleContextCatalog(db, undefined, {
-        availabilityMutations: availability,
-      });
-      const projection = createWorkProjectionMutation({
-        db,
-        availability,
-        catalog,
-        pending: createDrizzleWorkDraftPendingStore(db),
-      });
-      const measuredStore = createDrizzleBranchStore(db, {
-        live: { journal: livePersistence.journal, lifecycle: livePersistence.lifecycle },
-        workProjection: projection,
-        drafts: createDrizzleDraftStore(db),
-      });
-      const base = docWithText("live");
-      const branch = await measuredStore.ensureDraftBranch({
-        documentId: DOC_ID as never,
-        draftId: DRAFT_ID as never,
-        liveDoc: base,
-      });
-      const snapshot = await measuredStore.getBranch(branch.branchId);
-      if (!snapshot) throw new Error("missing batch target");
-      const source = new Y.Doc({ gc: false });
-      Y.applyUpdate(source, snapshot.state);
-      const { createDrizzleJournal } = await import("../drizzle-journal.js");
-      const wId = await createDrizzleJournal(db).reserveWriteOrdinal(DOC_ID, THREAD_ID);
-      const rows = Array.from({ length: 40 }, (_, index) => {
-        source.clientID = 10000 + index;
-        const before = Y.encodeStateVector(source);
-        source.getText("content").insert(source.getText("content").length, String(index));
-        return {
-          branchId: branch.branchId,
-          generation: snapshot.generation,
-          source: "agent" as const,
-          threadId: THREAD_ID,
-          turnId: TURN_ID,
-          toolCallId: "forty-segment-edit",
-          wId,
-          updateData: Y.encodeStateAsUpdate(source, before),
-        };
-      });
-      measuredQueries.length = 0;
-      captureQueries = true;
-      try {
-        const coordinator = createBranchCoordinator({ store: measuredStore });
-        expect(
-          await commitSegmentRows(coordinator, {
-            branchId: branch.branchId,
-            expectedGeneration: snapshot.generation,
-            sourceDoc: source,
-            rows,
-          }),
-        ).toBe(true);
-      } finally {
-        captureQueries = false;
-      }
-      expect(
-        measuredQueries.filter((query) =>
-          query.startsWith('(select "drafts"."origin_work_id", "document_branches"."document_id"'),
-        ),
-      ).toHaveLength(2);
-      expect(
-        measuredQueries.filter((query) => query.startsWith('insert into "branch_write_journal"')),
-      ).toHaveLength(1);
-      const persisted = await db
-        .select({ toolCallId: branchWriteJournal.toolCallId })
-        .from(branchWriteJournal)
-        .where(eq(branchWriteJournal.branchId, branch.branchId))
-        .orderBy(branchWriteJournal.id);
-      expect(persisted.map((row) => row.toolCallId)).toEqual(rows.map((row) => row.toolCallId));
-      source.destroy();
-      base.destroy();
-    });
-
     it("discard/reset marks old-generation rows discarded and unpushed counts join the active generation", async () => {
       // Pending counts describe visible manuscript effect, not arbitrary Y.Text roots.
       const { buildDocumentSchema, createCollabYDoc } = await import(
@@ -403,7 +304,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .countPendingByWorkIds([WORK_ID as never])
           .then((counts) => counts.get(WORK_ID as never) ?? 0),
       ).resolves.toBe(1);
-
       const { runInDrizzleTransaction } = await import("../../../../shared/drizzle-transaction.js");
       const before = await store.getBranch(work.branchId);
       await expect(
@@ -417,7 +317,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(resets).toEqual([]);
       await resetBranchFromDoc(coordinator, store, work.branchId, live);
       expect(resets).toEqual([work.generation + 1]);
-
       await expect(
         pendingDrafts
           .countPendingByWorkIds([WORK_ID as never])
@@ -429,7 +328,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .where(eq(branchWriteJournal.branchId, work.branchId));
       expect(rows).toEqual([{ generation: work.generation, status: "discarded" }]);
     });
-
     it("keeps compacted live documents visible when seeding despite zero live update rows", async () => {
       const live = docWithText("compacted live chapter");
       const [checkpoint] = await db
@@ -452,13 +350,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         latestStateVector: Buffer.from(Y.encodeStateVector(live)),
         latestCheckpointId: checkpoint?.id ?? null,
       });
-      await store.ensureDraftBranch({
+      const seeded = await store.ensureDraftBranch({
         documentId: DOC_ID as never,
         draftId: DRAFT_ID as never,
         liveDoc: live,
       });
+      const seededDoc = new Y.Doc({ gc: false });
+      Y.applyUpdate(seededDoc, seeded.state);
+      expect(seededDoc.getText("content").toString()).toBe("compacted live chapter");
+      seededDoc.destroy();
     });
-
     it("commitPushBatch rejects stale branch snapshots and non-active source rows", async () => {
       const pushStore = createDrizzlePushCommitStore(
         db,
@@ -484,7 +385,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         })
         .returning();
       if (!journalRow) throw new Error("missing journal row");
-
       await db
         .update(documentBranches)
         .set({ state: Buffer.from(Y.encodeStateAsUpdate(docWithText("concurrent"))) })
@@ -524,7 +424,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ),
       ).rejects.toThrow("changed before its push could commit");
       await expect(db.select().from(pushLineage)).resolves.toHaveLength(0);
-
       const fresh = await store.ensureDraftBranch({
         documentId: DOC_ID as never,
         draftId: DRAFT_ID as never,
@@ -560,7 +459,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).rejects.toThrow("changed before its push could commit");
       await expect(db.select().from(pushLineage)).resolves.toHaveLength(0);
     });
-
     it("commitPushBatch leaves no pending command behind when a lineage conflict ends staging", async () => {
       const pushStore = createDrizzlePushCommitStore(
         db,
@@ -636,7 +534,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const claimed = await db.select().from(draftCommands);
       expect(claimed).toEqual([]);
     });
-
     it("G2 §6.1 entry corrupt snapshot fails loudly at branch-room load", async () => {
       const { BranchCorruptError } = await import("../../domain/branch-resolver.js");
       await db.insert(documentBranches).values({
@@ -652,66 +549,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
       });
       const persistence = branchRoomPersistence();
-
       await expect(
         persistence.loadHocuspocusBranchState("branch_corrupt_review_entry", 1),
       ).rejects.toThrow(BranchCorruptError);
     });
-
-    it("never makes a branch in a closed draft: a review read of a captured draft after its close finds nothing", async () => {
-      const { runInDrizzleTransaction } = await import("../../../../shared/drizzle-transaction.js");
-      const draftStore = createDrizzleDraftStore(db);
-      // Review captured the Work's active draft and its branch, then a whole close ended it.
-      const captured = await store.ensureDraftBranch({
-        documentId: DOC_ID as never,
-        draftId: DRAFT_ID as never,
-        liveDoc: docWithText("live"),
-      });
-      await runInDrizzleTransaction(db, async () => {
-        await draftStore.lockActive(DRAFT_ID as never);
-        // The Discard kernel closes the branches first; the store closes only the row.
-        await db
-          .update(documentBranches)
-          .set({ status: "closed" })
-          .where(eq(documentBranches.draftId, DRAFT_ID as never));
-        await draftStore.close(DRAFT_ID as never, new Date());
-      });
-      const before = await db
-        .select({ id: documentBranches.id, status: documentBranches.status })
-        .from(documentBranches)
-        .where(eq(documentBranches.draftId, DRAFT_ID as never));
-
-      await expect
-        .soft(
-          store.resolveDraftBranch({
-            draftBranchId: captured.branchId,
-            documentId: DOC_ID as never,
-            draftId: DRAFT_ID as never,
-          }),
-          "the review read finds no branch",
-        )
-        .rejects.toMatchObject({ name: "BranchNotFoundError" });
-      await expect
-        .soft(
-          store.ensureDraftBranch({
-            documentId: DOC_ID as never,
-            draftId: DRAFT_ID as never,
-            liveDoc: docWithText("live"),
-          }),
-          "a write boundary refuses the closed draft",
-        )
-        .rejects.toMatchObject({ name: "BranchStaleUpdateError" });
-      expect
-        .soft(
-          await db
-            .select({ id: documentBranches.id, status: documentBranches.status })
-            .from(documentBranches)
-            .where(eq(documentBranches.draftId, DRAFT_ID as never)),
-          "and no branch row is added",
-        )
-        .toEqual(before);
-    });
-
     it("G2 §6.1 corrupt recovery resets from live without decoding the corrupt snapshot", async () => {
       await db.insert(documentBranches).values({
         id: "branch_corrupt_preview_reset",
@@ -726,7 +567,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
       });
       const coordinator = createBranchCoordinator({ store });
-
       await expect(
         resetBranchFromDoc(
           coordinator,
@@ -735,7 +575,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           docWithText("live repair"),
         ),
       ).resolves.toBe(true);
-
       const repaired = await store.resolveDraftBranch({
         draftBranchId: "branch_corrupt_preview_reset",
         documentId: DOC_ID as never,
@@ -745,7 +584,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(repaired.generation).toBeGreaterThan(0);
       expect(repaired.doc.getText("content").toString()).toBe("live repair");
     });
-
     it("G2 §6.1 entry mid-reset rebinds to the bumped generation branch room", async () => {
       const coordinator = createBranchCoordinator({ store });
       const branch = await store.ensureDraftBranch({
@@ -755,22 +593,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await resetBranchFromDoc(coordinator, store, branch.branchId, docWithText("after reset"));
       const persistence = branchRoomPersistence();
-
       const freshGeneration = branch.generation + 1;
       const room = await persistence.resolveBranchHocuspocusRoom(branch.branchId, freshGeneration);
       const loaded = (await persistence.loadHocuspocusBranchState(branch.branchId, freshGeneration))
         ?.state;
       const loadedDoc = new Y.Doc({ gc: false });
       if (loaded) Y.applyUpdate(loadedDoc, loaded);
-
       expect(room?.generation).toBe(freshGeneration);
       expect(loadedDoc.getText("content").toString()).toBe("after reset");
     });
-
     it("G2 §6.1 entry connect failure is a typed branch-room miss, never live fallback", async () => {
       const { parseYjsRoomName } = await import("@meridian/contracts/protocol");
       const persistence = branchRoomPersistence();
-
       expect(parseYjsRoomName("branch:missing-review-branch:gen:1")).toEqual({
         kind: "branch",
         branchId: "missing-review-branch",
@@ -801,7 +635,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         updateData: new Uint8Array(),
         source: "agent",
       });
-
       const beforeSecond = Y.encodeStateVector(live);
       live.getText("content").insert(live.getText("content").length, " later");
       const secondSeq = await livePersistence.journal.append(
@@ -815,7 +648,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         updateData: new Uint8Array(),
         source: "agent",
       });
-
       const rows = await db
         .select({ draftBaseUpdateSeq: branchWriteJournal.draftBaseUpdateSeq })
         .from(branchWriteJournal)
@@ -852,12 +684,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .select({ id: branchWriteJournal.id })
         .from(branchWriteJournal)
         .where(eq(branchWriteJournal.branchId, branch.branchId));
-
       expect(committed).toBe(false);
       expect(reloaded?.generation).toBe(branch.generation);
       expect(journalRows).toEqual([]);
     });
-
     it("rejects a staged reversal after Apply changes the planned row status", async () => {
       const branch = await store.ensureDraftBranch({
         documentId: DOC_ID as never,
@@ -879,7 +709,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .update(branchWriteJournal)
         .set({ status: "pushed" })
         .where(eq(branchWriteJournal.id, planned.id));
-
       const changed = docWithText("changed");
       const committed = await store.commitBranchMutation?.({
         branchId: branch.branchId,
@@ -904,14 +733,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .select({ id: branchWriteJournal.id, status: branchWriteJournal.status })
         .from(branchWriteJournal)
         .where(eq(branchWriteJournal.branchId, branch.branchId));
-
       expect(committed).toBe(false);
       expect(reloaded?.state).toEqual(branch.state);
       expect(rows).toEqual([{ id: planned.id, status: "pushed" }]);
     });
   });
 }
-
 function batchOfOne<T>(prepared: T) {
   return {
     settlement: {

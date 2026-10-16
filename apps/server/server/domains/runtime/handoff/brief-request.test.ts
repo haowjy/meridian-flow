@@ -228,9 +228,8 @@ async function prepareBrief(input: { userCutoff: boolean; previousTooLarge?: boo
   return { result, calls: summarizer.calls, beforeTurns, beforeBlocks, rig, source };
 }
 
-it.each([
-  true,
-])("prepares a source-shaped request through the selected turn (user cutoff=%s)", async (userCutoff) => {
+it("prepares a source-shaped request through the selected user turn", async () => {
+  const userCutoff = true;
   const { result, calls, beforeTurns, beforeBlocks, rig, source } = await prepareBrief({
     userCutoff,
   });
@@ -245,9 +244,7 @@ it.each([
   });
   expect(request?.model).toBe(model.id);
   expect(request?.tools).toEqual([bakedTool]);
-  expect(JSON.stringify(request?.messages)).toContain(
-    userCutoff ? "What should I do about the silver gate?" : "Earlier scene decision.",
-  );
+  expect(JSON.stringify(request?.messages)).toContain("What should I do about the silver gate?");
   expect(JSON.stringify(request?.messages)).not.toContain(
     "This reply is beyond the selected cutoff.",
   );

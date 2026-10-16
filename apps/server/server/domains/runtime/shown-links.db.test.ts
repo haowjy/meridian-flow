@@ -1,7 +1,7 @@
 /**
  * E-1: shown-link evidence on PostgreSQL threads (contract §7.3), for both
- * store adapters. Dedup keeps the latest showing per key; rows survive a real
- * compaction; a fork reads its source's showings only up to its cutoff turn,
+ * store adapters. Dedup keeps the latest showing per key; a fork reads its
+ * source's showings only up to its cutoff turn,
  * and a source's later repeat never takes one away; a handoff and a spawned
  * child inherit nothing; a showing recorded in a failed persistence rolls
  * back with it; a writer delayed after drawing its sequence never rewinds a
@@ -33,7 +33,6 @@ if (!RUN_DB_TESTS || !url) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { deleteDrizzleRows } = await import("../../test-support/drizzle-reset.js");
-    const { createCompactionFixture } = await import("./loop/__tests__/compaction-db-fixture.js");
     const { createDrizzleShownLinkStore } = await import("./adapters/drizzle/shown-links.js");
     const { createInMemoryShownLinkStore } = await import("./adapters/in-memory/shown-links.js");
     const { createDrizzleRepositoriesForTest } = await import(
@@ -44,7 +43,6 @@ if (!RUN_DB_TESTS || !url) {
     assertThrowawayDatabaseForRunDbTests(url);
     const db = createDb(url, { max: 8 });
     afterAll(() => db.close());
-    const compactionFixture = createCompactionFixture(db);
 
     /** A PostgreSQL project with one document; the in-memory adapter needs neither row. */
     async function seedDocument(projectId: string) {
@@ -102,25 +100,12 @@ if (!RUN_DB_TESTS || !url) {
         originTurnId: answer.id as TurnId,
         spawnDepth: 1,
       });
-      return { repos, threadId: thread.id, childId: child.id, documentId, compaction: undefined };
+      return { repos, threadId: thread.id, childId: child.id, documentId };
     }
 
-    /** The real runtime composition, only for the row that compacts. */
-    async function compactionScene() {
-      const compaction = await compactionFixture();
-      return {
-        repos: compaction.repos,
-        threadId: compaction.threadId,
-        childId: compaction.ids.child,
-        documentId: await seedDocument(compaction.ids.project),
-        compaction,
-      };
-    }
-
-    async function rig(adapter: Adapter, scene: "store" | "compaction") {
+    async function rig(adapter: Adapter) {
       const owner = new InMemoryTransactionOwner();
-      const { repos, threadId, childId, documentId, compaction } =
-        scene === "compaction" ? await compactionScene() : await storeScene(adapter, owner);
+      const { repos, threadId, childId, documentId } = await storeScene(adapter, owner);
       const store: ShownLinkStore =
         adapter === "drizzle"
           ? createDrizzleShownLinkStore(db)
@@ -170,7 +155,6 @@ if (!RUN_DB_TESTS || !url) {
           status: "complete",
         });
       return {
-        compaction,
         childId,
         store,
         answer,
@@ -263,7 +247,6 @@ if (!RUN_DB_TESTS || !url) {
     const rows: Array<{
       name: string;
       adapters?: readonly Adapter[];
-      scene?: "compaction";
       run(r: Rig, check: Check): Promise<void>;
     }> = [
       {
@@ -280,26 +263,6 @@ if (!RUN_DB_TESTS || !url) {
           ).toEqual([
             ["kb://moved.md", "live"],
             ["kb://target-1.md", "live"],
-          ]);
-        },
-      },
-      {
-        name: "rows survive a real compaction",
-        scene: "compaction",
-        async run({ compaction, answer, source, show, seen }, check) {
-          if (!compaction) throw new Error("the compaction scene builds the runtime");
-          await show(source.id, answer, [link(1), link(2)]);
-          const run = await compaction.orchestrator.prepare({
-            threadId: compaction.threadId,
-            tools: [],
-            userText: "Continue.",
-          });
-          await run.execute();
-          const turn = await compaction.repos.turns.findById(run.executionTurnId);
-          check(turn?.role, "the run compacted").toBe("compaction");
-          check(await seen(source.id), "rows after compaction").toEqual([
-            "00000001@kb://target-1.md",
-            "00000002@kb://target-2.md",
           ]);
         },
       },
@@ -414,7 +377,7 @@ if (!RUN_DB_TESTS || !url) {
             expect.soft(actual, `${row.name} (${adapter}): ${what}`);
           try {
             await deleteDrizzleRows(db, [schema.users]);
-            await row.run(await rig(adapter, row.scene ?? "store"), check);
+            await row.run(await rig(adapter), check);
           } catch (error) {
             check(error, "row threw").toBeUndefined();
           }

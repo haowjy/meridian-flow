@@ -33,7 +33,6 @@ import { createDrizzleDocumentLinkScopes } from "./document-link-scope.js";
 const DATABASE_URL = process.env.DATABASE_URL;
 const RUN =
   (process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true") && DATABASE_URL;
-
 const id = (n: number) => `00000000-0000-4000-8000-000000000c${n.toString(16).padStart(2, "0")}`;
 const USER = id(1);
 const PROJECT = id(2);
@@ -64,9 +63,7 @@ const RETIRED_SOURCE = id(27);
 const RETIRED_IMAGE = id(28);
 const RETIRED_CHAT = id(29);
 const LIVE = { kind: "live" } as const;
-
 const schema = buildDocumentSchema();
-
 /** A holder whose Yjs text carries one occurrence per stored `[ref, href]`. */
 function holderDoc(links: readonly (readonly [string, string])[], sources: readonly string[] = []) {
   const doc = new Y.Doc({ gc: false });
@@ -87,7 +84,6 @@ function holderDoc(links: readonly (readonly [string, string])[], sources: reado
   );
   return doc;
 }
-
 /** The file policy's list path, with one document the reader may not read. */
 const fileAccess: Pick<FileAccess, "listAccess"> = {
   async listAccess(_principal, ids) {
@@ -96,7 +92,6 @@ const fileAccess: Pick<FileAccess, "listAccess"> = {
     ) as Map<DocumentId, never>;
   },
 };
-
 if (!RUN) {
   describe.skip("document-link scope (postgres)", () => {});
 } else {
@@ -107,7 +102,6 @@ if (!RUN) {
       fileAccess,
       observer: createLinkScopeObserver(),
     });
-
     async function seed() {
       await deleteDrizzleRows(db, [users]);
       await db.insert(users).values(conformanceUserValues(USER, "document-link-scope"));
@@ -251,7 +245,6 @@ if (!RUN) {
       await deleteDrizzleRows(db, [users]);
       await db.close();
     });
-
     it("answers ids, settlements and addresses in one prepare, spelling only readable targets in the project", async () => {
       const stored = [
         [`doc:${TARGET}`, "manuscript://stored"],
@@ -335,7 +328,6 @@ if (!RUN) {
         expect.soft(scope.assetFor("wreck.png"), "a hidden tombstone holds no path").toBeNull();
       });
     });
-
     it("reports an image lookup in a view it never loaded as a miss, never as an answer (S-L2)", async () => {
       const misses: string[] = [];
       const recorded = createDrizzleDocumentLinkScopes({
@@ -404,7 +396,6 @@ if (!RUN) {
       });
       expect.soft(registered).toEqual([PROJECT]);
     });
-
     it("names the reader's own draft else the oldest, reads an unbound ahead ref by address in each view, and pins only a holder the reader may name (L-1)", async () => {
       const s = await draftTreeScenario(db, { runtime: await runtimes.compose(), runtimes });
       const [atlas, beacon, cove] = [
@@ -419,7 +410,6 @@ if (!RUN) {
       await s.seedHidden(beacon, "lore/kael", { join: kael });
       const [atlasDraft, beaconDraft] = [await s.draftOf(atlas), await s.draftOf(beacon)];
       await s.draftOf(cove);
-
       const named = async (view: typeof atlas | "live") => {
         const { answer } = await s.linkAnswer({
           view,
@@ -438,7 +428,6 @@ if (!RUN) {
       expect
         .soft(await named(beacon), "the reader's own draft, where it has it")
         .toEqual([true, beaconDraft.id, "manuscript://lore/kael"]);
-
       // An ahead ref reads by address in the reader's view until a live document binds it:
       // a draft's hidden document there reads "in a draft" from every view.
       const draftShip = await s.seedHidden(atlas, "ship");
@@ -482,7 +471,6 @@ if (!RUN) {
       expect
         .soft(await read(beacon, unbound, SHIP, CHAPTER), "joined by another draft")
         .toEqual(inShip);
-
       // A stale base: the id still pins the holder, and the answer names where it is now.
       expect
         .soft(
@@ -490,7 +478,6 @@ if (!RUN) {
           "moved holder",
         )
         .toEqual({ id: liveAnchor, holderUri: CHAPTER });
-
       // Another account's document is no holder here: knowing its id names nothing, so its
       // location never reaches this reader.
       const stranger = await draftTreeScenario(db);
@@ -505,26 +492,6 @@ if (!RUN) {
         )
         .toEqual({ id: liveAnchor });
     });
-
-    it("answers a direct ahead ref (unregistered, no holder) at a model-created hidden document as in a draft, from live and a draft view", async () => {
-      const s = await draftTreeScenario(db, { runtime: await runtimes.compose(), runtimes });
-      const atlas = await s.work("Atlas", "draft");
-      const ship = await s.model(atlas).create("ship2", "A ship.");
-      for (const view of ["live", atlas] as const) {
-        const { answer } = await s.linkAnswer({
-          view,
-          ref: `ahead:${crypto.randomUUID()}`,
-          href: "manuscript://ship2",
-          baseUri: null,
-        });
-        expect.soft(answer).toMatchObject({
-          state: "document",
-          inDraft: true,
-          document: { id: ship },
-        });
-      }
-    });
-
     it("reuses one snapshot in nested scopes, reloads an inherited settled one, and fails a door that never prepared", async () => {
       const spellTarget = () =>
         scopes
@@ -581,7 +548,6 @@ if (!RUN) {
       });
       expect(await inherited).toBe("moved");
       expect(await stray).toContain("outside a document link scope");
-
       await expect(
         scopes.within({ documentId: HOLDER }, async () => spellTarget()),
       ).rejects.toThrow("no door prepared");

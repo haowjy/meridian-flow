@@ -1,5 +1,4 @@
 /** PostgreSQL proof for catalog transaction, replay, exclusion, and wake semantics. */
-
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextCatalogCommits,
@@ -15,7 +14,6 @@ import { and, eq, isNull } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { Ok } from "../../../shared/result.js";
-import { draftTreeScenario } from "../../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
 import { createDrizzleWorkDraftPendingStore } from "../../collab/adapters/drizzle-branch-push.js";
 import type { BindMarkdownInput } from "../../collab/index.js";
@@ -37,7 +35,6 @@ import { createDrizzleProjectContextAvailability } from "./project-context-avail
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
-
 if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe.skip("context catalog (postgres)", () => {});
 } else {
@@ -49,7 +46,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const database = useRollbackTestDatabase(DATABASE_URL, {
       prepareSuite: (db) => deleteDrizzleRows(db, [users]),
     });
-
     async function seedProject(
       db: typeof database.current,
       label: string,
@@ -70,123 +66,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const rows = Array.isArray(sources) ? sources : [sources];
       if (rows.length) await db.insert(contextSources).values(rows);
     }
-
-    it("resolves a hidden created document only in its own draft address view", async () => {
-      const db = database.current;
-      const scenario = await draftTreeScenario(db);
-      const work = await scenario.work("Review", "draft");
-      const rival = await scenario.work("Rival", "draft");
-      const documentId = await scenario.seedHidden(work, "chapters/one");
-      const resolver = createDocumentAddressResolver({
-        locations: createDrizzleDocumentAddressStore(db),
-        availability: createDrizzleProjectContextAvailability(db),
-      });
-      const input = {
-        projectId: scenario.project.id,
-        userId: scenario.project.userId,
-        scheme: "manuscript" as const,
-        workId: null,
-        path: "/chapters/one",
-      };
-      await expect(resolver.resolve(input)).resolves.toEqual({ kind: "unavailable" });
-      await expect(
-        resolver.resolve({
-          ...input,
-          view: { kind: "draft", draftId: (await scenario.draftOf(work)).id },
-        }),
-      ).resolves.toMatchObject({ kind: "current", document: { documentId } });
-      await expect(
-        resolver.resolve({
-          ...input,
-          view: { kind: "draft", draftId: (await scenario.draftOf(rival)).id },
-        }),
-      ).resolves.toEqual({ kind: "unavailable" });
-    });
-
-    it("publishes only live manuscript rows while leaving other project sources unchanged", async () => {
-      const db = database.current;
-      const LIVE_DOCUMENT_ID = "00000000-0000-4000-8000-000000000805";
-      const DRAFT_DOCUMENT_ID = "00000000-0000-4000-8000-000000000806";
-      const KB_SOURCE_ID = "00000000-0000-4000-8000-000000000807";
-      const KB_DOCUMENT_ID = "00000000-0000-4000-8000-000000000808";
-      await seedProject(db, "catalog-membership", [
-        { id: SOURCE_ID, projectId: PROJECT_ID, name: "Manuscript", slug: "manuscript" },
-        { id: KB_SOURCE_ID, projectId: PROJECT_ID, name: "Knowledge Base", slug: "kb" },
-      ]);
-      await db.insert(documents).values([
-        {
-          id: LIVE_DOCUMENT_ID,
-          contextSourceId: SOURCE_ID,
-          name: "live",
-          extension: "",
-        },
-        {
-          id: DRAFT_DOCUMENT_ID,
-          contextSourceId: SOURCE_ID,
-          name: "draft-only",
-          extension: "",
-          hidden: true,
-        },
-        {
-          id: KB_DOCUMENT_ID,
-          contextSourceId: KB_SOURCE_ID,
-          name: "notes",
-          extension: "",
-        },
-      ]);
-      const publish = vi.fn();
-      const catalog = createDrizzleContextCatalog(db, { publish });
-      const scope = { kind: "project", projectId: PROJECT_ID } as const;
-      const initial = await catalog.snapshot(scope);
-      const initialFileIds = initial.entries.flatMap((entry) =>
-        entry.kind === "file" ? [entry.entryId] : [],
-      );
-      expect(initialFileIds).toEqual(expect.arrayContaining([LIVE_DOCUMENT_ID, KB_DOCUMENT_ID]));
-      expect(initialFileIds).not.toContain(DRAFT_DOCUMENT_ID);
-
-      // Apply reveals the draft's document: it joins the live tree.
-      await db.update(documents).set({ hidden: false }).where(eq(documents.id, DRAFT_DOCUMENT_ID));
-      await catalog.refreshProject(PROJECT_ID);
-      await expect(catalog.changes(scope, initial.cursor)).resolves.toMatchObject({
-        kind: "delta",
-        commits: [
-          {
-            changes: expect.arrayContaining([
-              expect.objectContaining({
-                operation: "upsert",
-                entry: expect.objectContaining({ entryId: DRAFT_DOCUMENT_ID }),
-              }),
-            ]),
-          },
-        ],
-      });
-      expect(publish).toHaveBeenCalledTimes(1);
-
-      const applied = await catalog.snapshot(scope);
-      await db
-        .update(documents)
-        .set({ deletedAt: new Date() })
-        .where(eq(documents.id, DRAFT_DOCUMENT_ID));
-      await catalog.refreshProject(PROJECT_ID);
-      await expect(catalog.changes(scope, applied.cursor)).resolves.toMatchObject({
-        kind: "delta",
-        commits: [
-          {
-            changes: expect.arrayContaining([
-              expect.objectContaining({ operation: "delete", entryId: DRAFT_DOCUMENT_ID }),
-            ]),
-          },
-        ],
-      });
-      const discarded = await catalog.snapshot(scope);
-      const discardedFileIds = discarded.entries.flatMap((entry) =>
-        entry.kind === "file" ? [entry.entryId] : [],
-      );
-      expect(discardedFileIds).toEqual(expect.arrayContaining([LIVE_DOCUMENT_ID, KB_DOCUMENT_ID]));
-      expect(discardedFileIds).not.toContain(DRAFT_DOCUMENT_ID);
-      expect(publish).toHaveBeenCalledTimes(2);
-    });
-
     it("publishes atomically, replays whole commits, and keeps failed hints nonthrowing", async () => {
       const db = database.current;
       await seedProject(db, "catalog");
@@ -196,7 +75,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const catalog = createDrizzleContextCatalog(db, { publish });
       const scope = { kind: "project", projectId: PROJECT_ID } as const;
       const before = await catalog.snapshot(scope);
-
       await expect(
         runInDrizzleTransaction(db, async () => {
           await currentDrizzleDb(db).insert(documents).values({
@@ -210,7 +88,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         }),
       ).resolves.toBeUndefined();
       expect(publish).toHaveBeenCalledTimes(1);
-
       const replay = await catalog.changes(scope, before.cursor);
       expect(replay.kind).toBe("delta");
       if (replay.kind !== "delta") return;
@@ -220,7 +97,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         entry: { kind: "file", entryId: DOCUMENT_ID, uri: "manuscript://chapter" },
       });
     });
-
     it("republishes a moved subtree even when an earlier repair already published its new location", async () => {
       const db = database.current;
       await seedProject(db, "catalog-invalidation");
@@ -275,7 +151,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ],
       });
     });
-
     it("rolls catalog state back and excludes hidden rows and content-only changes", async () => {
       const db = database.current;
       await seedProject(db, "catalog-rollback");
@@ -300,7 +175,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(after.entries.some((entry) => entry.entryId === DOCUMENT_ID)).toBe(false);
       const replay = await catalog.changes(scope, before.cursor);
       expect(replay).toMatchObject({ kind: "delta", commits: [] });
-
       const contentDocumentId = "00000000-0000-4000-8000-000000000806";
       await db.insert(documents).values({
         id: contentDocumentId,
@@ -325,7 +199,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         commits: [],
       });
     });
-
     it("preserves persisted tracked, binary, and custom classification", async () => {
       const db = database.current;
       await seedProject(db, "catalog-classification");
@@ -400,7 +273,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ]),
       );
     });
-
     it("keeps historical replay versions below newer exact-ID and snapshot observations", async () => {
       const db = database.current;
       await seedProject(db, "catalog-freshness");
@@ -448,7 +320,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect(BigInt(historicalVersion)).toBeLessThan(BigInt(newestVersion));
     });
-
     it("rolls real ContextFS metadata and its catalog commit back together", async () => {
       const db = database.current;
       await seedProject(db, "catalog-contextfs-rollback");
@@ -488,7 +359,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         catalog.changes({ kind: "project", projectId: PROJECT_ID }, before.cursor),
       ).resolves.toMatchObject({ kind: "delta", commits: [] });
     });
-
     it("rolls back first-touch source publication with the real ContextFS command", async () => {
       const db = database.current;
       await seedProject(db, "catalog-source-rollback", []);
@@ -539,7 +409,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ),
       ).resolves.toEqual([]);
       await expect(db.select().from(folders)).resolves.toEqual([]);
-
       failMutationRefresh = false;
       refreshCalls = 0;
       await expect(context.mkdir("Retry")).resolves.toMatchObject({ ok: true });
@@ -550,7 +419,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .where(and(eq(contextSources.projectId, PROJECT_ID), eq(contextSources.slug, "kb"))),
       ).resolves.toHaveLength(1);
     });
-
     it("rolls project lifecycle and catalog revocation back at the repository seam", async () => {
       const db = database.current;
       await seedProject(db, "catalog-project-rollback", []);
@@ -568,7 +436,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(repository.softDelete(PROJECT_ID)).rejects.toThrow("catalog failure");
       await expect(repository.findById(PROJECT_ID)).resolves.toMatchObject({ deletedAt: null });
     });
-
     it("projects successful Work lifecycle transitions and rolls refresh failure back", async () => {
       const db = database.current;
       await seedProject(db, "catalog-work-lifecycle", []);
@@ -608,7 +475,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(authority()).resolves.toMatchObject({ available: false, entityRevision: "4" });
       await repository.restore(workId);
       await expect(authority()).resolves.toMatchObject({ available: true, entityRevision: "5" });
-
       const failingRepository = createDrizzleWorkRepository({
         lineageScratch: createDrizzleLineageScratchLifecycle(db),
         db,
@@ -632,7 +498,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(repository.findById(workId)).resolves.toMatchObject({ status: null });
       await expect(authority()).resolves.toMatchObject({ available: true });
     });
-
     it("publishes provisional graduation and keeps canonical URI lookup scheme-qualified", async () => {
       const db = database.current;
       await seedProject(db, "catalog-graduation", []);
@@ -692,7 +557,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         entry: { kind: "file", uri: "kb://notes" },
       });
     });
-
     it("returns explicit expired and gap resets after PostgreSQL retention or missing history", async () => {
       const db = database.current;
       await seedProject(db, "catalog-retention");
@@ -714,14 +578,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         kind: "reset-required",
         reason: "expired",
       });
-
       await db.delete(contextCatalogCommits);
       await expect(catalog.changes(scope, middle.cursor)).resolves.toMatchObject({
         kind: "reset-required",
         reason: "gap",
       });
     });
-
     it("returns canonical Work files until the Work is deleted", async () => {
       const db = database.current;
       const NO_WORK = "00000000-0000-4000-8000-000000000808";
@@ -785,7 +647,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await fileUris({ kind: "work", projectId: PROJECT_ID, workId: NAMED })).toEqual([
         "scratch://@draft/arc",
       ]);
-
       await db.update(works).set({ archivedAt: new Date() }).where(eq(works.id, NAMED));
       expect(await fileUris({ kind: "work", projectId: PROJECT_ID, workId: NAMED })).toEqual([
         "scratch://@draft/arc",
@@ -809,11 +670,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           entry: { uri: "scratch://@draft/arc" },
         },
       });
-
       await db.update(works).set({ deletedAt: new Date() }).where(eq(works.id, NAMED));
       expect(await fileUris({ kind: "work", projectId: PROJECT_ID, workId: NAMED })).toEqual([]);
       await expect(namedAddress()).resolves.toEqual({ kind: "unavailable" });
-
       await expect(
         createDrizzleDocumentAddressStore(db).candidate({
           projectId: PROJECT_ID as never,

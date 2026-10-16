@@ -476,9 +476,7 @@ if (!RUN) {
       });
     });
 
-    it.each([
-      "lookup",
-    ] as const)("recovers expired orphan admissions through %s", async (operation) => {
+    it("recovers expired orphan admissions through lookup", async () => {
       const { createDrizzleRunClaim } = await import("../adapters/drizzle-run-claim.js");
       const { canonicalAdmissionFingerprint } = await import("./user-turn-admission.js");
       const input = {
@@ -519,11 +517,11 @@ if (!RUN) {
       );
       expect(liveClaim).not.toBeNull();
       try {
-        await expect(service[operation](input)).resolves.toMatchObject({ kind: "pending" });
+        await expect(service.lookup(input)).resolves.toMatchObject({ kind: "pending" });
       } finally {
         if (liveClaim) await remoteOwnership.release(liveClaim);
       }
-      await expect(service[operation](input)).resolves.toMatchObject({
+      await expect(service.lookup(input)).resolves.toMatchObject({
         kind: "rejected",
         code: "recovery_no_committed_turn",
       });

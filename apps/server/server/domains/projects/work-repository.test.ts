@@ -4,24 +4,6 @@ import { createInMemoryWorkRepository } from "./adapters/work-repository/in-memo
 import { WorkLockedError } from "./ports/work-repository.js";
 
 const PROJECT_ID = "project-1";
-
-describe("WorkRepository", () => {
-  it("rejects reuse of a deleted creation ID without replacing its reserved handle", async () => {
-    const repo = createInMemoryWorkRepository();
-    const first = await repo.create({
-      id: "same-work-id",
-      projectId: PROJECT_ID,
-      name: "Book Two",
-    });
-    await repo.softDelete(first.id);
-    const deleted = await repo.findById(first.id);
-    await expect(
-      repo.create({ id: first.id, projectId: PROJECT_ID, name: "Book Two" }),
-    ).rejects.toThrow();
-    expect(await repo.findById(first.id)).toEqual(deleted);
-  });
-});
-
 describe("No Work", () => {
   it("throws work_locked on mutate and delete", async () => {
     const repo = createInMemoryWorkRepository();

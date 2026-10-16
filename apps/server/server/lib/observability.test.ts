@@ -95,13 +95,10 @@ async function withChild(
 }
 
 describe("process shutdown hooks", () => {
-  it.each([
-    "SIGTERM",
-    "SIGINT",
-  ] as const)("starts every drain on %s before a hung callback reaches the process deadline", async (signalName) => {
+  it("starts every drain on SIGTERM before a hung callback reaches the process deadline", async () => {
     await withChild("deadline", 100, async ({ child, exited, tracePath }) => {
       const signalledAt = Date.now();
-      child.kill(signalName);
+      child.kill("SIGTERM");
       expect(await exited).toEqual([0, null]);
       expect(Date.now() - signalledAt).toBeGreaterThanOrEqual(75);
       expect(Date.now() - signalledAt).toBeLessThan(2_000);

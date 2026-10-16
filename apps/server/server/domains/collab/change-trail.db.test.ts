@@ -1,0 +1,521 @@
+/** Consolidated test contracts; each block retains its original fixture scope. */
+
+import { splitHashline } from "@meridian/agent-edit";
+import { eq, sql } from "drizzle-orm";
+import { describe as __mergedSuite, afterAll, beforeEach, expect, it } from "vitest";
+import { drizzleFileAccess } from "../../test-support/file-grants.js";
+import { createDrizzleChangeTrailAggregateWriter } from "./adapters/drizzle-change-trail-aggregate.js";
+import { createDrizzleChangeTrailReader } from "./adapters/drizzle-change-trail-reader.js";
+import {
+  ALPHA_ID,
+  BETA_ID,
+  closeDatabase,
+  createHarness,
+  createTestDatabase,
+  deleteDrizzleRows,
+  resetDatabase,
+  schema,
+  THREAD_ID,
+  TURN_ID,
+  USER_ID,
+  WORK_ID,
+} from "./test-support/change-trail-postgres-harness.js";
+import { reviewDriver } from "./test-support/draft-review-requests.js";
+
+__mergedSuite("change-trail-lifecycle.db.test.ts", () => {
+  // Merged from apps/server/server/domains/collab/change-trail-lifecycle.db.test.ts.
+  const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
+
+  if (!enabled || !process.env.DATABASE_URL) {
+    throw new Error("DB suites require RUN_DB_TESTS=1 and DATABASE_URL");
+  }
+
+  __mergedSuite("change trail (postgres)", () => {
+    const db = createTestDatabase();
+    beforeEach(() => resetDatabase(db));
+    afterAll(() => closeDatabase(db));
+    it("S10 settles multiple durable writes after the turn errors into one reachable trail", async () => {
+      let committed = 0;
+      let release!: () => void;
+      let allCommitted!: () => void;
+      const settlementRelease = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const durableWritesCommitted = new Promise<void>((resolve) => {
+        allCommitted = resolve;
+      });
+      const warm = createHarness(db, {
+        async afterDurableCommit() {
+          committed += 1;
+          if (committed === 2) allCommitted();
+          await settlementRelease;
+        },
+      });
+      const alpha = await warm.seedDestructivePush("s10-alpha", ALPHA_ID);
+      const beta = await warm.seedDestructivePush("s10-beta", BETA_ID);
+      const alphaSettlement = warm.push(alpha);
+      const betaSettlement = warm.push(beta);
+      await durableWritesCommitted;
+      await warm.markTurnError();
+      expect(await db.select().from(schema.turns).where(eq(schema.turns.id, TURN_ID))).toEqual([
+        expect.objectContaining({ status: "error" }),
+      ]);
+      expect(await db.select().from(schema.changeTrailShells)).toEqual([
+        expect.objectContaining({ state: "building", changeCount: 2, documentCount: 2 }),
+      ]);
+      await warm.pollTrails();
+      await warm.pollTrails();
+      expect((await warm.trailRowMembership()).shells).toEqual([
+        expect.objectContaining({ state: "settling" }),
+      ]);
+      expect((await warm.trailEventSequence()).every((row) => row.eventKind !== "settled")).toBe(
+        true,
+      );
+      release();
+      await expect(Promise.all([alphaSettlement, betaSettlement])).resolves.toEqual([
+        expect.objectContaining({ status: "pushed" }),
+        expect.objectContaining({ status: "pushed" }),
+      ]);
+      warm.destroyWarmState();
+      const cold = createHarness(db);
+      await cold.pollTrails();
+      await cold.pollTrails();
+      const trails = await cold.trailRowMembership();
+      expect(trails.shells).toEqual([
+        expect.objectContaining({
+          ownerKind: "turn",
+          turnId: TURN_ID,
+          state: "settled",
+          documentCount: 2,
+          documents: [
+            { documentId: ALPHA_ID, title: "alpha" },
+            { documentId: BETA_ID, title: "beta" },
+          ],
+          wordsAdded: 0,
+          wordsRemoved: 10,
+        }),
+      ]);
+      expect(trails.details).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            documentId: ALPHA_ID,
+            wordsAdded: 0,
+            wordsRemoved: 5,
+          }),
+          expect.objectContaining({
+            documentId: BETA_ID,
+            wordsAdded: 0,
+            wordsRemoved: 5,
+          }),
+        ]),
+      );
+      expect(
+        trails.details.flatMap((detail) =>
+          (
+            detail.changes as Array<{
+              beforeText?: string | null;
+            }>
+          ).flatMap((change) => {
+            if (!change.beforeText) return [];
+            return [splitHashline(change.beforeText)?.body ?? change.beforeText];
+          }),
+        ),
+      ).toEqual([
+        expect.stringContaining("Writer captured body"),
+        expect.stringContaining("Writer captured body"),
+      ]);
+      const reader = createDrizzleChangeTrailReader(db, drizzleFileAccess(db));
+      await expect(reader.listShells(THREAD_ID)).resolves.toEqual([
+        expect.objectContaining({
+          documents: [
+            { documentId: ALPHA_ID, title: "alpha" },
+            { documentId: BETA_ID, title: "beta" },
+          ],
+          wordsAdded: 0,
+          wordsRemoved: 10,
+        }),
+      ]);
+      const trailId = trails.shells[0]?.id;
+      if (!trailId) throw new Error("missing settled trail");
+      await expect(
+        reader.readDetails({ threadId: THREAD_ID, trailId, userId: USER_ID }),
+      ).resolves.toEqual([
+        expect.objectContaining({
+          documentId: ALPHA_ID,
+          wordsAdded: 0,
+          wordsRemoved: 5,
+        }),
+        expect.objectContaining({
+          documentId: BETA_ID,
+          wordsAdded: 0,
+          wordsRemoved: 5,
+        }),
+      ]);
+      cold.destroyWarmState();
+    });
+    it("returns no protected trail detail when document authorization fails", async () => {
+      const trailId = "00000000-0000-4000-8000-000000000811";
+      await db.insert(schema.changeTrailShells).values({
+        id: trailId,
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        ownerKind: "turn",
+        changeCount: 1,
+        documentCount: 1,
+      });
+      await db
+        .insert(schema.changeTrailDocumentOccurrences)
+        .values({ trailId, documentId: ALPHA_ID });
+      await db.insert(schema.changeTrailDocumentDetails).values({
+        trailId,
+        documentId: ALPHA_ID,
+        documentTitle: "Protected chapter",
+        changes: [
+          {
+            changeId: "protected-change",
+            ordinal: 0,
+            documentId: ALPHA_ID,
+            pushId: null,
+            receiptId: null,
+            kind: "delete",
+            beforeText: "protected-block|Protected prose.",
+            afterTextAtReceipt: null,
+            beforeBlockIdentity: null,
+            afterBlockIdentity: null,
+            navigation: { kind: "unavailable", reason: "test" },
+          },
+        ],
+      });
+      const reader = createDrizzleChangeTrailReader(db, drizzleFileAccess(db));
+      await expect(
+        reader.readDetails({
+          threadId: THREAD_ID,
+          trailId,
+          userId: "00000000-0000-4000-8000-000000000812" as never,
+        }),
+      ).resolves.toEqual([]);
+      const revokedAccess = { historyAccess: async () => null };
+      await expect(
+        createDrizzleChangeTrailReader(db, revokedAccess).readDetails({
+          threadId: THREAD_ID,
+          trailId,
+          userId: USER_ID,
+        }),
+      ).resolves.toEqual([]);
+    });
+    it("settles a terminal turn while its unapplied writes stay in the draft", async () => {
+      const harness = createHarness(db);
+      await harness.seedDestructivePush("unpushed-settlement");
+      await harness.pollTrails();
+      expect(await harness.trailRowMembership()).toMatchObject({
+        shells: [expect.objectContaining({ state: "settling", version: 2 })],
+        details: [],
+      });
+      expect(await harness.trailEventSequence()).toEqual([
+        expect.objectContaining({ eventKind: "updated", version: 2 }),
+      ]);
+      await harness.pollTrails();
+      expect(await harness.trailRowMembership()).toMatchObject({
+        shells: [
+          expect.objectContaining({
+            state: "settled",
+            version: 3,
+            changeCount: 0,
+            documentCount: 0,
+            settledAt: expect.any(Date),
+          }),
+        ],
+        details: [],
+      });
+      expect(await harness.trailEventSequence()).toEqual([
+        expect.objectContaining({ eventKind: "updated", version: 2 }),
+        expect.objectContaining({ eventKind: "settled", version: 3 }),
+      ]);
+    });
+    it.each([
+      "complete",
+      "cancelled",
+      "error",
+    ])("settles an empty %s turn after restart", async (status) => {
+      await db.update(schema.turns).set({ status }).where(eq(schema.turns.id, TURN_ID));
+      const coldDb = createTestDatabase();
+      try {
+        const cold = createDrizzleChangeTrailAggregateWriter(coldDb);
+        await cold.reconcileTerminalOwners();
+        await cold.reconcileTerminalOwners();
+        const [shell] = await coldDb.select().from(schema.changeTrailShells);
+        expect(shell).toMatchObject({
+          state: "settled",
+          changeCount: 0,
+          documentCount: 0,
+        });
+      } finally {
+        await closeDatabase(coldDb);
+      }
+    });
+    it("recovers a late Discard committed before the trail worker restarts", async () => {
+      const warm = createHarness(db);
+      try {
+        const branchId = await warm.seedDestructivePush("late-discard-restart");
+        await warm.pollTrails();
+        await warm.pollTrails();
+        const [settled] = (await warm.trailRowMembership()).shells;
+        await reviewDriver(warm.crossWorkProbeFixture().collab.draftReview).discardItem(ALPHA_ID);
+        expect(await db.select().from(schema.changeTrailDirtyLog)).not.toEqual([]);
+        warm.destroyWarmState();
+        const coldDb = createTestDatabase();
+        try {
+          const cold = createDrizzleChangeTrailAggregateWriter(coldDb);
+          await cold.reconcileTerminalOwners();
+          await cold.reconcileTerminalOwners();
+          const [shell] = await coldDb.select().from(schema.changeTrailShells);
+          expect(shell).toMatchObject({
+            state: "settled",
+            version: settled.version + 3,
+          });
+        } finally {
+          await closeDatabase(coldDb);
+        }
+      } finally {
+        warm.destroyWarmState();
+      }
+    });
+    it("commits receipt and placement invalidation atomically, then recovers without a warm owner", async () => {
+      const revision = async () => (await db.select().from(schema.changeTrailDirtyLog)).length;
+      const initial = await revision();
+      const receipt = async (tx: Parameters<Parameters<typeof db.transaction>[0]>[0]) => {
+        const [edit] = await tx
+          .insert(schema.documentEdits)
+          .values({
+            documentId: ALPHA_ID,
+            threadId: THREAD_ID,
+            turnId: TURN_ID,
+            actor: "agent",
+            kind: "write",
+          })
+          .returning();
+        await tx.insert(schema.documentEditParts).values({
+          editId: edit.id,
+          ordinal: 0,
+          update: Buffer.from([0, 0]),
+          effect: { inserted: [], deleted: [] },
+          frontier: {},
+          origin: { kind: "live", seq: 1 },
+          placement: { kind: "live", seq: 1 },
+        });
+        return edit.id;
+      };
+      await expect(
+        db.transaction(async (tx) => {
+          await receipt(tx);
+          throw new Error("receipt rollback");
+        }),
+      ).rejects.toThrow("receipt rollback");
+      expect(await revision()).toBe(initial);
+      expect(await db.select().from(schema.documentEdits)).toEqual([]);
+      const id = await db.transaction(receipt);
+      expect(await revision()).toBeGreaterThan(initial);
+      const admitted = await revision();
+      await db.transaction(async (tx) => {
+        await tx
+          .update(schema.documentEditParts)
+          .set({ placement: { kind: "discarded" } })
+          .where(eq(schema.documentEditParts.editId, id));
+      });
+      expect(await revision()).toBeGreaterThan(admitted);
+      const coldDb = createTestDatabase();
+      try {
+        const cold = createDrizzleChangeTrailAggregateWriter(coldDb);
+        await cold.reconcileTerminalOwners();
+        await cold.reconcileTerminalOwners();
+        expect(await coldDb.select().from(schema.changeTrailShells)).toEqual([
+          expect.objectContaining({ state: "settled" }),
+        ]);
+      } finally {
+        await closeDatabase(coldDb);
+      }
+    });
+    it("serializes concurrent per-document trail versions without losing either push", async () => {
+      const harness = createHarness(db);
+      const alpha = await harness.seedDestructivePush("version-race-alpha", ALPHA_ID);
+      const beta = await harness.seedDestructivePush("version-race-beta", BETA_ID);
+      await expect(Promise.all([harness.push(alpha), harness.push(beta)])).resolves.toEqual([
+        expect.objectContaining({ status: "pushed" }),
+        expect.objectContaining({ status: "pushed" }),
+      ]);
+      const rows = await harness.trailRowMembership();
+      expect(rows.shells).toEqual([expect.objectContaining({ version: 2, documentCount: 2 })]);
+      expect(rows.details.map((row) => row.documentId).sort()).toEqual([ALPHA_ID, BETA_ID]);
+      expect(rows.outbox.map((row) => row.version).sort((a, b) => a - b)).toEqual([1, 2]);
+      expect(
+        new Set(rows.outbox.map((row) => `${row.trailId}:${row.version}:${row.eventKind}`)).size,
+      ).toBe(rows.outbox.length);
+      expect(await harness.pushRows()).toHaveLength(2);
+    });
+    it("serializes shared recording against terminal reconciliation", async () => {
+      const harness = createHarness(db);
+      const first = await harness.seedDestructivePush("shared-record-reconcile-first", ALPHA_ID);
+      await harness.makeJournalOwnershipNull();
+      await harness.push(first);
+      await harness.pollTrails();
+      const second = await harness.seedDestructivePush("shared-record-reconcile-second", BETA_ID);
+      await harness.makeJournalOwnershipNull();
+      await expect(Promise.all([harness.push(second), harness.pollTrails()])).resolves.toEqual([
+        expect.objectContaining({ status: "pushed" }),
+        expect.any(Number),
+      ]);
+      const rows = await harness.trailRowMembership();
+      const shared = rows.shells.find((shell) => shell.ownerKind === "shared");
+      expect(shared).toMatchObject({ documentCount: 2 });
+      const sharedEvents = rows.outbox.filter((row) => row.trailId === shared?.id);
+      expect(new Set(sharedEvents.map((row) => `${row.version}:${row.eventKind}`)).size).toBe(
+        sharedEvents.length,
+      );
+    });
+    it("uses one sorted lock order for combined shared and turn reconciliation", async () => {
+      const harness = createHarness(db);
+      const branchId = await harness.seedDestructivePush("combined-lock-order");
+      await harness.makeJournalOwnershipMixed();
+      await harness.push(branchId);
+      await harness.stageAnotherDestructiveEdit(branchId);
+      await harness.makeJournalOwnershipMixed();
+      await expect(
+        Promise.race([
+          Promise.all([harness.push(branchId), harness.pollTrails()]),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("aggregate lock-order deadlock")), 5000),
+          ),
+        ]),
+      ).resolves.toEqual([expect.objectContaining({ status: "pushed" }), expect.any(Number)]);
+    });
+  });
+});
+
+__mergedSuite("change-trail-persistence-atomicity.db.test.ts", () => {
+  // Merged from apps/server/server/domains/collab/change-trail-persistence-atomicity.db.test.ts.
+  const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
+
+  if (!enabled || !process.env.DATABASE_URL) {
+    throw new Error("DB suites require RUN_DB_TESTS=1 and DATABASE_URL");
+  }
+
+  __mergedSuite("change trail (postgres)", () => {
+    const db = createTestDatabase();
+    beforeEach(() => resetDatabase(db));
+    afterAll(() => closeDatabase(db));
+    it("rolls content, lineage, shell, detail, and outbox back at every trail insert boundary", async () => {
+      const harness = createHarness(db);
+      const branchId = await harness.seedDestructivePush("trail-insert-boundaries");
+      const beforeMarkdown = await harness.liveMarkdown(ALPHA_ID);
+      const beforeUpdates = await harness.liveUpdateCount();
+      for (const table of [
+        "change_trail_shells",
+        "change_trail_document_details",
+        "change_trail_delivery_outbox",
+      ]) {
+        await db.execute(
+          sql.raw(`
+          CREATE OR REPLACE FUNCTION inject_change_trail_failure() RETURNS trigger
+          LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected ${table} failure'; END $$;
+          CREATE TRIGGER inject_change_trail_failure
+          BEFORE INSERT ON ${table}
+          FOR EACH ROW EXECUTE FUNCTION inject_change_trail_failure();
+        `),
+        );
+        try {
+          await expect(harness.push(branchId)).rejects.toThrow();
+        } finally {
+          await db.execute(sql.raw(`DROP TRIGGER inject_change_trail_failure ON ${table}`));
+        }
+        expect(await harness.liveMarkdown(ALPHA_ID)).toBe(beforeMarkdown);
+        expect(await harness.liveUpdateCount()).toBe(beforeUpdates);
+        expect(await harness.pushRows()).toEqual([]);
+        expect(await harness.trailRowMembership()).toEqual({
+          shells: [],
+          details: [],
+          outbox: [],
+        });
+        expect(await harness.noticeRows()).toEqual([]);
+        expect(await harness.activePushJournalCount()).toBe(1);
+      }
+      await db.execute(sql.raw("DROP FUNCTION inject_change_trail_failure()"));
+    });
+    it("persists proven replacements as live ranges and deletes conservatively", async () => {
+      const proven = createHarness(db);
+      const provenBranchId = await proven.seedDestructivePush("proven-replacement", ALPHA_ID, true);
+      await proven.push(provenBranchId);
+      const provenChange = (await proven.trailRowMembership()).details[0]?.changes[0];
+      expect(provenChange).toMatchObject({
+        kind: "modify",
+        navigation: { kind: "live_block_range", targetBlockId: expect.any(Object) },
+      });
+      await deleteDrizzleRows(db, [
+        schema.changeTrailDeliveryOutbox,
+        schema.changeTrailDocumentDetails,
+        schema.changeTrailShells,
+        schema.pendingNotices,
+        schema.branchWriteJournal,
+        schema.pushLineage,
+        schema.documentBranches,
+        schema.documentYjsCheckpoints,
+        schema.documentYjsHeads,
+        schema.documentYjsUpdates,
+      ]);
+      const conservative = createHarness(db);
+      const conservativeBranchId = await conservative.seedDestructivePush("conservative-delete");
+      await conservative.push(conservativeBranchId);
+      const conservativeChange = (await conservative.trailRowMembership()).details[0]?.changes[0];
+      expect(conservativeChange).toMatchObject({
+        kind: "delete",
+        navigation: { kind: "deletion_boundary" },
+      });
+    });
+    it("commits normalized trail state once and reuses it on an already-pushed retry", async () => {
+      const harness = createHarness(db);
+      const branchId = await harness.seedDestructivePush("trail-commit-retry");
+      const beforeMarkdown = await harness.liveMarkdown(ALPHA_ID);
+      await expect(harness.push(branchId)).resolves.toMatchObject({ status: "pushed" });
+      expect(await harness.liveMarkdown(ALPHA_ID)).not.toEqual(beforeMarkdown);
+      expect(await harness.noticeRows()).toEqual([]);
+      const committed = await harness.trailRowMembership();
+      expect(committed.shells).toHaveLength(1);
+      expect(committed.details).toHaveLength(1);
+      expect(committed.outbox).toHaveLength(1);
+      const changes = committed.details[0]?.changes ?? [];
+      expect(committed.shells[0]).toMatchObject({
+        changeCount: changes.length,
+        documentCount: 1,
+      });
+      await expect(harness.push(branchId)).resolves.toMatchObject({
+        status: "already_pushed",
+      });
+      expect(await harness.trailRowMembership()).toEqual(committed);
+    });
+    it("keeps a mixed-owner push turn-owned and preserves its shell across document deletion", async () => {
+      const harness = createHarness(db);
+      const branchId = await harness.seedDestructivePush("trail-shared-delete");
+      await harness.makeJournalOwnershipMixed();
+      await expect(harness.push(branchId)).resolves.toMatchObject({ status: "pushed" });
+      const beforeDelete = await harness.trailRowMembership();
+      expect(beforeDelete.shells).toEqual([
+        expect.objectContaining({
+          ownerKind: "turn",
+          turnId: expect.any(String),
+          changeCount: 1,
+        }),
+      ]);
+      expect(await harness.pushRows()).toEqual([expect.objectContaining({ turnId: null })]);
+      await harness.hardDeleteDocument(ALPHA_ID);
+      const afterDocumentDelete = await harness.trailRowMembership();
+      expect(afterDocumentDelete.shells).toEqual(beforeDelete.shells);
+      expect(afterDocumentDelete.details).toEqual([]);
+      expect(afterDocumentDelete.outbox).toEqual(beforeDelete.outbox);
+      await harness.hardDeleteThread();
+      expect(await harness.trailRowMembership()).toEqual({
+        shells: [],
+        details: [],
+        outbox: [],
+      });
+    });
+  });
+});

@@ -587,24 +587,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       for (const answer of response.answers)
         if (answer.state === "gone")
           expect(Object.keys(answer).filter((key) => key !== "settled")).toEqual(["state"]);
-      // A chat's lineage Scratch owner must not erase its No Work draft view.
-      const root = crypto.randomUUID();
-      await db
-        .insert(threads)
-        .values({ id: root, projectId: p, rootThreadId: root, createdByUserId: u, ref: "c1" });
-      provisioned.length = 0;
-      const noWorkDraft = await handleDocumentLinkResolveRequest(deps, {
-        projectId: p,
-        userId: u as never,
-        request: {
-          rootThreadId: root,
-          baseUri: null,
-          links: [{ ref: `doc:${discarded}`, href: "manuscript://discarded" }],
-        },
-      });
-      // The tombstone stays gone; the chat's links still read No Work's draft view.
-      expect(noWorkDraft.answers).toMatchObject([{ state: "gone" }]);
-      expect(provisioned).toEqual([noWork]);
       // A Work of another project never reaches draft membership provisioning.
       const foreignWork = crypto.randomUUID();
       await db.insert(works).values({

@@ -1,6 +1,6 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`frozen prompt provider requests > pins complete requests for a plain thread, fork, and fork cut at an inherited turn 1`] = `
+exports[`frozen-prompt.integration.test.ts > frozen prompt provider requests > pins complete requests for a plain thread, fork, and fork cut at an inherited turn 1`] = `
 [
   {
     "messages": [

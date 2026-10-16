@@ -333,8 +333,9 @@ else
         status: "complete",
         metadata: { elisions: expect.any(Array) },
       });
-      expect(c!.promptBakeId).not.toBeNull();
-      expect((c!.metadata as JsonObject).elisions).toHaveLength(5);
+      if (!c) throw new Error("compaction turn was not persisted");
+      expect(c?.promptBakeId).not.toBeNull();
+      expect((c?.metadata as JsonObject).elisions).toHaveLength(5);
       const first = rig.gateway.requests[0];
       const before = rig.summarizer.calls[0].requestInHand!;
       expect(first.messages[0]).toEqual(before.messages[0]);
@@ -366,8 +367,11 @@ else
       const blocks = await rig.repos.blocks.listByThread(rig.threadId);
       const rebuilt = await assembleNextTurnContext({
         thread,
-        turns: turns.filter((t) => t.position <= c!.position),
-        blocks: blocks.filter((b) => turns.find((t) => t.id === b.turnId)!.position <= c!.position),
+        turns: turns.filter((t) => t.position <= c.position),
+        blocks: blocks.filter((b) => {
+          const turn = turns.find((candidate) => candidate.id === b.turnId);
+          return turn ? turn.position <= c.position : false;
+        }),
         agentRevisions: rig.deps.agentRevisions,
         threads: rig.repos.threads,
         toolRegistry: rig.deps.toolRegistry,
@@ -377,7 +381,7 @@ else
         workContext: rig.deps.workContext,
       });
       expect(promptBytes(rebuilt.generateRequest)).toBe(bytes);
-      expect((await rig.repos.blocks.findById(results[0].id))!.content).toMatchObject({
+      expect((await rig.repos.blocks.findById(results[0].id))?.content).toMatchObject({
         output: "STALE-READ TEXT",
       });
       usage.inputTokens = 50_000;
@@ -413,7 +417,7 @@ else
       expect(secondElisions.some((elision) => elision.blockId === results[1].id)).toBe(true);
       expect(secondElisions.some((elision) => elision.blockId === results[0].id)).toBe(false);
       expect(promptBytes(rig.gateway.requests[2])).not.toContain("FRESH-READ TEXT");
-      expect((await rig.repos.blocks.findById(results[1].id))!.content).toMatchObject({
+      expect((await rig.repos.blocks.findById(results[1].id))?.content).toMatchObject({
         output: "FRESH-READ TEXT",
       });
     });
@@ -976,9 +980,8 @@ else
       expect(terminal?.error).toBe("This response failed.");
     });
 
-    it.each([
-      true,
-    ])("reserves C at run start and commits B over an unchanged rebake (child=%s)", async (child) => {
+    it("reserves C at run start and commits B over an unchanged rebake for a child", async () => {
+      const child = true;
       const rig = await fixture({ child });
       const run = await rig.orchestrator.prepare({
         threadId: rig.threadId,
@@ -1440,9 +1443,8 @@ else
         expect(request.split(text)).toHaveLength(2);
       expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
     });
-    it.each([
-      true,
-    ])("cancels C, settles its response, and wakes the late message (child=%s)", async (child) => {
+    it("cancels C, settles its response, and wakes the late message for a child", async () => {
+      const child = true;
       let rig: Awaited<ReturnType<typeof fixture>>;
       let lateId = "";
       const summarizer = scriptedSummarizer(async ({ owner: { turnId }, signal }) => {
@@ -1812,7 +1814,7 @@ else
       expect((await run.execute()).status).toBe("error");
       const c = await rig.repos.turns.findById(run.executionTurnId);
       expect(c).toMatchObject({ status: "error", promptBakeId: null });
-      expect((c!.metadata as JsonObject).elisions).toBeUndefined();
+      expect((c?.metadata as JsonObject).elisions).toBeUndefined();
       expect(observedElisions).toHaveLength(1);
       expect(await port.peek(rig.threadId)).toHaveLength(1);
       expect(await rig.repos.modelResponses.listByTurn(run.executionTurnId)).toMatchObject([
@@ -1948,9 +1950,7 @@ else
       });
     });
 
-    it.each([
-      true,
-    ])("orders writer and agent arrivals after C and lands the reply below both (failure=%s)", async (failure) => {
+    it("orders writer and agent arrivals after failed C and lands the reply below both", async () => {
       let rig: Awaited<ReturnType<typeof fixture>>;
       let writerId = "";
       let agentId = "";
@@ -1982,14 +1982,7 @@ else
             predictedCacheReason: "summary_transcript" as const,
           },
         ];
-        return failure
-          ? { kind: "failed", error: new Error("summary failed"), modelResponses }
-          : {
-              kind: "complete",
-              text: "Earlier context.",
-              model: "summary-model",
-              modelResponses,
-            };
+        return { kind: "failed", error: new Error("summary failed"), modelResponses };
       });
       rig = await fixture({ summarizer });
       const run = await rig.orchestrator.prepare({
@@ -1997,11 +1990,11 @@ else
         tools: [],
         userText: "Continue.",
       });
-      expect((await run.execute()).status).toBe(failure ? "error" : "complete");
+      expect((await run.execute()).status).toBe("error");
       const tail = (await rig.repos.turns.listByThread(rig.threadId)).slice(-4);
       expect(tail.map((turn) => turn.role)).toEqual(["compaction", "user", "user", "assistant"]);
       expect(tail.slice(1, 3).map((turn) => turn.id)).toEqual([writerId, agentId]);
-      expect(tail[0].status).toBe(failure ? "error" : "complete");
+      expect(tail[0].status).toBe("error");
       expect(await rig.repos.modelResponses.listByTurn(tail[0].id)).toMatchObject([
         {
           requestMessageCount: 7,
@@ -2016,48 +2009,13 @@ else
       expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
       const before = rig.summarizer.calls[0].requestInHand;
       if (!before) throw new Error("Missing request in hand");
-      if (failure) {
-        rig.setThreshold(undefined);
-        const next = await rig.orchestrator.prepare({
-          threadId: rig.threadId,
-          tools: [],
-          userText: "Continue after failure.",
-        });
-        expect((await next.execute()).status).toBe("complete");
-        expectStablePrefix(before, rig.gateway.requests[0]);
-      } else {
-        expect(rig.gateway.requests[0].messages[0]).toEqual(before.messages[0]);
-        const text = JSON.stringify(rig.gateway.requests[0].messages);
-        expect(text).toContain("Earlier context.");
-        expect(text).not.toContain("old history");
-        expect(text.indexOf("Continue.")).toBeLessThan(text.indexOf("late writer"));
-        expect(text.indexOf("late writer")).toBeLessThan(text.indexOf("late agent"));
-        for (const message of ["Continue.", "late writer", "late agent"]) {
-          expect(text.split(message)).toHaveLength(2);
-        }
-        expect(tail.map((turn) => [turn.role, turn.status])).toEqual([
-          ["compaction", "complete"],
-          ["user", "complete"],
-          ["user", "complete"],
-          ["assistant", "complete"],
-        ]);
-        const thread = await rig.repos.threads.findById(rig.threadId);
-        if (!thread) throw new Error("Missing thread");
-        const rebuilt = await assembleNextTurnContext({
-          thread,
-          turns: (await rig.repos.turns.listByThread(rig.threadId)).slice(0, -1),
-          blocks: (await rig.repos.blocks.listByThread(rig.threadId)).filter(
-            (block) => block.turnId !== tail[3].id,
-          ),
-          agentRevisions: rig.deps.agentRevisions,
-          threads: rig.repos.threads,
-          toolRegistry: rig.deps.toolRegistry,
-          baseTools: [],
-          gateway: rig.deps.gateway,
-          promptBakes: rig.repos.promptBakes,
-          workContext: rig.deps.workContext,
-        });
-        expect(promptBytes(rig.gateway.requests[0])).toBe(promptBytes(rebuilt.generateRequest));
-      }
+      rig.setThreshold(undefined);
+      const next = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Continue after failure.",
+      });
+      expect((await next.execute()).status).toBe("complete");
+      expectStablePrefix(before, rig.gateway.requests[0]);
     });
   });

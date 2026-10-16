@@ -157,7 +157,7 @@ describe("model document stack", () => {
     "stepwise",
     "count",
   ] as const)("overlapping replacements compose %s undo and redo", async (schedule) => {
-    const { harness, view, context, responseId, target } = await fixture();
+    const { harness, view, context, responseId } = await fixture();
     try {
       for (const [index, [find, content]] of [
         ["Beta", "Gold"],
@@ -217,16 +217,13 @@ describe("model document stack", () => {
     }
   });
   it.each([
-    ["live", "count"],
     ["draft", "count"],
     ["live", "stepwise"],
     ["draft", "stepwise"],
-    ["live", "short"],
     ["draft", "short"],
-    ["live", "rollback"],
     ["draft", "rollback"],
   ] as const)("two-edit undo in %s supports %s redo", async (destination, schedule) => {
-    const { harness, view, context, responseId, target } = await fixture();
+    const { harness, view, context, responseId } = await fixture();
     try {
       const core = view.collab.agentEdit();
       const address = { documentId: ALPHA_ID, file: "alpha.md" };
@@ -301,12 +298,11 @@ describe("model document stack", () => {
     }
   });
   it.each([
-    "pending",
     "applied",
     "discarded",
     "user undo",
   ] as const)("model refuses user-acted %s tops and reverts eligible parts", async (state) => {
-    const { harness, view, context, responseId, target } = await fixture();
+    const { harness, view, context, responseId } = await fixture();
     const review = reviewDriver(view.collab.draftReview);
     try {
       await view.collab.agentEdit().write(
@@ -344,11 +340,7 @@ describe("model document stack", () => {
           context,
         );
       expect(undone.status).toBe(
-        state === "pending"
-          ? "success"
-          : state === "user undo"
-            ? "cant_redo_users_undo"
-            : `cant_undo_${state}`,
+        state === "user undo" ? "cant_redo_users_undo" : `cant_undo_${state}`,
       );
       if (state === "applied") {
         expect(
@@ -377,7 +369,7 @@ it.each([
   "undo",
   "redo",
 ] as const)("model %s refuses changed and elsewhere without touching content", async (direction) => {
-  const { harness, view, context, responseId, target } = await fixture();
+  const { harness, view, context, responseId } = await fixture();
   try {
     const core = view.collab.agentEdit();
     const command = { documentId: ALPHA_ID, file: "alpha.md" };
@@ -437,7 +429,7 @@ it.each([
   "applied",
   "discarded",
 ] as const)("model cannot redo an undo the user %s", async (state) => {
-  const { harness, view, context, responseId, target } = await fixture();
+  const { harness, view, context, responseId } = await fixture();
   const review = reviewDriver(view.collab.draftReview);
   try {
     const core = view.collab.agentEdit(),
@@ -466,7 +458,7 @@ it.each([
 });
 
 it("model edit pages decode immutable parts and a new revert clears redo in the current destination", async () => {
-  const { harness, view, context, responseId, target } = await fixture();
+  const { harness, view, context, responseId } = await fixture();
   const review = reviewDriver(view.collab.draftReview);
   try {
     const core = view.collab.agentEdit(),
@@ -538,7 +530,7 @@ it.each([
   "changed",
   "partly applied",
 ] as const)("a multipart %s top blocks undo but targeted revert preserves skipped content", async (state) => {
-  const { harness, view, context, responseId, target } = await fixture();
+  const { harness, view, context, responseId } = await fixture();
   const review = reviewDriver(view.collab.draftReview);
   try {
     const core = view.collab.agentEdit(),

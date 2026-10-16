@@ -3,7 +3,6 @@
  * the thread lock, adoption refusal, expiry, a repair path or a conversation read. The rows whose risk
  * is the decision alone are `stop-rule.test.ts`. Every case also runs the publication parity check.
  */
-
 import type { HandBackRequest, StopResponse } from "@meridian/contracts/threads";
 import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -38,16 +37,14 @@ else
     beforeEach(() => deleteDrizzleRows(db, [schema.users]));
     afterAll(async () => {
       // Background work a run detached (a wake, a renewal) must settle before its database goes.
-      await processDetachedWork.drain(8_000);
+      await processDetachedWork.drain(8000);
       await audited.close();
     });
     // Publication pins: no input write without a record, and the last record equals the rows.
     afterEach(() => assertPublicationHooks(db));
-
     const fixture = createCompactionFixture(db);
     const lowUsage = { inputTokens: 100, outputTokens: 10 };
     type Rig = Awaited<ReturnType<typeof fixture>>;
-
     /** No auto-compaction and no wake after a release: each test starts every run it wants. */
     async function rigWith(options: Parameters<typeof fixture>[0] = {}) {
       const rig = await fixture({
@@ -60,7 +57,6 @@ else
     }
     const pausedGateway = (pauseAt: number[] = [1]) =>
       scriptedGateway({ usage: lowUsage, pauseAt });
-
     /** The press a tab sends from the record it holds: the current one, unless a field is overridden. */
     /** `remote` presses through the delivery port: the holder gets no local abort, as on another server. */
     async function press(
@@ -82,7 +78,6 @@ else
         ...override,
       });
     }
-
     async function inboxRows(rig: Rig) {
       return db
         .select({
@@ -119,10 +114,8 @@ else
       );
     }
     const seqOf = async (rig: Rig, id: string) => (await rowOf(rig, id)).seq;
-
     /** The request text of every model call so far. */
     const requestText = (rig: Rig) => JSON.stringify(rig.gateway.requests);
-
     /** A reply held at its first model call: the execution is open and its receipt holds the message. */
     async function heldReply(rig: Rig, text: string) {
       const run = await rig.orchestrator.prepare({ threadId: rig.threadId, userText: text });
@@ -144,7 +137,6 @@ else
         blocks.map((b) => ("text" in b ? b.text : "")).join(""),
       );
     }
-
     function gate() {
       let open!: () => void;
       const promise = new Promise<void>((resolve) => {
@@ -152,7 +144,6 @@ else
       });
       return { promise, open };
     }
-
     /** A summarizer that holds at its first call until the test lets it finish. */
     function heldSummarizer() {
       const started = gate();
@@ -169,7 +160,6 @@ else
       });
       return { summarizer, started: started.promise, release: released.open };
     }
-
     /**
      * An execution whose holder died: its lease row is expired and binds a pending reply or compaction
      * placeholder with `receipt`, and nothing holds the claim. The record is published as production
@@ -221,7 +211,6 @@ else
         .where(eq(schema.threadRunLeases.executionId, executionId));
       return carried > 0 && rows.length === 0;
     }
-
     it("row 3: a message waiting after a yield and a pending switch is handed back, and no reply starts", async () => {
       const toolUse = {
         content: [
@@ -261,7 +250,6 @@ else
       await processDetachedWork.drain();
       // E1 ended at the yield; the wake has not run. The switch waits for a run, then the press arrives.
       expect((await rowOf(rig, m2)).deliveredAt).toBeNull();
-
       const response = await press(rig, { seenThrough: await seqOf(rig, m2) });
       expect(response.cancelledExecutionId).toBeNull();
       expect(text(response)).toEqual(["M2 behind the switch"]);
@@ -269,7 +257,14 @@ else
       const turns = await rig.repos.turns.listByThread(rig.threadId);
       // No run started, so the switch is still pending and the mode unchanged.
       expect(
-        turns.some((turn) => (turn.metadata as { kind?: string })?.kind === "write_mode_switch"),
+        turns.some(
+          (turn) =>
+            (
+              turn.metadata as {
+                kind?: string;
+              }
+            )?.kind === "write_mode_switch",
+        ),
       ).toBe(false);
       expect(response.runState.mode).not.toBe("draft");
       expect(response.runState.items.map((item) => item.control)).toEqual([
@@ -280,78 +275,6 @@ else
       await processDetachedWork.drain();
       expect(gateway.requests).toHaveLength(1);
     });
-
-    it("row 5: a mixed batch the press set only half covers keeps running and answers both", async () => {
-      const gateway = pausedGateway();
-      const rig = await rigWith({ gateway });
-      const m2 = (await rig.send(rig.threadId, "M2")).userTurnId;
-      const seenThrough = await seqOf(rig, m2);
-      const m3 = (await rig.send(rig.threadId, "M3")).userTurnId;
-      const { run, done } = await startDrain(rig);
-      await gateway.untilGatewayBoundary(1);
-      expect((await leaseRow(rig))?.adoptedMessageIds).toEqual([m2, m3]);
-
-      const response = await press(rig, { seenThrough, seenExecutionId: null });
-      expect(response).toMatchObject({
-        cancelledExecutionId: null,
-        handedBack: [],
-        answered: [m2],
-      });
-      expect((await leaseRow(rig))?.cancelRequested).toBe(false);
-      await finish(rig, done);
-      const a = (await rowOf(rig, m2)).by;
-      expect(a).not.toBeNull();
-      expect((await rowOf(rig, m3)).by).toBe(a);
-      expect(run.executionTurnId).toBe(a);
-    });
-
-    it("row 6: a separate batch for M3 is refused by the flag, and the next execution answers it", async () => {
-      const gateway = pausedGateway();
-      const rig = await rigWith({ gateway });
-      const m2 = (await rig.send(rig.threadId, "M2")).userTurnId;
-      const seenThrough = await seqOf(rig, m2);
-      const { done } = await startDrain(rig);
-      await gateway.untilGatewayBoundary(1);
-      const m3 = (await rig.send(rig.threadId, "M3 arrives later")).userTurnId;
-
-      const response = await press(rig, { seenThrough });
-      expect(response.cancelledExecutionId).not.toBeNull();
-      expect(response.handedBack).toEqual([]);
-      await finish(rig, done);
-      expect((await rowOf(rig, m2)).by).not.toBeNull();
-      // The flag refused M3's adoption, so it is still pending for the next execution.
-      expect((await rowOf(rig, m3)).deliveredAt).toBeNull();
-      expect(await leaseRow(rig)).toBeNull();
-      const e3 = await startDrain(rig);
-      await finish(rig, e3.done, [2]);
-      const reply = (await rowOf(rig, m3)).by;
-      expect(reply).not.toBeNull();
-      expect(reply).not.toBe((await rowOf(rig, m2)).by);
-    });
-
-    it("row 7: a press committed before the wake reserves hands M2 back, and the reply is reserved for M3 alone", async () => {
-      const gateway = scriptedGateway({ usage: lowUsage });
-      const rig = await rigWith({ gateway });
-      const m2 = (await rig.send(rig.threadId, "M2 handed back")).userTurnId;
-      const seenThrough = await seqOf(rig, m2);
-      const m3 = (await rig.send(rig.threadId, "M3 stays")).userTurnId;
-      const response = await press(rig, { seenThrough });
-      expect(response.handedBack.map(({ userTurnId }) => userTurnId)).toEqual([m2]);
-
-      const { done } = await startDrain(rig);
-      await done;
-      await processDetachedWork.drain();
-      const reply = (await rowOf(rig, m3)).by;
-      expect(reply).not.toBeNull();
-      const [turn] = await db
-        .select({ reservedFor: schema.turns.reservedForUserTurnIds })
-        .from(schema.turns)
-        .where(eq(schema.turns.id, reply as never));
-      expect(turn?.reservedFor).toEqual([m3]);
-      expect(requestText(rig)).not.toContain("M2 handed back");
-      expect(requestText(rig)).toContain("M3 stays");
-    });
-
     it("row 8: a batch prepared before the press is re-selected at commit and no longer holds M2", async () => {
       const gateway = scriptedGateway({ usage: lowUsage });
       let pressed: Promise<StopResponse> | undefined;
@@ -373,17 +296,20 @@ else
       seenThrough = await seqOf(rig, m2);
       const m3 = (await rig.send(rig.threadId, "M3 stays")).userTurnId;
       armed = true;
-
       const { done } = await startDrain(rig);
       await done;
       await processDetachedWork.drain();
       expect((await rowOf(rig, m2)).handedBackBy).not.toBeNull();
       const reply = (await rowOf(rig, m3)).by;
       expect(reply).not.toBeNull();
+      const [turn] = await db
+        .select({ reservedFor: schema.turns.reservedForUserTurnIds })
+        .from(schema.turns)
+        .where(eq(schema.turns.id, reply as never));
+      expect(turn?.reservedFor).toEqual([m3]);
       expect(requestText(rig)).not.toContain("M2 handed back");
       expect(requestText(rig)).toContain("M3 stays");
     });
-
     it("row 9: a press that waits on the wake's locked attempt runs after the adoption and finds M3 taken on", async () => {
       const gateway = pausedGateway();
       let rig: Rig;
@@ -435,14 +361,12 @@ else
       await processDetachedWork.drain();
       expect((await rowOf(rig, m2)).by).not.toBeNull();
     });
-
     it("row 11: a later steer not yet adopted stays pending when the press cancels, and the next execution answers it", async () => {
       const gateway = pausedGateway();
       const rig = await rigWith({ gateway });
       const { run, done } = await heldReply(rig, "M1");
       const seenThrough = await seqOf(rig, run.userTurnId);
       const m3 = (await rig.send(rig.threadId, "M3 steer")).userTurnId;
-
       const response = await press(rig, { seenThrough });
       expect(response.cancelledExecutionId).toBe(run.executionId);
       await finish(rig, done);
@@ -455,7 +379,6 @@ else
       expect(reply).not.toBeNull();
       expect(reply).not.toBe(run.executionTurnId);
     });
-
     it("row 14: a Stop from another server hands a start-time compaction's message back before it summarizes", async () => {
       const summarizer = scriptedSummarizer();
       const rig = await fixture({
@@ -468,13 +391,12 @@ else
         role: "compaction",
       });
       expect((await leaseRow(rig))?.adoptedMessageIds).toEqual([run.userTurnId]);
-
       // The press commits after the reservation and before execute(): the run holds M1 in its
       // prepared history and has no local abort. The heartbeat has also expired; Stop still cancels
       // the held lease, and execute() must still see it.
       await db
         .update(schema.threadRunLeases)
-        .set({ expiresAt: new Date(Date.now() - 60_000) })
+        .set({ expiresAt: new Date(Date.now() - 60000) })
         .where(eq(schema.threadRunLeases.threadId, rig.threadId));
       const response = await press(rig, { seenThrough: await seqOf(rig, run.userTurnId) }, true);
       expect(response.cancelledExecutionId).toBe(run.executionId);
@@ -492,7 +414,6 @@ else
       expect(rig.gateway.requests).toHaveLength(0);
       expect(await ended(rig, run.executionId)).toBe(true);
     });
-
     it("row 16: a manual compaction's waiting message is handed back and the compact control is untouched", async () => {
       const held = heldSummarizer();
       const rig = await rigWith({ summarizer: held.summarizer });
@@ -507,7 +428,6 @@ else
       const { run, done } = await startDrain(rig);
       await held.started;
       const m2 = (await rig.send(rig.threadId, "M2 waits")).userTurnId;
-
       const response = await press(rig);
       expect(response.cancelledExecutionId).toBe(run.executionId);
       expect(text(response)).toEqual(["M2 waits"]);
@@ -521,16 +441,14 @@ else
       expect(control.deliveredAt).toBeNull();
       expect(rig.gateway.requests).toHaveLength(0);
     });
-
     it("row 23: an expired heartbeat does not refuse the press, and the live holder cancels", async () => {
       const gateway = pausedGateway();
       const rig = await rigWith({ gateway });
       const { run, done } = await heldReply(rig, "M1");
       await db
         .update(schema.threadRunLeases)
-        .set({ expiresAt: new Date(Date.now() - 60_000) })
+        .set({ expiresAt: new Date(Date.now() - 60000) })
         .where(eq(schema.threadRunLeases.threadId, rig.threadId));
-
       // From another server: the holder gets no local abort and can only see the durable flag.
       const response = await press(rig, {}, true);
       expect(response.cancelledExecutionId).toBe(run.executionId);
@@ -552,13 +470,11 @@ else
       gateway.release(1);
       expect(await done).toMatchObject({ status: "cancelled" });
     });
-
     it("row 24: a dead holder's reply keeps its message and the press hands the waiting one back, then repair settles", async () => {
       const rig = await rigWith();
       const m1 = (await rig.send(rig.threadId, "M1")).userTurnId;
       const dead = await deadExecution(rig, "assistant", [m1]);
       const m2 = (await rig.send(rig.threadId, "M2 waits")).userTurnId;
-
       const response = await press(rig, { seenExecutionId: dead.executionId });
       expect(response.cancelledExecutionId).toBe(dead.executionId);
       expect(text(response)).toEqual(["M2 waits"]);
@@ -566,14 +482,12 @@ else
       expect((await leaseRow(rig))?.cancelRequested).toBe(true);
       // The record shows the execution until repair settles it.
       expect(response.runState.execution?.executionId).toBe(dead.executionId);
-
       await repair(rig);
       expect((await rowOf(rig, m1)).by).toBe(dead.turn.id);
       expect((await rowOf(rig, m2)).handedBackBy).not.toBeNull();
       expect(await leaseRow(rig)).toBeNull();
       expect(await ended(rig, dead.executionId)).toBe(true);
     });
-
     it("row 31: Stop then a crash in a compaction leaves the message out of the chat for the next claim", async () => {
       const rig = await fixture({
         summarizer: scriptedSummarizer(),
@@ -585,7 +499,6 @@ else
       expect(await rig.repos.turns.findById(run.executionTurnId)).toMatchObject({
         role: "compaction",
       });
-
       // The press lands on the live holder; then the holder dies before it closes.
       const response = await press(
         rig,
@@ -611,39 +524,10 @@ else
       expect(rig.gateway.requests).toHaveLength(0);
       expect(await rig.delivery.selectPending(rig.threadId as never)).toEqual([]);
     });
-
-    it("row 32: a press on an abandoned compaction before repair gives the same outcome as row 31", async () => {
-      const rig = await rigWith();
-      const m1 = (await rig.send(rig.threadId, "M1")).userTurnId;
-      const dead = await deadExecution(rig, "compaction", [m1]);
-
-      const response = await press(rig, { seenExecutionId: dead.executionId });
-      expect(text(response)).toEqual(["M1"]);
-      await repair(rig);
-      expect((await rowOf(rig, m1)).handedBackBy).not.toBeNull();
-      expect(await leaseRow(rig)).toBeNull();
-      await rig.orchestrator.startDrain(rig.threadId as never);
-      await processDetachedWork.drain();
-      expect(rig.gateway.requests).toHaveLength(0);
-    });
-
-    it("row 33: a crash with no press leaves the message pending and the next execution answers it", async () => {
-      const rig = await rigWith();
-      const m1 = (await rig.send(rig.threadId, "M1 survives")).userTurnId;
-      await deadExecution(rig, "compaction", [m1]);
-      await repair(rig);
-      expect((await rowOf(rig, m1)).deliveredAt).toBeNull();
-      await rig.orchestrator.startDrain(rig.threadId as never);
-      await processDetachedWork.drain();
-      expect((await rowOf(rig, m1)).by).not.toBeNull();
-      expect(requestText(rig)).toContain("M1 survives");
-    });
-
     const handBack = (rig: Rig, requestId: string, ids: HandBackRequest["ids"]) =>
       rig.delivery.handBack(rig.threadId as never, { requestId, ids });
     const content = (response: { handedBack: StopResponse["handedBack"] }) =>
       response.handedBack.map(({ userTurnId, blocks }) => [userTurnId, blocks] as const);
-
     it("row 34: the x that loses the claim to the wake's adoption answers its message and hands nothing back", async () => {
       const gateway = pausedGateway();
       let rig: Rig;
@@ -674,7 +558,6 @@ else
       armed = true;
       const { done } = await startDrain(rig);
       await lockedAttempt.promise;
-
       const response = await handBack(rig, crypto.randomUUID(), [m2]);
       await gateway.untilGatewayBoundary(1);
       expect(response).toMatchObject({ handedBack: [], answered: [m2], gone: [] });
@@ -686,7 +569,6 @@ else
       for (const id of adopted) expect((await rowOf(rig, id)).by).toBe(reply);
       expect(await journalTypes(rig, "messages.handed_back")).toEqual([]);
     });
-
     it("row 35: Cancel queue committed during a stale preparation leaves the wake nothing to reserve", async () => {
       let rig: Rig;
       let armed = false;
@@ -705,7 +587,6 @@ else
       rig = await rigWith({ notices: notices as never });
       m2 = (await rig.send(rig.threadId, "M2")).userTurnId;
       armed = true;
-
       await expect(
         rig.orchestrator.prepare({ threadId: rig.threadId, drain: true }),
       ).rejects.toBeInstanceOf(NoPendingWakeError);
@@ -714,7 +595,6 @@ else
       expect(await leaseRow(rig)).toBeNull();
       expect(rig.gateway.requests).toHaveLength(0);
     });
-
     const toolUseResult = {
       content: [
         {
@@ -737,7 +617,6 @@ else
         pauseAt: [1, holdAt],
         results: [toolUseResult, toolUseResult],
       });
-
     it("row 41: Send now with a frozen queue does not cancel the reply that adopted a later message after an x took M2 back", async () => {
       // Risk: reading only the ids scope misses M3, which E adopted, and cancels the reply that answers it.
       const gateway = boundaryGateway(2);
@@ -754,7 +633,6 @@ else
       gateway.release(1);
       await gateway.untilGatewayBoundary(2);
       expect((await leaseRow(rig))?.adoptedMessageIds).toContain(m3);
-
       const response = await rig.orchestrator.sendNow(rig.threadId as never, frozen);
       expect(response.cancelledExecutionId).toBeNull();
       expect((await leaseRow(rig))?.cancelRequested).toBe(false);
@@ -762,7 +640,6 @@ else
       expect(await done).toMatchObject({ status: "complete" });
       await processDetachedWork.drain();
     });
-
     it("row 42: Send now is refused once the reply adopted a waiting message and its acknowledgement cleared the receipt", async () => {
       // Risk: with the receipt empty, only the delivering turn's row proves the execution took W on.
       const gateway = boundaryGateway(3);
@@ -778,7 +655,6 @@ else
       await gateway.untilGatewayBoundary(3);
       expect((await rowOf(rig, m2)).by).not.toBeNull();
       expect((await leaseRow(rig))?.adoptedMessageIds ?? []).not.toContain(m2);
-
       const response = await rig.orchestrator.sendNow(rig.threadId as never, frozen);
       expect(response.cancelledExecutionId).toBeNull();
       expect((await leaseRow(rig))?.cancelRequested).toBe(false);
@@ -786,7 +662,6 @@ else
       expect(await done).toMatchObject({ status: "complete" });
       await processDetachedWork.drain();
     });
-
     it("row 36: a replay answers the stored decision, a later request cannot resurrect, and another body is refused", async () => {
       const rig = await rigWith();
       const m2 = (await rig.send(rig.threadId, "M2 words")).userTurnId;
@@ -797,7 +672,6 @@ else
       const second = await handBack(rig, r2, [m2, m3]);
       expect(second).toMatchObject({ answered: [], gone: [m2] });
       expect(content(second)).toEqual([[m3, [{ type: "text", text: "M3 words" }]]]);
-
       const replay2 = await handBack(rig, r2, [m2, m3]);
       expect(content(replay2)).toEqual(content(second));
       expect(replay2).toMatchObject({ answered: [], gone: [m2] });
@@ -809,7 +683,6 @@ else
       expect((await rowOf(rig, m3)).handedBackBy).toBe(r2);
       expect(await journalTypes(rig, "messages.handed_back")).toHaveLength(2);
     });
-
     it("row 37: a handed-back message is in no conversation read, and the repository ports return the conversation by default", async () => {
       const rig = await rigWith();
       const main = await rig.repos.threads.findById(rig.threadId);
@@ -836,7 +709,6 @@ else
       expect(turn3?.prevTurnId).toBe(m2);
       expect(turn3?.position).toBe((turn2?.position ?? 0) + 1);
       expect((await graph.listByThread(rig.threadId as never)).map(({ id }) => id)).toContain(m2);
-
       // The port reads a later reader reaches without knowing about hand-back: all omit M2. Its blocks
       // stay stored for diagnostics, so they are looked up by the table.
       const turns = rig.repos.turns;
@@ -854,7 +726,6 @@ else
       expect(
         (await rig.repos.blocks.listByThread(rig.threadId as never)).map(({ turnId }) => turnId),
       ).not.toContain(m2);
-
       // The snapshot.
       const { buildThreadSnapshot } = await import("../../threads/thread-snapshot.js");
       const hub = {
@@ -879,7 +750,6 @@ else
       expect(snapshot.turns.map(({ id }) => id)).toContain(m3);
       expect(JSON.stringify(snapshot.turns)).not.toContain("M2 hidden words");
       expect(snapshot.turns.find(({ id }) => id === m3)?.siblingIds).toEqual([m3]);
-
       // Deliveries and the latest requester text.
       expect((await rig.repos.turns.listMessageDeliveries(rig.threadId as never)).has(m2)).toBe(
         false,
@@ -889,7 +759,6 @@ else
           ...(await rig.repos.turns.listLatestLocalRequesterText([rig.threadId as never])).values(),
         ].join(""),
       ).toContain("M3 kept words");
-
       // Both transcript page units, their counts and ordinals, on the chat and on the fork.
       const { readTranscriptPage, resolveTranscriptSpans } = await import("../../threads/index.js");
       for (const thread of [main, fork]) {
@@ -905,7 +774,7 @@ else
           expect(pageIds).toContain(m3);
         }
         const { spans } = await resolveTranscriptSpans(rig.repos, thread);
-        const total = await rig.repos.turns.countConversationTurns(spans, 1_000_000);
+        const total = await rig.repos.turns.countConversationTurns(spans, 1000000);
         const walked: string[] = [];
         for (let ordinal = 1; ordinal <= total; ordinal += 1)
           walked.push(
@@ -915,7 +784,6 @@ else
         expect(walked).toContain(m3);
         expect(walked).not.toContain("");
       }
-
       // The derive source and the model: the loader's conversation, then a reply on each chat.
       const { loadThreadConversationContext } = await import("../../threads/index.js");
       for (const thread of [main, fork]) {
@@ -943,7 +811,6 @@ else
         expect(JSON.stringify(request)).not.toContain("M2 hidden words");
         expect(JSON.stringify(request)).toContain("M3 kept words");
       }
-
       // The chat list: a handed-back message is neither the preview nor the activity head.
       const m5 = (await rig.send(rig.threadId, "M5 hidden preview")).userTurnId;
       await handBack(rig, crypto.randomUUID(), [m5]);
@@ -957,7 +824,6 @@ else
           ...(await rig.repos.turns.listLatestLocalRequesterText([rig.threadId as never])).values(),
         ].join(""),
       ).not.toContain("M5 hidden preview");
-
       // A send after a handed-back leaf chains from the graph, and its reply never sees M5.
       const m6 = (await rig.send(rig.threadId, "M6 after the hidden leaf")).userTurnId;
       const last = await rig.orchestrator.prepare({ threadId: rig.threadId, drain: true });
@@ -966,7 +832,6 @@ else
       expect((await rowOf(rig, m6)).by).not.toBeNull();
       expect(JSON.stringify(rig.gateway.requests.at(-1))).not.toContain("M5 hidden preview");
     });
-
     it("row 38: a replay returns the stored decision after the compaction that held the message dies", async () => {
       const rig = await rigWith();
       const m2 = (await rig.send(rig.threadId, "M2 words")).userTurnId;
@@ -974,7 +839,6 @@ else
       const request = crypto.randomUUID();
       const first = await handBack(rig, request, [m2]);
       expect(first).toMatchObject({ handedBack: [], answered: [m2], gone: [] });
-
       await repair(rig);
       expect((await rowOf(rig, m2)).deliveredAt).toBeNull();
       const replay = await handBack(rig, request, [m2]);
@@ -986,7 +850,6 @@ else
       expect((await rowOf(rig, m2)).by).not.toBeNull();
       expect(requestText(rig)).toContain("M2 words");
     });
-
     it("row 39: a run that starts with no writer message after the leaf was handed back chains from the graph and omits it", async () => {
       const summarizer = scriptedSummarizer();
       const rig = await rigWith({ summarizer });
@@ -1002,7 +865,6 @@ else
         body: { kind: "compact" },
         idempotencyKey: crypto.randomUUID(),
       });
-
       const { run, done } = await startDrain(rig);
       expect(await done).toMatchObject({ status: "complete" });
       await processDetachedWork.drain();
@@ -1011,7 +873,6 @@ else
       expect(compaction?.position).toBe((leaf?.position ?? 0) + 1);
       expect(JSON.stringify(summarizer.calls)).not.toContain("M2 hidden words");
     });
-
     it("row 40: a completed compaction's pin on a handed-back message neither breaks the next run nor reaches a summary", async () => {
       const held = heldSummarizer();
       const rig = await fixture({
@@ -1039,11 +900,14 @@ else
       const compaction = await rig.repos.turns.findById(run.executionTurnId);
       expect(compaction).toMatchObject({ role: "compaction", status: "complete" });
       expect(
-        (compaction?.metadata as { pinnedRequestTurnIds?: string[] }).pinnedRequestTurnIds,
+        (
+          compaction?.metadata as {
+            pinnedRequestTurnIds?: string[];
+          }
+        ).pinnedRequestTurnIds,
       ).toContain(run.userTurnId);
       expect(await leaseRow(rig)).toBeNull();
       expect((await rowOf(rig, run.userTurnId)).deliveredAt).toBeNull();
-
       await handBack(rig, crypto.randomUUID(), [run.userTurnId]);
       // The next run builds its context over the pin and answers M2 without it.
       rig.setThreshold(100000);

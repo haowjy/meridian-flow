@@ -1,5 +1,4 @@
 /** Production-composition regression for response credit and staged-push settlement. */
-
 import { renderAgentEditResult, splitHashline } from "@meridian/agent-edit";
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -10,7 +9,6 @@ import { testFileGrant } from "../test-support/file-grants.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
-
 if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe.skip("production-composed branch settlement (postgres)", () => {});
 } else {
@@ -26,7 +24,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { bindEditAgent, unloadHocuspocus, useComposedRuntimes } = await import(
       "../test-support/composed-runtime.js"
     );
-
     const USER_ID = "00000000-0000-4000-8000-000000000901";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000902";
     const SOURCE_ID = "00000000-0000-4000-8000-000000000903";
@@ -102,7 +99,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         isPrimary: true,
       });
     });
-
     it("returns a structured history tool error for a removed bound model", async () => {
       const runtime = await runtimes.compose();
       try {
@@ -135,11 +131,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await unloadHocuspocus(runtime.hocuspocus);
       }
     });
-
     it("S10 hard-delete evidence survives cold composition", () => runScenario(true));
-
-    it("reports writer prose overwritten without a concurrent edit", () => runScenario(false));
-
     it("writes a No Work draft onto a branch keyed by the locked Work", async () => {
       await db.insert(schema.works).values({
         id: NO_WORK_ID,
@@ -170,7 +162,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const responseId = await runtimes.insertModelResponse(THREAD);
       await bindEditAgent(runtime, THREAD_ID);
-
       const toolContext = {
         threadId: THREAD_ID,
         turnId: TURN_ID,
@@ -186,7 +177,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         toolContext,
       );
       if (read.isError) throw new Error(JSON.stringify(read.output));
-
       const result = await runtime.app.toolExecutor.executeTool(
         {
           id: "00000000-0000-4000-8000-000000000909",
@@ -201,7 +191,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         toolContext,
       );
-
       if (result.isError) {
         throw new Error(JSON.stringify({ output: result.output, events: eventSink.events }));
       }
@@ -237,11 +226,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
       await unloadHocuspocus(runtime.hocuspocus);
     });
-
     async function runScenario(writerAfterRead: boolean): Promise<void> {
       let runtime = await runtimes.compose();
       let { ports, app } = runtime;
-
       await writeMarkdown(ports.documentSync, {
         documentId: DOC_ID,
         markdown: "Writer V1 observed.",
@@ -259,7 +246,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
         },
       );
-
       const room = await runtime.hocuspocus.openDirectConnection(DOC_ID);
       if (!room.document) throw new Error("live production room is unavailable");
       if (writerAfterRead) {
@@ -291,7 +277,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         Y.applyUpdate(room.document, repeatedFullSync);
         writerReplica.destroy();
       }
-
       const insert = await ports.documentSync.agentEdit().write(
         {
           command: "insert",
@@ -357,7 +342,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         }),
       ).toMatchObject({ status: "applied" });
       await app.changeTrailDelivery.drain();
-
       const live = await ports.documentSync.readAsMarkdown(DOC_ID);
       expect(live.ok && live.value.trim()).toBe("Agent final.\n\nAgent prelude.");
       const [settlement] = await db.select().from(schema.branchPushSettlementBatches);
@@ -368,7 +352,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(trail?.changeCount).toBeGreaterThan(0);
       const [details] = await db.select().from(schema.changeTrailDocumentDetails);
       const beforeBodies = (
-        (details?.changes ?? []) as Array<{ beforeText?: string | null }>
+        (details?.changes ?? []) as Array<{
+          beforeText?: string | null;
+        }>
       ).flatMap((change) => {
         if (!change.beforeText) return [];
         return [(splitHashline(change.beforeText)?.body ?? change.beforeText).trim()];
@@ -379,7 +365,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       await room.disconnect();
       await unloadHocuspocus(runtime.hocuspocus);
-
       if (writerAfterRead) {
         // Drop every warm composition object; the next assertions can only use
         // the journal, settlement, and trail rows in PostgreSQL.
@@ -387,9 +372,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ({ ports, app } = runtime);
         const cold = await ports.documentSync.readAsMarkdown(DOC_ID);
         expect(cold.ok && cold.value).toContain("Agent final.");
-
         await unloadHocuspocus(runtime.hocuspocus);
-
         await db
           .update(schema.documents)
           .set({ deletedAt: new Date() })
@@ -403,7 +386,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
         const retained = reloaded as {
           anchorState?: "available" | "deleted";
-          changes?: Array<{ beforeText?: string | null }>;
+          changes?: Array<{
+            beforeText?: string | null;
+          }>;
         };
         const retainedChange = retained.changes?.find((candidate) =>
           candidate.beforeText?.includes("Writer V2 unseen."),

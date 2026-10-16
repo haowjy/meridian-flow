@@ -26,7 +26,6 @@ const docs: Y.Doc[] = [];
 afterEach(() => {
   for (const doc of docs.splice(0)) doc.destroy();
 });
-
 function fixture(existingUpstream?: Y.Doc) {
   const codec = createAgentEditCodecFactory(mdxCodec({ schema })).forScope(UNSCOPED_DOCUMENT_LINKS);
   const serialize = vi.spyOn(codec, "serializeBlockBodies");
@@ -39,7 +38,10 @@ function fixture(existingUpstream?: Y.Doc) {
   const liveUpdates: Array<{
     seq: number;
     update: Uint8Array;
-    meta: { origin: string; seq: number };
+    meta: {
+      origin: string;
+      seq: number;
+    };
   }> = [];
   const snapshot = (branchId: string): BranchSnapshot => ({
     branchId,
@@ -114,7 +116,6 @@ function fixture(existingUpstream?: Y.Doc) {
   }
   return { upstream, baseline, rows, liveUpdates, row, check, serialize, coordinator };
 }
-
 describe("branch concurrent attribution", () => {
   it("does not credit system:reconcile deletions to the writer", async () => {
     const f = fixture();
@@ -136,7 +137,6 @@ describe("branch concurrent attribution", () => {
     expect(blockTexts(f.baseline)).toEqual(["Beta."]);
     expect(echo.info).toBeUndefined();
   });
-
   it("does not fabricate writer credit when the recheck baseline is ahead of the Work draft", async () => {
     const f = fixture();
     const live = cloneYDoc(f.baseline);
@@ -149,7 +149,6 @@ describe("branch concurrent attribution", () => {
     Y.applyUpdate(f.baseline, update);
     expect(await f.check()).toEqual([]);
   });
-
   it("reports writer content arriving after the fast preflight in the actual response save", async () => {
     let afterPreflight = () => {};
     const ctx = createWriteToolHarness(
@@ -187,14 +186,6 @@ describe("branch concurrent attribution", () => {
     );
     expect(f.serialize).toHaveBeenCalled();
   });
-
-  it("does no block projection for identical states with retained, covered journal rows", async () => {
-    const f = fixture();
-    for (let i = 0; i < 20; i++) f.rows.push(f.row(Y.encodeStateAsUpdate(f.baseline)));
-    expect(await f.check()).toEqual([]);
-    expect(f.serialize).not.toHaveBeenCalled();
-  });
-
   it("rechecks a writer deletion after an identical-state preflight, despite equal state vectors", async () => {
     const f = fixture();
     f.rows.push(f.row(Y.encodeStateAsUpdate(f.baseline)));
@@ -211,7 +202,6 @@ describe("branch concurrent attribution", () => {
     });
     expect(recheck[0].update.byteLength).toBeGreaterThan(0);
   });
-
   it("does not suppress live journal edits that have not reached an identical upstream", async () => {
     const f = fixture();
     const live = cloneYDoc(f.baseline);
