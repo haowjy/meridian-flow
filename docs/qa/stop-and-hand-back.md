@@ -57,11 +57,21 @@ check that the composer and the rows match `thread view --json`.
 
 The composer has one button (owner ruling). With the box empty and a reply running it is Stop (Stopping
 is its spinning ring; a failed Stop is the red "Couldn't stop the reply." card above the box with Try again, which
-re-posts the same request and stays until the Stop is confirmed; once its reply ends it reads "Couldn't move your
+re-posts the same request and stays until the Stop is confirmed; once its reply ends, a Stop that had queued messages reads "Couldn't move your
 queued message to the message box.", plural for several, and a refused one reads "Couldn't move your queued
-message." with Dismiss); once you type it is Send with the
+message." with Dismiss; a Stop with nothing queued shows no card, and the button is no longer failed); once you type it is Send with the
 running ring, the card stays, and clearing the text brings Stop back. Escape stops only while Stop shows. After a
 Stop hands a steer back, the box holds it and the button is Send.
+
+## SB-31: a failed Stop with nothing queued is moot once its reply ends
+
+- **Setup:** a slow mock reply (`--mock '[{"text":"Slow.","delayMs":30000}]'`) streaming in the browser. In
+  `agent-browser`, make `POST /api/threads/<id>/stop` fail (`network route ... --abort`).
+- **Action:** press Stop with nothing queued; let the reply end (or `./mf thread stop` it from elsewhere).
+- **Expect:** while the reply runs, the red "Couldn't stop the reply." card with Try again. After it ends, no
+  card, and the button is no longer failed. Repeat with one queued message: the card stays, now
+  "Couldn't move your queued message to the message box." with Try again.
+- **Pinned by:** the `operation.test.ts` case "a failed Stop with nothing queued".
 
 ## SB-26: a send in flight at the press is untouched (row 26)
 
