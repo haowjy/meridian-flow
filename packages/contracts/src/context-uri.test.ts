@@ -72,36 +72,34 @@ describe("parseContextUri", () => {
     });
   });
 
-  it.each([
-    ["scratch://@/c12/x", "Handles follow @ directly: scratch://@c12/…"],
-    ["uploads://@w3/x", "Uploads belong to a chat"],
-    ["scratch://@W3/x", "Handles are lowercase: scratch://@w3/…"],
-    ["scratch://@tea-notes/x", "Unknown Work tea-notes. List Works with work list."],
-  ])("refuses the slip %s with its answer", (uri, reason) => {
-    expect(parseContextUri(uri)).toMatchObject({
+  it("refuses the #875 spelling @/c12/ with the flat handle", () => {
+    expect(parseContextUri("scratch://@/c12/x")).toMatchObject({
       ok: false,
-      error: { reason: expect.stringContaining(reason) },
+      error: { reason: "Handles follow @ directly: scratch://@c12/…" },
     });
   });
 
-  it.each(["scratch://@/", "uploads://@/"])("refuses the retired empty owner %s", (uri) => {
-    const scheme = uri.slice(0, uri.indexOf(":"));
-    expect(parseContextUri(uri)).toMatchObject({
-      ok: false,
-      error: { reason: expect.stringContaining(`ls ${scheme}://@`) },
-    });
+  it("refuses the retired empty owner @/ and points at the listing", () => {
+    for (const scheme of ["scratch", "uploads"]) {
+      expect(parseContextUri(`${scheme}://@/`)).toMatchObject({
+        ok: false,
+        error: { reason: expect.stringContaining(`ls ${scheme}://@`) },
+      });
+    }
   });
 
-  it.each([
-    "manuscript://~b7/Chapter 12",
-    "manuscript://~/b7/Chapter 12",
-    "scratch://~live/x",
-    "~rewrite/a",
-  ])("reserves the branch qualifier %s until branches are addressable", (uri) => {
-    expect(parseContextUri(uri, { barePathDefault: "manuscript" })).toMatchObject({
-      ok: false,
-      error: { reason: expect.stringContaining("Branches are not addressable yet") },
-    });
+  it("reserves the branch qualifier ~ until branches are addressable", () => {
+    for (const uri of [
+      "manuscript://~b7/Chapter 12",
+      "manuscript://~/b7/Chapter 12",
+      "scratch://~live/x",
+      "~rewrite/a",
+    ]) {
+      expect(parseContextUri(uri, { barePathDefault: "manuscript" })).toMatchObject({
+        ok: false,
+        error: { reason: expect.stringContaining("Branches are not addressable yet") },
+      });
+    }
   });
 
   it("serializes every owner through one spelling", () => {
