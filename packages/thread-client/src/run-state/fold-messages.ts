@@ -159,23 +159,21 @@ export function failedStopIsMoot(view: RunStateView, stop: FailedStop): boolean 
 }
 
 /**
- * Stop's control state for the tab that pressed it. A request in flight or a failed one stands
- * as it is. Once answered, an answer that named a cancelled execution reads Stopping while the
+ * Stop's control state for the tab that pressed it. A request in flight, or a failed Stop that is
+ * not moot, stands as it is. Once answered, an answer that named a cancelled execution reads Stopping while the
  * held record still shows that execution; any other answer is already idle.
  */
 export function stopStatus(
   view: RunStateView,
   command: {
-    request: "idle" | "pending" | "failed";
+    request: "idle" | "pending";
     cancelledExecutionId: string | null;
-    failedStop?: FailedStop | null;
+    /** Every Stop that failed; one that is not moot makes the control failed. */
+    failedStops: readonly FailedStop[];
   },
 ): StopStatus {
-  const moot =
-    command.request === "failed" &&
-    !!command.failedStop &&
-    failedStopIsMoot(view, command.failedStop);
-  if (command.request !== "idle" && !moot) return command.request;
+  if (command.request === "pending") return "pending";
+  if (command.failedStops.some((stop) => !failedStopIsMoot(view, stop))) return "failed";
   const cancelled = command.cancelledExecutionId;
   return cancelled !== null && view.record?.execution?.executionId === cancelled
     ? "stopping"
