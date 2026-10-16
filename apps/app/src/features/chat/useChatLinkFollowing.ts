@@ -196,12 +196,15 @@ export function useChatLinkFollowing({
 
   const navigation = useMemo<TranscriptLinkNavigation>(
     () => ({
-      follow: (target) => follower.follow(target),
+      follow: (target) => {
+        shellDoors?.retire();
+        follower.follow(target);
+      },
       canFollow: follower.canFollow,
       resolution,
       watch: requester.watch,
     }),
-    [follower, requester, resolution],
+    [follower, requester, resolution, shellDoors],
   );
 
   return {

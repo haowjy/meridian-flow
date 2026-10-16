@@ -10,10 +10,10 @@
  * (the Editor, or the dock beside the chat); a hidden document goes to its Work's review by
  * item identity; a missing one routes by address, so the route says so in place.
  *
- * Every door tells passage navigation it began, which retires whatever an earlier search row
- * was still resolving. A passage door's answer then carries the resolved id to passage
- * navigation, which opens the document itself and lands on the anchor. Passage handling never
- * gates the open, and never re-reads the address.
+ * Every door (and, through `retire`, every transcript click) retires a passage still landing.
+ * A passage door's answer hands the resolved id to passage navigation, which opens that
+ * document inside the answer and lands on the anchor if the open result allows. No lookup
+ * stands between the answer and the open.
  */
 import { type ReactNode, useCallback, useContext, useMemo } from "react";
 import { useLineage } from "@/client/query/useLineageTitle";
@@ -87,7 +87,7 @@ export function ProjectChatContextNavigationProvider({
     }),
     [ownHandle, rootThreadId, threads],
   );
-  const doorOpened = usePassageDoors(projectId, activeWork?.id ?? null);
+  const passages = usePassageDoors(projectId, activeWork?.id ?? null);
   const besideChat = useContext(BesideChatContext);
   const openChatDocument = useOpenChatDocument(projectId);
   const route = useCallback(
@@ -103,7 +103,7 @@ export function ProjectChatContextNavigationProvider({
       if (door.claim !== null && !useDockDocumentStore.getState().isCurrent(door.claim)) return;
       if (door.passage) {
         // The passage door opens the document itself, once, and lands on the passage.
-        doorOpened({ ...door.target, uri: door.uri }, door.passage, {
+        passages.land(door.target.workId, door.passage, {
           documentId: document.documentId,
           claim: door.claim ?? undefined,
         });
@@ -115,7 +115,7 @@ export function ProjectChatContextNavigationProvider({
         });
       }
     },
-    [doorOpened, openChatDocument],
+    [passages, openChatDocument],
   );
   // Only a hidden document reaches the review handoff, so its live fallback is never used.
   const openReviewing = useReviewingLinkDestination(reviewOnly);
@@ -171,7 +171,7 @@ export function ProjectChatContextNavigationProvider({
           : (availableWorks.find(({ id }) => id === target.workId)?.slug ?? undefined);
       const catalogUri = canonicalDoorUri(target, { ownerRef, workSlug }) ?? uri;
       // A new intent retires an earlier search row's passage work now, not when this answer lands.
-      doorOpened({ ...target, uri: catalogUri });
+      passages.retire();
       const link = classifyLinkTarget(catalogUri);
       if (!link) {
         route({ target });
@@ -195,7 +195,7 @@ export function ProjectChatContextNavigationProvider({
       lineages,
       onOpenContextTarget,
       besideChat,
-      doorOpened,
+      passages,
       openFound,
       openMissing,
       route,
@@ -212,8 +212,8 @@ export function ProjectChatContextNavigationProvider({
     [activeWork, availableWorks, noWorkId, lineages],
   );
   const doors = useMemo(
-    () => (onOpenContextTarget ? { prepare, canOpen } : null),
-    [canOpen, onOpenContextTarget, prepare],
+    () => (onOpenContextTarget ? { prepare, canOpen, retire: passages.retire } : null),
+    [canOpen, onOpenContextTarget, prepare, passages.retire],
   );
 
   return <ChatDoorsProvider doors={doors}>{children}</ChatDoorsProvider>;
