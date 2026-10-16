@@ -19,9 +19,16 @@ const workOwnerColumns = {
   deletedAt: works.deletedAt,
 };
 
-/** A name lowercased with every run of non-alphanumerics collapsed to one dash, as SQL compares it. */
+function foldAccents(text: string): string {
+  return text.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+/** `foldAccents` in SQL: decompose, then drop combining marks. Needs a UTF8 database. */
+const foldedWorkName = sql`regexp_replace(normalize(${works.name}, NFD), '[\u0300-\u036f]', '', 'g')`;
+
+/** A name with accents folded, lowercased and every run of non-alphanumerics collapsed to one dash, as SQL compares it. */
 function collapseName(name: string): string {
-  return name
+  return foldAccents(name)
     .toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, "-")
     .replace(/^-+|-+$/g, "");
@@ -101,7 +108,7 @@ export function createDrizzleOwnerLookup(
     async worksNamed(projectId, name) {
       // Exact name, or the same name with punctuation and spacing collapsed: the two spellings
       // `findWorkNamed` accepts. Few rows can match, so the cap only guards a pathological project.
-      const exact = name.trim().toLowerCase();
+      const exact = foldAccents(name.trim()).toLowerCase();
       const collapsed = collapseName(name);
       const rows = await currentDrizzleDb(db)
         .select(workOwnerColumns)
@@ -112,9 +119,9 @@ export function createDrizzleOwnerLookup(
             eq(works.isNoWork, false),
             isNull(works.deletedAt),
             or(
-              sql`lower(btrim(${works.name})) = ${exact}`,
+              sql`lower(btrim(${foldedWorkName})) = ${exact}`,
               collapsed
-                ? sql`btrim(regexp_replace(lower(${works.name}), '[^[:alnum:]]+', '-', 'g'), '-') = ${collapsed}`
+                ? sql`btrim(regexp_replace(lower(${foldedWorkName}), '[^[:alnum:]]+', '-', 'g'), '-') = ${collapsed}`
                 : undefined,
             ),
           ),
