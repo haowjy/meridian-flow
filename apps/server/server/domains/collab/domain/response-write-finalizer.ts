@@ -4,7 +4,7 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import type { ResponseWriteCommitFinalizeResult, ResponseWriteFinalizer } from "../contracts.js";
 import type { ResponseSaveResult, ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
 import type { DocumentProjectionRefreshService } from "./document-projection-refresher.js";
-import type { ApplicationBranchStore } from "./ports/application-branch-store.js";
+import type { DraftWriteVisibility } from "./draft-write-visibility.js";
 import { enlistResponseParticipant } from "./response-transaction.js";
 import type { PostDurabilityNoticeService } from "./reversal-notices.js";
 
@@ -13,6 +13,7 @@ export function createResponseWriteFinalizer(input: {
   rollback: Pick<import("./turn-inverse-service.js").TurnInverseService, "rollbackResponse">;
   projections: DocumentProjectionRefreshService;
   notices: PostDurabilityNoticeService;
+  visibility: DraftWriteVisibility;
 }): ResponseWriteFinalizer {
   const mapResult = (result: ResponseSaveResult): ResponseWriteCommitFinalizeResult => ({
     status: "committed",
@@ -46,6 +47,13 @@ export function createResponseWriteFinalizer(input: {
               const failures: unknown[] = [];
               for (const document of saved.documents) {
                 try {
+                  // Reports nothing for a live document: only pending parts are read.
+                  await input.visibility.report({
+                    threadId: ctx.threadId,
+                    responseId: responseIdentity.providerResponseId,
+                    editScopeId: responseIdentity.editScopeId,
+                    documentId: document.documentId as DocumentId,
+                  });
                   await input.projections.refresh(
                     { documentId: document.documentId as DocumentId, threadId: ctx.threadId },
                     "collab.response_finalize",

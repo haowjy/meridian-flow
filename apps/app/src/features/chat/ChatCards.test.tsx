@@ -34,7 +34,7 @@ vi.mock("@/rich-content/Markdown", () => ({
   Markdown: ({ children }: { children: React.ReactNode }) => children,
 }));
 vi.mock("@/client/query/useTurnLiveLineage", () => ({
-  useTurnLiveLineage: () => ({ documents: [], receipt: null }),
+  useTurnLiveLineage: () => ({ documents: [] }),
 }));
 vi.mock("./AssistantTurnActions", () => ({ AssistantTurnActions: () => null }));
 vi.mock("@/hooks/use-stats-for-nerds", () => ({ useStatsForNerds: () => false }));

@@ -28,7 +28,6 @@ import {
   parseContextMutationName,
   parseContextMutationPath,
 } from "../../../../../../lib/context-mutation-validation.js";
-import { containerTarget } from "../../../../../../lib/file-access-http.js";
 import { contextErrorToHttp, resolveContextRoute, toUri } from "./_helpers.js";
 
 interface CreateUntitledBody {

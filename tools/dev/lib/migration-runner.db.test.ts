@@ -305,4 +305,67 @@ describe.skipIf(!enabled)("migration runner (postgres)", () => {
       ]);
     }
   });
+
+  it("preflights before the run's first migration and runs a step immediately before its anchor", async () => {
+    const name = `${scratchName}_steps`;
+    const url = new URL(scratch);
+    url.pathname = `/${name}`;
+    await admin.unsafe(`CREATE DATABASE ${name}`);
+    const events = postgres(url.toString(), { max: 1 });
+    try {
+      const directory = path.join(temporaryRoot, "steps");
+      await writeMigrations(directory, [
+        {
+          tag: "0000_table",
+          when: 100,
+          sql: "CREATE TABLE public.step_events (event text); INSERT INTO public.step_events VALUES ('first');",
+        },
+        {
+          tag: "0001_anchor",
+          when: 200,
+          sql: "-- data-step: probe@1\nINSERT INTO public.step_events VALUES ('anchor');",
+        },
+      ]);
+      const record = (event: string) => (session: postgres.Sql) =>
+        session`INSERT INTO public.step_events VALUES (${event})`;
+      const refusing = {
+        id: "probe",
+        version: 1,
+        preflight: async () => {
+          throw new Error("batch b1 is unfinished");
+        },
+        run: async () => {},
+      };
+      await expect(
+        runMigrations({
+          databaseUrl: url.toString(),
+          migrationsDirectory: directory,
+          dataSteps: [refusing],
+        }),
+      ).rejects.toThrow("Data step probe@1 preflight failed");
+      // Nothing of the run applied: not even the ledger exists, so the old release's data is as it was.
+      expect(
+        await events`SELECT to_regnamespace('drizzle') IS NOT NULL AS ledger, to_regclass('public.step_events') IS NOT NULL AS table`,
+      ).toEqual([{ ledger: false, table: false }]);
+      await runMigrations({
+        databaseUrl: url.toString(),
+        migrationsDirectory: directory,
+        dataSteps: [
+          {
+            ...refusing,
+            preflight: async () => {},
+            run: async (session) => void (await record("step")(session)),
+          },
+        ],
+      });
+      expect(await events`SELECT event FROM public.step_events`).toEqual([
+        { event: "first" },
+        { event: "step" },
+        { event: "anchor" },
+      ]);
+    } finally {
+      await events.end();
+      await admin.unsafe(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
+    }
+  });
 });

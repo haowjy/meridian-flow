@@ -63,7 +63,6 @@ function fixture() {
       const push = {
         id: 1,
         branchId: "branch",
-        branchGeneration: 1,
         documentId,
         journalIds: [],
         upstreamUpdateSeq: 1,
@@ -80,17 +79,10 @@ function fixture() {
             lockCutUpdate: prepared.lockCutUpdate,
             pushUpdate: prepared.pushUpdate,
             trail: prepared.trail,
-            sweepEvidence: null,
           },
         ],
       });
       return { status: "inserted", pushes: [push] };
-    },
-    async commitDiscard() {
-      throw new Error("push only");
-    },
-    async lockDraftWorks() {
-      return new Set<string>();
     },
   };
   const mutex = new KeyedMutex();
@@ -106,9 +98,22 @@ function fixture() {
       commitStore: commits,
       settlementStore: store,
       liveCoordinator: coordinator,
-      model,
       codec: createAgentEditCodecFactory(markup),
       changeEventDelivery: { deliver() {} },
+      // Settlement replans each member; this rig keeps the staged merge as it is.
+      content: {
+        replan: async ({ pending }) => ({
+          pushId: pending.push.id,
+          outcome: {
+            status: "applied" as const,
+            pushUpdate: pending.pushUpdate,
+            trail: pending.trail,
+            overrode: [],
+          },
+          base: { kind: "none" as const },
+        }),
+        publishBranchUpdate() {},
+      },
     });
   const owner = transition();
   const trail = {
@@ -129,12 +134,11 @@ function fixture() {
       workId: "work" as WorkId,
       threadId: null,
       status: "active",
-      generation: 1,
       state: Y.encodeStateAsUpdate(branch),
       stateVector: Y.encodeStateVector(branch),
       schemaVersion: COLLAB_SCHEMA_VERSION,
     },
-    journalRows: [],
+    input: { scope: "item", snapshot: "" },
     pushUpdate,
     idempotencyKey: "push",
     trail,
@@ -183,6 +187,14 @@ function fixture() {
           afterDurableCommit,
           onConflict: () => "conflict",
           finish: () => "pushed",
+          command: {
+            commandId: "command" as never,
+            workId: "work" as WorkId,
+            accountId: "user" as never,
+            kind: "apply_items",
+            draftId: "draft-1" as never,
+            digest: "digest",
+          },
         }),
       }),
   };

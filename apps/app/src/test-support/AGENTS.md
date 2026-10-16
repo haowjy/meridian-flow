@@ -22,9 +22,6 @@ fixture used by one suite belongs with that suite.
   [`docs/qa/project-chrome-manual.md`](../../../../docs/qa/project-chrome-manual.md).
   A claim that needs a React root is usually about what the writer sees, which a
   browser judges and jsdom cannot.
-- Harnesses that claim transport ordering must use the real socket harness;
-  the held fake stores local bytes before announcement and cannot witness wire
-  order.
 
 Shuffle touched suites with multiple seeds. Reset module-level state through
 instance-owned fixtures, keep waits clock-driven, and fix fixture warnings

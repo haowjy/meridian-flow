@@ -43,9 +43,9 @@ the whole-document ProseMirror rebuild caused by remote Yjs writes.
   hover, and key scopes; object registration owns object physics; the suggestion
   lane owns trigger specs. Extensions register with those seams rather than
   binding private listeners.
-- Branch retirement never replays a retired AI snapshot. The transport owns
-  the outbox and the account-epoch writer handoff, which re-expresses only
-  surviving pending operations; the detailed carry and reset contract is in
+- Branch retirement never replays a retired AI snapshot and carries nothing to a
+  successor room. The transport owns the outbox; `BranchRoomPool` holds one room per
+  text branch, named by the server's `branchRoomName(branchId)`; callers never build it. Reset contract:
   [`.context/CONTEXT.md`](.context/CONTEXT.md).
 - Editor-owned keys remain consumed on refusals, and table drops have one
   landing authority. The Tab ladder, cell Enter behavior, dropcursor policy,

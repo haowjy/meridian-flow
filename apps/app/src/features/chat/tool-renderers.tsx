@@ -292,34 +292,6 @@ export function documentToolFailureCopy(tool: ToolView): string {
       : t`Something went wrong while reading that document.`;
   }
   switch (status) {
-    case "cant_undo_dependent":
-      return t`That change can't be undone because later edits depend on it.`;
-    case "cant_undo_applied":
-      return t`That change can't be undone here because it was already applied to your manuscript.`;
-    case "cant_undo_discarded":
-      return t`That change can't be undone because you discarded it.`;
-    case "cant_undo_changed":
-      return t`That change can't be undone because the text changed afterwards.`;
-    case "cant_undo_held":
-      return t`That change can't be undone because it is held for review.`;
-    case "cant_undo_elsewhere":
-      return t`That change can't be undone here because the chat now writes somewhere else.`;
-    case "cant_redo_applied":
-      return t`That change can't be redone here because it was already applied to your manuscript.`;
-    case "cant_redo_discarded":
-      return t`That change can't be redone because you discarded it.`;
-    case "cant_redo_changed":
-      return t`That change can't be redone because the text changed afterwards.`;
-    case "cant_redo_held":
-      return t`That change can't be redone because it is held for review.`;
-    case "cant_redo_elsewhere":
-      return t`That change can't be redone here because the chat now writes somewhere else.`;
-    case "cant_redo_users_undo":
-      return t`That change can't be redone because you undid it.`;
-    case "insufficient_undo":
-      return t`There isn't enough left to undo.`;
-    case "insufficient_redo":
-      return t`There isn't enough left to redo.`;
     case "nothing_to_revert":
       return t`There was nothing to revert.`;
     case "work_archived":

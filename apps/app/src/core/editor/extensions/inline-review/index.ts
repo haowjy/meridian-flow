@@ -1,21 +1,18 @@
 export {
+  type AppliedChangeRef,
+  currentReview,
   DraftInlineReviewExtension,
-  type DraftInlineReviewOptions,
   draftInlineReviewPluginKey,
   getInlineReviewPluginState,
   type InlineReviewPluginState,
+  inlineReviewFocusIntent,
 } from "./DraftInlineReviewExtension";
-export { inlineReviewClassNames, projectRestoring } from "./decorations";
+export { CHANGE_ATTR, inlineReviewClassNames } from "./decorations";
 export {
-  buildInlineReviewModel,
-  changeOperationIds,
-  decodeAnchor,
-  type InlineReviewModel,
-  type InlineReviewOperationKind,
-  indexOperations,
-  type ResolvedBlockReviewHunk,
-  type ResolvedReviewHunk,
-  type ResolvedTextReviewHunk,
-  unattributedHunkKey,
+  contentHashOf,
+  isSameChange,
+  type ProjectedReview,
+  removedParagraphs,
+  sameContent,
 } from "./model";
-export { BAR_SLOT_ATTR, BLOCK_ID_ATTR, REMOVED_BLOCKS_ATTR } from "./removal-widget";
+export { BAR_SLOT_ATTR } from "./removal-widget";

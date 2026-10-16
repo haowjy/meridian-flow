@@ -456,9 +456,7 @@ export function createResponseCommitter(deps: {
         const scope = kept.some((entry) => entry.writeId === handle)
           ? "part of this handle"
           : "all staged writes for this handle";
-        const explanation = writes.every((entry) => entry.rejectionReason === "discard")
-          ? "was discarded with the text it edited"
-          : `did not land: ${[...new Set(writes.map((entry) => rejectedWriteExplanation(entry.rejectionReason)))].join("; ")}`;
+        const explanation = `did not land: ${[...new Set(writes.map((entry) => rejectedWriteExplanation(entry.rejectionReason)))].join("; ")}`;
         return `${writes[0]?.documentLabel} ${handle}: ${scope} ${explanation}. Dropped writes: ${writes.map((entry) => entry.description).join("; ")}. Re-read and retry.`;
       });
     },
@@ -534,7 +532,6 @@ export function createResponseCommitter(deps: {
       // Equivalent readers do not invalidate each other; actual content/cut changes still retry.
       if (
         !rejected.length &&
-        view.cut.generation === accepted.helperCut.generation &&
         sameBytes(view.cut.state, accepted.helperCut.state) &&
         sameBytes(Y.encodeStateAsUpdate(view.doc), accepted.helperState)
       )
@@ -1478,10 +1475,7 @@ export function createResponseCommitter(deps: {
                 kind: "prepared",
                 doc: yjsUpdateFromState(input.preOwnSnapshot),
                 replay: coordinator.withStagedWrites,
-                cut: {
-                  generation: input.interactionContext.branchGeneration,
-                  state: input.preOwnSnapshot.slice(),
-                },
+                cut: { state: input.preOwnSnapshot.slice() },
               },
             }
           : { ...fields, view: { kind: "live", runtime: liveRuntime(input.runtime) } };
@@ -1555,7 +1549,7 @@ export function createResponseCommitter(deps: {
       ...(input.copied ? { copied: input.copied } : {}),
     };
     if (rejected) {
-      entry.rejectionReason = "discard";
+      entry.rejectionReason = "integration";
       docBuffer.rejectedUpdates = [...(docBuffer.rejectedUpdates ?? []), entry];
       enqueueNotices(input.responseId, input.docId, [entry]);
     } else docBuffer.updates.push(entry);

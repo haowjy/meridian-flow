@@ -2,8 +2,6 @@ packages:
   - 'apps/*'
   - 'packages/*'
   - 'tools/mf'
-  # Throwaway demo playground for @meridian/agent-edit (see demo/README.md).
-  - 'packages/agent-edit/demo/playground'
 allowBuilds:
   nx: true
 
@@ -29,3 +27,4 @@ overrides:
   "@tanstack/history": 1.162.3
 patchedDependencies:
   '@tanstack/history@1.162.3': patches/@tanstack__history@1.162.3.patch
+  '@tiptap/y-tiptap@3.0.5': patches/@tiptap__y-tiptap@3.0.5.patch

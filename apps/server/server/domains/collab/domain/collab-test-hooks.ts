@@ -10,8 +10,9 @@ const COLLAB_HOOK_POINTS = [
   "discard.beforeRetirement",
   "access.afterLeases",
   "applyItems.beforeStaging",
+  "applyItems.afterCatchUp",
   "applyItems.afterStaging",
-  "applyItems.beforeContinue",
+  "applyItems.planning",
 ] as const;
 export type CollabHookPoint = (typeof COLLAB_HOOK_POINTS)[number];
 

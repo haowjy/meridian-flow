@@ -1,6 +1,6 @@
 # Turn edit receipts
 
-This page defines the chat contract for turn-edit records and reversal.
+This page defines the chat contract for turn-edit records. The card has no Undo or Redo: review actions live in draft review.
 
 The per-turn receipt is a quiet, default-collapsed record for live and pending draft
 document edits. Its header counts documents ("Edited 1 document") and never
@@ -13,12 +13,11 @@ scrollport. A conversation reveal opened from an editor peer mark expands the
 receipt and brings its exact target row into view.
 
 `AssistantTurn` combines server-owned facts: full turn lineage supplies document
-scope, the durable receipt supplies whole-turn Undo/Redo authority, and the
-settled trail supplies historical titles, word totals, and change rows. Both
+scope, and the settled trail supplies historical titles, word totals, and change rows. Both
 direct and draft lineage may produce the same receipt. The receipt is a record of
 what the reply wrote: it counts every document the reply wrote to, live or draft,
 edited or created, as soon as the reply finishes. Apply and Discard never create
-or change it, and Undo never erases its turn-owned record. Pending draft lineage
+or change it, and it has no Undo or Redo. Pending draft lineage
 shows the same “Edited N documents” card before Apply.
 
 This checkout diverges for created documents ([#843][issue-843], fix planned):
@@ -27,45 +26,19 @@ reply created in a draft has none until Apply reveals it. A reply that only
 creates draft documents shows no card until Apply makes one appear. Settled live trails
 add retained Before/After excerpts; pending draft rows name the edited files.
 
+The word totals diverge as well. The card reads them from the mutable change
+trail (`changeTrail.wordsAdded` and `wordsRemoved`), and Apply's settlement
+writes those, so a finished reply's totals appear or change after Apply. The
+merge Apply can also count the writer's own draft typing that was published with
+it. The planned fix renders the receipt from a snapshot of the reply's targets
+and word deltas taken when the reply finishes ([#843][issue-843], with
+[#844][issue-844]'s split of historical from reversible targets).
+
 The receipt reads server lineage, never tool results. A binary copy (an upload
 such as a PDF, copied at once with no write handle) leaves no journal row, so it
-is not counted as an edit and offers no Undo. Undoing a text copy reverses its
-staged create and leaves an empty document, the same as undoing any create
-(document delete is not in the tool surface); the receipt shows it as undone
-and the document stays openable.
-
-The single Undo/Redo action calls the turn-scoped reverse endpoint. Receipt state
-(`live-active`, `branch-active`, reversed, dependent, or expired) decides whether
-it is available. Unavailable actions render a compact `Can't undo` pill; the
-server-derived reason appears only after expansion. Captured Before/After
-excerpts remain visible after document loss and reload, and deleted live anchors
-degrade navigation without discarding the receipt.
-
-A reversal command can race the projected receipt and return a semantic
-unavailable outcome with HTTP 200. The mutation invalidates the turn query,
-expands the receipt, and retains the returned reason while refreshed lineage
-withdraws the action. Do not reduce the result to transport success or clear the
-local reason merely because the refreshed control becomes `view_change`; both
-recreate click-and-nothing.
-
-Every refusal is visible, and the receipt's reason line is where it shows.
-Copy covers the whole wire status union through an exhaustive switch that fails
-the build when a status is added, and a command that never reached a status at
-all — rejected fetch, HTTP error envelope — gets its own retry line naming the
-command the writer pressed. `cant_undo_dependent` reads the same sentence
-whether it arrives as receipt state or as a refused command, and points at
-viewing the change, which is what expansion puts on screen. A refused command
-never leaves the card unchanged.
-
-Undo reverses the turn's remaining edits where they are now: pending in the
-Work draft or already applied to live. Branch and live writes remain one atomic
-command. The receipt immediately shows Undoing/Redoing while the command runs;
-Yjs publishes the edit after durable commit and failures stay on the card.
-Pending Undo preserves its generation so Redo can restore it. Review Discard is
-terminal, not Undo: discarded rows never authorize Redo even while other changes
-keep the draft open. Apply/Discard generation resets withdraw old branch
-authority without affecting applied live authority. The server's existing
-dependency and archived-Work guards still apply.
+is not counted as an edit. Captured Before/After excerpts remain visible after
+document loss and reload, and deleted live anchors degrade navigation without
+discarding the receipt.
 
 The card is a record, not a draft control panel. Draft Review/Apply/Discard
 remain exclusively in the composer-attached `DraftDock` and inline review
@@ -107,3 +80,4 @@ everything that could complete it. A stage deadline in the controller is only a
 backstop for the case no surface can report: a stage whose surface never mounts.
 
 [issue-843]: https://github.com/haowjy/meridian-flow/issues/843
+[issue-844]: https://github.com/haowjy/meridian-flow/issues/844

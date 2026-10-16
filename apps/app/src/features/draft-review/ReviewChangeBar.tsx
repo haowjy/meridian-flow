@@ -2,18 +2,18 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 
-import type { ChangeCommandState, DraftCommandFailure } from "@/client/query/draft-command-record";
+import type { ChangeFailure, DraftCommandFailure } from "@/client/query/draft-command-record";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ChangeAuthor, ChangeFailureText, discardLabel } from "./ReviewChangeParts";
 import { ReviewMessageText } from "./ReviewMessageText";
-import type { ReviewChange } from "./review-changes";
+import type { ReviewChange } from "./review-model";
 
 export type ReviewChangeBarProps = {
   change: ReviewChange;
   disabled: boolean;
 
-  failure: Extract<ChangeCommandState, { phase: "failed" }> | null;
+  failure: ChangeFailure | null;
   draftFailure?: DraftCommandFailure | null;
   onApply: () => void;
   onDiscard: () => void;
@@ -32,11 +32,11 @@ export function ReviewChangeBar({
   touch = false,
   className,
 }: ReviewChangeBarProps) {
-  const label = discardLabel(change);
+  const label = discardLabel();
   return (
     <section
       aria-label={t`Change`}
-      data-review-change-bar={change.classId}
+      data-review-change-bar={change.id}
       className={cn(
         touch
           ? "flex items-center gap-2 rounded-lg border border-border bg-card px-1 py-1 pl-2.5 text-caption shadow-card"
@@ -48,39 +48,37 @@ export function ReviewChangeBar({
         <div className="flex min-w-0 flex-1 items-center">
           <ChangeAuthor
             touch={touch}
-            overflow="menu"
-            attribution={change.attribution}
+            fit="names"
+            change={change}
             className={touch ? "min-h-11" : undefined}
           />
         </div>
-        {change.target.kind !== "display" ? (
-          <span
-            className={
-              touch
-                ? "flex shrink-0 items-center gap-3"
-                : "ml-auto flex items-center gap-1.5 whitespace-nowrap"
-            }
+        <span
+          className={
+            touch
+              ? "flex shrink-0 items-center gap-3"
+              : "ml-auto flex items-center gap-1.5 whitespace-nowrap"
+          }
+        >
+          <Button
+            variant="quiet"
+            size="xs"
+            className={touch ? "h-11 px-4 text-sm" : undefined}
+            aria-label={touch ? label : undefined}
+            disabled={disabled}
+            onClick={onDiscard}
           >
-            <Button
-              variant="quiet"
-              size="xs"
-              className={touch ? "h-11 px-4 text-sm" : undefined}
-              aria-label={touch ? label : undefined}
-              disabled={disabled}
-              onClick={onDiscard}
-            >
-              {touch ? <Trans>Discard</Trans> : label}
-            </Button>
-            <Button
-              size="xs"
-              className={touch ? "h-11 min-w-20 px-5 text-sm" : undefined}
-              disabled={disabled}
-              onClick={onApply}
-            >
-              <Trans>Apply</Trans>
-            </Button>
-          </span>
-        ) : null}
+            {touch ? <Trans>Discard</Trans> : label}
+          </Button>
+          <Button
+            size="xs"
+            className={touch ? "h-11 min-w-20 px-5 text-sm" : undefined}
+            disabled={disabled}
+            onClick={onApply}
+          >
+            <Trans>Apply</Trans>
+          </Button>
+        </span>
       </div>
       {failure || draftFailure ? (
         <p role="status" className="min-w-0 pr-2 text-meta text-destructive">

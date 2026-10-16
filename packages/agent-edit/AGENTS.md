@@ -20,7 +20,10 @@ best-effort and never mutates recovery state.
 
 - Public reads use `read()` and mutations use `write()` or response lifecycle
   APIs. The browser-safe `./yjs-mutation` subpath is only the host's pinned
-  reconstruction adapter; it does not own persistence, attribution, or undo.
+  reconstruction adapter; it does not own persistence, attribution, or inverse orchestration.
+- `./diff` is the pure review model shared by browser, server and migration:
+  Never reimplement any of it beside it: two copies of "what changed"
+  disagree. See [`.context/diff-review.md`](.context/diff-review.md).
 - Never bypass `ResponseCommitter` or infer durability from live projection.
   The journal boundary decides whether rollback discards or recovers.
 - Yjs merge is trusted. Destructive policy is report-only; it never blocks an

@@ -13,11 +13,13 @@ draft-control changes can be understood independently.
   rows and cards.
 - [Tool expands](tool-expands.md) — the three rendering tiers, the three
   channels, what each expand shows, and how a clipped expand states its bound.
-- [Turn edit receipts](turn-edit-receipts.md) — committed change records, Undo/Redo,
+- [Turn edit receipts](turn-edit-receipts.md) — committed change records
   and conversation reveal.
 - [Composer write mode](composer-write-mode.md) — the Work-scoped Draft /
   Auto-apply control, neutral shared presentation, New-chat and chat-detail adapters, and
   composer sizing.
+- A review change's chat link requests a conversation reveal of the producing turn and its `write`
+  tool call (`requestConversationReveal`), so it opens the chat at the write that made the change.
 - [Draft review](../../draft-review/.context/draft-review.md) — inline review session, pending projection,
   freshness, and draft-only tabs (owned by `features/draft-review`).
 - [Compaction surfaces](compaction-surfaces.md) — divider rows, R4 shells that

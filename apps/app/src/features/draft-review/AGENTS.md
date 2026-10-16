@@ -1,56 +1,61 @@
 # features/draft-review — changes under review
 
 Shared review state and presentation for manuscript, document-change, Work, and
-chat surfaces. One change is one server closure class, except a new document's
-whole-draft item. Chat and Work can command a draft without opening a review or
-joining a room.
+chat surfaces. A change is a group of the text diff between the draft's
+`review_base` fragment and its `prosemirror` fragment, computed in the browser;
+there is no server preview. Chat and Work can send a draft's server commands without opening a
+review or joining a room (text Discard is local and uses a headless room).
 
 ## Ownership boundary
 
-- Provider/session/controller own presented scope, selection, generation,
-  retained completion, navigation, and focus.
-- Command records/executor own per-draft claims, intent ordering, failures,
-  read fences, typed admission, and refresh ordering.
-- Room/editor adapters own eligibility, room acquisition, paint readiness, and
-  live presence; they do not own command delivery or review settlement.
-- Draft-only lifecycle owns cross-container settlement/removal. Catalog file
-  projection and change attribution remain separate query concerns.
+- Provider/session/controller own presented scope, selection, focus (a change
+  id), marks visibility, and navigation.
+- One review runtime per draft room (`review-runtime.ts`) computes the frame
+  (`projectReview(diffBlocks(base, draft))` and its `Y.Snapshot`), derives the
+  visible changes, and reconciles command records. Editors attach to it and
+  paint; a headless room feeds the same runtime for surfaces with no editor.
+- Command records/executor own Apply claims, failures, and refresh ordering.
+  Discard of a change or of a draft is not a command; it is an edit.
+- Room/editor adapters own eligibility, room acquisition, and paint readiness;
+  they do not own command delivery or settlement.
+- Draft-only lifecycle owns cross-container settlement/removal.
 
 ## Rules
 
-- Navigation consumes the row's `contextLocation`; never infer closure from an
-  empty change list or omitted row. Use generation-addressed observations.
-- No surface-local locks, optimistic hides, or completion stores. Keep command
-  Work/thread authority creation-bound (sharing Editor presentation does not
-  borrow Editor command authority), and retain completion in the open review.
-  A slow or refused chapter never locks another chapter. Archived Works stay
-  read-only, and chat generation gates chat batch controls.
-- Navigation consumes executor admission: offline clicks do not remove tabs,
-  move to another draft, or replay on reconnect. Room ownership is not editor
-  paint or writer-delivery ownership; session-layer delivery survives leaving
-  review.
-- A draft-only Editor tab is visible only in its review Work.
-- Formatting-only edits are real server-vended classes, drawn as one localized
-  line without a fake text replacement. A ready sole whole-draft item is its
-  document row (`isWholeDocumentChange`), not a file header plus a repeated
-  change. Change-row excerpts read complete ordered hunk runs, truncated only by
-  CSS, never the operations' first-hunk summaries.
-- Focus readers are pure and reconcile once per scope. Address focus requests to
-  their intended review, not the last rendered selection.
-- Accepted per-change commands keep an immutable member set and revision tokens.
-  Identical actionable stale answers get one fresh-cut retry; ambiguity and
-  permission failures do not retry. Whole-draft commands settle the current
-  server branch, and synthetic class keys never reach the server.
-- A draft-only tab is the document's one workspace tab and Editor persistence
-  strips it. The dock persists its one `reviews` entry, the only record that a
-  restored tab is draft-only; settlement removes a stale entry.
-  Apply settles it in place; gone/404 is not remote Discard evidence. Close and
-  Discard target the exact document, Work, and draft identity.
-- Review chrome and rows stay one line; only the header shows completion and
-  success has no toast. Components receive props/callbacks, while layout stays
-  in components and pane continuity stays in `PaintHold`.
+- Review is a pure function of the text. Never store review state beside the
+  document: a move, cut, paste or Ctrl+Z changes the text and the review follows.
+- Only red (removed) and green (added). Who wrote a change is the classifier's
+  byline (best-effort, silent under doubt); which conversation it belongs to is its
+  membership, which the draft dock and chat-scoped Apply and Discard read.
+- Discard is local and instant. In the Editor and the right-side dock it is one
+  Ctrl+Z step, and that surface alone undoes it: it writes the draft fragment
+  under the editor's own undo origin (`draft-discard.ts`). A surface with no
+  editor (the chat's draft dock, Work page rows, the phone change sheet) edits the
+  room it holds (`useHeadlessDiscards`) and undoes it with Undo on its row, not
+  Ctrl+Z. Neither the review nor the turn receipt has a card Undo or Redo. Only item Discard (a created, binary or
+  live-deleted document) and the Work page's Discard close on the server.
+- Every change row carries the frame it was listed from. Apply sends that
+  frame's snapshot; Discard finds the change again by pinned position and
+  content hash and is a no-op if the text under it changed. Never rebind a
+  click to the runtime's newest frame.
+- Apply is a server merge, not browser history. `overrode` is a dismissible
+  notice, not a gate.
+- No surface-local command lock, optimistic hide, or completion store; keep
+  commands bound to their creation-bound Work and thread authority. Offline
+  clicks do not remove tabs or replay on reconnect.
+- An item with no changes left stays open in its room; "No changes left" is
+  derived from the projection.
+- Room ownership is not editor paint ownership; the room survives leaving
+  review. Each editor attachment (tab, dock) owns its painter and command
+  handle, so a Discard lands in the history of the editor the writer clicked in.
+- A draft-only tab is the document's one tab and is visible only in its review
+  Work. The Editor never persists it; the dock persists its one `reviews`
+  entry, which settlement removes when stale. Only a command's own outcome
+  settles it, never a list, a metadata read or a 404.
+- Focus readers are pure and reconcile once per scope. Review chrome and rows
+  stay one line; success has no toast. Components receive props/callbacks.
 
-Read [the lifecycle reference][reference] before changing state or settlement.
+Read [the reference][reference] before changing state, Discard or Apply.
 Related decisions: [diff-based review][editable], [command outcomes][authority], and the [runtime recipes](../../../../../docs/qa/draft-review.md).
 
 [reference]: .context/draft-review.md

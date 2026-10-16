@@ -26,8 +26,9 @@ is not a claim that it passed on the current commit.
 - [Chat uploads menu](chat-uploads-menu.md): the top-bar list of a chat's files: add, open, delete, fork source and dock restore.
 - [Journal checkpoint coverage](checkpoint-coverage.md): durable admission, compaction, generation replacement and opaque cuts.
 - [Document adoption across a reload](document-adoption-reload.md): New file reloaded inside the adoption commit window, desktop and the phone's three document branches.
-- [Draft review](draft-review.md): visual editor and review workflows.
+- [Draft review](draft-review.md): review from a reply, Discard, Apply, tabs and addresses, the draft dock, the Work page and the late-arrival notice.
 - [Catalog sidebar](catalog-sidebar.md): rename, move, delete, and loaded/fresh-profile convergence.
+- [Review-base upgrade proof](review-base-upgrade.md): the populated `db:migrate` upgrade, interruption, preflight and guards.
 - [Debugging](../debugging.md): CLI reference, logs, and model-request inspection.
 - [CI quality groups](../../tools/ci/README.md): partition coverage and required-status failure propagation.
 
@@ -43,6 +44,13 @@ workloads separately. A missing prerequisite or skipped check is not a pass.
 - `pnpm smoke:prod-boot`: [production build, startup and public routes](../../tools/dev/smoke-app-prod-boot.ts). Both boot checks also run in CI; neither verifies authenticated writing.
 - `bash tools/deploy/smoke-check.sh`: [staging health](../../tools/deploy/smoke-check.sh). Requires `STAGING_URL`; without it the script exits successfully without probing.
 - `CHAT_SMOKE_TURNS=200 pnpm exec playwright test --config apps/app/e2e/playwright.chat-smoke.config.ts`: [chat virtualization](../../apps/app/e2e/chat-performance-smoke.pw.ts). Supply the owned app URL and database URL; a missing database skips the scenario. Capture the runner report and trace.
+- `pnpm exec tsx scripts/attribution-cost.ts` (from `packages/agent-edit`): [attribution classifier cost](../../packages/agent-edit/scripts/attribution-cost.ts), including the mandatory 50k-word footprint with naming budget zero (membership and recorded counts printed).
+  Prints the median `classifyChanges` time for 10,000- and 50,000-word chapters (50 changes, every paragraph
+  changed, one giant paragraph) beside the design's targets: 10,000 words in 5 ms with 50 changes and 15 ms with
+  every paragraph changed; 50,000 words in 10 ms and 50 ms. It also times the alternating `ab KEEP` shapes
+  (five 2,000-word paragraphs, one 3,000-word paragraph; 15 ms each) and prints how many changes were
+  named, so a fast run that named no one shows. Run it on an idle machine and record the numbers
+  with the commit. It replaces `review-kf16/bench.ts`, which timed the old matcher. Not a unit test.
 - [Project repository smoke](../../tools/dev/smoke-project-domain.ts) is not recommended on a shared database: it deletes a fixed project UUID before seeding. It needs run-scoped fixture ownership before becoming a safe catalog entry.
 
 Large-chapter editing, image-in-table layout and browser first-send/concurrent

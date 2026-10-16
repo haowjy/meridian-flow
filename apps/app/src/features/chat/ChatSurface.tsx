@@ -7,7 +7,7 @@
  * body and the pinned composer over it.
  *
  * The pinned footer is variable-height (composer growth + the unanchored-drafts
- * review strip), so this frame MEASURES it and exposes the height via
+ * draft dock), so this frame MEASURES it and exposes the height via
  * `ChatSurfaceBottomInsetContext`. The transcript reads that inset as its virtual
  * `paddingEnd`, so the last turn rests above the composer AND "scrolled to the end"
  * lines up exactly with it (no dead gap, no phantom scroll). Used by `ChatView`.

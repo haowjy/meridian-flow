@@ -141,8 +141,7 @@ export function createBranchAgentEditCoordinator(input: {
   function branchRows(branchId: string, entries: readonly JournalBatchAppendEntry[]) {
     return entries.flatMap((entry) => {
       const mutation = entry.mutation;
-      if (mutation?.mode !== "threadPeer")
-        throw new Error("thread_peer_commit_missing_branch_generation");
+      if (mutation?.mode !== "threadPeer") throw new Error("thread_peer_commit_missing_peer_mode");
       return (mutation.editParts ?? [entry.update]).map((updateData) => ({
         branchId,
         source: "agent" as const,
@@ -154,12 +153,6 @@ export function createBranchAgentEditCoordinator(input: {
         toolCallId: mutation.toolCallId ?? null,
         updateMeta: entry.meta ?? null,
         ...(mutation.semanticEditIr ? { semanticEditIr: mutation.semanticEditIr } : {}),
-        ...(mutation.branchJournalWatermark !== undefined
-          ? { expectedJournalWatermark: mutation.branchJournalWatermark }
-          : {}),
-        ...(mutation.branchJournalRevision !== undefined
-          ? { expectedJournalRevision: mutation.branchJournalRevision }
-          : {}),
       }));
     });
   }
@@ -210,24 +203,12 @@ export function createBranchAgentEditCoordinator(input: {
                 );
               }
               const first = pendingBatch[0];
-              if (
-                first?.mutation?.mode !== "threadPeer" ||
-                pendingBatch.some(
-                  (pending) =>
-                    pending.mutation?.mode !== "threadPeer" ||
-                    pending.mutation.branchGeneration !==
-                      (first.mutation?.mode === "threadPeer"
-                        ? first.mutation.branchGeneration
-                        : undefined),
-                )
-              ) {
-                throw new Error("thread_peer_commit_missing_branch_generation");
+              if (pendingBatch.some((pending) => pending.mutation?.mode !== "threadPeer")) {
+                throw new Error("thread_peer_commit_missing_peer_mode");
               }
-              const mutation = first.mutation;
               const committed = await owned.commitSegmentRows({
                 branchId: workDraftBranchId,
                 sourceDoc: doc,
-                expectedGeneration: mutation.branchGeneration,
                 rows: branchRows(workDraftBranchId, pendingBatch),
               });
               if (!committed) return result;
@@ -272,33 +253,20 @@ export function createBranchAgentEditCoordinator(input: {
         const result = await owned.withStagedRows(
           branchId,
           async (doc, snapshot) => {
-            if (request.helperCut.generation > snapshot.generation)
-              throw new Error("Response helper belongs to a future draft generation");
-            const retired: Uint8Array[] = [];
             const inverses: Uint8Array[] = [];
             const planning = new Y.Doc({ gc: false });
             try {
               Y.applyUpdate(planning, request.helperCut.state);
               const cut = Y.snapshot(planning);
-              // Every intervening generation can contain an inverse; the old cut
-              // excludes already observed removals without a second sequence fence.
-              for (
-                let generation = request.helperCut.generation;
-                generation <= snapshot.generation;
-                generation++
-              ) {
-                const rows = await owned.listHelperHistory({ branchId, generation });
-                for (const row of rows) {
-                  const observed = Y.snapshotContainsUpdate(cut, row.updateData);
-                  if (
-                    generation === request.helperCut.generation &&
-                    generation < snapshot.generation &&
-                    observed
-                  )
-                    retired.push(row.updateData);
-                  if (!observed && row.editKind && row.editKind !== "write")
-                    inverses.push(row.updateData);
-                }
+              // The cut excludes already observed removals without a second sequence fence.
+              const rows = await owned.listHelperHistory({ branchId });
+              for (const row of rows) {
+                if (
+                  !Y.snapshotContainsUpdate(cut, row.updateData) &&
+                  row.editKind !== undefined &&
+                  row.editKind !== "write"
+                )
+                  inverses.push(row.updateData);
               }
             } finally {
               planning.destroy();
@@ -307,7 +275,6 @@ export function createBranchAgentEditCoordinator(input: {
               doc,
               request.sourceDoc,
               request.entries,
-              retired,
               request.helperCut.state,
               inverses,
             );
@@ -317,7 +284,7 @@ export function createBranchAgentEditCoordinator(input: {
                 keptEntries: kept,
                 rejectedWrites: replay.rejectedWrites,
                 helperState: Y.encodeStateAsUpdate(doc),
-                helperCut: { generation: snapshot.generation, state: snapshot.state },
+                helperCut: { state: snapshot.state },
                 beforeState: snapshot.state,
               },
               rows: branchRows(branchId, kept),
@@ -522,10 +489,7 @@ export type BranchLookupWithSnapshots = WorkDraftLookup &
   BranchResolver & {
     getBranch(
       branchId: string,
-    ): Promise<Pick<
-      BranchSnapshot,
-      "upstreamBranchId" | "draftId" | "generation" | "state"
-    > | null>;
+    ): Promise<Pick<BranchSnapshot, "upstreamBranchId" | "draftId" | "state"> | null>;
   };
 
 type BranchPendingJournalEntries = {
@@ -632,10 +596,9 @@ async function concurrentUpstreamJournalRows(
   if (!upstreamBranchId) return { rows: [] };
   return (owned ? owned.read : input.branchCoordinator.readBranch)(
     upstreamBranchId,
-    async (doc, snapshot) => {
+    async (doc) => {
       const rows = await (owned ? owned.listConcurrentRows : journalRows.listConcurrentJournalRows)(
         upstreamBranchId,
-        snapshot.generation,
         { afterJournalId, documentId },
       );
       return { rows, upstreamState: Y.encodeStateAsUpdate(doc) };

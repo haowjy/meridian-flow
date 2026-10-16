@@ -41,13 +41,8 @@ export type RefusedResponseDocument =
       reason: StagedWriteRejectionReason;
     };
 
-/**
- * A model call's outcome. An undo or redo that reversed some of its writes but
- * was refused for others names the refused ones; the tool writes the copy.
- */
-export type RoutedWriteOutcome = WriteOutcome & {
-  refusedWrites?: { writeIds: string[]; denial: FileAccessDenied }[];
-};
+/** A model call's outcome. */
+export type RoutedWriteOutcome = WriteOutcome;
 
 /** One reply's save across every destination it wrote (D42). */
 export type ResponseSaveResult = ResponseCommitSuccessResult & {

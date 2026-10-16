@@ -51,7 +51,6 @@ import { pinStaged, type ReplyRecord, type ReplySaveFences } from "./reply-save-
 type PulledThreadPeer = {
   peerBranchId: string;
   upstreamBranchId: string;
-  branchGeneration: number;
   afterJournalId?: number;
   liveJournalSeq?: number;
   attributionBaseline: Uint8Array;
@@ -70,6 +69,8 @@ export function createThreadPeerCorePool(input: {
   drafts: Pick<Drafts, "viewForWork" | "ensureActiveForWrite" | "shareActive">;
   branches: Pick<ApplicationBranchStore, "getBranch">;
   fences: ReplySaveFences;
+  /** Which documents are hidden creates (§5.2); absent, every closed upstream reads as a discarded document. */
+  hiddenDocumentIds?(ids: readonly DocumentId[]): Promise<ReadonlySet<DocumentId>>;
   liveUtilityCore: LiveAgentEditCore;
   /**
    * `viewFor` is the view a command on this thread's core spells in: the one
@@ -223,7 +224,6 @@ export function createThreadPeerCorePool(input: {
         mode: "threadPeer" as const,
         peerBranchId: pulled.peerBranchId,
         upstreamBranchId: pulled.upstreamBranchId,
-        branchGeneration: pulled.branchGeneration,
         afterJournalId: pulled.afterJournalId ?? 0,
         liveJournalSeq: pulled.liveJournalSeq,
         attributionBaseline: pulled.attributionBaseline,
@@ -317,8 +317,7 @@ export function createThreadPeerCorePool(input: {
     // before cache maintenance yields, so that owner's lifecycle rejects late staging.
     record?.participants.add(core);
     await evictIdleCores();
-    const immediateInverse =
-      command.command === "undo" || command.command === "redo" || command.command === "revert";
+    const immediateInverse = command.command === "revert";
     const draftView: LinkView | undefined =
       pinned || destination.kind !== "draft" || immediateInverse
         ? undefined
@@ -415,12 +414,20 @@ export function createThreadPeerCorePool(input: {
     if (view.kind === "draft" && !(await input.drafts.shareActive(view.draftId)))
       return "discarded_draft";
     if (!lost) return undefined;
-    const gone = async (branchId: string) => {
+    const closed = async (branchId: string) => {
       const branch = await input.branches.getBranch(branchId);
-      return !branch || branch.status === "closed";
+      return { branch, gone: !branch || branch.status === "closed" };
     };
-    if (await gone(cause.upstreamBranchId)) return "discarded_document";
-    return (await gone(cause.peerBranchId)) ? "discarded_edit" : undefined;
+    const upstream = await closed(cause.upstreamBranchId);
+    if (upstream.gone) {
+      // A closed upstream is a discarded document only while its document is a hidden create (§5.2).
+      const documentId = upstream.branch?.documentId;
+      const hidden = documentId ? await input.hiddenDocumentIds?.([documentId]) : undefined;
+      return documentId && hidden && !hidden.has(documentId)
+        ? "discarded_edit"
+        : "discarded_document";
+    }
+    return (await closed(cause.peerBranchId)).gone ? "discarded_edit" : undefined;
   }
 
   /**

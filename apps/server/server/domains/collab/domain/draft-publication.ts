@@ -1,38 +1,36 @@
 /**
- * Apply as one publication (contract §11): a draft's selected items become one batch on
- * the settlement seam, carrying the `draft_tree` payload the tree step publishes with the
- * text. `applyItems` stages through `pushBranchesToLive` and maps per-item results; the
- * step itself (tokens, holds, vacate and install, arrivals, history, row drop, close) is `adapters/drizzle-draft-tree-step.ts`.
- * Every Apply caller goes through here: the per-document route, per-change Apply (its rows
- * chosen under the branch lease, §4.1), and Apply all. Apply never closes the
- * draft (§2.4). A writer's command is claimed in the staging transaction and settled by the
- * tree step in completion (§4.6).
+ * Apply as one publication (contract §2): a draft's chosen items become one batch on the
+ * settlement seam. Each text item is a content member (a merge of the change the writer saw into
+ * live's current text), staged by `pushBranchesToLive`; the tree work (reveals, restores, holds,
+ * arrivals, row drops) rides in the `draft_tree` payload and is the step in
+ * `adapters/drizzle-draft-tree-step.ts`. Every Apply caller goes through `applyItems`: the
+ * per-document route (the whole item, or its named changes) and Apply all. Apply never closes the
+ * draft (§2.4).
+ *
+ * The command is answered from its stored row. The tree step stores the terminal result in the
+ * batch's completion; refusals decided before anything stages (`gone`, `stale`, `whole_item`) are
+ * recorded here, so a resend never turns a refusal into an Apply (§1.4).
  */
-import type { DraftId, UserId, WorkId } from "@meridian/contracts";
-import type { DraftApplyAllResponse, DraftApplyItemResult } from "@meridian/contracts/drafts";
-import type { BranchSnapshot } from "./branch-coordinator.js";
+import type { DocumentId, DraftId, UserId, WorkId } from "@meridian/contracts";
 import type {
-  BranchJournalRow,
-  BranchPushService,
-  ReviewRowSelection,
-  SelectedPublication,
-} from "./branch-push-contracts.js";
-import { PublicationLeasesChangedError } from "./branch-push-transition.js";
+  DraftApplyAllResult,
+  DraftCommandOutcome,
+  DraftDecidedOutcome,
+} from "@meridian/contracts/drafts";
+import type { BranchPushService } from "./branch-push-contracts.js";
 import { collabHook } from "./collab-test-hooks.js";
-import type { DraftCommandEnvelope } from "./draft-commands.js";
-import type { DraftReviewItem, DraftReviewItems } from "./draft-review-items.js";
+import type { ContentApplyRequest } from "./draft-apply.js";
+import type { DraftCommandEnvelope, DraftCommands } from "./draft-commands.js";
+import type { DraftReviewIdentity, ResolvedReviewItem } from "./draft-review-identity.js";
 import {
   DRAFT_TREE_STEP,
   type DraftItemKey,
   type DraftTreePayload,
+  type DraftTreePayloadItem,
   encodeDraftTreePayload,
-  type HeldReason,
-  readDraftTreeHold,
-  readDraftTreeNotes,
   readDraftTreeRefusal,
 } from "./draft-tree-payload.js";
 import type { Drafts } from "./drafts.js";
-import type { PublicationRefusal } from "./ports/settlement-publication.js";
 
 export {
   type ApplyNote,
@@ -43,38 +41,23 @@ export {
 } from "./draft-tree-payload.js";
 
 /**
- * What the writer was shown of one item. A token absent (the legacy per-document Apply
- * without tokens) is filled from the read `applyItems` makes, so
- * what publishes is what that read saw; a selection with no tokens of its own that turns
- * out stale reads again once.
+ * What the writer asked of one item. `locationToken` is the tree token from the list row; absent,
+ * the server fills it from its own read. `content` absent means the whole item.
  */
 export type ApplyItemRef = {
   itemKey: DraftItemKey;
   locationToken?: string;
-  liveTextToken?: string;
-  branchGenerationToken?: string;
+  content?: ContentApplyRequest;
 };
-
-export type ApplySelection = { kind: "rendered"; items: readonly ApplyItemRef[] };
-
-/** Per-item and whole results are the wire's own types (`@meridian/contracts/drafts`). */
-export type ApplyItemResult = DraftApplyItemResult;
-export type ApplyResult = Exclude<DraftApplyAllResponse, { status: "pending" }>;
 
 /** The writer's command riding on a publication: claimed at staging, answered at completion. */
 export type ApplyCommand = { envelope: DraftCommandEnvelope; shape: "item" | "all" | "changes" };
 
-/** A command's id already has an effect: the caller answers the stored command. */
-export type ApplyOutcome = ApplyResult | { status: "command_exists" };
-
-/** What per-change Apply selected under the lease: its rows, fence and rendered basis. */
-export type ChangeSelection = ReviewRowSelection & {
-  operationIds: readonly string[];
-  closureClassIds: readonly string[];
-  /** The rendered basis the selection validated the client's token against (§4.1). */
-  locationToken: string;
-  branchGenerationToken: string;
-};
+/**
+ * `settled`: the command's row holds its answer (or its batch is staged and will, read the row).
+ * `command_exists`: the id already has an effect and the caller answers that row.
+ */
+export type ApplyOutcome = { status: "settled" } | { status: "command_exists" };
 
 /** A selection that names an item twice: refused before anything registers or stages. */
 export class DuplicateApplyItemError extends Error {
@@ -84,257 +67,174 @@ export class DuplicateApplyItemError extends Error {
   }
 }
 
-/** The staged Apply belongs to recovery; the transport must acknowledge acceptance (F27). */
-export class DraftApplyPendingError extends Error {
-  constructor(
-    readonly draftId: DraftId,
-    cause: PublicationLeasesChangedError,
-  ) {
-    super("The draft is finishing in the background.", { cause });
-    this.name = "DraftApplyPendingError";
-  }
-}
-
 export interface DraftPublication {
   applyItems(input: {
     workId: WorkId;
     draftId: DraftId;
-    selection: ApplySelection;
-    userId?: UserId;
-    command?: ApplyCommand;
-    signal?: AbortSignal;
-  }): Promise<ApplyOutcome>;
-  /** One item's selected changes, published as exact rows; the selection runs under the lease. */
-  applyChanges(input: {
-    workId: WorkId;
-    item: DraftReviewItem;
+    items: readonly ApplyItemRef[];
     userId: UserId;
     command: ApplyCommand;
-    select(branch: BranchSnapshot, rows: BranchJournalRow[]): Promise<ChangeSelection>;
     signal?: AbortSignal;
   }): Promise<ApplyOutcome>;
 }
 
 export function createDraftPublication(deps: {
   drafts: Pick<Drafts, "byIds">;
-  reviewItems: Pick<DraftReviewItems, "list" | "withLiveTextTokens">;
-  push: Pick<BranchPushService, "pushBranchesToLive">;
+  identity: Pick<DraftReviewIdentity, "resolveReviewItem">;
+  commands: Pick<DraftCommands, "record">;
+  push: Pick<BranchPushService, "pushBranchesToLive" | "settleUnfinished">;
 }): DraftPublication {
   async function activeDraft(draftId: DraftId, workId: WorkId) {
     const [draft] = await deps.drafts.byIds([draftId]);
     return draft?.status === "active" && draft.originWorkId === workId ? draft : null;
   }
 
-  /** Each selected item with every token the payload needs: the ref's, else the read's. */
-  async function withTokens(selected: readonly { ref: ApplyItemRef; item: DraftReviewItem }[]) {
-    const unread = selected
-      .filter(({ ref }) => ref.liveTextToken === undefined)
-      .map(({ item }) => item);
-    const read = new Map(
-      (await deps.reviewItems.withLiveTextTokens(unread)).map((item) => [item.itemKey, item]),
-    );
-    return selected.map(({ ref, item }) => ({
-      itemKey: item.itemKey,
-      documentId: item.documentId,
-      draftBranchId: item.draftBranchId,
-      origin: item.origin,
-      locationToken: ref.locationToken ?? item.tokens.locationToken,
-      liveTextToken: ref.liveTextToken ?? read.get(item.itemKey)?.tokens.liveTextToken ?? null,
-      branchGenerationToken: ref.branchGenerationToken ?? item.tokens.branchGenerationToken,
-      selection: null,
-    }));
+  /** The refusal as the command's own answer: item routes name the item, Apply all the draft. */
+  function refusalResult(
+    command: ApplyCommand,
+    draftId: DraftId,
+    status: "gone" | "stale" | "whole_item",
+    itemKeys: readonly DraftItemKey[],
+  ): DraftCommandOutcome {
+    if (command.shape === "all") {
+      if (status === "stale") {
+        return {
+          status: "stale",
+          draftId,
+          staleItemKeys: [...itemKeys],
+        } satisfies DraftApplyAllResult;
+      }
+      return { status: "gone", draftId };
+    }
+    const itemKey = itemKeys[0] ?? "";
+    return status === "gone" ? { status, draftId, itemKey } : { status, draftId, itemKey };
   }
 
   /** What one pass publishes: built fresh each pass, so a retry re-reads the draft. */
   interface PublicationPlan {
-    branchIds: string[];
-    itemKeys: string[];
-    payload: DraftTreePayload;
-    selected?: SelectedPublication;
+    members: { branchId: string; itemKey: DraftItemKey; request: ContentApplyRequest }[];
+    itemKeys: DraftItemKey[];
+    items: DraftTreePayloadItem[];
     /** A stale answer from a tokenless selection was read before a change: read again, once. */
     rereadStale: boolean;
-  }
-
-  /**
-   * One publication loop: stage, push, settle the answer. A tokenless selection whose
-   * tokens went stale is planned again, once.
-   */
-  async function publish(input: {
-    draftId: DraftId;
-    userId?: UserId;
-    command?: ApplyCommand;
-    signal?: AbortSignal;
-    plan(): Promise<PublicationPlan | ApplyOutcome>;
-  }): Promise<ApplyOutcome> {
-    const { draftId } = input;
-    let readAgain = false;
-    for (;;) {
-      const plan = await input.plan();
-      if ("status" in plan) return plan;
-      await collabHook("applyItems.beforeStaging");
-      const pushed = await deps.push
-        .pushBranchesToLive({
-          branchIds: plan.branchIds,
-          payloads: { [DRAFT_TREE_STEP]: encodeDraftTreePayload(plan.payload) },
-          ...(input.command ? { command: input.command.envelope } : {}),
-          ...(input.userId ? { pushedByUserId: input.userId } : {}),
-          ...(input.signal ? { signal: input.signal } : {}),
-          ...(plan.selected ? { selected: plan.selected } : {}),
-        })
-        .catch((cause: unknown) => {
-          if (cause instanceof PublicationLeasesChangedError) {
-            throw new DraftApplyPendingError(draftId, cause);
-          }
-          throw cause;
-        });
-      if (pushed.commandExists) return { status: "command_exists" };
-      if (pushed.refused) {
-        const refusal = readDraftTreeRefusal(pushed.refused);
-        if (!refusal) throw new Error(`Apply was refused: ${pushed.refused.code}`);
-        if (refusal.kind === "gone") return { status: "gone", draftId };
-        if (refusal.kind === "stale" && plan.rereadStale && !readAgain) {
-          readAgain = true;
-          continue;
-        }
-        return {
-          status: "stale",
-          draftId,
-          staleItemKeys: refusal.kind === "stale" ? [...refusal.itemKeys] : plan.itemKeys,
-        };
-      }
-      const held = new Map(pushed.heldItems.map((hold) => [hold.itemKey, hold.reason]));
-      const notes = new Map(
-        pushed.outcomes.map((outcome) => [outcome.itemKey, readDraftTreeNotes(outcome.detail)]),
-      );
-      return {
-        status: "completed",
-        draftId,
-        items: plan.itemKeys.map((itemKey): ApplyItemResult => {
-          const reason = held.get(itemKey);
-          return reason
-            ? { itemKey, status: "held", reason: heldReason(reason) }
-            : { itemKey, status: "applied", notes: notes.get(itemKey) ?? [] };
-        }),
-      };
-    }
+    documentIds: DocumentId[];
   }
 
   return {
     async applyItems(input) {
-      const { draftId } = input;
+      const { draftId, command } = input;
       const seen = new Set<string>();
-      const twice = input.selection.items
+      const twice = input.items
         .map((ref) => ref.itemKey)
         .filter((key) => seen.size === seen.add(key).size);
       if (twice.length > 0) throw new DuplicateApplyItemError([...new Set(twice)]);
-      if (!(await activeDraft(draftId, input.workId))) return { status: "gone", draftId };
-      const { selection } = input;
-      const tokenless = selection.items.every(
-        (ref) =>
-          ref.locationToken === undefined &&
-          ref.liveTextToken === undefined &&
-          ref.branchGenerationToken === undefined,
-      );
-      return publish({
-        draftId,
-        ...(input.userId ? { userId: input.userId } : {}),
-        ...(input.command ? { command: input.command } : {}),
-        ...(input.signal ? { signal: input.signal } : {}),
-        async plan() {
-          const current = await deps.reviewItems.list(draftId);
-          const byKey = new Map(current.map((item) => [item.itemKey, item]));
-          const refs = selection.items;
-          // An item the writer saw that is no longer pending (applied, discarded) is stale.
-          const missing = refs.filter((ref) => !byKey.has(ref.itemKey)).map((ref) => ref.itemKey);
-          if (missing.length > 0) return { status: "stale", draftId, staleItemKeys: missing };
-          const chosen = refs.map((ref) => ({
-            ref,
-            item: byKey.get(ref.itemKey) as DraftReviewItem,
-          }));
-          const items = await withTokens(chosen);
-          const itemKeys = items.map((item) => item.itemKey);
-          return {
-            branchIds: [...new Set(chosen.flatMap(({ item }) => item.draftBranchId ?? []))].sort(),
-            itemKeys,
-            rereadStale: tokenless,
-            payload: {
-              draftId,
-              command: input.command ? { shape: input.command.shape, itemKeys } : null,
-              items,
-            },
-          };
-        },
-      });
-    },
-
-    async applyChanges(input) {
-      const { item } = input;
-      const { draftId } = item;
-      const branchId = item.draftBranchId;
-      if (!branchId || !(await activeDraft(draftId, input.workId))) {
-        return { status: "gone", draftId };
-      }
-      const entry = {
-        itemKey: item.itemKey,
-        documentId: item.documentId,
-        draftBranchId: branchId,
-        origin: item.origin,
-        locationToken: item.tokens.locationToken,
-        liveTextToken: null,
-        branchGenerationToken: item.tokens.branchGenerationToken,
-        selection: { operationIds: [], closureClassIds: [] },
+      const record = async (
+        status: "gone" | "stale" | "whole_item",
+        itemKeys: readonly DraftItemKey[],
+      ): Promise<ApplyOutcome> => {
+        await deps.commands.record(
+          command.envelope,
+          refusalResult(command, draftId, status, itemKeys),
+        );
+        return { status: "settled" };
       };
-      const payload = (chosen?: ChangeSelection) =>
-        ({
-          draftId,
-          command: { shape: input.command.shape, itemKeys: [item.itemKey] },
-          items: [
-            chosen
-              ? {
-                  ...entry,
-                  locationToken: chosen.locationToken,
-                  branchGenerationToken: chosen.branchGenerationToken,
-                  selection: {
-                    operationIds: [...chosen.operationIds],
-                    closureClassIds: [...chosen.closureClassIds],
+      const itemKeys = input.items.map((ref) => ref.itemKey);
+      if (!(await activeDraft(draftId, input.workId))) return record("gone", itemKeys);
+
+      const tokenless = input.items.every((ref) => ref.locationToken === undefined);
+      let readAgain = false;
+      for (;;) {
+        // Resolved through the resolver: an item the writer emptied locally after the list
+        // rendered is unlisted but still addressable, and plans normally (§4.3).
+        const resolved = await Promise.all(
+          input.items.map(async (ref) => ({
+            ref,
+            item: await deps.identity.resolveReviewItem({
+              workId: input.workId,
+              itemKey: ref.itemKey,
+            }),
+          })),
+        );
+        const missing = resolved.filter(({ item }) => !item).map(({ ref }) => ref.itemKey);
+        if (missing.length > 0) return record("stale", missing);
+        const chosen = resolved.map(({ ref, item }) => ({
+          ref,
+          item: (item as ResolvedReviewItem).item,
+        }));
+        // A change of a created, binary or live-deleted item is the whole item: refused.
+        const whole = chosen.find(
+          ({ ref, item }) => ref.content?.scope === "changes" && item.wholeItem,
+        );
+        if (whole) return record("whole_item", [whole.ref.itemKey]);
+
+        const plan: PublicationPlan = {
+          members: chosen.flatMap(({ ref, item }) =>
+            item.draftBranchId
+              ? [
+                  {
+                    branchId: item.draftBranchId,
+                    itemKey: item.itemKey,
+                    request: ref.content ?? ({ scope: "item" } as const),
                   },
-                }
-              : entry,
-          ],
-        }) satisfies DraftTreePayload;
-      return publish({
-        draftId,
-        userId: input.userId,
-        command: input.command,
-        ...(input.signal ? { signal: input.signal } : {}),
-        async plan() {
+                ]
+              : [],
+          ),
+          itemKeys,
+          items: chosen.map(({ ref, item }) => ({
+            itemKey: item.itemKey,
+            documentId: item.documentId,
+            draftBranchId: item.draftBranchId,
+            origin: item.origin,
+            locationToken: ref.locationToken ?? item.tokens.locationToken,
+          })),
+          rereadStale: tokenless,
+          documentIds: chosen.flatMap(({ item }) => (item.draftBranchId ? [item.documentId] : [])),
+        };
+        // Settle what an earlier Apply left staged on these documents before any lease is
+        // held: its settlement takes the same leases, and the lease lock is not re-entrant.
+        // Whatever stays unfinished is decided again under the leases.
+        if (plan.documentIds.length > 0) {
+          await deps.push.settleUnfinished(plan.documentIds, input.signal);
+        }
+
+        const payload = (decided: readonly DraftDecidedOutcome[]): DraftTreePayload => {
+          const dropped = new Set(
+            decided
+              .filter((outcome) => outcome.status === "failed" || outcome.status === "not_found")
+              .map((outcome) => outcome.itemKey),
+          );
           return {
-            branchIds: [branchId],
-            itemKeys: [item.itemKey],
-            rereadStale: false,
-            payload: payload(),
-            selected: {
-              branchId,
-              select: async (branch, rows) => {
-                const chosen = await input.select(branch, rows);
-                return {
-                  journalIds: chosen.journalIds,
-                  expectedLiveRevision: chosen.expectedLiveRevision,
-                  payloads: {
-                    [DRAFT_TREE_STEP]: encodeDraftTreePayload(payload(chosen)),
-                  },
-                };
-              },
-            },
+            draftId,
+            command: { shape: command.shape, itemKeys: plan.itemKeys, decided: [...decided] },
+            // A failed or unfound item's tree effects are excluded: nothing is revealed without
+            // the content its Apply asked for.
+            items: plan.items.filter((item) => !dropped.has(item.itemKey)),
           };
-        },
-      });
+        };
+        await collabHook("applyItems.beforeStaging");
+        const pushed = await deps.push.pushBranchesToLive({
+          members: plan.members,
+          payloads: { [DRAFT_TREE_STEP]: encodeDraftTreePayload(payload([])) },
+          finalizePayloads: (decided) => ({
+            [DRAFT_TREE_STEP]: encodeDraftTreePayload(payload(decided)),
+          }),
+          command: command.envelope,
+          pushedByUserId: input.userId,
+          ...(input.signal ? { signal: input.signal } : {}),
+        });
+        if (pushed.commandExists) return { status: "command_exists" };
+        if (pushed.refused) {
+          const refusal = readDraftTreeRefusal(pushed.refused);
+          if (!refusal) throw new Error(`Apply was refused: ${pushed.refused.code}`);
+          if (refusal.kind === "gone") return record("gone", itemKeys);
+          if (refusal.kind === "stale" && plan.rereadStale && !readAgain) {
+            readAgain = true;
+            continue;
+          }
+          return record("stale", refusal.itemKeys.length > 0 ? refusal.itemKeys : plan.itemKeys);
+        }
+        return { status: "settled" };
+      }
     },
   };
-}
-
-function heldReason(reason: PublicationRefusal): HeldReason {
-  const held = readDraftTreeHold(reason);
-  if (!held) throw new Error(`Apply held an item for a reason it doesn't know: ${reason.code}`);
-  return held;
 }

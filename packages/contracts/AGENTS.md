@@ -7,8 +7,9 @@ React, or provider behavior.
 
 ## Mental model
 
-- `drafts/` is review-card vocabulary. The durable backend primitive is a
-  branch, not a legacy draft table; see [`src/drafts/AGENTS.md`](src/drafts/AGENTS.md)
+- `drafts/` is the review wire: the Work draft list, item metadata, and the Apply
+  and Discard commands. The durable backend primitive is a text branch, which
+  never crosses the wire; see [`src/drafts/AGENTS.md`](src/drafts/AGENTS.md)
   and its [context](src/drafts/.context/CONTEXT.md).
 - Protocol unions are canonical definitions. WebSocket classifiers use the
   `WS_CLOSE` registry, pending transcript kinds use `PENDING_PLACEHOLDER_ROLES`,

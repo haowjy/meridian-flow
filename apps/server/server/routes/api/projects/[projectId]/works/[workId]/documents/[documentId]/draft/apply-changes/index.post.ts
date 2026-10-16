@@ -1,10 +1,10 @@
-/** Apply the selected dependency-closed classes of one item. */
+/** Apply the named changes of one item: 200 applied, 202 pending, 409 held, stale, unfound or failed. */
 import type { DocumentId, ProjectId, WorkId } from "@meridian/contracts/runtime";
 import { defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import { requireAppUser } from "../../../../../../../../../../lib/auth-gate.js";
 import {
   handleApplyWorkDraftChangesRequest,
-  parseDraftApplySelection,
+  parseDraftApplyChanges,
   selectDraftRouteServices,
 } from "../../../../../../../../../../lib/draft-review-route.js";
 
@@ -15,7 +15,7 @@ export default defineEventHandler(async (event) => {
     workId: (getRouterParam(event, "workId") ?? "") as WorkId,
     documentId: (getRouterParam(event, "documentId") ?? "") as DocumentId,
     userId: user.userId,
-    request: parseDraftApplySelection(await readBody(event)),
+    request: parseDraftApplyChanges(await readBody(event)),
     signal: event.req.signal,
   });
   event.res.status = result.httpStatus;

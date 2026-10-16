@@ -14,7 +14,12 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
 import { MoreHorizontal } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  draftCommandFailure,
+  draftOverrode,
+  useDraftCommandRecords,
+} from "@/client/query/draft-command-record";
 import { useWorkDrafts } from "@/client/query/useWorkDrafts";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
@@ -24,6 +29,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useHeadlessDiscards } from "@/features/draft-review/useHeadlessDiscards";
+import { useRetainedFiles } from "@/features/draft-review/useRetainedFiles";
 import { useWorkDraftCommands } from "@/features/draft-review/useWorkDraftCommands";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { RuledList } from "../RuledList";
@@ -43,8 +50,31 @@ export function WorkChanges({
   const workId = work.id;
   const controller = useWorkDraftCommands({ projectId, work });
   const drafts = useWorkDrafts(projectId, workId);
+  const discards = useHeadlessDiscards(projectId, workId);
   const touch = usePhoneShell() === true;
-  const files = drafts.files ?? [];
+  const listed = drafts.files ?? [];
+  const records = useDraftCommandRecords();
+  // A file the server stops listing stays while it holds a failure or an overwrite notice, until that is
+  // dismissed or resolved (the writer must not see a refused Apply vanish as if it had succeeded), and while
+  // one of its Discards can still be undone. The row is the list's own last view of it.
+  const undoable = useMemo(
+    () => new Set(discards.entries.map((entry) => entry.subject.itemKey)),
+    [discards.entries],
+  );
+  const noticed = useRetainedFiles(
+    `${projectId}:${workId}`,
+    listed,
+    (file) => file.draft.itemKey,
+    (file) => {
+      const draft = { projectId, workId, documentId: file.documentId, itemKey: file.draft.itemKey };
+      return (
+        draftCommandFailure(records, draft) !== null ||
+        draftOverrode(records, draft).length > 0 ||
+        undoable.has(file.draft.itemKey)
+      );
+    },
+  );
+  const files = [...listed, ...noticed];
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const hasFiles = files.length > 0;
   useEffect(() => {
@@ -53,7 +83,7 @@ export function WorkChanges({
   const visible = files.filter((file) =>
     matchesSearch(file.documentName || file.contextLocation?.path || ""),
   );
-  if (files.length === 0 && drafts.status === "error") {
+  if (listed.length === 0 && discards.entries.length === 0 && drafts.status === "error") {
     return (
       <WorkFileGroup label={t`Changes to review`}>
         <InlineErrorRow
@@ -66,7 +96,10 @@ export function WorkChanges({
   }
   if (visible.length === 0) return null;
 
-  const everyDraft = files.map((file) => ({
+  // Apply all and Discard all act on the Work's listed items, never on a row only kept for its Undo. Discard
+  // all is one `discard_draft`: the draft closes on the server, so a reply still writing opens a new draft
+  // instead of adding to one the writer discarded (per-row Discard keeps its Undo; this one is confirmed first).
+  const everyDraft = listed.map((file) => ({
     documentId: file.documentId,
     itemKey: file.draft.itemKey,
   }));
@@ -137,18 +170,21 @@ export function WorkChanges({
       ) : null}
       <RuledList
         className="-mx-2"
-        rows={visible.map((file) => ({
-          key: file.documentId,
-          node: (
-            <WorkChangeFile
-              projectId={projectId}
-              workId={workId}
-              file={file}
-              controller={controller}
-              touch={touch}
-            />
-          ),
-        }))}
+        rows={[
+          ...visible.map((file) => ({
+            key: file.documentId,
+            node: (
+              <WorkChangeFile
+                projectId={projectId}
+                workId={workId}
+                file={file}
+                controller={controller}
+                discards={discards}
+                touch={touch}
+              />
+            ),
+          })),
+        ]}
       />
     </WorkFileGroup>
   );

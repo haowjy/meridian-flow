@@ -1,4 +1,6 @@
 /** Checked replay of whole response writes onto the current draft, without stale helper bytes. */
+
+import { DRAFT_SERVER_CLIENT_ID } from "@meridian/agent-edit/diff";
 import {
   cloneYDoc,
   decodeUpdateForDependencies,
@@ -10,17 +12,15 @@ import {
   structDependencies,
   suppliedRanges,
 } from "@meridian/agent-edit/integration";
-import { findItem, itemIsVisible } from "@meridian/agent-edit/yjs-mutation";
+import { itemIsVisible } from "@meridian/agent-edit/yjs-mutation";
 import * as Y from "yjs";
 import { assertNoPendingIntegration, BranchPeerIntegrationError } from "./branch-push-plan.js";
-import { subtractRanges } from "./branch-review-closure.js";
 
 /** Mutates only this disposable candidate; caller persists it under its existing branch lock. */
 export function reconcileStagedBranchWrites(
   current: Y.Doc,
   helper: Y.Doc,
   entries: readonly JournalBatchAppendEntry[],
-  retiredUpdates: readonly Uint8Array[],
   planningState: Uint8Array,
   inverseUpdates: readonly Uint8Array[] = [],
 ): {
@@ -32,9 +32,6 @@ export function reconcileStagedBranchWrites(
   const rows = entries.map((entry, seq) => ({ entry, seq, updateData: entry.update }));
   let dropped = new Set<(typeof rows)[number]>();
   const reasons = new Map<string, StagedWriteRejectionReason>();
-  const retiredIdentities = retiredUpdates.flatMap((update) =>
-    suppliedRanges(decodeUpdateForDependencies(update)),
-  );
   const inverseDeletes = inverseUpdates.flatMap((update) =>
     deleteRanges(decodeUpdateForDependencies(update)),
   );
@@ -50,12 +47,11 @@ export function reconcileStagedBranchWrites(
       try {
         for (const row of rows) {
           if (dropped.has(row)) continue;
-          // Absence alone is normal peer concurrency. Only retirement or an
-          // inverse since this cut revokes planning-visible identities. Retired
-          // structs are absent; ordinary deletions of refork survivors retain them.
+          // Absence alone is normal peer concurrency. Only an inverse since this cut
+          // revokes planning-visible identities; the writer's own deletions never do.
           const decoded = decodeUpdateForDependencies(row.updateData);
           const touched = [...deleteRanges(decoded), ...structDependencies(decoded)];
-          const lostIn = (evidence: typeof touched, retirement = false) =>
+          const lostIn = (evidence: typeof touched) =>
             touched.some((range) =>
               evidence.some((removed) => {
                 if (!rangesOverlap(range, removed)) return false;
@@ -63,18 +59,13 @@ export function reconcileStagedBranchWrites(
                 const end = Math.min(range.clock + range.length, removed.clock + removed.length);
                 for (let clock = start; clock < end; clock++) {
                   const id = Y.createID(range.client, clock);
-                  if (
-                    itemIsVisible(planning, id) &&
-                    (retirement ? !findItem(current, id) : !itemIsVisible(current, id))
-                  )
-                    return true;
+                  if (itemIsVisible(planning, id) && !itemIsVisible(current, id)) return true;
                 }
                 return false;
               }),
             );
-          const retired = lostIn(retiredIdentities, true);
-          if (retired || lostIn(inverseDeletes)) {
-            reason = retired ? "discard" : "inverse";
+          if (lostIn(inverseDeletes)) {
+            reason = "inverse";
             failed = row;
             break;
           }
@@ -114,25 +105,55 @@ export function reconcileStagedBranchWrites(
   for (const row of kept) Y.applyUpdate(current, row.updateData);
   assertNoPendingIntegration(current, "response_replay", []);
 
-  // The helper may retain only generation-retired rows and rejected writes.
+  // The helper may retain only rejected writes.
   // Delete sets are cumulative: subtract the admitted cut before checking them.
   const residual = decodeUpdateForDependencies(
     Y.encodeStateAsUpdate(helper, Y.encodeStateVector(current)),
   );
   const currentDeletes = deleteRanges(decodeUpdateForDependencies(Y.encodeStateAsUpdate(current)));
-  const explained = [...retiredUpdates, ...[...dropped].map((row) => row.updateData)].map(
-    decodeUpdateForDependencies,
-  );
-  const inserted = explained.flatMap(suppliedRanges),
-    deleted = explained.flatMap(deleteRanges);
+  const explained = [...dropped].map((row) => row.updateData).map(decodeUpdateForDependencies);
+  // The helper's cut is its baseline, never a write: after an item Discard closes the draft a
+  // reply's old writes keep their old draft's content in the cut while the peer is a fresh one.
+  const baseline = decodeUpdateForDependencies(planningState);
+  const inserted = [...explained.flatMap(suppliedRanges), ...suppliedRanges(baseline)],
+    deleted = [...explained.flatMap(deleteRanges), ...deleteRanges(baseline)];
+  // The server client's items (seed, rebase) are never the helper's own content: they are not
+  // residual a response could publish.
+  const helperOwn = (range: { client: number }) => range.client !== DRAFT_SERVER_CLIENT_ID;
   if (
-    subtractRanges(suppliedRanges(residual), inserted).length ||
-    subtractRanges(subtractRanges(deleteRanges(residual), currentDeletes), deleted).length
-  )
-    throw new Error("Response publication left an unexplained generation residual");
+    subtractRanges(suppliedRanges(residual).filter(helperOwn), inserted).length ||
+    subtractRanges(
+      subtractRanges(deleteRanges(residual).filter(helperOwn), currentDeletes),
+      deleted,
+    ).length
+  ) {
+    throw new Error("Response publication left an unexplained residual");
+  }
   // Never merge helper state into the candidate, even when the residual is explained.
   return {
     keptEntries: kept.map((row) => row.entry),
     rejectedWrites: [...reasons].map(([writeId, reason]) => ({ writeId, reason })),
   };
+}
+
+/** The parts of `ranges` that `excluded` does not cover. */
+function subtractRanges(
+  ranges: readonly { client: number; clock: number; length: number }[],
+  excluded: readonly { client: number; clock: number; length: number }[],
+) {
+  return ranges.flatMap((range) => {
+    let remaining = [range];
+    for (const cut of excluded) {
+      remaining = remaining.flatMap((part) => {
+        if (!rangesOverlap(part, cut)) return [part];
+        const end = part.clock + part.length;
+        const cutEnd = cut.clock + cut.length;
+        return [
+          ...(part.clock < cut.clock ? [{ ...part, length: cut.clock - part.clock }] : []),
+          ...(cutEnd < end ? [{ ...part, clock: cutEnd, length: end - cutEnd }] : []),
+        ];
+      });
+    }
+    return remaining;
+  });
 }

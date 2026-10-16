@@ -265,18 +265,17 @@ export const documentMarks = {
   ...customMarks,
 } satisfies Record<string, MarkSpec>;
 
-export function buildDocumentSchema(): Schema {
-  return new Schema({ nodes: documentNodes, marks: documentMarks });
-}
+let documentSchema: Schema | undefined;
 
-export {
-  captureUndoRestorationClaims,
-  isRestorationAlias,
-  RESTORATION_CLAIMS_TYPE,
-  type RestorationAlias,
-  type RestorationRange,
-  restorationAliasesFromMetadata,
-} from "./restoration-claims.js";
+/**
+ * The one document schema. ProseMirror compares nodes by their type object, so two instances make equal
+ * text unequal: the rebase read a live block from one module's schema as different from the same block
+ * in another's and invented an empty paragraph between them.
+ */
+export function buildDocumentSchema(): Schema {
+  documentSchema ??= new Schema({ nodes: documentNodes, marks: documentMarks });
+  return documentSchema;
+}
 
 /** Allocate independent author identity, excluding every client already held by the document. */
 export function allocateDocumentClient(

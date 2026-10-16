@@ -4,14 +4,10 @@ import * as Y from "yjs";
 import type {
   AppendBranchJournalInput,
   BranchCoordinator,
-  BranchStore,
   SegmentRowsInput,
 } from "../domain/branch-coordinator.js";
 
-type SessionDoors = Pick<
-  BranchCoordinator,
-  "withLeases" | "ownedSession" | "resetFromDocIfUnchangedWithLease"
->;
+type SessionDoors = Pick<BranchCoordinator, "withLeases" | "ownedSession">;
 
 /** Commits segment rows to one branch through its owned session, taking the lease the way a save does. */
 export function commitSegmentRows(
@@ -23,48 +19,27 @@ export function commitSegmentRows(
   );
 }
 
-/** Journals `updateData` as one row on the branch's current generation. */
+/** Journals `updateData` as one row. */
 export function commitJournaledUpdate(
   coordinator: SessionDoors,
-  input: Omit<AppendBranchJournalInput, "generation">,
+  input: AppendBranchJournalInput,
 ): Promise<boolean> {
   return coordinator.withLeases([input.branchId], async (lease) => {
     const owned = coordinator.ownedSession(lease);
-    const staged = await owned.read(input.branchId, async (doc, snapshot) => {
+    const staged = await owned.read(input.branchId, async (doc) => {
       const sourceDoc = createCollabYDoc({ gc: false });
       Y.applyUpdate(sourceDoc, Y.encodeStateAsUpdate(doc));
       Y.applyUpdate(sourceDoc, input.updateData);
-      return { sourceDoc, generation: snapshot.generation };
+      return { sourceDoc };
     });
     try {
       return await owned.commitSegmentRows({
         branchId: input.branchId,
-        expectedGeneration: staged.generation,
         sourceDoc: staged.sourceDoc,
         rows: [input],
       });
     } finally {
       staged.sourceDoc.destroy();
     }
-  });
-}
-
-/** Resets an active Work draft to `upstream`, reading its expected state straight from the store. */
-export function resetBranchFromDoc(
-  coordinator: SessionDoors,
-  store: Pick<BranchStore, "getBranch">,
-  branchId: string,
-  upstream: Y.Doc,
-): Promise<boolean> {
-  return coordinator.withLeases([branchId], async (lease) => {
-    const expected = await store.getBranch(branchId);
-    if (!expected) throw new Error(`Branch ${branchId} does not exist`);
-    return coordinator.resetFromDocIfUnchangedWithLease(lease, {
-      branchId,
-      upstream,
-      expectedGeneration: expected.generation,
-      expectedStateVector: expected.stateVector,
-      expectedState: expected.state,
-    });
   });
 }

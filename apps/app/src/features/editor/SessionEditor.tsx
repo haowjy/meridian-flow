@@ -69,6 +69,8 @@ type SessionEditorProps = {
   onConstructed?: (editor: Editor | null) => void;
   /** The tab instance this editor serves; it claims that instance's focus-on-open intent. */
   focusKey?: string;
+  /** The host mounting this editor; its undo history over the room outlives the editor. */
+  historySurface: string;
 };
 
 export function SessionEditor(props: SessionEditorProps) {
@@ -127,6 +129,7 @@ function ActiveSessionEditorView({
   session,
   onConstructed,
   focusKey,
+  historySurface,
   snapshot,
   evidenceDegraded,
 }: ActiveSessionEditorViewProps) {
@@ -289,6 +292,7 @@ function ActiveSessionEditorView({
     atReferenceCatalog,
     wikilinkPasteCatalog,
     surface: { editable: effectiveEditable, editorProps, publishPresence: active },
+    historySurface,
     evidenceDegraded,
   });
 

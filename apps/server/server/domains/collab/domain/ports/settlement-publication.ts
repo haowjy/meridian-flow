@@ -5,7 +5,8 @@
  *
  * The same plans and the same lock order run twice. First, before anything is
  * staged, in one short check transaction that calls `check()`; then inside the
- * root-owned completion transaction:
+ * root-owned completion transaction (the members it admits are content members: each
+ * a merge into live, replanned by settlement just before this transaction):
  *
  * 1. Work row locks, the union of every member's and every plan's `workIds`;
  *    then the plans' `draftIds` rows (`FOR NO KEY UPDATE`, id order);
@@ -14,8 +15,10 @@
  * 3. document mutation locks, sorted, for every member and every plan's `documentIds`;
  * 4. `beforeAdmission` of every plan (vacate, then install: reveal at final
  *    locations), each deciding `proceed` (optionally holding members) or `refuse`;
- * 5. trail settlement and text admission of every member not held;
- * 6. `afterAdmission(admitted)` of every plan (settle arrivals, record history once);
+ * 5. trail settlement and text admission of every member not held, each with its
+ *    text branch's base patch;
+ * 6. `afterAdmission(outcomes)` of every plan (settle arrivals, record history once,
+ *    answer the command);
  * 7. the warm-state recheck of admitted members, then commit;
  * 8. after commit: warm rooms, then every plan's `afterCommit` (catalog refresh,
  *    wake hints), each awaited before the next; a failing effect is logged and
@@ -32,9 +35,11 @@
  */
 
 import type { DraftId } from "@meridian/contracts";
+import type { DraftOverride } from "@meridian/contracts/drafts";
 import type { ContextSourceId, DocumentId, WorkId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
 import type { BranchLockLease } from "../branch-critical-sections.js";
+import type { ContentMemberInput } from "../draft-apply.js";
 
 export type PublicationRefusal = { code: string; detail?: JsonValue };
 
@@ -76,12 +81,47 @@ export type PublicationCheckAdmission =
   | { kind: "proceed"; hold?: readonly PublicationItemHold[]; payload?: JsonValue }
   | { kind: "refuse"; reason: PublicationRefusal };
 
-/** A text member, known before staging and reconstructed from its push for completion. */
+/**
+ * A content member, known before staging and reconstructed from its push for completion. Its
+ * `input` is what the writer asked for, frozen at staging. A branchless item is never a member.
+ */
 export type PublicationMember = {
   documentId: DocumentId;
   branchId: string | null;
   workId: WorkId | null;
-  journalIds: readonly number[];
+  input: ContentMemberInput | null;
+};
+
+/**
+ * The text branch's base patch, computed by settlement under the branch lease and written in
+ * completion through the one branch-state CAS (contract §2.3). `base_revision` is never decided
+ * here: completion binds it to the revision it admitted.
+ */
+export type BaseWrite =
+  /** The branch is not active, or the patch changes nothing. */
+  | { kind: "none" }
+  | {
+      kind: "patch";
+      /** The branch state read under the held lease: the CAS compares against it. */
+      expectedState: Uint8Array;
+      /** That state with the merged base written into `review_base`. */
+      state: Uint8Array;
+      stateVector: Uint8Array;
+      /** The delta, published to the branch room after commit. */
+      update: Uint8Array;
+      /** `draftDiffersFromBase` of the patched doc. */
+      hasEffect: boolean;
+      /** The merged base equals the merged live text: `base_revision` advances. */
+      advanceRevision: boolean;
+    };
+
+/** What completion decided for one member, handed to every step's `afterAdmission`. */
+export type MemberOutcome = {
+  status: "applied" | "already_live";
+  /** Live text the merge replaced. */
+  overrode: DraftOverride[];
+  /** The text branch still differs from its base: read in the transaction. */
+  hasChanges: boolean;
 };
 
 /** A member after staging: lineage-specific data lives only here. */
@@ -91,11 +131,6 @@ type ScopeInputs = {
   batchId: string;
   /** Step inputs by step kind; at completion, exactly what was staged (immutable). */
   payloads: ReadonlyMap<string, JsonValue>;
-  /**
-   * Each member's full-state fingerprint (`fullStateFingerprint`) at its coordinator
-   * lease, its lock cut, for rendered-text tokens: deletions change it.
-   */
-  liveTextFingerprints: ReadonlyMap<DocumentId, string>;
 };
 
 /** The batch being checked before staging, or settled after it, as a step sees it. */
@@ -125,8 +160,12 @@ export type SettlementPublicationPlan = {
   check?(): Promise<PublicationCheckAdmission>;
   /** Vacate and install; absent means `proceed`. */
   beforeAdmission?(): Promise<PublicationAdmission>;
-  /** Settle arrivals and record history, given the members whose text admitted. */
-  afterAdmission?(admitted: readonly DocumentId[]): Promise<void>;
+  /**
+   * Settle arrivals and record history, given what completion decided for each member that
+   * was not held (applied, or already live), with the text branch's `hasChanges` read after
+   * its base patch.
+   */
+  afterAdmission?(outcomes: ReadonlyMap<DocumentId, MemberOutcome>): Promise<void>;
   /**
    * The batch was refused in completion and is being abandoned, in that same transaction:
    * a step records what the withdrawal means for its writer's command (§4.6).
@@ -141,10 +180,12 @@ export type SettlementPublicationStep = {
   /**
    * The outer preparation, from the step's payload: the branch ids whose
    * critical-section leases the batch needs (Apply all: every branch of the draft
-   * an Apply may close). Warm execution and recovery both acquire them before
-   * coordinator leases and any database transaction; completion calls it again
-   * under its locks, and a set that grew sends the batch back to discovery.
-   * Never take leases from `beforeAdmission`.
+   * an Apply may close). Preparation derives them once, from the immutable items of
+   * the payload as submitted. A finalized payload may only drop items, so its set
+   * can only shrink; completion asserts it is a subset of what was leased and fails
+   * loudly otherwise (it never leases more). Recovery has no caller's set to reuse
+   * and leases afresh over the stored payload before any coordinator lease or
+   * database transaction. Never take leases from `beforeAdmission`.
    */
   prepare?(payload: JsonValue): Promise<{ branchIds: readonly string[] }>;
   /**

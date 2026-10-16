@@ -59,18 +59,18 @@ barrier that drains that open.
   and `buildDocumentSchema()` are built separately, so adding a node or
   attribute requires parity in both. Collaboration uses one
   `PROSEMIRROR_FRAGMENT_NAME` fragment and one sync path.
-- `EditorMountIdentity` distinguishes live and generation-fenced review rooms
+- `EditorMountIdentity` distinguishes live and draft (per-document text branch) rooms
   and includes every construction fact. `editorMountKey()` becomes the React
   key; a reopened session adds its Y.Doc `guid` so a concrete room swap remounts
-  TipTap. Review identity includes both `itemKey` and `roomName`.
+  TipTap. Draft identity includes both `itemKey` and `roomName`.
 - `useMountedEditor()` freezes construction options, binds through the session,
   and owns destruction. It applies editability and `editorProps` to the live
   instance. A new construction dependency belongs in the identity type, not an
   effect dependency list.
-- Live sessions may use a qualified, generation-aware IndexedDB key. Review
-  branch sessions use no local cache because a cache can recover into the wrong
-  review generation. Unacknowledged branch edits survive retirement only through
-  the transport outbox and its handoff path.
+- Live sessions may use a qualified, generation-aware IndexedDB key. Draft
+  sessions use no local cache because a cache can recover into a draft that was
+  closed and reopened. Unacknowledged draft edits are drained on release;
+  nothing is carried to a successor room.
 
 `DocumentSession` status combines persistence and transport: `detached`,
 `syncing`, `synced`, `offline`, `access-lost`, or `destroyed`; `schemaFence` is
@@ -108,7 +108,7 @@ presence write path or cached client ID creates ghost carets.
 Live peer marks, session markers, and review decorations are projections, never
 manuscript content. The session marker store is ephemeral and group revisions
 fence delayed replays. Peer-mark popovers navigate to durable trail receipts;
-Undo/Redo of an AI change remains the producing-turn receipt's authority.
+The writer removes an AI change by discarding it in the draft; Ctrl+Z in that surface restores the Discard.
 
 ## Anchors and holds
 
@@ -128,7 +128,17 @@ identity in anchors or holds.
 
 - Disable TipTap's trailing node and local undo defaults where collaborative
   behavior supplies the contract. The Yjs UndoManager and the dedicated keymap
-  own undo, including recovery from AI writes.
+  own undo of the writer's own edits and Discards; Apply and arbitrary AI writes are not in it.
+- Undo is per surface, not per room. `UndoOwnershipExtension` gives each surface
+  (the Editor, the dock) its own transaction origin, stamped on its binding's
+  writes and its Discards, and its UndoManager keeps only those, so Ctrl+Z in one
+  view never undoes the other's typing. The history belongs to
+  `DocumentSession.historyFor(surface)`, so a presenter handoff keeps it. The
+  stamp comes from an exact-version `pnpm patch` of `@tiptap/y-tiptap`; bumping
+  it fails the install until the patch is re-ported. The same patch exports the
+  binding's `refreshProseMirrorDoc` invalidation/reuse path for headless draft
+  review. Keep both ESM/CJS exports and declarations when re-porting it; headless
+  and attached readers must preserve unchanged node identities by the same rule.
 - Slash is one spec over the shared suggestion lane. Its predicate is the whole
   trigger envelope; insertion strategy determines target, schema availability,
   and caret placement. A pick in a table cell remains in that cell. Image picks
@@ -136,9 +146,10 @@ identity in anchors or holds.
 - Autoformat uses inherited TipTap rules plus explicit local fence and recovery
   behavior. Auto-pair owns only its declarative character table; Markdown
   delimiters remain input rules. Do not duplicate either mechanism.
-- Draft inline review is a projection-only extension installed for review
-  mounts. It owns decorations and relative-anchor resolution, never browser
-  mutation origins or collaborative history. Change-trail navigation retains a
+- Draft inline review is a view-only extension installed for draft mounts. It
+  paints a review the browser computed from the draft text against `review_base`
+  and stores no anchors of its own. Discard is a local edit under the editor's own
+  undo origin, so Ctrl+Z restores it. Change-trail navigation retains a
   session until item-ID validation and mounted-editor acceptance. Passage
   navigation uses block identity plus text, and refuses ambiguous fallback.
 - Search-passage navigation lands by block hash (from the block's immutable Yjs
@@ -163,9 +174,7 @@ identity in anchors or holds.
   change, then briefly "Back online"; "Closed" and "Access lost" always win and
   healthy sessions show nothing. Unacknowledged branch edits are lost if the tab
   closes or the writer signs out before acknowledgement.
-- Draft review colors a hunk by author (agent jade, writer gold, nested
-  authorship per span). A merge artifact or unclassified hunk is neutral, never
-  an invented AI color.
+- Draft review paints red (removed) and green (added) only. Authorship is not painted.
 - Keep the custom `math_display` node; do not install TipTap mathematics nodes
   that are absent from the shared schema.
 
@@ -204,12 +213,9 @@ keyboard, pointer, drop, or branch-recovery answer.
 
 ### Branch retirement
 
-- Branch retirement never replays the retired AI snapshot. The transport owns
-  the outbox; `BranchRoomPool` drains it on release or carries it on reset.
-  `BranchWriterHandoff` is account-epoch owned, not review-UI owned, and
-  re-expresses only pending writer operations whose anchors survive under a
-  fresh client. The rest is dropped, reported once through the
-  document-scoped ref, and released.
+- Branch retirement never replays the retired AI snapshot, and nothing is
+  carried to a successor room. The transport owns the outbox; `BranchRoomPool`
+  holds one room per text branch id (server-returned) and drains it on release.
 - `resetDisposition` gives the reset its meaning: `superseded` and `rebuild`
-  keep unacknowledged updates for retirement, `refused` rejects pending edits,
-  and `schema` fences the room.
+  keep unacknowledged updates for retirement (the draft closed), `refused` rejects
+  pending edits, and `schema` fences the room.

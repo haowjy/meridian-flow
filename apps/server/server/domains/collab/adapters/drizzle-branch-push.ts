@@ -1,6 +1,7 @@
 /** Drizzle store for durable branch pushes into the live Yjs journal. */
 import { randomUUID } from "node:crypto";
-import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
+import type { DraftId } from "@meridian/contracts";
+import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   branchPushSettlementBatches,
@@ -18,41 +19,31 @@ import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import {
-  branchDraftWork,
-  lockDraftBranchWorks,
-  runWithActiveWorkDrafts,
-} from "../../../shared/work-draft-lifecycle.js";
+import { branchDraftWork, runWithActiveWorkDrafts } from "../../../shared/work-draft-lifecycle.js";
 import type { NoticePort } from "../../notices/index.js";
 import { WorkLifecycleUnavailableError } from "../../projects/domain/work-lifecycle.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
-import { mergeStateVectors } from "../domain/branch-coordinator.js";
-import {
-  type BranchJournalReadStore,
-  type BranchJournalRow,
-  BranchPushCommitConflictError,
-  DraftChangeRefusal,
-  type PreparedDiscardCommit,
-  type PreparedPushCommit,
-  type PushCommitStore,
-  type PushLineageRow,
+import type {
+  BranchJournalReadStore,
+  BranchJournalRow,
+  PreparedPushCommit,
+  PushCommitStore,
+  PushLineageRow,
 } from "../domain/branch-push-contracts.js";
 import { persistDurableTrailRecords } from "../domain/branch-trail-projection.js";
-import { DraftCommandExistsError } from "../domain/draft-commands.js";
 import { DRAFT_TREE_STEP } from "../domain/draft-tree-payload.js";
 import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
 import type {
   WorkDraftPendingEvidence,
   WorkDraftPendingStore,
 } from "../domain/ports/work-draft-pending-store.js";
-import { placeDraftRows } from "./drizzle-document-edits.js";
 import { attachBatchWithinTx, claimCommandWithinTx } from "./drizzle-draft-commands.js";
-import { refreshDraftEffect } from "./drizzle-draft-effect.js";
-import { readLiveReviewRevision } from "./drizzle-draft-review-live.js";
+import { resolveEditOwners } from "./drizzle-edit-owners.js";
 import {
   assertRootOwnedSettlement,
   type StageSettlementBatchWithinTx,
 } from "./drizzle-pending-settlement.js";
+import { mapLineage } from "./drizzle-settlement-member.js";
 
 /** Global lock order for multi-document push batches — matches journal appendBatch. */
 export function sortPushesByDocumentId<T extends { branch: { documentId: string } }>(
@@ -65,29 +56,13 @@ export function sortPushesByDocumentId<T extends { branch: { documentId: string 
 
 export function createDrizzleBranchJournalReadStore(db: Database): BranchJournalReadStore {
   return {
-    async listActiveJournalRows(branchId, generation) {
+    async listReviewableJournalRows(branchId) {
       const rows = await db
         .select()
         .from(branchWriteJournal)
         .where(
           and(
             eq(branchWriteJournal.branchId, branchId),
-            eq(branchWriteJournal.generation, generation),
-            eq(branchWriteJournal.status, "active"),
-          ),
-        )
-        .orderBy(branchWriteJournal.id);
-      return rows.map(mapJournalRow);
-    },
-
-    async listReviewableJournalRows(branchId, generation) {
-      const rows = await db
-        .select()
-        .from(branchWriteJournal)
-        .where(
-          and(
-            eq(branchWriteJournal.branchId, branchId),
-            eq(branchWriteJournal.generation, generation),
             inArray(branchWriteJournal.status, ["active", "rollback_pending"]),
           ),
         )
@@ -95,31 +70,8 @@ export function createDrizzleBranchJournalReadStore(db: Database): BranchJournal
       return rows.map(mapJournalRow);
     },
 
-    async listJournalRowsForTurn(input) {
-      const conditions = [
-        eq(branchWriteJournal.threadId, input.threadId),
-        eq(branchWriteJournal.turnId, input.turnId),
-      ];
-      if (input.branchId) conditions.push(eq(branchWriteJournal.branchId, input.branchId));
-      if (input.generation !== undefined) {
-        conditions.push(eq(branchWriteJournal.generation, input.generation));
-      }
-      if (input.statuses && input.statuses.length > 0) {
-        conditions.push(inArray(branchWriteJournal.status, [...input.statuses]));
-      }
-      const rows = await db
-        .select()
-        .from(branchWriteJournal)
-        .where(and(...conditions))
-        .orderBy(branchWriteJournal.id);
-      return rows.map(mapJournalRow);
-    },
-
     async listJournalRowsForBranch(input) {
-      const conditions = [
-        eq(branchWriteJournal.branchId, input.branchId),
-        eq(branchWriteJournal.generation, input.generation),
-      ];
+      const conditions = [eq(branchWriteJournal.branchId, input.branchId)];
       if (input.throughJournalId !== undefined) {
         conditions.push(sql`${branchWriteJournal.id} <= ${input.throughJournalId}`);
       }
@@ -134,7 +86,6 @@ export function createDrizzleBranchJournalReadStore(db: Database): BranchJournal
           sql`
           ${documentEditParts.origin}->>'kind' = 'pending'
           and ${documentEditParts.origin}->>'branchId' = ${branchWriteJournal.branchId}::text
-          and ${documentEditParts.origin}->>'generation' = ${branchWriteJournal.generation}::text
           and ${documentEditParts.origin}->>'rowId' = ${branchWriteJournal.id}::text
         `,
         )
@@ -152,34 +103,7 @@ export function createDrizzleBranchJournalReadStore(db: Database): BranchJournal
       return [...byRow.values()];
     },
 
-    async listPushLineageForTurn(input) {
-      const turnRows = await db
-        .select({ id: branchWriteJournal.id })
-        .from(branchWriteJournal)
-        .where(
-          and(
-            eq(branchWriteJournal.threadId, input.threadId),
-            eq(branchWriteJournal.turnId, input.turnId),
-          ),
-        );
-      const journalIds = turnRows.map((row) => row.id);
-      const directCondition = and(
-        eq(pushLineage.threadId, input.threadId),
-        eq(pushLineage.turnId, input.turnId),
-      );
-      const rows = await db
-        .select()
-        .from(pushLineage)
-        .where(
-          journalIds.length > 0
-            ? sql`(${pushLineage.threadId} = ${input.threadId} AND ${pushLineage.turnId} = ${input.turnId}) OR ${pushLineage.journalIds} && ARRAY[${sql.join(journalIds, sql`, `)}]::bigint[]`
-            : directCondition,
-        )
-        .orderBy(pushLineage.id);
-      return rows.map(mapLineage);
-    },
-
-    async listConcurrentJournalRows(branchId, generation, options) {
+    async listConcurrentJournalRows(branchId, options) {
       const floor = options.afterJournalId ?? 0;
       // A save's attribution reads inside its own transaction: the root pool handle would
       // wait on another connection and miss that transaction's uncommitted rows.
@@ -194,33 +118,17 @@ export function createDrizzleBranchJournalReadStore(db: Database): BranchJournal
             // Same-branch active rows and cross-branch pushed rows are both needed for
             // attribution. Cold-start scans are deliberately unbounded until we add a
             // push-ordered floor; max(journal.id) is unsound because journal ids can include
-            // unpushed sibling rows and do not encode push order. Each row remains bounded
-            // by its owning branch generation so reset/future-generation rows cannot leak
-            // backward.
+            // unpushed sibling rows and do not encode push order.
             sql`(
               (${branchWriteJournal.branchId} = ${branchId}
-                AND ${branchWriteJournal.generation} <= ${generation}
                 AND ${branchWriteJournal.status} IN ('active', 'pushed'))
               OR (${branchWriteJournal.branchId} <> ${branchId}
-                AND ${branchWriteJournal.generation} <= ${documentBranches.generation}
                 AND ${branchWriteJournal.status} = 'pushed')
             )`,
           ),
         )
         .orderBy(branchWriteJournal.id);
       return rows.map(({ row }) => mapJournalRow(row));
-    },
-
-    async latestPushForBranch(branchId, generation) {
-      const [row] = await db
-        .select()
-        .from(pushLineage)
-        .where(
-          and(eq(pushLineage.branchId, branchId), eq(pushLineage.branchGeneration, generation)),
-        )
-        .orderBy(sql`${pushLineage.id} DESC`)
-        .limit(1);
-      return row ? mapLineage(row) : null;
     },
   };
 }
@@ -243,18 +151,6 @@ export function createDrizzlePushCommitStore(
   const mutatePending = <T>(branchIds: readonly string[], operation: () => Promise<T>) =>
     workProjection ? workProjection.mutatePendingBranches(branchIds, operation) : operation();
   return {
-    async commitDiscard(input) {
-      return runWithActiveWorkDrafts(db, { branchIds: [input.branch.branchId] }, () =>
-        mutatePending([input.branch.branchId], () =>
-          commitPreparedDiscard(currentDrizzleDb(db), input, new Date()),
-        ),
-      );
-    },
-
-    async lockDraftWorks(branchIds) {
-      return lockDraftBranchWorks(db, branchIds);
-    },
-
     async commitPushBatch(input) {
       assertRootOwnedSettlement("Branch push staging");
       const branchIds = input.pushes.map(({ branch }) => branch.branchId);
@@ -281,12 +177,11 @@ export function createDrizzlePushCommitStore(
           // Every document lock before any trail lock, as completion takes them.
           for (const prepared of sorted)
             await lockDocumentMutation(txDb, prepared.branch.documentId);
-          const now = new Date();
           const staged = [];
           for (const prepared of sorted) {
             staged.push({
               prepared,
-              push: mapLineage(await commitPreparedPush(txDb, prepared, now)),
+              push: mapLineage(await commitPreparedPush(txDb, prepared)),
             });
           }
           // A durable commit requires its trail bundle: every push's, in one record.
@@ -324,53 +219,68 @@ export function createDrizzlePushCommitStore(
   };
 }
 
+/** What bounds a read of the item relation: the Works', one document's, or one draft's items. */
+type ItemScope = {
+  workIds?: readonly WorkId[];
+  documentId?: DocumentId;
+  draftId?: DraftId;
+};
+
 /**
- * The one SQL membership rule for a branch to count as a pending document, twin of
- * `draft-review-items.ts` (`hasRows && (hasEffect || blocking)`). The Work count and the
- * document hint both filter by it; the Work projection reads its before and after through
- * that count.
+ * The one SQL item relation (contract §4.2), twin of `draft-review-items.ts`'s `isListed`: every
+ * listed item of an active draft as `(draftId, workId, documentId)`. Two arms, unioned. An edited
+ * item is an active text branch with `has_effect OR blocking`; a created item is a document the
+ * draft created, listed with no text yet (a blank create, a branchless image). Every count, hint
+ * and strip selects from here and never rebuilds an arm, so the list and the counts cannot drift.
  */
-const reviewableWorkDraftBranch = and(
-  eq(documentBranches.kind, "work_draft"),
-  eq(documentBranches.status, "active"),
-  sql`(${documentBranches.hasEffect} OR ${documentBranches.blocking})`,
-  sql`exists (
-    select 1 from ${branchWriteJournal}
-    where ${branchWriteJournal.branchId} = ${documentBranches.id}
-      and ${branchWriteJournal.generation} = ${documentBranches.generation}
-      and ${branchWriteJournal.status} in ('active', 'rollback_pending'))`,
-);
+export function listedItemRelation(tx: DrizzleDb, scope: ItemScope = {}) {
+  const edited = tx
+    .select({
+      draftId: drafts.id,
+      workId: drafts.originWorkId,
+      documentId: documentBranches.documentId,
+    })
+    .from(documentBranches)
+    .innerJoin(branchDraftWork.drafts, branchDraftWork.on)
+    .where(
+      and(
+        eq(drafts.status, "active"),
+        eq(documentBranches.kind, "work_draft"),
+        eq(documentBranches.status, "active"),
+        sql`(${documentBranches.hasEffect} OR ${documentBranches.blocking})`,
+        scope.workIds ? inArray(drafts.originWorkId, [...scope.workIds]) : undefined,
+        scope.documentId ? eq(documentBranches.documentId, scope.documentId) : undefined,
+        scope.draftId ? eq(drafts.id, scope.draftId) : undefined,
+      ),
+    );
+  const created = tx
+    .select({
+      draftId: drafts.id,
+      workId: drafts.originWorkId,
+      documentId: draftTreeChanges.nodeId,
+    })
+    .from(draftTreeChanges)
+    .innerJoin(drafts, eq(drafts.id, draftTreeChanges.draftId))
+    .where(
+      and(
+        eq(drafts.status, "active"),
+        eq(draftTreeChanges.nodeKind, "document"),
+        scope.workIds ? inArray(drafts.originWorkId, [...scope.workIds]) : undefined,
+        scope.documentId ? eq(draftTreeChanges.nodeId, scope.documentId) : undefined,
+        scope.draftId ? eq(drafts.id, scope.draftId) : undefined,
+      ),
+    );
+  return edited.union(created);
+}
 
 export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendingStore {
   return {
     async countPendingByWorkIds(workIds) {
       if (workIds.length === 0) return new Map();
-      const tx = currentDrizzleDb(db);
-      const branched = tx
-        .select({ workId: branchDraftWork.workId, documentId: documentBranches.documentId })
-        .from(documentBranches)
-        .innerJoin(branchDraftWork.drafts, branchDraftWork.on)
-        .where(
-          and(
-            inArray(branchDraftWork.workId, workIds),
-            eq(drafts.status, "active"),
-            reviewableWorkDraftBranch,
-          ),
-        );
-      // A created document is pending with no text yet (a branchless image, an empty create).
-      const changed = tx
-        .select({ workId: drafts.originWorkId, documentId: draftTreeChanges.nodeId })
-        .from(draftTreeChanges)
-        .innerJoin(drafts, eq(drafts.id, draftTreeChanges.draftId))
-        .where(
-          and(
-            inArray(drafts.originWorkId, workIds),
-            eq(drafts.status, "active"),
-            eq(draftTreeChanges.nodeKind, "document"),
-          ),
-        );
       const documents = new Map<WorkId, Set<string>>();
-      for (const { workId, documentId } of await branched.union(changed)) {
+      for (const { workId, documentId } of await listedItemRelation(currentDrizzleDb(db), {
+        workIds,
+      })) {
         if (!workId) continue;
         const set = documents.get(workId as WorkId) ?? new Set<string>();
         set.add(documentId);
@@ -380,17 +290,10 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
     },
     async listDraftsChangingDocument({ projectId, documentId }) {
       const tx = currentDrizzleDb(db);
-      // The same membership arms as the Work counts, narrowed to one document.
-      const branched = tx
-        .select({ draftId: documentBranches.draftId })
-        .from(documentBranches)
-        .where(and(eq(documentBranches.documentId, documentId), reviewableWorkDraftBranch));
-      const changed = tx
-        .select({ draftId: draftTreeChanges.draftId })
-        .from(draftTreeChanges)
-        .where(
-          and(eq(draftTreeChanges.nodeId, documentId), eq(draftTreeChanges.nodeKind, "document")),
-        );
+      const listed = [
+        ...new Set((await listedItemRelation(tx, { documentId })).map((r) => r.draftId)),
+      ];
+      if (listed.length === 0) return [];
       // Archived Works stay (their drafts remain reviewable); deleted Works and drafts whose
       // origin Work is gone are out, since today's review address needs a live Work.
       const rows = await tx
@@ -407,7 +310,7 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
             eq(drafts.projectId, projectId),
             eq(drafts.status, "active"),
             isNull(works.deletedAt),
-            sql`${drafts.id} in (${branched.union(changed)})`,
+            inArray(drafts.id, listed),
           ),
         )
         .orderBy(asc(drafts.createdAt), asc(drafts.id));
@@ -466,12 +369,10 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
         .select({
           branchId: documentBranches.id,
           documentId: documentBranches.documentId,
-          generation: documentBranches.generation,
           updatedAt: documentBranches.updatedAt,
           hasEffect: documentBranches.hasEffect,
           blocking: documentBranches.blocking,
           writer,
-          writes: sql<number>`count(${branchWriteJournal.id})::int`,
           lastWrite: sql<number | null>`max(${branchWriteJournal.id})`,
         })
         .from(documentBranches)
@@ -479,7 +380,6 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
           branchWriteJournal,
           and(
             eq(branchWriteJournal.branchId, documentBranches.id),
-            eq(branchWriteJournal.generation, documentBranches.generation),
             inArray(branchWriteJournal.status, ["active", "rollback_pending"]),
           ),
         )
@@ -494,6 +394,11 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
         .groupBy(documentBranches.id, writer)
         .orderBy(asc(documentBranches.id), sql`max(${branchWriteJournal.id}) desc nulls last`);
 
+      // A subagent's writes belong to the conversation that spawned it.
+      const owners = await resolveEditOwners(
+        currentDrizzleDb(db),
+        rows.flatMap((row) => (row.writer ? [row.writer] : [])),
+      );
       const evidence = new Map<string, WorkDraftPendingEvidence>();
       for (const row of rows) {
         const branch = evidence.get(row.branchId) ?? {
@@ -501,145 +406,19 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
             branchId: row.branchId,
             documentId: row.documentId,
             draftId,
-            generation: row.generation,
             updatedAt: row.updatedAt,
             hasEffect: row.hasEffect,
             blocking: row.blocking,
           },
-          hasRows: false,
           agentThreadIds: [],
         };
-        if (row.writes > 0) branch.hasRows = true;
-        if (row.writer) branch.agentThreadIds.push(row.writer);
+        const owner = row.writer ? (owners.get(row.writer)?.threadId ?? row.writer) : null;
+        if (owner && !branch.agentThreadIds.includes(owner)) branch.agentThreadIds.push(owner);
         evidence.set(row.branchId, branch);
       }
       return [...evidence.values()];
     },
   };
-}
-
-async function commitPreparedDiscard(
-  db: DrizzleDb,
-  input: PreparedDiscardCommit,
-  now: Date,
-): Promise<void> {
-  if (
-    input.command &&
-    !(await claimCommandWithinTx(db, input.command.envelope, input.command.result))
-  ) {
-    throw new DraftCommandExistsError(input.command.envelope.commandId);
-  }
-  await lockDocumentMutation(db, input.branch.documentId);
-  if (
-    input.expectedLiveRevision !== undefined &&
-    input.expectedLiveRevision !== (await readLiveReviewRevision(db, input.branch.documentId))
-  )
-    throw new DraftChangeRefusal("stale");
-
-  const [casRow] = await db
-    .update(documentBranches)
-    .set({
-      state: Buffer.from(input.state),
-      stateVector: Buffer.from(input.stateVector),
-      ...(input.survivors
-        ? {
-            generation: input.branch.generation + 1,
-            discardedStateVector: Buffer.from(
-              mergeStateVectors(input.branch.discardedStateVector, input.branch.stateVector),
-            ),
-          }
-        : {}),
-      updatedAt: now,
-    })
-    .where(
-      and(
-        eq(documentBranches.id, input.branch.branchId),
-        eq(documentBranches.status, "active"),
-        eq(documentBranches.generation, input.branch.generation),
-        eq(documentBranches.state, Buffer.from(input.branch.state)),
-      ),
-    )
-    .returning({ id: documentBranches.id });
-  if (!casRow) throw new BranchPushCommitConflictError(input.branch.branchId);
-
-  const discardedRows = await db
-    .update(branchWriteJournal)
-    .set({
-      status: "discarded",
-      reviewedBy: input.reviewedByUserId ?? null,
-      reviewedAt: now,
-    })
-    .where(
-      and(
-        eq(branchWriteJournal.branchId, input.branch.branchId),
-        eq(branchWriteJournal.generation, input.branch.generation),
-        inArray(branchWriteJournal.status, ["active", "rollback_pending"]),
-        inArray(
-          branchWriteJournal.id,
-          input.journalRows.map((row) => row.id),
-        ),
-      ),
-    )
-    .returning({ id: branchWriteJournal.id });
-  if (discardedRows.length !== input.journalRows.length) {
-    throw new BranchPushCommitConflictError(input.branch.branchId);
-  }
-  await placeDraftRows(
-    db,
-    input.branch.branchId,
-    input.branch.generation,
-    input.journalRows.map((row) => row.id),
-    { kind: "discarded" },
-  );
-  if (input.survivors) {
-    for (const row of input.survivors) {
-      if (input.retireSurvivors) {
-        await placeDraftRows(db, row.branchId, input.branch.generation, [row.id], {
-          kind: "retired",
-        });
-        continue;
-      }
-      const [next] = await db
-        .insert(branchWriteJournal)
-        .values({
-          branchId: row.branchId,
-          generation: input.branch.generation + 1,
-          updateData: Buffer.from(row.updateData),
-          source: row.source,
-          actorUserId: row.actorUserId,
-          threadId: row.threadId,
-          turnId: row.turnId,
-          wId: row.wId,
-          toolCallId: row.toolCallId,
-          updateMeta: row.updateMeta,
-          status: row.status,
-          draftBaseUpdateSeq: row.draftBaseUpdateSeq,
-        })
-        .returning({ id: branchWriteJournal.id });
-      if (!next) throw new Error("Discard survivor was not journaled");
-      await placeDraftRows(db, row.branchId, input.branch.generation, [row.id], {
-        kind: "pending",
-        branchId: row.branchId,
-        generation: input.branch.generation + 1,
-        rowId: next.id,
-      });
-    }
-    await db
-      .update(branchWriteJournal)
-      .set({ status: "discarded" })
-      .where(
-        and(
-          eq(branchWriteJournal.branchId, input.branch.branchId),
-          eq(branchWriteJournal.generation, input.branch.generation),
-          inArray(branchWriteJournal.status, ["active", "rollback_pending"]),
-        ),
-      );
-  }
-  await refreshDraftEffect(db, input.branch.branchId, undefined, true);
-  await db
-    .update(documentBranches)
-    .set({ blocking: false })
-    .where(eq(documentBranches.id, input.branch.branchId));
 }
 
 async function findLineage(db: DrizzleDb, idempotencyKey: string): Promise<PushLineageRow | null> {
@@ -654,90 +433,34 @@ async function findLineage(db: DrizzleDb, idempotencyKey: string): Promise<PushL
 async function commitPreparedPush(
   db: DrizzleDb,
   input: PreparedPushCommit,
-  now: Date,
 ): Promise<typeof pushLineage.$inferSelect> {
   await lockDocumentMutation(db, input.branch.documentId);
-  if (
-    input.expectedLiveRevision !== undefined &&
-    input.expectedLiveRevision !== (await readLiveReviewRevision(db, input.branch.documentId))
-  )
-    throw new DraftChangeRefusal("stale");
-
-  const [casRow] = await db
-    .update(documentBranches)
-    .set({ updatedAt: sql`${documentBranches.updatedAt}` })
-    .where(
-      and(
-        eq(documentBranches.id, input.branch.branchId),
-        eq(documentBranches.status, "active"),
-        eq(documentBranches.generation, input.branch.generation),
-        eq(documentBranches.state, Buffer.from(input.branch.state)),
-      ),
-    )
-    .returning({ id: documentBranches.id });
-  if (!casRow) throw new BranchPushCommitConflictError(input.branch.branchId);
-
+  // The member stages against the branch state it was planned on: a writer admission that landed
+  // since leaves the branch's own CAS to the settlement that patches its base.
   const [lineage] = await db
     .insert(pushLineage)
     .values({
       branchId: input.branch.branchId,
-      branchGeneration: input.branch.generation,
       documentId: input.branch.documentId,
-      journalIds: input.journalRows.map((row) => row.id),
+      // A content member moves no journal rows (the column stays NOT NULL for historical rows).
+      journalIds: [],
+      applyPayload: input.input,
       upstreamUpdateSeq: null,
       pushedByUserId: input.pushedByUserId ?? null,
-      threadId: representativeThreadId(input.journalRows),
-      turnId: representativeTurnId(input.journalRows),
+      threadId: null,
+      turnId: null,
       idempotencyKey: input.idempotencyKey,
       receiptId: input.receiptId ?? randomUUID(),
     })
     .returning();
   if (!lineage) throw new Error("Failed to record push lineage");
-
-  if (input.journalRows.length > 0) {
-    const pushedRows = await db
-      .update(branchWriteJournal)
-      .set({
-        status: "pushed",
-        pushedAt: now,
-        reviewedBy: input.pushedByUserId ?? null,
-        reviewedAt: now,
-      })
-      .where(
-        and(
-          inArray(branchWriteJournal.status, ["active", "rollback_pending"]),
-          inArray(
-            branchWriteJournal.id,
-            input.journalRows.map((row) => row.id),
-          ),
-        ),
-      )
-      .returning({ id: branchWriteJournal.id });
-    if (pushedRows.length !== input.journalRows.length) {
-      throw new BranchPushCommitConflictError(input.branch.branchId);
-    }
-  }
-
   return lineage;
-}
-
-function representativeThreadId(rows: BranchJournalRow[]): ThreadId | null {
-  const ids = new Set(rows.map((row) => row.threadId));
-  const [id] = ids;
-  return ids.size === 1 && id !== null ? id : null;
-}
-
-function representativeTurnId(rows: BranchJournalRow[]): TurnId | null {
-  const ids = new Set(rows.map((row) => row.turnId));
-  const [id] = ids;
-  return ids.size === 1 && id !== null ? id : null;
 }
 
 function mapJournalRow(row: typeof branchWriteJournal.$inferSelect): BranchJournalRow {
   return {
     id: row.id,
     branchId: row.branchId,
-    generation: row.generation,
     wId: row.wId,
     toolCallId: row.toolCallId,
     source: row.source,
@@ -748,20 +471,5 @@ function mapJournalRow(row: typeof branchWriteJournal.$inferSelect): BranchJourn
     draftBaseUpdateSeq: row.draftBaseUpdateSeq,
     status: row.status,
     updateMeta: row.updateMeta,
-  };
-}
-
-function mapLineage(row: typeof pushLineage.$inferSelect): PushLineageRow {
-  return {
-    id: row.id,
-    branchId: row.branchId,
-    branchGeneration: row.branchGeneration,
-    documentId: row.documentId,
-    journalIds: row.journalIds,
-    upstreamUpdateSeq: row.upstreamUpdateSeq,
-    idempotencyKey: row.idempotencyKey,
-    receiptId: row.receiptId,
-    threadId: row.threadId,
-    turnId: row.turnId,
   };
 }

@@ -1,158 +1,105 @@
-/** Admission and settlement of typed draft commands; records own their cross-surface lifetime. */
+/**
+ * Draft commands that reach the server: Apply (a change, a selection, or the whole item), item Discard,
+ * and the Work page's Apply all and Discard all. A review's own Discard is a local editor edit
+ * (`draft-discard.ts`) and never comes here.
+ *
+ * The click is optimistic: the changes leave the screen when Apply is sent and come back with the error
+ * on them when the server refuses. Records own that state (`draft-command-record`); this module decides
+ * what each answer means. Every command is one `commandId` with one frozen body, carried to its terminal
+ * answer by `settleCommand` (resends, 202 observation, blocked), so a lost request or a slow batch never
+ * applies twice.
+ */
 import type {
-  DraftApplyAllResponse,
-  DraftApplyChangesRequest,
-  DraftApplyChangesResponse,
-  DraftApplyHttpResponse,
+  DraftApplyAllBody,
+  DraftApplyAllResult,
+  DraftApplyChangesBody,
+  DraftApplyItemBody,
   DraftApplyPendingResponse,
-  DraftApplyRefusalBody,
-  DraftApplyRequest,
+  DraftCommandObservation,
   DraftDiscardAllResponse,
-  DraftDiscardRequest,
-  DraftDiscardResponse,
-  DraftPreviewResponse,
+  DraftItemApplyResult,
+  DraftItemDiscardResult,
+  DraftItemOutcome,
   ThreadDraftListItem,
 } from "@meridian/contracts/drafts";
-import { onlineManager, type QueryClient } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import {
   applyAllDrafts,
-  applyDraft,
-  applyDraftChanges,
   discardAllDrafts,
-  discardDraft,
   observeDraftCommand,
+  applyDraft as postApplyDraft,
+  applyDraftChanges as postApplyDraftChanges,
+  discardDraft as postDiscardDraft,
 } from "@/client/api/drafts-api";
 import { httpErrorStatus } from "@/client/api/http-client";
-import { coversEveryChange, selectionOf } from "@/features/draft-review/change-selection";
-import type { DraftReviewSelection } from "@/features/draft-review/draft-review-session";
-import { reviewChangesOfPreview } from "@/features/draft-review/review-changes";
 import {
-  accountEpochIs,
-  answerDraftCommandClosed,
-  answerDraftSelection,
-  beginChangeCommand,
+  beginChangeApply,
   beginDraftCommand,
-  beginIntentDrain,
-  type ChangeFailureCode,
-  type ChangeSelection,
+  type ChangeClaim,
+  type ChangeFailure,
+  type ChangeTarget,
+  changeClaimIsLive,
   claimIsLive,
   commandIdFor,
-  confirmChangeCommand,
-  confirmDraftCommand,
-  currentAccountEpoch,
-  currentChangeCommandRecords,
-  currentDraftCommandRecords,
   type DraftClaim,
   type DraftCommandFailure,
   type DraftRef,
-  endIntentDrain,
-  failChangeCommand,
+  failChangeApply,
   failDraftCommand,
-  intentDrainCurrent,
-  intentKeys,
-  nextQueuedClick,
-  pendingDraftCommand,
-  type QueuedChange,
-  queueChangeSelection,
-  queuedChangeIsLive,
-  queueWholeDraft,
-  rebaseChangeCommand,
+  noteOverrode,
+  type Overrode,
   releaseDraftCommand,
   retainUnknownCommand,
-  selectionKeys,
-  wholeDraftPending,
+  settleChangeApply,
 } from "./draft-command-record";
 import { classifyDraftCommandRejection } from "./draft-command-rejection";
 import { settleCommand } from "./draft-command-transport";
 import { bumpDraftLinkEpoch } from "./draft-link-epoch";
-import { projectDraft } from "./draft-projection";
+import { fetchForCommand, isOnline } from "./fetch-for-command";
 import { isProjectContextCatalogKey, projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
-import { draftPreviewQueryOptions } from "./useDraftPreview";
+import { draftMetaQueryOptions, isWholeItem } from "./useDraftMeta";
 
 export type DraftCommandOutcome =
+  /** Not sent: offline, a command already in flight, or the Work is frozen. */
   | { kind: "blocked" }
-  | { kind: "applied" }
-  | { kind: "apply-outcome-unknown" }
+  /**
+   * `itemClosed`: this command dropped a created item's row, so the document is an ordinary live
+   * document now (contract §3.4's promote signal). Every other Apply leaves the item and its tab.
+   */
+  | { kind: "applied"; overrode: Overrode; itemClosed: boolean }
   | { kind: "discarded" }
-  | { kind: "change-settled"; mode: Mode }
-  | { kind: "change-refused"; mode: Mode; code: ChangeFailureCode }
-  | { kind: "failed"; failure: DraftCommandFailure };
-type Mode = "apply" | "discard";
-export type ChangeBasis = {
-  liveRevisionToken: string;
-  draftRevisionToken: string;
-  branchGeneration: number;
+  /** The item was closed elsewhere; the review exits through the gone path. */
+  | { kind: "gone" }
+  /** The reason is on the item or its changes (`draft-command-record`). */
+  | { kind: "failed" };
+
+/** What an Apply sends, ready once the item's room is read and the server holds everything in it. */
+export type PreparedApply = {
+  /** Base64 `Y.snapshot` of the item's room the changes were computed from; null for an item with no text. */
+  snapshot: string | null;
+  /** Resolves when the server has every update the snapshot contains; rejects if it cannot be confirmed. */
+  synced: () => Promise<void>;
+  /** Ends whatever the preparation held (a room read for the command). */
+  release?: () => void;
 };
-export type DraftCommand =
-  | {
-      target: "all";
-      draft: DraftRef;
-      mode: Mode;
-      generation: number | undefined;
-      completesDraft?: boolean;
-    }
-  | {
-      target: "selection";
-      draft: DraftRef;
-      mode: Mode;
-      selection: ChangeSelection;
-      basis: ChangeBasis;
-      completesDraft: boolean;
-    };
-export type CommandStart = { sent: boolean; outcome: Promise<DraftCommandOutcome> };
-export type SelectionCommand = (
-  draft: DraftReviewSelection,
-  selection: ChangeSelection,
-) => Promise<DraftCommandOutcome>;
-export type DraftSelection = { draft: DraftReviewSelection; selection: ChangeSelection };
-type Scope = { projectId: string; workId: string };
-
-export function listedDocumentName(
-  queryClient: QueryClient,
-  projectId: string,
-  workId: string,
-  itemKey: string,
-): string | null {
-  return (
-    queryClient
-      .getQueryData<ThreadDraftListItem[]>(projectQueryKeys.workDrafts(projectId, workId))
-      ?.find((item) => item.itemKey === itemKey)?.documentName ?? null
-  );
-}
-
-export function newestKnownProposal(queryClient: QueryClient, draft: DraftRef): number | undefined {
-  const cached = queryClient.getQueryData<DraftPreviewResponse>(
-    projectQueryKeys.workDraftPreview(
-      draft.projectId,
-      draft.workId,
-      draft.documentId,
-      draft.itemKey,
-    ),
-  );
-  const row = queryClient
-    .getQueryData<ThreadDraftListItem[]>(projectQueryKeys.workDrafts(draft.projectId, draft.workId))
-    ?.find((item) => item.itemKey === draft.itemKey);
-  const known = [
-    cached?.status === "active" && reviewChangesOfPreview(cached).length > 0
-      ? cached.branchGeneration
-      : undefined,
-    row?.branchGeneration,
-  ].filter((generation) => typeof generation === "number");
-  return known.length ? Math.max(...known) : undefined;
-}
 
 /**
- * The one draft-read invalidation: hints, lists, previews and link answers all
- * re-read after any command. `documentId` narrows previews to one document;
- * a Work-wide command omits it and refreshes every document's.
+ * An Apply as its click made it. `prepare` runs inside the command's lifecycle, after the claim, so an item
+ * nobody has open is read, synced and acknowledged under the same pending state and failure as the send.
+ * The snapshot belongs to the frame the writer clicked: it is chosen by the click, never at send time.
  */
+export type ApplyCommand = {
+  draft: DraftRef;
+  prepare: () => Promise<PreparedApply>;
+} & ({ scope: "change"; targets: readonly ChangeTarget[]; baseKey: string } | { scope: "item" });
+
+/** Lists, the item's metadata and the chat caches that show what an item holds. */
 function refresh(
   queryClient: QueryClient,
-  scope: Scope & { documentId?: string },
+  scope: { projectId: string; workId: string; documentId?: string },
   threadId: string | null,
-  preview = true,
-): Promise<void> {
+): void {
   bumpDraftLinkEpoch(scope.projectId);
   if (threadId) {
     void queryClient.invalidateQueries({ queryKey: threadQueryKeys.liveLineageRoot(threadId) });
@@ -162,31 +109,14 @@ function refresh(
   void queryClient.invalidateQueries({
     queryKey: projectQueryKeys.documentDraftHintsOf(scope.projectId),
   });
+  void queryClient.invalidateQueries({
+    queryKey: projectQueryKeys.workDrafts(scope.projectId, scope.workId),
+  });
   const documents = ["projects", scope.projectId, "works", scope.workId, "documents"];
-  return Promise.all([
-    queryClient.invalidateQueries({
-      queryKey: projectQueryKeys.workDrafts(scope.projectId, scope.workId),
-    }),
-    preview
-      ? queryClient.invalidateQueries({
-          queryKey: scope.documentId ? [...documents, scope.documentId, "draft"] : documents,
-        })
-      : Promise.resolve(),
-  ]).then(() => undefined);
+  void queryClient.invalidateQueries({
+    queryKey: scope.documentId ? [...documents, scope.documentId, "draft"] : documents,
+  });
 }
-
-/** Everything one command's request can answer, before and after the server finishes it. */
-type CommandWire =
-  | DraftApplyHttpResponse
-  | DraftApplyRefusalBody
-  | DraftApplyChangesResponse
-  | DraftDiscardResponse;
-type CommandResult = Exclude<CommandWire, DraftApplyPendingResponse>;
-type CommandSettlement = Awaited<ReturnType<typeof settleCommand<CommandResult>>>;
-type CommandBody<T> = T extends unknown ? Omit<T, "commandId"> : never;
-type ApplyBody = DraftApplyRequest;
-type ApplyChangesBody = DraftApplyChangesRequest;
-type DiscardBody = DraftDiscardRequest;
 
 function listedRow(queryClient: QueryClient, draft: DraftRef): ThreadDraftListItem | undefined {
   return queryClient
@@ -194,589 +124,545 @@ function listedRow(queryClient: QueryClient, draft: DraftRef): ThreadDraftListIt
     ?.find((item) => item.itemKey === draft.itemKey);
 }
 
-/** The draft the item belongs to, from the preview the writer is reading, else the list row. */
-function draftIdOf(
-  queryClient: QueryClient,
-  draft: DraftRef,
-  row: ThreadDraftListItem | undefined,
-): string | null {
-  const preview = queryClient.getQueryData<DraftPreviewResponse>(
-    projectQueryKeys.workDraftPreview(
-      draft.projectId,
-      draft.workId,
-      draft.documentId,
-      draft.itemKey,
-    ),
-  );
-  // A corrupt preview carries draftId so an unlisted item can still be discarded.
-  const previewed =
-    preview?.status === "active" || preview?.status === "corrupt" ? preview.draftId : undefined;
-  return previewed ?? row?.draftId ?? null;
+/** The draft the item belongs to: its list row, else its metadata (read if it is not held). Null: the item is closed. */
+async function draftIdOf(queryClient: QueryClient, draft: DraftRef): Promise<string | null> {
+  const row = listedRow(queryClient, draft);
+  if (row) return row.draftId;
+  const meta = await fetchForCommand(queryClient, draftMetaQueryOptions(draft));
+  return meta.kind === "gone" ? null : meta.draftId;
 }
 
-/** The command's request without its id: what a resend repeats byte for byte. */
-function requestBody(
-  command: DraftCommand,
-  draftId: string,
-  row: ThreadDraftListItem | undefined,
-): CommandBody<ApplyBody | ApplyChangesBody | DiscardBody> {
-  const { itemKey } = command.draft;
-  if (command.target === "all")
-    return command.mode === "apply"
-      ? { draftId, itemKey, ...(row ? row.tokens : {}) }
-      : { draftId, itemKey };
-  const basis = {
-    draftId,
-    itemKey,
-    liveRevisionToken: command.basis.liveRevisionToken,
-    draftRevisionToken: command.basis.draftRevisionToken,
-  };
-  return command.mode === "apply"
-    ? { ...basis, operationIds: [...command.selection.operationIds] }
-    : {
-        ...basis,
-        closureClassIds: [...command.selection.classIds],
-        admissionTokens: [...command.selection.admissionTokens],
-        // Retained clicked operationKey values are part keys, except row-only fallbacks.
-        memberPartKeys: selectionKeys(command.selection).filter((key) => !key.startsWith("row:")),
-      };
+/** The Work's draft row: the first listed item's. */
+function workDraftId(rows: readonly ThreadDraftListItem[]): string | null {
+  return rows[0]?.draftId ?? null;
 }
 
-/** The server code a refused item command carries to the render layer. */
-function refusalCode(response: CommandResult): string {
-  if (response.status === "held") return response.reason.code;
-  return response.status === "gone" ? "draft_not_found" : response.status;
+function changeFailureOf(error: unknown): ChangeFailure {
+  const rejection = classifyDraftCommandRejection(error);
+  if (rejection.kind === "refused")
+    return {
+      code: "refused",
+      serverCode: rejection.serverCode,
+      serverReason: rejection.serverReason,
+    };
+  return { code: rejection.kind === "server-error" ? "server-error" : "unknown" };
 }
 
-function canSendDraftCommand(): boolean {
-  return navigator.onLine && onlineManager.isOnline();
+function draftFailureOf(error: unknown, mode: "apply" | "discard"): DraftCommandFailure {
+  const rejection = classifyDraftCommandRejection(error);
+  if (rejection.kind === "refused")
+    return {
+      code: `${mode}-refused`,
+      serverCode: rejection.serverCode,
+      serverReason: rejection.serverReason,
+    };
+  if (rejection.kind === "server-error") return { code: `${mode}-server-error` };
+  // A request the server never answered: it may have landed. Never read as offline.
+  return { code: `${mode}-unknown` };
 }
+
+/** The server code a refused item or change carries to the render layer. */
+function refusalCode(
+  outcome: Exclude<DraftItemOutcome, { status: "applied" | "already_live" }> | ItemRefusal,
+): string {
+  switch (outcome.status) {
+    case "held":
+      return outcome.reason.code;
+    case "not_found":
+      return "change_not_found";
+    case "failed":
+      return outcome.reason;
+    default:
+      return outcome.status;
+  }
+}
+
+/** The answers of an item route that leave the item as it was: why, as a code the render layer words. */
+type ItemRefusal = Exclude<DraftItemApplyResult, { status: "applied" | "already_live" | "gone" }>;
+function itemRefusalCode(result: ItemRefusal): string {
+  return result.status === "stale" || result.status === "whole_item"
+    ? result.status
+    : refusalCode(result);
+}
+
+/** One command's body without its id (what a resend repeats byte for byte) and how it is sent. */
+type Send<R> = {
+  kind: string;
+  body: object;
+  send: (request: object) => Promise<R | DraftApplyPendingResponse>;
+  observe: (commandId: string) => Promise<DraftCommandObservation | { state: "unknown" }>;
+  live: () => boolean;
+};
+
+type Carried<R> =
+  | { kind: "result"; result: R }
+  | { kind: "blocked" }
+  | { kind: "revoked" }
+  | { kind: "error"; error: unknown; unknown: boolean };
 
 /**
- * Claim and connectivity are decided together, before the caller takes
- * optimistic UI effects. Every claim belongs to just this draft.
+ * Carry one command to its answer. The id is frozen here: every resend of this command carries it and
+ * these bytes. An outcome that stayed unknown keeps the id for the writer's next try of the same body.
  */
-export function startDraftCommand(
+async function carry<R extends { status: string }>(
   queryClient: QueryClient,
-  command: DraftCommand,
-  threadId: string | null = null,
-  onSent?: () => void,
-  retryStale?: () => Promise<DraftCommand | null>,
-): CommandStart {
-  const { draft, mode } = command;
-  const blocked = {
-    sent: false,
-    outcome: Promise.resolve<DraftCommandOutcome>({ kind: "blocked" }),
-  };
-  if (pendingDraftCommand(currentDraftCommandRecords(), draft)) return blocked;
-  if (!canSendDraftCommand()) {
-    const by = draft;
-    const outcome: DraftCommandOutcome =
-      command.target === "all"
-        ? { kind: "failed", failure: { code: `${mode}-offline` } }
-        : { kind: "change-refused", mode, code: "offline" };
-    if (command.target === "all" && outcome.kind === "failed")
-      failDraftCommand(by, outcome.failure);
-    else if (command.target === "selection")
-      failChangeCommand(by, command.selection, mode, "offline");
-    releaseDraftCommand(by);
-    return { sent: false, outcome: Promise.resolve(outcome) };
-  }
-  const claim =
-    command.target === "all"
-      ? beginDraftCommand(draft, {
-          target: "all",
-          mode,
-          branchGeneration: command.generation,
-          ...(command.completesDraft ? { completesDraft: true } : {}),
-        })
-      : beginChangeCommand(
-          draft,
-          command.selection,
-          mode,
-          command.basis.branchGeneration,
-          command.completesDraft,
-        );
-  if (!claim) return blocked;
+  draft: DraftRef,
+  command: Send<R>,
+): Promise<Carried<R>> {
+  const digest = JSON.stringify(command.body);
+  const commandId = commandIdFor(draft, command.kind, digest);
+  const request = { ...command.body, commandId };
   try {
-    onSent?.();
-  } catch (error) {
-    releaseDraftCommand(claim);
-    return { sent: false, outcome: Promise.reject(error) };
-  }
-  return { sent: true, outcome: execute(queryClient, command, threadId, claim, retryStale) };
-}
-
-async function execute(
-  queryClient: QueryClient,
-  command: DraftCommand,
-  threadId: string | null,
-  claim: DraftClaim,
-  retryStale?: () => Promise<DraftCommand | null>,
-): Promise<DraftCommandOutcome> {
-  const { draft, mode } = command;
-  const refreshDraft = () => refresh(queryClient, draft, threadId);
-  let held: { commandId: string; digest: string } | null = null;
-  try {
-    if (command.target === "all" && mode === "apply")
-      void queryClient.cancelQueries({
-        queryKey: projectQueryKeys.workDrafts(draft.projectId, draft.workId),
-      });
-    const row = listedRow(queryClient, draft);
-    const draftId = draftIdOf(queryClient, draft, row);
-    const body = draftId ? requestBody(command, draftId, row) : null;
-    const digest = JSON.stringify(body);
-    const kind = `${command.target}-${mode}`;
-    const commandId = commandIdFor(draft, kind, digest);
-    // The body is frozen from here: every resend of this command carries this id and these bytes.
-    const request = { ...body, commandId };
-    const send = (): Promise<CommandWire> => {
-      if (!claimIsLive(claim)) throw new Error("Draft command capability revoked");
-      if (!body) return Promise.resolve({ status: "gone", draftId: "", itemKey: draft.itemKey });
-      if (command.target === "all")
-        return mode === "apply"
-          ? applyDraft(draft.projectId, draft.workId, draft.documentId, request as ApplyBody)
-          : discardDraft(draft.projectId, draft.workId, draft.documentId, request as DiscardBody);
-      return mode === "apply"
-        ? applyDraftChanges(
-            draft.projectId,
-            draft.workId,
-            draft.documentId,
-            request as ApplyChangesBody,
-          )
-        : discardDraft(draft.projectId, draft.workId, draft.documentId, request as DiscardBody);
-    };
-    held = { commandId, digest };
     // TanStack is the request adapter, never an offline queue.
     const settled = await queryClient
       .getMutationCache()
-      .build<CommandSettlement, unknown, void, unknown>(queryClient, {
+      .build<Awaited<ReturnType<typeof settleCommand<R>>>, unknown, void, unknown>(queryClient, {
         networkMode: "always",
         mutationFn: () =>
-          settleCommand<CommandResult>({
-            send,
-            observe: () => observeDraftCommand(draft.projectId, draft.workId, commandId),
-            live: () => claimIsLive(claim),
+          settleCommand<R>({
+            send: () => command.send(request),
+            observe: () => command.observe(commandId),
+            live: command.live,
           }),
       })
       .execute(undefined);
-    if (!claimIsLive(claim)) return { kind: "blocked" };
-    held = null;
-    retainUnknownCommand(draft, kind, null);
-    if (settled.kind === "revoked") return { kind: "blocked" };
-    if (settled.kind === "blocked") {
-      await refreshDraft().catch(() => undefined);
-      if (!claimIsLive(claim)) return { kind: "blocked" };
-      if (command.target === "all") {
-        const failure: DraftCommandFailure = { code: "apply-blocked" };
-        failDraftCommand(claim, failure);
-        return { kind: "failed", failure };
-      }
-      failChangeCommand(claim, command.selection, mode, "blocked");
-      return { kind: "change-refused", mode, code: "blocked" };
-    }
-    const wire = settled.result;
-    const response =
-      wire.status === "applied" && "item" in wire && wire.item.status === "held"
-        ? {
-            status: "held" as const,
-            draftId: wire.draftId,
-            itemKey: wire.itemKey,
-            reason: wire.item.reason,
-          }
-        : wire;
-    if (
-      command.target === "all" &&
-      response.status !== "applied" &&
-      response.status !== "discarded"
-    ) {
-      await refreshDraft().catch(() => undefined);
-      if (!claimIsLive(claim)) return { kind: "blocked" };
-      const failure: DraftCommandFailure = {
-        code: `${mode}-refused`,
-        serverCode: refusalCode(response),
-      };
-      failDraftCommand(claim, failure);
-      return { kind: "failed", failure };
-    }
-    if (response.status === "applied" || response.status === "discarded") {
-      if (command.target === "all" || ("itemClosed" in response && response.itemClosed))
-        answerDraftCommandClosed(claim, {
-          documentName: listedDocumentName(
-            queryClient,
-            draft.projectId,
-            draft.workId,
-            draft.itemKey,
-          ),
-        });
-    }
-    if (command.target === "all") {
-      if (mode === "apply") {
-        confirmDraftCommand(claim);
-        void Promise.all([
-          queryClient.invalidateQueries({
-            predicate: (query) => isProjectContextCatalogKey(query.queryKey, draft.projectId),
-          }),
-          refreshDraft(),
-        ]).catch(() => undefined);
-      } else await refreshDraft();
-      if (!accountEpochIs(claim.epoch)) return { kind: "blocked" };
-      return { kind: mode === "apply" ? "applied" : "discarded" };
-    }
-    const confirmed = response.status === (mode === "apply" ? "applied" : "discarded");
-    if (confirmed || response.status === "gone") {
-      answerDraftSelection(
-        claim,
-        response.status === "gone" ? "change-gone" : mode === "apply" ? "applied" : "discarded",
-      );
-      // Keep the claim while reads settle; confirmed intent projects older raw observations.
-      await refreshDraft();
-      if (!claimIsLive(claim)) return { kind: "blocked" };
-      confirmChangeCommand(claim, command.selection, mode);
-      return confirmed
-        ? { kind: "change-settled", mode }
-        : { kind: "change-refused", mode, code: "gone" };
-    }
-    await refresh(queryClient, draft, threadId, !retryStale);
-    if (!claimIsLive(claim)) return { kind: "blocked" };
-    if (response.status === "stale" && retryStale) {
-      // An explicit stale response proved non-acceptance. A failed fresh read
-      // refuses this intent; it is not an ambiguous mutation outcome.
-      const retry = await retryStale().catch(() => null);
-      if (!claimIsLive(claim)) return { kind: "blocked" };
-      if (retry?.target === "selection") {
-        rebaseChangeCommand(
-          claim,
-          retry.selection,
-          retry.basis.branchGeneration,
-          retry.completesDraft,
-        );
-        return await execute(queryClient, retry, threadId, claim);
-      }
-    }
-    const code = "stale";
-    failChangeCommand(claim, command.selection, mode, code);
-    return { kind: "change-refused", mode, code };
+    // Revoked while out: nothing is published, and the account's bookkeeping is not written for it.
+    if (settled.kind === "revoked" || !command.live()) return { kind: "revoked" };
+    retainUnknownCommand(draft, command.kind, null);
+    return settled.kind === "result"
+      ? { kind: "result", result: settled.result }
+      : { kind: settled.kind };
   } catch (error) {
-    if (!claimIsLive(claim)) return { kind: "blocked" };
-    if (command.target === "all" && mode === "apply") void refreshDraft().catch(() => undefined);
-    else await refreshDraft().catch(() => undefined);
-    if (!claimIsLive(claim)) return { kind: "blocked" };
+    if (!command.live()) return { kind: "revoked" };
     const unknown = httpErrorStatus(error) === undefined;
-    retainUnknownCommand(draft, `${command.target}-${mode}`, unknown ? held : null);
-    const rejection = classifyDraftCommandRejection(error);
-    if (command.target === "selection") {
-      const code = unknown ? "unknown" : rejection.kind;
-      failChangeCommand(
-        claim,
-        command.selection,
-        mode,
-        code,
-        rejection.kind === "refused"
-          ? { serverCode: rejection.serverCode, serverReason: rejection.serverReason }
-          : undefined,
-      );
-      return { kind: "change-refused", mode, code };
-    }
-    const failure: DraftCommandFailure = unknown
-      ? { code: `${mode}-unknown` }
-      : {
-          code: `${mode}-${rejection.kind}`,
-          ...(rejection.kind === "refused"
-            ? {
-                serverCode: rejection.serverCode,
-                ...(rejection.serverReason ? { serverReason: rejection.serverReason } : {}),
-              }
-            : {}),
-        };
-    failDraftCommand(claim, failure);
-    return unknown ? { kind: "apply-outcome-unknown" } : { kind: "failed", failure };
-  } finally {
-    releaseDraftCommand(claim);
+    retainUnknownCommand(draft, command.kind, unknown ? { commandId, digest } : null);
+    return { kind: "error", error, unknown };
   }
 }
+
+/** What preparation produced: the snapshot to send and, for an Apply of changes, which ones. */
+type Acquired = { prepared: PreparedApply; changeIds: readonly string[] | null };
+
+/** Preparation before the send. `unsent`: the request never left, so nothing may have landed. */
+type Prepared = { kind: "ready"; acquired: Acquired } | { kind: "unsent" } | { kind: "empty" };
+
+/** Acquire, then wait for the server to hold what the snapshot contains. */
+async function prepare(acquire: () => Promise<Acquired | null>): Promise<Prepared> {
+  let acquired: Acquired | null;
+  try {
+    acquired = await acquire();
+  } catch {
+    return { kind: "unsent" };
+  }
+  if (!acquired) return { kind: "empty" };
+  try {
+    await acquired.prepared.synced();
+  } catch {
+    acquired.prepared.release?.();
+    return { kind: "unsent" };
+  }
+  return { kind: "ready", acquired };
+}
+
+/** The item Apply request: a change route when `changeIds` names changes, else the item route. */
+function applySend(
+  draft: DraftRef,
+  draftId: string,
+  row: ThreadDraftListItem | undefined,
+  acquired: Acquired,
+  live: () => boolean,
+  wholeItem: boolean,
+): Send<DraftItemApplyResult> {
+  const { itemKey } = draft;
+  const { snapshot } = acquired.prepared;
+  const locationToken = row?.tokens.locationToken;
+  const token = locationToken ? { locationToken } : {};
+  const observe = (commandId: string) =>
+    observeDraftCommand(draft.projectId, draft.workId, commandId);
+  // A whole-item item has one change, the item: a per-change Apply would answer `whole_item`.
+  if (acquired.changeIds && snapshot && !wholeItem) {
+    const body: Omit<DraftApplyChangesBody, "commandId"> = {
+      draftId,
+      itemKey,
+      changeIds: [...acquired.changeIds],
+      snapshot,
+      ...token,
+    };
+    return {
+      kind: "apply-changes",
+      body,
+      send: (request) =>
+        postApplyDraftChanges(
+          draft.projectId,
+          draft.workId,
+          draft.documentId,
+          request as DraftApplyChangesBody,
+        ),
+      observe,
+      live,
+    };
+  }
+  const body: Omit<DraftApplyItemBody, "commandId"> = {
+    draftId,
+    itemKey,
+    ...(snapshot ? { snapshot } : {}),
+    ...token,
+  };
+  return {
+    kind: "apply-item",
+    body,
+    send: (request) =>
+      postApplyDraft(
+        draft.projectId,
+        draft.workId,
+        draft.documentId,
+        request as DraftApplyItemBody,
+      ),
+    observe,
+    live,
+  };
+}
+
+// ---- Apply of changes ----
+
+/** Apply some changes of an item. They leave the screen now and return, with the reason on them, if they fail. */
+export async function applyChanges(
+  queryClient: QueryClient,
+  command: ApplyCommand & { scope: "change" },
+  threadId: string | null = null,
+): Promise<DraftCommandOutcome> {
+  const { draft, targets } = command;
+  if (targets.length === 0) return { kind: "blocked" };
+  const claim = beginChangeApply(draft, targets, command.baseKey);
+  if (!isOnline()) {
+    failChangeApply(claim, { code: "offline" });
+    return { kind: "blocked" };
+  }
+  return sendChanges(queryClient, claim, command.prepare, threadId);
+}
+
+async function sendChanges(
+  queryClient: QueryClient,
+  claim: ChangeClaim,
+  acquire: () => Promise<PreparedApply>,
+  threadId: string | null,
+): Promise<DraftCommandOutcome> {
+  const { draft } = claim;
+  const ready = await prepare(async () => ({
+    prepared: await acquire(),
+    changeIds: claim.targets.map((target) => target.id),
+  }));
+  if (ready.kind !== "ready") {
+    failChangeApply(claim, { code: "offline" });
+    return { kind: "failed" };
+  }
+  const { acquired } = ready;
+  try {
+    const draftId = await draftIdOf(queryClient, draft);
+    if (!draftId) {
+      failChangeApply(claim, { code: "gone" });
+      refresh(queryClient, draft, threadId);
+      return { kind: "gone" };
+    }
+    const carried = await carry(
+      queryClient,
+      draft,
+      applySend(
+        draft,
+        draftId,
+        listedRow(queryClient, draft),
+        acquired,
+        () => changeClaimIsLive(claim),
+        isWholeItem(queryClient, draft),
+      ),
+    );
+    if (carried.kind === "revoked") return { kind: "blocked" };
+    if (carried.kind === "blocked") {
+      failChangeApply(claim, { code: "blocked" });
+      refresh(queryClient, draft, threadId);
+      return { kind: "failed" };
+    }
+    if (carried.kind === "error") {
+      failChangeApply(claim, changeFailureOf(carried.error));
+      return { kind: "failed" };
+    }
+    return answerChanges(queryClient, claim, carried.result, threadId);
+  } catch (error) {
+    failChangeApply(claim, changeFailureOf(error));
+    return { kind: "failed" };
+  } finally {
+    acquired.prepared.release?.();
+  }
+}
+
+function answerChanges(
+  queryClient: QueryClient,
+  claim: ChangeClaim,
+  result: DraftItemApplyResult,
+  threadId: string | null,
+): DraftCommandOutcome {
+  const { draft } = claim;
+  switch (result.status) {
+    case "applied":
+    case "already_live": {
+      const overrode = result.status === "applied" ? result.overrode : [];
+      settleChangeApply(claim);
+      noteOverrode(claim, overrode);
+      refresh(queryClient, draft, threadId);
+      return {
+        kind: "applied",
+        overrode,
+        itemClosed: result.status === "applied" && result.itemClosed,
+      };
+    }
+    case "gone":
+      failChangeApply(claim, { code: "gone" });
+      refresh(queryClient, draft, threadId);
+      return { kind: "gone" };
+    case "not_found":
+      failChangeApply(claim, { code: "gone" });
+      refresh(queryClient, draft, threadId);
+      return { kind: "failed" };
+    default:
+      failChangeApply(claim, { code: "refused", serverCode: itemRefusalCode(result) });
+      refresh(queryClient, draft, threadId);
+      return { kind: "failed" };
+  }
+}
+
+// ---- Apply of a whole item ----
+
+/** Apply a whole item. One claim per item, taken at the click; the item stays open and empty afterwards. */
+export async function applyDraft(
+  queryClient: QueryClient,
+  command: ApplyCommand & { scope: "item" },
+  threadId: string | null = null,
+): Promise<DraftCommandOutcome> {
+  return applyUnderDraftClaim(
+    queryClient,
+    command.draft,
+    async () => ({ prepared: await command.prepare(), changeIds: null }),
+    threadId,
+  );
+}
+
+/** What the strip's Apply finds once it has read the item: this chat's changes and the snapshot to send. */
+export type ChatApplyPlan = { targets: readonly ChangeTarget[]; prepared: PreparedApply };
 
 /**
- * One click on a change's Apply or Discard. It is accepted at once and shown
- * (the change leaves every surface); clicks on a draft are sent one at a time,
- * each resolved against the draft as it is when its turn comes, so a Discard
- * that re-forked the draft never leaves the next click holding the old
- * generation's rows or tokens. The queue entry is the click's capability: it
- * carries the account epoch and the caller's promise, and an account change
- * answers it `blocked` before anything is sent for it.
+ * Apply one chat's changes in an item nobody has open. The claim is taken at the click, so the file is
+ * pending at once and a failure of reading the room, of the attribution hint or of the send lands on it;
+ * `acquire` runs inside that lifecycle and what it returns is released here. Null: the chat has no change.
  */
-export function runDraftSelection(
-  queryClient: QueryClient,
-  scope: Scope,
-  mode: Mode,
-  draft: DraftReviewSelection,
-  selection: ChangeSelection,
-  threadId: string | null,
-): Promise<DraftCommandOutcome> {
-  if (!selection.operationIds.length) return Promise.resolve({ kind: "blocked" });
-  const target = { ...scope, documentId: draft.documentId, itemKey: draft.itemKey };
-  if (wholeDraftPending(currentChangeCommandRecords(), target))
-    return Promise.resolve({ kind: "blocked" });
-  if (cachedActivePreview(queryClient, target) === null)
-    return Promise.resolve({ kind: "change-refused", mode, code: "stale" });
-  return new Promise<DraftCommandOutcome>((resolve) => {
-    queueChangeSelection(target, selection, mode, resolve, (click, afterAnother) =>
-      sendClick(queryClient, target, mode, click, threadId, afterAnother),
-    );
-    void drainClicks(target);
-  });
-}
-
-function cachedActivePreview(queryClient: QueryClient, draft: DraftRef) {
-  const cached = queryClient.getQueryData<DraftPreviewResponse>(
-    projectQueryKeys.workDraftPreview(
-      draft.projectId,
-      draft.workId,
-      draft.documentId,
-      draft.itemKey,
-    ),
-  );
-  return cached?.status === "active" ? cached : null;
-}
-
-/** Sends a draft's accepted clicks in order; the first one's claim begins in the click's own turn. */
-async function drainClicks(draft: DraftRef): Promise<void> {
-  const token = beginIntentDrain(draft);
-  if (!token) return;
-  try {
-    for (let sent = 0; ; sent += 1) {
-      const click = nextQueuedClick(draft);
-      if (!click) return;
-      let outcome: DraftCommandOutcome | null;
-      try {
-        if (click.target === "all") {
-          if (queuedChangeIsLive(click.change)) {
-            // Admission transfers the intent to its addressed claim, as for selections.
-            click.change.retire();
-            outcome = await click.send();
-          } else outcome = { kind: "blocked" };
-        } else outcome = await click.send(click, sent > 0);
-      } catch (error) {
-        // A failed read is the click's to report only while the click is still this account's.
-        if (queuedChangeIsLive(click.change) && click.target === "selection")
-          failChangeCommand(draft, click, click.mode, "stale");
-        if (click.target === "all") {
-          click.reject(error);
-          outcome = null;
-        } else outcome = { kind: "change-refused", mode: click.mode, code: "stale" };
-      }
-      click.change.retire();
-      if (outcome) click.settle(outcome);
-      // An account change emptied the queue under this loop: it ends with it.
-      if (!intentDrainCurrent(draft, token)) return;
-    }
-  } finally {
-    endIntentDrain(draft, token);
-  }
-}
-
-async function sendClick(
+export async function applyChatChanges(
   queryClient: QueryClient,
   draft: DraftRef,
-  mode: Mode,
-  click: ChangeSelection & { change: QueuedChange },
-  threadId: string | null,
-  afterAnother: boolean,
+  acquire: () => Promise<ChatApplyPlan | null>,
+  threadId: string | null = null,
 ): Promise<DraftCommandOutcome> {
-  const blocked: DraftCommandOutcome = { kind: "blocked" };
-  // The first click is read against what the writer is looking at; a later one
-  // against the draft as the earlier commands left it.
-  let preview = cachedActivePreview(queryClient, draft);
-  if (afterAnother && canSendDraftCommand()) {
-    const fresh = await queryClient.fetchQuery({
-      ...draftPreviewQueryOptions(draft),
-      staleTime: 0,
-    });
-    // Revoked while the read was out: nothing is sent, nothing is published.
-    if (!queuedChangeIsLive(click.change)) return blocked;
-    preview = fresh.status === "active" ? fresh : null;
-  }
-  if (!preview) return { kind: "change-refused", mode, code: "gone" };
-  const resolved = resolveClick(preview, draft, click);
-  if (!resolved) {
-    failChangeCommand(draft, click, mode, "stale");
-    return { kind: "change-refused", mode, code: "stale" };
-  }
-  const { selection, changes } = resolved;
-  const start = startDraftCommand(
+  return applyUnderDraftClaim(
     queryClient,
-    {
-      target: "selection",
-      draft,
-      mode,
-      selection,
-      basis: {
-        liveRevisionToken: preview.liveRevisionToken,
-        draftRevisionToken: preview.draftRevisionToken,
-        branchGeneration: preview.branchGeneration,
-      },
-      completesDraft: coversEveryChange(selection, changes),
+    draft,
+    async () => {
+      const plan = await acquire();
+      return (
+        plan && { prepared: plan.prepared, changeIds: plan.targets.map((target) => target.id) }
+      );
     },
     threadId,
-    undefined,
-    async () => {
-      const fresh = await queryClient.fetchQuery({
-        ...draftPreviewQueryOptions(draft),
-        staleTime: 0,
-      });
-      if (
-        !accountEpochIs(click.change.epoch) ||
-        !canSendDraftCommand() ||
-        fresh.status !== "active"
-      )
-        return null;
-      const resolved = resolveClick(fresh, draft, click);
-      return resolved
-        ? {
-            target: "selection",
-            draft,
-            mode,
-            selection: resolved.selection,
-            basis: {
-              liveRevisionToken: fresh.liveRevisionToken,
-              draftRevisionToken: fresh.draftRevisionToken,
-              branchGeneration: fresh.branchGeneration,
-            },
-            completesDraft: coversEveryChange(resolved.selection, resolved.changes),
-          }
-        : null;
-    },
   );
-  // Its claim hides the change from here on; the queue entry's hiding ends with it.
-  click.change.retire();
-  return start.outcome;
 }
 
-/** Focus follows overlap; commands retain the clicked members and their server admission evidence. */
-function resolveClick(
-  preview: Extract<DraftPreviewResponse, { status: "active" }>,
+async function applyUnderDraftClaim(
+  queryClient: QueryClient,
   draft: DraftRef,
-  click: ChangeSelection,
-) {
-  const remaining = projectDraft(
-    preview,
-    intentKeys(currentChangeCommandRecords(), draft, true),
-    false,
-  ).preview;
-  if (remaining.status !== "active") return null;
-  const changes = reviewChangesOfPreview(remaining);
-  const wanted = new Set(selectionKeys(click));
-  // Membership is checked on complete raw classes, never on masked evidence.
-  const current = reviewChangesOfPreview(preview).filter((change) =>
-    change.keys.some((key) => wanted.has(key)),
-  );
-  if (!current.length || current.some((change) => change.target.kind !== "operations")) return null;
-  const selection = selectionOf(current);
-  const expectedTokens = new Set(click.admissionTokens);
-  if (
-    expectedTokens.size !== selection.admissionTokens.length ||
-    selection.admissionTokens.some((token) => !expectedTokens.has(token))
-  )
-    return null;
-  const found = new Set(selectionKeys(selection));
-  if (found.size !== wanted.size || [...found].some((key) => !wanted.has(key))) return null;
-  return { changes, selection: { ...selection, keys: [...selectionKeys(click)] } };
-}
-
-export type DraftBatchItem = { draft: DraftReviewSelection };
-export type DraftBatchOutcome = { draft: DraftReviewSelection; outcome: DraftCommandOutcome };
-
-/**
- * A batch is aggregate progress, not another scheduler. Each send submits to
- * its own draft's admission/queue; unrelated drafts remain actionable. The
- * account capability is checked by each queue at actual send.
- */
-export async function runDraftBatch<T extends DraftBatchItem>(
-  items: readonly T[],
-  send: (item: T) => Promise<DraftCommandOutcome>,
-): Promise<DraftBatchOutcome[]> {
-  const epoch = currentAccountEpoch();
-  // Admission is synchronous for every target. Their draft queues, not this
-  // aggregate, own dispatch and account revocation before an actual send.
-  const pending = items.map((item) => {
-    const outcome = accountEpochIs(epoch)
-      ? send(item)
-      : Promise.resolve<DraftCommandOutcome>({ kind: "blocked" });
-    return outcome.then((outcome) => ({ draft: item.draft, outcome }));
-  });
-  return Promise.all(pending);
-}
-
-/** Whole and selective batch targets share the draft's one epoch-bound drain. */
-export function runWholeDraftIntent(
-  draft: DraftRef,
-  mode: Mode,
-  send: () => CommandStart,
-): CommandStart {
-  let admitted: CommandStart | null = null;
-  const outcome = new Promise<DraftCommandOutcome>((resolve, reject) => {
-    queueWholeDraft(
+  acquire: () => Promise<Acquired | null>,
+  threadId: string | null,
+): Promise<DraftCommandOutcome> {
+  const claim = beginDraftCommand(draft, "apply");
+  if (!claim) return { kind: "blocked" };
+  if (!isOnline()) {
+    failDraftCommand(claim, { code: "apply-offline" });
+    return { kind: "blocked" };
+  }
+  const ready = await prepare(acquire);
+  if (ready.kind === "empty") {
+    releaseDraftCommand(claim);
+    return { kind: "blocked" };
+  }
+  if (ready.kind === "unsent") {
+    failDraftCommand(claim, { code: "apply-offline" });
+    return { kind: "failed" };
+  }
+  const { acquired } = ready;
+  try {
+    const draftId = await draftIdOf(queryClient, draft);
+    if (!draftId) {
+      releaseDraftCommand(claim);
+      refresh(queryClient, draft, threadId);
+      return { kind: "gone" };
+    }
+    const carried = await carry(
+      queryClient,
       draft,
-      mode,
-      () => {
-        const start = send();
-        admitted = start;
-        return start.outcome;
-      },
-      resolve,
-      reject,
+      applySend(
+        draft,
+        draftId,
+        listedRow(queryClient, draft),
+        acquired,
+        () => claimIsLive(claim),
+        isWholeItem(queryClient, draft),
+      ),
     );
-    void drainClicks(draft);
-  });
-  // The drain admits an idle draft synchronously. Queued whole commands do not
-  // grant immediate navigation; their onSent effect belongs to their own turn.
-  return { sent: (admitted as CommandStart | null)?.sent ?? false, outcome };
+    if (carried.kind === "revoked") return { kind: "blocked" };
+    if (carried.kind === "blocked") {
+      failDraftCommand(claim, { code: "apply-blocked" });
+      refresh(queryClient, draft, threadId);
+      return { kind: "failed" };
+    }
+    if (carried.kind === "error") {
+      failDraftCommand(claim, draftFailureOf(carried.error, "apply"));
+      return { kind: "failed" };
+    }
+    return answerApply(queryClient, claim, carried.result, threadId);
+  } catch (error) {
+    failDraftCommand(claim, draftFailureOf(error, "apply"));
+    return { kind: "failed" };
+  } finally {
+    acquired.prepared.release?.();
+  }
 }
 
+function answerApply(
+  queryClient: QueryClient,
+  claim: DraftClaim,
+  result: DraftItemApplyResult,
+  threadId: string | null,
+): DraftCommandOutcome {
+  const { draft } = claim;
+  switch (result.status) {
+    case "applied":
+    case "already_live": {
+      const overrode = result.status === "applied" ? result.overrode : [];
+      const itemClosed = result.status === "applied" && result.itemClosed;
+      noteOverrode(claim, overrode);
+      releaseDraftCommand(claim);
+      refresh(queryClient, draft, threadId);
+      return { kind: "applied", overrode, itemClosed };
+    }
+    case "gone":
+      releaseDraftCommand(claim);
+      refresh(queryClient, draft, threadId);
+      return { kind: "gone" };
+    default:
+      failDraftCommand(claim, { code: "apply-refused", serverCode: itemRefusalCode(result) });
+      refresh(queryClient, draft, threadId);
+      return { kind: "failed" };
+  }
+}
+
+// ---- item Discard ----
+
 /**
- * Work Files' Apply all and Discard all: one server command over the Work's listed items. Each item
- * the command acts on takes its own claim (it leaves every surface at the click and locks its
- * selective controls) and settles from the one answer: applied or discarded, held or stale on that item.
- * An item whose own command is in flight is left to that command.
+ * Close an item on the server (item Discard: a created, binary or live-deleted item). A review's own
+ * Discard is a local editor edit and never calls this; lists and the Work page do.
+ */
+export async function discardDraftItem(
+  queryClient: QueryClient,
+  draft: DraftRef,
+  threadId: string | null = null,
+): Promise<DraftCommandOutcome> {
+  const claim = beginDraftCommand(draft, "discard");
+  if (!claim) return { kind: "blocked" };
+  if (!isOnline()) {
+    failDraftCommand(claim, { code: "discard-offline" });
+    return { kind: "blocked" };
+  }
+  try {
+    const draftId = await draftIdOf(queryClient, draft);
+    if (!draftId) {
+      releaseDraftCommand(claim);
+      refresh(queryClient, draft, threadId);
+      return { kind: "gone" };
+    }
+    const body: Omit<Parameters<typeof postDiscardDraft>[3], "commandId"> = {
+      draftId,
+      itemKey: draft.itemKey,
+    };
+    const carried = await carry<DraftItemDiscardResult>(queryClient, draft, {
+      kind: "discard-item",
+      body,
+      send: (request) =>
+        postDiscardDraft(
+          draft.projectId,
+          draft.workId,
+          draft.documentId,
+          request as Parameters<typeof postDiscardDraft>[3],
+        ),
+      observe: (commandId) => observeDraftCommand(draft.projectId, draft.workId, commandId),
+      live: () => claimIsLive(claim),
+    });
+    if (carried.kind === "revoked") return { kind: "blocked" };
+    if (carried.kind === "blocked") {
+      failDraftCommand(claim, { code: "apply-blocked" });
+      return { kind: "failed" };
+    }
+    if (carried.kind === "error") {
+      failDraftCommand(claim, draftFailureOf(carried.error, "discard"));
+      return { kind: "failed" };
+    }
+    releaseDraftCommand(claim);
+    refresh(queryClient, draft, threadId);
+    return carried.result.status === "discarded" ? { kind: "discarded" } : { kind: "gone" };
+  } catch (error) {
+    failDraftCommand(claim, draftFailureOf(error, "discard"));
+    return { kind: "failed" };
+  }
+}
+
+// ---- the Work page: Apply all, Discard all ----
+
+type WorkTarget = { itemKey: string; documentId: string };
+
+/**
+ * Work Files' Apply all and Discard all: one server command over the Work's draft (`apply_items` over the
+ * listed items, or `discard_draft`). Each item the command acts on takes its own claim (it leaves every
+ * surface at the click and locks its controls) and settles from the one answer. An item whose own command
+ * is in flight is left to that command. Apply all sends each item as it stands when the server stages it
+ * (staging is consent, Q1), so it carries no snapshots.
  */
 export function runWorkWideCommand(
   queryClient: QueryClient,
-  scope: Scope,
-  mode: Mode,
-  drafts: readonly DraftReviewSelection[],
+  scope: { projectId: string; workId: string },
+  mode: "apply" | "discard",
+  drafts: readonly WorkTarget[],
   threadId: string | null,
-  onSent?: (claimed: readonly DraftReviewSelection[]) => void,
+  onSent?: (claimed: readonly WorkTarget[]) => void,
 ): Promise<DraftCommandOutcome[]> {
   const blocked: DraftCommandOutcome = { kind: "blocked" };
-  const rows = queryClient.getQueryData<ThreadDraftListItem[]>(
-    projectQueryKeys.workDrafts(scope.projectId, scope.workId),
-  );
+  const rows =
+    queryClient.getQueryData<ThreadDraftListItem[]>(
+      projectQueryKeys.workDrafts(scope.projectId, scope.workId),
+    ) ?? [];
+  const draftId = workDraftId(rows);
   const targets = drafts.flatMap((draft) => {
-    const row = rows?.find((item) => item.itemKey === draft.itemKey);
+    const row = rows.find((item) => item.itemKey === draft.itemKey);
     return row ? [{ draft: { ...scope, ...draft }, row }] : [];
   });
-  const draftId = targets[0]?.row.draftId;
-  const claimable = (draft: DraftRef) =>
-    !pendingDraftCommand(currentDraftCommandRecords(), draft) &&
-    !wholeDraftPending(currentChangeCommandRecords(), draft);
-  if (!draftId || !targets.some(({ draft }) => claimable(draft)))
-    return Promise.resolve(drafts.map(() => blocked));
-  if (!canSendDraftCommand()) {
+  if (!draftId || targets.length === 0) return Promise.resolve(drafts.map(() => blocked));
+  if (!isOnline()) {
     const failure: DraftCommandFailure = { code: `${mode}-offline` };
-    for (const { draft } of targets) if (claimable(draft)) failDraftCommand(draft, failure);
-    return Promise.resolve(drafts.map(() => ({ kind: "failed", failure })));
+    for (const { draft } of targets) {
+      const claim = beginDraftCommand(draft, mode);
+      if (claim) failDraftCommand(claim, failure);
+    }
+    return Promise.resolve(drafts.map(() => ({ kind: "failed" })));
   }
   const claims = targets.flatMap(({ draft, row }) => {
-    const claim = claimable(draft)
-      ? beginDraftCommand(draft, {
-          target: "all",
-          mode,
-          branchGeneration: row.branchGeneration ?? undefined,
-          completesDraft: true,
-        })
-      : null;
+    const claim = beginDraftCommand(draft, mode);
     return claim ? [{ claim, row }] : [];
   });
+  if (claims.length === 0) return Promise.resolve(drafts.map(() => blocked));
   try {
     onSent?.(claims.map(({ claim }) => claim.draft));
   } catch (error) {
@@ -790,16 +676,15 @@ export function runWorkWideCommand(
 
 async function executeWorkWide(
   queryClient: QueryClient,
-  scope: Scope,
-  mode: Mode,
+  scope: { projectId: string; workId: string },
+  mode: "apply" | "discard",
   draftId: string,
   claims: readonly { claim: DraftClaim; row: ThreadDraftListItem }[],
   threadId: string | null,
 ): Promise<Map<string, DraftCommandOutcome>> {
   const outcomes = new Map<string, DraftCommandOutcome>();
-  let held: { commandId: string; digest: string } | null = null;
+  const first = claims[0].claim.draft;
   const live = () => claims.some(({ claim }) => claimIsLive(claim));
-  const refreshWork = () => refresh(queryClient, scope, threadId);
   const settle = (
     each: (claim: DraftClaim, row: ThreadDraftListItem) => DraftCommandOutcome | null,
   ) => {
@@ -809,111 +694,93 @@ async function executeWorkWide(
       if (outcome) outcomes.set(row.itemKey, outcome);
     }
   };
-  const fail = (code: DraftCommandFailure["code"], serverCode?: string) =>
+  const fail = (failure: DraftCommandFailure) =>
     settle((claim) => {
-      const failure: DraftCommandFailure = { code, ...(serverCode ? { serverCode } : {}) };
       failDraftCommand(claim, failure);
-      return { kind: "failed", failure };
+      return { kind: "failed" };
     });
-  const closed = (claim: DraftClaim, row: ThreadDraftListItem) =>
-    answerDraftCommandClosed(claim, { documentName: row.documentName });
+  const observe = (commandId: string) =>
+    observeDraftCommand(scope.projectId, scope.workId, commandId);
   try {
     if (mode === "apply")
       void queryClient.cancelQueries({
         queryKey: projectQueryKeys.workDrafts(scope.projectId, scope.workId),
       });
-    const items = claims.map(({ row }) => ({
-      itemKey: row.itemKey,
-      locationToken: row.tokens.locationToken,
-      ...(row.tokens.liveTextToken ? { liveTextToken: row.tokens.liveTextToken } : {}),
-      ...(row.tokens.branchGenerationToken
-        ? { branchGenerationToken: row.tokens.branchGenerationToken }
-        : {}),
-    }));
-    const digest = JSON.stringify(items);
-    const commandId = commandIdFor(claims[0].claim.draft, `work-${mode}`, digest);
-    held = { commandId, digest };
-    const settled = await queryClient
-      .getMutationCache()
-      .build<
-        Awaited<ReturnType<typeof settleCommand<DraftApplyAllResponse | DraftDiscardAllResponse>>>,
-        unknown,
-        void,
-        unknown
-      >(queryClient, {
-        networkMode: "always",
-        mutationFn: () =>
-          settleCommand<DraftApplyAllResponse | DraftDiscardAllResponse>({
-            send: () =>
-              mode === "apply"
-                ? applyAllDrafts(scope.projectId, scope.workId, { draftId, commandId, items })
-                : discardAllDrafts(scope.projectId, scope.workId, { draftId, commandId }),
-            observe: () => observeDraftCommand(scope.projectId, scope.workId, commandId),
+    const carried =
+      mode === "apply"
+        ? await carry<DraftApplyAllResult>(queryClient, first, {
+            kind: "work-apply",
+            body: {
+              draftId,
+              items: claims.map(({ row }) => ({
+                itemKey: row.itemKey,
+                locationToken: row.tokens.locationToken,
+              })),
+            } satisfies Omit<DraftApplyAllBody, "commandId">,
+            send: (request) =>
+              applyAllDrafts(scope.projectId, scope.workId, request as DraftApplyAllBody),
+            observe,
             live,
-          }),
-      })
-      .execute(undefined);
-    if (settled.kind === "revoked") return outcomes;
-    retainUnknownCommand(claims[0].claim.draft, `work-${mode}`, null);
-    if (settled.kind === "blocked") {
-      await refreshWork().catch(() => undefined);
-      fail("apply-blocked");
+          })
+        : await carry<DraftDiscardAllResponse>(queryClient, first, {
+            kind: "work-discard",
+            body: { draftId },
+            send: (request) =>
+              discardAllDrafts(
+                scope.projectId,
+                scope.workId,
+                request as Parameters<typeof discardAllDrafts>[2],
+              ),
+            observe,
+            live,
+          });
+    if (carried.kind === "revoked") return outcomes;
+    if (carried.kind === "blocked") {
+      refresh(queryClient, scope, threadId);
+      fail({ code: "apply-blocked" });
       return outcomes;
     }
-    const response = settled.result;
-    if (response.status === "completed") {
-      const byKey = new Map(response.items.map((item) => [item.itemKey, item]));
+    if (carried.kind === "error") {
+      fail(draftFailureOf(carried.error, mode));
+      return outcomes;
+    }
+    const result = carried.result;
+    refresh(queryClient, scope, threadId);
+    if (result.status === "gone") {
+      settle(() => ({ kind: "gone" }));
+    } else if (result.status === "discarded") {
+      settle(() => ({ kind: "discarded" }));
+    } else if (result.status === "stale") {
+      const stale = new Set<string>(result.staleItemKeys);
+      settle((claim, row) => {
+        if (!stale.has(row.itemKey)) return { kind: "blocked" };
+        failDraftCommand(claim, { code: "apply-refused", serverCode: "stale" });
+        return { kind: "failed" };
+      });
+    } else {
+      const byKey = new Map(result.items.map((item) => [item.itemKey, item]));
       settle((claim, row) => {
         const item = byKey.get(row.itemKey);
-        if (item?.status === "applied") {
-          closed(claim, row);
-          confirmDraftCommand(claim);
-          return { kind: "applied" };
+        if (item?.status === "applied" || item?.status === "already_live") {
+          const overrode = item.status === "applied" ? item.overrode : [];
+          noteOverrode(claim, overrode);
+          return {
+            kind: "applied",
+            overrode,
+            itemClosed: item.status === "applied" && item.itemClosed,
+          };
         }
-        const failure: DraftCommandFailure = {
+        failDraftCommand(claim, {
           code: "apply-refused",
-          serverCode: item?.status === "held" ? item.reason.code : "stale",
-        };
-        failDraftCommand(claim, failure);
-        return { kind: "failed", failure };
+          serverCode: item ? refusalCode(item) : "stale",
+        });
+        return { kind: "failed" };
       });
       void queryClient
         .invalidateQueries({
           predicate: (query) => isProjectContextCatalogKey(query.queryKey, scope.projectId),
         })
         .catch(() => undefined);
-      await refreshWork().catch(() => undefined);
-    } else if (response.status === "discarded") {
-      settle((claim, row) => {
-        closed(claim, row);
-        return { kind: "discarded" };
-      });
-      await refreshWork().catch(() => undefined);
-    } else if (response.status === "stale") {
-      const stale = new Set<string>(response.staleItemKeys);
-      await refreshWork().catch(() => undefined);
-      settle((claim, row) => {
-        if (!stale.has(row.itemKey)) return { kind: "blocked" };
-        const failure: DraftCommandFailure = { code: "apply-refused", serverCode: "stale" };
-        failDraftCommand(claim, failure);
-        return { kind: "failed", failure };
-      });
-    } else {
-      await refreshWork().catch(() => undefined);
-      fail(`${mode}-refused`, "draft_not_found");
-    }
-    return outcomes;
-  } catch (error) {
-    const unknown = httpErrorStatus(error) === undefined;
-    retainUnknownCommand(claims[0].claim.draft, `work-${mode}`, unknown ? held : null);
-    await refreshWork().catch(() => undefined);
-    if (unknown) fail(`${mode}-unknown`);
-    else {
-      const rejection = classifyDraftCommandRejection(error);
-      fail(
-        `${mode}-${rejection.kind}`,
-        rejection.kind === "refused" ? rejection.serverCode : undefined,
-      );
     }
     return outcomes;
   } finally {

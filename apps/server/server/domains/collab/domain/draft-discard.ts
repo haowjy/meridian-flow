@@ -3,18 +3,17 @@
  * public command `discardItems` (writer and model) takes §14's in-process leases first —
  * every branch of the draft for a whole Discard, the items' branches and their live
  * documents for an item Discard — then the store's one transaction: the Work, active
- * (D30), the draft, the namespaces and documents, and the kernel. The kernel resets each
- * item's text from live, or closes every branch with the draft, and ends the draft's use
+ * (D30), the draft, the namespaces and documents, and the kernel. The kernel closes the
+ * items' branches (item Discard is close-only, W9), or every branch with the draft, and ends the draft's use
  * of what it created: what no draft uses any more is tombstoned and its storage released.
  * Purge runs the kernel in its own transaction after its own lifecycle proof (§2.6).
  */
 import type { DraftId, UserId, WorkId } from "@meridian/contracts";
-import type { DraftCommandResult } from "@meridian/contracts/drafts";
+import type { DraftCommandOutcome } from "@meridian/contracts/drafts";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import type * as Y from "yjs";
 import type { NodeRef } from "../../context/tree/tree-view.js";
 import { BranchCasConflictError } from "./branch-coordinator.js";
-import type { BranchCriticalSections, BranchLockLease } from "./branch-critical-sections.js";
+import type { BranchCriticalSections } from "./branch-critical-sections.js";
 import { collabHook } from "./collab-test-hooks.js";
 import type { DraftBranchLeases } from "./draft-branch-leases.js";
 import type { DraftCommandEnvelope } from "./draft-commands.js";
@@ -35,7 +34,7 @@ export interface DraftDiscard {
     selection: DiscardSelection;
     userId?: UserId;
     /** The writer's command, claimed `done` in the kernel's transaction with this result (§4.6). */
-    command?: { envelope: DraftCommandEnvelope; result: DraftCommandResult };
+    command?: CommandClaim;
   }): Promise<DiscardResult>;
 }
 
@@ -48,16 +47,11 @@ export type DiscardItem = {
   origin: "created" | "edited";
 };
 
-export type DiscardKernelInput =
-  /** Item text resets need the leased branches and the live documents they reset from. */
-  | {
-      draftId: DraftId;
-      selection: { kind: "items"; items: readonly DiscardItem[] };
-      lease: BranchLockLease;
-      liveDocs: ReadonlyMap<DocumentId, Y.Doc>;
-    }
-  /** A whole Discard closes every branch and resets no text (purge passes this). */
-  | { draftId: DraftId; selection: { kind: "whole" } };
+/** An item Discard closes the items' branches; a whole Discard closes every branch of the draft. No text is reset. */
+export type DiscardKernelInput = {
+  draftId: DraftId;
+  selection: { kind: "items"; items: readonly DiscardItem[] } | { kind: "whole" };
+};
 
 export type DiscardKernelResult = {
   draftClosed: boolean;
@@ -86,7 +80,7 @@ export interface DraftDiscardStore {
     workId: WorkId;
     kernel: DiscardKernelInput;
     leased: ReadonlySet<string>;
-    command?: { envelope: DraftCommandEnvelope; result: DraftCommandResult };
+    command?: CommandClaim;
   }): Promise<DiscardKernelResult | null>;
 }
 
@@ -103,39 +97,23 @@ export class DraftDiscardScopeChangedError extends Error {
 
 const ATTEMPTS = 4;
 
-type CommandClaim = { envelope: DraftCommandEnvelope; result: DraftCommandResult };
+/** `gone` restates the claim when the draft stopped being active under the kernel's lock. */
+type CommandClaim = {
+  envelope: DraftCommandEnvelope;
+  result: DraftCommandOutcome;
+  gone: DraftCommandOutcome;
+};
 
 export function createDraftDiscard(deps: {
   drafts: Pick<Drafts, "byIds">;
   draftLeases: DraftBranchLeases;
   criticalSections: BranchCriticalSections;
-  liveCoordinator: {
-    withDocument<T>(documentId: string, run: (doc: Y.Doc) => Promise<T>): Promise<T>;
-  };
   store: DraftDiscardStore;
   /** After commit: the rooms and thread state of exactly the branches the kernel retired. */
   retire: PeerRetirement;
   /** After commit: delete tombstoned binaries' objects, best effort. */
   releaseObjects(storageUrls: readonly string[]): Promise<void>;
 }): DraftDiscard {
-  /** Every one of these live documents' coordinator leases, in document-id order. */
-  function withLiveDocuments<T>(
-    ids: readonly DocumentId[],
-    run: (docs: ReadonlyMap<DocumentId, Y.Doc>) => Promise<T>,
-  ): Promise<T> {
-    const ordered = [...new Set(ids)].sort();
-    const docs = new Map<DocumentId, Y.Doc>();
-    const step = (index: number): Promise<T> => {
-      const id = ordered[index];
-      if (id === undefined) return run(docs);
-      return deps.liveCoordinator.withDocument(id, async (doc) => {
-        docs.set(id, doc);
-        return step(index + 1);
-      });
-    };
-    return step(0);
-  }
-
   async function retrying<T>(attempt: () => Promise<T>): Promise<T> {
     for (let tries = 1; ; tries += 1) {
       try {
@@ -173,17 +151,14 @@ export function createDraftDiscard(deps: {
     const documentIds = selected.map((item) => item.documentId);
     const branches = await deps.store.activeBranches(draftId, documentIds);
     const branchIds = branches.map((ref) => ref.branchId);
-    const textDocuments = selected.flatMap((item) => (item.draftBranchId ? [item.documentId] : []));
-    return deps.criticalSections.withBranches(branchIds, async (lease) => {
+    return deps.criticalSections.withBranches(branchIds, async () => {
       await collabHook("discard.afterLeases");
-      return withLiveDocuments(textDocuments, (liveDocs) =>
-        deps.store.discardLocked({
-          workId,
-          kernel: { draftId, selection: { kind: "items", items: selected }, lease, liveDocs },
-          leased: new Set(branchIds),
-          ...(command ? { command } : {}),
-        }),
-      );
+      return deps.store.discardLocked({
+        workId,
+        kernel: { draftId, selection: { kind: "items", items: selected } },
+        leased: new Set(branchIds),
+        ...(command ? { command } : {}),
+      });
     });
   }
 

@@ -19,7 +19,9 @@ bootstrap. The `./mf` CLI lives in [`tools/mf`](../mf/AGENTS.md).
   open an ad-hoc admin client.
 - Use `generate` plus `migrate`, not `push`, for schema changes. The migration
   runner owns frozen history, advisory locking, and no-transaction semantics;
-  only reset the current checkout's database with explicit ownership.
+  only reset the current checkout's database with explicit ownership. A migration
+  whose first line is `-- data-step: <id>@<version>` anchors a registered data step
+  that `pnpm db:migrate` runs itself; mechanics are in the context page.
 - Migration lint has one `RULES` list. Errors always block; warnings block in
   strict CI. Skips must be safe on populated tables.
 - Build canonical environment before the tmux command. Secrets may enter the
@@ -45,5 +47,5 @@ bootstrap. The `./mf` CLI lives in [`tools/mf`](../mf/AGENTS.md).
 - DB tests use owned databases and rollback/FK-ordered reset; never add per-case
   truncation or share a managed database between workers.
 
-See the context page for CLI output, DB lifecycle, cleanup evidence, and probe
+See the context page for DB lifecycle, cleanup evidence, and probe
 contracts.

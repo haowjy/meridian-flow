@@ -1,13 +1,14 @@
 /**
- * The review list (contract §13.1, sync 8 §3.1): a draft's items are its tree state (every
+ * The review list (contract §4, sync 8 §3.1): a draft's items are its tree state (every
  * document it created, listed with no text yet, and the documents it edited) merged by
  * document with its `work_draft` branches. A created document is always an item; an edited
- * one is when its branch has reviewable rows and `hasEffect OR blocking`, so a write and its
- * undo net to no item and a held restoration stays. That one predicate feeds the list, the
- * Work counts and the D40 confirmation. A branch with no effect is still addressable
- * (`resolve`), unlisted, so its next proposal keeps the same room. Every item is keyed `${draftId}:${documentId}` (F12) and carries the
- * tokens Apply checks (§11.3): its location version from the same tree read that spells
- * its path, the live document's full-state fingerprint, and the branch generation.
+ * one is when its text branch has `has_effect OR blocking`, so a writer-only edit lists and a
+ * write followed by its revert lists nothing, while a held restoration stays. That one
+ * predicate (`isListed`) feeds the list; `drizzle-branch-push.ts` holds its SQL twin for the
+ * Work counts, the document hint and the strip. A branch with no effect is still addressable
+ * (`resolve`), unlisted, so its next proposal keeps the same room. Every item is keyed
+ * `${draftId}:${documentId}` (F12) and carries its location token, the one freshness token left:
+ * the tree version from the same read that spells its path.
  */
 import type { DraftId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
@@ -22,8 +23,8 @@ export type DraftReviewItem = {
   documentId: DocumentId;
   /** The draft's branch on the document; null for an image or a create with no text yet. */
   draftBranchId: string | null;
-  /** The branch's generation; null without a branch. */
-  branchGeneration: number | null;
+  /** The text branch still differs from its base (`has_effect`); false without a branch. */
+  hasChanges: boolean;
   /** created: the draft has a `created` row; edited: branch rows only. */
   origin: "created" | "edited";
   /** Created and still hidden: derived on read, nothing rewrites it. */
@@ -33,11 +34,7 @@ export type DraftReviewItem = {
   /** Canonical URI in the draft's view (the last address for one deleted live). */
   path: string | null;
   conflict: { code: "path_taken"; path: string } | { code: "deleted_live" } | null;
-  tokens: {
-    locationToken: string;
-    liveTextToken: string | null;
-    branchGenerationToken: string | null;
-  };
+  tokens: { locationToken: string };
   /**
    * Deleted live (an edited document, or a revealed create): no view shows it, so it
    * authorizes through the draft's branch on it and its final location (F9, §13.3).
@@ -56,19 +53,15 @@ export type DraftReviewItem = {
 export type ResolvedDraftItem = { item: DraftReviewItem; listed: boolean };
 
 export interface DraftReviewItems {
-  /** The draft's listed items, live text tokens unread (null). */
+  /** The draft's listed items. */
   list(draftId: DraftId): Promise<DraftReviewItem[]>;
+  /** Every item the draft has a view of, listed or not. */
+  addressable(draftId: DraftId): Promise<DraftReviewItem[]>;
   /**
    * One document's item and whether it is listed, for every document the draft has a view
    * of (an active branch, or a change row); null only when it is not addressable.
    */
   resolve(draftId: DraftId, documentId: DocumentId): Promise<ResolvedDraftItem | null>;
-  /**
-   * The review list's enrichment: each live document's full-state fingerprint read under
-   * its lease, for an item with text that live readers see. Apply compares the tokens a
-   * request carries; it never needs these.
-   */
-  withLiveTextTokens(items: readonly DraftReviewItem[]): Promise<DraftReviewItem[]>;
 }
 
 export function createDraftReviewItems(deps: {
@@ -88,8 +81,6 @@ export function createDraftReviewItems(deps: {
   ): Promise<ReadonlyMap<DocumentId, string>>;
   /** The item keys a staged, unfinished batch of the draft holds. */
   settling(draftId: DraftId): Promise<ReadonlySet<string>>;
-  /** The live document's full-state fingerprint, read under its coordinator lease. */
-  liveFingerprint(documentId: DocumentId): Promise<string>;
 }): DraftReviewItems {
   async function items(
     draftId: DraftId,
@@ -108,7 +99,7 @@ export function createDraftReviewItems(deps: {
       .map((node) => {
         const evidence = branchOf.get(node.nodeId);
         const item = toItem(draftId, node, evidence, creators.get(node.nodeId), settling);
-        return { item, listed: node.origin === "created" || isEdited(evidence) };
+        return { item, listed: node.origin === "created" || isListed(evidence) };
       })
       .sort((a, b) => (a.item.path ?? "").localeCompare(b.item.path ?? ""));
   }
@@ -117,30 +108,18 @@ export function createDraftReviewItems(deps: {
     async list(draftId) {
       return (await items(draftId)).flatMap(({ item, listed }) => (listed ? [item] : []));
     },
+    async addressable(draftId) {
+      return (await items(draftId)).map(({ item }) => item);
+    },
     async resolve(draftId, documentId) {
       return (await items(draftId, [documentId]))[0] ?? null;
     },
-    withLiveTextTokens: (listed) =>
-      Promise.all(
-        listed.map(async (item) =>
-          // Live text exists only for a document live readers see.
-          item.draftBranchId && !item.isNew && !item.deletedLive && !item.binary
-            ? {
-                ...item,
-                tokens: {
-                  ...item.tokens,
-                  liveTextToken: await deps.liveFingerprint(item.documentId),
-                },
-              }
-            : item,
-        ),
-      ),
   };
 }
 
-/** The §3.1 predicate for a document the draft only edited. */
-function isEdited(evidence: WorkDraftPendingEvidence | undefined): boolean {
-  return Boolean(evidence?.hasRows && (evidence.branch.hasEffect || evidence.branch.blocking));
+/** The §4.1 predicate for a document the draft only edited: its text branch differs from its base or holds. */
+export function isListed(evidence: WorkDraftPendingEvidence | undefined): boolean {
+  return Boolean(evidence && (evidence.branch.hasEffect || evidence.branch.blocking));
 }
 
 function toItem(
@@ -159,21 +138,17 @@ function toItem(
     itemKey: draftItemKey(draftId, node.nodeId),
     documentId: node.nodeId,
     draftBranchId: evidence?.branch.branchId ?? null,
+    hasChanges: Boolean(evidence?.branch.hasEffect),
     origin: node.origin,
     isNew,
     binary: node.binary,
     wholeItem: isNew || node.binary || deletedLive,
     settling: settling.has(draftItemKey(draftId, node.nodeId)),
-    branchGeneration: evidence?.branch.generation ?? null,
     documentName: documentTitleFromUri(path),
     path,
     conflict: conflictOf(node),
     deletedLive,
-    tokens: {
-      locationToken: node.locationVersion.toString(),
-      liveTextToken: null,
-      branchGenerationToken: evidence ? String(evidence.branch.generation) : null,
-    },
+    tokens: { locationToken: node.locationVersion.toString() },
     actorThreadIds:
       creatorThreadId && !writers.includes(creatorThreadId)
         ? [...writers, creatorThreadId]

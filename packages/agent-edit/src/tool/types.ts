@@ -22,13 +22,10 @@ export type {
   WriteCommandName,
 } from "./command-schema.js";
 export type {
-  UndoRedoOutcome,
   WriteErrorStatus,
   WriteStatus,
   WriteSuccessPhase,
 } from "./model-result.js";
-export type UndoCommand = Extract<WriteCommand, { command: "undo" }>;
-export type RedoCommand = Extract<WriteCommand, { command: "redo" }>;
 /** Structured tool result with the exact LLM-facing text kept separate from host status. */
 export type WriteOutcome = WriteOutcomeBase &
   ({ status: "success"; phase: WriteSuccessPhase } | { status: Exclude<WriteStatus, "success"> });
@@ -165,14 +162,11 @@ interface InteractionContextBase {
 
 export type InteractionContext =
   | (InteractionContextBase & {
-      /** Live writes have no branch-generation fence by type. */
       mode: "live";
     })
   | (InteractionContextBase & {
-      /** Thread-peer writes must carry the branch-generation fence captured with the baseline. */
       mode: "threadPeer";
-      branchGeneration: number;
-      /** Host peer identity, for exact retirement independently of generation replay. */
+      /** Host peer identity, for exact retirement. */
       peerBranchId?: string;
       upstreamBranchId?: string;
     });

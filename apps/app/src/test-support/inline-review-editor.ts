@@ -1,26 +1,21 @@
 /**
  * Fixtures for the draft-review decoration and bar tests: a collaborative editor
- * with the inline-review extension, positions in it, and the model shapes the
- * server sends. Anchors are real Yjs relative positions, so every mark and
- * widget resolves the way it does in review.
+ * with the inline-review extension, a seeded `review_base`, and the projector
+ * that paints the review exactly as the app does.
  */
-import type { ReviewDeletedSpan, ReviewOperation } from "@meridian/contracts/drafts";
+import { REVIEW_BASE_FRAGMENT } from "@meridian/agent-edit/diff";
 import { Editor } from "@tiptap/core";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 
 import { createEditorConfig } from "@/core/editor/config";
-import type {
-  InlineReviewModel,
-  ResolvedReviewHunk,
-  ResolvedReviewSpan,
-} from "@/core/editor/extensions/inline-review/model";
-import { createLocalPresence } from "@/core/editor/local-presence";
 import {
-  relativePositionForIndex,
-  relativePositionRuntimeFromState,
-} from "@/core/editor/relative-position-runtime";
+  createSurfaceHistory,
+  type SurfaceHistory,
+} from "@/core/editor/extensions/UndoOwnershipExtension";
+import { createLocalPresence } from "@/core/editor/local-presence";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@/core/editor/schema";
+import { createReviewRuntime, type ReviewRuntime } from "@/features/draft-review/review-runtime";
 import { createManuscriptPane } from "./standalone-editor";
 
 const editors: Array<{ editor: Editor; pane: HTMLElement }> = [];
@@ -38,18 +33,27 @@ export function destroyReviewEditors(): void {
  * the page (chrome that measures the manuscript needs one), so anchors resolve
  * exactly as they do in review.
  */
-export function createReviewEditor(paragraphs: string[]): { editor: Editor; doc: Y.Doc } {
-  const doc = new Y.Doc({ gc: false });
+export function createReviewEditor(
+  paragraphs: string[],
+  /** A room another editor is already bound to: bind to it unseeded, as the dock and the Editor tab do. */
+  sharedDoc?: Y.Doc,
+  /** The history a session keeps for a surface: an editor rebuilt over it carries on from the one before. */
+  adopted?: SurfaceHistory,
+): { editor: Editor; doc: Y.Doc; history: SurfaceHistory } {
+  const doc = sharedDoc ?? new Y.Doc({ gc: false });
   const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-  doc.transact(() => {
-    for (const text of paragraphs) {
-      const paragraph = new Y.XmlElement("paragraph");
-      const run = new Y.XmlText();
-      paragraph.insert(0, [run]);
-      run.insert(0, text);
-      fragment.insert(fragment.length, [paragraph]);
-    }
-  }, "seed");
+  if (!sharedDoc) {
+    doc.transact(() => {
+      for (const text of paragraphs) {
+        const paragraph = new Y.XmlElement("paragraph");
+        const run = new Y.XmlText();
+        paragraph.insert(0, [run]);
+        run.insert(0, text);
+        fragment.insert(fragment.length, [paragraph]);
+      }
+    }, "seed");
+  }
+  const history = adopted ?? createSurfaceHistory(fragment);
   const element = document.createElement("div");
   const pane = createManuscriptPane();
   pane.append(element);
@@ -61,10 +65,11 @@ export function createReviewEditor(paragraphs: string[]): { editor: Editor; doc:
       presence: createLocalPresence(new Awareness(doc)),
       showCollaborationDecorations: false,
       enableDraftInlineReview: true,
+      history,
     }),
   });
   editors.push({ editor, pane });
-  return { editor, doc };
+  return { editor, doc, history };
 }
 
 /** Absolute editor position of the first character of `needle`. */
@@ -79,72 +84,40 @@ export function posOf(editor: Editor, needle: string): number {
   return found;
 }
 
-export function rel(editor: Editor, position: number): Y.RelativePosition {
-  const runtime = relativePositionRuntimeFromState(editor.state);
-  const anchor = runtime ? relativePositionForIndex(runtime, position) : null;
-  if (!anchor) throw new Error("editor has no Yjs binding");
-  return anchor;
+/** Write `paragraphs` into the draft room's `review_base` root, as the server's rebase writer would. */
+export function seedReviewBase(doc: Y.Doc, paragraphs: string[]): void {
+  const fragment = doc.getXmlFragment(REVIEW_BASE_FRAGMENT);
+  doc.transact(() => {
+    fragment.delete(0, fragment.length);
+    for (const text of paragraphs) {
+      const paragraph = new Y.XmlElement("paragraph");
+      const run = new Y.XmlText();
+      paragraph.insert(0, [run]);
+      run.insert(0, text);
+      fragment.insert(fragment.length, [paragraph]);
+    }
+  }, "seed-base");
 }
 
-export function operation(
-  operationId: string,
-  kind: "agent" | "writer",
-  closureClassId = `closure:${operationId}`,
-): ReviewOperation {
+/** A draft room that is already synced and holds no local edits: enough for a runtime to read. */
+function syncedRoom(doc: Y.Doc) {
   return {
-    operationId,
-    closureClassId,
-    admissionToken: closureClassId,
-    kind,
-    classification: "rewrite",
+    document: doc,
+    subscribe: () => () => {},
+    getSnapshot: () => ({ status: "synced" }) as never,
+    whenSynced: () => Promise.resolve(),
+    hasUnacknowledgedEdits: () => false,
   };
 }
 
-export function span(
-  editor: Editor,
-  operationId: string,
-  from: number,
-  to: number,
-): ResolvedReviewSpan {
-  return { operationId, from: rel(editor, from), to: rel(editor, to) };
+/** The one review runtime of the draft room `doc`; every editor on the room attaches to it, as a tab and the dock do. */
+export function createRoomRuntime(doc: Y.Doc): ReviewRuntime {
+  return createReviewRuntime(syncedRoom(doc), null);
 }
 
-export function textHunk(
-  editor: Editor,
-  hunkId: string,
-  operationIds: string[],
-  range: { from: number; to: number },
-  extra: {
-    spans?: ResolvedReviewSpan[];
-    deletedText?: string;
-    deletedSpans?: ReviewDeletedSpan[];
-    deletedBlockId?: string;
-    mergeArtifact?: boolean;
-    unclassified?: boolean;
-  } = {},
-): ResolvedReviewHunk {
-  return {
-    kind: "text",
-    hunkId,
-    operationIds,
-    relStart: rel(editor, range.from),
-    relEnd: rel(editor, range.to),
-    spans: extra.spans ?? [],
-    ...(extra.deletedText ? { deletedText: extra.deletedText } : {}),
-    ...(extra.deletedSpans ? { deletedSpans: extra.deletedSpans } : {}),
-    ...(extra.deletedBlockId ? { deletedBlockId: extra.deletedBlockId } : {}),
-    ...(extra.mergeArtifact ? { mergeArtifact: true } : {}),
-    ...(extra.unclassified ? { unclassified: true } : {}),
-  };
-}
-
-export function model(
-  operations: ReviewOperation[],
-  hunks: ResolvedReviewHunk[],
-): InlineReviewModel {
-  return { draftRevisionToken: "1", operations, hunks };
-}
-
-export function setModel(editor: Editor, next: InlineReviewModel): void {
-  editor.commands.setInlineReviewModel(next);
+/** A fresh runtime of `doc` with `editor` attached: it projects the editor's text and paints it, as the app does. */
+export function attachReviewRuntime(editor: Editor, doc: Y.Doc): ReviewRuntime {
+  const runtime = createRoomRuntime(doc);
+  runtime.attachEditor(editor);
+  return runtime;
 }

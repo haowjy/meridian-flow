@@ -9,7 +9,7 @@ Drizzle schema and migrations for the v3 Meridian Postgres database (plain `post
 From repo root (requires `.env` with `DATABASE_URL`, port **54422** for local Postgres):
 
 ```bash
-pnpm db:migrate          # apply pending migrations and sync SQL functions
+pnpm db:migrate          # apply pending migrations (and any data step they anchor), then sync SQL functions
 pnpm db:apply-functions  # sync PL/pgSQL from src/functions/ after editing functions
 pnpm db:generate         # drizzle-kit generate (review output)
 pnpm db:studio

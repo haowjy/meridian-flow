@@ -206,7 +206,8 @@ switch precedes work (`switch`, applied at the admitted run start); a lone
 switch stays pending, and otherwise the oldest command runs alone. See
 [controls](controls.md). Stop ends only the current turn. A notice-only queue
 does not start a run. `wakeIfRunnable` rereads after release and setup
-cancellation; the periodic sweep is the durable backstop, and an empty reread
+cancellation, and never applies a switch (a due write-mode switch applies inside the
+admitted run start); the periodic sweep is the durable backstop, and an empty reread
 must not spin.
 
 `UserTurnAdmission` is the writer fence under the thread lock. Its sequence is

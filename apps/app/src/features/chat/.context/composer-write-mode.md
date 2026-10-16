@@ -8,13 +8,12 @@ workspace navigation. It opens the toolbar's write-mode page for the Draft and
 Auto-apply choices instead of spending persistent width on both choices.
 `ProjectView` resolves the displayed thread’s Work once at the project
 composition boundary and passes that same Work identity to `DraftReviewProvider`
-and `ChatView`; the dock and composer control therefore share one binding.
+and `ChatView`; the draft dock and composer control therefore share one binding.
 Project chat always has a Work: named or No Work, looked up from
 `snapshot.noWork`, never `works.find`. `ChatView` renders picker plus write mode
 for that Work. There is no first/default-Work fallback.
 
-`useComposerWorkBinding` owns Work interaction, mutation presentation, and
-Undo. `useThreadDurableProjections` owns transport projection, while
+`useComposerWorkBinding` owns Work interaction, and mutation presentation. `useThreadDurableProjections` owns transport projection, while
 `convergeThreadWorkBinding` owns all cache effects. `ComposerWorkControl`
 renders the measured inline/overflow entry only in the composer; headers remain
 chat identity surfaces. Work management and navigation never call this explicit
@@ -48,7 +47,7 @@ with the switch view's intents laid over it
 control: a record in the chat's submission journal, posted in order with the
 messages around it. In the new-chat composer the value is the selected Work's
 `defaultAiWriteMode`, and `aiWriteMode` is sent with the first message only if
-the writer picked one there. Switching never touches drafts: the dock keeps
+the writer picked one there. Switching never touches drafts: the draft dock keeps
 showing pending changes in either mode, and its generating state reads the
 running turn's own mode.
 
@@ -138,5 +137,5 @@ The base `Textarea` applies `field-sizing-content`, but Composer's JavaScript
 resize loop requires `field-sizing: fixed`. Keep that override inline:
 Tailwind merge does not reliably deduplicate `field-sizing-*` utilities.
 
-For the shared pending projection and draft-review lifecycle, see
+For the shared pending projection, draft-review model and lifecycle, see
 [draft review](../../draft-review/.context/draft-review.md).

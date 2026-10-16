@@ -15,8 +15,8 @@ behind a newer checkpoint. A persistence watermark includes the checkpoint cut
 even when no rows remain above it. The host, not this package, mints captured
 checkpoint cuts. Compaction never expires immutable receipts or lineage.
 
-Undo/redo state is not transport state. `DocumentEdits` reads immutable parts
-and delegates stack policy to the host's inverse policy, behind the
+Inverse state is not transport state. `DocumentEdits` reads immutable parts
+and delegates model `revert` to the host's inverse policy, behind the
 prepared-lease gate and never through the branch journal facade or staged-write
 queue. There is no reconstruction-based reversal endpoint or reserved undo
 client.
@@ -81,7 +81,7 @@ snapshot. It is optional and may fall back to an in-memory map.
 
 The facade exposes read/write, recovery, response commit/rollback, prepared
 leases, response-document discovery, and thread invalidation. The host chooses
-destination, stack policy, immutable receipt persistence, notices, and
+destination, inverse policy, immutable receipt persistence, notices, and
 publish-after-commit. `responseIdentity` separates provider authorship from
 rotated helper scope. No public method reconstructs an UndoManager from journal
 history.

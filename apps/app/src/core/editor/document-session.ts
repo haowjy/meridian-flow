@@ -75,6 +75,7 @@ import {
 
 export type { SchemaFence } from "./schema-fence";
 
+import { createSurfaceHistory, type SurfaceHistory } from "./extensions/UndoOwnershipExtension";
 import { SessionMarkerStore } from "./session-marker-store";
 
 /** Give normal IndexedDB replay priority without letting blocked storage hold collaboration offline. */
@@ -91,7 +92,7 @@ export type DocumentSessionStatus =
 export type DocumentSessionSnapshot = {
   /** Live document id for live rooms; draft/branch sessions expose the room-scoped id here. */
   documentId: string;
-  /** Hocuspocus room key: the bare document id for a live document, `branch:<branchId>:gen:<generation>` for a branch room. */
+  /** Hocuspocus room key: the bare document id for a live document, `branch:<branchId>` for a branch room. */
   roomKey: string;
   room: YjsRoomName;
   status: DocumentSessionStatus;
@@ -116,13 +117,13 @@ export type DocumentSessionAccess = "edit" | "read";
 export type DocumentSessionResetReason =
   /** The room's access changed while local edits were pending; the server refused them. */
   | typeof WS_CLOSE.ACCESS_CHANGED.reason
-  | typeof WS_CLOSE.BRANCH_STALE.reason
   | typeof WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason
   | typeof WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason
-  | typeof WS_CLOSE.BRANCH_GENERATION_STALE.reason;
+  | typeof WS_CLOSE.BRANCH_CLOSED.reason
+  | typeof WS_CLOSE.WRITE_REFUSED.reason;
 
 /** How a terminal room reset treats its unacknowledged writer updates. */
-export type ResetDisposition = "superseded" | "rebuild" | "refused" | "schema";
+export type ResetDisposition = "superseded" | "refused" | "schema";
 
 export type DocumentSessionConnectionState =
   | Exclude<ConnectionState, { kind: "reset" }>
@@ -180,7 +181,7 @@ export type DocumentSessionTransportFactory = (opts: {
 }) => DocumentSessionTransportProvider;
 
 export type DocumentSessionOptions = {
-  /** Hocuspocus room key: the bare document id for a live document, `branch:<branchId>:gen:<generation>` for a branch room. */
+  /** Hocuspocus room key: the bare document id for a live document, `branch:<branchId>` for a branch room. */
   roomKey: string;
   /** Exact cache identity. Only the owner that just reserved it may declare it fresh. */
   persistence: { kind: "indexeddb"; key: string; fresh?: boolean } | { kind: "none" };
@@ -202,6 +203,7 @@ export class DocumentSession {
   readonly awareness: Awareness;
   readonly fragmentName = PROSEMIRROR_FRAGMENT_NAME;
   readonly markerStore: SessionMarkerStore;
+  private readonly histories = new Map<string, SurfaceHistory>();
 
   private persistence: IndexeddbPersistence | null;
   private localPeers: LocalDocumentPeers | null = null;
@@ -435,6 +437,19 @@ export class DocumentSession {
     if (this.adoptionFailed === next) return;
     this.adoptionFailed = next;
     this.emit();
+  }
+
+  /**
+   * The undo history of one surface (the Editor, the dock) over this room. A handoff rebuilds the editor,
+   * so the history lives here, as long as the room does, and each editor the surface mounts adopts it.
+   */
+  historyFor(surface: string): SurfaceHistory {
+    let history = this.histories.get(surface);
+    if (!history) {
+      history = createSurfaceHistory(this.document.getXmlFragment(this.fragmentName));
+      this.histories.set(surface, history);
+    }
+    return history;
   }
 
   /**
@@ -673,7 +688,14 @@ export class DocumentSession {
       ];
     }
 
-    const attempt = (async () => {
+    // The promise is installed before the first stage runs: that stage notifies observers, and one may
+    // call `destroy()` again from inside the notification, which must join this attempt.
+    let settle!: { resolve: () => void; reject: (error: unknown) => void };
+    const attempt = new Promise<void>((resolve, reject) => {
+      settle = { resolve, reject };
+    });
+    this.destroyPromise = attempt;
+    void (async () => {
       const errors: unknown[] = [];
       for (const stage of this.destroyStages ?? []) {
         if (stage.settled) continue;
@@ -687,10 +709,16 @@ export class DocumentSession {
 
       if (errors.length === 1) throw errors[0];
       if (errors.length > 1) throw new AggregateError(errors, "Document session teardown failed");
-    })().finally(() => {
-      if (this.destroyPromise === attempt) this.destroyPromise = null;
-    });
-    this.destroyPromise = attempt;
+    })().then(
+      () => {
+        if (this.destroyPromise === attempt) this.destroyPromise = null;
+        settle.resolve();
+      },
+      (error) => {
+        if (this.destroyPromise === attempt) this.destroyPromise = null;
+        settle.reject(error);
+      },
+    );
     return attempt;
   }
 

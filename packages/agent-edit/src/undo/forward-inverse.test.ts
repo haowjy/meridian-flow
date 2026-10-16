@@ -73,13 +73,13 @@ function write(v: View, fns: ((v: View) => void)[]): InversePart[] {
   v.history.push(...parts);
   return parts;
 }
-function inverse(v: View, parts: InversePart[], direction: "invert" | "reapply"): number {
+function inverse(v: View, parts: InversePart[], _direction: "invert" = "invert"): number {
   cold(v);
   const result = computeInverse(
     v.doc,
     v.history,
-    parts.map((part) => ({ part, direction })),
-    { actionId: `a${v.history.length}`, allocateClient: () => v.nextClient++ },
+    parts.map((part) => ({ part })),
+    { actionId: `a${v.history.length}`, kind: "revert", allocateClient: () => v.nextClient++ },
   );
   for (const edit of result.edits) {
     const editId = `e${(v.history.at(-1)?.id ?? 0) + 1}`;
@@ -90,12 +90,25 @@ function inverse(v: View, parts: InversePart[], direction: "invert" | "reapply")
         id: (v.history.at(-1)?.id ?? 0) + 1,
         editId,
         ordinal,
-        kind: direction === "invert" ? "undo" : "redo",
-        actionId: result.actionId,
+        kind: "revert",
       });
     }
   }
   return result.edits.reduce((n, edit) => n + edit.parts.length, 0);
+}
+/** Restores what an earlier inverse removed, the way a revert of that inverse does. */
+function restore(v: View, parts: InversePart[]): number {
+  const key = (p: { editId: string; ordinal: number }) => `${p.editId}:${p.ordinal}`;
+  const inverses = parts.flatMap((part) =>
+    v.history.filter(
+      (h) =>
+        h.kind === "revert" &&
+        h.targets.some((t) => key(t) === key(part)) &&
+        !v.history.some((later) => later.id > h.id && later.targets.some((t) => key(t) === key(h))),
+    ),
+  );
+  for (const h of inverses) h.kind = "revert";
+  return inverse(v, inverses);
 }
 const states = (v: View, parts: InversePart[]) =>
   classifyEditParts(v.doc, v.history, parts).map((p) => p.state);
@@ -110,11 +123,12 @@ describe("forward inverse on cold Yjs replicas", () => {
       seed = Y.encodeStateAsUpdate(v.doc),
       parts = write(v, [fn]);
     expect(content(v)).toEqual([edited]);
-    for (const direction of ["invert", "reapply", "invert", "reapply"] as const) {
-      expect(inverse(v, parts, direction)).toBe(1);
+    for (const direction of ["invert", "restore", "invert", "restore"] as const) {
+      const run = direction === "invert" ? inverse : restore;
+      expect(run(v, parts)).toBe(1);
       expect(content(v)).toEqual([direction === "invert" ? original : edited]);
       expect(states(v, parts)).toEqual([direction === "invert" ? "undone" : "active"]);
-      expect(inverse(v, parts, direction)).toBe(0);
+      expect(run(v, parts)).toBe(0);
       expect(content(v)).toEqual([direction === "invert" ? original : edited]);
     }
     const live = new Y.Doc({ gc: false });
@@ -146,7 +160,6 @@ describe("forward inverse on cold Yjs replicas", () => {
       inverse(v, edits.slice().reverse().flat(), "invert");
       expect(content(v)).toEqual(count === 2 ? ["red", "blue"] : ["red"]);
       const generated = v.history.slice(start);
-      expect([...new Set(generated.map((p) => p.actionId))]).toEqual([`a${start}`]);
       expect(new Set(generated.map((p) => p.editId)).size).toBe(edits.length);
       for (const id of new Set(generated.map((p) => p.editId))) {
         const group = generated.filter((p) => p.editId === id);
@@ -163,12 +176,12 @@ describe("forward inverse on cold Yjs replicas", () => {
         );
         expect(inserted.filter((k) => deleted.includes(k))).toEqual([]);
       }
-      inverse(v, edits.flat(), "reapply");
+      restore(v, edits.flat());
       expect(content(v)).toEqual(expected);
     }
     inverse(v, edits.slice().reverse().flat(), "invert");
     for (const [i, edit] of edits.entries()) {
-      inverse(v, edit, "reapply");
+      restore(v, edit);
       expect(content(v)[0]).toBe(i === edits.length - 1 ? "silver" : "gold");
     }
     const applied = new Y.Doc({ gc: false });
@@ -190,10 +203,10 @@ describe("forward inverse on cold Yjs replicas", () => {
       for (const [parts, direction, expected] of [
         [e2, "invert", inserted ? "Start. A red bird." : "gold"],
         [e1, "invert", inserted ? "Start. " : "red"],
-        [e1, "reapply", inserted ? "Start. A red bird." : "gold"],
-        [e2, "reapply", inserted ? "Start. A gold bird." : "silver"],
+        [e1, "restore", inserted ? "Start. A red bird." : "gold"],
+        [e2, "restore", inserted ? "Start. A gold bird." : "silver"],
       ] as const) {
-        expect(inverse(v, [...parts], direction)).toBe(1);
+        expect((direction === "invert" ? inverse : restore)(v, [...parts])).toBe(1);
         expect(content(v)).toEqual([expected]);
       }
       v.doc.destroy();
@@ -218,59 +231,11 @@ describe("forward inverse on cold Yjs replicas", () => {
     expect(content(v)).toEqual([initial]);
     v.history[v.history.length - 1].kind = "rollback";
     expect(states(v, original)).toEqual(["rolled_back"]);
-    expect(inverse(v, original, "reapply")).toBe(0);
+    expect(restore(v, original)).toBe(0);
     expect(content(v)).toEqual([initial]);
     v.doc.destroy();
   });
-  it("a restoration in a cold draft does not restore its live replica twice", () => {
-    const live = base(["abcdef"]),
-      e = write(live, [(v) => text(v).delete(1, 4)]);
-    const draft: View = {
-      doc: new Y.Doc({ gc: false }),
-      history: [...live.history],
-      nextClient: live.nextClient,
-    };
-    Y.applyUpdate(draft.doc, Y.encodeStateAsUpdate(live.doc));
-    inverse(draft, e, "invert");
-    cold(live);
-    cold(draft);
-    expect(content(live)).toEqual(["af"]);
-    expect(content(draft)).toEqual(["abcdef"]);
-    expect(states(live, e)).toEqual(["active"]);
-    expect(states(draft, e)).toEqual(["undone"]);
-    Y.applyUpdate(draft.doc, Y.encodeStateAsUpdate(live.doc));
-    expect(inverse(draft, e, "invert")).toBe(0);
-    expect(content(live)).toEqual(["af"]);
-    expect(content(draft)).toEqual(["abcdef"]);
-    live.doc.destroy();
-    draft.doc.destroy();
-  });
-  it("mixed authored history inverses in one draft, then Apply and live Redo replay exactly", () => {
-    const live = base(["red"]),
-      e1 = write(live, [(v) => swap(v, "red", "gold")]);
-    const draft: View = {
-      doc: new Y.Doc({ gc: false }),
-      history: [...live.history],
-      nextClient: live.nextClient,
-    };
-    Y.applyUpdate(draft.doc, Y.encodeStateAsUpdate(live.doc));
-    const e2 = write(draft, [(v) => swap(v, "gold", "silver")]);
-    inverse(draft, [...e2, ...e1], "invert");
-    expect(content(live)).toEqual(["gold"]);
-    expect(content(draft)).toEqual(["red"]);
-    for (const p of draft.history) Y.applyUpdate(live.doc, p.update);
-    live.history = [...draft.history];
-    live.nextClient = draft.nextClient;
-    cold(live);
-    expect(content(live)).toEqual(["red"]);
-    inverse(live, [...e1, ...e2], "reapply");
-    expect(content(live)).toEqual(["silver"]);
-    for (const p of live.history) Y.applyUpdate(draft.doc, p.update);
-    expect(content(draft)).toEqual(["silver"]);
-    live.doc.destroy();
-    draft.doc.destroy();
-  });
-  it("writer deletes original or restored text: neither direction revives it", () => {
+  it("writer deletes original or restored text: neither inverse nor restore revives it", () => {
     for (const restored of [false, true]) {
       const v = base(["abcdef"]),
         parts = write(v, [(v) => (restored ? text(v).delete(1, 4) : text(v).insert(1, "AI"))]);
@@ -279,7 +244,7 @@ describe("forward inverse on cold Yjs replicas", () => {
       const expected = restored ? "af" : "abcdef";
       expect(states(v, parts)).toEqual(["changed"]);
       expect(inverse(v, parts, "invert")).toBe(0);
-      expect(inverse(v, parts, "reapply")).toBe(0);
+      expect(restore(v, parts)).toBe(0);
       expect(content(v)).toEqual([expected]);
       v.doc.destroy();
     }
@@ -291,7 +256,7 @@ describe("forward inverse on cold Yjs replicas", () => {
     write(v, [(v) => text(v).insert(3, "WRITER")]);
     cold(v);
     expect(states(v, e)).toEqual(["changed"]);
-    expect(inverse(v, e, "reapply")).toBe(0);
+    expect(restore(v, e)).toBe(0);
     expect(content(v)).toEqual(["abcWRITERdef"]);
     v.doc.destroy();
   });
@@ -309,7 +274,7 @@ describe("forward inverse on cold Yjs replicas", () => {
     expect(inverse(v, parts, "invert")).toBe(1);
     expect(content(v)).toEqual(["red", "siXlver"]);
     expect(v.doc.getArray("provenance").toArray()).toEqual([{ edit: 1 }]);
-    inverse(v, parts, "reapply");
+    restore(v, parts);
     expect(content(v)).toEqual(["gold", "siXlver"]);
     v.doc.destroy();
   });
@@ -342,12 +307,12 @@ describe("forward inverse on cold Yjs replicas", () => {
       attr = write(v, [(v) => ps(v)[0].setAttribute("align", "right")]);
     inverse(v, attr, "invert");
     expect(xml(v)).toBe(original);
-    inverse(v, attr, "reapply");
+    restore(v, attr);
     expect(ps(v)[0].getAttribute("align")).toBe("right");
     const rich = xml(v),
       remove = write(v, [(v) => v.doc.getXmlFragment("prosemirror").delete(0, 1)]);
-    for (const direction of ["invert", "reapply", "invert", "reapply"] as const) {
-      expect(inverse(v, remove, direction)).toBe(1);
+    for (const direction of ["invert", "restore", "invert", "restore"] as const) {
+      expect((direction === "invert" ? inverse : restore)(v, remove)).toBe(1);
       expect(xml(v)).toBe(direction === "invert" ? rich : "");
     }
     v.doc.destroy();
@@ -395,7 +360,7 @@ describe("forward inverse on cold Yjs replicas", () => {
     expect(states(v, e)).toEqual(["changed"]);
     expect(inverse(v, e, "invert")).toBe(0);
     expect(xml(v)).toBe(expected);
-    expect(inverse(v, e, "reapply")).toBe(0);
+    expect(restore(v, e)).toBe(0);
     expect(xml(v)).toBe(expected);
     v.doc.destroy();
   });
@@ -408,8 +373,8 @@ describe("forward inverse on cold Yjs replicas", () => {
     expect(content(v)).toEqual(["af"]);
     inverse(v, word, "invert");
     expect(content(v)).toEqual(["abcdef"]);
-    inverse(v, word, "reapply");
-    inverse(v, parent, "reapply");
+    restore(v, word);
+    restore(v, parent);
     expect(xml(v)).toBe("");
     v.doc.destroy();
   });
@@ -435,7 +400,7 @@ describe("forward inverse on cold Yjs replicas", () => {
     const atomParagraph = write(v, [(v) => v.doc.getXmlFragment("prosemirror").delete(0, 1)]);
     inverse(v, atomParagraph, "invert");
     expect(xml(v)).toBe(original);
-    inverse(v, atomParagraph, "reapply");
+    restore(v, atomParagraph);
     expect(xml(v)).toBe(
       '<paragraph>def</paragraph><bullet_list><list_item><paragraph><link href="doc:path" ref="keep">linked</link></paragraph></list_item></bullet_list>',
     );
@@ -445,7 +410,7 @@ describe("forward inverse on cold Yjs replicas", () => {
     const remove = write(v, [() => root.delete(2, 1)]);
     inverse(v, remove, "invert");
     expect(xml(v)).toBe(original);
-    inverse(v, remove, "reapply");
+    restore(v, remove);
     expect(xml(v)).toBe(
       '<paragraph>abc<hard_break></hard_break><image ref="image-ref" src="asset:image"></image></paragraph><paragraph>def</paragraph>',
     );
@@ -462,14 +427,14 @@ describe("forward inverse on cold Yjs replicas", () => {
     const movedXml = xml(v);
     inverse(v, moved, "invert");
     expect(xml(v)).toBe(original);
-    inverse(v, moved, "reapply");
+    restore(v, moved);
     expect(xml(v)).toBe(movedXml);
     const copied = write(v, [
       (v) => v.doc.getXmlFragment("prosemirror").insert(3, [ps(v)[0].clone()]),
     ]);
     inverse(v, copied, "invert");
     expect(xml(v)).toBe(movedXml);
-    inverse(v, copied, "reapply");
+    restore(v, copied);
     expect(xml(v)).toBe(movedXml + ps(v)[0].toString());
     v.doc.destroy();
   });
@@ -508,8 +473,8 @@ describe("forward inverse on cold Yjs replicas", () => {
     const result = computeInverse(
       v.doc,
       v.history,
-      target.map((part) => ({ part, direction: "invert" })),
-      { actionId: `a${v.history.length}`, allocateClient: () => v.nextClient++ },
+      target.map((part) => ({ part })),
+      { actionId: `a${v.history.length}`, kind: "revert", allocateClient: () => v.nextClient++ },
     ).edits[0].parts[0];
     expect(() =>
       captureEditParts(v.doc, [{ update: target[0].update, frontier: undefined as never }]),
@@ -544,8 +509,8 @@ describe("forward inverse on cold Yjs replicas", () => {
       computeInverse(
         overlap.doc,
         overlap.history,
-        parts.map((part) => ({ part, direction: "invert" })),
-        { actionId: "overlap", allocateClient: () => overlap.nextClient++ },
+        parts.map((part) => ({ part })),
+        { actionId: "overlap", kind: "revert", allocateClient: () => overlap.nextClient++ },
       ).edits[0].parts[0];
     const whole = restore(deleted),
       range = deleted[0].effect.deleted[0];
@@ -556,7 +521,7 @@ describe("forward inverse on cold Yjs replicas", () => {
       },
     ]);
     Y.applyUpdate(overlap.doc, tail.update);
-    overlap.history.push({ ...tail, id: 2, editId: "tail", ordinal: 0, kind: "undo" });
+    overlap.history.push({ ...tail, id: 2, editId: "tail", ordinal: 0, kind: "revert" });
     cold(overlap);
     expect(content(overlap)).toEqual(["adef"]);
     expect(() => admitInverseReceipt(overlap.doc, overlap.history, deleted, whole)).toThrow(
@@ -573,14 +538,14 @@ describe("forward inverse on cold Yjs replicas", () => {
     const a = computeInverse(
         v.doc,
         v.history,
-        target.map((part) => ({ part, direction: "invert" })),
-        { actionId: `a${v.history.length}`, allocateClient: () => v.nextClient++ },
+        target.map((part) => ({ part })),
+        { actionId: `a${v.history.length}`, kind: "revert", allocateClient: () => v.nextClient++ },
       ),
       b = computeInverse(
         v.doc,
         v.history,
-        target.map((part) => ({ part, direction: "invert" })),
-        { actionId: `a${v.history.length}`, allocateClient: () => v.nextClient++ },
+        target.map((part) => ({ part })),
+        { actionId: `a${v.history.length}`, kind: "revert", allocateClient: () => v.nextClient++ },
       );
     for (const [i, out] of [...a.edits[0].parts, ...b.edits[0].parts].entries()) {
       if (i === 1)
@@ -589,12 +554,12 @@ describe("forward inverse on cold Yjs replicas", () => {
         );
       Y.applyUpdate(v.doc, out.update);
       const id = (v.history.at(-1)?.id ?? 0) + 1;
-      v.history.push({ ...out, id, editId: `e${id}`, ordinal: 0, kind: "undo" });
+      v.history.push({ ...out, id, editId: `e${id}`, ordinal: 0, kind: "revert" });
     }
     expect(content(v)).toEqual(["abcdebcdef"]);
     expect(states(v, target)).toEqual(["changed"]);
     expect(inverse(v, target, "invert")).toBe(0);
-    expect(inverse(v, target, "reapply")).toBe(0);
+    expect(restore(v, target)).toBe(0);
     expect(content(v)).toEqual(["abcdebcdef"]);
     v.doc.destroy();
   });
@@ -606,7 +571,7 @@ describe("forward inverse on cold Yjs replicas", () => {
     for (let n = 0; n < 200; n++) write(v, [(v) => text(v, n % 20).insert(0, "x")]);
     const historical = write(v, [(v) => swap(v, "w1_150", "past", 1)]);
     inverse(v, historical, "invert");
-    inverse(v, historical, "reapply");
+    restore(v, historical);
     expect(v.history.flatMap((p) => p.aliases).reduce((n, a) => n + a.len, 0)).toBe(10);
     expect(content(v)).toEqual(
       chapter.map((p, i) => "x".repeat(10) + (i === 1 ? p.replace("w1_150", "past") : p)),
@@ -616,7 +581,7 @@ describe("forward inverse on cold Yjs replicas", () => {
     expect(states(v, parts)).toEqual(["active"]);
     expect(inverse(v, parts, "invert")).toBe(1);
     expect(content(v)).toEqual(before);
-    inverse(v, parts, "reapply");
+    restore(v, parts);
     expect(content(v)).toEqual(
       before.map((line, i) => (i === 0 ? line.replace("w0_150", "AI_150") : line)),
     );
@@ -628,7 +593,7 @@ describe("forward inverse on cold Yjs replicas", () => {
     cold(v);
     expect(states(v, deletion)).toEqual(["undone"]);
     expect(content(v)[0]).toBe(restored + before[0].replace("w0_150", "AI_150"));
-    expect(inverse(v, deletion, "reapply")).toBe(1);
+    expect(restore(v, deletion)).toBe(1);
     expect(content(v)[0]).toBe(before[0].replace("w0_150", "AI_150"));
     v.doc.destroy();
     const long = base(["x".repeat(10_000), "Blue."]);
@@ -638,7 +603,7 @@ describe("forward inverse on cold Yjs replicas", () => {
       cold(long);
       expect(states(long, removed)).toEqual(["undone"]);
       expect(content(long)).toEqual(["x".repeat(10_000), "Blue."]);
-      expect(inverse(long, removed, "reapply")).toBe(1);
+      expect(restore(long, removed)).toBe(1);
       expect(content(long)).toEqual(["", "Blue."]);
     }
     expect(long.history).toHaveLength(17);

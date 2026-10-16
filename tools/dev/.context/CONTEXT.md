@@ -139,6 +139,16 @@ entries. Ordinary files commit each file with history; marked no-transaction
 files autocommit breakpoint chunks and record history last. Lint rules are
 centralized and a skip must be safe on populated tables.
 
+Data steps (`lib/migration-data-steps.ts`): a migration whose SQL starts with
+`-- data-step: <id>@<version>` anchors a registered step. Before the run's first
+pending migration, `runMigrations` plans the steps (refusing a pending marker with
+no registered `id@version`, and a step marked by more than one migration) and runs
+each due step's read-only `preflight`; immediately before an anchor it runs the
+step, all inside the advisory-locked run, so one `pnpm db:migrate` converts and
+migrates. Step bodies live in `packages/database/src/migration-steps/` because
+tools may not import application code. A failure is a `MigrationDataStepError`
+naming the anchor and phase.
+
 Gate policy: lint errors always block and warnings block only under `--strict`
 (CI PRs targeting `main` or `staging`); `--changed <ref>` scopes PR lint,
 `--staged` powers pre-commit (errors only), and the `0000_` baseline is

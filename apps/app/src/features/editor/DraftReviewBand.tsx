@@ -38,6 +38,7 @@ import {
   ReviewStateInline,
 } from "@/features/draft-review/ReviewHeaderNotices";
 import { ReviewStepper } from "@/features/draft-review/ReviewStepper";
+import type { ReviewSurface } from "@/features/draft-review/review-runtime";
 import {
   type ReviewHeaderModel,
   useReviewFailures,
@@ -55,6 +56,8 @@ export type DraftReviewBandProps = {
   onOpenDraft: (row: ReviewFileTarget) => void;
   /** Opens the identity row's rename field; absent when the document cannot be renamed. */
   onRename?: () => void;
+  /** Which host's editor these controls act in; the dock's is "dock". */
+  surface?: ReviewSurface;
 };
 
 /**
@@ -123,7 +126,6 @@ export function DraftReviewBand({
       ) : null}
       <ReviewStateInline
         finished={finished}
-        unlisted={header.unlisted}
         completing={header.completing}
         next={header.next}
         draftOnly={header.draftOnly}
@@ -258,13 +260,18 @@ export function DraftReviewFailureNotices({
   itemKey: string;
   onOpenDraft: (row: ReviewFileTarget) => void;
 }) {
-  const { commandError, failedElsewhere } = useReviewFailures({ documentId, itemKey });
-  if (!commandError && failedElsewhere.length === 0) return null;
+  const { commandError, failedElsewhere, appliedOver, dismissAppliedOver } = useReviewFailures({
+    documentId,
+    itemKey,
+  });
+  if (!commandError && failedElsewhere.length === 0 && appliedOver.length === 0) return null;
   return (
     <div className="shrink-0 text-caption" data-draft-review-notices>
       <ReviewFailureNotices
         commandError={commandError}
         failedElsewhere={failedElsewhere}
+        appliedOver={appliedOver}
+        onDismissAppliedOver={dismissAppliedOver}
         onOpenNext={onOpenDraft}
         className="px-4"
       />

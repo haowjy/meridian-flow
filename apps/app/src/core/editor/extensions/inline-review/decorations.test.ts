@@ -1,756 +1,603 @@
 // @vitest-environment jsdom
-/** Review marks, removals, focus and visibility through a real collaborative editor. */
-
-import type { ReviewDeletedSpan } from "@meridian/contracts/drafts";
-import type { Editor } from "@tiptap/core";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import * as Y from "yjs";
+/**
+ * The review's paint: where a hunk's green and red land in the editor, and the two risks that make the
+ * review lie: a removal drawn at the wrong block boundary, and a review repainted from a stale base.
+ */
 import {
+  appendApplyRecord,
+  readRestorations,
+  recordRestorations,
+  writeBlocks,
+} from "@meridian/agent-edit/diff";
+import type { DraftAttribution } from "@meridian/contracts/drafts";
+import { buildDocumentSchema } from "@meridian/prosemirror-schema";
+import { QueryClient } from "@tanstack/react-query";
+import type { Editor } from "@tiptap/core";
+import { act, createElement, useSyncExternalStore } from "react";
+import { createRoot } from "react-dom/client";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import * as Y from "yjs";
+import * as draftsApi from "@/client/api/drafts-api";
+import { draftAttributionQueryOptions } from "@/client/query/useDraftAttribution";
+import {
+  createReviewRuntime,
+  REVIEW_DEBOUNCE_MS,
+  type ReviewRuntime,
+} from "@/features/draft-review/review-runtime";
+import { useArrivedChanges } from "@/features/draft-review/useArrivedChanges";
+import {
+  attachReviewRuntime,
   createReviewEditor,
   destroyReviewEditors,
-  model,
-  operation,
-  posOf,
-  rel,
-  setModel,
-  span,
-  textHunk,
-} from "../../../../test-support/inline-review-editor";
-import { PROSEMIRROR_FRAGMENT_NAME } from "../../schema";
+  seedReviewBase,
+} from "@/test-support/inline-review-editor";
 import { getInlineReviewPluginState } from "./DraftInlineReviewExtension";
-import { projectRestoring } from "./decorations";
-import { type InlineReviewModel, unattributedHunkKey } from "./model";
-import { REMOVAL_COLLAPSE_CHARS } from "./removal-widget";
+import { inlineReviewClassNames } from "./decorations";
 
-beforeEach(() => {
-  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
-    callback(0);
-    return 1;
-  });
-});
+const projectors: ReviewRuntime[] = [];
+function reviewing(base: string[], draft: string[]) {
+  const { editor, doc } = createReviewEditor(draft);
+  seedReviewBase(doc, base);
+  const projector = attachReviewRuntime(editor, doc);
+  projectors.push(projector);
+  projector.projectNow();
+  return { editor, doc, projector };
+}
+
+const added = (editor: Editor) =>
+  [...editor.view.dom.querySelectorAll(`.${inlineReviewClassNames.added}`)].map(
+    (el) => el.textContent,
+  );
+const removals = (editor: Editor) => [
+  ...editor.view.dom.querySelectorAll(`.${inlineReviewClassNames.removal}`),
+];
 
 afterEach(() => {
+  for (const projector of projectors.splice(0)) projector.destroy();
   destroyReviewEditors();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
-function marked(editor: Editor, className: string): string[] {
-  return [...editor.view.dom.querySelectorAll(`.${className}`)].map((el) => el.textContent ?? "");
-}
-
-function removals(editor: Editor): HTMLElement[] {
-  return [...editor.view.dom.querySelectorAll<HTMLElement>(".meridian-review-removal")];
-}
-
-/** One text-hunk scenario; anchors still come from the real collaborative editor. */
-function paintText(
-  editor: Editor,
-  operations: InlineReviewModel["operations"],
-  operationIds: string[],
-  range: { from: number; to: number },
-  extra: Parameters<typeof textHunk>[4] = {},
-  hunkId = "h1",
-): void {
-  setModel(editor, model(operations, [textHunk(editor, hunkId, operationIds, range, extra)]));
-}
-
-/** An attributed insertion over these actual manuscript words. */
-function markedTextHunk(editor: Editor, id: string, op: string, words: string, extra = {}) {
-  const from = posOf(editor, words);
-  const to = from + words.length;
-  return textHunk(
-    editor,
-    id,
-    [op],
-    { from, to },
-    { spans: [span(editor, op, from, to)], ...extra },
-  );
-}
-
-describe("insertion marks", () => {
-  it("paints writer text typed inside an AI change gold inside green", () => {
-    const { editor } = createReviewEditor(["The third seal cracked, spilling bone-white light."]);
-    const start = posOf(editor, "The third");
-    const bone = posOf(editor, "bone-white");
-    const end = posOf(editor, ".") + 1;
-    paintText(
-      editor,
-      [operation("a1", "agent", "closure:a1+w1"), operation("w1", "writer", "closure:a1+w1")],
-      ["a1", "w1"],
-      { from: start, to: end },
-      {
-        spans: [
-          span(editor, "a1", start, bone),
-          span(editor, "w1", bone, bone + 10),
-          span(editor, "a1", bone + 10, end),
-        ],
-      },
+describe("hunk placement", () => {
+  it("paints inserted words green and the words they replaced red, ahead of the green", () => {
+    const { editor } = reviewing(["Alpha beta gamma delta"], ["Alpha BETA gamma delta"]);
+    expect(added(editor)).toEqual(["BETA"]);
+    const [removal] = removals(editor);
+    // A removed word brings the space before it, unstruck, so it never fuses: "Alpha ~~beta~~ BETA".
+    expect(removal?.textContent).toBe(" beta");
+    expect(removal?.querySelector("del")?.textContent).toBe("beta");
+    // Red then green: the widget is the green mark's previous sibling in the paragraph.
+    expect(removal?.nextElementSibling?.classList.contains(inlineReviewClassNames.added)).toBe(
+      true,
     );
-    expect(marked(editor, "meridian-review-writer")).toEqual(["bone-white"]);
-    expect(marked(editor, "meridian-review-added").join("")).toBe(
-      "The third seal cracked, spilling  light.",
-    );
-    expect(marked(editor, "meridian-review-merged")).toEqual([]);
   });
 
-  it("paints a hunk the server flags as a merge artifact as one dashed grey region, whatever its author runs", () => {
-    const { editor } = createReviewEditor(["The outer disciples fell back to their knees."]);
-    const start = posOf(editor, "fell");
-    const end = posOf(editor, ".");
-    // Two author runs only: a run-counting heuristic would have called this readable.
-    const cut = start + 9;
-    paintText(
-      editor,
-      [operation("a1", "agent", "closure:m"), operation("w1", "writer", "closure:m")],
-      ["a1", "w1"],
-      { from: start, to: end },
-      {
-        mergeArtifact: true,
-        spans: [span(editor, "a1", start, cut), span(editor, "w1", cut, end)],
-      },
+  it("draws a removed paragraph between its neighbours and a new one as a block mark", () => {
+    const { editor } = reviewing(
+      ["First paragraph stays.", "Second paragraph goes away.", "Third paragraph stays."],
+      ["First paragraph stays.", "Third paragraph stays.", "A new closing paragraph."],
     );
-    expect(marked(editor, "meridian-review-merged")).toEqual(["fell back to their knees"]);
-    expect(marked(editor, "meridian-review-added")).toEqual([]);
-    expect(marked(editor, "meridian-review-writer")).toEqual([]);
-  });
-
-  it("marks what the writer types at once, before any refetch", () => {
-    const { editor, doc } = createReviewEditor(["Lin Feng counted breaths.", "Elsewhere."]);
-    const start = posOf(editor, "counted");
-    const end = posOf(editor, "breaths") + 7;
-    const stale = model(
-      [operation("a1", "agent")],
-      [textHunk(editor, "h1", ["a1"], { from: start, to: end })],
+    const children = [...editor.view.dom.children];
+    const widget = children.find((el) =>
+      el.classList.contains(inlineReviewClassNames.removalBlock),
     );
-    setModel(editor, stale);
-    const at = posOf(editor, "breaths");
-    editor.commands.insertContentAt(at, "slow");
-    editor.commands.insertContentAt(at + 4, "er ");
-    expect(marked(editor, "meridian-review-writer")).toEqual(["slower "]);
-
-    const peer = new Y.Doc({ gc: false });
-    try {
-      Y.applyUpdate(peer, Y.encodeStateAsUpdate(doc));
-      const paragraph = peer.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).get(1) as Y.XmlElement;
-      const text = paragraph.get(0) as Y.XmlText;
-      text.insert(text.length, " Remote.");
-      Y.applyUpdate(doc, Y.encodeStateAsUpdate(peer), "remote");
-    } finally {
-      peer.destroy();
-    }
-    expect(marked(editor, "meridian-review-writer")).toEqual(["slower "]);
-    editor.commands.setInlineReviewMarksVisible(false);
-    expect(marked(editor, "meridian-review-writer")).toEqual([]);
-    editor.commands.setInlineReviewMarksVisible(true);
-    expect(marked(editor, "meridian-review-writer")).toEqual(["slower "]);
-    setModel(editor, stale);
-    expect(marked(editor, "meridian-review-writer")).toEqual(["slower "]);
-
-    // A partial receipt retires only the explicitly attributed portion.
-    for (const length of [4, 7]) {
-      paintText(
-        editor,
-        [operation("w1", "writer")],
-        ["w1"],
-        { from: at, to: at + length },
-        {
-          spans: [span(editor, "w1", at, at + length)],
-        },
-      );
-      expect(marked(editor, "meridian-review-writer").join("")).toBe("slower ");
-    }
-    expect(marked(editor, "meridian-review-writer")).toEqual(["slower "]);
-    expect(getInlineReviewPluginState(editor.state)?.pendingWriterRanges).toHaveLength(0);
-
-    // The old right anchor excludes new edge text after a rebuild.
-    setModel(editor, stale);
-    editor.commands.insertContentAt(posOf(editor, "counted"), "START ");
-    editor.commands.insertContentAt(posOf(editor, "breaths") + 7, " END");
-    setModel(editor, stale);
-    expect(marked(editor, "meridian-review-writer")).toEqual(["START ", " END"]);
+    expect(widget?.textContent).toBe("Second paragraph goes away.");
+    // Between the first and the (surviving) third paragraph, not before or after the pair.
+    expect(widget?.previousElementSibling?.textContent).toBe("First paragraph stays.");
+    expect(widget?.nextElementSibling?.textContent).toBe("Third paragraph stays.");
+    const block = editor.view.dom.querySelector(
+      `p.${inlineReviewClassNames.added}.${inlineReviewClassNames.block}`,
+    );
+    expect(block?.textContent).toBe("A new closing paragraph.");
   });
 });
 
-describe("block insertions", () => {
-  /** A hunk over the whole top-level paragraph that starts at `needle`, the way the server anchors one. */
-  function blockInsertion(
-    editor: Editor,
-    needle: string,
-    hunkId: string,
-    operationIds: string[],
-    flags: { unclassified?: boolean; mergeArtifact?: boolean } = {},
-  ): Extract<InlineReviewModel["hunks"][number], { kind: "block" }> {
-    const start = posOf(editor, needle) - 1;
-    const node = editor.state.doc.nodeAt(start);
-    return {
-      kind: "block",
-      hunkId,
-      operationIds,
-      relStart: rel(editor, start),
-      relEnd: rel(editor, start + (node?.nodeSize ?? 0)),
-      insertedBlock: { type: "paragraph", display: needle },
-      ...flags,
-    };
-  }
-
-  it("paints rich-only block changes without fake removals, preserving author tones", () => {
-    const { editor } = createReviewEditor(["Before.", "Agent block.", "Writer block."]);
-    setModel(
-      editor,
-      model(
-        [operation("a1", "agent"), operation("w1", "writer")],
-        [
-          {
-            ...blockInsertion(editor, "Agent block", "b1", ["a1"]),
-            deletedBlock: { type: "paragraph", display: "Old formatting" },
-            formatting: [{ kind: "attributes" }],
-          },
-          blockInsertion(editor, "Writer block", "b2", ["w1"]),
-        ],
-      ),
+describe("the base the review compares against", () => {
+  it("repaints from the new base when review_base changes, with no edit in the draft", async () => {
+    const { editor, doc } = reviewing(
+      ["One two three four five six"],
+      ["One TWO three four five six"],
     );
-    expect(marked(editor, "meridian-review-block.meridian-review-added")).toEqual(["Agent block."]);
-    expect(marked(editor, "meridian-review-writer")).toEqual(["Writer block."]);
-    expect(editor.view.dom.querySelector(".meridian-review-removal")).toBeNull();
-  });
-
-  it("paints an unclassified block neutral, not as the AI's", () => {
-    const { editor } = createReviewEditor(["Before.", "Loose block."]);
-    const key = unattributedHunkKey("b-loose");
-    setModel(
-      editor,
-      model([], [blockInsertion(editor, "Loose block", "b-loose", [key], { unclassified: true })]),
-    );
-    expect(marked(editor, "meridian-review-merged")).toEqual(["Loose block."]);
-    expect(marked(editor, "meridian-review-added")).toEqual([]);
-    expect(marked(editor, "meridian-review-block")).toEqual(["Loose block."]);
-  });
-});
-
-describe("removals", () => {
-  it("shows AI-removed live text struck inline, outside the document", () => {
-    const { editor, doc } = createReviewEditor(["Elder Mo raised one withered hand."]);
-    const withered = posOf(editor, "one withered");
-    paintText(
-      editor,
-      [operation("a1", "agent")],
-      ["a1"],
-      { from: withered, to: withered + 12 },
-      {
-        spans: [span(editor, "a1", withered, withered + 12)],
-        deletedText: "his",
-      },
-    );
-    const [removal] = removals(editor);
-    expect(removal?.querySelector("del")?.textContent).toBe("his");
-    expect(removal?.classList.contains("meridian-review-removal-writer")).toBe(false);
-    expect(removal?.getAttribute("contenteditable")).toBe("false");
-    // Never part of the document or the Y.Doc.
-    expect(editor.getText()).toBe("Elder Mo raised one withered hand.");
-    expect(editor.getHTML()).not.toContain("his");
-    expect(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).toString()).not.toContain("his");
-  });
-
-  it("shows the original of a change being discarded as plain prose, with its insertion hidden, and can show it as marked again", () => {
-    const { editor } = createReviewEditor(["Elder Mo raised one withered hand."]);
-    const withered = posOf(editor, "one withered");
-    const hunk = textHunk(
-      editor,
-      "h1",
-      ["a1"],
-      { from: withered, to: withered + 12 },
-      { spans: [span(editor, "a1", withered, withered + 12)], deletedText: "his" },
-    );
-    setModel(editor, {
-      ...model([operation("a1", "agent")], [hunk]),
-      restoring: new Set(["a1"]),
-    });
-    expect(marked(editor, "meridian-review-restoring")).toEqual(["one withered"]);
-    const [restored] = editor.view.dom.querySelectorAll(".meridian-review-restored");
-    expect(restored?.textContent).toBe("his");
-    expect(editor.getText()).toBe("Elder Mo raised one withered hand.");
-    // A copy of what was drawn (the paint cover's) is reversible: nothing was thrown away.
-    const copy = editor.view.dom.cloneNode(true) as HTMLElement;
-    projectRestoring(copy, new Set());
-    expect(copy.querySelector(".meridian-review-restoring")).toBeNull();
-    expect(copy.querySelector(".meridian-review-restored")).toBeNull();
-    expect(copy.querySelector(".meridian-review-removal del")?.textContent).toBe("his");
-    projectRestoring(copy, new Set(["a1"]));
-    expect(copy.querySelector(".meridian-review-restoring")?.textContent).toBe("one withered");
-    expect(copy.querySelector(".meridian-review-restored")).not.toBeNull();
-  });
-
-  it("paints unclassified insertion and removal in no author's colour", () => {
-    const { editor } = createReviewEditor(["Lin Feng counted the breath."]);
-    const at = posOf(editor, "breath");
-    const key = unattributedHunkKey("h-loose");
-    paintText(
-      editor,
-      [],
-      [key],
-      { from: at, to: at + 6 },
-      { deletedText: "first slow ", deletedSpans: [], unclassified: true },
-      "h-loose",
-    );
-    expect(marked(editor, "meridian-review-merged")).toEqual(["breath"]);
-    expect(marked(editor, "meridian-review-added")).toEqual([]);
-    const [removal] = removals(editor);
-    const del = removal?.querySelector("del");
-    expect(del?.textContent).toBe("first slow ");
-    expect(del?.classList.contains("meridian-review-removal-text-unattributed")).toBe(true);
-    expect(del?.classList.contains("meridian-review-removal-text-writer")).toBe(false);
-    expect(removal?.classList.contains("meridian-review-removal-writer")).toBe(false);
-    expect(editor.getText()).not.toContain("first slow");
-
-    // Focusing it by its key emphasises it, as a click on it does.
-    editor.commands.setInlineReviewActiveOperation(key);
-    expect(removals(editor)[0]?.classList.contains("meridian-review-emphasized")).toBe(true);
-  });
-
-  it.each([
-    {
-      author: "unattributed",
-      operations: [],
-      ids: [unattributedHunkKey("b1")],
-      unclassified: true,
-    },
-    { author: "writer", operations: [operation("w1", "writer")], ids: ["w1"], unclassified: false },
-  ])("strikes a $author block removal by its owning operations", ({
-    author,
-    operations,
-    ids,
-    unclassified,
-  }) => {
-    const { editor } = createReviewEditor(["Before.", "After."]);
-    const after = posOf(editor, "After") - 1;
-    setModel(
-      editor,
-      model(operations, [
-        {
-          kind: "block",
-          hunkId: "b1",
-          operationIds: ids,
-          unclassified,
-          relStart: rel(editor, after),
-          relEnd: rel(editor, after),
-          deletedBlock: { type: "paragraph", display: "A gone paragraph." },
-        },
-      ]),
-    );
-    const del = removals(editor)[0]?.querySelector("del");
-    expect(del?.textContent).toBe("A gone paragraph.");
-    expect(del?.classList.contains(`meridian-review-removal-text-${author}`)).toBe(true);
-  });
-
-  it.each([
-    { author: "unattributed", operations: [], ids: [unattributedHunkKey("h1")], neutral: true },
-    {
-      author: "AI with unattributed text",
-      operations: [operation("a1", "agent")],
-      ids: ["a1"],
-      neutral: false,
-    },
-  ])("keeps the $author tone when a removal fold opens", ({ operations, ids, neutral }) => {
-    const { editor } = createReviewEditor(["Keep one.", "Keep two."]);
-    const between = posOf(editor, "Keep two") - 1;
-    paintText(
-      editor,
-      operations,
-      ids,
-      { from: between, to: between },
-      {
-        deletedText: "q".repeat(REMOVAL_COLLAPSE_CHARS + 10),
-        deletedSpans: [],
-        unclassified: neutral,
-      },
-    );
-    const [folded] = removals(editor);
-    expect(folded?.querySelector("button")).not.toBeNull();
-    expect(folded?.classList.contains("meridian-review-removal-unattributed")).toBe(neutral);
-    folded?.querySelector("button")?.click();
-    expect(removals(editor)[0]?.classList.contains("meridian-review-removal-unattributed")).toBe(
-      neutral,
-    );
-  });
-
-  it("strikes the writer's removal of live text in gold", () => {
-    const { editor } = createReviewEditor(["Lin Feng counted the breath."]);
-    const at = posOf(editor, "breath");
-    paintText(
-      editor,
-      [operation("w1", "writer")],
-      ["w1"],
-      { from: at, to: at },
-      { deletedText: "first ", deletedSpans: [{ from: 0, to: 6, deletedBy: "writer" }] },
-    );
-    const [removal] = removals(editor);
-    expect(removal?.querySelector("del")?.textContent).toBe("first ");
-    expect(removal?.classList.contains("meridian-review-removal-writer")).toBe(true);
-    expect(editor.getText()).not.toContain("first");
-  });
-
-  it("strikes each stretch of one removal in its remover's colour", () => {
-    const { editor } = createReviewEditor(["He raised his hand."]);
-    const at = posOf(editor, "hand");
-    const spans: ReviewDeletedSpan[] = [
-      { from: 0, to: 6, deletedBy: "agent" },
-      { from: 6, to: 11, deletedBy: "writer" },
-    ];
-    paintText(
-      editor,
-      [operation("a1", "agent", "closure:x"), operation("w1", "writer", "closure:x")],
-      ["a1", "w1"],
-      { from: at, to: at + 4 },
-      { deletedText: "sword blade", deletedSpans: spans },
-    );
-    const [removal] = removals(editor);
-    const struck = [...(removal?.querySelectorAll("del") ?? [])];
-    expect(struck.map((del) => del.textContent)).toEqual(["sword ", "blade"]);
-    expect(
-      struck.map((del) => del.classList.contains("meridian-review-removal-text-writer")),
-    ).toEqual([false, true]);
-    // Mixed authors: the fold, if any, reads as the AI's.
-    expect(removal?.classList.contains("meridian-review-removal-writer")).toBe(false);
-  });
-
-  it("folds adjacent deleted paragraphs into one count and expands on click", () => {
-    const { editor } = createReviewEditor(["Keep one.", "Keep two."]);
-    const between = posOf(editor, "Keep two") - 1;
-    const long = "The courtyard held its breath while the elders conferred. ".repeat(2);
-    const hunks = [0, 1, 2].map((i) =>
-      textHunk(
-        editor,
-        `h${i}`,
-        ["a1"],
-        { from: between, to: between },
-        {
-          deletedText: `${i}: ${long}`,
-        },
-      ),
-    );
-    setModel(editor, model([operation("a1", "agent")], hunks));
-
-    expect(removals(editor)).toHaveLength(1);
-    const [group] = removals(editor);
-    expect(group?.tagName).toBe("DIV");
-    expect(group?.querySelector("button")?.textContent).toBe("3 paragraphs removed");
-
-    group?.querySelector("button")?.click();
-    const open = removals(editor)[0];
-    expect(open?.querySelectorAll("del")).toHaveLength(3);
-    expect(open?.querySelector("button")?.getAttribute("aria-expanded")).toBe("true");
-    expect(editor.getText()).not.toContain("courtyard");
-
-    open?.querySelector("button")?.click();
-    // Folded again: the text stays in the widget, hidden, for whatever restores it.
-    const folded = removals(editor)[0];
-    expect(folded?.classList.contains("meridian-review-removal-folded")).toBe(true);
-    expect(folded?.querySelectorAll("p")).toHaveLength(3);
-  });
-
-  it("keeps a folded removal's text beneath the fold, named by its blocks, so restoring it has the text to show", () => {
-    const { editor } = createReviewEditor(["Keep one.", "Keep two."]);
-    const between = posOf(editor, "Keep two") - 1;
-    const long = "The courtyard held its breath while the elders conferred. ".repeat(2);
-    const hunks = [0, 1].map((i) =>
-      textHunk(
-        editor,
-        `h${i}`,
-        ["a1"],
-        { from: between, to: between },
-        { deletedText: `${i}: ${long}`, deletedBlockId: `7:${i}` },
-      ),
-    );
-    setModel(editor, model([operation("a1", "agent")], hunks));
-    const copy = editor.view.dom.cloneNode(true) as HTMLElement;
-    const widget = () => copy.querySelector<HTMLElement>(".meridian-review-removal-block");
-    // As a cover captures it: the label, and the paragraphs held (hidden by the fold's class) with the live blocks they were.
-    expect(widget()?.classList.contains("meridian-review-removal-folded")).toBe(true);
-    expect(widget()?.querySelector("button")?.textContent).toBe("2 paragraphs removed");
-    expect(
-      [...(widget()?.querySelectorAll("p") ?? [])].map((p) => [
-        p.getAttribute("data-review-block-id"),
-        p.textContent?.slice(0, 2),
-      ]),
-    ).toEqual([
-      ["7:0", "0:"],
-      ["7:1", "1:"],
-    ]);
-    // Restoring and withdrawing only toggle the class; the fold and the text stay as they were.
-    const before = widget()?.innerHTML;
-    projectRestoring(copy, new Set(["a1"]));
-    expect(widget()?.classList.contains("meridian-review-restored")).toBe(true);
-    projectRestoring(copy, new Set());
-    expect(widget()?.classList.contains("meridian-review-restored")).toBe(false);
-    expect(widget()?.innerHTML).toBe(before);
-  });
-
-  it("refreshes removal content and attribution without reusing stale DOM", () => {
-    const { editor } = createReviewEditor(["Keep one.", "Keep two."]);
-    const between = posOf(editor, "Keep two") - 1;
-    const next = (suffix = "OLD", deletedBy: "agent" | "writer" = "agent", id = "h1") =>
-      paintText(
-        editor,
-        [operation("a1", "agent")],
-        ["a1"],
-        { from: between, to: between },
-        {
-          deletedText: "y".repeat(REMOVAL_COLLAPSE_CHARS + 50) + suffix,
-          deletedSpans: [
-            { from: 0, to: 100, deletedBy },
-            { from: 100, to: REMOVAL_COLLAPSE_CHARS + 53, deletedBy: "agent" },
-          ],
-        },
-        id,
-      );
-    next();
-    removals(editor)[0]?.querySelector("button")?.click();
-    next();
-    expect(removals(editor)[0]?.querySelector("del")).not.toBeNull();
-    next("NEW");
-    if (!removals(editor)[0]?.querySelector("del"))
-      removals(editor)[0]?.querySelector("button")?.click();
-    expect(removals(editor)[0]?.textContent).toContain("NEW");
-    next("NEW", "writer");
-    if (!removals(editor)[0]?.querySelector("del"))
-      removals(editor)[0]?.querySelector("button")?.click();
-    expect(
-      removals(editor)[0]?.querySelector(".meridian-review-removal-text-writer"),
-    ).not.toBeNull();
-    next("NEW", "writer", "refetched-hunk");
-    expect(removals(editor)[0]?.getAttribute("data-review-hunk")).toBe("refetched-hunk");
-  });
-
-  it("is not selectable into and not clickable into the document", () => {
-    const { editor } = createReviewEditor(["Alpha beta."]);
-    const at = posOf(editor, "beta");
-    paintText(
-      editor,
-      [operation("a1", "agent")],
-      ["a1"],
-      { from: at, to: at },
-      { deletedText: "gone" },
-    );
-    const before = editor.state.selection.from;
-    const event = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
-    removals(editor)[0]?.dispatchEvent(event);
-    expect(event.defaultPrevented).toBe(true);
-    expect(editor.state.selection.from).toBe(before);
-  });
-});
-
-describe("clicking a removal", () => {
-  function foldedModel(editor: Editor): InlineReviewModel {
-    const between = posOf(editor, "Keep two") - 1;
-    return model(
-      [operation("a1", "agent")],
-      [
-        textHunk(
-          editor,
-          "h1",
-          ["a1"],
-          { from: between, to: between },
-          {
-            deletedText: "z".repeat(REMOVAL_COLLAPSE_CHARS + 20),
-          },
-        ),
-      ],
-    );
-  }
-
-  it("selects its change and opens the fold on one mouse click", () => {
-    const { editor } = createReviewEditor(["Keep one.", "Keep two."]);
-    editor.commands.setTextSelection(2);
-    setModel(editor, foldedModel(editor));
-    const toggle = removals(editor)[0]?.querySelector("button");
-    // A real click is press, then release: the press must not rebuild the
-    // widget out from under the release.
-    toggle?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
-    expect(removals(editor)[0]?.querySelector("button")).toBe(toggle);
-    toggle?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
-
-    expect(removals(editor)[0]?.querySelector("del")).not.toBeNull();
-    expect(removals(editor)[0]?.classList.contains("meridian-review-emphasized")).toBe(true);
-    expect(editor.state.selection.from).toBe(2);
-    setModel(editor, foldedModel(editor));
-    expect(removals(editor)[0]?.querySelector("del")).not.toBeNull();
-  });
-
-  it("does nothing for the original of a change being discarded", () => {
-    const { editor } = createReviewEditor(["Keep one.", "Keep two."]);
-    editor.commands.setTextSelection(2);
-    setModel(editor, { ...foldedModel(editor), restoring: new Set(["a1"]) });
-    const [removal] = removals(editor);
-    // Plain prose now: shown whole (no fold to open), and a click neither focuses its change nor moves the caret.
-    expect(removal?.querySelector("button")).toBeNull();
-    removal?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
-    removal?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1, clientX: 5 }));
-    expect(removals(editor)[0]?.classList.contains("meridian-review-emphasized")).toBe(false);
-    expect(editor.state.selection.from).toBe(2);
-  });
-
-  it("keeps keyboard focus on the fold after Enter rebuilds it", async () => {
-    const { editor } = createReviewEditor(["Keep one.", "Keep two."]);
-    document.body.append(editor.view.dom.parentElement as HTMLElement);
-    setModel(editor, foldedModel(editor));
-    // `click()` with no pointer is what Enter on a focused button sends.
-    removals(editor)[0]?.querySelector("button")?.click();
+    expect(added(editor)).toEqual(["TWO"]);
+    // A rebase advances the base to the writer's text: nothing is left to review.
+    seedReviewBase(doc, ["One TWO three four five six"]);
     await Promise.resolve();
-    expect(document.activeElement).toBe(removals(editor)[0]?.querySelector("button"));
-    expect(document.activeElement?.getAttribute("aria-expanded")).toBe("true");
-  });
-});
-
-describe("clicking a removal puts the caret where it stands", () => {
-  const pressAndRelease = (removal: HTMLElement | undefined, clientX: number, clientY = 0) => {
-    removal?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
-    removal?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1, clientX, clientY }));
-  };
-  /**
-   * jsdom lays nothing out: give the widget a box so a click has a side. Like a
-   * browser, a widget that has left the document has no box, so a side read
-   * after the click rebuilt the widget comes out as zero.
-   */
-  const boxed = (removal: HTMLElement | undefined) =>
-    vi
-      .spyOn(removal as HTMLElement, "getBoundingClientRect")
-      .mockImplementation(
-        () =>
-          (removal?.parentNode
-            ? { left: 100, top: 10, width: 40, height: 20 }
-            : { left: 0, top: 0, width: 0, height: 0 }) as DOMRect,
-      );
-
-  it("moves the caret to the removal's position, so typing lands there", () => {
-    const { editor } = createReviewEditor(["Alpha beta gamma."]);
-    const at = posOf(editor, "beta");
-    editor.commands.setTextSelection(posOf(editor, "gamma"));
-    paintText(
-      editor,
-      [operation("a1", "agent")],
-      ["a1"],
-      { from: at, to: at },
-      { deletedText: "gone" },
-    );
-    const [removal] = removals(editor);
-    boxed(removal);
-    pressAndRelease(removal, 110);
-    expect(editor.state.selection.empty).toBe(true);
-    expect(editor.state.selection.from).toBe(at);
-
-    editor.commands.insertContent("X");
-    expect(editor.getText()).toBe("Alpha Xbeta gamma.");
-    // The removal itself is still not part of the document.
-    expect(editor.getText()).not.toContain("gone");
-  });
-
-  it("puts the caret at the end of the text before a removed paragraph for the upper half, at the start of the text after it for the lower", () => {
-    const { editor } = createReviewEditor(["Keep one.", "Keep two."]);
-    const between = posOf(editor, "Keep two") - 1;
-    paintText(
-      editor,
-      [operation("a1", "agent")],
-      ["a1"],
-      { from: between, to: between },
-      { deletedText: "Removed paragraph." },
-    );
-    const [removal] = removals(editor);
-    boxed(removal);
-    // The first click focuses the change and rebuilds the widget under the pointer.
-    pressAndRelease(removal, 110, 12);
-    expect(editor.state.selection.from).toBe(posOf(editor, "one.") + 4);
-    const [rebuilt] = removals(editor);
-    boxed(rebuilt);
-    pressAndRelease(rebuilt, 110, 25);
-    expect(editor.state.selection.from).toBe(posOf(editor, "Keep two"));
-  });
-});
-
-function focusModel(editor: Editor): InlineReviewModel {
-  return model(
-    [
-      operation("a1", "agent", "closure:one"),
-      operation("w1", "writer", "closure:one"),
-      operation("a2", "agent", "closure:two"),
-    ],
-    [
-      markedTextHunk(editor, "h1", "a1", "alpha"),
-      markedTextHunk(editor, "h2", "w1", "beta"),
-      markedTextHunk(editor, "h3", "a2", "gamma", { deletedText: "old" }),
-    ],
-  );
-}
-
-describe("focus and visibility", () => {
-  it("emphasizes every operation of the focused change and nothing else", () => {
-    const { editor } = createReviewEditor(["alpha beta gamma."]);
-    setModel(editor, focusModel(editor));
-    expect(marked(editor, "meridian-review-emphasized")).toEqual([]);
-
-    editor.commands.setInlineReviewActiveOperation("w1");
-    expect(marked(editor, "meridian-review-emphasized")).toEqual(["alpha", "beta"]);
-
-    editor.commands.setInlineReviewActiveOperation("a2");
-    expect(marked(editor, "meridian-review-emphasized").sort()).toEqual(["gamma", "old"]);
-
-    editor.commands.setInlineReviewActiveOperation(null);
-    expect(marked(editor, "meridian-review-emphasized")).toEqual([]);
-  });
-
-  it("pulses the marks of a change that just arrived, marks and removal alike, and stops when told", () => {
-    const { editor } = createReviewEditor(["alpha beta gamma."]);
-    setModel(editor, focusModel(editor));
-    expect(marked(editor, "meridian-review-arrived")).toEqual([]);
-
-    editor.commands.setInlineReviewPulse(["a2"]);
-    expect(marked(editor, "meridian-review-arrived").sort()).toEqual(["gamma", "old"]);
-
-    editor.commands.setInlineReviewPulse([]);
-    expect(marked(editor, "meridian-review-arrived")).toEqual([]);
-  });
-
-  it("hides every mark and removal without losing the model, then restores them", () => {
-    const { editor } = createReviewEditor(["alpha beta gamma."]);
-    setModel(editor, focusModel(editor));
-    editor.commands.setInlineReviewActiveOperation("a2");
-    editor.commands.insertContentAt(posOf(editor, "gamma") + 2, "NEW ");
-
-    editor.commands.setInlineReviewMarksVisible(false);
-    expect(marked(editor, "meridian-review-added")).toEqual([]);
-    expect(marked(editor, "meridian-review-writer")).toEqual([]);
+    expect(added(editor)).toEqual([]);
     expect(removals(editor)).toHaveLength(0);
-    editor.chain().setTextSelection(1).insertContent("zz").run();
-    editor.commands.setInlineReviewActiveOperation("a2");
-    expect(marked(editor, "meridian-review-writer")).toEqual([]);
-    expect(editor.getText()).toBe("zzalpha beta gaNEW mma.");
-
-    editor.commands.setInlineReviewMarksVisible(true);
-    expect(marked(editor, "meridian-review-writer")).toEqual(["zz", "beta", "NEW "]);
-    expect(marked(editor, "meridian-review-added").join("")).toBe("zzalphagaNEW mma");
-    expect(removals(editor)).toHaveLength(1);
-    expect(marked(editor, "meridian-review-emphasized").join("")).toContain("gaNEW mma");
-    setModel(editor, model([], []));
-    expect(marked(editor, "meridian-review-writer")).toEqual(["zz", "NEW "]);
+    // And a later base that differs again repaints against that base, not the first one.
+    seedReviewBase(doc, ["One two three four five SIX"]);
+    await Promise.resolve();
+    expect(added(editor)).toEqual(["TWO", "six"]);
   });
 });
 
-describe("anchors survive real edits", () => {
-  it("re-anchors after the writer types, so a focus step marks the right words", () => {
-    const { editor } = createReviewEditor(["alpha beta gamma."]);
-    setModel(editor, focusModel(editor));
-    editor.chain().setTextSelection(1).insertContent("Well, ").run();
-    editor.commands.setInlineReviewActiveOperation("a2");
-    expect(marked(editor, "meridian-review-emphasized").sort()).toEqual(["gamma", "old"]);
-    expect(editor.getText()).toBe("Well, alpha beta gamma.");
+describe("recomputing while the writer types", () => {
+  it("keeps the painted marks mapped through the edit and recomputes after the debounce", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const { editor } = reviewing(["Alpha beta gamma delta"], ["Alpha BETA gamma delta"]);
+    editor.commands.insertContentAt(1, "Oh ");
+    expect(added(editor)).toEqual(["BETA"]);
+    vi.advanceTimersByTime(REVIEW_DEBOUNCE_MS - 1);
+    expect(added(editor)).toEqual(["BETA"]);
+    vi.advanceTimersByTime(2);
+    expect(added(editor).join("")).toContain("Oh");
   });
+});
 
-  it("re-anchors after a remote edit moves the words", () => {
-    const { editor, doc } = createReviewEditor(["alpha beta gamma."]);
-    setModel(editor, focusModel(editor));
-    const text = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).get(0) as Y.XmlElement;
-    doc.transact(() => (text.get(0) as Y.XmlText).insert(0, "Remote "), "remote");
-    editor.commands.setInlineReviewActiveOperation("a2");
-    expect(marked(editor, "meridian-review-emphasized").sort()).toEqual(["gamma", "old"]);
-    expect(editor.getText()).toBe("Remote alpha beta gamma.");
+it("retains mark and removal DOM while typing inside a change and changing emphasis", () => {
+  const { editor, projector } = reviewing(["The door is red."], ["The door is green."]);
+  const mark = editor.view.dom.querySelector(`.${inlineReviewClassNames.added}`);
+  const removal = removals(editor)[0];
+  editor.commands.setTextSelection(15);
+  const input = new InputEvent("beforeinput", {
+    inputType: "insertText",
+    data: "x",
+    bubbles: true,
+    cancelable: true,
   });
+  // jsdom has no native target-range implementation.
+  Object.defineProperty(input, "getTargetRanges", { value: () => [] });
+  editor.view.dom.dispatchEvent(input);
+  expect(input.defaultPrevented).toBe(true);
+  expect(editor.state.doc.textContent).toBe("The door is grxeen.");
+  projector.projectNow();
+  expect(editor.view.dom.querySelector(`.${inlineReviewClassNames.added}`)).toBe(mark);
+  expect(removals(editor)[0]).toBe(removal);
+  const id = mark?.getAttribute("data-review-change") ?? null;
+  editor.commands.setReviewActiveChange(id);
+  expect(editor.view.dom.querySelector(`.${inlineReviewClassNames.added}`)).toBe(mark);
+  expect(removals(editor)[0]).toBe(removal);
+  expect(mark?.classList.contains(inlineReviewClassNames.emphasized)).toBe(true);
+});
+
+it("defers projected paint during composition and consumes a pulse at the DOM only once", () => {
+  vi.stubGlobal("matchMedia", () => ({ matches: false }));
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  const { editor, projector } = reviewing(["The door is red."], ["The door is green."]);
+  const root = editor.view.dom;
+  const mark = root.querySelector(`.${inlineReviewClassNames.added}`);
+  const removal = removals(editor)[0];
+  root.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+  editor.commands.insertContentAt(15, "x");
+  const mapped = getInlineReviewPluginState(editor.state)?.decorations;
+  projector.projectNow();
+  expect(getInlineReviewPluginState(editor.state)?.decorations).toBe(mapped);
+  expect(root.querySelector(`.${inlineReviewClassNames.added}`)).toBe(mark);
+  expect(removals(editor)[0]).toBe(removal);
+  const arrivingId = getInlineReviewPluginState(editor.state)?.review?.groups[0].id;
+  if (!arrivingId) throw new Error("Missing arrival");
+  editor.commands.setReviewPulse([arrivingId]);
+  expect(mark?.classList.contains(inlineReviewClassNames.arrived)).toBe(false);
+  editor.commands.insertContentAt(15, "y");
+  projector.projectNow();
+  root.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+  vi.advanceTimersByTime(25);
+  const id = mark?.getAttribute("data-review-change");
+  if (!id || !mark) throw new Error("Missing painted change");
+  expect(mark.classList.contains(inlineReviewClassNames.arrived)).toBe(true);
+  mark.dispatchEvent(new Event("animationend", { bubbles: true }));
+  expect(mark.classList.contains(inlineReviewClassNames.arrived)).toBe(false);
+  projector.projectNow();
+  editor.commands.setReviewActiveChange(id);
+  editor.commands.setReviewPulse([arrivingId]);
+  expect(root.querySelector(`.${inlineReviewClassNames.added}`)).toBe(mark);
+  expect(mark.classList.contains(inlineReviewClassNames.arrived)).toBe(false);
+  editor.commands.setReviewMarksVisible(false);
+  editor.commands.setReviewMarksVisible(true);
+  expect(root.querySelector(`.${inlineReviewClassNames.arrived}`)).toBeNull();
+});
+
+describe("a repaint after the writer's edit", () => {
+  it("keeps green on its words when focus repaints before the next projection", () => {
+    // Risk: metadata repaints used the projection's old coordinates and threw away the mapped marks.
+    const { editor } = reviewing(["The door is red."], ["The door is green."]);
+    expect(added(editor)).toEqual(["green"]);
+    editor.commands.insertContentAt(1, "PREFIX ");
+    editor.commands.setReviewActiveChange("c0");
+    expect(added(editor)).toEqual(["green"]);
+  });
+});
+
+// Root-only updates do not generate editor document transactions.
+it("an attached runtime receives atomic Undo provenance and refreshes a later Apply record", async () => {
+  vi.useFakeTimers();
+  const schema = buildDocumentSchema();
+  const p = (s: string) => schema.nodes.paragraph.create(null, schema.text(s));
+  const doc = new Y.Doc({ gc: false });
+  doc.clientID = 1;
+  writeBlocks(doc.getXmlFragment("prosemirror"), schema, [p("alpha tail")]);
+  seedReviewBase(doc, ["alpha tail"]);
+  doc.clientID = 200000;
+  writeBlocks(doc.getXmlFragment("prosemirror"), schema, [p("alpha tail END")]);
+  const inserted = [[200000, 0, Y.getState(doc.store, 200000)]] as [number, number, number][];
+  const payload = {
+    itemKey: "draft:provenance",
+    revision: [...Y.encodeSnapshot(Y.snapshot(doc))],
+    userId: "u",
+    edits: [
+      {
+        threadId: "chat",
+        turnId: "turn",
+        title: "Chat",
+        at: "2026",
+        owner: { threadId: "chat", title: "Chat", reveal: { threadId: "chat", turnId: "turn" } },
+        inserted,
+        deleted: [],
+      },
+    ],
+  };
+  const peer = new Y.Doc({ gc: false });
+  Y.applyUpdate(peer, Y.encodeStateAsUpdate(doc));
+  peer.clientID = 300000;
+  const origin = Symbol("discard");
+  const history = new Y.UndoManager(peer.getXmlFragment("prosemirror"), {
+    trackedOrigins: new Set([origin]),
+  });
+  recordRestorations(history);
+  peer.transact(() => {
+    const t = (peer.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(0) as Y.XmlText;
+    t.delete(10, 4);
+  }, origin);
+  Y.applyUpdate(doc, Y.encodeStateAsUpdate(peer));
+  const updates: Array<{ update: Uint8Array; origin: unknown }> = [];
+  peer.on("update", (update, origin) => updates.push({ update, origin }));
+  history.undo();
+  const { editor, history: surfaceHistory } = createReviewEditor([], doc);
+  const draft = {
+    projectId: "p",
+    workId: "w",
+    documentId: "provenance",
+    itemKey: "draft:provenance",
+  };
+  vi.spyOn(draftsApi, "getDraftAttribution").mockReturnValue(new Promise(() => {}));
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+  });
+  client.setQueryData(draftAttributionQueryOptions(draft).queryKey, payload);
+  const room = {
+    document: doc,
+    subscribe: () => () => {},
+    getSnapshot: () => ({ status: "synced" }),
+    whenSynced: () => Promise.resolve(),
+    hasUnacknowledgedEdits: () => false,
+  };
+  const runtime = createReviewRuntime(room as never, { draft, queryClient: client });
+  try {
+    runtime.attachEditor(editor);
+    await vi.advanceTimersByTimeAsync(180);
+    expect(updates).toHaveLength(1);
+    Y.applyUpdate(doc, updates[0].update);
+    await vi.advanceTimersByTimeAsync(180);
+    const frame = runtime.state().frame;
+    const restoredFrame = runtime.state().frame;
+    if (!restoredFrame) throw new Error("Restored frame was not published");
+    const seen = Y.createDocFromSnapshot(doc, restoredFrame.snapshot, new Y.Doc({ gc: false }));
+    expect(readRestorations(seen).links).toHaveLength(1);
+    seen.destroy();
+    expect(runtime.state().changes[0]).toMatchObject({
+      byline: [{ kind: "thread", threadId: "chat", turnId: "turn" }],
+      members: ["chat"],
+    });
+    doc.clientID = 1;
+    appendApplyRecord(doc, { base: inserted, settled: [] });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(runtime.state().frame?.doc).toBe(frame?.doc);
+    // The old read cannot settle the deletion until its revision catches up.
+    client.setQueryData(draftAttributionQueryOptions(draft).queryKey, {
+      ...payload,
+      revision: [...Y.encodeSnapshot(Y.snapshot(doc))],
+    });
+    expect(runtime.state().changes[0]).toMatchObject({ byline: [], members: [] });
+  } finally {
+    runtime.destroy();
+    editor.destroy();
+    surfaceHistory.undoManager.destroy();
+    client.clear();
+    history.destroy();
+    peer.destroy();
+    doc.destroy();
+  }
+});
+
+it.each([
+  "changed prose",
+  "same prose",
+])("new item IDs refresh attribution even with %s", async (kind) => {
+  vi.useFakeTimers();
+  const schema = buildDocumentSchema();
+  const p = (text: string) => schema.nodes.paragraph.create(null, schema.text(text));
+  const doc = new Y.Doc({ gc: false });
+  doc.clientID = 1;
+  writeBlocks(doc.getXmlFragment("prosemirror"), schema, [p("alpha tail")]);
+  seedReviewBase(doc, ["alpha tail"]);
+  doc.clientID = 200000;
+  writeBlocks(doc.getXmlFragment("prosemirror"), schema, [p("alpha tail END")]);
+  const payload = (client: number): DraftAttribution => ({
+    itemKey: "stale",
+    userId: "u",
+    revision: [...Y.encodeSnapshot(Y.snapshot(doc))],
+    edits: [
+      {
+        threadId: "chat",
+        turnId: "turn",
+        title: "Chat",
+        at: "2026",
+        owner: { threadId: "chat", title: "Chat", reveal: { threadId: "chat", turnId: "turn" } },
+        inserted: [
+          [200000, 0, Y.getState(doc.store, 200000)],
+          [client, 0, Y.getState(doc.store, client)],
+        ],
+        deleted: [...Y.snapshot(doc).ds.clients].flatMap(([c, ranges]) =>
+          ranges.map(({ clock, len }) => [c, clock, len] as [number, number, number]),
+        ),
+      },
+    ],
+  });
+  const old = payload(200000);
+  let resolve!: (value: DraftAttribution) => void;
+  const held = new Promise<DraftAttribution>((done) => {
+    resolve = done;
+  });
+  const api = vi
+    .spyOn(draftsApi, "getDraftAttribution")
+    .mockResolvedValueOnce(old)
+    .mockReturnValue(held);
+  const { editor } = createReviewEditor([], doc);
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+  });
+  const room = {
+    document: doc,
+    subscribe: () => () => {},
+    getSnapshot: () => ({ status: "synced" }),
+    whenSynced: () => Promise.resolve(),
+    hasUnacknowledgedEdits: () => false,
+  };
+  const runtime = createReviewRuntime(room as never, {
+    draft: { projectId: "p", workId: "w", documentId: "stale", itemKey: "stale" },
+    queryClient: client,
+  });
+  const peer = new Y.Doc({ gc: false });
+  try {
+    runtime.attachEditor(editor);
+    await vi.advanceTimersByTimeAsync(180);
+    expect(runtime.state().changes[0].byline).toEqual([
+      { kind: "thread", threadId: "chat", turnId: "turn" },
+    ]);
+    const group = runtime.state().changes[0].id;
+    Y.applyUpdate(peer, Y.encodeStateAsUpdate(doc));
+    peer.clientID = 400000;
+    peer.transact(() => {
+      writeBlocks(peer.getXmlFragment("prosemirror"), schema, [p("alpha tail JUNK")]);
+      writeBlocks(peer.getXmlFragment("prosemirror"), schema, [
+        p(kind === "same prose" ? "alpha tail END" : "alpha tail NEW"),
+      ]);
+    });
+    Y.applyUpdate(doc, Y.encodeStateAsUpdate(peer));
+    await vi.advanceTimersByTimeAsync(180);
+    expect(api).toHaveBeenCalledTimes(2);
+    expect(runtime.state().changes[0].byline).toEqual([]);
+    expect(runtime.state().changes[0].members).toEqual(["chat"]);
+    expect(runtime.state().membership.status).toBe("loading");
+    if (kind === "same prose") expect(runtime.state().changes[0].id).toBe(group);
+    resolve(payload(400000));
+    await vi.advanceTimersByTimeAsync(180);
+    expect(runtime.state().changes[0].byline).toEqual([
+      { kind: "thread", threadId: "chat", turnId: "turn" },
+    ]);
+    expect(runtime.state().membership.status).toBe("ready");
+  } finally {
+    runtime.destroy();
+    client.clear();
+    peer.destroy();
+    editor.destroy();
+    doc.destroy();
+  }
+});
+
+it("drains a cold read overtaken by a peer revision, and makes an uncovered fence retryable", async () => {
+  vi.useFakeTimers();
+  const schema = buildDocumentSchema();
+  const p = (text: string) => schema.nodes.paragraph.create(null, schema.text(text));
+  const doc = new Y.Doc({ gc: false });
+  doc.clientID = 1;
+  writeBlocks(doc.getXmlFragment("prosemirror"), schema, [p("alpha tail")]);
+  seedReviewBase(doc, ["alpha tail"]);
+  doc.clientID = 900;
+  const stale: DraftAttribution = {
+    itemKey: "cold",
+    userId: "u",
+    revision: [...Y.encodeSnapshot(Y.snapshot(doc))],
+    edits: [],
+  };
+  let resolve!: (value: DraftAttribution) => void;
+  const held = new Promise<DraftAttribution>((done) => {
+    resolve = done;
+  });
+  const current = () => ({ ...stale, revision: [...Y.encodeSnapshot(Y.snapshot(doc))] });
+  const api = vi
+    .spyOn(draftsApi, "getDraftAttribution")
+    .mockReturnValueOnce(held)
+    .mockImplementation(async () => current());
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+  });
+  const runtime = createReviewRuntime(
+    {
+      document: doc,
+      subscribe: () => () => {},
+      getSnapshot: () => ({ status: "synced" }),
+      whenSynced: () => Promise.resolve(),
+      hasUnacknowledgedEdits: () => false,
+    } as never,
+    {
+      draft: { projectId: "p", workId: "w", documentId: "cold", itemKey: "cold" },
+      queryClient: client,
+    },
+  );
+  const peer = new Y.Doc({ gc: false });
+  try {
+    await vi.advanceTimersByTimeAsync(180);
+    expect(api).toHaveBeenCalledTimes(1);
+    Y.applyUpdate(peer, Y.encodeStateAsUpdate(doc));
+    peer.clientID = 901;
+    writeBlocks(peer.getXmlFragment("prosemirror"), schema, [p("alpha tail WRITER")]);
+    Y.applyUpdate(doc, Y.encodeStateAsUpdate(peer));
+    await vi.advanceTimersByTimeAsync(180);
+    expect(runtime.state().membership.status).toBe("loading");
+    expect(runtime.state().changes[0].byline).toEqual([]);
+    resolve(stale);
+    await vi.advanceTimersByTimeAsync(180);
+    expect(api).toHaveBeenCalledTimes(2);
+    expect(runtime.state().membership.status).toBe("ready");
+    expect(runtime.state().changes[0].byline).toEqual([{ kind: "user", userId: "u" }]);
+
+    // The next revision can never be covered by this response. Stop refreshing and offer Retry.
+    const behind = current();
+    api.mockResolvedValue(behind);
+    writeBlocks(peer.getXmlFragment("prosemirror"), schema, [p("alpha tail WRITER AGAIN")]);
+    Y.applyUpdate(doc, Y.encodeStateAsUpdate(peer));
+    await vi.advanceTimersByTimeAsync(180);
+    const failed = runtime.state().membership;
+    expect(failed.status).toBe("failed");
+    const attempts = api.mock.calls.length;
+    expect(attempts).toBeLessThanOrEqual(5);
+    runtime.projectNow();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(api).toHaveBeenCalledTimes(attempts);
+    api.mockImplementation(async () => current());
+    if (failed.status !== "failed") throw new Error("Expected retryable membership");
+    failed.retry();
+    await vi.advanceTimersByTimeAsync(180);
+    expect(runtime.state().membership.status).toBe("ready");
+    expect(api).toHaveBeenCalledTimes(attempts + 1);
+  } finally {
+    runtime.destroy();
+    client.clear();
+    peer.destroy();
+    doc.destroy();
+  }
+});
+
+it("writer typing and Enter neither arrive nor fetch, while a concurrent AI write arrives once", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const schema = buildDocumentSchema();
+  const p = (text: string) => schema.nodes.paragraph.create(null, schema.text(text));
+  const doc = new Y.Doc({ gc: false });
+  doc.clientID = 1;
+  writeBlocks(doc.getXmlFragment("prosemirror"), schema, [p("The red door stays.")]);
+  seedReviewBase(doc, ["The red door stays."]);
+  doc.clientID = 200000;
+  writeBlocks(doc.getXmlFragment("prosemirror"), schema, [p("The blue door stays.")]);
+  const part = (client: number, turnId: string) => ({
+    threadId: "chat",
+    turnId,
+    toolCallId: turnId,
+    title: "Chat",
+    at: "2026",
+    owner: { threadId: "chat", title: "Chat", reveal: { threadId: "chat", turnId } },
+    inserted: [[client, 0, Y.getState(doc.store, client)]] as [number, number, number][],
+    deleted: [...Y.snapshot(doc).ds.clients].flatMap(([c, ranges]) =>
+      ranges.map(({ clock, len }) => [c, clock, len] as [number, number, number]),
+    ),
+  });
+  let payload: DraftAttribution = {
+    itemKey: "typing",
+    userId: "u",
+    revision: [...Y.encodeSnapshot(Y.snapshot(doc))],
+    edits: [part(200000, "initial")],
+  };
+  doc.clientID = 900;
+  const api = vi.spyOn(draftsApi, "getDraftAttribution").mockImplementation(async () => payload);
+  const { editor } = createReviewEditor([], doc);
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+  });
+  const runtime = createReviewRuntime(
+    {
+      document: doc,
+      subscribe: () => () => {},
+      getSnapshot: () => ({ status: "synced" }),
+      whenSynced: () => Promise.resolve(),
+      hasUnacknowledgedEdits: () => false,
+    } as never,
+    {
+      draft: { projectId: "p", workId: "w", documentId: "typing", itemKey: "typing" },
+      queryClient: client,
+    },
+  );
+  let arrived: ReadonlySet<string> = new Set();
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  function ArrivalReader() {
+    const state = useSyncExternalStore(runtime.subscribe, runtime.state);
+    arrived = useArrivedChanges(state.changes, state.ready, "typing");
+    return null;
+  }
+  await act(async () => {
+    root.render(createElement(ArrivalReader));
+  });
+  const peer = new Y.Doc({ gc: false });
+  const settle = () =>
+    act(async () => {
+      await vi.advanceTimersByTimeAsync(180);
+    });
+  try {
+    runtime.attachEditor(editor);
+    await settle();
+    expect(arrived.size).toBe(0);
+    api.mockClear();
+    act(() => {
+      editor.commands.insertContentAt(7, "X");
+    });
+    await settle();
+    expect.soft(arrived.size).toBe(0);
+    expect.soft(api).not.toHaveBeenCalled();
+    act(() => {
+      editor.commands.setTextSelection(8);
+      editor.commands.splitBlock();
+    });
+    await settle();
+    expect.soft(arrived.size).toBe(0);
+    expect.soft(api).not.toHaveBeenCalled();
+    Y.applyUpdate(peer, Y.encodeStateAsUpdate(doc));
+    peer.clientID = 400000;
+    const last = peer.getXmlFragment("prosemirror").get(1) as Y.XmlElement;
+    const text = last.get(0) as Y.XmlText;
+    text.insert(text.length, " A visitor arrives.");
+    Y.applyUpdate(doc, Y.encodeStateAsUpdate(peer));
+    payload = {
+      ...payload,
+      revision: [...Y.encodeSnapshot(Y.snapshot(doc))],
+      edits: [part(400000, "next"), ...payload.edits],
+    };
+    act(() => {
+      editor.commands.insertContentAt(2, "Y");
+    });
+    await settle();
+    expect(arrived.size).toBe(1);
+    const reads = api.mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+    });
+    expect(arrived.size).toBe(0);
+    act(() => {
+      editor.commands.insertContentAt(3, "Z");
+    });
+    await settle();
+    expect(arrived.size).toBe(0);
+    expect(api).toHaveBeenCalledTimes(reads);
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    runtime.destroy();
+    client.clear();
+    peer.destroy();
+    editor.destroy();
+    doc.destroy();
+  }
 });

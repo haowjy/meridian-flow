@@ -29,11 +29,7 @@ server's structured receipt facts (`metadata.workReceipt`, carried on the tool
 result): operation, Work name, before and after. `work-receipt-copy.ts`
 localizes them into the sentence, in Work names. Reads keep one minimal
 generic row; failures title with the failure verb and open onto the
-structured message. A mutation receipt's
-`inverse` (`workReceipt` in `@meridian/thread-client`) makes create/update/delete
-reversible, and that action lives on the turn edits receipt, not on this row:
-the reversal seam (`/api/threads/:id/context/reverse`) is turn-scoped and turn
-lineage owns Undo authority. This row stays a record.
+structured message. This row stays a record: no Undo or Redo.
 
 **The tool picks the parser.** A search hit and a listing entry are both
 `{uri, …}`, so a payload cannot be asked what it is: guessing from the first

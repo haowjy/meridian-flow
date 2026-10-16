@@ -106,12 +106,12 @@ export class DocumentSessionTeardownOwner {
 
   private start(entry: Entry): Promise<void> {
     if (entry.attempt) return entry.attempt;
-    let attempt: Promise<void>;
-    try {
-      attempt = Promise.resolve(entry.session.destroy());
-    } catch (error) {
-      attempt = Promise.reject(error);
-    }
+    // The attempt is installed before `destroy()` runs: its first stage notifies observers, and one of
+    // them (a refused reader) may ask to drain this very entry, which must join this attempt, not begin another.
+    let settle!: { resolve: () => void; reject: (error: unknown) => void };
+    const attempt = new Promise<void>((resolve, reject) => {
+      settle = { resolve, reject };
+    });
     entry.attempt = attempt;
     void attempt
       .then(() => this.finish(entry))
@@ -119,6 +119,11 @@ export class DocumentSessionTeardownOwner {
         if (entry.attempt === attempt) entry.attempt = null;
       })
       .catch(() => undefined);
+    try {
+      Promise.resolve(entry.session.destroy()).then(settle.resolve, settle.reject);
+    } catch (error) {
+      settle.reject(error);
+    }
     return attempt;
   }
 

@@ -2,6 +2,54 @@
 
 ## [Unreleased]
 
+- Large draft Discard and Undo updates use indexed writer admission instead of scanning the whole update for every item. Apply no longer blames the connection when it is still waiting for edits to save.
+
+### Fixed
+
+- Draft review keeps the space before a struck word: "The ~~red~~ blue gate", not "Thered blue gate".
+- Discard waits for attribution when another chat deletes Undo-restored text, instead of silently missing that chat’s change.
+
+- Draft Apply indexes fragmented journal ownership once and reconstructs prior deletions with a linear scan, avoiding repeated full-range sorting after Discard and Undo.
+- Discarding a large full-rewrite draft avoids redundant word matching and repeated Yjs text-split work, while preserving exact edits and Undo.
+
+- Draft review paints the full heading scope when a heading-level change and a leading inline edit combine, without claiming another change's text.
+- Draft review no longer names a chat whose edit was replaced when the final change only inserts text. Shared replacements still name the chat that removed the base text.
+- Formatting-only draft review rows exclude separate text edits from their excerpts and red/green paint.
+
+- Draft edit-status reads release document locks before review projection and reuse exact-state status pages, reducing contention with writer acknowledgements.
+- Rich-only draft changes show their affected text in the change list and red/green editor paint, including heading-level changes.
+
+- Draft review waits for a 300 ms typing pause before recomputing, updates review chrome at lower priority, and keeps unchanged readiness and focus readers asleep. Remote edits and explicit commands still project promptly.
+
+- Draft review keeps existing red widgets and green highlights while typing. Focus, removal folds and arrival pulses update in place; composing text defers review repaint until composition ends. Green changes remain clickable after IME blur, and reduced-motion arrivals cannot replay when motion is re-enabled.
+- Large draft rewrites use deterministic paragraph-sized diffs, reuse unchanged paragraph work in both open editors and headless rooms, and warm the attached editor before the first key. Unchanged review content and pins are reused; move/Undo also clears retired review attributes.
+- Apply drafts without repeatedly hashing every block for every journal row; rebase move matching indexes matching text while preserving the original longest-match choice, so repeated moved words are not dropped.
+
+- Draft review keeps existing red widgets and green highlights while typing. Focus, removal folds and arrival pulses update in place; composing text defers review repaint until composition ends.
+
+- A change row never hides its author. With a long chat title, the editor's change list, the phone's Changes sheet and the Work row show "You", then the first chat truncated with an ellipsis (full title in its tooltip and accessible name), then "+N" for the other chats. The red and green text gets its width first; the byline keeps a floor of about six letters. The change bar truncates its first chat the same way instead of folding it into "+1".
+- Typing or pressing Enter in a draft no longer replays AI arrival highlights or fetches attribution. New AI writes still pulse once; the initial review stays quiet.
+
+- Recreate the unmerged review migration sequence as `0062`–`0067` after main’s `0056`–`0061`, with later timestamps, so an existing database applies every review upgrade.
+
+- Draft membership reads catch up when a peer edit overtakes an in-flight response, with Retry if the read stays stale. Closed files no longer leave the chat's ready drafts waiting to Apply or Discard.
+- The chat's draft dock lists files, not changes: each row is the file's name, this chat's +/− word diff in it, and Discard (✕) and Apply (✓) icon buttons with tooltips. Hovering washes the row and clicking it opens the file's review. A single file is the summary row itself. Per-change review stays in the editor, the dock pane, the phone sheet and the Work row. Word counts use the turn receipt's counter, now shared from `@meridian/agent-edit/diff`.
+
+- Discarding one change keeps the other chat's attribution, including paragraphs with inline images and large rewrites. Undo carries its text and provenance together, and restored chat attribution survives garbage-collected reloads.
+- Draft review no longer calls new AI text “You” while attribution catches up, including rewrites that leave the prose unchanged. Attribution reads carry a room revision; unresolved membership stays included.
+- A failed draft-dock membership read shows an error and Retry on its file. Summary Apply and Discard wait for every file, while ready files retain their individual change commands. The dock uses one keyed summary instead of recursive file readers.
+
+- Deleting text restored by Discard keeps the writer’s "You" byline, including after a reload. Undo of a discarded AI change still credits its chat.
+
+- Draft attribution collects a complete word-and-structure footprint before refining author names. Shared word ends, rebuilt list text and repeated-text changes keep their chat membership and full Apply evidence even when naming exhausts its budget.
+- An open editor refreshes attribution when Undo restoration links or Apply records arrive separately from the text. The chat draft dock derives its summary, file count and commands from the same ready membership as its rows, including while collapsed. An attribution refresh during the editor’s projection debounce cannot stall on offsets from the previous text.
+
+- Discard then Undo keeps a change's chat on every surface, and after a reload. Undo now writes its restoration links into the draft itself (a new writer-writable root, `__meridian_review_restored_v1`), so the server and every reload read what Yjs knew at the moment of Undo; the inference from tombstone text and the `restorations` field of the attribution read are gone. Apply records every pending item inside an edit, including characters the text diff calls unchanged ("red" to "blue" keeps the shared "e"), so deleting an applied word reads "You".
+- The change list shows each change's byline ("You", then the chat links), keeps "You" when the names do not fit, and refreshes it when a chat is renamed. A chat's draft dock no longer lists a file where the chat has no change.
+- A review change stays in its chat's draft dock, and Apply stays correct, when the text is ambiguous. A deletion inside a long repeated phrase, a bullet list made numbered, removed bold, and a change too large to name no longer drop out of their chat or read as applied, and Apply writes its full record even when it cannot name the author. Discard then Undo of an AI paragraph, bold or heading level keeps the chat's byline, however many times it is repeated. A deletion alone now refreshes the attribution read. The classifier works on the word edits, so a long paragraph of alternating changes classifies in a few milliseconds and keeps its names.
+- A review change names only the authors it can prove. "You" and each writing chat come from one classifier over the draft's text, so repeated words, a sliding space, a restored Undo or text the writer edited after an Apply no longer name the wrong chat, and an ambiguous change names no one rather than guessing. Apply now records which draft items it moved into the base so applied AI text reads as base afterward.
+- A subagent's changes belong to the chat that launched it: they show in that chat's draft dock and its Apply and Discard act on them. The card's link carries the parent chat's title and opens the spawn row. "You" stays visible when the chat names are hidden for lack of room.
+- API: `GET …/draft/attribution` adds `userId` and each edit's `owner`; `DraftAttribution` and `DraftAttributionEdit` change shape, and the matcher (`matchAttribution`, `editsInChanges`) is removed.
 - Every chat failure is a card drawn from one place (`chatCards`), announced once when you watched it appear and cleared from the screen reader's live region when the card ends. A failed compaction's card now has Try again (it sends `/compact` again), a hidden "Couldn't stop the reply." no longer lingers in the page after its card goes, and a Retry whose request was lost is a "Couldn't start the retry." card with Try again on the failed reply instead of a fake failed reply. `./mf thread view` prints the same cards (`cards` in its JSON).
 ### Fixed
 - Production contracts imports no longer load golden test fixtures; tests use a separate test-support entry point.
@@ -264,6 +312,8 @@
 - A deleted chat or project now tells its owner so ("This chat was deleted.", "This project was deleted."). Other accounts still get "not found".
 
 ### Fixed
+
+- Shared draft replacements name both chats, including the chat whose removal survives after another chat rewrites its insertion. Discard and Undo retain those names.
 
 - Development: `pnpm dev --restart` failed with "port … could not be inspected" when an open connection happened to use a backend port as its source port. Backend ports now come from 20000-27999, below Linux's ephemeral range, and a port busy with no listener says so.
 - Exiting review while its address is resolving no longer reopens that review. Switching to another Work or draft keeps the new destination.

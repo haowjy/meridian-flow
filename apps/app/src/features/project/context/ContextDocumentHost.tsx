@@ -201,6 +201,7 @@ export function ContextDocumentHost({
                 // The intent, not the resolved room: the live editor goes
                 // read-only from the click, while the room is still resolving.
                 reviewItemKey={selectedReviewItemKey}
+                reviewSurface={container}
               />
             </>
           )}

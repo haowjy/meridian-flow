@@ -97,9 +97,9 @@ function AssistantTurnComponent({
     [liveLineage.documents],
   );
   // Work mutations leave no document lineage; their receipts ride the turn's
-  // own tool results, so a Work-mutation-only turn still gets its Undo receipt.
+  // own tool results, so a Work-mutation-only turn still gets its receipt.
   // Gated on settlement like document lineage: a receipt is a record of a
-  // finished turn, and mid-stream it would offer Undo on a turn still writing.
+  // finished turn.
   const workReceipts = isLive ? NO_WORK_RECEIPTS : view.workReceipts;
 
   return (
@@ -131,7 +131,6 @@ function AssistantTurnComponent({
             threadId={resolvedThreadId}
             turn={turn}
             documents={editedDocuments}
-            receipt={liveLineage.receipt}
             workReceipts={workReceipts}
             changeTrail={changeTrail}
             navigateToChange={navigateToChange}

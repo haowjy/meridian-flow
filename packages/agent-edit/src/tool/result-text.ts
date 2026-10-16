@@ -76,7 +76,7 @@ function blockCount(count: number): string {
  */
 export function agentEditResultSummary(result: AgentEditResultV1, words?: number): string {
   const facts: string[] = [];
-  if (result.status !== "success" && result.status !== "reversed") facts.push(result.status);
+  if (result.status !== "success") facts.push(result.status);
   if (result.write?.id) facts.push(result.write.id);
   if (words !== undefined)
     facts.push(`${words.toLocaleString("en-US")} ${words === 1 ? "word" : "words"}`);
@@ -96,7 +96,7 @@ export function agentEditResultSummary(result: AgentEditResultV1, words?: number
 /**
  * The version a write changed, in `read`'s terms (D50): `live`, or `draft
  * (@work)` for a write held in a named Work's draft; No Work's draft has no
- * slug to name, so it is plain `draft`. Undo and redo name none.
+ * slug to name, so it is plain `draft`.
  */
 function writeVersion(result: Pick<AgentEditResultV1, "destination" | "draftWork">): string {
   if (result.destination === "draft" && result.draftWork !== undefined)
@@ -110,9 +110,6 @@ function notes(result: AgentEditResultV1, groups: readonly AgentEditBlockGroup[]
   const lines: string[] = [];
   const removed = result.write?.deletedHashes ?? [];
   if (removed.length > 0) lines.push(`removed: ${removed.join(", ")}`);
-  if (result.status === "reconciled") {
-    lines.push("later edits were kept, so the text may not match how it was before the write.");
-  }
   if (result.documentEmpty) lines.push("document is now empty; its one blank block always stays.");
   if (result.unchanged) lines.push(UNCHANGED_NOTE);
   if (result.concurrent) {

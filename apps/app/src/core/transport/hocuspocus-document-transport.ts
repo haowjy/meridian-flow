@@ -59,6 +59,7 @@ import { notifyYjsRoomAttached, TappedWebSocket } from "./tapped-websocket";
 const TERMINAL_DENIAL_CODES = new Set<number>([
   WS_CLOSE.AUTH_FAILED.code,
   WS_CLOSE.PERMISSION_DENIED.code,
+  WS_CLOSE.WRITE_REFUSED.code,
 ]);
 
 // WebSocket.OPEN; the provider's own queue-or-send decision uses the same test.
@@ -187,8 +188,8 @@ function terminalState(reason: string, code?: number): DocumentSessionConnection
 }
 
 const RESET_DISPOSITIONS: Readonly<Record<DocumentSessionResetReason, ResetDisposition>> = {
-  [WS_CLOSE.BRANCH_GENERATION_STALE.reason]: "superseded",
-  [WS_CLOSE.BRANCH_STALE.reason]: "rebuild",
+  [WS_CLOSE.BRANCH_CLOSED.reason]: "superseded",
+  [WS_CLOSE.WRITE_REFUSED.reason]: "refused",
   [WS_CLOSE.ACCESS_CHANGED.reason]: "refused",
   [WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason]: "schema",
   [WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason]: "schema",
@@ -202,11 +203,7 @@ export function classifyDocumentTransportClose(
   const reason = event.reason as DocumentSessionResetReason;
   const disposition = Object.hasOwn(RESET_DISPOSITIONS, reason) ? RESET_DISPOSITIONS[reason] : null;
   if (disposition) {
-    if (
-      (disposition === "superseded" || disposition === "rebuild") &&
-      !roomName.startsWith("branch:")
-    )
-      return null;
+    if (disposition === "superseded" && !roomName.startsWith("branch:")) return null;
     if (disposition === "refused" && !hasUnacknowledgedEdits) return null;
     return { kind: "reset", reason, disposition, code: event.code };
   }

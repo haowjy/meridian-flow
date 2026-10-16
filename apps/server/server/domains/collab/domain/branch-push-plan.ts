@@ -1,12 +1,9 @@
-/** Pure document materialization and integration primitives for branch pushes. */
-import { createHash } from "node:crypto";
 import {
   type BlockRef,
   decodeUpdateForDependencies,
   deleteRanges,
   rangeCovers,
   suppliedRanges,
-  toDocHandle,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import * as Y from "yjs";
@@ -48,10 +45,6 @@ export function assertRowsIntegrated(
   }
 }
 
-export function wholeBranchPushUpdate(input: { branchDoc: Y.Doc; liveDoc: Y.Doc }): Uint8Array {
-  return Y.encodeStateAsUpdate(input.branchDoc, Y.encodeStateVector(input.liveDoc));
-}
-
 export function publicationBlockChanges(input: {
   model: YProsemirrorDocumentModel;
   beforeDoc: Y.Doc;
@@ -86,27 +79,6 @@ export function publicationBlockChanges(input: {
     .sort((a, b) => a.blockId.localeCompare(b.blockId));
 }
 
-export function blockTextMap(model: YProsemirrorDocumentModel, doc: Y.Doc): Map<string, string> {
-  const result = new Map<string, string>();
-  for (const block of model.getBlocks(toDocHandle(doc))) {
-    result.set(model.getBlockId(block), model.getText(block));
-  }
-  return result;
-}
-
-export function stablePushIdempotencyKey(input: {
-  branchId: string;
-  generation: number;
-  journalIds: number[];
-}): string {
-  return createHash("sha256")
-    .update(input.branchId)
-    .update("\0")
-    .update(String(input.generation))
-    .update("\0")
-    .update([...input.journalIds].sort((a, b) => a - b).join(","))
-    .digest("hex");
-}
 export class BranchPeerIntegrationError extends Error {
   constructor(
     readonly operation: string,

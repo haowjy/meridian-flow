@@ -1,8 +1,7 @@
-/** useTurnLiveLineage — edited-document lineage and receipt state for one transcript turn. */
+/** useTurnLiveLineage — edited-document lineage for one transcript turn. */
 import type {
   ListTurnLiveLineageResponse,
   TurnLiveLineageDocumentItem,
-  TurnReceiptChip,
 } from "@meridian/contracts/protocol";
 import { useQuery } from "@tanstack/react-query";
 
@@ -14,7 +13,6 @@ import { threadQueryKeys } from "./thread-query-keys";
 
 export type TurnLiveLineageStatus = ListQueryStatus<TurnLiveLineageDocumentItem> & {
   documents: TurnLiveLineageDocumentItem[] | null;
-  receipt: TurnReceiptChip | null;
 };
 
 export function useTurnLiveLineage(
@@ -40,7 +38,6 @@ export function useTurnLiveLineage(
       isFetching: false,
       refetch: () => undefined,
       documents: null,
-      receipt: null,
     };
   }
 
@@ -60,6 +57,5 @@ export function useTurnLiveLineage(
       void query.refetch();
     },
     documents,
-    receipt: query.data?.receipt ?? null,
   };
 }

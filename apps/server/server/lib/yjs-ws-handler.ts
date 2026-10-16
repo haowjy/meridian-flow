@@ -14,10 +14,11 @@ import {
   headAdmitsClient,
   serverServesHead,
 } from "@meridian/prosemirror-schema";
-import { messageYjsSyncStep1, messageYjsSyncStep2, messageYjsUpdate } from "y-protocols/sync";
+import { messageYjsSyncStep2, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
 import {
   type AdmitLiveWriterUpdateResult,
+  BranchWriterRefusedError,
   isDocumentSchemaMajorMismatchError,
   type UpdateOrigin,
 } from "../domains/collab/index.js";
@@ -43,7 +44,6 @@ import {
   type YjsRoomAccessIndex,
   type YjsRoomRegistration,
 } from "./yjs-room-access.js";
-export type BranchHandshakeState = "pending" | "passed" | "rejected";
 
 type HocuspocusConnection = ReturnType<Hocuspocus["handleConnection"]>;
 
@@ -57,7 +57,6 @@ export type YjsGatewayPeer = {
 
 export type YjsGatewayConnection = {
   hocuspocus: HocuspocusConnection;
-  branchSyncState: Map<string, BranchHandshakeState>;
   offlineSyncUpdates: Set<string>;
   registration: YjsRoomRegistration;
 };
@@ -85,7 +84,6 @@ type YjsAdmissionTarget =
       kind: "branch";
       branchId: Extract<ParsedYjsRoom, { kind: "branch" }>["branchId"];
       documentId: DocumentId;
-      generation: number;
     };
 
 /**
@@ -117,7 +115,6 @@ type YjsConnectionContext = {
   userId: UserId;
   traceId: string;
   clientSchemaVersion: CollabSchemaVersion;
-  branchSyncState: Map<string, BranchHandshakeState>;
   offlineSyncUpdates: Set<string>;
   admissionTarget?: YjsAdmissionTarget;
   access?: YjsRoomAccess;
@@ -268,11 +265,8 @@ async function classifyYjsConnectionAdmission(input: {
     }
     headSchemaVersion = await services.documentSync.headSchemaVersion(documentId);
   } else {
-    const branch = await services.documentSync.resolveBranchHocuspocusRoom(
-      room.branchId,
-      room.generation,
-    );
-    if (!branch) throw permissionDenied(WS_CLOSE.BRANCH_GENERATION_STALE.reason);
+    const branch = await services.documentSync.resolveBranchHocuspocusRoom(room.branchId);
+    if (!branch) throw permissionDenied(WS_CLOSE.BRANCH_CLOSED.reason);
     documentId = branch.documentId;
     headSchemaVersion = branch.schemaVersion;
     fileTarget = { kind: "draft", documentId, workId: branch.workId };
@@ -322,40 +316,8 @@ async function classifyYjsConnectionAdmission(input: {
       kind: "branch",
       branchId: room.branchId,
       documentId,
-      generation: room.generation,
     },
   };
-}
-
-async function enforceBranchHandshake(input: {
-  services: YjsGatewayServices;
-  room: Extract<ReturnType<typeof parseRoomOrDeny>, { kind: "branch" }>;
-  syncType: number;
-  payload: Uint8Array;
-  context?: { branchSyncState?: Map<string, BranchHandshakeState> };
-}): Promise<void> {
-  const key = `${input.room.branchId}:${input.room.generation}`;
-  if (input.syncType === messageYjsSyncStep1) {
-    const stale = await input.services.documentSync.rejectStaleBranchSyncStep1({
-      branchId: input.room.branchId,
-      generation: input.room.generation,
-      clientStateVector: input.payload,
-    });
-    if (input.context?.branchSyncState?.get(key) === "rejected") {
-      throw permissionDenied(WS_CLOSE.BRANCH_STALE.reason, WS_CLOSE.BRANCH_STALE.code);
-    }
-    if (stale) {
-      input.context?.branchSyncState?.set(key, "rejected");
-      throw permissionDenied(WS_CLOSE.BRANCH_STALE.reason, WS_CLOSE.BRANCH_STALE.code);
-    }
-    input.context?.branchSyncState?.set(key, "passed");
-    return;
-  }
-  if (input.syncType !== messageYjsSyncStep2 && input.syncType !== messageYjsUpdate) return;
-  const state = input.context?.branchSyncState?.get(key) ?? "pending";
-  if (state === "passed") return;
-  input.context?.branchSyncState?.set(key, "rejected");
-  throw permissionDenied(WS_CLOSE.BRANCH_STALE.reason, WS_CLOSE.BRANCH_STALE.code);
 }
 
 export async function admitWriterSync(input: {
@@ -368,7 +330,6 @@ export async function admitWriterSync(input: {
   closeTransport?(input: { code: number; reason: string }): void;
   expectedGeneration?: bigint;
   context?: {
-    branchSyncState?: Map<string, BranchHandshakeState>;
     offlineSyncUpdates?: Set<string>;
   };
 }): Promise<AdmitLiveWriterUpdateResult | undefined> {
@@ -389,13 +350,6 @@ async function admitBranchSync(
   input: WriterSyncInput,
   room: Extract<ReturnType<typeof parseRoomOrDeny>, { kind: "branch" }>,
 ): Promise<undefined> {
-  await enforceBranchHandshake({
-    services: input.services,
-    room,
-    syncType: input.syncType,
-    payload: input.payload,
-    context: input.context,
-  });
   if (!carriesUpdate(input.syncType, input.payload)) return;
   // A draft branch room is a collaborative room like any other: the writer is
   // one more peer in it. Client frames run the same durable admission the
@@ -403,7 +357,6 @@ async function admitBranchSync(
   try {
     await input.services.documentSync.admitBranchWriterUpdate({
       branchId: room.branchId,
-      expectedGeneration: room.generation,
       update: input.payload,
       origin: { type: "user", userId: input.userId },
       document: input.document,
@@ -412,8 +365,17 @@ async function admitBranchSync(
   } catch (cause) {
     // The bound edit grant was refused under the seam's locks; `beforeSync` answers it.
     if (cause instanceof FileEditRefusedError) throw cause;
-    input.closeTransport?.({ code: 1008, reason: "branch-update-admission-failed" });
-    throw permissionDenied("branch-update-admission-failed", 1008);
+    // A closed draft ends the room; any other refusal repeats on every retry, so
+    // it ends the room as a refusal. Only a failure that is not a verdict may
+    // reconnect.
+    const close =
+      cause instanceof BranchWriterRefusedError
+        ? cause.closed
+          ? WS_CLOSE.BRANCH_CLOSED
+          : WS_CLOSE.WRITE_REFUSED
+        : { code: 1013, reason: "branch-update-admission-failed" };
+    input.closeTransport?.(close);
+    throw permissionDenied(close.reason, close.code);
   }
 }
 
@@ -458,10 +420,7 @@ function admittedTargetForSync(
   if (
     !target ||
     (room.kind === "live" && (target.kind !== "live" || target.documentId !== room.documentId)) ||
-    (room.kind === "branch" &&
-      (target.kind !== "branch" ||
-        target.branchId !== room.branchId ||
-        target.generation !== room.generation))
+    (room.kind === "branch" && (target.kind !== "branch" || target.branchId !== room.branchId))
   ) {
     throw permissionDenied("permission-denied");
   }
@@ -515,19 +474,23 @@ export function createHocuspocus(
 
         if (admission.target.kind === "branch") {
           const target = admission.target;
-          // Do not delay room admission: a cold room may briefly render its persisted
-          // state before this pull arrives, then normal CRDT sync catches it up.
-          void services.documentSync
-            .flushBranchLivePull(target.documentId)
-            .catch((cause: unknown) => {
-              emitEvent(services.eventSink, {
-                level: "warn",
-                source: "collab.hocuspocus",
-                name: "branch_review.live_pull_failed",
-                correlation: { documentId: target.documentId, branchId: target.branchId },
-                payload: unknownToEventPayload(cause),
-              });
+          // Readiness barrier: Hocuspocus runs onConnect before it loads the room and
+          // queues the client's frames until it returns. The pull must finish first, so
+          // the room loads (or already holds, via publishBranchUpdate) the same state
+          // the durable branch has; otherwise the writer's cumulative sync.step2 meets
+          // a stale room, is refused, and the provider loops reconnecting. A failed
+          // pull is reported, not fatal: the next pull converges the branch.
+          try {
+            await services.documentSync.flushBranchLivePull(target.documentId);
+          } catch (cause) {
+            emitEvent(services.eventSink, {
+              level: "warn",
+              source: "collab.hocuspocus",
+              name: "branch_review.live_pull_failed",
+              correlation: { documentId: target.documentId, branchId: target.branchId },
+              payload: unknownToEventPayload(cause),
             });
+          }
         }
       });
     },
@@ -581,12 +544,7 @@ export function createHocuspocus(
           state =
             room.kind === "live"
               ? await services.documentSync.loadHocuspocusDocument(room.documentId, document)
-              : (
-                  await services.documentSync.loadHocuspocusBranchState(
-                    room.branchId,
-                    room.generation,
-                  )
-                )?.state;
+              : (await services.documentSync.loadHocuspocusBranchState(room.branchId))?.state;
         } catch (cause) {
           if (!isDocumentSchemaMajorMismatchError(cause)) throw cause;
           refuseSchemaAdmission({
@@ -600,8 +558,7 @@ export function createHocuspocus(
             serverSchemaVersion: cause.expectedVersion,
           });
         }
-        if (!state && room.kind === "branch")
-          throw permissionDenied(WS_CLOSE.BRANCH_GENERATION_STALE.reason);
+        if (!state && room.kind === "branch") throw permissionDenied(WS_CLOSE.BRANCH_CLOSED.reason);
         if (state) Y.applyUpdate(document, state);
         if (room.kind === "live") services.documentSync.primeReservedNamespaceIndex(document);
       });
@@ -682,7 +639,6 @@ export function createYjsGateway(services: YjsGatewayServices) {
     rooms.unregister(connection.registration);
     // Hocuspocus unloads the room once its last connection is gone.
     connection.hocuspocus.handleClose(event);
-    connection.branchSyncState.clear();
     connection.offlineSyncUpdates.clear();
   }
 
@@ -696,17 +652,14 @@ export function createYjsGateway(services: YjsGatewayServices) {
       }
 
       const registration: YjsRoomRegistration = { revoke: () => undefined };
-      const branchSyncState = new Map<string, BranchHandshakeState>();
       const offlineSyncUpdates = new Set<string>();
       const connection: YjsGatewayConnection = {
-        branchSyncState,
         offlineSyncUpdates,
         registration,
         hocuspocus: hocuspocus.handleConnection(peer.socket, peer.request, {
           userId: peer.userId,
           traceId: peer.traceId,
           clientSchemaVersion: clientSchemaVersionFromRequest(peer.request),
-          branchSyncState,
           offlineSyncUpdates,
           registration,
           closeTransport: ({ code, reason }: { code: number; reason: string }) =>

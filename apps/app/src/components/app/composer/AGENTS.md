@@ -2,7 +2,9 @@
 
 This directory owns authored text, reference and skill atoms, and pending or
 failed uploads. It is the authoring boundary; admission and server authority
-remain outside it.
+remain outside it. Message serialization and occurrence spelling live in
+`@meridian/thread-client`; this directory keeps the TipTap schema, clipboard,
+selection and upload ownership.
 
 - A reference is a standard Markdown link with a canonical URI for model input and
   plain clipboard (`[label](uri)`; the destination is `spellDocumentHref(null, uri)`,

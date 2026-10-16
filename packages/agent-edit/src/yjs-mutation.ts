@@ -1,11 +1,46 @@
 /**
- * Pinned Yjs 13.6.31 mutation adapter. Owns retained-struct lookup, root/nested
+ * Pinned Yjs 13.6.31 mutation adapter. Owns retained/decoded-struct lookup, root/nested
  * parent resolution, fresh-item integration and tombstone splitting/transfer.
  * Browser-safe: no undo policy, host lifecycle or attribution policy. Recovery
  * and forward-inverse hosts supply identity mapping and choose mutation targets.
  * Keep the exact yjs manifest pin synchronized with these private invariants.
  */
 import * as Y from "yjs";
+
+/** Index one decoded update without changing first-match lookup on noncanonical frames. */
+export function indexDecodedStructs<T extends { id: Y.ID; length: number }>(
+  structs: readonly T[],
+): (id: Y.ID) => T | undefined {
+  const clients = new Map<number, { values: T[]; ordered: boolean }>();
+  for (const struct of structs) {
+    const entry = clients.get(struct.id.client) ?? { values: [], ordered: true };
+    const last = entry.values.at(-1);
+    if (last && last.id.clock + last.length > struct.id.clock) entry.ordered = false;
+    entry.values.push(struct);
+    clients.set(struct.id.client, entry);
+  }
+  return (id) => {
+    const entry = clients.get(id.client);
+    if (!entry) return undefined;
+    // decodeUpdate also accepts repeated client blocks out of clock order. Keep their
+    // original first-match semantics, including overlaps, rather than changing admission.
+    if (!entry.ordered) {
+      return entry.values.find(
+        (item) => item.id.clock <= id.clock && id.clock < item.id.clock + item.length,
+      );
+    }
+    let lo = 0;
+    let hi = entry.values.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      const item = entry.values[mid];
+      if (id.clock < item.id.clock) hi = mid;
+      else if (id.clock >= item.id.clock + item.length) lo = mid + 1;
+      else return item;
+    }
+    return undefined;
+  };
+}
 
 export function findItem(document: Y.Doc, id: Y.ID): Y.Item | null {
   const structs = document.store.clients.get(id.client);
@@ -256,4 +291,28 @@ export function captureMutationUpdates(doc: Y.Doc, mutate: () => void): Uint8Arr
     doc.off("update", collect);
   }
   return updates;
+}
+
+/** Split existing text boundaries in clock order, before a bulk edit shifts the same struct tail repeatedly. */
+export function splitTextBoundaries(
+  transaction: Y.Transaction,
+  runs: readonly { text: Y.XmlText; offsets: readonly number[] }[],
+): void {
+  const ids: Y.ID[] = [];
+  for (const { text, offsets } of runs) {
+    let position = 0;
+    let cut = 0;
+    for (let item = text._start; item; item = item.right) {
+      if (item.deleted || !item.countable) continue;
+      const end = position + item.length;
+      while (cut < offsets.length && offsets[cut] < end) {
+        const offset = offsets[cut++];
+        if (offset > position && item.content instanceof Y.ContentString)
+          ids.push(Y.createID(item.id.client, item.id.clock + offset - position));
+      }
+      position = end;
+    }
+  }
+  ids.sort((a, b) => a.client - b.client || a.clock - b.clock);
+  for (const id of ids) Y.getItemCleanStart(transaction, id);
 }

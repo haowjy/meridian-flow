@@ -225,7 +225,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         description:
           DOCUMENT_NAMES_DESCRIPTION +
           "\n" +
-          "Read a document, or part of it. Results show a block hash before each block; use hashes to target `read` and `write`. `format: edits` lists your edits newest first with undo, redo or revert availability. `before` pages older edits. Never show hashes or handles to the user.",
+          "Read a document, or part of it. Results show a block hash before each block; use hashes to target `read` and `write`. `format: edits` lists your edits newest first with what `revert` would do. `before` pages older edits. Never show hashes or handles to the user.",
         inputSchema: modelToolSchema(ReadToolInputSchema),
       },
       input: ReadToolInputSchema,

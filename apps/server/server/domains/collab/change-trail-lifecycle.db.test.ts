@@ -15,7 +15,6 @@ import {
   THREAD_ID,
   TURN_ID,
   USER_ID,
-  WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
 import { reviewDriver } from "./test-support/draft-review-requests.js";
 

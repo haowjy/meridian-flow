@@ -1,5 +1,6 @@
 /** Operation-specific contract tests for document mutation admission policy. */
 
+import { APPLY_RECORD_ROOT, RESTORED_ROOT } from "@meridian/agent-edit/diff";
 import type { DocumentRevision } from "@meridian/contracts";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
@@ -12,7 +13,7 @@ import {
   replaceAuthorityGeneration,
   replicateFrozenIdentity,
 } from "./document-mutation-policy.js";
-import { appendProvenanceFacts } from "./provenance.js";
+import { appendProvenanceFacts, validateClientUpdateAdmission } from "./provenance.js";
 
 const revision = "revision-1" as DocumentRevision;
 
@@ -73,6 +74,25 @@ describe("document mutation policy operations", () => {
     expect(target.getText("prosemirror").toString()).toBe("kept");
     expect(target.getText("companion").toString()).toBe("");
     expect(target.getText("deleted").toString()).toBe("");
+  });
+
+  it("admits a writer's restoration links and Discard write-backs but refuses the server's Apply record", () => {
+    const reference = new Y.Doc({ gc: false });
+    const writer = (root: string) => {
+      const doc = new Y.Doc({ gc: false });
+      doc.clientID = 1_000_000;
+      doc.getArray(root).push([
+        [1_000_000, 0, 4, 7, 0],
+        [1_000_000, 5, 4],
+      ]);
+      return Y.encodeStateAsUpdate(doc);
+    };
+    expect(validateClientUpdateAdmission(reference, writer(RESTORED_ROOT))).toEqual({
+      reservedClientId: null,
+    });
+    expect(() => validateClientUpdateAdmission(reference, writer(APPLY_RECORD_ROOT))).toThrow(
+      "server-owned",
+    );
   });
 
   it("rejects a frozen replication source from another document", async () => {

@@ -28,7 +28,6 @@ import {
 import { SelectionProxyHandler } from "drizzle-orm/selection-proxy";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { BINARY_FILE_TYPES } from "../adapters/catalog-file-mapper.js";
-import { loadSourceOwners, type SourceOwner } from "./draft-ownership.js";
 import type { NodeRef, TreeView } from "./tree-view.js";
 
 // The relations' column shapes. Not schema tables: they type and decode the subqueries

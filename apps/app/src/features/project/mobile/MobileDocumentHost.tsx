@@ -21,7 +21,6 @@ import type { ContextTab } from "@/client/stores";
 import { isDraftOnly } from "@/client/stores";
 import { PaintCapture, PaintHold } from "@/components/app/PaintHold";
 import { PassageNotice } from "@/features/editor/PassageNotice";
-import { WriterHandoffLossNotice } from "@/features/editor/WriterHandoffLossNotice";
 import { useContextRemovalCoordinator } from "../context/account-feature-context";
 import { ContextDocumentHost, type EditableContextTab } from "../context/ContextDocumentHost";
 import { ContextViewerBareHost } from "../context/ContextViewerHost";
@@ -336,7 +335,7 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
   // resumes and a failed open can retry. The phone keeps its route and its review presentation.
   return (
     <MobileDocumentReview projectId={projectId} tab={activeTab}>
-      <WriterHandoffLossNotice projectId={projectId} documentId={activeTab.documentId} />
+      {capture}
       <PhoneDocument projectId={projectId} tab={activeTab}>
         <PassageNotice documentId={activeTab.documentId} />
       </PhoneDocument>

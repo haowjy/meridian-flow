@@ -7,7 +7,7 @@ import * as Y from "yjs";
 import { RecentEventsBuffer } from "../observability/adapters/recent/recent-events-buffer.js";
 import { createInMemoryJournal } from "./adapters/in-memory/agent-edit.js";
 import type { BranchSnapshot } from "./domain/branch-coordinator.js";
-import { BranchStaleUpdateError } from "./domain/branch-coordinator.js";
+import { BranchStaleUpdateError, BranchWriterRefusedError } from "./domain/branch-coordinator.js";
 import {
   bindDocumentAuthority,
   documentAuthority,
@@ -95,7 +95,6 @@ describe("createHocuspocusPersistenceService branch room storage", () => {
 
     const admission = persistence.admitBranchWriterUpdate({
       branchId: BRANCH_ID,
-      expectedGeneration: 2,
       update: writerUpdate(),
       origin: { type: "user", userId: "user-1" as never },
       document: boundDoc({ gc: false }),
@@ -227,7 +226,6 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
     await expect(
       persistence.admitBranchWriterUpdate({
         branchId: BRANCH_ID,
-        expectedGeneration: 2,
         update: humanUpdate,
         origin: { type: "user", userId: "user-1" as never },
         document: roomDoc,
@@ -239,7 +237,7 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
     );
   });
 
-  it("rejects a stale room doc that lacks the branch tombstone delete set", async () => {
+  it("refuses a stale update as a terminal verdict, never a retry", async () => {
     const snapshot = branchSnapshot(tombstoneBearingDoc());
     const staleRoomDoc = docWithText("seed");
     const before = Y.encodeStateVector(staleRoomDoc);
@@ -269,47 +267,11 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
     await expect(
       persistence.admitBranchWriterUpdate({
         branchId: BRANCH_ID,
-        expectedGeneration: 2,
         update: staleUpdate,
         origin: { type: "user", userId: "user-1" as never },
         document: staleRoomDoc,
       }),
-    ).rejects.toThrow(BranchStaleUpdateError);
-  });
-
-  it("fences a retained stale client at the branch SyncStep1 handshake", async () => {
-    const discardedDoc = tombstoneBearingDoc();
-    discardedDoc.getText("content").insert(discardedDoc.getText("content").length, " stale");
-    const currentDoc = docWithText("current generation");
-    const snapshot = {
-      ...branchSnapshot(currentDoc),
-      generation: 3,
-      discardedStateVector: Y.encodeStateVector(discardedDoc),
-    };
-    const persistence = createHocuspocusPersistenceService({
-      journal: fakeJournal(),
-      branchStore: {
-        ...unimplementedBranchMutations(),
-        deferUntilCommit: (callback) => {
-          callback();
-          return true;
-        },
-        getBranch: async () => snapshot,
-        updateBranchSnapshot: async () => true,
-      },
-      branchCoordinator: { commitWriterUpdate: vi.fn(async () => ({ admitted: true })) } as never,
-      hocuspocus: () => null,
-      metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      emitAgentEditInvariantViolation: () => undefined,
-    });
-
-    await expect(
-      persistence.rejectStaleBranchSyncStep1({
-        branchId: BRANCH_ID,
-        generation: 3,
-        clientStateVector: Y.encodeStateVector(discardedDoc),
-      }),
-    ).resolves.toBe(true);
+    ).rejects.toThrow(BranchWriterRefusedError);
   });
 });
 
@@ -734,7 +696,6 @@ function branchSnapshot(doc: Y.Doc): BranchSnapshot {
     workId: "work-1" as never,
     threadId: null,
     status: "active",
-    generation: 2,
     state: Y.encodeStateAsUpdate(doc),
     stateVector: Y.encodeStateVector(doc),
     schemaVersion: COLLAB_SCHEMA_VERSION,

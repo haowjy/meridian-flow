@@ -23,10 +23,15 @@ function knownRefusal(serverCode: string): MessageDescriptor | undefined {
       return msg`This document changed since you opened the review. The review now shows the latest, so look again before you apply.`;
     case "whole_item":
       return msg`This change only applies together with the rest of the document. Apply the whole document instead.`;
-    case "incomplete_class":
-      return msg`This change belongs with others. Select all of them and try again.`;
     case "gone":
+    case "change_not_found":
       return msg`That change is no longer in the draft.`;
+    case "settlement_unfinished":
+      return msg`An earlier apply to this document is still settling. Try again in a moment.`;
+    case "base_uninitialized":
+      return msg`This draft is missing the text it was started from, so it can't be applied yet.`;
+    case "merge_failed":
+      return msg`This draft couldn't be brought up to date with the latest text. Nothing was changed.`;
     default:
       return undefined;
   }
@@ -60,7 +65,7 @@ export function ReviewMessageText({
 }) {
   switch (code) {
     case "apply-offline":
-      return <Trans>Couldn't apply. Check your connection and try again.</Trans>;
+      return <Trans>Couldn't apply yet. Try again in a moment.</Trans>;
     case "apply-refused":
       return (
         <>

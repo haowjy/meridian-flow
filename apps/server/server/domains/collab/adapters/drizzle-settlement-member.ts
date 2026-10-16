@@ -1,17 +1,16 @@
 /**
- * One push of a settlement batch, at the member boundary: staging its cut,
- * admitting it to the live journal with attribution, derivation and head, and
- * reconstructing its sweep evidence. Every function takes the caller's
- * transaction explicitly; the batch owner (`drizzle-pending-settlement.ts`)
- * holds the locks and orders the members.
+ * One content member of a settlement batch, at the member boundary: staging its cut,
+ * admitting its merge to the live journal as one reconcile row with derivation and head, and
+ * withdrawing it. A content member moves no draft journal rows. Every function takes the caller's
+ * transaction explicitly; the batch owner (`drizzle-pending-settlement.ts`) holds the locks and
+ * orders the members.
  */
+import type { DraftBaseRevision } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   branchPushOutboxUpdates,
   branchPushSettlementOutbox,
-  branchWriteJournal,
-  documentYjsCheckpoints,
   documentYjsHeads,
   documentYjsUpdates,
   pushLineage,
@@ -21,33 +20,25 @@ import {
   createCollabYDoc,
   packCollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
-import { and, asc, desc, eq, inArray, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { draftBranchWorks } from "../../../shared/work-draft-lifecycle.js";
 import type { NoticePort } from "../../notices/index.js";
-import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import type { WorkProjectionMutation } from "../../projects/index.js";
 import type {
-  BranchJournalRow,
   PendingLiveSettlement,
   PreparedPushCommit,
   PushLineageRow,
 } from "../domain/branch-push-contracts.js";
 import { deriveDocument } from "../domain/document-derivations.js";
+import { parseContentMemberInput } from "../domain/draft-apply.js";
 import { parseDurableTrailSeedV1 } from "../domain/ports/change-trail-persistence.js";
 import type { DocumentDerivationStore } from "../domain/ports/document-derivations.js";
 import type { DocumentProjectionEffects } from "../domain/ports/document-projection-effects.js";
 import type { DurableProjectionSerializer } from "../domain/ports/durable-projection.js";
 import type { SettlementCut } from "../domain/ports/pending-settlement-store.js";
-import { journalInsertionRanges, ProvenanceMaterializationError } from "../domain/provenance.js";
-import { materializeSweepEvidence } from "../domain/sweep-policy.js";
 import { loadDocumentState } from "./document-loader.js";
-import {
-  allocateDocumentAdmission,
-  ensureAndReadDocumentAuthorityHead,
-} from "./drizzle-document-authority-head.js";
-import { placeDraftRows } from "./drizzle-document-edits.js";
+import { allocateDocumentAdmission } from "./drizzle-document-authority-head.js";
 import { createDrizzleJournal } from "./drizzle-journal.js";
 import { joinAdmissionWithinTx } from "./drizzle-settlement-admission.js";
 
@@ -117,43 +108,25 @@ export async function stageSettlementMemberWithinTx(
 }
 
 /**
- * Puts pushes that never reached live back in review, inside the caller's
- * transaction: their journal rows are active again at their generation, their
- * unconsumed notices are retracted, and their lineage is deleted (the outbox
- * member and its joins cascade), so the idempotency key never answers "already
- * pushed" for an Apply that didn't happen. The drafts are pending again, so the
- * change goes through the Work projection like the staging that made them
- * pushed; the caller already holds their Works. The caller retires their trail
- * contribution.
+ * Takes members that never reached live out of the batch, inside the caller's transaction: their
+ * unconsumed notices are retracted and their lineage is deleted (the outbox member and its joins
+ * cascade), so the idempotency key never answers "already pushed" for an Apply that didn't
+ * happen. The draft keeps every change it had, so there is nothing to put back. The caller
+ * retires their trail contribution.
  */
 export async function withdrawSettlementMembersWithinTx(
   db: DrizzleDb,
-  pushes: readonly Pick<PushLineageRow, "id" | "journalIds" | "branchId">[],
+  pushes: readonly Pick<PushLineageRow, "id">[],
   notices?: NoticePort,
-  workProjection?: WorkProjectionMutation,
 ): Promise<void> {
   if (pushes.length === 0) return;
-  const withdraw = async () => {
-    const journalIds = pushes.flatMap((push) => push.journalIds);
-    if (journalIds.length > 0) {
-      await db
-        .update(branchWriteJournal)
-        .set({ status: "active", pushedAt: null, reviewedBy: null, reviewedAt: null })
-        .where(
-          and(inArray(branchWriteJournal.id, journalIds), eq(branchWriteJournal.status, "pushed")),
-        );
-    }
-    await notices?.retractForPushes(pushes.map((push) => String(push.id)));
-    await db.delete(pushLineage).where(
-      inArray(
-        pushLineage.id,
-        pushes.map((push) => push.id),
-      ),
-    );
-  };
-  const branchIds = pushes.flatMap(({ branchId }) => (branchId ? [branchId] : []));
-  if (!workProjection) return withdraw();
-  await workProjection.mutatePendingBranches(branchIds, withdraw);
+  await notices?.retractForPushes(pushes.map((push) => String(push.id)));
+  await db.delete(pushLineage).where(
+    inArray(
+      pushLineage.id,
+      pushes.map((push) => push.id),
+    ),
+  );
 }
 
 /** Each member's lock cut and post-cut joins, read inside the completion transaction. */
@@ -198,52 +171,11 @@ export async function admitSettlementMemberWithinTx(
   db: DrizzleDb,
   staged: LockedSettlementMember,
   deps: MemberAdmissionDeps,
-): Promise<void> {
+): Promise<DraftBaseRevision> {
   const pushId = staged.push.id;
   const documentId = staged.outbox.documentId as DocumentId;
 
-  const journalRows =
-    staged.push.journalIds.length > 0
-      ? (
-          await db
-            .select()
-            .from(branchWriteJournal)
-            .where(inArray(branchWriteJournal.id, staged.push.journalIds))
-            .orderBy(branchWriteJournal.id)
-        ).map(mapJournalRow)
-      : [];
   const authority = await allocateDocumentAdmission(db, documentId);
-  const authoredRows =
-    journalRows.length > 0
-      ? await db
-          .insert(documentYjsUpdates)
-          .values(
-            journalRows.map((row, batchOrdinal) => ({
-              documentId,
-              authorityId: authority.authorityId,
-              authorityGeneration: authority.generation,
-              admissionSequence: authority.admissionSequence,
-              batchOrdinal,
-              updateData: Buffer.from(row.updateData),
-              originType:
-                row.source === "writer"
-                  ? ("human" as const)
-                  : row.turnId
-                    ? ("agent" as const)
-                    : ("system" as const),
-              actorUserId: row.source === "writer" ? row.actorUserId : null,
-              actorTurnId: row.source === "agent" ? row.turnId : null,
-            })),
-          )
-          .returning({ id: documentYjsUpdates.id })
-      : [];
-  // Applied edit parts leave pending for their live sequence (§4.1).
-  for (const [i, row] of journalRows.entries()) {
-    await placeDraftRows(db, row.branchId, row.generation, [row.id], {
-      kind: "live",
-      seq: (authoredRows[i] as { id: number }).id,
-    });
-  }
   const [canonicalRow] = await db
     .insert(documentYjsUpdates)
     .values({
@@ -251,10 +183,9 @@ export async function admitSettlementMemberWithinTx(
       authorityId: authority.authorityId,
       authorityGeneration: authority.generation,
       admissionSequence: authority.admissionSequence,
-      batchOrdinal: journalRows.length,
+      batchOrdinal: 0,
       updateData: staged.outbox.pushUpdate,
-      // Exact authored rows preserve attribution and reversal targets. This
-      // aggregate system row resolves any omitted causal dependencies on replay.
+      // The merge is the push: one reconcile row, the same shape a pull of live records.
       originType: "reconcile",
       actorUserId: null,
       actorTurnId: null,
@@ -296,6 +227,11 @@ export async function admitSettlementMemberWithinTx(
     update: staged.outbox.pushUpdate,
     excludePushId: String(pushId),
   });
+  return {
+    authorityId: authority.authorityId,
+    authorityGeneration: authority.generation.toString(),
+    seq: canonicalRow.id,
+  };
 }
 
 async function upsertHead(
@@ -325,29 +261,10 @@ async function upsertHead(
     });
 }
 
-function mapJournalRow(row: typeof branchWriteJournal.$inferSelect): BranchJournalRow {
-  return {
-    id: row.id,
-    branchId: row.branchId,
-    generation: row.generation,
-    wId: row.wId,
-    toolCallId: row.toolCallId,
-    source: row.source,
-    threadId: row.threadId,
-    turnId: row.turnId,
-    actorUserId: row.actorUserId,
-    updateData: row.updateData,
-    draftBaseUpdateSeq: row.draftBaseUpdateSeq,
-    status: row.status,
-    updateMeta: row.updateMeta,
-  };
-}
-
 export function mapLineage(row: typeof pushLineage.$inferSelect): PushLineageRow {
   return {
     id: row.id,
     branchId: row.branchId,
-    branchGeneration: row.branchGeneration,
     documentId: row.documentId,
     journalIds: row.journalIds,
     upstreamUpdateSeq: row.upstreamUpdateSeq,
@@ -355,169 +272,24 @@ export function mapLineage(row: typeof pushLineage.$inferSelect): PushLineageRow
     receiptId: row.receiptId,
     threadId: row.threadId,
     turnId: row.turnId,
+    input: row.applyPayload ? parseContentMemberInput(row.applyPayload) : null,
   };
 }
 
-/** A member with its best-effort sweep evidence, for classification outside completion. */
+/** A member as the settlement loop reads it: its push, cut, joins and staged trail. */
 export async function readSettlementMember(
   db: DrizzleDb,
   row: {
     outbox: typeof branchPushSettlementOutbox.$inferSelect;
     push: typeof pushLineage.$inferSelect;
   },
-  eventSink?: EventSink,
 ): Promise<PendingLiveSettlement> {
-  const pushId = row.outbox.pushId;
   const trail = parseDurableTrailSeedV1(row.outbox.trailSeed);
   const updates = await db
     .select({ update: branchPushOutboxUpdates.update })
     .from(branchPushOutboxUpdates)
-    .where(eq(branchPushOutboxUpdates.pushId, pushId))
+    .where(eq(branchPushOutboxUpdates.pushId, row.outbox.pushId))
     .orderBy(branchPushOutboxUpdates.ordinal);
-  let sweepEvidence: PendingLiveSettlement["sweepEvidence"] = null;
-  try {
-    const candidateRows =
-      row.push.journalIds.length > 0
-        ? await db
-            .select({
-              source: branchWriteJournal.source,
-              draftBaseUpdateSeq: branchWriteJournal.draftBaseUpdateSeq,
-              update: branchWriteJournal.updateData,
-            })
-            .from(branchWriteJournal)
-            .where(inArray(branchWriteJournal.id, row.push.journalIds))
-            .orderBy(branchWriteJournal.id)
-        : [];
-    const sweepCandidates = candidateRows.flatMap((candidate, index) =>
-      candidate.source === "agent"
-        ? [
-            {
-              precedingUpdates: candidateRows
-                .slice(0, index)
-                .map(({ update }) => new Uint8Array(update)),
-              update: new Uint8Array(candidate.update),
-              observedBaseUpdateSeq: candidate.draftBaseUpdateSeq,
-            },
-          ]
-        : [],
-    );
-    if (sweepCandidates.length === 0) {
-      throw new ProvenanceMaterializationError(
-        `Pending branch push settlement ${pushId} has no agent observation watermark`,
-      );
-    }
-    const authority = row.push.upstreamUpdateSeq
-      ? (
-          await db
-            .select({
-              authorityId: documentYjsUpdates.authorityId,
-              generation: documentYjsUpdates.authorityGeneration,
-            })
-            .from(documentYjsUpdates)
-            .where(eq(documentYjsUpdates.id, row.push.upstreamUpdateSeq))
-            .limit(1)
-        )[0]
-      : await ensureAndReadDocumentAuthorityHead(db, row.outbox.documentId);
-    if (!authority) {
-      throw new ProvenanceMaterializationError(
-        `Pending branch push settlement ${pushId} has no authority admission`,
-      );
-    }
-    const latestObservationWatermark = sweepCandidates.reduce(
-      (latest, { observedBaseUpdateSeq }) => Math.max(latest, observedBaseUpdateSeq),
-      0,
-    );
-    const checkpointMetadata = await db
-      .select({
-        id: documentYjsCheckpoints.id,
-        upToSeq: documentYjsCheckpoints.upToSeq,
-      })
-      .from(documentYjsCheckpoints)
-      .where(
-        and(
-          eq(documentYjsCheckpoints.documentId, row.outbox.documentId),
-          eq(documentYjsCheckpoints.authorityId, authority.authorityId),
-          eq(documentYjsCheckpoints.authorityGeneration, authority.generation),
-          lte(documentYjsCheckpoints.upToSeq, latestObservationWatermark),
-        ),
-      )
-      .orderBy(desc(documentYjsCheckpoints.upToSeq), desc(documentYjsCheckpoints.id));
-    const selectedCheckpoints = sweepCandidates.map((candidate) => {
-      const checkpoint = checkpointMetadata.find(
-        ({ upToSeq }) => upToSeq <= candidate.observedBaseUpdateSeq,
-      );
-      if (!checkpoint) {
-        throw new ProvenanceMaterializationError(
-          `Pending branch push settlement ${pushId} has no neutral root floor`,
-        );
-      }
-      return { candidate, checkpointId: checkpoint.id };
-    });
-    const checkpointIds = [...new Set(selectedCheckpoints.map(({ checkpointId }) => checkpointId))];
-    const checkpointStates = await db
-      .select({
-        id: documentYjsCheckpoints.id,
-        state: documentYjsCheckpoints.state,
-      })
-      .from(documentYjsCheckpoints)
-      .where(inArray(documentYjsCheckpoints.id, checkpointIds));
-    const rootsByCheckpoint = new Map(
-      checkpointStates.map(({ id, state }) => [id, journalInsertionRanges(new Uint8Array(state))]),
-    );
-    const attributedRows = await db
-      .select({
-        journalRowId: documentYjsUpdates.id,
-        originType: documentYjsUpdates.originType,
-        actorUserId: documentYjsUpdates.actorUserId,
-        update: documentYjsUpdates.updateData,
-      })
-      .from(documentYjsUpdates)
-      .where(
-        and(
-          eq(documentYjsUpdates.documentId, row.outbox.documentId),
-          eq(documentYjsUpdates.authorityId, authority.authorityId),
-          eq(documentYjsUpdates.authorityGeneration, authority.generation),
-        ),
-      )
-      .orderBy(
-        documentYjsUpdates.admissionSequence,
-        documentYjsUpdates.batchOrdinal,
-        documentYjsUpdates.id,
-      );
-    sweepEvidence = materializeSweepEvidence({
-      candidates: selectedCheckpoints.map(({ candidate, checkpointId }) => {
-        const roots = rootsByCheckpoint.get(checkpointId);
-        if (!roots) {
-          throw new ProvenanceMaterializationError(
-            `Pending branch push settlement ${pushId} lost its neutral root floor`,
-          );
-        }
-        return {
-          ...candidate,
-          rootFloor: { key: String(checkpointId), roots },
-        };
-      }),
-      rows: attributedRows.map((attribution) => ({
-        ...attribution,
-        journalRowId: BigInt(attribution.journalRowId),
-        update: new Uint8Array(attribution.update),
-      })),
-    });
-  } catch (cause) {
-    if (!(cause instanceof ProvenanceMaterializationError)) throw cause;
-    if (eventSink) {
-      emitEvent(eventSink, {
-        level: "warn",
-        source: "collab.change_event",
-        name: "sweep_projection.unavailable",
-        correlation: { pushId: String(pushId) },
-        payload: {
-          documentId: row.outbox.documentId,
-          ...unknownToEventPayload(cause),
-        },
-      });
-    }
-  }
   return {
     push: mapLineage(row.push),
     documentTitle: row.outbox.documentTitle,
@@ -525,7 +297,6 @@ export async function readSettlementMember(
     pushUpdate: row.outbox.pushUpdate,
     postCutUpdates: updates.map(({ update }) => update),
     trail,
-    sweepEvidence,
     joinVersion: row.outbox.joinVersion,
   };
 }

@@ -20,7 +20,7 @@ describe("branch journal reads (Postgres)", () => {
     const outcome = await runInDrizzleTransaction(db, () =>
       Promise.race([
         reads
-          .listConcurrentJournalRows("00000000-0000-4000-8000-0000000008f1", 0, {
+          .listConcurrentJournalRows("00000000-0000-4000-8000-0000000008f1", {
             documentId: ALPHA_ID as DocumentId,
           })
           .then(() => "served"),

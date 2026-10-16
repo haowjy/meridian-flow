@@ -85,7 +85,7 @@ will grow, one per command. It holds the transcript comparison and the live-sync
   - background report bodies (`inputs.backgroundReports`): the browser fetches each
     child's report for its card, and the view has none;
   - change trails (`inputs.changeTrails`), also fetched by the browser;
-  - copy and the receipt rows under a reply (Undo, "Edited 1 document") are the app's
+  - copy and the receipt rows under a reply ("Edited 1 document") are the app's
     drawing of Work and lineage reads, not view-model rows;
   - a pending reply's DOM `data-turn-id` is its client id, so it is not row identity: a
     Retry stand-in carries the id it will be stored under before the request leaves the

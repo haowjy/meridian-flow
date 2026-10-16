@@ -6,15 +6,17 @@ action, and a text branch never crosses the wire.
 
 - Rows carry `contextLocation: { scheme, path } | null`; preserve the scheme
   and the leading slash in the path.
-- `reviewRoomName` is an opaque, generation-fenced transport address, not an
-  application identity.
-- The list contains current reviewable work only; completed review is not a
-  durable draft-list receipt.
+- `roomName` is the opaque transport address of an item's text branch, returned
+  by the server; clients never build or parse it.
+- The list contains listed items only (created nodes, and edited items that have
+  changes); completed review is not a durable draft-list receipt.
 - Keep storage identities behind the DTOs; the server maps an `itemKey` to its
   branch and owns branch integration.
-- Preview and command responses preserve explicit stale, gone, held, and
-  incomplete outcomes so clients do not infer closure from operation counts.
-- Apply and discard remain writer commands, not branch-storage operations.
+- There is no server preview: the browser projects the review from the draft
+  room. Command responses preserve explicit stale, gone, held, and failed
+  outcomes so clients do not infer closure from change counts.
+- Apply and item or whole Discard remain writer commands. Discarding a change is
+  a local edit, not a wire operation.
 
-See [`.context/CONTEXT.md`](.context/CONTEXT.md) for command, preview, and
-closure contracts.
+See [`.context/CONTEXT.md`](.context/CONTEXT.md) for command and item
+contracts.

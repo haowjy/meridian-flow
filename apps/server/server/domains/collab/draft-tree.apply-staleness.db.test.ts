@@ -34,39 +34,35 @@ async function draftedChapter(start: DraftTreeStart) {
 }
 
 describeDraftTreeDb("Apply refuses a stale review (postgres)", (start, db) => {
-  it("refuses a live rename, edit or delete-only change made after the review rendered, before staging (E-6a)", async () => {
-    const { s, ascension, vector, staleAnswer } = await draftedChapter(start);
-    const stale = async (change: () => Promise<unknown>) => {
-      const rendered = await s.items(ascension);
+  it("refuses a live rename made after the review rendered, before staging, but merges a live edit into the chosen change (E-6a)", async () => {
+    const { s, ascension, staleAnswer } = await draftedChapter(start);
+    const rendered = async (change: () => Promise<unknown>) => {
+      const items = await s.items(ascension);
       await change();
-      return s.applyAll(ascension, { items: rendered });
+      return s.applyAll(ascension, { items });
     };
     expect
-      .soft(await stale(() => s.writer.move("chapter.md", "chapter-1.md")), "a live rename")
+      .soft(await rendered(() => s.writer.move("chapter.md", "chapter-1.md")), "a live rename")
       .toEqual(staleAnswer);
-    expect
-      .soft(
-        await stale(() => s.writer.write("chapter-1.md", "Opening.\n\nMiddle.\n\nEnd.\n\nCoda.")),
-        "a live edit",
-      )
-      .toEqual(staleAnswer);
-    const before = await vector();
-    expect
-      .soft(
-        await stale(() => s.writer.write("chapter-1.md", "Opening.\n\nEnd.\n\nCoda.")),
-        "a delete-only edit",
-      )
-      .toEqual(staleAnswer);
-    expect.soft(await vector(), "it inserted nothing (V2-H1)").toEqual(before);
     expect.soft(await s.batchStates(), "nothing staged").toEqual([]);
     expect.soft((await s.review(ascension)).items, "rows reviewable").toHaveLength(1);
+    // Live text is not part of the review's frame: Apply merges the chosen change into it.
+    expect
+      .soft(
+        await rendered(() =>
+          s.writer.write("chapter-1.md", "Opening.\n\nMiddle.\n\nEnd.\n\nCoda."),
+        ),
+        "a live edit",
+      )
+      .toMatchObject({ status: "completed", items: [{ status: "applied" }] });
+    expect.soft(await s.view("live").text("chapter-1.md")).toContain("Coda.");
   });
 
   it("an item Apply refused as stale names its own item, the shape the client accepts", async () => {
     const { s, ascension, chapter } = await draftedChapter(start);
     const remove = setCollabHook("applyItems.beforeStaging", async () => {
       remove();
-      await s.writer.write("chapter.md", "Opening.\n\nMiddle.\n\nEnd.\n\nCoda.");
+      await s.writer.move("chapter.md", "chapter-1.md");
     });
     const [answer] = await s.apply(ascension, [chapter]);
     const { itemKey } = itemFor(await s.items(ascension), chapter);

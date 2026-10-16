@@ -232,7 +232,6 @@ import {
   createActiveDocumentResolver,
   createDrizzleTopPrimaryChatResolver,
   createInMemoryEventJournalWriter,
-  requireThreadOwner,
 } from "../domains/threads/index.js";
 import type {
   EventJournalReader,
@@ -575,16 +574,6 @@ export async function createProductionAppPorts(input: {
     notices,
     workProjectionMutation,
     objects: objectRelease,
-    threadContext: {
-      async requireThreadOwner(input) {
-        const thread = await requireThreadOwner(
-          { threads: threadRepos.threads },
-          input.threadId,
-          input.userId as never,
-        );
-        return { projectId: thread.projectId };
-      },
-    },
   });
   const results = createDrizzleResultRepository(db);
   const promotionService = createPromotionService({
@@ -1182,7 +1171,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     async shutdown() {
       runner.beginShutdown();
       handoffBriefs.beginShutdown();
-      ports.documentSync.dispose();
+      await ports.documentSync.dispose();
       await ports.documentSync.documentDerivations.stop();
       const timeoutMs = APP_DRAIN_DEADLINE_MS;
       const drained = await backgroundTasks.drain(timeoutMs);

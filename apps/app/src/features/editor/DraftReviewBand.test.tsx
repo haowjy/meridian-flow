@@ -1,41 +1,44 @@
 // @vitest-environment jsdom
-/** S-doc: document focus and selective commands through the real review band and provider. */
+/**
+ * The review band over a real review editor and the real provider. It protects the writer's flows:
+ * stepping scrolls to the change, Apply leaves the screen at the click and returns with its reason, and
+ * Discard draft is an editor edit that Ctrl+Z brings back, with "No changes left" a function of the text.
+ */
 
 import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
-import { act } from "react";
+import type { Editor } from "@tiptap/core";
+import { act, useLayoutEffect, useMemo } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import * as Y from "yjs";
+import { HttpResponseError } from "@/client/api/http-client";
 import * as projectsApi from "@/client/api/projects-api";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
-import type { ContextTab } from "@/client/stores";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import * as handoff from "@/features/project/dock/editor-review-handoff";
-import { MobileDocumentReview } from "@/features/project/mobile/MobileDocumentReview";
+import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { ProjectNavigationProvider } from "@/features/project/routing/ProjectNavigationContext";
 import {
-  applied,
   createReviewScopeFixture,
   deferredReviewAnswer,
-  discarded,
   listed,
-  preview,
+  meta,
 } from "@/test-support/draft-review-scope";
 import {
   createReviewEditor,
   destroyReviewEditors,
-  model,
-  posOf,
-  setModel,
-  textHunk,
+  seedReviewBase,
 } from "@/test-support/inline-review-editor";
 import { settleReact } from "@/test-support/react-dom-harness";
 import { DraftReviewBand } from "./DraftReviewBand";
+import { useInlineReviewFocus } from "./useInlineReviewFocus";
+import { useInlineReviewSync } from "./useInlineReviewSync";
 
 let fixture: ReturnType<typeof createReviewScopeFixture>;
 beforeEach(() => {
   vi.useFakeTimers();
   resetDraftCommandRecords();
   i18n.loadAndActivate({ locale: "en", messages: {} });
+  Element.prototype.scrollIntoView = () => {};
   fixture = createReviewScopeFixture();
   vi.spyOn(projectsApi, "listProjectWorks").mockReturnValue(new Promise(() => {}));
 });
@@ -43,188 +46,82 @@ afterEach(() => {
   fixture.dispose();
   destroyReviewEditors();
   vi.restoreAllMocks();
-  vi.unstubAllGlobals();
   vi.useRealTimers();
 });
-const list = () => document.querySelector<HTMLElement>("[data-draft-change-list]");
-const row = (id: string) =>
-  list()?.querySelector<HTMLElement>(`[data-review-change-row="class-${id}"]`);
-const open = () =>
-  act(async () =>
-    document
-      .querySelector<HTMLButtonElement>("[data-draft-review-controls] [data-slot=popover-trigger]")
-      ?.click(),
-  );
 
-/** Drain bounded query/UI scheduling under act; never advance a repeating refresh loop wholesale. */
+/** The room as the app mounts it: the editor, its sync state and the projection published to the controller. */
+const syncedSession = (document: Y.Doc) =>
+  ({
+    document,
+    getSnapshot: () => ({ status: "synced" }),
+    subscribe: () => () => {},
+    whenSynced: () => Promise.resolve(),
+    hasUnacknowledgedEdits: () => false,
+  }) as never;
+/** Mounted only once the review is open, as the editor is: a model announced before then has no review to join. */
+function Runtime(props: { editor: Editor; doc: Y.Doc }) {
+  return useDraftReview().controller.inlineReview ? <OpenRuntime {...props} /> : null;
+}
+function OpenRuntime({ editor, doc }: { editor: Editor; doc: Y.Doc }) {
+  const { controller } = useDraftReview();
+  const session = useMemo(() => syncedSession(doc), [doc]);
+  useInlineReviewSync({
+    editor,
+    session,
+    documentId: "document-a",
+    itemKey: "draft-a",
+    onInlineModelAvailable: controller.inlineReviewModelAvailable,
+  });
+  useInlineReviewFocus({ editor, documentId: "document-a", itemKey: "draft-a" });
+  // The editor publishes the shown chrome from a layout effect, never during render.
+  const { setInlineReviewShown } = controller;
+  useLayoutEffect(() => {
+    setInlineReviewShown("document-a", "draft-a", true);
+  }, [setInlineReviewShown]);
+  return null;
+}
 
-it("focuses this document, then applies and discards its classes without closing the list", async () => {
-  const network = fixture.network;
-  const other = {
-    ...listed,
-    documentId: "document-b",
-    itemKey: "draft-b",
-    documentName: "Other chapter",
-  };
-  network.listWorkDrafts.mockResolvedValue({ items: [listed, other] });
-  network.getDraftPreview.mockImplementation(async (_p, _w, _d, id) => ({
-    ...preview,
-    itemKey: id,
-  }));
-  const answer = deferredReviewAnswer<ReturnType<typeof applied>>();
-  network.applyDraftChanges.mockReturnValueOnce(answer.promise);
-  network.discardDraft.mockResolvedValue(discarded(false));
-  const navigate = vi.fn();
-  await fixture.render(
-    async (probe) => {
-      await settleReact(() => expect(probe().presented.files).toHaveLength(2));
-      await act(async () =>
-        probe().presented.controller.enterInlineReview("document-a", "draft-a"),
-      );
-      await settleReact(() => expect(probe().header.view.items).toHaveLength(2));
-      await open();
-      expect(list()?.querySelectorAll("[data-review-change-row]")).toHaveLength(2);
-      expect(list()?.textContent).not.toContain("Other chapter");
-      await act(async () => row("2")?.querySelector<HTMLButtonElement>("button")?.click());
-      expect(probe().header.view.focused?.classId).toBe("class-2");
-      expect(list()).toBeNull();
-      await open();
-      await act(async () =>
-        row("1")?.querySelector<HTMLButtonElement>('[aria-label="Apply"]')?.click(),
-      );
-      expect(list()).not.toBeNull();
-      expect(row("1")).toBeNull();
-      expect(network.applyDraftChanges.mock.calls).toEqual([
-        [
-          "project-a",
-          "work-a",
-          "document-a",
-          {
-            commandId: expect.any(String),
-            draftId: "work-draft-a",
-            itemKey: "draft-a",
-            operationIds: ["1"],
-            liveRevisionToken: "live-1",
-            draftRevisionToken: "draft-1",
-          },
-        ],
-      ]);
-      expect(probe().header.view.focused?.classId).toBe("class-2");
-      await act(async () => answer.resolve(applied(false, "1")));
-      await settleReact(() => expect(probe().presented.controller.isDisposing).toBe(false));
-      await act(async () =>
-        row("2")?.querySelector<HTMLButtonElement>('[aria-label="Discard"]')?.click(),
-      );
-      expect(network.discardDraft.mock.calls).toEqual([
-        [
-          "project-a",
-          "work-a",
-          "document-a",
-          {
-            commandId: expect.any(String),
-            draftId: "work-draft-a",
-            itemKey: "draft-a",
-            closureClassIds: ["class-2"],
-            memberPartKeys: [],
-            admissionTokens: ["class-2"],
-            liveRevisionToken: "live-1",
-            draftRevisionToken: "draft-1",
-          },
-        ],
-      ]);
-      expect(list()).toBeNull();
-      await settleReact(() => expect(probe().presented.controller.isDisposing).toBe(false));
-      expect(navigate).not.toHaveBeenCalled();
-    },
-    {
-      surface: (
-        <DraftReviewBand documentId="document-a" itemKey="draft-a" onOpenDraft={navigate}>
-          {({ version, controls }) => (
-            <>
-              {version}
-              {controls}
-            </>
-          )}
-        </DraftReviewBand>
-      ),
-      host: (children) => (
-        <I18nProvider i18n={i18n}>
-          <TooltipProvider>
-            <ProjectNavigationProvider openContextRoute={navigate} openWork={navigate}>
-              {children}
-            </ProjectNavigationProvider>
-          </TooltipProvider>
-        </I18nProvider>
-      ),
-    },
-  );
-});
+const draft = ["Alpha green.", "Filler one.", "Filler two.", "Filler three.", "Omega green."];
+const base = ["Alpha red.", "Filler one.", "Filler two.", "Filler three.", "Omega red."];
+const rows = () => [...document.querySelectorAll<HTMLElement>("[data-review-change-row]")];
+const button = (label: string) =>
+  document.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`);
+const host = (children: React.ReactNode) => (
+  <I18nProvider i18n={i18n}>
+    <TooltipProvider>
+      <ProjectNavigationProvider openContextRoute={vi.fn()} openWork={vi.fn()}>
+        {children}
+      </ProjectNavigationProvider>
+    </TooltipProvider>
+  </I18nProvider>
+);
 
-it.each([
-  "desktop",
-  "phone",
-] as const)("%s steps with marks hidden without restoring them", async (surface) => {
+async function review(
+  run: (
+    editor: Editor,
+    doc: Y.Doc,
+    probe: Parameters<Parameters<typeof fixture.render>[0]>[0],
+  ) => Promise<void>,
+) {
   fixture.network.listWorkDrafts.mockResolvedValue({ items: [listed] });
-  fixture.network.getDraftPreview.mockResolvedValue(preview);
-  const navigate = vi.fn();
-  vi.spyOn(handoff, "useOpenEditorReview").mockReturnValue(navigate);
+  fixture.network.getDraftMeta.mockResolvedValue(meta);
+  const { editor, doc } = createReviewEditor(draft);
+  seedReviewBase(doc, base);
   await fixture.render(
     async (probe) => {
+      // Applying focuses the next change, whose scroll reads motion preference from the harness window.
+      window.matchMedia = (() => ({ matches: false })) as never;
       await settleReact(() => expect(probe().presented.files).toHaveLength(1));
       await act(async () =>
         probe().presented.controller.enterInlineReview("document-a", "draft-a"),
       );
       await settleReact(() => expect(probe().header.view.items).toHaveLength(2));
-      await act(async () => {
-        probe().presented.controller.setInlineReviewShown("document-a", "draft-a", true);
-        probe().presented.controller.setMarksVisible(false);
-      });
-      vi.stubGlobal("HTMLElement", window.HTMLElement);
-      window.matchMedia = vi.fn().mockReturnValue({ matches: true });
-      const { editor } = createReviewEditor(["Alpha", "Beta"]);
-      setModel(
-        editor,
-        model(
-          preview.operations,
-          ["Alpha", "Beta"].map((text, index) => {
-            const from = posOf(editor, text);
-            return textHunk(editor, `h${index}`, [String(index + 1)], {
-              from,
-              to: from + text.length,
-            });
-          }),
-        ),
-      );
-      editor.commands.setInlineReviewMarksVisible(false);
-      probe().presented.controller.registerInlineReviewRuntime({
-        documentId: "document-a",
-        itemKey: "draft-a",
-        editor,
-      });
-      const paragraphs = [...editor.view.dom.querySelectorAll("p")];
-      const scrolls = paragraphs.map((paragraph) => {
-        const scroll = vi.fn();
-        paragraph.scrollIntoView = scroll;
-        return scroll;
-      });
-      for (const [label, classId] of [
-        ["Next change", "class-1"],
-        ["Previous change", "class-2"],
-      ]) {
-        const button = document.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`);
-        expect(button).not.toBeNull();
-        expect(button?.disabled).toBe(false);
-        await act(async () => button?.click());
-        expect(probe().header.view.focused?.classId).toBe(classId);
-        expect(probe().presented.controller.marksVisible).toBe(false);
-        expect(scrolls[classId === "class-1" ? 0 : 1]).toHaveBeenCalled();
-        expect(editor.view.dom.querySelector("[data-review-operations]")).toBeNull();
-      }
+      await run(editor, doc, probe);
     },
     {
-      surface:
-        surface === "desktop" ? (
-          <DraftReviewBand documentId="document-a" itemKey="draft-a" onOpenDraft={navigate}>
+      surface: (
+        <>
+          <DraftReviewBand documentId="document-a" itemKey="draft-a" onOpenDraft={vi.fn()}>
             {({ version, controls }) => (
               <>
                 {version}
@@ -232,28 +129,92 @@ it.each([
               </>
             )}
           </DraftReviewBand>
-        ) : (
-          <MobileDocumentReview projectId="project-a" tab={reviewedTab}>
-            <div />
-          </MobileDocumentReview>
-        ),
-      host: (children) => (
-        <I18nProvider i18n={i18n}>
-          <TooltipProvider>
-            <ProjectNavigationProvider openContextRoute={navigate} openWork={navigate}>
-              {children}
-            </ProjectNavigationProvider>
-          </TooltipProvider>
-        </I18nProvider>
+          <Runtime editor={editor} doc={doc} />
+        </>
       ),
+      host,
     },
   );
+}
+
+it("Apply takes the change off the screen at the click, sends its id and snapshot, never claims 'No changes left' while one is out, and restores a refused change with the reason", async () => {
+  const answer = deferredReviewAnswer<never>();
+  const second = deferredReviewAnswer<never>();
+  fixture.network.applyDraftChanges.mockReturnValueOnce(answer.promise);
+  fixture.network.applyDraftChanges.mockReturnValueOnce(second.promise);
+  await review(async (_editor, _doc, probe) => {
+    await act(async () =>
+      document
+        .querySelector<HTMLButtonElement>(
+          "[data-draft-review-controls] [data-slot=popover-trigger]",
+        )
+        ?.click(),
+    );
+    expect(rows()).toHaveLength(2);
+    const first = rows()[0].dataset.reviewChangeRow as string;
+    await act(async () =>
+      rows()[0].querySelector<HTMLButtonElement>('[aria-label="Apply"]')?.click(),
+    );
+    expect(rows()).toHaveLength(1);
+    await settleReact(() => expect(fixture.network.applyDraftChanges).toHaveBeenCalledOnce());
+    expect(fixture.network.applyDraftChanges.mock.calls[0].slice(0, 3)).toEqual([
+      "project-a",
+      "work-a",
+      "document-a",
+    ]);
+    expect(fixture.network.applyDraftChanges.mock.calls[0][3]).toMatchObject({
+      itemKey: "draft-a",
+      changeIds: [first],
+      snapshot: expect.stringMatching(/^[A-Za-z0-9+/=]+$/),
+    });
+    // The last change goes too, and the draft is not finished while either answer is outstanding.
+    await act(async () =>
+      rows()[0].querySelector<HTMLButtonElement>('[aria-label="Apply"]')?.click(),
+    );
+    await settleReact(() => expect(fixture.network.applyDraftChanges).toHaveBeenCalledTimes(2));
+    expect(rows()).toHaveLength(0);
+    expect(document.body.textContent).not.toContain("No changes left");
+    await act(async () =>
+      second.resolve({
+        status: "applied",
+        itemKey: "draft-a",
+        itemClosed: false,
+        overrode: [],
+      } as never),
+    );
+    expect(document.body.textContent).not.toContain("No changes left");
+    // A refused request puts the change back with the error on it.
+    await act(async () => answer.reject(new HttpResponseError("boom", 500, undefined)));
+    // The list closed when nothing was left to show; the returned change is there when it is opened again.
+    await act(async () =>
+      document
+        .querySelector<HTMLButtonElement>(
+          "[data-draft-review-controls] [data-slot=popover-trigger]",
+        )
+        ?.click(),
+    );
+    await settleReact(() => expect(rows()).toHaveLength(1));
+    expect(rows()[0].textContent).toContain("Couldn't apply this change. Try again.");
+    expect(document.body.textContent).not.toContain("No changes left");
+    expect(probe().presented.controller.isDisposing).toBe(false);
+  });
 });
 
-/** The tab of the document under review; a local reservation, which has no drafts to hint at. */
-const reviewedTab = {
-  kind: "new",
-  documentId: "document-a",
-  name: "Chapter",
-  resourceHandle: "handle-a",
-} as unknown as ContextTab;
+it("Apply draft sent at once after typing carries the words just typed, not the frame the debounce had reached", async () => {
+  fixture.network.applyDraft.mockReturnValue(new Promise(() => {}));
+  await review(async (editor, doc) => {
+    await settleReact(() => expect(button("Apply draft")?.disabled).toBe(false));
+    const shown = Y.snapshot(doc);
+    await act(async () => {
+      editor.commands.insertContentAt(editor.state.doc.content.size - 1, " A heron watched.");
+    });
+    // No timers advance: the runtime's last frame still shows the text before the typing.
+    await act(async () => button("Apply draft")?.click());
+    await settleReact(() => expect(fixture.network.applyDraft).toHaveBeenCalledOnce());
+    const sent = fixture.network.applyDraft.mock.calls[0][3] as { snapshot: string };
+    const bytes = Uint8Array.from(atob(sent.snapshot), (char) => char.charCodeAt(0));
+    const applied = Y.decodeSnapshot(bytes);
+    expect(Y.equalSnapshots(applied, Y.snapshot(doc))).toBe(true);
+    expect(Y.equalSnapshots(applied, shown)).toBe(false);
+  });
+});

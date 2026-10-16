@@ -60,7 +60,10 @@ Stale checkpoint requests return `stale_generation`.
 Seed and compaction snapshots use the same mutation lock. A first seed is
 initialize-only, becomes the generation's base checkpoint, and reconciles an
 already open room before success. Writer admission rejects reserved client IDs
-and reserved provenance namespace mutations before append or Yjs apply.
+and reserved provenance namespace mutations before append or Yjs apply. A text
+branch's `review_base` root is server-owned the same way (`SERVER_OWNED_ROOTS`):
+only the rebase, seeding and the Apply base patch write it, as
+`DRAFT_SERVER_CLIENT_ID`.
 
 WebSocket admission checks the declared schema major/minor against the specific
 live or Work-draft head for each connection. Patch differences do not gate;

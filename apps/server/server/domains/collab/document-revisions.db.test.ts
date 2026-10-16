@@ -49,6 +49,7 @@ import {
   WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
 import { createTestDocumentLinkScopes } from "./test-support/document-link-scopes.js";
+import { draftRebaseDeps } from "./test-support/draft-rebase-deps.js";
 
 /** The grant names this project and its owner, as the file policy would: the read's scope key. */
 function inProject<T extends ReturnType<typeof testFileGrant>>(grant: T): T {
@@ -332,17 +333,17 @@ describe("document revisions (postgres and collab)", () => {
     const f = await fixture(db, harnesses, "draft");
     await f.read();
     await f.writerDelete();
-    const originalPull = f.branchCoordinator.pullFromDoc.bind(f.branchCoordinator);
+    const originalPull = f.branchCoordinator.rewriteDraft.bind(f.branchCoordinator);
     const originalRead = f.branchCoordinator.readBranch.bind(f.branchCoordinator);
     const draft = await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
     const workBranchId = draft.branchId;
     draft.doc.destroy();
     const contending = deferred();
     let scheduled = false;
-    f.branchCoordinator.pullFromDoc = async (...args) => {
+    f.branchCoordinator.rewriteDraft = (async (...args: Parameters<typeof originalPull>) => {
       if (scheduled && args[1] === workBranchId) contending.resolve();
       return originalPull(...args);
-    };
+    }) as typeof f.branchCoordinator.rewriteDraft;
     f.branchCoordinator.readBranch = async (id, callback) => {
       if (!scheduled && id === workBranchId) {
         scheduled = true;
@@ -379,16 +380,16 @@ describe("document revisions (postgres and collab)", () => {
     const before = await f.current();
     const captured = deferred();
     const release = deferred();
-    const original = f.branchCoordinator.pullFromDoc.bind(f.branchCoordinator);
+    const original = f.branchCoordinator.rewriteDraft.bind(f.branchCoordinator);
     let pause = true;
-    f.branchCoordinator.pullFromDoc = async (...args) => {
+    f.branchCoordinator.rewriteDraft = (async (...args: Parameters<typeof original>) => {
       if (pause) {
         pause = false;
         captured.resolve();
         await release.promise;
       }
       return original(...args);
-    };
+    }) as typeof f.branchCoordinator.rewriteDraft;
     const older = f.branchPulls.flushLivePull(ALPHA_ID);
     const started = [older];
     try {
@@ -446,6 +447,11 @@ describe("document revisions (postgres and collab)", () => {
       liveCoordinator: f.liveCoordinator,
       branchCoordinator: coordinator,
       branches: f.branchStore,
+      ...draftRebaseDeps({
+        journal: f.persistence.journal,
+        branchCoordinator: coordinator,
+        branches: f.branchStore,
+      }),
     });
     await expect(
       runResponseTransaction(

@@ -1,5 +1,4 @@
 // Mutating and query write command handlers.
-import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { applyEdits } from "../apply/apply-edits.js";
 import { snapshotBlocks } from "../apply/echo.js";
@@ -179,7 +178,7 @@ export function createWriteCommands(deps: {
 
   /**
    * `create`, and `copy`, which is a create whose content is the source's
-   * blocks as nodes (D24): same write handle, rollback, undo and drafting.
+   * blocks as nodes (D24): same write handle, rollback, revert and drafting.
    */
   async function create(
     command: Extract<WriteCommand, { command: "create" | "copy" }>,
@@ -421,17 +420,15 @@ export function createWriteCommands(deps: {
     };
     let captured: ReturnType<typeof captureWriteUpdate<import("../apply/types.js").ApplyResult>>;
     try {
-      captured = captureWriteUpdate(runtime.doc, (beforeSegment) => {
+      captured = captureWriteUpdate(runtime.doc, () => {
         if ("edits" in plan)
           return applyEdits(
             toDocHandle(runtime.doc),
             options.model,
             plan.edits,
             origin,
-            beforeSegment,
-            certifySegment(runtime, plan.ir, beforeVector),
+            certifyEdit(runtime, plan.ir, beforeVector),
           );
-        beforeSegment?.();
         let insertedBlocks: string[] = [];
         runtime.doc.transact(() => {
           insertedBlocks = options.model
@@ -444,7 +441,7 @@ export function createWriteCommands(deps: {
       restore();
       throw cause;
     }
-    const { result: applied, update, parts } = captured;
+    const { result: applied, update } = captured;
     if (!applied.ok) {
       restore();
       return errorResponse(applied.error.code, applied.error.message, filePath);
@@ -494,7 +491,7 @@ export function createWriteCommands(deps: {
           documentLabel: command.file,
           description: stagedWriteDescription(command),
           update,
-          editParts: parts,
+          editParts: [update],
           meta,
           liveOrigin,
           actor,
@@ -534,7 +531,7 @@ export function createWriteCommands(deps: {
               update,
               meta,
               mutation: {
-                editParts: parts,
+                editParts: [update],
                 threadId: session.threadId,
                 turnId,
                 ...(actor.kind === "agent"
@@ -735,25 +732,16 @@ export function createWriteCommands(deps: {
     };
   }
 
-  /** Certify inside the segment's prose transaction, before capture rotates its fresh client. */
-  function certifySegment(
+  /** Certify inside the edit's prose transaction, within the same capture. */
+  function certifyEdit(
     runtime: { doc: Y.Doc },
     ir: SemanticEditIRV1,
     beforeStateVector: Uint8Array,
-  ): (segment: readonly ResolvedEdit[]) => void {
-    return (segment) => {
+  ): (applied: ResolvedEdit) => void {
+    return (applied) => {
       const intent = ir.intent;
       if (intent.kind === "fullScopeFreshReplacement") return;
-      const edits = intent.edits.filter(({ edit }) =>
-        segment.some(
-          (part) =>
-            part === edit ||
-            (part.kind === "textRanges" &&
-              edit.kind === "textRanges" &&
-              part.block === edit.block &&
-              part.replacements.some((replacement) => edit.replacements.includes(replacement))),
-        ),
-      );
+      const edits = intent.edits.filter(({ edit }) => edit === applied);
       options.semanticProvenance?.writeCertifiedFacts(
         toDocHandle(runtime.doc),
         { ...ir, intent: { ...intent, edits } },
@@ -777,32 +765,14 @@ function documentBlocksDetail(details: Record<string, unknown> | undefined): num
   return typeof details?.documentBlocks === "number" ? details.documentBlocks : undefined;
 }
 
-/**
- * Capture the synchronous content and certification transactions, not a state-vector
- * diff: that diff includes every old tombstone and couples otherwise independent writes.
- */
-function captureWriteUpdate<T>(
-  doc: Y.Doc,
-  write: (beforeSegment?: () => void) => T,
-): { result: T; update: Uint8Array; parts: Uint8Array[] } {
+/** Capture the synchronous content and certification transactions, not a state-vector diff: that diff includes every old tombstone. */
+function captureWriteUpdate<T>(doc: Y.Doc, write: () => T): { result: T; update: Uint8Array } {
   const updates: Uint8Array[] = [];
-  const segments: Uint8Array[] = [];
-  const flush = () => {
-    if (updates.length) {
-      segments.push(Y.mergeUpdates(updates.splice(0)));
-    }
-  };
-  const beforeSegment = () => {
-    flush();
-    doc.clientID = allocateDocumentClient(doc);
-  };
   const collect = (update: Uint8Array) => updates.push(update);
   doc.on("update", collect);
   try {
-    const result = write(beforeSegment);
-    flush();
-    const update = Y.mergeUpdates(segments);
-    return { result, update, parts: segments };
+    const result = write();
+    return { result, update: Y.mergeUpdates(updates) };
   } finally {
     doc.off("update", collect);
   }

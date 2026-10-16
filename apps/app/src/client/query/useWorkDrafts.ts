@@ -7,21 +7,16 @@ import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 
-import { listWorkDrafts } from "@/client/api/drafts-api";
-import {
-  readDraftsAfterCommands,
-  shareDraftObservation,
-  useChangeCommandRecords,
-} from "./draft-command-record";
-import { projectDraftList } from "./draft-projection";
+import { getThreadDraftFiles, listWorkDrafts } from "@/client/api/drafts-api";
 import { type ListQueryStatus, unwrapListQuery } from "./list-query";
 import { projectQueryKeys } from "./project-query-keys";
 import { useContextCatalogViews } from "./useContextCatalog";
 import { projectWorkDraftFiles, type ReviewFileTarget } from "./work-draft-files";
 
 export type ThreadDraftsStatus = ListQueryStatus<ThreadDraftListItem> & {
-  /** Raw query rows for generation evidence and command fences. */
+  /** Every listed item row (contract §4). A row's absence is never evidence that its item closed. */
   drafts: ThreadDraftListItem[] | null;
+  /** The listed items as files, in the one file order. */
   files: ReviewFileTarget[] | null;
   fileForDocument: (documentId: string | null | undefined) => ReviewFileTarget | null;
 };
@@ -30,14 +25,63 @@ export type ThreadDraftsStatus = ListQueryStatus<ThreadDraftListItem> & {
 export function workDraftsQueryOptions(projectId: string, workId: string) {
   return {
     queryKey: projectQueryKeys.workDrafts(projectId, workId),
-    queryFn: () =>
-      readDraftsAfterCommands({ projectId, workId }, () =>
-        listWorkDrafts(projectId, workId).then((response) => response.items),
-      ),
+    queryFn: () => listWorkDrafts(projectId, workId).then((response) => response.items),
     staleTime: 15_000,
-    structuralSharing: shareDraftObservation,
   };
 }
+
+/** Catalog-labelled files for the listed items, in the one file order. */
+function useDraftFileProjection(
+  projectId: string | null,
+  workId: string | null,
+  rows: ThreadDraftListItem[] | undefined,
+  enabled: boolean,
+) {
+  const schemes = useMemo(
+    () => [
+      ...new Set(rows?.flatMap((row) => (row.contextLocation ? [row.contextLocation.scheme] : []))),
+    ],
+    [rows],
+  );
+  const catalogs = useContextCatalogViews(projectId ?? "", schemes, {
+    enabled: enabled && Boolean(rows?.length),
+    workId,
+  });
+  const visible = rows ?? null;
+  const findDocument = useCallback(
+    (id: string) =>
+      Object.values(catalogs)
+        .flatMap(({ catalog }) => catalog?.findDocument(id) ?? [])
+        .at(0) ?? null,
+    [catalogs],
+  );
+  const files = useMemo(
+    () => (enabled && visible ? projectWorkDraftFiles(visible, { findDocument }) : null),
+    [enabled, visible, findDocument],
+  );
+  return { visible, files };
+}
+
+/**
+ * The drafts a chat has pending AI edits in (SQL only on the server: no decode, no projection), as files.
+ * Invalidated with the Work's draft list.
+ */
+export function useThreadDraftFiles(
+  projectId: string | null,
+  workId: string | null,
+  threadId: string,
+): ReviewFileTarget[] {
+  const enabled = Boolean(projectId) && Boolean(workId);
+  const { data } = useQuery({
+    queryKey: [...projectQueryKeys.workDrafts(projectId ?? "", workId ?? ""), "thread", threadId],
+    queryFn: () => getThreadDraftFiles(threadId).then((response) => response.drafts),
+    staleTime: 15_000,
+    enabled,
+  });
+  return useDraftFileProjection(projectId, workId, data, enabled).files ?? NO_FILES;
+}
+
+const NO_FILES: ReviewFileTarget[] = [];
 
 export function useWorkDrafts(
   projectId: string | null,
@@ -53,41 +97,11 @@ export function useWorkDrafts(
     }),
   );
 
-  const schemes = useMemo(
-    () => [
-      ...new Set(
-        result.data?.flatMap((row) => (row.contextLocation ? [row.contextLocation.scheme] : [])),
-      ),
-    ],
-    [result.data],
-  );
-  const catalogs = useContextCatalogViews(projectId ?? "", schemes, {
-    enabled: enabled && Boolean(result.data?.length),
+  const { visible, files } = useDraftFileProjection(
+    projectId,
     workId,
-  });
-  const records = useChangeCommandRecords();
-  const visible = useMemo(
-    () =>
-      result.data
-        ? projectDraftList(
-            result.data,
-            { projectId: projectId ?? "", workId: workId ?? "" },
-            records,
-          )
-        : null,
-    [result.data, projectId, workId, records],
-  );
-  const files = useMemo(
-    () =>
-      enabled && visible
-        ? projectWorkDraftFiles(visible, {
-            findDocument: (id) =>
-              Object.values(catalogs)
-                .flatMap(({ catalog }) => catalog?.findDocument(id) ?? [])
-                .at(0) ?? null,
-          })
-        : null,
-    [enabled, visible, catalogs],
+    result.data ?? undefined,
+    enabled,
   );
   const byDocument = useMemo(() => new Map(files?.map((file) => [file.documentId, file])), [files]);
   const fileForDocument = useCallback(

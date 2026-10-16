@@ -1,256 +1,138 @@
 /**
- * Inline review model — the client-side view of the server's draft review hunk
- * model. Pure data types plus the anchor-decode helper that converts the
- * server's base64-encoded `Y.RelativePosition` strings back into runtime
- * `RelativePosition` instances the plugin can resolve against the live
- * y-prosemirror binding.
+ * Inline review model: the browser-computed review the extension paints.
  *
- * Kept free of ProseMirror imports so it can be unit-tested without a DOM.
+ * `ProjectedReview` is `projectReview`'s output plus the two things a client needs to act on it: the
+ * editor document its positions belong to, and the `Y.Snapshot` of the draft room it was computed at
+ * (Apply sends the snapshot so the server rebuilds exactly what the writer saw). Kept free of
+ * ProseMirror view imports so it unit-tests without a DOM.
  */
-import type {
-  ReviewBlockHunk,
-  ReviewHunk,
-  ReviewOperation,
-  ReviewTextHunk,
-} from "@meridian/contracts/drafts";
+import type { ProseMirrorJSON, ReviewProjection } from "@meridian/agent-edit/diff";
+import type { Node as PMNode } from "@tiptap/pm/model";
 import * as Y from "yjs";
 
-export type InlineReviewOperationKind = "agent" | "writer";
+/**
+ * One review frame: `projectReview`'s output with what an action on it needs. It is immutable, and every
+ * row or command made from it carries it, so a click always means the change that was drawn.
+ */
+export interface ProjectedReview extends ReviewProjection {
+  /** The editor document `inserted` and `anchor` positions address; a projection of another doc is stale. */
+  doc: PMNode;
+  snapshot: Y.Snapshot;
+  /** Each change's first mark, pinned in Yjs terms when the frame was computed: a change's identity, as ids are only ranks. */
+  pins: ReadonlyMap<string, Y.RelativePosition>;
+}
 
-import { unattributedHunkKey } from "@/features/draft-review/review-mark-key";
-
-export { unattributedHunkKey } from "@/features/draft-review/review-mark-key";
+const sameJson = (a: unknown, b: unknown) => a === b || JSON.stringify(a) === JSON.stringify(b);
 
 /**
- * A per-operation piece of an inserted hunk. Every inserted character is
- * covered by exactly one span, so nested authorship (e.g. a writer edit
- * inside an AI insertion) is expressed as adjacent spans that render in
- * their owner's color. The union of a hunk's spans equals its full
- * insertion range.
+ * Whether two documents hold the same content at the same positions. `Node.eq` cannot answer it across
+ * editors: each editor builds its own schema, so equal text has different node types. Compares type names,
+ * attributes, marks and text, exiting at the first difference.
  */
-export interface ResolvedReviewSpan {
-  operationId: string;
-  from: Y.RelativePosition;
-  to: Y.RelativePosition;
+export function sameContent(a: PMNode, b: PMNode): boolean {
+  if (a === b) return true;
+  if (a.type.name !== b.type.name || a.childCount !== b.childCount || a.nodeSize !== b.nodeSize)
+    return false;
+  if (a.isText) return a.text === b.text && sameMarks(a, b);
+  if (!sameJson(a.attrs, b.attrs) || !sameMarks(a, b)) return false;
+  for (let i = 0; i < a.childCount; i++) if (!sameContent(a.child(i), b.child(i))) return false;
+  return true;
 }
 
-/** Runtime anchors replace the wire-encoded anchor pair. */
-interface DecodedReviewAnchors {
-  relStart: Y.RelativePosition;
-  relEnd: Y.RelativePosition;
-}
+const sameMarks = (a: PMNode, b: PMNode) =>
+  a.marks.length === b.marks.length &&
+  a.marks.every(
+    (mark, i) => mark.type.name === b.marks[i].type.name && sameJson(mark.attrs, b.marks[i].attrs),
+  );
 
-/** Text presentation is unchanged; only anchors and insertion spans are decoded. */
-export interface ResolvedTextReviewHunk
-  extends Omit<ReviewTextHunk, "anchor" | "spans" | "insertedText">,
-    DecodedReviewAnchors {
-  spans: ResolvedReviewSpan[];
-}
+/** A group id is a content hash plus an occurrence rank (`h`, `h~1`); the hash is what the text decides. */
+export const contentHashOf = (id: string): string => id.split("~")[0];
 
-/** Block presentation is unchanged; only its anchor pair is decoded. */
-export interface ResolvedBlockReviewHunk
-  extends Omit<ReviewBlockHunk, "anchor">,
-    DecodedReviewAnchors {}
-
-/** A hunk with anchors already decoded to runtime `Y.RelativePosition`. */
-export type ResolvedReviewHunk = ResolvedTextReviewHunk | ResolvedBlockReviewHunk;
-
-/** The full plugin input: hunks + operations + a revision token from the server. */
-export interface InlineReviewModel {
-  /** Server-issued token identifying the live base the model was computed against. */
-  liveRevisionToken?: string;
-  /** Server-issued token identifying the draft state the model was computed against. */
-  draftRevisionToken: string;
-  operations: ReviewOperation[];
-  hunks: ResolvedReviewHunk[];
-  /**
-   * Operations whose Discard is on its way: the editor shows their original
-   * text from the click, until the draft's next generation paints without
-   * them. Their hunks stay in `hunks` so the original can be drawn in place.
-   */
-  restoring?: ReadonlySet<string>;
-}
-
-/** The hunk belongs to a change being discarded: its insertion hides and its removal reads as plain prose. */
-export function isRestoringHunk(
-  model: Pick<InlineReviewModel, "restoring">,
-  hunk: Pick<ResolvedReviewHunk, "operationIds">,
+/**
+ * Whether a recorded change (the id and pin of the frame it was clicked in) is this change of another
+ * frame. Same hash alone is not it (two identical changes swap ranks), and neither is the place alone.
+ */
+export function isSameChange(
+  recorded: { id: string; pin: Y.RelativePosition },
+  id: string,
+  pin: Y.RelativePosition | undefined,
 ): boolean {
-  const restoring = model.restoring;
-  return restoring !== undefined && hunk.operationIds.some((id) => restoring.has(id));
+  return (
+    pin !== undefined &&
+    contentHashOf(recorded.id) === contentHashOf(id) &&
+    Y.compareRelativePositions(recorded.pin, pin)
+  );
 }
 
 /**
- * Decode a base64 `Y.RelativePosition` produced by the server draft-review
- * hunk pipeline. Returns `null` on malformed input rather than throwing —
- * the plugin degrades to skipping the hunk when an anchor won't decode.
- *
- * A `Y.RelativePosition` addresses one of three things: `tname` (top-level
- * fragment name), `type` (a nested Y.AbstractType id), or `item` (a specific
- * CRDT item by `{client, clock}` — the common case for anchoring to a
- * character position in text). `Y.decodeRelativePosition` accepts arbitrary
- * bytes and hands back an all-null position; reject only when all three
- * addressability channels are absent.
+ * The review carried through the writer's edit: every position the painter and the scroll read
+ * (`inserted`, `anchor`) moves with the text, and the review now addresses `doc`.
  */
-export function decodeAnchor(encoded: string): Y.RelativePosition | null {
-  if (typeof encoded !== "string" || encoded.length === 0) return null;
-  try {
-    const bytes = base64ToBytes(encoded);
-    const decoded = Y.decodeRelativePosition(bytes);
-    if (decoded.type == null && decoded.tname == null && decoded.item == null) return null;
-    return decoded;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Build an `InlineReviewModel` from a raw server response. Hunks with
- * un-decodable anchors are dropped — a stale/corrupted anchor should never
- * crash review; it just means one hunk is invisible until the next refetch.
- */
-export function buildInlineReviewModel(input: {
-  liveRevisionToken?: string;
-  draftRevisionToken: string;
-  operations: ReviewOperation[];
-  hunks: ReviewHunk[];
-  restoring?: ReadonlySet<string>;
-}): InlineReviewModel {
-  const resolved: ResolvedReviewHunk[] = [];
-  for (const hunk of input.hunks) {
-    const relStart = decodeAnchor(hunk.anchor.relStart);
-    const relEnd = decodeAnchor(hunk.anchor.relEnd);
-    if (!relStart || !relEnd) continue;
-    const base = {
-      hunkId: hunk.hunkId,
-      operationIds:
-        hunk.operationIds.length > 0 ? hunk.operationIds : [unattributedHunkKey(hunk.hunkId)],
-      relStart,
-      relEnd,
-      ...(hunk.unclassified ? { unclassified: true } : {}),
-      ...(hunk.mergeArtifact ? { mergeArtifact: true } : {}),
-    };
-    if (hunk.kind === "block") {
-      resolved.push({
-        ...base,
-        kind: "block",
-        ...(hunk.insertedBlock ? { insertedBlock: hunk.insertedBlock } : {}),
-        ...(hunk.deletedBlock ? { deletedBlock: hunk.deletedBlock } : {}),
-      });
-      continue;
-    }
-    // Spans are optional at wire-level — a text hunk with no spans falls back
-    // to whole-hunk coloring by the plugin. Drop malformed span anchors
-    // instead of dropping the hunk; a missing span just paints as its
-    // neighbour.
-    const spans: ResolvedReviewSpan[] = [];
-    for (const span of hunk.spans) {
-      const from = decodeAnchor(span.anchorFrom);
-      const to = decodeAnchor(span.anchorTo);
-      if (!from || !to) continue;
-      spans.push({ operationId: span.operationId, from, to });
-    }
-    resolved.push({
-      ...base,
-      kind: "text",
-      spans,
-      ...(hunk.deletedText ? { deletedText: hunk.deletedText } : {}),
-      ...(hunk.deletedSpans ? { deletedSpans: hunk.deletedSpans } : {}),
-      ...(hunk.deletedBlockId ? { deletedBlockId: hunk.deletedBlockId } : {}),
-    });
-  }
+export function mapReview(
+  review: ProjectedReview,
+  mapping: { map(position: number, assoc?: number): number },
+  doc: PMNode,
+): ProjectedReview {
   return {
-    ...(input.liveRevisionToken === undefined
-      ? {}
-      : { liveRevisionToken: input.liveRevisionToken }),
-    draftRevisionToken: input.draftRevisionToken,
-    operations: input.operations,
-    hunks: resolved,
-    ...(input.restoring?.size ? { restoring: input.restoring } : {}),
+    ...review,
+    doc,
+    groups: review.groups.map((group) => ({
+      ...group,
+      hunks: group.hunks.map((hunk) => ({
+        ...hunk,
+        anchor: mapping.map(hunk.anchor, -1),
+        ...(hunk.formatContext && {
+          formatContext: {
+            ...hunk.formatContext,
+            inserted: hunk.formatContext.inserted.map(({ from, to }) => ({
+              from: mapping.map(from, 1),
+              to: mapping.map(to, -1),
+            })),
+          },
+        }),
+        inserted: hunk.inserted
+          ? { from: mapping.map(hunk.inserted.from, 1), to: mapping.map(hunk.inserted.to, -1) }
+          : null,
+      })),
+    })),
   };
 }
 
 /**
- * How a hunk's marks are drawn: an author's colour, or `neutral` when no
- * author can be named. A merge artifact (concurrent edits the CRDT combined)
- * and an unclassified hunk (no operation owns it) are neutral whatever their
- * operations say, so text and block rendering share this one decision.
- * Otherwise a hunk with a writer contribution paints the writer colour (the
- * writer instantly sees "I touched this"), and any other known operation
- * paints the AI's. A hunk whose operations are all unknown reads as the AI's,
- * so the change is still seen.
+ * The paragraphs of text a hunk removed. Inline removals come back as one entry; block removals as one
+ * per block, each without its leading space. Marks are dropped: a removal is red, whatever it was.
  */
-export type ReviewTone = InlineReviewOperationKind | "neutral";
-
-export function hunkTone(
-  hunk: ResolvedReviewHunk,
-  operationsById: ReadonlyMap<string, ReviewOperation>,
-): ReviewTone {
-  if (hunk.mergeArtifact === true || hunk.unclassified === true) return "neutral";
-  for (const opId of hunk.operationIds) {
-    if (operationsById.get(opId)?.kind === "writer") return "writer";
+export function removedParagraphs(removed: readonly ProseMirrorJSON[]): string[] {
+  const out: string[] = [];
+  const collect = (node: ProseMirrorJSON): string | null => {
+    if (node.type === "text") return node.text ?? "";
+    if (!node.content?.length) return null;
+    const children = node.content as ProseMirrorJSON[];
+    if (children.every((child) => child.type === "text" || !child.content)) {
+      return children.map((child) => (child.type === "text" ? (child.text ?? "") : " ")).join("");
+    }
+    for (const child of children) {
+      const text = collect(child);
+      if (text !== null) out.push(text);
+    }
+    return null;
+  };
+  // Leading inline content (a removal that starts mid-block) is one paragraph before the blocks.
+  let inline = "";
+  const flush = () => {
+    if (inline) out.push(inline);
+    inline = "";
+  };
+  for (const node of removed) {
+    if (node.type === "text") {
+      inline += node.text ?? "";
+      continue;
+    }
+    flush();
+    const text = collect(node);
+    if (text !== null) out.push(text);
   }
-  return "agent";
-}
-
-/** Who a removed stretch is drawn as: an author, or `unattributed` when the server could not say. */
-export type RemovalKind = InlineReviewOperationKind | "unattributed";
-
-/**
- * Who removed the live block a block hunk shows struck. The preview carries no
- * per-removal author for blocks, only the hunk's owning operations, so the
- * removal is the writer's when every owning operation is the writer's and the
- * AI's otherwise; unattributed when the hunk is neutral. (Text hunks say who
- * removed each stretch: `deletedSpans`.)
- */
-export function blockRemovalKind(
-  hunk: ResolvedBlockReviewHunk,
-  operationsById: ReadonlyMap<string, ReviewOperation>,
-): RemovalKind {
-  if (hunkTone(hunk, operationsById) === "neutral") return "unattributed";
-  let sawWriter = false;
-  for (const opId of hunk.operationIds) {
-    const op = operationsById.get(opId);
-    if (op?.kind === "writer") sawWriter = true;
-    else return "agent";
-  }
-  return sawWriter ? "writer" : "agent";
-}
-
-/**
- * The operations that make up the one change the active operation belongs to.
- * Operations sharing a server closure class overlap, so the writer sees and
- * acts on them as a single change; focusing one focuses them all.
- */
-export function changeOperationIds(
-  operations: readonly ReviewOperation[],
-  activeOperationId: string | null,
-): ReadonlySet<string> {
-  if (!activeOperationId) return new Set();
-  const active = operations.find((op) => op.operationId === activeOperationId);
-  const ids = new Set([activeOperationId]);
-  if (!active) return ids;
-  for (const op of operations) {
-    if (op.closureClassId === active.closureClassId) ids.add(op.operationId);
-  }
-  return ids;
-}
-
-export function indexOperations(
-  operations: readonly ReviewOperation[],
-): Map<string, ReviewOperation> {
-  const map = new Map<string, ReviewOperation>();
-  for (const op of operations) map.set(op.operationId, op);
-  return map;
-}
-
-function base64ToBytes(input: string): Uint8Array {
-  if (typeof atob === "function") {
-    const binary = atob(input);
-    const out = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i += 1) out[i] = binary.charCodeAt(i);
-    return out;
-  }
-  // Node fallback for unit tests / SSR paths.
-  return new Uint8Array(Buffer.from(input, "base64"));
+  flush();
+  // A token carries the space before it; the widget starts at the word.
+  return out.map((paragraph) => paragraph.trimStart()).filter((paragraph) => paragraph !== "");
 }

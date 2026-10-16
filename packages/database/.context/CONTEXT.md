@@ -42,6 +42,40 @@ check`, migration lint, then `db:migrate`. Function files are synchronized after
 migrations. A row-transform migration needs a populated upgrade fixture; the
 fixture can be retired only after a later frozen migration supersedes it.
 
+### Data steps and the diff-based review upgrade
+
+Some upgrades need code between two SQL migrations. A data step is
+`{ id, version, preflight, run }` in the registry
+([`tools/dev/lib/migration-data-steps.ts`](../../../tools/dev/lib/migration-data-steps.ts));
+its implementation in [`../src/migration-steps/`](../src/migration-steps) uses the
+release's own code (the review-base conversion calls `@meridian/agent-edit/diff`),
+so no frozen copy exists.
+
+- The marker, registry keying, preflight ordering, locking and refusals are the
+  runner's, owned by [`tools/dev/.context/CONTEXT.md`](../../../tools/dev/.context/CONTEXT.md).
+  Steps are restartable, and failures name ids, never prose.
+
+One `pnpm db:migrate` upgrades a database that ran the old review model: `0062`
+to `0067` add `base_revision` and the content-Apply trail arm, drop the
+`document_edits` action columns, rewrite `document_edit_parts`, and drop the
+generation columns and `live_cut`. `0067` is the anchor
+(`-- data-step: review-base-conversion@1`) and begins with `DO` guards. `0065`,
+`0066` and `0067` destroy data, so read their SQL before changing them.
+
+The `review-base-conversion@1` step converts every active `work_draft` branch
+with a NULL `base_revision`: the base is the `live_cut` text, or the branch's own
+text when it has no journal rows (a branch with journal rows and no cut stops the
+run with its ids). Each row is one compare-and-swap on its prior `state`; it
+writes `review_base`, recomputes `has_effect`, and sets `base_revision` to the
+initialized-unknown sentinel so the first rebase merges live's edits since. Its
+preflight refuses with batch ids if any settlement batch is `pending` or
+`blocked`: let the old release's recovery drain them, stop it, then run
+`db:migrate`. Servers stop before `db:migrate` and start after it. The
+populated-upgrade proof is
+[`docs/qa/review-base-upgrade.md`](../../../docs/qa/review-base-upgrade.md).
+`draft_commands` rows are not migrated, and the unwritten legacy
+journal columns (`branch_write_journal`, `push_lineage.journal_ids`) stay for history.
+
 ## Schema contracts
 
 Drizzle timestamp helpers use JS `Date` mode. The small set of string-mode

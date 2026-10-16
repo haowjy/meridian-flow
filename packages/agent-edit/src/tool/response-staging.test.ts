@@ -227,15 +227,15 @@ describe("response staging", () => {
     }
   });
 
-  it("never saves a reply early for an undo; the host must save it first", async () => {
+  it("never saves a reply early for a revert; the host must save it first", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
     await ctx.core.read({ file: "chapter.md" }, context);
     const responseContext = {
       ...context,
-      turnId: "turn-undo-mid",
+      turnId: "turn-revert-mid",
       responseIdentity: {
-        providerResponseId: "response-undo-mid",
-        editScopeId: "response-undo-mid",
+        providerResponseId: "response-revert-mid",
+        editScopeId: "response-revert-mid",
       },
     };
     await ctx.core.write(
@@ -243,12 +243,15 @@ describe("response staging", () => {
       responseContext,
     );
 
-    const undo = await ctx.core.write({ command: "undo", file: "chapter.md" }, responseContext);
+    const revert = await ctx.core.write(
+      { command: "revert", file: "chapter.md", edit: "w1" },
+      responseContext,
+    );
 
-    expect(undo).toMatchObject({ status: "internal_error", isError: true });
+    expect(revert).toMatchObject({ status: "internal_error", isError: true });
 
     expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(0);
-    await expect(ctx.core.commitResponse("response-undo-mid")).resolves.toMatchObject({
+    await expect(ctx.core.commitResponse("response-revert-mid")).resolves.toMatchObject({
       updateCount: 1,
     });
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta."]);
@@ -322,7 +325,7 @@ describe("response staging", () => {
   });
 });
 
-it("keeps segmented writes logical across rollback, retry and live destinations", async () => {
+it("keeps a multi-paragraph write one journal entry across rollback, retry and live destinations", async () => {
   const ctx = harness({ "chapter.md": "She did what she wanted.\n\nShe climbed the road." }, {});
   const command = {
     command: "replace" as const,
@@ -353,10 +356,10 @@ it("keeps segmented writes logical across rollback, retry and live destinations"
   const committed = await ctx.core.commitResponse("retry");
   expect(committed.documents[0].receipts).toHaveLength(1);
   const entries = ctx.journal.recordedBatchEntries().at(-1) ?? [];
-  expect(entries).toHaveLength(2);
+  expect(entries).toHaveLength(1);
   expect(new Set(entries.map((entry) => entry.mutation?.writeId)).size).toBe(1);
   expect(new Set(entries.map((entry) => entry.mutation?.wId)).size).toBe(1);
   const live = harness({ "chapter.md": "She did what she wanted.\n\nShe climbed the road." });
   expect((await live.core.write(command, context)).result.status).toBe("success");
-  expect((await live.journal.read("chapter.md")).updates).toHaveLength(2);
+  expect((await live.journal.read("chapter.md")).updates).toHaveLength(1);
 });

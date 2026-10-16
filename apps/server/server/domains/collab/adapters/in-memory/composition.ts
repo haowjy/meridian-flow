@@ -46,7 +46,6 @@ import { createAgentEditObservabilityOptions } from "../agent-edit-observability
 import {
   SILENT_DOCUMENT_PROJECTION_DIAGNOSTICS,
   SILENT_POST_DURABILITY_NOTICES,
-  UNSUPPORTED_REVERSE_THREAD_CONTEXT,
 } from "../declared-stubs.js";
 import { createHocuspocusBinding } from "../hocuspocus-binding.js";
 import {
@@ -148,6 +147,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
     },
     projections,
     notices: SILENT_POST_DURABILITY_NOTICES,
+    visibility: { async report() {} },
   });
   const checkpoints = createCheckpointService({
     coordinator,
@@ -176,18 +176,11 @@ export function createInMemoryCollabDomain(): CollabDomain {
       drainHocuspocusPersistence: hocuspocusPersistence.drainHocuspocusPersistence,
       drainHocuspocusBranchPersistence: hocuspocusPersistence.drainHocuspocusBranchPersistence,
       closeHocuspocusBranchRoom: hocuspocusPersistence.closeHocuspocusBranchRoom,
-      rejectStaleBranchSyncStep1: hocuspocusPersistence.rejectStaleBranchSyncStep1,
       getPersistenceQueueMetrics: hocuspocusPersistence.getPersistenceQueueMetrics,
     },
     authorityHeads,
     agentEdit: {
       agentEdit: () => agentEdit,
-    },
-    reversal: {
-      reverseTurn: async () => {
-        throw new Error("Turn receipts require the durable Postgres receipt adapter");
-      },
-      reverseThreadContext: UNSUPPORTED_REVERSE_THREAD_CONTEXT,
     },
     documents: {
       ensureDocument: lifecycle.ensureDocument,
@@ -333,31 +326,25 @@ function createInMemoryDraftStub(): CollabDrafts {
       async resolveItemByDocument() {
         return null;
       },
-      async preview(input) {
+      async addressableItems() {
+        return { draftId: null, items: [] };
+      },
+      async itemMeta(input) {
         return { status: "gone", itemKey: input.itemKey };
+      },
+      async attribution() {
+        return null;
       },
       async lookupCommand() {
         return { kind: "none" };
       },
+      async refuse({ result }) {
+        return { kind: "result", result };
+      },
       applyItem: (input) => gone(input.item),
       applyAll: gone,
-      applyChanges: async (input) => ({
-        kind: "result",
-        result: {
-          status: "gone",
-          draftId: input.envelope.draftId as DraftId,
-          itemKey: input.itemKey,
-        },
-      }),
+      applyChanges: (input) => gone(input.item),
       discardItem: (input) => gone(input.item),
-      discardChanges: async (input) => ({
-        kind: "result",
-        result: {
-          status: "gone",
-          draftId: input.envelope.draftId as DraftId,
-          itemKey: input.itemKey,
-        },
-      }),
       discardAll: gone,
     },
   };

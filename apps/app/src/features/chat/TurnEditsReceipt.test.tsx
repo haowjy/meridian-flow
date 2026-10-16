@@ -1,15 +1,14 @@
 // @vitest-environment jsdom
-/** Turn receipts count and reveal drafted edits, with reversal failures on the receipt. */
+/** Turn receipts count and reveal drafted edits; reversing is the draft's and the editor's job, not the card's. */
 import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
-import type { ReversalOutcome, Turn } from "@meridian/contracts/protocol";
+import type { Turn } from "@meridian/contracts/protocol";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, useState } from "react";
+import { act } from "react";
 import { afterEach, expect, it, vi } from "vitest";
-import * as reverseApi from "@/client/api/reverse-api";
 import { changeTrailDetailKey } from "@/client/change-trails";
-import { settleReact, withReactRoot } from "@/test-support/react-dom-harness";
-import { hasTurnEditsReceiptContent, TurnEditsReceipt } from "./TurnEditsReceipt";
+import { withReactRoot } from "@/test-support/react-dom-harness";
+import { TurnEditsReceipt } from "./TurnEditsReceipt";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -55,9 +54,9 @@ it("counts and reveals pending files alongside an already settled live trail", a
                 uri: "manuscript://pending.md",
                 path: "pending.md",
                 scope: "draft",
+                invisibleWrites: true,
               },
             ]}
-            receipt={{ state: "live-active", control: "undo" }}
             navigateToChange={async () => ({ kind: "unavailable" })}
             changeTrail={{
               trailId: "trail",
@@ -81,6 +80,9 @@ it("counts and reveals pending files alongside an already settled live trail", a
           document.querySelector<HTMLButtonElement>("[aria-expanded]")?.click(),
         );
         expect(document.body.textContent).toContain("pending");
+        expect(document.body.textContent).toContain(
+          "Some of this reply's words went into text you discarded.",
+        );
         expect(document.body.textContent).toContain("live");
         expect(document.querySelector('[data-change-view-row="modify"]')?.textContent).toContain(
           "Saved before.",
@@ -92,145 +94,6 @@ it("counts and reveals pending files alongside an already settled live trail", a
           "pending",
         );
       },
-    );
-  } finally {
-    client.clear();
-  }
-});
-
-it("keeps the card's named partial result, pending Redo and failure beside its authoritative states", async () => {
-  i18n.loadAndActivate({ locale: "en", messages: {} });
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  let setReceipt: (receipt: import("@meridian/contracts/protocol").TurnReceiptChip) => void =
-    () => {};
-  let answer: (result: ReversalOutcome) => void = () => {};
-  let fail: (reason: Error) => void = () => {};
-  const reverse = vi.spyOn(reverseApi, "reverseTurn").mockImplementation(
-    () =>
-      new Promise((resolve, reject) => {
-        answer = resolve;
-        fail = reject;
-      }),
-  );
-  function Card() {
-    const [receipt, set] = useState<import("@meridian/contracts/protocol").TurnReceiptChip>({
-      state: "branch-active",
-      control: "undo",
-    });
-    setReceipt = set;
-    return (
-      <TurnEditsReceipt
-        threadId="chat"
-        turn={{ id: "turn" } as Turn}
-        documents={[
-          { documentId: "doc", uri: "manuscript://chapter.md", path: "chapter.md", scope: "draft" },
-        ]}
-        receipt={receipt}
-        changeTrail={{
-          trailId: "empty",
-          owner: { kind: "turn", threadId: "chat", turnId: "turn" },
-          state: "settled",
-          version: 1,
-          changeCount: 0,
-          documentCount: 0,
-          documents: [],
-          wordsAdded: null,
-          wordsRemoved: null,
-          updatedAt: "",
-          settledAt: null,
-        }}
-        navigateToChange={async () => ({ kind: "unavailable" })}
-      />
-    );
-  }
-  try {
-    await withReactRoot(
-      <QueryClientProvider client={client}>
-        <I18nProvider i18n={i18n}>
-          <Card />
-        </I18nProvider>
-      </QueryClientProvider>,
-      async () => {
-        expect(
-          hasTurnEditsReceiptContent(
-            [
-              {
-                documentId: "doc",
-                path: "chapter.md",
-                uri: "manuscript://chapter.md",
-                scope: "draft",
-              },
-            ],
-            undefined,
-            [],
-          ),
-        ).toBe(true);
-        expect(document.body.textContent).toContain("Edited 1 document");
-        await act(async () =>
-          document.querySelector<HTMLButtonElement>("[aria-expanded]")?.click(),
-        );
-        expect(document.body.textContent).toContain("chapter");
-        await act(async () => {
-          [...document.querySelectorAll("button")]
-            .find((button) => button.textContent === "Undo")
-            ?.click();
-        });
-        expect(document.body.textContent).toContain("Undoing…");
-        expect(
-          [...document.querySelectorAll("button")].find(
-            (button) => button.textContent === "Undoing…",
-          )?.disabled,
-        ).toBe(true);
-        expect(reverse).toHaveBeenCalledWith("chat", { turnId: "turn", direction: "undo" });
-        await act(async () => {
-          answer({
-            status: "partial",
-            documents: [
-              {
-                uri: "manuscript://chapter.md",
-                status: "reversed",
-                destination: { kind: "draft", branchId: "draft" },
-              },
-            ],
-            acceptedParts: 1,
-            skips: [
-              {
-                documentId: "doc",
-                uri: "manuscript://chapter.md",
-                before: "Mara",
-                after: "I",
-                reason: "discarded",
-              },
-            ],
-          });
-          setReceipt({ state: "live-reversed", control: "redo" });
-        });
-        await settleReact(() => {
-          expect(document.querySelector("[data-turn-skips]")?.textContent).toContain(
-            "1 part stayed",
-          );
-          expect(document.body.textContent).toContain("“Mara” → “I”");
-          expect(document.body.textContent).toContain("discarded");
-          expect(document.querySelector("[data-turn-draft-outcome]")?.textContent).toBe(
-            "Undone in your draft. Apply it to change your manuscript.",
-          );
-        });
-        await act(async () => {
-          [...document.querySelectorAll("button")]
-            .find((button) => button.textContent === "Redo")
-            ?.click();
-        });
-        expect(document.body.textContent).toContain("Redoing…");
-        await act(async () => {
-          fail(new Error("offline"));
-        });
-        await settleReact(() => {
-          expect(document.querySelector("[data-undo-unavailable-reason]")).not.toBeNull();
-        });
-        await act(async () => setReceipt({ state: "expired", control: "view_change" }));
-        expect(document.querySelector("[data-undo-unavailable]")?.textContent).toBe("Can't undo");
-      },
-      { drainMacrotask: true },
     );
   } finally {
     client.clear();

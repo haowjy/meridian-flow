@@ -25,6 +25,11 @@ domain persistence and transaction propagation live in the server.
 - Until launch, do not add expand/contract compatibility shims for the previous
   server version. Reset only the current checkout's own dev database when the
   baseline requires it; legacy imports are a separate ETL.
+- **Data steps.** Code that must run between two SQL migrations is a versioned
+  data step (implementation in `src/migration-steps/`). `pnpm db:migrate` alone
+  runs it; changing its semantics means a new version, marker and migration.
+  The review-base conversion runs this way (`0062`–`0067`). Details in
+  `.context/CONTEXT.md`.
 - Rollup columns are maintained by application repositories/projectors, not
   database triggers, except for the documented thread activity projection.
   Yjs head/checkpoint relationships and immutable edit storage are contracts;

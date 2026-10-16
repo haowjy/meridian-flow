@@ -109,7 +109,7 @@ export type {
   JournalReadOptions,
   UpdateJournal,
 } from "./ports/update-journal.js";
-export { parseWriteHandle, writeHandle } from "./ports/update-journal.js";
+export { writeHandle } from "./ports/update-journal.js";
 export type {
   MappedContinuation,
   PmSourceContinuation,
@@ -154,7 +154,6 @@ export {
   captureEditParts,
   classifyEditParts,
   computeInverse,
-  inspectEditRoots,
   prepareEditRoots,
 } from "./undo/forward-inverse.js";
 export type { ClockRange, JournalDependencyRow } from "./undo/journal-dependencies.js";
@@ -168,7 +167,6 @@ export {
   structDependencies,
   suppliedRanges,
 } from "./undo/journal-dependencies.js";
-export { wordHunks } from "./word-hunks.js";
 export {
   applyYjsUpdateIfEffective,
   bytesEqual,

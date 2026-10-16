@@ -4,7 +4,6 @@ import type { ParsedContent } from "@meridian/markup";
 import type { Fragment } from "prosemirror-model";
 import type { BlockRef, DocHandle } from "../handles.js";
 import type { AgentEditModel, InlineTextReplacement } from "../ports/model.js";
-import { editSegments } from "./segments.js";
 import type { ApplyErrorCode, ApplyResult, ApplyTransactionOrigin, ResolvedEdit } from "./types.js";
 
 type Ref = BlockRef;
@@ -48,8 +47,7 @@ export function applyEdits(
   model: AgentEditModel,
   edits: ResolvedEdit | readonly ResolvedEdit[],
   origin: ApplyTransactionOrigin,
-  beforeSegment?: () => void,
-  certifySegment?: (segment: readonly ResolvedEdit[]) => void,
+  certifyEdit?: (edit: ResolvedEdit) => void,
 ): ApplyResult {
   const editList = Array.isArray(edits) ? [...edits] : [edits];
   if (editList.length === 0) {
@@ -66,29 +64,18 @@ export function applyEdits(
     deletedHashes: new Set(),
   };
 
-  const segments = beforeSegment
-    ? editSegments(doc, model, editList)
-    : editList.map((edit) => [edit]);
   let committedEdits = 0;
-  for (const segment of segments) {
-    const plans: PlannedEdit[] = [];
-    for (const edit of segment) {
-      const planned = preflightEdit(doc, model, edit);
-      if (!planned.ok)
-        return applyError(planned.code, planned.message, planned.details, { committedEdits });
-      plans.push(planned.plan);
-    }
+  for (const edit of editList) {
+    const planned = preflightEdit(doc, model, edit);
+    if (!planned.ok)
+      return applyError(planned.code, planned.message, planned.details, { committedEdits });
     try {
-      beforeSegment?.();
       let failure: ApplyFailure | undefined;
       model.transact(
         doc,
         () => {
-          for (const plan of plans) {
-            failure = executePlan(doc, model, plan, accumulator);
-            if (failure) break;
-          }
-          if (!failure) certifySegment?.(segment);
+          failure = executePlan(doc, model, planned.plan, accumulator);
+          if (!failure) certifyEdit?.(edit);
         },
         origin,
       );
@@ -101,7 +88,7 @@ export function applyEdits(
         { committedEdits },
       );
     }
-    committedEdits += segment.length;
+    committedEdits += 1;
   }
 
   return {

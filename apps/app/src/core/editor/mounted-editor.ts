@@ -112,6 +112,8 @@ export type MountedEditorInput = {
   /** Read at paste time: what a pasted `[[Name]]` may link to. Same reason again. */
   wikilinkPasteCatalog?: () => WikilinkPasteCatalog | null;
   surface: EditorSurfaceOptions;
+  /** Which host mounts this editor ("editor", "dock"): the undo history it adopts is that host's over the room. */
+  historySurface: string;
   /** The horizon expired, so any resulting verdict must carry that limitation. */
   evidenceDegraded?: boolean;
 };
@@ -125,6 +127,7 @@ export function useMountedEditor({
   atReferenceCatalog,
   wikilinkPasteCatalog,
   surface,
+  historySurface,
   evidenceDegraded = false,
 }: MountedEditorInput): Editor | null {
   // The getter is read at menu-open time, so freezing the reference is safe
@@ -145,6 +148,7 @@ export function useMountedEditor({
     const caretGate = gateCaretPresence(session.presence, () => publishPresenceRef.current);
     const editorConfig = createEditorConfig({
       document: session.document,
+      history: session.historyFor(historySurface),
       // The session owns whether this client is visible (inline review suspends
       // it), so it owns every local awareness field the editor publishes — the
       // caret's included. Its caret is arbitrated, because another view of

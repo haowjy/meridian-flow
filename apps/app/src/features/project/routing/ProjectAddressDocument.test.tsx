@@ -9,15 +9,20 @@ import { ProjectAddressDocument } from "./ProjectAddressDocument";
 import type { ProjectAddress } from "./project-address";
 import { createProjectNavigation } from "./project-navigation";
 
-const { openTab } = vi.hoisted(() => ({
+const { openTab, openTabs } = vi.hoisted(() => ({
   openTab: vi.fn(),
+  openTabs: [] as unknown[],
 }));
 vi.mock("@/client/stores", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/client/stores")>()),
   useContextTabsActions: () => ({ openTab }),
+  useContextTabs: () => ({ tabs: openTabs, selectedTabIdByWork: {} }),
 }));
 
-beforeEach(() => openTab.mockReset());
+beforeEach(() => {
+  openTab.mockReset();
+  openTabs.length = 0;
+});
 
 function navigationFixture(
   href: string,
@@ -213,6 +218,43 @@ it("keeps a draft-only document out of the live view and repairs only its review
       expect(replaceEntry).toHaveBeenCalledOnce();
       // A No Work review address names its Work itself, so a copy opens the same draft.
       expect(replaceEntry.mock.calls[0]?.[0]).toBe(`${href}?work=&item=draft-1`);
+    },
+  );
+  navigation.dispose();
+});
+
+it("a renamed live document's route stays with its tab (#845)", async () => {
+  const noWorkId = "00000000-0000-4000-8000-000000000009";
+  const projectId = "550e8400-e29b-41d4-a716-446655440000";
+  // The sidebar rename moved the tab and the route to `renamed`; the review entry's uri says `doc`.
+  const href = `/p/${projectId}/editor/manuscript/renamed?work=&item=draft-1`;
+  openTabs.push({ kind: "tracked", documentId: "doc-id", scheme: "manuscript", path: "/renamed" });
+  const replaceEntry = vi.fn();
+  const navigation = navigationFixture(href, { replaceEntry });
+  const result = documentResult("current");
+  if (result.kind === "unavailable") throw new Error("Invalid fixture");
+  result.document.entry.uri = "manuscript://doc";
+  await withReactRoot(
+    <ProjectAddressDocument
+      projectId={projectId}
+      href={href}
+      entryKey="entry"
+      address={{
+        projectId,
+        destination: { kind: "document", scheme: "manuscript", path: "renamed" },
+        work: { kind: "none" },
+      }}
+      result={result}
+      reviewItemKey="draft-1"
+      workId={noWorkId}
+      noWorkId={noWorkId}
+      navigation={navigation}
+      onAdmission={vi.fn()}
+    />,
+    async () => {
+      await act(async () => {});
+      expect(replaceEntry).not.toHaveBeenCalled();
+      expect(openTab).not.toHaveBeenCalled();
     },
   );
   navigation.dispose();

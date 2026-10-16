@@ -31,11 +31,11 @@ export type AiDraftLaunchTarget = {
   documentName?: string;
   isNew?: boolean;
   /**
-   * Operations of the change to focus once this review has painted (the
+   * Ids of the changes to focus once this review has painted (the
    * strip's Review, a Work page change row). When none is in the review any
    * more, it opens at the top.
    */
-  focusOperationIds?: readonly string[];
+  focusChangeIds?: readonly string[];
 };
 
 type EditorReviewIntent = AiDraftLaunchTarget & { sequence: number };
@@ -226,12 +226,12 @@ export function EditorReviewIntentClaimant({
     review.controller.enterInlineReview(intent.documentId, intent.itemKey);
     // The latest launch decides the focus: one without it clears an older request.
     setFocus(
-      intent.focusOperationIds?.length
+      intent.focusChangeIds?.length
         ? {
             sequence: intent.sequence,
             documentId: intent.documentId,
             itemKey: intent.itemKey,
-            operationIds: intent.focusOperationIds,
+            changeIds: intent.focusChangeIds,
           }
         : null,
     );

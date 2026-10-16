@@ -287,14 +287,14 @@ describe("DocumentSession status derivation", () => {
 
     current().emit({
       kind: "reset",
-      reason: WS_CLOSE.BRANCH_STALE.reason,
-      disposition: "rebuild",
-      code: WS_CLOSE.BRANCH_STALE.code,
+      reason: WS_CLOSE.BRANCH_CLOSED.reason,
+      disposition: "superseded",
+      code: WS_CLOSE.BRANCH_CLOSED.code,
     });
 
     expect(session.getSnapshot()).toMatchObject({
       status: "access-lost",
-      connectionState: { kind: "reset", code: 4205 },
+      connectionState: { kind: "reset", code: 4206 },
     });
     void session.destroy();
   });

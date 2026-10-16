@@ -1,4 +1,7 @@
-/** Debounced parent-to-child branch pulls for shadow-mode branch peers. */
+/**
+ * Debounced live-to-draft catch-up. A Work draft rebases onto live's certified cut (`draft-rebase.ts`);
+ * a thread peer pulls its Work draft's Yjs state. Every branch is caught up under its own lease.
+ */
 
 import {
   type DocumentCoordinator,
@@ -12,12 +15,14 @@ import * as Y from "yjs";
 import type { BranchConcurrentJournalWatermarks } from "./branch-agent-edit.js";
 import {
   BranchCasConflictError,
+  BranchClosedError,
   type BranchCoordinator,
   BranchMissingError,
   type BranchSnapshot,
   BranchStaleUpdateError,
 } from "./branch-coordinator.js";
 import type { BranchLockLease } from "./branch-critical-sections.js";
+import type { DraftRebase } from "./draft-rebase.js";
 import { runOutsideResponseTransaction } from "./response-transaction.js";
 
 export type WorkDraftLookup = {
@@ -32,8 +37,13 @@ export type WorkDraftLookup = {
 
 export type BranchPullService = {
   scheduleLivePull(documentId: DocumentId): void;
-  /** Drops debounced pulls that haven't started; in-flight pulls finish. */
+  /** Drops debounced pulls that haven't started; in-flight pulls finish but arm no retry. */
   cancelScheduledPulls(): void;
+  /**
+   * Shutdown: cancels, refuses every later schedule or flush, and settles once the pulls already
+   * running have finished, so nothing starts and nothing is left in flight.
+   */
+  close(): Promise<void>;
   flushLivePull(documentId: DocumentId): Promise<void>;
   pullThreadPeer(input: {
     documentId: DocumentId;
@@ -42,7 +52,6 @@ export type BranchPullService = {
   }): Promise<{
     peerBranchId: string;
     upstreamBranchId: string;
-    branchGeneration: number;
     afterJournalId?: number;
     liveJournalSeq?: number;
     attributionBaseline: Uint8Array;
@@ -66,8 +75,43 @@ export class ThreadPeerPullLost extends Error {
 }
 
 export type BranchPullDiagnostics = {
-  backgroundFailed(input: { documentId: DocumentId; cause: unknown }): void;
+  /** `branchId` names the branch whose pull failed, when the failure belongs to one. */
+  backgroundFailed(input: { documentId: DocumentId; branchId?: string; cause: unknown }): void;
 };
+
+/** A pull failed at one branch. Internal: the public edge rethrows `cause`, which callers match on. */
+class BranchPullFailure extends Error {
+  constructor(
+    readonly branchId: string,
+    override readonly cause: unknown,
+  ) {
+    super(cause instanceof Error ? cause.message : String(cause));
+    this.name = "BranchPullFailure";
+  }
+}
+
+/** The merge of a draft onto live failed. It repeats on the same inputs, so the pull fails without a retry. */
+export class DraftRebaseFailedError extends Error {
+  constructor(readonly reason: "base_uninitialized" | "merge_failed") {
+    super(`Draft rebase failed: ${reason}`);
+    this.name = "DraftRebaseFailedError";
+  }
+}
+
+async function atBranch<T>(branchId: string, operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation();
+  } catch (cause) {
+    throw new BranchPullFailure(branchId, cause);
+  }
+}
+
+/**
+ * `fenced`: an unfinished settlement blocked a rebase. The fence lifts on its own, but nothing else
+ * would pull again, so the caller keeps a retry armed. `failure`: a rebase failed; it repeats on the
+ * same inputs, so it is reported and not retried (the next live write is the new input).
+ */
+type PullResult = { fenced: boolean; failure?: BranchPullFailure };
 
 export function createBranchPullService(input: {
   outsideTransaction<T>(operation: () => T): T;
@@ -80,6 +124,8 @@ export function createBranchPullService(input: {
   concurrentJournalWatermarks?: BranchConcurrentJournalWatermarks;
   liveJournal?: Pick<UpdateJournal, "read">;
   diagnostics?: BranchPullDiagnostics;
+  /** The rebase every Work draft takes onto live; thread peers pull Yjs state instead. */
+  draftRebase: Pick<DraftRebase, "catchUp">;
 }): BranchPullService {
   const debounceMs = input.debounceMs ?? 2000;
   const maxDebounceMs = input.maxDebounceMs ?? 10000;
@@ -92,6 +138,9 @@ export function createBranchPullService(input: {
       queued?: Promise<void>;
     }
   >();
+  let closed = false;
+  /** Bumped by cancel: a run that started before it must not arm a retry. */
+  let cancelEpoch = 0;
 
   function outsideCallerTransactions<T>(operation: () => T): T {
     return input.outsideTransaction(() => runOutsideResponseTransaction(operation));
@@ -117,31 +166,46 @@ export function createBranchPullService(input: {
     return doc;
   }
 
-  async function pullLive(documentId: DocumentId): Promise<void> {
-    // Most documents have no Work draft; skip the snapshot (a room open and
-    // release) for them. Re-list before pulling: a branch can close in
-    // between, and one opened since waits for the next pull.
-    if ((await input.branches.listActiveWorkDraftBranchIds(documentId)).length === 0) return;
-    // Snapshot before the root transaction opens: the snapshot takes its own
-    // connection, and taking it while holding the root's lets concurrent pulls
-    // hold every pooled connection and wait on each other forever.
-    const liveDoc = await liveSnapshot(documentId);
-    try {
-      // One branch at a time: its lease, then its transaction (the save's order), and
-      // the transaction commits before the next branch's lease is taken.
-      for (const branchId of await input.branches.listActiveWorkDraftBranchIds(documentId)) {
-        await input.branchCoordinator.withLeases([branchId], (lease) =>
+  async function pullLive(documentId: DocumentId): Promise<PullResult> {
+    // Most documents have no Work draft. Re-list before pulling: a branch can close in between,
+    // and one opened since waits for the next pull.
+    const branchIds = await input.branches.listActiveWorkDraftBranchIds(documentId);
+    let fenced = false;
+    let failure: BranchPullFailure | undefined;
+    // One branch at a time: its lease, then its transaction (the save's order), and the
+    // transaction commits before the next branch's lease is taken. Every draft is attempted;
+    // the first failure is returned.
+    for (const branchId of branchIds) {
+      const outcome = await atBranch(branchId, () =>
+        input.branchCoordinator.withLeases([branchId], (lease) =>
           input.rootTransaction(() =>
-            input.branchCoordinator.pullFromDoc(lease, branchId, liveDoc),
+            input.draftRebase.catchUp(lease, branchId).catch((cause: unknown) => {
+              // A Discard closed the branch after the listing: nothing is left to catch up.
+              if (cause instanceof BranchStaleUpdateError) return { kind: "noop" as const };
+              throw cause;
+            }),
           ),
-        );
+        ),
+      );
+      switch (outcome.kind) {
+        case "fenced":
+          fenced = true;
+          break;
+        case "failed":
+          failure ??= new BranchPullFailure(branchId, new DraftRebaseFailedError(outcome.reason));
+          break;
+        case "rebased":
+        case "noop":
+          break;
+        default:
+          assertNever(outcome);
       }
-    } finally {
-      liveDoc.destroy();
     }
+    return { fenced, ...(failure ? { failure } : {}) };
   }
 
-  async function run(documentId: DocumentId): Promise<void> {
+  async function run(documentId: DocumentId, epoch = cancelEpoch): Promise<void> {
+    if (closed) return;
     const current = timers.get(documentId);
     if (current?.running) {
       // A joiner needs a snapshot captured after its call, not the in-flight
@@ -150,7 +214,7 @@ export function createBranchPullService(input: {
       current.queued ??= outsideCallerTransactions(() => {
         const rerun = () => {
           current.queued = undefined;
-          return run(documentId);
+          return run(documentId, epoch);
         };
         return running.then(rerun, rerun);
       });
@@ -159,13 +223,20 @@ export function createBranchPullService(input: {
     const entry = current ?? {};
     const running = outsideCallerTransactions(() =>
       pullLive(documentId)
-        .then(() => {
-          // A queued snapshot may include newer edits; its retries still need these timers.
-          if (entry.queued) return;
-          if (entry.debounce) clearTimeout(entry.debounce);
-          if (entry.max) clearTimeout(entry.max);
-          entry.debounce = undefined;
-          entry.max = undefined;
+        .then(({ fenced, failure }) => {
+          if (fenced && epoch === cancelEpoch && !closed) {
+            entry.max ??= setTimeout(() => {
+              entry.max = undefined;
+              backgroundPull(documentId);
+            }, maxDebounceMs);
+          } else if (!entry.queued) {
+            // A queued snapshot may include newer edits; its retries still need these timers.
+            if (entry.debounce) clearTimeout(entry.debounce);
+            if (entry.max) clearTimeout(entry.max);
+            entry.debounce = undefined;
+            entry.max = undefined;
+          }
+          if (failure) throw failure;
         })
         .finally(() =>
           outsideCallerTransactions(() => {
@@ -179,14 +250,39 @@ export function createBranchPullService(input: {
     return running;
   }
 
+  function cancelScheduledPulls(): void {
+    cancelEpoch += 1;
+    for (const [documentId, entry] of timers) {
+      if (entry.debounce) clearTimeout(entry.debounce);
+      if (entry.max) clearTimeout(entry.max);
+      entry.debounce = undefined;
+      entry.max = undefined;
+      if (!entry.running && !entry.queued) timers.delete(documentId);
+    }
+  }
+
   function backgroundPull(documentId: DocumentId): void {
     void run(documentId).catch((cause: unknown) => {
-      input.diagnostics?.backgroundFailed({ documentId, cause });
+      input.diagnostics?.backgroundFailed(
+        cause instanceof BranchPullFailure
+          ? { documentId, branchId: cause.branchId, cause: cause.cause }
+          : { documentId, cause },
+      );
     });
+  }
+
+  /** `run` for callers: they match on the underlying failure, not on which branch it came from. */
+  async function runForCaller(documentId: DocumentId): Promise<void> {
+    try {
+      await run(documentId);
+    } catch (cause) {
+      throw cause instanceof BranchPullFailure ? cause.cause : cause;
+    }
   }
 
   return {
     scheduleLivePull(documentId) {
+      if (closed) return;
       const entry = timers.get(documentId) ?? {};
       if (entry.running) backgroundPull(documentId);
       if (entry.debounce) clearTimeout(entry.debounce);
@@ -201,18 +297,23 @@ export function createBranchPullService(input: {
       timers.set(documentId, entry);
     },
 
-    cancelScheduledPulls() {
-      for (const [documentId, entry] of timers) {
-        if (entry.debounce) clearTimeout(entry.debounce);
-        if (entry.max) clearTimeout(entry.max);
-        entry.debounce = undefined;
-        entry.max = undefined;
-        if (!entry.running && !entry.queued) timers.delete(documentId);
+    cancelScheduledPulls,
+
+    async close() {
+      closed = true;
+      cancelScheduledPulls();
+      // Pulls already running (and the rerun queued behind one) finish; none starts after this.
+      while (true) {
+        const inFlight = [...timers.values()].flatMap((entry) =>
+          [entry.running, entry.queued].filter((pull): pull is Promise<void> => Boolean(pull)),
+        );
+        if (inFlight.length === 0) return;
+        await Promise.allSettled(inFlight);
       }
     },
 
     flushLivePull(documentId) {
-      return run(documentId);
+      return runForCaller(documentId);
     },
 
     pullThreadPeer(inputPeer) {
@@ -231,7 +332,7 @@ export function createBranchPullService(input: {
         let identity = { peerBranchId: first.branchId, upstreamBranchId: first.upstreamBranchId };
         try {
           const attributionBaseline = first.state;
-          await run(inputPeer.documentId);
+          await runForCaller(inputPeer.documentId);
           const liveCut = await input.liveJournal?.read(inputPeer.documentId);
           const liveJournalSeq = liveCut
             ? (liveCut.persistenceWatermark ??
@@ -247,28 +348,24 @@ export function createBranchPullService(input: {
           if (!upstreamBranchId)
             throw new Error(`Thread peer ${peer.branchId} has no upstream Work draft branch`);
           // The peer's and its upstream's leases are held from capture through persisting
-          // the peer, so a per-change Discard cannot refork the upstream in between and a
+          // the peer, so a Discard cannot close the upstream in between and a
           // stale capture is never merged back. Leases come before the transaction.
-          const upstream = await input.branchCoordinator.withLeases(
-            [peer.branchId, upstreamBranchId],
-            (lease) =>
-              input.rootTransaction(async () => {
-                const read = await input.branchCoordinator
-                  .ownedSession(lease)
-                  .read(upstreamBranchId, (doc, snapshot) =>
-                    Promise.resolve({
-                      generation: snapshot.generation,
-                      state: Y.encodeStateAsUpdate(doc),
-                    }),
-                  );
-                await pullPeerFromCapturedUpstream(lease, peer.branchId, read.state);
-                return read;
-              }),
+          await input.branchCoordinator.withLeases([peer.branchId, upstreamBranchId], (lease) =>
+            input.rootTransaction(async () => {
+              const state = await input.branchCoordinator
+                .ownedSession(lease)
+                .read(upstreamBranchId, (doc, snapshot) => {
+                  // An item Discard closes its branch without touching the text: a peer never
+                  // pulls from an upstream that ended while it waited for the leases.
+                  if (snapshot.status === "closed") throw new BranchClosedError(upstreamBranchId);
+                  return Promise.resolve(Y.encodeStateAsUpdate(doc));
+                });
+              await pullPeerFromCapturedUpstream(lease, peer.branchId, state);
+            }),
           );
           return {
             peerBranchId: peer.branchId,
             upstreamBranchId,
-            branchGeneration: upstream.generation,
             afterJournalId,
             liveJournalSeq,
             attributionBaseline,
@@ -278,6 +375,7 @@ export function createBranchPullService(input: {
             identity.upstreamBranchId &&
             (cause instanceof BranchStaleUpdateError ||
               cause instanceof BranchCasConflictError ||
+              cause instanceof BranchClosedError ||
               cause instanceof BranchMissingError)
           )
             throw new ThreadPeerPullLost(identity.peerBranchId, identity.upstreamBranchId, cause);
@@ -303,4 +401,8 @@ export function createBranchPullService(input: {
 
 function docFromSnapshot(snapshot: Uint8Array): Y.Doc {
   return yjsUpdateFromState(snapshot);
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unhandled pull outcome ${JSON.stringify(value)}`);
 }

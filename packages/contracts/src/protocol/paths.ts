@@ -168,6 +168,14 @@ export function apiProjectWorkDocumentDraftApplyChangesPath(
   return `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}/apply-changes`;
 }
 
+export function apiProjectWorkDocumentDraftAttributionPath(
+  projectId: string,
+  workId: string,
+  documentId: string,
+): string {
+  return `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}/attribution`;
+}
+
 export function apiProjectWorkDocumentDraftDiscardPath(
   projectId: string,
   workId: string,
@@ -254,6 +262,10 @@ export function apiProjectContextKbImportDriveFixturePath(projectId: string): st
 
 export function apiThreadPath(threadId: string): string {
   return `${API_THREADS_PATH}/${threadId}`;
+}
+
+export function apiThreadDraftFilesPath(threadId: string): string {
+  return `${apiThreadPath(threadId)}/draft-files`;
 }
 
 export function apiThreadTitlePath(threadId: string): string {

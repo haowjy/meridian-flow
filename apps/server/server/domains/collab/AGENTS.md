@@ -8,9 +8,17 @@ review settlement, and Hocuspocus admission. It composes
 
 - Live documents, Work drafts, and thread peers are real Y.Docs. Journals and
   durable authority heads are the source from which runtime state is rebuilt.
-- A Work draft is shared by every thread editing that document in that Work.
-  Review classes and writer attribution are server-derived, dependency-closed,
-  and never reconstructed by a client.
+- A Work draft is shared by every thread editing that document in that Work. A
+  text branch holds `prosemirror` (the draft text) and the server-owned
+  `review_base`; the review is the browser's projection of one against the other,
+  and the server stores no review operations, classes or tokens.
+- A text branch shares no Yjs lineage with live: it catches up by a three-way
+  content rebase on live's certified cut, never a Yjs pull (thread peers still
+  pull). A late peer's stale frame is rebased onto the current text: its
+  surviving typing is recovered as paragraphs, and its stale deletions are never replayed.
+- Apply is a content merge into live's current text and never closes the draft.
+  Discard is a writer edit inside the room (undone by Ctrl+Z in the Editor, by Undo on the row elsewhere), with no command;
+  only item Discard and Discard all are kernel commands, and they only close.
 - Authority identity and generation fence every live connection and mutation.
   The domain owns authorization, persistence, coordination, settlement, and
   trail projection around the agent-edit core.
@@ -22,7 +30,11 @@ review settlement, and Hocuspocus admission. It composes
   behavior belongs in domain services.
 - Admit novel writer content durably before Yjs apply, broadcast, or ack.
   Treat Yjs merge as trusted: destructive evidence informs receipts and marks,
-  never a veto. Undo and redo are the reversal authority.
+  never a veto. Undo recovers.
+- Every server write into a text branch goes through `writeBranchState`, computed
+  against the state it compare-and-swaps onto under the branch lease. Never
+  store a server-client delta and replay it later: Yjs drops it silently. Reject
+  writer updates that touch reserved client ids or `review_base`.
 - Branch Y.Docs use `gc: false`. Any apply after an `await` must use the
   documented durable authority/concurrency fence; a coordinator lock alone is
   not enough.
@@ -45,6 +57,5 @@ The focused references are [branch records](.context/branch-model-and-records.md
 [WebSocket concurrency](.context/websocket-concurrency.md).
 The visual references are [collab-domain.html](.context/collab-domain.html)
 and [draft-live-model.html](.context/draft-live-model.html).
-Deferred work is in [FUTURE.md](.context/FUTURE.md), [TODO.md](.context/TODO.md),
-and [TODO](.context/TODO). Related boundaries are [`domains/notices`](../notices/AGENTS.md)
+Deferred work is in [FUTURE.md](.context/FUTURE.md), and [TODO.md](.context/TODO.md). Related boundaries are [`domains/notices`](../notices/AGENTS.md)
 and [`@meridian/agent-edit`](../../../../../packages/agent-edit/AGENTS.md).

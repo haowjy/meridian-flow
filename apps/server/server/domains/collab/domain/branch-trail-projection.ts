@@ -1,9 +1,5 @@
 /** Projects branch journal ownership and push effects into durable change-trail records. */
-import {
-  type AgentEditModel,
-  toDocHandle,
-  type YProsemirrorDocumentModel,
-} from "@meridian/agent-edit/integration";
+import { toDocHandle, type YProsemirrorDocumentModel } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
@@ -14,14 +10,8 @@ import type {
   PublicationBlockChange,
   TrailContributionReplacement,
 } from "./branch-push-contracts.js";
-import { blockTextMap } from "./branch-push-plan.js";
-import {
-  diffAlignedBlocks,
-  documentDifference,
-  hunkDeletedRanges,
-  hunkInsertedRanges,
-} from "./document-difference.js";
-import { type IndexedDraftUpdate, indexDraftUpdates } from "./draft-review-attribution.js";
+import { changedRangesByBlock, documentDifference } from "./document-difference.js";
+import { replayJournalClockOwners } from "./journal-clock-owners.js";
 import type {
   ChangeTrailPersistence,
   DurableTrailRecord,
@@ -43,8 +33,73 @@ type TrailProjectionLocation = {
   afterIdentity: CanonicalBlockIdentityV1 | null;
   navigation: RawTrailChange["navigation"];
 };
+/**
+ * The draft as it stood before `rows`, rebuilt from the draft's own state: every
+ * struct the rows introduced is cut off and every deletion they made is lifted.
+ * A draft's rows are authored in the draft's identity space, so replaying them
+ * over a live doc would not land.
+ */
+export function draftPriorDoc(draftState: Uint8Array, rows: readonly BranchJournalRow[]): Y.Doc {
+  const draft = createCollabYDoc({ gc: false });
+  try {
+    Y.applyUpdate(draft, draftState);
+    const stateVector = Y.decodeStateVector(Y.encodeStateVector(draft));
+    const rowDeletes = new Map<number, Array<{ clock: number; len: number }>>();
+    for (const row of rows) {
+      const decoded = Y.decodeUpdate(row.updateData);
+      for (const struct of decoded.structs) {
+        const cut = stateVector.get(struct.id.client);
+        if (cut !== undefined && struct.id.clock < cut) {
+          if (struct.id.clock === 0) stateVector.delete(struct.id.client);
+          else stateVector.set(struct.id.client, struct.id.clock);
+        }
+      }
+      for (const [client, items] of decoded.ds.clients) {
+        let ranges = rowDeletes.get(client);
+        if (!ranges) {
+          ranges = [];
+          rowDeletes.set(client, ranges);
+        }
+        for (const item of items) ranges.push(item);
+      }
+    }
+    const deleteSet = Y.createDeleteSetFromStructStore(draft.store);
+    for (const [client, lifted] of rowDeletes) {
+      lifted.sort((a, b) => a.clock - b.clock);
+      let gapIndex = 0;
+      const kept: Array<{ clock: number; len: number }> = [];
+      for (const item of deleteSet.clients.get(client) ?? []) {
+        let start = item.clock;
+        const end = item.clock + item.len;
+        while (gapIndex < lifted.length) {
+          const gap = lifted[gapIndex];
+          if (gap.clock >= end) break;
+          const gapEnd = gap.clock + gap.len;
+          if (gapEnd > start) {
+            if (gap.clock > start) kept.push({ clock: start, len: gap.clock - start });
+            start = gapEnd;
+          }
+          // A lifted range can span several disjoint tombstones. Keep it for the next item.
+          if (gapEnd >= end) break;
+          gapIndex++;
+        }
+        if (start < end) kept.push({ clock: start, len: end - start });
+      }
+      deleteSet.clients.set(client, kept as never);
+    }
+    return Y.createDocFromSnapshot(
+      draft,
+      new Y.Snapshot(deleteSet, stateVector),
+      createCollabYDoc({ gc: false }),
+    );
+  } finally {
+    draft.destroy();
+  }
+}
+
 export function journalAttributionByChangedBlock(input: {
-  liveDoc: Y.Doc;
+  /** The draft before `rows`; see `draftPriorDoc`. */
+  priorDoc: Y.Doc;
   rows: readonly BranchJournalRow[];
   model: YProsemirrorDocumentModel;
 }): {
@@ -66,42 +121,37 @@ export function journalAttributionByChangedBlock(input: {
     journalRowIndex: number;
   }> = [];
   try {
-    Y.applyUpdate(scratch, Y.encodeStateAsUpdate(input.liveDoc));
-    for (const [journalRowIndex, row] of input.rows.entries()) {
-      const before = canonicalSnapshot(input.model, scratch);
-      Y.applyUpdate(scratch, row.updateData);
-      const after = canonicalSnapshot(input.model, scratch);
-      const beforeByIdentity = new Map(before.map((block) => [block.identity, block]));
-      const afterByIdentity = new Map(after.map((block) => [block.identity, block]));
-      const deleted = before.filter((block) => !afterByIdentity.has(block.identity));
-      const inserted = after.filter((block) => !beforeByIdentity.has(block.identity));
-      if (deleted.length > 0 || inserted.length > 0) {
-        journalOperations.push({
-          removedBlockHashes: deleted.map((block) => block.hash),
-          insertedBlockIds: inserted.map((block) => block.hash),
-          ambiguous: deleted.length !== 1 || inserted.length !== 1,
-          removedIndex:
-            deleted.length === 1 ? before.indexOf(deleted[0] as (typeof before)[number]) : null,
-          insertedIndex:
-            inserted.length === 1 ? after.indexOf(inserted[0] as (typeof after)[number]) : null,
-          journalRowIndex,
-        });
-      }
-    }
-    const rowsById = new Map(input.rows.map((row) => [String(row.id), row]));
-    const operationIdsByBlock = draftOperationIdsByChangedBlock({
-      liveDoc: input.liveDoc,
-      draftDoc: scratch,
-      model: input.model,
-      draftUpdates: input.rows.map((row) => ({
-        id: row.id,
-        actorTurnId: row.turnId,
-        actorUserId: row.actorUserId,
-        updateData: row.updateData,
-        updateMeta: row.updateMeta,
-      })),
+    Y.applyUpdate(scratch, Y.encodeStateAsUpdate(input.priorDoc));
+    let before = canonicalSnapshot(input.model, scratch);
+    const attribution = replayJournalClockOwners({
+      doc: scratch,
+      updates: input.rows,
+      afterUpdate(journalRowIndex) {
+        const after = canonicalSnapshot(input.model, scratch);
+        const beforeByIdentity = new Map(before.map((block) => [block.identity, block]));
+        const afterByIdentity = new Map(after.map((block) => [block.identity, block]));
+        const deleted = before.filter((block) => !afterByIdentity.has(block.identity));
+        const inserted = after.filter((block) => !beforeByIdentity.has(block.identity));
+        if (deleted.length > 0 || inserted.length > 0) {
+          journalOperations.push({
+            removedBlockHashes: deleted.map((block) => block.hash),
+            insertedBlockIds: inserted.map((block) => block.hash),
+            ambiguous: deleted.length !== 1 || inserted.length !== 1,
+            removedIndex:
+              deleted.length === 1 ? before.indexOf(deleted[0] as (typeof before)[number]) : null,
+            insertedIndex:
+              inserted.length === 1 ? after.indexOf(inserted[0] as (typeof after)[number]) : null,
+            journalRowIndex,
+          });
+        }
+        before = after;
+      },
     });
-    for (const [blockId, operationIds] of operationIdsByBlock) {
+    const rowsById = new Map(input.rows.map((row) => [String(row.id), row]));
+    for (const [blockId, ranges] of changedRangesByBlock(
+      documentDifference(input.priorDoc, scratch, input.model),
+    )) {
+      const operationIds = attribution.owningRowIds(ranges);
       const owners: Array<{ threadId: ThreadId; turnId: TurnId } | null> = [];
       for (const operationId of operationIds) {
         const row = rowsById.get(operationId);
@@ -150,14 +200,13 @@ export function journalAttributionByChangedBlock(input: {
 }
 
 function canonicalSnapshot(model: YProsemirrorDocumentModel, doc: Y.Doc) {
-  const text = blockTextMap(model, doc);
-  const blocks = model.getBlocks(toDocHandle(doc));
-  return [...text].map(([hash, serialized], index) => {
-    const identity = blocks[index] ? model.getCanonicalBlockIdentity(blocks[index]) : null;
+  const handle = toDocHandle(doc);
+  const hashes = model.getDocumentBlockIds(handle);
+  return model.getBlocks(handle).map((block, index) => {
+    const identity = model.getCanonicalBlockIdentity(block);
     return {
-      hash,
-      serialized,
-      identity: identity ? `${identity.clientID}:${identity.clock}` : `missing:${hash}`,
+      hash: hashes[index],
+      identity: `${identity.clientID}:${identity.clock}`,
     };
   });
 }
@@ -167,6 +216,8 @@ export function preparedTrailChanges(input: {
   changedBlocks: readonly PublicationBlockChange[];
   receiptId: string;
   ownersByBlock: ReadonlyMap<string, readonly ({ threadId: ThreadId; turnId: TurnId } | null)[]>;
+  /** Owners of a changed block the draft's identities do not name (a content Apply writes fresh live items). */
+  fallbackOwners?: readonly ({ threadId: ThreadId; turnId: TurnId } | null)[];
   operations: readonly ReplacementOperation[];
   before: readonly {
     hash: string;
@@ -300,7 +351,7 @@ export function preparedTrailChanges(input: {
       block.afterText !== null &&
       afterBody.status === "available" &&
       afterBody.markdown.length === 0;
-    const owners = input.ownersByBlock.get(block.blockId) ?? [null];
+    const owners = input.ownersByBlock.get(block.blockId) ?? input.fallbackOwners ?? [null];
     const afterBlockIdentity = replacement?.afterBlockIdentity ?? block.afterBlockIdentity;
     const afterIdentity =
       emptiedSurvivingBlock || contentRelocated || !afterBlockIdentity
@@ -436,12 +487,13 @@ export function buildDurablePushTrail(input: {
   prepared: PreparedPush;
   documentTitle: string;
 }): DurableTrailRecord {
-  const journalOwners = input.prepared.prepared.journalRows.map((row) =>
+  // A manifest push is owned by the rows it moves; a content Apply by the draft's pending rows (the
+  // rows that fed `attributionRows`), since it writes fresh live items and moves none.
+  const rows = input.prepared.attributionRows;
+  const journalOwners = rows.map((row) =>
     row.threadId && row.turnId ? { threadId: row.threadId, turnId: row.turnId } : null,
   );
-  const threadIds = new Set(
-    input.prepared.prepared.journalRows.flatMap((row) => (row.threadId ? [row.threadId] : [])),
-  );
+  const threadIds = new Set(rows.flatMap((row) => (row.threadId ? [row.threadId] : [])));
   return {
     documentId: input.prepared.prepared.branch.documentId,
     documentTitle: input.documentTitle,
@@ -450,32 +502,4 @@ export function buildDurablePushTrail(input: {
     journalOwners,
     changes: input.prepared.trailChanges,
   };
-}
-
-/** Net publication ownership uses the same clock attribution as review, not canceled keystrokes. */
-function draftOperationIdsByChangedBlock(input: {
-  liveDoc: Y.Doc;
-  draftDoc: Y.Doc;
-  model: AgentEditModel;
-  draftUpdates: readonly IndexedDraftUpdate[];
-}): Map<string, string[]> {
-  const attribution = indexDraftUpdates({ baseDoc: input.liveDoc, updates: input.draftUpdates });
-  const rawHunks = diffAlignedBlocks(
-    documentDifference(input.liveDoc, input.draftDoc, input.model),
-    input.draftDoc,
-  );
-  const result = new Map<string, string[]>();
-  for (const hunk of rawHunks) {
-    const owners = attribution.attributeRanges({
-      insertedRanges: hunkInsertedRanges(hunk),
-      deletedRanges: hunkDeletedRanges(hunk),
-    });
-    const blockKeys = [
-      hunk.blockKey,
-      ...(hunk.kind === "block" && hunk.beforeBlockKey ? [hunk.beforeBlockKey] : []),
-    ];
-    for (const blockKey of blockKeys)
-      result.set(blockKey, [...new Set([...(result.get(blockKey) ?? []), ...owners.operationIds])]);
-  }
-  return result;
 }

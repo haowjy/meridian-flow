@@ -9,15 +9,11 @@ import { parseContextUri } from "../domains/context/context/uri.js";
 import { requireThreadOwner } from "../domains/threads/index.js";
 import type { AppServices } from "./app.js";
 import { requireRequestId } from "./request-id.js";
-import { getWorkReceiptReversalAvailability } from "./work-receipt-reversal.js";
 
 type TurnLiveLineageRouteServices = {
   threads: AppServices["threadRepos"]["threads"];
   fileAccess: Pick<AppServices["fileAccess"], "listAccess">;
   documentSync: AppServices["documentSync"];
-  blocks: AppServices["threadRepos"]["blocks"];
-  turns: AppServices["threadRepos"]["turns"];
-  works: AppServices["workRepo"];
 };
 
 export function selectTurnLiveLineageRouteServices(app: AppServices): TurnLiveLineageRouteServices {
@@ -25,9 +21,6 @@ export function selectTurnLiveLineageRouteServices(app: AppServices): TurnLiveLi
     threads: app.threadRepos.threads,
     fileAccess: app.fileAccess,
     documentSync: app.documentSync,
-    blocks: app.threadRepos.blocks,
-    turns: app.threadRepos.turns,
-    works: app.workRepo,
   };
 }
 
@@ -43,25 +36,7 @@ export async function handleTurnLiveLineageRequest(
     documents,
     userId: input.userId,
   });
-  const receipt = await deps.documentSync.getTurnReceiptChip(threadId, turnId);
-  const workAvailability = await getWorkReceiptReversalAvailability(
-    {
-      blocks: deps.blocks,
-      turns: deps.turns,
-      works: deps.works,
-      threads: deps.threads,
-    },
-    { threadId, turnId },
-  );
-  const workReceipt = workAvailability.undo
-    ? ({ state: "work-active", control: "undo" } as const)
-    : workAvailability.redo
-      ? ({ state: "work-reversed", control: "redo" } as const)
-      : null;
-  return {
-    documents: visibleDocuments.map(serializeLiveLineageDocument),
-    receipt: receipt ?? workReceipt,
-  };
+  return { documents: visibleDocuments.map(serializeLiveLineageDocument) };
 }
 
 /** The lineage's documents the writer can still read (file-access §6). */
@@ -79,6 +54,7 @@ function serializeLiveLineageDocument(document: {
   documentId: string;
   uri: string;
   scope: "live" | "draft";
+  invisibleWrites?: true;
 }): TurnLiveLineageDocumentItem {
   const parsed = parseContextUri(document.uri);
   if (!parsed.ok) {
@@ -89,5 +65,6 @@ function serializeLiveLineageDocument(document: {
     uri: parsed.value.normalized,
     path: `/${parsed.value.path}`,
     scope: document.scope,
+    ...(document.invisibleWrites ? { invisibleWrites: true } : {}),
   };
 }

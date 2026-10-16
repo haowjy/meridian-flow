@@ -16,8 +16,9 @@ remains stable.
 
 Preparation failure or cancellation leaves rows pending. A Work-switch notice
 is one-shot causal context and never replaces persistent hidden Work context;
-the model cannot rebind a Work. Current notice kinds are `undo`,
-`awareness_degraded`, and writer-origin `work_switched`.
+the model cannot rebind a Work. Current notice kinds are
+`awareness_degraded`, `draft_write_invisible` (a reply's words went into draft
+text the writer had already discarded locally), and writer-origin `work_switched`.
 
 ## Failure boundary
 

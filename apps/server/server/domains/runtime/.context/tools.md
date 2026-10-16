@@ -53,8 +53,9 @@ contract-shaped values with model-facing renderers that omit internal IDs and
 add detail only for explicit `verbose` requests. A Work has no write mode of its
 own: the chat's mode is in its work context (D62).
 
-Document inverse commands use `write undo/redo` and `write revert`; model-only
-handles select edits, and the command is all-or-nothing. Skills retain Mars
+The model's one inverse command is `write revert {path, edit}`; model-only handles
+select edits. It reverts the parts the writer left alone in the thread's current
+destination and reports the rest. Skills retain Mars
 filenames while `skills://` exposes the document codec's names.
 
 Tool policy does not gate model-call cost. `turn-accounting.ts` uses

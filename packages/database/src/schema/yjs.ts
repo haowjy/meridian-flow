@@ -1,9 +1,10 @@
 import type {
   DocumentAuthorityId,
   DocumentId,
+  DraftBaseRevision,
   DraftCommandId,
   DraftCommandKind,
-  DraftCommandResult,
+  DraftCommandOutcome,
   DraftId,
   ModelResponseId,
   ThreadId,
@@ -76,15 +77,20 @@ export const documentBranches = pgTable(
     status: text("status").$type<DocumentBranchStatus>().notNull().default("active"),
     state: byteaColumn("state").notNull(),
     stateVector: byteaColumn("state_vector").notNull(),
-    /** Current visible effect against the durable last-pulled live cut. */
-    hasEffect: boolean("has_effect").notNull().default(true),
+    /**
+     * The text differs from its base. Every write sets it explicitly; the default only governs an
+     * ensure that writes nothing.
+     */
+    hasEffect: boolean("has_effect").notNull().default(false),
     blocking: boolean("blocking").notNull().default(false),
-    liveCut: byteaColumn("live_cut"),
-    discardedStateVector: byteaColumn("discarded_state_vector"),
+    /**
+     * The live revision the draft's `review_base` fragment reflects. Null means uninitialized: no
+     * base was ever written, and rebase refuses it.
+     */
+    baseRevision: jsonb("base_revision").$type<DraftBaseRevision>(),
     schemaVersion: integer("schema_version")
       .notNull()
       .default(packCollabSchemaVersion(COLLAB_SCHEMA_VERSION)),
-    generation: integer("generation").notNull().default(1),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -93,7 +99,7 @@ export const documentBranches = pgTable(
       .on(table.documentId, table.draftId)
       .where(sql`${table.kind} = 'work_draft' AND ${table.status} = 'active'`),
     index("document_branches_active_work_draft_by_draft")
-      .on(table.draftId, table.id, table.generation)
+      .on(table.draftId, table.id)
       .where(sql`${table.kind} = 'work_draft' AND ${table.status} = 'active'`),
     uniqueIndex("document_branches_active_thread_peer")
       .on(table.documentId, table.threadId)
@@ -114,7 +120,6 @@ export const branchWriteJournal = pgTable(
     branchId: text("branch_id")
       .notNull()
       .references(() => documentBranches.id, { onDelete: "cascade" }),
-    generation: integer("generation").notNull(),
     wId: integer("w_id"),
     /** The model's tool call that made this write; the chat transcript row to jump to. */
     toolCallId: text("tool_call_id"),
@@ -141,10 +146,10 @@ export const branchWriteJournal = pgTable(
     createdAt: createdAt(),
   },
   (table) => [
-    index("branch_write_journal_branch").on(table.branchId, table.generation, table.id),
+    index("branch_write_journal_branch").on(table.branchId, table.id),
     index("branch_write_journal_thread_turn").on(table.branchId, table.threadId, table.turnId),
     index("branch_write_journal_active")
-      .on(table.branchId, table.generation, table.status)
+      .on(table.branchId, table.status)
       .where(sql`${table.status} = 'active'`),
     check("branch_write_journal_source_valid", sql`${table.source} IN ('agent', 'writer')`),
     check(
@@ -159,7 +164,6 @@ export const pushLineage = pgTable(
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
     branchId: text("branch_id").references(() => documentBranches.id, { onDelete: "set null" }),
-    branchGeneration: integer("branch_generation").notNull(),
     documentId: uuid("document_id")
       .$type<DocumentId>()
       .notNull()
@@ -177,12 +181,14 @@ export const pushLineage = pgTable(
       .references(() => turns.id, { onDelete: "set null" }),
     idempotencyKey: text("idempotency_key").notNull(),
     receiptId: uuid("receipt_id").notNull().default(sql`gen_random_uuid()`),
+    /** A content Apply's durable input and result; null for a publication that pushed journal rows. */
+    applyPayload: jsonb("apply_payload").$type<unknown>(),
     createdAt: createdAt(),
   },
   (table) => [
     uniqueIndex("push_lineage_idempotency").on(table.idempotencyKey),
     index("push_lineage_document").on(table.documentId),
-    index("push_lineage_branch").on(table.branchId, table.branchGeneration),
+    index("push_lineage_branch").on(table.branchId),
     index("push_lineage_turn").on(table.threadId, table.turnId),
     index("push_lineage_receipt").on(table.receiptId),
   ],
@@ -662,7 +668,7 @@ export const draftCommands = pgTable(
       { onDelete: "set null" },
     ),
     state: text("state").$type<"pending" | "done">().notNull().default("pending"),
-    result: jsonb("result").$type<DraftCommandResult>(),
+    result: jsonb("result").$type<DraftCommandOutcome>(),
     createdAt: createdAt(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
   },

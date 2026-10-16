@@ -1,9 +1,24 @@
-import { COLLAB_SCHEMA_VERSION, formatCollabSchemaSubprotocol } from "@meridian/prosemirror-schema";
+import { readBlocks, UNKNOWN_BASE_REVISION, writeBlocks } from "@meridian/agent-edit/diff";
+import type { DraftBaseRevision } from "@meridian/contracts";
+import { WS_CLOSE } from "@meridian/contracts/protocol";
+import {
+  COLLAB_SCHEMA_VERSION,
+  formatCollabSchemaSubprotocol,
+  PROSEMIRROR_FRAGMENT_NAME,
+} from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
-import { messageYjsSyncStep1, messageYjsUpdate } from "y-protocols/sync";
+import { messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
-import { createBranchCoordinator } from "../../domains/collab/domain/branch-coordinator.js";
+import {
+  BranchWriterRefusedError,
+  createBranchCoordinator,
+} from "../../domains/collab/domain/branch-coordinator.js";
 import { createBranchPullService } from "../../domains/collab/domain/branch-pulls.js";
+import {
+  createDraftRebase,
+  draftSchema,
+  seedDraftState,
+} from "../../domains/collab/domain/draft-rebase.js";
 import {
   createAllowAllFileAccess,
   createLocalFileAccessChanges,
@@ -12,18 +27,28 @@ import {
   isFileAccessDenied,
 } from "../../domains/file-policy/index.js";
 import { createYjsRoomAccessIndex } from "../yjs-room-access.js";
-import {
-  admitWriterSync,
-  type BranchHandshakeState,
-  createHocuspocus,
-  createYjsGateway,
-} from "../yjs-ws-handler.js";
+import { admitWriterSync, createHocuspocus, createYjsGateway } from "../yjs-ws-handler.js";
 
-const documentName = "branch:branch_1:gen:3";
+const documentName = "branch:branch_1";
+
+function paragraph(text: string) {
+  return draftSchema.nodes.paragraph.create(null, draftSchema.text(text));
+}
+
+function textOf(doc: Y.Doc): string {
+  return readBlocks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), draftSchema)
+    .map((block) => block.textContent)
+    .join("\n");
+}
+
+function typeAtStart(doc: Y.Doc, text: string): void {
+  const first = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).get(0) as Y.XmlElement;
+  (first.get(0) as Y.XmlText).insert(0, text);
+}
 
 const payload = new Uint8Array([1, 2, 3]);
 
-function services(stale: boolean) {
+function services() {
   return {
     fileAccess: {} as never,
     fileAccessChanges: createLocalFileAccessChanges(),
@@ -32,7 +57,6 @@ function services(stale: boolean) {
     },
     eventSink: {} as never,
     documentSync: {
-      rejectStaleBranchSyncStep1: vi.fn(async () => stale),
       admitBranchWriterUpdate: vi.fn(async () => undefined),
     } as never,
   };
@@ -55,15 +79,23 @@ function connectionConfig() {
 }
 
 describe("Yjs branch handshake route guard", () => {
-  it("pulls live changes into a Work draft without blocking branch-room connection", async () => {
+  it("holds a branch connection until the live pull and the room share one state", async () => {
     const live = new Y.Doc({ gc: false });
-    live.getText("content").insert(0, "live advanced");
+    writeBlocks(live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), draftSchema, [
+      paragraph("live advanced"),
+    ]);
+    let stored = seedDraftState(new Y.Doc({ gc: false })).state;
+    let baseRevision: DraftBaseRevision | null = UNKNOWN_BASE_REVISION;
     const loadedRoom = new Y.Doc({ gc: false });
-    let storedState = Y.encodeStateAsUpdate(new Y.Doc({ gc: false }));
+    Y.applyUpdate(loadedRoom, stored);
     let releasePull: (() => void) | undefined;
     const pullBlocked = new Promise<void>((resolve) => {
       releasePull = resolve;
     });
+    const write = (input: { state: Uint8Array; baseRevision?: DraftBaseRevision }) => {
+      stored = input.state;
+      if (input.baseRevision) baseRevision = input.baseRevision;
+    };
     const branchCoordinator = createBranchCoordinator({
       store: {
         getBranch: async () => ({
@@ -75,23 +107,18 @@ describe("Yjs branch handshake route guard", () => {
           workId: "work-1" as never,
           threadId: null,
           status: "active",
-          generation: 3,
-          state: storedState,
-          stateVector: Y.encodeStateVectorFromUpdate(storedState),
-          discardedStateVector: null,
+          state: stored,
+          stateVector: Y.encodeStateVectorFromUpdate(stored),
+          baseRevision,
           schemaVersion: COLLAB_SCHEMA_VERSION,
         }),
         async commitBranchMutation(input) {
-          await pullBlocked;
-          storedState = input.state;
-          return true;
-        },
-        async resetBranchSnapshot() {
+          write(input);
           return true;
         },
         async updateBranchSnapshot(input) {
           await pullBlocked;
-          storedState = input.state;
+          write(input);
           return true;
         },
         deferUntilCommit: () => false,
@@ -103,11 +130,18 @@ describe("Yjs branch handshake route guard", () => {
     const branchPulls = createBranchPullService({
       outsideTransaction: (operation) => operation(),
       rootTransaction: (operation) => operation(),
-      liveCoordinator: {
-        withDocument: async (_documentId, fn) => fn(live),
-        recover: async () => {},
-      },
+      liveCoordinator: { withDocument: async (_id, fn) => fn(live), recover: async () => {} },
       branchCoordinator,
+      draftRebase: createDraftRebase({
+        branchCoordinator,
+        liveCut: {
+          read: async () => ({
+            revision: { authorityId: "live", authorityGeneration: "1", seq: 1 },
+            blocks: readBlocks(live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), draftSchema),
+          }),
+        },
+        blockingApplySettlement: async () => null,
+      }),
       branches: {
         listActiveWorkDraftBranchIds: async () => ["branch_1"],
         ensureThreadPeerBranch: async () => ({
@@ -128,7 +162,6 @@ describe("Yjs branch handshake route guard", () => {
             branchId: "branch_1",
             documentId: "document-1",
             workId: "work-1",
-            generation: 3,
             schemaVersion: COLLAB_SCHEMA_VERSION,
             status: "active",
           })),
@@ -147,59 +180,112 @@ describe("Yjs branch handshake route guard", () => {
       createYjsRoomAccessIndex(),
     );
 
-    await expect(
-      hocuspocus.configuration.onConnect?.({
-        connectionConfig: connectionConfig(),
-        documentName,
-        context: { userId: "user-1", clientSchemaVersion: COLLAB_SCHEMA_VERSION },
-      } as never),
-    ).resolves.toBeUndefined();
-    expect(flushBranchLivePull).toHaveBeenCalledWith("document-1");
-    expect(loadedRoom.getText("content").toString()).toBe("");
+    let connected = false;
+    const connecting = hocuspocus.configuration.onConnect?.({
+      connectionConfig: connectionConfig(),
+      documentName,
+      context: { userId: "user-1", clientSchemaVersion: COLLAB_SCHEMA_VERSION },
+    } as never);
+    void connecting?.then(() => {
+      connected = true;
+    });
+    await vi.waitFor(() => expect(flushBranchLivePull).toHaveBeenCalledWith("document-1"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(connected).toBe(false);
 
     releasePull?.();
-    await flushBranchLivePull.mock.results[0]?.value;
-    await vi.waitFor(() => {
-      expect(loadedRoom.getText("content").toString()).toBe("live advanced");
-    });
+    await connecting;
+    expect(textOf(loadedRoom)).toBe("live advanced");
     const persisted = new Y.Doc({ gc: false });
-    Y.applyUpdate(persisted, storedState);
-    expect(persisted.getText("content").toString()).toBe("live advanced");
+    Y.applyUpdate(persisted, stored);
+    expect(textOf(persisted)).toBe("live advanced");
+
+    // The reconnect handshake is admitted: the room and the durable branch agree.
+    const offline = new Y.Doc({ gc: false });
+    Y.applyUpdate(offline, Y.encodeStateAsUpdate(loadedRoom));
+    const before = Y.encodeStateVector(offline);
+    typeAtStart(offline, "offline ");
+    await expect(
+      branchCoordinator.commitWriterUpdate({
+        branchId: "branch_1",
+        updateData: Y.encodeStateAsUpdate(offline, before),
+        roomDocument: loadedRoom,
+      }),
+    ).resolves.toEqual({ admitted: true });
+
+    // A pull committed mid-session: this room is behind the durable snapshot. The frame is early, not
+    // hostile, so the room is caught up under the lock and the frame is admitted.
+    const staleRoom = new Y.Doc({ gc: false });
+    const lateFrame = new Y.Doc({ gc: false });
+    Y.applyUpdate(lateFrame, stored);
+    const lateBefore = Y.encodeStateVector(lateFrame);
+    typeAtStart(lateFrame, "late ");
+    await expect(
+      branchCoordinator.commitWriterUpdate({
+        branchId: "branch_1",
+        updateData: Y.encodeStateAsUpdate(lateFrame, lateBefore),
+        roomDocument: staleRoom,
+      }),
+    ).resolves.toEqual({ admitted: true });
+    // The room was caught up to the durable snapshot before the frame; the frame is durable too.
+    expect(textOf(staleRoom)).toBe("offline live advanced");
+    const durable = new Y.Doc({ gc: false });
+    Y.applyUpdate(durable, stored);
+    expect(textOf(durable)).toBe("late offline live advanced");
   });
 
-  it("rejects hostile branch payloads before returning them to Hocuspocus", async () => {
+  it.each([
+    { name: "a refusal ends the room as terminal", closed: false, close: WS_CLOSE.WRITE_REFUSED },
+    { name: "a closed draft ends the room as closed", closed: true, close: WS_CLOSE.BRANCH_CLOSED },
+  ])("$name, never a reconnectable 1008", async ({ closed, close }) => {
     const admitBranchWriterUpdate = vi.fn(async () => {
-      throw new Error("reserved provenance");
+      throw new BranchWriterRefusedError("branch_1", closed, new Error("reserved provenance"));
     });
     const closeTransport = vi.fn();
     const document = new Y.Doc();
 
     await expect(
       admitWriterSync({
-        services: {
-          ...services(false),
-          documentSync: { admitBranchWriterUpdate } as never,
-        },
+        services: { ...services(), documentSync: { admitBranchWriterUpdate } as never },
         documentName,
         document,
         syncType: messageYjsUpdate,
         payload,
         userId: "user-1" as never,
         closeTransport,
-        context: {
-          branchSyncState: new Map([["branch_1:3", "passed"]]),
-        },
       }),
-    ).rejects.toMatchObject({ reason: "branch-update-admission-failed", code: 1008 });
+    ).rejects.toMatchObject({ reason: close.reason, code: close.code });
     expect(admitBranchWriterUpdate).toHaveBeenCalledWith({
       branchId: "branch_1",
-      expectedGeneration: 3,
       update: new Uint8Array([1, 2, 3]),
       origin: { type: "user", userId: "user-1" },
       document,
     });
+    expect(closeTransport).toHaveBeenCalledWith(close);
+  });
+
+  it("closes a failure that is not a verdict as reconnectable", async () => {
+    const closeTransport = vi.fn();
+    await expect(
+      admitWriterSync({
+        services: {
+          ...services(),
+          documentSync: {
+            admitBranchWriterUpdate: vi.fn(async () => {
+              throw new Error("database down");
+            }),
+          } as never,
+        },
+        documentName,
+        document: new Y.Doc(),
+        syncType: messageYjsUpdate,
+        payload,
+        userId: "user-1" as never,
+        closeTransport,
+      }),
+    ).rejects.toMatchObject({ code: 1013 });
     expect(closeTransport).toHaveBeenCalledWith({
-      code: 1008,
+      code: 1013,
       reason: "branch-update-admission-failed",
     });
   });
@@ -214,7 +300,7 @@ describe("Yjs branch handshake route guard", () => {
     );
     const admission = admitWriterSync({
       services: {
-        ...services(false),
+        ...services(),
         documentSync: { admitBranchWriterUpdate } as never,
       },
       documentName,
@@ -222,9 +308,6 @@ describe("Yjs branch handshake route guard", () => {
       syncType: messageYjsUpdate,
       payload,
       userId: "user-1" as never,
-      context: {
-        branchSyncState: new Map([["branch_1:3", "passed"]]),
-      },
     });
 
     await Promise.resolve();
@@ -238,81 +321,6 @@ describe("Yjs branch handshake route guard", () => {
     commit?.();
     await expect(admission).resolves.toBeUndefined();
     expect(returned).toBe(true);
-  });
-
-  it("rejects update-first sync messages", async () => {
-    const state = new Map<string, BranchHandshakeState>();
-    await expect(
-      admitWriterSync({
-        services: services(false),
-        documentName,
-        document: new Y.Doc(),
-        syncType: messageYjsUpdate,
-        payload,
-        userId: "user-1" as never,
-        context: { branchSyncState: state },
-      }),
-    ).rejects.toMatchObject({ reason: "branch-stale-doc", code: 4205 });
-    expect(state.get("branch_1:3")).toBe("rejected");
-  });
-
-  it("keeps a rejected room rejected when a later step1 would pass", async () => {
-    const state = new Map<string, BranchHandshakeState>();
-    await expect(
-      admitWriterSync({
-        services: services(false),
-        documentName,
-        document: new Y.Doc(),
-        syncType: messageYjsUpdate,
-        payload,
-        userId: "user-1" as never,
-        context: { branchSyncState: state },
-      }),
-    ).rejects.toMatchObject({ reason: "branch-stale-doc" });
-    await expect(
-      admitWriterSync({
-        services: services(false),
-        documentName,
-        document: new Y.Doc(),
-        syncType: messageYjsSyncStep1,
-        payload,
-        userId: "user-1" as never,
-        context: { branchSyncState: state },
-      }),
-    ).rejects.toMatchObject({ reason: "branch-stale-doc", code: 4205 });
-    expect(state.get("branch_1:3")).toBe("rejected");
-  });
-
-  it("clears branch sync state through the route close handler", async () => {
-    const state = new Map<string, BranchHandshakeState>([["branch_1:3", "rejected"]]);
-    const handleClose = vi.fn();
-    const gateway = createYjsGateway(gatewayServices());
-    const connection = {
-      hocuspocus: { handleClose },
-      branchSyncState: state,
-      offlineSyncUpdates: new Set<string>(),
-    };
-
-    gateway.close(connection as never, { code: 1000, reason: "test" });
-
-    expect(handleClose).toHaveBeenCalledWith({ code: 1000, reason: "test" });
-    expect(state.size).toBe(0);
-  });
-
-  it("clears branch sync state through the route error handler", async () => {
-    const state = new Map<string, BranchHandshakeState>([["branch_1:3", "rejected"]]);
-    const handleClose = vi.fn();
-    const gateway = createYjsGateway(gatewayServices());
-    const connection = {
-      hocuspocus: { handleClose },
-      branchSyncState: state,
-      offlineSyncUpdates: new Set<string>(),
-    };
-
-    gateway.error(connection as never);
-
-    expect(handleClose).toHaveBeenCalledWith({ code: 1011, reason: "error" });
-    expect(state.size).toBe(0);
   });
 
   it("stops connection admission synchronously when drain starts", async () => {
@@ -378,7 +386,7 @@ describe("Yjs live writer admission", () => {
     );
     const admission = admitWriterSync({
       services: {
-        ...services(false),
+        ...services(),
         documentSync: { admitLiveWriterUpdate } as never,
       },
       documentName: "document-1",
@@ -417,7 +425,7 @@ describe("Yjs live writer admission", () => {
     await expect(
       admitWriterSync({
         services: {
-          ...services(false),
+          ...services(),
           documentSync: { admitLiveWriterUpdate } as never,
         },
         documentName: "document-1",
@@ -441,7 +449,7 @@ describe("Yjs live writer admission", () => {
     await expect(
       admitWriterSync({
         services: {
-          ...services(false),
+          ...services(),
           documentSync: { admitLiveWriterUpdate } as never,
         },
         documentName: "document-1",
@@ -465,7 +473,7 @@ describe("Yjs live writer admission", () => {
     const closeTransport = vi.fn();
     const input = {
       services: {
-        ...services(false),
+        ...services(),
         documentSync: { admitLiveWriterUpdate } as never,
       },
       documentName: "document-1",

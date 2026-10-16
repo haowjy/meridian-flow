@@ -3,6 +3,12 @@ import path from "node:path";
 import postgres from "postgres";
 import { isLocalDevPostgres } from "./dev-db";
 import {
+  MIGRATION_DATA_STEPS,
+  type MigrationDataStep,
+  planDataSteps,
+  stepKey,
+} from "./migration-data-steps";
+import {
   formatDatabaseHistoryRefusal,
   planDatabaseMigrations,
   readAppliedMigrations,
@@ -21,6 +27,7 @@ export const MIGRATION_ADVISORY_LOCK_ID = 4_884_217_039_117;
 interface ErrorDetails {
   cause?: unknown;
   code?: unknown;
+  dataStep?: unknown;
   message?: unknown;
   migrationPath?: unknown;
 }
@@ -31,6 +38,19 @@ class MigrationStatementError extends Error {
   constructor(migrationPath: string, cause: unknown) {
     super(`Migration statement failed in ${migrationPath}`, { cause });
     this.name = "MigrationStatementError";
+    this.migrationPath = migrationPath;
+  }
+}
+
+class MigrationDataStepError extends Error {
+  readonly dataStep: string;
+  readonly migrationPath: string;
+
+  constructor(step: MigrationDataStep, migrationPath: string, phase: string, cause: unknown) {
+    const reason = cause instanceof Error ? `: ${cause.message}` : "";
+    super(`Data step ${stepKey(step)} ${phase} failed before ${migrationPath}${reason}`, { cause });
+    this.name = "MigrationDataStepError";
+    this.dataStep = stepKey(step);
     this.migrationPath = migrationPath;
   }
 }
@@ -61,6 +81,7 @@ export function formatMigrationFailure(error: unknown, input: { repoRoot: string
   const postgresError = [...chain].reverse().find((details) => typeof details.message === "string");
   const message =
     typeof postgresError?.message === "string" ? postgresError.message : String(error);
+  const dataStep = chain.find((details) => typeof details.dataStep === "string")?.dataStep;
   const code = typeof postgresError?.code === "string" ? ` [${postgresError.code}]` : "";
   const migrationPath = chain.find(
     (details): details is ErrorDetails & { migrationPath: string } =>
@@ -69,13 +90,19 @@ export function formatMigrationFailure(error: unknown, input: { repoRoot: string
   const migration = migrationPath
     ? path.relative(input.repoRoot, migrationPath)
     : "unknown (failure occurred outside a migration statement)";
+  if (typeof dataStep === "string") {
+    return `db:migrate: failed\n  migration: ${migration}\n  data step: ${dataStep}\n  ${message.replace(/\n/g, "\n  ")}`;
+  }
   return `db:migrate: failed\n  migration: ${migration}\n  postgres${code}: ${message}`;
 }
 
 export async function runMigrations(input: {
   databaseUrl: string;
   migrationsDirectory: string;
+  /** Defaults to the registered steps; a step runs only if its anchor migration is pending. */
+  dataSteps?: readonly MigrationDataStep[];
 }): Promise<void> {
+  const dataSteps = input.dataSteps ?? MIGRATION_DATA_STEPS;
   let disconnected = false;
   let failed = false;
   const client = postgres(input.databaseUrl, {
@@ -112,13 +139,13 @@ export async function runMigrations(input: {
     }
     const session = await client.reserve();
     try {
+      const databaseName = decodeURIComponent(
+        new URL(input.databaseUrl).pathname.replace(/^\//, ""),
+      );
       await session`SELECT pg_advisory_lock(${MIGRATION_ADVISORY_LOCK_ID})`;
       const applied = (await readAppliedMigrations(session)) ?? [];
       const plan = planDatabaseMigrations(history, applied);
       if (plan.issues.length > 0) {
-        const databaseName = decodeURIComponent(
-          new URL(input.databaseUrl).pathname.replace(/^\//, ""),
-        );
         throw new MigrationHistoryError(
           formatDatabaseHistoryRefusal({
             databaseName,
@@ -126,6 +153,33 @@ export async function runMigrations(input: {
             localDevDatabase: isLocalDevPostgres(input.databaseUrl),
           }),
         );
+      }
+      const pendingTags = new Set(plan.pending.map((entry) => entry.tag));
+      const dataStepPlan = planDataSteps(dataSteps, history.entries, pendingTags);
+      if (dataStepPlan.issues.length > 0) {
+        throw new MigrationHistoryError(
+          `db:migrate: refused mismatched data steps\n${dataStepPlan.issues.map((issue) => `  - ${issue}`).join("\n")}`,
+        );
+      }
+      // Read-only, and before the run's first pending migration: a refusal leaves the database
+      // exactly as the previous release left it.
+      const stepContext = {
+        databaseName,
+        hasApplied: (tag: string) =>
+          history.entries.some((entry) => entry.tag === tag) && !pendingTags.has(tag),
+      };
+      for (const { step, anchorTag } of dataStepPlan.due) {
+        try {
+          await step.preflight(session, stepContext);
+        } catch (error) {
+          observeFailure(error);
+          throw new MigrationDataStepError(
+            step,
+            path.join(input.migrationsDirectory, `${anchorTag}.sql`),
+            "preflight",
+            error,
+          );
+        }
       }
       await session`CREATE SCHEMA IF NOT EXISTS drizzle`;
       await session`
@@ -137,6 +191,16 @@ export async function runMigrations(input: {
       `;
       for (const entry of plan.pending) {
         const migrationPath = path.join(input.migrationsDirectory, `${entry.tag}.sql`);
+        for (const { step } of dataStepPlan.due.filter(
+          ({ anchorTag }) => anchorTag === entry.tag,
+        )) {
+          try {
+            await step.run(session, stepContext);
+          } catch (error) {
+            observeFailure(error);
+            throw new MigrationDataStepError(step, migrationPath, "run", error);
+          }
+        }
         const content = normalizeMigrationSql(entry.sql.toString("utf8"));
         const noTransaction = isNoTransactionMigration(content);
         // Reserved postgres.js sessions do not expose begin(); keep transaction

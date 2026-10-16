@@ -3,12 +3,6 @@
 Open follow-ups must preserve immutable edit identity, durable authority fences,
 and the one push/discard kernels.
 
-## Per-change Apply Undo
-
-Expose per-change Apply Undo through the existing immutable edit-part and
-forward-inverse authority. Apply currently confirms settlement only; this does
-not need a separate reversal planner or mutable receipt.
-
 ## Connection ownership
 
 Audit paths that hold a pooled connection while acquiring another:
@@ -16,11 +10,6 @@ Audit paths that hold a pooled connection while acquiring another:
 `createDeferredLiveProjectionCoordinator.withDocument` inside a response
 transaction. Restructure only if concurrency measurements show pool
 exhaustion; preserve the lock order and independent root pull transactions.
-
-## Empty-paragraph preview
-
-Support empty text blocks in the draft-preview anchoring seam instead of
-returning an internal error.
 
 ## Code representation
 
@@ -38,10 +27,23 @@ The concurrent-journal scan still decodes retained candidates because its floor
 is a commit-bound attribution cursor, not a global maximum. Profile retained
 state materialization, encodes, persistence, and thread-peer pulls before
 choosing an incremental checkpoint or captured-state design. Keep delete-only
-changes, generation CAS, and the final concurrency fence intact.
+changes, the full-state branch CAS, and the final concurrency fence intact.
 
-## Generation invalidation
+## Unused columns
 
-Thread-peer and Work-draft generations remain independent. A reset must evict
-the affected thread peers individually; audit for missing invalidation paths
-before considering a unified generation API.
+`branch_write_journal.reviewed_by`, `reviewed_at` and `pushed_at` have no writer;
+retiring them needs a migration, and `push_lineage.journal_ids` (`NOT NULL`,
+written `'{}'` by content members) can go with it.
+
+## Empty text branches stay open
+
+A text branch whose draft equals its base stays active (its room, history and
+next proposal's identity survive), and every live edit rebases each active text
+branch. `gc: false` histories grow until Discard all, archive or purge. Measure a
+long-lived Work before choosing an idle close.
+
+## A blocked settlement batch stops its document's rebases and Applies
+
+`blocked` is reserved for corrupt durable authority. A blocked batch fences
+rebases and Applies (`settlement_unfinished`) on its documents until a human
+repairs it; there is no repair tool or withdrawal path yet.

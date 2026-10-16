@@ -91,10 +91,6 @@ it("failed-response rollback targets the response, is per-part and terminal on r
     expect(
       await db.select().from(schema.documentEdits).where(eq(schema.documentEdits.kind, "rollback")),
     ).toHaveLength(1);
-    expect(await view.collab.getTurnReceiptChip(THREAD_ID, TURN_ID)).toMatchObject({
-      control: "undo",
-      skips: [{ reason: "Rolled back" }],
-    });
   } finally {
     harness.cancelScheduledPulls();
     harness.destroyWarmState();
@@ -137,7 +133,6 @@ it("failed response leaves only the writer-dependent draft part rollback_pending
       const updates = captureMutationUpdates(doc, () => text.insert(8, "!"));
       await view.branchCoordinator.commitWriterUpdate({
         branchId: branch.id,
-        expectedGeneration: branch.generation,
         updateData: Y.mergeUpdates(updates),
         actorUserId: USER_ID,
         roomDocument: doc,
@@ -169,9 +164,6 @@ it("failed response leaves only the writer-dependent draft part rollback_pending
       },
     );
     expect(await view.draftMarkdown(branch.id)).toBe("Alpha Ga!mma.\n\nBlue.\n");
-    expect(await view.collab.getTurnReceiptChip(THREAD_ID, TURN_ID)).toMatchObject({
-      control: "view_change",
-    });
   } finally {
     harness.cancelScheduledPulls();
     harness.destroyWarmState();
@@ -181,7 +173,7 @@ it("failed response leaves only the writer-dependent draft part rollback_pending
 it.each([
   "live",
   "draft",
-] as const)("failed edit scope rolls back durable model inverses in %s without losing provider authorship", async (destination) => {
+] as const)("failed edit scope rolls back a durable model revert in %s without losing provider authorship", async (destination) => {
   const { harness, view, context, responseId } = await fixture();
   try {
     const core = view.collab.agentEdit();
@@ -197,13 +189,9 @@ it.each([
     await harness.commit(responseId);
     const responseIdentity = { providerResponseId: responseId, editScopeId: randomUUID() };
     const inverseContext = { ...initial, responseIdentity };
-    for (const command of ["undo", "redo"] as const)
-      expect(await core.write({ ...address, command }, inverseContext)).toMatchObject({
-        status: "success",
-      });
     expect(
       await core.write({ ...address, command: "revert", edit: "w1" }, inverseContext),
-    ).toMatchObject({ status: "success", writeId: "w4" });
+    ).toMatchObject({ status: "success", writeId: "w2" });
     const [branch] = await db
       .select()
       .from(schema.documentBranches)
@@ -232,16 +220,11 @@ it.each([
       .where(eq(schema.documentEdits.editScopeId, responseIdentity.editScopeId));
     expect(rows.filter((row) => row.actor === "agent").map((row) => row.responseId)).toEqual([
       responseId,
-      responseId,
-      responseId,
     ]);
     expect(rows.filter((row) => row.kind === "rollback")).toHaveLength(0);
     const edits = await core.read({ ...address, format: "edits" }, initial);
-    expect(edits.result.message).toMatch(/w4.*rolled back/);
-    expect(edits.result.message).toMatch(/w1.*undo(?:\n|$)/);
-    expect(await core.write({ ...address, command: "redo" }, initial)).toMatchObject({
-      status: "nothing_to_redo",
-    });
+    expect(edits.result.message).toMatch(/w2.*rolled back/);
+    expect(edits.result.message).toMatch(/w1.*revert(?:\n|$)/);
     expect(await db.select().from(schema.modelResponses)).toHaveLength(1);
     if (destination === "draft") {
       const authored = await db
@@ -256,15 +239,10 @@ it.each([
       const metadata = authored.map(
         (row) => row.updateMeta as { authoringResponseId?: string; editScopeId?: string },
       );
-      expect(metadata.map((meta) => meta.authoringResponseId)).toEqual([
-        responseId,
-        responseId,
-        responseId,
-        responseId,
-      ]);
+      expect(metadata.map((meta) => meta.authoringResponseId)).toEqual([responseId, responseId]);
       expect(
         metadata.filter((meta) => meta.editScopeId === responseIdentity.editScopeId),
-      ).toHaveLength(3);
+      ).toHaveLength(1);
     }
     if (destination === "live") {
       const journal = await db
@@ -283,14 +261,10 @@ it.each([
   }
 });
 
-it.each(
-  (["live", "draft"] as const).flatMap((destination) =>
-    (["undo", "redo", "revert"] as const).map((command) => ({ destination, command })),
-  ),
-)("failed $command in a separate scope restores $destination availability on retry", async ({
-  destination,
-  command,
-}) => {
+it.each([
+  "live",
+  "draft",
+] as const)("failed revert in a separate scope restores %s availability on retry", async (destination) => {
   const { harness, view, context, responseId } = await fixture();
   try {
     const core = view.collab.agentEdit();
@@ -308,21 +282,13 @@ it.each(
       ...initial,
       responseIdentity: { providerResponseId: responseId, editScopeId: randomUUID() },
     };
-    if (command === "redo")
-      expect(await core.write({ ...address, command: "undo" }, saved)).toMatchObject({
-        status: "success",
-        result: { message: "undone: w1" },
-      });
     const failed = {
       ...initial,
       responseIdentity: { providerResponseId: responseId, editScopeId: randomUUID() },
     };
-    expect(
-      await core.write(
-        command === "revert" ? { ...address, command, edit: "w1" } : { ...address, command },
-        failed,
-      ),
-    ).toMatchObject({ status: "success" });
+    expect(await core.write({ ...address, command: "revert", edit: "w1" }, failed)).toMatchObject({
+      status: "success",
+    });
     const draft =
       destination === "draft"
         ? (
@@ -338,40 +304,25 @@ it.each(
           )[0]
         : null;
     const text = () => (draft ? view.draftMarkdown(draft.draftId) : harness.liveMarkdown(ALPHA_ID));
-    expect(await text()).toBe(
-      command === "redo" ? "Alpha Gamma.\n\nBlue.\n" : "Alpha Beta.\n\nBlue.\n",
-    );
+    expect(await text()).toBe("Alpha Beta.\n\nBlue.\n");
     for (let retry = 0; retry < 2; retry++) {
       await view.collab.finalizeResponseRollback(failed.responseIdentity, {
         threadId: THREAD_ID,
         turnId: TURN_ID,
       });
-      expect(await text()).toBe(
-        command === "redo" ? "Alpha Beta.\n\nBlue.\n" : "Alpha Gamma.\n\nBlue.\n",
-      );
+      expect(await text()).toBe("Alpha Gamma.\n\nBlue.\n");
       const edits = await core.read({ ...address, format: "edits" }, saved);
       const original = edits.result.message?.split("\n").find((line) => line.startsWith("w1  "));
-      expect(original).toMatch(
-        command === "redo" ? /undone.* {2}redo$/ : /(?:live|pending).* {2}undo$/,
-      );
-      expect(await view.collab.getTurnReceiptChip(THREAD_ID, TURN_ID)).toMatchObject({
-        state: command === "redo" ? "live-reversed" : "live-active",
-        control: command === "redo" ? "redo" : "undo",
-      });
+      expect(original).toMatch(/(?:live|pending).* {2}revert$/);
     }
     const retry = {
       ...saved,
       responseIdentity: { providerResponseId: responseId, editScopeId: randomUUID() },
     };
-    expect(
-      await core.write({ ...address, command: command === "redo" ? "redo" : "undo" }, retry),
-    ).toMatchObject({
+    expect(await core.write({ ...address, command: "revert", edit: "w1" }, retry)).toMatchObject({
       status: "success",
-      result: { message: command === "redo" ? "redone: w1" : "undone: w1" },
     });
-    expect(await text()).toBe(
-      command === "redo" ? "Alpha Gamma.\n\nBlue.\n" : "Alpha Beta.\n\nBlue.\n",
-    );
+    expect(await text()).toBe("Alpha Beta.\n\nBlue.\n");
   } finally {
     harness.cancelScheduledPulls();
     harness.destroyWarmState();

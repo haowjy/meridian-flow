@@ -1,9 +1,9 @@
 /** Mutable Hocuspocus instance binding and branch-room publication adapter. */
 import type { Hocuspocus, TransactionOrigin } from "@hocuspocus/server";
+import { branchRoomName } from "@meridian/contracts/protocol";
 import * as Y from "yjs";
 import type { EventSink } from "../../observability/index.js";
 import { emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import { closeBranchRooms } from "../hocuspocus-rooms.js";
 
 const BRANCH_AGENT_BROADCAST_ORIGIN = {
   source: "local",
@@ -23,17 +23,10 @@ export function createHocuspocusBinding(eventSink?: EventSink) {
       if (!instance) throw new Error("Hocuspocus is not bound to the collab domain");
       return instance;
     },
-    closeBranch(branchId: string): void {
-      closeBranchRooms(instance, branchId);
-    },
     publishBranchUpdate({ branchId, update }: { branchId: string; update: Uint8Array }): void {
       try {
-        const prefix = `branch:${branchId}:gen:`;
-        for (const [roomName, branchDoc] of instance?.documents.entries() ?? []) {
-          if (roomName.startsWith(prefix)) {
-            Y.applyUpdate(branchDoc, update, BRANCH_AGENT_BROADCAST_ORIGIN);
-          }
-        }
+        const branchDoc = instance?.documents.get(branchRoomName(branchId));
+        if (branchDoc) Y.applyUpdate(branchDoc, update, BRANCH_AGENT_BROADCAST_ORIGIN);
       } catch (cause) {
         if (!eventSink) return;
         emitEvent(eventSink, {

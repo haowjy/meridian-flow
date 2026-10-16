@@ -1,8 +1,14 @@
 import { toDocHandle } from "@meridian/agent-edit/integration";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { testFileGrant } from "../../test-support/file-grants.js";
+import { lockDocumentMutation } from "../../shared/document-mutation-lock.js";
+import { grantedJournal, testFileGrant } from "../../test-support/file-grants.js";
+import {
+  ensureAndReadDocumentAuthorityHead,
+  replaceDocumentAuthorityHeadGeneration,
+} from "./adapters/drizzle-document-authority-head.js";
+import { documentAuthority } from "./domain/document-handle.js";
 import { applyDraftDocument } from "./test-support/apply-draft-document.js";
 import { commitJournaledUpdate, commitSegmentRows } from "./test-support/branch-update-writes.js";
 import {
@@ -12,10 +18,12 @@ import {
   createHarness,
   createTestDatabase,
   PROJECT_ID,
+  replaceMarkdown,
   resetDatabase,
   runInDrizzleTransaction,
   SOURCE_ID,
   schema,
+  serializeMarkdown,
   THREAD_ID,
   TURN_ID,
   USER_ID,
@@ -235,7 +243,7 @@ describe("change trail (postgres)", () => {
   it("retains mixed provenance across repeated compaction and generation replacement", async () => {
     const harness = createHarness(db);
 
-    await expect(harness.compactMixedProvenanceTwice()).resolves.toEqual({
+    await expect(compactionScenarios(harness).compactMixedProvenanceTwice()).resolves.toEqual({
       retainedUpdateCount: 0,
       warmProvenance: ["agent", "writer_protected"],
       coldProvenance: ["agent", "writer_protected"],
@@ -246,7 +254,7 @@ describe("change trail (postgres)", () => {
   it("does not compact a retired-generation suffix into the restored authority head", async () => {
     const harness = createHarness(db);
 
-    await expect(harness.compactAfterAuthorityReplacement()).resolves.toEqual({
+    await expect(compactionScenarios(harness).compactAfterAuthorityReplacement()).resolves.toEqual({
       coldMarkdown: "Restored base.\n",
       currentGenerationUpdateCount: 0,
     });
@@ -255,7 +263,9 @@ describe("change trail (postgres)", () => {
   it("serializes compaction with concurrent authority-head replacement", async () => {
     const harness = createHarness(db);
 
-    await expect(harness.compactWhileAuthorityReplacementWaits()).resolves.toEqual({
+    await expect(
+      compactionScenarios(harness).compactWhileAuthorityReplacementWaits(),
+    ).resolves.toEqual({
       coldMarkdown: "Restored base.\n",
       currentGenerationUpdateCount: 0,
     });
@@ -288,37 +298,6 @@ describe("change trail (postgres)", () => {
       branchBroadcasts: [],
       watermarkCommits: [],
     });
-  });
-
-  it("reports a writer sweep journaled after the observation cut", async () => {
-    const harness = createHarness(db);
-    const responseId = "00000000-0000-4000-8000-000000000821";
-    const branchId = await harness.seedProbeTimelineSweep(responseId);
-
-    await expect(harness.commit(responseId)).resolves.toMatchObject({
-      status: "committed",
-      documents: [
-        expect.objectContaining({
-          lateSweep: expect.objectContaining({
-            affectedBlockHashes: expect.any(Array),
-          }),
-        }),
-      ],
-    });
-    await harness.push(branchId);
-
-    const trail = await harness.trailRowMembership();
-    expect(trail.shells).toEqual([expect.objectContaining({ changeCount: expect.any(Number) })]);
-    expect(trail.shells[0]?.changeCount).toBeGreaterThan(1);
-    expect(trail.details).toEqual([
-      expect.objectContaining({
-        changes: expect.arrayContaining([
-          expect.objectContaining({
-            beforeText: expect.stringContaining("Writer concurrent edit"),
-          }),
-        ]),
-      }),
-    ]);
   });
 
   it("S10 reports a pulled writer edit that landed after the response read", async () => {
@@ -386,8 +365,10 @@ describe("change trail (postgres)", () => {
       });
     });
 
-    const preview = await reviewDriver(fixture.collab.draftReview).preview(ALPHA_ID);
-    if (preview.status !== "active") throw new Error("missing draft preview");
+    expect(await reviewDriver(fixture.collab.draftReview).meta(ALPHA_ID)).toMatchObject({
+      kind: "text",
+      hasChanges: true,
+    });
 
     const result = await applyDraftDocument(fixture.collab.draftReview, {
       workId: WORK_ID,
@@ -412,8 +393,9 @@ describe("change trail (postgres)", () => {
       content: "AI DRAFT PROPOSAL",
     });
     const fixture = harness.crossWorkProbeFixture();
-    const reviewed = await reviewDriver(fixture.collab.draftReview).preview(ALPHA_ID);
-    if (reviewed.status !== "active") throw new Error("missing reviewed draft preview");
+    expect(await reviewDriver(fixture.collab.draftReview).meta(ALPHA_ID)).toMatchObject({
+      kind: "text",
+    });
     const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
     const block = fixture.model.getBlocks(toDocHandle(branch.doc))[0];
     if (!block) throw new Error("draft writer block missing");
@@ -427,7 +409,6 @@ describe("change trail (postgres)", () => {
     const committed = await commitSegmentRows(fixture.branchCoordinator, {
       branchId: branch.branchId,
       sourceDoc: branch.doc,
-      expectedGeneration: branch.generation,
       rows: [
         {
           branchId: branch.branchId,
@@ -448,12 +429,9 @@ describe("change trail (postgres)", () => {
     branch.doc.destroy();
     expect(committed).toBe(true);
 
-    const current = await reviewDriver(fixture.collab.draftReview).preview(ALPHA_ID);
-    expect(current).toMatchObject({
-      status: "active",
-      operations: expect.arrayContaining([
-        expect.objectContaining({ kind: "writer", actorUserId: USER_ID }),
-      ]),
+    expect(await reviewDriver(fixture.collab.draftReview).meta(ALPHA_ID)).toMatchObject({
+      kind: "text",
+      hasChanges: true,
     });
 
     await expect(
@@ -465,26 +443,7 @@ describe("change trail (postgres)", () => {
     ).resolves.toMatchObject({ status: "applied" });
     await expect(harness.liveMarkdown(ALPHA_ID)).resolves.toContain("AI DRAFT PROPOSAL");
     await expect(harness.liveMarkdown(ALPHA_ID)).resolves.toContain("WRITER DRAFT MARKER");
-    await expect(
-      fixture.collab.reverseTurn({
-        threadId: THREAD_ID,
-        turnId: TURN_ID,
-        direction: "undo",
-        actor: { type: "user", userId: USER_ID },
-      }),
-    ).resolves.toMatchObject({ status: "expired" });
     await expect(reviewDriver(fixture.collab.draftReview).list()).resolves.toEqual([]);
-    await expect(
-      db
-        .select({ id: schema.branchWriteJournal.id })
-        .from(schema.branchWriteJournal)
-        .where(
-          and(
-            eq(schema.branchWriteJournal.branchId, branch.branchId),
-            inArray(schema.branchWriteJournal.status, ["active", "rollback_pending"]),
-          ),
-        ),
-    ).resolves.toEqual([]);
   });
 
   it("preserves a live writer insertion between two branch edits", async () => {
@@ -547,8 +506,10 @@ describe("change trail (postgres)", () => {
       });
     });
 
-    const preview = await reviewDriver(fixture.collab.draftReview).preview(ALPHA_ID);
-    if (preview.status !== "active") throw new Error("missing draft preview");
+    expect(await reviewDriver(fixture.collab.draftReview).meta(ALPHA_ID)).toMatchObject({
+      kind: "text",
+      hasChanges: true,
+    });
     await expect(
       applyDraftDocument(fixture.collab.draftReview, {
         workId: WORK_ID,
@@ -622,8 +583,10 @@ describe("change trail (postgres)", () => {
       });
     });
 
-    const preview = await reviewDriver(fixture.collab.draftReview).preview(ALPHA_ID);
-    if (preview.status !== "active") throw new Error("missing draft preview");
+    expect(await reviewDriver(fixture.collab.draftReview).meta(ALPHA_ID)).toMatchObject({
+      kind: "text",
+      hasChanges: true,
+    });
     await expect(
       applyDraftDocument(fixture.collab.draftReview, {
         workId: WORK_ID,
@@ -637,3 +600,225 @@ describe("change trail (postgres)", () => {
     );
   });
 });
+
+/** Compaction and authority-head replacement scenarios; only this suite drives them. */
+function compactionScenarios(harness: ReturnType<typeof createHarness>) {
+  const { db, persistence, liveCoordinator, model } = harness.crossWorkProbeFixture();
+  const testJournal = grantedJournal(persistence.journal);
+  async function compactMixedProvenanceTwice(): Promise<{
+    retainedUpdateCount: number;
+    warmProvenance: string[];
+    coldProvenance: string[];
+    rebasedBranchProvenance: string[];
+  }> {
+    await persistence.lifecycle.ensureDocument(ALPHA_ID);
+    return liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
+      const before = Y.encodeStateVector(doc);
+      replaceMarkdown(doc, "Agent-only passage.");
+      await testJournal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+        origin: `agent:${TURN_ID}`,
+        actorTurnId: TURN_ID,
+        seq: 0,
+      });
+      await persistence.journal.compact(ALPHA_ID, new Date("2100-01-01T00:00:00.000Z"));
+
+      const firstBlock = model.getBlocks(toDocHandle(doc))[0];
+      if (!firstBlock) throw new Error("compaction probe block is unavailable");
+      const beforeWriter = Y.encodeStateVector(doc);
+      model.applyTextEdit(toDocHandle(doc), firstBlock, { from: 0, to: 0 }, "Writer prefix. ");
+      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, beforeWriter), {
+        origin: `human:${USER_ID}`,
+        seq: 0,
+      });
+      await persistence.journal.compact(ALPHA_ID, new Date("2100-01-01T00:00:00.000Z"));
+
+      const warm = await persistence.journal.materializeDestructiveProvenance?.({
+        docId: ALPHA_ID,
+        before: toDocHandle(doc),
+        afterCandidate: toDocHandle(doc),
+      });
+      const snapshot = await persistence.journal.read(ALPHA_ID);
+      const coldDoc = new Y.Doc({ gc: false });
+      if (snapshot.checkpoint) Y.applyUpdate(coldDoc, snapshot.checkpoint);
+      for (const update of snapshot.updates) Y.applyUpdate(coldDoc, update.update);
+      const cold = await persistence.journal.materializeDestructiveProvenance?.({
+        docId: ALPHA_ID,
+        before: toDocHandle(coldDoc),
+        afterCandidate: toDocHandle(coldDoc),
+      });
+      coldDoc.destroy();
+
+      const [checkpoint] = await db
+        .select({ id: schema.documentYjsCheckpoints.id })
+        .from(schema.documentYjsCheckpoints)
+        .where(eq(schema.documentYjsCheckpoints.documentId, ALPHA_ID))
+        .orderBy(desc(schema.documentYjsCheckpoints.id))
+        .limit(1);
+      if (!checkpoint) throw new Error("compaction probe checkpoint is unavailable");
+      const authorityHead = await ensureAndReadDocumentAuthorityHead(db, ALPHA_ID);
+      const replaced = await replaceDocumentAuthorityHeadGeneration(db, {
+        documentId: ALPHA_ID,
+        checkpointId: checkpoint.id,
+        expectedGeneration: authorityHead.generation,
+      });
+      if (!replaced.ok) throw new Error(`compaction probe replacement failed: ${replaced.code}`);
+      const rebased = await persistence.journal.materializeDestructiveProvenance?.({
+        docId: ALPHA_ID,
+        before: toDocHandle(doc),
+        afterCandidate: toDocHandle(doc),
+        fallbackProvenance: "agent",
+      });
+      const retainedUpdateCount = (
+        await db
+          .select()
+          .from(schema.documentYjsUpdates)
+          .where(eq(schema.documentYjsUpdates.documentId, ALPHA_ID))
+      ).length;
+      return {
+        retainedUpdateCount,
+        warmProvenance: [...new Set(warm?.before.map((run) => run.provenance) ?? [])].sort(),
+        coldProvenance: [...new Set(cold?.before.map((run) => run.provenance) ?? [])].sort(),
+        rebasedBranchProvenance: [
+          ...new Set(rebased?.before.map((run) => run.provenance) ?? []),
+        ].sort(),
+      };
+    });
+  }
+
+  async function seedAuthorityReplacementProbe(): Promise<number> {
+    await persistence.lifecycle.ensureDocument(ALPHA_ID);
+    return liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
+      let before = Y.encodeStateVector(doc);
+      replaceMarkdown(doc, "Restored base.");
+      await testJournal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+        origin: `agent:${TURN_ID}`,
+        actorTurnId: TURN_ID,
+        seq: 0,
+      });
+      const cut = await persistence.journal.captureCheckpoint(ALPHA_ID, documentAuthority(doc));
+      if (!cut) throw new Error("Replacement probe checkpoint cut is unavailable");
+      await persistence.journal.storeCheckpoint(cut);
+      const [checkpoint] = await db
+        .select({ id: schema.documentYjsCheckpoints.id })
+        .from(schema.documentYjsCheckpoints)
+        .where(eq(schema.documentYjsCheckpoints.documentId, ALPHA_ID))
+        .orderBy(desc(schema.documentYjsCheckpoints.id))
+        .limit(1);
+      if (!checkpoint) throw new Error("replacement probe checkpoint is unavailable");
+
+      const block = model.getBlocks(toDocHandle(doc))[0];
+      if (!block) throw new Error("replacement probe block is unavailable");
+      before = Y.encodeStateVector(doc);
+      model.applyTextEdit(toDocHandle(doc), block, { from: 0, to: 0 }, "Retired suffix. ");
+      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+        origin: `human:${USER_ID}`,
+        seq: 0,
+      });
+      return checkpoint.id;
+    });
+  }
+
+  async function authorityReplacementProbeResult(generation: bigint): Promise<{
+    coldMarkdown: string;
+    currentGenerationUpdateCount: number;
+  }> {
+    const snapshot = await persistence.journal.read(ALPHA_ID);
+    const coldDoc = new Y.Doc({ gc: false });
+    if (snapshot.checkpoint) Y.applyUpdate(coldDoc, snapshot.checkpoint);
+    for (const update of snapshot.updates) Y.applyUpdate(coldDoc, update.update);
+    const coldMarkdown = serializeMarkdown(coldDoc);
+    coldDoc.destroy();
+    const currentGenerationUpdateCount = (
+      await db
+        .select()
+        .from(schema.documentYjsUpdates)
+        .where(
+          and(
+            eq(schema.documentYjsUpdates.documentId, ALPHA_ID),
+            eq(schema.documentYjsUpdates.authorityGeneration, generation),
+          ),
+        )
+    ).length;
+    return { coldMarkdown, currentGenerationUpdateCount };
+  }
+
+  async function compactAfterAuthorityReplacement(): Promise<{
+    coldMarkdown: string;
+    currentGenerationUpdateCount: number;
+  }> {
+    const checkpointId = await seedAuthorityReplacementProbe();
+    const authorityHead = await ensureAndReadDocumentAuthorityHead(db, ALPHA_ID);
+    const replaced = await replaceDocumentAuthorityHeadGeneration(db, {
+      documentId: ALPHA_ID,
+      checkpointId,
+      expectedGeneration: authorityHead.generation,
+    });
+    if (!replaced.ok) throw new Error(`replacement probe failed: ${replaced.code}`);
+    await persistence.journal.compact(ALPHA_ID, new Date("2100-01-01T00:00:00.000Z"));
+    return authorityReplacementProbeResult(replaced.generation);
+  }
+
+  async function compactWhileAuthorityReplacementWaits(): Promise<{
+    coldMarkdown: string;
+    currentGenerationUpdateCount: number;
+  }> {
+    const checkpointId = await seedAuthorityReplacementProbe();
+    const authorityHead = await ensureAndReadDocumentAuthorityHead(db, ALPHA_ID);
+    let releaseBlocker!: () => void;
+    let blockerReady!: () => void;
+    const blockerRelease = new Promise<void>((resolve) => {
+      releaseBlocker = resolve;
+    });
+    const blockerAcquired = new Promise<void>((resolve) => {
+      blockerReady = resolve;
+    });
+    const blocker = db.transaction(async (tx) => {
+      await lockDocumentMutation(tx, ALPHA_ID);
+      blockerReady();
+      await blockerRelease;
+    });
+    await blockerAcquired;
+
+    async function waitForAdvisoryLockWaiters(expected: number): Promise<void> {
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        const [row] = await db.execute<{ waiting: number }>(sql`
+          SELECT count(*)::int AS waiting
+          FROM pg_locks
+          WHERE locktype = 'advisory'
+            AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+            AND NOT granted
+        `);
+        if ((row?.waiting ?? 0) >= expected) return;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      throw new Error(`expected ${expected} waiting document mutation locks`);
+    }
+
+    const compact = persistence.journal.compact(ALPHA_ID, new Date("2100-01-01T00:00:00.000Z"));
+    let replacement: ReturnType<typeof replaceDocumentAuthorityHeadGeneration> | undefined;
+    try {
+      await waitForAdvisoryLockWaiters(1);
+      replacement = replaceDocumentAuthorityHeadGeneration(db, {
+        documentId: ALPHA_ID,
+        checkpointId,
+        expectedGeneration: authorityHead.generation,
+      });
+      await waitForAdvisoryLockWaiters(2);
+    } finally {
+      releaseBlocker();
+      await blocker;
+    }
+    if (!replacement) {
+      throw new Error("durable authority head generation replacement did not enter the lock queue");
+    }
+    const [, replaced] = await Promise.all([compact, replacement]);
+    if (!replaced.ok) throw new Error(`replacement probe failed: ${replaced.code}`);
+    return authorityReplacementProbeResult(replaced.generation);
+  }
+
+  return {
+    compactMixedProvenanceTwice,
+    compactAfterAuthorityReplacement,
+    compactWhileAuthorityReplacementWaits,
+  };
+}

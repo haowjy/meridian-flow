@@ -50,7 +50,6 @@ function fixture(existingUpstream?: Y.Doc) {
     workId: null,
     threadId: null,
     status: "active",
-    generation: 1,
     state: Y.encodeStateAsUpdate(upstream),
     stateVector: Y.encodeStateVector(upstream),
     schemaVersion: COLLAB_SCHEMA_VERSION,
@@ -71,7 +70,6 @@ function fixture(existingUpstream?: Y.Doc) {
       getBranch: async (id) => snapshot(id),
       resolveThreadBranch: async () => ({
         branchId: "peer",
-        generation: 1,
         doc: cloneYDoc(baseline),
       }),
       ensureThreadPeerBranch: async () => snapshot("peer"),
@@ -90,7 +88,6 @@ function fixture(existingUpstream?: Y.Doc) {
     return {
       id: rows.length + 1,
       branchId: "draft",
-      generation: 1,
       wId: null,
       source: "writer",
       threadId: null,

@@ -16,6 +16,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef } from "react";
 
 import { renameThread } from "@/client/api/threads-api";
+import { isProjectDraftAttributionKey } from "@/client/query/project-query-keys";
 import { useOptionalAccountEpochSignal } from "@/features/project/context/account-feature-context";
 
 import {
@@ -62,6 +63,10 @@ export function useRenameThread(
     onSuccess: (response, _variables, context: RenameMutationContext) => {
       if (context.accountSignal?.aborted) return;
       if (confirmThreadRename(client, context, response.title)) {
+        // A change's byline names the chat by the title its attribution payload carried.
+        void client.invalidateQueries({
+          predicate: (query) => isProjectDraftAttributionKey(projectId, query.queryKey),
+        });
         confirmedRef.current?.(response.title);
       }
     },

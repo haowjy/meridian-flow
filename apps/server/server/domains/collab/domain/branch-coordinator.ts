@@ -1,13 +1,22 @@
 /** Coordinates persisted branch-peer Y.Docs behind one mutation surface. */
 
+import {
+  DRAFT_SERVER_CLIENT_ID,
+  findLostEdits,
+  type LateTyping,
+  type LostEdit,
+  NO_LATE_TYPING,
+  recoverLatePeerEdits,
+} from "@meridian/agent-edit/diff";
 import type { SemanticEditIRV1 } from "@meridian/agent-edit/integration";
 import { bytesEqual } from "@meridian/agent-edit/integration";
-import type { DraftId } from "@meridian/contracts";
+import type { DraftBaseRevision, DraftId } from "@meridian/contracts";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import {
   COLLAB_SCHEMA_VERSION,
   type CollabSchemaVersion,
   createCollabYDoc,
+  PROSEMIRROR_FRAGMENT_NAME,
 } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import {
@@ -24,9 +33,9 @@ import {
   admitWriterUpdate,
   replicateFrozenIdentity,
 } from "./document-mutation-policy.js";
+import { draftDiffersFromBase, draftSchema } from "./draft-rebase.js";
 import { currentResponseTransactionId, enlistResponseParticipant } from "./response-transaction.js";
 import { DocumentSchemaMajorMismatchError, isStaleSchema } from "./stale-schema.js";
-import { certifyWriterRestorations } from "./writer-restoration.js";
 
 export type BranchKind = "work_draft" | "thread_peer";
 export type BranchStatus = "active" | "closed";
@@ -42,22 +51,29 @@ export type BranchSnapshot = {
   workId: WorkId | null;
   threadId: ThreadId | null;
   status: BranchStatus;
-  generation: number;
   state: Uint8Array;
   stateVector: Uint8Array;
-  discardedStateVector?: Uint8Array | null;
-  liveCut?: Uint8Array | null;
+  /** The live revision `review_base` reflects; null until a text branch's first rebase. */
+  baseRevision?: DraftBaseRevision | null;
   schemaVersion: CollabSchemaVersion;
 };
 
+/**
+ * How a write settles `has_effect`; the writer states it, nothing infers it. `text`: a Work draft, whose
+ * effect is `draftDiffersFromBase` of the document being written. `peer`: a thread peer, which carries no
+ * membership effect.
+ */
+export type BranchWriteEffect = { kind: "text"; hasEffect: boolean } | { kind: "peer" };
+
+/** One branch-state write: a compare-and-swap on the full prior state (`writeBranchState`). */
 export type PersistBranchInput = {
-  liveCut?: Uint8Array;
   branchId: string;
-  expectedGeneration: number;
-  expectedStateVector: Uint8Array;
   expectedState: Uint8Array;
   state: Uint8Array;
   stateVector: Uint8Array;
+  effect: BranchWriteEffect;
+  /** Written with the state by the same CAS; absent leaves the column alone. */
+  baseRevision?: DraftBaseRevision;
 };
 
 export type CommitBranchMutationInput = PersistBranchInput & {
@@ -68,11 +84,6 @@ export type AppendBranchJournalInput = {
   /** One logical tool write, shared by its segment rows. */
   documentEditKey?: string;
   branchId: string;
-  generation: number;
-  /** Rejects a staged reversal if branch history advanced after planning. */
-  expectedJournalWatermark?: number;
-  /** Rejects status-only Apply/discard/redo transitions after planning. */
-  expectedJournalRevision?: string;
   updateData: Uint8Array;
   source: "agent" | "writer";
   wId?: number | null;
@@ -84,31 +95,63 @@ export type AppendBranchJournalInput = {
   semanticEditIr?: SemanticEditIRV1;
 };
 
-export type ResetBranchSnapshotInput = {
-  editDisposition?: "discarded" | "retired";
+/** What late-peer recovery did with one writer update: counts only, never the writer's words. */
+export type LateWriterEdits = {
   branchId: string;
-  expectedGeneration: number;
-  expectedStateVector: Uint8Array;
-  expectedState: Uint8Array;
-  state: Uint8Array;
-  stateVector: Uint8Array;
-  discardedStateVector: Uint8Array;
-  schemaVersion: CollabSchemaVersion;
+  documentId: DocumentId;
+  /** Lost edits found: typed runs plus deleted characters. */
+  lost: number;
+  /** Paragraphs of the peer's typing written into the draft. */
+  written: number;
+  /** Characters of rebased text the update deleted, left as they are (log-only). */
+  dropped: number;
 };
 
 export type BranchStore = {
   getBranch(branchId: string): Promise<BranchSnapshot | null>;
   updateBranchSnapshot(input: PersistBranchInput): Promise<boolean>;
   commitBranchMutation(input: CommitBranchMutationInput): Promise<boolean>;
-  resetBranchSnapshot(input: ResetBranchSnapshotInput): Promise<boolean>;
   /** Defers cache-visible effects when persistence joined a response transaction. */
   deferUntilCommit(callback: () => void): boolean;
 };
 
 export class BranchStaleUpdateError extends Error {
   constructor(readonly branchId: string) {
-    super(`Branch ${branchId} update did not apply to the current generation`);
+    super(`Branch ${branchId} update did not apply to the current state`);
     this.name = "BranchStaleUpdateError";
+  }
+}
+
+/**
+ * No writer frame can ever land on this branch: it is closed, or it is not a Work draft
+ * (a writer room only ever targets a Work draft). `reason` names which.
+ */
+export class BranchClosedError extends Error {
+  constructor(
+    readonly branchId: string,
+    readonly reason: "branch_closed" | "not_writer_draft" = "branch_closed",
+  ) {
+    super(
+      reason === "branch_closed"
+        ? `Branch ${branchId} is closed`
+        : `Branch ${branchId} is not a writer draft`,
+    );
+    this.name = "BranchClosedError";
+  }
+}
+
+/**
+ * Admission judged a writer frame and refused it. Retrying the same bytes
+ * refuses again, so the transport must end the room rather than reconnect.
+ */
+export class BranchWriterRefusedError extends Error {
+  constructor(
+    readonly branchId: string,
+    readonly closed: boolean,
+    cause: unknown,
+  ) {
+    super(`Branch ${branchId} refused a writer update`, { cause });
+    this.name = "BranchWriterRefusedError";
   }
 }
 
@@ -128,7 +171,6 @@ export class BranchMissingError extends Error {
 }
 
 type CachedBranchDoc = {
-  generation: number;
   state: Uint8Array;
   stateVector: Uint8Array;
   doc: Y.Doc;
@@ -136,12 +178,11 @@ type CachedBranchDoc = {
 
 export type SegmentRowsInput = {
   branchId: string;
-  expectedGeneration: number;
   sourceDoc: Y.Doc;
-  rows: readonly Omit<AppendBranchJournalInput, "generation">[];
+  rows: readonly AppendBranchJournalInput[];
 };
 
-/** The journal reads a save performs: the helper's generation history and attribution's concurrent rows. */
+/** The journal reads a save performs: the helper's history and attribution's concurrent rows. */
 export type BranchSaveJournalReads = Pick<BranchJournalReadStore, "listConcurrentJournalRows"> & {
   listJournalRowsForBranch(
     input: Parameters<BranchJournalReadStore["listJournalRowsForBranch"]>[0],
@@ -159,12 +200,12 @@ export type OwnedBranchSession = {
     run: (
       doc: Y.Doc,
       snapshot: BranchSnapshot,
-    ) => Promise<{ result: T; rows: readonly Omit<AppendBranchJournalInput, "generation">[] }>,
+    ) => Promise<{ result: T; rows: readonly AppendBranchJournalInput[] }>,
     commit: boolean,
   ): Promise<T>;
   commitSegmentRows(input: SegmentRowsInput): Promise<boolean>;
   checkpoint(branchId: string): Promise<void>;
-  /** The generation history B+ replays against, with each row's persisted inverse evidence. */
+  /** The branch history B+ replays against, with each row's persisted inverse evidence. */
   listHelperHistory: BranchSaveJournalReads["listJournalRowsForBranch"];
   listConcurrentRows: BranchSaveJournalReads["listConcurrentJournalRows"];
 };
@@ -175,18 +216,21 @@ export type BranchCoordinator = {
    * branches' leases before its transaction); throws for a branch the lease does not cover.
    */
   pullFromDoc(lease: BranchLockLease, branchId: string, upstream: Y.Doc): Promise<Uint8Array>;
-  resetFromDocIfUnchangedWithLease(
+  /**
+   * Rewrites a text branch's document as one server edit and persists it in one CAS under a lease the
+   * caller holds. `run` edits the clone it is given; a returned `baseRevision` is written with the state.
+   */
+  rewriteDraft<T>(
     lease: BranchLockLease,
-    input: {
-      branchId: string;
-      upstream: Y.Doc;
-      expectedGeneration: number;
-      expectedStateVector: Uint8Array;
-      expectedState: Uint8Array;
-      schemaVersion?: CollabSchemaVersion;
-      editDisposition?: "discarded" | "retired";
-    },
-  ): Promise<boolean>;
+    branchId: string,
+    run: (
+      doc: Y.Doc,
+      snapshot: BranchSnapshot,
+    ) => Promise<{
+      result: T;
+      baseRevision?: DraftBaseRevision;
+    }>,
+  ): Promise<T>;
   /**
    * These branches' leases in one ordered acquisition, for an operation that touches
    * several (a peer and its draft branch) and runs every step under the one lease.
@@ -201,7 +245,6 @@ export type BranchCoordinator = {
   ): Promise<T>;
   commitWriterUpdate(input: {
     branchId: string;
-    expectedGeneration: number;
     updateData: Uint8Array;
     actorUserId?: string;
     roomDocument: Y.Doc;
@@ -211,8 +254,9 @@ export type BranchCoordinator = {
    * throws `BranchLeaseScopeError` for a branch the lease does not cover.
    */
   ownedSession(lease: BranchLockLease): OwnedBranchSession;
-  notifyReset(input: { branchId: string; generation: number }): void;
   broadcastUpdate(input: { branchId: string; update: Uint8Array }): void;
+  /** Destroys every process replica; durable branches are untouched. Call after in-flight work finished. */
+  dispose(): void;
 };
 
 export function createBranchCoordinator(input: {
@@ -221,8 +265,13 @@ export function createBranchCoordinator(input: {
   journalReads?: BranchSaveJournalReads;
   criticalSections?: BranchCriticalSections;
   maxCasRetries?: number;
+  /** Clean replicas kept warm; the least recently used beyond this are destroyed and rebuilt from persisted bytes. */
+  maxCachedReplicas?: number;
+  /** A thread peer was found to lack part of its upstream: with no reset or refork this never happens. */
+  onPeerNotContained?: (input: { branchId: string; upstreamBranchId: string | null }) => void;
   onBranchUpdate?: (input: { branchId: string; update: Uint8Array }) => void;
-  onBranchReset?: (input: { branchId: string; generation: number }) => void;
+  /** A writer update touched text a rebase had already removed; recovery says what it placed. */
+  onLateWriterEdits?: (input: LateWriterEdits) => void;
 }): BranchCoordinator {
   const criticalSections = input.criticalSections ?? createBranchCriticalSections();
   const documentContainment = createDocumentContainment();
@@ -230,37 +279,43 @@ export function createBranchCoordinator(input: {
   const pendingTransients = new Map<string, CachedBranchDoc>();
   const dirtyTransientBranches = new Set<string>();
   const maxCasRetries = input.maxCasRetries ?? 3;
+  const maxCachedReplicas = input.maxCachedReplicas ?? 32;
+  // Late typing recovered per draft, so a reconnect's keystroke-per-frame replay extends one paragraph
+  // per typed span. Process memory: after a restart or eviction later keystrokes start new paragraphs.
+  const lateTyping = new Map<string, LateTyping>();
+  const MAX_LATE_TYPING_BRANCHES = 64;
+  // Branches an operation is using right now: their replica is never destroyed under it.
+  const pins = new Map<string, number>();
 
-  async function resetFromDocIfUnchangedWithLease(
-    lease: BranchLockLease,
-    resetInput: {
-      branchId: string;
-      upstream: Y.Doc;
-      expectedGeneration: number;
-      expectedStateVector: Uint8Array;
-      expectedState: Uint8Array;
-      schemaVersion?: CollabSchemaVersion;
-      editDisposition?: "discarded" | "retired";
-    },
-  ): Promise<boolean> {
-    assertBranchLeaseCovers(lease, resetInput.branchId);
-    const snapshot = await loadSnapshot(resetInput.branchId);
-    assertWorkDraftResetTarget(snapshot);
-    if (
-      snapshot.generation !== resetInput.expectedGeneration ||
-      !bytesEqual(snapshot.stateVector, resetInput.expectedStateVector) ||
-      !bytesEqual(snapshot.state, resetInput.expectedState)
-    ) {
-      cached.delete(resetInput.branchId);
-      return false;
+  /** Caches a replica as most recently used, then drops clean idle ones beyond the bound. */
+  function remember(branchId: string, entry: CachedBranchDoc): void {
+    cached.delete(branchId);
+    cached.set(branchId, entry);
+    trimReplicas();
+  }
+
+  function trimReplicas(): void {
+    for (const [branchId, entry] of cached) {
+      if (cached.size <= maxCachedReplicas) return;
+      if (dirtyTransientBranches.has(branchId) || pins.has(branchId)) continue;
+      cached.delete(branchId);
+      entry.doc.destroy();
     }
-    await persistReset(
-      snapshot,
-      resetInput.upstream,
-      resetInput.schemaVersion ?? snapshot.schemaVersion,
-      resetInput.editDisposition,
-    );
-    return true;
+  }
+
+  /** Runs `run` with these branches' replicas pinned. */
+  async function pinned<T>(branchIds: readonly string[], run: () => Promise<T>): Promise<T> {
+    for (const id of branchIds) pins.set(id, (pins.get(id) ?? 0) + 1);
+    try {
+      return await run();
+    } finally {
+      for (const id of branchIds) {
+        const left = (pins.get(id) ?? 1) - 1;
+        if (left) pins.set(id, left);
+        else pins.delete(id);
+      }
+      trimReplicas();
+    }
   }
 
   async function loadSnapshot(branchId: string): Promise<BranchSnapshot> {
@@ -279,7 +334,6 @@ export function createBranchCoordinator(input: {
     const current = cached.get(snapshot.branchId);
     if (
       current &&
-      current.generation === snapshot.generation &&
       (dirtyTransientBranches.has(snapshot.branchId) ||
         (bytesEqual(current.stateVector, snapshot.stateVector) &&
           bytesEqual(current.state, snapshot.state)))
@@ -290,12 +344,11 @@ export function createBranchCoordinator(input: {
       const doc = createCollabYDoc({ gc: false });
       Y.applyUpdate(doc, snapshot.state);
       const next = {
-        generation: snapshot.generation,
         state: snapshot.state,
         stateVector: snapshot.stateVector,
         doc,
       };
-      cached.set(snapshot.branchId, next);
+      remember(snapshot.branchId, next);
       return next;
     } catch (cause) {
       throw new BranchCorruptError({
@@ -335,7 +388,7 @@ export function createBranchCoordinator(input: {
           {
             readMutationTarget: () => ({
               documentId: snapshot.documentId,
-              generation: BigInt(snapshot.generation),
+              generation: 0n,
               doc,
             }),
             readCurrentRevision: async () => ir.inputRevision,
@@ -352,28 +405,33 @@ export function createBranchCoordinator(input: {
     }
   }
 
+  /** The effect of writing `doc` into `snapshot`'s branch: the writer states it, nothing infers it later. */
+  function effectOf(snapshot: BranchSnapshot, doc: Y.Doc): BranchWriteEffect {
+    return snapshot.kind === "work_draft"
+      ? { kind: "text", hasEffect: draftDiffersFromBase(doc) }
+      : { kind: "peer" };
+  }
+
+  /** Returns false (the caller still owns `doc`) when the write changed nothing and wrote nothing. */
   async function persist(
     snapshot: BranchSnapshot,
     doc: Y.Doc,
     journals?: readonly AppendBranchJournalInput[],
     publishUpdate?: Uint8Array,
     kind: "mutation" | "pull" = "mutation",
-    upstream?: Y.Doc,
-  ): Promise<void> {
+    baseRevision?: DraftBaseRevision,
+  ): Promise<boolean> {
     const state = Y.encodeStateAsUpdate(doc);
     const stateVector = Y.encodeStateVector(doc);
-    if (!journals?.length && bytesEqual(state, snapshot.state) && !upstream) return;
+    if (!journals?.length && bytesEqual(state, snapshot.state) && !baseRevision) return false;
     const mutation = {
       branchId: snapshot.branchId,
-      expectedGeneration: snapshot.generation,
-      expectedStateVector: snapshot.stateVector,
       expectedState: snapshot.state,
       state,
       stateVector,
+      effect: effectOf(snapshot, doc),
+      ...(baseRevision ? { baseRevision } : {}),
       ...(journals ? { journals } : {}),
-      ...(upstream && snapshot.kind === "work_draft"
-        ? { liveCut: Y.encodeStateAsUpdate(upstream) }
-        : {}),
     };
     // Replication creates no reviewable edit. Its CAS must not reacquire the
     // Work lifecycle lock a reader may already hold in another transaction.
@@ -388,7 +446,7 @@ export function createBranchCoordinator(input: {
     }
     const publish = () => {
       dirtyTransientBranches.delete(snapshot.branchId);
-      cached.set(snapshot.branchId, { generation: snapshot.generation, state, stateVector, doc });
+      remember(snapshot.branchId, { state, stateVector, doc });
       const update = journals?.length
         ? Y.mergeUpdates(journals.map((row) => row.updateData))
         : publishUpdate;
@@ -396,49 +454,10 @@ export function createBranchCoordinator(input: {
     };
     if (currentResponseTransactionId()) {
       enlistResponseParticipant({ commit: publish, abort() {} });
-      return;
+      return true;
     }
     if (!input.store.deferUntilCommit(publish)) publish();
-  }
-
-  function notifyReset(reset: { branchId: string; generation: number }): void {
-    dirtyTransientBranches.delete(reset.branchId);
-    cached.delete(reset.branchId);
-    const publish = () => input.onBranchReset?.(reset);
-    if (!input.store.deferUntilCommit(publish)) publish();
-  }
-
-  async function persistReset(
-    snapshot: BranchSnapshot,
-    upstream: Y.Doc,
-    schemaVersion: CollabSchemaVersion,
-    editDisposition: "discarded" | "retired" = "discarded",
-  ): Promise<void> {
-    const resetDoc = createCollabYDoc({ gc: false });
-    await replicateFrozenSource(upstream, resetDoc);
-    const state = Y.encodeStateAsUpdate(resetDoc);
-    const stateVector = Y.encodeStateVector(resetDoc);
-    const ok = await input.store.resetBranchSnapshot({
-      branchId: snapshot.branchId,
-      expectedGeneration: snapshot.generation,
-      expectedStateVector: snapshot.stateVector,
-      expectedState: snapshot.state,
-      state,
-      stateVector,
-      editDisposition,
-      discardedStateVector: mergeStateVectors(snapshot.discardedStateVector, snapshot.stateVector),
-      schemaVersion,
-    });
-    if (!ok) {
-      resetDoc.destroy();
-      cached.delete(snapshot.branchId);
-      dirtyTransientBranches.delete(snapshot.branchId);
-      throw new BranchCasConflictError(snapshot.branchId);
-    }
-    dirtyTransientBranches.delete(snapshot.branchId);
-    cached.delete(snapshot.branchId);
-    resetDoc.destroy();
-    notifyReset({ branchId: snapshot.branchId, generation: snapshot.generation + 1 });
+    return true;
   }
 
   /** One snapshot-clone-persist step of a branch operation; the caller holds the branch's lease. */
@@ -451,28 +470,20 @@ export function createBranchCoordinator(input: {
   ): Promise<T> {
     const snapshot = await loadSnapshot(branchId);
     const { doc: cachedDoc } = await materialize(snapshot);
-    // A durable thread peer has already saved its writes into the Work draft.
-    // If the parent no longer contains them, a review retired their effect.
-    // Merging cannot remove those structs or undo their tombstones.
+    // With no reset or refork an upstream only grows, so a peer always contains what it saved into it.
+    // Report, never repair, if that ever stops being true.
     if (
       snapshot.kind === "thread_peer" &&
       upstream &&
       !Y.snapshotContainsUpdate(Y.snapshot(upstream), snapshot.state)
     ) {
-      const doc = cloneDoc(upstream);
-      try {
-        const result = await operation(snapshot, doc);
-        await persistReset(snapshot, upstream, snapshot.schemaVersion);
-        return result;
-      } finally {
-        doc.destroy();
-      }
+      input.onPeerNotContained?.({ branchId, upstreamBranchId: snapshot.upstreamBranchId });
     }
     // O(doc) clone-before-write is intentional per GATE-1 spec §9 (Q4 headroom):
     // failed CAS/rollback must never mutate the cached branch doc.
     const doc = cloneDoc(cachedDoc);
     const result = await operation(snapshot, doc);
-    await persist(snapshot, doc, undefined, updateToPublish?.(result), kind, upstream);
+    await persist(snapshot, doc, undefined, updateToPublish?.(result), kind);
     return result;
   }
 
@@ -508,9 +519,77 @@ export function createBranchCoordinator(input: {
     }
   }
 
+  /**
+   * Appends a writer update. Typing the update would lose to a rebase (under text the rebase removed)
+   * is written as its own paragraph by a server-client update in this same admission, so the words
+   * reach the draft as one ordinary `writer` row; its deletions of rebased text stay log-only (D33). Recovery runs here, under the branch's critical section after
+   * the update applies to a clone and before the CAS; it is not part of any owned save session.
+   */
+  async function persistWriterUpdate(
+    snapshot: BranchSnapshot,
+    inputWriter: { branchId: string; updateData: Uint8Array; actorUserId?: string },
+    currentDocument: Y.Doc,
+    lost: LostPeerEdits,
+  ): Promise<boolean> {
+    const journal = {
+      branchId: inputWriter.branchId,
+      updateData: inputWriter.updateData,
+      source: "writer" as const,
+      actorUserId: inputWriter.actorUserId,
+    };
+    if (!hasLostEdits(lost)) return persistJournaledUpdate(snapshot, journal, currentDocument);
+    const doc = cloneDoc(currentDocument);
+    Y.applyUpdate(doc, inputWriter.updateData);
+    const recovery = recoverLatePeerEdits({
+      doc,
+      update: inputWriter.updateData,
+      lost,
+      memory: lateTyping.get(snapshot.branchId) ?? NO_LATE_TYPING,
+      schema: draftSchema,
+      fragmentName: PROSEMIRROR_FRAGMENT_NAME,
+      clientId: DRAFT_SERVER_CLIENT_ID,
+    });
+    // Every stale frame is logged once, including one that changes nothing (D32): the event is the log.
+    input.onLateWriterEdits?.({
+      branchId: snapshot.branchId,
+      documentId: snapshot.documentId,
+      lost: lost.typed.length + lost.deleted.length,
+      written: recovery.written.length,
+      dropped: recovery.dropped,
+    });
+    // A deletion-only update that hit dead copies (a reconnect repeating tombstones) changes nothing: a
+    // late deletion is log-only (D33), never replayed against the rebased text.
+    if (bytesEqual(Y.encodeStateAsUpdate(currentDocument), Y.encodeStateAsUpdate(doc))) {
+      doc.destroy();
+      rememberLateTyping(snapshot.branchId, recovery.memory);
+      return false;
+    }
+    // One journal row: the recovered text is the writer's, so it travels with the writer's update.
+    await persist(snapshot, doc, [
+      {
+        ...journal,
+        updateData: recovery.update
+          ? Y.mergeUpdates([inputWriter.updateData, recovery.update])
+          : inputWriter.updateData,
+      },
+    ]);
+    rememberLateTyping(snapshot.branchId, recovery.memory);
+    return true;
+  }
+
+  /** Keeps a draft's late typing once its frame is persisted, dropping the least recent drafts beyond the bound. */
+  function rememberLateTyping(branchId: string, memory: LateTyping): void {
+    lateTyping.delete(branchId);
+    lateTyping.set(branchId, memory);
+    for (const oldest of lateTyping.keys()) {
+      if (lateTyping.size <= MAX_LATE_TYPING_BRANCHES) break;
+      lateTyping.delete(oldest);
+    }
+  }
+
   async function persistJournaledUpdate(
     snapshot: BranchSnapshot,
-    inputJournal: Omit<AppendBranchJournalInput, "generation">,
+    inputJournal: AppendBranchJournalInput,
     currentDocument?: Y.Doc,
   ): Promise<boolean> {
     const cachedDoc = currentDocument ?? (await materialize(snapshot)).doc;
@@ -522,7 +601,7 @@ export function createBranchCoordinator(input: {
     if (bytesEqual(beforeState, Y.encodeStateAsUpdate(doc))) {
       throw new BranchStaleUpdateError(inputJournal.branchId);
     }
-    await persist(snapshot, doc, [{ ...inputJournal, generation: snapshot.generation }]);
+    await persist(snapshot, doc, [inputJournal]);
     return true;
   }
 
@@ -549,14 +628,13 @@ export function createBranchCoordinator(input: {
     const doc = cloneDoc(cachedDoc);
     const result = await fn(doc, snapshot);
     const next = {
-      generation: snapshot.generation,
       state: Y.encodeStateAsUpdate(doc),
       stateVector: Y.encodeStateVector(doc),
       doc,
     };
     const transactionId = currentResponseTransactionId();
     if (!transactionId) {
-      cached.set(snapshot.branchId, next);
+      remember(snapshot.branchId, next);
       dirtyTransientBranches.add(snapshot.branchId);
       return result;
     }
@@ -567,8 +645,8 @@ export function createBranchCoordinator(input: {
         const pending = pendingTransients.get(key);
         if (!pending) return;
         pendingTransients.delete(key);
-        cached.set(snapshot.branchId, pending);
         dirtyTransientBranches.add(snapshot.branchId);
+        remember(snapshot.branchId, pending);
       },
       abort() {
         pendingTransients.delete(key);
@@ -583,7 +661,7 @@ export function createBranchCoordinator(input: {
     run: (
       doc: Y.Doc,
       snapshot: BranchSnapshot,
-    ) => Promise<{ result: T; rows: readonly Omit<AppendBranchJournalInput, "generation">[] }>,
+    ) => Promise<{ result: T; rows: readonly AppendBranchJournalInput[] }>,
     commit: boolean,
   ): Promise<T> {
     const snapshot = await loadSnapshot(branchId);
@@ -595,21 +673,13 @@ export function createBranchCoordinator(input: {
       if (commit && rows.length) {
         const admitted = cloneDoc((await materialize(snapshot)).doc);
         try {
-          await applySegmentRows(
-            admitted,
-            snapshot,
-            rows.map((row) => ({ ...row, generation: snapshot.generation })),
-          );
+          await applySegmentRows(admitted, snapshot, rows);
           if (!bytesEqual(Y.encodeStateAsUpdate(admitted), Y.encodeStateAsUpdate(doc)))
             throw new Error("Response replay differs from its admitted segment rows");
         } finally {
           admitted.destroy();
         }
-        await persist(
-          snapshot,
-          doc,
-          rows.map((row) => ({ ...row, generation: snapshot.generation })),
-        );
+        await persist(snapshot, doc, rows);
         published = true;
       }
       return result;
@@ -622,10 +692,8 @@ export function createBranchCoordinator(input: {
   async function segmentRowsUnder(batch: SegmentRowsInput): Promise<boolean> {
     const snapshot = await loadSnapshot(batch.branchId);
     assertWritableBranch(snapshot);
-    if (snapshot.generation !== batch.expectedGeneration)
-      throw new BranchStaleUpdateError(batch.branchId);
     const doc = cloneDoc((await materialize(snapshot)).doc);
-    const journals = batch.rows.map((row) => ({ ...row, generation: snapshot.generation }));
+    const journals = batch.rows;
     await applySegmentRows(doc, snapshot, journals);
     if (journalSyncDelta(batch.sourceDoc, doc))
       throw new Error("Segment publication left an unjournaled residual");
@@ -651,9 +719,9 @@ export function createBranchCoordinator(input: {
         under(branchId, () => retryCas(() => runUnder(branchId, async () => undefined))),
       listHelperHistory: (query) =>
         under(query.branchId, async () => requireJournalReads().listJournalRowsForBranch(query)),
-      listConcurrentRows: (branchId, generation, options) =>
+      listConcurrentRows: (branchId, options) =>
         under(branchId, async () =>
-          requireJournalReads().listConcurrentJournalRows(branchId, generation, options),
+          requireJournalReads().listConcurrentJournalRows(branchId, options),
         ),
     };
   }
@@ -663,19 +731,15 @@ export function createBranchCoordinator(input: {
     return input.journalReads;
   }
 
-  function assertWorkDraftResetTarget(snapshot: BranchSnapshot): void {
-    if (snapshot.kind !== "work_draft" || snapshot.status !== "active") {
-      throw new Error(`Branch ${snapshot.branchId} is not an active work draft reset target`);
-    }
-  }
-
   return {
-    notifyReset,
     readBranch(branchId, fn) {
-      return criticalSections.withBranches([branchId], (lease) => readUnder(lease, branchId, fn));
+      return pinned([branchId], () =>
+        criticalSections.withBranches([branchId], (lease) => readUnder(lease, branchId, fn)),
+      );
     },
 
-    withLeases: (branchIds, run) => criticalSections.withBranches(branchIds, run),
+    withLeases: (branchIds, run) =>
+      pinned(branchIds, () => criticalSections.withBranches(branchIds, run)),
 
     ownedSession,
 
@@ -692,7 +756,34 @@ export function createBranchCoordinator(input: {
       );
     },
 
-    resetFromDocIfUnchangedWithLease,
+    rewriteDraft(lease, branchId, run) {
+      assertBranchLeaseCovers(lease, branchId);
+      return retryCas(async () => {
+        const snapshot = await loadSnapshot(branchId);
+        assertWritableBranch(snapshot);
+        const doc = cloneDoc((await materialize(snapshot)).doc);
+        try {
+          const { result, baseRevision } = await run(doc, snapshot);
+          const delta = Y.encodeStateAsUpdate(doc, snapshot.stateVector);
+          const wrote = await persist(snapshot, doc, undefined, delta, "pull", baseRevision);
+          // Persisted, the document is the cached replica; otherwise nothing owns it.
+          if (!wrote) doc.destroy();
+          return result;
+        } catch (cause) {
+          doc.destroy();
+          throw cause;
+        }
+      });
+    },
+
+    dispose() {
+      for (const entry of cached.values()) entry.doc.destroy();
+      for (const entry of pendingTransients.values()) entry.doc.destroy();
+      cached.clear();
+      pendingTransients.clear();
+      dirtyTransientBranches.clear();
+      lateTyping.clear();
+    },
 
     broadcastUpdate(update) {
       const current = cached.get(update.branchId);
@@ -708,44 +799,41 @@ export function createBranchCoordinator(input: {
       let attempt = 0;
       while (true) {
         try {
-          return await criticalSections.withBranches([inputWriter.branchId], async () => {
-            const snapshot = await loadSnapshot(inputWriter.branchId);
-            const { doc: currentDocument } = await materialize(snapshot);
-            const admission = await admitWriterUpdate({
-              targetDocument: currentDocument,
-              update: inputWriter.updateData,
-              validateTarget() {
-                if (
-                  snapshot.kind !== "work_draft" ||
-                  snapshot.status !== "active" ||
-                  snapshot.generation !== inputWriter.expectedGeneration ||
-                  !documentContainment.contains(inputWriter.roomDocument, snapshot.state)
-                ) {
-                  throw new BranchStaleUpdateError(inputWriter.branchId);
-                }
-              },
-              isContained: () =>
-                documentContainment.contains(currentDocument, inputWriter.updateData),
-              append: () =>
-                persistJournaledUpdate(
-                  snapshot,
-                  {
-                    branchId: inputWriter.branchId,
-                    updateData: inputWriter.updateData,
-                    source: "writer",
-                    actorUserId: inputWriter.actorUserId,
-                    updateMeta: {
-                      restorationAliases: certifyWriterRestorations(
-                        currentDocument,
-                        inputWriter.updateData,
-                      ),
-                    },
-                  },
-                  currentDocument,
-                ),
-            });
-            return { admitted: admission.admitted };
-          });
+          return await pinned([inputWriter.branchId], () =>
+            criticalSections.withBranches([inputWriter.branchId], async () => {
+              const snapshot = await loadSnapshot(inputWriter.branchId);
+              const { doc: currentDocument } = await materialize(snapshot);
+              // A pull or rebase can commit between the room loading and this frame. The room is
+              // only behind the durable snapshot, so catch it up under the lock instead of
+              // refusing a frame that is merely early.
+              if (
+                snapshot.kind === "work_draft" &&
+                snapshot.status === "active" &&
+                !documentContainment.contains(inputWriter.roomDocument, snapshot.state)
+              ) {
+                Y.applyUpdate(inputWriter.roomDocument, snapshot.state, "branch-room-reconcile");
+              }
+              const lost = findLostEdits(currentDocument, inputWriter.updateData);
+              const admission = await admitWriterUpdate({
+                targetDocument: currentDocument,
+                update: inputWriter.updateData,
+                validateTarget() {
+                  if (snapshot.kind !== "work_draft") {
+                    throw new BranchClosedError(inputWriter.branchId, "not_writer_draft");
+                  }
+                  if (snapshot.status !== "active")
+                    throw new BranchClosedError(inputWriter.branchId);
+                },
+                // Containment first: a repeated delete set is no new instruction, so recovery judges
+                // only what the document has not seen. That includes a delete set echoing the server's own
+                // tombstones back, recovered typing among them (D35).
+                isContained: () =>
+                  documentContainment.contains(currentDocument, inputWriter.updateData),
+                append: () => persistWriterUpdate(snapshot, inputWriter, currentDocument, lost),
+              });
+              return { admitted: admission.admitted && admission.value };
+            }),
+          );
         } catch (cause) {
           if (!(cause instanceof BranchCasConflictError) || attempt++ >= maxCasRetries) throw cause;
         }
@@ -753,6 +841,9 @@ export function createBranchCoordinator(input: {
     },
   };
 }
+
+type LostPeerEdits = { typed: LostEdit[]; deleted: LostEdit[] };
+const hasLostEdits = (lost: LostPeerEdits) => lost.typed.length > 0 || lost.deleted.length > 0;
 
 function pendingTransientKey(transactionId: string, branchId: string): string {
   return `${transactionId}\0${branchId}`;

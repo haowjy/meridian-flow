@@ -10,7 +10,7 @@ afterEach(() => vi.useRealTimers());
 
 describe("BranchRoomPool.rebuild", () => {
   it("does not reopen a room whose last owner released while the retired session drained", async () => {
-    const room = branchRoomName("draft-pool", 1);
+    const room = branchRoomName("draft-pool");
     let finishDrain!: () => void;
     const draining = new Promise<void>((resolve) => {
       finishDrain = resolve;
@@ -24,8 +24,8 @@ describe("BranchRoomPool.rebuild", () => {
         opened += 1;
         const first = opened === 1;
         return {
-          getSnapshot: () => ({ connectionState: { kind: "reset", disposition: "rebuild" } }),
-          resetDisposition: "rebuild",
+          getSnapshot: () => ({ connectionState: { kind: "reset", disposition: "refused" } }),
+          resetDisposition: "refused",
           unacknowledgedUpdates: () => null,
           hasUnacknowledgedEdits: () => false,
           subscribe: (listener: (snapshot: unknown) => void) => {
@@ -37,10 +37,10 @@ describe("BranchRoomPool.rebuild", () => {
       },
     });
 
-    pool.retain("owner", [{ roomKey: room, currentRoom: async () => room, changed: () => {} }]);
+    pool.retain("owner", [room]);
     pool.get(room);
     resetListener({
-      connectionState: { kind: "reset", reason: "branch-stale-doc", disposition: "rebuild" },
+      connectionState: { kind: "reset", reason: "access-changed", disposition: "refused" },
     });
     const rebuilt = pool.rebuild(room);
     const outcome = expect(rebuilt).rejects.toThrow("released");
@@ -55,7 +55,7 @@ describe("BranchRoomPool.rebuild", () => {
   });
 
   it("reopens the room for the owner that still holds it", async () => {
-    const room = branchRoomName("draft-pool-held", 1);
+    const room = branchRoomName("draft-pool-held");
     let resetListener: (snapshot: unknown) => void = () => {};
     let opened = 0;
     const pool = new BranchRoomPool({
@@ -65,8 +65,8 @@ describe("BranchRoomPool.rebuild", () => {
         opened += 1;
         const first = opened === 1;
         return {
-          getSnapshot: () => ({ connectionState: { kind: "reset", disposition: "rebuild" } }),
-          resetDisposition: "rebuild",
+          getSnapshot: () => ({ connectionState: { kind: "reset", disposition: "refused" } }),
+          resetDisposition: "refused",
           unacknowledgedUpdates: () => null,
           hasUnacknowledgedEdits: () => false,
           subscribe: (listener: (snapshot: unknown) => void) => {
@@ -77,10 +77,10 @@ describe("BranchRoomPool.rebuild", () => {
         } as never;
       },
     });
-    pool.retain("owner", [{ roomKey: room, currentRoom: async () => room, changed: () => {} }]);
+    pool.retain("owner", [room]);
     pool.get(room);
     resetListener({
-      connectionState: { kind: "reset", reason: "branch-stale-doc", disposition: "rebuild" },
+      connectionState: { kind: "reset", reason: "access-changed", disposition: "refused" },
     });
     const fresh = await pool.rebuild(room);
     expect(opened).toBe(2);
@@ -91,7 +91,7 @@ describe("BranchRoomPool.rebuild", () => {
 
 describe("BranchRoomPool.release", () => {
   it("never reopens a reset room for the owner that remains", async () => {
-    const room = branchRoomName("draft-pool-two-owners", 1);
+    const room = branchRoomName("draft-pool-two-owners");
     let finishDrain!: () => void;
     const draining = new Promise<void>((resolve) => {
       finishDrain = resolve;
@@ -105,8 +105,8 @@ describe("BranchRoomPool.release", () => {
         opened += 1;
         const first = opened === 1;
         return {
-          getSnapshot: () => ({ connectionState: { kind: "reset", disposition: "rebuild" } }),
-          resetDisposition: "rebuild",
+          getSnapshot: () => ({ connectionState: { kind: "reset", disposition: "refused" } }),
+          resetDisposition: "refused",
           unacknowledgedUpdates: () => null,
           hasUnacknowledgedEdits: () => false,
           subscribe: (listener: (snapshot: unknown) => void) => {
@@ -117,11 +117,11 @@ describe("BranchRoomPool.release", () => {
         } as never;
       },
     });
-    pool.retain("editor", [{ roomKey: room, currentRoom: async () => room, changed: () => {} }]);
-    pool.retain("refresh", [{ roomKey: room, currentRoom: async () => room, changed: () => {} }]);
+    pool.retain("editor", [room]);
+    pool.retain("refresh", [room]);
     pool.get(room);
     resetListener({
-      connectionState: { kind: "reset", reason: "branch-stale-doc", disposition: "rebuild" },
+      connectionState: { kind: "reset", reason: "access-changed", disposition: "refused" },
     });
 
     // The room is retiring and the refresh owner still retains it.

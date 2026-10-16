@@ -25,7 +25,7 @@ coordinator; the runtime replica is a disposable model-side Y.Doc.
 advances, the runtime rebuilds and resolves the writer's command against the
 current document instead of requiring a reread; a missing target is ordinary
 `not_found`. A wrong-target residual shows in the result receipt and is
-recoverable through durable undo. Target uncertainty never becomes an approval
+recoverable through durable inverse lineage. Target uncertainty never becomes an approval
 or refusal gate on the writer's instruction.
 - Equal serialized content does not preserve Yjs identity, tombstones, or
   authorship. Never rebuild an existing replica from Markdown as a merge path.
@@ -61,7 +61,7 @@ escaped, entity, and cross-block cases use splice/reparse structural lowering.
 
 Low-level mutators are not package-root API. Runtime/coordinator failures map
 to `internal_error` except an actual missing coordinator document. Turn identity
-and immutable receipts are durable inputs to reversal, not in-memory undo state.
+and immutable receipts are durable inputs to reversal, not in-memory inverse state.
 
 Echo text is verbatim and exact-matchable: truncation may drop a suffix but
 never normalizes what it keeps, because a whitespace-collapsing cleanup breaks

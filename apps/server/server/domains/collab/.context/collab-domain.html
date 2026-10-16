@@ -115,7 +115,7 @@ packages directory. The draft versus live product model has its own page:
   <li><a href="#writer">The writer write path</a></li>
   <li><a href="#ai">The AI write path</a></li>
   <li><a href="#journal">The journal and reconstruction</a></li>
-  <li><a href="#branches">Branches: pulls, pushes, Apply, Discard</a></li>
+  <li><a href="#branches">Branches: rebase, Apply, Discard</a></li>
   <li><a href="#reversal">Reversal</a></li>
   <li><a href="#schema">Schema fence and repair</a></li>
   <li><a href="#derived">Derived outputs on this checkout</a></li>
@@ -153,7 +153,7 @@ the WebSocket shell, or files and folders. Four neighbors split the rest.
   <g style="color: var(--draft)">
     <rect x="150" y="186" width="140" height="58" rx="9" fill="var(--paper)" stroke="currentColor" stroke-width="2"/>
     <text x="220" y="210" text-anchor="middle" fill="currentColor" font-size="14" font-weight="700">Work draft</text>
-    <text x="220" y="229" text-anchor="middle" fill="var(--muted)" font-size="11">one per (document, Work)</text>
+    <text x="220" y="229" text-anchor="middle" fill="var(--muted)" font-size="11">one per (document, draft)</text>
   </g>
   <!-- Live -->
   <g style="color: var(--live)">
@@ -170,10 +170,10 @@ the WebSocket shell, or files and folders. Four neighbors split the rest.
   </g>
   <!-- draft <-> live -->
   <line x1="204" y1="244" x2="204" y2="310" stroke="var(--gate)" stroke-width="2" marker-end="url(#arrT)" style="color: var(--gate)"/>
-  <text x="198" y="276" text-anchor="end" fill="var(--gate)" font-size="10.5" font-weight="600">push</text>
-  <text x="198" y="289" text-anchor="end" fill="var(--gate)" font-size="10">(Apply, auto)</text>
+  <text x="198" y="276" text-anchor="end" fill="var(--gate)" font-size="10.5" font-weight="600">Apply</text>
+  <text x="198" y="289" text-anchor="end" fill="var(--gate)" font-size="10">(content merge)</text>
   <line x1="238" y1="312" x2="238" y2="246" stroke="var(--draft)" stroke-width="1.6" marker-end="url(#arrT)" style="color: var(--draft)"/>
-  <text x="244" y="282" fill="var(--draft)" font-size="10.5">pull</text>
+  <text x="244" y="282" fill="var(--draft)" font-size="10.5">rebase</text>
   <!-- Writer via Hocuspocus -->
   <g style="color: var(--muted)">
     <rect x="4" y="242" width="122" height="78" rx="9" fill="var(--paper)" stroke="currentColor" stroke-width="1.4"/>
@@ -221,7 +221,7 @@ live in direct mode. Every arrow into a Y.Doc is journaled first.
   <tr><th>Neighbor</th><th>Owns</th><th>Talks to collab through</th></tr>
   <tr>
     <td><code>@meridian/agent-edit</code></td>
-    <td>Model-facing <code>read</code>/<code>write</code>, the response buffer, write handles, and the cold undo/redo planner. It edits a memory-only runtime Y.Doc over host ports and never imports server code.</td>
+    <td>Model-facing <code>read</code>/<code>write</code>, the response buffer, write handles, and the forward-inverse planner behind model revert and failed-reply rollback. It edits a memory-only runtime Y.Doc over host ports and never imports server code.</td>
     <td>Collab builds the cores and supplies the journal and coordinator ports. <span class="ref"><code>domain/agent-edit-runtime.ts</code>, <code>domain/thread-peer-core-pool.ts</code>, <code>packages/agent-edit/AGENTS.md</code></span></td>
   </tr>
   <tr>
@@ -251,9 +251,11 @@ depending on server state it cannot replay.
 <!-- ============================================================ -->
 <h2 id="ydocs">2. The three kinds of Y.Doc</h2>
 <p>
-Every view of a document is a real Y.Doc, and changes move between them only
-by Yjs sync. That one rule is why a draft can fall behind live and catch up
-without a merge algorithm of our own.
+Every view of a document is a real Y.Doc. A thread peer syncs with its Work
+draft by Yjs. A Work draft and live do not: nothing relates live's items to
+the draft's, so the draft catches up to live by a content rebase and reaches
+live by a content merge. Either way a draft can fall behind live and catch up
+without a refusal.
 </p>
 <div class="scroll">
 <table>
@@ -261,25 +263,25 @@ without a merge algorithm of our own.
   <tr>
     <td><strong>Durable form</strong></td>
     <td><code>document_yjs_updates</code> plus <code>document_yjs_checkpoints</code>, fenced by <code>document_yjs_heads</code></td>
-    <td><code>document_branches</code> row (kind <code>work_draft</code>) with a full state snapshot, plus <code>branch_write_journal</code> rows</td>
+    <td><code>document_branches</code> row (kind <code>work_draft</code>, the item's <em>text branch</em>) with a full state snapshot, plus <code>branch_write_journal</code> rows. Its Y.Doc holds two fragments: <code>prosemirror</code> (what the writer and the AI edit) and the server-owned <code>review_base</code> (live's text as of <code>base_revision</code>)</td>
     <td><code>document_branches</code> row (kind <code>thread_peer</code>), upstream is the Work draft</td>
   </tr>
   <tr>
     <td><strong>Uniqueness</strong></td>
     <td>One per document</td>
-    <td>One active per <code>(documentId, workId)</code>, shared by every thread in that Work</td>
+    <td>One active per <code>(documentId, draftId)</code>, shared by every thread in that Work's draft</td>
     <td>One active per <code>(documentId, threadId)</code></td>
   </tr>
   <tr>
     <td><strong>In memory</strong></td>
     <td>The Hocuspocus room named by the document ID</td>
-    <td>Branch-coordinator cache; Hocuspocus room <code>branch:&lt;id&gt;:gen:&lt;n&gt;</code> when a writer reviews it</td>
+    <td>Branch-coordinator cache; Hocuspocus room <code>branchRoomName(draftBranchId)</code> when a writer reviews it</td>
     <td>Branch-coordinator cache only; no room</td>
   </tr>
   <tr>
     <td><strong>Who writes</strong></td>
-    <td>Writers, direct-mode AI, push settlement, reversal</td>
-    <td>Thread-peer commits, writer edits in the review room, live pulls</td>
+    <td>Writers, direct-mode AI, Apply settlement, revert</td>
+    <td>Thread-peer commits, writer edits in the review room (including local Discard), the live rebase, content Apply's base patch</td>
     <td>The thread's agent-edit core</td>
   </tr>
 </table>
@@ -288,31 +290,40 @@ without a merge algorithm of our own.
 
 <h3>How sync moves between them</h3>
 <ul class="rule-list">
-  <li><strong>Live to Work draft (pull).</strong> After a live writer update is
-    journaled, a pull is scheduled with a 2 s debounce and a 10 s maximum; a
-    review-room connection triggers one without waiting; a thread-peer write
-    flushes one first. The pull replicates the live state into every active
-    Work draft for that document and commits in its own root transaction, so a
-    caller's rollback cannot undo it.
-    <span class="ref"><code>domain/branch-pulls.ts</code>, <code>composition.ts</code> (<code>onLiveUpdatePersisted: branchPulls.scheduleLivePull</code>), <code>lib/yjs-ws-handler.ts</code> <code>onConnect</code></span></li>
+  <li><strong>Live to Work draft (rebase).</strong> After a live writer update
+    is journaled, a catch-up is scheduled with a 2 s debounce and a 10 s
+    maximum; a review-room connection awaits one before frames are admitted; a
+    thread-peer write flushes one first. For a Work draft the catch-up is the
+    <em>rebase</em> (<code>draft-rebase.ts</code>): a three-way content merge of
+    <code>review_base</code>, live and the draft, written into both fragments
+    in one transaction as server client 1 and persisted by one branch
+    compare-and-set that also records <code>base_revision</code> and
+    <code>has_effect</code>. The rebase takes live's content and revision from one
+    certified live cut (<code>LiveCut</code>), so a revision never certifies text
+    it has not read. It waits while a settlement batch on the document is
+    pending or blocked, and a failure fails the pull as a typed outcome rather
+    than retrying unchanged inputs.
+    <span class="ref"><code>domain/branch-pulls.ts</code>, <code>domain/draft-rebase.ts</code>, <code>adapters/drizzle-live-cut.ts</code>, <code>composition.ts</code> (<code>onLiveUpdatePersisted: branchPulls.scheduleLivePull</code>), <code>lib/yjs-ws-handler.ts</code> <code>onConnect</code></span></li>
   <li><strong>Work draft to thread peer (pull).</strong> Before a thread's
     first write to a document in a reply, <code>pullThreadPeer</code> flushes
-    the live pull, then syncs the Work draft into the peer and returns the
-    branch generation and watermarks the write is pinned to.
+    the live catch-up, then syncs the Work draft into the peer by Yjs and
+    returns the watermarks the write is pinned to. The pull copies the
+    draft's whole encoded doc, base included; the peer never advances that base.
     <span class="ref"><code>domain/thread-peer-core-pool.ts</code> <code>write</code>, <code>domain/branch-pulls.ts</code></span></li>
   <li><strong>Thread peer to Work draft (commit).</strong> At response commit,
     the peer's delta is committed into the Work draft as one
     <code>branch_write_journal</code> row (source <code>agent</code>).
     <span class="ref"><code>domain/branch-agent-edit.ts</code> <code>createBranchAgentEditCoordinator</code></span></li>
-  <li><strong>Work draft to live (push).</strong> Writer Apply, or an
-    automatic push when the draft's push policy is <code>auto</code>. This is
-    the only edge that needs consent. See <a href="#branches">section 7</a>.</li>
+  <li><strong>Work draft to live (content Apply).</strong> The writer's Apply.
+    This is the only edge that needs consent, and it is a merge, not a copy.
+    See <a href="#branches">section 7</a>.</li>
 </ul>
 <p>
 All branch Y.Docs are created with <code>gc: false</code>, and so are the
 Hocuspocus rooms (<code>yDocOptions: { gc: false }</code> in
-<code>lib/yjs-ws-handler.ts</code>). Reversal dependency checks, echo
-attribution and the stale-client fence all read tombstoned struct history;
+<code>lib/yjs-ws-handler.ts</code>). Revert dependency checks, echo
+attribution, the review projection and late-peer recovery all read tombstoned
+struct history;
 garbage collection would make those checks silently wrong.
 </p>
 
@@ -543,7 +554,7 @@ call. So any server-side apply that follows an <code>await</code> must re-check
 the live document and apply in one synchronous block with no
 <code>await</code> between them. agent-edit's
 <code>applyCommittedUpdateWithRecheck</code> is that block for response
-commits and reversal; push settlement uses a full-state fingerprint compare
+commits and revert; Apply settlement uses a full-state fingerprint compare
 plus the writer-ingress generation inside its completion fence.
 <span class="ref"><code>adapters/hocuspocus-coordinator.ts</code>, <code>packages/agent-edit/src/tool/mutation-commit.ts</code>, <code>domain/branch-push-transition.ts</code> <code>completeUnderFence</code>, <a href="websocket-concurrency.md">WebSocket concurrency</a></span>
 </p>
@@ -552,19 +563,27 @@ plus the writer-ingress generation inside its completion fence.
 <summary>The review-room variant (writer edits in a Work draft)</summary>
 <p>
 A draft review room is an ordinary collaborative room; the writer is one more
-peer. The transport first enforces the stale-client handshake: a sync step 1
-whose state vector reaches into clocks discarded by a branch reset closes with
-<code>4205 branch-stale-doc</code>, and no update is accepted before that
-handshake passes. Admission then runs the same sequence against one locked
-branch snapshot: the branch must be an active <code>work_draft</code> at the
-room's generation and the room must contain the snapshot; then containment,
-fresh authorship, and a snapshot compare-and-set plus a
-<code>branch_write_journal</code> row with source <code>writer</code>. A failure
-closes with <code>1008 branch-update-admission-failed</code>. Branch rooms never
-re-persist in <code>onStoreDocument</code>; every branch mutation is already
-durable.
+peer. Before frames are admitted, <code>onConnect</code> awaits the branch's
+live catch-up, so the room loads the same state the durable branch has and the
+writer's cumulative sync step 2 never meets a stale room. A stale room also
+catches up to the durable snapshot under the coordinator lock (origin
+<code>branch-room-reconcile</code>, which <code>onChange</code> skips).
+Admission then runs one sequence against one locked branch snapshot: the
+branch must be an active <code>work_draft</code> and the room must contain the
+snapshot; then containment, fresh authorship, late-peer recovery, and a
+snapshot compare-and-set plus a <code>branch_write_journal</code> row with
+source <code>writer</code>. Recovery handles a client that typed into text a
+rebase already changed: typing it cannot place exactly lands as its own
+paragraph beside its last known neighbour, and a deletion alone is reported
+unplaced and never written, so a reconnect that replays a delete set cannot
+erase retyped words. A refusal closes the socket with <code>4206
+branch-closed</code> (the branch is gone) or <code>4410 write-refused</code>
+(terminal for this socket's writes); any other failure closes with
+<code>1013 branch-update-admission-failed</code> and may reconnect. Branch
+rooms never re-persist in <code>onStoreDocument</code>; every branch mutation
+is already durable.
 </p>
-<p class="ref"><code>lib/yjs-ws-handler.ts</code> <code>enforceBranchHandshake</code> and <code>admitBranchSync</code>, <code>domain/branch-coordinator.ts</code> <code>commitWriterUpdate</code>, <code>hocuspocus-persistence.ts</code> <code>admitBranchWriterUpdate</code> and <code>storeHocuspocusBranch</code></p>
+<p class="ref"><code>lib/yjs-ws-handler.ts</code> <code>admitBranchSync</code>, <code>domain/branch-coordinator.ts</code> <code>commitWriterUpdate</code>, <code>packages/agent-edit/src/diff/late-peer-recovery.ts</code>, <code>packages/contracts/src/protocol/ws-close.ts</code>, <code>hocuspocus-persistence.ts</code> <code>admitBranchWriterUpdate</code> and <code>storeHocuspocusBranch</code></p>
 </details>
 
 <!-- ============================================================ -->
@@ -587,7 +606,7 @@ the thread's Work.
     <td><span class="draft-word">Draft</span></td>
     <td><code>aiWriteMode</code> is <code>draft</code></td>
     <td>The thread's thread-peer core</td>
-    <td>The Work draft; live only after a push</td>
+    <td>The Work draft; live only after the writer's Apply</td>
   </tr>
 </table>
 </div>
@@ -624,55 +643,52 @@ live core instead. <span class="ref"><code>domain/thread-peer-core-pool.ts</code
 </p>
 <p>
 After commit, <code>finalizeResponseCommit</code> records late-sweep and
-awareness notices, checkpoints each touched thread peer (draft mode), and refreshes the
-markdown projection for each document (<a href="#derived">section 10</a>). If
-the Work draft's push policy is <code>auto</code>, a push is scheduled after
-the database commit.
-<span class="ref"><code>domain/response-write-finalizer.ts</code>, <code>domain/branch-agent-edit.ts</code> <code>scheduleAutoPushAfterCommit</code></span>
+awareness notices, checkpoints each touched thread peer (draft mode), refreshes the
+markdown projection for each document (<a href="#derived">section 10</a>), and
+runs the invisible-write check: words the reply wrote into draft text the
+writer had already discarded stay discarded, and the writer and the model's
+next turn are told (<code>draft_write_invisible</code>). Discard is a local
+edit, so the reply is never refused.
+<span class="ref"><code>domain/response-write-finalizer.ts</code>, <code>domain/draft-write-visibility.ts</code></span>
 </p>
 
 <div class="invariant">
 <p><strong>Merges are trusted.</strong> Destructive effects become marks,
-receipts and trail evidence, never a veto on a valid Yjs merge. Undo is the
-recovery. Adding an approval gate here would refuse the writer's own
+receipts and trail evidence, never a veto on a valid Yjs merge. Revert and
+the writer's own Ctrl+Z are the recovery. Adding an approval gate here would refuse the writer's own
 instruction to the AI.</p>
 </div>
 
-<h3>Settlement: how a push reaches live</h3>
+<h3>Settlement: how Apply reaches live</h3>
 <p>
-A push (Apply or automatic) is a staged, fenced transition so that warm and
-cold execution produce the same live document.
+Every Apply (an item, some of its changes, or Apply all) is one staged, fenced
+batch so that warm and cold execution produce the same live document. Each
+text item is a <em>content member</em>: the change the writer saw merges into
+live's current text, and live text it replaced comes back in <code>overrode</code>.
+Draft bytes are never copied to live.
 </p>
-<ol>
-  <li><strong>Lock.</strong> Branch locks in branch-ID order, then live
-    coordinator locks in document-ID order. The first thing done inside each
-    live lock is to capture the complete Yjs state: the <em>lock cut</em>.</li>
-  <li><strong>Durable commit.</strong> One transaction writes
-    <code>push_lineage</code> (publication identity and idempotency key), the
-    <code>branch_push_settlement_outbox</code> row (lock cut, push update,
-    trail seed, claim), and the required change trail.</li>
-  <li><strong>Settle.</strong> Drain writer admissions that started before
-    this point, reload the outbox (including any writer edits joined after the
-    cut), rebuild the final pre-push document from the lock cut plus those
-    post-cut updates, and settle the trail.</li>
-  <li><strong>Complete under the fence.</strong> In one transaction under the
-    document mutation lock: append the branch's exact authored rows with their
-    original attribution plus one <code>reconcile</code> row carrying the whole
-    push update, re-derive the projection from the durable journal, then, still
-    synchronously, compare the live room's full-state fingerprint to the
-    rebuilt pre-push document and apply the push only if they match. A newer
-    writer admission or mismatch means retry.</li>
-</ol>
-<p class="ref"><code>domain/branch-push.ts</code>, <code>domain/branch-push-transition.ts</code>, <code>adapters/drizzle-branch-push.ts</code>, <code>adapters/drizzle-pending-settlement.ts</code> <code>withCompletionFence</code> and <code>completeStagedPush</code></p>
 <p>
-The reconcile row exists because the active authored rows alone can omit
-causal dependencies of the branch state being published; replaying only them
-cold would not reproduce the merged live document. It is coverage, not an
-author: dependency checks ignore it and it is never a reversal target. A crash
-after the durable commit leaves a pending outbox row that the recovery lane
+Admission freezes each item's input and plans against the live lock cut; one
+transaction durably writes the command, push lineage and settlement outbox;
+settlement replans every member against the document as it stands (staged bytes
+are never replayed); completion persists the live update, the reconcile row and
+the base patch under the document mutation lock, and applies to the live room
+only if its fingerprint still matches.
+</p>
+
+<p class="ref"><code>domain/draft-publication.ts</code>, <code>domain/draft-apply.ts</code>, <code>domain/branch-push.ts</code>, <code>domain/branch-push-transition.ts</code> <code>settleBatch</code>, <code>adapters/drizzle-pending-settlement.ts</code> <code>completeBatch</code>, <code>adapters/drizzle-draft-tree-step.ts</code></p>
+<p>
+The base is never stored as bytes and replayed: the base patch and late-peer
+recovery both write as server client 1, so a staged delta replayed after a
+crash would collide on struct ids and Yjs would drop it silently. A patch
+computed under the lease at completion has nothing to collide with. The
+reconcile row exists because authored rows alone can omit causal dependencies
+of the merged state; it is coverage, not an author. A crash after the durable
+commit leaves a pending outbox row that the recovery lane
 (<code>recoverPendingLiveSettlements</code>, run by the change-trail worker)
-completes with the same code path. Depth lives in
-<a href="settlement-and-trail.md">push settlement and change trail</a>.
+completes with the same code path; a batch blocks only on validated corrupt
+durable authority. Depth lives in
+<a href="settlement-and-trail.md">settlement and change trail</a>.
 </p>
 
 <h3>The change trail and receipts</h3>
@@ -680,7 +696,7 @@ completes with the same code path. Depth lives in
   <li><strong>Change trail.</strong> The sole durable publication record: one
     folded set of before/after block changes per turn (or one shared trail per
     thread), keyed by Yjs <code>{clientID, clock}</code> identity. It is
-    written by push commit and settlement, and by offline reconciliation.
+    written by settlement and by offline reconciliation.
     A direct-mode AI write does not write a trail on this checkout.
     <span class="ref"><code>adapters/drizzle-branch-push.ts</code> <code>persistRequiredTrail</code>, <code>domain/offline-reconciliation.ts</code>, <code>adapters/drizzle-change-trail-aggregate.ts</code></span></li>
   <li><strong>Trail dirty signals.</strong> Mutation transactions append to
@@ -689,10 +705,11 @@ completes with the same code path. Depth lives in
     consumes the signals and publishes derived changes.
     <span class="ref"><code>adapters/drizzle-change-trail-aggregate.ts</code>, <code>adapters/change-trail-worker.ts</code></span></li>
   <li><strong>Receipts.</strong> Live and draft receipt actions use immutable
-    edits and parts with their current placements. Card Undo/Redo and
-    failed-response rollback compute forward inverse edits; trail evidence
+    edits and parts with their current placements. A part's placement is
+    pending (on a text branch), live, or discarded. Model revert and
+    failed-reply rollback compute forward inverse edits; trail evidence
     remains read-only.
-    <span class="ref"><code>adapters/drizzle-document-edits.ts</code>, <code>domain/turn-inverse-service.ts</code>, <code>domain/turn-receipt.ts</code></span></li>
+    <span class="ref"><code>adapters/drizzle-document-edits.ts</code>, <code>domain/turn-inverse-service.ts</code></span></li>
 </ul>
 
 <!-- ============================================================ -->
@@ -800,7 +817,7 @@ and the next store captures afresh. Unresolved Yjs dependencies refuse the cut.
     <!-- branch lane -->
     <rect x="228" y="30" width="204" height="64" rx="8" fill="var(--chip)" stroke="var(--rule)"/>
     <text x="240" y="52" fill="var(--ink)" font-size="12" font-weight="700">1. Branch row</text>
-    <text x="240" y="70" fill="var(--muted)" font-size="10.5">status, kind, generation,</text>
+    <text x="240" y="70" fill="var(--muted)" font-size="10.5">status, kind, base revision,</text>
     <text x="240" y="85" fill="var(--muted)" font-size="10.5">schema stamp</text>
     <line x1="330" y1="94" x2="330" y2="112" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrR)"/>
     <rect x="228" y="114" width="204" height="64" rx="8" fill="var(--chip)" stroke="var(--rule)"/>
@@ -850,7 +867,7 @@ never from the current room.
 </details>
 
 <!-- ============================================================ -->
-<h2 id="branches">7. Branches: pulls, pushes, Apply, Discard</h2>
+<h2 id="branches">7. Branches: rebase, Apply, Discard</h2>
 <p>
 Branch mechanics are covered in depth by
 <a href="branch-model-and-records.md">branch model and records</a> and the
@@ -858,36 +875,56 @@ product shape by <a href="draft-live-model.html">the draft / live model</a>.
 The points below are the ones that change how you reason about edits here.
 </p>
 <ul class="rule-list">
-  <li><strong>Pulls are replication, not authorship.</strong> A live pull uses
-    <code>replicateFrozenIdentity</code> on a frozen copy of live, so pulled
-    structs keep their original Yjs identities and attribution. Pulls take the
-    snapshot compare-and-set without the Work lifecycle lock because they
-    create no reviewable edit, and they publish the delta to an open review
-    room through the normal branch update publisher.
-    <span class="ref"><code>domain/branch-coordinator.ts</code> <code>pullFromDoc</code></span></li>
-  <li><strong>Apply publishes the whole current branch.</strong>
-    <code>DraftApplyRequest</code> is <code>{ draftId }</code>. The server pushes
-    every reviewable row of the current generation, including writer edits made
-    after the preview was rendered. Preview revisions are evidence, not command
-    scope. A new document drafted only in the Work is pushed together with its
-    project-manifest entry in one batch.
-    <span class="ref"><code>packages/contracts/src/drafts/review.ts</code>, <code>domain/work-draft-review-service.ts</code> <code>applyWorkDraft</code>, <code>domain/branch-push.ts</code> <code>pushToLiveWithManifestEntry</code></span></li>
-  <li><strong>No stale-Apply refusal on this checkout.</strong> Apply carries no
-    live-head token; a push integrates through Yjs against whatever live holds
-    at the lock cut. The settlement fence protects concurrent writer edits from
-    being lost, not the writer from applying against a live they have not seen.</li>
-  <li><strong>Discard has two shapes.</strong> Full Discard resets the content
-    branch to live in one Work-locked transaction (and removes a draft-only
-    document's manifest entry); it bumps the branch generation, records the
-    discarded state vector, and requires the Work to be active. Selective
-    Discard removes the rows of server-vended discard classes chosen from the
-    preview; the client never reconstructs turns.
-    <span class="ref"><code>adapters/drizzle-work-draft-discard.ts</code>, <code>domain/work-draft-review-service.ts</code> <code>discardWorkDraft</code>, <code>domain/branch-review-operations.ts</code></span></li>
-  <li><strong>Generation is branch identity.</strong> A reset bumps
-    <code>document_branches.generation</code>, closes the old room, and its
-    clients are fenced by the 4205 handshake. Thread-peer and Work-draft
-    generations are separate counters; see <a href="TODO.md">TODO</a>.
-    <span class="ref"><code>domain/branch-coordinator.ts</code> <code>persistReset</code>, <code>adapters/hocuspocus-binding.ts</code> <code>closeBranch</code></span></li>
+  <li><strong>The review is a diff against a base.</strong> A text branch keeps
+    <code>review_base</code> beside <code>prosemirror</code>. The client
+    projects the room into <em>changes</em> (<code>projectReview</code> in
+    <code>@meridian/agent-edit/diff</code>), one red/green unit each, and an item
+    <em>has changes</em> when the two fragments differ (<code>has_effect</code>
+    on the branch row). There are no per-edit accept surfaces and no closure
+    classes: a change is whatever the diff shows.
+    <span class="ref"><code>packages/agent-edit/src/diff/</code>, <code>domain/draft-rebase.ts</code></span></li>
+  <li><strong>Rebase is a three-way merge, not replication.</strong> Live
+    edits reach the draft as a merge of base, live and draft, so the writer's
+    and the AI's pending edits survive a live edit and the base advances to
+    live. A late peer's stale frame is recovered as paragraphs of its surviving
+    typing, never by replaying its stale deletions; no rebase cuts are retained.
+    <span class="ref"><code>domain/draft-rebase.ts</code>, <code>packages/agent-edit/src/diff/late-peer-recovery.ts</code></span></li>
+  <li><strong>Apply is content Apply.</strong> The writer's Apply of an item
+    (<code>apply_items</code>) or of named changes (<code>apply_changes</code>)
+    carries the <code>Y.snapshot</code> of the room frame it acted on when the
+    client has one (otherwise the request freezes at staging), so it applies
+    what the writer saw, not words typed since. The change is a content merge
+    into live's current text (<code>rebase</code>), not Yjs replication; live text it replaced returns in
+    <code>overrode</code> as one dismissible notice, never a gate. Live text
+    moving never refuses; only a live rename, move or reveal since the list
+    was read answers <code>stale</code> (the <code>locationToken</code>). A created
+    document is revealed with the content its Apply asked for. Apply never
+    closes the draft or an edited item; the base patch just moves the applied
+    change into the base.
+    <span class="ref"><code>packages/contracts/src/drafts/review.ts</code>, <code>domain/draft-publication.ts</code> <code>applyItems</code>, <code>domain/draft-apply.ts</code>, <code>domain/draft-commands.ts</code></span></li>
+  <li><strong>Discard has three shapes.</strong> <em>Local Discard</em> (one
+    change, Discard draft in a review, the strip, a Work row) is an ordinary
+    writer edit in the room that sets the chosen changes back to the base. It
+    sends no command, closes nothing, and Ctrl+Z (or the row's Undo) restores
+    it. <em>Item Discard</em> (<code>discard_items</code>) closes one item and
+    is sent only for whole-item items: a created, binary or live-deleted
+    document. <em>Discard all</em> (<code>discard_draft</code>) closes every
+    branch and the draft. The Discard kernel is the only branch closer; an
+    item's text is never reset from live.
+    <span class="ref"><code>domain/draft-discard.ts</code>, <code>adapters/drizzle-draft-discard.ts</code></span></li>
+  <li><strong>A branch has no generation.</strong> Its room is
+    <code>branchRoomName(draftBranchId)</code>, returned by the server. An empty
+    text branch stays active after local Discard or Apply. A closed branch gets
+    a fresh id on the next write, which is the only remount. Existence is item
+    metadata (200 versus 404 <code>gone</code>) plus the server closing the
+    room with 4206.
+    <span class="ref"><code>packages/contracts/src/protocol/yjs-ws.ts</code> <code>branchRoomName</code>, <code>adapters/hocuspocus-binding.ts</code></span></li>
+  <li><strong>Listing is one predicate.</strong> An item is listed when it is a
+    created node, or its active text branch has <code>has_effect</code> or an
+    inverse hold. Lists, counts, the Work page and Apply all read the same SQL
+    relation, and every branch write goes through one projection-wrapped
+    <code>writeBranchState</code>.
+    <span class="ref"><code>domain/draft-review-items.ts</code>, <code>adapters/drizzle-branch-push.ts</code>, <code>adapters/drizzle-branch-state.ts</code></span></li>
 </ul>
 
 <h3>Echo attribution</h3>
@@ -906,12 +943,18 @@ The watermark advances only when the surrounding branch write commits.
 
 <!-- ============================================================ -->
 <h2 id="reversal">8. Forward-turn inverses</h2>
-<p>Collab owns durable Undo and Redo through <code>turn-inverse-service.ts</code>.
-Immutable edit parts capture each forward operation and its inverse. Pending
-parts are settled in the Work draft; accepted parts are inverted in live prose.
-Certified aliases connect displaced identities. The model can target edits,
-while card actions invert a whole turn. There is no reconstruction reversal
-engine, mutable reversal history, or reserved undo client.</p>
+<p>Collab owns durable <em>revert</em> and failed-reply <em>rollback</em> through
+<code>turn-inverse-service.ts</code>. Immutable edit parts capture each forward
+operation and its inverse. Revert is the model's tool: it writes into the
+thread's current destination (the active draft's text branch, or live in
+direct mode) as an ordinary journal row with pending parts, so it shows as a
+change the writer applies. Rollback keeps a failed reply's order and skips
+parts already discarded. Certified aliases connect displaced identities. A
+part's placement is pending (branch and row), live (sequence) or discarded; a
+blocking hold (<code>document_branches.blocking</code>) keeps an item reachable
+while a revert is held. There is no card Undo or Redo, no reconstruction
+reversal engine, mutable reversal history, or reserved undo client; the
+writer's undo is Ctrl+Z in the editor.</p>
 <p>Full policy and persistence contracts: <a href="reversal.md">turn inverses</a>.</p>
 
 <h2 id="schema">9. Schema fence and repair</h2>
@@ -978,7 +1021,7 @@ specific write paths, and some write paths do not refresh it at all.
     <td>The context domain writes the operation's markdown into the column: the given content on create, collab's returned serialization on write and edit. <span class="ref"><code>../context/adapters/context-fs/context-fs.ts</code> <code>persistProjection</code></span></td>
   </tr>
   <tr>
-    <td>AI write tool outside a reply, and tool <code>undo</code>/<code>redo</code></td>
+    <td>AI write tool outside a reply, and tool <code>revert</code></td>
     <td>Refreshed immediately by re-reading live. <span class="ref"><code>lib/model-tools/document-tools.ts</code> (<code>documentSync.refreshDocumentProjection</code>)</span></td>
   </tr>
   <tr>
@@ -986,12 +1029,12 @@ specific write paths, and some write paths do not refresh it at all.
     <td>Refreshed per document at response finalization by re-reading <em>live</em>. In draft mode live has not changed, so the projection keeps showing live, not the draft. <span class="ref"><code>domain/response-write-finalizer.ts</code></span></td>
   </tr>
   <tr>
-    <td>Receipt Undo/Redo and failed-reply rollback</td>
-    <td>Refreshed after a successful reversal (deferred to commit when inside one). <span class="ref"><code>adapters/drizzle-turn-inverse.ts</code>, <code>domain/turn-reversal-service.ts</code></span></td>
+    <td>Model revert and failed-reply rollback</td>
+    <td>Refreshed after a successful inverse (deferred to commit when inside one). <span class="ref"><code>adapters/drizzle-turn-inverse.ts</code>, <code>domain/turn-inverse-service.ts</code></span></td>
   </tr>
   <tr>
-    <td>Push completion (Apply or automatic)</td>
-    <td>Re-derived from the durable journal inside the completion-fence transaction, so it rolls back with the push. <span class="ref"><code>adapters/drizzle-pending-settlement.ts</code> <code>deriveDurableProjection</code>, <code>adapters/drizzle-document-activity.ts</code> <code>applyPushCompletion</code></span></td>
+    <td>Apply completion</td>
+    <td>Re-derived from the durable journal inside the completion-fence transaction, so it rolls back with the Apply. <span class="ref"><code>adapters/drizzle-pending-settlement.ts</code> <code>deriveDurableProjection</code>, <code>adapters/drizzle-document-activity.ts</code> <code>applyPushCompletion</code></span></td>
   </tr>
   <tr>
     <td>Writer typing over the WebSocket</td>
@@ -1049,18 +1092,18 @@ graph.
     and the live utility core, each spelling links and image sources through
     the operation's prepared link scope. A second <code>mdxCodec(...)</code>
     elsewhere would spell stored hrefs instead of current paths.</li>
-  <li><strong>Settlement and push.</strong> Pending-settlement store,
+  <li><strong>Settlement and Apply.</strong> Pending-settlement store,
     push-commit store, change-trail writer, writer-ingress binding (bound to the
-    Hocuspocus persistence barrier once that exists), push service, review
-    operations.</li>
+    Hocuspocus persistence barrier once that exists), push service, the
+    draft publication (content Apply), tree step and Discard kernel.</li>
   <li><strong>AI cores.</strong> The thread-peer core pool over the live utility
     core, branch services and the response-transaction hooks.</li>
   <li><strong>Transport persistence.</strong> Hocuspocus persistence wired to
     the journal, the authority-generation reader, offline reconciliation, and
     <code>scheduleLivePull</code>.</li>
   <li><strong>Read models and commands.</strong> Response finalizer, Work-draft
-    review service, effective reader, checkpoint service with generation
-    replacement, receipt lineage, turn reversal service; then the facade, whose
+    review service, effective reader, checkpoint service with authority-generation
+    replacement, receipt lineage, turn inverse service; then the facade, whose
     <code>agentEdit(context)</code> selects the core per call.</li>
 </ol>
 <p>
@@ -1079,8 +1122,8 @@ same interfaces for tests. Rules for this file are in
   <li><a href="../AGENTS.md">collab AGENTS.md</a>: the rules to know before editing here</li>
   <li><a href="CONTEXT.md">CONTEXT.md</a>: modes, revision identity, pull and provisioning transactions, composition rules</li>
   <li><a href="document-authority-and-schema.md">Document authority, schema, and connection admission</a></li>
-  <li><a href="branch-model-and-records.md">Branch model, provenance, manifests, and durable records</a></li>
-  <li><a href="settlement-and-trail.md">Push settlement and change trail</a></li>
+  <li><a href="branch-model-and-records.md">Branch model, provenance, and durable records</a></li>
+  <li><a href="settlement-and-trail.md">Settlement and change trail</a></li>
   <li><a href="reversal.md">Reversal</a></li>
   <li><a href="websocket-concurrency.md">WebSocket concurrency boundary</a></li>
   <li><a href="draft-live-model.html">The draft / live model</a></li>
@@ -1094,7 +1137,7 @@ same interfaces for tests. Rules for this file are in
   <li><a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/index.md">Collab decisions index</a> and <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/index.md">concurrent-safety decisions index</a></li>
   <li>Journal: <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/journal/concurrent-awareness-journal-first-durability.md">journal-first durability</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/journal/lock-ws-invariant.md">LOCK-WS</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/journal/response-transaction-unit-of-work.md">response transaction unit of work</a></li>
   <li>Merge and settlement: <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/merge/agent-writes-merge-report-and-recover.md">agent writes merge</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/settlement/settlement-persistence-authority.md">settlement persistence authority</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/trail/ai-change-event-projections.md">durable change trails</a></li>
-  <li>Branches: <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/model/draft-branch-topology.md">draft-branch topology</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/branch-publication-pipeline.md">publication pipeline</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/branch-echo-attribution.md">echo attribution</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/branch-stale-client-fencing.md">stale-client fencing</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/apply/draft-apply-whole-current-branch.md">Apply settles the whole branch</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/apply/pull-cadence-chunked-attribution.md">pull cadence</a></li>
+  <li>Branches: <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/model/draft-branch-topology.md">draft-branch topology</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/branch-publication-pipeline.md">publication pipeline</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/branch-echo-attribution.md">echo attribution</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/apply/pull-cadence-chunked-attribution.md">pull cadence</a></li>
   <li>Reversal: <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/reversal/cold-only-reversal.md">cold-only reversal</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/reversal/reserved-clientid-band.md">reserved client ID band</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/reversal/canonical-dependency-predicate.md">canonical dependency predicate</a></li>
   <li>Schema: <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/schema/collab-schema-fence.md">schema fence</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/schema/schema-coherence-invariant.md">schema coherence</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/schema/schema-repair-witness.md">schema repair witness</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/schema/repair-first-never-disable.md">repair first, never disable</a></li>
 </ul>

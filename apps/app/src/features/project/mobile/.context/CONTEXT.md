@@ -61,7 +61,10 @@ button; `MobileChangeBar` sits in page flow at the bottom of the manuscript;
 `MobileChangeSheet` lists this document's changes and links to Work changes.
 All controls use 44px targets. Apply/Discard, refusal holds, toast, and next
 change behavior come from shared draft-review state; phone owns only sheet and
-phone-layout state. No Apply-all/Discard-all lives in the sheet.
+phone-layout state. No Apply-all/Discard-all lives in the sheet. The one exception
+is Discard: the read-only body has no editor history, so a phone Discard is a headless
+edit of the draft's room (`useHeadlessDiscards`) with its own history, and the row it
+leaves (`DiscardedRow`) restores that change.
 
 A pending live draft exposes a Draft chip. A draft-only entry can show the
 terminal Close state. The read-only body selects changes instead of opening the

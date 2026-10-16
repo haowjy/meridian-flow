@@ -15,20 +15,6 @@ export type WriteErrorStatus =
   | "invalid_write"
   | "document_not_found"
   | "partial_failure"
-  | "cant_undo_dependent"
-  | "cant_undo_applied"
-  | "cant_undo_discarded"
-  | "cant_undo_changed"
-  | "cant_undo_held"
-  | "cant_undo_elsewhere"
-  | "cant_redo_applied"
-  | "cant_redo_discarded"
-  | "cant_redo_changed"
-  | "cant_redo_held"
-  | "cant_redo_elsewhere"
-  | "cant_redo_users_undo"
-  | "insufficient_undo"
-  | "insufficient_redo"
   | "nothing_to_revert"
   | "work_archived"
   | "read_required"
@@ -36,16 +22,7 @@ export type WriteErrorStatus =
   | "permission_denied"
   | "internal_error";
 
-export type UndoRedoOutcome =
-  | "reversed"
-  | "reconciled"
-  | "partial"
-  | "nothing_to_undo"
-  | "nothing_to_redo"
-  | "expired";
-
-// Keep in sync with @meridian/contracts/protocol WriteStatus; agent-edit must stay host-agnostic.
-export type WriteStatus = "success" | WriteErrorStatus | UndoRedoOutcome;
+export type WriteStatus = "success" | WriteErrorStatus;
 export type WriteSuccessPhase = "staged" | "committed";
 
 export interface AgentEditBlockItem {
@@ -202,31 +179,11 @@ export function isWriteStatus(status: unknown): status is WriteStatus {
     case "invalid_write":
     case "document_not_found":
     case "partial_failure":
-    case "cant_undo_dependent":
-    case "cant_undo_applied":
-    case "cant_undo_discarded":
-    case "cant_undo_changed":
-    case "cant_undo_held":
-    case "cant_undo_elsewhere":
-    case "cant_redo_applied":
-    case "cant_redo_discarded":
-    case "cant_redo_changed":
-    case "cant_redo_held":
-    case "cant_redo_elsewhere":
-    case "cant_redo_users_undo":
     case "nothing_to_revert":
     case "work_archived":
     case "read_required":
     case "binary_file":
     case "internal_error":
-    case "reversed":
-    case "reconciled":
-    case "partial":
-    case "nothing_to_undo":
-    case "nothing_to_redo":
-    case "insufficient_undo":
-    case "insufficient_redo":
-    case "expired":
       return true;
     default:
       return false;

@@ -35,7 +35,7 @@ not hold (`draftMayHold`: its project's, or its account's `user://`).
 `createFileAccess` is the only grant mint. A `FileGrant` carries principal,
 decided facts, and destination; it is proof of one authorization decision, not
 a boolean flag. `authorize` preflights one target. `authorizeAt` checks an
-explicit destination for draft preview, Apply, Discard, or reversal. `listAccess`
+explicit destination for draft review (item metadata, Apply, Discard) or `revert`. `listAccess`
 batches readable identities for listing, search, links, and review; a row the
 principal cannot read is absent from the result, so callers drop it. `historyAccess`
 exposes person-scoped change evidence for deleted files.

@@ -10,8 +10,8 @@ type NoticeFields = {
 };
 
 export type NoticeInput =
-  | ({ kind: "undo" } & NoticeFields)
   | ({ kind: "awareness_degraded" } & NoticeFields)
+  | ({ kind: "draft_write_invisible" } & NoticeFields)
   | {
       kind: "work_switched";
       scope: { kind: "thread"; threadId: ThreadId };
@@ -52,9 +52,6 @@ export function parseNoticeInput(value: unknown): NoticeInput {
   if (typeof scope.threadId !== "string" || typeof message !== "string" || !isRecord(data)) {
     throw new Error("Invalid model notice");
   }
-  if (kind === "undo") {
-    return { kind, scope: { kind: "thread", threadId: scope.threadId }, message, data };
-  }
   if (
     kind === "awareness_degraded" &&
     Array.isArray(data.documentIds) &&
@@ -68,6 +65,16 @@ export function parseNoticeInput(value: unknown): NoticeInput {
       message,
       data,
     };
+  }
+  if (
+    kind === "draft_write_invisible" &&
+    typeof data.responseId === "string" &&
+    typeof data.documentId === "string" &&
+    Array.isArray(data.writeIds) &&
+    data.writeIds.every((id) => typeof id === "string") &&
+    typeof data.words === "number"
+  ) {
+    return { kind, scope: { kind: "thread", threadId: scope.threadId }, message, data };
   }
   if (
     kind === "work_switched" &&

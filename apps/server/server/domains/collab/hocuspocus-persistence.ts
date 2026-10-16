@@ -9,10 +9,12 @@ import { type EventSink, emitEvent, unknownToEventPayload } from "../observabili
 import { type DetachedWorkTracker, processDetachedWork } from "../runtime/detached-work.js";
 import { loadDocumentState } from "./adapters/document-loader.js";
 import type { CollabPersistenceMetrics, CollabTransport, UpdateOrigin } from "./contracts.js";
-import type {
-  BranchCoordinator,
-  BranchSnapshot,
-  BranchStore,
+import {
+  BranchClosedError,
+  type BranchCoordinator,
+  BranchStaleUpdateError,
+  type BranchStore,
+  BranchWriterRefusedError,
 } from "./domain/branch-coordinator.js";
 import { createDocumentContainment } from "./domain/document-containment.js";
 import {
@@ -23,6 +25,7 @@ import {
 } from "./domain/document-handle.js";
 import {
   admitWriterUpdate,
+  DocumentMutationPolicyError,
   ReservedWriterClientIdError,
 } from "./domain/document-mutation-policy.js";
 import type { OfflineReconciliation } from "./domain/offline-reconciliation.js";
@@ -86,7 +89,6 @@ export type HocuspocusPersistenceService = Pick<
   | "drainHocuspocusPersistence"
   | "drainHocuspocusBranchPersistence"
   | "closeHocuspocusBranchRoom"
-  | "rejectStaleBranchSyncStep1"
   | "getPersistenceQueueMetrics"
 > & {
   writerIngressBarrier: WriterIngressBarrier;
@@ -132,10 +134,7 @@ export function createHocuspocusPersistenceService(
   async function drainPending(documentId?: string): Promise<void> {
     while (true) {
       const pending = [...pendingAppends.values()].filter(
-        (entry) =>
-          !documentId ||
-          entry.documentId === documentId ||
-          (documentId.startsWith("branch:") && entry.documentId.startsWith(`${documentId}:gen:`)),
+        (entry) => !documentId || entry.documentId === documentId,
       );
       if (pending.length === 0) return;
       await Promise.allSettled(pending.map((entry) => entry.promise));
@@ -195,6 +194,17 @@ export function createHocuspocusPersistenceService(
       name: "persistence_append.failed",
       correlation: { documentId },
       payload: unknownToEventPayload(cause),
+    });
+  }
+
+  function emitBranchWriterRefused(branchId: string, cause: unknown): void {
+    if (!deps.eventSink) return;
+    emitEvent(deps.eventSink, {
+      level: "warn",
+      source: "collab.hocuspocus",
+      name: "branch_writer.refused",
+      correlation: { branchId },
+      payload: { reason: branchWriterRefusalReason(cause) },
     });
   }
 
@@ -367,20 +377,14 @@ export function createHocuspocusPersistenceService(
       return (await deps.readAuthorityHeadGeneration?.(documentId)) ?? 1n;
     },
 
-    async resolveBranchHocuspocusRoom(branchId, generation) {
+    async resolveBranchHocuspocusRoom(branchId) {
       const branch = await requireBranchStore().getBranch(branchId);
-      if (
-        branch?.status !== "active" ||
-        branch.kind !== "work_draft" ||
-        !branch.workId ||
-        branch.generation !== generation
-      )
+      if (branch?.status !== "active" || branch.kind !== "work_draft" || !branch.workId)
         return null;
       return {
         branchId: branch.branchId,
         documentId: branch.documentId,
         workId: branch.workId,
-        generation: branch.generation,
         schemaVersion: branch.schemaVersion,
         status: branch.status,
       };
@@ -399,17 +403,11 @@ export function createHocuspocusPersistenceService(
       }
     },
 
-    async loadHocuspocusBranchState(branchId, generation) {
+    async loadHocuspocusBranchState(branchId) {
       const branch = await requireBranchStore().getBranch(branchId);
-      if (
-        branch?.status !== "active" ||
-        branch.kind !== "work_draft" ||
-        branch.generation !== generation
-      )
-        return undefined;
-      return requireBranchCoordinator().readBranch(branchId, async (doc, snapshot) => ({
+      if (branch?.status !== "active" || branch.kind !== "work_draft") return undefined;
+      return requireBranchCoordinator().readBranch(branchId, async (doc) => ({
         state: Y.encodeStateAsUpdate(doc),
-        generation: snapshot.generation,
       }));
     },
 
@@ -509,12 +507,11 @@ export function createHocuspocusPersistenceService(
     },
 
     admitBranchWriterUpdate(input) {
-      const queueKey = branchRoomName(input.branchId, input.expectedGeneration);
+      const queueKey = branchRoomName(input.branchId);
       const admission = (async () => {
         try {
           const { admitted } = await requireBranchCoordinator().commitWriterUpdate({
             branchId: input.branchId,
-            expectedGeneration: input.expectedGeneration,
             updateData: input.update,
             actorUserId: input.origin.type === "user" ? input.origin.userId : undefined,
             roomDocument: input.document,
@@ -531,12 +528,29 @@ export function createHocuspocusPersistenceService(
               originType: input.origin.type,
             });
           }
+          const closed = cause instanceof BranchClosedError;
+          if (
+            closed ||
+            cause instanceof BranchStaleUpdateError ||
+            cause instanceof ReservedNamespaceAdmissionError ||
+            cause instanceof ReservedWriterClientIdError ||
+            cause instanceof DocumentMutationPolicyError
+          ) {
+            emitBranchWriterRefused(input.branchId, cause);
+            throw new BranchWriterRefusedError(input.branchId, closed, cause);
+          }
           throw cause;
         }
       })();
       // Register before validation's first await so shutdown cannot miss an
-      // admission that Hocuspocus is already processing.
-      trackAppend(queueKey, admission);
+      // admission that Hocuspocus is already processing. A refusal is the
+      // admission working, not a failed append, so it is not tracked as one.
+      trackAppend(
+        queueKey,
+        admission.catch((cause) => {
+          if (!(cause instanceof BranchWriterRefusedError)) throw cause;
+        }),
+      );
       return admission;
     },
 
@@ -583,15 +597,10 @@ export function createHocuspocusPersistenceService(
 
     closeHocuspocusBranchRoom(branchId) {
       // Narrow ops/test affordance kept for the durable shadow probe fixture T6;
-      // production reset paths use the branch coordinator reset callback.
+      // production close paths use the branch coordinator close callback.
       const hocuspocus = deps.hocuspocus();
       if (!hocuspocus) return;
-      const roomPrefix = `branch:${branchId}:gen:`;
-      for (const roomName of [...hocuspocus.documents.keys()].filter((name) =>
-        name.startsWith(roomPrefix),
-      )) {
-        hocuspocus.closeConnections(roomName);
-      }
+      hocuspocus.closeConnections(branchRoomName(branchId));
     },
 
     async disconnectLiveGeneration(documentId, generation) {
@@ -617,47 +626,19 @@ export function createHocuspocusPersistenceService(
       retireRoom(documentId, document);
     },
 
-    async rejectStaleBranchSyncStep1(input) {
-      const branch = await requireBranchStore().getBranch(input.branchId);
-      if (
-        branch?.status !== "active" ||
-        branch.kind !== "work_draft" ||
-        branch.generation !== input.generation ||
-        !branchSyncStep1IsStale(input.clientStateVector, branch)
-      ) {
-        return false;
-      }
-      recordDroppedConnectionUpdate(branchRoomName(input.branchId, input.generation));
-      if (deps.eventSink) {
-        emitEvent(deps.eventSink, {
-          level: "warn",
-          source: "collab.hocuspocus",
-          name: "branch_sync_step1.fenced",
-          correlation: { branchId: input.branchId, branchGeneration: input.generation },
-          payload: {},
-        });
-      }
-      return true;
-    },
-
     getPersistenceQueueMetrics() {
       return latestMetrics();
     },
   };
 }
 
-function branchSyncStep1IsStale(clientStateVector: Uint8Array, branch: BranchSnapshot): boolean {
-  if (!branch.discardedStateVector) return false;
-  const clientClocks = Y.decodeStateVector(clientStateVector);
-  const currentClocks = Y.decodeStateVector(branch.stateVector);
-  const discardedClocks = Y.decodeStateVector(branch.discardedStateVector);
-  for (const [client, clientClock] of clientClocks) {
-    const currentClock = currentClocks.get(client) ?? 0;
-    if (clientClock <= currentClock) continue;
-    const discardedClock = discardedClocks.get(client) ?? 0;
-    if (Math.min(clientClock, discardedClock) > currentClock) return true;
-  }
-  return false;
+/** Why admission refused a writer frame, as a stable code (never the exception's class or prose). */
+function branchWriterRefusalReason(cause: unknown): string {
+  if (cause instanceof BranchClosedError) return cause.reason;
+  if (cause instanceof BranchStaleUpdateError) return "stale_update";
+  if (cause instanceof ReservedNamespaceAdmissionError) return "reserved_namespace";
+  if (cause instanceof ReservedWriterClientIdError) return "reserved_client_id";
+  return "mutation_policy";
 }
 
 function replaysRetiredGeneration(

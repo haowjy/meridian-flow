@@ -1,4 +1,4 @@
-/** Apply one item of the Work's draft: 200 applied, 202 pending, 409 held or stale. */
+/** Apply one item of the Work's draft: 200 applied, 202 pending, 409 held, stale, unfound or failed. */
 import type { DocumentId, ProjectId, WorkId } from "@meridian/contracts/runtime";
 import { defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import { requireAppUser } from "../../../../../../../../../../lib/auth-gate.js";

@@ -38,7 +38,7 @@ subagent's assistant alone, and `claimed`, used only by that full settlement
 under a newly taken claim, which adds it and any unsettled compaction. Status
 publishes only after commit. A rollback keeps both
 unfinished work and lease. Every path that finalizes orphans under the claim
-(run start, idle materialization, applying due write-mode switches) goes through
+(run start and idle materialization) goes through
 the delivery adapter's one `repairOrphans` helper.
 
 Release is guarded: delivery re-reads the receipt and ends the execution

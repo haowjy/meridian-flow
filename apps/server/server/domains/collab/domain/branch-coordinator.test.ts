@@ -1,18 +1,16 @@
 /** Shadow branch coordinator conformance for peer pulls and CAS persistence. */
+
+import { readBlocks, writeBlocks } from "@meridian/agent-edit/diff";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import {
   allocateDocumentClient,
+  buildDocumentSchema,
   COLLAB_SCHEMA_VERSION,
-  type CollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
-import {
-  commitJournaledUpdate,
-  commitSegmentRows,
-  resetBranchFromDoc,
-} from "../test-support/branch-update-writes.js";
+import { commitJournaledUpdate, commitSegmentRows } from "../test-support/branch-update-writes.js";
 import { captureHistoricalBranchRow } from "../test-support/historical-branch-row.js";
 import {
   type BranchSnapshot,
@@ -66,7 +64,6 @@ function branchSnapshot(input: {
     workId: WORK_ID,
     threadId: input.kind === "thread_peer" ? THREAD_ID : null,
     status: "active",
-    generation: 1,
     state: Y.encodeStateAsUpdate(input.doc),
     stateVector: Y.encodeStateVector(input.doc),
     schemaVersion: COLLAB_SCHEMA_VERSION,
@@ -90,8 +87,6 @@ class MemoryBranchStore implements BranchStore {
 
   async updateBranchSnapshot(input: {
     branchId: string;
-    expectedGeneration: number;
-    expectedStateVector: Uint8Array;
     expectedState: Uint8Array;
     state: Uint8Array;
     stateVector: Uint8Array;
@@ -100,33 +95,12 @@ class MemoryBranchStore implements BranchStore {
       ...current,
       state: input.state,
       stateVector: input.stateVector,
-    }));
-  }
-
-  async resetBranchSnapshot(input: {
-    branchId: string;
-    expectedGeneration: number;
-    expectedStateVector: Uint8Array;
-    expectedState: Uint8Array;
-    state: Uint8Array;
-    stateVector: Uint8Array;
-    discardedStateVector: Uint8Array;
-    schemaVersion: CollabSchemaVersion;
-  }): Promise<boolean> {
-    return this.persist(input, (current) => ({
-      ...current,
-      generation: current.generation + 1,
-      state: input.state,
-      stateVector: input.stateVector,
-      discardedStateVector: input.discardedStateVector,
-      schemaVersion: input.schemaVersion,
     }));
   }
 
   private persist(
     input: {
       branchId: string;
-      expectedGeneration: number;
       expectedStateVector?: Uint8Array;
       expectedState?: Uint8Array;
     },
@@ -137,7 +111,7 @@ class MemoryBranchStore implements BranchStore {
       return false;
     }
     const current = this.branches.get(input.branchId);
-    if (!current || current.generation !== input.expectedGeneration) return false;
+    if (!current) return false;
     if (input.expectedStateVector && !bytesEqual(current.stateVector, input.expectedStateVector)) {
       return false;
     }
@@ -150,7 +124,6 @@ class MemoryBranchStore implements BranchStore {
 
   async commitBranchMutation(input: {
     branchId: string;
-    expectedGeneration: number;
     expectedState?: Uint8Array;
     state: Uint8Array;
     stateVector: Uint8Array;
@@ -170,10 +143,6 @@ class MemoryBranchStore implements BranchStore {
     }
     for (const row of input.journals ?? []) this.journal.push(row.updateData);
     return true;
-  }
-
-  async appendJournal(input: { updateData: Uint8Array }): Promise<void> {
-    this.journal.push(input.updateData);
   }
 }
 
@@ -199,7 +168,6 @@ describe("BranchCoordinator", () => {
     await expect(
       coordinator.commitWriterUpdate({
         branchId: "work",
-        expectedGeneration: 1,
         updateData: Y.encodeStateAsUpdate(branchDoc),
         actorUserId: "user-1",
         roomDocument: materialize(storedBranch(store, "work")),
@@ -208,6 +176,108 @@ describe("BranchCoordinator", () => {
 
     expect(store.journal).toHaveLength(0);
     expect(materialize(storedBranch(store, "work")).getText("content").toString()).toBe("seed");
+  });
+
+  // Risk: a reconnect's cumulative sync.step2 repeats the admitted writer struct and the server's own
+  // tombstones; it was judged as fresh authorship (refused, 4410) or reported as a lost late-peer edit.
+  it("admits a cumulative reconnect frame with repeated server tombstones as a no-op, reporting nothing", async () => {
+    const server = documentWithReservedFacts();
+    const paragraph = new Y.XmlElement("paragraph");
+    paragraph.insert(0, [new Y.XmlText("hello")]);
+    server.getXmlFragment("prosemirror").insert(0, [paragraph]);
+    const dropped = new Y.XmlElement("paragraph");
+    dropped.insert(0, [new Y.XmlText("gone")]);
+    server.getXmlFragment("prosemirror").insert(1, [dropped]);
+    server.getXmlFragment("prosemirror").delete(1, 1);
+    const store = new MemoryBranchStore();
+    store.branches.set("work", branchSnapshot({ branchId: "work", doc: server }));
+    const serverVector = Y.encodeStateVector(server);
+    const writer = materialize(storedBranch(store, "work"));
+    writer.clientID = allocateDocumentClient(writer);
+    let typing: Uint8Array = new Uint8Array();
+    writer.once("update", (update: Uint8Array) => {
+      typing = update;
+    });
+    const text = (writer.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(0) as Y.XmlText;
+    text.insert(5, " world");
+    const reports: unknown[] = [];
+    const coordinator = createBranchCoordinator({
+      store,
+      onLateWriterEdits: (report) => reports.push(report),
+    });
+    const room = materialize(storedBranch(store, "work"));
+    Y.applyUpdate(room, typing);
+    await expect(
+      coordinator.commitWriterUpdate({ branchId: "work", updateData: typing, roomDocument: room }),
+    ).resolves.toEqual({ admitted: true });
+
+    await expect(
+      coordinator.commitWriterUpdate({
+        branchId: "work",
+        updateData: Y.encodeStateAsUpdate(writer, serverVector),
+        roomDocument: room,
+      }),
+    ).resolves.toEqual({ admitted: false });
+    expect(store.journal).toHaveLength(1);
+    expect(reports).toEqual([]);
+  });
+
+  // Risk (D33): a reconnect repeats the client's whole delete set; recovering a late deletion erased words
+  // the writer wrote back since (K1-1). Late deletions of rebased text are log-only, so the exact replay
+  // is inert. The property test in `late-peer-admission.test.ts` covers the mixed frames around it.
+  it("never lets a replayed late deletion erase words written since", async () => {
+    const schema = buildDocumentSchema();
+    const para = (text: string) => schema.nodes.paragraph.create(null, schema.text(text));
+    const fragmentTexts = (doc: Y.Doc) =>
+      readBlocks(doc.getXmlFragment("prosemirror"), schema).map((block) => block.textContent);
+    const server = new Y.Doc({ gc: false });
+    server.clientID = 1;
+    server.transact(() =>
+      writeBlocks(server.getXmlFragment("prosemirror"), schema, [
+        para("alpha beta gamma"),
+        para("tail"),
+      ]),
+    );
+    const peer = materialize(branchSnapshot({ branchId: "seed", doc: server }));
+    peer.clientID = 1000;
+    let deletion: Uint8Array = new Uint8Array();
+    peer.once("update", (update: Uint8Array) => {
+      deletion = update;
+    });
+    ((peer.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(0) as Y.XmlText).delete(6, 5);
+    const store = new MemoryBranchStore();
+    server.transact(
+      () =>
+        writeBlocks(server.getXmlFragment("prosemirror"), schema, [
+          para("tail"),
+          para("ALPHA beta gamma"),
+        ]),
+      "rebase",
+    );
+    store.branches.set("work", branchSnapshot({ branchId: "work", doc: server }));
+    const coordinator = createBranchCoordinator({ store });
+    const room = materialize(storedBranch(store, "work"));
+    const commit = (updateData: Uint8Array) =>
+      coordinator.commitWriterUpdate({ branchId: "work", updateData, roomDocument: room });
+    const current = () => fragmentTexts(materialize(storedBranch(store, "work")));
+
+    await commit(deletion);
+    expect(current()).toEqual(["tail", "ALPHA beta gamma"]);
+    const writer = materialize(storedBranch(store, "work"));
+    writer.clientID = allocateDocumentClient(writer);
+    let retype: Uint8Array = new Uint8Array();
+    writer.once("update", (update: Uint8Array) => {
+      retype = update;
+    });
+    ((writer.getXmlFragment("prosemirror").get(1) as Y.XmlElement).get(0) as Y.XmlText).insert(
+      16,
+      "!",
+    );
+    await commit(retype);
+    expect(current()).toEqual(["tail", "ALPHA beta gamma!"]);
+
+    await commit(deletion);
+    expect(current()).toEqual(["tail", "ALPHA beta gamma!"]);
   });
 
   it("rejects reserved namespace deletion against the snapshot it would commit", async () => {
@@ -224,12 +294,11 @@ describe("BranchCoordinator", () => {
     await expect(
       coordinator.commitWriterUpdate({
         branchId: "work",
-        expectedGeneration: 1,
         updateData,
         actorUserId: "user-1",
         roomDocument,
       }),
-    ).rejects.toThrow("reserved provenance");
+    ).rejects.toThrow("server-owned state");
 
     expect(store.journal).toHaveLength(0);
     expect(materialize(storedBranch(store, "work")).getMap(PROVENANCE_TARGETS_TYPE).size).toBe(1);
@@ -267,7 +336,6 @@ describe("BranchCoordinator", () => {
       commitSegmentRows(coordinator, {
         branchId: "work",
         sourceDoc: sourceDoc,
-        expectedGeneration: beforeWork.generation,
         rows: [
           {
             branchId: "work",
@@ -308,39 +376,6 @@ describe("BranchCoordinator", () => {
     );
   });
 
-  it("rejects reset after a delete-only concurrent write changes bytes without changing the state vector", async () => {
-    const store = new MemoryBranchStore();
-    const originalDoc = docWithText("abcdef");
-    const original = branchSnapshot({ branchId: "work", doc: originalDoc });
-    store.branches.set("work", original);
-
-    const deleteOnlyDoc = materialize(original);
-    deleteOnlyDoc.getText("content").delete(1, 2);
-    expect(Y.encodeStateVector(deleteOnlyDoc)).toEqual(original.stateVector);
-    store.branches.set("work", {
-      ...original,
-      state: Y.encodeStateAsUpdate(deleteOnlyDoc),
-      stateVector: Y.encodeStateVector(deleteOnlyDoc),
-    });
-
-    const coordinator = createBranchCoordinator({ store });
-    await expect(
-      coordinator.withLeases(["work"], (lease) =>
-        coordinator.resetFromDocIfUnchangedWithLease(lease, {
-          branchId: "work",
-          upstream: docWithText("fresh live"),
-          expectedGeneration: original.generation,
-          expectedStateVector: original.stateVector,
-          expectedState: original.state,
-          schemaVersion: original.schemaVersion,
-        }),
-      ),
-    ).resolves.toBe(false);
-
-    expect(materialize(storedBranch(store, "work")).getText("content").toString()).toBe("adef");
-    expect(store.journal).toHaveLength(0);
-  });
-
   it("does not mutate the cached branch doc when journal append fails", async () => {
     const store = new MemoryBranchStore();
     store.branches.set("work", branchSnapshot({ branchId: "work", doc: new Y.Doc({ gc: false }) }));
@@ -360,23 +395,6 @@ describe("BranchCoordinator", () => {
     await pull(coordinator, "work", new Y.Doc({ gc: false }));
     expect(store.journal).toHaveLength(0);
     expect(materialize(storedBranch(store, "work")).getText("content").toString()).toBe("");
-  });
-
-  it("keeps the discarded replay fence monotonic across resets", async () => {
-    const store = new MemoryBranchStore();
-    const first = docWithText("first discarded");
-    store.branches.set("work", branchSnapshot({ branchId: "work", doc: first }));
-    const coordinator = createBranchCoordinator({ store });
-
-    await resetBranchFromDoc(coordinator, store, "work", docWithText("second discarded"));
-    await resetBranchFromDoc(coordinator, store, "work", docWithText("current"));
-
-    const discarded = Y.decodeStateVector(
-      storedBranch(store, "work").discardedStateVector ?? new Uint8Array(),
-    );
-    for (const [client, clock] of Y.decodeStateVector(Y.encodeStateVector(first))) {
-      expect(discarded.get(client)).toBeGreaterThanOrEqual(clock);
-    }
   });
 });
 
@@ -414,7 +432,6 @@ it("publishes ordered segment rows once and rejects reused clients and unjournal
   await expect(
     commitSegmentRows(coordinator, {
       branchId: "work",
-      expectedGeneration: 1,
       sourceDoc,
       rows: rows.slice(0, -1),
     }),
@@ -422,7 +439,6 @@ it("publishes ordered segment rows once and rejects reused clients and unjournal
   expect(store.journal).toHaveLength(0);
   await commitSegmentRows(coordinator, {
     branchId: "work",
-    expectedGeneration: 1,
     sourceDoc,
     rows,
   });
@@ -432,7 +448,6 @@ it("publishes ordered segment rows once and rejects reused clients and unjournal
   await expect(
     commitSegmentRows(coordinator, {
       branchId: "work",
-      expectedGeneration: 1,
       sourceDoc,
       rows: [rows[0]],
     }),
@@ -479,13 +494,12 @@ describe("a save's owned session (U1)", () => {
       await session.withStagedRows("work", async () => ({ result: 1, rows: [] }), false);
       await session.commitSegmentRows({
         branchId: "work",
-        expectedGeneration: 1,
         sourceDoc: materialize(storedBranch(store, "work")),
         rows: [],
       });
       await session.checkpoint("peer");
-      await session.listHelperHistory({ branchId: "work", generation: 1 });
-      await session.listConcurrentRows("work", 1, { documentId: DOCUMENT_ID });
+      await session.listHelperHistory({ branchId: "work" });
+      await session.listConcurrentRows("work", { documentId: DOCUMENT_ID });
       expect(run).not.toHaveBeenCalled();
       expect(listJournalRowsForBranch).toHaveBeenCalledOnce();
       expect(listConcurrentJournalRows).toHaveBeenCalledOnce();
@@ -494,8 +508,8 @@ describe("a save's owned session (U1)", () => {
         () => session.read("other", async () => undefined),
         () => session.withTransient("other", async () => undefined),
         () => session.checkpoint("other"),
-        () => session.listHelperHistory({ branchId: "other", generation: 1 }),
-        () => session.listConcurrentRows("other", 1, { documentId: DOCUMENT_ID }),
+        () => session.listHelperHistory({ branchId: "other" }),
+        () => session.listConcurrentRows("other", { documentId: DOCUMENT_ID }),
       ])
         await expect(call()).rejects.toBeInstanceOf(BranchLeaseScopeError);
       expect(run).not.toHaveBeenCalled();
@@ -503,8 +517,8 @@ describe("a save's owned session (U1)", () => {
   });
 });
 
-describe("containment replacement (U3)", () => {
-  it("replaces a peer whose state its upstream no longer contains, and merges one that is only behind", async () => {
+describe("peer containment", () => {
+  it("never replaces a peer its upstream lacks: it reports, and still merges one that is only behind", async () => {
     const shared = docWithText("base");
     const store = new MemoryBranchStore();
     const dropped = cloneOf(shared);
@@ -518,12 +532,16 @@ describe("containment replacement (U3)", () => {
         upstreamBranchId: "work",
       }),
     );
-    const coordinator = createBranchCoordinator({ store });
+    const notContained = vi.fn();
+    const coordinator = createBranchCoordinator({ store, onPeerNotContained: notContained });
 
-    // The upstream reforked from live, losing the peer's saved text.
+    // With no reset or refork an upstream only grows: a peer that is ahead of it is a bug to report,
+    // not a state to repair by resetting the peer.
     await pull(coordinator, "peer", cloneOf(shared));
-    expect(storedBranch(store, "peer").generation).toBe(2);
-    expect(materialize(storedBranch(store, "peer")).getText("content").toString()).toBe("base");
+    expect(notContained).toHaveBeenCalledWith({ branchId: "peer", upstreamBranchId: "work" });
+    expect(materialize(storedBranch(store, "peer")).getText("content").toString()).toBe(
+      "base discarded",
+    );
 
     const behind = cloneOf(shared);
     store.branches.set(
@@ -537,8 +555,9 @@ describe("containment replacement (U3)", () => {
     );
     const ahead = cloneOf(shared);
     ahead.getText("content").insert(4, " more");
+    notContained.mockClear();
     await pull(coordinator, "behind", ahead);
-    expect(storedBranch(store, "behind").generation).toBe(1);
+    expect(notContained).not.toHaveBeenCalled();
     expect(materialize(storedBranch(store, "behind")).getText("content").toString()).toBe(
       "base more",
     );

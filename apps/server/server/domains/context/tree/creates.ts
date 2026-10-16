@@ -9,20 +9,10 @@
  * advisory locks. A draft's create never seeds live content: a new text row gets an empty
  * live Yjs document, and its text lives in the draft's branch.
  */
-import type {
-  ContextSourceId,
-  DocumentId,
-  DraftId,
-  ProjectId,
-  ThreadId,
-  TurnId,
-} from "@meridian/contracts";
+import type { ContextSourceId, DocumentId, DraftId, ThreadId, TurnId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
-import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
-import { isUuid } from "../../../shared/uuid.js";
 import { isStorageBackedDocument } from "../adapters/catalog-file-mapper.js";
-import { draftMayHold, loadProjectHolder } from "./draft-ownership.js";
 import { recordCreated } from "./draft-tree-store.js";
 import { tombstoneUnused } from "./end-use.js";
 import type { HiddenNodeRepair } from "./hidden-node-repair.js";
@@ -32,7 +22,6 @@ import type {
   DraftCreateResult,
   LiveClaim,
   LiveCreateCandidate,
-  RevealExpectation,
   TrackedNode,
 } from "./hidden-node-types.js";
 import { filePath, insertDocumentRow, insertFolder, lockDocuments } from "./node-rows.js";

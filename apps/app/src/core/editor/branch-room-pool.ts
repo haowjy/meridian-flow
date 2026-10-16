@@ -1,35 +1,19 @@
 /**
- * The session registry's generation-fenced branch (review) rooms: retained per
+ * The session registry's branch (review) rooms, one per draft id: retained per
  * owner, torn down after a grace period once no owner holds them, retired when
  * they reset, and rebuilt on request. Branch rooms hold no lease. Retaining and
  * releasing only record ownership; a room opens on `get` or `rebuild`.
  */
 
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
-import * as Y from "yjs";
 
 import type { DocumentSession } from "./document-session";
 import type { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
 
-export type BranchRoomRef = Readonly<{
-  roomKey: string;
-  currentRoom(): Promise<string | null>;
-  changed(): void | Promise<void>;
-  writerChanges?(generation: number | null): void;
-  writerLoss?(): void;
-}>;
-export type BranchRoomCarry = Readonly<{
-  ref: BranchRoomRef;
-  source: { roomKey: string; generation: number };
-  carry: Uint8Array;
-  sourceState: Uint8Array;
-}>;
-
 export class BranchRoomPool {
-  private readonly refs = new Map<string, BranchRoomRef>();
   private readonly draining = new Set<string>();
   private readonly rooms = new Map<string, DocumentSession>();
-  private readonly retainedByOwner = new Map<string, Map<string, BranchRoomRef>>();
+  private readonly retainedByOwner = new Map<string, ReadonlySet<string>>();
   private readonly teardownTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(
@@ -38,7 +22,6 @@ export class BranchRoomPool {
       openSession(roomKey: string): DocumentSession;
       teardownOwner: DocumentSessionTeardownOwner;
       teardownGraceMs: number;
-      carry?(carry: BranchRoomCarry): void;
     },
   ) {}
 
@@ -46,15 +29,14 @@ export class BranchRoomPool {
     return this.rooms.get(roomKey);
   }
 
-  retain(ownerId: string, refs: readonly BranchRoomRef[]): void {
-    const keys = new Set(refs.map((ref) => ref.roomKey));
+  retain(ownerId: string, roomKeys: readonly string[]): void {
+    const keys = new Set(roomKeys);
     for (const roomKey of keys) {
       if (parseYjsRoomName(roomKey)?.kind !== "branch") {
         throw new Error(`Branch retention requires a branch room: ${roomKey}`);
       }
     }
-    for (const ref of refs) this.refs.set(ref.roomKey, ref);
-    this.retainedByOwner.set(ownerId, new Map(refs.map((ref) => [ref.roomKey, ref])));
+    this.retainedByOwner.set(ownerId, keys);
     for (const roomKey of keys) this.cancelTeardown(roomKey);
     this.reconcile();
   }
@@ -81,13 +63,6 @@ export class BranchRoomPool {
     this.deps.teardownOwner.assertAvailable({ kind: "branch", roomKey });
     const existing = this.rooms.get(roomKey);
     if (existing) return existing;
-    for (const retained of this.retainedByOwner.values()) {
-      const ref = retained.get(roomKey);
-      if (ref) {
-        this.refs.set(roomKey, ref);
-        break;
-      }
-    }
     const session = this.deps.openSession(roomKey);
     this.rooms.set(roomKey, session);
     session.subscribe((snapshot) => {
@@ -112,14 +87,13 @@ export class BranchRoomPool {
     for (const timer of this.teardownTimers.values()) clearTimeout(timer);
     this.teardownTimers.clear();
     const rooms = [...this.rooms];
-    for (const [roomKey, session] of rooms) this.retire(roomKey, session, true);
-    this.refs.clear();
+    for (const [roomKey, session] of rooms) this.retire(roomKey, session);
   }
 
   private reconcile(): void {
     const keep = new Set<string>();
     for (const retained of this.retainedByOwner.values()) {
-      for (const roomKey of retained.keys()) keep.add(roomKey);
+      for (const roomKey of retained) keep.add(roomKey);
     }
     // Only `get` and `rebuild` open a room. A release must not: another owner may still retain a
     // room that was just reset, and reopening it would hit the retirement quarantine.
@@ -158,31 +132,13 @@ export class BranchRoomPool {
     return false;
   }
 
-  private retire(roomKey: string, session: DocumentSession, closing = false): void {
+  private retire(roomKey: string, session: DocumentSession): void {
     if (this.rooms.get(roomKey) !== session) return;
-    const disposition = session.resetDisposition;
-    const ref = this.refs.get(roomKey);
-    const carry = closing ? null : session.unacknowledgedUpdates();
-    const room = parseYjsRoomName(roomKey);
-    const retirement: BranchRoomCarry | null =
-      carry &&
-      ref &&
-      room?.kind === "branch" &&
-      (disposition === "superseded" || disposition === "rebuild")
-        ? {
-            ref,
-            source: { roomKey, generation: room.generation },
-            carry,
-            sourceState: Y.encodeStateAsUpdate(session.document),
-          }
-        : null;
     this.rooms.delete(roomKey);
-    this.refs.delete(roomKey);
     this.cancelTeardown(roomKey);
-    // Quarantine is installed before delivery can try to reopen the same room.
+    // Quarantine is installed before anything can try to reopen the same room.
     void this.deps.teardownOwner
       .retire({ kind: "branch", roomKey }, session)
       .catch(() => undefined);
-    if (retirement) this.deps.carry?.(retirement);
   }
 }

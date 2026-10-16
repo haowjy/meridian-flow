@@ -4,10 +4,11 @@ export const WS_CLOSE = {
   AUTH_FAILED: { code: 4401, reason: "auth_failed" },
   AUTH_ERROR: { code: 1011, reason: "auth_error" },
   PERMISSION_DENIED: { code: 4403, reason: "permission-denied" },
-  BRANCH_STALE: { code: 4205, reason: "branch-stale-doc" },
-  BRANCH_GENERATION_STALE: { code: 4206, reason: "branch-generation-stale" },
+  BRANCH_CLOSED: { code: 4206, reason: "branch-closed" },
   CLIENT_SCHEMA_SUPERSEDED: { code: 4406, reason: "client-schema-superseded" },
   DOCUMENT_SCHEMA_STALE: { code: 4407, reason: "document-schema-stale" },
+  /** The room refused a writer frame. Resending it refuses again: terminal. */
+  WRITE_REFUSED: { code: 4410, reason: "write-refused" },
   /**
    * The room's file access changed (a Work archived, unarchived, deleted or
    * restored). Not terminal: reconnect and take the new authenticated scope.

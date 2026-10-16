@@ -197,7 +197,13 @@ export function createInMemoryPendingSettlementStore(options?: {
       if (result === "retry") return { status: "retry" as const };
       input.afterCommit(input.members.map(({ push }) => push.documentId));
       for (const member of input.members) options?.onCompleted?.(member.push.id);
-      return { status: "completed" as const, projections: [], held: [], outcomes: [] };
+      return {
+        status: "completed" as const,
+        projections: [],
+        held: [],
+        outcomes: [],
+        baseUpdates: [],
+      };
     },
 
     // This store models no publication steps: every check proceeds.
@@ -229,6 +235,17 @@ export function createInMemoryPendingSettlementStore(options?: {
             (!batch.claim || batch.claim.leaseExpiresAt <= now),
         )
         .map(({ batchId }) => batchId);
+    },
+
+    async listUnfinishedBatches(documentIds) {
+      const wanted = new Set<string>(documentIds);
+      return [...batches.values()]
+        .filter(
+          (batch) =>
+            (batch.state === "pending" || batch.state === "blocked") &&
+            batch.members.some(({ pending }) => wanted.has(pending.push.documentId)),
+        )
+        .map(({ batchId, state }) => ({ batchId, state: state as "pending" | "blocked" }));
     },
   };
 

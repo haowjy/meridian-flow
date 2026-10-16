@@ -8,7 +8,11 @@
  */
 import { randomUUID } from "node:crypto";
 import type { DocumentId, DocumentLinkAnswer, WorkId } from "@meridian/contracts";
-import type { DraftCommandResult, ThreadDraftListItem } from "@meridian/contracts/drafts";
+import type {
+  DraftApplyPendingResponse,
+  DraftCommandOutcome,
+  ThreadDraftListItem,
+} from "@meridian/contracts/drafts";
 import type { CreateUntitledContextDocumentAnswer } from "@meridian/contracts/protocol";
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
 import type { ResolvedWorkAuthority, WorkSlug } from "@meridian/contracts/works";
@@ -106,7 +110,7 @@ export interface ScenarioWriter {
     work: ScenarioWork,
     documentId: DocumentId,
     edit: (doc: Y.Doc) => void,
-  ): Promise<{ branchId: string; generation: number }>;
+  ): Promise<{ branchId: string }>;
 }
 
 /** What a reader sees through its context port: a writer's live port, or a Work thread's. */
@@ -135,7 +139,7 @@ export interface DraftTreeCommands {
     work: ScenarioWork,
     items: "all" | readonly DocumentId[],
     options?: { draftId?: string },
-  ): Promise<DraftCommandResult | DraftCommandResult[]>;
+  ): Promise<CommandBody | CommandBody[]>;
   /**
    * Work purge (§2.6): the writer deletes the Work, its deletion ages past the cutoff, and
    * the purge sweep runs.
@@ -191,12 +195,9 @@ export interface DraftTreeCommands {
   applyAll(
     work: ScenarioWork,
     options?: { items?: readonly ThreadDraftListItem[]; draftId?: string },
-  ): Promise<DraftCommandResult>;
+  ): Promise<CommandBody>;
   /** The Work draft's branch of this document, as its review room names it. */
-  draftBranch(
-    work: ScenarioWork,
-    documentId: DocumentId,
-  ): Promise<{ branchId: string; generation: number }>;
+  draftBranch(work: ScenarioWork, documentId: DocumentId): Promise<{ branchId: string }>;
 }
 
 /** The review item of `documentId`; throws when the list has none. */
@@ -220,15 +221,12 @@ export function typeLink(href: string, aheadId: string) {
   };
 }
 
+/** What a command route answers: its result, or the acceptance of a pending Apply. */
+type CommandBody = DraftCommandOutcome | DraftApplyPendingResponse;
+
 /** The tokens an item rendered, as a request carries them. */
 function refOf(item: ThreadDraftListItem) {
-  return {
-    locationToken: item.tokens.locationToken,
-    ...(item.tokens.liveTextToken === null ? {} : { liveTextToken: item.tokens.liveTextToken }),
-    ...(item.tokens.branchGenerationToken === null
-      ? {}
-      : { branchGenerationToken: item.tokens.branchGenerationToken }),
-  };
+  return { locationToken: item.tokens.locationToken };
 }
 
 function uri(path: string): string {
@@ -472,18 +470,17 @@ export function draftTreeCommands(
       const sync = ports().documentSync;
       const room = await draftBranch(work, documentId);
       const document = new Y.Doc({ gc: false });
-      const loaded = await sync.loadHocuspocusBranchState(room.branchId, room.generation);
+      const loaded = await sync.loadHocuspocusBranchState(room.branchId);
       if (loaded) Y.applyUpdate(document, loaded.state);
       const before = Y.encodeStateVector(document);
       edit(document);
       await sync.admitBranchWriterUpdate({
         branchId: room.branchId,
-        expectedGeneration: room.generation,
         update: Y.encodeStateAsUpdate(document, before),
         origin: { type: "user", userId },
         document,
       });
-      return { branchId: room.branchId, generation: room.generation };
+      return { branchId: room.branchId };
     },
   };
 
@@ -491,11 +488,12 @@ export function draftTreeCommands(
     const review = ports().documentSync.draftReview;
     const item = await review.resolveItemByDocument({ workId: work.id, documentId });
     if (!item) throw new Error(`No draft of ${documentId} in ${work.slug}`);
-    const preview = await review.preview({ workId: work.id, itemKey: item.itemKey });
-    if (preview.status !== "active") throw new Error(`The draft of ${documentId} is gone`);
-    const room = parseYjsRoomName(preview.reviewRoomName);
-    if (room?.kind !== "branch") throw new Error(`Not a branch room: ${preview.reviewRoomName}`);
-    return { branchId: room.branchId, generation: room.generation };
+    const meta = await review.itemMeta({ workId: work.id, itemKey: item.itemKey });
+    if (!("kind" in meta) || meta.kind !== "text")
+      throw new Error(`The draft of ${documentId} is gone`);
+    const room = parseYjsRoomName(meta.roomName);
+    if (room?.kind !== "branch") throw new Error(`Not a branch room: ${meta.roomName}`);
+    return { branchId: room.branchId };
   }
 
   function view(of: ScenarioWork | "live"): ScenarioView {
@@ -587,7 +585,7 @@ export function draftTreeCommands(
         })
       ).body;
     }
-    const results: DraftCommandResult[] = [];
+    const results: CommandBody[] = [];
     await eachItem(work, items, "discard", async ({ documentId, draftId, itemKey }) => {
       results.push(
         (
@@ -666,7 +664,7 @@ export function draftTreeCommands(
       const results: CommandRouteResult[] = [];
       for (const documentId of documentIds) {
         const item = items.find((candidate) => candidate.documentId === documentId);
-        if (!item?.branchGeneration) throw new Error(`No draft branch of ${documentId} to apply`);
+        if (!item) throw new Error(`No draft branch of ${documentId} to apply`);
         results.push(
           await handleApplyWorkDraftRequest(routes(), {
             projectId,

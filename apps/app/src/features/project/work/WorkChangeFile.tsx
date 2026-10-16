@@ -1,11 +1,12 @@
 /** A Work's pending file, expandable to its changes. Commands act in place; the file name opens review. Preview reads begin only when expanded. */
 import { t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
 import { ChevronRight } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { useState } from "react";
 import {
   clearDraftCommandFailure,
+  dismissOverrode,
   draftCommandFailure,
+  draftOverrode,
   useDraftCommandRecords,
 } from "@/client/query/draft-command-record";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
@@ -16,8 +17,11 @@ import {
   type DraftChangesView,
   isWholeDocumentChange,
 } from "@/features/draft-review/draft-changes";
+import { FileCommandStatus } from "@/features/draft-review/ReviewCompletion";
+import { AppliedOverNotice } from "@/features/draft-review/ReviewHeaderNotices";
 import { ReviewMessageText } from "@/features/draft-review/ReviewMessageText";
 import { useDraftView } from "@/features/draft-review/useDraftView";
+import type { HeadlessDiscards } from "@/features/draft-review/useHeadlessDiscards";
 import type { WorkDraftCommands } from "@/features/draft-review/useWorkDraftCommands";
 import { cn } from "@/lib/utils";
 import { useAiDraftLauncher } from "../dock/useAiDraftLauncher";
@@ -28,6 +32,7 @@ export function WorkChangeFile({
   workId,
   file,
   controller,
+  discards,
   touch,
 }: {
   projectId: string;
@@ -35,6 +40,8 @@ export function WorkChangeFile({
   file: ReviewFileTarget;
   /** The scope that sends this file's per-change commands. */
   controller: WorkDraftCommands;
+  /** Where this file's in-place Discards live while the Work page is open. */
+  discards: HeadlessDiscards;
   touch: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -43,21 +50,25 @@ export function WorkChangeFile({
   const records = useDraftCommandRecords();
   const draft = { projectId, workId, documentId: file.documentId, itemKey: file.draft.itemKey };
   const refused = draftCommandFailure(records, draft);
-  const view = useDraftView(draft, { controller, enabled: expanded, item: file.draft });
-  if (
-    expanded &&
-    (view.status === "gone" ||
-      (view.status === "ready" && view.items.length === 0 && !view.unlisted))
-  )
-    return null;
+  const overrode = draftOverrode(records, draft);
+  const view = useDraftView(draft, {
+    controller,
+    enabled: expanded,
+    file,
+    discards,
+  });
+  // No changes left is not nothing to say: a held failure or overwrite notice keeps the file until it is
+  // dismissed or resolved.
+  const noticed = refused !== null || overrode.length > 0;
+  if (expanded && !noticed && (view.status === "gone" || view.finished)) return null;
   const wholeDocument = expanded && isWholeDocumentChange(view);
   const imageOpenable = isDraftImagePath(file.contextLocation?.path);
   const name = file.documentName || file.contextLocation?.path || t`Untitled document`;
 
-  const review = (focusOperationIds?: readonly string[]) =>
-    file.draft.branchGeneration !== null
-      ? openReviewFile(file, workId, focusOperationIds)
-      : imageOpenable && setPreviewing(true);
+  const review = (focusChangeIds?: readonly string[]) =>
+    file.draft.binary
+      ? imageOpenable && setPreviewing(true)
+      : openReviewFile(file, workId, focusChangeIds);
 
   return (
     <>
@@ -92,14 +103,13 @@ export function WorkChangeFile({
           <button
             type="button"
             className={cn(workFileRowClass, "w-auto flex-1 pl-1", touch && "min-h-11")}
-            disabled={
-              !file.contextLocation || (file.draft.branchGeneration === null && !imageOpenable)
-            }
+            disabled={!file.contextLocation || (file.draft.binary && !imageOpenable)}
             onClick={() => review()}
           >
             <span className="min-w-0 flex-1 truncate font-medium">{name}</span>
           </button>
         )}
+        {view.completing ? <FileCommandStatus mode={view.completing} /> : null}
       </div>
       <DraftImagePreview
         target={previewing ? { projectId, workId, documentId: file.documentId, name } : null}
@@ -111,6 +121,12 @@ export function WorkChangeFile({
           onDismiss={() => clearDraftCommandFailure(draft)}
         />
       ) : null}
+      <AppliedOverNotice
+        items={overrode}
+        onDismiss={() => dismissOverrode(draft)}
+        touch={touch}
+        className={touch ? "pl-11" : "pl-8"}
+      />
       {expanded && !wholeDocument ? (
         <div className={cn("pb-1.5", touch ? "pl-11" : "pl-8")}>
           <FileChanges view={view} touch={touch} onSelect={review} />
@@ -128,7 +144,7 @@ function FileChanges({
 }: {
   view: DraftChangesView;
   touch: boolean;
-  onSelect: (operationIds: readonly string[]) => void;
+  onSelect: (changeIds: readonly string[]) => void;
   documentName?: string;
 }) {
   return (
@@ -137,22 +153,7 @@ function FileChanges({
       showAttribution
       view={view}
       touch={touch}
-      onSelect={(change) => onSelect(change.operationIds)}
-      standIn={
-        view.unlisted ? (
-          <StateLine>
-            <Trans>Formatting changes remain</Trans>
-          </StateLine>
-        ) : null
-      }
+      onSelect={(change) => onSelect([change.id])}
     />
-  );
-}
-
-function StateLine({ children }: { children: ReactNode }) {
-  return (
-    <p className="px-2 py-2 text-caption text-muted-foreground" role="status">
-      {children}
-    </p>
   );
 }

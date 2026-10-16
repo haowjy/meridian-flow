@@ -19,12 +19,15 @@ import {
   currentDrizzleDb,
   deferUntilDrizzleCommit,
   runInDrizzleTransaction,
+  runInRootDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
 import { confirmScopedEdits } from "../../../shared/edit-confirmation.js";
 import { lockDraftBranchWorks } from "../../../shared/work-draft-lifecycle.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import type { BranchCoordinator, BranchStore } from "../domain/branch-coordinator.js";
 import type { BranchCriticalSections } from "../domain/branch-critical-sections.js";
+import { draftDiffersFromBase } from "../domain/draft-rebase.js";
+import type { ApplicationBranchStore } from "../domain/ports/application-branch-store.js";
 import { appendInverseRestorationFacts } from "../domain/provenance.js";
 import {
   createTurnInverseService,
@@ -34,20 +37,18 @@ import {
   type TurnInverseStore,
 } from "../domain/turn-inverse-service.js";
 import { recordDocumentEdit } from "./drizzle-document-edits.js";
-import { refreshDraftEffect } from "./drizzle-draft-effect.js";
 import { readTurnEditTargets } from "./drizzle-turn-edit-targets.js";
 
 type Dependencies = {
   db: Database;
   journal: UpdateJournal;
-  branches: BranchStore;
+  branches: BranchStore & Pick<ApplicationBranchStore, "writeBranchState">;
   coordinator: DocumentCoordinator;
   branchCoordinator: Pick<BranchCoordinator, "broadcastUpdate">;
   criticalSections: BranchCriticalSections;
   resolveDocumentUri(documentId: string): Promise<string | null>;
   refreshDocument(documentId: DocumentId): Promise<void>;
   flushLivePull(documentId: DocumentId): Promise<void>;
-  notices: import("../domain/reversal-notices.js").TurnInverseNoticePort;
   /** Revert, rollback and mark-blocking change pending membership, so they publish through it. */
   workProjection: Pick<WorkProjectionMutation, "mutatePendingBranches">;
 };
@@ -71,112 +72,139 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       ...part,
       update: new Uint8Array(part.update),
       kind: edit.kind,
-      actionId: edit.actionId,
       documentId: edit.documentId,
       threadId: edit.threadId,
       turnId: edit.turnId,
       responseId: edit.responseId,
       editScopeId: edit.editScopeId,
-      consumes: edit.consumes,
       actor: edit.actor,
       wId: edit.wId,
     }));
   }
-  async function materialize(documentId: DocumentId): Promise<Y.Doc> {
-    const snapshot = await input.journal.read(documentId);
-    const doc = new Y.Doc({ gc: false });
-    if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint);
-    for (const row of snapshot.updates) Y.applyUpdate(doc, row.update);
-    return doc;
+  type CapturedDraft = Omit<
+    InverseDocument["drafts"] extends ReadonlyMap<string, infer D> ? D : never,
+    "doc"
+  >;
+  type CapturedDocument = Omit<InverseDocument, "live" | "drafts"> & {
+    live: Uint8Array[];
+    drafts: Map<string, CapturedDraft>;
+  };
+  async function withMaterialized<T>(
+    captured: CapturedDocument[],
+    run: (documents: InverseDocument[]) => Promise<T>,
+  ): Promise<T> {
+    const owned: Y.Doc[] = [];
+    const materialize = (updates: Uint8Array[]) => {
+      const doc = new Y.Doc({ gc: false });
+      owned.push(doc);
+      for (const update of updates) Y.applyUpdate(doc, update);
+      return doc;
+    };
+    try {
+      return await run(
+        captured.map((document) => ({
+          ...document,
+          live: materialize(document.live),
+          drafts: new Map(
+            [...document.drafts].map(([id, draft]) => [
+              id,
+              { ...draft, doc: materialize([draft.branch.state]) },
+            ]),
+          ),
+        })),
+      );
+    } finally {
+      for (const doc of owned) doc.destroy();
+    }
+  }
+  async function withCapturedDocuments<T>(
+    query: TurnInverseQuery,
+    run: (documents: CapturedDocument[]) => Promise<T>,
+  ): Promise<T> {
+    return runInDrizzleTransaction(input.db, async () => {
+      const ids = await selectedDocuments(query);
+      // Only inverse policies take this lock. Apply never waits on it.
+      for (const id of ids)
+        await db().execute(
+          sql`select pg_advisory_xact_lock(hashtextextended(${`document-inverse:${id}`},0::bigint))`,
+        );
+      const parts = await history(ids);
+      const branchIds = [
+        ...new Set([
+          ...(query.branchId ? [query.branchId] : []),
+          ...parts
+            .filter(
+              (part) =>
+                (part.threadId === query.threadId &&
+                  (query.model || !query.turnId || part.turnId === query.turnId) &&
+                  (query.model ||
+                    !query.responseIdentity ||
+                    part.editScopeId === query.responseIdentity.editScopeId)) ||
+                (part.kind !== "write" && part.placement.kind === "pending"),
+            )
+            .flatMap((part) =>
+              [part.origin, part.placement].flatMap((placement) =>
+                placement.kind === "pending" ? [placement.branchId] : [],
+              ),
+            ),
+        ]),
+      ].sort();
+      return input.criticalSections.withBranches(branchIds, async () => {
+        const lockLive = async (index: number): Promise<T> => {
+          const id = ids[index];
+          if (id) return input.coordinator.withDocument(id, () => lockLive(index + 1));
+          const frozen = await lockDraftBranchWorks(input.db, branchIds);
+          for (const key of [...ids, ...branchIds].sort()) await lockDocumentMutation(db(), key);
+          if (query.model) await confirmScopedEdits();
+          const currentParts = await history(ids);
+          const documents: CapturedDocument[] = [];
+          for (const documentId of ids) {
+            const live = await input.journal.read(documentId);
+            const drafts: CapturedDocument["drafts"] = new Map();
+            for (const branchId of branchIds) {
+              const branch = await input.branches.getBranch(branchId);
+              if (!branch || branch.documentId !== documentId || branch.status !== "active")
+                continue;
+              const [name] = branch.workId
+                ? await db()
+                    .select({ slug: works.slug })
+                    .from(works)
+                    .where(eq(works.id, branch.workId))
+                : [];
+              drafts.set(branchId, {
+                branch,
+                name: name?.slug ? `@${name.slug}` : "@/",
+                frozen: frozen.has(branchId),
+              });
+            }
+            documents.push({
+              documentId,
+              uri: (await input.resolveDocumentUri(documentId)) ?? documentId,
+              live: [
+                ...(live.checkpoint ? [live.checkpoint] : []),
+                ...live.updates.map((row) => row.update),
+              ],
+              history: currentParts.filter((part) => part.documentId === documentId),
+              drafts,
+            });
+          }
+          return run(documents);
+        };
+        return lockLive(0);
+      });
+    });
   }
   const store: TurnInverseStore = {
-    async withLockedDocuments(query, run) {
-      return runInDrizzleTransaction(input.db, async () => {
-        const ids = await selectedDocuments(query);
-        // Only inverse policies take this lock. Apply never waits on it.
-        for (const id of ids)
-          await db().execute(
-            sql`select pg_advisory_xact_lock(hashtextextended(${`document-inverse:${id}`},0::bigint))`,
-          );
-        const parts = await history(ids);
-        const branchIds = [
-          ...new Set([
-            ...(query.branchId ? [query.branchId] : []),
-            ...parts
-              .filter(
-                (part) =>
-                  (part.threadId === query.threadId &&
-                    (query.model || !query.turnId || part.turnId === query.turnId) &&
-                    (query.model ||
-                      !query.responseIdentity ||
-                      part.editScopeId === query.responseIdentity.editScopeId)) ||
-                  (part.kind !== "write" && part.placement.kind === "pending"),
-              )
-              .flatMap((part) =>
-                [part.origin, part.placement].flatMap((placement) =>
-                  placement.kind === "pending" ? [placement.branchId] : [],
-                ),
-              ),
-          ]),
-        ].sort();
-        return input.criticalSections.withBranches(branchIds, async () => {
-          const lockLive = async (index: number): Promise<Awaited<ReturnType<typeof run>>> => {
-            const id = ids[index];
-            if (id) return input.coordinator.withDocument(id, () => lockLive(index + 1));
-            const frozen = await lockDraftBranchWorks(input.db, branchIds);
-            for (const key of [...ids, ...branchIds].sort()) await lockDocumentMutation(db(), key);
-            if (query.model) await confirmScopedEdits();
-            const currentParts = await history(ids);
-            const documents: InverseDocument[] = [];
-            try {
-              for (const documentId of ids) {
-                const live = await materialize(documentId);
-                const document: InverseDocument = {
-                  documentId,
-                  uri: (await input.resolveDocumentUri(documentId)) ?? documentId,
-                  live,
-                  history: currentParts.filter((part) => part.documentId === documentId),
-                  drafts: new Map(),
-                };
-                documents.push(document);
-                const drafts = new Map<
-                  string,
-                  InverseDocument["drafts"] extends ReadonlyMap<string, infer D> ? D : never
-                >();
-                for (const branchId of branchIds) {
-                  const branch = await input.branches.getBranch(branchId);
-                  if (!branch || branch.documentId !== documentId || branch.status !== "active")
-                    continue;
-                  const doc = new Y.Doc({ gc: false });
-                  Y.applyUpdate(doc, branch.state);
-                  // A draft action always includes the locked, current live cut.
-                  Y.applyUpdate(doc, Y.encodeStateAsUpdate(live));
-                  const [name] = branch.workId
-                    ? await db()
-                        .select({ slug: works.slug })
-                        .from(works)
-                        .where(eq(works.id, branch.workId))
-                    : [];
-                  drafts.set(branchId, {
-                    branch,
-                    doc,
-                    name: name?.slug ? `@${name.slug}` : "@/",
-                    frozen: frozen.has(branchId),
-                  });
-                }
-                document.drafts = drafts;
-              }
-              return await run(documents);
-            } finally {
-              for (const document of documents) {
-                document.live.destroy();
-                for (const draft of document.drafts.values()) draft.doc.destroy();
-              }
-            }
-          };
-          return lockLive(0);
-        });
-      });
+    withLockedDocuments(query, run) {
+      return withCapturedDocuments(query, (documents) => withMaterialized(documents, run));
+    },
+    async withReadDocuments(query, run) {
+      // Keep the DB's encoded cuts; materialize this read only after releasing the locks.
+      // A root transaction also releases SQL locks before the read-only projection runs.
+      const documents = await runInRootDrizzleTransaction(input.db, () =>
+        withCapturedDocuments(query, async (documents) => documents),
+      );
+      return withMaterialized(documents, run);
     },
     async markBlocking(branchIds) {
       if (!branchIds.length) return;
@@ -204,7 +232,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         own.destroy();
       }
     },
-    async commit({ plans, kind, userId, query }) {
+    async commit({ plans, kind, query }) {
       const handles: string[] = [];
       const mutate = async () => {
         for (const plan of plans) {
@@ -242,12 +270,11 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                   .insert(branchWriteJournal)
                   .values({
                     branchId: draft.branch.branchId,
-                    generation: draft.branch.generation,
                     updateData: Buffer.from(part.update),
                     source: query.model ? "agent" : "writer",
                     threadId: query.model ? query.threadId : null,
                     turnId: query.model ? query.turnId : null,
-                    actorUserId: userId ?? null,
+                    actorUserId: null,
                     draftBaseUpdateSeq: sql`coalesce((select max(id) from document_yjs_updates where document_id = ${document.documentId}),0)`,
                     updateMeta: {
                       ...(query.model && query.responseIdentity
@@ -256,10 +283,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                             editScopeId: query.responseIdentity.editScopeId,
                           }
                         : {}),
-                      restorationAliases: part.aliases.map((alias) => ({
-                        source: { ...alias.source, length: alias.len },
-                        target: { ...alias.target, length: alias.len },
-                      })),
                     },
                   })
                   .returning({ id: branchWriteJournal.id });
@@ -267,7 +290,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                 origin = {
                   kind: "pending",
                   branchId: draft.branch.branchId,
-                  generation: draft.branch.generation,
                   rowId: row.id,
                 };
               } else {
@@ -303,43 +325,28 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             }
             await recordDocumentEdit(db(), {
               documentId: document.documentId,
-              actor: query.model ? "agent" : kind === "rollback" ? "system" : "human",
+              actor: query.model ? "agent" : "system",
               wId,
               threadId: query.model ? query.threadId : undefined,
               turnId: query.model ? query.turnId : undefined,
               responseId: query.model ? query.responseIdentity?.providerResponseId : undefined,
               editScopeId: query.model ? query.responseIdentity?.editScopeId : undefined,
-              actorUserId: userId,
               kind,
-              actionId: edit.actionId ?? plan.computed.actionId,
-              consumes: plan.consumes,
               receipts,
             });
           }
           if (draft && updates.length) {
-            const [updated] = await db()
-              .update(documentBranches)
-              .set({
-                state: Buffer.from(Y.encodeStateAsUpdate(view)),
-                stateVector: Buffer.from(Y.encodeStateVector(view)),
-                updatedAt: new Date(),
-              })
-              .where(
-                and(
-                  eq(documentBranches.id, draft.branch.branchId),
-                  eq(documentBranches.generation, draft.branch.generation),
-                  eq(documentBranches.status, "active"),
-                  eq(documentBranches.state, Buffer.from(draft.branch.state)),
-                  eq(documentBranches.stateVector, Buffer.from(draft.branch.stateVector)),
-                ),
-              )
-              .returning({ id: documentBranches.id });
-            if (!updated) throw new Error("Inverse draft admission changed under its lock");
-            await refreshDraftEffect(
-              db(),
-              draft.branch.branchId,
-              Y.encodeStateAsUpdate(document.live),
-            );
+            const written = await input.branches.writeBranchState({
+              branchId: draft.branch.branchId,
+              expectedState: draft.branch.state,
+              state: Y.encodeStateAsUpdate(view),
+              stateVector: Y.encodeStateVector(view),
+              effect:
+                draft.branch.kind === "work_draft"
+                  ? { kind: "text", hasEffect: draftDiffersFromBase(view) }
+                  : { kind: "peer" },
+            });
+            if (!written) throw new Error("Inverse draft admission changed under its lock");
           }
           if (kind === "rollback") {
             const accepted = new Set(
@@ -351,10 +358,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             );
             const unresolved = document.history.filter(
               (part) =>
-                (part.kind === "write" ||
-                  part.kind === "revert" ||
-                  part.kind === "undo" ||
-                  part.kind === "redo") &&
+                (part.kind === "write" || part.kind === "revert") &&
                 part.editScopeId === query.responseIdentity?.editScopeId &&
                 part.placement.kind === "pending" &&
                 !accepted.has(`${part.editId}:${part.ordinal}`) &&
@@ -392,15 +396,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
               await input.refreshDocument(document.documentId);
               await input.flushLivePull(document.documentId);
             }
-            if (kind !== "rollback" && kind !== "revert" && !query.model && query.turnId)
-              await input.notices.record({
-                docId: document.documentId,
-                threadId: query.threadId,
-                direction: kind,
-                turnId: query.turnId,
-                sweptContent: false,
-                beforeContentRef: null,
-              });
           };
           if (!deferUntilDrizzleCommit(publish)) await publish();
         }

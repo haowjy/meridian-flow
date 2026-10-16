@@ -60,6 +60,12 @@ export function ProjectAddressDocument({
       tab.documentId === result.document.documentId &&
       matchesReviewItem(tab, { reviewWorkId: workId ?? "", reviewItemKey: reviewItemKey }),
   );
+  // A tab on the document without a draft-only entry: the document lives, and its tab follows
+  // the live catalog.
+  const liveTabOpen =
+    !!result &&
+    result.kind !== "unavailable" &&
+    tabs.some((tab) => tab.kind === "tracked" && tab.documentId === result.document.documentId);
   const reviewLocatorFingerprint = JSON.stringify(
     reviewTab ? { scheme: reviewTab.scheme, path: reviewTab.path, name: reviewTab.name } : null,
   );
@@ -84,9 +90,13 @@ export function ProjectAddressDocument({
       return;
     }
     if (reviewItemKey) {
-      // No tab and no live room: the address carries the item and
-      // ReviewAddressOwner opens its review. A hidden review has no live catalog to
-      // refresh its labels, so the server's canonical locator repairs its tab here.
+      // The address carries the item and ReviewAddressOwner opens its review. A live
+      // document's locator belongs to its live tab and the live catalog, which a sidebar
+      // rename moves; the review does not write it back. The server-canonical repair is for a
+      // review with no live entry (a draft-only document), whose tab nothing else updates.
+      // Repairing a live document's route here wrote against the rename-follow and the two
+      // traded writes without end (#845).
+      if (!reviewTab && liveTabOpen) return;
       if (reviewTab) {
         const patch = canonicalReviewTabPatch(
           reviewTab,
@@ -146,6 +156,7 @@ export function ProjectAddressDocument({
     entryKey,
     admissionFingerprint,
     reviewLocatorFingerprint,
+    liveTabOpen,
     workId,
     noWorkId,
     navigation,

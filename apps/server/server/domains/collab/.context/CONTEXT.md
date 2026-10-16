@@ -33,24 +33,21 @@ pure deletion and a document snapshot misses tree-only moves. Reads and applies
 compute the token synchronously in their prepared link scope; an unverified
 recovery returns `null`, never a later read's token.
 
-Preview and selective disposition use one `ReadReviewCut`. The first branch
-read fixes a repeatable-read snapshot containing branch bytes/generation,
-review rows, history status, live journal/head, thread titles, and live/draft
-link views. It performs no room reads, pulls, provisioning, or repair. A
-missing branch is `gone`, not an invitation to create one. Returned bytes and
-scopes are detached before rich difference work begins.
+The review lives in the browser: a draft room projects `prosemirror` against its
+server-owned `review_base` (`projectReview` in `@meridian/agent-edit/diff`). The
+server stores no review operations, classes, tokens or evidence, and a review read
+needs no repeatable-read snapshot. It answers item metadata (`roomName`, `isNew`,
+`wholeItem`, `hasChanges`; a closed item is `gone`), the list (draft tree merged
+with text branches, each row carrying the location token; live text moving never refuses), the commands, and the chat-attribution hint.
+Apply is a content merge of the change the writer saw into live's current text.
+Discard of a change or draft is a writer edit inside the room, undone by that
+surface's Ctrl+Z, with no command. Apply is server-authored and has no Ctrl+Z. Only
+item Discard and Discard all are kernel commands; they close branches and never
+reset text from live.
 
-Apply fences the displayed cut. Selective Discard fences the displayed class
-identities and the server-vended closed-row/rich-effect evidence, allowing
-independent draft typing but refusing changed selected evidence. Whole Apply
-and whole Discard retain their existing document-level semantics. Corrupt
-previews return a typed refusal without resetting state; the whole Discard
-command is the recovery path for a corrupt branch.
-
-Discard closes only peers whose upstream is the addressed Work-draft branch,
-then retires those peers after commit. A fresh peer in the same thread and
-peers for other Works survive. Thread-core invalidation is a post-discard
-side effect, never a preview side effect.
+Closing a branch retires only the peers whose upstream is that branch, after
+commit. A fresh peer in the same thread and peers for other Works survive.
+Thread-core invalidation is a post-discard side effect.
 
 ## Save, replay, and grants
 
@@ -60,8 +57,8 @@ document to its first grant. The response transaction saves all live and draft
 journals, receipt records, and callbacks together. Live rooms publish only
 after commit, so rollback is invisible to open editors.
 
-A chat's write mode decides only where its new AI writes go (D62); chats in
-one Work may differ. A draft write never pushes itself live (D59): a draft
+A chat's write mode decides only where its new AI writes go; chats in
+one Work may differ. A draft write never pushes itself live: a draft
 that an auto-apply chat leaves behind, or another chat keeps writing, waits
 there like a kept change, and the dock shows it. Switching a chat to
 auto-apply touches no draft; Apply stays the writer's command. Branches carry
@@ -79,32 +76,30 @@ write against a different version from the thread's last read returns
 `read_required`. Model inverse commands use the current destination grant and
 the immutable edit policy, not a legacy journal selection.
 
-Prepared replay treats ordinary concurrent chat edits and writer deletions as
-Yjs peers. A planning-visible item disappearing is not by itself rollback
-evidence. Only retired-generation structs or immutable inverse removals after
-the helper cut revoke a staged write. Replay drops the rejected logical write
-and its later dependency closure, retains independent writes, and reports the
-typed refusal in notices and receipts.
+Prepared replay treats concurrent chat edits and writer deletions as Yjs peers.
+A staged write is refused only on inverse evidence or a failed integration; text
+that merely disappeared (a writer's Discard, a rebase) merges like any peer's edit.
+Replay drops the rejected logical write and its later dependency closure, retains
+independent writes, and reports the typed refusal in notices and receipts.
 
 ## Work mode and branch persistence
 
-Work write mode chooses the destination for new AI writes. A draft write never
-pushes itself live, even if the Work changes to Auto-apply while the reply is
-in flight. Switching to Auto-apply with pending changes explicitly chooses
-`apply` or `keep`; branch data does not carry push policy. Applying an archived
-Work refuses under the Work lock.
+Live writer SET and agent writes routed to live never touch a pending Work draft:
+the next rebase merges the live edit into it by content, keeping every draft change.
+`./mf doc put --overwrite` is not that path: it deletes the document and creates a
+new one at the same URI, and the new identity inherits no drafts.
 
-Live writer SET and agent writes routed to live preserve a pending Work draft:
-pulls merge live edits into it without resetting its generation or settling its
-authored rows. `./mf doc put --overwrite` is not that path: it deletes the
-document and creates a new one at the same URI, and the new identity inherits
-no drafts.
-
-A Work draft is shared by every thread editing the same document in that Work.
-Thread peers fork from it and retain the upstream branch identity and
-peer-branch generation independently of the Work's current generation. Draft
-Apply publishes its selected or whole branch through the single push seam;
-Discard re-forks from live plus surviving rows and creates no restoration copy.
+A Work draft is shared by every thread editing the same document in that Work. A
+text branch holds `prosemirror` and the server-owned `review_base`, shares no Yjs
+lineage with live, and catches up by a three-way content rebase (base, live, draft)
+on live's certified cut; only thread peers still pull the draft's Yjs state. Every
+server write into a text branch (seed, rebase, Apply's base patch, late recovery)
+goes through `writeBranchState`, computed against the state it compare-and-swaps
+onto under the branch lease; a stored server-client delta replayed later is dropped
+silently by Yjs. A late peer's stale frame is rebased onto the current text: its
+surviving typing is recovered as paragraphs, and its stale deletions are never
+replayed ([late-peer recovery][late-peer]). Draft Apply merges
+content; no draft bytes reach live and the draft stays open.
 
 Attribution is based on immutable journal provenance and dependency closure,
 not text similarity or block proximity. Writer rows retain their identity.
@@ -124,8 +119,8 @@ and upstream together. A shared pull promise resolves only after commit. A
 caller joining an in-flight live pull awaits one coalesced run that starts
 after its call, since the in-flight snapshot may predate a writer edit it must
 see. Pulls run after persisted live updates, on branch review room open and
-reconnect, and at agent tool boundaries; the room trigger is fire-and-forget
-and Hocuspocus admission never waits for it.
+reconnect, and at agent tool boundaries; room open awaits one before admitting
+frames, and a failure is logged without aborting the connection.
 
 Room loads read in the caller's transaction because that transaction may
 already hold the authority head. Provisioning locks the canonical thread row
@@ -187,43 +182,28 @@ a global maximum.
 `document_links` is a hint from a certified cut, never link authority. Changing
 the extractor bumps its version, and no second post-write publisher exists.
 
-Review attribution compares live, branch, and journal content from one cut.
-It must preserve surviving Yjs identities, distinguish rich changes from text
-changes, and leave incomplete ownership as `unclassified`. Missing authorship
-never disappears from a complete hunk and never becomes invented AI credit.
-Every class touching an unclassified hunk is `canApplyOrDiscard: false`; both
-selectors refuse it as `incomplete_class`, so only document-level Apply or
-Discard can settle it. Deleted text carries per-author spans (agent or writer)
-from deletion attribution, since one deletion can contain both authors.
-Publication uses canonical block identities, not display hash prefixes or
-serialized prose. Agent preview operations carry their chat thread (with its
-title, resolved in one batched lookup) and the journal row's turn and tool-call
-ids so the app can open the chat at the write; writer operations carry none.
-Review hunks and publication compare prose (`documentProseEqual`); pending
-effects and terminal settlement also compare managed manifest membership
-(`documentEffectsEqual`). Manifest changes have their own review operations and
-never become prose hunks.
+Attribution has three rules and one classifier (`classifyChanges`, `@meridian/agent-edit/diff`). Byline: a
+change names an author when every alignment the draft's items allow gives that author part of an edit
+(fewer names under doubt). Membership: a change belongs to a conversation when any alignment puts one of its
+AI writes in it (inclusive under doubt); the draft dock, chat-scoped Apply and Discard and part status
+(`draft-edit-status.ts`) read it. Status: an AI part reads applied only when no change has it as a member.
+The browser classifies the AI edit parts pending in the branch (`…/draft/attribution`, each with its `owner`:
+the nearest primary ancestor conversation, and the spawn row to reveal for a subagent's write) against the
+room. The payload carries the project's `userId` and an encoded Yjs snapshot fence (`revision`).
+State and parts come from one read-only repeatable-read database snapshot, not a process-local lock.
+Undo links live in the room's restoration root. Writer edits are never listed as edit parts: unlisted IDs
+are the user's only within the fence or from the browser's explicitly identified own client. Unlisted
+deletions require coverage in the snapshot's delete set. Otherwise provenance is unresolved, unnamed
+and inclusive for membership. Apply appends the Apply record (a
+server-owned root, `__meridian_review_applied_v1`, client 1) in the same write that moves `review_base`. A text branch's effect is base-versus-draft equality; manifest changes have their
+own operations and never become prose hunks.
 
-## Selective disposition and response retirement
+## Disposition and response retirement
 
-Apply and Discard parse required-field selection variants and thread them
-through branch critical sections and snapshot-CAS retries. Only an absent
-selection chooses whole Discard; a present but incomplete or malformed selection
-is HTTP 400, never a whole Discard. Class IDs,
-immutable part keys, live revisions, and admission tokens are evidence for the
-clicked class only; they never admit a replacement class. A missing selected
-class is `stale` if an immutable member survives and `gone` otherwise.
-
-No visible review operations is not permission to reset a draft. An empty
-draft settles only when its complete document effect (prose, marks, attributes,
-ordered children, and managed manifest membership) equals live; incomplete
-attribution never makes a semantically changed draft empty. When a per-change
-Apply or Discard leaves such a draft, its generation resets and the terminal
-`itemDisposition` is `applied` if any current-generation row reached live, else
-`discarded`; pushed history stays pushed. Cleanup failure after a committed
-disposition leaves `itemClosed: false` and cannot reject the command. Staged
-item Apply (the draft tree step) compares its location, live-text, and
-generation tokens only at the staging check: staging is the consent boundary.
+An item whose draft equals its base is unlisted but stays addressable with its
+room, history and next proposal; no empty-draft reset exists. Staged item Apply
+compares its location token only at the staging check: staging is the consent
+boundary. Cleanup failure after a committed disposition cannot reject the command.
 
 Thread-peer publication applies ordered per-segment journal rows to a
 provisional target clone and never regenerates durable Work journal rows from a
@@ -234,9 +214,9 @@ update. Manifest membership mutations still journal cumulative sync bytes
 
 Forward inverses append ordinary immutable journal parts with restoration
 aliases. They do not rewrite target rows, mark them reversed, or use a reserved
-undo client. Card actions and model undo/redo share immutable edit and
-placement targets but retain their own authorization and stack policy. Model
-revert is a new edit in the current destination.
+undo client. Model `revert` is a new edit in the current destination, shown in a draft as a
+change the writer applies. Stored `undo` and `redo` edit kinds remain readable
+history; nothing writes them.
 
 Response helpers are private to agent-edit's committer. Every tool and scoped
 read obtains a prepare lease; reporting uses disposable replicas. Rollback
@@ -256,3 +236,5 @@ back unrelated documents in the reply.
 - [Collab visual explainer](collab-domain.html)
 - [Draft/live visual model](draft-live-model.html)
 - [Deferred work](FUTURE.md) and [TODO](TODO.md)
+
+[late-peer]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/late-peer-recovery.md

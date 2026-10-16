@@ -261,6 +261,7 @@ export function DocumentIdentityBar({
       itemKey={reviewItemKey ?? ""}
       onOpenDraft={openDraft}
       onCloseDraftOnly={onCloseDraftOnly}
+      surface={variant === "header" ? "dock" : "editor"}
     >
       {({ version, controls }) => renderRow(version, controls)}
     </DraftReviewBand>
