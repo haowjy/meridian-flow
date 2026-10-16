@@ -88,7 +88,8 @@ export async function buildThreadSnapshot(
 
     const headSeq = await hub.headSeq(threadId);
 
-    // The graph keeps every turn (the leaf, `prevTurnId`); the snapshot shows the conversation.
+    // The graph keeps every turn (the leaf, `prevTurnId`). The snapshot drops handed-back messages and keeps
+    // forgotten turns, stamped `forgottenBy`: the client hides them, and diagnostics can still read them.
     const graph = await turnGraph(repos.turns).listByThread(threadId);
     const handedBack = await repos.turns.listHandedBackIds(threadId);
     // Contract: `messageFate` (@meridian/thread-client) reads a user turn's absence from this
@@ -149,7 +150,7 @@ export async function buildThreadSnapshot(
   });
 }
 
-/** Walks the graph from the leaf, which may be a handed-back message, and counts only conversation turns. */
+/** Walks the graph from the leaf, which may be a handed-back message, and counts only conversation turns (a forgotten turn is not one). */
 function snapshotActionRequired(
   activeLeafTurnId: TurnId | null,
   turns: Turn[],
@@ -160,7 +161,8 @@ function snapshotActionRequired(
   const activeLineage: Array<Pick<Turn, "role" | "status">> = [];
   while (turn && !visited.has(turn.id)) {
     visited.add(turn.id);
-    if (!handedBack.has(turn.id)) activeLineage.push({ role: turn.role, status: turn.status });
+    if (!handedBack.has(turn.id) && !turn.forgottenBy)
+      activeLineage.push({ role: turn.role, status: turn.status });
     turn = turns.find((candidate) => candidate.id === turn?.prevTurnId);
   }
   return isThreadActionRequired({ activeLineage });

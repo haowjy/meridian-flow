@@ -124,6 +124,15 @@ export function createDrizzleBlockRepository(db: DrizzleDb): BlockRepository {
         .orderBy(asc(schema.turnBlocks.sequence));
       return rows.map(mapBlock);
     },
+    async listByTurnIds(turnIds) {
+      if (turnIds.length === 0) return [];
+      const rows = await currentDrizzleDb(db)
+        .select()
+        .from(schema.turnBlocks)
+        .where(and(inArray(schema.turnBlocks.turnId, [...turnIds]), inConversation))
+        .orderBy(asc(schema.turnBlocks.turnId), asc(schema.turnBlocks.sequence));
+      return rows.map(mapBlock);
+    },
     async listByThread(threadId) {
       const rows = await currentDrizzleDb(db)
         .select({ block: schema.turnBlocks })

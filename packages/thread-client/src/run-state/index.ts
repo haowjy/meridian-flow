@@ -22,7 +22,6 @@ export {
   type RetryEntry,
   type RetryReconciliation,
   reconcileRetries,
-  retryTargetOf,
 } from "./retry";
 export {
   addIntent,

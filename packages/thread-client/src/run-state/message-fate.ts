@@ -11,18 +11,31 @@
  * turns any other way must expose `handedBackIds` and this selector must read them, or an
  * absent turn would be claimed as a hand-back it was not.
  *
+ * A stamped writer message (`forgottenBy`) is FORGOTTEN, never answered. Forgotten reply turns stay
+ * findable below: a failed reply followed by a successful Retry still proves the Retry.
+ *
  * The answer is the last reply in the message's chain: the deliverer's execution from the
  * deliverer on, then each Retry's execution (`metadata.retryOf`), so a failed or cancelled
  * successor can never fall back to an earlier reply's success.
  */
-import { isTerminalTurnStatus, type RunState, type Turn } from "@meridian/contracts/threads";
+import {
+  isTerminalTurnStatus,
+  type RunState,
+  retryTargetOf,
+  type Turn,
+} from "@meridian/contracts/threads";
 import { isBlockedForUsage, isOwed } from "./fold-messages";
-import { retryTargetOf } from "./retry";
 import { addIntent, INITIAL_RUN_STATE_VIEW, receiveRecord } from "./run-state-view";
 
 export type MessageFate =
   | { kind: "waiting"; blocked: boolean }
   | { kind: "handedBack" }
+  /**
+   * The chat moved past this message's failed attempt: a stamped writer message left the
+   * conversation, so no reply answers it. Not success, not a hand-back; `forgottenBy` is the
+   * turn that moved on.
+   */
+  | { kind: "forgotten"; forgottenBy: string }
   | { kind: "answering"; answeredBy: string; chain: string[]; last: Turn }
   /** `last.status` is terminal. */
   | { kind: "answered"; answeredBy: string; chain: string[]; last: Turn }
@@ -47,6 +60,8 @@ export function messageFate(input: {
 
   const message = turns.find((turn) => turn.id === messageId);
   if (!message) return { kind: "handedBack" };
+  // Before any answer is attributed: a later reply belongs to the turn that moved on, not to this message.
+  if (message.forgottenBy) return { kind: "forgotten", forgottenBy: message.forgottenBy };
   if (message.delivery === null) return { kind: "unproven", reason: "unconfirmed" };
 
   const byId = new Map(turns.map((turn) => [turn.id, turn]));

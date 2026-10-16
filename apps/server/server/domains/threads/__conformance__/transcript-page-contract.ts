@@ -5,9 +5,11 @@ import type { Block, Thread, Turn } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import { loadThreadConversationContext } from "../domain/thread-conversation-context.js";
 import {
+  countConversationTurnsBefore,
   cursorAfter,
   InvalidTranscriptCursorError,
   readTranscriptPage,
+  readTranscriptTurn,
 } from "../domain/transcript-page.js";
 import type { InternalThreadRepositories } from "../ports/repositories.js";
 import { turnGraph } from "../ports/turn-graph.js";
@@ -223,6 +225,115 @@ export function defineTranscriptPageContract(
         expect(actual).toEqual(expected);
       }
       expect([r1.id, r2.id, r3.id, f2.id]).toContain(expectedTurns.at(-1));
+    });
+
+    /** Everything a reader may show of a chat: its pages, its conversation read and that read's blocks. */
+    async function shown(
+      repos: InternalThreadRepositories,
+      thread: Thread,
+      names: ReadonlyMap<string, string>,
+    ) {
+      const label = (turnId: string) => names.get(turnId) ?? turnId;
+      const pages = await readAll(repos, thread, "oldest_first", "turn", 10);
+      const context = await loadThreadConversationContext(repos, thread);
+      return {
+        pages: pages.flatMap((page) => page.entries.map((entry) => label(entry.turn.id))),
+        context: context.turns.map((entry) => label(entry.id)),
+        blocks: [...new Set(context.blocks.map((entry) => label(entry.turnId)))],
+      };
+    }
+
+    async function forkAt(
+      repos: InternalThreadRepositories,
+      id: (label: string) => string,
+      label: string,
+      source: Thread,
+      cut: Turn,
+    ) {
+      return (
+        await repos.threads.createDerivedPrimary({
+          aiWriteMode: "direct",
+          id: id(label) as ThreadId,
+          userId: source.userId,
+          projectId: source.projectId,
+          workId: null,
+          source,
+          originType: "fork",
+          originTurnId: cut.id as TurnId,
+        })
+      ).thread;
+    }
+
+    it("leaves a forgotten failure and its message out of pages, counts and ordinals", async () => {
+      // Risk (C2, the FX1 review): the page reader, counts and ordinals ignoring the stamp that the
+      // conversation read honors, so `thread_history`, the page route and a fork's pages show a forgotten turn.
+      const { repos, root, turn, block, id } = await fixture();
+      const u = await turn(root.id as ThreadId, "u");
+      await block(u.id as TurnId, "u.0", 0, "FORGET-ME");
+      const f = await turn(root.id as ThreadId, "f", "assistant", { status: "error" });
+      const next = await turn(root.id as ThreadId, "next");
+      await block(next.id as TurnId, "next.0", 0);
+      const answer = await turn(root.id as ThreadId, "answer", "assistant");
+      await block(answer.id as TurnId, "answer.0", 0);
+      await repos.turns.forgetTurns([u.id as TurnId, f.id as TurnId], next.id as TurnId);
+      const names = new Map(["u", "f", "next", "answer"].map((label) => [id(label), label]));
+
+      const expected = {
+        pages: ["next", "answer"],
+        context: ["next", "answer"],
+        blocks: ["next", "answer"],
+      };
+      expect(await shown(repos, root, names)).toEqual(expected);
+      expect(await countConversationTurnsBefore(repos, root, answer.position)).toBe(1);
+      expect((await readTranscriptTurn(repos, root, 1))?.turn.id).toBe(next.id);
+      // The graph keeps them: the chain, the leaf and the stamp are still there.
+      expect(
+        (await turnGraph(repos.turns).listByThread(root.id as ThreadId)).map((t) => t.id),
+      ).toEqual([u.id, f.id, next.id, answer.id]);
+      const fork = await forkAt(repos, id, "fork", root, answer);
+      expect(await shown(repos, fork, names)).toEqual(expected);
+    });
+
+    it("keeps a failed reply in a fork cut at it after the source retries it", async () => {
+      // Risk (C8): a stamp applied to a fork whose cutoff precedes the forgetting turn would erase text the
+      // fork was cut with; position scoping must apply it only inside the span read.
+      const { repos, root, turn, block, id } = await fixture();
+      const u = await turn(root.id as ThreadId, "u");
+      await block(u.id as TurnId, "u.0", 0);
+      const f = await turn(root.id as ThreadId, "f", "assistant", { status: "error" });
+      await block(f.id as TurnId, "f.0", 0, "partial words");
+      const fork = await forkAt(repos, id, "fork", root, f);
+      const g = await repos.turns.create({
+        id: id("g") as TurnId,
+        threadId: fork.id as ThreadId,
+        prevTurnId: f.id as TurnId,
+        role: "assistant",
+        origin: "assistant",
+        status: "complete",
+      });
+      const names = new Map(["u", "f", "r", "g"].map((label) => [id(label), label]));
+      // The source retries f: the Retry forgets it.
+      const r = await turn(root.id as ThreadId, "r", "assistant");
+      await block(r.id as TurnId, "r.0", 0);
+      await repos.turns.forgetTurns([f.id as TurnId], r.id as TurnId);
+
+      expect(await shown(repos, root, names)).toMatchObject({
+        pages: ["u", "r"],
+        context: ["u", "r"],
+      });
+      // The fork was cut before the Retry: it still reads f, in its pages, its conversation and its blocks.
+      expect(await shown(repos, fork, names)).toEqual({
+        pages: ["u", "f", "g"],
+        context: ["u", "f", "g"],
+        blocks: ["u", "f"],
+      });
+      // A fork of that fork inherits both spans the same way.
+      const grandFork = await forkAt(repos, id, "grandfork", fork, g);
+      expect((await shown(repos, grandFork, names)).pages).toEqual(["u", "f", "g"]);
+      // A fork cut at the Retry sees the forgetting inside its span. Derivation picks its cutoff from the full
+      // conversation read, which no longer lists f, so a fork created now cannot recover it.
+      const afterRetry = await forkAt(repos, id, "after", root, r);
+      expect((await shown(repos, afterRetry, names)).context).toEqual(["u", "r"]);
     });
 
     it("resolves three spans when a fork of a fork stops in the middle fork's local turns", async () => {

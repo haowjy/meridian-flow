@@ -107,6 +107,44 @@ describe("turn reducer", () => {
       expect(ids(store)).toEqual(["m1"]);
     });
   });
+  it("stamps forgotten turns whether or not they are held yet, and no older snapshot clears the stamp", () => {
+    // Risk: a forgotten turn drawn again because its stamp arrived before its turn was hydrated (a user
+    // turn's creation gives the client no row), or because a snapshot read before the commit lacked it.
+    const { store, reducer } = instance();
+    const forgotten = (...turnIds: string[]) =>
+      ({
+        type: EventType.CUSTOM,
+        name: "meridian.turns.forgotten",
+        value: { turnIds, byTurnId: "next", reason: "forgotten" },
+      }) as unknown as AGUIEvent;
+    const turn = (id: string) =>
+      ({ id, role: "user", blocks: [], forgottenBy: null }) as unknown as Turn;
+    const stamps = () => store.turns(THREAD)?.map((held) => [held.id, held.forgottenBy]);
+    store.hydrate(THREAD, [turn("u1"), turn("f1")], "5000");
+    reducer.applyEvent(THREAD, forgotten("f1", "u0"), "7000");
+    expect(stamps()).toEqual([
+      ["u1", null],
+      ["f1", "next"],
+    ]);
+    // A snapshot read before the commit lacks the stamp; so does one that hydrates u0 for the first time.
+    store.hydrate(THREAD, [turn("u0"), turn("u1"), turn("f1")], "6000");
+    expect(stamps()).toEqual([
+      ["u0", "next"],
+      ["u1", null],
+      ["f1", "next"],
+    ]);
+    // Write-once: a second frame naming f1 keeps its first forgetting turn.
+    reducer.applyEvent(
+      THREAD,
+      {
+        type: EventType.CUSTOM,
+        name: "meridian.turns.forgotten",
+        value: { turnIds: ["f1"], byTurnId: "later", reason: "forgotten" },
+      } as unknown as AGUIEvent,
+      "7100",
+    );
+    expect(stamps()?.[2]).toEqual(["f1", "next"]);
+  });
   it("places a switch's divider by the anchor its frame names, and a stale snapshot keeps it there", () => {
     // Risk (#760 review B1): a divider put at the tail lands after a reply that finished before
     // the frame, a snapshot, or a second switch, and its notice then jumps. Also: an answered

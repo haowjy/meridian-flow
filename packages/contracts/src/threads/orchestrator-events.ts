@@ -190,6 +190,17 @@ export type OrchestratorEvent =
       requestId: string;
     }
   | {
+      /**
+       * Failed turns left the conversation, stamped with the turn that retried them or moved the chat
+       * past them. Their rows, blocks and journal entries stay for diagnostics.
+       */
+      type: "turns.forgotten";
+      turnIds: string[];
+      /** The first closing row appended in the commit that forgot them. */
+      byTurnId: string;
+      reason: "retried" | "forgotten";
+    }
+  | {
       type: "run_state.changed";
       threadId: string;
       /** The record without its version: the journal row's own seq is the version. */
