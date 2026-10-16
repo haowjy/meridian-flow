@@ -24,6 +24,8 @@ export type SendProjectChatArgs = {
   workAiWriteMode: AiWriteMode;
   /** The writer's explicit choice in this composer; it becomes the Work's default too. */
   aiWriteMode?: AiWriteMode;
+  /** The thread id minted before the first attach, which owns any uploads already attached. */
+  threadId?: string;
   threadActions: ThreadStoreActions;
   selectChat: (threadId: string) => void;
   now?: number;
@@ -46,11 +48,12 @@ export function sendProjectChat({
   workId,
   workAiWriteMode,
   aiWriteMode,
+  threadId: mintedThreadId,
   threadActions,
   selectChat,
   now,
 }: SendProjectChatArgs): SendProjectChatResult | null {
-  const threadId = crypto.randomUUID();
+  const threadId = mintedThreadId ?? crypto.randomUUID();
   const timestamp = new Date(now ?? Date.now()).toISOString();
   const title = deriveTitleFromMessage(text.trim());
 

@@ -1,14 +1,17 @@
 /** Browser adapter for authoritative material intake; removing a reference never deletes the file. */
 import { t } from "@lingui/core/macro";
-import type { UploadIntakeResult } from "@meridian/contracts/protocol";
+import type {
+  DeleteDraftUploadInput,
+  DeleteDraftUploadResult,
+  UploadIntakeResult,
+} from "@meridian/contracts/protocol";
 import type { ComposerUploadPort, ComposerUploadScope } from "@/components/app/composer";
 import { errorMessageFromPayload, readResponsePayload } from "./http-client";
 
 import { meridianApiErrorFromPayload } from "./meridian-error";
 
-function url(scope: ComposerUploadScope) {
-  const query = scope.kind === "work" ? `?workId=${encodeURIComponent(scope.workId)}` : "";
-  return `/api/projects/${encodeURIComponent(scope.projectId)}/context/uploads/upload${query}`;
+function url(scope: Pick<ComposerUploadScope, "projectId" | "chatId">) {
+  return `/api/projects/${encodeURIComponent(scope.projectId)}/context/uploads/upload?chatId=${encodeURIComponent(scope.chatId)}`;
 }
 async function response<T>(request: Promise<Response>): Promise<T> {
   const value = await request;
@@ -45,3 +48,20 @@ export const uploadIntakePort: ComposerUploadPort = {
     return response<UploadIntakeResult>(fetch(url(scope), { method: "POST", body: form }));
   },
 };
+
+/**
+ * Deletes one unused upload the writer attached to a chat. The server refuses a file a sent
+ * message has used (`already_used`) and one whose identity no longer stands (`identity_mismatch`).
+ */
+export function deleteChatUpload(
+  scope: Pick<ComposerUploadScope, "projectId" | "chatId">,
+  identity: DeleteDraftUploadInput,
+): Promise<DeleteDraftUploadResult> {
+  return response<DeleteDraftUploadResult>(
+    fetch(url(scope), {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(identity),
+    }),
+  );
+}

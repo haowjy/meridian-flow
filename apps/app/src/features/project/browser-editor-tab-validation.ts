@@ -1,9 +1,9 @@
 /** Validates this browser tab's persisted Editor membership against current resources. */
 
+import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import {
   type ContextOwner,
   isProjectContextTreeScheme,
-  isWorkScopedProjectContextScheme,
   type ProjectContextIdentityResolution,
   type WorkingSetRoute,
 } from "@meridian/contracts/protocol";
@@ -57,20 +57,26 @@ function availableTab(
 ): ContextTab {
   const scheme = resolution.entry.uri.slice(0, resolution.entry.uri.indexOf(":"));
   if (!isProjectContextTreeScheme(scheme)) throw new TypeError("Invalid available route scheme");
+  const authorityKind = resolution.authority.kind;
   if (
-    isWorkScopedProjectContextScheme(scheme) &&
-    resolution.authority.kind !== "work" &&
-    resolution.authority.kind !== "lineage"
+    scheme === "uploads"
+      ? authorityKind !== "chat"
+      : isWorkScopedScheme(scheme) && authorityKind !== "work" && authorityKind !== "lineage"
   ) {
     throw new TypeError("Invalid available route authority");
   }
   const owner: ContextOwner =
-    resolution.authority.kind === "lineage"
-      ? { rootThreadId: resolution.authority.rootThreadId }
-      : {
-          workId:
-            resolution.authority.kind === "work" ? editorTabWorkId(resolution.authority) : null,
-        };
+    resolution.authority.kind === "chat"
+      ? {
+          chatThreadId: resolution.authority.chatId,
+          chatRef: resolution.authority.chatRef ?? undefined,
+        }
+      : resolution.authority.kind === "lineage"
+        ? { rootThreadId: resolution.authority.rootThreadId }
+        : {
+            workId:
+              resolution.authority.kind === "work" ? editorTabWorkId(resolution.authority) : null,
+          };
   return contextTabFromFile(scheme, projectCatalogFile(resolution.entry), owner);
 }
 

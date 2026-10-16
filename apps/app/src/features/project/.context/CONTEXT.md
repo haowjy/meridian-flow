@@ -61,16 +61,15 @@ resource handle, live catalog membership, and draft admission resolve identity.
 Rename/move replaces the path while preserving a review item.
 
 Project content uses absent, no-Work, or explicit Work selection distinctly.
-Scratch has either a named Work or a No Work chat lineage; Uploads use Work
-identity. No Work Scratch is addressed by lineage, not an empty Work selector.
+Scratch has either a named Work or a No Work chat lineage; Uploads belong to a
+chat, whose handle the address spells. No Work Scratch is addressed by lineage, not an empty Work selector.
 Slugs, `@`, and internal IDs never enter context URI authority. Required
 selectors are never silently defaulted. Only genuinely absent Editor selection
 may use local continuity.
 
 `?work` has one meaning per scheme. Project schemes (manuscript, KB, user,
 unfiled) read it as the editing context: absent, empty (No Work), or an id.
-Uploads read it as the resource's identity (`?work=` is No Work; absent or
-malformed is invalid). Scratch has exactly one owner, `?work=<id>` or
+Uploads take no Work. Scratch has exactly one owner, `?work=<id>` or
 `?chat=<first chat id>`; No Work owns no Scratch, so a Scratch address with
 neither or both is invalid. The Editor's Work seeds once from the selected chat
 and is independent after; with no chat it is explicit No Work, and the catalog

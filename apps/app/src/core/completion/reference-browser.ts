@@ -254,6 +254,9 @@ export function createReferenceBrowserController(
             );
           }
           if (parsed.authority.kind === "lineage") return scope.kind === "lineage";
+          if (parsed.authority.kind === "chat") return scope.kind === "chat";
+          // A bare `uploads://` is this chat's.
+          if (parsed.scheme === "uploads") return scope.kind === "chat";
           // A No Work chat's bare Scratch is its lineage's.
           if (parsed.authority.kind === "contextual")
             return parsed.scheme === "scratch" && scopes.some((other) => other.kind === "lineage")
@@ -657,8 +660,8 @@ function rowForEntry(
       kind: "source",
       rowId: `source:${catalogScopeKey(entry.scope)}:${entry.entryId}`,
       label: entry.name,
-      // A chat's Scratch is named by the chat, never by the first chat's handle.
-      location: entry.scope.kind === "lineage" ? "" : prefix,
+      // A chat's Scratch and uploads are named by the chat, never by a handle.
+      location: entry.scope.kind === "lineage" || entry.scope.kind === "chat" ? "" : prefix,
       matchAliases: [entry.scheme],
       action: {
         type: "navigate",

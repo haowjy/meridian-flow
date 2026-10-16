@@ -5,10 +5,7 @@
  */
 
 import { validateContextEntryPath } from "@meridian/contracts/context-entry-validation";
-import {
-  type CanonicalContextAuthority,
-  WORK_SCOPED_CONTEXT_URI_SCHEMES,
-} from "@meridian/contracts/context-uri";
+import type { CanonicalContextAuthority } from "@meridian/contracts/context-uri";
 import {
   type DeleteContextEntryResult,
   filenameForBinary,
@@ -64,8 +61,17 @@ export interface ContextPortRouterDeps {
   resolveDestinationFolder?: (folderId: string) => Promise<string | null>;
   /** The document a device's create id was forwarded to (a join), within this project. */
   resolveForward?: (documentId: string) => Promise<string | null>;
+  /** A chat's uploads by handle (`uploads://@/c12/`): found, trashed, or no such chat. */
+  resolveChatSource?: (
+    ref: string,
+  ) => Promise<
+    { kind: "found"; binding: ContextSourceBinding } | { kind: "unavailable" } | { kind: "missing" }
+  >;
+  /** Where a chat's uploads and Scratch live, to name them in near-miss errors. */
+  chatFiles?: (
+    ref: string,
+  ) => Promise<import("../chat-file-addresses.js").ChatFileAddresses | null>;
   resolveLineageSource?: (ref: string) => Promise<ContextSourceBinding | null>;
-  rootForThreadRef?: (ref: string) => Promise<import("../scratch-owner.js").ScratchLineage | null>;
   listLineages?: () => Promise<import("../scratch-owner.js").ScratchLineage[]>;
   moveLinks?: ConstructorParameters<typeof ContextTreeMover>[2];
   operationReceipts?: import("./context-operation-receipts.js").ContextOperationReceipts;
@@ -81,11 +87,8 @@ export interface ContextPortRouterDeps {
   resolveWorkAdapters?: (
     authority: ResolvedWorkAuthority,
   ) => ReadonlyMap<ContextScheme, ContextSchemeAdapter>;
-  /** Builds No Work Scratch and Uploads adapters for explicit `@/` authority. */
-  resolveNoWork?: () => Promise<{
-    adapters: ReadonlyMap<ContextScheme, ContextSchemeAdapter>;
-    workId: string;
-  }>;
+  /** The No Work row's id, the work scope of notes written outside any named Work. */
+  resolveNoWorkId?: () => Promise<string | null>;
   /** URI parse options — unified port passes manuscript default + extended schemes. */
   parseOptions?: ParseContextUriOptions;
   commandTransaction?: ContextCommandTransaction;
@@ -116,6 +119,7 @@ interface MutationDispatch extends Dispatch {
 function sameOwner(a: CanonicalContextAuthority, b: CanonicalContextAuthority): boolean {
   if (!("kind" in a)) return !("kind" in b) && a.workId === b.workId;
   if (!("kind" in b) || a.kind !== b.kind) return false;
+  if (a.kind === "chat") return b.kind === "chat" && a.chatRef === b.chatRef;
   return a.kind !== "lineage" || (b.kind === "lineage" && a.rootThreadRef === b.rootThreadRef);
 }
 
@@ -269,22 +273,16 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       locationKeys.add(key);
       locations.push({ scheme, authority, workScopeId, adapter: candidate });
     };
-    const noWork = await deps.resolveNoWork?.();
+    const noWorkId = await deps.resolveNoWorkId?.();
     for (const [scheme, { adapter: candidate, authority }] of await contextualSources()) {
-      const workScoped = (WORK_SCOPED_CONTEXT_URI_SCHEMES as readonly string[]).includes(scheme);
       addLocation(
         scheme,
         authority,
-        workScoped && !("kind" in authority && authority.kind === "lineage")
-          ? (deps.primaryWorkAuthority?.workId ?? noWork?.workId ?? null)
+        scheme === "scratch" && !("kind" in authority && authority.kind === "lineage")
+          ? (deps.primaryWorkAuthority?.workId ?? noWorkId ?? null)
           : null,
         candidate,
       );
-    }
-    if (noWork) {
-      for (const [scheme, candidate] of noWork.adapters) {
-        addLocation(scheme, { kind: "none" }, noWork.workId, candidate);
-      }
     }
     for (const authority of deps.workAuthorities.values()) {
       for (const [scheme, candidate] of deps.resolveWorkAdapters?.(authority) ?? []) {
@@ -388,7 +386,16 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
 
   async function resolve(uri: string): Promise<Result<Dispatch, ContextError>> {
     const parsed = parseContextUri(uri, parseOptions);
-    if (!parsed.ok) return parsed;
+    if (!parsed.ok) {
+      const { error } = parsed;
+      const files =
+        error.code === "invalid_uri" && error.chatHandle
+          ? await deps.chatFiles?.(error.chatHandle)
+          : null;
+      return files && error.code === "invalid_uri"
+        ? Err({ ...error, reason: `Another chat's uploads are at ${files.uploads}…` })
+        : parsed;
+    }
     const { scheme, authority, path } = parsed.value;
 
     const contextual = authority.kind === "contextual" ? sources.get(scheme) : undefined;
@@ -398,43 +405,62 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       binding?.authority ?? (authority.kind === "none" ? authority : { kind: "contextual" });
     let workScopeId =
       authority.kind === "contextual" ? (deps.primaryWorkAuthority?.workId ?? null) : null;
-    if ("kind" in canonicalAuthority && canonicalAuthority.kind === "lineage") workScopeId = null;
-    if (scheme === "scratch" && authority.kind === "lineage") {
-      const lineageSource = await deps.resolveLineageSource?.(authority.rootThreadRef);
-      if (!lineageSource) {
-        const owner = await deps.rootForThreadRef?.(authority.rootThreadRef);
+    // Uploads are a chat's, never a Work's.
+    if (
+      scheme === "uploads" ||
+      ("kind" in canonicalAuthority && canonicalAuthority.kind === "lineage")
+    )
+      workScopeId = null;
+    if (scheme === "uploads" && authority.kind === "chat") {
+      const chat = await deps.resolveChatSource?.(authority.chatRef);
+      if (chat?.kind !== "found") {
         return Err({
           code: "invalid_uri",
           uri,
-          reason: owner
-            ? `This chat's notes are at scratch://@/${owner.rootThreadRef}/. Use its first chat handle, or scratch://x in that chat.`
+          reason:
+            chat?.kind === "unavailable"
+              ? `The uploads of chat ${authority.chatRef} are unavailable because that chat is in the trash.`
+              : `This project has no chat ${authority.chatRef}. Use uploads://x for this chat's files.`,
+        });
+      }
+      adapter = chat.binding.adapter;
+      canonicalAuthority = chat.binding.authority;
+      workScopeId = null;
+    } else if (scheme === "scratch" && authority.kind === "lineage") {
+      const lineageSource = await deps.resolveLineageSource?.(authority.rootThreadRef);
+      if (!lineageSource) {
+        const files = await deps.chatFiles?.(authority.rootThreadRef);
+        return Err({
+          code: "invalid_uri",
+          uri,
+          reason: files
+            ? `Chat ${authority.rootThreadRef}'s scratch notes are at ${files.scratch}. scratch://x in that chat reaches the same notes.`
             : "Scratch requires a first chat handle. Use scratch://x in a chat, or scratch://@/c12/x. List chats with ls scratch://@/.",
         });
       }
       adapter = lineageSource.adapter;
       canonicalAuthority = lineageSource.authority;
       workScopeId = null;
-    } else if (authority.kind === "none") {
-      const noWork = await deps.resolveNoWork?.();
-      if (noWork) {
-        adapter = noWork.adapters.get(scheme);
-        workScopeId = noWork.workId;
-      }
     } else if (
       authority.kind === "contextual" &&
       !workScopeId &&
       !("kind" in canonicalAuthority && canonicalAuthority.kind === "lineage") &&
-      (WORK_SCOPED_CONTEXT_URI_SCHEMES as readonly string[]).includes(scheme)
+      scheme === "scratch"
     ) {
-      const noWork = await deps.resolveNoWork?.();
-      if (noWork) workScopeId = noWork.workId;
+      workScopeId = (await deps.resolveNoWorkId?.()) ?? workScopeId;
     } else if (authority.kind === "work") {
       const resolvedAuthority = deps.workAuthorities.get(authority.workSlug) ?? null;
       if (!resolvedAuthority) {
+        const chatFiles =
+          scheme === "scratch" && /^c[1-9][0-9]*$/.test(authority.workSlug)
+            ? await deps.chatFiles?.(authority.workSlug)
+            : null;
         return Err({
           code: "invalid_uri",
           uri: parsed.value.normalized,
-          reason: unknownWorkMessage(authority.workSlug),
+          reason: chatFiles
+            ? `Chat ${authority.workSlug}'s scratch notes are at ${chatFiles.scratch}. @${authority.workSlug} is not a Work.`
+            : unknownWorkMessage(authority.workSlug),
           workSlug: authority.workSlug,
         });
       }
@@ -453,6 +479,12 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       }
     }
 
+    if (scheme === "uploads" && authority.kind === "contextual" && !adapter)
+      return Err({
+        code: "invalid_uri",
+        uri,
+        reason: "Bare uploads:// needs a chat. Use uploads://@/c12/x to name one.",
+      });
     if (scheme === "scratch" && authority.kind === "contextual" && !adapter)
       return Err({
         code: "invalid_uri",

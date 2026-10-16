@@ -1,11 +1,14 @@
 /** Durable namespace reconciliation: pure record transitions around an account-bound transport. */
-import { type ParsedContextAuthority, parseContextUri } from "@meridian/contracts/context-uri";
 import {
-  type ContextOperationReceipt,
-  type CreateUntitledContextDocumentResponse,
-  type CreateUntitledDestination,
-  isWorkScopedProjectContextScheme,
-  type ProjectContextTreeScheme,
+  isOwnedContextScheme,
+  type ParsedContextAuthority,
+  parseContextUri,
+} from "@meridian/contracts/context-uri";
+import type {
+  ContextOperationReceipt,
+  CreateUntitledContextDocumentResponse,
+  CreateUntitledDestination,
+  ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import { canonicalRefreshObservation } from "./canonical-observation";
 import {
@@ -342,12 +345,17 @@ function authorityMatches(
   owner: Parameters<typeof resourceContextAuthority>[1],
 ): boolean {
   const expected = resourceContextAuthority(scheme, owner);
+  // A chat's bare uploads URI parses as contextual: the handle exists only after creation.
+  const expectedKind =
+    expected.kind === "chat" && expected.chatRef === null ? "contextual" : expected.kind;
   return (
-    authority.kind === expected.kind &&
+    authority.kind === expectedKind &&
     (authority.kind !== "work" ||
       (expected.kind === "work" && authority.workSlug === expected.workSlug)) &&
     (authority.kind !== "lineage" ||
-      (expected.kind === "lineage" && authority.rootThreadRef === expected.rootThreadRef))
+      (expected.kind === "lineage" && authority.rootThreadRef === expected.rootThreadRef)) &&
+    (authority.kind !== "chat" ||
+      (expected.kind === "chat" && authority.chatRef === expected.chatRef))
   );
 }
 
@@ -570,17 +578,20 @@ export function installCanonicalRefresh(input: {
     obligation.observationVersion,
   );
   if (!newer && !completes) return null;
-  const workScoped = isWorkScopedProjectContextScheme(input.location.scheme);
   // A catalog observation names its Work by id with its slug, null for No Work
   // (`@/`), exactly as catalog installation derives it from the entry's URI.
-  // A lineage's Scratch names its first chat instead. Only a Work-scoped
-  // location with neither owner is incomplete.
-  const owned = input.location.workId != null || input.location.rootThreadId !== undefined;
+  // A lineage's Scratch names its first chat, and chat uploads name their chat.
+  // Only an owned scheme's location with no owner is incomplete.
+  const hasOwner =
+    input.location.workId != null ||
+    input.location.rootThreadId !== undefined ||
+    input.location.chatId !== undefined;
   if (
-    (workScoped && !owned) ||
-    (!workScoped && (owned || input.location.workId !== null || input.location.workSlug != null))
+    (isOwnedContextScheme(input.location.scheme) && !hasOwner) ||
+    (!isOwnedContextScheme(input.location.scheme) &&
+      (hasOwner || input.location.workId !== null || input.location.workSlug != null))
   )
-    throw new Error("Canonical observation has incomplete Work authority");
+    throw new Error("Canonical observation has incomplete owner authority");
   const { canonicalRefresh: _completed, ...obligations } = input.record.resource.obligations;
   return {
     expectedRevision: input.record.resource.revision,

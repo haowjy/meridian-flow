@@ -348,6 +348,7 @@ async function sourceOwners(
       id: contextSources.id,
       workId: contextSources.workId,
       rootThreadId: contextSources.rootThreadId,
+      chatThreadId: contextSources.chatThreadId,
     })
     .from(contextSources)
     .where(inArray(contextSources.id, [...new Set(sourceIds)]));
@@ -355,7 +356,10 @@ async function sourceOwners(
   for (const row of rows) {
     const owner = owners.get(row.id);
     if (owner)
-      out.set(row.id, { owner, undrafted: row.workId !== null || row.rootThreadId !== null });
+      out.set(row.id, {
+        owner,
+        undrafted: row.workId !== null || row.rootThreadId !== null || row.chatThreadId !== null,
+      });
   }
   return out;
 }

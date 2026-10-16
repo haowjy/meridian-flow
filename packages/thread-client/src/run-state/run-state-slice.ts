@@ -20,19 +20,32 @@
 import { compareSeq } from "@meridian/contracts/protocol";
 import type { ControlBody, PendingInboxItem, RunState } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
+import { type FailedCommand, nextOccurrence } from "../commands";
+import { switchState } from "./fold-switches";
 import {
   addIntent,
   answerIntent,
   dropIntent,
   failIntent,
   INITIAL_RUN_STATE_VIEW,
-  nextOccurrence,
   type RunStateIntent,
   type RunStateView,
   receiveRecord,
-  switchState,
-} from "@meridian/thread-client";
-import type { JournalSwitch } from "@/client/chat-submissions/owner";
+} from "./run-state-view";
+
+/** A write-mode switch the journal still holds: unanswered, or answered with the stamp. */
+export type JournalSwitch = {
+  id: string;
+  mode: AiWriteMode;
+  /** The record's place in the chat's order. */
+  seq: number;
+  /** Marked posted before its first request left. */
+  posted: boolean;
+  /** The server refused it: nothing is held there, so Withdraw is local. */
+  refused: boolean;
+  /** The server's answer, stamped by whichever tab drove the record: the whole record, and when (ms). */
+  answer: { runState: RunState; at: number } | null;
+} & FailedCommand;
 
 export const isWriteModeControl = (item: PendingInboxItem) =>
   item.intent === "control" && item.control?.kind === "write_mode";

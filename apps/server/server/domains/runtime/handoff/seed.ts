@@ -3,6 +3,7 @@ import type { HandoffBriefProps } from "@meridian/contracts/components";
 import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { Turn } from "@meridian/contracts/threads";
 import {
+  continuesFromLine,
   type HandoffFailureOutcome,
   HandoffFailureOutcomeCodec,
   HandoffSeedMetadataCodec,
@@ -25,9 +26,10 @@ export function handoffSeedBlock(
   const history = historyReadable
     ? `${brief ? "\n" : " "}Read ${brief ? "the full conversation" : "it"} with thread_history(${JSON.stringify({ ref: sourceRef })}).`
     : "";
+  const continues = continuesFromLine(sourceRef);
   const modelText = brief
-    ? `<system_update>\n<prior-session-context source="${sourceRef}">\n${brief.text}\n</prior-session-context>${history}\n</system_update>`
-    : `<system_update>\nThis conversation was handed off from ${sourceRef} with no brief.${history}\n</system_update>`;
+    ? `<system_update>\n<prior-session-context source="${sourceRef}">\n${brief.text}\n</prior-session-context>\n${continues}${history}\n</system_update>`
+    : `<system_update>\nThis conversation was handed off from ${sourceRef} with no brief. ${continues}${history}\n</system_update>`;
   const props: HandoffBriefProps = {
     state: brief ? "available" : "unavailable",
     brief: brief?.text ?? null,

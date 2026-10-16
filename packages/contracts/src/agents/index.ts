@@ -33,6 +33,21 @@ export interface AgentCatalogPage {
   nextCursor: AgentCatalogCursor | null;
 }
 
+export const agentCatalogPageSchema = z.object({
+  agents: z.array(
+    z.object({
+      selection: agentSelectionSchema,
+      slug: z.string().min(1),
+      name: z.string(),
+      description: z.string(),
+      model: z.string().nullable(),
+      ownership: z.enum(["system", "personal"]),
+      unavailableReasons: z.array(z.string()),
+    }),
+  ),
+  nextCursor: z.object({ nameSortKey: z.string(), id: z.string().min(1) }).nullable(),
+}) satisfies z.ZodType<AgentCatalogPage>;
+
 /** Raw overlay retained for inspection/export; effective values live in `configuration`. */
 export interface InvocationOverlay {
   appendSystemPrompt?: string;

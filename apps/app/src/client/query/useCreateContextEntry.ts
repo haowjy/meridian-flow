@@ -1,5 +1,5 @@
+import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { createContextEntry } from "@/client/api/projects-api";
@@ -35,7 +35,7 @@ export function useCreateContextEntry(projectId: string) {
         queryKey: projectQueryKeys.contextCatalogView(
           projectId,
           args.scheme,
-          isWorkScopedProjectContextScheme(args.scheme) ? { workId: args.workId } : undefined,
+          isWorkScopedScheme(args.scheme) ? { workId: args.workId } : undefined,
         ),
       });
     },

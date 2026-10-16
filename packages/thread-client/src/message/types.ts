@@ -13,7 +13,9 @@ export type StableReferenceAuthority =
   | { kind: "user"; userId: UserId }
   | { kind: "work"; projectId: ProjectId; workId: WorkId; workSlug: WorkSlug | null }
   /** A No Work chat's Scratch: the lineage by its first chat's id, and the handle its URI spells. */
-  | { kind: "lineage"; projectId: ProjectId; rootThreadId: string; rootThreadRef: string };
+  | { kind: "lineage"; projectId: ProjectId; rootThreadId: string; rootThreadRef: string }
+  /** A chat's uploads: the chat by id, and the handle its URI spells (null before the chat exists). */
+  | { kind: "chat"; projectId: ProjectId; chatId: string; chatRef: string | null };
 
 /** Only the fields message serialization consumes; hosts may carry more metadata. */
 export type MessageReference = {

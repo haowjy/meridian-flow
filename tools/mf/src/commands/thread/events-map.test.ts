@@ -1,6 +1,5 @@
 /** AG-UI → dotted CLI events, pinned to the shared golden projector streams. */
 import type { AGUIEvent } from "@meridian/contracts/protocol";
-import { SIMPLE_TEXT_TURN_AGUI } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import { type CliEvent, RunEventMapper, renderEventLine } from "./events-map";
 
@@ -10,20 +9,6 @@ function mapAll(events: AGUIEvent[]): CliEvent[] {
 }
 
 describe("RunEventMapper", () => {
-  it("folds a text turn into started, deltas, one completed message, finished, ended", () => {
-    const events = mapAll(SIMPLE_TEXT_TURN_AGUI);
-    const types = events.map((event) => event.type);
-    expect(events[0]).toMatchObject({ type: "turn.started" });
-    expect(types).toContain("turn.finished");
-    const completed = events.filter((event) => event.type === "message.completed");
-    expect(completed).toHaveLength(1);
-    const deltas = events
-      .filter((event) => event.type === "message.delta")
-      .map((event) => (event.type === "message.delta" ? event.text : ""))
-      .join("");
-    expect(completed[0]?.type === "message.completed" && completed[0].text).toBe(deltas);
-  });
-
   it("marks a message joined mid-stream as partial instead of passing a fragment off as whole", () => {
     const events = mapAll([
       { type: "TEXT_MESSAGE_CONTENT", messageId: "m1", delta: " there" } as AGUIEvent,

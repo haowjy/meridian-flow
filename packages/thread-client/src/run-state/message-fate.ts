@@ -1,8 +1,9 @@
 /**
  * `messageFate`: what became of one admitted writer message, proven from a single snapshot read.
  *
- * Inputs are one read's `record` and `turns` plus the admission's version; stream frames are
- * never inputs (they only decide when a client reads). The rules are built from the shared
+ * The input is one read's response (its record and turns agree, because the server builds them in
+ * one transaction) plus the admission's version; the synced thread, whose record and turns come
+ * from different frames, and stream frames are never inputs (they only decide when a client reads). The rules are built from the shared
  * pieces the app runs (`receiveRecord`, `addIntent`, `isOwed`, `isBlockedForUsage`,
  * `retryTargetOf`), so `./mf` decides nothing about a reply itself.
  *
@@ -18,12 +19,8 @@
  * deliverer on, then each Retry's execution (`metadata.retryOf`), so a failed or cancelled
  * successor can never fall back to an earlier reply's success.
  */
-import {
-  isTerminalTurnStatus,
-  type RunState,
-  retryTargetOf,
-  type Turn,
-} from "@meridian/contracts/threads";
+import type { ThreadSnapshotResponse } from "@meridian/contracts/protocol";
+import { isTerminalTurnStatus, retryTargetOf, type Turn } from "@meridian/contracts/threads";
 import { isBlockedForUsage, isOwed } from "./fold-messages";
 import { addIntent, INITIAL_RUN_STATE_VIEW, receiveRecord } from "./run-state-view";
 
@@ -41,14 +38,15 @@ export type MessageFate =
   | { kind: "answered"; answeredBy: string; chain: string[]; last: Turn }
   | { kind: "unproven"; reason: "deliverer_unknown" | "unconfirmed" };
 
-/** `record` and `turns` must come from one read (a snapshot). Stream frames are not inputs. */
+/** `read` is one snapshot response whole. Stream frames and the synced thread are not inputs. */
 export function messageFate(input: {
   messageId: string;
   admittedVersion: string | null;
-  record: RunState;
-  turns: readonly Turn[];
+  read: Pick<ThreadSnapshotResponse, "turns" | "liveState">;
 }): MessageFate {
-  const { messageId, admittedVersion, record, turns } = input;
+  const { messageId, admittedVersion, read } = input;
+  const record = read.liveState.runState;
+  const turns = read.turns;
 
   // A record older than the admission keeps the intent, so it reads as waiting, never gone.
   let view = INITIAL_RUN_STATE_VIEW;

@@ -28,6 +28,18 @@ export {
   reconcileRetries,
 } from "./retry";
 export {
+  type AppliedNews,
+  INITIAL_RUN_STATE_SLICE,
+  isWriteModeControl,
+  type JournalSwitch,
+  type QueuedNews,
+  queuedSwitchKey,
+  type RunStateAction,
+  type RunStateSlice,
+  reduceRunState,
+  switchDisplay,
+} from "./run-state-slice";
+export {
   addIntent,
   answerIntent,
   dropIntent,

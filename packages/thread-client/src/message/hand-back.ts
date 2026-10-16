@@ -5,13 +5,7 @@
  * `UserMessageBlock` shape: serializing its document again gives the blocks that were handed
  * back. `prependMessageDoc` puts that document above what the writer has typed.
  */
-import {
-  isProjectScopedScheme,
-  type ProjectId,
-  parseContextUri,
-  type UserId,
-  type WorkId,
-} from "@meridian/contracts";
+import { type ProjectId, parseContextUri, type UserId, type WorkId } from "@meridian/contracts";
 import type { UserMessageBlock } from "@meridian/contracts/protocol";
 import {
   classifyFiletype,
@@ -45,6 +39,10 @@ export type ChatReferenceScope = {
   rootThreadId: string;
   /** That first chat's handle (`c12`), the name a lineage URI carries; null until it is known. */
   rootThreadRef: string | null;
+  /** The chat that owns uploads here: a subagent's top primary chat. */
+  chatId: string;
+  /** That chat's handle (`c15`); null until the chat row exists. */
+  chatRef: string | null;
 };
 
 /**
@@ -75,12 +73,18 @@ export function chatReferenceResolver(scope: ChatReferenceScope): ResolveReferen
           rootThreadId: scope.rootThreadId,
           rootThreadRef: authority.rootThreadRef,
         };
-    } else if (authority.kind === "none") {
-      // `@/` names No Work's uploads; No Work owns no Scratch and a project-wide scheme takes no owner.
-      if (scheme === "uploads" && scope.work.slug === null)
-        owner = { kind: "work", projectId: scope.projectId, workId: scope.work.id, workSlug: null };
+    } else if (authority.kind === "chat") {
+      // A chat's uploads are named by its handle, which the chat must already know.
+      if (scheme === "uploads" && scope.chatRef === authority.chatRef)
+        owner = {
+          kind: "chat",
+          projectId: scope.projectId,
+          chatId: scope.chatId,
+          chatRef: authority.chatRef,
+        };
     } else if (authority.kind === "work") {
-      if (!isProjectScopedScheme(scheme) && authority.workSlug === scope.work.slug)
+      // A Work owns no uploads, only Scratch.
+      if (scheme === "scratch" && authority.workSlug === scope.work.slug)
         owner = {
           kind: "work",
           projectId: scope.projectId,

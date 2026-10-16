@@ -6,6 +6,7 @@
  * sidebar/context rail reopen controls reachable above that surface.
  */
 import { ChatThreadTitle } from "@/features/chat/ChatThreadTitle";
+import { ChatUploadsMenu } from "@/features/chat/ChatUploadsMenu";
 import { SubagentHeader } from "@/features/chat/SubagentHeader";
 import { useThreadActivity } from "@/features/chat/useThreadActivity";
 import { ChatIndexChip } from "./chat-index/ChatIndexButton";
@@ -46,7 +47,12 @@ export function ChatPaneController({
       left={sidebarToggle}
       right={contextToggle}
       actions={
-        threadId ? <SubagentHeader threadId={threadId} nodes={activity.activity.children} /> : null
+        threadId ? (
+          <>
+            <ChatUploadsMenu projectId={projectId} threadId={threadId} />
+            <SubagentHeader threadId={threadId} nodes={activity.activity.children} />
+          </>
+        ) : null
       }
     />
   );

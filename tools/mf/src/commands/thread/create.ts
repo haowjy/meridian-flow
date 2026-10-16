@@ -1,8 +1,8 @@
 /** `thread create`: create a thread with a resolved agent selection; `createThread` is reused by seed. */
 import { randomUUID } from "node:crypto";
-import type { AgentCatalogPage } from "@meridian/contracts/agents";
+import { agentCatalogPageSchema } from "@meridian/contracts/agents";
 import { API_THREADS_PATH, type CreateThreadRequest } from "@meridian/contracts/protocol";
-import type { Thread } from "@meridian/contracts/threads";
+import { type Thread, threadSchema } from "@meridian/contracts/threads";
 import { CliError } from "../../core/cli-error";
 import { type CommandSpec, stringOption } from "../../core/command";
 import type { Session } from "../../core/session";
@@ -11,9 +11,11 @@ import { resolveProjectId, resolveWorkId } from "../project/resolve";
 const DEFAULT_AGENT_SLUG = "general";
 
 async function resolveAgentSelection(session: Session, projectId: string, slug: string) {
-  const page = await session.request<AgentCatalogPage>(
+  const page = await session.request(
     "GET",
     `/api/agents?projectId=${encodeURIComponent(projectId)}&limit=100`,
+    undefined,
+    { parse: agentCatalogPageSchema.safeParse },
   );
   const agent = page.agents.find((entry) => entry.slug === slug);
   if (!agent) {
@@ -46,7 +48,7 @@ export async function createThread(
     workId: await resolveWorkId(session, projectId, input.work),
     ...(input.title ? { title: input.title } : {}),
   };
-  return session.request<Thread>("POST", API_THREADS_PATH, body);
+  return session.request("POST", API_THREADS_PATH, body, { parse: threadSchema.safeParse });
 }
 
 export const threadCreateCommand: CommandSpec = {

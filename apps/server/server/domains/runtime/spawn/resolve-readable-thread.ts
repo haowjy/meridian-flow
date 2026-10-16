@@ -2,6 +2,7 @@
 
 import { type MeridianError, meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import { parseThreadRef, type Thread } from "@meridian/contracts/threads";
+import type { ChatFileLookup } from "../../context/index.js";
 import { sameLineage } from "../../threads/domain/lineage.js";
 import type { ThreadRepository, TurnRepository } from "../../threads/index.js";
 import { type TURN_GRAPH, turnGraph } from "../../threads/ports/turn-graph.js";
@@ -20,6 +21,8 @@ export async function resolveReadableThread(input: {
   ref?: string;
   threads: Pick<ThreadRepository, "findLiveByProjectRef">;
   turns: Parameters<typeof areThreadsConnected>[2];
+  /** Names the target's files in the not-connected refusal; absent where none are wired. */
+  chatFiles?: ChatFileLookup;
 }): Promise<ReadableThreadOutcome> {
   const ref = input.ref === undefined || input.ref === "current" ? input.caller.ref : input.ref;
   if (!ref || !parseThreadRef(ref)) return threadReadError("thread_not_found", "Thread not found");
@@ -30,8 +33,17 @@ export async function resolveReadableThread(input: {
     target.projectId !== input.caller.projectId
   )
     return threadReadError("thread_not_found", "Thread not found");
-  if (!(await areThreadsConnected(input.caller, target, input.turns)))
-    return threadReadError("thread_not_connected", "Thread is not connected to this conversation");
+  if (!(await areThreadsConnected(input.caller, target, input.turns))) {
+    const files = await input.chatFiles?.byRef(target.projectId, target.ref ?? ref);
+    return threadReadError(
+      "thread_not_connected",
+      `Thread is not connected to this conversation${
+        files
+          ? `. Its uploads are at ${files.uploads} and its scratch notes at ${files.scratch}.`
+          : ""
+      }`,
+    );
+  }
   return { ok: true, target };
 }
 

@@ -220,14 +220,6 @@ export function chatSnapshot(
   return { view, cards };
 }
 
-/** The view model over a snapshot's facts. */
-export function viewSnapshot(
-  snapshot: Pick<ThreadSnapshotResponse, "liveState" | "thread">,
-  turns: Turn[],
-) {
-  return chatSnapshot(snapshot, turns).view;
-}
-
 /** `--turn` (id or prefix) or the last N rows (all with --full); `total` counts the matches. */
 export function selectRows(
   rows: readonly ViewRow[],

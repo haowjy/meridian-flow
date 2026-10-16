@@ -29,7 +29,12 @@ export async function resolveThreadContextPort(
   options: { liveWrites?: boolean } = {},
 ) {
   const resolution = await resolveThreadContext(
-    { ...deps, scratchLineages: deps.contextPorts.lineages },
+    {
+      ...deps,
+      scratchLineages: deps.contextPorts.lineages,
+      topPrimaryChats: deps.contextPorts.topPrimaryChats,
+      uploadChats: deps.contextPorts.chats,
+    },
     threadId,
   );
   if (!resolution || resolution.thread.userId !== userId) {
