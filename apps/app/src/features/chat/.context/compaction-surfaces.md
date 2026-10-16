@@ -30,7 +30,7 @@ A divider does not end a reply. `continuesResponse` and response grouping look
 past compaction rows, so a mid-response autocompaction keeps one action row and
 one Info scope across A, C, B. Delivery rows never attach across a divider.
 
-## `endsTranscript`
+## A divider closes the chat
 
 A divider is a closing turn for the failed-reply rule (`chatMovedPast`): a failed reply followed by a
 divider is history, because the writer (or the run) moved on, and it no
@@ -47,7 +47,7 @@ complete (the icon and state label are one button, named by the full label plus
 ", summary", that opens and closes the summary; there is no separate Summary
 control; the section itself is unnamed so the state words are read once; the
 summary is the model's text alone, with no token sentence), failed, cancelled. Only a complete
-divider is a toggle: pending, stopped and failed ones have no summary. A manual failure speaks on the divider with the server's
+divider is a toggle: pending, stopped and failed ones have no summary. A manual failure is a card on the divider (`chatCards`, Try again sends `/compact` again with the same instructions) with the server's
 generic `turn.error`, or "This conversation couldn't be compacted." when it is
 null; the client owns no reason-specific copy (A10). There is no "nothing to
 compact" state: a manual `/compact` always compacts (A12). An autocompaction's

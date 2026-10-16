@@ -12,14 +12,14 @@ reply itself.
 | Not the latest turn, never retried | No failure line. With no text or items it has no row at all (no grey line, no empty icons row); with partial text it keeps the text and items |
 | Retried (accepted or pending) | Not drawn: the Retry's row takes its place |
 | A retry that failed too | One failure, the newest, in that same place |
-| Its Retry was refused | Only a red error card "Couldn't retry." on that reply ("Couldn't retry. Another reply started first." for a 409), with no "This response failed." above it once the chat moved past it (a failure still latest keeps its card with the refusal as a note inside). The reply's row stays showing just the card, with no action icons if it has no content. Temporary: it clears when the next reply completes, or at the writer's next Retry or send; a reply that fails or is cancelled leaves it |
-| The provider declined it | "The AI provider turned this request down." with **Retry** when latest and a retry handler is present |
+| Its Retry was refused | Only a red error card "Couldn't retry." on that reply ("Couldn't retry. Another reply started first." for a 409), with no "This response failed." above it once the chat moved past it (a failure still latest keeps its own card, and the refusal is a second card under it). The reply's row stays showing just the card, with no action icons if it has no content. Temporary: it clears when the next reply completes, or at the writer's next Retry or send; a reply that fails or is cancelled leaves it |
+| The provider declined it | "The AI provider turned this request down." with **Retry** when latest |
 
 A failure shows only while the writer can act on it. Whether a failed reply that is
 not the latest has a row is decided in `viewTranscript` (no row without items or
-deliveries, unless the `refused` input names it); `ErrorBlock` then draws nothing
-for it but a refusal card. "Latest" is `endsTranscript` in `TurnList`, read from the row's `movedPast`: no closing turn
-(`isClosingRow`, drawn or not) follows it, so a divider counts and an agent's message, which draws no
+deliveries, unless a card is anchored on it, `anchoredTurnIds`). `chatCards` decides every card
+(a `FailureCard` per anchor; `ErrorBlock` is gone). "Latest" is `latestRow` over the normalized turns:
+no closing turn (`isClosingRow`, drawn or not) follows it, so a divider counts and an agent's message, which draws no
 row, does too. `chatMovedPast` in `@meridian/thread-client/view` is the one reader; handoff seeds use it as well. The client does not gate Retry on the chat being
 busy: a failed reply is followed at once by whatever runs next, which takes
 its Retry away, and the server refuses a Retry that races a run (409), which
@@ -61,14 +61,17 @@ snapshot) replaces that.
   replies already complete, and the card ends when a stored reply completes that
   wasn't among them (durable turn status, no timers). A row landing below the
   failed reply, or a reply that fails or is cancelled, does not clear it.
-- **Lost request.** The stand-in stays, failed, and reads "Couldn't start the
-  retry. Try again." with its own Retry, which re-sends the same id for the same
-  failed reply. If the lost request landed, the server answers the replay with
+- **Lost request.** The entry stays held, failed, but is no stand-in: the failed reply
+  shows again with a card, "Couldn't start the retry." with Try again (`chatCards`'
+  `retry-lost`), and no error row. Try again re-sends the same id for the same
+  failed reply (`attempt` counts the presses). If the lost request landed, the
+  server answers the replay with
   the execution it started (`{ executionId, turn }`, `turn` null until the reply
   is reserved), or `retry_pending` (503) while it can't tell yet. Pending
   answers repeat the same id after the response's `Retry-After`, up to
-  `RETRY_PENDING_ATTEMPTS` automatic sends; past that the stand-in is lost again,
-  unresolved and retryable, never refused.
+  `RETRY_PENDING_ATTEMPTS` automatic sends; past that the request is lost again,
+  unresolved and retryable, never refused. The card goes once the chat moves past the
+  reply, or the store has the request's reply by id.
 - **Its run ends without the reply.** The stand-in keeps the execution its
   Retry answered and the version of the run-state record that answer carried.
   Once the held record, at or past that version, shows no execution or another
@@ -100,6 +103,6 @@ fact (`turns.forgotten_by_turn_id`) the server writes in the transaction that ap
 the following turn. Retry forgets the failure and keeps the writer's message; moving
 on from a failure that drew nothing forgets the attempt and its messages too. The
 snapshot keeps forgotten turns, stamped `forgottenBy`; `viewTranscript` hides them
-(a reply in `refused` stays), and `markForgotten` stamps held turns from the
+(a reply a card is anchored on stays), and `markForgotten` stamps held turns from the
 `meridian.turns.forgotten` frame. Reconcile and snapshots never clear a stamp. A
 failure with a tool call, or one carried into a continuation, stays.

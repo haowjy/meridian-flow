@@ -22,8 +22,15 @@ never into `apps/app`; the chat session moves the rest.
   functions. The app draws its output and `./mf thread view` prints it. It emits
   counts, kinds and numbers; Lingui and `Intl` strings stay in the app. Memoized
   by input identity (`WeakMap`) so unchanged turns keep their items. A failed reply
-  the chat moved past, with nothing to read, has no row (unless the `refused` input
-  names it); the app's `ErrorBlock` draws no failure for it.
+  the chat moved past, with nothing to read, has no row (unless a card is anchored on it,
+  `anchoredTurnIds`).
+- Every chat failure the writer sees comes from `chatCards` (`cards/`), a pure projection over
+  facts: the normalized turns (`normalizeTurns`) and the latest row (`latestRow`), the
+  `RunStateView`, the hand-back operation's `unresolved()`, failed Send nows, Retry outcomes
+  (refused or lost), unadmitted sends, queued commands and the brief's failed Stop. A card's
+  `key` is its occurrence id (`${requestId}:${attempt}`, the turn id for a reply,
+  `usage:${threadId}:${seq}`); its copy is a closed key set the app words. React draws cards
+  by anchor and decides nothing; `./mf thread view` prints the same cards.
 - `partitionTurn` (`view/partition-turn.ts`) reads only the turn's ordered
   blocks, never transient stream state. Hidden tool protocol is not rendered
   twice: a call whose card is in the turn shows as that card alone
@@ -34,7 +41,7 @@ never into `apps/app`; the chat session moves the rest.
   timers, and never compose a record from parts.
 - Hand-back commands (Stop, the x, Cancel queue) run through one operation in `hand-back/`
   over explicit ports; Send now shares its answer classifier (`postSendNow`). Clients adapt
-  storage, editor and printing, and never re-implement the lifecycle. `handBackCards` decides
+  storage, editor and printing, and never re-implement the lifecycle. `chatCards` decides
   which failures show a card; React and `./mf` decide nothing about them.
 - Share a decision's inputs and recovery, not only its reducer. A rule that
   needs a snapshot to finish (a divider waiting for its anchor, a waiting
