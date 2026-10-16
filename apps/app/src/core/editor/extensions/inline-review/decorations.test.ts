@@ -27,6 +27,7 @@ import {
   destroyReviewEditors,
   seedReviewBase,
 } from "@/test-support/inline-review-editor";
+import { getInlineReviewPluginState } from "./DraftInlineReviewExtension";
 import { inlineReviewClassNames } from "./decorations";
 
 const projectors: ReviewRuntime[] = [];
@@ -117,6 +118,63 @@ describe("recomputing while the writer types", () => {
     vi.advanceTimersByTime(2);
     expect(added(editor).join("")).toContain("Oh");
   });
+});
+
+it("retains mark and removal DOM while typing inside a change and changing emphasis", () => {
+  const { editor, projector } = reviewing(["The door is red."], ["The door is green."]);
+  const mark = editor.view.dom.querySelector(`.${inlineReviewClassNames.added}`);
+  const removal = removals(editor)[0];
+  editor.commands.setTextSelection(15);
+  const input = new InputEvent("beforeinput", {
+    inputType: "insertText",
+    data: "x",
+    bubbles: true,
+    cancelable: true,
+  });
+  // jsdom has no native target-range implementation.
+  Object.defineProperty(input, "getTargetRanges", { value: () => [] });
+  editor.view.dom.dispatchEvent(input);
+  expect(input.defaultPrevented).toBe(true);
+  expect(editor.state.doc.textContent).toBe("The door is grxeen.");
+  projector.projectNow();
+  expect(editor.view.dom.querySelector(`.${inlineReviewClassNames.added}`)).toBe(mark);
+  expect(removals(editor)[0]).toBe(removal);
+  const id = mark?.getAttribute("data-review-change") ?? null;
+  editor.commands.setReviewActiveChange(id);
+  expect(editor.view.dom.querySelector(`.${inlineReviewClassNames.added}`)).toBe(mark);
+  expect(removals(editor)[0]).toBe(removal);
+  expect(mark?.classList.contains(inlineReviewClassNames.emphasized)).toBe(true);
+});
+
+it("defers projected paint during composition and consumes a pulse at the DOM only once", () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  const { editor, projector } = reviewing(["The door is red."], ["The door is green."]);
+  const root = editor.view.dom;
+  const mark = root.querySelector(`.${inlineReviewClassNames.added}`);
+  const removal = removals(editor)[0];
+  root.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+  editor.commands.insertContentAt(15, "x");
+  const mapped = getInlineReviewPluginState(editor.state)?.decorations;
+  projector.projectNow();
+  expect(getInlineReviewPluginState(editor.state)?.decorations).toBe(mapped);
+  expect(root.querySelector(`.${inlineReviewClassNames.added}`)).toBe(mark);
+  expect(removals(editor)[0]).toBe(removal);
+  root.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+  vi.advanceTimersByTime(25);
+  const id = mark?.getAttribute("data-review-change");
+  if (!id || !mark) throw new Error("Missing painted change");
+  editor.commands.setReviewPulse([id]);
+  expect(mark.classList.contains(inlineReviewClassNames.arrived)).toBe(true);
+  mark.dispatchEvent(new Event("animationend", { bubbles: true }));
+  expect(mark.classList.contains(inlineReviewClassNames.arrived)).toBe(false);
+  projector.projectNow();
+  editor.commands.setReviewActiveChange(id);
+  editor.commands.setReviewPulse([id]);
+  expect(root.querySelector(`.${inlineReviewClassNames.added}`)).toBe(mark);
+  expect(mark.classList.contains(inlineReviewClassNames.arrived)).toBe(false);
+  editor.commands.setReviewMarksVisible(false);
+  editor.commands.setReviewMarksVisible(true);
+  expect(root.querySelector(`.${inlineReviewClassNames.arrived}`)).toBeNull();
 });
 
 describe("a repaint after the writer's edit", () => {

@@ -2,7 +2,7 @@
  * Draft-only review painting: the browser-computed review (`ProjectedReview`)
  * becomes green marks and red removal widgets. The extension is a passive
  * receiver: the draft's review runtime computes and pushes the frame, and
- * focus, folds, pulses and locale repaint the cached frame. Until the next
+ * a view owner updates focus, folds, pulses and locale without changing decoration equality. Until the next
  * frame arrives, the painter owns position mapping: the writer's edits are
  * accumulated and mapped through only when a position is read (`currentReview`),
  * so typing never blanks the review and a keystroke does not clone every group.
@@ -11,7 +11,6 @@
  * Removal widgets never enter manuscript content.
  */
 
-import { i18n } from "@lingui/core";
 import { type Command, Extension } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import type { EditorState } from "@tiptap/pm/state";
@@ -21,7 +20,9 @@ import { DecorationSet, type EditorView } from "@tiptap/pm/view";
 import type * as Y from "yjs";
 import { CHANGE_ATTR, paintDecorations } from "./decorations";
 import { isSameChange, mapReview, type ProjectedReview } from "./model";
-import type { RemovalHandlers } from "./removal-widget";
+import { matchRenderKeys } from "./paint-identity";
+import { createReviewPaintView } from "./paint-view";
+import type { RemovalHandlers, RemovalPlan } from "./removal-widget";
 
 /** The writer's edits since the review was projected, newest first; mapped only when a position is read. */
 interface PendingEdits {
@@ -38,6 +39,11 @@ export interface InlineReviewPluginState {
   review: ProjectedReview | null;
   /** The edits that moved the text since `review` was projected. */
   edits: PendingEdits | null;
+  renderKeys: ReadonlyMap<number, string>;
+  removals: ReadonlyMap<string, RemovalPlan>;
+  composing: boolean;
+  pulseRevision: number;
+  arrivals: ReadonlySet<string>;
   activeChangeId: string | null;
   /** Changes that just arrived; their marks pulse once. */
   pulsedChangeIds: ReadonlySet<string>;
@@ -62,7 +68,8 @@ type PluginMeta =
   | { kind: "set-applied"; applied: readonly AppliedChangeRef[] }
   | { kind: "set-bar-slot"; open: boolean }
   | { kind: "relocalize" }
-  | { kind: "removal-click"; changeId: string; toggle: string | null; keyboard: boolean };
+  | { kind: "composition"; active: boolean }
+  | { kind: "removal-click"; changeId: string; toggle: string | null };
 
 const mappedReviews = new WeakMap<PendingEdits, ProjectedReview>();
 
@@ -169,8 +176,7 @@ function dispatchMeta(view: EditorView, meta: PluginMeta): void {
 /** What a removal widget does on click: it holds the view it was drawn in. */
 function removalHandlersFor(view: EditorView): RemovalHandlers {
   return {
-    activate: (changeId, toggle, keyboard) =>
-      dispatchMeta(view, { kind: "removal-click", changeId, toggle, keyboard }),
+    activate: (changeId, toggle) => dispatchMeta(view, { kind: "removal-click", changeId, toggle }),
     placeCaret: (identity, side) => {
       // A read-only review (the phone's body) has no caret to move.
       if (!view.editable) return;
@@ -195,9 +201,10 @@ function removalHandlersFor(view: EditorView): RemovalHandlers {
   };
 }
 
-function paint(state: InlineReviewPluginState, refocusRemoval: string | null = null) {
+function paint(state: InlineReviewPluginState) {
   const projected = currentReview(state);
-  if (!projected) return DecorationSet.empty;
+  if (!projected)
+    return { decorations: DecorationSet.empty, removals: new Map<string, RemovalPlan>() };
   const { applied } = state;
   const review =
     applied.length === 0
@@ -211,24 +218,28 @@ function paint(state: InlineReviewPluginState, refocusRemoval: string | null = n
         };
   return paintDecorations(
     review,
-    {
-      activeChangeId: state.activeChangeId,
-      pulsedChangeIds: state.pulsedChangeIds,
-      expandedRemovals: state.expandedRemovals,
-      refocusRemoval,
-      barSlot: state.barSlot,
-    },
+    state.renderKeys,
+    state.decorations,
+    state.activeChangeId,
+    state.barSlot,
     removalHandlersFor,
   );
 }
 
 export function buildInlineReviewPlugin() {
+  let serial = 0;
+  let compositionTimer: ReturnType<typeof setTimeout> | undefined;
   return new Plugin<InlineReviewPluginState>({
     key: draftInlineReviewPluginKey,
     state: {
       init: () => ({
         review: null,
         edits: null,
+        renderKeys: new Map(),
+        removals: new Map(),
+        composing: false,
+        pulseRevision: 0,
+        arrivals: new Set(),
         activeChangeId: null,
         pulsedChangeIds: new Set(),
         applied: [],
@@ -239,29 +250,51 @@ export function buildInlineReviewPlugin() {
       }),
       apply(tr, previous, _oldState, newState) {
         const meta = tr.getMeta(draftInlineReviewPluginKey) as PluginMeta | undefined;
+        if (!meta && !tr.docChanged) return previous;
         const next = { ...previous };
         let repaint = false;
         // Every repaint and scroll reads current positions through `currentReview`, so the review follows the
         // text without a keystroke paying to map every change.
         if (tr.docChanged && meta?.kind !== "set-review" && next.review)
           next.edits = { mapping: tr.mapping, doc: newState.doc, earlier: previous.edits };
-        let refocusRemoval: string | null = null;
         switch (meta?.kind) {
-          case "set-review":
+          case "set-review": {
             // A projection of another document would place marks on the wrong text; the next one is coming.
             if (meta.review && meta.review.doc !== newState.doc) return previous;
+            next.renderKeys = meta.review
+              ? matchRenderKeys(
+                  currentReview(next),
+                  previous.renderKeys,
+                  meta.review,
+                  () => `h${++serial}`,
+                )
+              : new Map();
+            const retainedKeys = new Set(next.renderKeys.values());
+            next.expandedRemovals = new Set(
+              [...previous.expandedRemovals].filter((key) => retainedKeys.has(key)),
+            );
             next.review = meta.review;
             next.edits = null;
             repaint = true;
             break;
+          }
           case "set-active-change":
           case "focus-click":
             next.activeChangeId = meta.changeId;
-            repaint = true;
+            repaint = next.barSlot;
             break;
           case "set-pulse":
-            next.pulsedChangeIds = new Set(meta.changeIds);
-            repaint = true;
+            if (
+              meta.changeIds.length !== previous.pulsedChangeIds.size ||
+              meta.changeIds.some((id) => !previous.pulsedChangeIds.has(id))
+            ) {
+              next.pulsedChangeIds = new Set(meta.changeIds);
+              const arrivals = meta.changeIds.filter((id) => !previous.pulsedChangeIds.has(id));
+              if (arrivals.length) {
+                next.arrivals = new Set(arrivals);
+                next.pulseRevision++;
+              }
+            }
             break;
           case "set-applied":
             next.applied = meta.applied;
@@ -276,7 +309,10 @@ export function buildInlineReviewPlugin() {
             next.marksVisible = meta.visible;
             break;
           case "relocalize":
-            repaint = true;
+            break;
+          case "composition":
+            next.composing = meta.active;
+            repaint = !meta.active;
             break;
           case "removal-click":
             next.activeChangeId = meta.changeId;
@@ -284,21 +320,28 @@ export function buildInlineReviewPlugin() {
               const expanded = new Set(previous.expandedRemovals);
               if (!expanded.delete(meta.toggle)) expanded.add(meta.toggle);
               next.expandedRemovals = expanded;
-              if (meta.keyboard) refocusRemoval = meta.toggle;
             }
-            repaint = true;
+            repaint = next.barSlot;
             break;
         }
-        if (repaint) next.decorations = paint(next, refocusRemoval);
-        // The writer's edit before the next projection: carry what is painted along with the text.
-        else if (tr.docChanged) next.decorations = previous.decorations.map(tr.mapping, tr.doc);
+        if (tr.docChanged) next.decorations = previous.decorations.map(tr.mapping, tr.doc);
+        if (repaint && !next.composing) Object.assign(next, paint(next));
         return next;
       },
     },
     view: (view) => {
-      // The fold's label is copy: a locale change redraws it from the same projection.
-      const unsubscribe = i18n.on("change", () => dispatchMeta(view, { kind: "relocalize" }));
-      return { destroy: unsubscribe };
+      const paintView = createReviewPaintView(
+        view,
+        (state) => draftInlineReviewPluginKey.getState(state),
+        () => dispatchMeta(view, { kind: "relocalize" }),
+      );
+      return {
+        update: paintView.update,
+        destroy: () => {
+          clearTimeout(compositionTimer);
+          paintView.destroy();
+        },
+      };
     },
     props: {
       decorations(state) {
@@ -306,6 +349,53 @@ export function buildInlineReviewPlugin() {
         return pluginState?.marksVisible ? pluginState.decorations : DecorationSet.empty;
       },
       handleDOMEvents: {
+        beforeinput: (view, event) => {
+          const state = draftInlineReviewPluginKey.getState(view.state);
+          if (
+            !event.cancelable ||
+            event.inputType !== "insertText" ||
+            event.data === null ||
+            event.isComposing ||
+            view.composing ||
+            state?.composing ||
+            !state?.marksVisible
+          )
+            return false;
+          const { from, to } = view.state.selection;
+          const targets = event.getTargetRanges();
+          if (
+            targets.length &&
+            (targets.length !== 1 ||
+              view.posAtDOM(targets[0].startContainer, targets[0].startOffset) !== from ||
+              view.posAtDOM(targets[0].endContainer, targets[0].endOffset) !== to)
+          )
+            return false;
+          if (!state.decorations.find(from, to, (spec) => spec.side === "added").length)
+            return false;
+          // Native characterData dirties the entire decorated TextViewDesc in PM 1.41.9,
+          // which replaces its wrapper even when decoration identity is unchanged. Route ordinary
+          // typing through PM's existing text-input handlers before the browser mutates that DOM.
+          // Composition, replacement input, paste and deletion retain their native PM paths.
+          const text = event.data;
+          const insert = () => view.state.tr.insertText(text, from, to).scrollIntoView();
+          if (!view.someProp("handleTextInput", (handler) => handler(view, from, to, text, insert)))
+            view.dispatch(insert());
+          event.preventDefault();
+          return true;
+        },
+        compositionstart: (view) => {
+          clearTimeout(compositionTimer);
+          dispatchMeta(view, { kind: "composition", active: true });
+          return false;
+        },
+        compositionend: (view) => {
+          // PM consumes the final native composition mutation before deferred paint is released.
+          compositionTimer = setTimeout(
+            () => dispatchMeta(view, { kind: "composition", active: false }),
+            0,
+          );
+          return false;
+        },
         input: (view) => {
           // A repaint can land before the MutationObserver's delivery,
           // overwriting a native input's caret with the previous PM selection.

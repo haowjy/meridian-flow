@@ -38,6 +38,7 @@ export interface RemovalPlan {
 
 /** One removal before grouping: a single hunk's removed text at its position. */
 export interface RemovalInput {
+  identity: string;
   position: number;
   block: boolean;
   paragraphs: string[];
@@ -63,11 +64,10 @@ export function planRemovals(inputs: readonly RemovalInput[]): RemovalPlan[] {
       last.changeId === input.changeId
     ) {
       last.paragraphs.push(...paragraphs);
-      last.identity = removalIdentity(last.changeId, last.paragraphs);
       continue;
     }
     plans.push({
-      identity: removalIdentity(input.changeId, paragraphs),
+      identity: input.identity,
       position: input.position,
       block: input.block,
       tight: input.tight,
@@ -76,10 +76,6 @@ export function planRemovals(inputs: readonly RemovalInput[]): RemovalPlan[] {
     });
   }
   return plans;
-}
-
-function removalIdentity(changeId: string, paragraphs: readonly string[]): string {
-  return JSON.stringify([changeId, paragraphs]);
 }
 
 export function removalCharCount(plan: RemovalPlan): number {
@@ -107,10 +103,9 @@ export function removalLabel(plan: RemovalPlan): string {
 export interface RemovalHandlers {
   /**
    * A click on a removal: its change becomes the focused one, and a click on the
-   * fold toggles that removal open or closed. `keyboard` is true when the fold
-   * was activated from the keyboard, so focus can follow it to the rebuilt widget.
+   * fold toggles that removal open or closed. The button keeps keyboard focus while its fold changes.
    */
-  activate: (changeId: string, toggleIdentity: string | null, keyboard: boolean) => void;
+  activate: (changeId: string, toggleIdentity: string | null) => void;
   /**
    * A click on the struck text: the caret goes to where the removal stands, on
    * the side of it that was clicked, so typing lands there. The removal itself
@@ -120,75 +115,77 @@ export interface RemovalHandlers {
 }
 
 export interface RemovalRenderOptions {
-  focused: boolean;
-  /** The change arrived while the writer was reviewing; it pulses once. */
-  pulsed: boolean;
-  expanded: boolean;
-  /** Put keyboard focus on the fold once this widget is in the document. */
-  refocusToggle: boolean;
   handlers: RemovalHandlers;
   changeAttr: string;
+  renderAttr: string;
 }
 
-/** Build the widget DOM. Non-editable and unselectable; clicking focuses the change or toggles a fold. */
+/** Build once; the view updates copy, focus and folds without replacing the widget. */
 export function createRemovalElement(
   doc: Document,
   plan: RemovalPlan,
   options: RemovalRenderOptions,
 ): HTMLElement {
-  const collapsible = isCollapsible(plan);
-  const folded = collapsible && !options.expanded;
   const root: HTMLElement = doc.createElement(plan.block ? "div" : "span");
-  root.className = [
-    REMOVAL_CLASS,
-    plan.block ? REMOVAL_BLOCK_CLASS : "",
-    folded ? REMOVAL_FOLDED_CLASS : "",
-    plan.tight && !plan.block ? REMOVAL_TIGHT_CLASS : "",
-    options.focused ? "meridian-review-emphasized" : "",
-    options.pulsed ? "meridian-review-arrived" : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
+  root.className = [REMOVAL_CLASS, plan.block ? REMOVAL_BLOCK_CLASS : ""].filter(Boolean).join(" ");
   root.setAttribute("contenteditable", "false");
+  root.setAttribute(options.renderAttr, plan.identity);
   root.setAttribute(options.changeAttr, plan.changeId);
-
-  if (collapsible) {
-    const toggle = doc.createElement("button");
-    toggle.type = "button";
-    toggle.className = REMOVAL_TOGGLE_CLASS;
-    toggle.setAttribute("aria-expanded", folded ? "false" : "true");
-    toggle.textContent = folded ? removalLabel(plan) : t`Hide removed text`;
-    root.append(toggle);
-    if (options.refocusToggle) queueMicrotask(() => toggle.focus());
-  }
-  // The text is always here: a fold only hides it.
-  for (const text of plan.paragraphs) {
-    const del = doc.createElement("del");
-    del.className = REMOVAL_TEXT_CLASS;
-    del.textContent = text;
-    if (plan.block) {
-      const paragraph = doc.createElement("p");
-      paragraph.append(del);
-      root.append(paragraph);
-    } else {
-      root.append(del);
-    }
-  }
-  // Keep the editor's caret and focus where the writer left them. The change is
-  // chosen on click, not on press: choosing rebuilds this widget, and a rebuild
-  // between press and release would swallow the click.
+  updateRemovalElement(root, plan, false);
   root.addEventListener("mousedown", (event) => event.preventDefault());
   root.addEventListener("click", (event) => {
     const onToggle =
       event.target instanceof Element && event.target.closest(`.${REMOVAL_TOGGLE_CLASS}`);
-    // A pointer click on the struck text (not the fold, not Enter on it). The side
-    // is read before activating: activating rebuilds this widget, and a detached
-    // one has no box to measure.
     const side = !onToggle && event.detail > 0 ? clickedSide(root, event, plan.block) : null;
-    options.handlers.activate(plan.changeId, onToggle ? plan.identity : null, event.detail === 0);
+    // The semantic hash may have changed since this DOM was created.
+    const changeId = root.getAttribute(options.changeAttr);
+    if (!changeId) return;
+    options.handlers.activate(changeId, onToggle ? plan.identity : null);
     if (side !== null) options.handlers.placeCaret(plan.identity, side);
   });
   return root;
+}
+
+const renderedText = new WeakMap<HTMLElement, string>();
+
+/** Idempotent DOM updates: a fold keeps both the widget and its focused button. */
+export function updateRemovalElement(
+  root: HTMLElement,
+  plan: RemovalPlan,
+  expanded: boolean,
+): void {
+  const collapsible = isCollapsible(plan);
+  const folded = collapsible && !expanded;
+  root.classList.toggle(REMOVAL_FOLDED_CLASS, folded);
+  root.classList.toggle(REMOVAL_TIGHT_CLASS, plan.tight && !plan.block);
+  let toggle = root.querySelector<HTMLButtonElement>(`.${REMOVAL_TOGGLE_CLASS}`);
+  if (collapsible) {
+    if (!toggle) {
+      toggle = root.ownerDocument.createElement("button");
+      toggle.type = "button";
+      toggle.className = REMOVAL_TOGGLE_CLASS;
+      root.prepend(toggle);
+    }
+    const label = folded ? removalLabel(plan) : t`Hide removed text`;
+    if (toggle.textContent !== label) toggle.textContent = label;
+    const ariaExpanded = folded ? "false" : "true";
+    if (toggle.getAttribute("aria-expanded") !== ariaExpanded)
+      toggle.setAttribute("aria-expanded", ariaExpanded);
+  } else toggle?.remove();
+  const signature = JSON.stringify(plan.paragraphs);
+  if (renderedText.get(root) === signature) return;
+  renderedText.set(root, signature);
+  for (const child of [...root.children]) if (child !== toggle) child.remove();
+  for (const text of plan.paragraphs) {
+    const del = root.ownerDocument.createElement("del");
+    del.className = REMOVAL_TEXT_CLASS;
+    del.textContent = text;
+    if (plan.block) {
+      const paragraph = root.ownerDocument.createElement("p");
+      paragraph.append(del);
+      root.append(paragraph);
+    } else root.append(del);
+  }
 }
 
 /** Which side of the removal a click landed on: left or upper half is before it, the rest after. */

@@ -132,6 +132,11 @@ update their text and labels in place. A consumed arrival never restarts on a re
 Mapped decoration sets survive ordinary transactions. On projection, retain equal mapped
 decorations and remove/add only changed descriptors, rather than recreating the full set.
 Composition deferral is a paint constraint, not a delay to editing or the review runtime.
+The view brackets DOM-only updates with ProseMirror's observer stop/start so they cannot be parsed
+as manuscript edits. Ordinary cancelable `insertText` at a painted range uses the existing PM
+`handleTextInput` chain before native DOM mutation: PM otherwise dirties/replaces a decorated text
+wrapper even with equal decorations. Composition, paste, deletion, replacement input and a target
+range different from the PM selection remain native. No input history decides review semantics.
 
 ## Discard
 
