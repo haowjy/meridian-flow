@@ -45,8 +45,6 @@ export type RunStateIntent =
       mode: AiWriteMode;
       /** The version of the server's answer, once it has answered. */
       answer: string | null;
-      /** The last attempt did not succeed: shown with Retry, and the fold leaves it out. */
-
       /** Posted and not refused: the server may hold it, so Retry only. */
       awaitingServer?: boolean;
     } & FailedCommand)

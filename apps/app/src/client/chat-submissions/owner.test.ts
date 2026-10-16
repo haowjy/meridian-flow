@@ -196,7 +196,7 @@ it("Edit dissolves every never-created message in order before newer New chat wr
   expect(scenario.retireRequests).toHaveLength(0);
 });
 
-it("a cross-tab retirement removes an unresolved optimistic row, not just rejected rows", async () => {
+it("cross-tab updates preserve failure identity and retire failed or pending writer rows", async () => {
   recordChatSubmission(account, { ...entry(), state: undefined });
   const scenario = new ThreadRunScenario({
     append: async () => {
@@ -216,8 +216,22 @@ it("a cross-tab retirement removes an unresolved optimistic row, not just reject
   window.localStorage.setItem(key, JSON.stringify(raw));
   window.dispatchEvent(new StorageEvent("storage", { key, storageArea: window.localStorage }));
   expect(mounted.read().presentation.get(row.id)?.failure).toEqual(before);
+  recordChatSubmission(account, {
+    ...entry(),
+    recordId: "two",
+    submissionId: "two",
+    state: undefined,
+  });
+  expect(scenario.turns()).toHaveLength(2);
+  expect(scenario.turns().some((turn) => turn.status === "pending")).toBe(true);
   window.localStorage.removeItem(key);
   window.dispatchEvent(new StorageEvent("storage", { key, storageArea: window.localStorage }));
+  expect(scenario.turns()).toHaveLength(1);
+  const pendingKey = chatSubmissionStorageKey(account, "two");
+  window.localStorage.removeItem(pendingKey);
+  window.dispatchEvent(
+    new StorageEvent("storage", { key: pendingKey, storageArea: window.localStorage }),
+  );
   expect(scenario.turns()).toEqual([]);
   expect(mounted.dissolved).not.toHaveBeenCalled();
 });
