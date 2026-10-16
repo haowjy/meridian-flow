@@ -52,6 +52,81 @@ function runningReply() {
 }
 
 describe("thread send", () => {
+  it("assembles CLI skills and repeated refs from address lookups into the admission", async () => {
+    wire.fail("other", {
+      body: { skills: [{ slug: "revise", name: "Revise", description: "Revise prose" }] },
+    });
+    wire.fail("other", {
+      body: {
+        kind: "current",
+        document: {
+          documentId: "notes-id",
+          entry: { name: "Notes", fileType: "markdown" },
+        },
+      },
+    });
+    wire.fail("other", {
+      body: {
+        kind: "current",
+        document: {
+          documentId: "image-id",
+          entry: { name: "Cover", fileType: "image" },
+        },
+      },
+    });
+    const result = await send(
+      "Compare\nthese",
+      "--skill",
+      "revise",
+      "--ref",
+      "kb://notes.md",
+      "--ref",
+      "kb://cover.png",
+      "--no-wait",
+      "--json",
+    );
+    expect(result.code).toBe(EXIT.ok);
+    expect(wire.requestsOf("other").map((request) => request.path)).toEqual([
+      `/api/threads/${THREAD_ID}/skills`,
+      "/api/projects/22222222-2222-4222-8222-222222222222/context/kb/address?path=notes",
+      "/api/projects/22222222-2222-4222-8222-222222222222/context/kb/address?path=cover.png",
+    ]);
+    expect(wire.bodiesOf("admit")).toEqual([
+      {
+        submissionId: expect.any(String),
+        text: "/reviseCompare\nthese[Notes](kb://notes)[Cover](kb://cover.png)",
+        activatedSkillSlugs: ["revise"],
+        references: [
+          { documentId: "notes-id", uri: "kb://notes", purpose: "reference" },
+          { documentId: "image-id", uri: "kb://cover.png", purpose: "reference" },
+        ],
+        blocks: [
+          {
+            type: "skill",
+            text: "/revise",
+            slug: "revise",
+            name: "Revise",
+            description: "Revise prose",
+          },
+          { type: "text", text: "Compare\nthese" },
+          {
+            type: "reference",
+            text: "[Notes](kb://notes)",
+            documentId: "notes-id",
+            uri: "kb://notes",
+          },
+          {
+            type: "reference",
+            text: "[Cover](kb://cover.png)",
+            documentId: "image-id",
+            uri: "kb://cover.png",
+          },
+          { type: "image", documentId: "image-id", uri: "kb://cover.png" },
+        ],
+      },
+    ]);
+  });
+
   it("uses the snapshot's outcome rather than an obsolete usage block in the replay", async () => {
     // The journal carries a blocked record from before the usage returned. It sits above the join
     // read's cursor, so the client really replays it.

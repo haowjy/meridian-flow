@@ -109,7 +109,7 @@ describe("tail --until-idle", () => {
       outcome: "failed",
       reason: null,
     },
-  ])("counts $name without inventing covered membership", async ({
+  ])("counts $name with membership from the proving read", async ({
     gap,
     failure,
     code,
@@ -152,7 +152,10 @@ describe("tail --until-idle", () => {
       outcome,
       reason,
       idle: true,
-      turns: [{ turnId: "A", status: "complete" }],
+      turns: [
+        { turnId: "A", status: "complete" },
+        { turnId: "B", status: failure ? "error" : "complete" },
+      ],
       // A replay gap leaves nothing fair to compare.
       ...(gap ? { liveView: "not_observed" } : {}),
     });
