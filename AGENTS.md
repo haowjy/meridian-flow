@@ -197,10 +197,10 @@ Prune a worktree as soon as its branch merges, whether into `main`, `staging`,
 or a longer-lived integration branch — `pnpm dev:prune-worktrees -- --target
 <work-id|path|branch|pr> --dry-run` (see [tools/dev/AGENTS.md](tools/dev/AGENTS.md)).
 Don't defer this: a side-lane is provable by containment in its integration
-branch, or by its own merged PR, and either proof can vanish. If the integration
-branch is later squash-merged and its ref deleted and the lane had no PR of its
-own, only a human who tracked the actual history can confirm by hand that it is
-safe to remove.
+branch, or by its own merged PR. Containment disappears when that ref is
+deleted: once the integration branch is squash-merged and its ref deleted
+without the lane having a PR of its own, only a human who tracked the actual
+history can confirm by hand that it is safe to remove.
 
 **Clean up as soon as you're done with something.** Idle dev stacks, databases and
 checkouts waste the machine's memory, CPU and disk. When a worktree, dev stack, probe,

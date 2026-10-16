@@ -28,10 +28,12 @@ import {
   decideCleanupEligibility,
   type MergedPullRequest,
   type PullRequestDiscovery,
+  parseNonSymbolicRefNames,
   selectContainedByRef,
   shortRefName,
   validateCleanupEligibility,
 } from "./lib/worktree-cleanup-eligibility";
+import { acquireCleanupLock, type CleanupLock } from "./lib/worktree-cleanup-lock";
 import {
   type AutoCleanupReadinessDecision,
   autoCleanupReadinessKey,
@@ -314,8 +316,9 @@ function fetchBaseBranch(baseBranch: string, cwd: string): void {
 
 // Authorizes a targeted cleanup when the planned commit survives in a ref other
 // than the branch's own: a lane merged into a working or integration branch
-// keeps its commits reachable after its own refs are deleted. Selecting the ref
-// that reports that containment is `selectContainedByRef`'s job.
+// keeps its commits reachable after its own refs are deleted. Symbolic refs are
+// dropped (an alias can point back at the deleted branch), and selecting the
+// surviving ref is `selectContainedByRef`'s job.
 function findContainedByRef(
   oid: string,
   branch: string,
@@ -324,10 +327,27 @@ function findContainedByRef(
 ): string | undefined {
   const refs = runText(
     "git",
-    ["for-each-ref", `--contains=${oid}`, "--format=%(refname)", "refs/heads", "refs/remotes"],
+    [
+      "for-each-ref",
+      `--contains=${oid}`,
+      "--format=%(refname)%00%(symref)",
+      "refs/heads",
+      "refs/remotes",
+    ],
     cwd,
   );
-  return selectContainedByRef(refs.split("\n").filter(Boolean), branch, baseBranch);
+  return selectContainedByRef(parseNonSymbolicRefNames(refs), branch, baseBranch);
+}
+
+// Shared by every worktree: refs are repository-wide state, so one lock file
+// under the common git dir covers the whole repository.
+function cleanupLockPath(cwd: string): string {
+  const commonDir = runText(
+    "git",
+    ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    cwd,
+  );
+  return path.join(commonDir, "meridian-prune.lock");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -368,7 +388,9 @@ function parseMergedPullRequests(output: string): MergedPullRequest[] {
 // Merged PRs are discovered across every base: targeted cleanup accepts an
 // exact head commit merged into any branch, stacked PRs into integration
 // branches included, while batch cleanup filters to the trunk. The exact head
-// OID in the match keeps historical same-name PRs out.
+// OID in the match keeps historical same-name PRs out. The window covers the
+// newest 5000 merged PRs of any base; older lanes fall back to containment or
+// the manual path.
 async function discoverMergedPullRequests(cwd: string): Promise<PullRequestDiscovery> {
   try {
     const output = await runTextAsync(
@@ -379,7 +401,7 @@ async function discoverMergedPullRequests(cwd: string): Promise<PullRequestDisco
         "--state",
         "merged",
         "--limit",
-        "1000",
+        "5000",
         "--json",
         "number,baseRefName,headRefName,headRefOid,headRepositoryOwner",
       ],
@@ -434,13 +456,19 @@ function indexMergedPullRequests(
   return index;
 }
 
+interface CleanupEligibilityDiscovery {
+  readonly eligibilityByBranch: ReadonlyMap<string, CleanupEligibility>;
+  readonly refusalByBranch: ReadonlyMap<string, string>;
+}
+
 async function collectCleanupEligibility(
   gitWorktreePorcelain: string,
   baseBranch: string,
   cwd: string,
   targeted: boolean,
-): Promise<Map<string, CleanupEligibility>> {
+): Promise<CleanupEligibilityDiscovery> {
   const eligibility = new Map<string, CleanupEligibility>();
+  const refusals = new Map<string, string>();
   let repositoryOwner = "";
   let pullRequestDiscovery: PullRequestDiscovery;
   try {
@@ -494,8 +522,9 @@ async function collectCleanupEligibility(
       pullRequestDiscovery: branchPullRequestDiscovery,
     });
     if (decision.eligible) eligibility.set(branch, decision.evidence);
+    else refusals.set(branch, decision.reason);
   }
-  return eligibility;
+  return { eligibilityByBranch: eligibility, refusalByBranch: refusals };
 }
 
 function printAutoReadinessSkips(
@@ -528,9 +557,12 @@ async function buildPlan(options: CliOptions, cwd: string): Promise<CleanupPlan>
   const gitWorktreePorcelain = runText("git", ["worktree", "list", "--porcelain"], cwd);
   const baseBranch = resolveBaseBranch(cwd);
   fetchBaseBranch(baseBranch, cwd);
-  const [eligibilityByBranch, meridianWorkItems] = await Promise.all([
+  const [discovery, meridianWorkItems] = await Promise.all([
     options.mode === "target" && options.manuallyVerified
-      ? Promise.resolve(new Map<string, CleanupEligibility>())
+      ? Promise.resolve<CleanupEligibilityDiscovery>({
+          eligibilityByBranch: new Map(),
+          refusalByBranch: new Map(),
+        })
       : collectCleanupEligibility(gitWorktreePorcelain, baseBranch, cwd, options.mode !== "auto"),
     collectMeridianWorkItems(cwd),
   ]);
@@ -548,11 +580,16 @@ async function buildPlan(options: CliOptions, cwd: string): Promise<CleanupPlan>
         };
   if (options.mode === "auto") {
     for (const caveat of autoReadiness.caveats) console.log(`Caveat: ${caveat}`);
-    printAutoReadinessSkips(gitWorktreePorcelain, eligibilityByBranch, autoReadiness.decisions);
+    printAutoReadinessSkips(
+      gitWorktreePorcelain,
+      discovery.eligibilityByBranch,
+      autoReadiness.decisions,
+    );
   }
   const context = buildCleanupContext({
     gitWorktreePorcelain,
-    eligibilityByBranch,
+    eligibilityByBranch: discovery.eligibilityByBranch,
+    eligibilityRefusalByBranch: discovery.refusalByBranch,
     autoReadinessByWorktree: autoReadiness.decisions,
     baseBranch,
     meridianWorkItems,
@@ -765,7 +802,24 @@ async function main(): Promise<void> {
     return;
   }
 
-  const failures = await executePlan(plan, options.force);
+  // One cleanup executes at a time per repository: two overlapping runs could
+  // otherwise each cite the other's worktree branch as their surviving ref and
+  // delete both. Every action revalidates, so a run that starts after another
+  // finished refuses when its carrier is gone.
+  let lock: CleanupLock | undefined;
+  try {
+    lock = acquireCleanupLock(cleanupLockPath(process.cwd()));
+  } catch (error) {
+    console.error(`✗ ${(error as Error).message}`);
+    process.exit(1);
+  }
+
+  let failures: number;
+  try {
+    failures = await executePlan(plan, options.force);
+  } finally {
+    lock?.release();
+  }
   if (failures > 0) {
     console.error(`\nCleanup completed with ${failures} failure(s).`);
     process.exit(1);

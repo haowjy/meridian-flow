@@ -32,7 +32,8 @@ bootstrap. The `./mf` CLI lives in [`tools/mf`](../mf/AGENTS.md).
   live listeners and use surgical Tailscale `off`; never reset all routes or
   infer staleness from a branch name. Cleanup authorizes only the planned
   commit: contained in another surviving ref, or one exact merged PR; batch
-  cleanup narrows to the exact PR into the detected base.
+  cleanup narrows to the exact PR into the detected base. Cleanup executes one
+  run at a time per repository.
 - `tools/mf` consumes `portless-prefix.ts`, `portless-routes.ts`,
   `portlessCa` in `dev-readiness.ts` and `resolveCheckoutRouteUrls` in
   `dev-session-state.ts`, and `apps/app/e2e` consumes

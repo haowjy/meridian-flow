@@ -73,8 +73,8 @@ pnpm dev:prune-worktrees -- --target <branch> \
   --manually-verified "<reason citing the evidence and commits above>"
 ```
 
-Manual verification replaces only the automatic ancestry or PR proof; the tool
-still refuses primary, current, base, locked, dirty, or (by default) live worktrees and
+Manual verification replaces only the automatic containment or PR proof; the
+tool still refuses primary, current, base, locked, dirty, or (by default) live worktrees and
 still revalidates the branch OID and readiness before destructive actions.
 
 ### Verify stacked-lane acceptance
@@ -83,7 +83,8 @@ Exercise both automatic proof paths on disposable refs. Only the first can be
 synthesized; the stacked-PR path needs a real merged PR, so use one whose base
 was a working branch.
 
-1. Containment: a lane whose tip is an ancestor of an integration ref.
+1. Containment: a lane whose tip is an ancestor of an integration ref. Give
+   both branches worktrees, so each is a cleanup target.
 
    ```bash
    tree=$(git rev-parse origin/main^{tree})
@@ -92,15 +93,24 @@ was a working branch.
    git branch fixture/prune-lane $lane
    git branch fixture/prune-integration $integration
    git worktree add ../meridian-flow.worktrees/prune-fixture-lane fixture/prune-lane
+   git worktree add ../meridian-flow.worktrees/prune-fixture-integration fixture/prune-integration
    ```
 
 2. A dry run on `fixture/prune-lane` plans with evidence
    `contained in fixture/prune-integration`; a dry run on
-   `fixture/prune-integration` refuses (only its own refs accept it).
-3. Stacked PR: list merged PRs with `gh pr list --state merged --json
-   number,baseRefName,headRefName`, pick one whose base is a working branch,
-   and create a branch at that PR's `headRefOid`. The dry run plans with
-   evidence `merged PR #N into <base>`.
+   `fixture/prune-integration` refuses (only its own refs contain it).
+3. Stacked PR: list merged PRs whose base is a working branch, pick one, and
+   create a worktree at its head commit.
+
+   ```bash
+   gh pr list --state merged --limit 500 \
+     --json number,baseRefName,headRefName,headRefOid
+   git worktree add -b <headRefName> \
+     ../meridian-flow.worktrees/prune-fixture-pr <headRefOid>
+   ```
+
+   The dry run on `<headRefName>` plans with evidence `merged PR #N into
+   <base>`.
 4. A branch at a commit no other ref contains and no merged PR matches still
    refuses.
 5. Remove the fixture worktrees and branches: `git worktree remove <path>` and

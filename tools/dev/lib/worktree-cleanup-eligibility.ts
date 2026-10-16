@@ -58,6 +58,27 @@ export function shortRefName(ref: string): string {
   return ref;
 }
 
+/** Locale-independent name order, so evidence selection is stable. */
+function compareRefNames(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/**
+ * Parses `%(refname)%00%(symref)` rows into ref names, dropping symbolic refs.
+ * A symbolic ref (e.g. `refs/remotes/origin/HEAD`) is an alias, not another
+ * branch, and it can even alias the very ref being deleted, which would leave
+ * the planned commit reachable from nothing.
+ */
+export function parseNonSymbolicRefNames(refOutput: string): string[] {
+  return refOutput
+    .split("\n")
+    .filter(Boolean)
+    .flatMap((line) => {
+      const [name, symref] = line.split("\0");
+      return name !== undefined && symref === "" ? [name] : [];
+    });
+}
+
 /** The branch a remote-tracking ref tracks, with the remote's first path segment dropped. */
 function remoteTrackingBranch(ref: string): string | undefined {
   if (!ref.startsWith(REMOTE_BRANCH_PREFIX)) return undefined;
@@ -96,7 +117,7 @@ export function selectContainedByRef(
     )
     .sort(
       (a, b) =>
-        containmentRank(a, baseBranch) - containmentRank(b, baseBranch) || a.localeCompare(b),
+        containmentRank(a, baseBranch) - containmentRank(b, baseBranch) || compareRefNames(a, b),
     );
   return candidates[0];
 }
@@ -149,12 +170,17 @@ export function decideCleanupEligibility(input: {
           `into '${input.baseBranch}'`,
     };
   }
-  if (exactMatches.length > 1) {
-    return {
-      eligible: false,
-      reason: `multiple merged pull requests match exact commit ${input.plannedOid}; refusing ambiguous evidence`,
-    };
-  }
+
+  // The same commit can be the head of several merged PRs: a retargeted
+  // branch, or one merged into an integration branch and later into the trunk.
+  // Every exact match independently proves the merge, so the choice is
+  // deterministic: the trunk's record when present, then the lowest base name
+  // and PR number.
+  const match = [...exactMatches].sort((a, b) => {
+    const aTrunk = a.baseRefName === input.baseBranch ? 0 : 1;
+    const bTrunk = b.baseRefName === input.baseBranch ? 0 : 1;
+    return aTrunk - bTrunk || compareRefNames(a.baseRefName, b.baseRefName) || a.number - b.number;
+  })[0];
 
   return {
     eligible: true,
@@ -162,9 +188,9 @@ export function decideCleanupEligibility(input: {
       kind: "pull-request",
       branch: input.branch,
       plannedOid: input.plannedOid,
-      pullRequestBase: exactMatches[0].baseRefName,
+      pullRequestBase: match.baseRefName,
       repositoryOwner: input.repositoryOwner,
-      pullRequestNumber: exactMatches[0].number,
+      pullRequestNumber: match.number,
     },
   };
 }
