@@ -170,7 +170,11 @@ export function chatCards(input: ChatCardsInput): ChatCards {
           requestId: outcome.requestId,
         }),
       );
-    } else if (target.status === "error" && current(target)) {
+    } else if (
+      target.status === "error" &&
+      current(target) &&
+      (!isHandoffSeed(target) || target === newestSeed)
+    ) {
       cards.push(
         card({
           key,
