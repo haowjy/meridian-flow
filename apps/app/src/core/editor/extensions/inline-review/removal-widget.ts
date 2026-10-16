@@ -32,6 +32,8 @@ export interface RemovalPlan {
   /** Followed by punctuation or the end of the line: no gap after the struck text. */
   tight: boolean;
   paragraphs: string[];
+  /** The removed text began with a space: the widget draws it before the strike, unstruck. */
+  spaceBefore: boolean;
   /** The change that removed it. */
   changeId: string;
 }
@@ -43,6 +45,7 @@ export interface RemovalInput {
   block: boolean;
   paragraphs: string[];
   tight: boolean;
+  spaceBefore: boolean;
   changeId: string;
 }
 
@@ -71,6 +74,7 @@ export function planRemovals(inputs: readonly RemovalInput[]): RemovalPlan[] {
       position: input.position,
       block: input.block,
       tight: input.tight,
+      spaceBefore: input.spaceBefore,
       paragraphs,
       changeId: input.changeId,
     });
@@ -172,10 +176,12 @@ export function updateRemovalElement(
     if (toggle.getAttribute("aria-expanded") !== ariaExpanded)
       toggle.setAttribute("aria-expanded", ariaExpanded);
   } else toggle?.remove();
-  const signature = JSON.stringify(plan.paragraphs);
+  const lead = plan.spaceBefore && !plan.block;
+  const signature = JSON.stringify([lead, plan.paragraphs]);
   if (renderedText.get(root) === signature) return;
   renderedText.set(root, signature);
-  for (const child of [...root.children]) if (child !== toggle) child.remove();
+  for (const child of [...root.childNodes]) if (child !== toggle) child.remove();
+  if (lead) root.append(root.ownerDocument.createTextNode(" "));
   for (const text of plan.paragraphs) {
     const del = root.ownerDocument.createElement("del");
     del.className = REMOVAL_TEXT_CLASS;

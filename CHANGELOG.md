@@ -6,6 +6,7 @@
 
 ### Fixed
 
+- Draft review keeps the space before a struck word: "The ~~red~~ blue gate", not "Thered blue gate".
 - Discard waits for attribution when another chat deletes Undo-restored text, instead of silently missing that chat’s change.
 
 - Draft Apply indexes fragmented journal ownership once and reconstructs prior deletions with a linear scan, avoiding repeated full-range sorting after Discard and Undo.
