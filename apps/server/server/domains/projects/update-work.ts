@@ -55,7 +55,7 @@ export async function updateWorkTransition(
     if (!before) throw new WorkLifecycleUnavailableError(workId, "missing");
     const lifecycle = workLifecycleState(before);
     if (lifecycle !== "active") {
-      throw new WorkLifecycleUnavailableError(workId, lifecycle, before.slug);
+      throw new WorkLifecycleUnavailableError(workId, lifecycle, before.handle);
     }
     if (
       before.isNoWork &&
@@ -103,7 +103,7 @@ export async function setWorkArchived(
     if (!before) throw new WorkLifecycleUnavailableError(workId, "missing");
     const lifecycle = workLifecycleState(before);
     if (lifecycle === "deleted") {
-      throw new WorkLifecycleUnavailableError(workId, lifecycle, before.slug);
+      throw new WorkLifecycleUnavailableError(workId, lifecycle, before.handle);
     }
     const after = archived ? await deps.works.archive(workId) : await deps.works.unarchive(workId);
     const result = { before, after, changed: before.archivedAt !== after.archivedAt };

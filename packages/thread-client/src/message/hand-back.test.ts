@@ -8,7 +8,7 @@ import type { RestorableReference } from "./types";
 const scope = {
   projectId: "p1",
   userId: "u1",
-  work: { id: "w1", slug: null },
+  work: { id: "w1", handle: null },
   rootThreadId: "t1",
   rootThreadRef: "c1",
 } as never;
@@ -16,7 +16,7 @@ const resolve = chatReferenceResolver(scope);
 
 const reference = (name: string, imageCapable: boolean): RestorableReference => ({
   documentId: `doc-${name}`,
-  uri: `scratch://@/c1/${name}` as never,
+  uri: `scratch://@c1/${name}` as never,
   fileType: name.endsWith(".png") ? "png" : "markdown",
   authority: { kind: "lineage", projectId: "p1", rootThreadId: "t1", rootThreadRef: "c1" } as never,
   label: `the [${name}]`,
@@ -65,24 +65,24 @@ describe("hand-back composer content", () => {
     const other: UserMessageBlock[] = [
       {
         type: "reference",
-        text: "[x](scratch://@/c9/x.md)",
+        text: "[x](scratch://@c9/x.md)",
         documentId: "doc-o",
-        uri: "scratch://@/c9/x.md" as never,
+        uri: "scratch://@c9/x.md" as never,
       },
     ];
     expect(
       serializeMessageDoc(composerDocFromHandedBack([{ userTurnId: "o", blocks: other }], resolve)),
-    ).toMatchObject({ text: "[x](scratch://@/c9/x.md)", references: [] });
+    ).toMatchObject({ text: "[x](scratch://@c9/x.md)", references: [] });
 
     // An image with no extension in its name is still an image when the message carried one.
     const plain: UserMessageBlock[] = [
       {
         type: "reference",
-        text: "[sketch](scratch://@/c1/sketch)",
+        text: "[sketch](scratch://@c1/sketch)",
         documentId: "doc-s",
-        uri: "scratch://@/c1/sketch" as never,
+        uri: "scratch://@c1/sketch" as never,
       },
-      { type: "image", documentId: "doc-s", uri: "scratch://@/c1/sketch" as never },
+      { type: "image", documentId: "doc-s", uri: "scratch://@c1/sketch" as never },
     ];
     const kept = composerDocFromHandedBack([{ userTurnId: "s", blocks: plain }], resolve);
     expect(serializeMessageDoc(kept).blocks).toEqual(plain);
@@ -90,7 +90,7 @@ describe("hand-back composer content", () => {
 
     // An image block with no chip before it (an API client) comes back as an image-capable chip.
     const bare: UserMessageBlock[] = [
-      { type: "image", documentId: "doc-x", uri: "scratch://@/c1/x.png" as never },
+      { type: "image", documentId: "doc-x", uri: "scratch://@c1/x.png" as never },
     ];
     const alone = serializeMessageDoc(
       composerDocFromHandedBack([{ userTurnId: "m", blocks: bare }], resolve),

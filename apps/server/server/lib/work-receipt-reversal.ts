@@ -381,7 +381,8 @@ function hasIdentityConflict(works: Map<WorkId, ShadowWork>, work: ShadowWork) {
     (candidate) =>
       candidate.id !== work.id &&
       !candidate.deleted &&
-      (candidate.name.toLowerCase() === work.name.toLowerCase() || candidate.slug === work.slug),
+      (candidate.name.toLowerCase() === work.name.toLowerCase() ||
+        candidate.handle === work.handle),
   );
 }
 

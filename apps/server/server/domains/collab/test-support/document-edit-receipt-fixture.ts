@@ -92,7 +92,9 @@ export function responseContext(responseId: string) {
     threadId: THREAD_ID,
     turnId: TURN_ID,
     responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
-    grant: inProject(testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" })),
+    grant: inProject(
+      testFileGrant({ kind: "draft", workId: WORK_ID, workHandle: "atomicity-work" }),
+    ),
   };
 }
 

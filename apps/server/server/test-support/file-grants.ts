@@ -36,7 +36,7 @@ export function testFileGrant(
         ? {
             draftWork: {
               id: destination.workId,
-              slug: destination.workSlug,
+              slug: destination.workHandle,
               isNoWork: false,
               archived: false,
               deleted: false,

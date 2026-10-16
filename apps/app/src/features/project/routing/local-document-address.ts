@@ -165,7 +165,7 @@ export function resolveLocalDocumentAddress(
       kind: "work",
       projectId,
       workId: entry.scope.workId,
-      workSlug: uri.value.authority.kind === "work" ? uri.value.authority.workSlug : null,
+      workHandle: uri.value.authority.kind === "work" ? uri.value.authority.workHandle : null,
     };
   }
   return {

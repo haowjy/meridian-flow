@@ -41,7 +41,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.insert(projects).values({ id: p, userId: u, name: "Serial", slug: "serial" });
       await db.insert(works).values([
         { id: noWork, projectId: p, createdByUserId: u, name: "No Work", isNoWork: true },
-        { id: a, projectId: p, createdByUserId: u, name: "Arc A", slug: "arc-a" },
+        { id: a, projectId: p, createdByUserId: u, name: "Arc A", handle: "w1" },
       ]);
       await db.insert(contextSources).values([
         { id: manuscript, projectId: p, name: "Manuscript", slug: "manuscript" },

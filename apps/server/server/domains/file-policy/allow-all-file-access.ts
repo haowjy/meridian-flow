@@ -28,7 +28,7 @@ function openFacts(request: FileFactsRequest): FileFacts {
       ? {
           draftWork: {
             id: draftWorkId,
-            slug: null,
+            handle: null,
             isNoWork: false,
             archived: false,
             deleted: false,

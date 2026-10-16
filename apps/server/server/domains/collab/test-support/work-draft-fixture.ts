@@ -36,7 +36,7 @@ export const TURN_2_ID = "00000000-0000-4000-8000-000000000708";
 const TURN_3_ID = "00000000-0000-4000-8000-000000000709";
 export const CREATED_DOC_ID = "00000000-0000-4000-8000-000000000710";
 
-export const DRAFT_DESTINATION = { kind: "draft", workId: WORK_ID, workSlug: "work" } as const;
+export const DRAFT_DESTINATION = { kind: "draft", workId: WORK_ID, workHandle: "work" } as const;
 
 export function createWorkDraftFixture(db: Database) {
   const hocuspocus = fakeHocuspocus();
@@ -71,7 +71,7 @@ export function createWorkDraftFixture(db: Database) {
       projectId: PROJECT_ID,
       createdByUserId: USER_ID,
       name: "Work",
-      slug: "work",
+      handle: "w1",
     });
     // The Work already has its draft, as if an earlier write ensured it (contract §2.5).
     await db

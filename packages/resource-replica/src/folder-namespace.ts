@@ -354,7 +354,7 @@ export function prepareFolderNamespaceAttempt(
       kind: "delete",
       scheme: source.scheme,
       workId: source.workId,
-      workSlug: source.workSlug ?? null,
+      workHandle: source.workHandle ?? null,
       rootThreadId: source.rootThreadId ?? null,
       rootThreadRef: source.rootThreadRef ?? null,
       body: {

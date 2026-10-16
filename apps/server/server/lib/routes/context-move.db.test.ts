@@ -184,7 +184,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId,
         createdByUserId: USER_ID,
         name: "Current Work",
-        slug: "current-work",
+        handle: "w1",
       });
       const contextPorts = createProductionUnifiedContextPortFactory({
         links: createTestDocumentLinkScopes(db),
@@ -198,7 +198,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         authority,
         projectId,
         USER_ID,
-        authority.workSlug ? new Map([[authority.workSlug, authority]]) : new Map(),
+        authority.workHandle ? new Map([[authority.workHandle, authority]]) : new Map(),
       );
       await createUntitledContextDocument({
         port,
@@ -1023,7 +1023,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createdByUserId: USER_ID,
         deletedAt: new Date(),
       });
-      const result = await port.write("scratch://@/c12/after-trash", "unavailable", {
+      const result = await port.write("scratch://@c12/after-trash", "unavailable", {
         origin: { type: "agent", agentSlug: null, threadId: rootId, turnId: crypto.randomUUID() },
       });
       expect(result).toMatchObject({ ok: false, error: { code: "not_found" } });
@@ -1045,12 +1045,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId,
         createdByUserId: USER_ID,
       });
-      const created = await port.write("scratch://@/c12/Unassigned", "portable", {
+      const created = await port.write("scratch://@c12/Unassigned", "portable", {
         origin: { type: "agent", agentSlug: null, threadId: rootId, turnId: crypto.randomUUID() },
       });
       expect(created).toMatchObject({
         ok: true,
-        value: { uri: "scratch://@/c12/Unassigned", documentId: expect.any(String) },
+        value: { uri: "scratch://@c12/Unassigned", documentId: expect.any(String) },
       });
       if (!created.ok || !created.value.documentId) throw new Error("missing no-Work document");
       const documentId = created.value.documentId;
@@ -1097,7 +1097,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(port.stat("scratch://@current-work/Assigned/Unassigned")).resolves.toMatchObject(
         { ok: true, value: { documentId } },
       );
-      await expect(port.stat("scratch://@/c12/Unassigned")).resolves.toMatchObject({
+      await expect(port.stat("scratch://@c12/Unassigned")).resolves.toMatchObject({
         ok: false,
         error: { code: "not_found" },
       });

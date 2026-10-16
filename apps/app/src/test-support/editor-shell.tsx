@@ -35,7 +35,7 @@ export function installEditorShell(registry: LiveDocumentSessionRegistry) {
       .spyOn(threads, "useProjectThreads")
       .mockReturnValue({ threads: [], isError: false, isFetching: false, refetch: () => {} }),
     vi.spyOn(works, "useWorks").mockReturnValue({
-      noWork: { id: "no-work", slug: null, archivedAt: null } as NonNullable<
+      noWork: { id: "no-work", handle: null, archivedAt: null } as NonNullable<
         ReturnType<typeof works.useWorks>["noWork"]
       >,
       works: [],

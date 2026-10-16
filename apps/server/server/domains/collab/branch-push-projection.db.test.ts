@@ -120,7 +120,7 @@ describe("branch-push durable projection", () => {
       projectId,
       createdByUserId: userId,
       name: "Recovery work",
-      slug: "recovery-work",
+      handle: "w1",
     });
     await db.insert(contextSources).values({
       id: sourceId,
@@ -324,7 +324,7 @@ describe("branch-push durable projection", () => {
       projectId,
       createdByUserId: userId,
       name: "Retry rollback work",
-      slug: "retry-rollback-work",
+      handle: "w2",
       updatedAt: old,
     });
     await db.insert(contextSources).values({

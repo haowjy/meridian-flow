@@ -153,14 +153,14 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                   Y.applyUpdate(doc, Y.encodeStateAsUpdate(live));
                   const [name] = branch.workId
                     ? await db()
-                        .select({ slug: works.slug })
+                        .select({ handle: works.handle })
                         .from(works)
                         .where(eq(works.id, branch.workId))
                     : [];
                   drafts.set(branchId, {
                     branch,
                     doc,
-                    name: name?.slug ? `@${name.slug}` : "@/",
+                    name: name?.handle ?? "No Work",
                     frozen: frozen.has(branchId),
                   });
                 }

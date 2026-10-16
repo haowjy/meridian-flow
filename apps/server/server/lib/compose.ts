@@ -1327,7 +1327,7 @@ export function createInMemoryAppServices(): AppServices {
     async byId() {
       return null;
     },
-    async bySlug() {
+    async byHandle() {
       return null;
     },
     async noWork() {

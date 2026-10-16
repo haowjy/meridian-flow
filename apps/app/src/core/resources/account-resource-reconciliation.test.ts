@@ -137,7 +137,7 @@ it("keeps prose typed after filing when first placement is refused, listed in Un
     release = () => content.release();
     databaseName = content.session.persistenceName ?? undefined;
     await replica.setLocation("project", reservation.key, {
-      parent: { kind: "root", scheme: "scratch", owner: { workId: "work", workSlug: "serial" } },
+      parent: { kind: "root", scheme: "scratch", owner: { workId: "work", workHandle: "serial" } },
       name: "scene",
     });
     // File first, type second, refuse third. The content owner is a real local Yjs session.

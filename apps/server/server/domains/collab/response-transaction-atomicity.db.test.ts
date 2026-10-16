@@ -24,7 +24,7 @@ import {
 import { reviewDriver } from "./test-support/draft-review-requests.js";
 import { captureHistoricalBranchRow } from "./test-support/historical-branch-row.js";
 
-const DRAFT_DESTINATION = { kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" } as const;
+const DRAFT_DESTINATION = { kind: "draft", workId: WORK_ID, workHandle: "atomicity-work" } as const;
 
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 if (!enabled || !process.env.DATABASE_URL) {

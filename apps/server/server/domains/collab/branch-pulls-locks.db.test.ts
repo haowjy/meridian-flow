@@ -70,7 +70,7 @@ it("releases a pull's Work row before the next branch mutex while a receipt owns
       threadId: THREAD_ID,
       turnId: TURN_ID,
       responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
-      grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" }),
+      grant: testFileGrant({ kind: "draft", workId: WORK_ID, workHandle: "atomicity-work" }),
     },
   );
   await harness.commit(responseId);

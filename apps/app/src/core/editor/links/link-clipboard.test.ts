@@ -68,27 +68,27 @@ it("carries what a copied link names across the clipboard", async () => {
     },
     {
       row: "a contextual Scratch link carries its lineage",
-      copied: { from: "scratch://@/c12/holder.md", href: "scratch://note.md#gate", ref: null },
+      copied: { from: "scratch://@c12/holder.md", href: "scratch://note.md#gate", ref: null },
       into: { holder: "manuscript://chapter.md", project: "project-a" },
-      pasted: { link: "scratch://@/c12/note.md#gate", ref: null },
+      pasted: { link: "scratch://@c12/note.md#gate", ref: null },
     },
     {
       row: "a Scratch lineage holder supplies no Uploads owner",
-      copied: { from: "scratch://@/c12/holder.md", href: "uploads://seal.md", ref: null },
+      copied: { from: "scratch://@c12/holder.md", href: "uploads://seal.md", ref: null },
       into: { holder: "manuscript://chapter.md", project: "project-a" },
       pasted: { link: "uploads://seal.md", ref: null },
     },
     {
       row: "chat Uploads supply no Scratch owner",
-      copied: { from: "uploads://@/c15/holder.md", href: "scratch://note.md#gate", ref: null },
+      copied: { from: "uploads://@c15/holder.md", href: "scratch://note.md#gate", ref: null },
       into: { holder: "manuscript://chapter.md", project: "project-a" },
       pasted: { link: "scratch://note.md#gate", ref: null },
     },
     {
       row: "chat Uploads retain their Uploads owner",
-      copied: { from: "uploads://@/c15/holder.md", href: "uploads://seal.md", ref: null },
+      copied: { from: "uploads://@c15/holder.md", href: "uploads://seal.md", ref: null },
       into: { holder: "manuscript://chapter.md", project: "project-a" },
-      pasted: { link: "uploads://@/c15/seal.md", ref: null },
+      pasted: { link: "uploads://@c15/seal.md", ref: null },
     },
     {
       row: "a same-project paste keeps the ref",
@@ -555,20 +555,20 @@ it.each([
 });
 
 it("qualifies plain-text Scratch and Uploads without confusing their owners", () => {
-  const state = EditorState.create({ schema, plugins: [clipboard("scratch://@/c12/holder.md")] });
+  const state = EditorState.create({ schema, plugins: [clipboard("scratch://@c12/holder.md")] });
   const scope = clipboardLinkScope(state);
   expect(scope.spellLink({ ref: null, href: "scratch://note.md#gate" }).href).toBe(
-    "scratch://@/c12/note.md#gate",
+    "scratch://@c12/note.md#gate",
   );
   expect(scope.spellLink({ ref: null, href: "uploads://seal.md" }).href).toBe("uploads://seal.md");
 });
 
 it("copies contextual links through the plugin's plain-text scope by applicable owner", () => {
   const rows = [
-    ["uploads://@/c15/holder.md", "scratch://note.md#gate", "scratch://note.md#gate"],
-    ["uploads://@/c15/holder.md", "uploads://seal.md", "uploads://@/c15/seal.md"],
-    ["scratch://@/c12/holder.md", "scratch://note.md#gate", "scratch://@/c12/note.md#gate"],
-    ["scratch://@/c12/holder.md", "uploads://seal.md", "uploads://seal.md"],
+    ["uploads://@c15/holder.md", "scratch://note.md#gate", "scratch://note.md#gate"],
+    ["uploads://@c15/holder.md", "uploads://seal.md", "uploads://@c15/seal.md"],
+    ["scratch://@c12/holder.md", "scratch://note.md#gate", "scratch://@c12/note.md#gate"],
+    ["scratch://@c12/holder.md", "uploads://seal.md", "uploads://seal.md"],
     ["manuscript://holder.md", "scratch://note.md", "scratch://note.md"],
   ];
   for (const [holder, href, expected] of rows) {

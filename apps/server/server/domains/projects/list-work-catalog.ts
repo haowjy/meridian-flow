@@ -39,20 +39,20 @@ export async function listWorkCatalog(
       ...identity,
       requestId,
       works: works.map((work): NamedWorkCatalogEntry => {
-        if (work.isNoWork || work.slug === null) {
+        if (work.isNoWork || work.handle === null) {
           throw new Error(`Named Work catalog included locked Work ${work.id}`);
         }
         return {
           ...work,
           isNoWork: false,
-          slug: work.slug,
+          handle: work.handle,
           unpushedChangeCount: counts.get(work.id) ?? 0,
         };
       }),
       noWork: {
         ...noWork,
         isNoWork: true,
-        slug: null,
+        handle: null,
         unpushedChangeCount: counts.get(noWork.id) ?? 0,
       } satisfies NoWorkCatalogEntry,
     };

@@ -47,11 +47,11 @@ explicit null binds the thread to that row. After creation, the writer may
 explicitly rebind the chat through one canonical operation; Work management
 and navigation never invoke it implicitly. The model can't rebind; see the
 [model's `work switch`][model-work-switch]. Named-Work URIs use `@slug`;
-uploads belong to the chat they were attached in and use `uploads://@/c15/`
+uploads belong to the chat they were attached in and use `uploads://@c15/`
 (`c15` is the chat's handle; the Work and No Work own none). The address grammar
 for owners is being redesigned, see [#888](https://github.com/haowjy/meridian-flow/issues/888). No Work owns no Scratch: a No Work chat's Scratch
 belongs to its lineage (the first chat, its forks and subagents) at
-`scratch://@/c12/`, named by the first chat's handle. Internal IDs never
+`scratch://@c12/`, named by the first chat's handle. Internal IDs never
 appear in URI authority. The schema is `works` + `thread_works`.
 
 ## Agency

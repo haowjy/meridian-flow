@@ -61,7 +61,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
         name: "Rewrite",
-        slug: "rewrite",
+        handle: "w1",
       });
       await db.insert(schema.contextSources).values({
         id: SOURCE_ID,

@@ -230,7 +230,7 @@ async function harness(
   const port = createInMemoryUnifiedContextPortFactory({
     documentSync: documentSync as never,
     storeRegistry: registry,
-  }).forWork({ workId: crypto.randomUUID(), workSlug: null } as never, PROJECT, USER, new Map(), {
+  }).forWork({ workId: crypto.randomUUID(), workHandle: null } as never, PROJECT, USER, new Map(), {
     threadId: crypto.randomUUID(),
     draftWork: null,
   });

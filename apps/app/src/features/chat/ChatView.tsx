@@ -466,7 +466,7 @@ export function ChatView({
         ? {
             projectId: projectId as ProjectId,
             userId: accountId as UserId,
-            work: { id: activeWork.id, slug: activeWork.slug },
+            work: { id: activeWork.id, handle: activeWork.handle },
             rootThreadId: activeThread.rootThreadId,
             rootThreadRef: lineage?.rootThreadRef ?? null,
             chatId: topChat.chatId,

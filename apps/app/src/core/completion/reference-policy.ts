@@ -239,7 +239,7 @@ function stableAuthority(
         kind: "work",
         projectId: scope.projectId,
         workId: scope.workId,
-        workSlug: entry.authority.workSlug,
+        workHandle: entry.authority.workHandle,
       };
     }
   }
@@ -267,11 +267,8 @@ export function referenceUriForAuthority(
       : null;
   }
   if (authority.kind === "work") {
-    if (authority.workSlug === null) {
-      return parsed.value.authority.kind === "none" ? parsed.value.normalized : null;
-    }
     return parsed.value.authority.kind === "work" &&
-      parsed.value.authority.workSlug === authority.workSlug
+      parsed.value.authority.workHandle === authority.workHandle
       ? parsed.value.normalized
       : null;
   }

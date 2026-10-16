@@ -71,7 +71,8 @@ export const works = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    slug: text("slug"),
+    // Permanent `w<n>`, minted from project_handle_counters and never reused. Null only on No Work.
+    handle: text("handle"),
     isNoWork: boolean("is_no_work").notNull().default(false),
     goal: text("goal"),
     status: text("status"),
@@ -96,22 +97,19 @@ export const works = pgTable(
     uniqueIndex("works_project_name_active")
       .on(table.projectId, sql`lower(${table.name})`)
       .where(sql`${table.deletedAt} IS NULL`),
-    uniqueIndex("works_project_slug")
-      .on(table.projectId, table.slug)
-      .where(sql`${table.slug} IS NOT NULL`),
+    uniqueIndex("works_project_handle")
+      .on(table.projectId, table.handle)
+      .where(sql`${table.handle} IS NOT NULL`),
     uniqueIndex("works_project_no_work_active")
       .on(table.projectId)
       .where(sql`${table.isNoWork} = true AND ${table.deletedAt} IS NULL`),
     check("works_name_nonempty", sql`btrim(${table.name}) <> ''`),
     check(
-      "works_no_work_slug",
-      sql`(${table.isNoWork} AND ${table.slug} IS NULL) OR (NOT ${table.isNoWork} AND ${table.slug} IS NOT NULL)`,
+      "works_no_work_handle",
+      sql`(${table.isNoWork} AND ${table.handle} IS NULL) OR (NOT ${table.isNoWork} AND ${table.handle} IS NOT NULL)`,
     ),
     check("works_no_work_not_archived", sql`NOT ${table.isNoWork} OR ${table.archivedAt} IS NULL`),
-    check(
-      "works_slug_valid",
-      sql`${table.slug} IS NULL OR ${table.slug} ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'`,
-    ),
+    check("works_handle_valid", sql`${table.handle} IS NULL OR ${table.handle} ~ '^w[1-9][0-9]*$'`),
     // Schema SQL needs a literal: interpolating a number generates an unbound $1 in migrations.
     check(
       "works_status_length",

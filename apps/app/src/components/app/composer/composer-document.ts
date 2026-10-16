@@ -7,7 +7,7 @@ import type {
 } from "@meridian/contracts/protocol";
 import { classifyFiletype } from "@meridian/contracts/protocol";
 import { parseRequestId } from "@meridian/contracts/request-id";
-import { decodeWorkSlug } from "@meridian/contracts/works";
+import { decodeWorkHandle } from "@meridian/contracts/works";
 import { formatMarkdownLink } from "@meridian/markup/links";
 import {
   imageCapable,
@@ -111,10 +111,10 @@ function parseClipboardReference(raw: string | null): ComposerReferenceAttrs | n
     case "work": {
       const projectId = parseRequestId(rawAuthority.projectId);
       const workId = parseRequestId(rawAuthority.workId);
-      const workSlug =
-        rawAuthority.workSlug === null ? null : decodeWorkSlug(rawAuthority.workSlug);
-      if (!projectId || !workId || (rawAuthority.workSlug !== null && !workSlug)) return null;
-      authority = { kind: "work", projectId, workId, workSlug };
+      const workHandle =
+        rawAuthority.workHandle === null ? null : decodeWorkHandle(rawAuthority.workHandle);
+      if (!projectId || !workId || (rawAuthority.workHandle !== null && !workHandle)) return null;
+      authority = { kind: "work", projectId, workId, workHandle };
       break;
     }
     case "lineage": {

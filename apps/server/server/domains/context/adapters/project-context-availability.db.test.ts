@@ -78,7 +78,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: PROJECT,
           createdByUserId: USER,
           name: "No Work",
-          slug: null,
+          handle: null,
           isNoWork: true,
         },
         {
@@ -86,7 +86,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: PROJECT,
           createdByUserId: USER,
           name: "Draft",
-          slug: "draft",
+          handle: "w2",
         },
       ]);
       await db.insert(contextSources).values([
@@ -776,8 +776,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .set({ slug: "scratch" })
         .where(eq(contextSources.id, WORK_SOURCE));
 
-      await db.execute(sql`alter table works drop constraint works_slug_valid`);
-      await db.update(works).set({ slug: "invalid slug" }).where(eq(works.id, WORK));
+      await db.execute(sql`alter table works drop constraint works_handle_valid`);
+      await db.update(works).set({ handle: "invalid handle" }).where(eq(works.id, WORK));
       await assertIndeterminate(DOCS[2]);
 
       const foreignFolder = "00000000-0000-4000-8000-000000000928";

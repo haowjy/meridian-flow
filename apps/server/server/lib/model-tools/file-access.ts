@@ -55,7 +55,7 @@ export async function agentPrincipal(
     agent: {
       chain: await deps.readAgentChain(thread.id as ThreadId),
       draftWork: execution.draftOwner
-        ? { id: execution.draftOwner.workId, slug: execution.scope.workSlug }
+        ? { id: execution.draftOwner.workId, handle: execution.scope.workHandle }
         : null,
     },
   };
@@ -74,10 +74,10 @@ export async function keptDraftReader(
   documentId: string,
 ): Promise<Principal> {
   if (!principal.agent || principal.agent.draftWork || execution.draftOwner) return principal;
-  const { workId, workSlug } = execution.scope;
+  const { workId, workHandle } = execution.scope;
   const drafts = await deps.drafts.draftReview.list({ workId });
   if (!drafts.some((draft) => draft.documentId === documentId)) return principal;
-  return withDraftWork(principal, { id: workId, slug: workSlug });
+  return withDraftWork(principal, { id: workId, handle: workHandle });
 }
 
 /** The file policy's grant on a document; a denial comes back as the tool's error. */

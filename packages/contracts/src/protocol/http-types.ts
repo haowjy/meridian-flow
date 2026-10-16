@@ -32,7 +32,7 @@ import type {
   TurnStatus,
   TurnUsage,
 } from "../threads/index.js";
-import type { AiWriteMode, Work, WorkSlug, WorksSnapshot } from "../works/index.js";
+import type { AiWriteMode, Work, WorkHandle, WorksSnapshot } from "../works/index.js";
 import type { Filetype, YjsTrackedSchemaType } from "./filetype.js";
 import type { SubmittedReference } from "./user-turn-admission.js";
 import { runStateSchema } from "./ws-protocol.js";
@@ -182,7 +182,7 @@ export type ContextDestinationParent = {
       scheme: ProjectContextTreeScheme;
       owner: {
         workId: string | null;
-        workSlug?: string | null;
+        workHandle?: string | null;
         rootThreadId?: string | null;
         rootThreadRef?: string | null;
       };
@@ -223,7 +223,7 @@ export type MoveContextEntryLocator =
   | {
       scheme: "scratch";
       path: string;
-      authority: { workId: WorkId; workSlug: WorkSlug | null };
+      authority: { workId: WorkId; workHandle: WorkHandle | null };
     }
   | {
       scheme: "scratch";

@@ -11,7 +11,7 @@ import type { DocumentId, DocumentLinkAnswer, WorkId } from "@meridian/contracts
 import type { DraftCommandResult, ThreadDraftListItem } from "@meridian/contracts/drafts";
 import type { CreateUntitledContextDocumentAnswer } from "@meridian/contracts/protocol";
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
-import type { ResolvedWorkAuthority, WorkSlug } from "@meridian/contracts/works";
+import type { ResolvedWorkAuthority, WorkHandle } from "@meridian/contracts/works";
 import { branchPushSettlementBatches, works } from "@meridian/database/schema";
 import { extractStoredLinks } from "@meridian/markup/stored-links";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
@@ -72,7 +72,7 @@ export interface ScenarioWriter {
     path: string,
     options?: {
       content?: string;
-      /** Create in this Work's Scratch (`scratch://@slug/path`) instead of a project source. */
+      /** Create in this Work's Scratch (`scratch://@w3/path`) instead of a project source. */
       inScratchOf?: ScenarioWork;
     },
   ): Promise<{ status: "created" | "conflict"; documentId?: string }>;
@@ -342,12 +342,12 @@ export function draftTreeCommands(
     };
   }
 
-  /** The writer's live port, resolving `@slug` for every Work the world made. */
+  /** The writer's live port, resolving `@w3` for every Work the world made. */
   async function livePort(): Promise<ContextPort> {
-    const authorities = new Map<WorkSlug, ResolvedWorkAuthority>();
+    const authorities = new Map<WorkHandle, ResolvedWorkAuthority>();
     for (const workId of world.works()) {
       const authority = await ports().workAuthorityResolver.byId(projectId, workId as WorkId);
-      if (authority?.workSlug) authorities.set(authority.workSlug, authority);
+      if (authority?.workHandle) authorities.set(authority.workHandle, authority);
     }
     return ports().contextPorts.forProject(projectId, userId, authorities);
   }
@@ -366,7 +366,7 @@ export function draftTreeCommands(
               authority,
               projectId,
               userId,
-              authority.workSlug ? new Map([[authority.workSlug, authority]]) : new Map(),
+              authority.workHandle ? new Map([[authority.workHandle, authority]]) : new Map(),
             )
           : await livePort(),
         userId,
@@ -490,7 +490,7 @@ export function draftTreeCommands(
   async function draftBranch(work: ScenarioWork, documentId: DocumentId) {
     const review = ports().documentSync.draftReview;
     const item = await review.resolveItemByDocument({ workId: work.id, documentId });
-    if (!item) throw new Error(`No draft of ${documentId} in ${work.slug}`);
+    if (!item) throw new Error(`No draft of ${documentId} in ${work.handle}`);
     const preview = await review.preview({ workId: work.id, itemKey: item.itemKey });
     if (preview.status !== "active") throw new Error(`The draft of ${documentId} is gone`);
     const room = parseYjsRoomName(preview.reviewRoomName);
@@ -577,7 +577,7 @@ export function draftTreeCommands(
     if (items === "all") {
       const draftId =
         options.draftId ?? (await ports().documentSync.drafts.activeForWork(work.id))?.id;
-      if (!draftId) throw new Error(`${work.slug} has no draft to discard`);
+      if (!draftId) throw new Error(`${work.handle} has no draft to discard`);
       return (
         await handleDiscardAllWorkDraftRequest(routes(), {
           projectId,
@@ -691,7 +691,7 @@ export function draftTreeCommands(
         options.draftId ??
         items[0]?.draftId ??
         (await ports().documentSync.drafts.activeForWork(work.id))?.id;
-      if (!draftId) throw new Error(`${work.slug} has no draft to apply`);
+      if (!draftId) throw new Error(`${work.handle} has no draft to apply`);
       return (
         await handleApplyAllWorkDraftRequest(routes(), {
           projectId,

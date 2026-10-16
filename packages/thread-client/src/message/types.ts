@@ -5,13 +5,13 @@ import type {
   SubmittedReference,
   UserMessageBlock,
 } from "@meridian/contracts/protocol";
-import type { WorkSlug } from "@meridian/contracts/works";
+import type { WorkHandle } from "@meridian/contracts/works";
 
 /** The stable owner of a referenced document: what survives a rename of its URI. */
 export type StableReferenceAuthority =
   | { kind: "project"; projectId: ProjectId }
   | { kind: "user"; userId: UserId }
-  | { kind: "work"; projectId: ProjectId; workId: WorkId; workSlug: WorkSlug | null }
+  | { kind: "work"; projectId: ProjectId; workId: WorkId; workHandle: WorkHandle | null }
   /** A No Work chat's Scratch: the lineage by its first chat's id, and the handle its URI spells. */
   | { kind: "lineage"; projectId: ProjectId; rootThreadId: string; rootThreadRef: string }
   /** A chat's uploads: the chat by id, and the handle its URI spells (null before the chat exists). */

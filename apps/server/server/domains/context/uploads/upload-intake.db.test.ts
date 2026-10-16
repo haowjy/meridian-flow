@@ -170,7 +170,7 @@ if (!RUN) {
       expect(conflict).toEqual({ kind: "conflict" });
       expect(collision.kind === "reserved" && collision.reservation.finalPath).toBe("chapter (2)");
       expect(existingChat.kind === "reserved" && existingChat.reservation.canonicalUri).toBe(
-        "uploads://@/c1/chapter",
+        "uploads://@c1/chapter",
       );
       // The New chat gets its row, and so its handle, at Send: the same upload now reads there.
       await database.current.insert(threads).values({
@@ -182,7 +182,7 @@ if (!RUN) {
       });
       const afterSend = await repo.reserve(reservation("one", NEW_CHAT));
       expect(afterSend.kind === "existing" && afterSend.reservation.canonicalUri).toBe(
-        "uploads://@/c2/chapter",
+        "uploads://@c2/chapter",
       );
     });
 

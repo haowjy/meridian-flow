@@ -83,7 +83,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: PROJECT,
           createdByUserId: USER,
           name: "No Work",
-          slug: null,
+          handle: null,
           isNoWork: true,
         },
         {
@@ -91,7 +91,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: PROJECT,
           createdByUserId: USER,
           name: "Draft",
-          slug: "draft",
+          handle: "w2",
         },
       ]);
       await db.insert(contextSources).values([
@@ -163,7 +163,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             projectId: PROJECT,
             scheme: "scratch",
             path: "/scene",
-            workSlug: "draft",
+            workHandle: "draft",
           }),
           // No Work resolves to a null work slug.
           expect.objectContaining({
@@ -171,7 +171,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             projectId: PROJECT,
             scheme: "uploads",
             path: "/aside",
-            workSlug: null,
+            workHandle: null,
           }),
         ]),
       );
@@ -183,7 +183,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: PERSONAL,
           scheme: "user",
           path: "/notes",
-          workSlug: null,
+          workHandle: null,
         }),
       ]);
     });

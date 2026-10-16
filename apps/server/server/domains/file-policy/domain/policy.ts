@@ -52,7 +52,7 @@ export function sourceDestination(
   draftWork: WorkRef | null,
 ): FileDestination {
   return draftWork && isDrafted(scheme)
-    ? { kind: "draft", workId: draftWork.id, workSlug: draftWork.slug }
+    ? { kind: "draft", workId: draftWork.id, workHandle: draftWork.handle }
     : { kind: "live" };
 }
 
@@ -70,7 +70,7 @@ export interface NodeGrant {
 function destinationFor(principal: Principal, facts: FileFacts): FileDestination {
   const target = facts.target;
   if (target.kind === "draft") {
-    return { kind: "draft", workId: target.workId, workSlug: facts.draftWork?.slug ?? null };
+    return { kind: "draft", workId: target.workId, workHandle: facts.draftWork?.handle ?? null };
   }
   return sourceDestination(facts.scheme, principal.agent?.draftWork ?? null);
 }
@@ -142,7 +142,7 @@ function lifecycleTerms(facts: FileFacts, at: FileDestination): Term[] {
 function workTerms(work: FileWorkFacts): Term[] {
   if (work.deleted) return [{ cap: "none", limit: "not_found" }];
   if (work.archived) {
-    return [{ cap: "read", limit: "work_archived", work: { id: work.id, slug: work.slug } }];
+    return [{ cap: "read", limit: "work_archived", work: { id: work.id, handle: work.handle } }];
   }
   return [];
 }

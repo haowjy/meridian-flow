@@ -10,6 +10,7 @@ export * from "./document-ref.js";
 export * from "./drafts/index.js";
 export type { EditOrigin, EditPlacement } from "./edit-placement.js";
 export * from "./enums";
+export * from "./handles.js";
 export * from "./ids";
 export * from "./jsonb";
 export type { ModelResponseIdentity } from "./model-response-identity.js";

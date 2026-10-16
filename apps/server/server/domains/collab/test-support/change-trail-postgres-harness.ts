@@ -214,7 +214,7 @@ export async function seedDatabase(
     projectId: PROJECT_ID,
     createdByUserId: USER_ID,
     name: "Atomicity work",
-    slug: "atomicity-work",
+    handle: "w1",
   });
   // The Work already has its draft, as if an earlier write ensured it (contract §2.5):
   // a drafted read pulls its thread peers instead of reading live.
@@ -341,7 +341,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   const DRAFT_DESTINATION = {
     kind: "draft",
     workId: (options.ids ?? DEFAULT_SCENARIO_IDS).WORK_ID,
-    workSlug: "atomicity-work",
+    workHandle: "atomicity-work",
   } as const;
   const persistence = createDrizzleCollabPersistence(db);
   const testJournal = grantedJournal(persistence.journal);

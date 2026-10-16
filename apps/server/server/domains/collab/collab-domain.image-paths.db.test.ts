@@ -149,7 +149,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         mutationStore: new DrizzleContextTreeMutationStore(db),
         threadView: {
           threadId: THREAD_ID,
-          draftWork: { id: WORK_ID as never, slug: "work" },
+          draftWork: { id: WORK_ID as never, handle: "w1" },
         },
         documentSync: {
           ...collab,
@@ -358,7 +358,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         threadView: {
           threadId: THREAD_ID,
           responseId: RESPONSE_ID,
-          draftWork: { id: WORK_ID as never, slug: "work" },
+          draftWork: { id: WORK_ID as never, handle: "w1" },
         },
         documentSync: collab,
       }).search("See created");

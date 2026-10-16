@@ -24,7 +24,7 @@ export type ParsedContextUriTarget = {
   rootThreadId?: string;
 };
 
-export type ActiveWorkHandle = { id: string; slug: string | null };
+export type ActiveWorkHandle = { id: string; handle: string | null };
 
 /** The lineages a chat's URIs can name: its own, and any other by its first chat's handle. */
 export type ChatLineages = {
@@ -93,19 +93,16 @@ export function contextRouteTargetFromUri(
     return inLineage(lineages?.idForRef(parsed.authority.rootThreadRef));
   // No Work has no Scratch of its own: its chats' notes belong to their lineage.
   if (parsed.scheme === "scratch") {
-    if (parsed.authority.kind === "none") return null;
+    if (parsed.authority.kind === "owners") return null;
     if (parsed.authority.kind === "contextual" && activeWork.id === noWorkId)
       return inLineage(lineages?.own);
-  }
-  if (parsed.authority.kind === "none") {
-    return { scheme: parsed.scheme, path: parsed.path, workId: noWorkId };
   }
   if (parsed.authority.kind === "contextual") {
     return { scheme: parsed.scheme, path: parsed.path, workId: activeWork.id };
   }
-  if (parsed.authority.kind === "chat") return null;
-  const requestedSlug = parsed.authority.workSlug;
-  const qualified = availableWorks.find(({ slug }) => slug === requestedSlug);
+  if (parsed.authority.kind === "chat" || parsed.authority.kind === "owners") return null;
+  const requestedHandle = parsed.authority.workHandle;
+  const qualified = availableWorks.find(({ handle }) => handle === requestedHandle);
   return qualified ? { scheme: parsed.scheme, path: parsed.path, workId: qualified.id } : null;
 }
 

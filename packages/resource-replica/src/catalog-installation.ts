@@ -111,7 +111,7 @@ export function catalogEntryLocation(
     path: displayedPath(path),
     name: entry.name,
     workId: view.scope.workId,
-    workSlug: authority.workSlug,
+    workHandle: authority.workHandle,
   };
 }
 

@@ -350,7 +350,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
         name: "Archived",
-        slug: "archived",
+        handle: "w1",
         archivedAt: new Date(),
       });
       const { contextPorts } = createFixture({ load: false });
@@ -358,12 +358,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         PROJECT_ID,
         WORK_ID,
       );
-      if (!authority?.workSlug) throw new Error("missing Work authority");
+      if (!authority?.workHandle) throw new Error("missing Work authority");
       const port = contextPorts.forWork(
         authority,
         PROJECT_ID,
         USER_ID,
-        new Map([[authority.workSlug, authority]]),
+        new Map([[authority.workHandle, authority]]),
       );
       const fileAccess = drizzleFileAccess(db);
       const container = await containerTarget(
@@ -400,7 +400,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
         name: "Empty archived Work",
-        slug: "empty-archived-work",
+        handle: "w2",
         archivedAt: new Date(),
       });
       const { contextPorts } = createFixture({ load: false });
@@ -408,15 +408,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         PROJECT_ID,
         WORK_ID,
       );
-      if (!authority?.workSlug) throw new Error("missing Work authority");
+      if (!authority?.workHandle) throw new Error("missing Work authority");
       const port = contextPorts.forWork(
         authority,
         PROJECT_ID,
         USER_ID,
-        new Map([[authority.workSlug, authority]]),
+        new Map([[authority.workHandle, authority]]),
       );
 
-      await expect(port.list(`scratch://@${authority.workSlug}/`)).resolves.toMatchObject({
+      await expect(port.list(`scratch://@${authority.workHandle}/`)).resolves.toMatchObject({
         ok: true,
         value: { entries: [] },
       });
@@ -433,7 +433,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
         name: "Deleted Project Work",
-        slug: "deleted-project-work",
+        handle: "w3",
       });
       await db.insert(schema.contextSources).values({
         id: workSourceId,

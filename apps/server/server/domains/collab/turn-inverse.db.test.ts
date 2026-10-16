@@ -211,7 +211,10 @@ it("a tombstoned draft document with released storage does not stop another docu
   try {
     const betaContext = {
       ...context,
-      grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" }, BETA_ID),
+      grant: testFileGrant(
+        { kind: "draft", workId: WORK_ID, workHandle: "atomicity-work" },
+        BETA_ID,
+      ),
     };
     await view.collab.agentEdit().read(
       { file: "beta.md", documentId: BETA_ID },

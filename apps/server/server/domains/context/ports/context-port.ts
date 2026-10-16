@@ -30,8 +30,8 @@ import type { DocumentCreationMetadata } from "../document-metadata.js";
  * Registered context URI schemes.
  *
  * Project-scoped: `manuscript`/`kb`/`user` (bare paths default to `manuscript`).
- * Owned: `scratch` (a Work's, `scratch://@<work-slug>/...`, or a lineage's, `scratch://@/c12/...`)
- * and `uploads` (a chat's, `uploads://@/c15/...`). Only Scratch belongs to a Work.
+ * Owned: `scratch` (a Work's, `scratch://@w3/...`, or a lineage's, `scratch://@c12/...`)
+ * and `uploads` (a chat's, `uploads://@c15/...`). Only Scratch belongs to a Work.
  */
 export type { ContextError, ContextMoveResult } from "@meridian/contracts/protocol";
 export type ContextScheme = ContextUriScheme;

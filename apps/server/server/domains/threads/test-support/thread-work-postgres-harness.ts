@@ -33,7 +33,7 @@ export async function resetThreadWorkRaceFixture(db: Database): Promise<void> {
       projectId: ids.projectId,
       createdByUserId: ids.userId,
       name: "No Work",
-      slug: null,
+      handle: null,
       isNoWork: true,
     },
     {
@@ -41,14 +41,14 @@ export async function resetThreadWorkRaceFixture(db: Database): Promise<void> {
       projectId: ids.projectId,
       createdByUserId: ids.userId,
       name: "Race target",
-      slug: "race-target",
+      handle: "w2",
     },
     {
       id: ids.targetWorkId,
       projectId: ids.projectId,
       createdByUserId: ids.userId,
       name: "Rebound target",
-      slug: "rebound-target",
+      handle: "w3",
       archivedAt: new Date(),
     },
   ]);

@@ -717,7 +717,9 @@ function sameView(a: { kind: string; draftId?: string }, b: LinkView): boolean {
 function versionPhrase(destination: FileDestination, preposition: "in" | "to"): string {
   return destination.kind === "live"
     ? "live"
-    : `${preposition} @${destination.workSlug ?? "/"}'s draft`;
+    : destination.workHandle
+      ? `${preposition} ${destination.workHandle}'s draft`
+      : `${preposition} the shared draft`;
 }
 
 function documentIdFromCommand(command: { file: string; documentId?: string }): DocumentId | null {

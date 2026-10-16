@@ -134,7 +134,7 @@ else
         projectId,
         createdByUserId: userId,
         name: "Upgrade",
-        slug: "upgrade",
+        handle: "w1",
         deletedAt,
       });
       await db.insert(contextSources).values({

@@ -56,7 +56,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
         name: "Runtime settlement",
-        slug: "runtime-settlement",
+        handle: "w1",
         defaultAiWriteMode: "direct",
       });
       // The Work already has its draft, as if an earlier write ensured it (contract §2.5).
@@ -146,7 +146,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
         name: "No Work",
-        slug: null,
+        handle: null,
         isNoWork: true,
       });
       await db
@@ -253,7 +253,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { file: "runtime-settlement", documentId: DOC_ID },
         {
           sessionId: "runtime-settlement",
-          grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "runtime-settlement" }),
+          grant: testFileGrant({
+            kind: "draft",
+            workId: WORK_ID,
+            workHandle: "runtime-settlement",
+          }),
           threadId: THREAD_ID,
           turnId: TURN_ID,
           responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
@@ -301,7 +305,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         {
           sessionId: "runtime-settlement",
-          grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "runtime-settlement" }),
+          grant: testFileGrant({
+            kind: "draft",
+            workId: WORK_ID,
+            workHandle: "runtime-settlement",
+          }),
           threadId: THREAD_ID,
           turnId: TURN_ID,
           responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
@@ -319,7 +327,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         {
           sessionId: "runtime-settlement",
-          grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "runtime-settlement" }),
+          grant: testFileGrant({
+            kind: "draft",
+            workId: WORK_ID,
+            workHandle: "runtime-settlement",
+          }),
           threadId: THREAD_ID,
           turnId: TURN_ID,
           responseIdentity: { providerResponseId: responseId, editScopeId: responseId },

@@ -6,7 +6,7 @@
 import type { DocumentVersion } from "@meridian/agent-edit";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
-import type { ResolvedWorkAuthority, WorkSlug } from "@meridian/contracts/works";
+import type { ResolvedWorkAuthority, WorkHandle } from "@meridian/contracts/works";
 import type { WorkRef } from "../file-policy/index.js";
 import type { ProjectWorkAuthorityResolver, WorkRepository } from "../projects/index.js";
 import type {
@@ -22,7 +22,7 @@ import type { UnifiedContextPortFactory } from "./unified-context-port-factory.j
 export interface ThreadContextResolution {
   thread: Thread;
   primaryWorkId: string | null;
-  workAuthorities: ReadonlyMap<WorkSlug, ResolvedWorkAuthority>;
+  workAuthorities: ReadonlyMap<WorkHandle, ResolvedWorkAuthority>;
   primaryWorkAuthority: ResolvedWorkAuthority | null;
   /** The thread's Work when the chat drafts AI writes; null in auto-apply. */
   primaryDraftWork: WorkRef | null;
@@ -30,7 +30,7 @@ export interface ThreadContextResolution {
   scratchOwner?: import("./scratch-owner.js").ScratchOwner;
   /** The chat whose uploads this thread's bare `uploads://` names; null for an unknown chat. */
   uploadsOwner: UploadsOwner | null;
-  /** Finds another chat by its handle, for `uploads://@/c12/` addresses. */
+  /** Finds another chat by its handle, for `uploads://@c12/` addresses. */
   uploadChats?: ChatUploadsOwners;
 }
 
@@ -63,10 +63,10 @@ export async function resolveThreadContext(
   const workAuthorities = new Map(
     authorities
       .filter(
-        (authority): authority is ResolvedWorkAuthority & { workSlug: WorkSlug } =>
-          authority != null && authority.workSlug !== null,
+        (authority): authority is ResolvedWorkAuthority & { workHandle: WorkHandle } =>
+          authority != null && authority.workHandle !== null,
       )
-      .map((authority) => [authority.workSlug, authority]),
+      .map((authority) => [authority.workHandle, authority]),
   );
   // By id: the project listing leaves out No Work, whose chats can draft too.
   const primaryWork = primaryMembership
@@ -84,7 +84,7 @@ export async function resolveThreadContext(
     primaryWorkAuthority,
     primaryDraftWork:
       primaryWork && thread.aiWriteMode === "draft"
-        ? { id: primaryWork.id, slug: primaryWork.slug }
+        ? { id: primaryWork.id, handle: primaryWork.handle }
         : null,
   };
 }
@@ -110,7 +110,7 @@ export function contextPortForThread(
     {
       scratchOwner: scratchOwnerFor(resolution.thread, {
         id: resolution.primaryWorkAuthority.workId,
-        isNoWork: resolution.primaryWorkAuthority.workSlug === null,
+        isNoWork: resolution.primaryWorkAuthority.workHandle === null,
       }),
       ...(resolution.uploadsOwner ? { uploadsOwner: resolution.uploadsOwner } : {}),
       threadId: resolution.thread.id,
@@ -131,17 +131,17 @@ async function resolvedAuthorities(
   deps: ProjectBrowseContextPortDeps,
   projectId: string,
   works: Awaited<ReturnType<WorkRepository["listByProject"]>>,
-): Promise<Map<WorkSlug, ResolvedWorkAuthority>> {
+): Promise<Map<WorkHandle, ResolvedWorkAuthority>> {
   const resolved = await Promise.all(
     works.map((work) => deps.workAuthorityResolver.byId(projectId, work.id)),
   );
   return new Map(
     resolved
       .filter(
-        (value): value is ResolvedWorkAuthority & { workSlug: WorkSlug } =>
-          value != null && value.workSlug !== null,
+        (value): value is ResolvedWorkAuthority & { workHandle: WorkHandle } =>
+          value != null && value.workHandle !== null,
       )
-      .map((value) => [value.workSlug, value]),
+      .map((value) => [value.workHandle, value]),
   );
 }
 
@@ -213,7 +213,7 @@ export async function contextPortForProjectAuthorities(input: {
 /**
  * Resolve a route-level context port after the caller has already proven
  * project ownership. The selected Work is primary, while every non-deleted Work in
- * the project remains addressable by slug.
+ * the project remains addressable by handle.
  */
 export async function contextPortForProjectBrowse(input: {
   deps: ProjectBrowseContextPortDeps;

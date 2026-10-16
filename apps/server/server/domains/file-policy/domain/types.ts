@@ -58,7 +58,7 @@ export type AgentChain = readonly AgentLink[];
 /** A Work as refusal copy names it. */
 export interface WorkRef {
   id: WorkId;
-  slug: string | null;
+  handle: string | null;
 }
 
 /**
@@ -117,7 +117,7 @@ export type FileNode =
 
 export interface FileWorkFacts {
   id: WorkId;
-  slug: string | null;
+  handle: string | null;
   isNoWork: boolean;
   archived: boolean;
   deleted: boolean;
@@ -152,7 +152,7 @@ export interface FileFacts {
 /** Where a write lands: the live document, or a Work's draft (D20). */
 export type FileDestination =
   | { kind: "live" }
-  | { kind: "draft"; workId: WorkId; workSlug: string | null };
+  | { kind: "draft"; workId: WorkId; workHandle: string | null };
 
 /** The reason a transport reports (§9); the wire type. A deleted file is `not_found`. */
 export type { FileAccessDenial };

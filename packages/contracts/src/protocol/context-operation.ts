@@ -1,4 +1,5 @@
 /** Durable namespace attempt outcomes, independent from current canonical location. */
+import type { OwnerSlip } from "../context-uri.js";
 import type {
   DeleteContextEntryRequest,
   DeleteContextEntryResult,
@@ -19,15 +20,15 @@ export type ContextError =
       code: "context_unavailable";
       uri: string;
       reason: "work_archived" | "work_deleted" | "work_missing";
-      workSlug: string | null;
+      workHandle: string | null;
     }
   | {
       code: "invalid_uri";
       uri: string;
       reason: string;
-      workSlug?: string;
+      workHandle?: string;
       unknownScheme?: string;
-      chatHandle?: string;
+      slip?: OwnerSlip;
     }
   | { code: "io_error"; uri: string; message: string };
 

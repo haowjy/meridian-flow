@@ -115,7 +115,7 @@ describe("response helper revocation (Postgres)", () => {
       projectId: PROJECT_ID,
       createdByUserId: USER_ID,
       name: "Other Work",
-      slug: "other-work",
+      handle: "w1",
     });
     await db.insert(schema.threads).values({
       id: threadB as never,
@@ -158,7 +158,7 @@ describe("response helper revocation (Postgres)", () => {
       turnId: turnB,
       responseIdentity: { providerResponseId: responseB, editScopeId: responseB },
       grant: inProject(
-        testFileGrant({ kind: "draft", workId: workB as never, workSlug: "other-work" }),
+        testFileGrant({ kind: "draft", workId: workB as never, workHandle: "other-work" }),
       ),
     };
     expect(

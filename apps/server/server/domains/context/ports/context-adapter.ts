@@ -70,7 +70,7 @@ export type AdapterFault =
   | {
       code: "context_unavailable";
       reason: "work_archived" | "work_deleted" | "work_missing";
-      workSlug: string | null;
+      workHandle: string | null;
     }
   | { code: "io_error"; message: string };
 

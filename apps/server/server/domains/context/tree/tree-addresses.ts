@@ -318,7 +318,7 @@ export type NodeAddress = {
   userId: UserId;
   scheme: ContextUriScheme;
   workId: WorkId | null;
-  workSlug: string | null;
+  workHandle: string | null;
   /** A lineage Scratch's first chat; null for every other source. */
   rootThreadId: string | null;
   /** The chat whose uploads these are; null for every other source. */
@@ -381,7 +381,7 @@ export async function spellNodeAddresses(
     if (!chain || chain.at(-1)?.parentId) return null;
     const path = chainPrefix(chain) + renderFilename(location.name, location.extension);
     const scheme = source.scheme;
-    const workSlug = source.is_no_work ? null : source.work_slug;
+    const workHandle = source.is_no_work ? null : source.work_slug;
     let uri: string;
     try {
       uri = canonicalContextUri(
@@ -390,7 +390,7 @@ export async function spellNodeAddresses(
         catalogSourceAuthority(
           scheme,
           source.work_id,
-          workSlug,
+          workHandle,
           source.root_thread_ref,
           source.chat_thread_id !== null,
         ),
@@ -404,7 +404,7 @@ export async function spellNodeAddresses(
       userId: source.user_id as UserId,
       scheme,
       workId: source.work_id && !source.is_no_work ? (source.work_id as WorkId) : null,
-      workSlug,
+      workHandle,
       rootThreadId: source.root_thread_id,
       chatThreadId: source.chat_thread_id,
       contextSourceId: location.contextSourceId,
