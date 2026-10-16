@@ -656,7 +656,11 @@ else
           await loadForgettingFacts(deps, fixture.destination.id, fixture.seed.id),
           closing,
         ),
-      ).toEqual({ forget: [], passed: [fixture.seed.id], reason: null });
+      ).toEqual({
+        forget: [],
+        ends: [{ turnId: fixture.seed.id, end: "moved_on" }],
+        reason: null,
+      });
 
       const runner = await destinationRunner(fixture);
       await runner.delivery.enqueue({
