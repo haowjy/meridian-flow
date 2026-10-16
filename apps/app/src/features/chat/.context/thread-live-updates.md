@@ -91,7 +91,7 @@ answer's content is prepended by one checked draft write that also records its
 not restore after a reload never retires the command. References come back as
 chips only when the chat proves their owner (`chatReferenceResolver`): a
 `scratch://` URI on this chat's lineage handle, `uploads://@c15/` for this chat's own handle,
-`@slug` for this chat's own Work, or a project or user reference. Anything else,
+`@w3` (the Work's handle) for this chat's own Work, or a project or user reference. Anything else,
 another named Work included, comes back as its link text, so no content is lost.
 An image takes its type from the message's image block, not the extension.
 Send-time chip metadata would make this exact (see the shared client's FUTURE).

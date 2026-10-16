@@ -647,6 +647,15 @@ function rowForAuthority(
   };
 }
 
+/**
+ * The writer's name for the area's owner, never its handle. Only a Work has a
+ * name the catalog carries; a chat, the project and the account name no one
+ * beside the row's own label.
+ */
+function ownerLabel(scope: CatalogScope, authorities: ReferenceAuthorityIndex): string {
+  return scope.kind === "work" ? (authorities.get(`work:${scope.workId}`)?.name ?? "") : "";
+}
+
 function rowForEntry(
   entry: BrowsableCatalogEntry,
   authorities: ReferenceAuthorityIndex,
@@ -659,8 +668,7 @@ function rowForEntry(
       kind: "source",
       rowId: `source:${catalogScopeKey(entry.scope)}:${entry.entryId}`,
       label: entry.name,
-      // A chat's Scratch and uploads are named by the chat, never by a handle.
-      location: entry.scope.kind === "lineage" || entry.scope.kind === "chat" ? "" : prefix,
+      location: ownerLabel(entry.scope, authorities),
       matchAliases: [entry.scheme],
       action: {
         type: "navigate",
