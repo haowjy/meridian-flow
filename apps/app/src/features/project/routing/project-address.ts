@@ -5,9 +5,7 @@
 import { validateContextEntryPath } from "@meridian/contracts/context-entry-validation";
 import {
   isProjectContextTreeScheme,
-  isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
-  type WorkAuthorityScheme,
 } from "@meridian/contracts/protocol";
 import { type ParsedRequestId, parseRequestId } from "@meridian/contracts/request-id";
 import { isSettingsSection, type SettingsSection } from "@/features/account/settings-sections";
@@ -77,19 +75,9 @@ function selection(value: string | null): AddressSelection {
   return value === null ? ABSENT : workIdSelection(value || null);
 }
 
-/** Scratch and Uploads belong to a Work; every other scheme is the project's. */
-export function isWorkScopedScheme(
-  scheme: ProjectContextTreeScheme | null,
-): scheme is WorkAuthorityScheme {
-  return scheme !== null && isWorkScopedProjectContextScheme(scheme);
-}
-
-/** Whether `?work=` names the resource itself rather than an editing context. */
+/** Whether `?work=` names the resource itself rather than an editing context: only Scratch. */
 export function workIsIdentity(destination: ProjectDestination): boolean {
-  return (
-    (destination.kind === "document" || destination.kind === "browse") &&
-    isWorkScopedScheme(destination.scheme)
-  );
+  return lineageIsIdentity(destination);
 }
 
 /** Whether `?chat=` can name the resource's owner: only Scratch has a lineage. */
@@ -180,12 +168,7 @@ export function parseProjectAddress(
     : undefined;
   // A Scratch resource has exactly one owner; a chat's Scratch has no No Work spelling.
   if (workIsIdentity(destination)) {
-    const scratch = lineageIsIdentity(destination);
-    const owned = lineage
-      ? work.kind === "absent"
-      : scratch
-        ? work.kind === "id"
-        : work.kind === "id" || work.kind === "none";
+    const owned = lineage ? work.kind === "absent" : work.kind === "id";
     if (!owned || (chatParam !== null && !lineage)) return { kind: "invalid", reason: "work" };
   }
   const settings = query.get("settings");
