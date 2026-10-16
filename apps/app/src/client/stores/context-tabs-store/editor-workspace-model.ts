@@ -32,7 +32,8 @@ export type TabOwner =
       rootThreadId?: undefined;
       rootThreadRef?: undefined;
       chatId: string;
-      chatRef: string;
+      /** Null before the chat exists, when its uploads spell a bare URI. */
+      chatRef: string | null;
     };
 
 /** A patch's owner, with the absent arm spelled out so a spread replaces the old owner. */
@@ -58,7 +59,8 @@ export function replaceOwner(owner: TabOwner): TabOwner {
 
 /** The owner a tab names, for catalog and request lookups. */
 export function tabContextOwner(owner: TabOwner): ContextOwner {
-  if (owner.chatId !== undefined) return { chatThreadId: owner.chatId, chatRef: owner.chatRef };
+  if (owner.chatId !== undefined)
+    return { chatThreadId: owner.chatId, ...(owner.chatRef ? { chatRef: owner.chatRef } : {}) };
   return owner.rootThreadId !== undefined
     ? { rootThreadId: owner.rootThreadId, rootThreadRef: owner.rootThreadRef }
     : { workId: owner.workId ?? null };

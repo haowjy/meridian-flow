@@ -20,7 +20,7 @@ export type ResourceKey = Readonly<{ handle: string }>;
  * Project-scoped schemes have no owner (`workId: null`). A Work-scoped location
  * names a Work (id and slug, slug null for No Work) or, for Scratch, a lineage
  * (the first chat's id and its handle, as in `scratch://@/c12/`); uploads are held by a chat
- * (its id and handle, as in `uploads://@/c15/`). The type
+ * (its id and handle, as in `uploads://@/c15/`; no handle, and a bare `uploads://` URI, until the chat exists). The type
  * preserves each pair; only a known project snapshot can establish which row is
  * No Work. Use resourceWorkAuthorityFor when constructing writer commands.
  */
@@ -28,7 +28,7 @@ export type ResourceOwner =
   | ({ workId: null; workSlug?: undefined } & NoLineage & NoChat)
   | ({ workId: string; workSlug: string | null } & NoLineage & NoChat)
   | ({ workId: null; workSlug?: undefined; rootThreadId: string; rootThreadRef: string } & NoChat)
-  | ({ workId: null; workSlug?: undefined; chatId: string; chatRef: string } & NoLineage);
+  | ({ workId: null; workSlug?: undefined; chatId: string; chatRef: string | null } & NoLineage);
 type NoLineage = { rootThreadId?: undefined; rootThreadRef?: undefined };
 type NoChat = { chatId?: undefined; chatRef?: undefined };
 export type ResourceLocation = Readonly<
