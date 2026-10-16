@@ -538,6 +538,24 @@ Use a change two chats wrote. Run both shells.
    task title in its tooltip; clicking it opens the parent chat at the spawn row (the subagent's launch
    card), not at a turn of the subagent.
 
+For step 4, use AI replacements **red → bed**, **young → younger** and **red → reed**,
+Apply, then delete the accepted word as the writer. Also change a bullet list to a
+numbered list, Apply, then delete one word inside it. PASS: each later deletion says
+"You", with no old chat link or chat membership.
+
+Repeat with two files from the same chat and leave its draft dock collapsed.
+Once only writer changes remain, PASS: no stale document count or Apply/Discard
+commands, without expanding the dock to discover it is empty. While a room is
+loading, its summary has no commands; a failed read offers Retry, not an empty
+success. A retained Discard/Undo or overrode notice stays without commands for
+a known-empty file.
+
+With the Editor attached in one tab, Discard and Undo the AI text from another
+surface. PASS: once synced, the attached editor's byline and the collapsed chat
+dock recover the chat's membership without a prose keystroke or reload. The
+runtime regression also delivers content and restoration updates separately;
+this browser step verifies the real surface and transport path.
+
 ## Review across document schemes
 
 In a named draft-mode Work, use the mock model to create `kb://Place`, edit an existing
