@@ -197,12 +197,25 @@ it("Edit dissolves every never-created message in order before newer New chat wr
 });
 
 it("a cross-tab retirement removes an unresolved optimistic row, not just rejected rows", async () => {
-  const gate = scenarioGate<never>();
   recordChatSubmission(account, { ...entry(), state: undefined });
-  const scenario = new ThreadRunScenario({ lookup: () => gate.promise });
+  const scenario = new ThreadRunScenario({
+    append: async () => {
+      throw new TypeError("Lost send");
+    },
+  });
   const mounted = await mount(scenario);
   expect(scenario.turns()).toHaveLength(1);
+  const row = scenario.turns()[0];
+  if (!row) throw new Error("No row");
+  await mounted.read().driver.drive("thread_1");
+  await vi.waitFor(() => expect(mounted.read().presentation.get(row.id)?.failure).toBeDefined());
+  const before = mounted.read().presentation.get(row.id)?.failure;
   const key = chatSubmissionStorageKey(account, "one");
+  const raw = JSON.parse(window.localStorage.getItem(key) ?? "{}");
+  raw.payload.occurrence = { requestId: "other-tab", attempt: (before?.attempt ?? 0) + 1 };
+  window.localStorage.setItem(key, JSON.stringify(raw));
+  window.dispatchEvent(new StorageEvent("storage", { key, storageArea: window.localStorage }));
+  expect(mounted.read().presentation.get(row.id)?.failure).toEqual(before);
   window.localStorage.removeItem(key);
   window.dispatchEvent(new StorageEvent("storage", { key, storageArea: window.localStorage }));
   expect(scenario.turns()).toEqual([]);
@@ -595,7 +608,7 @@ it("retains an unsaved switch with distinct failed retry occurrences and local w
         id: "unsaved",
         failed: true,
         posted: false,
-        failure: { requestId: "unsaved", attempt: 1, kind: "unsaved" },
+        failure: { requestId: expect.any(String), attempt: 1, kind: "unsaved" },
       },
     ]);
     owner.retrySwitch("unsaved");

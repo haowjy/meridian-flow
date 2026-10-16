@@ -130,7 +130,7 @@ export type RunStateAction =
   | { type: "journal"; switches: readonly JournalSwitch[] }
   /** The view told the writer of the news through these counts. */
   | { type: "spoken"; queued: number; applied: number }
-  | { type: "withdraw"; id: string; failed?: boolean }
+  | { type: "withdraw"; id: string; requestId: string; failed?: boolean }
   | { type: "withdrawn"; id: string; runState: RunState }
   | { type: "dropWithdraw"; id: string };
 
@@ -255,16 +255,16 @@ function reduceView(view: RunStateView, action: RunStateAction): RunStateView {
         (intent) => intent.kind === "withdraw" && intent.id === action.id,
       );
       const before =
-        held?.kind === "withdraw"
-          ? held.occurrence
-          : { requestId: `withdraw:${action.id}`, attempt: 0 };
+        held?.kind === "withdraw" ? held.occurrence : { requestId: action.requestId, attempt: 0 };
       return addIntent(view, {
         kind: "withdraw",
         id: action.id,
         order: 0,
         answer: null,
         failed: action.failed,
-        occurrence: action.failed ? before : nextOccurrence(before),
+        occurrence: action.failed
+          ? before
+          : { ...nextOccurrence(before), requestId: action.requestId },
       });
     }
     case "withdrawn":

@@ -44,6 +44,9 @@ owner of writer rows, attempts, recovery status, and draft transfer.
   id is separate and can stay unchanged. A fresh request identity prevents a
   failed local save from colliding with a later attempt after reload. Restored
   failures read the saved occurrence, never allocate one while projecting.
+  Storage events that change only occurrence metadata rebuild the view but never
+  wake another replay; command additions, removals or state changes can wake it.
+  Another tab starting an attempt is not evidence that the attempt failed.
   Unsaved switches retain their mode, order and occurrence in the owner until
   retried or withdrawn; these facts cannot survive refused browser storage.
 - Pane disposal fences only that pane's recovery session. Account disposal

@@ -69,7 +69,7 @@ export type ControlAction =
   /** The server took the command; `sent` when the record lists it, else it already ran or was withdrawn. */
   | { type: "enqueued"; id: string; sent: boolean }
   | { type: "enqueue_failed"; id: string }
-  | { type: "withdraw"; id: string }
+  | { type: "withdraw"; id: string; requestId: string }
   | { type: "withdrawn"; id: string }
   /** The server had no such command (404) when the withdrawal reached it. */
   | { type: "withdraw_not_found"; id: string }
@@ -82,13 +82,10 @@ export function controlsReducer(state: LocalControls, action: ControlAction): Lo
     ...state,
     sends: state.sends.map((entry) => (entry.id === id ? { ...entry, request } : entry)),
   });
-  const withdrawal = (id: string, next: Withdrawal["status"]) => {
-    const before = state.withdrawals.get(id) ?? { requestId: `withdraw:${id}`, attempt: 0 };
-    const occurrence = next === "withdrawing" ? nextOccurrence(before) : before;
-    return {
-      ...state,
-      withdrawals: new Map(state.withdrawals).set(id, { ...occurrence, status: next }),
-    };
+  const withdrawal = (id: string, status: Withdrawal["status"], next?: Occurrence) => {
+    const occurrence = next ?? state.withdrawals.get(id);
+    if (!occurrence) return state;
+    return { ...state, withdrawals: new Map(state.withdrawals).set(id, { ...occurrence, status }) };
   };
   switch (action.type) {
     case "enqueue":
@@ -115,7 +112,14 @@ export function controlsReducer(state: LocalControls, action: ControlAction): Lo
     case "enqueue_failed":
       return patchSend(action.id, "failed");
     case "withdraw":
-      return withdrawal(action.id, "withdrawing");
+      return withdrawal(
+        action.id,
+        "withdrawing",
+        nextOccurrence({
+          requestId: action.requestId,
+          attempt: state.withdrawals.get(action.id)?.attempt ?? 0,
+        }),
+      );
     case "withdrawn":
       return withdrawal(action.id, "settled");
     case "withdraw_failed":

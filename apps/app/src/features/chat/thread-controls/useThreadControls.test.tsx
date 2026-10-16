@@ -219,14 +219,14 @@ describe("useThreadControls", () => {
     api.withdrawThreadControl.mockRejectedValueOnce(new TypeError("lost withdrawal"));
     await act(async () => latest.withdraw(failed));
     expect(latest.queued[0]?.failure).toEqual({
-      requestId: `withdraw:${id}`,
+      requestId: expect.any(String),
       attempt: 1,
       kind: "lost",
     });
     api.withdrawThreadControl.mockRejectedValueOnce(new TypeError("lost withdrawal again"));
     await act(async () => latest.withdraw(failed));
     expect(latest.queued[0]?.failure).toEqual({
-      requestId: `withdraw:${id}`,
+      requestId: expect.any(String),
       attempt: 2,
       kind: "lost",
     });

@@ -2,7 +2,11 @@
 import type { CommandFailureInput } from "@meridian/contracts/failures";
 
 export type Occurrence = { requestId: string; attempt: number };
-export type CommandFailure = Occurrence & CommandFailureInput;
+export type CommandFailure = Occurrence &
+  CommandFailureInput & {
+    /** Stable wire id for journaled commands; requestId identifies the client attempt. */
+    submissionId?: string;
+  };
 export type FailedCommand =
   | { failed?: false; failure?: never }
   | { failed: true; failure: CommandFailure };

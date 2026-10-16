@@ -23,7 +23,7 @@ import { projectWriterText, type WriterText } from "./writer";
 
 export type TranscriptViewInput = (
   | (TurnFacts & { normalized?: never })
-  | { normalized: NormalizedTurns; turns?: never }
+  | ({ normalized: NormalizedTurns } & { [K in keyof TurnFacts]?: never })
 ) & {
   /** A fork's frozen prefix from its source, or omitted when none is known. */
   inherited?: InheritedTranscript | null;

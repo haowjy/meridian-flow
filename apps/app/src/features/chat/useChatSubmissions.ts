@@ -3,8 +3,10 @@ import type { AiWriteMode } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useReducer, useRef } from "react";
 import {
+  CHAT_SUBMISSIONS_STORAGE_PREFIX,
   getChatSubmissionAccountId,
   getChatSubmissionEpoch,
+  submissionReplayChanged,
   subscribeChatSubmissions,
 } from "@/client/chat-submissions";
 import {
@@ -82,9 +84,15 @@ export function useChatSubmissions(
     };
     wake();
     const unsubscribe = subscribeChatSubmissions(owner.rebuild);
-    const storage = () => {
+    const storage = (event: StorageEvent) => {
+      if (event.storageArea !== window.localStorage) return;
+      if (
+        event.key !== null &&
+        !event.key.startsWith(`${CHAT_SUBMISSIONS_STORAGE_PREFIX}${accountId}:`)
+      )
+        return;
       owner.rebuild();
-      wake();
+      if (event.key === null || submissionReplayChanged(event.oldValue, event.newValue)) wake();
     };
     window.addEventListener("storage", storage);
     window.addEventListener("online", wake);

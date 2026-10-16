@@ -390,3 +390,19 @@ export class DeviceChatSubmissionJournal {
     return retired;
   }
 }
+
+/** Storage mirrors attempt facts without making the other tab replay those facts back. */
+export function submissionReplayChanged(before: string | null, after: string | null): boolean {
+  const scheduling = (raw: string | null) => {
+    if (raw === null) return null;
+    try {
+      const value = parseSubmission(JSON.parse(raw)?.payload);
+      if (!value) return null;
+      const { occurrence: _occurrence, ...command } = value;
+      return JSON.stringify(command);
+    } catch {
+      return null;
+    }
+  };
+  return scheduling(before) !== scheduling(after);
+}

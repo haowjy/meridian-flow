@@ -151,7 +151,12 @@ function step({ state, journal }: Harness, event: Event): Harness {
     return ingest(rest);
   }
   if ("withdraw" in event)
-    return dispatch({ type: "withdraw", id: event.withdraw, failed: event.failed });
+    return dispatch({
+      type: "withdraw",
+      id: event.withdraw,
+      requestId: `withdraw:${event.withdraw}`,
+      failed: event.failed,
+    });
   return dispatch({
     type: "withdrawn",
     id: event.withdrawn,

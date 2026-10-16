@@ -136,7 +136,7 @@ export function useThreadControls(input: {
       // The writer's own Stop is the server being told it won't run: the row goes at once.
       held.current.controls.delete(queued.id);
       if (queued.control.kind === "write_mode") return withdrawSwitch(queued);
-      dispatch({ type: "withdraw", id: queued.id });
+      dispatch({ type: "withdraw", id: queued.id, requestId: crypto.randomUUID() });
       announce(controlStoppedCopy(queued.control));
       const withdrawOnServer = async () => {
         try {
