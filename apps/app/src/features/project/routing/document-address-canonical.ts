@@ -1,10 +1,6 @@
 /** Canonical document locators repair both live and review addresses without changing identity. */
-import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
-import {
-  type CatalogFileEntry,
-  isProjectContextTreeScheme,
-  isWorkScopedProjectContextScheme,
-} from "@meridian/contracts/protocol";
+import { isWorkScopedScheme, parseUnifiedContextUri } from "@meridian/contracts/context-uri";
+import { type CatalogFileEntry, isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { type ParsedRequestId, parseRequestId } from "@meridian/contracts/request-id";
 import type { ProjectAddress } from "./project-address";
 import { workSelectionFor } from "./project-address-resolution";
@@ -41,9 +37,7 @@ export function canonicalDocumentAddress(
         destination,
         work: workSelectionFor(
           destination,
-          scope.kind === "work" && isWorkScopedProjectContextScheme(uri.value.scheme)
-            ? scope.workId
-            : workId,
+          scope.kind === "work" && isWorkScopedScheme(uri.value.scheme) ? scope.workId : workId,
           noWorkId,
         ),
       };

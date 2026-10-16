@@ -4,9 +4,9 @@ import { referenceOccurrenceContent, skillOccurrenceContent } from "./user-turn-
 
 const occurrence = {
   type: "reference",
-  text: "[Gate Map](uploads://@/gate-map.png)",
+  text: "[Gate Map](uploads://@/c1/gate-map.png)",
   documentId: "33333333-3333-4333-8333-333333333333",
-  uri: "uploads://@/gate-map.png",
+  uri: "uploads://@/c1/gate-map.png",
 };
 
 describe("referenceOccurrenceContent", () => {
@@ -27,7 +27,7 @@ describe("referenceOccurrenceContent", () => {
     expect(
       referenceOccurrenceContent({
         blockType: "text",
-        content: { ...occurrence, uri: "uploads://@//gate-map.png" },
+        content: { ...occurrence, uri: "uploads://@/c1//gate-map.png" },
       }),
     ).toBeNull();
   });

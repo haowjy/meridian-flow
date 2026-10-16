@@ -3,11 +3,11 @@
  */
 import {
   canonicalContextUri,
+  isWorkScopedScheme,
   type ParsedContextUri,
   parseUnifiedContextUri,
 } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 
 export type ContextUri = Omit<ParsedContextUri, "path"> & {
   path: string;
@@ -34,6 +34,25 @@ export type ChatLineages = {
   idForRef(rootThreadRef: string): string | null;
 };
 
+/** The chats a chat's `uploads://` URIs can name: its own, and any other by its handle. */
+export type ChatUploadOwners = {
+  /** The chat's own id: what a bare `uploads://` means. A subagent's is its top chat's. */
+  own: string | null;
+  /** The chat's id for a handle such as `c15`, or null when the app does not know it. */
+  idForRef(chatRef: string): string | null;
+};
+
+/**
+ * The chat whose uploads an `uploads://` URI names, or null for any other URI. A Work route
+ * can't name an upload, so a chat door opens it by its document in the chat's catalog.
+ */
+export function chatIdForUploadsUri(uri: string, chats: ChatUploadOwners): string | null {
+  const parsed = parseContextUri(uri);
+  if (!parsed || parsed.scheme !== "uploads") return null;
+  if (parsed.authority.kind === "chat") return chats.idForRef(parsed.authority.chatRef);
+  return parsed.authority.kind === "contextual" ? chats.own : null;
+}
+
 export function parseContextUri(uri: string): ContextUri | null {
   const parsed = parseUnifiedContextUri(uri);
   if (!parsed.ok) return null;
@@ -43,13 +62,20 @@ export function parseContextUri(uri: string): ContextUri | null {
 /**
  * The context URI a tool path names: bare paths are manuscript paths. `null`
  * for a path under a scheme that addresses no writer document (`skills://`),
- * which must never be filed under the manuscript.
+ * which must never be filed under the manuscript, and for a path that parses
+ * to no address (`uploads://@c1/notes`, `a/../b`). Never throws.
  */
 export function contextUriFromWritePath(path: string): string | null {
   const parsed = parseUnifiedContextUri(path);
   if (parsed.ok) return parsed.value.normalized;
   if (parsed.error.unknownScheme !== undefined) return null;
-  return canonicalContextUri("manuscript", path.replace(/^\/+/, ""));
+  // A model-written path is untrusted: the serializer throws on reserved or
+  // traversing segments, and a render path must show such a path as text.
+  try {
+    return canonicalContextUri("manuscript", path.replace(/^\/+/, ""));
+  } catch {
+    return null;
+  }
 }
 
 export function contextRouteTargetFromUri(
@@ -62,7 +88,9 @@ export function contextRouteTargetFromUri(
   const parsed = parseContextUri(uri);
   if (!parsed) return null;
 
-  if (!isWorkScopedProjectContextScheme(parsed.scheme)) {
+  // Uploads belong to a chat; no Work or lineage route holds one (see `chatIdForUploadsUri`).
+  if (parsed.scheme === "uploads") return null;
+  if (!isWorkScopedScheme(parsed.scheme)) {
     return { scheme: parsed.scheme, path: parsed.path, workId: null };
   }
 
@@ -82,6 +110,7 @@ export function contextRouteTargetFromUri(
   if (parsed.authority.kind === "contextual") {
     return { scheme: parsed.scheme, path: parsed.path, workId: activeWork.id };
   }
+  if (parsed.authority.kind === "chat") return null;
   const requestedSlug = parsed.authority.workSlug;
   const qualified = availableWorks.find(({ slug }) => slug === requestedSlug);
   return qualified ? { scheme: parsed.scheme, path: parsed.path, workId: qualified.id } : null;

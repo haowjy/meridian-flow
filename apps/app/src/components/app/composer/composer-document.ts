@@ -125,6 +125,14 @@ function parseClipboardReference(raw: string | null): ComposerReferenceAttrs | n
       authority = { kind: "lineage", projectId, rootThreadId, rootThreadRef };
       break;
     }
+    case "chat": {
+      const projectId = parseRequestId(rawAuthority.projectId);
+      const chatId = parseRequestId(rawAuthority.chatId);
+      const chatRef = rawAuthority.chatRef;
+      if (!projectId || !chatId || (chatRef !== null && typeof chatRef !== "string")) return null;
+      authority = { kind: "chat", projectId, chatId, chatRef };
+      break;
+    }
     default:
       return null;
   }

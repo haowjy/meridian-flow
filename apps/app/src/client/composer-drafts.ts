@@ -23,7 +23,18 @@ type StoredComposerDraft = (ComposerDraftSnapshot | { doc: null }) & {
   received?: string[];
   notices?: DeletedChatNotice[];
   handBacks?: PendingHandBack[];
+  /** A New chat's thread id, minted before its first attach so its uploads and Send share it. */
+  chatId?: string;
+  parked?: ParkedDraft[];
 };
+
+/** An unsent New-chat draft with its own uploads, set aside while a recovered chat takes the box. */
+type ParkedDraft = { chatId: string; draft: ComposerDraftSnapshot };
+
+const isParkedDraft = (value: unknown): value is ParkedDraft =>
+  isRecord(value) &&
+  typeof value.chatId === "string" &&
+  parseRestorableComposerDraft(value.draft) !== null;
 
 /** The `received` entry a hand-back leaves: the checked write that carries the content records it. */
 export const handBackReceipt = (requestId: string) => `handBack:${requestId}`;
@@ -51,6 +62,45 @@ export class ComposerSessionDraft {
   private received = new Set<string>();
   private handBacksPending: PendingHandBack[] = [];
   notices: DeletedChatNotice[] = [];
+  /**
+   * The thread id a New chat will be created with. Uploads attached before Send belong to it, so
+   * it is minted here, kept with the draft, and reused by Send. A sent draft mints the next one.
+   */
+  chatId: string;
+  private readonly mintsChat: boolean;
+  private parked: ParkedDraft[] = [];
+  private chatField(): { chatId?: string; parked?: ParkedDraft[] } {
+    return this.mintsChat ? { chatId: this.chatId, parked: this.parked } : {};
+  }
+
+  /**
+   * Bring a creation that never reached the server back as one unit: its chat id, its words and
+   * its receipts. Uploads belong to the id they were attached under, so the id travels with them.
+   * A newer unsent draft with uploads of its own is parked and returns after the next Send; it is
+   * never folded into the recovered chat, whose uploads it does not own.
+   */
+  recoverCreation(
+    chatId: string,
+    snapshots: ComposerDraftSnapshot[],
+    recordIds: string[] = [],
+  ): boolean {
+    if (!this.mintsChat) return false;
+    if (snapshots.every((_, index) => recordIds[index] && this.hasReceived(recordIds[index])))
+      return true;
+    const recovered = snapshots.some((snapshot) => snapshot.ownedUploads.length > 0);
+    const typed =
+      this.current && serializeComposerDraft(this.current.doc).text ? this.current : null;
+    const park = recovered && typed !== null && typed.ownedUploads.length > 0;
+    const before = { current: this.current, chatId: this.chatId, parked: this.parked };
+    if (park && typed) {
+      this.parked = [...this.parked, { chatId: this.chatId, draft: typed }];
+      this.current = null;
+    }
+    if (recovered) this.chatId = chatId;
+    if (this.prependSnapshots(snapshots, recordIds)) return true;
+    Object.assign(this, before);
+    return false;
+  }
   dismissNotice = (threadId: string) => {
     this.notices = this.notices.filter((notice) => notice.threadId !== threadId);
     this.dirty = true;
@@ -183,6 +233,7 @@ export class ComposerSessionDraft {
       received: [...next.received],
       notices: next.notices,
       handBacks: next.handBacks,
+      ...this.chatField(),
     };
     if (!this.record.write(stored)) return false;
     this.notices = next.notices;
@@ -193,6 +244,11 @@ export class ComposerSessionDraft {
     this.publish();
     return true;
   }
+
+  /** The chat Send created: a no-op when recording the Send already handed the draft off. */
+  handoffCreated = (chatId: string): void => {
+    if (this.chatId === chatId) this.handoff();
+  };
 
   /** Once recorded, only the exact unchanged authoring draft transfers to the journal. */
   handoffSubmitted = (snapshot: ComposerDraftSnapshot): void => {
@@ -242,6 +298,10 @@ export class ComposerSessionDraft {
               received,
               notices: notices as DeletedChatNotice[],
               handBacks,
+              ...(typeof value.chatId === "string" ? { chatId: value.chatId } : {}),
+              ...(Array.isArray(value.parked)
+                ? { parked: value.parked.filter(isParkedDraft) }
+                : {}),
             };
       },
     );
@@ -250,6 +310,9 @@ export class ComposerSessionDraft {
     this.received = new Set(saved?.received);
     this.notices = saved?.notices ?? [];
     this.handBacksPending = saved?.handBacks ?? [];
+    this.mintsChat = scope.kind === "new-chat";
+    this.chatId = saved?.chatId ?? crypto.randomUUID();
+    this.parked = saved?.parked ?? [];
   }
 
   get initialDraft(): ComposerDraftSnapshot | null {
@@ -267,8 +330,11 @@ export class ComposerSessionDraft {
 
   /** Call only after the submission journal has durably accepted ownership. */
   handoff = (): void => {
-    this.current = null;
+    const next = this.parked.at(-1);
+    this.parked = this.parked.slice(0, -1);
+    this.current = next ? next.draft : null;
     this.notices = [];
+    this.chatId = next ? next.chatId : crypto.randomUUID();
     this.dirty = true;
     this.flush();
   };
@@ -287,6 +353,7 @@ export class ComposerSessionDraft {
                   received: [...this.received],
                   notices: this.notices,
                   handBacks: this.handBacksPending,
+                  ...this.chatField(),
                 }
               : undefined,
           )
@@ -295,6 +362,7 @@ export class ComposerSessionDraft {
             received: [...this.received],
             notices: this.notices,
             handBacks: this.handBacksPending,
+            ...this.chatField(),
           });
     if (saved) this.dirty = false;
   };

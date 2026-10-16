@@ -69,7 +69,8 @@ export function createWriterTurnProducer(deps: {
   records: AdmissionPersistencePort;
   /** Runs inside the turn-start transaction before any writer content is persisted. */
   requireWritableThread(threadId: ThreadId): Promise<void>;
-  consumeUploads(documentIds: readonly string[]): Promise<void>;
+  /** Every admitted reference: the sending chat's own uploads among them become used. */
+  consumeUploads(documentIds: readonly string[], threadId: string): Promise<void>;
   attachDocument(
     threadId: string,
     documentId: string,
@@ -160,9 +161,8 @@ export function createWriterTurnProducer(deps: {
               );
             }
             await deps.consumeUploads(
-              input.references
-                .filter((reference) => reference.purpose === "draft-upload")
-                .map((reference) => reference.documentId),
+              input.references.map((reference) => reference.documentId),
+              threadId,
             );
             for (const reference of input.references) {
               await deps.attachDocument(threadId, reference.documentId, reference.relationship);

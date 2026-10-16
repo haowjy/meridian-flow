@@ -3,6 +3,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { PanelRightClose } from "lucide-react";
 import type { ReactNode } from "react";
+import { ChatUploadsMenu } from "@/features/chat/ChatUploadsMenu";
 import { SubagentHeader } from "@/features/chat/SubagentHeader";
 import { useThreadActivity } from "@/features/chat/useThreadActivity";
 import { PaneTitle } from "../PaneTitle";
@@ -64,7 +65,10 @@ export function DockHeader({
         ) : null}
         {screen !== "chat" ? threadSelect : null}
         {screen !== "chat" && threadId ? (
-          <SubagentHeader threadId={threadId} nodes={activity.activity.children} />
+          <>
+            <ChatUploadsMenu projectId={projectId} threadId={threadId} />
+            <SubagentHeader threadId={threadId} nodes={activity.activity.children} />
+          </>
         ) : null}
       </div>
       {collapse ? <div className="flex shrink-0 items-center gap-0.5 px-2">{collapse}</div> : null}

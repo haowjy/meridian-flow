@@ -193,7 +193,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             scope: "project",
             workId: null,
           }),
-          expect.objectContaining({ slug: "uploads", scope: "work", projectId: null }),
         ]),
       );
       await expect(

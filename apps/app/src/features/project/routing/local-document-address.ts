@@ -156,6 +156,8 @@ export function resolveLocalDocumentAddress(
       rootThreadRef: uri.value.authority.rootThreadRef,
     };
   } else {
+    // A chat's uploads are files, never editable text: they have no editor address.
+    if (entry.scope.kind === "chat") return undefined;
     if (!workId || workId !== entry.scope.workId) return undefined;
     const uri = parseUnifiedContextUri(file.uri);
     if (!uri.ok || uri.value.authority.kind === "contextual") return undefined;

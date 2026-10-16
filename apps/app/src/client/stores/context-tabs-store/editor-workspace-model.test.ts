@@ -34,7 +34,13 @@ it("drops old No Work snapshots with empty selection keys or ownerless Scratch t
 
 function lineageTab(): ContextTab {
   const { workId: _work, ...rest } = tab("scratch") as Extract<ContextTab, { kind: "tracked" }>;
-  return { ...rest, rootThreadId: "root", rootThreadRef: "c12" };
+  return {
+    ...rest,
+    rootThreadId: "root",
+    rootThreadRef: "c12",
+    chatId: undefined,
+    chatRef: undefined,
+  };
 }
 
 function workspaceWith(tab: ContextTab) {

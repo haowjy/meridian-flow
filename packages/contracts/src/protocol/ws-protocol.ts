@@ -279,6 +279,11 @@ export const wsServerMessageSchema: z.ZodType<WsServerMessage> = z.discriminated
         projectId: z.string().min(1),
         rootThreadId: z.string().min(1),
       }),
+      z.object({
+        kind: z.literal("chat"),
+        projectId: z.string().min(1),
+        chatId: z.string().min(1),
+      }),
     ]),
     headRevision: wsEventSeqSchema,
   }),

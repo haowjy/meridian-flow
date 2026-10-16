@@ -220,6 +220,7 @@ function catalogQuery(scope: CatalogScope, extra?: Record<string, string>): stri
   const query = new URLSearchParams({ scope: scope.kind, ...extra });
   if (scope.kind === "work") query.set("workId", scope.workId);
   if (scope.kind === "lineage") query.set("rootThreadId", scope.rootThreadId);
+  if (scope.kind === "chat") query.set("chatId", scope.chatId);
   return query.toString();
 }
 

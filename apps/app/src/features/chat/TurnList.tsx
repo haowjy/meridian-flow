@@ -41,6 +41,8 @@ export type TurnQueueControls = {
 
 export type TurnListProps = {
   threadId: string;
+  /** The chat's handle once it is named: a just-sent upload link follows before the stored text is reloaded. */
+  uploadsChat?: string;
   /** What the transcript shows, decided by `viewTranscript`: rows, items and writer text. */
   view: TranscriptView;
   historySettled: boolean;
@@ -100,6 +102,7 @@ const TOP_INSET = 24;
 
 export function TurnList({
   threadId,
+  uploadsChat,
   view,
   historySettled,
   tailFollowRevision,
@@ -294,6 +297,7 @@ export function TurnList({
           <UserTurn
             turn={turn}
             writer={writer}
+            uploadsChat={local ? uploadsChat : undefined}
             submissionRecovery={local ? submissionRecoveryByTurnId?.get(turn.id) : undefined}
             queued={row.queued}
             queueControls={row.queued && local ? queue : null}

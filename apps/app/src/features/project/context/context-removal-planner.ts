@@ -1,9 +1,7 @@
 /** Pure eligibility and continuity planning for one exact context-removal intent. */
 
-import {
-  isWorkScopedProjectContextScheme,
-  type WorkingSetRoute,
-} from "@meridian/contracts/protocol";
+import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
+import type { WorkingSetRoute } from "@meridian/contracts/protocol";
 import {
   type ContextTab,
   editorTabsForWork,
@@ -194,7 +192,7 @@ export function contextTabEligibleForRemoval(
       return (
         tab.kind !== "new" &&
         (tab.kind !== "tracked" || tab.origin !== "local-resource") &&
-        isWorkScopedProjectContextScheme(tab.scheme)
+        isWorkScopedScheme(tab.scheme)
       );
     case "draft-discard":
       return tab.kind !== "new" && isDraftOnly(tab);
@@ -204,13 +202,7 @@ export function contextTabEligibleForRemoval(
 export function workingSetRouteForTab(tab: ContextTab) {
   return tab.kind === "new"
     ? null
-    : buildWorkingSetRoute(
-        tab.documentId,
-        tab.scheme,
-        tab.path,
-        isWorkScopedProjectContextScheme(tab.scheme) ? tab.workId : undefined,
-        tab.rootThreadId,
-      );
+    : buildWorkingSetRoute(tab.documentId, tab.scheme, tab.path, tab);
 }
 
 export function routeTargetForTab(tab: ContextTab, activeWorkId: string): ContextRouteTarget {
@@ -225,7 +217,7 @@ export function routeTargetForTab(tab: ContextTab, activeWorkId: string): Contex
     };
   const reviewers = Object.keys(reviewEntriesOf(tab));
   let workId = reviewEntryOf(tab, activeWorkId) ? activeWorkId : (reviewers[0] ?? activeWorkId);
-  if (isWorkScopedProjectContextScheme(tab.scheme)) {
+  if (isWorkScopedScheme(tab.scheme)) {
     if (!tab.workId) throw new Error("Work-scoped tab has no Work owner");
     workId = tab.workId;
   }
@@ -477,7 +469,7 @@ function workingSetRouteMatchesTarget(route: WorkingSetRoute, target: ContextRou
     route.scheme === target.scheme &&
     route.path === target.path &&
     route.rootThreadId === target.rootThreadId &&
-    (!isWorkScopedProjectContextScheme(route.scheme) ||
+    (!isWorkScopedScheme(route.scheme) ||
       route.rootThreadId !== undefined ||
       route.workId === target.workId)
   );
@@ -487,13 +479,7 @@ export function workingSetRouteForTarget(
   documentId: string,
   locator: ContextRouteTarget,
 ): WorkingSetRoute | null {
-  return buildWorkingSetRoute(
-    documentId,
-    locator.scheme,
-    locator.path,
-    locator.workId,
-    locator.rootThreadId,
-  );
+  return buildWorkingSetRoute(documentId, locator.scheme, locator.path, locator);
 }
 
 export function chooseAdmittedFallback(input: {
@@ -533,6 +519,8 @@ function contextualizeWorkingSetRoute(
   route: WorkingSetRoute,
   activeWorkId: string,
 ): ContextRouteTarget | null {
+  // A chat's upload has no Editor route; its recency entry only carries its chat.
+  if (route.scheme === "uploads") return null;
   if (route.rootThreadId)
     return {
       scheme: route.scheme,
@@ -541,7 +529,7 @@ function contextualizeWorkingSetRoute(
       rootThreadId: route.rootThreadId,
     };
   let workId = activeWorkId;
-  if (isWorkScopedProjectContextScheme(route.scheme)) {
+  if (isWorkScopedScheme(route.scheme)) {
     if (!route.workId) return null;
     workId = route.workId;
   }
@@ -552,9 +540,7 @@ function contextualizeProjectRoute(
   route: ContextRouteTarget,
   activeWorkId: string,
 ): ContextRouteTarget {
-  return isWorkScopedProjectContextScheme(route.scheme)
-    ? route
-    : { ...route, workId: activeWorkId };
+  return isWorkScopedScheme(route.scheme) ? route : { ...route, workId: activeWorkId };
 }
 
 function sameContinuityLocator(a: ContextRouteTarget, b: ContextRouteTarget): boolean {
@@ -562,8 +548,6 @@ function sameContinuityLocator(a: ContextRouteTarget, b: ContextRouteTarget): bo
     a.scheme === b.scheme &&
     a.path === b.path &&
     a.rootThreadId === b.rootThreadId &&
-    (!isWorkScopedProjectContextScheme(a.scheme) ||
-      a.rootThreadId !== undefined ||
-      a.workId === b.workId)
+    (!isWorkScopedScheme(a.scheme) || a.rootThreadId !== undefined || a.workId === b.workId)
   );
 }
