@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ownedLinkableSchemes } from "@/features/links/linkable-catalog-scopes";
 import { aggregateCatalogScope } from "./useContextCatalog";
 
 describe("a link index's catalogs", () => {
@@ -23,5 +24,9 @@ describe("a link index's catalogs", () => {
       workId: "arc",
     });
     expect(aggregateCatalogScope("project", "uploads", owners)).toBeNull();
+    // The link index requests only owned catalogs, so an Editor document's index can complete.
+    const editor = { projectId: "project", workId: "arc", rootThreadId: null, chatId: null };
+    expect(ownedLinkableSchemes(editor)).not.toContain("uploads");
+    expect(ownedLinkableSchemes({ ...editor, chatId: "chat" })).toContain("uploads");
   });
 });

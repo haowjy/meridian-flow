@@ -202,15 +202,5 @@ function UserTurnComponent({
   );
 }
 
-export const UserTurn = memo(
-  UserTurnComponent,
-  (prev, next) =>
-    prev.turn === next.turn &&
-    prev.writer === next.writer &&
-    prev.submissionRecovery === next.submissionRecovery &&
-    prev.queued === next.queued &&
-    prev.queueControls === next.queueControls &&
-    prev.lastQueued === next.lastQueued &&
-    prev.queuedCount === next.queuedCount,
-);
+export const UserTurn = memo(UserTurnComponent);
 UserTurn.displayName = "UserTurn";
