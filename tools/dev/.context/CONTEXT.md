@@ -44,10 +44,13 @@ and clones one database per worker from it. Managed names carry the owner's PID
 for GC, and `test-run-`, `test-manual-` and `migrations_` are reserved
 worktree-slug prefixes, so a worktree database can't pass for a managed one.
 
-`pnpm check` ends with `check-db-gate.ts`: it skips loudly only when the
-configured Postgres server is absent or unreachable (the static CI job has no
-database service), and otherwise runs the full managed `pnpm test:db` suite and
-propagates failures. `pnpm test:db` always forces the gate.
+`pnpm check` ends with `check-db-gate.ts`: Vitest's module graph selects DB test
+files related to changes since `origin/main`, including staged, unstaged and
+untracked files. No related DB files, or an absent or unreachable configured
+Postgres server, skips loudly. DB config, migrations, shared DB test support and
+DB-test lifecycle helpers bypass selection and run the full suite, as does
+`DB_GATE_FULL=1`. The gate provisions the same owned test databases as
+`pnpm test:db`; `pnpm test:db` and CI's `db-tests` job always run every DB file.
 
 ## Session and readiness
 
