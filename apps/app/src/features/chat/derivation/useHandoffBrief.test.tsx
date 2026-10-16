@@ -104,7 +104,10 @@ describe("useHandoffBrief Stop", () => {
     transport.cancel.mockRejectedValueOnce(new Error("offline"));
     await act(async () => latest.stop("s"));
     expect(latest.stopping.has("s")).toBe(false);
-    expect(latest.stopFailures).toEqual([{ turnId: "s", attempt: 1 }]);
+    expect(latest.stopFailures).toEqual([
+      { turnId: "s", requestId: expect.any(String), attempt: 1 },
+    ]);
+    const firstRequest = latest.stopFailures[0]?.requestId;
     expect(announcements.announceError).not.toHaveBeenCalled();
     transport.cancel.mockReturnValueOnce(new Promise(() => undefined));
     await act(async () => latest.stop("s"));
@@ -112,6 +115,9 @@ describe("useHandoffBrief Stop", () => {
     // A second failure is a new occurrence of the same Stop.
     transport.cancel.mockRejectedValueOnce(new Error("offline"));
     await act(async () => latest.stop("s"));
-    expect(latest.stopFailures).toEqual([{ turnId: "s", attempt: 2 }]);
+    expect(latest.stopFailures).toEqual([
+      { turnId: "s", requestId: expect.any(String), attempt: 3 },
+    ]);
+    expect(latest.stopFailures[0]?.requestId).not.toBe(firstRequest);
   });
 });
