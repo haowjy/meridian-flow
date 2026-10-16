@@ -50,7 +50,9 @@ export function useCreationComposer(projectId: string) {
           threadId: draft.chatId,
           threadActions,
           selectChat: (threadId) => {
-            draft.handoff();
+            // Recording the Send already handed off an unchanged draft; one that moved on since
+            // still names the chat just created, and must not reuse its id.
+            draft.handoffCreated(threadId);
             acceptCreatedChat(threadId);
           },
         }) !== null

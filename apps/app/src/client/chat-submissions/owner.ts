@@ -326,11 +326,11 @@ export class ChatSubmissionOwner {
           !cohort.some((record) => target.hasReceived(record.recordId))
         )
           snapshots.push(source.initialDraft);
+        const recordIds = messages.map((record) => record.recordId);
         if (
-          !target.prependSnapshots(
-            snapshots,
-            messages.map((record) => record.recordId),
-          )
+          !(entry.creation
+            ? target.recoverCreation(entry.threadId, snapshots, recordIds)
+            : target.prependSnapshots(snapshots, recordIds))
         )
           return false;
         if (entry.creation) {
@@ -535,8 +535,7 @@ export class ChatSubmissionOwner {
       const source = composerSessionDraft(accountId, { kind: "chat", id: threadId });
       const target = composerSessionDraft(accountId, { kind: "new-chat", id: projectId });
       // The server never had this chat, so the draft's uploads still belong to its id.
-      target.adoptChat(threadId);
-      if (source.initialDraft && !target.prependSnapshots([source.initialDraft])) return;
+      if (source.initialDraft && !target.recoverCreation(threadId, [source.initialDraft])) return;
       source.handoff();
       this.destination = "editing";
       this.rebuild();

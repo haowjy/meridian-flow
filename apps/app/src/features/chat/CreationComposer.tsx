@@ -71,7 +71,13 @@ export function CreationComposer({
     : null;
   // An archived Work refuses new chats, so it is never the new chat's Work.
   const work = selected && (selected.isNoWork || !isWorkArchived(selected)) ? selected : null;
-  const references = useReferenceBrowserCatalog(projectId, work?.id, t`Reference a file`);
+  const references = useReferenceBrowserCatalog(
+    projectId,
+    work?.id,
+    t`Reference a file`,
+    null,
+    creation.draft.chatId,
+  );
   const openDocument = useOpenChatDocument(projectId);
   // The Work's default shows until the writer picks a mode here, and only a
   // picked mode is sent: a stale default from another tab never overwrites a newer one.

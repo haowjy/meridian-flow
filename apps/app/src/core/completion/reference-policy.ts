@@ -210,15 +210,17 @@ function stableAuthority(
     case "user":
       return { kind: "user", userId: scope.userId };
     case "chat": {
+      // The scope already names the chat; its handle only appears once the chat exists.
       const parsed = parseContextUri(uri);
-      return parsed.ok && parsed.value.authority.kind === "chat"
-        ? {
-            kind: "chat",
-            projectId: scope.projectId,
-            chatId: scope.chatId,
-            chatRef: parsed.value.authority.chatRef,
-          }
-        : null;
+      return {
+        kind: "chat",
+        projectId: scope.projectId,
+        chatId: scope.chatId,
+        chatRef:
+          parsed.ok && parsed.value.authority.kind === "chat"
+            ? parsed.value.authority.chatRef
+            : null,
+      };
     }
     case "work": {
       const entry = authorities.get(`work:${scope.workId}`);

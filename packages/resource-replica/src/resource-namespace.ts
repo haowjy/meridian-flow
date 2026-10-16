@@ -342,8 +342,11 @@ function authorityMatches(
   owner: Parameters<typeof resourceContextAuthority>[1],
 ): boolean {
   const expected = resourceContextAuthority(scheme, owner);
+  // A chat's bare uploads URI parses as contextual: the handle exists only after creation.
+  const expectedKind =
+    expected.kind === "chat" && expected.chatRef === null ? "contextual" : expected.kind;
   return (
-    authority.kind === expected.kind &&
+    authority.kind === expectedKind &&
     (authority.kind !== "work" ||
       (expected.kind === "work" && authority.workSlug === expected.workSlug)) &&
     (authority.kind !== "lineage" ||
