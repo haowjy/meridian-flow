@@ -44,7 +44,27 @@ export function paintDecorations(
   handlersFor: (view: EditorView) => RemovalHandlers,
 ): { decorations: DecorationSet; removals: ReadonlyMap<string, RemovalPlan> } {
   const { doc, groups } = review;
-  const decorations: Decoration[] = [];
+  const before = previous.find();
+  const identity = (key: string, from: number, to: number) => `${key}:${from}:${to}`;
+  const retained = new Set<Decoration>();
+  const added: Decoration[] = [];
+  const reusable = new Map(
+    before.map((decoration) => [
+      identity(
+        decoration.spec.key ?? `${decoration.spec.renderKey}:added:${decoration.spec.node}`,
+        decoration.from,
+        decoration.to,
+      ),
+      decoration,
+    ]),
+  );
+  // All equality inputs are structural: identity and range prove reuse before allocating a decoration.
+  // Widget copy and transient state are updated separately by the view owner.
+  const retainOrAdd = (key: string, from: number, to: number, create: () => Decoration) => {
+    const old = reusable.get(identity(key, from, to));
+    if (old) retained.add(old);
+    else added.push(create());
+  };
   const removals: RemovalInput[] = [];
   /** Where the focused change ends: the bar's block goes after the paragraph holding this. */
   let focusedEnd: number | null = null;
@@ -56,22 +76,22 @@ export function paintDecorations(
       if (focused) focusedEnd = Math.max(focusedEnd ?? 0, hunk.inserted?.to ?? hunk.anchor);
       if (hunk.inserted) {
         for (const mark of addedMarks(doc, hunk.inserted.from, hunk.inserted.to)) {
-          const attrs = {
-            class: [ADDED_CLASS, mark.node && BLOCK_CLASS].filter(Boolean).join(" "),
-            [RENDER_ATTR]: key,
-          };
-          const spec = {
-            renderKey: key,
-            side: "added",
-            node: mark.node,
-            inclusiveStart: true,
-            inclusiveEnd: true,
-          };
-          decorations.push(
-            mark.node
+          retainOrAdd(`${key}:added:${mark.node}`, mark.from, mark.to, () => {
+            const attrs = {
+              class: [ADDED_CLASS, mark.node && BLOCK_CLASS].filter(Boolean).join(" "),
+              [RENDER_ATTR]: key,
+            };
+            const spec = {
+              renderKey: key,
+              node: mark.node,
+              side: "added",
+              inclusiveStart: true,
+              inclusiveEnd: true,
+            };
+            return mark.node
               ? Decoration.node(mark.from, mark.to, attrs, spec)
-              : Decoration.inline(mark.from, mark.to, attrs, spec),
-          );
+              : Decoration.inline(mark.from, mark.to, attrs, spec);
+          });
         }
       }
       // Format and whitespace hunks keep their text: the green mark says it, a struck copy would not.
@@ -95,7 +115,8 @@ export function paintDecorations(
   const plans = new Map<string, RemovalPlan>();
   for (const plan of planRemovals(removals)) {
     plans.set(plan.identity, plan);
-    decorations.push(
+    const key = `removal:${plan.identity}:${plan.block ? "block" : "inline"}`;
+    retainOrAdd(key, plan.position, plan.position, () =>
       Decoration.widget(
         plan.position,
         (view) =>
@@ -105,7 +126,7 @@ export function paintDecorations(
             renderAttr: RENDER_ATTR,
           }),
         {
-          key: `removal:${plan.identity}:${plan.block ? "block" : "inline"}`,
+          key,
           renderKey: plan.identity,
           side: -1,
           stopEvent: () => true,
@@ -115,45 +136,18 @@ export function paintDecorations(
   }
 
   if (barSlot && focusedEnd !== null) {
-    decorations.push(
-      Decoration.widget(
-        slotPosition(doc, focusedEnd),
-        (view) => createBarSlotElement(view.dom.ownerDocument),
-        {
-          // One slot per focused change, so the bar's DOM survives recomputes.
-          key: "bar-slot",
-          side: 1,
-          stopEvent: () => true,
-          ignoreSelection: true,
-        },
-      ),
+    const position = slotPosition(doc, focusedEnd);
+    retainOrAdd("bar-slot", position, position, () =>
+      Decoration.widget(position, (view) => createBarSlotElement(view.dom.ownerDocument), {
+        // The one slot follows focus without replacing its DOM.
+        key: "bar-slot",
+        side: 1,
+        stopEvent: () => true,
+        ignoreSelection: true,
+      }),
     );
   }
 
-  // Preserve the mapped tree and its unchanged decorations. Equality includes ranges and attrs;
-  // widget payload is updated by the view, never smuggled into its key.
-  const before = previous.find();
-  const byIdentity = new Map<string, Decoration[]>();
-  const identity = (decoration: Decoration) =>
-    decoration.spec.key ??
-    `${decoration.spec.renderKey}:${decoration.spec.side}:${decoration.spec.node}`;
-  for (const decoration of before) {
-    const key = identity(decoration);
-    const entries = byIdentity.get(key) ?? [];
-    entries.push(decoration);
-    byIdentity.set(key, entries);
-  }
-  const retained = new Set<Decoration>();
-  const added: Decoration[] = [];
-  for (const decoration of decorations) {
-    const same = byIdentity
-      .get(identity(decoration))
-      ?.find(
-        (old) => !retained.has(old) && old.from === decoration.from && old.to === decoration.to,
-      );
-    if (same) retained.add(same);
-    else added.push(decoration);
-  }
   return {
     decorations: previous.remove(before.filter((old) => !retained.has(old))).add(doc, added),
     removals: plans,
