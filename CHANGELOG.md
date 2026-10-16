@@ -3,6 +3,14 @@
 ## [Unreleased]
 
 - A chat no longer sits connected but silent when its catch-up fails or hangs: the app and `./mf` drop the connection after a server error or 20 seconds, and the usual reconnect resumes every open view from where it was. A view opened while the catch-up was already under way gets the events it was owed.
+- A socket replaced while still closing now reports its close once (handler callbacks, generation-closed listeners and subscription cleanup) instead of silently skipping them.
+
+- A disconnected or unsubscribed client no longer acquires a catalog listener when a pending project ownership read finishes.
+
+- Completed chat replay requests now release superseded request ids instead of retaining them until disconnect.
+
+- Leaving a chat from a stream-error or history-gap callback now cancels its recovery; an abandoned retry can no longer replace the next chat subscription and lose reply text.
+
 - The AI never sees a failure. `thread_history` no longer prints `error:` or `failure reason:` lines or marks failed turns: a failed turn shows the text and tool calls it kept, and is skipped when it kept none. Stop keeps its `cancelled` marker. A tool call that a failed reply never finished now reads "did not finish" instead of "interrupted by an error".
 - The server logs each failure once where it is classified and once where it ends, as `failure.recorded` and `failure.ended` in `./mf log` (a failed reply, compaction or handoff brief; a usage block and its clear). Each carries the occurrence id, a category and source, and how it ended (`retried`, `forgotten`, `moved_on` or `resolved`). They are emitted after the transaction commits. The event hub's `turn.error` log line is replaced by `failure.recorded`.
 - New `@meridian/contracts/failures` holds the failure types and `classifyReplyFailure`, the one place a failed reply's source is chosen.

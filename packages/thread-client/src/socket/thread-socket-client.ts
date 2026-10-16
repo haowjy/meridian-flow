@@ -1,12 +1,10 @@
 /**
  * ThreadSocketClient — the production `ThreadTransport` over `/api/threads/ws`.
  *
- * Owns the thread-domain control plane: per-thread subscribe/resume, gap
- * detection, and connection-state fan-out to subscribers. The socket lifecycle
- * (handshake readiness/deadline, connect/reconnect/backoff, ping-timeout,
- * generation tracking, terminal-close policy) lives in `SocketLifecycleController`;
- * message routing in `dispatch-ws-server-message`; subscription bookkeeping in
- * `ws-thread-subscription`. The single live agent-event transport.
+ * Routes thread-domain messages and connection notifications. Per-thread
+ * replay requests, outcomes, retries and delivery belong to the subscription registry.
+ * `SocketLifecycleController` owns handshake readiness, reconnect, ping timeout
+ * and generation fencing; `dispatch-ws-server-message` owns message routing.
  */
 import {
   type AGUIEvent,
@@ -15,6 +13,7 @@ import {
   parseWsServerMessage,
   type WsServerMessage,
 } from "@meridian/contracts/protocol";
+
 import { dispatchWsServerMessage } from "./dispatch-ws-server-message";
 import { SocketLifecycleController, type SocketLifecycleOptions } from "./socket-lifecycle";
 import type {
@@ -26,24 +25,21 @@ import type {
   ThreadTransportHandlers,
   ThreadTransportSubscribeOptions,
 } from "./thread-transport";
-import { DEFAULT_WS_REPLAY_DEADLINE_MS } from "./ws-thread-socket-utils";
-import {
-  type ActiveThreadSubscription,
-  oldestCursor,
-  WsThreadSubscriptionRegistry,
-} from "./ws-thread-subscription";
+import { WsThreadSubscriptionRegistry } from "./ws-thread-subscription";
 
 export type ThreadSocketClientOptions = SocketLifecycleOptions & {
   url: () => string;
   toError: (error: MeridianError) => Error;
   cancelTurn: (threadId: string, turnId: string) => Promise<CancelTurnResponse>;
-  /** Longest a replay may wait for its `subscribed`; pings do not extend it. */
-  replayDeadlineMs?: number;
 };
 
 export class ThreadSocketClient implements ThreadTransport {
   private readonly socket: SocketLifecycleController;
-  private readonly subscriptions = new WsThreadSubscriptionRegistry();
+  private readonly subscriptions = new WsThreadSubscriptionRegistry({
+    isConnected: () => this.socket.isServerConnected(),
+    nextRequestId: () => this.nextRequestId(),
+    send: (message) => this.send(message),
+  });
   private readonly connectionListeners = new Set<(state: ConnectionState) => void>();
   private readonly catalogSubscriptions = new Map<
     string,
@@ -54,11 +50,9 @@ export class ThreadSocketClient implements ThreadTransport {
   >();
   private readonly socketGenerationClosedListeners = new Set<(generation: number) => void>();
   private wantsConnection = false;
-  private readonly replayDeadlines = new Map<string, ReturnType<typeof setTimeout>>();
-  private readonly replayDeadlineMs: number;
+  private requestCounter = 0;
 
   constructor(private readonly options: ThreadSocketClientOptions) {
-    this.replayDeadlineMs = options.replayDeadlineMs ?? DEFAULT_WS_REPLAY_DEADLINE_MS;
     this.socket = new SocketLifecycleController(
       {
         buildUrl: options.url,
@@ -69,16 +63,11 @@ export class ThreadSocketClient implements ThreadTransport {
           // (it only advances on the next `startSocket`/`teardown`), so a send
           // tagged with it can be recognized as unconfirmed.
           const closedGeneration = this.socket.currentGeneration;
-          this.clearReplayDeadlines();
           for (const listener of this.socketGenerationClosedListeners) {
             listener(closedGeneration);
           }
-          for (const subscription of this.subscriptions.values()) {
-            this.subscriptions.connectionLost(subscription);
-            for (const handler of subscription.handlers) {
-              handler.onClose?.(event);
-            }
-          }
+          this.subscriptions.connectionLost();
+          for (const handler of this.subscriptions.handlers()) handler.onClose?.(event);
         },
         onSocketError: () => this.publishError(new Error("WebSocket error")),
         publishConnectionState: (state) => this.publishConnectionState(state),
@@ -96,8 +85,7 @@ export class ThreadSocketClient implements ThreadTransport {
   disconnect(_reason?: "logout" | "app_unmount"): void {
     this.wantsConnection = false;
     this.socket.teardown();
-    this.clearReplayDeadlines();
-    this.subscriptions.clearServerSubscribed();
+    this.subscriptions.connectionLost();
   }
 
   reconnect(): void {
@@ -119,33 +107,19 @@ export class ThreadSocketClient implements ThreadTransport {
     handlers: ThreadTransportHandlers,
     opts?: ThreadTransportSubscribeOptions,
   ): () => void {
-    const { subscription, sendSubscribe, forceSubscribe, waiters } = this.subscriptions.ensure(
-      threadId,
-      handlers,
-      opts?.after,
-    );
-
-    if (handlers.onConnectionState) {
-      handlers.onConnectionState(this.socket.state);
-    }
-
+    this.subscriptions.join(threadId, handlers, opts?.after);
+    handlers.onConnectionState?.(this.socket.state);
     this.ensureConnected();
-    if (sendSubscribe && this.socket.isServerConnected()) {
-      this.sendSubscribe(threadId, subscription, forceSubscribe, waiters);
-    }
-
-    return () => {
-      const removed = this.subscriptions.removeHandler(threadId, handlers);
-      if (!removed) return;
-      if (this.socket.isSocketOpen() && removed.serverSubscribed) {
-        this.send({ type: "unsubscribe", threadId });
-      }
-    };
+    return () => this.subscriptions.remove(threadId, handlers);
   }
 
   respondInterrupt(input: InterruptRespondInput): InterruptRespondReceipt {
     const socketGeneration = this.socket.currentGeneration;
-    const sent = this.send({ type: "interrupt.respond", ...input });
+    const sent = this.send({
+      type: "interrupt.respond",
+      requestId: this.nextRequestId(),
+      ...input,
+    });
     return sent ? { sent: true, socketGeneration } : { sent: false };
   }
 
@@ -173,7 +147,7 @@ export class ThreadSocketClient implements ThreadTransport {
     this.catalogSubscriptions.set(projectId, listeners);
     this.ensureConnected();
     if (first && this.socket.isServerConnected()) {
-      this.send({ type: "catalog.subscribe", projectId });
+      this.send({ type: "catalog.subscribe", requestId: this.nextRequestId(), projectId });
     }
     return () => {
       const current = this.catalogSubscriptions.get(projectId);
@@ -181,13 +155,18 @@ export class ThreadSocketClient implements ThreadTransport {
       if (current?.size) return;
       this.catalogSubscriptions.delete(projectId);
       if (this.socket.isServerConnected()) {
-        this.send({ type: "catalog.unsubscribe", projectId });
+        this.send({ type: "catalog.unsubscribe", requestId: this.nextRequestId(), projectId });
       }
     };
   }
 
   cancel(threadId: string, turnId: string) {
     return this.options.cancelTurn(threadId, turnId);
+  }
+
+  private nextRequestId(): string {
+    this.requestCounter += 1;
+    return `r${this.requestCounter}`;
   }
 
   private ensureConnected(): void {
@@ -209,178 +188,34 @@ export class ThreadSocketClient implements ThreadTransport {
       return;
     }
 
-    if (message.type === "subscribed") {
-      // Before the dispatch: it may queue the next replay, which arms its own deadline.
-      this.clearReplayDeadline(message.threadId);
-      this.socket.releaseBackoff();
-    }
     dispatchWsServerMessage(message, {
-      subscriptions: this.subscriptions,
       toError: this.options.toError,
       dispatchSequencedEvent: (threadId, seq, aguiEvent, error, sourceThreadId) =>
         this.dispatchSequencedEvent(threadId, seq, aguiEvent, error, sourceThreadId),
-      handleGap: (gap) => this.handleGap(gap),
-      resubscribe: (threadId) => {
-        const subscription = this.subscriptions.get(threadId);
-        if (subscription) this.sendSubscribe(threadId, subscription, true);
-      },
+      onSubscribed: (subscribed) => this.subscriptions.handleSubscribed(subscribed),
+      handleGap: (gap) => this.subscriptions.handleGap(gap),
       send: (payload) => this.send(payload),
       onConnected: () => {
         this.socket.markConnected();
-        this.sendResume();
-        if (!this.replayInFlight()) this.socket.releaseBackoff();
+        this.subscriptions.connected();
         for (const projectId of this.catalogSubscriptions.keys()) {
-          this.send({ type: "catalog.subscribe", projectId });
+          this.send({ type: "catalog.subscribe", requestId: this.nextRequestId(), projectId });
         }
       },
+      onRequestError: (requestId, error, retryable) =>
+        this.subscriptions.handleRequestError(requestId, error, retryable),
       onThreadError: (threadId, error) => {
-        const subscription = this.subscriptions.get(threadId);
-        if (!subscription) return;
-        for (const handler of subscription.handlers) {
+        for (const handler of this.subscriptions.handlers(threadId)) {
           handler.onError?.(error);
         }
-        if (subscription.replayInFlight) this.failReplay("replay_failed");
       },
       onInterruptResponseError: (threadId, error) => {
         for (const listener of this.interruptResponseErrorListeners) {
           listener({ threadId, error });
         }
       },
-      onGlobalError: (error) => {
-        this.publishError(error);
-        // The server's error names no request: any replay still waiting may be the one it failed.
-        if (this.replayInFlight()) this.failReplay("replay_failed");
-      },
+      onGlobalError: (error) => this.publishError(error),
     });
-  }
-
-  private replayInFlight(): boolean {
-    for (const subscription of this.subscriptions.values()) {
-      if (subscription.replayInFlight) return true;
-    }
-    return false;
-  }
-
-  /**
-   * A replay ended without `subscribed`. Recovery is the connection's alone: drop it, and the
-   * reconnect (backoff, banner) resumes every handler from its cursor, with held frames dropped
-   * and the replay state cleared.
-   */
-  private failReplay(reason: string): void {
-    this.clearReplayDeadlines();
-    this.socket.dropConnection(reason);
-  }
-
-  private armReplayDeadline(threadId: string): void {
-    this.clearReplayDeadline(threadId);
-    this.replayDeadlines.set(
-      threadId,
-      setTimeout(() => {
-        this.replayDeadlines.delete(threadId);
-        if (this.subscriptions.get(threadId)?.replayInFlight) this.failReplay("replay_deadline");
-      }, this.replayDeadlineMs),
-    );
-  }
-
-  private clearReplayDeadline(threadId: string): void {
-    const timer = this.replayDeadlines.get(threadId);
-    if (timer === undefined) return;
-    clearTimeout(timer);
-    this.replayDeadlines.delete(threadId);
-  }
-
-  private clearReplayDeadlines(): void {
-    for (const timer of this.replayDeadlines.values()) clearTimeout(timer);
-    this.replayDeadlines.clear();
-  }
-
-  private sendResume(): void {
-    if (!this.socket.isSocketOpen() || this.subscriptions.size === 0) return;
-    // A reconnect replays for every handler, so every handler waits for it.
-    for (const [threadId, subscription] of this.subscriptions.entries()) {
-      this.armReplayDeadline(threadId);
-      this.subscriptions.holdForReplay(subscription, subscription.handlers);
-      subscription.replayInFlight = true;
-      subscription.serverSubscribed = true;
-      subscription.requestedAfter = oldestCursor(subscription) ?? "0";
-    }
-    this.send({
-      type: "resume",
-      subscriptions: Array.from(this.subscriptions.entries()).map(([threadId, subscription]) => ({
-        threadId,
-        lastSeq: subscription.requestedAfter,
-      })),
-    });
-  }
-
-  private sendSubscribe(
-    threadId: string,
-    subscription: ActiveThreadSubscription,
-    force: boolean,
-    waiters: Iterable<ThreadTransportHandlers> = [],
-  ): void {
-    if (!this.socket.isSocketOpen()) {
-      subscription.serverSubscribed = false;
-      return;
-    }
-
-    if (subscription.serverSubscribed && !force) {
-      return;
-    }
-
-    this.subscriptions.holdForReplay(subscription, waiters);
-    // One replay at a time: the server answers only the latest request, so a
-    // second in-flight subscribe could leave the fence waiting forever.
-    if (subscription.replayInFlight) {
-      subscription.resendQueued = true;
-      return;
-    }
-
-    subscription.replayInFlight = true;
-    subscription.serverSubscribed = true;
-    const lastSeq = oldestCursor(subscription);
-    subscription.requestedAfter = lastSeq ?? "0";
-    this.armReplayDeadline(threadId);
-    this.send({
-      type: "subscribe",
-      threadId,
-      ...(lastSeq ? { lastSeq } : {}),
-    });
-  }
-
-  private async handleGap(message: Extract<WsServerMessage, { type: "gap" }>): Promise<void> {
-    const subscription = this.subscriptions.get(message.threadId);
-    if (!subscription) {
-      return;
-    }
-
-    subscription.gapCount += 1;
-    for (const handler of subscription.handlers) {
-      handler.onGap?.({
-        threadId: message.threadId,
-        cause: message.cause,
-        fromSeq: message.fromSeq,
-        toSeq: message.toSeq,
-        message: message.message,
-        gapCount: subscription.gapCount,
-      });
-    }
-
-    // A gap means the server could not replay from our cursor. Jump the resume
-    // point to the head it reported so the next subscribe requests events the
-    // server can actually serve; re-requesting the same unreplayable window
-    // would gap forever. The truncated history is recovered from the thread
-    // snapshot the onGap consumers refetch.
-    if (message.toSeq) {
-      this.subscriptions.skipTo(subscription, message.toSeq);
-    }
-
-    // The gap answers the request in flight in place of a `subscribed`, so the
-    // resubscribe below is the replay the fenced handlers now wait on.
-    subscription.replayInFlight = false;
-    if (this.socket.isSocketOpen()) {
-      this.sendSubscribe(message.threadId, subscription, true);
-    }
   }
 
   private send(payload: unknown): boolean {
@@ -406,18 +241,10 @@ export class ThreadSocketClient implements ThreadTransport {
     for (const listener of this.connectionListeners) {
       listener(state);
     }
-    for (const subscription of this.subscriptions.values()) {
-      for (const handler of subscription.handlers) {
-        handler.onConnectionState?.(state);
-      }
-    }
+    for (const handler of this.subscriptions.handlers()) handler.onConnectionState?.(state);
   }
 
   private publishError(error: Error): void {
-    for (const subscription of this.subscriptions.values()) {
-      for (const handler of subscription.handlers) {
-        handler.onError?.(error);
-      }
-    }
+    for (const handler of this.subscriptions.handlers()) handler.onError?.(error);
   }
 }

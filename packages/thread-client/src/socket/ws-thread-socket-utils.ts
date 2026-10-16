@@ -8,7 +8,12 @@ import { WS_CLOSE } from "@meridian/contracts/protocol";
 import type { SocketClose } from "./socket-ports";
 
 export const DEFAULT_WS_PING_TIMEOUT_MS = 45_000;
-/** A replay's `subscribed` must arrive within this; server pings do not reset it. */
+
+/**
+ * One replay request's bound, from its send to its outcome. A backstop for a
+ * request the server never answers; pings do not reset it. The slowest
+ * legitimate case measured (five 50k-row threads on a cold hub) took 2 s.
+ */
 export const DEFAULT_WS_REPLAY_DEADLINE_MS = 20_000;
 
 export function isTerminalWsClose(event: SocketClose): boolean {
