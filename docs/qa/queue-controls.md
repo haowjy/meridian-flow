@@ -122,7 +122,9 @@ ordinary message the reply answers, the box is empty, and no card shows.
 
 ## QC-08: failure cards
 
-Each is an error `FailureCard` above the box, except the last row. None announces itself.
+Hand-back failures are `FailureCard`s above the box. A queued-command failure
+sits in that command's row. None announces itself; the chat's keyed announcer
+publishes watched cards.
 
 - **Committed, answer lost:** as QC-05 without reloading. Rows gone, card with Try again. Restore
   `fetch`, Try again: the words arrive once, the card clears.
