@@ -29,8 +29,10 @@ remain outside it.
   an error card in the notice stack, "Couldn't stop the reply." with Try again,
   which replays the same request. The chat draws it (`HandBackCards`, from
   `handBackCards`) through `notices`, not the composer. It shows while the reply still
-  runs, even once the writer types, and goes when the Stop succeeds, Try again is
-  pressed or Dismiss. Escape stops only while Stop shows. Stopping and sending at once
+  runs, even once the writer types, and goes when the Stop is confirmed (Try again
+  re-posts it, and the card stays until that succeeds) or on Dismiss after a refusal.
+  Once the reply it targeted ends, its copy changes to "Couldn't move your queued
+  message to the message box." (or "Couldn't move your queued message." when refused). Escape stops only while Stop shows. Stopping and sending at once
   lives in the queue: Send now is on the last queued row, not in the composer.
 - Hosts own session persistence through `initialDraft`/`onDraftChange`; apply an
   initial snapshot once. A successful catalog acquisition removes restored
