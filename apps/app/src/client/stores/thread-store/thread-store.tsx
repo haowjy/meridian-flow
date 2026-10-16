@@ -6,9 +6,7 @@
 import {
   type Block,
   blockContentRecord,
-  compareSeq,
   interruptIdForBlock,
-  parseSeq,
   type ThreadListItem,
   type Turn,
   type TurnStatus,
