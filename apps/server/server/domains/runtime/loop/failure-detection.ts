@@ -85,52 +85,30 @@ async function recordSettled(
 
 /**
  * Records that each failed turn in `turnIds` ended; ids of turns that did not fail (a forgotten message)
- * are skipped, and so is anything `already` says ended another way.
+ * are skipped. The caller owns which failures end now: the recorder does not second-guess it.
  */
 export async function recordEnded(
   deps: Detector,
   turnIds: readonly string[],
   end: Extract<FailureRecord, { phase: "ended" }>["end"],
   byTurnId: string | undefined,
-  already?: (turn: Turn) => Promise<boolean>,
 ): Promise<void> {
   if (!deps.eventWriter.recordFailure) return;
   const graph = turnGraph(deps.repos.turns);
   for (const id of turnIds) {
     const turn = await graph.findById(id as never);
-    if (turn?.status !== "error" || (await already?.(turn))) continue;
+    if (turn?.status !== "error") continue;
     deps.eventWriter.recordFailure(ended(turn, end, byTurnId));
   }
 }
 
-function isHandoffSeed(turn: Turn): boolean {
-  const metadata = turn.metadata;
-  return (
-    !!metadata &&
-    typeof metadata === "object" &&
-    !Array.isArray(metadata) &&
-    metadata.kind === "derivation_seed" &&
-    metadata.derivation === "handoff"
-  );
-}
-
-/** Turns a closing row passes with their content kept end as moved on. */
+/** Turns whose failure ends at this closing row, as the transition's decision lists them, end as moved on. */
 export async function recordPassed(
   deps: Detector,
-  threadId: ThreadId,
   passedIds: readonly string[],
   byTurnId: string | undefined,
 ): Promise<void> {
-  if (passedIds.length === 0 || !deps.eventWriter.recordFailure) return;
-  // A failed seed that a later seed retried ended as `retried` when the Retry began.
-  const latestSeed = await deps.repos.turns.findLatestHandoffSeed(threadId);
-  await recordEnded(
-    deps,
-    passedIds,
-    "moved_on",
-    byTurnId,
-    async (turn) => isHandoffSeed(turn) && latestSeed !== null && latestSeed.id !== turn.id,
-  );
+  await recordEnded(deps, passedIds, "moved_on", byTurnId);
 }
 
 /** The detection for one durable event, run inside the transaction that projected it. */

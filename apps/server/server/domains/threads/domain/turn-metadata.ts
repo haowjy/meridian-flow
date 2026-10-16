@@ -119,10 +119,12 @@ export const CompactionFailureOutcomeCodec = z.object({
 
 export type CompactionFailureOutcome = z.infer<typeof CompactionFailureOutcomeCodec>;
 
-// A reason added to either codec must be classified in `@meridian/contracts/failures`, or this fails.
+// A reason added to either codec must be classified in `@meridian/contracts/failures`: the constraint
+// fails to compile for an unclassified member (a conditional type resolving to `never` would not).
+type AssertClassified<_Reason extends TypedFailureReason> = true;
 type _FailureReasonsAreClassified = [
-  z.infer<typeof HandoffFailureReasonCodec> extends TypedFailureReason ? true : never,
-  z.infer<typeof CompactionFailureReasonCodec> extends TypedFailureReason ? true : never,
+  AssertClassified<z.infer<typeof HandoffFailureReasonCodec>>,
+  AssertClassified<z.infer<typeof CompactionFailureReasonCodec>>,
 ];
 
 const compactionFailureMetadataFields = {
