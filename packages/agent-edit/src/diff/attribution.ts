@@ -161,6 +161,26 @@ function slideDelete(text: string, p: number, removed: string, cap: number) {
   return { lo, hi, cut: p - lo >= cap || hi - p >= cap };
 }
 
+/** Equal boundary whitespace is context, not part of a replaced word. */
+function replacement(now: string, was: string) {
+  let head = 0;
+  let tail = 0;
+  while (head < now.length && head < was.length && /\s/u.test(now[head]) && now[head] === was[head])
+    head++;
+  while (
+    tail < now.length - head &&
+    tail < was.length - head &&
+    /\s/u.test(now[now.length - 1 - tail]) &&
+    now[now.length - 1 - tail] === was[was.length - 1 - tail]
+  )
+    tail++;
+  return {
+    head,
+    added: now.slice(head, now.length - tail),
+    removed: was.slice(head, was.length - tail),
+  };
+}
+
 /** The hunk's token range split at block tokens: a leading run of text, then one segment per block. */
 function segments(toks: readonly Tok[], lo: number, hi: number): Array<[number, number]> {
   const out: Array<[number, number]> = [];
@@ -488,26 +508,8 @@ class Classifier {
         let hi = lo + now.text.length;
         // Scan the whole slide envelope once, not once per candidate alignment. No precision cap
         // may choose which items Apply accepts, even when Phase 2 never runs.
-        let head = 0;
-        let tail = 0;
-        // Token whitespace is context when present on both sides, not an inserted/deleted word.
-        while (
-          head < now.text.length &&
-          head < was.length &&
-          /\s/u.test(now.text[head]) &&
-          now.text[head] === was[head]
-        )
-          head++;
-        while (
-          tail < now.text.length - head &&
-          tail < was.length - head &&
-          /\s/u.test(now.text[now.text.length - 1 - tail]) &&
-          now.text[now.text.length - 1 - tail] === was[was.length - 1 - tail]
-        )
-          tail++;
+        const { head, added, removed } = replacement(now.text, was);
         const start = now.at + head;
-        const added = now.text.slice(head, now.text.length - tail);
-        const removed = was.slice(head, was.length - tail);
         if (!ix.bad && added.length) {
           const slide = slideInsert(ix.text, start, added.length, Infinity);
           lo = Math.min(lo, slide.lo);
@@ -553,7 +555,22 @@ class Classifier {
   private names(changes: readonly Boundary[]): Names {
     const acc: Names = { names: new Map(), incomplete: false };
     const boundaries: Boundaries = {
-      text: (b, _raw, _was, now, before) => this.chars(acc, b, now.at, before, now.text),
+      text: (b, raw, was, now, before) => {
+        this.chars(acc, b, now.at, before, now.text);
+        if (acc.incomplete) return;
+        const { head, added, removed } = replacement(raw.text, was);
+        if (!added || !removed || added === removed) return;
+        const start = raw.at + head;
+        let replaced = true;
+        this.eachChar(this.index(b), start, start + added.length, (c, k) => {
+          const who = this.origin(c, k);
+          if (who === BASE || who === UNKNOWN) replaced = false;
+        });
+        // Equal letters in recreated words are not retained base anchors: sword → sabre shares
+        // s/r, but its five base tombstones still prove who removed sword. Keep the exact red
+        // rule over the whole replacement, rather than matching its smaller character deletions.
+        if (replaced) this.deletion(acc, b, [start, start + added.length], removed);
+      },
       items: (items, name = true) => {
         if (!name) return;
         for (const item of items) {
