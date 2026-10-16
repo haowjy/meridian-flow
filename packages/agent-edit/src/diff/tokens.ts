@@ -200,7 +200,8 @@ function joinText(nodes: PMNode[]): PMNode[] {
 }
 
 // ---------- shared diff helpers ----------
-export const DIFF_OPTS = { checkLines: false, timeout: 30 };
+// Text alone decides the diff. Interactive bounds belong to deterministic input-size limits.
+export const DIFF_OPTS = { checkLines: false, timeout: 0 };
 
 /** Largest count of distinct keys one UTF-16 code per key can name (the surrogate block is skipped). */
 const MAX_CODES = 0xffff - 0x800 - 1;

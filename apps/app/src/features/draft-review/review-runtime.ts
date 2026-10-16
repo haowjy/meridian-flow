@@ -9,7 +9,8 @@
  * Readers select from that state; none of them recomputes it.
  *
  * Two sources, one stream. With no editor the runtime reads the room's Yjs text on a 120 ms trailing
- * debounce (the draft dock and the Work page). With editors attached (`attachEditor`) it projects the first
+ * debounce (the draft dock and the Work page), retaining unchanged nodes with the binding's Yjs
+ * mapping invalidation rule. With editors attached (`attachEditor`) it projects the first
  * attached editor's state, whose unchanged top-level nodes hit the diff core's node caches: a recompute runs 120 ms after
  * the writer's edits, at once for a peer's write or a `review_base` change, and the previous frame stays
  * painted (mapped through the writer's edits by the painter) until the next is ready.
@@ -175,6 +176,7 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
   let synced = room.getSnapshot().status === "synced";
   /** The base blocks, parsed once per schema (an editor's own, or the headless one) until `review_base` changes. */
   let baseBlocks = new Map<Schema | null, PMNode[]>();
+  let projectedBase: typeof baseBlocks | null = null;
 
   const attributionOf = (frame: ReviewFrame): Attribution => {
     // Until the chats' writes have loaded, a change is not the writer's: nothing is said.
@@ -443,6 +445,7 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
     if (!from && !synced) return state.frame;
     const frame = from ? projectEditor(from) : projectHeadless();
     if (!frame) return state.frame;
+    projectedBase = baseBlocks;
     publish(frame, deferred);
     return frame;
   };
@@ -536,7 +539,17 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
       attached.on("transaction", onTransaction);
       // A second editor joins a frame already published: it is painted now, not at the next change.
       paintAttachment(attached, painted);
-      flushSoon();
+      // A headless frame already describes this text. Paint can bind its positions across schemas;
+      // commands still project in their own editor schema before composing Discard's replacement.
+      if (
+        painted &&
+        projectedBase === baseBlocks &&
+        Y.equalSnapshots(painted.snapshot, Y.snapshot(yDoc)) &&
+        sameContent(painted.doc, attached.state.doc)
+      ) {
+        if (timer) clearTimeout(timer);
+        timer = null;
+      } else flushSoon();
       return () => {
         attached.off("transaction", onTransaction);
         const at = attachments.indexOf(attachment);

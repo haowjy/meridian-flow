@@ -1,11 +1,10 @@
 /**
- * Anchored alignment of two token sides. Equal blocks are anchors (Myers over one code per block key);
- * each gap between anchors is token-diffed on its own, and an empty gap costs nothing. So the cost
- * follows the size of the edits, not the size of the document.
+ * Align by retained paragraph identity: equal paragraphs anchor the diff; changed paragraphs and
+ * small split/join runs are cached units. A new node re-diffs only its unit, while the paragraph pass
+ * relocates every cached result. A deterministic size cap guards an oversized unit, never the chapter.
  *
- * Inside a gap, words align first (they rarely repeat nearby), then punctuation between matched words,
- * then paragraph starts pair with the paragraph their first aligned word landed in. That reads a split
- * or a join as ordinary hunks over block-start tokens.
+ * Within a unit, words align before punctuation, and paragraph starts follow their first matched word.
+ * That keeps a small split or join reading as one edit instead of unrelated paragraph replacements.
  */
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT } from "@sanity/diff-match-patch";
 import type { Node as PMNode } from "prosemirror-model";
@@ -14,6 +13,7 @@ import { type Hunk, posMap } from "./hunks.js";
 import {
   blockKey,
   blockWords,
+  buildSide,
   coreKey,
   diffKeys,
   isBlockTok,
@@ -32,7 +32,7 @@ export interface Alignment {
 export function align(B: Side, S: Side): Alignment {
   const baseToSide = new Int32Array(B.blocks.length).fill(-1);
   const sideToBase = new Int32Array(S.blocks.length).fill(-1);
-  const hunks: Hunk[] = [];
+  const units: UnitHunk[] = [];
   let bi = 0;
   let si = 0;
   let gb = 0;
@@ -41,7 +41,7 @@ export function align(B: Side, S: Side): Alignment {
     if (gb === bi && gs === si) return;
     for (const [b0, b1, s0, s1] of anchorGap(B, gb, bi, S, gs, si)) {
       if (b0 === b1 && s0 === s1) continue;
-      tokenHunks(B, B.starts[b0], B.starts[b1], S, S.starts[s0], S.starts[s1], hunks);
+      boundedGap(B, b0, b1, S, s0, s1, units);
     }
   };
   for (const [op, n] of diffKeys(B.blocks.map(blockKey), S.blocks.map(blockKey))) {
@@ -59,10 +59,12 @@ export function align(B: Side, S: Side): Alignment {
     else if (op === DIFF_INSERT) si += n;
   }
   gap();
-  canonicalize(B.toks, S.toks, hunks);
-  const fine = refine(B.toks, hunks);
-  hunks.length = 0;
-  hunks.push(...fine);
+  canonicalize(
+    B.toks,
+    S.toks,
+    units.map((unit) => unit.raw),
+  );
+  const hunks = units.flatMap((unit) => unit.refined);
   return { hunks, baseToSide, sideToBase, pos: posMap(B.toks.length, hunks) };
 }
 
@@ -72,13 +74,18 @@ export function align(B: Side, S: Side): Alignment {
  * near the same position), so each token diff stays paragraph-sized. Small gaps stay whole: the
  * content-first diff over a gap is what reads a split or a join as one.
  */
-const ANCHOR_GAP_TOKENS = 1500;
+// 1,000 tokens preserves ordinary split/join gaps while capping Myers' quadratic search.
+// Disjoint 1,000-word paragraphs measured 18–29 ms; 1,500 reached 128 ms (KF30 probe).
+// Chapter-sized rewrites pair paragraphs instead, and oversized paragraphs stay whole replacements.
+const ANCHOR_GAP_TOKENS = 1000;
 const ANCHOR_SIMILAR = 0.8;
 const ANCHOR_BAND = 40;
 
 // Repeated recomputes over retained nodes ask the same pairs again; nodes are immutable.
 const similarityMemo = new WeakMap<PMNode, WeakMap<PMNode, number>>();
 function cachedSimilarity(a: PMNode, b: PMNode): number {
+  if (blockWords(a).length > ANCHOR_GAP_TOKENS || blockWords(b).length > ANCHOR_GAP_TOKENS)
+    return 0;
   let row = similarityMemo.get(a);
   if (!row) {
     row = new WeakMap();
@@ -98,14 +105,29 @@ function anchorGap(
   S: Side,
   gs: number,
   si: number,
+  threshold = ANCHOR_SIMILAR,
 ): Array<[number, number, number, number]> {
   const whole: Array<[number, number, number, number]> = [[gb, bi, gs, si]];
   if (
-    B.starts[bi] - B.starts[gb] < ANCHOR_GAP_TOKENS &&
-    S.starts[si] - S.starts[gs] < ANCHOR_GAP_TOKENS
+    B.starts[bi] - B.starts[gb] <= ANCHOR_GAP_TOKENS &&
+    S.starts[si] - S.starts[gs] <= ANCHOR_GAP_TOKENS
   )
     return whole;
   if (bi - gb < 2 || si - gs < 2) return whole;
+  // Dense in-place edits need no quadratic paragraph search. This is the same maximal matching
+  // the ordered matcher returns when every diagonal pair qualifies.
+  if (
+    bi - gb === si - gs &&
+    B.blocks
+      .slice(gb, bi)
+      .every(
+        (a, k) =>
+          a.type === S.blocks[gs + k].type &&
+          a.isTextblock &&
+          cachedSimilarity(a, S.blocks[gs + k]) >= threshold,
+      )
+  )
+    return Array.from({ length: bi - gb }, (_, k) => [gb + k, gb + k + 1, gs + k, gs + k + 1]);
   const sets = new Map<PMNode, Set<string>>();
   const setOf = (n: PMNode) => {
     let x = sets.get(n);
@@ -123,11 +145,11 @@ function anchorGap(
     if (a.type !== b.type || !a.isTextblock) return 0;
     const sa = setOf(a);
     const sb = setOf(b);
-    if (Math.min(sa.size, sb.size) < ANCHOR_SIMILAR * Math.max(sa.size, sb.size)) return 0;
+    if (Math.min(sa.size, sb.size) < threshold * Math.max(sa.size, sb.size)) return 0;
     let common = 0;
     for (const t of sa) if (sb.has(t)) common++;
-    if (common < ANCHOR_SIMILAR * Math.max(sa.size, sb.size)) return 0;
-    return cachedSimilarity(a, b) >= ANCHOR_SIMILAR ? 1 : 0;
+    if (common < threshold * Math.max(sa.size, sb.size)) return 0;
+    return cachedSimilarity(a, b) >= threshold ? 1 : 0;
   };
   const m = weightedOrderedMatches(w, gb, bi, gs, si, 4_000_000);
   if (!m?.length) return whole;
@@ -141,6 +163,99 @@ function anchorGap(
   }
   out.push([pb, bi, ps, si]);
   return out;
+}
+
+type UnitHunk = { raw: Hunk; refined: Hunk[] };
+type UnitMemo = { next: WeakMap<object, UnitMemo>; hunks?: UnitHunk[] };
+const units: UnitMemo = { next: new WeakMap() };
+const sideBoundary = {};
+
+/**
+ * The ordered base nodes, a boundary, then the ordered draft nodes identify one unit. A weak trie
+ * retains small multi-paragraph runs without retaining old documents; the boundary distinguishes
+ * [a] → [b, c] from [a, b] → [c]. Cached offsets belong to the unit, not its place in the document.
+ */
+function unitHunks(
+  B: Side,
+  b0: number,
+  b1: number,
+  S: Side,
+  s0: number,
+  s1: number,
+  out: UnitHunk[],
+) {
+  let memo = units;
+  const step = (node: object) => {
+    let next = memo.next.get(node);
+    if (!next) {
+      next = { next: new WeakMap() };
+      memo.next.set(node, next);
+    }
+    memo = next;
+  };
+  for (let b = b0; b < b1; b++) step(B.blocks[b]);
+  step(sideBoundary);
+  for (let s = s0; s < s1; s++) step(S.blocks[s]);
+  if (!memo.hunks) {
+    const base = buildSide(B.blocks.slice(b0, b1));
+    const draft = buildSide(S.blocks.slice(s0, s1));
+    const hunks: Hunk[] = [];
+    if (base.toks.length > ANCHOR_GAP_TOKENS || draft.toks.length > ANCHOR_GAP_TOKENS)
+      hunks.push({ from: 0, to: base.toks.length, sfrom: 0, ins: draft.toks });
+    else tokenHunks(base, 0, base.toks.length, draft, 0, draft.toks.length, hunks);
+    memo.hunks = hunks.map((raw) => ({ raw, refined: refine(base.toks, [raw]) }));
+  }
+  const relocate = (h: Hunk): Hunk => ({
+    ...h,
+    from: h.from + B.starts[b0],
+    to: h.to + B.starts[b0],
+    sfrom: h.sfrom + S.starts[s0],
+  });
+  for (const unit of memo.hunks) {
+    const raw = relocate(unit.raw);
+    // Canonicalization only moves pure insertions/deletions; refinement only splits replacements.
+    // Keep the raw neighbour bounds until canonicalization, and share its moved pure hunks.
+    out.push({ raw, refined: unit.refined.map((h) => (h === unit.raw ? raw : relocate(h))) });
+  }
+}
+
+/** Keep small split/join gaps whole. Large unmatched runs pair in order, not by token search. */
+function boundedGap(
+  B: Side,
+  b0: number,
+  b1: number,
+  S: Side,
+  s0: number,
+  s1: number,
+  out: UnitHunk[],
+) {
+  if (b1 - b0 === 1 && s1 - s0 === 1) {
+    unitHunks(B, b0, b1, S, s0, s1, out);
+    return;
+  }
+  if (
+    B.starts[b1] - B.starts[b0] <= ANCHOR_GAP_TOKENS &&
+    S.starts[s1] - S.starts[s0] <= ANCHOR_GAP_TOKENS
+  ) {
+    unitHunks(B, b0, b1, S, s0, s1, out);
+    return;
+  }
+  if (b1 - b0 !== s1 - s0) {
+    const paired = anchorGap(B, b0, b1, S, s0, s1, 0.4);
+    if (paired.length > 1) {
+      for (const [b, be, s, se] of paired)
+        if (b < be || s < se) boundedGap(B, b, be, S, s, se, out);
+      return;
+    }
+  }
+  // No strong anchors survived. Position is only a boundary for work, not evidence of equal text:
+  // every token still participates in either a bounded diff or a whole-paragraph replacement.
+  while (b0 < b1 && s0 < s1) {
+    unitHunks(B, b0, b0 + 1, S, s0, s0 + 1, out);
+    b0++;
+    s0++;
+  }
+  if (b0 < b1 || s0 < s1) unitHunks(B, b0, b1, S, s0, s1, out);
 }
 
 /**
@@ -318,7 +433,7 @@ function refine(bt: Tok[], hunks: Hunk[]): Hunk[] {
   for (const h of hunks) {
     const n = h.to - h.from;
     const m = h.ins.length;
-    if (!n || !m) {
+    if (!n || !m || n > ANCHOR_GAP_TOKENS || m > ANCHOR_GAP_TOKENS) {
       out.push(h);
       continue;
     }

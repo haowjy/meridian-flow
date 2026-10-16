@@ -31,6 +31,39 @@ decorates (`inserted`, `anchor`), the base content drawn red (`removed`) and a
 short excerpt. The projection is pure and retains nothing, so a caller that
 keeps PM nodes between edits pays only for the changed region.
 
+## Only diff the units whose nodes changed
+
+Equal paragraphs anchor the diff and need no token search. Each changed
+paragraph, or small run of adjacent changed paragraphs needed to read a split or
+join together, is one **unit**. A weak trie keyed by the ordered retained base
+nodes, a side boundary, and the ordered retained draft nodes caches that unit's
+token hunks and their word/mark refinement. Canonicalization still runs against
+the raw neighbouring boundaries: it moves only pure insertions/deletions, whereas
+refinement only splits replacements. Like ProseMirror's view, it follows immutable node identity: a
+keystroke or AI write re-diffs only the unit whose nodes changed. Other units
+reuse their hunks; the paragraph-level pass supplies their new positions.
+Cached offsets are unit-local and publication copies them, so moving a paragraph
+or typing before it cannot mutate another unit's coordinates.
+
+The size cap is a guard for one oversized unit, not the primary performance
+mechanism. Alignment never uses a wall-clock timeout (`DIFF_OPTS.timeout = 0`).
+Gaps of at most 1,000 tokens per side stay whole, preserving small splits and
+joins. Larger gaps use ordered 80%-similar paragraph anchors; unequal residual
+runs try 40% anchors. Remaining paragraphs pair in order, with excess paragraphs
+inserted or deleted. Position bounds work, not whether text is equal. A unit
+still over budget is one whole replacement, without later word-level refinement.
+
+Disjoint paragraph probes took 18–29 ms around 1,000 words, versus up to 128 ms
+around 1,500, motivating the guard. Strong diagonal matches avoid the paragraph
+matching table for dense in-place edits. Caches change cost, never output.
+
+Pure character-refinement scripts also reuse retained draft nodes and the base
+array, keyed by their exact input strings. Their cache is bounded to the 64k
+character budget per node, and hits consume the same naming budget as misses.
+No Yjs evidence, membership or author result is cached: those still read the
+current room on every classification. Incremental attribution and publication
+remain separate work (#900).
+
 ## Attribution footprint and names
 
 Classification has two phases over raw word/structural boundaries. The mandatory

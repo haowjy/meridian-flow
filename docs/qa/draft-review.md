@@ -188,6 +188,15 @@ follows it. Use a Work with two changes in Chapter A and one in Chapter B.
 7. Phone (no typing, no Ctrl+Z). Discard happens in place and offers its own Undo; see
    [Probe I.9](#probe-i-the-change-list-on-both-shells).
 
+## Large rewrites
+
+On 10k- and 50k-word full rewrites, time open and native typing through the next
+paint (including a paused key after the 120 ms review debounce). Check that attach
+paints the headless frame without a second projection, unchanged paragraphs reuse
+their diff work, and a paragraph above the token budget shows whole red/green
+replacement rather than cross-paragraph word noise. Repeat the move, cut/paste
+and Discard Undo checks below; retained and fresh-node diffs must agree.
+
 ## Probe C: moves, Ctrl+Z and view handoff
 
 1. In an Editor review, select the first paragraph including its break with a native DOM
@@ -952,3 +961,11 @@ emphasis survives the settled DOM. Undo restores the original prose and review.
 Check ordinary text input and auto-pairs inside and at the edge of green, then move a paragraph,
 Undo, native cut/paste and Undo twice. Discard and Undo must restore exact text and red/green marks;
 Apply must publish exactly the reviewed text. Reload has fresh render keys but identical semantics.
+
+### Headless identity reuse
+
+With a large rewritten draft closed, let an AI write change one paragraph while
+its Work/dock review is visible. Reopen it: counts, red/green marks and pins must
+match a fresh load. The headless refresh must retain all other paragraph nodes;
+projection should re-diff one unit, and resolving an existing pin must not rebuild
+the document. Repeat after Undo and a remote paragraph deletion.

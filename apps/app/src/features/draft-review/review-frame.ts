@@ -17,6 +17,7 @@ import type { Node as PMNode } from "@tiptap/pm/model";
 import {
   absolutePositionToRelativePosition,
   initProseMirrorDoc,
+  refreshProseMirrorDoc,
   relativePositionToAbsolutePosition,
 } from "@tiptap/y-tiptap";
 import * as Y from "yjs";
@@ -58,10 +59,35 @@ export function buildFrame(
   return { ...projection, doc: draft, snapshot: Y.snapshot(yDoc), pins };
 }
 
+// A room has one runtime, but headless Discard also reads it directly. Both must use the same
+// retained nodes and current pin mapping, not a fresh conversion (or a second per-command cache).
+const roomContents = new WeakMap<Y.Doc, ReturnType<typeof initProseMirrorDoc>>();
+function roomContent(doc: Y.Doc) {
+  let content = roomContents.get(doc);
+  if (!content) {
+    const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
+    const retained = initProseMirrorDoc(fragment, roomSchema());
+    roomContents.set(doc, retained);
+    const refresh = (_events: Y.YEvent<Y.AbstractType<unknown>>[], transaction: Y.Transaction) => {
+      const next = refreshProseMirrorDoc(fragment, roomSchema(), retained.meta, transaction);
+      retained.doc = next.doc;
+    };
+    // Observe Yjs, not PM steps: remote writes and Undo are one whole-document replace step,
+    // even though the binding preserves every untouched node's identity inside that replacement.
+    fragment.observeDeep(refresh);
+    doc.once("destroy", () => {
+      fragment.unobserveDeep(refresh);
+      roomContents.delete(doc);
+    });
+    content = retained;
+  }
+  return content;
+}
+
 /** The review of a room nobody has open, read from its Yjs text alone. */
 export function projectRoom(doc: Y.Doc, base: readonly PMNode[] = readBase(doc)): ReviewFrame {
   const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-  const { doc: root, mapping } = initProseMirrorDoc(fragment, roomSchema());
+  const { doc: root, mapping } = roomContent(doc);
   return buildFrame(doc, base, root, (position) =>
     absolutePositionToRelativePosition(position, fragment, mapping),
   );
@@ -70,7 +96,7 @@ export function projectRoom(doc: Y.Doc, base: readonly PMNode[] = readBase(doc))
 /** Where a pin made by an earlier frame stands in the room's text now, or null when it is gone. */
 export function locateInRoom(doc: Y.Doc, pin: Y.RelativePosition): number | null {
   const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-  const { mapping } = initProseMirrorDoc(fragment, roomSchema());
+  const { mapping } = roomContent(doc);
   return relativePositionToAbsolutePosition(doc, fragment, pin, mapping);
 }
 

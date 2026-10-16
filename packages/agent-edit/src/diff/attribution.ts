@@ -16,6 +16,7 @@
 import type { Author } from "@meridian/contracts/drafts";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT, makeDiff } from "@sanity/diff-match-patch";
+import type { Node as PMNode } from "prosemirror-model";
 import * as Y from "yjs";
 import { type ApplyEntry, readApplyRecord } from "./apply-record.js";
 import { DRAFT_SERVER_CLIENT_ID } from "./draft-base.js";
@@ -67,6 +68,13 @@ export interface ClassifyOptions {
   /** Characters a repeated-text slide may scan each way before the exact byline gives way to membership (tests lower it). */
   slide?: number;
 }
+
+// Cache only pure character scripts, never Yjs evidence or names. A retained node can acquire
+// different spans after neighbouring edits; bound its entries, and retire them when the base changes.
+const characterDiffs = new WeakMap<
+  readonly PMNode[],
+  WeakMap<PMNode, { size: number; spans: Map<string, Array<[number, string]>> }>
+>();
 
 const DIFF_BUDGET = 64_000;
 const SLIDE_SCAN = 4096;
@@ -672,7 +680,7 @@ class Classifier {
    * The character edit between two spans. What the two share at both ends is trimmed first, so a one-word
    * edit never reaches diff-match-patch, and only what is left counts against the budget.
    */
-  private diff(a: string, b: string): Array<[number, string]> | null {
+  private diff(block: number, a: string, b: string): Array<[number, string]> | null {
     let lo = 0;
     while (lo < a.length && lo < b.length && a[lo] === b[lo]) lo++;
     let hi = 0;
@@ -687,13 +695,36 @@ class Classifier {
     const cost = was.length + now.length;
     if (cost > this.budget) return null;
     this.budget -= cost;
-    const middle: Array<[number, string]> =
-      !was || !now || (was.length === 1 && now.length === 1)
-        ? [
-            ...(was ? [[DIFF_DELETE, was] as [number, string]] : []),
-            ...(now ? [[DIFF_INSERT, now] as [number, string]] : []),
-          ]
-        : (makeDiff(was, now, DIFF_OPTS) as Array<[number, string]>);
+    const { base, draft } = this.projection.diff;
+    let byNode = characterDiffs.get(base.blocks);
+    if (!byNode) {
+      byNode = new WeakMap();
+      characterDiffs.set(base.blocks, byNode);
+    }
+    const node = draft.blocks[block];
+    let cached = byNode.get(node);
+    if (!cached) {
+      cached = { size: 0, spans: new Map() };
+      byNode.set(node, cached);
+    }
+    const key = JSON.stringify([was, now]);
+    // Charge the same budget on hits: cache warmth must not change which bylines can be named.
+    let middle = cached.spans.get(key);
+    if (!middle) {
+      middle =
+        !was || !now || (was.length === 1 && now.length === 1)
+          ? [
+              ...(was ? [[DIFF_DELETE, was] as [number, string]] : []),
+              ...(now ? [[DIFF_INSERT, now] as [number, string]] : []),
+            ]
+          : (makeDiff(was, now, DIFF_OPTS) as Array<[number, string]>);
+      if (cached.size + cost > DIFF_BUDGET) {
+        cached.spans.clear();
+        cached.size = 0;
+      }
+      cached.size += cost;
+      cached.spans.set(key, middle);
+    }
     return [
       ...(lo ? [[DIFF_EQUAL, a.slice(0, lo)] as [number, string]] : []),
       ...middle,
@@ -707,7 +738,7 @@ class Classifier {
       acc.incomplete = true;
       return;
     }
-    const ops = this.diff(base, draft);
+    const ops = this.diff(b, base, draft);
     if (!ops) {
       acc.incomplete = true;
       return;
