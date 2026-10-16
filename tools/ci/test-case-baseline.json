@@ -392,7 +392,7 @@
     "apps/server/server/domains/runtime/loop/context-builder.test.ts": 2,
     "apps/server/server/domains/runtime/loop/control-protocol.db.test.ts": 50,
     "apps/server/server/domains/runtime/loop/execution-finalizer.db.test.ts": 5,
-    "apps/server/server/domains/runtime/loop/forget-failed-attempt.test.ts": 21,
+    "apps/server/server/domains/runtime/loop/forget-failed-attempt.test.ts": 23,
     "apps/server/server/domains/runtime/loop/image-context.test.ts": 4,
     "apps/server/server/domains/runtime/loop/inbox-context.test.ts": 6,
     "apps/server/server/domains/runtime/loop/next-inbox-work.test.ts": 10,
