@@ -15,6 +15,7 @@ import {
   type ForgettingFacts,
   loadForgettingFacts,
 } from "./forget-failed-attempt.js";
+import { firstClosingRowAfter } from "./latest-row.js";
 
 function block(turnId: string, blockType: Block["blockType"], extra: Partial<Block> = {}): Block {
   return {
@@ -319,6 +320,14 @@ describe("loadForgettingFacts", () => {
     );
     expect(loaded.latest?.id).toBe("f");
     expect(decideForgetting(loaded, writerNext).forget).toEqual(["f", "u"]);
+  });
+
+  it("names the first closing row after a reply, not the latest, when two follow it", async () => {
+    // Risk: a reply that fails while the writer sends U then V being reported as moved on by V, so the
+    // log names a later boundary than the first one the rule promises.
+    const graph = chain([failed("a"), turn("u", "user"), turn("v", "user")]);
+    expect((await firstClosingRowAfter(graph as never, "v" as never, "a"))?.id).toBe("u");
+    expect(await firstClosingRowAfter(graph as never, "a" as never, "a")).toBeNull();
   });
 
   // Risk: the delivery walk stopping at a different turn than the view groups reports under, so the loader
