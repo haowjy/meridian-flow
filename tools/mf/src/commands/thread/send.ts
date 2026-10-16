@@ -66,6 +66,8 @@ export type SendFields = {
   liveView?: "matches" | "differs" | "not_observed";
   liveDiff?: LiveDiff[];
   liveReason?: LiveReason;
+  /** Diagnostic observation stopped before all claimed terminal turns were checked. */
+  observationIncomplete?: boolean;
 };
 
 export type SendOutcome = TerminalResult<SendFields>;
@@ -297,23 +299,21 @@ async function followToOutcome(
     }
     const claim = proven as Proven | null;
     if (!claim) throw new Error("Send stopped without a proving read");
+    let observationIncomplete = false;
     try {
       await observer.until(
         () => observer.pending(claim.claimed, claim.turns).length === 0,
         Math.min(deadlineAt, Date.now() + CATCH_UP_MS),
       );
     } catch (error) {
-      // The claim stands. A catch-up that ran out, or a transport failure during it, only leaves
-      // the log and `liveView` incomplete; it never replaces a proven claim.
-      if (
-        !(
-          error instanceof CliError &&
-          (error.code === "timeout" || error.code === "unavailable" || error.code === "protocol")
-        )
-      )
-        throw error;
+      // Expected read/transport failures end diagnostics, not a result already proved by a read.
+      // Unclassified exceptions are programming errors and must still escape.
+      if (!(error instanceof CliError)) throw error;
+      observationIncomplete = true;
     }
-    return withLiveView(claim, observer);
+    const result = withLiveView(claim, observer);
+    if (observationIncomplete) result.result.observationIncomplete = true;
+    return result;
   } finally {
     observer.close();
   }

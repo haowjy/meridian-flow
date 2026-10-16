@@ -132,9 +132,10 @@ contains. It carries no run identity: `turn.started` has only the turn id.
   the reply that took the message (`answeredBy`) and `userTurnId`. A settled claim gives the
   stream a bounded 1.5 s for claimed terminal turns to be stream-ended and checked
   (no delivery-cursor barrier) (the stream ending a turn makes the sync ask for a read, which checks it); the
-  printed log is best-effort. A timeout, transport or protocol error in catch-up never changes
-  the claim and leaves `liveView` `not_observed`; the command ends within the catch-up even if a
-  read is still pending.
+  printed log is best-effort. A timeout or expected read/transport failure in catch-up never changes
+  the claim: `observationIncomplete: true` records unfinished observation. Check results still
+  determine `liveView` independently; neither a clean check nor a completed catch-up certifies
+  the whole printed journal. The command ends within catch-up even if a read is still pending.
 - **`stop`, `queue hand-back`, `queue send-now`** run the shared `@meridian/thread-client`
   hand-back operation and `postSendNow`; `./mf` contributes only
   `commands/thread/hand-back-adapter.ts` (one command in memory, the HTTP port over the session,

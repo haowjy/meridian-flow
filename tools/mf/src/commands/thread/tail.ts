@@ -161,6 +161,7 @@ async function untilIdleTail(
     if (!frozen) throw new Error("Tail finished without a confirming snapshot");
     const { read: proving, claimed, outcome, immediate } = frozen;
     const turns = new Map(proving.turns.map((turn) => [turn.id, turn]));
+    let observationIncomplete = false;
     if (!immediate) {
       try {
         await observer.until(
@@ -168,12 +169,8 @@ async function untilIdleTail(
           Math.min(deadlineAt, Date.now() + CATCH_UP_MS),
         );
       } catch (error) {
-        if (
-          !(
-            error instanceof CliError && ["timeout", "unavailable", "protocol"].includes(error.code)
-          )
-        )
-          throw error;
+        if (!(error instanceof CliError)) throw error;
+        observationIncomplete = true;
       }
     }
     return finishResult(
@@ -182,6 +179,7 @@ async function untilIdleTail(
         ...outcome,
         result: {
           ...outcome.result,
+          ...(observationIncomplete ? { observationIncomplete: true } : {}),
           ...(immediate ? {} : observer.liveView(claimed)),
         },
       },
