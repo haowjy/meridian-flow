@@ -2,7 +2,7 @@
  * useArrivedChanges — which changes arrived while the writer was reviewing.
  *
  * The first read of a draft is the baseline: everything in it was already
- * there. A change that shows up later is an arrival (the AI is still writing),
+ * there. The runtime marks new AI writes with an arrival sequence,
  * and is reported for a moment so its row and marks can pulse once. The
  * writer's own typing is never an arrival.
  */
@@ -17,7 +17,7 @@ export function useArrivedChanges(
   ready: boolean,
   draftKey: string | null,
 ): ReadonlySet<string> {
-  const known = useRef<{ key: string | null; ids: Set<string> } | null>(null);
+  const known = useRef<{ key: string | null; sequence: number } | null>(null);
   const [arrived, setArrived] = useState<ReadonlySet<string>>(EMPTY);
   // Timers outlive the effect that set them: a refetch re-runs it, and the
   // pulse of an earlier arrival must still end on time.
@@ -35,17 +35,17 @@ export function useArrivedChanges(
       return;
     }
     if (known.current?.key !== draftKey) {
-      known.current = { key: draftKey, ids: new Set(changes.map((change) => change.id)) };
+      known.current = {
+        key: draftKey,
+        sequence: changes.reduce((last, change) => Math.max(last, change.arrival ?? 0), 0),
+      };
       setArrived(EMPTY);
       return;
     }
-    const seen = known.current.ids;
-    // The writer's own typing is a change too, but it is not an arrival: only changes whose byline names a
-    // chat pulse (a pulse says an AI wrote this; an ambiguous author arrives quietly). Ids are content hashes, so a change the writer edited is a new id and stays quiet.
-    const fresh = changes.filter(
-      (change) => !seen.has(change.id) && change.byline.some((author) => author.kind === "thread"),
-    );
-    for (const change of changes) seen.add(change.id);
+    const seen = known.current.sequence;
+    const fresh = changes.filter((change) => change.arrival !== undefined && change.arrival > seen);
+    for (const change of fresh)
+      known.current.sequence = Math.max(known.current.sequence, change.arrival ?? 0);
     if (fresh.length === 0) return;
     setArrived((current) => new Set([...current, ...fresh.map((change) => change.id)]));
     const timer = window.setTimeout(() => {

@@ -54,8 +54,9 @@ remain conservatively pending even if the character edit touches only writer tex
 
 Provenance includes the snapshot its parts cover. An unlisted ID is the writer only within that state
 vector or from the caller's explicitly identified local browser client; an unlisted deletion requires
-coverage in the snapshot's delete set. Otherwise it is unresolved: its footprint keeps all candidate
-parts, and uncertain naming contributes no author. A state vector alone cannot fence deletion-only writes.
+coverage in the snapshot's delete set or an explicitly supplied locally witnessed delete set. Otherwise it is unresolved: its footprint keeps all candidate
+parts, and uncertain naming contributes no author. A state vector alone cannot fence deletion-only writes. The classifier also returns the unresolved item
+ranges so the browser requests evidence revisions rather than every text snapshot.
 
 ## Apply and local Discard are the same operation on two sides
 

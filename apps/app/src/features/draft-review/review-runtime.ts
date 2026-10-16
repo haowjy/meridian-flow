@@ -42,7 +42,7 @@ import type { DocumentSession } from "@/core/editor/document-session";
 import { sameContent } from "@/core/editor/extensions/inline-review";
 import { relativePositionRuntimeFromState } from "@/core/editor/relative-position-runtime";
 import type { ReviewEditorHandle } from "./draft-discard";
-import { classifyRoom } from "./review-attribution";
+import { classifyRoom, writeKey } from "./review-attribution";
 import { baseKeyOf, buildFrame, projectRoom, type ReviewFrame, readBase } from "./review-frame";
 import { type ReviewChange, reviewChanges } from "./review-model";
 import { deriveVisible, NO_VISIBLE, type ReviewVisible } from "./review-visible";
@@ -150,6 +150,10 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
   let edits: DraftAttribution | null = NO_EDITS;
   let attributionFailed = false;
   let provenanceRevision = 0;
+  let requestedProvenanceRevision = 0;
+  let localDeletions = Y.createDeleteSet();
+  let seenWrites: Set<string> | null = null;
+  let arrivalSequence = 0;
   let matched: {
     frame: ReviewFrame;
     edits: DraftAttribution;
@@ -181,7 +185,12 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
       matched.edits !== edits ||
       matched.provenanceRevision !== provenanceRevision
     )
-      matched = { frame, edits, provenanceRevision, value: classifyRoom(yDoc, frame, edits) };
+      matched = {
+        frame,
+        edits,
+        provenanceRevision,
+        value: classifyRoom(yDoc, frame, edits, localDeletions),
+      };
     return matched.value;
   };
 
@@ -211,13 +220,14 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
     queueMicrotask(async () => {
       while (!destroyed) {
         readAttempts++;
+        const requested = desiredRevision;
         const result = await attributionQuery.refetch({ cancelRefetch: false });
         if (destroyed) break;
         if (result.isError) {
           attributionFailed = true;
           break;
         }
-        if (covers(latest())) {
+        if (covers(latest()) && requested === desiredRevision) {
           coveredRevision = desiredRevision;
           readAttempts = 0;
           break;
@@ -235,34 +245,24 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
   };
   const useAttribution = (frame: ReviewFrame) => {
     if (!attributionQuery || !source) return;
-    const now = [...Y.encodeSnapshot(frame.snapshot)].join(",");
-    if (desiredRevision !== now) {
-      const first = desiredRevision === null;
-      desiredRevision = now;
-      readAttempts = 0;
-      attributionFailed = false;
-      if (first) {
-        if (
-          edits &&
-          Y.equalSnapshots(frame.snapshot, Y.decodeSnapshot(Uint8Array.from(edits.revision)))
-        )
-          coveredRevision = now;
-        queueMicrotask(() => {
-          if (!destroyed)
-            attributionQuery.setOptions({
-              ...draftAttributionQueryOptions(source.draft),
-              enabled: true,
-            });
-        });
+    const unresolved = [...attributionOf(frame).values()].flatMap((c) => c.unresolvedItems);
+    const rootsChanged = requestedProvenanceRevision !== provenanceRevision;
+    if (!edits || unresolved.length > 0 || rootsChanged) {
+      const now = JSON.stringify([provenanceRevision, edits ? unresolved : "initial"]);
+      if (desiredRevision !== now) {
+        desiredRevision = now;
+        requestedProvenanceRevision = provenanceRevision;
+        readAttempts = 0;
+        attributionFailed = false;
       }
     }
-    if (!covers(frame)) coveredRevision = null;
     refreshAttribution();
   };
 
   const failedMembership: MembershipRead = {
     status: "failed",
     retry: () => {
+      desiredRevision ??= JSON.stringify([provenanceRevision, "retry"]);
       attributionFailed = false;
       coveredRevision = null;
       readAttempts = 0;
@@ -296,7 +296,7 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
   /** Bookkeeping: join the frame with attribution and command records, derive what is visible, tell readers. */
   const settle = (frame: ReviewFrame | null) => {
     if (frame) useAttribution(frame);
-    const changes =
+    let changes =
       frame &&
       frame === state.frame &&
       edits === settledEdits &&
@@ -305,6 +305,23 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
         : frame
           ? reviewChanges(frame, attributionOf(frame))
           : NO_CHANGES;
+    if (edits && frame && changes !== state.changes) {
+      if (seenWrites === null) seenWrites = new Set(edits.edits.map(writeKey));
+      const fresh = new Set<string>();
+      for (const c of attributionOf(frame).values())
+        for (const write of c.writes) if (!seenWrites.has(write)) fresh.add(write);
+      if (fresh.size > 0) {
+        const arrival = ++arrivalSequence;
+        changes = changes.map((change) =>
+          attributionOf(frame)
+            .get(change.id)
+            ?.writes.some((write) => fresh.has(write))
+            ? { ...change, arrival }
+            : change,
+        );
+        for (const write of fresh) seenWrites.add(write);
+      }
+    }
     const ready = frame !== null && (synced || changes.length > 0);
     const membership = attributionFailed
       ? failedMembership
@@ -462,6 +479,13 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
   };
   for (const root of provenanceRoots) root.observeDeep(onProvenanceChange);
 
+  // Enter and cut delete peer-authored items too. Their creator cannot identify who deleted them.
+  const onLocalTransaction = (transaction: Y.Transaction) => {
+    if (!transaction.local || transaction.deleteSet.clients.size === 0) return;
+    localDeletions = Y.mergeDeleteSets([localDeletions, transaction.deleteSet]);
+    matched = null;
+  };
+  yDoc.on("afterTransaction", onLocalTransaction);
   // Without an editor the room's own updates drive the frame; with one, its transactions do.
   const onUpdate = () => {
     if (attachments.length === 0) schedule();
@@ -532,6 +556,7 @@ export function createReviewRuntime(room: ReviewRoom, source: ReviewSource | nul
       destroyed = true;
       if (timer) clearTimeout(timer);
       yDoc.off("update", onUpdate);
+      yDoc.off("afterTransaction", onLocalTransaction);
       unsubscribeRoom();
       unwatchRecords();
       unwatchAttribution?.();

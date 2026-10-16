@@ -43,8 +43,10 @@ hide-mode overflow keeps it), then a link per writing thread. A primary thread's
 turn and tool call; a subagent's write belongs to its nearest primary ancestor conversation (`owner`), the
 link carries the parent conversation's title (the subagent's task title is in its label and tooltip), and
 it reveals the outermost spawn row. The draft dock, chat-scoped Apply and Discard and the thread
-draft-files list read `members` through `owner.threadId`. The arrival pulse reads the byline: a pulse says
-an AI wrote this, so an ambiguous author arrives quietly.
+draft-files list read `members` through `owner.threadId`. The runtime detects arrivals by AI operation identity (thread, turn, tool call), not group hashes or
+byline changes. Its first attribution payload is the baseline and never pulses. Later unseen operations
+pulse only the resolved footprints containing them, once per room runtime. A surface consumes the
+runtime's arrival sequence; writer edits and regrouping cannot mint arrivals.
 
 Undo of a Discard keeps the chat through restoration links (`restorations.ts`): every UndoManager that can
 restore draft text (the editor's surface history, `room-discard`) registers `recordRestorations`, which on each
@@ -70,10 +72,14 @@ writer only inside that fence or from this browser's own client. Unlisted deleti
 set fence, since deletion-only updates do not advance a state vector. Unknown evidence retains inclusive
 membership and does not name the writer. Runtime refresh keys include snapshot identity, not group
 content hashes, so equal-prose rewrites still refetch. Membership is loading, ready, or failed with Retry;
-a cached payload alone is not proof of readiness. The requested room revision is separate from the
+a cached payload alone is not proof of readiness. The requested evidence revision is separate from the
 revision actually covered by the classifier. One read joins in-flight work and drains again if its
 response leaves the latest frame unresolved. Three uncovered reads for a revision stop at failed;
-Retry or a new room revision starts a fresh attempt budget. This bounds stale-success responses,
+Retry or new unresolved evidence starts a fresh attempt budget. Ordinary writer snapshots do not
+request attribution: the browser's insertions and locally witnessed deletions are already resolved.
+Unknown footprint item ranges beyond the payload fence, restoration/Apply root changes, and Retry
+request reads; query mount/focus/staleness does not. Local deletion witnesses are runtime-owned and
+never broaden the server's provenance fence. This bounds stale-success responses,
 not just network errors, without relaxing the attribution fence.
 
 The chat dock reads its files' rooms even while collapsed. Flat file readers publish into one keyed membership-summary owner; rows,

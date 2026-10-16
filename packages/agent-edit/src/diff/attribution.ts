@@ -44,6 +44,8 @@ export interface Provenance {
   snapshot: Y.Snapshot;
   /** Only this browser can positively identify its own unacknowledged insertions. */
   localClientId?: number;
+  /** Deletions this browser witnessed in its own local transactions. */
+  localDeletions?: Y.Snapshot["ds"];
 }
 export interface ChangeClassification {
   /** The user first, then each writing thread once (linking to its latest write). */
@@ -52,6 +54,8 @@ export interface ChangeClassification {
   members: number[];
   /** Some footprint evidence lies beyond the provenance read. */
   unresolved: boolean;
+  /** Unclassified item identities, independent of unrelated local edits. */
+  unresolvedItems: ItemRange[];
   /** With `record`: what Apply moves into the base if this change is applied. */
   applied?: ApplyEntry;
 }
@@ -165,6 +169,7 @@ function segments(toks: readonly Tok[], lo: number, hi: number): Array<[number, 
 /** The names a change has gathered so far; thread names keep the index of their latest part. */
 interface Footprint {
   members: Set<number>;
+  unresolvedItems: ItemRange[];
   unresolved: boolean;
   base: ItemRange[];
   settled: ItemRange[];
@@ -371,7 +376,12 @@ class Classifier {
         const part = this.deleted.get(c, k);
         return part >= 0 ? part : undefined;
       },
-      (c, k) => (Y.isDeleted(this.provenance.snapshot.ds, Y.createID(c, k)) ? USER : UNKNOWN),
+      (c, k) =>
+        Y.isDeleted(this.provenance.snapshot.ds, Y.createID(c, k)) ||
+        (this.provenance.localDeletions &&
+          Y.isDeleted(this.provenance.localDeletions, Y.createID(c, k)))
+          ? USER
+          : UNKNOWN,
     );
   }
 
@@ -423,7 +433,13 @@ class Classifier {
 
   /** Phase 1: collect the complete footprint before any bounded name work. */
   private footprint(changes: readonly Boundary[]): Footprint {
-    const footprint: Footprint = { members: new Set(), unresolved: false, base: [], settled: [] };
+    const footprint: Footprint = {
+      members: new Set(),
+      unresolved: false,
+      unresolvedItems: [],
+      base: [],
+      settled: [],
+    };
     const include = (who: number) => {
       if (who >= 0) footprint.members.add(who);
       if (who === UNKNOWN) footprint.unresolved = true;
@@ -432,6 +448,7 @@ class Classifier {
       const who = this.origin(client, clock);
       if (who === BASE) return;
       include(who);
+      if (who === UNKNOWN) pushRange(footprint.unresolvedItems, client, clock);
       if (this.options.record) pushRange(footprint.base, client, clock);
     };
     const dead = (item: Y.Item) => {
@@ -442,6 +459,7 @@ class Classifier {
         if (this.options.record) pushRange(footprint.settled, c, clock);
         const who = this.deleter(c, clock);
         include(who);
+        if (who === UNKNOWN) pushRange(footprint.unresolvedItems, c, clock);
       }
     };
     const item = (value: Y.Item) => {
@@ -946,6 +964,7 @@ class Classifier {
       out.set(group.id, {
         byline,
         unresolved: footprint.unresolved,
+        unresolvedItems: joined(footprint.unresolvedItems),
         members: [...footprint.members].sort((x, y) => x - y),
         ...(this.options.record
           ? { applied: { base: joined(footprint.base), settled: joined(footprint.settled) } }

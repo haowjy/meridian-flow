@@ -335,9 +335,16 @@ it("a failed membership read shows Retry on its file, blocks summary Apply, and 
     itemKey: id === "chapter" ? "draft-a" : "draft-b",
     roomName: `room-${id}`,
   }));
+  // The initial payload must describe the synced fixture, not an empty room followed by
+  // locally seeded "AI" text: local edits deliberately no longer trigger attribution reads.
+  let seeded!: () => void;
+  const roomsSeeded = new Promise<void>((resolve) => {
+    seeded = resolve;
+  });
   let failed = true;
   fixture.network.getDraftAttribution.mockImplementation(async (_p, _w, id) => {
     if (id === "chapter" && failed) throw new Error("attribution HTTP 503");
+    await roomsSeeded;
     const doc = roomDoc(id);
     return {
       itemKey: id === "chapter" ? "draft-a" : "draft-b",
@@ -366,6 +373,7 @@ it("a failed membership read shows Retry on its file, blocks summary Apply, and 
       await act(async () => {
         fillRoom("room-chapter", ["green"], ["red"]);
         fillRoom("room-chapter2", ["green"], ["red"]);
+        seeded();
       });
       await settleReact(() =>
         expect(

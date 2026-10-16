@@ -89,9 +89,8 @@ export function useInlineReviewFocus({
   );
   useEffect(() => {
     if (!live || !reviewing) return;
-    // An empty pulse that is already empty is not worth a repaint.
-    if (pulsed.length === 0 && getInlineReviewPluginState(live.state)?.pulsedChangeIds.size === 0)
-      return;
+    const painted = getInlineReviewPluginState(live.state)?.pulsedChangeIds;
+    if (painted?.size === pulsed.length && pulsed.every((id) => painted.has(id))) return;
     live.commands.setReviewPulse(pulsed);
   }, [live, reviewing, pulsed]);
 }

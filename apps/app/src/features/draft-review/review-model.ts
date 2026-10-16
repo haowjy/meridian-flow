@@ -31,6 +31,8 @@ export interface ChangeAttribution {
 }
 
 export interface ReviewChange {
+  /** Runtime-local AI arrival sequence; absent for the initial read and writer edits. */
+  arrival?: number;
   /** The group id: a content hash, stable while edits elsewhere change nothing inside the change. */
   id: string;
   kind: ReviewGroup["kind"];

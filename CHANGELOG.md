@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Typing or pressing Enter in a draft no longer replays AI arrival highlights or fetches attribution. New AI writes still pulse once; the initial review stays quiet.
+
 - Recreate the unmerged review migration sequence as `0058`–`0063` after main’s `0056` and `0057`, with later timestamps, so an existing database applies every review upgrade.
 
 - Draft membership reads catch up when a peer edit overtakes an in-flight response, with Retry if the read stays stale. Closed files no longer leave the chat's ready drafts waiting to Apply or Discard.
