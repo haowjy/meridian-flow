@@ -20,8 +20,8 @@ React, or provider behavior.
   or answer field for a fact the record carries, and never infer run state from
   arrival order or transcript ancestry.
 - Context ownership is exclusive: a named Work owns its drafted schemes, a
-  lineage owns Scratch and No Work uploads, and No Work owns uploads only. A
-  document owner is a Work or a lineage, never both.
+  lineage owns Scratch, and a chat (a primary thread) owns uploads. A
+  document owner is one of a Work, a lineage, or a chat, never two.
 - Stored document links carry refs as internal identity and spell destinations
   only at the wire boundary. The same resolver and filename codec serve app,
   server, and tooling consumers.

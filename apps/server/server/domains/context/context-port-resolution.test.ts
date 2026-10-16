@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { testWorkSlug } from "../../test-support/work-slug.js";
 import { resolvedWorkAuthority } from "../projects/domain/work-authority.js";
 import type { ProjectWorkAuthorityResolver } from "../projects/index.js";
+import { createChatFileLookup } from "./chat-file-addresses.js";
 import {
   contextPortForProjectRecovery,
   contextPortForThread,
@@ -70,6 +71,9 @@ describe("thread context-port resolution", () => {
 
     const calls: Array<{ workId: string; projectId: string; threadId?: string }> = [];
     const contextPorts: UnifiedContextPortFactory = {
+      topPrimaryChats: { resolveTopPrimaryChat: async () => null },
+      chats: { byRef: async () => null },
+      chatFiles: { byRef: async () => null },
       lineages: {
         async byId() {
           return null;
@@ -142,5 +146,30 @@ describe("project recovery context-port resolution", () => {
     });
 
     expect(calls).toEqual([{ workId: "work-1", authorities: ["work-1", "work-2"] }]);
+  });
+});
+
+it("names a chat's Scratch by its named Work, or in No Work by its lineage's first chat", async () => {
+  const lookup = createChatFileLookup({
+    chats: { byRef: async (_p, ref) => ({ chatId: `id-${ref}`, chatRef: ref, live: true }) },
+    lineages: {
+      byId: async () => null,
+      byRef: async () => null,
+      list: async () => [],
+      rootForThreadRef: async (projectId, ref) => ({
+        projectId,
+        rootThreadId: "root",
+        rootThreadRef: ref === "c15" ? "c12" : ref,
+      }),
+    },
+    namedWorkSlug: async (id) => (id === "id-c15" ? null : "tea-notes"),
+  });
+  await expect(lookup.byRef("project", "c15")).resolves.toEqual({
+    uploads: "uploads://@/c15/",
+    scratch: "scratch://@/c12/",
+  });
+  await expect(lookup.byRef("project", "c1")).resolves.toEqual({
+    uploads: "uploads://@/c1/",
+    scratch: "scratch://@tea-notes/",
   });
 });

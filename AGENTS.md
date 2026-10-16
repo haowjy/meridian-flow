@@ -47,7 +47,8 @@ explicit null binds the thread to that row. After creation, the writer may
 explicitly rebind the chat through one canonical operation; Work management
 and navigation never invoke it implicitly. The model can't rebind; see the
 [model's `work switch`][model-work-switch]. Named-Work URIs use `@slug`;
-No Work Uploads use `@/`. No Work owns no Scratch: a No Work chat's Scratch
+uploads belong to the chat they were attached in and use `uploads://@/c15/`
+(`c15` is the chat's handle; Works and No Work own no uploads). No Work owns no Scratch: a No Work chat's Scratch
 belongs to its lineage (the first chat, its forks and subagents) at
 `scratch://@/c12/`, named by the first chat's handle. Internal IDs never
 appear in URI authority. The schema is `works` + `thread_works`.

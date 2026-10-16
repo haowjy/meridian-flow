@@ -42,7 +42,7 @@ function projectStoreKey(
   return `project:${projectId}:${scheme}`;
 }
 
-function workStoreKey(workId: string, scheme: WorkScopedContextFsScheme): string {
+function workStoreKey(workId: string, scheme: WorkScopedContextFsScheme | "uploads"): string {
   return `work:${workId}:${scheme}`;
 }
 
@@ -64,7 +64,7 @@ export function getInMemoryProjectContextStore(
 export function getInMemoryWorkContextStore(
   registry: InMemoryUnifiedContextStoreRegistry,
   workId: string,
-  scheme: WorkScopedContextFsScheme,
+  scheme: WorkScopedContextFsScheme | "uploads",
 ): InMemoryContextDocumentStore {
   const key = workStoreKey(workId, scheme);
   let store = registry.workStores.get(key);

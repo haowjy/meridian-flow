@@ -44,7 +44,9 @@ flowchart TD
   tab metadata to the route owner. Accepted history commits the tab and
   selection; a cancelled decision publishes neither. A background open publishes
   the tab without navigating or cancelling a foreground attempt. Uploads resources are not Editor
-  tabs (`isEditorScheme`): their resolved URLs show the deferred chat-resource viewing notice.
+  tabs (`isEditorScheme`): their resolved URLs show the deferred chat-resource viewing notice. The only viewer is the dock
+  beside a centered chat, so Open on an upload (`useOpenChatResource`, the Files menu and a sent
+  attachment) is offered only there; the docked chat on Work and Editor pages and the phone offer none.
   A Work's Scratch is an Editor tab only in that Work's Editor, and a chat's
   Scratch (`rootThreadId`) in every Editor (`isEditorTab`).
   The URL layer still does not repeat

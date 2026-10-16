@@ -10,8 +10,8 @@ provides the cold-start mental model.
 The unified `ContextPort` resolves `manuscript://`, `kb://`, `user://`,
 `unfiled://`, `scratch://`, and `uploads://`. Bare paths default to
 `manuscript://`. Work-scoped authorities use a persisted project-local
-`@slug`; `uploads://@/` names the locked No Work row, while
-`scratch://@/c12/` names the No Work chat lineage rooted at its first chat.
+`@slug`; `uploads://@/c12/` names a chat's uploads (bare `uploads://name` is
+the asking chat's), while `scratch://@/c12/` names the No Work chat lineage rooted at its first chat.
 Parsing normalizes syntax but does not authorize a Work. Cross-project or
 foreign authorities remain unavailable, and the legacy `work://` scheme does
 not exist.
@@ -55,7 +55,7 @@ not creation: the source's single `requireCreation` policy is the only
 lineage-creation guard, so never move it to bind time or add a second one.
 
 Scheme capabilities are declared in `ports/context-adapter.ts`. Uploads
-provisioning and authority are separate from `UploadIntake`: uploads are flat
+authority is separate from `UploadIntake`: uploads are flat
 binary intake, while Scratch is the writable authoring space and accepts
 nested paths. Text creates and writes resolve the persisted filetype and call
 collab's document-aware engine; they never seed a Y.Doc with an assumed

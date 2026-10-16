@@ -229,6 +229,8 @@ export function createDrizzleRecentDocumentsRepository(deps: {
           workId: work?.id ?? null,
           workSlug,
           parentPath: classification.identity.parentPath,
+          // Only the entry's path and name are read; a chat upload's address needs no handle here.
+          chatOwned: source.scope === "chat",
         });
         documentsOut.push({
           documentId: document.id,

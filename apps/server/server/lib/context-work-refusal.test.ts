@@ -69,7 +69,7 @@ it("finally refuses a missing Work locator before dispatch, identically on repla
     workAuthorityResolver: { byId },
     contextPorts: {},
   } as unknown as ContextMoveRouteDeps;
-  for (const scheme of ["scratch", "uploads"] as const) {
+  for (const scheme of ["scratch"] as const) {
     for (const missingSide of ["source", "destination"] as const) {
       const request = {
         projectId: "project",
