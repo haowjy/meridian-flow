@@ -1,7 +1,7 @@
 /**
  * Pure turn-list operations behind `TurnStore.ensureAssistantTurn`,
- * `upsertAssistantBlock` and `patchTurnStatus`. Every store (the app's Zustand
- * adapter and `InMemoryTurnStore`) calls these, so the semantics exist once.
+ * `upsertAssistantBlock` and `patchTurnStatus`. The one `TurnStore`, `syncedTurnStore`, calls these
+ * over the host's `SyncedThread`, so the semantics exist once.
  */
 import type { Block, Turn } from "@meridian/contracts/protocol";
 import { compareSeq } from "@meridian/contracts/protocol";

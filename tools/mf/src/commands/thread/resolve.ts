@@ -2,9 +2,9 @@
 import {
   API_THREADS_PATH,
   apiProjectThreadByRefPath,
-  type ListThreadsResponse,
+  listThreadsResponseSchema,
 } from "@meridian/contracts/protocol";
-import { parseThreadRef, type Thread } from "@meridian/contracts/threads";
+import { parseThreadRef, threadSchema } from "@meridian/contracts/threads";
 import { CliError } from "../../core/cli-error";
 import type { OptionSpec } from "../../core/command";
 import type { Session } from "../../core/session";
@@ -34,9 +34,11 @@ export async function resolveThreadId(
   if (parseThreadRef(raw)) {
     const projectId = await resolveProjectId(session, project);
     try {
-      const thread = await session.request<Thread>(
+      const thread = await session.request(
         "GET",
         apiProjectThreadByRefPath(projectId, raw),
+        undefined,
+        { parse: threadSchema.safeParse },
       );
       return thread.id;
     } catch (error) {
@@ -48,7 +50,9 @@ export async function resolveThreadId(
       throw error;
     }
   }
-  const { threads } = await session.request<ListThreadsResponse>("GET", API_THREADS_PATH);
+  const { threads } = await session.request("GET", API_THREADS_PATH, undefined, {
+    parse: listThreadsResponseSchema.safeParse,
+  });
   const matches = threads.filter((thread) => thread.id.startsWith(raw.toLowerCase()));
   if (matches.length === 1) return (matches[0] as { id: string }).id;
   if (matches.length === 0) {

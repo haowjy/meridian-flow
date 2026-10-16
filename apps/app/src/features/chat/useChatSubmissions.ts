@@ -1,6 +1,7 @@
 /** Mount binding: cancellation, external wakes, and keyed accessibility presentation. */
 import { t } from "@lingui/core/macro";
 import type { AiWriteMode } from "@meridian/contracts/works";
+import type { JournalSwitch } from "@meridian/thread-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useReducer, useRef } from "react";
 import {
@@ -12,7 +13,7 @@ import {
   cleanDeletedChat,
   registerDeletedChatSurface,
 } from "@/client/chat-submissions/deleted-chat";
-import { ChatSubmissionOwner, type JournalSwitch } from "@/client/chat-submissions/owner";
+import { ChatSubmissionOwner } from "@/client/chat-submissions/owner";
 import { threadAvailability } from "@/client/chat-submissions/thread-availability";
 import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
 import { useOptionalThreadTransport } from "@/client/providers/TransportProvider";

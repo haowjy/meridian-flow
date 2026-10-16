@@ -113,7 +113,7 @@ thread entities use string IDs and ISO timestamps. Both transports emit the same
 shape and the reducer consumes it.
 
 Snapshot application is data-sync/transport recovery work, never a view effect.
-`applyThreadSnapshot` reconciles server history with local optimistic rows.
+`applyThreadSnapshot` applies the package's `applyRead` to the chat's `SyncedThread` (`syncedByThread`), reconciling server history with local optimistic rows.
 HTTP sync runs on route activation, new run, and gap; WebSocket recovery applies
 snapshots on reconnect/gap. A mounted snapshot hook owns addressed block-upsert
 projection and refetches missing targets instead of creating synthetic turns.

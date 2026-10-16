@@ -109,6 +109,8 @@ export class Wire {
 
   readonly journal: SequencedEvent[] = [];
   readonly requests: Recorded[] = [];
+  /** Requests the client closed before this server answered them. */
+  readonly aborted: Recorded[] = [];
   readonly clientMessages: Record<string, unknown>[] = [];
   /** Sockets ever accepted, and subscription cursors ever answered. */
   connections = 0;
@@ -233,7 +235,8 @@ export class Wire {
     ws.on("message", (raw) => {
       const message = JSON.parse(String(raw)) as Record<string, unknown> & {
         type: string;
-        requestId?: string;
+        requestId: string;
+        threadId: string;
         lastSeq?: string;
       };
       this.clientMessages.push(message);
@@ -242,8 +245,8 @@ export class Wire {
         message.type === "subscribe"
           ? [
               {
-                requestId: message.requestId ?? "",
-                threadId: THREAD_ID,
+                requestId: message.requestId,
+                threadId: message.threadId,
                 lastSeq: message.lastSeq ?? "0",
               },
             ]
@@ -273,7 +276,11 @@ export class Wire {
     const path = url.pathname;
     const body = await readBody(req);
     const kind = classify(req.method ?? "GET", path);
-    this.requests.push({ kind, method: req.method ?? "GET", path: path + url.search, body });
+    const recorded = { kind, method: req.method ?? "GET", path: path + url.search, body };
+    this.requests.push(recorded);
+    res.on("close", () => {
+      if (!res.writableFinished) this.aborted.push(recorded);
+    });
     const reply = async (status: number, payload: unknown, enveloped = false) => {
       const fault = this.nextFault(kind);
       if (fault?.delayMs) await new Promise((resolve) => setTimeout(resolve, fault.delayMs));
@@ -354,7 +361,16 @@ function classify(method: string, path: string): RouteKind {
 /** Routes whose answer is the same fixed fact in every scenario. */
 function staticRoute(route: string, path: string): [number, unknown, boolean?] {
   if (route === "GET /api/threads") return [200, { threads: [thread()] }, true];
-  if (route === "POST /api/projects/bootstrap-default") return [201, { projectId: PROJECT_ID }];
+  if (route === "POST /api/projects/bootstrap-default")
+    return [
+      201,
+      {
+        projectId: PROJECT_ID,
+        documentId: DOCUMENT_ID,
+        manuscriptSourceId: "source",
+        uri: "manuscript://Manuscript",
+      },
+    ];
   if (route === "POST /api/threads") return [201, thread(), true];
   if (route === `GET /api/threads/${THREAD_ID}/skills`)
     return [200, { skills: [{ slug: "revise", name: "Revise", description: "Revise prose" }] }];
@@ -371,7 +387,7 @@ function staticRoute(route: string, path: string): [number, unknown, boolean?] {
             model: null,
             ownership: "system",
             unavailableReasons: [],
-            selection: { catalogEntryId: "c", definitionRevisionId: "r" },
+            selection: { catalogEntryId: PROJECT_ID, definitionRevisionId: DOCUMENT_ID },
           },
         ],
         nextCursor: null,

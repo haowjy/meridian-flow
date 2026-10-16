@@ -369,7 +369,9 @@ function ContinuesFrom({ source }: { source: ContinuedSource }) {
  */
 function useContinuesFrom(chat: Thread | null): ContinuedSource | null {
   const inherited = useInheritedView(chat, null);
-  const turns = useThreadStore((state) => (chat ? state.turnsByThread[chat.id] : undefined));
+  const turns = useThreadStore((state) =>
+    chat ? state.syncedByThread[chat.id]?.turns : undefined,
+  );
   if (!chat?.originType) return null;
   if (chat.originType === "fork") {
     const view = inherited.view;

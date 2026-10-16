@@ -1,7 +1,7 @@
 /** `mock clear`: drop one queued mock script, or all. */
 import {
   API_DEBUG_MOCK_MODEL_SCRIPT_PATH,
-  type MockModelScriptState,
+  mockModelScriptStateSchema,
 } from "@meridian/contracts/protocol";
 import { type CommandSpec, stringOption } from "../../core/command";
 import { renderState } from "./queue";
@@ -16,9 +16,11 @@ export const mockClearCommand: CommandSpec = {
     const id = stringOption(ctx, "id");
     const session = await ctx.session();
     ctx.out.result(
-      await session.request<MockModelScriptState>(
+      await session.request(
         "DELETE",
         `${API_DEBUG_MOCK_MODEL_SCRIPT_PATH}${id ? `?id=${encodeURIComponent(id)}` : ""}`,
+        undefined,
+        { parse: mockModelScriptStateSchema.safeParse },
       ),
       renderState,
     );

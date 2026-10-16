@@ -100,7 +100,7 @@ export const logCommand: CommandSpec = {
     const query = async (cursor?: string) => {
       const params = new URLSearchParams(search);
       if (cursor) params.set("sinceEventId", cursor);
-      return session.request<EventQueryResponse>("GET", `/api/debug/events?${params}`);
+      return session.request("GET", `/api/debug/events?${params}`) as Promise<EventQueryResponse>;
     };
 
     const first = await query();
