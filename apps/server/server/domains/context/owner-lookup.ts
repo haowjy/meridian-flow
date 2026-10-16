@@ -42,6 +42,9 @@ export interface OwnerRow {
   label: string;
 }
 
+/** An address note for a receipt: a sentence to print on its own line, or the owner's label. */
+export type OwnerReceiptNote = { notice: string } | { owner: string };
+
 /** The one error for a Work handle that names no Work. It points to `work list` instead of listing. */
 export function unknownWorkMessage(handle: string): string {
   return `Unknown Work ${handle}. List Works with work list.`;
@@ -80,10 +83,15 @@ export interface OwnerLookup {
   /** The Work a handle names (deleted ones included), or the handle its name answers to. */
   workReference(projectId: string, ref: string): Promise<WorkReference>;
   /**
-   * The line to put first in a read or write result: a collision or dropped-sigil notice, else, for
-   * an explicit owner address, the owner's current label. Null for bare addresses.
+   * What a read or write result says about its address: a collision or dropped-sigil `notice` (its
+   * own line), else, for an explicit owner address, the owner's current `owner` label (the receipt
+   * puts it in parentheses after the path). Null for bare addresses.
    */
-  notice(projectId: string, requestedPath: string, canonicalUri: string): Promise<string | null>;
+  notice(
+    projectId: string,
+    requestedPath: string,
+    canonicalUri: string,
+  ): Promise<OwnerReceiptNote | null>;
   scratchOwners(projectId: string): Promise<OwnerRow[]>;
   uploadOwners(projectId: string): Promise<OwnerRow[]>;
 }
@@ -128,12 +136,12 @@ export function findWorkNamed<T extends { name: string; state?: WorkOwnerState }
   return similar.length === 1 ? (similar[0] ?? null) : null;
 }
 
-function quotedTitle(title: string | null): string {
-  return `("${(title ?? "").replace(/\s+/g, " ").trim() || "New chat"}")`;
+function chatTitle(title: string | null): string {
+  return `"${(title ?? "").replace(/\s+/g, " ").trim() || "New chat"}"`;
 }
 
 function chatLabel(title: string | null, detail: string): string {
-  return `"${(title ?? "").replace(/\s+/g, " ").trim() || "New chat"}" (${detail})`;
+  return `${chatTitle(title)} (${detail})`;
 }
 
 export function createOwnerLookup(deps: OwnerLookupDeps): OwnerLookup {
@@ -229,16 +237,14 @@ export function createOwnerLookup(deps: OwnerLookupDeps): OwnerLookup {
     projectId: string,
     requestedPath: string,
     canonicalUri: string,
-  ): Promise<string | null> {
+  ): Promise<OwnerReceiptNote | null> {
     const requested = parseUnifiedContextUri(requestedPath.replace(/#.*$/, ""));
     if (!requested.ok) return null;
     const { authority, path } = requested.value;
     if (requested.value.scheme === "uploads") {
       if (authority.kind !== "chat") return null;
       const owner = await deps.chats.byRef(projectId, authority.chatRef);
-      return owner?.live
-        ? `${formatParsedContextUri("uploads", "", authority)} is chat ${authority.chatRef} ${quotedTitle(owner.title ?? null)}.`
-        : null;
+      return owner?.live ? { owner: `chat ${chatTitle(owner.title ?? null)}` } : null;
     }
     if (requested.value.scheme !== "scratch") return null;
     const workAddress = (handle: string) =>
@@ -248,24 +254,22 @@ export function createOwnerLookup(deps: OwnerLookupDeps): OwnerLookup {
       const handle = authority.kind === "work" ? authority.workHandle : authority.rootThreadRef;
       const named = await workNamed(projectId, handle);
       const address = formatParsedContextUri("scratch", "", authority);
-      // No collision: the receipt still names the owner beside its handle.
+      // No collision: the receipt still names the owner beside the path.
       if (!named || named.handle === handle) {
         if (authority.kind === "work") {
           const work = await deps.workByHandle(projectId, handle);
-          return work && work.state !== "deleted"
-            ? `${address} is Work ${handle} "${work.name}".`
-            : null;
+          return work && work.state !== "deleted" ? { owner: `Work "${work.name}"` } : null;
         }
         const lineage = await deps.lineages.byRef(projectId, handle);
-        return lineage
-          ? `${address} is chat ${handle}'s notes ${quotedTitle(lineage.title ?? null)}.`
-          : null;
+        return lineage ? { owner: `chat ${chatTitle(lineage.title ?? null)}` } : null;
       }
       const reached =
         authority.kind === "work"
           ? `Work ${handle} "${(await deps.workByHandle(projectId, handle))?.name ?? ""}"`
           : `chat ${handle}'s notes`;
-      return `${address} is ${reached}. The Work named "${handle}" is ${named.handle} at ${workAddress(named.handle)}… .`;
+      return {
+        notice: `${address} is ${reached}. The Work named "${handle}" is ${named.handle} at ${workAddress(named.handle)}… .`,
+      };
     }
 
     if (authority.kind !== "contextual") return null;
@@ -275,12 +279,16 @@ export function createOwnerLookup(deps: OwnerLookupDeps): OwnerLookup {
     if (kind === "work") {
       const work = await deps.workByHandle(projectId, handle);
       if (!work || work.state === "deleted") return null;
-      return `${requestedPath} is a folder named ${handle} in this chat's notes, written to ${canonicalUri}. Work ${handle} "${work.name}" is at ${workAddress(handle)}… .`;
+      return {
+        notice: `${requestedPath} is a folder named ${handle} in this chat's notes, written to ${canonicalUri}. Work ${handle} "${work.name}" is at ${workAddress(handle)}… .`,
+      };
     }
     if (kind === "chat") {
       const files = await chat(projectId, handle);
       if (!files) return null;
-      return `${requestedPath} is a folder named ${handle} in this chat's notes, written to ${canonicalUri}. Chat ${handle}'s notes are at ${files.scratch}… .`;
+      return {
+        notice: `${requestedPath} is a folder named ${handle} in this chat's notes, written to ${canonicalUri}. Chat ${handle}'s notes are at ${files.scratch}… .`,
+      };
     }
     return null;
   }

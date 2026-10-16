@@ -1243,6 +1243,7 @@ async function persistCommittedWriteResult(input: {
     ...input.result,
     ...(staged?.path ? { path: staged.path } : {}),
     ...(staged?.notice ? { notice: staged.notice } : {}),
+    ...(staged?.owner ? { owner: staged.owner } : {}),
     ...(staged?.destination ? { destination: staged.destination } : {}),
     ...(staged?.draftWork !== undefined ? { draftWork: staged.draftWork } : {}),
   });
