@@ -46,9 +46,10 @@ contract owns a rule and where it is consumed.
 `context-uri.ts` owns scheme classification and address syntax. Draft-mode
 Works own manuscript, KB, user, and unfiled content; Scratch and uploads are
 not drafted. A leading `@` in each path segment is reserved for Work authority;
-other `@` characters are valid. `@/` is a lineage-qualified No Work upload
-address only when a first-chat handle is present, and bare `scratch://x`
-remains contextual.
+other `@` characters are valid. `uploads://@/c15/x` names a chat's upload
+(`{ kind: "chat" }`); `@/` without a handle, `@slug` and a subagent handle
+(`p…`) are refused for uploads. Bare `uploads://x` and `scratch://x` remain
+contextual.
 
 `ContextOwner` is either `workId` or, for Scratch, `rootThreadId`; never both.
 A resolved catalog owner carries that identity and its lineage handle from the
