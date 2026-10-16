@@ -90,18 +90,19 @@ async function resolveReferences(session: Session, threadId: string, refs: strin
     apiThreadSnapshotPath(threadId),
   );
   const projectId = snapshot.thread.projectId;
-  return Promise.all(
-    refs.map(async (raw) => {
-      const target = await resolveUri(session, projectId, raw);
-      const document = await resolveDocument(session, projectId, target);
-      return {
-        uri: target.uri,
-        documentId: document.documentId,
-        label: document.entry.name,
-        imageCapable: imageCapable(document.entry.fileType),
-      };
-    }),
-  );
+  const references = [];
+  // One owned lookup at a time: a failure leaves no sibling request running after return.
+  for (const raw of refs) {
+    const target = await resolveUri(session, projectId, raw);
+    const document = await resolveDocument(session, projectId, target);
+    references.push({
+      uri: target.uri,
+      documentId: document.documentId,
+      label: document.entry.name,
+      imageCapable: imageCapable(document.entry.fileType),
+    });
+  }
+  return references;
 }
 
 async function resolveSkills(session: Session, threadId: string, slugs: string[]) {
