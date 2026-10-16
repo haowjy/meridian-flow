@@ -6,8 +6,14 @@
 import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
 import type { Turn } from "@meridian/contracts/protocol";
-import type { ChatCardsInput } from "@meridian/thread-client";
-import { chatCards, INITIAL_RUN_STATE_VIEW, viewTranscript } from "@meridian/thread-client";
+import {
+  type ChatCardsInput,
+  chatCards,
+  INITIAL_RUN_STATE_VIEW,
+  normalizeTurns,
+  type TurnFacts,
+  viewTranscript,
+} from "@meridian/thread-client";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
@@ -56,17 +62,21 @@ const handlers = () =>
   }) satisfies ChatCardHandlers;
 
 /** Cards for `input`, with every handler a spy; `node` draws inside their provider. */
-async function render(input: Partial<ChatCardsInput>, node: () => React.ReactNode) {
+async function render(
+  input: Partial<Omit<ChatCardsInput, "turns">> & { turns?: TurnFacts },
+  node: () => React.ReactNode,
+) {
   const spies = handlers();
   const { cards } = chatCards({
     threadId: "t",
-    turns: { turns: [] },
     runState: INITIAL_RUN_STATE_VIEW,
+    sends: new Map(),
     handBack: [],
     retries: [],
     briefStops: [],
     controls: [],
     ...input,
+    turns: normalizeTurns(input.turns ?? { turns: [] }),
   });
   const host = document.createElement("div");
   const root = createRoot(host);

@@ -1,7 +1,7 @@
 /** Tab submission model: durable handoff, row projection, and writer commands. */
 
 import type { AiWriteMode } from "@meridian/contracts/works";
-import type { CommandFailure } from "@meridian/thread-client";
+import type { CommandFailure, FailedCommand, Occurrence } from "@meridian/thread-client";
 import type { QueryClient } from "@tanstack/react-query";
 import { HttpResponseError } from "@/client/api/http-client";
 import { createProjectThread } from "@/client/api/projects-api";
@@ -48,6 +48,7 @@ type Row = {
   fresh: boolean;
   failed?: boolean;
   localFailure?: boolean;
+  failure?: CommandFailure;
   busy?: boolean;
   status?: "error";
   attempt?: { session: object; submissionId: string; signal: AbortSignal };
@@ -70,22 +71,18 @@ export type JournalSwitch = {
   posted: boolean;
   /** The server refused it: nothing is held there, so Withdraw is local. */
   refused: boolean;
-  /** The last attempt did not succeed (refused, or lost in this tab). */
-  failed: boolean;
   /** The server's answer, stamped by whichever tab drove the record. */
   answer: ControlAnswer | null;
-  failure?: CommandFailure;
-};
+} & FailedCommand;
 type ThreadModel = {
   epoch: number;
   rows: Map<string, Row>;
   presentation: Map<string, RecoveryState>;
   bindings: Set<ChatSubmissionOwner>;
   /** Records of switches whose last attempt in this tab did not reach the server. */
-  failedSwitches: Set<string>;
+  failedSwitches: Map<string, CommandFailure>;
   switches: readonly JournalSwitch[];
-  attempts: Map<string, { requestId: string; attempt: number; pending: boolean }>;
-  unsavedSwitches: Map<string, { entry: NewChatSubmission; seq: number }>;
+  unsavedSwitches: Map<string, { mode: AiWriteMode; seq: number; occurrence: Occurrence }>;
 };
 const models = new Map<string, ThreadModel>();
 function threadModel(accountId: string, threadId: string): ThreadModel {
@@ -97,9 +94,8 @@ function threadModel(accountId: string, threadId: string): ThreadModel {
       rows: new Map(),
       presentation: new Map(),
       bindings: new Set(),
-      failedSwitches: new Set(),
+      failedSwitches: new Map(),
       switches: [],
-      attempts: new Map(),
       unsavedSwitches: new Map(),
     };
     models.set(id, model);
@@ -174,19 +170,25 @@ export class ChatSubmissionOwner {
   readonly driver: ChatSubmissionDriver;
   private readonly model: ThreadModel;
   /** Shared eligibility/status, with commands bound only at the invoking pane. */
+  private recovery = new Map<string, UserTurnRecovery>();
   get presentation(): ReadonlyMap<string, UserTurnRecovery> {
-    return new Map(
+    return this.recovery;
+  }
+
+  private publishPresentation() {
+    this.recovery = new Map(
       [...this.model.presentation].map(([turnId, state]) => [
         turnId,
         {
           busy: state.busy,
-          failure: state.failure,
           moving: state.moving,
+          failure: state.failure,
           ...(!state.moving ? { onRetry: () => this.retry(turnId) } : {}),
           ...(state.editable ? { onEdit: () => this.edit(turnId) } : {}),
         },
       ]),
     );
+    this.options.changed();
   }
 
   private retry(turnId: string) {
@@ -220,7 +222,7 @@ export class ChatSubmissionOwner {
     controller.beginRecoverySession(this.session);
     this.driver = new ChatSubmissionDriver({
       accountId,
-      deleted: (entry, reason) =>
+      deleted: (_entry, reason) =>
         cleanDeletedChat(accountId, threadId, projectId, reason, undefined, true),
       signal,
       isCurrent: current,
@@ -277,22 +279,23 @@ export class ChatSubmissionOwner {
         if (thread.workId) void invalidateWorkThreads(queryClient, projectId, thread.workId);
       },
       status: (entry, status, localFailure) => {
-        const prior = this.model.attempts.get(entry.recordId);
-        this.model.attempts.set(entry.recordId, {
-          requestId: entry.submissionId,
-          attempt:
-            (prior?.attempt ?? 1) + (status === "pending" && prior && !prior.pending ? 1 : 0),
-          pending: status === "pending",
-        });
+        const failure =
+          status === "error"
+            ? commandFailure(
+                entry,
+                localFailure ? "unsaved" : entry.state === "rejected" ? "refused" : "lost",
+              )
+            : undefined;
         if (entry.control) {
           // A switch has no writer row: only its queued row (`switches`) shows the state.
-          if (status === "error") this.model.failedSwitches.add(entry.recordId);
+          if (failure) this.model.failedSwitches.set(entry.recordId, failure);
           else this.model.failedSwitches.delete(entry.recordId);
           this.rebuild();
           return;
         }
         const row = projectRow(accountId, entry, actions);
         row.status = status === "error" ? status : undefined;
+        row.failure = failure;
         row.attempt =
           status === "pending"
             ? { session: this.session, submissionId: entry.submissionId, signal }
@@ -388,13 +391,9 @@ export class ChatSubmissionOwner {
       const seq =
         this.model.unsavedSwitches.get(id)?.seq ??
         Math.max(0, ...this.model.switches.map((row) => row.seq)) + 1;
-      const prior = this.model.attempts.get(id);
-      this.model.attempts.set(id, {
-        requestId: id,
-        attempt: (prior?.attempt ?? 0) + 1,
-        pending: false,
-      });
-      this.model.unsavedSwitches.set(id, { entry, seq });
+      const previous = this.model.unsavedSwitches.get(id);
+      const occurrence = { requestId: id, attempt: (previous?.occurrence.attempt ?? 0) + 1 };
+      this.model.unsavedSwitches.set(id, { mode, seq, occurrence });
       this.publishSwitches();
       return false;
     }
@@ -407,7 +406,7 @@ export class ChatSubmissionOwner {
   retrySwitch = (id: string) => {
     if (!this.options.current()) return;
     const unsaved = this.model.unsavedSwitches.get(id);
-    if (unsaved?.entry.control) this.submitSwitch(id, unsaved.entry.control.mode);
+    if (unsaved) this.submitSwitch(id, unsaved.mode);
     else void this.driver.retry(id);
   };
 
@@ -419,23 +418,10 @@ export class ChatSubmissionOwner {
     return this.driver.withdrawControl(id, this.options.threadId);
   };
 
-  private failureOf(
-    id: string,
-    requestId: string,
-    kind: CommandFailure["kind"] = "lost",
-  ): CommandFailure {
-    let held = this.model.attempts.get(id);
-    if (!held) {
-      held = { requestId, attempt: 1, pending: false };
-      this.model.attempts.set(id, held);
-    }
-    return { requestId: held.requestId, attempt: held.attempt, kind };
-  }
-
   private publishSwitches() {
     this.rebuildSwitches(this.entries());
     for (const binding of this.model.bindings)
-      if (binding.options.current()) binding.options.changed();
+      if (binding.options.current()) binding.publishPresentation();
   }
 
   shownRecordIds = () =>
@@ -489,7 +475,7 @@ export class ChatSubmissionOwner {
       this.model.presentation.set(row.turnId, {
         recordId: entry.recordId,
         submissionId: entry.submissionId,
-        failure: this.failureOf(entry.recordId, entry.submissionId),
+        failure: latestFailure(entry, row.failure),
         moving,
         busy: moving || row.busy,
         editable: !moving && entry.state === "rejected" && !!entry.draft && !row.localFailure,
@@ -497,14 +483,14 @@ export class ChatSubmissionOwner {
     }
     if (retired) actions.invalidateThreadSnapshot(threadId);
     for (const binding of this.model.bindings)
-      if (binding.options.current()) binding.options.changed();
+      if (binding.options.current()) binding.publishPresentation();
   };
 
   /** The switches still in the journal, oldest first. A new array only when one changed. */
   private rebuildSwitches(records: readonly ChatSubmission[]) {
     const found = records.filter((entry) => entry.control).sort(compareSubmissions);
     const failed = this.model.failedSwitches;
-    for (const id of failed) {
+    for (const id of failed.keys()) {
       if (found.some((entry) => entry.recordId === id && !entry.answer)) continue;
       // Withdrawn, answered by another tab, or retired: its "Couldn't switch" card ends.
       failed.delete(id);
@@ -515,26 +501,28 @@ export class ChatSubmissionOwner {
       seq: entry.seq,
       posted: !!entry.posted,
       refused: entry.state === "rejected",
-      failed: !entry.answer && (entry.state === "rejected" || failed.has(entry.recordId)),
       answer: entry.answer ?? null,
       ...(!entry.answer && (entry.state === "rejected" || failed.has(entry.recordId))
-        ? { failure: this.failureOf(entry.recordId, entry.submissionId) }
-        : {}),
+        ? {
+            failed: true,
+            failure: latestFailure(entry, failed.get(entry.recordId)),
+          }
+        : { failed: false }),
     }));
-    for (const [id, { entry, seq }] of this.model.unsavedSwitches) {
+    for (const [id, { mode, seq, occurrence }] of this.model.unsavedSwitches) {
       if (found.some((record) => record.recordId === id)) {
         this.model.unsavedSwitches.delete(id);
         continue;
       }
       next.push({
         id,
-        mode: entry.control?.mode ?? "direct",
+        mode,
         seq,
         posted: false,
         refused: false,
         failed: true,
         answer: null,
-        failure: this.failureOf(id, id, "unsaved"),
+        failure: { ...occurrence, kind: "unsaved" },
       });
     }
     const previous = this.model.switches;
@@ -649,4 +637,15 @@ export class ChatSubmissionOwner {
     const binding = [...this.model.bindings].find((owner) => owner.options.current());
     binding?.rebuild();
   }
+}
+
+function commandFailure(entry: ChatSubmission, kind: CommandFailure["kind"]): CommandFailure {
+  return { ...(entry.occurrence ?? { requestId: entry.submissionId, attempt: 1 }), kind };
+}
+
+/** A newer durable attempt from another tab supersedes this tab's old failure. */
+function latestFailure(entry: ChatSubmission, local?: CommandFailure): CommandFailure {
+  return local && local.attempt >= (entry.occurrence?.attempt ?? 0)
+    ? local
+    : commandFailure(entry, entry.state === "rejected" ? "refused" : "lost");
 }

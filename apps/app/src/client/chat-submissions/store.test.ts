@@ -36,6 +36,7 @@ function existingThread(overrides: Partial<ChatSubmission> = {}): ChatSubmission
   return {
     recordId: "sub-1",
     submissionId: "sub-1",
+    occurrence: { requestId: "sub-1", attempt: 1 },
     threadId: "thread-1",
     projectId: "project-1",
     createdAt: "2026-09-22T12:00:00.000Z",
@@ -164,6 +165,11 @@ it("rewrites a reminted submission in its stable key, retaining the draft and cr
   // One record, and the chat's seq counter.
   expect(storage.length).toBe(2);
   expect(journal.get(entry.recordId)).toEqual({ ...entry, submissionId: "reminted" });
+  const retried = { ...entry, occurrence: { requestId: "retry-request", attempt: 2 } };
+  journal.record("account", retried);
+  const reloaded = new DeviceChatSubmissionJournal(storage);
+  reloaded.setUser("account");
+  expect(reloaded.get(entry.recordId)?.occurrence).toEqual(retried.occurrence);
   // A new record takes the chat's next place in order; a rewrite keeps its own.
   journal.record("account", { ...entry, recordId: "later", submissionId: "later", seq: 99 });
   journal.record("account", { ...entry, submissionId: "again" });

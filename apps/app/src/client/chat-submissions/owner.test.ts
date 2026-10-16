@@ -347,9 +347,8 @@ it("a refused Retry rewrite retains an actionable row but does not authorize Edi
   try {
     const first = mounted.read().presentation.get(row.id)?.failure;
     await mounted.read().driver.retry("one");
-    expect(mounted.read().presentation.get(row.id)?.failure?.attempt).toBe(
-      (first?.attempt ?? 0) + 1,
-    );
+    expect(first?.attempt).toBe(1);
+    expect(mounted.read().presentation.get(row.id)?.failure?.attempt).toBe(2);
     expect(scenario.turns()[0]?.status).toBe("error");
     expect(mounted.read().presentation.get(row.id)?.onRetry).toBeTypeOf("function");
     expect(mounted.read().presentation.get(row.id)?.onEdit).toBeUndefined();

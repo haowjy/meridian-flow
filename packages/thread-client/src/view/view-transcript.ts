@@ -21,9 +21,10 @@ import {
 import { type TurnStats, turnStats } from "./turn-stats";
 import { projectWriterText, type WriterText } from "./writer";
 
-export type TranscriptViewInput = TurnFacts & {
-  /** The same normalization used by the host's cards and run selectors. */
-  normalized?: NormalizedTurns;
+export type TranscriptViewInput = (
+  | (TurnFacts & { normalized?: never })
+  | { normalized: NormalizedTurns; turns?: never }
+) & {
   /** A fork's frozen prefix from its source, or omitted when none is known. */
   inherited?: InheritedTranscript | null;
   activity: {
@@ -106,8 +107,9 @@ function responseOf(parts: readonly Turn[]): NonNullable<ViewRow["response"]> {
 const NO_DELIVERIES: readonly (readonly DeliveryEvent[])[] = [];
 
 export function viewTranscript(input: TranscriptViewInput): TranscriptView {
-  const standIns = input.standIns ?? [];
   const normalized = input.normalized ?? normalizeTurns(input);
+  const facts = normalized.facts;
+  const standIns = facts.standIns ?? [];
   const { placed } = normalized;
   // A card needs its turn's row, so an anchored turn outranks Retry suppression and forgetting
   // (a refused Retry's reply is stamped by the competing Retry that won). Inherited rows are never
@@ -116,12 +118,12 @@ export function viewTranscript(input: TranscriptViewInput): TranscriptView {
   const anchored = input.anchoredTurnIds;
   const effective = new Set(normalized.turns.map((turn) => turn.id));
   const turns = placed.filter(
-    (turn) => !input.hidden?.has(turn.id) && (anchored?.has(turn.id) || effective.has(turn.id)),
+    (turn) => !facts.hidden?.has(turn.id) && (anchored?.has(turn.id) || effective.has(turn.id)),
   );
   // Provenance is stated, never read from an id's shape: only the server's own turns are named.
-  const stored = new Set(input.turns.map((turn) => turn.id));
+  const stored = new Set(facts.turns.map((turn) => turn.id));
   const unconfirmed = new Set(standIns.map((turn) => turn.id).filter((id) => !stored.has(id)));
-  if (input.opening) unconfirmed.add(input.opening.id);
+  if (facts.opening) unconfirmed.add(facts.opening.id);
   const model = buildTranscriptModel(
     turns,
     input.activity.awaitingSubagents,

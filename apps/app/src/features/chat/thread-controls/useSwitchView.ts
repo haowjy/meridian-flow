@@ -180,8 +180,9 @@ export function useSwitchView(input: {
       folded.rows.map((row) => ({
         id: row.id,
         control: { kind: "write_mode" as const, mode: row.mode },
-        status: row.status,
-        failure: row.failure,
+        ...(row.status === "failed" || row.status === "withdraw_failed"
+          ? { status: row.status, failure: row.failure }
+          : { status: row.status }),
         ...(row.awaitingServer ? { awaitingServer: true } : {}),
         // The server's `deliveryState` decides "queued": a switch waits only for a reply that
         // already held the chat. Before it lists the switch, a running reply is the only fact.

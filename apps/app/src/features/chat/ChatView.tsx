@@ -379,19 +379,14 @@ export function ChatView({
     () =>
       chatCards({
         threadId,
-        turns: turnFacts,
-        normalized,
+        turns: normalized,
         runState,
         handBack: [...handBack.unresolved, ...(sendNow.failed ? [sendNow.failed] : [])],
         retries: [...replyRetry.outcomes, ...brief.outcomes],
         briefStops: brief.stopFailures,
         controls: controls.queued,
         movingTurnIds,
-        sends: new Map(
-          [...(submissions.presentation ?? [])].flatMap(([id, row]) =>
-            row.failure ? [[id, row.failure] as const] : [],
-          ),
-        ),
+        sends: new Map([...(submissions.presentation ?? [])].map(([id, row]) => [id, row.failure])),
       }),
     [
       brief.outcomes,
@@ -404,7 +399,6 @@ export function ChatView({
       runState,
       sendNow.failed,
       threadId,
-      turnFacts,
       normalized,
     ],
   );
@@ -481,7 +475,6 @@ export function ChatView({
   const view = useMemo(
     () =>
       viewTranscript({
-        ...turnFacts,
         normalized,
         inherited: inheritedTranscript,
         activity: { awaitingSubagents },
@@ -496,7 +489,6 @@ export function ChatView({
       inheritedTranscript,
       queuedWriterTurnIds,
       switchAwaitsRun,
-      turnFacts,
       normalized,
     ],
   );

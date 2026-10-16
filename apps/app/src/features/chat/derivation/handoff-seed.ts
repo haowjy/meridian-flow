@@ -15,7 +15,7 @@ export type BriefCardView = {
   superseded: boolean;
   /** Stop is offered while the brief is generating and no Stop is in flight. */
   canStop: boolean;
-  /** Retry is offered only on the latest seed, once it ended without a brief. */
+  /** Stopped-brief Retry is offered only on the latest seed; failed-brief recovery comes from chatCards. */
   canRetry: boolean;
 };
 
@@ -39,13 +39,13 @@ export function briefCardView(input: {
         : turn.status === "cancelled"
           ? "stopped"
           : "failed";
-  const ended = state === "failed" || state === "stopped";
+  const stopped = state === "stopped";
   return {
     state,
     brief: state === "ready" ? readHandoffBrief(turn) : null,
-    superseded: ended && !latest,
+    superseded: stopped && !latest,
     canStop: state === "generating" && !stopping,
-    canRetry: ended && latest,
+    canRetry: stopped && latest,
   };
 }
 

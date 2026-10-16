@@ -44,7 +44,7 @@ export type SubmissionDriverOptions = {
 export class ChatSubmissionDriver {
   private readonly deletedThreads = new Set<string>();
   private readonly incompleteDeletions = new Map<string, "deleted" | "project-deleted">();
-  private readonly localFailures = new Set<string>();
+  private readonly localFailures = new Map<string, ChatSubmission>();
   private readonly drives = new Map<string, Promise<void>>();
   constructor(private readonly options: SubmissionDriverOptions) {}
 
@@ -179,15 +179,16 @@ export class ChatSubmissionDriver {
       return Promise.resolve();
     if (!this.incompleteDeletions.has(original.threadId) && this.options.transferReceived(original))
       return this.edit(submissionId);
-    this.options.status(original, "pending");
+    const requested = this.nextAttempt(original);
+    this.options.status(requested, "pending");
     return this.locked(
       original.threadId,
       async (derived) => {
         const entry = this.read(original.recordId);
         if (!entry || entry.submissionId !== submissionId || !this.current()) return;
-        await this.guard(entry, () => this.attempt(entry, true, derived));
+        await this.guard(requested, () => this.attempt(entry, true, derived, requested));
       },
-      original,
+      requested,
     )
       .finally(() => this.options.finished(original))
       .then(() => {
@@ -229,14 +230,19 @@ export class ChatSubmissionDriver {
     } catch (error) {
       if (!this.current()) return;
       reportError(error);
-      this.localFailure(entry);
+      const saved = this.read(entry.recordId);
+      this.localFailure(
+        saved && (saved.occurrence?.attempt ?? 0) > (entry.occurrence?.attempt ?? 0)
+          ? saved
+          : entry,
+      );
     } finally {
       this.options.finished(entry);
     }
   }
 
   private localFailure(entry: ChatSubmission) {
-    this.localFailures.add(entry.recordId);
+    this.localFailures.set(entry.recordId, entry);
     try {
       this.options.status(entry, "error", true);
     } catch (error) {
@@ -253,7 +259,26 @@ export class ChatSubmissionDriver {
     return false;
   }
 
-  private async attempt(original: ChatSubmission, retry: boolean, derived: boolean) {
+  private nextAttempt(entry: ChatSubmission): ChatSubmission {
+    return {
+      ...entry,
+      occurrence: {
+        requestId: crypto.randomUUID(),
+        attempt:
+          Math.max(
+            entry.occurrence?.attempt ?? 0,
+            this.localFailures.get(entry.recordId)?.occurrence?.attempt ?? 0,
+          ) + 1,
+      },
+    };
+  }
+
+  private async attempt(
+    original: ChatSubmission,
+    retry: boolean,
+    derived: boolean,
+    requested?: ChatSubmission,
+  ) {
     let entry = this.read(original.recordId);
     if (!entry || !this.current()) return;
     const deletion = this.incompleteDeletions.get(entry.threadId);
@@ -278,10 +303,13 @@ export class ChatSubmissionDriver {
       return;
     }
     const fresh = this.options.takeFresh(entry.recordId) && !retry;
-    if (retry && entry.state) {
-      entry = { ...entry, state: undefined };
-      if (!this.current() || !this.write(entry)) return;
-    }
+    entry = {
+      ...entry,
+      occurrence: (requested ?? (fresh && entry.occurrence ? entry : this.nextAttempt(entry)))
+        .occurrence,
+      ...(retry ? { state: undefined } : {}),
+    };
+    if (!this.write(entry)) return;
     this.options.status(entry, "pending");
     if (!derived) {
       this.settle(entry, "rejected");
@@ -475,7 +503,10 @@ export class ChatSubmissionDriver {
     if (kind === "accepted") {
       if (!this.options.journal.retire(entry.recordId)) this.localFailure(entry);
     } else {
-      if (kind === "rejected" && !this.write({ ...entry, state: "rejected" })) return;
+      if (kind === "rejected") {
+        entry = { ...entry, state: "rejected" };
+        if (!this.write(entry)) return;
+      }
       if (this.current()) this.options.status(entry, "error");
     }
   }

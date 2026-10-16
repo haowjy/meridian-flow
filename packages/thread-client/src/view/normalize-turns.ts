@@ -29,6 +29,7 @@ export type TurnFacts = {
 };
 
 export type NormalizedTurns = {
+  facts: TurnFacts;
   /** Stand-ins placed, nothing suppressed: the turns a card may still anchor on. */
   placed: Turn[];
   /** The conversation the writer is in: `placed` less the hidden, the retried and the forgotten. */
@@ -51,5 +52,5 @@ export function normalizeTurns(facts: TurnFacts): NormalizedTurns {
   const turns = placed.filter(
     (turn) => !facts.hidden?.has(turn.id) && !retried.has(turn.id) && inConversation(turn),
   );
-  return { placed, turns, retried };
+  return { facts, placed, turns, retried };
 }

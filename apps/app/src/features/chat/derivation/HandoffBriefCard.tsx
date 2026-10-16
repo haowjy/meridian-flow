@@ -73,7 +73,7 @@ export function HandoffBriefCard({
   const canRetry =
     view.state === "stopped"
       ? view.canRetry
-      : failures.some((card) => card.copy === "brief-failed");
+      : failures.some((card) => card.action === "retry_brief");
   // For a source that was untitled when S was created: refs are never writer copy.
   const sourceFallbackName = t`the source chat`;
 

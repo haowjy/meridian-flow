@@ -108,8 +108,7 @@ export type CommandFailureInput = {
 
 /** The only place a command failure's source is chosen. A refused command is the writer's to dismiss or redo. */
 export function classifyCommandFailure(input: CommandFailureInput): Failure {
-  const source: FailureSource =
-    input.kind === "lost" ? "transport" : input.kind === "refused" ? "refusal" : "bug";
+  const source: FailureSource = input.kind === "refused" ? "refusal" : "transport";
   const code = input.code ?? (input.kind === "unsaved" ? "unsaved" : input.kind);
   return {
     category: "command",

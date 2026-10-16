@@ -26,6 +26,7 @@ import {
   dropIntent,
   failIntent,
   INITIAL_RUN_STATE_VIEW,
+  nextOccurrence,
   type RunStateIntent,
   type RunStateView,
   receiveRecord,
@@ -236,13 +237,10 @@ function reduceView(view: RunStateView, action: RunStateAction): RunStateView {
           order: entry.seq,
           mode: entry.mode,
           answer: entry.answer?.runState.version ?? null,
-          ...(entry.answer
-            ? {}
-            : {
-                failed: entry.failed,
-                failure: entry.failure,
-                awaitingServer: entry.posted && !entry.refused,
-              }),
+          awaitingServer: !entry.answer && entry.posted && !entry.refused,
+          ...(!entry.answer && entry.failed
+            ? { failed: true as const, failure: entry.failure }
+            : { failed: false as const }),
         });
       }
       // An entry that left the journal was withdrawn or refused here, or pruned while this
@@ -256,18 +254,17 @@ function reduceView(view: RunStateView, action: RunStateAction): RunStateView {
       const held = view.intents.find(
         (intent) => intent.kind === "withdraw" && intent.id === action.id,
       );
-      const attempt = held?.kind === "withdraw" ? (held.failure?.attempt ?? 0) : 0;
+      const before =
+        held?.kind === "withdraw"
+          ? held.occurrence
+          : { requestId: `withdraw:${action.id}`, attempt: 0 };
       return addIntent(view, {
         kind: "withdraw",
         id: action.id,
         order: 0,
         answer: null,
         failed: action.failed,
-        failure: {
-          requestId: `withdraw:${action.id}`,
-          attempt: attempt + (action.failed ? 0 : 1),
-          kind: "lost",
-        },
+        occurrence: action.failed ? before : nextOccurrence(before),
       });
     }
     case "withdrawn":
