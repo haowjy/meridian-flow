@@ -2,8 +2,8 @@
  * The attribution classifier's named risks, one table: a writer-only change credited to a chat, a chat
  * named for text it did not write, a chat dropped from a change it did write, and an AI part read as
  * applied while a change still holds it. Every row asserts all three outputs: byline, members, status.
- * Each row also runs on a gc-on reload of the draft that has only the payload's restoration links, and
- * must give the same answer.
+ * Each row also runs on a gc-on reload of the draft, which has only what the draft itself carries (the
+ * restoration links Undo recorded into it), and must give the same answer.
  */
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
@@ -21,7 +21,7 @@ import {
 import { readBlocks } from "./fragments.js";
 import { diffBlocks } from "./hunks.js";
 import { rebase } from "./merge.js";
-import { restorationLinks } from "./restorations.js";
+import { recordRestorations } from "./restorations.js";
 import { projectReview } from "./review.js";
 import { writeBlocks } from "./writer.js";
 
@@ -72,11 +72,7 @@ function room(blocks: Array<string | PMNode>) {
   let base = readBlocks(frag(seed), schema);
   let writers = 100;
   const projection = () => projectReview(diffBlocks(base, readBlocks(frag(draft), schema)));
-  const provenance = () => ({
-    userId: "u1",
-    parts,
-    restorations: restorationLinks(draft),
-  });
+  const provenance = () => ({ userId: "u1", parts });
   const room = {
     draft,
     parts,
@@ -114,6 +110,7 @@ function room(blocks: Array<string | PMNode>) {
             trackedOrigins: new Set([origin]),
             captureTimeout: 0,
           });
+          recordRestorations(history);
           d.transact(() => run(d), origin);
           history.undo();
           history.destroy();
@@ -323,6 +320,32 @@ const ROWS: Row[] = [
     byline: [T()],
     members: [0],
     status: ["pending"],
+  },
+  {
+    name: "Discard then Undo of text at the end of a run keeps its chat (no right neighbor to infer from)",
+    text: "alpha beta gamma delta",
+    run: (r) => {
+      r.ai((d) => textOf(d).insert(textOf(d).length, " tail"));
+      r.discardUndo((d) => textOf(d).delete(textOf(d).length - 5, 5), 2);
+    },
+    byline: [T()],
+    members: [0],
+    status: ["pending"],
+  },
+  {
+    name: "red to blue, Apply, then the writer deletes blue: the writer's, and nothing is left pending",
+    text: "red",
+    run: (r) => {
+      r.ai((d) => {
+        textOf(d).delete(0, 3);
+        textOf(d).insert(0, "blue");
+      });
+      r.apply();
+      r.writer((d) => textOf(d).delete(0, 4));
+    },
+    byline: ["user"],
+    members: [],
+    status: ["applied"],
   },
   {
     name: "33 Discard and Undo rounds of an insertion still name its chat",

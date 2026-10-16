@@ -109,7 +109,6 @@ it("an expanded file lists its room's changes; Apply sends the id with the snaps
   fixture.network.getDraftAttribution.mockImplementation(async () => ({
     itemKey: "draft-a",
     userId: "user-1",
-    restorations: [],
     edits: [
       {
         threadId: "thread-a",

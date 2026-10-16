@@ -10,7 +10,6 @@ import {
   projectReview,
   REVIEW_BASE_FRAGMENT,
   readBlocks,
-  restorationLinks,
 } from "@meridian/agent-edit/diff";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
@@ -39,7 +38,6 @@ export function partsInChanges(draft: Y.Doc, parts: readonly PartEffect[]): bool
       inserted: effect.inserted.map(tuple),
       deleted: effect.deleted.map(tuple),
     })),
-    restorations: restorationLinks(draft),
   });
   const inside = parts.map(() => false);
   for (const { members } of classified.values()) for (const i of members) inside[i] = true;

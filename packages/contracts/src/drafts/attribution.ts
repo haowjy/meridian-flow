@@ -13,15 +13,6 @@ export type Author =
   | { kind: "user"; userId: string }
   | { kind: "thread"; threadId: string; turnId: string; toolCallId?: string };
 
-/** `[client, clock, length, toClient, toClock]`: those ids restore `toClient:toClock..` (Undo re-created them). */
-export type AttributionRestoration = [
-  client: number,
-  clock: number,
-  length: number,
-  toClient: number,
-  toClock: number,
-];
-
 /** Where a write's link lands in the conversation the writer knows it by. */
 export interface DraftEditReveal {
   threadId: string;
@@ -60,14 +51,13 @@ export interface DraftAttributionEdit {
 
 /**
  * `GET …/draft/attribution?itemKey=`: what the browser's classifier needs to say who wrote each change.
- * `userId` owns the browser clients (the project's one user today); `restorations` are the server's
- * Undo-restoration links, computed where tombstone text exists.
+ * `userId` owns the browser clients (the project's one user today). Undo-restoration links are not here:
+ * they live in the draft doc itself (`recordRestorations`).
  */
 export interface DraftAttribution {
   itemKey: DraftItemKey;
   userId: string;
   edits: DraftAttributionEdit[];
-  restorations: AttributionRestoration[];
 }
 
 /** `GET /api/threads/:threadId/draft-files`: the listed items whose pending AI edits include this chat. */

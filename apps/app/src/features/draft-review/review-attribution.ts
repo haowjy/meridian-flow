@@ -5,7 +5,7 @@
  * subagent, the primary conversation that spawned it), so every membership consumer reads
  * `members` and none walks lineage itself.
  */
-import { type Author, classifyChanges, restorationLinks } from "@meridian/agent-edit/diff";
+import { type Author, classifyChanges } from "@meridian/agent-edit/diff";
 import type { DraftAttribution, DraftAttributionEdit } from "@meridian/contracts/drafts";
 import type * as Y from "yjs";
 import type { ReviewFrame } from "./review-frame";
@@ -69,13 +69,11 @@ export const writerIn = (change: Pick<ReviewChange, "byline">) =>
 export function classifyRoom(
   doc: Y.Doc,
   frame: ReviewFrame,
-  data: Pick<DraftAttribution, "userId" | "edits" | "restorations">,
+  data: Pick<DraftAttribution, "userId" | "edits">,
 ): ReadonlyMap<string, ChangeAttribution> {
   const classified = classifyChanges(doc, frame, {
     userId: data.userId,
     parts: data.edits,
-    // The server proves what tombstone text allows; the browser adds its own undo stacks' restorations.
-    restorations: [...data.restorations, ...restorationLinks(doc)],
   });
   const resolve = chatResolver(data.edits);
   return new Map(

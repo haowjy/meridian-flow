@@ -21,7 +21,7 @@ import { type ApplyEntry, readApplyRecord } from "./apply-record.js";
 import { DRAFT_SERVER_CLIENT_ID } from "./draft-base.js";
 import type { Hunk } from "./hunks.js";
 import { IdIndex, type ItemRange, indexRanges } from "./id-index.js";
-import type { RestorationLink } from "./restorations.js";
+import { type RestorationLink, readRestorationLinks } from "./restorations.js";
 import type { ReviewProjection } from "./review.js";
 import { DIFF_OPTS, isBlockTok, type Side, type Tok } from "./tokens.js";
 
@@ -40,8 +40,6 @@ export interface Provenance {
   /** The human who owns the draft's browser clients (`projects.user_id` while a project has one user). */
   userId: string;
   parts: readonly AttributionPart[];
-  /** Links the server computed from tombstone text, plus the browser's own for its undo stacks. */
-  restorations?: readonly RestorationLink[];
 }
 export interface ChangeClassification {
   /** The user first, then each writing thread once (linking to its latest write). */
@@ -67,12 +65,9 @@ const SLIDE_WORK = 200_000;
 const OBJECT = "￼";
 const BASE = -1;
 const USER = -2;
-/** Provenance that could not be proven: the item may restore an earlier one. Names no one. */
+/** Provenance a restoration chain could not settle. Names no one, and is never the writer's. */
 const UNKNOWN = -3;
-/** Unknown, but the item it may restore came from AI part `part`: still a member. */
-const unknownOf = (part: number) => (part >= 0 ? -4 - part : UNKNOWN);
-const isUnknown = (who: number) => who <= UNKNOWN;
-const partOf = (who: number) => (who >= 0 ? who : isUnknown(who) ? -4 - who : -1);
+const isUnknown = (who: number) => who === UNKNOWN;
 
 const tokStr = (t: Tok) => (t.kind === "text" ? t.ws + t.core : t.kind === "inline" ? OBJECT : "");
 
@@ -217,7 +212,6 @@ class Classifier {
   private readonly texts = [new Map<number, SideText>(), new Map<number, SideText>()] as const;
   private readonly originMemo = new IdMemo();
   private readonly deleterMemo = new IdMemo();
-  private readonly claims = new WeakMap<Y.Item, number>();
 
   constructor(
     private readonly doc: Y.Doc,
@@ -233,7 +227,7 @@ class Classifier {
     const record = readApplyRecord(doc);
     this.applied = indexRanges([record.flatMap((e) => e.base)]);
     this.settled = indexRanges([record.flatMap((e) => e.settled)]);
-    this.linkList = provenance.restorations ?? [];
+    this.linkList = readRestorationLinks(doc);
     this.links = new IdIndex(this.linkList.map((l, i) => [l[0], l[1], l[2], i] as const));
     this.superseded = indexRanges([this.linkList.map((l) => [l[3], l[4], l[2]] as const)]);
     const items: Y.Item[] = [];
@@ -271,8 +265,7 @@ class Classifier {
     clock: number,
     memo: IdMemo,
     end: (client: number, clock: number) => number | undefined,
-    unlinked: (client: number, clock: number, item?: Y.Item) => number,
-    item?: Y.Item,
+    unlinked: number,
   ): number {
     let c = client;
     let k = clock;
@@ -286,7 +279,7 @@ class Classifier {
       }
       const to = this.link(c, k);
       if (!to) {
-        who = unlinked(c, k, hops ? undefined : item);
+        who = unlinked;
         break;
       }
       if (hops > this.linkList.length) {
@@ -301,8 +294,8 @@ class Classifier {
     return who;
   }
 
-  /** `BASE`, `USER`, an unknown, or the index of the AI part that wrote the item. */
-  private origin(client: number, clock: number, item?: Y.Item): number {
+  /** `BASE`, `USER`, `UNKNOWN`, or the index of the AI part that wrote the item. */
+  private origin(client: number, clock: number): number {
     return this.chase(
       client,
       clock,
@@ -313,8 +306,7 @@ class Classifier {
         if (part >= 0) return part;
         return c === DRAFT_SERVER_CLIENT_ID ? BASE : undefined;
       },
-      (c, k, hint) => this.unlinked(c, k, hint),
-      item,
+      USER,
     );
   }
 
@@ -328,71 +320,8 @@ class Classifier {
         const part = this.deleted.get(c, k);
         return part >= 0 ? part : undefined;
       },
-      () => USER,
+      USER,
     );
-  }
-
-  /**
-   * An item with no insertion range and no link is the writer's, unless it or an element it sits in may
-   * be an Undo of an earlier item that nothing proves: that reads unknown, never the writer's.
-   */
-  private unlinked(client: number, clock: number, hint?: Y.Item): number {
-    let item = hint;
-    if (!item) {
-      if (Y.getState(this.doc.store, client) <= clock) return USER;
-      const found = Y.getItem(this.doc.store, Y.createID(client, clock));
-      if (!(found instanceof Y.Item)) return USER;
-      item = found;
-    }
-    const known = this.unlinkedMemo.get(item);
-    if (known !== undefined) return known;
-    let who = this.claim(item);
-    for (
-      let parent = item.parent as Y.AbstractType<unknown>;
-      who === USER && parent._item;
-      parent = parent._item.parent as Y.AbstractType<unknown>
-    ) {
-      const above = parent._item;
-      let seen = this.ancestors.get(above);
-      if (seen === undefined) {
-        seen = this.origin(above.id.client, above.id.clock, above);
-        this.ancestors.set(above, seen);
-      }
-      if (isUnknown(seen)) who = seen;
-    }
-    this.unlinkedMemo.set(item, who);
-    return who;
-  }
-  private readonly unlinkedMemo = new WeakMap<Y.Item, number>();
-  private readonly ancestors = new WeakMap<Y.Item, number>();
-
-  /** Unknown, with the part the original came from, when `item` re-creates a deleted element or format; else `USER`. */
-  private claim(item: Y.Item): number {
-    if (item.content instanceof Y.ContentString) return USER;
-    const known = this.claims.get(item);
-    if (known !== undefined) return known;
-    let who = USER;
-    const ro = item.rightOrigin;
-    const { content } = item;
-    if (ro && (content instanceof Y.ContentType || content instanceof Y.ContentFormat)) {
-      const original =
-        Y.getState(this.doc.store, ro.client) > ro.clock ? Y.getItem(this.doc.store, ro) : null;
-      const kind = (c: Y.Item["content"]) =>
-        c instanceof Y.ContentFormat
-          ? `f${c.key}`
-          : c instanceof Y.ContentType
-            ? `t${c.type.constructor.name}`
-            : "";
-      // A browser that dropped the original's content cannot compare kinds and must assume they match.
-      const same =
-        !!original?.deleted &&
-        (!(original instanceof Y.Item) ||
-          original.content instanceof Y.ContentDeleted ||
-          kind(original.content) === kind(content));
-      if (same) who = unknownOf(partOf(this.origin(ro.client, ro.clock)));
-    }
-    this.claims.set(item, who);
-    return who;
   }
 
   private keyOf = (who: number) => (who === USER ? "user" : `thread:${this.parts[who].threadId}`);
@@ -452,8 +381,7 @@ class Classifier {
   /** A live item of the change: its part is a member, Apply moves it, and `named` lets it name its author. */
   private touch(acc: Acc, who: number, client: number, clock: number, named: boolean) {
     if (who === BASE) return;
-    const part = partOf(who);
-    if (part >= 0) acc.members.add(part);
+    if (who >= 0) acc.members.add(who);
     if (this.options.record) pushRange(acc.base, client, clock);
     if (named && !isUnknown(who)) this.name(acc, who);
   }
@@ -461,7 +389,7 @@ class Classifier {
   /** A single-unit item that is the change itself (an element, a format, an attribute): it names its author. */
   private evidence(acc: Acc, item: Y.Item) {
     const { client, clock } = item.id;
-    this.touch(acc, this.origin(client, clock, item), client, clock, true);
+    this.touch(acc, this.origin(client, clock), client, clock, true);
   }
 
   /** Tombstones of the change: the parts that deleted them are members and Apply settles them. */
@@ -474,7 +402,7 @@ class Classifier {
         if (this.options.record) pushRange(acc.settled, c, clock);
         const part = this.deleted.get(c, clock);
         if (part >= 0) acc.members.add(part);
-        if (deleters && this.origin(c, clock, item) === BASE && this.superseded.get(c, clock) < 0)
+        if (deleters && this.origin(c, clock) === BASE && this.superseded.get(c, clock) < 0)
           deleters.push(this.deleter(c, clock));
       }
   }
@@ -489,9 +417,7 @@ class Classifier {
   ) {
     const ix = this.index(b);
     if (what.live)
-      this.eachChar(ix, from, to, (c, k, item) =>
-        this.touch(acc, this.origin(c, k, item), c, k, false),
-      );
+      this.eachChar(ix, from, to, (c, k, item) => this.touch(acc, this.origin(c, k), c, k, false));
     if (!what.dead) return;
     const dead: Y.Item[] = [];
     for (let i = lowerBound(ix.dead, from); i < ix.dead.length && ix.dead[i].at <= to; i++)
@@ -511,7 +437,7 @@ class Classifier {
     for (let p = lo; p <= hi; p++) {
       const origins = new Set<number>();
       this.eachChar(ix, p, p + n, (c, k, item) => {
-        const who = this.origin(c, k, item);
+        const who = this.origin(c, k);
         origins.add(who);
         this.touch(acc, who, c, k, false);
       });
@@ -595,7 +521,10 @@ class Classifier {
    * The character edit between two spans. What the two share at both ends is trimmed first, so a one-word
    * edit never reaches diff-match-patch, and only what is left counts against the budget.
    */
-  private diff(a: string, b: string): Array<[number, string]> | null {
+  private diff(
+    a: string,
+    b: string,
+  ): { ops: Array<[number, string]>; head: number; tail: number } | null {
     let lo = 0;
     while (lo < a.length && lo < b.length && a[lo] === b[lo]) lo++;
     let hi = 0;
@@ -617,17 +546,22 @@ class Classifier {
             ...(now ? [[DIFF_INSERT, now] as [number, string]] : []),
           ]
         : (makeDiff(was, now, DIFF_OPTS) as Array<[number, string]>);
-    return [
-      ...(lo ? [[DIFF_EQUAL, a.slice(0, lo)] as [number, string]] : []),
-      ...middle,
-      ...(hi ? [[DIFF_EQUAL, a.slice(a.length - hi)] as [number, string]] : []),
-    ];
+    return {
+      ops: [
+        ...(lo ? [[DIFF_EQUAL, a.slice(0, lo)] as [number, string]] : []),
+        ...middle,
+        ...(hi ? [[DIFF_EQUAL, a.slice(a.length - hi)] as [number, string]] : []),
+      ],
+      head: lo,
+      tail: hi,
+    };
   }
 
   /** The character edit of one span, `draft` starting at offset `ds` of draft block `b`. */
   private chars(acc: Acc, b: number, ds: number, base: string, draft: string) {
-    const ops = this.diff(base, draft);
-    if (!ops) return this.region(acc, b, ds, ds + draft.length, { live: true, dead: true });
+    const diffed = this.diff(base, draft);
+    if (!diffed) return this.region(acc, b, ds, ds + draft.length, { live: true, dead: true });
+    const { ops, head, tail } = diffed;
     let at = 0;
     ops.forEach(([op, txt], k) => {
       if (op === DIFF_INSERT) {
@@ -643,7 +577,13 @@ class Classifier {
           starts.map((s) => ds + s),
           txt,
         );
-      } else if (op === DIFF_EQUAL) at += txt.length;
+      } else if (op === DIFF_EQUAL) {
+        // Items count, not characters the diff calls new: an equal character inside the edit ("e" of
+        // red to blue) can still be a pending item, and the change owns it.
+        if (at >= head && at + txt.length <= draft.length - tail)
+          this.region(acc, b, ds + at, ds + at + txt.length, { live: true, dead: false });
+        at += txt.length;
+      }
     });
   }
 

@@ -742,7 +742,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       releaseObjects: async () => {},
     }),
     commands: draftCommands,
-    attribution: createDraftAttribution(createDrizzleDraftAttributionStore(db), branchStore),
+    attribution: createDraftAttribution(createDrizzleDraftAttributionStore(db)),
     resolveThreadTitles: lookups.resolveThreadTitles,
     publication: createDraftPublication({
       drafts: workDrafts,

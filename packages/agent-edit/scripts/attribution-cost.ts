@@ -10,7 +10,6 @@ import * as Y from "yjs";
 import { classifyChanges, type ItemRange } from "../src/diff/attribution.ts";
 import { readBlocks } from "../src/diff/fragments.ts";
 import { diffBlocks } from "../src/diff/hunks.ts";
-import { restorationLinks } from "../src/diff/restorations.ts";
 import { projectReview } from "../src/diff/review.ts";
 
 const schema = buildDocumentSchema();
@@ -72,7 +71,6 @@ function chapter(words: number, perParagraph: number, changed: number) {
         deleted,
       },
     ],
-    restorations: restorationLinks(draft),
   };
   return { draft, projection, provenance };
 }
@@ -124,7 +122,6 @@ function alternating(paragraphs: number, words: number) {
         deleted,
       },
     ],
-    restorations: restorationLinks(draft),
   };
   const projection = projectReview(
     diffBlocks(base, readBlocks(draft.getXmlFragment(NAME), schema)),

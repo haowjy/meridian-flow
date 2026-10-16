@@ -1,24 +1,22 @@
 /**
- * Restoration links: which browser items Undo re-created from deleted ones.
+ * Restoration links: which items an Undo re-created from deleted ones, recorded at the moment of Undo.
  *
- * Yjs never undeletes. `redoItem` creates a new item at a new id with a copy of the old content, so one
- * restoration proof feeds the classifier's single provenance resolver, for every kind of item:
+ * Yjs never undeletes. `redoItem` creates a new item at a new id with a copy of the old content and sets
+ * `original.redone` to it, for every kind of item (text, element, descendant, format, map attribute). Only
+ * the doc that ran the Undo holds those pointers, so `recordRestorations` copies them into a writer-writable
+ * root of the draft, under an origin the UndoManagers do not track. The root syncs and persists with the
+ * draft, so the server and every reload read the same links, and the classifier follows them through chains
+ * (a second Discard and Undo). Nothing is inferred afterwards.
  *
- * - `redone` pointers, where the doc has them (the browser that ran the Undo): exact.
- * - Text: a run whose `rightOrigin` names a deleted item is linked only when the whole run's text equals
- *   the original slice. The server (gc off) keeps the text; a browser keeps it only for the tombstones its
- *   own undo stacks retained.
- * - Elements: a new element whose `rightOrigin` names a deleted element of the same name restores it, and
- *   its descendants come back inside it with no origin of their own, so they are paired by content, in
- *   order: the original's children, text, formats and attributes against the new element's. An element is
- *   linked only when everything the original held was found in it.
- * - Formats: a new format item whose `rightOrigin` names a deleted format of the same key and value.
- * - Attributes: a map item that repeats the value of an earlier, deleted item of its own chain.
- *
- * Where a restoration cannot be proven there is no link, and the classifier reads the item as unknown
- * rather than as the writer's.
+ * Validation is light because the root is writable by the writer: the original must be deleted and the
+ * restored range must be the same kind of content, in ids the doc has. A forged link can only relabel the
+ * writer's own text in their own draft.
  */
 import * as Y from "yjs";
+
+export const RESTORED_ROOT = "__meridian_review_restored_v1";
+/** The origin of the recording transaction. No UndoManager tracks it, so a record never lands on an undo stack. */
+export const RESTORED_ORIGIN = "meridian:review-restored";
 
 /** `[client, clock, length, toClient, toClock]`: ids `client:clock..+length` restore `toClient:toClock..`. */
 export type RestorationLink = readonly [
@@ -29,192 +27,80 @@ export type RestorationLink = readonly [
   toClock: number,
 ];
 
-/** Characters of unit pairing one restoration may spend before it is left unproven. */
-const PAIR_WORK = 2_000_000;
-
-const textOf = (item: Y.Item) =>
-  item.content instanceof Y.ContentString ? item.content.str : null;
-const sameId = (a: Y.ID | null, client: number, clock: number) =>
-  !!a && a.client === client && a.clock === clock;
-
-/** Whether `next` continues the insertion run that `prev` ends: consecutive clocks, chained origin, same rightOrigin. */
-function continues(prev: Y.AbstractStruct, next: Y.AbstractStruct): next is Y.Item {
-  if (!(prev instanceof Y.Item) || !(next instanceof Y.Item)) return false;
-  const ro = prev.rightOrigin;
-  return (
-    prev.id.client === next.id.client &&
-    next.id.clock === prev.id.clock + prev.length &&
-    prev.content instanceof Y.ContentString &&
-    next.content instanceof Y.ContentString &&
-    !!ro &&
-    sameId(next.rightOrigin, ro.client, ro.clock) &&
-    sameId(next.origin, prev.id.client, prev.id.clock + prev.length - 1)
-  );
+/** Copies an UndoManager's restorations into its doc as each undo or redo pops, for the manager's life. */
+export function recordRestorations(history: Y.UndoManager): void {
+  history.on("stack-item-popped", ({ stackItem }) => {
+    const { doc } = history;
+    const links: RestorationLink[] = [];
+    for (const [client, ranges] of stackItem.deletions.clients) {
+      for (const { clock, len } of ranges) {
+        for (let k = clock; k < clock + len && Y.getState(doc.store, client) > k; ) {
+          const struct = Y.getItem(doc.store, Y.createID(client, k));
+          const end = Math.min(clock + len, struct.id.clock + struct.length);
+          if (struct instanceof Y.Item && struct.redone)
+            pushLink(links, [
+              struct.redone.client,
+              struct.redone.clock + (k - struct.id.clock),
+              end - k,
+              client,
+              k,
+            ]);
+          k = end;
+        }
+      }
+    }
+    if (links.length)
+      doc.transact(() => doc.getArray<RestorationLink>(RESTORED_ROOT).push(links), RESTORED_ORIGIN);
+  });
 }
 
-/** Appends a link, extending the last one when both sides continue it. */
-function emit(out: RestorationLink[], to: Y.ID, original: Y.ID, length = 1) {
+/** Appends a link, extending the last one when both its sides continue it. */
+function pushLink(out: RestorationLink[], link: RestorationLink) {
   const last = out[out.length - 1];
   if (
     last &&
-    last[0] === to.client &&
-    last[1] + last[2] === to.clock &&
-    last[3] === original.client &&
-    last[4] + last[2] === original.clock
+    last[0] === link[0] &&
+    last[1] + last[2] === link[1] &&
+    last[3] === link[3] &&
+    last[4] + last[2] === link[4]
   )
-    out[out.length - 1] = [last[0], last[1], last[2] + length, last[3], last[4]];
-  else out.push([to.client, to.clock, length, original.client, original.clock]);
+    out[out.length - 1] = [last[0], last[1], last[2] + link[2], last[3], last[4]];
+  else out.push(link);
 }
 
-const nameOf = (type: Y.AbstractType<unknown>) =>
-  type instanceof Y.XmlElement ? type.nodeName : (type.constructor as { name: string }).name;
+const kindOf = (content: Y.Item["content"]) =>
+  content instanceof Y.ContentFormat
+    ? `f${content.key}`
+    : content instanceof Y.ContentType
+      ? `t${content.type instanceof Y.XmlElement ? content.type.nodeName : content.type.constructor.name}`
+      : content.constructor.name;
 
-/** The value an item holds, for deciding that two items hold the same one. */
-function valueKey(item: Y.Item): string | null {
-  const { content } = item;
-  if (content instanceof Y.ContentFormat)
-    return `${content.key}\u0000${JSON.stringify(content.value)}`;
-  if (content instanceof Y.ContentDeleted || content instanceof Y.ContentType) return null;
-  return JSON.stringify(content.getContent());
+/** Whether the link names ids the doc has, a deleted original, and the same kind of content on both sides. */
+function sound(doc: Y.Doc, [client, clock, len, toClient, toClock]: RestorationLink): boolean {
+  if (!(len > 0)) return false;
+  if (client === toClient && clock < toClock + len && toClock < clock + len) return false;
+  const { store } = doc;
+  if (Y.getState(store, client) < clock + len || Y.getState(store, toClient) < toClock + len)
+    return false;
+  const now = Y.getItem(store, Y.createID(client, clock));
+  const was = Y.getItem(store, Y.createID(toClient, toClock));
+  if (!(now instanceof Y.Item) || !(was instanceof Y.Item) || !was.deleted) return false;
+  // A browser's gc drops a deleted item's content, so its kind can no longer be compared.
+  return was.content instanceof Y.ContentDeleted || kindOf(was.content) === kindOf(now.content);
 }
 
-interface Unit {
-  key: string;
-  id: Y.ID;
-  type?: Y.AbstractType<unknown>;
-}
-
-/** A type's children one unit per character or object, in order, live or deleted. */
-function unitsOf(type: Y.AbstractType<unknown>): Unit[] {
-  const out: Unit[] = [];
-  for (let c = type._start; c; c = c.right) {
-    const { content } = c;
-    if (content instanceof Y.ContentString)
-      for (let i = 0; i < content.str.length; i++)
-        out.push({ key: content.str[i], id: Y.createID(c.id.client, c.id.clock + i) });
-    else if (content instanceof Y.ContentType)
-      out.push({ key: `<${nameOf(content.type)}`, id: c.id, type: content.type });
-    else if (!(content instanceof Y.ContentDeleted)) {
-      const key = valueKey(c) ?? "";
-      for (let i = 0; i < c.length; i++)
-        out.push({ key: `${key}#${i}`, id: Y.createID(c.id.client, c.id.clock + i) });
-    } else out.push({ key: "\u0000gone", id: c.id });
-  }
-  return out;
-}
-
-/**
- * Pairs the restored type `r` with the original `o` it came from and emits what matched. True when every
- * unit of the original was found in the same order (the restored type may hold more: the writer typed).
- */
-function pair(
-  r: Y.AbstractType<unknown>,
-  o: Y.AbstractType<unknown>,
-  out: RestorationLink[],
-  work: { left: number },
-): boolean {
-  for (const [key, was] of o._map) {
-    const now = r._map.get(key);
-    if (now && now !== was && valueKey(now) !== null && valueKey(now) === valueKey(was))
-      emit(out, now.id, was.id);
-  }
-  const now = unitsOf(r);
-  const was = unitsOf(o);
-  let ok = true;
-  let from = 0;
-  for (const unit of was) {
-    let at = from;
-    while (at < now.length && now[at].key !== unit.key) at++;
-    work.left -= at - from + 1;
-    if (at === now.length || work.left < 0) {
-      ok = false;
-      if (work.left < 0) break;
-      continue;
-    }
-    emit(out, now[at].id, unit.id);
-    if (
-      unit.type &&
-      now[at].type &&
-      !pair(now[at].type as Y.AbstractType<unknown>, unit.type, out, work)
-    )
-      ok = false;
-    from = at + 1;
-  }
-  return ok;
-}
-
-export function restorationLinks(doc: Y.Doc): RestorationLink[] {
+/** The draft's recorded restoration links that pass validation. */
+export function readRestorationLinks(doc: Y.Doc): RestorationLink[] {
+  const root = doc.share.get(RESTORED_ROOT);
+  if (!root) return [];
   const out: RestorationLink[] = [];
-  const store = doc.store;
-  for (const structs of store.clients.values()) {
-    for (let i = 0; i < structs.length; i++) {
-      const head = structs[i];
-      if (!(head instanceof Y.Item)) continue;
-      if (head.redone)
-        out.push([
-          head.redone.client,
-          head.redone.clock,
-          head.length,
-          head.id.client,
-          head.id.clock,
-        ]);
-      const ro = head.rightOrigin;
-      const { content } = head;
-      if (content instanceof Y.ContentString) {
-        if (!ro || (i > 0 && continues(structs[i - 1], head))) continue; // not a run head
-        textRun(doc, structs, i, head, ro, out);
-      } else if (head.parentSub !== null && !(content instanceof Y.ContentType)) {
-        const key = valueKey(head);
-        for (let z = head.left; key !== null && z; z = z.left)
-          if (z.deleted && valueKey(z) === key) {
-            emit(out, head.id, z.id);
-            break;
-          }
-      } else if (ro && content instanceof Y.ContentFormat) {
-        const was = Y.getItem(store, ro);
-        if (was instanceof Y.Item && was.deleted && valueKey(was) === valueKey(head))
-          emit(out, head.id, was.id);
-      } else if (ro && content instanceof Y.ContentType) {
-        const was = Y.getItem(store, ro);
-        const original =
-          was instanceof Y.Item && was.deleted && was.content instanceof Y.ContentType
-            ? was.content.type
-            : null;
-        if (
-          original &&
-          nameOf(original) === nameOf(content.type) &&
-          pair(content.type, original, out, { left: PAIR_WORK })
-        )
-          emit(out, head.id, was.id);
+  for (let item = (root as Y.Array<unknown>)._start; item; item = item.right) {
+    if (item.deleted || !(item.content instanceof Y.ContentAny)) continue;
+    for (const raw of item.content.getContent() as unknown[])
+      if (Array.isArray(raw) && raw.length === 5 && raw.every(Number.isSafeInteger)) {
+        const link = raw as unknown as RestorationLink;
+        if (sound(doc, link)) out.push(link);
       }
-    }
   }
   return out;
-}
-
-/** The text run starting at `structs[i]`: linked only when it repeats the original's slice exactly. */
-function textRun(
-  doc: Y.Doc,
-  structs: Y.AbstractStruct[],
-  i: number,
-  head: Y.Item,
-  ro: Y.ID,
-  out: RestorationLink[],
-) {
-  const original = Y.getItem(doc.store, ro);
-  const was = original instanceof Y.Item && original.deleted ? textOf(original) : null;
-  if (!(original instanceof Y.Item) || was === null) return;
-  const run = [head];
-  while (i + run.length < structs.length && continues(run[run.length - 1], structs[i + run.length]))
-    run.push(structs[i + run.length] as Y.Item);
-  const texts = run.map(textOf);
-  const offset = ro.clock - original.id.clock;
-  const joined = texts.every((t) => t !== null) ? texts.join("") : null;
-  if (joined === null || joined.length > original.length - offset) return;
-  if (joined !== was.slice(offset, offset + joined.length)) return;
-  let k = 0;
-  for (const part of run) {
-    out.push([part.id.client, part.id.clock, part.length, ro.client, ro.clock + k]);
-    k += part.length;
-  }
 }

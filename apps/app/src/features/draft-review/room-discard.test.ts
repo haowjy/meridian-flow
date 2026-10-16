@@ -2,7 +2,8 @@
  * Discard outside the editor. It protects: removing a different change than the one clicked, eating the
  * writer's later typing, and an Undo that reverts more than its own Discard (two rows, one draft).
  */
-import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { classifyChanges, type ItemRange, writeBlocks } from "@meridian/agent-edit/diff";
+import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { expect, it } from "vitest";
 import * as Y from "yjs";
 import { seedReviewBase } from "@/test-support/inline-review-editor";
@@ -83,4 +84,51 @@ it("a row whose identical twin was removed by a peer discards nothing, hides not
     }),
   ).not.toBeNull();
   expect(paragraphs()).toEqual(["Other.", "Keep me.", "Other."]);
+});
+
+const schema = buildDocumentSchema();
+const proposals: Array<[string, (text: string) => ReturnType<typeof schema.node>[]]> = [
+  [
+    "text at the end of a run",
+    (t) => [schema.nodes.paragraph.create(null, schema.text(`${t} ENDING`))],
+  ],
+  [
+    "a new paragraph",
+    (t) => [
+      schema.nodes.paragraph.create(null, schema.text(t)),
+      schema.nodes.paragraph.create(null, schema.text("AI paragraph")),
+    ],
+  ],
+  [
+    "bold",
+    (t) => [schema.nodes.paragraph.create(null, schema.text(t, [schema.marks.strong.create()]))],
+  ],
+];
+
+it.each(
+  proposals,
+)("Discard then Undo through the room's history keeps the chat after a reload (%s)", (_name, propose) => {
+  const { doc } = room(["alpha tail"], ["alpha tail"]);
+  const peer = new Y.Doc({ gc: false });
+  peer.clientID = 77;
+  Y.applyUpdate(peer, Y.encodeStateAsUpdate(doc));
+  writeBlocks(peer.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema, propose("alpha tail"));
+  const inserted: ItemRange[] = [[77, 0, Y.getState(peer.store, 77)]];
+  Y.applyUpdate(doc, Y.encodeStateAsUpdate(peer));
+  const part = { threadId: "chat", turnId: "turn", inserted, deleted: [] };
+
+  for (let round = 0; round < 2; round++) {
+    discardInRoom(doc, "all")?.undo();
+    const reloaded = new Y.Doc({ gc: true });
+    Y.applyUpdate(reloaded, Y.encodeStateAsUpdate(doc));
+    for (const read of [doc, reloaded]) {
+      const classified = classifyChanges(read, projectRoom(read), { userId: "u", parts: [part] });
+      const members = [...classified.values()].flatMap((c) => c.members);
+      expect(members.length > 0 && members.every((m) => m === 0)).toBe(true);
+      expect([...classified.values()].flatMap((c) => c.byline)).not.toContainEqual({
+        kind: "user",
+        userId: "u",
+      });
+    }
+  }
 });
