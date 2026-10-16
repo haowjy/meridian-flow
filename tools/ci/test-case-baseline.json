@@ -115,7 +115,7 @@
     "apps/app/src/features/draft-review/review-files.test.ts": 3,
     "apps/app/src/features/draft-review/ReviewMessageText.test.tsx": 1,
     "apps/app/src/features/draft-review/room-discard.test.ts": 5,
-    "apps/app/src/features/draft-review/room-review.test.tsx": 2,
+    "apps/app/src/features/draft-review/room-review.test.tsx": 3,
     "apps/app/src/features/editor/DraftReviewBand.test.tsx": 2,
     "apps/app/src/features/editor/EditorView.lifetime.test.tsx": 5,
     "apps/app/src/features/editor/surfaces/table/table-cell-hold.test.ts": 3,

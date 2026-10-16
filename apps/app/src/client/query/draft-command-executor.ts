@@ -55,6 +55,7 @@ import {
 import { classifyDraftCommandRejection } from "./draft-command-rejection";
 import { settleCommand } from "./draft-command-transport";
 import { bumpDraftLinkEpoch } from "./draft-link-epoch";
+import { fetchForCommand } from "./fetch-for-command";
 import { isProjectContextCatalogKey, projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
 import { draftMetaQueryOptions, isWholeItem } from "./useDraftMeta";
@@ -131,7 +132,7 @@ function listedRow(queryClient: QueryClient, draft: DraftRef): ThreadDraftListIt
 async function draftIdOf(queryClient: QueryClient, draft: DraftRef): Promise<string | null> {
   const row = listedRow(queryClient, draft);
   if (row) return row.draftId;
-  const meta = await queryClient.fetchQuery(draftMetaQueryOptions(draft));
+  const meta = await fetchForCommand(queryClient, draftMetaQueryOptions(draft));
   return meta.kind === "gone" ? null : meta.draftId;
 }
 

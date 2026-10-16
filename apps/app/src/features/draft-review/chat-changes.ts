@@ -7,6 +7,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type * as Y from "yjs";
 import type { ChatApplyPlan } from "@/client/query/draft-command-executor";
+import { fetchForCommand } from "@/client/query/fetch-for-command";
 import { draftAttributionQueryOptions } from "@/client/query/useDraftAttribution";
 import { draftMetaQueryOptions } from "@/client/query/useDraftMeta";
 import {
@@ -26,7 +27,7 @@ export async function chatChangeTargets(
   doc: Y.Doc,
   threadId: string,
 ) {
-  const attribution = await queryClient.fetchQuery({
+  const attribution = await fetchForCommand(queryClient, {
     ...draftAttributionQueryOptions(draft),
     staleTime: 0,
   });
@@ -45,7 +46,10 @@ export async function acquireChatChanges(
   draft: { projectId: string; workId: string; documentId: string; itemKey: string },
   threadId: string,
 ): Promise<ChatApplyPlan | null> {
-  const meta = await queryClient.fetchQuery({ ...draftMetaQueryOptions(draft), staleTime: 0 });
+  const meta = await fetchForCommand(queryClient, {
+    ...draftMetaQueryOptions(draft),
+    staleTime: 0,
+  });
   if (meta.kind !== "text") return null;
   const read = readBranchRoom(registry, meta.roomName);
   const release = read.dispose;

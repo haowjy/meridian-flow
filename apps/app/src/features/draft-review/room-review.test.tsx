@@ -7,7 +7,7 @@
 
 import { branchRoomName } from "@meridian/contracts/protocol";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { act, useState } from "react";
 import { expect, it, vi } from "vitest";
 import * as Y from "yjs";
@@ -28,6 +28,13 @@ import { useHeadlessDiscards } from "./useHeadlessDiscards";
 const registry = vi.hoisted(() => ({ port: {} as Record<string, unknown> }));
 vi.mock("@/features/project/context/account-feature-context", () => ({
   useLiveDocumentSessionRegistry: () => registry.port,
+}));
+
+// The cold collapsed Discard reads the item's metadata and attribution over the network.
+const api = vi.hoisted(() => ({ meta: vi.fn(), attribution: vi.fn() }));
+vi.mock("@/client/api/drafts-api", () => ({
+  getDraftMeta: api.meta,
+  getDraftAttribution: api.attribution,
 }));
 
 const ROOM = branchRoomName("draft");
@@ -218,6 +225,64 @@ it("a reader joins a room's rebuild instead of throwing, and a pending read or l
     );
   } finally {
     reader.dispose();
+    pool.invalidate();
+    client.clear();
+  }
+});
+
+it("a cold collapsed chat Discard survives the row's metadata observer unmounting mid-read", async () => {
+  const room = fakeRoom();
+  const { client, pool } = fixture([room]);
+  client.removeQueries();
+  api.meta.mockImplementation(
+    (_p: string, _w: string, _d: string, _i: string, signal?: AbortSignal) =>
+      new Promise((resolve, reject) => {
+        signal?.addEventListener("abort", () => reject(new Error("aborted")));
+        setTimeout(
+          () =>
+            resolve({
+              kind: "text",
+              draftId: "draft",
+              itemKey: "draft:doc",
+              documentId: "doc",
+              roomName: ROOM,
+              isNew: false,
+              wholeItem: false,
+              hasChanges: true,
+            }),
+          5,
+        );
+      }),
+  );
+  api.attribution.mockResolvedValue({ itemKey: "draft:doc", userId: "user-1", edits: [] });
+  let discards!: ReturnType<typeof useHeadlessDiscards>;
+  // The collapsed dock row holds an idle observer on the metadata query and is replaced by the Discard's entry.
+  function Row() {
+    useQuery({ ...draftMetaQueryOptions(draft), enabled: false });
+    return null;
+  }
+  function Probe() {
+    discards = useHeadlessDiscards("p", "w");
+    return discards.entries.length === 0 ? <Row /> : null;
+  }
+  try {
+    await withReactRoot(
+      <QueryClientProvider client={client}>
+        <Probe />
+      </QueryClientProvider>,
+      async () => {
+        await act(async () =>
+          discards.discardFile({ ...(file as object), itemKey: "draft:doc" } as never, "thread"),
+        );
+        await settleReact(() =>
+          expect(discards.entries.some((entry) => entry.phase === "pending")).toBe(false),
+        );
+        // Nothing is attributed to the chat, so the row clears; a cancelled read would have left it failed.
+        expect(api.attribution).toHaveBeenCalled();
+        expect(discards.entries).toEqual([]);
+      },
+    );
+  } finally {
     pool.invalidate();
     client.clear();
   }

@@ -10,6 +10,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import * as Y from "yjs";
 import type { PreparedApply } from "@/client/query/draft-command-executor";
 import type { DraftRef } from "@/client/query/draft-command-record";
+import { fetchForCommand } from "@/client/query/fetch-for-command";
 import { draftMetaQueryOptions } from "@/client/query/useDraftMeta";
 import { type BranchRoomRegistry, readBranchRoom } from "@/core/editor/branch-room-read";
 import type { ReviewFrame } from "./review-frame";
@@ -42,7 +43,10 @@ export async function acquireItemSnapshot(
   queryClient: QueryClient,
   draft: DraftRef,
 ): Promise<PreparedApply> {
-  const meta = await queryClient.fetchQuery({ ...draftMetaQueryOptions(draft), staleTime: 0 });
+  const meta = await fetchForCommand(queryClient, {
+    ...draftMetaQueryOptions(draft),
+    staleTime: 0,
+  });
   // A branchless item has no text to snapshot; a closed one answers `gone` at the send.
   if (meta.kind !== "text") return { snapshot: null, synced: () => Promise.resolve() };
   const read = readBranchRoom(registry, meta.roomName);
