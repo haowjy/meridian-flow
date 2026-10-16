@@ -629,8 +629,9 @@ internal `file` name.
 
 Read the Work's draft list and the document through `./mf api` and open the Editor with that
 Work and item. PASS: two changes (a heading-level change and a bold change), each with the
-affected text struck and rewritten in its row, both blocks tinted red and green, and no
-duplicate struck-through copy of unchanged text. Apply each change separately with its row's
+affected text struck and rewritten in its row (`Scene` → `Scene`, `red` → `red`). The
+old heading text is red and the new heading block green; the old `red` is red and its bold
+replacement green. Do not strike or duplicate unaffected neighbouring prose. Apply each change separately with its row's
 Apply, reading live after each: only its exact rich effect reaches live and the other change
 remains. Stage the reverse formatting proposal and Discard each change separately: live stays
 exactly unchanged and the other change survives until its own Discard. Capture the list, the

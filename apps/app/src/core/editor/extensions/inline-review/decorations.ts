@@ -94,8 +94,8 @@ export function paintDecorations(
           });
         }
       }
-      // Format and whitespace hunks keep their text: the green mark says it, a struck copy would not.
-      if (hunk.kind === "text" && hunk.removed.length > 0) {
+      // Formatting has a before and after too; only whitespace needs no struck copy.
+      if (hunk.kind !== "whitespace" && hunk.removed.length > 0) {
         const block = !doc.resolve(hunk.anchor).parent.inlineContent;
         const paragraphs = removedParagraphs(hunk.removed);
         removals.push({

@@ -380,9 +380,10 @@ function hunkContent(diff: BlockDiff, h: Hunk): HunkContent {
   const key = `${base}/${draft}`;
   let content = memo.value.get(key);
   if (!content) {
+    const kind = hunkKind(diff.base.toks, h);
     content = {
-      removed: tokensToJSON(diff.base.toks.slice(h.from, h.to)),
-      kind: hunkKind(diff.base.toks, h),
+      removed: tokensToJSON(diff.base.toks.slice(h.from, reviewEnd(diff.base, h.from, h.to, kind))),
+      kind,
     };
     memo.value.set(key, content);
   }
@@ -397,7 +398,8 @@ function reviewHunk(
 ): ReviewHunk {
   const h = diff.hunks[index];
   const end = h.sfrom + h.ins.length;
-  const inserted = h.ins.length ? { from: pos.start(h.sfrom), to: pos.end(end - 1) } : null;
+  const paintedEnd = reviewEnd(diff.draft, h.sfrom, end, content.kind);
+  const inserted = h.ins.length ? { from: pos.start(h.sfrom), to: pos.end(paintedEnd - 1) } : null;
   const continues = h.to > h.from && !isBlockTok(diff.base.toks[h.from]);
   return {
     index,
@@ -411,6 +413,13 @@ function reviewHunk(
 }
 
 // ---------- content ----------
+/** A block-attribute token names the whole block visually, but never widens the actionable hunk. */
+function reviewEnd(side: Side, from: number, to: number, kind: HunkKind): number {
+  return kind === "format" && to === from + 1 && side.toks[from]?.kind === "block"
+    ? side.starts[side.blockOf[from] + 1]
+    : to;
+}
+
 function tokensToJSON(toks: readonly Tok[]): ProseMirrorJSON[] {
   const out: ProseMirrorJSON[] = [];
   let block: ProseMirrorJSON | null = null;
@@ -466,8 +475,16 @@ function excerpt(diff: BlockDiff, members: number[]): { removed: string; inserte
   const inserted: string[] = [];
   for (const i of members) {
     const h = diff.hunks[i];
-    removed.push(plain(diff.base.toks.slice(h.from, h.to)));
-    inserted.push(plain(h.ins));
+    const kind = hunkKind(diff.base.toks, h);
+    removed.push(plain(diff.base.toks.slice(h.from, reviewEnd(diff.base, h.from, h.to, kind))));
+    inserted.push(
+      plain(
+        diff.draft.toks.slice(
+          h.sfrom,
+          reviewEnd(diff.draft, h.sfrom, h.sfrom + h.ins.length, kind),
+        ),
+      ),
+    );
   }
   return { removed: clip(removed), inserted: clip(inserted) };
 }

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Rich-only draft changes show their affected text in the change list and red/green editor paint, including heading-level changes.
+
 - Draft review waits for a 300 ms typing pause before recomputing, updates review chrome at lower priority, and keeps unchanged readiness and focus readers asleep. Remote edits and explicit commands still project promptly.
 
 - Draft review keeps existing red widgets and green highlights while typing. Focus, removal folds and arrival pulses update in place; composing text defers review repaint until composition ends. Green changes remain clickable after IME blur, and reduced-motion arrivals cannot replay when motion is re-enabled.

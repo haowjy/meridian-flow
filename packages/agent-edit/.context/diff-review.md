@@ -28,7 +28,7 @@ words separate them, across paragraph breaks, and a block removed in one place
 and added in another joins both places as a `move` group so Apply and Discard
 can never take half of one. A group carries the draft positions the editor
 decorates (`inserted`, `anchor`), the base content drawn red (`removed`) and a
-short excerpt. The projection is pure and retains nothing, so a caller that
+short excerpt. A block-attribute-only hunk paints and excerpts the whole affected block; its raw token range, identity and composition stay attribute-only. Formatting has red before-text and green after-text just like prose replacements. The projection is pure and retains nothing, so a caller that
 keeps PM nodes between edits pays only for the changed region.
 
 ## Only diff the units whose nodes changed
