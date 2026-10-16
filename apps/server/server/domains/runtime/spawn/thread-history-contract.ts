@@ -353,6 +353,33 @@ export function defineThreadHistoryContract(
       expect(seen).toHaveLength(20);
       expect(new Set(seen).size).toBe(20);
     });
+    it("shows a failed turn's kept text and calls but never its failure, and keeps Stop's marker", async () => {
+      const f = await fixture();
+      const failed = async (t: Turn, reason: string) => {
+        await f.repos.turns.updateStatus(t.id, {
+          status: "error",
+          error: "Provider overloaded, try again",
+          metadata: { reason },
+        });
+      };
+      const partial = await f.turn();
+      await f.text(partial, "half a senten");
+      await failed(partial, "max_tokens");
+      const hiddenCall = await f.turn();
+      await f.tool(hiddenCall, "read", { path: "manuscript://ch1.md" }, "copy");
+      await failed(hiddenCall, "server_error");
+      const stopped = await f.turn("assistant", null, "cancelled");
+      await f.text(stopped, "stopped here");
+      for (const input of [{}, { expand: 2 }]) {
+        const text = output(await f.read(input));
+        expect(text).not.toMatch(/error|failure reason|overloaded|max_tokens|server_error/i);
+      }
+      const page = output(await f.read());
+      expect(page).toContain("half a senten");
+      expect(page).toContain("(1 routine tool call hidden;");
+      expect(page).toMatch(/\[3\] assistant\n(?:.*\n)*cancelled/);
+      expect(output(await f.read({ expand: 2 }))).toContain("read");
+    });
     it("caps a long message at the item limit with a copyable item handle", async () => {
       const f = await fixture();
       const t = await f.turn();

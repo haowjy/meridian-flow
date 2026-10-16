@@ -1,6 +1,7 @@
 /** PostgreSQL contracts for fork cutoffs, idempotency, retained bindings, and provenance. */
 
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createQuietDrizzleJournalWriter } from "../../../test-support/journal-writer.js";
 import { turnGraph } from "../ports/turn-graph.js";
 import {
   resetThreadWorkRaceFixture,
@@ -45,7 +46,7 @@ else
     ).createDrizzleRepositoriesForTest(db);
     const revisions = createDrizzleAgentRevisionStore(db);
     const eventReader = createDrizzleEventJournalReader(db);
-    const eventWriter = createDrizzleEventJournalWriter(db);
+    const eventWriter = createQuietDrizzleJournalWriter(db);
     const ids = THREAD_WORK_RACE;
     beforeEach(async () => resetThreadWorkRaceFixture(db));
     afterAll(() => db.close());

@@ -1,5 +1,6 @@
 import { createDrizzleLineageScratchLifecycle } from "../domains/context/adapters/lineage-scratch-lifecycle.js";
 import { createTestDrizzleDelivery } from "../domains/runtime/loop/__tests__/test-drizzle-delivery.js";
+import { createQuietDrizzleJournalWriter } from "../test-support/journal-writer.js";
 
 /** PostgreSQL coverage for the writer Work-rebind HTTP boundary. */
 
@@ -109,7 +110,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const turnId = crypto.randomUUID();
       const writer = () =>
         persistWriterEnqueue({
-          persistence: { repos: threads, eventWriter: createDrizzleEventJournalWriter(db) },
+          persistence: { repos: threads, eventWriter: createQuietDrizzleJournalWriter(db) },
           hub: createDrizzleEventJournalReader(db),
           threadId: THREAD_ID,
           userTurnId: turnId,

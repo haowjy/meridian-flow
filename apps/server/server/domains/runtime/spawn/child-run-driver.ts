@@ -8,7 +8,11 @@ import type {
 } from "@meridian/contracts/spawn";
 import type { BlockUpsertedRow, Thread, ThreadActivity } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import type { EventJournalWriter, ThreadRepositories } from "../../threads/index.js";
+import type {
+  EventJournalWriter,
+  LiveEventWriter,
+  ThreadRepositories,
+} from "../../threads/index.js";
 import type { DetachedWorkTracker } from "../detached-work.js";
 import type { PreparedRun, RunTurnPort } from "../loop/run-turn-port.js";
 import { appendSubagentActivityBestEffort } from "./activity-event.js";
@@ -40,7 +44,7 @@ export interface ChildRunDriverDeps {
   backgroundTasks: DetachedWorkTracker;
   orchestrator: RunTurnPort;
   repos: Pick<ThreadRepositories, "executionReports">;
-  eventWriter: EventJournalWriter;
+  eventWriter: LiveEventWriter;
   readActivity: (threadId: ThreadId) => Promise<ThreadActivity>;
   publisher: Pick<ReportPublisher, "publish">;
   eventSink: EventSink;
