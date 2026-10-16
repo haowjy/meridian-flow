@@ -128,6 +128,9 @@ it("cards a manual compaction's failure with Try again, never an autocompaction'
     { key: "c", copy: "compaction-failed", action: "try_again", text: "Couldn't compact." },
   ]);
   expect(cards("auto")).toEqual([]);
+  expect(
+    cards("manual", [{ id: "q", control: { kind: "compact" }, status: "withdraw_failed" }]),
+  ).toMatchObject([{ copy: "compact-withdraw-failed", action: "try_again" }]);
   expect(cards("manual", [{ id: "q", control: { kind: "compact" }, status: "queued" }])).toEqual(
     [],
   );
