@@ -389,7 +389,8 @@ export function buildInlineReviewPlugin() {
           return false;
         },
         compositionend: (view) => {
-          // PM consumes the final native composition mutation before deferred paint is released.
+          // Release deferred decorations after the native mutation. PM can reconcile wrappers
+          // again later; the paint view hydrates those unchanged-state updates too.
           compositionTimer = setTimeout(
             () => dispatchMeta(view, { kind: "composition", active: false }),
             0,

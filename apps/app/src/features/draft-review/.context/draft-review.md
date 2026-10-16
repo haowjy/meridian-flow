@@ -122,7 +122,7 @@ update their text and labels in place. A consumed arrival never restarts on a re
 | Discard / Undo Discard | Removed / restored by resulting text | Retire / match or mint | No arrival; Undo restores text, not paint history |
 | Apply | Clicked snapshot/hash remains authority; base eventually advances | Retire applied paint | No animation or identity authority from optimistic hide |
 | Caret / click / stepper focus | Unchanged | Unchanged | Toggle emphasis in existing DOM; slot may move independently |
-| Arrival pulse | Unchanged | Unchanged | Add once per arrival; remove on animationend; rebuild does not replay |
+| Arrival pulse | Unchanged | Unchanged | Consume without a class under reduced motion; otherwise add once and remove on animationend/cancel; rebuild does not replay |
 | Fold / expand removal | Unchanged | Unchanged | Toggle existing widget and accessible label in place |
 | Locale | Unchanged | Unchanged | Refresh widget labels; redraw permitted |
 | Show changes off / on | Unchanged | Retain while hidden | DOM unmount/remount allowed; consumed pulse never replays |
@@ -132,6 +132,8 @@ update their text and labels in place. A consumed arrival never restarts on a re
 Mapped decoration sets survive ordinary transactions. On projection, retain equal mapped
 decorations and remove/add only changed descriptors, rather than recreating the full set.
 Composition deferral is a paint constraint, not a delay to editing or the review runtime.
+PM can rebuild decorated wrappers during final composition cleanup with an unchanged EditorState;
+the view hydrates these updates too, restoring semantic click targets and emphasis.
 The view brackets DOM-only updates with ProseMirror's observer stop/start so they cannot be parsed
 as manuscript edits. Ordinary cancelable `insertText` at a painted range uses the existing PM
 `handleTextInput` chain before native DOM mutation: PM otherwise dirties/replaces a decorated text

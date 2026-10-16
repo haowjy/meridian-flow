@@ -41,6 +41,8 @@ export function createReviewPaintView(
     const changes = new Map<string, string>();
     for (const group of state.review?.groups ?? [])
       for (const hunk of group.hunks) changes.set(state.renderKeys.get(hunk.index) ?? "", group.id);
+    const animateArrival =
+      arrivals.size > 0 && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     paintDOM(() => {
       for (const element of view.dom.querySelectorAll<HTMLElement>(`[${RENDER_ATTR}]`)) {
         const key = element.getAttribute(RENDER_ATTR) ?? "";
@@ -48,7 +50,8 @@ export function createReviewPaintView(
         if (!id) continue;
         if (element.getAttribute(CHANGE_ATTR) !== id) element.setAttribute(CHANGE_ATTR, id);
         element.classList.toggle(inlineReviewClassNames.emphasized, id === state.activeChangeId);
-        if (arrivals.has(key)) element.classList.add(inlineReviewClassNames.arrived);
+        if (animateArrival && arrivals.has(key))
+          element.classList.add(inlineReviewClassNames.arrived);
         const plan = state.removals.get(key);
         if (plan && element.classList.contains(inlineReviewClassNames.removal))
           updateRemovalElement(element, plan, state.expandedRemovals.has(key));
@@ -62,6 +65,7 @@ export function createReviewPaintView(
       paintDOM(() => element.classList.remove(inlineReviewClassNames.arrived));
   };
   view.dom.addEventListener("animationend", endAnimation);
+  view.dom.addEventListener("animationcancel", endAnimation);
   const unsubscribe = i18n.on("change", () => relocalize());
   update();
   return {
@@ -69,8 +73,11 @@ export function createReviewPaintView(
       const before = read(oldState);
       const after = read(view.state);
       if (!after) return;
-      // Keystrokes map the tree. No DOM scan or review traversal until a projection or paint intent.
+      // PM finalizes composition with updateState(view.state), recreating wrappers without
+      // changing decorations or plugin state. Hydrate that DOM too; ordinary keystrokes
+      // still map the tree without a scan until a projection or paint intent.
       if (
+        oldState === view.state ||
         before?.review !== after.review ||
         before?.activeChangeId !== after.activeChangeId ||
         before?.expandedRemovals !== after.expandedRemovals ||
@@ -84,6 +91,7 @@ export function createReviewPaintView(
     destroy: () => {
       unsubscribe();
       view.dom.removeEventListener("animationend", endAnimation);
+      view.dom.removeEventListener("animationcancel", endAnimation);
     },
   };
 }

@@ -937,9 +937,18 @@ check that unresolved peer evidence still drains and fails/retries normally.
 Click a green mark and its red removal, use the change stepper, and fold/unfold a long removal with
 pointer and keyboard: emphasis and fold labels update in place, with keyboard focus retained. End an
 arrival animation, reproject, then hide/show changes: the consumed animation must not restart.
+With reduced motion enabled, deliver a real AI write and wait for the pulse command to expire:
+no element keeps `meridian-review-arrived`. Turn reduced motion off without another write:
+no animation starts. Also enable reduced motion during an active arrival; cancellation must
+remove its class, and turning motion back on must not replay it.
 
 During an IME composition in a changed block, deliver a projection and a focus change. Existing paint
 maps with editing but is not rebuilt until compositionend; committed prose and review must agree.
+Use native IME (Chromium CDP `Input.imeSetComposition`, not only synthetic composition events) to
+compose `山` after green `young`. Blur by clicking outside, wait for the DOM to settle after PM
+composition cleanup, then click green `young山`: its `data-review-change` must match the current
+change, focus must select it, and its action bar must open. Repeat with a change already focused:
+emphasis survives the settled DOM. Undo restores the original prose and review.
 Check ordinary text input and auto-pairs inside and at the edge of green, then move a paragraph,
 Undo, native cut/paste and Undo twice. Discard and Undo must restore exact text and red/green marks;
 Apply must publish exactly the reviewed text. Reload has fresh render keys but identical semantics.

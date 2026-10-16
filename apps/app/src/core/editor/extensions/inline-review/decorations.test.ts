@@ -147,6 +147,7 @@ it("retains mark and removal DOM while typing inside a change and changing empha
 });
 
 it("defers projected paint during composition and consumes a pulse at the DOM only once", () => {
+  vi.stubGlobal("matchMedia", () => ({ matches: false }));
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   const { editor, projector } = reviewing(["The door is red."], ["The door is green."]);
   const root = editor.view.dom;
