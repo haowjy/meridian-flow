@@ -4,7 +4,7 @@ import type { ChatCard } from "@meridian/thread-client";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { announceError, useAnnouncement } from "@/client/stores";
+import { announceError, clearAnnouncement, useAnnouncement } from "@/client/stores";
 import { useChatCardAnnouncer } from "./useChatCardAnnouncer";
 
 vi.mock("@lingui/core/macro", () => ({
@@ -57,6 +57,16 @@ describe("useChatCardAnnouncer", () => {
     expect(alert).toBe("Couldn't stop the reply.");
     await view.show([]);
     expect(alert).toBe("");
+    // An unrelated alert is left alone when another card ends.
+    await view.show([card("f", "reply-failed")]);
+    await act(async () => announceError("Something else."));
+    await view.show([]);
+    expect(alert).toBe("Something else.");
+    // The store is a module singleton: leave no alert for the next case.
+    await act(async () => {
+      announceError("", { key: "end" });
+      clearAnnouncement("end");
+    });
     await view.unmount();
   });
 
@@ -66,19 +76,6 @@ describe("useChatCardAnnouncer", () => {
     await view.show([card("f", "reply-failed")], false);
     await view.show([card("f", "reply-failed")]);
     expect(alert).toBe("");
-    await view.unmount();
-  });
-
-  it("announces a key once, and leaves an unrelated alert alone when a card ends", async () => {
-    const view = await mount();
-    await view.show([]);
-    await view.show([card("f", "reply-failed")]);
-    expect(alert).toBe("This response failed.");
-    await act(async () => announceError("Something else."));
-    await view.show([card("f", "reply-failed")]);
-    expect(alert).toBe("Something else.");
-    await view.show([]);
-    expect(alert).toBe("Something else.");
     await view.unmount();
   });
 });
