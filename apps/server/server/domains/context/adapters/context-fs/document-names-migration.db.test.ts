@@ -439,6 +439,7 @@ else
         content: createContextUploadContentPort(contextPorts),
         objectStore: createInMemoryObjectStore(),
         eventSink: createNoopEventSink(),
+        catalog: { refreshSources: async () => "1" },
       });
       const request = {
         intakeId: "pending",

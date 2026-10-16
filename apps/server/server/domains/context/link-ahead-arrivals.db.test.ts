@@ -213,6 +213,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
         content: createContextUploadContentPort(app.contextPorts),
         objectStore: createInMemoryObjectStore(),
         eventSink: createNoopEventSink(),
+        catalog: { refreshSources: async () => "1" },
       });
       for (const [filename, mimeType] of [
         ["delete-target.toml", "application/toml"],

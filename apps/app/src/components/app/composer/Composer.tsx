@@ -143,12 +143,29 @@ export type ComposerHandle = {
   restoreSnapshot: (snapshot: ComposerDraftSnapshot, expectedRevision?: number) => boolean;
 };
 
-/** The chip the `@` picker and the uploads list both insert for a file the writer chose. */
-function pickedReferenceContent(reference: AuthoritativeReference, fileKind: "document" | "asset") {
+/**
+ * The chip the `@` picker and the uploads list both insert for a file the writer chose. A file
+ * of the chat still being created has no handle yet (`chatRef` null), and its scope is this
+ * draft's own chat, so the chip keeps the intake identity admission verifies, as an attached one
+ * does. Any other pick is an ordinary reference, which the server admits by its catalog address.
+ */
+function pickedReferenceContent(
+  { intake, ...reference }: AuthoritativeReference,
+  fileKind: "document" | "asset",
+) {
+  const ownDraftUpload =
+    intake && reference.authority.kind === "chat" && reference.authority.chatRef === null;
   return composerReferenceContent({
     ...reference,
     imageCapable: fileKind === "asset" && imageCapable(reference.fileType),
-    upload: null,
+    upload: ownDraftUpload
+      ? {
+          intakeId: intake.intakeId,
+          documentId: reference.documentId,
+          uri: reference.uri,
+          locationRevision: intake.locationRevision,
+        }
+      : null,
   });
 }
 
