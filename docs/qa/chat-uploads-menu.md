@@ -7,7 +7,7 @@ the composer's Attach file input (`agent-browser upload`), since the files must
 come in through the real intake.
 
 1. In a New chat, attach `outline.txt` and send. The chat's top bar now shows a
-   paperclip and "1 files" beside the subagents control. A chat with no files
+   paperclip and "1 file" beside the subagents control. A chat with no files
    shows no control.
 2. Attach two more files without sending. The trigger reads "3 files". Open it
    (Enter or Space on the trigger): rows are newest first, each with the name, the
