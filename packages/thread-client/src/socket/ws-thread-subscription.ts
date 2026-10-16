@@ -3,48 +3,43 @@
  * `ThreadSocketClient`.
  *
  * Owns subscription bookkeeping and the delivery contract: each handler
- * receives every sequenced event after its own cursor, exactly once and in
- * `seq` order, whatever the timing between live frames and a replay. A handler
- * waiting on a replay (a rewind, a reconnect) is held behind a fence that the
- * server's `subscribed` frame releases. The transport owns the socket.
+ * receives every sequenced event above its own cursor, exactly once and in
+ * `seq` order, whatever the timing between live frames and a replay. A
+ * subscription holds at most one request in flight; handlers that need a
+ * replay are `waiting` and take live frames only through the catch-up the
+ * request's `subscribed` brings. The transport owns the socket and the timers.
  */
 import { compareSeq, type SequencedEvent } from "@meridian/contracts/protocol";
 
 import type { ThreadTransportHandlers } from "./thread-transport";
 
-/** Live frames held back, from sending a replay request until `subscribed`. */
-type ReplayFence = {
-  /** Handlers waiting on the replay now in flight. */
-  waiting: Set<ThreadTransportHandlers>;
-  /** Handlers whose replay request is queued behind the one in flight. */
-  deferred: Set<ThreadTransportHandlers>;
-  held: Map<string, SequencedEvent>;
-};
+type Timer = ReturnType<typeof setTimeout>;
 
-export type ActiveThreadSubscription = {
+export type ThreadSubscription = {
   handlers: Set<ThreadTransportHandlers>;
-  /** Per-handler delivery cursor: the last seq delivered, or the `after` it registered with. */
+  /** Each handler's cursor: the last seq delivered, or the `after` it joined with; undefined = from the position, until one is known. */
   cursors: Map<ThreadTransportHandlers, string | undefined>;
-  /** Highest seq delivered to any handler: the subscription's current position. */
-  lastSeq?: string;
+  /** max(lease floor, highest delivered seq). Only rises. Undefined until the first `subscribed` or delivery. */
+  position?: string;
+  /** The client's belief that the server holds a lease for this thread: set by a matching `subscribed`, cleared by any failure or connection loss. */
+  lease: "none" | "active";
+  /** Handlers that need a replay before a live frame may reach them. */
+  waiting: Set<ThreadTransportHandlers>;
+  /** Frames held for `waiting` since the request in flight was sent: live frames, and a superseded request's catch-up. */
+  held: Map<string, SequencedEvent>;
+  /** The one request in flight. */
+  request?: { id: string; after?: string; deadline: Timer };
+  /** Requests this subscription replaced; their `subscribed`, if it arrives, is still a valid batch of frames. */
+  superseded: Set<string>;
+  /** This thread's backoff for failed requests. Reset by `subscribed`, connection loss, and removal. */
+  retry: { attempt: number; timer?: Timer };
   gapCount: number;
-  /** Server acknowledged subscribe/resume for this thread. */
-  serverSubscribed: boolean;
-  /** A subscribe/resume was sent and its `subscribed` has not arrived. */
-  replayInFlight: boolean;
-  /** A subscribe was requested while one was in flight; resend on `subscribed`. */
-  resendQueued: boolean;
-  fence?: ReplayFence;
 };
 
-export type EnsureSubscriptionResult = {
-  subscription: ActiveThreadSubscription;
-  /** Send a subscribe frame now (socket must be open). */
-  sendSubscribe: boolean;
-  /** Bypass the serverSubscribed short-circuit in sendSubscribe. */
-  forceSubscribe: boolean;
-  /** Handlers that must wait for the replay this subscribe will trigger. */
-  waiters: ThreadTransportHandlers[];
+export type JoinResult = {
+  subscription: ThreadSubscription;
+  /** A request must be sent now (the socket is connected). */
+  sendRequest: boolean;
 };
 
 export function selectNewestSeq(a?: string, b?: string): string | undefined {
@@ -53,36 +48,29 @@ export function selectNewestSeq(a?: string, b?: string): string | undefined {
   return compareSeq(a, b) >= 0 ? a : b;
 }
 
-/** The oldest cursor any handler still needs: the wire cursor for subscribe/resume. */
-export function oldestCursor(subscription: ActiveThreadSubscription): string | undefined {
+/** The lowest defined cursor: the wire cursor of a request. Undefined when no handler has one. */
+export function oldestCursor(subscription: ThreadSubscription): string | undefined {
   let oldest: string | undefined;
-  let first = true;
-  for (const handler of subscription.handlers) {
-    const cursor = subscription.cursors.get(handler);
-    if (cursor === undefined) return undefined;
-    if (first || compareSeq(cursor, oldest as string) < 0) oldest = cursor;
-    first = false;
+  for (const cursor of subscription.cursors.values()) {
+    if (cursor !== undefined && (oldest === undefined || compareSeq(cursor, oldest) < 0)) {
+      oldest = cursor;
+    }
   }
-  return first ? subscription.lastSeq : oldest;
-}
-
-function isHeld(subscription: ActiveThreadSubscription, handler: ThreadTransportHandlers): boolean {
-  const fence = subscription.fence;
-  return Boolean(fence && (fence.waiting.has(handler) || fence.deferred.has(handler)));
+  return oldest;
 }
 
 export class WsThreadSubscriptionRegistry {
-  private readonly subscriptions = new Map<string, ActiveThreadSubscription>();
+  private readonly subscriptions = new Map<string, ThreadSubscription>();
 
-  get(threadId: string): ActiveThreadSubscription | undefined {
+  get(threadId: string): ThreadSubscription | undefined {
     return this.subscriptions.get(threadId);
   }
 
-  values(): IterableIterator<ActiveThreadSubscription> {
+  values(): IterableIterator<ThreadSubscription> {
     return this.subscriptions.values();
   }
 
-  entries(): IterableIterator<[string, ActiveThreadSubscription]> {
+  entries(): IterableIterator<[string, ThreadSubscription]> {
     return this.subscriptions.entries();
   }
 
@@ -90,174 +78,156 @@ export class WsThreadSubscriptionRegistry {
     return this.subscriptions.size;
   }
 
-  ensure(
-    threadId: string,
-    handlers: ThreadTransportHandlers,
-    after?: string,
-  ): EnsureSubscriptionResult {
-    let subscription = this.subscriptions.get(threadId);
+  /** The subscription holding request `requestId` in flight, with its thread. */
+  findRequest(requestId: string): [string, ThreadSubscription] | undefined {
+    for (const entry of this.subscriptions) if (entry[1].request?.id === requestId) return entry;
+    return undefined;
+  }
 
+  /** A handler joins with cursor `after`, or none. See the join table in `.context/CONTEXT.md`. */
+  join(
+    threadId: string,
+    handler: ThreadTransportHandlers,
+    after: string | undefined,
+    connected: boolean,
+  ): JoinResult {
+    let subscription = this.subscriptions.get(threadId);
     if (!subscription) {
       subscription = {
-        handlers: new Set([handlers]),
-        cursors: new Map([[handlers, after]]),
-        lastSeq: after,
+        handlers: new Set([handler]),
+        cursors: new Map([[handler, after]]),
+        lease: "none",
+        waiting: new Set([handler]),
+        held: new Map(),
+        superseded: new Set(),
+        retry: { attempt: 0 },
         gapCount: 0,
-        serverSubscribed: false,
-        replayInFlight: false,
-        resendQueued: false,
       };
       this.subscriptions.set(threadId, subscription);
-      return {
-        subscription,
-        sendSubscribe: true,
-        forceSubscribe: after !== undefined,
-        waiters: [handlers],
-      };
+      return { subscription, sendRequest: connected };
     }
 
-    const wasServerSubscribed = subscription.serverSubscribed;
-    const position = subscription.lastSeq;
-    const rewinding =
-      after !== undefined && (position === undefined || compareSeq(after, position) < 0);
-    subscription.handlers.add(handlers);
-    subscription.cursors.set(handlers, after ?? subscription.cursors.get(handlers) ?? position);
+    const position = subscription.position;
+    const requested = subscription.request?.after;
+    const inFlight = Boolean(subscription.request);
+    // A cursorless handler starts at the position, else at the replay in flight.
+    subscription.handlers.add(handler);
+    subscription.cursors.set(handler, after ?? position ?? (inFlight ? requested : undefined));
 
-    let waiters: ThreadTransportHandlers[] = [];
-    if (!wasServerSubscribed) waiters = [...subscription.handlers];
-    else if (rewinding) waiters = [handlers];
-    return {
-      subscription,
-      sendSubscribe: rewinding || !wasServerSubscribed,
-      forceSubscribe: rewinding,
-      waiters,
-    };
+    if (!connected) {
+      subscription.waiting.add(handler);
+      return { subscription, sendRequest: false };
+    }
+    if (inFlight) {
+      subscription.waiting.add(handler);
+      const supersedes =
+        after !== undefined && requested !== undefined && compareSeq(after, requested) < 0;
+      return { subscription, sendRequest: supersedes };
+    }
+    if (subscription.lease === "active") {
+      if (after === undefined || (position !== undefined && compareSeq(after, position) >= 0)) {
+        return { subscription, sendRequest: false };
+      }
+      subscription.waiting = new Set([handler]);
+      return { subscription, sendRequest: true };
+    }
+    // No lease and no request (refused, retrying, or not yet requested): everyone waits.
+    subscription.waiting = new Set(subscription.handlers);
+    return { subscription, sendRequest: true };
   }
 
   /**
    * Removes a handler. Returns the subscription only when it was removed from the
-   * registry (last handler gone); otherwise `null`.
+   * registry (last handler gone), its timers cleared; otherwise `null`.
    */
-  removeHandler(
-    threadId: string,
-    handlers: ThreadTransportHandlers,
-  ): ActiveThreadSubscription | null {
+  remove(threadId: string, handler: ThreadTransportHandlers): ThreadSubscription | null {
     const subscription = this.subscriptions.get(threadId);
     if (!subscription) return null;
 
-    subscription.handlers.delete(handlers);
-    subscription.cursors.delete(handlers);
-    const fence = subscription.fence;
-    if (fence) {
-      fence.waiting.delete(handlers);
-      fence.deferred.delete(handlers);
-      if (fence.waiting.size === 0 && fence.deferred.size === 0) subscription.fence = undefined;
-    }
+    subscription.handlers.delete(handler);
+    subscription.cursors.delete(handler);
+    subscription.waiting.delete(handler);
     if (subscription.handlers.size > 0) return null;
 
     this.subscriptions.delete(threadId);
+    endRequest(subscription);
+    clearRetryTimer(subscription);
     return subscription;
   }
 
-  /**
-   * Holds `waiters` back from live delivery until the replay they need
-   * arrives. Call just before sending a subscribe/resume.
-   */
-  holdForReplay(
-    subscription: ActiveThreadSubscription,
-    waiters: Iterable<ThreadTransportHandlers>,
-  ): void {
-    const handlers = [...waiters];
-    if (handlers.length === 0) return;
-    const fence = subscription.fence ?? {
-      waiting: new Set(),
-      deferred: new Set(),
-      held: new Map(),
-    };
-    subscription.fence = fence;
-    const target = subscription.replayInFlight ? fence.deferred : fence.waiting;
-    for (const handler of handlers) target.add(handler);
-  }
-
-  /** A live frame: held for waiting handlers, delivered now to the rest. */
+  /** A live frame: held for waiting handlers while a request is in flight, delivered now to the rest. */
   accept(threadId: string, frame: SequencedEvent): void {
     const subscription = this.subscriptions.get(threadId);
     if (!subscription) return;
-    subscription.fence?.held.set(frame.seq, frame);
+    if (subscription.request) subscription.held.set(frame.seq, frame);
     this.deliver(subscription, frame);
   }
 
   /**
-   * The `subscribed` frame: merge its catch-up with the held live frames and
-   * deliver them in `seq` order to the handlers that waited, then release the
-   * fence. Returns true when a queued subscribe must now be sent.
+   * The `subscribed` frame of the request in flight: the lease is active from
+   * `after`, and every waiting handler gets the catch-up merged with the held
+   * live frames, in `seq` order, before `onLiveState`.
    */
-  settleReplay(threadId: string, catchup: SequencedEvent[]): boolean {
-    const subscription = this.subscriptions.get(threadId);
-    if (!subscription) return false;
-    subscription.gapCount = 0;
-    subscription.serverSubscribed = true;
-    subscription.replayInFlight = false;
-
-    const fence = subscription.fence;
-    let frames = catchup;
-    if (fence) {
-      for (const frame of catchup) fence.held.set(frame.seq, frame);
-      frames = [...fence.held.values()].sort((a, b) => compareSeq(a.seq, b.seq));
-      // Handlers queued behind this replay stay held for the next one.
-      fence.waiting = fence.deferred;
-      fence.deferred = new Set();
-      if (fence.waiting.size === 0) subscription.fence = undefined;
+  settle(subscription: ThreadSubscription, after: string, catchup: SequencedEvent[]): void {
+    subscription.lease = "active";
+    subscription.position = selectNewestSeq(subscription.position, after);
+    for (const handler of subscription.handlers) {
+      if (subscription.cursors.get(handler) === undefined) {
+        subscription.cursors.set(handler, after);
+      }
     }
+    endRequest(subscription);
+    clearRetryTimer(subscription);
+    subscription.retry.attempt = 0;
+    for (const frame of catchup) subscription.held.set(frame.seq, frame);
+    const frames = [...subscription.held.values()].sort((a, b) => compareSeq(a.seq, b.seq));
+    subscription.held.clear();
+    subscription.waiting.clear();
+    subscription.gapCount = 0;
     for (const frame of frames) this.deliver(subscription, frame);
-
-    const resend = subscription.resendQueued || Boolean(subscription.fence);
-    subscription.resendQueued = false;
-    return resend;
   }
 
-  /** The replay will never arrive (thread error): release held frames. */
-  abortReplay(threadId: string): void {
-    const subscription = this.subscriptions.get(threadId);
-    if (!subscription) return;
-    subscription.replayInFlight = false;
-    subscription.resendQueued = false;
-    const fence = subscription.fence;
-    subscription.fence = undefined;
-    if (!fence) return;
-    for (const frame of [...fence.held.values()].sort((a, b) => compareSeq(a.seq, b.seq))) {
+  /**
+   * A superseded request's `subscribed`: a batch of frames from a lease the
+   * newer request will replace. Delivered to the handlers that are not waiting
+   * (the socket's order puts it before that lease's live frames); it settles nothing.
+   */
+  applySuperseded(subscription: ThreadSubscription, catchup: SequencedEvent[]): void {
+    const frames = [...catchup].sort((a, b) => compareSeq(a.seq, b.seq));
+    for (const frame of frames) {
+      if (subscription.request) subscription.held.set(frame.seq, frame);
       this.deliver(subscription, frame);
     }
   }
 
-  /** A gap: events before `toSeq` are unreplayable; every cursor jumps to it. */
-  skipTo(subscription: ActiveThreadSubscription, toSeq: string): void {
+  /** The lease is void (a failed request, a refusal, a gap): every handler waits for the next `subscribed`. */
+  voidLease(subscription: ThreadSubscription): void {
+    endRequest(subscription);
+    subscription.held.clear();
+    subscription.lease = "none";
+    subscription.waiting = new Set(subscription.handlers);
+  }
+
+  /** A gap: events before `toSeq` are unreplayable; every cursor and the position jump to it. */
+  skipTo(subscription: ThreadSubscription, toSeq: string): void {
     for (const handler of subscription.handlers) {
       subscription.cursors.set(handler, selectNewestSeq(subscription.cursors.get(handler), toSeq));
     }
-    subscription.lastSeq = selectNewestSeq(subscription.lastSeq, toSeq);
+    subscription.position = selectNewestSeq(subscription.position, toSeq);
   }
 
-  /** The connection is gone: in-flight replays are void; the resume replays for everyone. */
-  connectionLost(subscription: ActiveThreadSubscription): void {
-    subscription.serverSubscribed = false;
-    subscription.replayInFlight = false;
-    subscription.resendQueued = false;
-    const fence = subscription.fence;
-    if (fence) {
-      for (const handler of fence.deferred) fence.waiting.add(handler);
-      fence.deferred.clear();
-    }
+  /** The connection is gone: nothing is in flight, no lease exists, and the next `connected` replays for everyone. */
+  connectionLost(subscription: ThreadSubscription): void {
+    this.voidLease(subscription);
+    subscription.superseded.clear();
+    clearRetryTimer(subscription);
+    subscription.retry.attempt = 0;
   }
 
-  clearServerSubscribed(): void {
-    for (const subscription of this.subscriptions.values()) this.connectionLost(subscription);
-  }
-
-  private deliver(subscription: ActiveThreadSubscription, frame: SequencedEvent): void {
+  private deliver(subscription: ThreadSubscription, frame: SequencedEvent): void {
     let delivered = false;
     for (const handler of subscription.handlers) {
-      if (isHeld(subscription, handler)) continue;
+      if (subscription.waiting.has(handler)) continue;
       const cursor = subscription.cursors.get(handler);
       if (cursor !== undefined && compareSeq(frame.seq, cursor) <= 0) continue;
       subscription.cursors.set(handler, frame.seq);
@@ -265,8 +235,19 @@ export class WsThreadSubscriptionRegistry {
       handler.onEvent(frame);
     }
     if (delivered) {
-      subscription.lastSeq = selectNewestSeq(subscription.lastSeq, frame.seq);
+      subscription.position = selectNewestSeq(subscription.position, frame.seq);
       subscription.gapCount = 0;
     }
   }
+}
+
+/** Ends the request in flight and stops its deadline. */
+export function endRequest(subscription: ThreadSubscription): void {
+  if (subscription.request) clearTimeout(subscription.request.deadline);
+  subscription.request = undefined;
+}
+
+export function clearRetryTimer(subscription: ThreadSubscription): void {
+  if (subscription.retry.timer) clearTimeout(subscription.retry.timer);
+  subscription.retry.timer = undefined;
 }

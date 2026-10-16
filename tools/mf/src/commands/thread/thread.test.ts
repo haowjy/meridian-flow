@@ -178,9 +178,7 @@ describe("thread send", () => {
     ).toBe("Hello there");
     expect(records.at(-1)).toMatchObject({ status: "complete", finalText: "Hello there" });
     // The reconnect asks for events after the last one it saw, not from the start again.
-    const cursors = wire.clientMessages
-      .filter((message) => message.type === "resume")
-      .flatMap((message) => message.subscriptions as { lastSeq: string }[]);
+    const cursors = wire.clientMessages.filter((message) => message.type === "subscribe");
     expect(cursors.at(-1)?.lastSeq).toBe(started[0].seq);
     expect(wire.connections).toBe(2);
   });
