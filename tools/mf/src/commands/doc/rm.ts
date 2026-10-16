@@ -7,6 +7,7 @@ import {
 } from "@meridian/contracts/protocol";
 import { type CommandSpec, requirePositional, stringOption } from "../../core/command";
 import type { Session } from "../../core/session";
+import { jsonResponse } from "../../core/session";
 import { resolveProjectId } from "../project/resolve";
 import { ownerOf, PROJECT_OPTION, type ResolvedUri, resolveDocumentId, resolveUri } from "./uri";
 
@@ -22,10 +23,12 @@ export async function deleteDocument(session: Session, projectId: string, target
     apiProjectContextDeletePath(projectId, target.scheme, ownerOf(target)),
     body,
     {
-      parse: deleteContextEntryResultSchema.refine(
-        (response) => response.deletedDocumentIds.includes(documentId),
-        "Deletion did not cover the requested document",
-      ).safeParse,
+      decode: jsonResponse(
+        deleteContextEntryResultSchema.refine(
+          (response) => response.deletedDocumentIds.includes(documentId),
+          "Deletion did not cover the requested document",
+        ),
+      ),
     },
   );
   return documentId;

@@ -10,6 +10,7 @@
     "./context-entry-validation": "./src/context-entry-validation.ts",
     "./components": "./src/components/index.ts",
     "./threads": "./src/threads/index.ts",
+    "./test-support": "./src/threads/golden/index.ts",
     "./projects": "./src/projects/index.ts",
     "./works": "./src/works/index.ts",
     "./interrupt": "./src/interrupt/index.ts",

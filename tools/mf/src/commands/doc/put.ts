@@ -11,6 +11,7 @@ import {
   stringOption,
 } from "../../core/command";
 import type { Session } from "../../core/session";
+import { jsonResponse } from "../../core/session";
 import { resolveProjectId } from "../project/resolve";
 import { deleteDocument } from "./rm";
 import { ownerOf, PROJECT_OPTION, resolveUri } from "./uri";
@@ -41,7 +42,7 @@ export async function putDocument(
       "POST",
       apiProjectContextCreatePath(input.projectId, target.scheme, ownerOf(target)),
       { type: "file", path: target.path, content: input.content },
-      { parse: createContextFileResponseSchema.safeParse },
+      { decode: jsonResponse(createContextFileResponseSchema) },
     );
   try {
     const created = await create();

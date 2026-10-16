@@ -8,6 +8,7 @@ import { parseThreadRef, threadSchema } from "@meridian/contracts/threads";
 import { CliError } from "../../core/cli-error";
 import type { OptionSpec } from "../../core/command";
 import type { Session } from "../../core/session";
+import { jsonResponse } from "../../core/session";
 import { resolveProjectId } from "../project/resolve";
 
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
@@ -38,7 +39,7 @@ export async function resolveThreadId(
         "GET",
         apiProjectThreadByRefPath(projectId, raw),
         undefined,
-        { parse: threadSchema.safeParse },
+        { decode: jsonResponse(threadSchema) },
       );
       return thread.id;
     } catch (error) {
@@ -51,7 +52,7 @@ export async function resolveThreadId(
     }
   }
   const { threads } = await session.request("GET", API_THREADS_PATH, undefined, {
-    parse: listThreadsResponseSchema.safeParse,
+    decode: jsonResponse(listThreadsResponseSchema),
   });
   const matches = threads.filter((thread) => thread.id.startsWith(raw.toLowerCase()));
   if (matches.length === 1) return (matches[0] as { id: string }).id;

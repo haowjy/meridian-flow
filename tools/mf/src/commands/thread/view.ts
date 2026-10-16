@@ -7,6 +7,7 @@ import {
   requirePositional,
   stringOption,
 } from "../../core/command";
+import { jsonResponse } from "../../core/session";
 import { blockTimings, renderBlocks } from "./block-timing";
 import { chatSnapshot, projectChatView, renderChatView, selectRows } from "./chat-view";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
@@ -48,7 +49,7 @@ export const threadViewCommand: CommandSpec = {
       stringOption(ctx, "project"),
     );
     const snapshot = await session.request("GET", apiThreadSnapshotPath(threadId), undefined, {
-      parse: threadSnapshotSchema.safeParse,
+      decode: jsonResponse(threadSnapshotSchema),
     });
     // One authoritative read, no socket and no sync: the shared view model decides the rows, as the app does.
     const shown = chatSnapshot(snapshot, snapshot.turns);
