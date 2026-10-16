@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Fixed
+- Snapshot reads in the app and `./mf` validate the whole declared chat and turn shape, rejecting malformed reply errors before rendering.
 - Every `./mf` HTTP request now chooses one response decoder; contradictory options can no longer bypass validation while promising a validated result.
 - `./mf api` preserves raw text responses again; domain command outcomes now require
   validated response bodies, including cancellation, admission, creation and document deletion.
