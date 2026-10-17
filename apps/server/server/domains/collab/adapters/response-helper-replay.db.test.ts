@@ -1,6 +1,7 @@
 // Revocable response helpers and accepted replay across draft generation changes.
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { readBranchContent } from "../test-support/branch-store-seam.js";
 import {
   ALPHA_ID,
   closeDatabase,
@@ -327,19 +328,19 @@ describe("response helper replay (Postgres)", () => {
     const dropped = [await write("gold", "gild"), await write("gild", "bronze")];
     expect(await write("green", "lime")).toMatchObject({ status: "success", phase: "staged" });
     await review("gold");
-    const original = fixture.branchStore.commitBranchMutation.bind(fixture.branchStore);
+    const original = fixture.branchStore.appendRows.bind(fixture.branchStore);
     let refused = false;
-    fixture.branchStore.commitBranchMutation = async (request) => {
+    fixture.branchStore.appendRows = async (request) => {
       if (!refused && request.branchId === branchId) {
         refused = true;
-        return false;
+        return { status: "moved" };
       }
       return original(request);
     };
     try {
       await expect(harness.commit(responseId)).rejects.toThrow();
     } finally {
-      fixture.branchStore.commitBranchMutation = original;
+      fixture.branchStore.appendRows = original;
     }
     expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nazure\n\ngreen\n");
     const lease = await fixture.collab.agentEdit().prepare(responseId, ALPHA_ID);
@@ -363,9 +364,10 @@ describe("response helper replay (Postgres)", () => {
     const writer = async () => {
       const snapshot = await fixture.branchStore.getBranch(branchId);
       if (!snapshot) throw new Error("Missing branch");
+      const content = await readBranchContent(fixture.branchStore, branchId);
       const room = new Y.Doc({ gc: false });
       try {
-        Y.applyUpdate(room, snapshot.state);
+        Y.applyUpdate(room, content);
         const updates: Uint8Array[] = [];
         room.on("update", (update) => updates.push(update));
         const text = (room.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(

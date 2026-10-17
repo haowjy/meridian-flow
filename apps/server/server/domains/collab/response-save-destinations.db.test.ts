@@ -26,6 +26,7 @@ import {
 import { createInMemoryEventSink } from "../observability/index.js";
 import type { DocumentLinkScopes } from "./domain/ports/document-link-scope.js";
 import { writeMarkdown } from "./test-support/bound-writes.js";
+import { branchContent } from "./test-support/branch-store-seam.js";
 import { createTestDocumentLinkScopes, testLinkDeps } from "./test-support/document-link-scopes.js";
 
 const documentSchema = buildDocumentSchema();
@@ -812,11 +813,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         );
       if (!workDraft) throw new Error("expected a kept Work draft for lore.md");
       return async () => {
-        const [row] = await db
-          .select({ state: schema.documentBranches.state })
-          .from(schema.documentBranches)
-          .where(eq(schema.documentBranches.id, workDraft.id));
-        return markdownOf(row?.state);
+        return markdownOf(await branchContent(db, workDraft.id));
       };
     }
 

@@ -3,14 +3,11 @@
 import { createAgentEditCodecFactory, yProsemirrorModel } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import { mdxCodec } from "@meridian/markup";
-import {
-  buildDocumentSchema,
-  COLLAB_SCHEMA_VERSION,
-  createCollabYDoc,
-} from "@meridian/prosemirror-schema";
+import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createStaticDocumentLinkScopes } from "../adapters/in-memory/static-document-link-scopes.js";
+import { testBranchRow } from "../test-support/stub-branch-store.js";
 import type { BranchSnapshot } from "./branch-coordinator.js";
 import type {
   PendingSettlementBatch,
@@ -68,21 +65,8 @@ function projection(input: {
   };
 }
 
-function branch(documentId: DocumentId, doc: Y.Doc): BranchSnapshot {
-  return {
-    branchId: `branch-${documentId}`,
-    documentId,
-    kind: "work_draft",
-    upstreamBranchId: null,
-    draftId: "draft-1",
-    workId: WORK_ID,
-    threadId: null,
-    status: "active",
-    generation: 1,
-    state: Y.encodeStateAsUpdate(doc),
-    stateVector: Y.encodeStateVector(doc),
-    schemaVersion: COLLAB_SCHEMA_VERSION,
-  };
+function branch(documentId: DocumentId, _doc: Y.Doc): BranchSnapshot {
+  return testBranchRow({ branchId: `branch-${documentId}`, documentId, workId: WORK_ID });
 }
 
 function preparedPush(documentId: DocumentId, liveDoc: Y.Doc, pushId: number): PreparedPushCommit {

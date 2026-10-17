@@ -11,7 +11,11 @@ import {
   currentDrizzleDb,
   runInRootDrizzleReadSnapshot,
 } from "../../../shared/drizzle-transaction.js";
-import { assertReadableBranch, type BranchStore } from "../domain/branch-coordinator.js";
+import {
+  assertReadableBranch,
+  type BranchStore,
+  materializeBranchRead,
+} from "../domain/branch-coordinator.js";
 import {
   type BranchJournalReadStore,
   DraftChangeRefusal,
@@ -37,8 +41,10 @@ export function createDrizzleReviewCut(input: {
       // database-only and joins it, so no room/network wait holds this snapshot.
       const resolved = await input.identity.resolveReviewItem(address);
       if (!resolved?.draftBranchId) throw new DraftChangeRefusal("gone");
-      const branch = await input.branches.getBranch(resolved.draftBranchId);
+      const read = await input.branches.readBranchAt(resolved.draftBranchId);
+      const branch = read?.branch;
       if (
+        !read ||
         branch?.kind !== "work_draft" ||
         branch.status !== "active" ||
         branch.draftId !== resolved.draftId ||
@@ -56,18 +62,24 @@ export function createDrizzleReviewCut(input: {
         generation: branch.generation,
       });
       const liveDoc = materialize(live);
-      const draftDoc = createCollabYDoc({ gc: false });
+      let draftDoc: Y.Doc;
       try {
-        try {
-          Y.applyUpdate(draftDoc, branch.state);
-        } catch (cause) {
-          throw new BranchCorruptError({
-            branchId: branch.branchId,
-            documentId: branch.documentId,
-            generation: branch.generation,
-            cause,
-          });
-        }
+        draftDoc = materializeBranchRead(read);
+      } catch (cause) {
+        liveDoc.destroy();
+        throw new BranchCorruptError({
+          branchId: branch.branchId,
+          documentId: branch.documentId,
+          generation: branch.generation,
+          cause,
+        });
+      }
+      // The cut's own bytes, detached before the link scope binds the document.
+      const state =
+        read.tail.length === 0 && read.checkpoint
+          ? read.checkpoint.state
+          : Y.encodeStateAsUpdate(draftDoc);
+      try {
         const draftView = { kind: "draft" as const, draftId: resolved.draftId };
         return await input.links.within({ documentId: resolved.documentId }, async () => {
           await input.links.prepare({
@@ -81,7 +93,7 @@ export function createDrizzleReviewCut(input: {
             ...new Set(history.flatMap((row) => (row.threadId ? [row.threadId] : []))),
           ]);
           return {
-            branch,
+            branch: { ...branch, state },
             history,
             live: { state: Y.encodeStateAsUpdate(liveDoc), revision },
             item: resolved.item,

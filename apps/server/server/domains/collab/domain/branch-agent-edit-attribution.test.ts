@@ -10,10 +10,10 @@ import {
 import { blockTexts, createWriteToolHarness, humanText } from "@meridian/agent-edit/test-support";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
-import { buildDocumentSchema, COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
+import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
-import { unimplementedBranchMutations } from "../test-support/unimplemented-branch-mutations.js";
+import { stubBranchStore, testBranchRow } from "../test-support/stub-branch-store.js";
 import { createBranchAgentEditCoordinator } from "./branch-agent-edit.js";
 import { type BranchSnapshot, createBranchCoordinator } from "./branch-coordinator.js";
 import type { BranchJournalRow } from "./branch-push-contracts.js";
@@ -41,31 +41,16 @@ function fixture(existingUpstream?: Y.Doc) {
     update: Uint8Array;
     meta: { origin: string; seq: number };
   }> = [];
-  const snapshot = (branchId: string): BranchSnapshot => ({
-    branchId,
-    documentId,
-    kind: "work_draft",
-    upstreamBranchId: branchId === "peer" ? "draft" : null,
-    draftId: "draft-1",
-    workId: null,
-    threadId: null,
-    status: "active",
-    generation: 1,
-    state: Y.encodeStateAsUpdate(upstream),
-    stateVector: Y.encodeStateVector(upstream),
-    schemaVersion: COLLAB_SCHEMA_VERSION,
-  });
+  const snapshot = (branchId: string): BranchSnapshot =>
+    testBranchRow({ branchId, documentId, upstreamBranchId: branchId === "peer" ? "draft" : null });
   const coordinator = createBranchAgentEditCoordinator({
     threadId,
     model,
     codec,
     branchCoordinator: createBranchCoordinator({
-      store: {
-        getBranch: async (id) => snapshot(id),
-        updateBranchSnapshot: async () => true,
-        deferUntilCommit: () => false,
-        ...unimplementedBranchMutations(),
-      },
+      store: stubBranchStore({
+        branch: (id) => ({ branch: snapshot(id), state: Y.encodeStateAsUpdate(upstream) }),
+      }),
     }),
     branches: {
       getBranch: async (id) => snapshot(id),
@@ -74,7 +59,10 @@ function fixture(existingUpstream?: Y.Doc) {
         generation: 1,
         doc: cloneYDoc(baseline),
       }),
-      ensureThreadPeerBranch: async () => snapshot("peer"),
+      ensureThreadPeerBranch: async () => ({
+        branch: snapshot("peer"),
+        state: Y.encodeStateAsUpdate(upstream),
+      }),
       listActiveWorkDraftBranchIds: async () => ["draft"],
     },
     journalRows: {

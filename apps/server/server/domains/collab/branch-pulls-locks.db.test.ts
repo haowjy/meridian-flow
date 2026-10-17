@@ -125,17 +125,18 @@ it("releases a pull's Work row before the next branch mutex while a receipt owns
       },
       pullFromDoc: async (_lease: unknown, id: string) => {
         if (id !== secondId) {
+          const current = await branches.getBranch(id);
+          const doc = new Y.Doc({ gc: false });
+          Y.applyUpdate(doc, a.state);
           expect(
-            await branches.updateBranchSnapshot({
+            await branches.commitRewrite({
               branchId: id,
-              expectedGeneration: a.generation,
-              expectedState: a.state,
-              expectedStateVector: a.stateVector,
-              state: a.state,
-              stateVector: a.stateVector,
-              liveCut: a.state,
+              policy: { kind: "exact", revision: current?.revision ?? -1 },
+              fence: { kind: "none" },
+              doc,
+              operation: { kind: "pull", liveCut: a.state },
             }),
-          ).toBe(true);
+          ).toMatchObject({ status: "committed" });
         }
         return new Uint8Array();
       },

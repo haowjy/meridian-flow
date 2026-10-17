@@ -2,7 +2,7 @@
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import type { BranchSnapshot } from "./branch-coordinator.js";
+import { type BranchSnapshot, materializeBranchRead } from "./branch-coordinator.js";
 import { type BranchLockLease, createBranchCriticalSections } from "./branch-critical-sections.js";
 import {
   buildSelectedRowCandidates,
@@ -117,7 +117,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
         assertRowsIntegrated(afterDoc, rows, "selective_content_push");
         pushUpdate = Y.encodeStateAsUpdate(afterDoc, Y.encodeStateVector(liveDoc));
       } else {
-        branchDoc = materializeBranch(branch);
+        branchDoc = await materializeBranch(branch);
         pushUpdate = computePushUpdate({ branch, branchDoc, liveDoc });
       }
       return {
@@ -330,10 +330,15 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
     };
   }
 
-  function materializeBranch(branch: BranchSnapshot): Y.Doc {
-    const doc = createCollabYDoc({ gc: false });
-    Y.applyUpdate(doc, branch.state);
-    return doc;
+  /**
+   * The branch's content at the revision the attempt read. A newer revision is a moved
+   * branch: the attempt recaptures, as a failed staging compare would make it.
+   */
+  async function materializeBranch(branch: BranchSnapshot): Promise<Y.Doc> {
+    const read = await input.branchStore.readBranchAt(branch.branchId);
+    if (read?.branch.revision !== branch.revision)
+      throw new BranchPushCommitConflictError(branch.branchId);
+    return materializeBranchRead(read);
   }
 
   /** One item per pushed candidate, keyed by its branch. */

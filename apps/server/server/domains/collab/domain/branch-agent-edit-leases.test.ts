@@ -4,11 +4,11 @@
  * §14), so an immediate write and a close never wait on each other in a cycle.
  */
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
-import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
+import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
-import { unimplementedBranchMutations } from "../test-support/unimplemented-branch-mutations.js";
+import { stubBranchStore, testBranchRow } from "../test-support/stub-branch-store.js";
 import { createBranchAgentEditCoordinator } from "./branch-agent-edit.js";
 import { type BranchSnapshot, createBranchCoordinator } from "./branch-coordinator.js";
 import { createBranchCriticalSections } from "./branch-critical-sections.js";
@@ -20,21 +20,14 @@ const UPSTREAM = "branch_a";
 const PEER = "branch_z";
 
 function snapshot(branchId: string): BranchSnapshot {
-  const doc = createCollabYDoc({ gc: false });
-  return {
+  return testBranchRow({
     branchId,
     documentId,
     kind: branchId === PEER ? "thread_peer" : "work_draft",
     upstreamBranchId: branchId === PEER ? UPSTREAM : null,
-    draftId: "draft-1",
-    workId: "work-1",
+    workId: "work-1" as BranchSnapshot["workId"],
     threadId: branchId === PEER ? threadId : null,
-    status: "active",
-    generation: 1,
-    state: Y.encodeStateAsUpdate(doc),
-    stateVector: Y.encodeStateVector(doc),
-    schemaVersion: COLLAB_SCHEMA_VERSION,
-  };
+  });
 }
 
 describe("thread-core branch leases", () => {
@@ -50,13 +43,13 @@ describe("thread-core branch leases", () => {
     const sections = createBranchCriticalSections(mutex);
     // The edit's own update, journaled as the staged write the access commits.
     const edit: { update: Uint8Array } = { update: new Uint8Array() };
-    const store = {
-      getBranch: async (id: string) => snapshot(id),
-      updateBranchSnapshot: async () => true,
-      deferUntilCommit: () => false,
-      ...unimplementedBranchMutations(),
-      commitBranchMutation: async () => true,
-    };
+    const store = stubBranchStore({
+      branch: (id) => ({
+        branch: snapshot(id),
+        state: Y.encodeStateAsUpdate(createCollabYDoc({ gc: false })),
+      }),
+      appends: "accept",
+    });
     const branchCoordinator = createBranchCoordinator({ store, criticalSections: sections });
     const coordinator = createBranchAgentEditCoordinator({
       threadId,

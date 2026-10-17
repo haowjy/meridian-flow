@@ -317,8 +317,8 @@ export function createBranchAgentEditCoordinator(input: {
                 keptEntries: kept,
                 rejectedWrites: replay.rejectedWrites,
                 helperState: Y.encodeStateAsUpdate(doc),
-                helperCut: { generation: snapshot.generation, state: snapshot.state },
-                beforeState: snapshot.state,
+                helperCut: { generation: snapshot.generation, state: snapshot.encoded },
+                beforeState: snapshot.encoded,
               },
               rows: branchRows(branchId, kept),
             };
@@ -522,10 +522,7 @@ export type BranchLookupWithSnapshots = WorkDraftLookup &
   BranchResolver & {
     getBranch(
       branchId: string,
-    ): Promise<Pick<
-      BranchSnapshot,
-      "upstreamBranchId" | "draftId" | "generation" | "state"
-    > | null>;
+    ): Promise<Pick<BranchSnapshot, "upstreamBranchId" | "draftId" | "generation"> | null>;
   };
 
 type BranchPendingJournalEntries = {

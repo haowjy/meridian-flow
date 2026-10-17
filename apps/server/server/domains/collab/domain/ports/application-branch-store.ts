@@ -8,9 +8,6 @@ import type { PeerRetirementCause, RetiredBranch } from "../peer-retirement.js";
 
 export type ApplicationBranchStore = BranchStore &
   BranchResolver & {
-    appendJournal(
-      input: import("../branch-coordinator.js").AppendBranchJournalInput,
-    ): Promise<void>;
     listActiveWorkDraftBranchIds(documentId: DocumentId): Promise<string[]>;
     /** Every active branch of the draft, both kinds. */
     listActiveDraftBranchIds(draftId: DraftId): Promise<string[]>;
@@ -38,15 +35,16 @@ export type ApplicationBranchStore = BranchStore &
         }
     >;
     /**
-     * The thread's peer of the draft's branch on the document. Takes the draft it is given,
-     * never ensures one; a draft that is no longer active is `BranchStaleUpdateError`.
+     * The thread's peer of the draft's branch on the document, with its content as it stands
+     * (the checkpoint just written for a new peer). Takes the draft it is given, never ensures
+     * one; a draft that is no longer active is `BranchStaleUpdateError`.
      */
     ensureThreadPeerBranch(input: {
       documentId: DocumentId;
       threadId: ThreadId;
       draftId: DraftId;
       liveDoc: Y.Doc;
-    }): Promise<BranchSnapshot>;
+    }): Promise<{ branch: BranchSnapshot; state: Uint8Array }>;
     /**
      * Close the active thread peers of these branches (a reset or a Discard moved their
      * upstream), in the caller's transaction; exactly the peers closed come back with the

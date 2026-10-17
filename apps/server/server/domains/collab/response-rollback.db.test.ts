@@ -7,13 +7,13 @@ import { afterAll, beforeEach, expect, it } from "vitest";
 import * as Y from "yjs";
 import { asGrantedWriter, testFileGrant } from "../../test-support/file-grants.js";
 import { writeMarkdown } from "./test-support/bound-writes.js";
+import { branchContent } from "./test-support/branch-store-seam.js";
 import {
   ALPHA_ID,
   BETA_ID,
   closeDatabase,
   createHarness,
   createTestDatabase,
-  PROJECT_ID,
   resetDatabase,
   schema,
   THREAD_ID,
@@ -242,7 +242,7 @@ it("failed response rolls back immediate live and draft parts while keeping a wr
       .where(eq(schema.documentBranches.id, betaBranch.branchId));
     const doc = new Y.Doc({ gc: false });
     try {
-      Y.applyUpdate(doc, branch.state);
+      Y.applyUpdate(doc, await branchContent(db, branch.id));
       doc.clientID = allocateDocumentClient(doc);
       const text = (doc.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(0) as Y.XmlText;
       const updates = captureMutationUpdates(doc, () => text.insert(8, "!"));

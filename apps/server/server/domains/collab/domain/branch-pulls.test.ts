@@ -43,8 +43,7 @@ describe("BranchPullService", () => {
         branches: {
           listActiveWorkDraftBranchIds: async () => ["work"],
           ensureThreadPeerBranch: async () => ({
-            branchId: "peer",
-            upstreamBranchId: "work",
+            branch: { branchId: "peer", upstreamBranchId: "work" },
             state: new Uint8Array(),
           }),
         },
@@ -96,8 +95,7 @@ describe("BranchPullService", () => {
         branches: {
           listActiveWorkDraftBranchIds: async () => ["work"],
           ensureThreadPeerBranch: async () => ({
-            branchId: "peer",
-            upstreamBranchId: "work",
+            branch: { branchId: "peer", upstreamBranchId: "work" },
             state: new Uint8Array(),
           }),
         },
@@ -146,8 +144,7 @@ describe("BranchPullService", () => {
         branches: {
           listActiveWorkDraftBranchIds: async () => ["work"],
           ensureThreadPeerBranch: async () => ({
-            branchId: "peer",
-            upstreamBranchId: "work",
+            branch: { branchId: "peer", upstreamBranchId: "work" },
             state: new Uint8Array(),
           }),
         },

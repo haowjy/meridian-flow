@@ -1,6 +1,6 @@
 /** Pure preview and closed-set selection from one detached authority observation. */
 import { createHash } from "node:crypto";
-import { bytesEqual, type YProsemirrorDocumentModel } from "@meridian/agent-edit/integration";
+import type { YProsemirrorDocumentModel } from "@meridian/agent-edit/integration";
 import { branchRoomName } from "@meridian/contracts/protocol";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
@@ -110,12 +110,16 @@ export function selectReviewCut(
   // will admit, not a newer independently captured branch or row-status view.
   if (
     cut.branch.generation !== snapshot.generation ||
-    !bytesEqual(cut.branch.state, snapshot.state) ||
     branchJournalRevision(reviewRows(cut)) !== branchJournalRevision(rows)
   )
     throw command.kind === "apply"
       ? new DraftChangeRefusal("stale")
       : new BranchPushCommitConflictError(snapshot.branchId);
+  // A revision is stricter than the content it fences: a metadata-only bump (a hold, an
+  // effect refresh, a lifecycle freeze) moves it without moving the bytes. The attempt
+  // recaptures both reads; the recaptured cut's tokens then refuse only a content move.
+  if (cut.branch.revision !== snapshot.revision)
+    throw new BranchPushCommitConflictError(snapshot.branchId);
   const { preview } = deriveReviewCut(cut, model);
   if (command.liveRevisionToken !== preview.liveRevisionToken)
     throw new DraftChangeRefusal("stale");

@@ -14,7 +14,9 @@ import {
   pushLineage,
   works,
 } from "@meridian/database/schema";
+import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
@@ -26,7 +28,6 @@ import {
 import type { NoticePort } from "../../notices/index.js";
 import { WorkLifecycleUnavailableError } from "../../projects/domain/work-lifecycle.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
-import { mergeStateVectors } from "../domain/branch-coordinator.js";
 import {
   type BranchJournalReadStore,
   type BranchJournalRow,
@@ -45,6 +46,7 @@ import type {
   WorkDraftPendingEvidence,
   WorkDraftPendingStore,
 } from "../domain/ports/work-draft-pending-store.js";
+import { bumpBranchRevisions, commitRewriteWithinTx } from "./drizzle-branches.js";
 import { placeDraftRows } from "./drizzle-document-edits.js";
 import { attachBatchWithinTx, claimCommandWithinTx } from "./drizzle-draft-commands.js";
 import { refreshDraftEffect } from "./drizzle-draft-effect.js";
@@ -536,31 +538,27 @@ async function commitPreparedDiscard(
   )
     throw new DraftChangeRefusal("stale");
 
-  const [casRow] = await db
-    .update(documentBranches)
-    .set({
-      state: Buffer.from(input.state),
-      stateVector: Buffer.from(input.stateVector),
-      ...(input.survivors
-        ? {
-            generation: input.branch.generation + 1,
-            discardedStateVector: Buffer.from(
-              mergeStateVectors(input.branch.discardedStateVector, input.branch.stateVector),
-            ),
-          }
-        : {}),
-      updatedAt: now,
-    })
-    .where(
-      and(
-        eq(documentBranches.id, input.branch.branchId),
-        eq(documentBranches.status, "active"),
-        eq(documentBranches.generation, input.branch.generation),
-        eq(documentBranches.state, Buffer.from(input.branch.state)),
-      ),
-    )
-    .returning({ id: documentBranches.id });
-  if (!casRow) throw new BranchPushCommitConflictError(input.branch.branchId);
+  // The re-forked (or row-discarded) draft is the new checkpoint, at the revision the
+  // selection was made against; survivors re-journal under the row lock, inside it.
+  const checkpoint = createCollabYDoc({ gc: false });
+  let rewritten: Awaited<ReturnType<typeof commitRewriteWithinTx>>;
+  try {
+    Y.applyUpdate(checkpoint, input.state);
+    rewritten = await commitRewriteWithinTx(db, {
+      branchId: input.branch.branchId,
+      policy: { kind: "exact", revision: input.branch.revision },
+      fence: { kind: "none" },
+      doc: checkpoint,
+      ...(input.survivors ? { reset: { kind: "refork" as const } } : {}),
+      withinLock: input.survivors
+        ? () => rejournalSurvivors(db, input, input.survivors ?? [])
+        : undefined,
+    });
+  } finally {
+    checkpoint.destroy();
+  }
+  if (rewritten.status !== "committed")
+    throw new BranchPushCommitConflictError(input.branch.branchId);
 
   const discardedRows = await db
     .update(branchWriteJournal)
@@ -592,38 +590,6 @@ async function commitPreparedDiscard(
     { kind: "discarded" },
   );
   if (input.survivors) {
-    for (const row of input.survivors) {
-      if (input.retireSurvivors) {
-        await placeDraftRows(db, row.branchId, input.branch.generation, [row.id], {
-          kind: "retired",
-        });
-        continue;
-      }
-      const [next] = await db
-        .insert(branchWriteJournal)
-        .values({
-          branchId: row.branchId,
-          generation: input.branch.generation + 1,
-          updateData: Buffer.from(row.updateData),
-          source: row.source,
-          actorUserId: row.actorUserId,
-          threadId: row.threadId,
-          turnId: row.turnId,
-          wId: row.wId,
-          toolCallId: row.toolCallId,
-          updateMeta: row.updateMeta,
-          status: row.status,
-          draftBaseUpdateSeq: row.draftBaseUpdateSeq,
-        })
-        .returning({ id: branchWriteJournal.id });
-      if (!next) throw new Error("Discard survivor was not journaled");
-      await placeDraftRows(db, row.branchId, input.branch.generation, [row.id], {
-        kind: "pending",
-        branchId: row.branchId,
-        generation: input.branch.generation + 1,
-        rowId: next.id,
-      });
-    }
     await db
       .update(branchWriteJournal)
       .set({ status: "discarded" })
@@ -636,10 +602,51 @@ async function commitPreparedDiscard(
       );
   }
   await refreshDraftEffect(db, input.branch.branchId, undefined, true);
-  await db
-    .update(documentBranches)
-    .set({ blocking: false })
-    .where(eq(documentBranches.id, input.branch.branchId));
+  await bumpBranchRevisions(db, [input.branch.branchId], { blocking: false });
+}
+
+/**
+ * A selective Discard's surviving rows at the next generation (their content is in the
+ * re-forked checkpoint), with their edit parts moved onto them; retired instead when the
+ * item closes.
+ */
+async function rejournalSurvivors(
+  db: DrizzleDb,
+  input: PreparedDiscardCommit,
+  survivors: NonNullable<PreparedDiscardCommit["survivors"]>,
+): Promise<void> {
+  for (const row of survivors) {
+    if (input.retireSurvivors) {
+      await placeDraftRows(db, row.branchId, input.branch.generation, [row.id], {
+        kind: "retired",
+      });
+      continue;
+    }
+    const [next] = await db
+      .insert(branchWriteJournal)
+      .values({
+        branchId: row.branchId,
+        generation: input.branch.generation + 1,
+        updateData: Buffer.from(row.updateData),
+        source: row.source,
+        actorUserId: row.actorUserId,
+        threadId: row.threadId,
+        turnId: row.turnId,
+        wId: row.wId,
+        toolCallId: row.toolCallId,
+        updateMeta: row.updateMeta,
+        status: row.status,
+        draftBaseUpdateSeq: row.draftBaseUpdateSeq,
+      })
+      .returning({ id: branchWriteJournal.id });
+    if (!next) throw new Error("Discard survivor was not journaled");
+    await placeDraftRows(db, row.branchId, input.branch.generation, [row.id], {
+      kind: "pending",
+      branchId: row.branchId,
+      generation: input.branch.generation + 1,
+      rowId: next.id,
+    });
+  }
 }
 
 async function findLineage(db: DrizzleDb, idempotencyKey: string): Promise<PushLineageRow | null> {
@@ -663,15 +670,16 @@ async function commitPreparedPush(
   )
     throw new DraftChangeRefusal("stale");
 
+  // Staging flips the rows' status (a membership input): the revision fences and records it.
   const [casRow] = await db
     .update(documentBranches)
-    .set({ updatedAt: sql`${documentBranches.updatedAt}` })
+    .set({ revision: sql`${documentBranches.revision} + 1` })
     .where(
       and(
         eq(documentBranches.id, input.branch.branchId),
         eq(documentBranches.status, "active"),
         eq(documentBranches.generation, input.branch.generation),
-        eq(documentBranches.state, Buffer.from(input.branch.state)),
+        eq(documentBranches.revision, input.branch.revision),
       ),
     )
     .returning({ id: documentBranches.id });

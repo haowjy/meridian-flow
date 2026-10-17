@@ -12,8 +12,14 @@ export type ReviewAddress = {
   itemKey: string;
 };
 
+/** The branch row with its content as the cut's snapshot read it through the read seam. */
+export type ReviewCutBranch = Readonly<BranchSnapshot> & {
+  /** Detached, privately owned bytes of checkpoint ⊕ tail at `revision`. */
+  readonly state: Uint8Array;
+};
+
 export type ReviewCut = Readonly<{
-  branch: Readonly<BranchSnapshot>;
+  branch: ReviewCutBranch;
   history: readonly Readonly<BranchJournalRow>[];
   live: Readonly<{ state: Uint8Array; revision: string }>;
   /** The tree-derived item, never null: an unlisted active branch has one (M1). */

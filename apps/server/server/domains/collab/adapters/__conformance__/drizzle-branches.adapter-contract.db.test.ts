@@ -42,6 +42,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "../../../../test-support/drizzle-reset.js"
     );
     const { createDrizzleBranchStore } = await import("../drizzle-branches.js");
+    const { appendBranchRows, EMPTY_BRANCH_UPDATE, readBranchContent } = await import(
+      "../../test-support/branch-store-seam.js"
+    );
     const { createDrizzleDraftStore } = await import("../drizzle-drafts.js");
     const { createHocuspocusPersistenceService } = await import("../../hocuspocus-persistence.js");
     const {
@@ -219,7 +222,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("reseeds a clean thread peer under the reassigned primary Work's draft", async () => {
       const live = docWithText("live prose");
-      const oldPeer = await store.ensureThreadPeerBranch({
+      const { branch: oldPeer } = await store.ensureThreadPeerBranch({
         documentId: DOC_ID as never,
         threadId: THREAD_ID as never,
         draftId: DRAFT_ID as never,
@@ -254,7 +257,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         store.resolveThreadBranch(DOC_ID as never, THREAD_ID as never),
       ).rejects.toMatchObject({ name: "BranchNotFoundError" });
-      const nextPeer = await store.ensureThreadPeerBranch({
+      const { branch: nextPeer } = await store.ensureThreadPeerBranch({
         documentId: DOC_ID as never,
         threadId: THREAD_ID as never,
         draftId: NEXT_DRAFT_ID as never,
@@ -314,7 +317,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const snapshot = await measuredStore.getBranch(branch.branchId);
       if (!snapshot) throw new Error("missing batch target");
       const source = new Y.Doc({ gc: false });
-      Y.applyUpdate(source, snapshot.state);
+      Y.applyUpdate(source, await readBranchContent(measuredStore, branch.branchId));
       const { createDrizzleJournal } = await import("../drizzle-journal.js");
       const wId = await createDrizzleJournal(db).reserveWriteOrdinal(DOC_ID, THREAD_ID);
       const rows = Array.from({ length: 40 }, (_, index) => {
@@ -485,9 +488,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .returning();
       if (!journalRow) throw new Error("missing journal row");
 
+      // A concurrent committed write moves the revision the push was prepared at.
       await db
         .update(documentBranches)
-        .set({ state: Buffer.from(Y.encodeStateAsUpdate(docWithText("concurrent"))) })
+        .set({ revision: branch.revision + 1 })
         .where(eq(documentBranches.id, branch.branchId));
       await expect(
         pushStore.commitPushBatch(
@@ -795,12 +799,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         draftId: DRAFT_ID as never,
         liveDoc: live,
       });
-      await store.appendJournal?.({
-        branchId: branch.branchId,
-        generation: branch.generation,
-        updateData: new Uint8Array(),
-        source: "agent",
-      });
+      await appendBranchRows(store, branch.branchId, [
+        { updateData: EMPTY_BRANCH_UPDATE, source: "agent" },
+      ]);
 
       const beforeSecond = Y.encodeStateVector(live);
       live.getText("content").insert(live.getText("content").length, " later");
@@ -809,12 +810,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         Y.encodeStateAsUpdate(live, beforeSecond),
         { origin: `human:${USER_ID}`, seq: 0 },
       );
-      await store.appendJournal?.({
-        branchId: branch.branchId,
-        generation: branch.generation,
-        updateData: new Uint8Array(),
-        source: "agent",
-      });
+      await appendBranchRows(store, branch.branchId, [
+        { updateData: EMPTY_BRANCH_UPDATE, source: "agent" },
+      ]);
 
       const rows = await db
         .select({ draftBaseUpdateSeq: branchWriteJournal.draftBaseUpdateSeq })
@@ -823,29 +821,36 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .orderBy(branchWriteJournal.id);
       expect(rows).toEqual([{ draftBaseUpdateSeq: firstSeq }, { draftBaseUpdateSeq: secondSeq }]);
     });
-    it("rejects branch journal writes whose generation does not match the snapshot CAS generation", async () => {
+    // Risk: the revision predicate is the write fence that replaced the byte compare; an
+    // append judged at a revision another write moved (or carrying another generation's rows)
+    // must leave the branch exactly as it was.
+    it("refuses an append judged at a moved revision or for another generation", async () => {
       const branch = await store.ensureDraftBranch({
         documentId: DOC_ID as never,
         draftId: DRAFT_ID as never,
         liveDoc: docWithText("seed"),
       });
+      const before = await readBranchContent(store, branch.branchId);
       const changed = docWithText("changed");
       const updateData = Y.encodeStateAsUpdate(changed);
-      const committed = await store.commitBranchMutation?.({
-        branchId: branch.branchId,
-        expectedGeneration: branch.generation,
-        expectedStateVector: branch.stateVector,
-        expectedState: branch.state,
-        state: updateData,
-        stateVector: Y.encodeStateVector(changed),
-        journals: [
-          {
-            branchId: branch.branchId,
-            generation: branch.generation + 1,
-            updateData,
-            source: "agent",
-          },
-        ],
+      const append = (revision: number, generation: number) =>
+        store.appendRows({
+          branchId: branch.branchId,
+          expectedRevision: revision,
+          expectedGeneration: branch.generation,
+          rows: [{ branchId: branch.branchId, generation, updateData, source: "agent" }],
+          receiptBase: before,
+        });
+
+      await expect(append(branch.revision, branch.generation + 1)).resolves.toEqual({
+        status: "moved",
+      });
+      await db
+        .update(documentBranches)
+        .set({ revision: branch.revision + 1 })
+        .where(eq(documentBranches.id, branch.branchId));
+      await expect(append(branch.revision, branch.generation)).resolves.toEqual({
+        status: "moved",
       });
       const reloaded = await store.getBranch(branch.branchId);
       const journalRows = await db
@@ -853,9 +858,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .from(branchWriteJournal)
         .where(eq(branchWriteJournal.branchId, branch.branchId));
 
-      expect(committed).toBe(false);
-      expect(reloaded?.generation).toBe(branch.generation);
+      expect(reloaded).toMatchObject({
+        generation: branch.generation,
+        revision: branch.revision + 1,
+      });
       expect(journalRows).toEqual([]);
+      expect(await readBranchContent(store, branch.branchId)).toEqual(before);
     });
 
     it("rejects a staged reversal after Apply changes the planned row status", async () => {
@@ -864,12 +872,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         draftId: DRAFT_ID as never,
         liveDoc: docWithText("seed"),
       });
-      await store.appendJournal?.({
-        branchId: branch.branchId,
-        generation: branch.generation,
-        updateData: new Uint8Array(),
-        source: "agent",
-      });
+      await appendBranchRows(store, branch.branchId, [
+        { updateData: EMPTY_BRANCH_UPDATE, source: "agent" },
+      ]);
       const [planned] = await db
         .select({ id: branchWriteJournal.id })
         .from(branchWriteJournal)
@@ -880,15 +885,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .set({ status: "pushed" })
         .where(eq(branchWriteJournal.id, planned.id));
 
+      const current = await store.getBranch(branch.branchId);
+      if (!current) throw new Error("missing branch");
+      const before = await readBranchContent(store, branch.branchId);
       const changed = docWithText("changed");
-      const committed = await store.commitBranchMutation?.({
+      const committed = await store.appendRows({
         branchId: branch.branchId,
-        expectedGeneration: branch.generation,
-        expectedStateVector: branch.stateVector,
-        expectedState: branch.state,
-        state: Y.encodeStateAsUpdate(changed),
-        stateVector: Y.encodeStateVector(changed),
-        journals: [
+        expectedRevision: current.revision,
+        expectedGeneration: current.generation,
+        rows: [
           {
             branchId: branch.branchId,
             generation: branch.generation,
@@ -898,6 +903,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             source: "agent",
           },
         ],
+        receiptBase: before,
       });
       const reloaded = await store.getBranch(branch.branchId);
       const rows = await db
@@ -905,8 +911,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .from(branchWriteJournal)
         .where(eq(branchWriteJournal.branchId, branch.branchId));
 
-      expect(committed).toBe(false);
-      expect(reloaded?.state).toEqual(branch.state);
+      expect(committed).toEqual({ status: "moved" });
+      expect(reloaded?.revision).toBe(current.revision);
+      expect(await readBranchContent(store, branch.branchId)).toEqual(before);
       expect(rows).toEqual([{ id: planned.id, status: "pushed" }]);
     });
   });
