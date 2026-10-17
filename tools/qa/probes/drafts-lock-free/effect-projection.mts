@@ -7,26 +7,29 @@
  * Arms, each on its own draft (the Works badge is `countPendingByWorkIds`, the Work's
  * republication is its `entity_revision`):
  * 1. one key into a fresh draft: pending 1 and the Work republished within 1 s;
- * 2. 3 s of keys at 50 ms: pending within 1 s of the first key, at most four touches;
+ * 2. 3 s of keys at 50 ms: pending within the 1 s max wait of the first key plus one run (judge
+ *    and write), at most four touches;
  *    then deleting everything typed: pending 0 within 1 s;
  * 3. Apply staging (rows `pushed`, `has_effect` still true) then one key: the Work republishes
  *    within 1 s (the review's `row-only-membership-flip`);
  * 4. two processes typing inside one debounce: the stored value equals the materialized
  *    comparison and `has_effect_revision = revision`.
  *
- * Negative control on `586e58ae1e`: there is no watermark and no job, so arm 4 fails on the
- * watermark; arms 1–3 report today's inline effect for comparison.
+ * Negative control on `586e58ae1e` (inline effect, no job, no watermark): arms 1, 2 and 4 fail
+ * on the watermark; arm 3 passed there through the inline membership flip.
  */
 import assert from "node:assert/strict";
 import { independently, observe, openHarness, type Probe } from "./harness.mts";
 import {
   branchRow,
   captureUpdate,
+  countingEffects,
   firstText,
   judgedEffect,
   keystroke,
   openProjected,
   openRoom,
+  percentiles,
   runArms,
   seedDraft,
   within,
@@ -34,6 +37,9 @@ import {
 } from "./phase4.mts";
 
 const KEY_MS = 50;
+/** The job's max wait from the first unserved key (§3.2), plus one run: judge and write. */
+const MAX_WAIT_MS = 1_000;
+const RUN_MS = 250;
 const TYPING_MS = 3_000;
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -44,7 +50,6 @@ export const effectProjection: Probe = {
     "badge follows a key within 1 s, continuous typing within 1 s of the first key with at most four touches, delete-all clears within 1 s, a key after staging republishes the Work, two processes converge with a fresh watermark",
   async run(harness) {
     const p = await openProjected(harness);
-    if (p.missing) observe("projection", p.missing);
     try {
       await runArms({
         async "1-one-key"() {
@@ -74,14 +79,19 @@ export const effectProjection: Probe = {
 
         async "2-continuous-typing-then-delete-all"() {
           const draft = await seedDraft(harness, "effect-typing");
-          const tab = await openRoom(harness, p.coordinator, draft);
+          const effects = countingEffects(harness.store);
+          const typingProcess = await openProjected(harness, { store: effects.store });
+          const tab = await openRoom(harness, typingProcess.coordinator, draft);
           try {
             const before = await workBadge(harness, draft.workId);
             const started = performance.now();
             let firstPendingMs: number | null = null;
+            const keyMs: number[] = [];
             const typing = (async () => {
               while (performance.now() - started < TYPING_MS) {
+                const sent = performance.now();
                 assert.equal(await tab.send(keystroke(tab.room, "x")), "appended");
+                keyMs.push(performance.now() - sent);
                 await pause(KEY_MS);
               }
             })();
@@ -108,6 +118,8 @@ export const effectProjection: Probe = {
               (b) => b.pending === 0,
             );
             observe("arm 2", {
+              keys: percentiles(keyMs),
+              writeEffect: effects.outcomes,
               firstPendingMs,
               touches,
               typedChars,
@@ -116,12 +128,13 @@ export const effectProjection: Probe = {
               clearedMs: cleared.elapsedMs,
             });
             assert.ok(
-              firstPendingMs !== null && firstPendingMs <= 1_000,
-              "pending within 1 s of the first key",
+              firstPendingMs !== null && firstPendingMs <= MAX_WAIT_MS + RUN_MS,
+              "pending within the 1 s max wait of the first key, plus one run",
             );
             assert.ok(touches <= 4, `at most four Work touches while typing, saw ${touches}`);
             assert.equal(erased, "appended");
           } finally {
+            typingProcess.dispose();
             tab.room.destroy();
             draft.live.destroy();
           }

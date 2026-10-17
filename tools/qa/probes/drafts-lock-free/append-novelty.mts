@@ -41,7 +41,6 @@ import {
   pauseAt,
   pausedAppend,
   phase4Coordinator,
-  prefixMissingConstant,
   receipts,
   runArms,
   seedDraft,
@@ -141,7 +140,7 @@ export const appendNovelty: Probe = {
             `${WRITER}:1`,
           ]);
           assert.match(after.text, /BaseAB/);
-          assert.deepEqual(prefixMissingConstant(), close, "the contracts constant");
+          assert.deepEqual(close, { code: 4207, reason: "branch-prefix-missing" });
         } finally {
           draft.live.destroy();
           await gateway.close();

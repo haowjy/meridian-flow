@@ -30,7 +30,6 @@ import {
   openProjected,
   openRoom,
   phase4Coordinator,
-  phase4Store,
   runArms,
   seedDraft,
   within,
@@ -149,7 +148,7 @@ export const effectWatermarkSweep: Probe = {
         const [first, rest] = [branchIds[0] as string, branchIds.slice(1)];
         const pages: number[] = [];
         const outcomes: Record<EffectWrite, number> = { written: 0, moved: 0, contended: 0 };
-        const store = phase4Store(harness.store);
+        const store = harness.store;
         const counted = {
           ...store,
           async staleEffectBranches(input: Parameters<typeof store.staleEffectBranches>[0]) {

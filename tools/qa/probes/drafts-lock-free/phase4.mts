@@ -1,132 +1,49 @@
 /**
- * What the phase 4 probes share (design `phase4-crdt-appends.md`, §9): the contract they drive
- * (the close code, the outcomes, the store doors and the projection job, named as the design
- * names them), readers of the journal, receipts and effect columns, and the pauses that order
- * two writers by a hook or a held call rather than by a sleep.
- *
- * A seam the design names but the checkout does not have yet fails its probe with
- * `Phase 4 seam missing: …`, not the whole runner: lane-1 modules load through `loadSeam`.
+ * What the phase 4 probes share (design `phase4-crdt-appends.md`, §9): readers of the journal,
+ * receipts and effect columns, a process with the projection job wired as composition wires
+ * it, and the pauses that order two writers by a hook or a held call rather than by a sleep.
  */
 import { WS_CLOSE } from "@meridian/contracts/protocol";
 import type { WorkId } from "@meridian/contracts/runtime";
 import { createBranchCoordinator } from "../../../../apps/server/server/domains/collab/domain/branch-coordinator.ts";
+import { createBranchProjection } from "../../../../apps/server/server/domains/collab/domain/branch-projection.ts";
+import { createBranchPullService } from "../../../../apps/server/server/domains/collab/domain/branch-pulls.ts";
 import {
   type BranchStore,
   materializeBranchRead,
 } from "../../../../apps/server/server/domains/collab/domain/branch-store.ts";
+import type { WriterFrameDiagnostics } from "../../../../apps/server/server/domains/collab/domain/branch-writer-frames.ts";
 import {
   type CollabHookPoint,
   setCollabHook,
 } from "../../../../apps/server/server/domains/collab/domain/collab-test-hooks.ts";
+import { documentEffectsEqual } from "../../../../apps/server/server/domains/collab/domain/document-content.ts";
+import { runOutsideWrite } from "../../../../apps/server/server/shared/drizzle-transaction.ts";
 import { gate, type Harness, settled, Y } from "./harness.mts";
 
 /** The resync close: not a refusal, never counted by the client (design §2.7, D30). */
-export const PREFIX_MISSING_CLOSE = { code: 4207, reason: "branch-prefix-missing" } as const;
-/** A genuine admission refusal, bounded by the client at three in a row (#940). */
-export const REFUSED_CLOSE = { code: 1008, reason: "branch-update-admission-failed" } as const;
+export const PREFIX_MISSING_CLOSE = WS_CLOSE.BRANCH_PREFIX_MISSING;
 
-export class Phase4SeamMissing extends Error {
-  constructor(seam: string) {
-    super(`Phase 4 seam missing: ${seam} (design phase4-crdt-appends §8.2)`);
-    this.name = "Phase4SeamMissing";
-  }
-}
+export type EffectWrite = Awaited<ReturnType<BranchStore["writeEffect"]>>;
 
-/** `WS_CLOSE.BRANCH_PREFIX_MISSING` as the contracts package declares it. */
-export function prefixMissingConstant(): { code: number; reason: string } {
-  const constant = (WS_CLOSE as Record<string, { code: number; reason: string } | undefined>)
-    .BRANCH_PREFIX_MISSING;
-  if (!constant) throw new Phase4SeamMissing("WS_CLOSE.BRANCH_PREFIX_MISSING");
-  return constant;
-}
+const noop = () => {};
 
-/** A module lane 1 adds; loaded by path so its absence fails one probe, not the runner. */
-export async function loadSeam<T>(relativeToRepo: string, seam: string): Promise<T> {
-  const url = new URL(`../../../../${relativeToRepo}`, import.meta.url).href;
-  try {
-    return (await import(url)) as T;
-  } catch (cause) {
-    if ((cause as { code?: string }).code === "ERR_MODULE_NOT_FOUND")
-      throw new Phase4SeamMissing(seam);
-    throw cause;
-  }
-}
-
-export type EffectWrite = "written" | "moved" | "contended";
-
-/** The store doors phase 4 adds (§3.2, §8.2). */
-export type Phase4Store = BranchStore & {
-  writeEffect(input: {
-    branchId: string;
-    revision: number;
-    hasEffect: boolean;
-    workId: WorkId | null;
-  }): Promise<EffectWrite>;
-  staleEffectBranches(input: {
-    after?: { updatedAt: Date; id: string };
-    limit: number;
-  }): Promise<readonly { id?: string; branchId?: string; updatedAt: Date }[]>;
-};
-
-export function phase4Store(store: BranchStore): Phase4Store {
-  for (const door of ["writeEffect", "staleEffectBranches"] as const)
-    if (typeof (store as Partial<Phase4Store>)[door] !== "function")
-      throw new Phase4SeamMissing(`BranchStore.${door}`);
-  return store as Phase4Store;
-}
-
-/** The projection job (§3.2): `createBranchProjection` in `domain/branch-projection.ts`. */
-export type BranchProjection = {
-  markDirty(branchId: string): void;
-  sweep(): Promise<void>;
-  dispose(): void;
-};
-
-export type ProjectionDiagnostics = {
-  projectionFailed(input: { branchId: string; cause: unknown }): void;
-  projectionBaselineBlocked(input: { branchId: string; documentId: string }): void;
-};
-
-type ProjectionModule = {
-  createBranchProjection(input: {
-    coordinator: unknown;
-    store: BranchStore;
-    pulls: unknown;
-    diagnostics?: ProjectionDiagnostics;
-    maxRuns?: number;
-  }): BranchProjection;
-};
-
-export async function loadProjection(): Promise<ProjectionModule["createBranchProjection"]> {
-  const module = await loadSeam<Partial<ProjectionModule>>(
-    "apps/server/server/domains/collab/domain/branch-projection.ts",
-    "domain/branch-projection.ts",
-  );
-  if (!module.createBranchProjection) throw new Phase4SeamMissing("createBranchProjection");
-  return module.createBranchProjection;
-}
-
-/**
- * A coordinator over `store` with phase 4's required `onAppendCommitted` (§3.1) and any other
- * input; the cast keeps this compiling on both sides of lane 1.
- */
+/** A coordinator over `store` with the required `onAppendCommitted` (§3.1). */
 export function phase4Coordinator(
   harness: Harness,
   input: {
     store?: BranchStore;
     onAppendCommitted?: (branchId: string) => void;
     onBranchUpdate?: (input: { branchId: string; update: Uint8Array }) => void;
-    diagnostics?: Record<string, (...args: never[]) => void>;
+    diagnostics?: Partial<WriterFrameDiagnostics>;
   } = {},
 ) {
-  const noop = () => {};
   return createBranchCoordinator({
     store: input.store ?? harness.store,
     attemptScope: harness.attemptScope,
     onAppendCommitted: input.onAppendCommitted ?? noop,
     ...(input.onBranchUpdate ? { onBranchUpdate: input.onBranchUpdate } : {}),
     diagnostics: {
-      frameRetried: noop,
       compactionFailed: noop,
       roomReconciled: noop,
       projectionFailed: noop,
@@ -134,7 +51,7 @@ export function phase4Coordinator(
       appendPrefixMissing: noop,
       ...input.diagnostics,
     },
-  } as unknown as Parameters<typeof createBranchCoordinator>[0]);
+  });
 }
 
 /** A writer frame's outcome as the probes name them (§8.2's `AppendRowsOutcome`, at the frame). */
@@ -491,9 +408,8 @@ export async function workBadge(harness: Harness, workId: string) {
 
 /**
  * A process with the projection job wired as composition wires it (§3.1, §3.2): every durable
- * append marks its branch dirty. `projection` is null, and `missing` says why, until lane 1
- * lands `domain/branch-projection.ts`; the coordinator still runs, so an arm can observe
- * today's inline effect. `captures` counts live snapshots per document (the legacy pull).
+ * append marks its branch dirty. `captures` counts live snapshots per document (the legacy
+ * pull); `blocked` and `failed` are the job's diagnostics.
  */
 export async function openProjected(
   harness: Harness,
@@ -504,11 +420,12 @@ export async function openProjected(
   const blocked: { branchId: string; documentId: string }[] = [];
   const failed: { branchId: string; cause: unknown }[] = [];
   const captures = new Map<string, number>();
-  const diagnostics: ProjectionDiagnostics = {
-    projectionFailed: (input) => failed.push(input),
-    projectionBaselineBlocked: (input) => blocked.push(input),
-  };
-  let projection: BranchProjection | null = null;
+  const diagnostics = {
+    projectionFailed: (input: { branchId: string; cause: unknown }) => failed.push(input),
+    projectionBaselineBlocked: (input: { branchId: string; documentId: string }) =>
+      blocked.push(input),
+  } as Pick<WriterFrameDiagnostics, "projectionFailed" | "projectionBaselineBlocked">;
+  let projection: ReturnType<typeof createBranchProjection> | undefined;
   const coordinator = phase4Coordinator(harness, {
     store,
     onAppendCommitted(branchId) {
@@ -517,9 +434,6 @@ export async function openProjected(
     },
     diagnostics,
   });
-  const { createBranchPullService } = await import(
-    "../../../../apps/server/server/domains/collab/domain/branch-pulls.ts"
-  );
   const pulls = createBranchPullService({
     outsideTransaction: (operation) => operation(),
     branches: harness.store,
@@ -537,14 +451,15 @@ export async function openProjected(
       recover: async () => {},
     } as never,
   });
-  let missing: string | undefined;
-  try {
-    const create = await loadProjection();
-    projection = create({ coordinator, store, pulls, diagnostics, maxRuns: options.maxRuns ?? 4 });
-  } catch (cause) {
-    if (!(cause instanceof Phase4SeamMissing)) throw cause;
-    missing = cause.message;
-  }
+  projection = createBranchProjection({
+    coordinator,
+    store,
+    pulls,
+    diagnostics,
+    outsideTransaction: runOutsideWrite,
+    maxRuns: options.maxRuns ?? 4,
+  });
+  const job = projection;
   return {
     coordinator,
     pulls,
@@ -552,14 +467,9 @@ export async function openProjected(
     blocked,
     failed,
     captures,
-    missing,
-    /** The job, or a failure naming the missing seam. */
-    projection(): BranchProjection {
-      if (!projection) throw new Error(missing ?? "No projection job");
-      return projection;
-    },
+    projection: () => job,
     dispose() {
-      projection?.dispose();
+      job.dispose();
       pulls.cancelScheduledPulls();
     },
   };
@@ -570,9 +480,6 @@ export async function judgedEffect(harness: Harness, branchId: string): Promise<
   const [row] = await harness.raw<{ live_cut: Uint8Array | null }[]>`
     select live_cut from document_branches where id = ${branchId}`;
   if (!row?.live_cut) return null;
-  const { documentEffectsEqual } = await import(
-    "../../../../apps/server/server/domains/collab/domain/document-content.ts"
-  );
   const baseline = new Y.Doc({ gc: false });
   const doc = await durableDoc(harness, branchId);
   try {
@@ -582,4 +489,18 @@ export async function judgedEffect(harness: Harness, branchId: string): Promise<
     baseline.destroy();
     doc.destroy();
   }
+}
+
+/** `store` whose `writeEffect` outcomes are counted. */
+export function countingEffects(store: BranchStore) {
+  const outcomes: Record<EffectWrite, number> = { written: 0, moved: 0, contended: 0 };
+  const counted: BranchStore = {
+    ...store,
+    async writeEffect(input) {
+      const outcome = await store.writeEffect(input);
+      outcomes[outcome] += 1;
+      return outcome;
+    },
+  };
+  return { store: counted, outcomes };
 }
