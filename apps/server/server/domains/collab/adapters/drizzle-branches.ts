@@ -71,6 +71,13 @@ import { createDrizzleJournal } from "./drizzle-journal.js";
 
 export type DrizzleBranchStore = ApplicationBranchStore;
 
+export type RewriteCommitted = {
+  branchId: string;
+  rewrite: CommitRewriteInput["operation"]["kind"];
+  holdMs: number;
+  tailRows: number;
+};
+
 export function createDrizzleBranchStore(
   db: Database,
   deps: {
@@ -82,9 +89,11 @@ export function createDrizzleBranchStore(
     workProjection: WorkProjectionMutation;
     /** A peer ensure relies on its draft staying active; a thread finds its Work's draft. */
     drafts: Pick<Drafts, "shareActive" | "activeForWork">;
+    /** A `commitRewrite` committed: the row lock's hold (`FOR UPDATE` → `COMMIT`) and its tail. */
+    onRewriteCommitted?: (detail: RewriteCommitted) => void;
   },
 ): DrizzleBranchStore {
-  const { live, workProjection, drafts } = deps;
+  const { live, workProjection, drafts, onRewriteCommitted } = deps;
   async function findPrimaryWork(threadId: ThreadId): Promise<WorkId> {
     const [row] = await currentDrizzleDb(db)
       .select({ workId: threadWorks.workId })
@@ -543,6 +552,20 @@ export function createDrizzleBranchStore(
         ...(operation.kind === "pull" && operation.effect ? { effect: operation.effect } : {}),
         ...(input.upstream ? { upstream: input.upstream } : {}),
         doc: input.doc,
+        ...(onRewriteCommitted
+          ? {
+              onLocked: ({ lockedAt, tailRows }) => {
+                deferUntilDrizzleCommit(() =>
+                  onRewriteCommitted({
+                    branchId: input.branchId,
+                    rewrite: operation.kind,
+                    holdMs: Math.round(performance.now() - lockedAt),
+                    tailRows,
+                  }),
+                );
+              },
+            }
+          : {}),
         ...(operation.kind === "reset"
           ? {
               reset: { kind: "discard" as const },
