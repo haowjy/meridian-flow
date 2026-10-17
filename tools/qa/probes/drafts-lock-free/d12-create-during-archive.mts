@@ -1,8 +1,8 @@
 /**
  * Decision D12: creating a Work draft branch enters the Work-first boundary, so it cannot escape
- * Archive's branch enumeration. Archive pauses inside its transaction after fencing the Work's
- * branches; a branch ensure for a new document waits on the Work row, lands only after Archive
- * commits, and is derived archived: a writer frame into it is refused and nothing is written.
+ * Archive. Archive pauses inside its transaction after its Work update; a branch ensure for a new
+ * document waits on the Work row, lands only after Archive commits, and is derived archived: a
+ * writer frame into it is refused and nothing is written.
  */
 import assert from "node:assert/strict";
 import { materializeBranchRead } from "../../../../apps/server/server/domains/collab/domain/branch-store.ts";
@@ -24,10 +24,10 @@ export const d12CreateDuringArchive: Probe = {
     "the ensure waits on the Work row until Archive commits; the new branch is archived and refuses a writer frame",
   async run(harness) {
     const { workId, draftId } = await harness.seedWork("create-archive");
-    const fenced = gate();
+    const paused = gate();
     const finish = gate();
     let pause = true;
-    // Archive's projection publication runs inside its transaction, after the branch fence.
+    // Archive's projection publication runs inside its transaction, after its Work update.
     const works = createDrizzleWorkRepository({
       db: harness.db,
       projectionMutation: {
@@ -35,7 +35,7 @@ export const d12CreateDuringArchive: Probe = {
         async publishWorks(ids) {
           if (pause) {
             pause = false;
-            fenced.open();
+            paused.open();
             await finish.wait;
           }
           return harness.projection.publishWorks(ids);
@@ -47,7 +47,7 @@ export const d12CreateDuringArchive: Probe = {
     const { documentId, live } = await harness.seedDocument("create-archive", "Fresh");
     try {
       const archive = settled(independently(() => works.archive(workId)));
-      await fenced.wait;
+      await paused.wait;
       const archivedBefore = await harness.workArchived(workId);
       const ensuring = settled(
         independently(() =>
