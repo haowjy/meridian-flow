@@ -42,13 +42,18 @@ function openProcess(harness: Harness, label: string, store: BranchStore = harne
  * A draft over "Base" with a room loaded in each process, the second process on its own
  * connections. `storeA` lets a probe pause process A's store.
  */
-async function twoProcesses(harness: Harness, label: string, storeA?: BranchStore) {
+async function twoProcesses(
+  harness: Harness,
+  label: string,
+  storeA?: BranchStore,
+  wrap: (store: BranchStore) => BranchStore = (store) => store,
+) {
   const { draftId } = await harness.seedWork(label);
   const { documentId, live } = await harness.seedDocument(label, "Base");
   const branch = await harness.store.ensureDraftBranch({ documentId, draftId, liveDoc: live });
   const other = await openHarness(harness.url);
-  const a = openProcess(harness, "A", storeA);
-  const b = openProcess(other, "B");
+  const a = openProcess(harness, "A", wrap(storeA ?? harness.store));
+  const b = openProcess(other, "B", wrap(other.store));
   for (const process of [a, b]) {
     await process.coordinator.readBranch(branch.branchId, async (doc) => {
       Y.applyUpdate(process.room, Y.encodeStateAsUpdate(doc));
@@ -105,9 +110,24 @@ const roomText = (process: Process) => process.room.getXmlFragment("prosemirror"
 export const twoProcessFrames: Probe = {
   name: "two-process-frames",
   decision: "D25",
-  expected: `frames: {"admitted":${2 * KEYS},"failures":{}}; ${2 * KEYS} tokens durable and in both rooms after a rejoin; no frame over 1 s, no BranchCasConflictError`,
+  expected: `frames: {"admitted":${2 * KEYS},"failures":{}}; ${2 * KEYS} tokens durable and in both rooms after a rejoin; no frame over 1 s, no BranchCasConflictError, one appendRows per frame`,
   async run(harness) {
-    const { branchId, generation, live, a, b, other } = await twoProcesses(harness, "two-process");
+    // One sequence point per frame (design §9): today's revision miss, retried inside the frame
+    // as `BranchCasConflictError`, would show as a second `appendRows` call.
+    let appendRowsCalls = 0;
+    const counted = (store: BranchStore): BranchStore => ({
+      ...store,
+      appendRows(input) {
+        appendRowsCalls += 1;
+        return store.appendRows(input);
+      },
+    });
+    const { branchId, generation, live, a, b, other } = await twoProcesses(
+      harness,
+      "two-process",
+      undefined,
+      counted,
+    );
     live.destroy();
     const failures: Record<string, number> = {};
     const wall: number[] = [];
@@ -144,7 +164,9 @@ export const twoProcessFrames: Probe = {
       waitMs: latency(appends.map((append) => append.waitMs)),
       holdMs: latency(appends.map((append) => append.holdMs)),
       foldedPrefixRows: appends.reduce((total, append) => total + append.prefixRows, 0),
+      appendRowsCalls,
     });
+    assert.equal(appendRowsCalls, 2 * KEYS, "a frame retried its sequence point");
     assert.ok(!Object.keys(failures).some((name) => name.startsWith("BranchCasConflictError")));
     assert.ok(Math.max(...wall) < 1_000, "a frame took a second or more");
     assert.equal(admitted, 2 * KEYS);
