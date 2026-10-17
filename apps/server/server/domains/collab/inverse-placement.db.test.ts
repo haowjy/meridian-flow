@@ -205,11 +205,12 @@ it.each([
       if (!row) throw new Error("missing holding draft branch");
       return row;
     };
+    let marked: Awaited<ReturnType<typeof holdingBranch>> | undefined;
     if (origin === "applied") {
       // Nothing has asked about this turn yet, so nothing marked the holding draft.
       const unmarked = await holdingBranch();
       await view.collab.getTurnReceiptChip(THREAD_ID, TURN_ID);
-      const marked = await holdingBranch();
+      marked = await holdingBranch();
       expect(unmarked.blocking).toBe(false);
       expect({ blocking: marked.blocking, moved: marked.revision > unmarked.revision }).toEqual({
         blocking: true,
@@ -229,6 +230,14 @@ it.each([
     });
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Gamma.\n\nBlue.\n");
     expect(await holdingReview.discardItem(ALPHA_ID)).toMatchObject({ status: "discarded" });
+    if (marked) {
+      // Placing the held rows clears the hold, in a revision move like setting it.
+      const cleared = await holdingBranch();
+      expect({ blocking: cleared.blocking, moved: cleared.revision > marked.revision }).toEqual({
+        blocking: false,
+        moved: true,
+      });
+    }
     // Both an active Gamma part and the latest action's undone Gold part now qualify.
     expect(await view.collab.getTurnReceiptChip(THREAD_ID, TURN_ID)).toMatchObject({
       control: "redo",

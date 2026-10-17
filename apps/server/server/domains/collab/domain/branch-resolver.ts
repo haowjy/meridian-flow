@@ -31,10 +31,6 @@ export class BranchNotFoundError extends Error {
   }
 }
 
-export function isBranchNotFoundError(cause: unknown): cause is BranchNotFoundError {
-  return cause instanceof BranchNotFoundError;
-}
-
 export class BranchCorruptError extends Error {
   readonly branchId: string;
   readonly documentId: DocumentId;
@@ -59,8 +55,4 @@ export class BranchCorruptError extends Error {
     this.threadId = input.threadId;
     this.generation = input.generation;
   }
-}
-
-export function isBranchCorruptError(cause: unknown): cause is BranchCorruptError {
-  return cause instanceof BranchCorruptError;
 }

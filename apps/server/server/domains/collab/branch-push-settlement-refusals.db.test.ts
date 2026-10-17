@@ -47,6 +47,14 @@ describe("branch-push settlement refusals and holds (postgres)", () => {
     );
   }
 
+  /** Each branch's revision, which every review-membership write moves. */
+  async function revisions(branchIds: readonly string[]) {
+    const rows = await db
+      .select({ id: schema.documentBranches.id, revision: schema.documentBranches.revision })
+      .from(schema.documentBranches);
+    return branchIds.map((branchId) => rows.find((row) => row.id === branchId)?.revision ?? -1);
+  }
+
   /** Trail changes and unconsumed notices that still name a push. */
   async function pushTraces() {
     const details = await db.select().from(schema.changeTrailDocumentDetails);
@@ -214,9 +222,15 @@ describe("branch-push settlement refusals and holds (postgres)", () => {
     // The next owner decides again and abandons it whole; recovery never returns to it.
     await expireAllPendingClaims(db);
     const recoverer = createHarness(db, { publicationSteps: [proceedingStep, refusingStep] });
+    const revisionsBeforeWithdrawal = await revisions(branchIds);
     await expect(recoverer.recoverPendingLiveSettlements()).resolves.toBe(1);
     expect((await batchStates()).map(({ state }) => state)).toEqual(["abandoned", "abandoned"]);
     expect((await journalStatuses(branchIds)).flat()).toEqual(["active", "active", "active"]);
+    // Withdrawing the members (pushed → active) moved each branch's revision (§2.5).
+    const withdrawn = await revisions(branchIds);
+    expect(withdrawn.map((revision, i) => revision > (revisionsBeforeWithdrawal[i] ?? 0))).toEqual(
+      branchIds.map(() => true),
+    );
     expect(await db.select().from(schema.pushLineage)).toEqual([]);
     await expireAllPendingClaims(db);
     await expect(recoverer.recoverPendingLiveSettlements()).resolves.toBe(0);

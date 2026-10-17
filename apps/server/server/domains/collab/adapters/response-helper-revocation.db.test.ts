@@ -202,6 +202,8 @@ describe("response helper revocation (Postgres)", () => {
       .from(schema.documentBranches)
       .where(eq(schema.documentBranches.id, peerB.id));
     expect(closedA.status).toBe("closed");
+    // Closing a peer is a review-membership input: it moves the peer's revision (§2.5).
+    expect(closedA.revision).toBeGreaterThan(peerA.revision);
     expect(activeB.status).toBe("active");
     expect(await core.commitResponse(responseB)).toMatchObject({
       status: "committed",

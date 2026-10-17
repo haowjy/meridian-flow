@@ -221,9 +221,14 @@ describe("response helper replay (Postgres)", () => {
   it("whole Discard rolls back the only staged document in a reply", async () => {
     const { fixture, branchId, responseId, write } = await setupResponseDraft(db, harness, true);
     expect(await write("green", "lime")).toMatchObject({ status: "success", phase: "staged" });
+    const open = await fixture.branchStore.getBranch(branchId);
     expect(await reviewDriver(fixture.collab.draftReview).discardAll()).toMatchObject({
       status: "discarded",
     });
+    // Closing the draft's branches is a review-membership input: it moves their revision (§2.5).
+    expect((await fixture.branchStore.getBranch(branchId))?.revision).toBeGreaterThan(
+      open?.revision ?? Number.POSITIVE_INFINITY,
+    );
     // Discard all closes the draft: the save refuses the write with its receipt (contract §2.2).
     const saved = await harness.commit(responseId);
     expect(saved).toMatchObject({ status: "committed", documents: [{ updateCount: 0 }] });
