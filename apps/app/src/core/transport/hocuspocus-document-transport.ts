@@ -19,6 +19,11 @@
  * scope. Local edits still unacknowledged at that close were refused, and a
  * reconnect would replay them from this Y.Doc, so the transport resets instead
  * and the owner rebuilds the room from the server's state.
+ *
+ * A branch room's update refusal (`1008`) is bounded. One refusal reconnects
+ * and resends, as any close does; after `MAX_BRANCH_UPDATE_REFUSALS` in a row
+ * with no acknowledgement between them, the room ends `BRANCH_UPDATES_REFUSED`
+ * and keeps its outbox for the owner to show. Live rooms never count.
  */
 import {
   HocuspocusProvider,
@@ -40,12 +45,13 @@ import {
 import { COLLAB_SCHEMA_VERSION, formatCollabSchemaSubprotocol } from "@meridian/prosemirror-schema";
 import type { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
-import type {
-  DocumentSessionAccess,
-  DocumentSessionConnectionState,
-  DocumentSessionResetReason,
-  DocumentSessionTransportProvider,
-  ResetDisposition,
+import {
+  BRANCH_UPDATES_REFUSED,
+  type DocumentSessionAccess,
+  type DocumentSessionConnectionState,
+  type DocumentSessionResetReason,
+  type DocumentSessionTransportProvider,
+  type ResetDisposition,
 } from "@/core/editor/document-session";
 
 import type { ConnectivityHintsPort } from "./connectivity-hints";
@@ -63,6 +69,10 @@ const TERMINAL_DENIAL_CODES = new Set<number>([
 
 // WebSocket.OPEN; the provider's own queue-or-send decision uses the same test.
 const SOCKET_OPEN = 1;
+
+// The server's close for a branch frame it would not admit (policy violation).
+const BRANCH_UPDATE_REFUSED_CODE = 1008;
+const MAX_BRANCH_UPDATE_REFUSALS = 3;
 
 class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
   private permanentlyDestroyed = false;
@@ -233,7 +243,10 @@ export function createHocuspocusDocumentTransport({
   const changeEventListeners = new Set<(message: ChangeEventWsMessage) => void>();
   const acknowledgementListeners = new Set<(acknowledged: boolean) => void>();
   const acknowledgement = createServerAcknowledgementTracker((acknowledged) => {
-    if (acknowledged && !terminal) outbox = null;
+    if (acknowledged && !terminal) {
+      outbox = null;
+      refusals = 0;
+    }
     for (const listener of acknowledgementListeners) listener(acknowledged);
   });
   const websocket = new RoomScopedHocuspocusWebsocket(
@@ -248,6 +261,7 @@ export function createHocuspocusDocumentTransport({
   // Only the server names a scope; until it does, the session keeps its own.
   let currentAccess: DocumentSessionAccess | null = null;
   let outbox: Uint8Array | null = null;
+  let refusals = 0;
   let terminal = false;
   let destroyed = false;
   let resolveSynced!: () => void;
@@ -328,7 +342,17 @@ export function createHocuspocusDocumentTransport({
       publishAccess("read");
     }
     const state = classifyDocumentTransportClose(roomName, event, outbox !== null);
-    if (state) publishTerminal(state);
+    if (state) {
+      publishTerminal(state);
+      return;
+    }
+    if (
+      event.code === BRANCH_UPDATE_REFUSED_CODE &&
+      roomName.startsWith("branch:") &&
+      outbox !== null &&
+      ++refusals >= MAX_BRANCH_UPDATE_REFUSALS
+    )
+      publishTerminal({ kind: "terminal", reason: BRANCH_UPDATES_REFUSED, code: event.code });
   }
 
   function handleStateless({ payload }: onStatelessParameters): void {

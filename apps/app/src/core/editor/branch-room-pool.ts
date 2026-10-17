@@ -3,12 +3,16 @@
  * owner, torn down after a grace period once no owner holds them, retired when
  * they reset, and rebuilt on request. Branch rooms hold no lease. Retaining and
  * releasing only record ownership; a room opens on `get` or `rebuild`.
+ *
+ * A room whose updates the server kept refusing (`updatesRefused`) is not
+ * retired on that close: it stays open, read-only, so its owner can show the
+ * unsent text, until the owner rebuilds it or the last owner leaves.
  */
 
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
 import * as Y from "yjs";
 
-import type { DocumentSession } from "./document-session";
+import { type DocumentSession, updatesRefused } from "./document-session";
 import type { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
 
 export type BranchRoomRef = Readonly<{
@@ -65,6 +69,9 @@ export class BranchRoomPool {
   }
 
   async rebuild(roomKey: string): Promise<DocumentSession> {
+    const refused = this.rooms.get(roomKey);
+    if (refused && updatesRefused(refused.getSnapshot().connectionState))
+      this.retire(roomKey, refused);
     // A reset branch session is already retired; wait out its teardown quarantine.
     await this.deps.teardownOwner.drainRoom({ kind: "branch", roomKey });
     // The last owner can leave while the drain waits. Reopening then would start a session
@@ -92,7 +99,9 @@ export class BranchRoomPool {
     this.rooms.set(roomKey, session);
     session.subscribe((snapshot) => {
       if (this.rooms.get(roomKey) !== session) return;
-      if (
+      if (updatesRefused(snapshot.connectionState)) {
+        if (!this.isRetained(roomKey)) this.retire(roomKey, session);
+      } else if (
         snapshot.connectionState?.kind === "reset" ||
         snapshot.connectionState?.kind === "unauthorized" ||
         snapshot.connectionState?.kind === "terminal" ||
@@ -134,7 +143,10 @@ export class BranchRoomPool {
       this.teardownTimers.delete(roomKey);
       const session = this.rooms.get(roomKey);
       if (!session || this.isRetained(roomKey)) return;
-      if (session.hasUnacknowledgedEdits()) {
+      if (
+        session.hasUnacknowledgedEdits() &&
+        !updatesRefused(session.getSnapshot().connectionState)
+      ) {
         this.draining.add(roomKey);
         return;
       }

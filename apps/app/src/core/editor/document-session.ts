@@ -134,6 +134,17 @@ export type DocumentSessionConnectionState =
     };
 
 /**
+ * Client-side terminal reason: the server refused this branch room's updates on
+ * several reconnects in a row. The session stays open and read-only so its owner
+ * can show the unsent text and reopen the draft; nothing retries it.
+ */
+export const BRANCH_UPDATES_REFUSED = "branch-updates-refused";
+
+export function updatesRefused(state: DocumentSessionConnectionState | null | undefined): boolean {
+  return state?.kind === "terminal" && state.reason === BRANCH_UPDATES_REFUSED;
+}
+
+/**
  * Surface `DocumentSession` consumes from its transport.
  *
  * `synced` / `whenSynced` describe the FIRST server reconciliation. Live
