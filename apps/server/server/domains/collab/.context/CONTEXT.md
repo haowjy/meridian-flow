@@ -34,7 +34,8 @@ compute the token synchronously in their prepared link scope; an unverified
 recovery returns `null`, never a later read's token.
 
 Preview and selective disposition use one `ReadReviewCut`. The first branch
-read fixes a repeatable-read snapshot containing branch bytes/generation,
+read fixes a repeatable-read snapshot containing the branch (checkpoint ⊕ tail
+through the read seam, with its revision and generation),
 review rows, history status, live journal/head, thread titles, and live/draft
 link views. It performs no room reads, pulls, provisioning, or repair. A
 missing branch is `gone`, not an invitation to create one. Returned bytes and
@@ -116,6 +117,14 @@ share a segment, but sharing a paragraph alone never joins edits.
 
 ## Transaction and lock contracts
 
+A branch write commits only at the `revision` it was computed at: appends
+through `appendRows`, checkpoint rewrites through `commitRewrite` (exact or
+fold policy), status and hold changes after locking the branch rows in ID order
+and bumping their revision. No write compares branch bytes. Branch creation
+takes the origin Work `FOR KEY SHARE` before the draft share, close, or insert;
+archive, unarchive, soft delete, and restore take the Work `FOR UPDATE` and sync
+the drafts' `frozen` in the same transaction.
+
 Pulls commit in their own root transactions outside a caller's response
 transaction. A pull takes its branch leases before its root transaction and
 keeps them through persistence. Live pulls snapshot before opening the root
@@ -139,7 +148,8 @@ peer. Use `NO KEY UPDATE` where a root insert needs FK key
 share against a caller-held lifecycle lock.
 
 The practical lock order is: in-process leases, Work rows, draft row, sorted
-namespace/advisory keys, then document locks in ID order. Never take a
+namespace/advisory keys, document locks in ID order, then branch rows (an
+upstream before its peer, otherwise ID order). Never take a
 namespace lock while holding a document lock; compute the complete namespace
 set first and revalidate. Background timers remain armed across failed pulls;
 only a committed run with no newer work may clear them.
@@ -207,7 +217,7 @@ never become prose hunks.
 ## Selective disposition and response retirement
 
 Apply and Discard parse required-field selection variants and thread them
-through branch critical sections and snapshot-CAS retries. Only an absent
+through branch critical sections and revision-fenced retries. Only an absent
 selection chooses whole Discard; a present but incomplete or malformed selection
 is HTTP 400, never a whole Discard. Class IDs,
 immutable part keys, live revisions, and admission tokens are evidence for the

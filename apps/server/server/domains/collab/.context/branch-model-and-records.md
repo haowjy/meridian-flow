@@ -10,6 +10,9 @@ branch ID, item key, or presented address interchangeably.
 |---|---|---|
 | **draft** | One active Work review draft; Apply leaves it open, whole Discard and purge close it. | `draftId` |
 | **branch** | One document's Work-draft Y.Doc and its thread peers; generation advances on reset. | opaque branch room plus generation |
+| **revision** | The branch row's write fence: moves with every committed write, never reaches a client. | none |
+| **checkpoint** | The branch's stored state, with the highest journal id it contains (`checkpoint_seq`). | none |
+| **tail** | The current generation's journal rows past the checkpoint, replayed on every read. | none |
 | **item** | One document's reviewable change, including an empty create or image. | `${draftId}:${documentId}` |
 | **command** | One idempotent writer Apply or Discard action. | `commandId` |
 | **presented address** | The writer's Work/item/change selection; it names no branch. | review selector |
@@ -76,10 +79,36 @@ keeps when the deletion is discarded, so a held review can find the restored
 block. Incomplete ownership remains unclassified
 and cannot become invented AI credit.
 
+## Branch store
+
+A branch's content is its checkpoint (`state`, `state_vector`) replayed with its
+tail. `readBranchAt` reads the row, the checkpoint, and the tail in one
+statement, and nothing else reads `state`. `revision` is the only write fence,
+and every committed write moves it: appends, checkpoint rewrites, closes, the
+freeze, and every change to a review-membership input (`has_effect`,
+`blocking`, a row's status in either direction). `generation` stays the re-fork
+epoch that names rooms and groups rows and placements.
+
+Writes go through two doors. `appendRows` adds rows past the checkpoint at the
+judged revision, allocating their ids under the row lock. `commitRewrite` writes
+a new checkpoint covering every row of the branch, under an `exact` policy (the
+revision it was computed at) or a `fold` policy (any appends since its cursor are
+applied, or discarded by a reset). Pulls, resets, selective Discard, the
+inverse's merged draft, a peer's checkpoint, and compaction are rewrites. A reset
+also discards the generation's pending rows and adds the checkpoint's and the
+tail's clocks to `discarded_state_vector`. A tail past 512 rows or 2 MB folds
+into a new checkpoint with unchanged content.
+
+`frozen` mirrors the origin Work: archived, deleted, or missing. The lifecycle
+transitions set it under the Work's `FOR UPDATE`; branch creation reads it under
+`FOR KEY SHARE`. The coordinator holds one immutable replica per branch at a
+committed revision and catches it up from the tail; every write computes on a
+private copy, so a failed commit never changes what a reader holds.
+
 ## Durable records and checkpoints
 
-The live journal is the durable content source. Branch snapshots and generation
-are stored separately; branch write rows carry review status. `push_lineage`
+The live journal is the durable content source. A branch is stored as a
+checkpoint plus its tail; branch write rows carry review status. `push_lineage`
 provides publication identity and idempotency. The change trail is the durable
 publication record; a `system:reconcile` row carries causal replay coverage
 without becoming a semantic author or inverse target. Immutable edit parts keep
@@ -98,7 +127,7 @@ late checkpoint costs replay time, never data.
 
 Branch mutations are durable before Hocuspocus apply, broadcast, or ack. The
 awaited admission path validates authority/generation, exact containment, and
-fresh provenance, then appends under the branch snapshot. `onChange` does not
+fresh provenance, then appends at the revision it judged. `onChange` does not
 own branch persistence. The transport layer only authenticates, adapts peers,
 and delegates this ordering.
 
