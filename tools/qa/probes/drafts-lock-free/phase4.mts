@@ -457,3 +457,129 @@ export async function settledOrWaiting<T>(
   }
   throw new Error(`Neither settled nor waiting on ${match} within ${timeoutMs} ms`);
 }
+
+/**
+ * Polls `observe` every 10 ms until `done(observation)` or `withinMs` passes: the latency a
+ * projection takes to catch up, which no hook can order. Returns the elapsed time; past the
+ * deadline it fails with the last observation.
+ */
+export async function within<T>(
+  withinMs: number,
+  observeNow: () => Promise<T>,
+  done: (observation: T) => boolean,
+): Promise<{ elapsedMs: number; observation: T }> {
+  const started = performance.now();
+  for (;;) {
+    const observation = await observeNow();
+    const elapsedMs = Math.round(performance.now() - started);
+    if (done(observation)) return { elapsedMs, observation };
+    if (elapsedMs > withinMs)
+      throw new Error(`Not within ${withinMs} ms: ${JSON.stringify(observation)}`);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+/** The Work's badge inputs: its pending-draft count and its `entity_revision`. */
+export async function workBadge(harness: Harness, workId: string) {
+  const pending = (await harness.pending.countPendingByWorkIds([workId as WorkId])).get(
+    workId as WorkId,
+  );
+  const [row] = await harness.raw<{ entity_revision: string }[]>`
+    select entity_revision from works where id = ${workId}`;
+  return { pending: pending ?? 0, entityRevision: Number(row?.entity_revision) };
+}
+
+/**
+ * A process with the projection job wired as composition wires it (§3.1, §3.2): every durable
+ * append marks its branch dirty. `projection` is null, and `missing` says why, until lane 1
+ * lands `domain/branch-projection.ts`; the coordinator still runs, so an arm can observe
+ * today's inline effect. `captures` counts live snapshots per document (the legacy pull).
+ */
+export async function openProjected(
+  harness: Harness,
+  options: { store?: BranchStore; maxRuns?: number } = {},
+) {
+  const store = options.store ?? harness.store;
+  const marks: string[] = [];
+  const blocked: { branchId: string; documentId: string }[] = [];
+  const failed: { branchId: string; cause: unknown }[] = [];
+  const captures = new Map<string, number>();
+  const diagnostics: ProjectionDiagnostics = {
+    projectionFailed: (input) => failed.push(input),
+    projectionBaselineBlocked: (input) => blocked.push(input),
+  };
+  let projection: BranchProjection | null = null;
+  const coordinator = phase4Coordinator(harness, {
+    store,
+    onAppendCommitted(branchId) {
+      marks.push(branchId);
+      projection?.markDirty(branchId);
+    },
+    diagnostics,
+  });
+  const { createBranchPullService } = await import(
+    "../../../../apps/server/server/domains/collab/domain/branch-pulls.ts"
+  );
+  const pulls = createBranchPullService({
+    outsideTransaction: (operation) => operation(),
+    branches: harness.store,
+    branchCoordinator: coordinator,
+    liveCoordinator: {
+      async withDocument(documentId: string, fn: (doc: Y.Doc) => Promise<unknown>) {
+        captures.set(documentId, (captures.get(documentId) ?? 0) + 1);
+        const doc = await harness.liveDoc(documentId);
+        try {
+          return await fn(doc);
+        } finally {
+          doc.destroy();
+        }
+      },
+      recover: async () => {},
+    } as never,
+  });
+  let missing: string | undefined;
+  try {
+    const create = await loadProjection();
+    projection = create({ coordinator, store, pulls, diagnostics, maxRuns: options.maxRuns ?? 4 });
+  } catch (cause) {
+    if (!(cause instanceof Phase4SeamMissing)) throw cause;
+    missing = cause.message;
+  }
+  return {
+    coordinator,
+    pulls,
+    marks,
+    blocked,
+    failed,
+    captures,
+    missing,
+    /** The job, or a failure naming the missing seam. */
+    projection(): BranchProjection {
+      if (!projection) throw new Error(missing ?? "No projection job");
+      return projection;
+    },
+    dispose() {
+      projection?.dispose();
+      pulls.cancelScheduledPulls();
+    },
+  };
+}
+
+/** `has_effect` as the projection must judge it: the branch against its stored `live_cut`. */
+export async function judgedEffect(harness: Harness, branchId: string): Promise<boolean | null> {
+  const [row] = await harness.raw<{ live_cut: Uint8Array | null }[]>`
+    select live_cut from document_branches where id = ${branchId}`;
+  if (!row?.live_cut) return null;
+  const { documentEffectsEqual } = await import(
+    "../../../../apps/server/server/domains/collab/domain/document-content.ts"
+  );
+  const baseline = new Y.Doc({ gc: false });
+  const doc = await durableDoc(harness, branchId);
+  try {
+    Y.applyUpdate(baseline, new Uint8Array(row.live_cut));
+    return !documentEffectsEqual(doc, baseline);
+  } finally {
+    baseline.destroy();
+    doc.destroy();
+  }
+}

@@ -23,6 +23,8 @@ import { d20BlockedSettlementPull } from "./d20-blocked-settlement-pull.mts";
 import { d22ConcurrentUndo } from "./d22-concurrent-undo.mts";
 import { d22RetractedPeerPull } from "./d22-retracted-peer-pull.mts";
 import { d23ArchivedDraftRebases } from "./d23-archived-draft-rebases.mts";
+import { effectProjection } from "./effect-projection.mts";
+import { effectWatermarkSweep } from "./effect-watermark-sweep.mts";
 import { f1InverseDeadlock } from "./f1-inverse-deadlock.mts";
 import { f1InverseGrant } from "./f1-inverse-grant.mts";
 import { createScratchDatabase, openHarness, type Probe } from "./harness.mts";
@@ -59,6 +61,8 @@ const PROBES: readonly Probe[] = [
   appendNovelty,
   appendRollbackScope,
   archiveInFlightAppend,
+  effectProjection,
+  effectWatermarkSweep,
 ];
 
 function parseArgs(argv: readonly string[]) {
