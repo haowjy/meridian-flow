@@ -415,25 +415,18 @@ describe("reply save refusals (postgres)", () => {
     const preview = await review.activePreview(ALPHA_ID);
     const azure = preview.operations.find((op) => op.afterExcerpt === "azure");
     // The pause sits after the pull captured its upstream and before it persists the peer:
-    // the Discard starts there and must wait for the pull's lease on that upstream.
+    // the Discard re-forks that upstream there, so the pull's capture is of a dead generation.
     const pull = fixture.branchCoordinator.pullFromDoc;
-    // Created here, outside the pull's lease scope, so the Discard waits for the lease
-    // instead of tripping the re-entry guard.
     let startDiscard!: () => void;
-    let settled = false;
     const discard = new Promise<void>((resolve) => {
       startDiscard = resolve;
-    })
-      .then(() => review.discardChanges(ALPHA_ID, preview, [azure?.operationId as string]))
-      .finally(() => {
-        settled = true;
-      });
-    let discardSettledAtApply: boolean | undefined;
+    }).then(() => review.discardChanges(ALPHA_ID, preview, [azure?.operationId as string]));
+    let paused = false;
     fixture.branchCoordinator.pullFromDoc = (async (...args: unknown[]) => {
-      if (discardSettledAtApply === undefined && args.includes(peer.branchId)) {
+      if (!paused && args.includes(peer.branchId)) {
+        paused = true;
         startDiscard();
         await new Promise((resolve) => setTimeout(resolve, 300));
-        discardSettledAtApply = settled;
       }
       return (pull as (...pullArgs: unknown[]) => Promise<Uint8Array>).apply(
         fixture.branchCoordinator,
@@ -448,7 +441,7 @@ describe("reply save refusals (postgres)", () => {
     } finally {
       fixture.branchCoordinator.pullFromDoc = pull;
     }
-    expect(discardSettledAtApply).toBe(false);
+    expect(paused).toBe(true);
     await discard;
     const next = await core.read(
       { file: "alpha.md", documentId: ALPHA_ID, tool_use_id: "read-16-next" },
