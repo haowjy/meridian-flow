@@ -414,6 +414,13 @@
       "when": 1792280000000,
       "tag": "0064_has_effect_watermark",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1792290000000,
+      "tag": "0065_change_trail_owner_cost",
+      "breakpoints": true
     }
   ]
 }
