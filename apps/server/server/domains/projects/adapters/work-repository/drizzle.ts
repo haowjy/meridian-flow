@@ -17,6 +17,7 @@ import {
 } from "../../../../shared/drizzle-transaction.js";
 import { lockWorkThreadTree } from "../../../../shared/thread-work-lock.js";
 import { isUuid } from "../../../../shared/uuid.js";
+import { syncWorkDraftFreeze } from "../../../../shared/work-draft-lifecycle.js";
 import { lockWorkLifecycle } from "../../../../shared/work-lifecycle-lock.js";
 import {
   ContextEntryConflictError,
@@ -123,6 +124,15 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
     return row ? mapWork(row) : null;
   }
 
+  /** The lifecycle transitions' `FOR UPDATE`, taken after the thread tree (thread before Work). */
+  async function lockWorkForFreeze(id: WorkId): Promise<void> {
+    await currentDrizzleDb(db)
+      .select({ id: works.id })
+      .from(works)
+      .where(eq(works.id, id))
+      .for("update");
+  }
+
   async function requireUnlocked(id: WorkId): Promise<Work> {
     const existing = await findWorkById(id);
     if (!existing) throw new WorkLifecycleUnavailableError(id, "missing");
@@ -131,6 +141,29 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
     }
     if (existing.isNoWork) throw new WorkLockedError();
     return existing;
+  }
+
+  /**
+   * Archive and unarchive hold the Work row `FOR UPDATE` across the change and the drafts'
+   * freeze: a branch creation (`FOR KEY SHARE` on the Work) either commits first and is frozen
+   * by the sync, or waits and reads the new lifecycle.
+   */
+  async function setArchived(id: WorkId, archived: boolean): Promise<Work> {
+    const result = await runInDrizzleTransaction(db, async () => {
+      if (!isUuid(id)) throw new WorkLifecycleUnavailableError(id, "missing");
+      await currentDrizzleDb(db)
+        .select({ id: works.id })
+        .from(works)
+        .where(eq(works.id, id))
+        .for("update");
+      const existing = await requireUnlocked(id);
+      if ((existing.archivedAt !== null) === archived) return { work: existing, changed: false };
+      const work = await updateWork(id, { archivedAt: archived ? new Date() : null });
+      await syncWorkDraftFreeze(db, id, archived);
+      return { work, changed: true };
+    });
+    if (result.changed) await deps.fileAccessChanges.publish({ workId: id });
+    return result.work;
   }
 
   async function updateWork(id: WorkId, patch: Partial<typeof works.$inferInsert>): Promise<Work> {
@@ -304,23 +337,17 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
       }
     },
     async archive(id: WorkId): Promise<Work> {
-      const existing = await requireUnlocked(id);
-      if (existing.archivedAt !== null) return existing;
-      const archived = await updateWork(id, { archivedAt: new Date() });
-      await deps.fileAccessChanges.publish({ workId: id });
-      return archived;
+      return setArchived(id, true);
     },
     async unarchive(id: WorkId): Promise<Work> {
-      const existing = await requireUnlocked(id);
-      if (existing.archivedAt === null) return existing;
-      const unarchived = await updateWork(id, { archivedAt: null });
-      await deps.fileAccessChanges.publish({ workId: id });
-      return unarchived;
+      return setArchived(id, false);
     },
     async softDelete(id: WorkId) {
       return runInDrizzleTransaction(db, async () => {
         const activeDb = currentDrizzleDb(db);
         const lockedTree = await lockWorkThreadTree(db, id);
+        // Branch creation's `FOR KEY SHARE` waits on this, so the freeze below sees every branch.
+        await lockWorkForFreeze(id);
         const before = await findWorkById(id);
         if (lockedTree.lifecycle === "missing" || lockedTree.lifecycle === "deleted" || !before) {
           return { before, after: before, threadIds: [] };
@@ -343,6 +370,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
             updatedAt: deletedAt,
           })
           .where(and(eq(works.id, id), isNull(works.deletedAt)));
+        await syncWorkDraftFreeze(db, id, true);
         await projectionMutation.publishWorks([id]);
         await deps.fileAccessChanges.publish({ workId: id });
         const after = await findWorkById(id);
@@ -354,6 +382,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
       try {
         return await runInDrizzleTransaction(db, async () => {
           const lockedTree = await lockWorkThreadTree(db, id, { includeMarked: true });
+          await lockWorkForFreeze(id);
           const existing = await findWorkById(id);
           if (!existing) throw new Error(`Work not found: ${id}`);
           if (decideWorkRestore(existing, now()) === "unchanged") {
@@ -375,6 +404,8 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
             .where(eq(works.id, id))
             .returning();
           if (!row) throw new Error(`Work not found: ${id}`);
+          // A restored archived Work stays frozen.
+          await syncWorkDraftFreeze(db, id, row.archivedAt !== null);
           await cascadeRestore(db, {
             workId: id,
             threadIds: lockedTree.threadIds,
