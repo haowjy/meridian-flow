@@ -2984,6 +2984,10 @@ msgstr "Not Found"
 msgid "Not reported"
 msgstr "Not reported"
 
+#: src/features/editor/SyncStatus.tsx
+msgid "Not saved yet (keep this tab open until you're back online)"
+msgstr "Not saved yet (keep this tab open until you're back online)"
+
 #: src/features/chat/chat-upload-display.ts
 msgid "Notebook"
 msgstr "Notebook"
