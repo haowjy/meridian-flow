@@ -42,7 +42,6 @@ import {
   createStaticDocumentLinkScopes,
   UNSUPPORTED_AHEAD_REFS,
 } from "../adapters/in-memory/static-document-link-scopes.js";
-import { createDraftBranchLeases } from "../domain/draft-branch-leases.js";
 import { createDraftDiscard } from "../domain/draft-discard.js";
 import { createDrafts } from "../domain/drafts.js";
 import { createPeerRetirement } from "../domain/peer-retirement.js";
@@ -781,11 +780,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     identity,
     discard: createDraftDiscard({
       drafts: workDrafts,
-      draftLeases: createDraftBranchLeases({
-        branches: branchStore,
-        criticalSections: branchCriticalSections,
-      }),
-      criticalSections: branchCriticalSections,
       liveCoordinator,
       attemptScope: (operation) => runInDrizzleSavepoint(db, operation),
       // No Work projection in this harness: pending counts aren't under test.

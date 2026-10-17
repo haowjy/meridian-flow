@@ -289,9 +289,9 @@ describe("reply save refusals (postgres)", () => {
     void fixture;
   });
 
-  it("15b: another Work revealing the create while Discard waits for its leases keeps the branch and refuses discarded_edit", async () => {
+  it("15b: another Work revealing the create before Discard's transaction keeps the branch and refuses discarded_edit", async () => {
     const { second, review, fixture } = await createdThenStaged();
-    const remove = setCollabHook("discard.afterLeases", async () => {
+    const remove = setCollabHook("discard.beforeCommitScope", async () => {
       remove();
       await db
         .update(schema.documents)

@@ -237,11 +237,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
     drafts: createInMemoryDraftStub(),
     draftResolver: {
       drafts,
-      // No draft branches in memory: a whole draft leases nothing.
-      draftLeases: {
-        withDraftBranches: (_draftId, run) =>
-          createBranchCriticalSections().withBranches([], (lease) => run(lease, [])),
-      },
       // No drafts in memory: a purged Work has none to dispose of.
       workDraftDisposal: {
         withDisposal: (_workId, run) => run(async () => ({ releasedObjects: [] })),

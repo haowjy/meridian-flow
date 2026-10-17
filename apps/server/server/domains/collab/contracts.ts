@@ -30,7 +30,6 @@ export type { RefusedResponseDocument, RoutedWriteOutcome };
 
 import type { DocumentCreationAggregate } from "./domain/document-creation.js";
 import type { DraftBranchAheadRegistration } from "./domain/draft-branch-ahead-registration.js";
-import type { DraftBranchLeases } from "./domain/draft-branch-leases.js";
 import type {
   CommandLookup,
   CommandLookupKey,
@@ -435,8 +434,6 @@ export type CollabDraftResolver = {
   drafts: Drafts;
   /** A drain for the debounced registration of writers' review-room edits (§10.7). */
   draftLinks: Pick<DraftBranchAheadRegistration, "flush">;
-  /** Every branch of a draft leased before its transaction: what closing the draft needs. */
-  draftLeases: DraftBranchLeases;
   /** Work purge's disposal of the purged Work's drafts through the locked Discard kernel (§2.6). */
   workDraftDisposal: WorkDraftDisposal;
 };
