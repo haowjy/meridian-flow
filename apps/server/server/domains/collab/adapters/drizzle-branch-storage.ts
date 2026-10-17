@@ -24,7 +24,7 @@ import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { branchDraftWork } from "../../../shared/work-draft-lifecycle.js";
-import { branchJournalRevision } from "../domain/branch-push-contracts.js";
+import { branchJournalRevision } from "../domain/branch-journal.js";
 import {
   type AppendBranchJournalInput,
   type AppendRowsInput,

@@ -1,4 +1,4 @@
-/** Neutral branch-push contracts shared across collab domain services and adapters. */
+/** Branch-push (Apply and settlement) contracts shared across collab domain services and adapters. */
 
 import type {
   AgentEditCodecFactory,
@@ -11,6 +11,7 @@ import type { DraftCommandResult } from "@meridian/contracts/drafts";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
 import type * as Y from "yjs";
+import type { BranchJournalReadStore, BranchJournalRow } from "./branch-journal.js";
 import type { BranchSnapshot, BranchStore } from "./branch-store.js";
 import type { DraftCommandEnvelope } from "./draft-commands.js";
 import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
@@ -42,35 +43,6 @@ export class BranchPushRetryExhaustedError extends Error {
     super(`Branch ${branchId} push did not commit after ${maxRetries} CAS retries`, { cause });
     this.name = "BranchPushRetryExhaustedError";
   }
-}
-
-export type BranchJournalRow = {
-  id: number;
-  branchId: string;
-  generation: number;
-  wId: number | null;
-  /** The model's tool call that made this write; null for writer rows and legacy rows. */
-  toolCallId?: string | null;
-  source: "agent" | "writer";
-  threadId: ThreadId | null;
-  turnId: TurnId | null;
-  actorUserId: UserId | null;
-  updateData: Uint8Array;
-  /** Immutable live-journal watermark captured with this draft mutation. */
-  draftBaseUpdateSeq: number;
-  status: "active" | "pushed" | "discarded" | "rollback_pending";
-  updateMeta?: unknown;
-  /** Immutable edit evidence, never inferred from actor or missing text. */
-  editKind?: "write" | "undo" | "redo" | "revert" | "rollback";
-};
-
-export function branchJournalRevision(
-  rows: readonly Pick<BranchJournalRow, "id" | "status">[],
-): string {
-  return [...rows]
-    .sort((left, right) => left.id - right.id)
-    .map((row) => `${row.id}:${row.status}`)
-    .join(",");
 }
 
 export type PublicationBlockChange = {
@@ -246,27 +218,9 @@ export type CandidateBatch = {
   pushedByUserId?: UserId;
 };
 
-export type BranchJournalReadStore = {
-  listActiveJournalRows(branchId: string, generation: number): Promise<BranchJournalRow[]>;
-  listReviewableJournalRows(branchId: string, generation: number): Promise<BranchJournalRow[]>;
-  listConcurrentJournalRows(
-    branchId: string,
-    generation: number,
-    options: { afterJournalId?: number; documentId: DocumentId },
-  ): Promise<BranchJournalRow[]>;
+/** The journal reads plus publication's push lineage: the reads an Apply makes. */
+export type BranchPushReadStore = BranchJournalReadStore & {
   latestPushForBranch(branchId: string, generation: number): Promise<PushLineageRow | null>;
-  listJournalRowsForTurn(input: {
-    branchId?: string;
-    generation?: number;
-    threadId: ThreadId;
-    turnId: TurnId;
-    statuses?: readonly BranchJournalRow["status"][];
-  }): Promise<BranchJournalRow[]>;
-  listJournalRowsForBranch(input: {
-    branchId: string;
-    generation: number;
-    throughJournalId?: number;
-  }): Promise<BranchJournalRow[]>;
   listPushLineageForTurn(input: { threadId: ThreadId; turnId: TurnId }): Promise<PushLineageRow[]>;
 };
 
@@ -356,7 +310,7 @@ export type BranchReviewService = {
 
 export type BranchPushServiceInput = {
   branchStore: BranchStore;
-  journalReadStore: BranchJournalReadStore;
+  journalReadStore: BranchPushReadStore;
   commitStore: PushCommitStore;
   settlementStore: PendingSettlementStore;
   journal: UpdateJournal;

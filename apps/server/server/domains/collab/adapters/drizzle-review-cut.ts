@@ -11,10 +11,8 @@ import {
   currentDrizzleDb,
   runInRootDrizzleReadSnapshot,
 } from "../../../shared/drizzle-transaction.js";
-import {
-  type BranchJournalReadStore,
-  DraftChangeRefusal,
-} from "../domain/branch-push-contracts.js";
+import type { BranchJournalReadStore } from "../domain/branch-journal.js";
+import { DraftChangeRefusal } from "../domain/branch-push-contracts.js";
 import { BranchCorruptError } from "../domain/branch-resolver.js";
 import {
   assertReadableBranch,

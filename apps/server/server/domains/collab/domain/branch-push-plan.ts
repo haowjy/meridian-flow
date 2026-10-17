@@ -10,7 +10,8 @@ import {
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import * as Y from "yjs";
-import type { BranchJournalRow, PublicationBlockChange } from "./branch-push-contracts.js";
+import type { BranchJournalRow } from "./branch-journal.js";
+import type { PublicationBlockChange } from "./branch-push-contracts.js";
 import { documentDifference } from "./document-difference.js";
 
 export class BranchPushEffectVerificationError extends Error {

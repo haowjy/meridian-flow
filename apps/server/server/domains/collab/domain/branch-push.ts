@@ -3,12 +3,12 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { type Attempt, NO_ATTEMPT_SCOPE, runBoundedAttempts } from "./branch-attempts.js";
+import type { BranchJournalRow } from "./branch-journal.js";
 import {
   buildSelectedRowCandidates,
   buildWholeBranchCandidates,
 } from "./branch-push-candidates.js";
 import {
-  type BranchJournalRow,
   BranchPushCommitConflictError,
   BranchPushRetryExhaustedError,
   type BranchPushService,

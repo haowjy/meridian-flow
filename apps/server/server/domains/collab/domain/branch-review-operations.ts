@@ -9,9 +9,8 @@ import {
   runBoundedAttempts,
 } from "./branch-attempts.js";
 import type { BranchCoordinator } from "./branch-coordinator.js";
+import type { BranchJournalReadStore, BranchJournalRow } from "./branch-journal.js";
 import {
-  type BranchJournalReadStore,
-  type BranchJournalRow,
   BranchPushCommitConflictError,
   type BranchReviewService,
   DraftChangeRefusal,
