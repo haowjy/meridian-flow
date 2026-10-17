@@ -5,7 +5,6 @@ import type { DocumentId } from "@meridian/contracts";
 import {
   branchWriteJournal,
   type Database,
-  documentBranches,
   documentEditParts,
   documentEdits,
   type EditOrigin,
@@ -23,7 +22,11 @@ import {
 import { confirmScopedEdits } from "../../../shared/edit-confirmation.js";
 import { lockDraftBranchWorks } from "../../../shared/work-draft-lifecycle.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
-import type { BranchCoordinator, BranchStore } from "../domain/branch-coordinator.js";
+import {
+  type BranchCoordinator,
+  type BranchStore,
+  materializeBranchRead,
+} from "../domain/branch-coordinator.js";
 import type { BranchCriticalSections } from "../domain/branch-critical-sections.js";
 import { appendInverseRestorationFacts } from "../domain/provenance.js";
 import {
@@ -33,6 +36,7 @@ import {
   type TurnInverseQuery,
   type TurnInverseStore,
 } from "../domain/turn-inverse-service.js";
+import { bumpBranchRevisions, commitRewriteWithinTx } from "./drizzle-branches.js";
 import { recordDocumentEdit } from "./drizzle-document-edits.js";
 import { refreshDraftEffect } from "./drizzle-draft-effect.js";
 import { readTurnEditTargets } from "./drizzle-turn-edit-targets.js";
@@ -144,11 +148,11 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                   InverseDocument["drafts"] extends ReadonlyMap<string, infer D> ? D : never
                 >();
                 for (const branchId of branchIds) {
-                  const branch = await input.branches.getBranch(branchId);
-                  if (!branch || branch.documentId !== documentId || branch.status !== "active")
+                  const read = await input.branches.readBranchAt(branchId);
+                  const branch = read?.branch;
+                  if (!read || branch?.documentId !== documentId || branch.status !== "active")
                     continue;
-                  const doc = new Y.Doc({ gc: false });
-                  Y.applyUpdate(doc, branch.state);
+                  const doc = materializeBranchRead(read, new Y.Doc({ gc: false }));
                   // A draft action always includes the locked, current live cut.
                   Y.applyUpdate(doc, Y.encodeStateAsUpdate(live));
                   const [name] = branch.workId
@@ -181,10 +185,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     async markBlocking(branchIds) {
       if (!branchIds.length) return;
       await input.workProjection.mutatePendingBranches(branchIds, async () => {
-        await db()
-          .update(documentBranches)
-          .set({ blocking: true })
-          .where(inArray(documentBranches.id, branchIds));
+        await bumpBranchRevisions(db(), branchIds, { blocking: true });
       });
     },
     describePart(document, part) {
@@ -317,24 +318,17 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             });
           }
           if (draft && updates.length) {
-            const [updated] = await db()
-              .update(documentBranches)
-              .set({
-                state: Buffer.from(Y.encodeStateAsUpdate(view)),
-                stateVector: Buffer.from(Y.encodeStateVector(view)),
-                updatedAt: new Date(),
-              })
-              .where(
-                and(
-                  eq(documentBranches.id, draft.branch.branchId),
-                  eq(documentBranches.generation, draft.branch.generation),
-                  eq(documentBranches.status, "active"),
-                  eq(documentBranches.state, Buffer.from(draft.branch.state)),
-                  eq(documentBranches.stateVector, Buffer.from(draft.branch.stateVector)),
-                ),
-              )
-              .returning({ id: documentBranches.id });
-            if (!updated) throw new Error("Inverse draft admission changed under its lock");
+            // The inverse draft is branch ⊕ the locked live cut ⊕ the inverse parts, written
+            // whole as the checkpoint at the revision it was captured at; the rows inserted
+            // above are inside it.
+            const rewritten = await commitRewriteWithinTx(db(), {
+              branchId: draft.branch.branchId,
+              policy: { kind: "exact", revision: draft.branch.revision },
+              fence: { kind: "none" },
+              doc: view,
+            });
+            if (rewritten.status !== "committed")
+              throw new Error("Inverse draft admission changed under its lock");
             await refreshDraftEffect(
               db(),
               draft.branch.branchId,
@@ -369,7 +363,20 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             const rowIds = unresolved.flatMap((part) =>
               part.placement.kind === "pending" ? [part.placement.rowId] : [],
             );
-            if (rowIds.length)
+            if (rowIds.length) {
+              const flipping = await db()
+                .select({ branchId: branchWriteJournal.branchId })
+                .from(branchWriteJournal)
+                .where(
+                  and(
+                    inArray(branchWriteJournal.id, rowIds),
+                    eq(branchWriteJournal.status, "active"),
+                  ),
+                );
+              await bumpBranchRevisions(
+                db(),
+                flipping.map((row) => row.branchId),
+              );
               await db()
                 .update(branchWriteJournal)
                 .set({ status: "rollback_pending" })
@@ -379,6 +386,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                     eq(branchWriteJournal.status, "active"),
                   ),
                 );
+            }
           }
           if (!updates.length) continue;
           const publish = async () => {

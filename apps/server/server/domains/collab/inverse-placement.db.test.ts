@@ -6,6 +6,7 @@ import { and, eq } from "drizzle-orm";
 import { afterAll, beforeEach, expect, it } from "vitest";
 import * as Y from "yjs";
 import { testFileGrant } from "../../test-support/file-grants.js";
+import { branchContent } from "./test-support/branch-store-seam.js";
 import {
   ALPHA_ID,
   closeDatabase,
@@ -18,7 +19,6 @@ import {
   USER_ID,
   WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
-
 import { reviewDriver } from "./test-support/draft-review-requests.js";
 import { draftBranchId, inverseFixture } from "./test-support/turn-inverse-fixture.js";
 
@@ -429,7 +429,7 @@ it.each(["empty", "mixed"])("inverse placement through Apply and %s reset", asyn
         .where(eq(schema.documentBranches.id, branchId));
       const doc = new Y.Doc({ gc: false });
       try {
-        Y.applyUpdate(doc, branch.state);
+        Y.applyUpdate(doc, await branchContent(db, branch.id));
         doc.clientID = allocateDocumentClient(doc);
         const updates = captureMutationUpdates(doc, () => {
           const p = new Y.XmlElement("paragraph"),

@@ -18,9 +18,7 @@ import type { DraftId, ThreadId, WorkId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { branchWriteJournal, documentBranches } from "@meridian/database/schema";
-import { createCollabYDoc } from "@meridian/prosemirror-schema";
-import { and, eq, inArray } from "drizzle-orm";
-import * as Y from "yjs";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { requireLockedActiveWorks } from "../../../shared/work-lifecycle-lock.js";
 import type { ContextCatalogMutationPort } from "../../context/ports/context-catalog.js";
@@ -33,7 +31,12 @@ import {
   readEndUseScope,
 } from "../../context/tree/end-use.js";
 import type { WorkDraftDisposal, WorkProjectionMutation } from "../../projects/index.js";
-import { BranchCasConflictError, type BranchCoordinator } from "../domain/branch-coordinator.js";
+import {
+  BranchCasConflictError,
+  type BranchCoordinator,
+  type BranchRead,
+  materializeBranchRead,
+} from "../domain/branch-coordinator.js";
 import type { BranchCriticalSections } from "../domain/branch-critical-sections.js";
 import { DraftCommandExistsError } from "../domain/draft-commands.js";
 import {
@@ -99,7 +102,11 @@ async function closeDraftBranches(
   const tx = currentDrizzleDb(db);
   const closed = await tx
     .update(documentBranches)
-    .set({ status: "closed", updatedAt: new Date() })
+    .set({
+      status: "closed",
+      revision: sql`${documentBranches.revision} + 1`,
+      updatedAt: new Date(),
+    })
     .where(
       and(
         eq(documentBranches.draftId, draftId),
@@ -177,7 +184,7 @@ export function createDrizzleDraftDiscard(
   db: Database,
   deps: KernelDeps & {
     drafts: Pick<Drafts, "lockActive" | "close">;
-    branches: Pick<ApplicationBranchStore, "getBranch" | "closeThreadPeersOf">;
+    branches: Pick<ApplicationBranchStore, "readBranchAt" | "closeThreadPeersOf">;
     coordinator: Pick<BranchCoordinator, "resetFromDocIfUnchangedWithLease">;
     workProjection: Pick<WorkProjectionMutation, "mutatePendingDraft">;
   },
@@ -210,9 +217,11 @@ export function createDrizzleDraftDiscard(
     input: Extract<DiscardKernelInput, { selection: { kind: "items" } }>,
     item: { documentId: DocumentId; draftBranchId: string },
   ): Promise<readonly RetiredBranch[]> {
-    const content = await deps.branches.getBranch(item.draftBranchId);
+    const read = await deps.branches.readBranchAt(item.draftBranchId);
+    const content = read?.branch;
     // Gone with its tombstone, or no longer the draft's: nothing of the draft left to reset.
     if (
+      !read ||
       content?.kind !== "work_draft" ||
       content.status !== "active" ||
       content.draftId !== input.draftId ||
@@ -234,7 +243,7 @@ export function createDrizzleDraftDiscard(
     // A healthy rowless branch has no text to reset (unless its state cannot be read: Discard
     // is the recovery for a corrupt item, rows or not), but an open reply may still hold staged
     // writes on it, so its peers close either way.
-    if (!pending && isReadable(content.state)) {
+    if (!pending && isReadable(read)) {
       return deps.branches.closeThreadPeersOf([content.branchId], "edit_discarded");
     }
     const liveDoc = input.liveDocs.get(item.documentId);
@@ -243,8 +252,7 @@ export function createDrizzleDraftDiscard(
       branchId: content.branchId,
       upstream: liveDoc,
       expectedGeneration: content.generation,
-      expectedState: content.state,
-      expectedStateVector: content.stateVector,
+      expectedRevision: content.revision,
       schemaVersion: content.schemaVersion,
     });
     if (!reset) throw new BranchCasConflictError(content.branchId);
@@ -404,14 +412,11 @@ export function createDrizzleWorkDraftDisposal(
   };
 }
 
-function isReadable(state: Uint8Array): boolean {
-  const scratch = createCollabYDoc({ gc: false });
+function isReadable(read: BranchRead): boolean {
   try {
-    Y.applyUpdate(scratch, state);
+    materializeBranchRead(read).destroy();
     return true;
   } catch {
     return false;
-  } finally {
-    scratch.destroy();
   }
 }

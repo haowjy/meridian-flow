@@ -43,6 +43,7 @@ import type { SettlementCut } from "../domain/ports/pending-settlement-store.js"
 import { journalInsertionRanges, ProvenanceMaterializationError } from "../domain/provenance.js";
 import { materializeSweepEvidence } from "../domain/sweep-policy.js";
 import { loadDocumentState } from "./document-loader.js";
+import { bumpBranchRevisions } from "./drizzle-branches.js";
 import {
   allocateDocumentAdmission,
   ensureAndReadDocumentAuthorityHead,
@@ -136,6 +137,18 @@ export async function withdrawSettlementMembersWithinTx(
   const withdraw = async () => {
     const journalIds = pushes.flatMap((push) => push.journalIds);
     if (journalIds.length > 0) {
+      // `pushed → active` is a review-membership change: the branch rows are locked in id
+      // order and their revisions bumped before the rows return (the caller holds the Works).
+      const affected = await db
+        .selectDistinct({ branchId: branchWriteJournal.branchId })
+        .from(branchWriteJournal)
+        .where(
+          and(inArray(branchWriteJournal.id, journalIds), eq(branchWriteJournal.status, "pushed")),
+        );
+      await bumpBranchRevisions(
+        db,
+        affected.map((row) => row.branchId),
+      );
       await db
         .update(branchWriteJournal)
         .set({ status: "active", pushedAt: null, reviewedBy: null, reviewedAt: null })

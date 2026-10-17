@@ -381,15 +381,14 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   }
   const branchStore = {
     ...realBranchStore,
-    async appendJournal(input: Parameters<NonNullable<typeof realBranchStore.appendJournal>>[0]) {
-      injectSecondJournalFailure();
-      return realBranchStore.appendJournal?.(input);
+    async appendRows(input: Parameters<typeof realBranchStore.appendRows>[0]) {
+      if (input.rows.length) injectSecondJournalFailure();
+      return realBranchStore.appendRows(input);
     },
-    async commitBranchMutation(
-      input: Parameters<NonNullable<typeof realBranchStore.commitBranchMutation>>[0],
-    ) {
-      if (input.journals?.length) injectSecondJournalFailure();
-      return realBranchStore.commitBranchMutation?.(input) ?? false;
+    async commitRewrite(input: Parameters<typeof realBranchStore.commitRewrite>[0]) {
+      if (input.operation.kind === "checkpoint" && input.operation.rows?.length)
+        injectSecondJournalFailure();
+      return realBranchStore.commitRewrite(input);
     },
   };
   const branchBroadcasts: string[] = [];
@@ -463,7 +462,12 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     payload: Record<string, unknown>;
     correlation?: object;
   }> = [];
-  let preCommitBranchHashes: Array<{ id: string; state: string; stateVector: string }> = [];
+  let preCommitBranchHashes: Array<{
+    id: string;
+    revision: number;
+    state: string;
+    stateVector: string;
+  }> = [];
   const eventSink: import("../../observability/index.js").EventSink = {
     emit(event) {
       events.push({
@@ -2576,6 +2580,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     return rows
       .map((row) => ({
         id: row.id,
+        revision: row.revision,
         state: Buffer.from(row.state).toString("base64"),
         stateVector: Buffer.from(row.stateVector).toString("base64"),
       }))

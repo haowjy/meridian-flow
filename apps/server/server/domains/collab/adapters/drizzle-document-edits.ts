@@ -129,11 +129,21 @@ export async function placeDraftRows(
       ),
     )
     .returning({ editId: documentEditParts.editId, ordinal: documentEditParts.ordinal });
-  if (placed.length)
-    await db
-      .update(importedDocumentBranches)
-      .set({ blocking: false })
-      .where(eq(importedDocumentBranches.id, branchId));
+  // Clearing a hold is a review-membership change: lock the row and bump its revision.
+  if (placed.length) {
+    const [held] = await db
+      .select({ id: importedDocumentBranches.id })
+      .from(importedDocumentBranches)
+      .where(
+        and(eq(importedDocumentBranches.id, branchId), eq(importedDocumentBranches.blocking, true)),
+      )
+      .for("update");
+    if (held)
+      await db
+        .update(importedDocumentBranches)
+        .set({ blocking: false, revision: sql`${importedDocumentBranches.revision} + 1` })
+        .where(eq(importedDocumentBranches.id, branchId));
+  }
   if (placement.kind === "live" && placed.length === 1) {
     await db
       .update(documentYjsUpdates)

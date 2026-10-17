@@ -27,7 +27,11 @@ export type WorkDraftLookup = {
     threadId: ThreadId;
     draftId?: DraftId;
     liveDoc: Y.Doc;
-  }): Promise<Pick<BranchSnapshot, "branchId" | "upstreamBranchId" | "state">>;
+  }): Promise<{
+    branch: Pick<BranchSnapshot, "branchId" | "upstreamBranchId">;
+    /** The peer's content as the ensure left it. */
+    state: Uint8Array;
+  }>;
 };
 
 export type BranchPullService = {
@@ -225,19 +229,20 @@ export function createBranchPullService(input: {
             liveDoc.destroy();
           }
         };
-        const first = await ensurePeer();
+        const ensured = await ensurePeer();
+        const first = ensured.branch;
         // From here every phase fails by name: the identities the ensures returned are
         // captured, so a Discard landing in any later phase is `ThreadPeerPullLost`.
         let identity = { peerBranchId: first.branchId, upstreamBranchId: first.upstreamBranchId };
         try {
-          const attributionBaseline = first.state;
+          const attributionBaseline = ensured.state;
           await run(inputPeer.documentId);
           const liveCut = await input.liveJournal?.read(inputPeer.documentId);
           const liveJournalSeq = liveCut
             ? (liveCut.persistenceWatermark ??
               liveCut.updates.reduce((latest, update) => Math.max(latest, update.seq), 0))
             : undefined;
-          const peer = await ensurePeer();
+          const peer = (await ensurePeer()).branch;
           identity = { peerBranchId: peer.branchId, upstreamBranchId: peer.upstreamBranchId };
           const afterJournalId = input.concurrentJournalWatermarks?.current(
             inputPeer.threadId,

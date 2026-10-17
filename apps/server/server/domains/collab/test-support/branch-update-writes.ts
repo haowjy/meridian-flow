@@ -63,8 +63,7 @@ export function resetBranchFromDoc(
       branchId,
       upstream,
       expectedGeneration: expected.generation,
-      expectedStateVector: expected.stateVector,
-      expectedState: expected.state,
+      expectedRevision: expected.revision,
     });
   });
 }

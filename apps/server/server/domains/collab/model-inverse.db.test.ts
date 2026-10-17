@@ -10,6 +10,7 @@ import { createAllowAllFileAccess } from "../file-policy/index.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createTurnLiveLineageReadModel } from "./domain/turn-live-lineage.js";
 import { createTurnReversalService } from "./domain/turn-reversal-service.js";
+import { branchContent } from "./test-support/branch-store-seam.js";
 import {
   ALPHA_ID,
   closeDatabase,
@@ -404,7 +405,7 @@ it.each([
       .where(eq(schema.documentBranches.id, branchId));
     const doc = new Y.Doc({ gc: false });
     try {
-      Y.applyUpdate(doc, branch.state);
+      Y.applyUpdate(doc, await branchContent(db, branch.id));
       doc.clientID = allocateDocumentClient(doc);
       const text = (doc.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(0) as Y.XmlText;
       const updates = captureMutationUpdates(doc, () => text.insert(8, "!"));
@@ -562,7 +563,7 @@ it.each([
         .where(eq(schema.documentBranches.id, branchId));
       const doc = new Y.Doc({ gc: false });
       try {
-        Y.applyUpdate(doc, branch.state);
+        Y.applyUpdate(doc, await branchContent(db, branch.id));
         doc.clientID = allocateDocumentClient(doc);
         const text = (doc.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(0) as Y.XmlText;
         const updates = captureMutationUpdates(doc, () => text.insert(8, "!"));

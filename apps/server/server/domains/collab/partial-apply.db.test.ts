@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { toDocHandle } from "@meridian/agent-edit/integration";
 import { branchRoomName } from "@meridian/contracts/protocol";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
-import { and, asc, eq, ne } from "drizzle-orm";
+import { and, asc, eq, ne, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { runOutsideDrizzleTransaction } from "../../shared/drizzle-transaction.js";
@@ -20,6 +20,7 @@ import {
   schema,
   USER_ID,
 } from "./test-support/branch-push-settlement-fixture.js";
+import { appendBranchRows, branchContent } from "./test-support/branch-store-seam.js";
 import { commitJournaledUpdate } from "./test-support/branch-update-writes.js";
 import {
   BETA_ID,
@@ -267,13 +268,9 @@ describe("per-change Apply (postgres)", () => {
     const duplicate = await fixture.branchCoordinator.readBranch(branch.branchId, async (doc) =>
       Y.encodeStateAsUpdate(doc, Y.encodeStateVector(doc)),
     );
-    await fixture.branchStore.appendJournal({
-      branchId: branch.branchId,
-      generation: branch.generation,
-      source: "writer",
-      actorUserId: USER_ID,
-      updateData: duplicate,
-    });
+    await appendBranchRows(fixture.branchStore, branch.branchId, [
+      { source: "writer", actorUserId: USER_ID, updateData: duplicate },
+    ]);
     const preview = await review.preview(command.documentId);
     if (preview.status !== "active") throw new Error("missing preview");
     const request = fencedRequest(
@@ -721,14 +718,18 @@ describe("ReviewCut concurrent capture (postgres)", () => {
       .from(schema.documentBranches)
       .where(eq(schema.documentBranches.id, branch.branchId));
     const proposed = createCollabYDoc({ gc: false });
-    Y.applyUpdate(proposed, original.state);
+    Y.applyUpdate(proposed, await branchContent(db, original.id));
     const vector = Y.encodeStateVector(proposed);
     const beta = fixture.model.getBlocks(toDocHandle(proposed))[1];
     fixture.model.applyTextEdit(toDocHandle(proposed), beta, { from: 10, to: 10 }, " Concurrent");
     const appended = Y.encodeStateAsUpdate(proposed, vector);
-    const appendedState = Y.encodeStateAsUpdate(proposed);
-    const appendedVector = Y.encodeStateVector(proposed);
     proposed.destroy();
+    // A checkpoint rewrite: a new revision the checkpoint was written at, covering every row.
+    const rewrittenCheckpoint = {
+      revision: sql`${schema.documentBranches.revision} + 1`,
+      checkpointRevision: sql`${schema.documentBranches.revision} + 1`,
+      checkpointSeq: sql`(select coalesce(max(id), 0) from branch_write_journal where branch_id = ${branch.branchId})`,
+    };
     inject = async () => {
       await db.transaction(async (tx) => {
         if (mutation === "append") {
@@ -740,16 +741,25 @@ describe("ReviewCut concurrent capture (postgres)", () => {
             updateData: Buffer.from(appended),
             draftBaseUpdateSeq: 0,
           });
+          // An append: a tail row, and the revision every committed write moves.
           await tx
             .update(schema.documentBranches)
-            .set({ state: Buffer.from(appendedState), stateVector: Buffer.from(appendedVector) })
+            .set({ revision: sql`${schema.documentBranches.revision} + 1` })
             .where(eq(schema.documentBranches.id, branch.branchId));
         } else if (mutation === "refork") {
           await tx
             .update(schema.documentBranches)
-            .set({ generation: original.generation + 1, state: original.liveCut ?? original.state })
+            .set({
+              generation: original.generation + 1,
+              state: original.liveCut ?? original.state,
+              ...rewrittenCheckpoint,
+            })
             .where(eq(schema.documentBranches.id, branch.branchId));
         } else {
+          await tx
+            .update(schema.documentBranches)
+            .set({ revision: sql`${schema.documentBranches.revision} + 1` })
+            .where(eq(schema.documentBranches.id, branch.branchId));
           await tx
             .update(schema.branchWriteJournal)
             .set({ status: "pushed" })
@@ -778,6 +788,8 @@ describe("ReviewCut concurrent capture (postgres)", () => {
           state: original.state,
           stateVector: original.stateVector,
           generation: original.generation,
+          ...rewrittenCheckpoint,
+          checkpointSeq: original.checkpointSeq,
         })
         .where(eq(schema.documentBranches.id, branch.branchId));
     }

@@ -2,6 +2,7 @@
 import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { readBranchContent } from "../test-support/branch-store-seam.js";
 import { commitSegmentRows } from "../test-support/branch-update-writes.js";
 import {
   ALPHA_ID,
@@ -63,9 +64,10 @@ describe("document edit receipts (Postgres)", () => {
       const { fixture, branchId, review } = draft;
       const snapshot = await fixture.branchStore.getBranch(branchId);
       if (!snapshot) throw new Error("Missing branch");
+      const content = await readBranchContent(fixture.branchStore, branchId);
       const room = new Y.Doc({ gc: false });
       try {
-        Y.applyUpdate(room, snapshot.state);
+        Y.applyUpdate(room, content);
         let delta!: Uint8Array;
         room.on("update", (update: Uint8Array) => {
           delta = update;
@@ -166,9 +168,10 @@ describe("document edit receipts (Postgres)", () => {
       const replace = async (paragraph: number, text: string) => {
         const snapshot = await fixture.branchStore.getBranch(branchId);
         if (!snapshot) throw new Error("Missing branch");
+        const content = await readBranchContent(fixture.branchStore, branchId);
         const doc = new Y.Doc({ gc: false });
         try {
-          Y.applyUpdate(doc, snapshot.state);
+          Y.applyUpdate(doc, content);
           const deltas: Uint8Array[] = [];
           doc.on("update", (update: Uint8Array) => deltas.push(update));
           const node = doc.getXmlFragment("prosemirror").get(paragraph) as Y.XmlElement;
@@ -438,9 +441,10 @@ describe("document edit receipts (Postgres)", () => {
       ]);
       const snapshot = await fixture.branchStore.getBranch(branchId);
       if (!snapshot) throw new Error("Missing branch");
+      const content = await readBranchContent(fixture.branchStore, branchId);
       const room = new Y.Doc({ gc: false });
       try {
-        Y.applyUpdate(room, snapshot.state);
+        Y.applyUpdate(room, content);
         let update!: Uint8Array;
         room.on("update", (delta: Uint8Array) => {
           update = delta;

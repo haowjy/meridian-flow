@@ -9,10 +9,10 @@ import { type EventSink, emitEvent, unknownToEventPayload } from "../observabili
 import { type DetachedWorkTracker, processDetachedWork } from "../runtime/detached-work.js";
 import { loadDocumentState } from "./adapters/document-loader.js";
 import type { CollabPersistenceMetrics, CollabTransport, UpdateOrigin } from "./contracts.js";
-import type {
-  BranchCoordinator,
-  BranchSnapshot,
-  BranchStore,
+import {
+  type BranchCoordinator,
+  type BranchStore,
+  branchReadStateVector,
 } from "./domain/branch-coordinator.js";
 import { createDocumentContainment } from "./domain/document-containment.js";
 import {
@@ -618,12 +618,17 @@ export function createHocuspocusPersistenceService(
     },
 
     async rejectStaleBranchSyncStep1(input) {
-      const branch = await requireBranchStore().getBranch(input.branchId);
+      const read = await requireBranchStore().readBranchAt(input.branchId);
+      const branch = read?.branch;
       if (
+        !read ||
         branch?.status !== "active" ||
         branch.kind !== "work_draft" ||
         branch.generation !== input.generation ||
-        !branchSyncStep1IsStale(input.clientStateVector, branch)
+        !branchSyncStep1IsStale(input.clientStateVector, {
+          stateVector: branchReadStateVector(read),
+          discardedStateVector: branch.discardedStateVector,
+        })
       ) {
         return false;
       }
@@ -646,7 +651,14 @@ export function createHocuspocusPersistenceService(
   };
 }
 
-function branchSyncStep1IsStale(clientStateVector: Uint8Array, branch: BranchSnapshot): boolean {
+/**
+ * A client vector past the branch's current clocks only where a reset discarded them: the
+ * tab still holds the previous generation's content. `stateVector` is checkpoint ⊕ tail.
+ */
+function branchSyncStep1IsStale(
+  clientStateVector: Uint8Array,
+  branch: { stateVector: Uint8Array; discardedStateVector?: Uint8Array | null },
+): boolean {
   if (!branch.discardedStateVector) return false;
   const clientClocks = Y.decodeStateVector(clientStateVector);
   const currentClocks = Y.decodeStateVector(branch.stateVector);

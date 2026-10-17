@@ -25,8 +25,7 @@ import type {
   DraftItemSettlement,
 } from "@meridian/contracts/drafts";
 import type { Database } from "@meridian/database";
-import { createCollabYDoc } from "@meridian/prosemirror-schema";
-import * as Y from "yjs";
+import type * as Y from "yjs";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { ContextCatalogMutationPort } from "../../context/ports/context-catalog.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
@@ -39,7 +38,7 @@ import type {
   BranchSnapshot,
   BranchStore,
 } from "../domain/branch-coordinator.js";
-import { BranchCasConflictError } from "../domain/branch-coordinator.js";
+import { BranchCasConflictError, materializeBranchRead } from "../domain/branch-coordinator.js";
 import { documentEffectsEqual } from "../domain/document-content.js";
 import {
   type ApplyNote,
@@ -75,7 +74,7 @@ export function createDrizzleDraftTreeStep(
   db: Database,
   deps: {
     drafts: Pick<Drafts, "byIds">;
-    branches: Pick<BranchStore, "getBranch">;
+    branches: Pick<BranchStore, "getBranch" | "readBranchAt">;
     /** The reset of a drained branch, under the lease the completion's caller holds. */
     coordinator: Pick<BranchCoordinator, "resetFromDocIfUnchangedWithLease">;
     /** The live document as the completion transaction sees it, admissions included. */
@@ -278,17 +277,18 @@ export function createDrizzleDraftTreeStep(
         for (const { item } of apply) {
           if (!item.draftBranchId || item.branchGenerationToken === null) continue;
           if (!admitted.has(item.documentId as DocumentId)) continue;
-          const branch = await deps.branches.getBranch(item.draftBranchId);
+          const read = await deps.branches.readBranchAt(item.draftBranchId);
+          const branch = read?.branch;
           if (
+            !read ||
             branch?.status !== "active" ||
             String(branch.generation) !== item.branchGenerationToken
           ) {
             continue;
           }
           const live = await deps.liveDoc(item.documentId as DocumentId);
-          const draft = createCollabYDoc({ gc: false });
+          const draft = materializeBranchRead(read);
           try {
-            Y.applyUpdate(draft, branch.state);
             if (!documentEffectsEqual(live, draft)) continue;
             if (scope.stage !== "completion" || !scope.lease) {
               throw new Error("A drained item resets under the completion's branch lease");
@@ -297,8 +297,7 @@ export function createDrizzleDraftTreeStep(
               branchId: branch.branchId,
               upstream: live,
               expectedGeneration: branch.generation,
-              expectedStateVector: branch.stateVector,
-              expectedState: branch.state,
+              expectedRevision: branch.revision,
               schemaVersion: branch.schemaVersion,
               editDisposition: "retired",
             });

@@ -5,6 +5,10 @@ import * as Y from "yjs";
 import { createBranchCoordinator } from "../../domains/collab/domain/branch-coordinator.js";
 import { createBranchPullService } from "../../domains/collab/domain/branch-pulls.js";
 import {
+  stubBranchStore,
+  testBranchRow,
+} from "../../domains/collab/test-support/stub-branch-store.js";
+import {
   createAllowAllFileAccess,
   createLocalFileAccessChanges,
   type FileAccessDenied,
@@ -64,38 +68,26 @@ describe("Yjs branch handshake route guard", () => {
     const pullBlocked = new Promise<void>((resolve) => {
       releasePull = resolve;
     });
+    let storedRevision = 0;
     const branchCoordinator = createBranchCoordinator({
-      store: {
-        getBranch: async () => ({
-          branchId: "branch_1",
-          documentId: "document-1" as never,
-          kind: "work_draft",
-          upstreamBranchId: null,
-          draftId: "draft-1",
-          workId: "work-1" as never,
-          threadId: null,
-          status: "active",
-          generation: 3,
+      store: stubBranchStore({
+        branch: () => ({
+          branch: testBranchRow({
+            branchId: "branch_1",
+            documentId: "document-1" as never,
+            workId: "work-1" as never,
+            generation: 3,
+            revision: storedRevision,
+            checkpointRevision: storedRevision,
+          }),
           state: storedState,
-          stateVector: Y.encodeStateVectorFromUpdate(storedState),
-          discardedStateVector: null,
-          schemaVersion: COLLAB_SCHEMA_VERSION,
         }),
-        async commitBranchMutation(input) {
+        async onRewrite(rewrite) {
           await pullBlocked;
-          storedState = input.state;
-          return true;
+          storedState = Y.encodeStateAsUpdate(rewrite.doc);
+          storedRevision += 1;
         },
-        async resetBranchSnapshot() {
-          return true;
-        },
-        async updateBranchSnapshot(input) {
-          await pullBlocked;
-          storedState = input.state;
-          return true;
-        },
-        deferUntilCommit: () => false,
-      },
+      }),
       onBranchUpdate: ({ update }) => {
         Y.applyUpdate(loadedRoom, update);
       },
@@ -111,8 +103,7 @@ describe("Yjs branch handshake route guard", () => {
       branches: {
         listActiveWorkDraftBranchIds: async () => ["branch_1"],
         ensureThreadPeerBranch: async () => ({
-          branchId: "thread-peer",
-          upstreamBranchId: "branch_1",
+          branch: { branchId: "thread-peer", upstreamBranchId: "branch_1" },
           state: new Uint8Array(),
         }),
       },

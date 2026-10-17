@@ -83,7 +83,7 @@ export async function resetThreadWorkRaceFixture(db: Database): Promise<void> {
     documentId: ids.documentId,
     kind: "work_draft",
     draftId: ids.draftId,
-    state: Buffer.alloc(0),
-    stateVector: Buffer.alloc(0),
+    state: Buffer.from([0, 0]),
+    stateVector: Buffer.from([0]),
   });
 }

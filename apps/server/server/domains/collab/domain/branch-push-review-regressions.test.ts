@@ -8,11 +8,7 @@ import {
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import { mdxCodec } from "@meridian/markup";
-import {
-  buildDocumentSchema,
-  COLLAB_SCHEMA_VERSION,
-  createCollabYDoc,
-} from "@meridian/prosemirror-schema";
+import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createInMemoryJournal } from "../adapters/in-memory/agent-edit.js";
@@ -21,7 +17,11 @@ import {
   createInMemoryPendingSettlementStore,
   type InMemoryPendingSettlementStore,
 } from "../test-support/in-memory-pending-settlement-store.js";
-import { unimplementedBranchMutations } from "../test-support/unimplemented-branch-mutations.js";
+import {
+  type StubBranch,
+  stubBranchStore,
+  testBranchRow,
+} from "../test-support/stub-branch-store.js";
 import type { BranchSnapshot, BranchStore } from "./branch-coordinator.js";
 import {
   type BranchCriticalSections,
@@ -60,20 +60,10 @@ function cloneDoc(source: Y.Doc): Y.Doc {
   return doc;
 }
 
-function branchFromDoc(branchId: string, documentId: DocumentId, doc: Y.Doc): BranchSnapshot {
+function branchFromDoc(branchId: string, documentId: DocumentId, doc: Y.Doc): StubBranch {
   return {
-    branchId,
-    documentId,
-    kind: "work_draft",
-    upstreamBranchId: null,
-    draftId: "draft-1",
-    workId: WORK_ID,
-    threadId: null,
-    status: "active",
-    generation: 1,
+    branch: testBranchRow({ branchId, documentId, workId: WORK_ID }),
     state: Y.encodeStateAsUpdate(doc),
-    stateVector: Y.encodeStateVector(doc),
-    schemaVersion: COLLAB_SCHEMA_VERSION,
   };
 }
 
@@ -255,7 +245,7 @@ class StateBackedPushStores implements BranchJournalReadStore, PushCommitStore {
 function serviceFixture(input: {
   links?: DocumentLinkScopes;
   criticalSections?: BranchCriticalSections;
-  branches: readonly BranchSnapshot[];
+  branches: readonly StubBranch[];
   rows: BranchJournalRow[];
   pushes?: readonly PushLineageRow[];
   journal: ReturnType<typeof createInMemoryJournal>;
@@ -268,20 +258,14 @@ function serviceFixture(input: {
     input.journal,
     settlements,
   );
-  const branches = new Map(input.branches.map((branch) => [branch.branchId, branch]));
-  const branchStore: BranchStore = {
-    ...unimplementedBranchMutations(),
+  const branches = new Map(input.branches.map((stub) => [stub.branch.branchId, stub]));
+  const branchStore: BranchStore = stubBranchStore({
+    branch: (branchId) => branches.get(branchId),
     deferUntilCommit(callback) {
       callback();
       return true;
     },
-    async getBranch(branchId) {
-      return branches.get(branchId) ?? null;
-    },
-    async updateBranchSnapshot() {
-      return true;
-    },
-  };
+  });
   const liveCoordinator: DocumentCoordinator = {
     async withDocument(documentId, run) {
       const doc = input.liveDocs.get(documentId as DocumentId);
@@ -318,7 +302,11 @@ async function blindConflictFixture(
   const beforeDelete = Y.encodeStateVector(contentBranchDoc);
   model.deleteBlock(toDocHandle(contentBranchDoc), doomed);
   const contentBranch = branchFromDoc("branch_content", CONTENT_ID, contentBranchDoc);
-  const row = rowFor(contentBranch, 1, Y.encodeStateAsUpdate(contentBranchDoc, beforeDelete));
+  const row = rowFor(
+    contentBranch.branch,
+    1,
+    Y.encodeStateAsUpdate(contentBranchDoc, beforeDelete),
+  );
   const journal = createInMemoryJournal();
   await journal.append(CONTENT_ID, Y.encodeStateAsUpdate(contentLive), {
     origin: "system",
@@ -339,7 +327,6 @@ async function blindConflictFixture(
   });
   Y.applyUpdate(contentBranchDoc, Y.encodeStateAsUpdate(contentLive));
   contentBranch.state = Y.encodeStateAsUpdate(contentBranchDoc);
-  contentBranch.stateVector = Y.encodeStateVector(contentBranchDoc);
 
   const fixture = serviceFixture({
     ...options,
@@ -348,7 +335,7 @@ async function blindConflictFixture(
     journal,
     liveDocs: new Map([[CONTENT_ID, contentLive]]),
   });
-  return { ...fixture, contentBranch };
+  return { ...fixture, contentBranch: contentBranch.branch };
 }
 
 describe("branch push review regressions", () => {

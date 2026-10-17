@@ -39,6 +39,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "../../../collab/adapters/drizzle-branches.js"
     );
     const { createDrizzleDraftStore } = await import("../../../collab/adapters/drizzle-drafts.js");
+    const { appendBranchRows, proseBranchUpdate } = await import(
+      "../../../collab/test-support/branch-store-seam.js"
+    );
     const { createDrizzleWorkDraftPendingStore } = await import(
       "../../../collab/adapters/drizzle-branch-push.js"
     );
@@ -197,13 +200,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await control`SELECT pg_advisory_lock(${ADVISORY_KEY})`;
       let advisoryLockHeld = true;
       try {
-        const draft = branches.appendJournal?.({
-          branchId: BRANCH_ID,
-          generation: 1,
-          updateData: new Uint8Array([1]),
-          source: "agent",
-        });
-        if (!draft) throw new Error("Branch journal append is unavailable");
+        const draft = appendBranchRows(branches, BRANCH_ID, [
+          { updateData: proseBranchUpdate(), source: "agent" },
+        ]);
         await waitForLock("advisory");
         const deletion = works.softDelete(WORK_ID).then(
           () => ({ status: "fulfilled" as const }),
@@ -246,13 +245,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       try {
         const deletion = works.softDelete(WORK_ID);
         await waitForLock("advisory");
-        const draft = branches.appendJournal?.({
-          branchId: BRANCH_ID,
-          generation: 1,
-          updateData: new Uint8Array([1]),
-          source: "agent",
-        });
-        if (!draft) throw new Error("Branch journal append is unavailable");
+        const draft = appendBranchRows(branches, BRANCH_ID, [
+          { updateData: proseBranchUpdate(), source: "agent" },
+        ]);
         // The append can reject while `deletion` is still being awaited, before
         // the assertion below attaches; mark it handled so load can't surface it
         // as an unhandled rejection.
