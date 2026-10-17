@@ -1,7 +1,8 @@
 /**
  * The application mutation boundary for Works: the one owner of Work-first lock order for
- * every write that holds a draft, branch or document row a Work's lifecycle fences, and the
- * canonical transaction participant for every mutation visible in a Works snapshot.
+ * every write that holds a Work's draft, branch or document row, which is how those writes
+ * order themselves against the Work's lifecycle transitions, and the canonical transaction
+ * participant for every mutation visible in a Works snapshot.
  */
 import type { DraftId } from "@meridian/contracts";
 import type { WorkId } from "@meridian/contracts/runtime";

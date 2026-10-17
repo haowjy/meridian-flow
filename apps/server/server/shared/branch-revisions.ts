@@ -1,8 +1,8 @@
 /**
  * The one door for a branch metadata write outside a content write: a close, a hold flag, a
- * journal row's status flip, a Work lifecycle fence. The rows are locked in id order and their
- * `revision` bumped with the change, so a write judged at the old revision cannot commit over
- * it. Content writes go through `appendRowsWithinTx` and `commitRewriteWithinTx` instead.
+ * journal row's status flip. The rows are locked in id order and their `revision` bumped with
+ * the change, so a write judged at the old revision cannot commit over it. Content writes go
+ * through `appendRowsWithinTx` and `commitRewriteWithinTx` instead.
  */
 import { documentBranches } from "@meridian/database/schema";
 import { and, asc, eq, inArray, type SQL, sql } from "drizzle-orm";

@@ -1,12 +1,11 @@
 /**
  * The one canonical branch → draft → Work mapping (contract §2.2) every reader of a branch's
- * Work goes through, and the fence a Work's lifecycle transition puts on its branches.
+ * Work goes through.
  */
 import type { DraftId } from "@meridian/contracts";
 import type { WorkId } from "@meridian/contracts/runtime";
 import { documentBranches, drafts } from "@meridian/database/schema";
-import { and, eq, inArray } from "drizzle-orm";
-import { bumpBranchRevisions } from "./branch-revisions.js";
+import { eq, inArray } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "./drizzle-transaction.js";
 
 export type DraftBranchWork = { id: string; draftId: DraftId; workId: WorkId | null };
@@ -58,24 +57,4 @@ export async function draftOriginWorkIds(
     .from(drafts)
     .where(inArray(drafts.id, ids));
   return rows.flatMap(({ workId }) => (workId ? [workId as WorkId] : []));
-}
-
-/**
- * A Work lifecycle transition (archive, unarchive, delete, restore) is a write to every
- * branch the Work owns: inside the transition's Work-locked transaction, its active branches
- * (Work drafts and the thread peers on their drafts) are locked in id order and their
- * `revision` bumped, so a branch write judged before the transition misses its predicate
- * rather than committing after it. The order is Work, then branch rows (decision D11).
- */
-export async function fenceWorkBranches(db: DrizzleDb, workId: WorkId): Promise<void> {
-  const tx = currentDrizzleDb(db);
-  const owned = await tx
-    .select({ id: documentBranches.id })
-    .from(documentBranches)
-    .innerJoin(branchDraftWork.drafts, branchDraftWork.on)
-    .where(and(eq(branchDraftWork.workId, workId), eq(documentBranches.status, "active")));
-  await bumpBranchRevisions(
-    tx,
-    owned.map((row) => row.id),
-  );
 }
