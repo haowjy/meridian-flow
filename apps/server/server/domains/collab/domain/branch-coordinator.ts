@@ -174,6 +174,13 @@ export type OwnedBranchSession = {
   listConcurrentRows: BranchSaveJournalReads["listConcurrentJournalRows"];
 };
 
+/**
+ * A work draft re-forked from `upstream` at the generation it was read: `exact` only at the
+ * revision read; `fold` over every append since, which the reset discards with its clocks fenced.
+ */
+export type ResetFromDocInput = Omit<ResetInput, "expectedRevision"> &
+  ({ policy: "exact"; expectedRevision: number } | { policy: "fold" });
+
 /** A work draft re-forked from `upstream`, only at the generation and revision it was read. */
 type ResetInput = {
   branchId: string;
@@ -193,6 +200,15 @@ export type BranchCoordinator = {
    */
   pullFromDoc(lease: BranchLockLease, branchId: string, upstream: Y.Doc): Promise<Uint8Array>;
   resetFromDocIfUnchangedWithLease(lease: BranchLockLease, input: ResetInput): Promise<boolean>;
+  /**
+   * Re-forks a work draft from `upstream` inside the caller's transaction, with no lease:
+   * false when the branch is no longer at the generation (or, `exact`, the revision) read.
+   * With `owner`, the caller's attempt owns the reset candidate and the write runs in its
+   * already-open commit scope, so a later miss in that attempt disposes it; without one, the
+   * reset is a single attempt in the caller's transaction. A moved branch throws
+   * `BranchCasConflictError` for the caller's attempt to classify.
+   */
+  resetFromDoc(input: ResetFromDocInput, owner?: Attempt): Promise<boolean>;
   /**
    * These branches' leases in one ordered acquisition, for an operation that touches
    * several (a peer and its draft branch) and runs every step under the one lease.
@@ -290,6 +306,30 @@ export function createBranchCoordinator(input: {
     const { write } = await prepareReset(snapshot, resetInput.upstream, resetInput);
     // The caller's transaction is the scope; its miss handling is the caller's too.
     await commitOnce(write, { scope: NO_ATTEMPT_SCOPE });
+    return true;
+  }
+
+  async function resetFromDoc(resetInput: ResetFromDocInput, owner?: Attempt): Promise<boolean> {
+    const snapshot = await loadSnapshot(resetInput.branchId);
+    assertWorkDraftResetTarget(snapshot);
+    if (snapshot.generation !== resetInput.expectedGeneration) return false;
+    if (resetInput.policy === "exact" && snapshot.revision !== resetInput.expectedRevision)
+      return false;
+    const policy =
+      resetInput.policy === "exact"
+        ? { kind: "exact" as const, revision: snapshot.revision }
+        : {
+            kind: "fold" as const,
+            checkpointRevision: snapshot.checkpointRevision,
+            seq: snapshot.checkpointSeq,
+          };
+    const { write } = await prepareReset(snapshot, resetInput.upstream, resetInput, policy);
+    if (!owner) {
+      await commitOnce(write, { scope: NO_ATTEMPT_SCOPE });
+      return true;
+    }
+    owner.own(write);
+    await write.persist();
     return true;
   }
 
@@ -593,6 +633,7 @@ export function createBranchCoordinator(input: {
     snapshot: BranchSnapshot,
     upstream: Y.Doc,
     reset: Pick<ResetInput, "schemaVersion" | "editDisposition" | "fence">,
+    policy: CommitRewriteInput["policy"] = { kind: "exact", revision: snapshot.revision },
   ): Promise<{ write: PreparedBranchWrite; update: Uint8Array }> {
     const candidate = createCollabYDoc({ gc: false });
     const update = await replicatedInto(upstream, candidate);
@@ -601,7 +642,6 @@ export function createBranchCoordinator(input: {
       editDisposition: reset.editDisposition ?? "discarded",
       schemaVersion: reset.schemaVersion ?? snapshot.schemaVersion,
     };
-    const policy = { kind: "exact" as const, revision: snapshot.revision };
     const fence = reset.fence ?? { kind: "none" };
     const write = prepareRewrite(snapshot.branchId, candidate, { policy, fence, operation });
     return { write, update };
@@ -854,6 +894,7 @@ export function createBranchCoordinator(input: {
     },
 
     resetFromDocIfUnchangedWithLease,
+    resetFromDoc,
 
     broadcastUpdate(update) {
       // Published replicas are immutable: the next read catches up from the committed tail.
