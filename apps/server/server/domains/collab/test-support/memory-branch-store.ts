@@ -78,20 +78,17 @@ export class MemoryBranchStore implements BranchStore {
 
   async getBranch(branchId: string): Promise<BranchSnapshot | null> {
     const branch = this.branches.get(branchId);
-    if (!branch) return null;
-    const { checkpoint: _checkpoint, rows: _rows, ...snapshot } = branch;
-    return snapshot;
+    return branch ? rowOf(branch) : null;
   }
 
+  /** One observation: the row, checkpoint and tail are taken together, with no await between. */
   async readBranchAt(branchId: string, since?: BranchReadSince): Promise<BranchRead | null> {
     const branch = this.branches.get(branchId);
     if (!branch) return null;
     const held = since?.checkpointRevision === branch.checkpointRevision;
     const after = held ? Math.max(since.seq, branch.checkpointSeq) : branch.checkpointSeq;
-    const snapshot = await this.getBranch(branchId);
-    if (!snapshot) return null;
     return {
-      branch: snapshot,
+      branch: rowOf(branch),
       checkpoint: held ? null : branch.checkpoint,
       tail: branch.rows
         .filter((row) => row.generation === branch.generation && row.id > after)
@@ -180,4 +177,9 @@ export class MemoryBranchStore implements BranchStore {
     this.failNextCas = false;
     return true;
   }
+}
+
+function rowOf(branch: MemoryBranch): BranchSnapshot {
+  const { checkpoint: _checkpoint, rows: _rows, ...snapshot } = branch;
+  return snapshot;
 }
