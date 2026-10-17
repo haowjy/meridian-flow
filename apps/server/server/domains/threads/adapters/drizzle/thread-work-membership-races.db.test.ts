@@ -256,10 +256,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
         advisoryLockHeld = false;
         await deletion;
-        await expect(draft).rejects.toMatchObject({
-          name: "WorkLifecycleUnavailableError",
-          state: "deleted",
-        });
+        // The append waited on the Work row its first pending row locks; once the deletion
+        // committed, the append's Work-is-active predicate refused it as a moved write.
+        await expect(draft).rejects.toThrow(/moved under the append/);
         await expect(
           draftPending.countPendingByWorkIds([WORK_ID]).then((counts) => counts.get(WORK_ID) ?? 0),
         ).resolves.toBe(0);

@@ -25,6 +25,7 @@ import {
   BranchStaleUpdateError,
   type BranchStore,
   materializeBranchRead,
+  membershipFlipWork,
   type RewriteFence,
 } from "./branch-store.js";
 import { createDocumentContainment } from "./document-containment.js";
@@ -459,12 +460,14 @@ export function createBranchCoordinator(input: {
     if (snapshot.kind !== "work_draft") return {};
     const baseline = await effectBaseline(base);
     const hasEffect = !effectFingerprintsEqual(baseline.fingerprint, effectFingerprint(candidate));
-    const member = (effect: boolean, rows: boolean) => (effect || snapshot.blocking) && rows;
-    const flips = member(snapshot.hasEffect, base.pendingRows) !== member(hasEffect, true);
+    const workTouch = membershipFlipWork(
+      { branch: snapshot, pendingRows: base.pendingRows },
+      hasEffect,
+    );
     return {
       hasEffect,
       ...(baseline.unstored ? { liveCut: baseline.unstored } : {}),
-      ...(flips && snapshot.workId ? { workTouch: snapshot.workId } : {}),
+      ...(workTouch ? { workTouch } : {}),
     };
   }
 
