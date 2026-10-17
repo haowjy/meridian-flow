@@ -23,7 +23,7 @@ import {
   packCollabSchemaVersion,
   unpackCollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
-import { and, asc, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { bumpBranchRevisions } from "../../../shared/branch-revisions.js";
 import {
@@ -54,6 +54,7 @@ import {
   type CommitRewriteInput,
   materializeBranchRead,
   type RewriteOutcome,
+  type StaleEffectCursor,
 } from "../domain/branch-store.js";
 import { collabHook } from "../domain/collab-test-hooks.js";
 import { replicateFrozenSource } from "../domain/document-mutation-policy.js";
@@ -611,13 +612,14 @@ export function createDrizzleBranchStore(
    * One keyset page of the stale set: active work drafts whose watermark is behind their
    * revision, newest first with `id` as the tie-breaker, after `after` when given.
    */
-  async function staleEffectBranches(input: {
-    after?: { branchId: string; updatedAt: Date };
-    limit: number;
-  }) {
+  async function staleEffectBranches(input: { after?: StaleEffectCursor; limit: number }) {
     const { after } = input;
-    const rows = await currentDrizzleDb(db)
-      .select({ branchId: documentBranches.id, updatedAt: documentBranches.updatedAt })
+    const position = sql`(${documentBranches.updatedAt}, ${documentBranches.id})`;
+    return currentDrizzleDb(db)
+      .select({
+        branchId: documentBranches.id,
+        updatedAt: sql<string>`${documentBranches.updatedAt}::text`,
+      })
       .from(documentBranches)
       .where(
         and(
@@ -625,19 +627,12 @@ export function createDrizzleBranchStore(
           eq(documentBranches.status, "active"),
           lt(documentBranches.hasEffectRevision, documentBranches.revision),
           after
-            ? or(
-                lt(documentBranches.updatedAt, after.updatedAt),
-                and(
-                  eq(documentBranches.updatedAt, after.updatedAt),
-                  lt(documentBranches.id, after.branchId),
-                ),
-              )
+            ? sql`${position} < (${after.updatedAt}::timestamptz, ${after.branchId})`
             : undefined,
         ),
       )
       .orderBy(desc(documentBranches.updatedAt), desc(documentBranches.id))
       .limit(input.limit);
-    return rows;
   }
 
   /**
