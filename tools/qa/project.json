@@ -1,0 +1,16 @@
+{
+  "name": "meridian-qa-tools",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "tools/qa",
+  "projectType": "library",
+  "implicitDependencies": ["@meridian/server"],
+  "targets": {
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "tools/qa",
+        "command": "tsc --noEmit -p tsconfig.json"
+      }
+    }
+  }
+}

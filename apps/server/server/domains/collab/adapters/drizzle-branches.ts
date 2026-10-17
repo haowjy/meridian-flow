@@ -53,6 +53,7 @@ import {
   materializeBranchRead,
   type RewriteOutcome,
 } from "../domain/branch-store.js";
+import { collabHook } from "../domain/collab-test-hooks.js";
 import { replicateFrozenIdentity } from "../domain/document-mutation-policy.js";
 import type { Drafts } from "../domain/drafts.js";
 import type { PeerRetirementCause, RetiredBranch } from "../domain/peer-retirement.js";
@@ -481,7 +482,8 @@ export function createDrizzleBranchStore(
    * first and touches the Work's projection; no count query runs.
    */
   async function appendRows(input: AppendRowsInput): Promise<AppendRowsOutcome> {
-    return runInDrizzleTransaction(db, async () => {
+    const nested = isInDrizzleTransaction();
+    const outcome = await runInDrizzleTransaction(db, async () => {
       const tx = currentDrizzleDb(db);
       if (input.workTouch) await lockWorksInIdOrder(tx, [input.workTouch]);
       const { revision, rowIds } = await appendRowsWithinTx(tx, input);
@@ -492,6 +494,8 @@ export function createDrizzleBranchStore(
       if (cause instanceof BranchWriteRollback) return { status: "moved" as const };
       throw cause;
     });
+    if (!nested && outcome.status === "appended") await collabHook("branch.append.afterCommit");
+    return outcome;
   }
 
   /** The Work row, then the branch row, held for one frame's last judgement. */
@@ -548,6 +552,7 @@ export function createDrizzleBranchStore(
         const effect = await refreshDraftEffect(tx, input.branchId, operation.liveCut);
         if (effect) revision = effect.revision;
       }
+      await collabHook("branch.rewrite.beforeCommit");
       return {
         status: "committed",
         revision,

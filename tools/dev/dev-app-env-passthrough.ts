@@ -22,6 +22,13 @@ const APP_ENV_PASSTHROUGH_KEYS = [
   "FLOW_OPENROUTER_BASE_URL",
 ] as const;
 
+/** The crash controller's keys (collab's `collab-test-hooks.ts`), never passed to production. */
+const DEV_ONLY_PASSTHROUGH_KEYS = ["COLLAB_CRASH_AT", "COLLAB_CRASH_ARM"] as const;
+
 export function resolveAppEnvPassthroughKeys(env: NodeJS.ProcessEnv): string[] {
-  return APP_ENV_PASSTHROUGH_KEYS.filter((key) => env[key] !== undefined);
+  const keys: readonly string[] =
+    env.NODE_ENV === "production"
+      ? APP_ENV_PASSTHROUGH_KEYS
+      : [...APP_ENV_PASSTHROUGH_KEYS, ...DEV_ONLY_PASSTHROUGH_KEYS];
+  return keys.filter((key) => env[key] !== undefined);
 }
