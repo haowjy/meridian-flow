@@ -19,6 +19,10 @@ const COLLAB_HOOK_POINTS = [
   "applyItems.beforeStaging",
   "applyItems.afterStaging",
   "applyItems.beforeContinue",
+  /** A created document's retraction read its branches and holds no branch row yet. */
+  "retract.beforeLocks",
+  /** A retraction holds its branch rows and found no contribution; nothing is deleted yet. */
+  "retract.afterRecheck",
   /** A branch append's transaction committed; its frame is not yet acknowledged. */
   "branch.append.afterCommit",
   /** A branch rewrite wrote its checkpoint; the transaction has not committed. */

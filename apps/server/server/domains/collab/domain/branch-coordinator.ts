@@ -914,13 +914,18 @@ export function createBranchCoordinator(input: {
    * private candidate of the committed replica, appended under the revision it was judged
    * at, published only once committed. A miss destroys the candidate and judges again on
    * the new revision; the fourth attempt holds the Work row and the branch row.
+   *
+   * Only the first attempt fences a stale room (one missing a committed update: `1008`). A
+   * retry exists because a concurrent commit moved the branch, and that commit reaches this
+   * room through its own publish, which runs after its COMMIT returns and so may land after
+   * this frame judges again: the room lags it without being stale.
    */
   async function commitWriterUpdate(
     inputWriter: Parameters<BranchCoordinator["commitWriterUpdate"]>[0],
   ): Promise<{ admitted: boolean }> {
     for (let attempt = 1; ; attempt++) {
       const locked = attempt === FRAME_ATTEMPTS;
-      const judge = () => judgeWriterUpdate(inputWriter);
+      const judge = () => judgeWriterUpdate(inputWriter, { fenceRoom: attempt === 1 });
       const outcome = locked
         ? await input.store.withJudgementLocks(inputWriter.branchId, judge)
         : await judge();
@@ -934,6 +939,7 @@ export function createBranchCoordinator(input: {
 
   async function judgeWriterUpdate(
     inputWriter: Parameters<BranchCoordinator["commitWriterUpdate"]>[0],
+    { fenceRoom }: { fenceRoom: boolean },
   ): Promise<"admitted" | "contained" | "moved"> {
     const base = await loadBase(inputWriter.branchId);
     const { snapshot, replica } = base;
@@ -946,7 +952,7 @@ export function createBranchCoordinator(input: {
           snapshot.status !== "active" ||
           snapshot.lifecycle !== "active" ||
           snapshot.generation !== inputWriter.expectedGeneration ||
-          !documentContainment.contains(inputWriter.roomDocument, encodedOf(replica))
+          (fenceRoom && !documentContainment.contains(inputWriter.roomDocument, encodedOf(replica)))
         ) {
           throw new BranchStaleUpdateError(inputWriter.branchId);
         }

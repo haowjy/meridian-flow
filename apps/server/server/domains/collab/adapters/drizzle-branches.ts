@@ -237,6 +237,7 @@ export function createDrizzleBranchStore(
               ),
             );
     const branches = [...peers, ...drafted];
+    await collabHook("retract.beforeLocks");
     // A frame takes no lock but its branch row: holding the rows (id order, after the
     // caller's Work and namespace order) makes a contribution that committed first visible
     // to the recheck below, and makes one that comes later find its row deleted.
@@ -266,6 +267,7 @@ export function createDrizzleBranchStore(
         .limit(1);
       if (contribution) return { outcome: "stands" };
     }
+    await collabHook("retract.afterRecheck");
     if (branches.length > 0) {
       await tx.delete(documentBranches).where(
         inArray(
