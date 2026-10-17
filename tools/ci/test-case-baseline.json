@@ -425,7 +425,7 @@
     "apps/server/server/domains/threads/adapters/drizzle/thread-liveness.db.test.ts": 2,
     "apps/server/server/domains/threads/adapters/drizzle/thread-ls-requester-plan.db.test.ts": 1,
     "apps/server/server/domains/threads/adapters/drizzle/thread-repository-root.db.test.ts": 2,
-    "apps/server/server/domains/threads/adapters/drizzle/thread-work-membership-races.db.test.ts": 7,
+    "apps/server/server/domains/threads/adapters/drizzle/thread-work-membership-races.db.test.ts": 6,
     "apps/server/server/domains/threads/adapters/drizzle/transcript-reader.db.test.ts": 6,
     "apps/server/server/domains/threads/adapters/drizzle/turn-position.db.test.ts": 2,
     "apps/server/server/domains/threads/adapters/drizzle/turn-start-race.db.test.ts": 2,
