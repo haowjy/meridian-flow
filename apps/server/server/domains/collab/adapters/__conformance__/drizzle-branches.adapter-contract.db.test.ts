@@ -908,6 +908,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               editDisposition: "discarded",
               schemaVersion: COLLAB_SCHEMA_VERSION,
             },
+            work: "any",
           }),
         ).resolves.toMatchObject({ status: "committed" });
       });

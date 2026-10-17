@@ -155,9 +155,20 @@ Work archives is either fenced by the archive or read as archived. An
 effect-neutral writer append enters no boundary: it takes only its branch row.
 Tests use the same boundary (`test-support/work-projection.ts`), with no
 catalog or availability publication and no pending counts. The append's
-`UPDATE` and a Work-admitted checkpoint `UPDATE` carry a Work-is-active
-predicate, so the lifecycle decision and the write are one statement; pulls,
-resets and compaction carry none.
+`UPDATE` carries a Work-is-active predicate, so the lifecycle decision and the
+write are one statement.
+
+An archived Work's draft is frozen to content-moving rewrites (D19). A rewrite
+names its admission (`CommitRewriteInput.work`). A live→draft pull, a peer's
+pull or containment reset and a peer's catch-up are `active`: their `UPDATE`
+carries the Work-is-active predicate, and a pull or reset is refused first by
+the boundary under the Work lock (`requireActive`). The pull answers
+`inactive`, writes nothing and is neither retried nor re-armed; the next live
+update after unarchive catches the draft up. A peer read on an archived Work sees the peer as it stands. Exempt,
+by name (`any`): a settlement's reset completing a batch staged before the
+archive (D1's settlement fence), Discard and purge (lifecycle operations
+themselves), and compaction (content-free, and only an append triggers it,
+which the append's predicate already refuses).
 
 A writer frame takes no lease, mutex or document lock, and no lock beyond its
 own statement. It is judged on a private clone of the published replica

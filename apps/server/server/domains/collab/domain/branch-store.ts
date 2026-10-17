@@ -208,6 +208,14 @@ export type CommitRewriteInput = {
   /** The rewritten checkpoint. A `fold` pull applies the tail into it. */
   doc: Y.Doc;
   operation: RewriteOperation;
+  /**
+   * Whether the branch's Work must be active (decision D19): a pull, a peer's catch-up and a
+   * peer's containment reset move content into a draft, which an archived Work freezes; they
+   * are refused `inactive`. `any` names an operation the freeze exempts: a settlement's reset
+   * completing a batch staged before the archive (decision D1's settlement fence), Discard and
+   * purge (lifecycle operations themselves), and compaction (content-free).
+   */
+  work: "active" | "any";
 };
 
 export type RewriteOutcome =
@@ -218,7 +226,8 @@ export type RewriteOutcome =
       seq: number;
       generation: number;
     }
-  | { status: "moved" | "fenced" | "closed" | "upstreamMoved" };
+  /** `inactive`: a `work: "active"` rewrite whose Work is archived, deleted or gone (D19). */
+  | { status: "moved" | "fenced" | "closed" | "upstreamMoved" | "inactive" };
 
 export type BranchStore = {
   /** The row only; content comes through `readBranchAt`. */

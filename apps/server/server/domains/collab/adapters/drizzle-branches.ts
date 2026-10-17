@@ -41,7 +41,10 @@ import {
   loadDraftHolder,
 } from "../../context/tree/draft-ownership.js";
 import { isDrafted } from "../../file-policy/index.js";
-import type { WorkProjectionMutation } from "../../projects/index.js";
+import {
+  WorkLifecycleUnavailableError,
+  type WorkProjectionMutation,
+} from "../../projects/index.js";
 import { BranchNotFoundError, type ResolvedBranch } from "../domain/branch-resolver.js";
 import {
   type AppendRowsInput,
@@ -533,8 +536,9 @@ export function createDrizzleBranchStore(
 
   /**
    * Shape B: one transaction, the branch row locked only for the fold and its write. A
-   * checkpoint (a thread peer's catch-up) carries the Work-is-active predicate; a pull,
-   * reset or compaction carries none.
+   * `work: "active"` rewrite (decision D19) carries the Work-is-active predicate, and a pull
+   * or reset among them is refused `inactive` by the Work boundary first, under the Work lock;
+   * the input names the operations the freeze exempts.
    */
   async function commitRewrite(input: CommitRewriteInput): Promise<RewriteOutcome> {
     const { operation } = input;
@@ -544,7 +548,7 @@ export function createDrizzleBranchStore(
         branchId: input.branchId,
         policy: input.policy,
         fence: input.fence,
-        work: operation.kind === "checkpoint" ? "active" : "any",
+        work: input.work,
         keepUpdatedAt: operation.kind === "compact",
         // Only a pull moves a work draft's content against its baseline, and its caller
         // computed the effect on the candidate; a peer has none, a compaction keeps the
@@ -594,11 +598,16 @@ export function createDrizzleBranchStore(
       operation.kind === "pull" || operation.kind === "reset"
         ? () =>
             runInDrizzleTransaction(db, () =>
-              workProjection.mutatePending({ branches: [input.branchId] }, rewrite),
+              workProjection.mutatePending(
+                { branches: [input.branchId] },
+                rewrite,
+                input.work === "active" ? { requireActive: true } : undefined,
+              ),
             )
         : () => runInDrizzleTransaction(db, rewrite);
-    return run().catch((cause) => {
+    return run().catch((cause): RewriteOutcome => {
       if (cause instanceof BranchWriteRollback) return cause.outcome;
+      if (cause instanceof WorkLifecycleUnavailableError) return { status: "inactive" };
       throw cause;
     });
   }
