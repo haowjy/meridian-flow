@@ -611,7 +611,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     commitStore: durablePushCommitStore,
     branchCoordinator,
     journal: persistence.journal,
-    criticalSections: branchCriticalSections,
     attemptScope: (operation) => runInDrizzleSavepoint(db, operation),
   });
   const deliveredEvents: unknown[] = [];
