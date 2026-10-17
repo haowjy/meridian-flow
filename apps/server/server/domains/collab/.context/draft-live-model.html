@@ -263,7 +263,7 @@ cure was one mechanism, enforced by types and keys rather than prose.
 <div class="scroll">
 <table>
   <tr><th>Edge</th><th>Rule</th></tr>
-  <tr><td>live → draft</td><td><strong>No consent gate.</strong> Continuous and automatic; a pull merges whenever it runs. It waits while an Apply of the same document is settling, and on this checkout it stops while the Work is archived (see the archive contract in <a href="CONTEXT.md">CONTEXT.md</a>).</td></tr>
+  <tr><td>live → draft</td><td><strong>No consent gate.</strong> Continuous and automatic; a pull merges whenever it runs. It waits while an Apply of the same document is settling, and keeps running while the Work is archived, so the draft applies cleanly after unarchive (see the archive contract in <a href="CONTEXT.md">CONTEXT.md</a>).</td></tr>
   <tr><td>draft → live</td><td><strong>Only via Apply.</strong> The single consent-bearing promotion. Item and per-change Apply refuse a stale render; whole Apply has no live-head guard yet (#420).</td></tr>
   <tr><td>AI → live</td><td><strong>Direct mode only.</strong> A draft-mode chat's AI writes to its Work's branch, always. The mode is the chat's, never the Work's.</td></tr>
   <tr><td>Presence</td><td><strong>Room-scoped.</strong> No cross-surface cursors; cross-surface provenance uses marks.</td></tr>

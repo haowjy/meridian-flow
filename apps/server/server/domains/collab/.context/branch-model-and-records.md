@@ -33,12 +33,10 @@ closed. Work purge reuses this kernel after proving its lifecycle set.
 
 Draft HTTP routes share one Work-access check: a deleted Work is 404 before any
 draft read or mutation, while an archived Work still permits review reads. An
-archived Work's drafts are frozen: no frame, Apply or writer Discard writes
-them until unarchive, and on this checkout no pull does either. The
-exceptions are named: a settlement completing a batch staged before the
-archive, purge, and compaction, which changes no content. The pull refusal
-diverges from the settled archive rule, under which pulls keep the draft's
-base current; see the flag in [CONTEXT.md](CONTEXT.md). Replaying an already committed push
+archived Work's drafts are frozen to their writer: no frame, Apply or writer
+Discard writes them until unarchive. Live→draft pulls keep rebasing them, so
+their base stays current and they apply cleanly after unarchive; see
+[CONTEXT.md](CONTEXT.md). Replaying an already committed push
 returns its durable receipt without reauthorizing a new write.
 
 Apply and Discard are server commands, not client loops. Apply item and
