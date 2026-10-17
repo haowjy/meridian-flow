@@ -39,6 +39,7 @@ import {
   createMarkdownSerializationAnomalyObserver,
   createResponseTransactionDiagnostics,
   createReversalNoticeDiagnostics,
+  createRewriteCommittedEvent,
   createSweepProjectionDiagnostics,
 } from "./adapters/agent-edit-observability.js";
 import {
@@ -204,6 +205,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     },
     workProjection: deps.workProjectionMutation,
     drafts: workDrafts,
+    ...(deps.eventSink ? { onRewriteCommitted: createRewriteCommittedEvent(deps.eventSink) } : {}),
   });
   const branchJournal = createDrizzleBranchJournalReadStore(deps.db);
   const branchCoordinator = createBranchCoordinator({

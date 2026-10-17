@@ -96,6 +96,7 @@ const SAFE_PAYLOAD_ENUM_VALUES: Readonly<Record<string, ReadonlySet<string>>> = 
   outcome: new Set(["cancelled", "error", "ok"]),
   phase: new Set(["committed", "skeleton", "staged"]),
   reason: new Set(["client-schema-superseded", "document-schema-stale", "record_byte_limit"]),
+  rewrite: new Set(["checkpoint", "compact", "pull", "reset"]),
   ...DIAGNOSTIC_CODE_ENUMS,
   source: new Set([
     "agent",
