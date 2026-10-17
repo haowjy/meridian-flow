@@ -602,7 +602,7 @@ async function commitPreparedDiscard(
         ),
       );
   }
-  await refreshDraftEffect(db, input.branch.branchId, undefined, true);
+  await refreshDraftEffect(db, input.branch.branchId);
   await bumpBranchRevisions(db, [input.branch.branchId], { blocking: false });
 }
 

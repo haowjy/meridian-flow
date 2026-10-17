@@ -10,7 +10,6 @@ import {
   runAfterDrizzleCommit,
   runInDrizzleSavepoint,
   runInDrizzleTransaction,
-  runInRootDrizzleTransaction,
   runOutsideDrizzleTransaction,
   runOutsideWrite,
 } from "../../shared/drizzle-transaction.js";
@@ -97,6 +96,7 @@ import { createCollabFacade } from "./collab-facade.js";
 import type { CollabDomain } from "./contracts.js";
 import { createAgentEditRuntime, metaForOrigin } from "./domain/agent-edit-runtime.js";
 import { createBranchConcurrentJournalWatermarks } from "./domain/branch-agent-edit.js";
+import type { AttemptScope } from "./domain/branch-attempts.js";
 import { createBranchCoordinator } from "./domain/branch-coordinator.js";
 import { createBranchCriticalSections } from "./domain/branch-critical-sections.js";
 import { createBranchPullService } from "./domain/branch-pulls.js";
@@ -192,6 +192,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     journal: persistence.journal,
   });
   const criticalSections = createBranchCriticalSections();
+  // Every bounded branch-store attempt's rollback boundary (decision D13).
+  const attemptScope: AttemptScope = (operation) => runInDrizzleSavepoint(deps.db, operation);
   const workDrafts = createDrafts({
     store: createDrizzleDraftStore(deps.db),
     boundary: createDrizzleDraftWriteBoundary(deps.db),
@@ -209,6 +211,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     journalReads: branchJournal,
     store: branches,
     criticalSections,
+    attemptScope,
     onBranchUpdate: hocuspocusBinding.publishBranchUpdate,
     onBranchReset: ({ branchId }) => hocuspocusBinding.closeBranch(branchId),
     diagnostics: createBranchCoordinatorDiagnostics(deps.eventSink),
@@ -217,7 +220,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const branchPulls = createBranchPullService({
     // A pull isn't the write that scheduled it: it leaves that write's grants too.
     outsideTransaction: runOutsideWrite,
-    rootTransaction: (operation) => runInRootDrizzleTransaction(deps.db, operation),
     liveCoordinator,
     branchCoordinator,
     branches,
@@ -379,6 +381,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     branchCoordinator,
     journal: persistence.journal,
     criticalSections,
+    attemptScope,
   });
 
   const agentEdit = scopeAgentEdit(
@@ -412,7 +415,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       semanticProvenance: runtime.semanticProvenance,
       observability,
       commitThreadResponseAtomically: (operation) => runInDrizzleTransaction(deps.db, operation),
-      attemptScope: (operation) => runInDrizzleSavepoint(deps.db, operation),
+      attemptScope,
       responseTransactionSettlement: {
         deferUntilCommit: deferUntilDrizzleCommit,
         deferUntilRollback: deferUntilDrizzleRollback,
@@ -549,6 +552,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     store: discardStore,
     retire: retirePeers,
     releaseObjects: (storageUrls) => deps.objects?.storageUrls(storageUrls) ?? Promise.resolve(),
+    attemptScope,
   });
   const identity = createDraftReviewIdentity({ drafts: workDrafts, reviewItems });
   const drafts = createWorkDraftReviewService({

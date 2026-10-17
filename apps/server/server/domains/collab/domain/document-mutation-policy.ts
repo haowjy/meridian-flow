@@ -6,7 +6,9 @@ import {
   validateSemanticEditIRV1,
 } from "@meridian/agent-edit/integration";
 import type { DocumentRevision } from "@meridian/contracts";
+import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
+import type { AppendBranchJournalInput } from "./branch-store.js";
 import {
   PROVENANCE_RESERVED_TYPES,
   validateClientUpdateAdmission,
@@ -184,6 +186,90 @@ export async function replicateFrozenIdentity(input: {
   validatePostUpdateProvenance(input.target.doc, update);
   const admitted = await input.admit({ update, attribution: { kind: "agent" } });
   return { sequence: admitted.sequence, joined: admitted.joined };
+}
+
+/**
+ * `source` replicated whole into `target` from a frozen copy, the admitted update applied to
+ * `target`: the identity replication every branch seed, pull and reset uses.
+ */
+export async function replicateFrozenSource(source: Y.Doc, target: Y.Doc): Promise<Uint8Array> {
+  let admittedUpdate: Uint8Array | undefined;
+  const frozenSource = createCollabYDoc({ gc: false });
+  Y.applyUpdate(frozenSource, Y.encodeStateAsUpdate(source));
+  try {
+    await replicateFrozenIdentity({
+      source: { documentId: "branch", doc: frozenSource },
+      target: { documentId: "branch", generation: 0n, doc: target },
+      plan: { kind: "wholeDocument" },
+      admit: async ({ update }) => {
+        admittedUpdate = update;
+        Y.applyUpdate(target, update);
+        return { sequence: 0n, joined: 0 };
+      },
+    });
+    if (!admittedUpdate) throw new Error("Identity replication produced no branch update");
+    return admittedUpdate;
+  } finally {
+    frozenSource.destroy();
+  }
+}
+
+/**
+ * A branch's journal rows applied to `doc`, admitted per logical write: the rows of one
+ * semantic edit as a certified mutation, each other row on its own.
+ */
+export async function admitSegmentRows(
+  doc: Y.Doc,
+  target: { documentId: string; generation: number },
+  journals: readonly AppendBranchJournalInput[],
+): Promise<void> {
+  for (let index = 0; index < journals.length; ) {
+    const first = journals[index];
+    const writeRows = [first];
+    index++;
+    while (
+      index < journals.length &&
+      first.semanticEditIr &&
+      journals[index].semanticEditIr === first.semanticEditIr
+    )
+      writeRows.push(journals[index++]);
+    const apply = () => {
+      for (const row of writeRows) {
+        if (row.source === "agent") assertFreshAgentUpdate(doc, row.updateData);
+        Y.applyUpdate(doc, row.updateData);
+      }
+    };
+    if (!first.semanticEditIr) {
+      apply();
+      continue;
+    }
+    const ir = first.semanticEditIr;
+    await admitCertifiedMutation(
+      {
+        readMutationTarget: () => ({
+          documentId: target.documentId,
+          generation: BigInt(target.generation),
+          doc,
+        }),
+        readCurrentRevision: async () => ir.inputRevision,
+        lowerCertifiedMutation: async () => Y.mergeUpdates(writeRows.map((row) => row.updateData)),
+        admitImmediate: async () => {
+          apply();
+          return { sequence: 0n, joined: 0 };
+        },
+      },
+      { ir },
+    );
+  }
+}
+
+/** Draft agent rows own fresh structs; deletes may refer to older clients. */
+export function assertFreshAgentUpdate(doc: Y.Doc, update: Uint8Array): void {
+  const clients = Y.decodeStateVector(Y.encodeStateVector(doc));
+  for (const struct of Y.decodeUpdate(update).structs) {
+    if (clients.has(struct.id.client))
+      throw new Error(`Agent segment reused client ${struct.id.client}`);
+  }
 }
 
 function validatePostUpdateProvenance(targetDocument: Y.Doc, update: Uint8Array): void {

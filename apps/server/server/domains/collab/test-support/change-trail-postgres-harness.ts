@@ -393,6 +393,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     journalReads: createDrizzleBranchJournalReadStore(db),
     store: branchStore,
     criticalSections: branchCriticalSections,
+    attemptScope: (operation) => runInDrizzleSavepoint(db, operation),
     onBranchUpdate: ({ branchId }) => branchBroadcasts.push(branchId),
   });
   const realWatermarks = createBranchConcurrentJournalWatermarks();
@@ -417,7 +418,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   };
   const branchPulls = createBranchPullService({
     outsideTransaction: runOutsideWrite,
-    rootTransaction: (operation) => runInRootDrizzleTransaction(db, operation),
     liveCoordinator,
     branchCoordinator,
     branches: branchStore,
@@ -608,6 +608,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     branchCoordinator,
     journal: persistence.journal,
     criticalSections: branchCriticalSections,
+    attemptScope: (operation) => runInDrizzleSavepoint(db, operation),
   });
   const deliveredEvents: unknown[] = [];
   const trailDelivery = createChangeTrailWorker({
@@ -781,6 +782,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       }),
       criticalSections: branchCriticalSections,
       liveCoordinator,
+      attemptScope: (operation) => runInDrizzleSavepoint(db, operation),
       // No Work projection in this harness: pending counts aren't under test.
       store: createDrizzleDraftDiscard(db, {
         drafts: workDrafts,

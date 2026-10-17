@@ -172,8 +172,11 @@ export type RewriteOperation =
    * stay. Nothing schedules it in phase 1a; its trigger lands with the inverse's attempt contract.
    */
   | { kind: "compact" }
-  /** Live (or the upstream) merged into the branch; `liveCut` is the work draft's new baseline. */
-  | { kind: "pull"; liveCut?: Uint8Array }
+  /**
+   * Live (or the upstream) merged into the branch. A work draft's `effect` was computed on the
+   * candidate against `liveCut`, its new baseline, before the rewrite locked anything.
+   */
+  | { kind: "pull"; effect?: { hasEffect: boolean; liveCut: Uint8Array } }
   /** A content rewrite the branch's Work must admit: a thread peer catching up its upstream. */
   | { kind: "checkpoint" }
   /** A re-fork: the next generation, the tail discarded with its clocks fenced. */
@@ -218,8 +221,11 @@ export type BranchStore = {
    */
   withJudgementLocks<T>(branchId: string, run: () => Promise<T>): Promise<T>;
   commitRewrite(input: CommitRewriteInput): Promise<RewriteOutcome>;
-  /** Defers cache-visible effects when persistence joined a response transaction. */
-  deferUntilCommit(callback: () => void): boolean;
+  /**
+   * Defers cache-visible effects until the ambient transaction commits, and `onRollback`
+   * until it rolls back instead; false (nothing deferred) outside a transaction.
+   */
+  deferUntilCommit(callback: () => void, onRollback?: () => void): boolean;
 };
 
 export class BranchStaleUpdateError extends Error {

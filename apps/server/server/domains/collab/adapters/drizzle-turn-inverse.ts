@@ -33,6 +33,7 @@ import { confirmScopedEdits } from "../../../shared/edit-confirmation.js";
 import { draftBranchWorks } from "../../../shared/work-draft-lifecycle.js";
 import { lockWorksInIdOrder } from "../../../shared/work-lifecycle-lock.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
+import { type Attempt, runBoundedAttempts } from "../domain/branch-attempts.js";
 import type { BranchCoordinator } from "../domain/branch-coordinator.js";
 import type { BranchCriticalSections } from "../domain/branch-critical-sections.js";
 import { type BranchStore, materializeBranchRead } from "../domain/branch-store.js";
@@ -201,37 +202,47 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     query: TurnInverseQuery,
     run: (documents: InverseDocument[]) => Promise<T>,
   ): Promise<T> {
-    for (let attempt = 1; ; attempt++) {
-      const classifying = attempt > INVERSE_ATTEMPTS;
-      // The branch leases still exclude rewrites (lanes 2 to 4 remove them).
-      const { branchIds } = await runInRootDrizzleReadSnapshot(input.db, async () => ({
-        branchIds: inverseBranchIds(query, await history(await selectedDocuments(query))),
-      }));
-      const publications: (() => Promise<void>)[] = [];
-      let result: T;
+    return runBoundedAttempts({
+      bound: INVERSE_ATTEMPTS,
+      scope: (operation) => runInDrizzleSavepoint(input.db, operation),
+      isMiss: (cause) => cause instanceof InverseAttemptMiss,
+      run: (attempt) => capturedAttempt(query, run, attempt),
+      exhausted: () => capturedAttempt(query, run, null),
+    });
+  }
+
+  /** One capture planned by `run`; with no `attempt`, the classification pass that never writes. */
+  async function capturedAttempt<T>(
+    query: TurnInverseQuery,
+    run: (documents: InverseDocument[]) => Promise<T>,
+    attempt: Attempt | null,
+  ): Promise<T> {
+    // The branch leases still exclude rewrites (lanes 2 to 4 remove them).
+    const { branchIds } = await runInRootDrizzleReadSnapshot(input.db, async () => ({
+      branchIds: inverseBranchIds(query, await history(await selectedDocuments(query))),
+    }));
+    const publications: (() => Promise<void>)[] = [];
+    // Publication reads the documents through their coordinators and may pull: only once the
+    // attempt completed, and outside every mutex and lease it held.
+    attempt?.own({
+      async transfer() {
+        const publish = async () => {
+          for (const publication of publications) await publication();
+        };
+        if (!deferUntilDrizzleCommit(publish)) await publish();
+      },
+      dispose() {},
+    });
+    return input.criticalSections.withBranches(branchIds, async () => {
+      const captured = await capture(query);
       try {
-        result = await input.criticalSections.withBranches(branchIds, async () => {
-          const captured = await capture(query);
-          try {
-            return await attemptStorage.run({ ...captured, classifying, publications }, () =>
-              run(captured.documents),
-            );
-          } finally {
-            destroyDocuments(captured.documents);
-          }
-        });
-      } catch (cause) {
-        if (cause instanceof InverseAttemptMiss && !classifying) continue;
-        throw cause;
+        return await attemptStorage.run({ ...captured, attempt, publications }, () =>
+          run(captured.documents),
+        );
+      } finally {
+        destroyDocuments(captured.documents);
       }
-      // Publication reads the documents through their coordinators and may pull: only after
-      // the commit, and outside every mutex and lease the attempt held.
-      const publish = async () => {
-        for (const publication of publications) await publication();
-      };
-      if (!deferUntilDrizzleCommit(publish)) await publish();
-      return result;
-    }
+    });
   }
 
   const store: TurnInverseStore = {
@@ -270,7 +281,8 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     async commit({ plans, kind, userId, query }) {
       const attempt = attemptStorage.getStore();
       if (!attempt) throw new Error("An inverse commits only inside its captured attempt");
-      if (attempt.classifying) throw new ReversalConflictError();
+      if (!attempt.attempt) throw new ReversalConflictError();
+      const scope = attempt.attempt;
       await collabHook("inverse.beforeCommitScope");
       // Off every lock: each plan's parts with their provenance on its attempt-local view,
       // and a draft destination's effect against the captured live state.
@@ -279,7 +291,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       const handles: string[] = [];
       const publications: (() => Promise<void>)[] = [];
       await withLiveDocuments([...new Set(liveIds)].sort(), () =>
-        runInDrizzleSavepoint(input.db, async () => {
+        scope.commit(async () => {
           for (const id of attempt.ids)
             await db().execute(
               sql`select pg_advisory_xact_lock(hashtextextended(${`document-inverse:${id}`},0::bigint))`,
@@ -597,7 +609,7 @@ type PlannedInverse = {
 
 /** The attempt a store call runs in: its capture, and whether it may still commit. */
 const attemptStorage = new AsyncLocalStorage<
-  InverseCapture & { classifying: boolean; publications: (() => Promise<void>)[] }
+  InverseCapture & { attempt: Attempt | null; publications: (() => Promise<void>)[] }
 >();
 
 /** The captured revision or live head moved before the commit scope validated it. */

@@ -38,6 +38,7 @@ import {
   type RewriteOutcome,
   type RewritePolicy,
 } from "../domain/branch-store.js";
+import { assertFreshAgentUpdate } from "../domain/document-mutation-policy.js";
 
 /** A commit that must not stand: thrown inside the write's transaction to roll it back. */
 export class BranchWriteRollback extends Error {
@@ -430,7 +431,7 @@ export async function commitRewriteWithinTx(
     const after = input.policy.seq;
     for (const row of tail) {
       if (row.id <= after) continue;
-      if (row.source === "agent") assertFreshAgentRow(input.doc, row.update);
+      if (row.source === "agent") assertFreshAgentUpdate(input.doc, row.update);
       Y.applyUpdate(input.doc, row.update);
     }
   }
@@ -555,13 +556,4 @@ export async function bumpBranchRevisions(
     .set({ ...set, revision: sql`${documentBranches.revision} + 1` })
     .where(inArray(documentBranches.id, lockedIds));
   return lockedIds;
-}
-
-/** Draft agent rows own fresh structs; deletes may refer to older clients. */
-function assertFreshAgentRow(doc: Y.Doc, update: Uint8Array): void {
-  const clients = Y.decodeStateVector(Y.encodeStateVector(doc));
-  for (const struct of Y.decodeUpdate(update).structs) {
-    if (clients.has(struct.id.client))
-      throw new Error(`Agent segment reused client ${struct.id.client}`);
-  }
 }

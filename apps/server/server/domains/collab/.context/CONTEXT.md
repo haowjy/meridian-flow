@@ -122,10 +122,15 @@ through `appendRows`, checkpoint rewrites through `commitRewrite` (exact or
 fold policy), status and hold changes after locking the branch rows in ID order
 and bumping their revision. No write compares branch bytes. Whether a branch is
 frozen is derived on every read from its draft's origin Work (archived,
-deleted, or missing), never stored, and branch creation takes no Work lock, as
-on main. A Work lifecycle transition (archive, unarchive, delete, restore)
-locks and bumps every active branch of the Work's drafts after its Work update,
-so a write judged before the transition misses its revision. The append's
+deleted, or missing), never stored. A Work lifecycle transition (archive,
+unarchive, delete, restore) locks and bumps every active branch of the Work's
+drafts after its Work update, so a write judged before the transition misses
+its revision. Every branch write that can move a Work's pending projection
+runs inside `mutatePendingBranches` or `mutatePendingDraft`, which lock those
+Works first (`FOR NO KEY UPDATE`, id order), so it enters Work, draft, live
+advisory lock, branch, the order the transitions take. Creating a draft branch
+runs there too: a branch made while its Work archives is either fenced by the
+archive or read as archived. The append's
 `UPDATE` and a Work-admitted checkpoint `UPDATE` carry a Work-is-active
 predicate, so the lifecycle decision and the write are one statement; pulls,
 resets and compaction carry none.
@@ -145,17 +150,30 @@ the background under the branch's lease (`compact`: no content, effect or
 `updatedAt` change); a failure is logged as `collab.branch`
 `compaction.failed`.
 
+Every bounded branch write (frame, reply save, inverse, pull, segment rows,
+selective and item Discard) runs its attempts through `runBoundedAttempts`
+(`domain/branch-attempts.ts`): capture and compute off every lock, one commit
+scope per attempt (a root transaction, or one savepoint inside an ambient one)
+opened before its first branch-store lock, and a miss that leaves that scope
+before the next capture. The attempt owns its candidates: one completed
+attempt transfers them to publication, and any unwind disposes the rest,
+including a write whose own statement succeeded in a scope a later miss rolled
+back. The bound's exhaustion outcome stays with each caller.
+
 A reply save is an attempt across every participating core: prepare replays
 each staged document on a candidate, consume appends per upstream inside one
 savepoint, install publishes. A miss unwinds the savepoint and prepares again
 from the original staged buffer, up to four attempts; the reply's `confirm`
-runs once. Apply, selective Discard and pulls retry a moved branch up to four
-times, then refuse `stale`.
+runs once, and an attempt prepared before it is disposed if it throws. Apply,
+selective Discard and pulls retry a moved branch up to four times, then refuse
+`stale`.
 
-Pulls commit in their own root transactions outside a caller's response
-transaction. A pull takes its branch leases before its root transaction and
-keeps them through persistence. Live pulls snapshot before opening the root
-transaction and re-read branch membership; thread-peer pulls lease the peer
+Each pull attempt is its own root transaction, outside a caller's response
+and database transactions: its candidate and `has_effect` are computed before
+the scope, and inside it only the revision is compared and the checkpoint
+written. A pull takes its branch leases before any transaction and keeps them
+through persistence. Live pulls snapshot before any transaction and re-read
+branch membership; thread-peer pulls lease the peer
 and upstream together. A shared pull promise resolves only after commit. A
 caller joining an in-flight live pull awaits one coalesced run that starts
 after its call, since the in-flight snapshot may predate a writer edit it must
@@ -165,8 +183,9 @@ and Hocuspocus admission never waits for it.
 
 Room loads read in the caller's transaction because that transaction may
 already hold the authority head. Provisioning locks the canonical thread row
-before committing the Work draft and peer in a root transaction, and the root
-must not re-lock that thread. Referenced rows must be committed before a root
+before committing the peer in a root transaction (a Work draft branch it needs
+commits first, in its own Work-first root), and the root must not re-lock that
+thread. Referenced rows must be committed before a root
 peer can reference them, so manifest identity and its live head commit in a
 root transaction. Live manifest writes instead load the manifest in the
 caller's transaction: during cold project bootstrap the project and source are
