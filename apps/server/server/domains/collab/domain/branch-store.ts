@@ -176,7 +176,7 @@ export type RewriteOperation =
    * Live (or the upstream) merged into the branch. A work draft's `effect` was computed on the
    * candidate against `liveCut`, its new baseline, before the rewrite locked anything.
    */
-  | { kind: "pull"; effect?: { hasEffect: boolean; liveCut: Uint8Array } }
+  | { kind: "pull"; effect?: PullEffect }
   /** A content rewrite the branch's Work must admit: a thread peer catching up its upstream. */
   | { kind: "checkpoint" }
   /** A re-fork: the next generation, the tail discarded with its clocks fenced. */
@@ -185,6 +185,18 @@ export type RewriteOperation =
       editDisposition: "discarded" | "retired";
       schemaVersion: CollabSchemaVersion;
     };
+
+/**
+ * A pull's effect against its new baseline, judged on the candidate. When a `fold` applies
+ * rows the candidate lacked, the checkpoint is no longer the candidate: `refolded` judges the
+ * folded checkpoint instead, under the row lock, and only then (frames rarely land inside a
+ * pull's short commit window).
+ */
+export type PullEffect = {
+  hasEffect: boolean;
+  liveCut: Uint8Array;
+  refolded?(doc: Y.Doc): boolean;
+};
 
 export type CommitRewriteInput = {
   branchId: string;

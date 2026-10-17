@@ -26,7 +26,6 @@ import {
   type EnlistResponseParticipant,
 } from "./domain/branch-agent-edit.js";
 import type { BranchCoordinator } from "./domain/branch-coordinator.js";
-import type { BranchCriticalSections } from "./domain/branch-critical-sections.js";
 import type { BranchPullService } from "./domain/branch-pulls.js";
 import type { BranchJournalReadStore } from "./domain/branch-push-contracts.js";
 import { createScopedDocumentLinks } from "./domain/document-links-port.js";
@@ -82,7 +81,6 @@ export function createBranchThreadPeerAgentEditCore(input: {
   lockWorks(workIds: readonly string[]): Promise<void>;
   lockLiveDocuments(documentIds: readonly DocumentId[]): Promise<void>;
   drafts: Pick<Drafts, "viewForWork" | "ensureActiveForWrite" | "shareActive">;
-  criticalSections: BranchCriticalSections;
 }): ThreadPeerAgentEditCore {
   return createThreadPeerCorePool({
     drafts: input.drafts,
@@ -90,7 +88,6 @@ export function createBranchThreadPeerAgentEditCore(input: {
     fences: createReplySaveFences({
       liveUtilityCore: input.liveUtilityCore,
       branches: input.branches,
-      criticalSections: input.criticalSections,
       drafts: input.drafts,
       diagnostics: input.diagnostics,
       fileAccess: input.fileAccess,

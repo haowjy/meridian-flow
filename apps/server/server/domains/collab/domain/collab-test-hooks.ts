@@ -11,7 +11,8 @@ const COLLAB_HOOK_POINTS = [
   "checkpoint.afterAuthorityRead",
   "discard.afterLeases",
   "discard.beforeRetirement",
-  "access.afterLeases",
+  /** A thread core's access, or a peer pull past its ensures, is about to read its branches. */
+  "branch.beforeAccess",
   "applyItems.beforeStaging",
   "applyItems.afterStaging",
   "applyItems.beforeContinue",

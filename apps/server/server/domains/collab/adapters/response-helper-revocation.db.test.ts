@@ -4,6 +4,7 @@ import { branchRoomName } from "@meridian/contracts/protocol";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { testFileGrant } from "../../../test-support/file-grants.js";
+import { setCollabHook } from "../domain/collab-test-hooks.js";
 import {
   ALPHA_ID,
   BETA_ID,
@@ -355,17 +356,15 @@ describe("response helper revocation (Postgres)", () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    // Pause the read before it leases any branch, so Discard commits ahead of it.
-    const original = fixture.branchCoordinator.withLeases.bind(fixture.branchCoordinator);
+    // Pause the read before it reads any branch, so Discard commits ahead of it.
     let once = true;
-    fixture.branchCoordinator.withLeases = async (...args) => {
+    const unhook = setCollabHook("branch.beforeAccess", async () => {
       if (once) {
         once = false;
         entered();
         await gate;
       }
-      return original(...args);
-    };
+    });
     try {
       const pending = core.prepare(responseId, ALPHA_ID);
       // Observe rejection before releasing the orphaned read.
@@ -384,7 +383,7 @@ describe("response helper revocation (Postgres)", () => {
       expect(outcome).toHaveProperty("error");
     } finally {
       release();
-      fixture.branchCoordinator.withLeases = original;
+      unhook();
     }
     expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\ngreen\n");
     await expectFreshWrite("olive");

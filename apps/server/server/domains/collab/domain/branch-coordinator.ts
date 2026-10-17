@@ -35,6 +35,8 @@ import {
   membershipFlipWork,
   type RewriteFence,
   type RewriteOperation,
+  type RewriteOutcome,
+  type RewritePolicy,
 } from "./branch-store.js";
 import { collabHook } from "./collab-test-hooks.js";
 import { createDocumentContainment } from "./document-containment.js";
@@ -174,6 +176,35 @@ export type OwnedBranchSession = {
   listConcurrentRows: BranchSaveJournalReads["listConcurrentJournalRows"];
 };
 
+/**
+ * A pull merges `upstream` into the branch. A peer's pull names the upstream epoch it read
+ * `upstream` at: the commit locks that row `FOR SHARE` and loses to a re-fork of it.
+ */
+export type PullInput = {
+  branchId: string;
+  upstream: Y.Doc;
+  upstreamEpoch?: { branchId: string; generation: number };
+};
+
+/**
+ * `pulled` committed. A live pull into a work draft waits out a pending settlement on its
+ * document (`fenced`: nothing was written, and the caller tries again later); a closed
+ * branch has nothing to pull into; a peer whose upstream re-forked since its read is
+ * `upstreamMoved`, its capture abandoned.
+ */
+export type PullOutcome = "pulled" | "fenced" | "closed" | "upstreamMoved";
+
+/** A rewrite refused for a reason other than a moved revision: never retried. */
+class BranchRewriteRefused extends Error {
+  constructor(
+    readonly branchId: string,
+    readonly status: Extract<RewriteOutcome["status"], "fenced" | "upstreamMoved">,
+  ) {
+    super(`Branch ${branchId} rewrite was refused: ${status}`);
+    this.name = "BranchRewriteRefused";
+  }
+}
+
 /** A work draft re-forked from `upstream`, only at the generation and revision it was read. */
 type ResetInput = {
   branchId: string;
@@ -187,20 +218,12 @@ type ResetInput = {
 
 export type BranchCoordinator = {
   /**
-   * Merges `upstream` into the branch under a lease the caller holds (a pull takes its
-   * branches' leases first), outside any transaction: each attempt is its own commit scope.
-   * Throws for a branch the lease does not cover.
+   * Merges `upstream` into the branch as a folding rewrite, outside any transaction: each
+   * attempt is its own commit scope. Frames that commit while the pull computes are folded
+   * into its checkpoint, never a miss; only another rewrite makes it recompute.
    */
-  pullFromDoc(lease: BranchLockLease, branchId: string, upstream: Y.Doc): Promise<Uint8Array>;
+  pullFromDoc(input: PullInput): Promise<PullOutcome>;
   resetFromDocIfUnchangedWithLease(lease: BranchLockLease, input: ResetInput): Promise<boolean>;
-  /**
-   * These branches' leases in one ordered acquisition, for an operation that touches
-   * several (a peer and its draft branch) and runs every step under the one lease.
-   */
-  withLeases<T>(
-    branchIds: readonly string[],
-    run: (lease: BranchLockLease) => Promise<T>,
-  ): Promise<T>;
   readBranch<T>(
     branchId: string,
     fn: (doc: Y.Doc, snapshot: BranchSnapshot) => Promise<T>,
@@ -213,10 +236,10 @@ export type BranchCoordinator = {
     roomDocument: Y.Doc;
   }): Promise<{ admitted: boolean }>;
   /**
-   * A save's one door to branch state: every call runs under `lease`, acquires nothing, and
-   * throws `BranchLeaseScopeError` for a branch the lease does not cover.
+   * A save's one door to branch state. It acquires nothing: reads see committed replicas,
+   * and every write is an attempt fenced by the revision it was prepared at.
    */
-  ownedSession(lease: BranchLockLease): OwnedBranchSession;
+  ownedSession(): OwnedBranchSession;
   notifyReset(input: { branchId: string; generation: number }): void;
   broadcastUpdate(input: { branchId: string; update: Uint8Array }): void;
 };
@@ -551,6 +574,8 @@ export function createBranchCoordinator(input: {
       ...(update ? { update } : {}),
       async persist() {
         const outcome = await input.store.commitRewrite({ branchId, doc: candidate, ...rewrite });
+        if (outcome.status === "fenced" || outcome.status === "upstreamMoved")
+          throw new BranchRewriteRefused(branchId, outcome.status);
         if (outcome.status !== "committed") throw new BranchCasConflictError(branchId);
         if (rewrite.operation.kind === "reset") return { resetTo: outcome.generation };
         return { ...outcome, doc: candidate, tail: EMPTY_TAIL };
@@ -558,41 +583,70 @@ export function createBranchCoordinator(input: {
     });
   }
 
+  /** `candidate` as the branch's checkpoint at the base's exact revision: a peer's catch-up. */
+  function prepareCheckpoint(base: BranchBase, candidate: Y.Doc): PreparedBranchWrite {
+    const { snapshot } = base;
+    const policy = { kind: "exact" as const, revision: snapshot.revision };
+    return prepareRewrite(snapshot.branchId, candidate, {
+      policy,
+      fence: { kind: "none" },
+      operation: { kind: "checkpoint" },
+    });
+  }
+
   /**
-   * `candidate` as the branch's checkpoint at the base's exact revision: a peer's catch-up,
-   * or a pull with the effect it was computed to have against `upstream`.
+   * `candidate`, `upstream` merged into the committed replica, as a fold over the replica's
+   * cursor: rows appended since are applied into it under the row lock. A work draft's effect
+   * is judged against `upstream`, its new baseline, before the lock, and judged again on the
+   * folded checkpoint only when the fold applied rows.
    */
-  function prepareCheckpoint(
+  function preparePull(
     base: BranchBase,
     candidate: Y.Doc,
-    pull?: { upstream: Y.Doc; update: Uint8Array },
+    pull: PullInput & { update: Uint8Array },
   ): PreparedBranchWrite {
     const { snapshot } = base;
-    const operation: RewriteOperation = !pull
-      ? { kind: "checkpoint" }
-      : snapshot.kind === "work_draft"
+    const operation: RewriteOperation =
+      snapshot.kind === "work_draft"
         ? {
             kind: "pull",
             effect: {
               hasEffect: !documentEffectsEqual(pull.upstream, candidate),
               liveCut: Y.encodeStateAsUpdate(pull.upstream),
+              refolded: (folded) => !documentEffectsEqual(pull.upstream, folded),
             },
           }
         : { kind: "pull" };
-    const policy = { kind: "exact" as const, revision: snapshot.revision };
     return prepareRewrite(
       snapshot.branchId,
       candidate,
-      { policy, fence: { kind: "none" }, operation },
-      pull?.update,
+      {
+        policy: foldPolicy(base),
+        // A live pull's checkpoint would move the revision a pending Apply's completion resets at.
+        fence: snapshot.kind === "work_draft" ? { kind: "pending-settlement" } : { kind: "none" },
+        operation,
+        ...(pull.upstreamEpoch ? { upstream: pull.upstreamEpoch } : {}),
+      },
+      pull.update,
     );
+  }
+
+  function foldPolicy(base: BranchBase): RewritePolicy {
+    return {
+      kind: "fold",
+      checkpointRevision: base.replica.checkpointRevision,
+      seq: base.replica.seq,
+    };
   }
 
   /** A re-fork of the branch from `upstream` at the snapshot's exact revision. */
   async function prepareReset(
     snapshot: BranchSnapshot,
     upstream: Y.Doc,
-    reset: Pick<ResetInput, "schemaVersion" | "editDisposition" | "fence">,
+    reset: Pick<ResetInput, "schemaVersion" | "editDisposition" | "fence"> & {
+      policy?: RewritePolicy;
+      upstreamEpoch?: PullInput["upstreamEpoch"];
+    },
   ): Promise<{ write: PreparedBranchWrite; update: Uint8Array }> {
     const candidate = createCollabYDoc({ gc: false });
     const update = await replicatedInto(upstream, candidate);
@@ -601,9 +655,14 @@ export function createBranchCoordinator(input: {
       editDisposition: reset.editDisposition ?? "discarded",
       schemaVersion: reset.schemaVersion ?? snapshot.schemaVersion,
     };
-    const policy = { kind: "exact" as const, revision: snapshot.revision };
+    const policy = reset.policy ?? { kind: "exact" as const, revision: snapshot.revision };
     const fence = reset.fence ?? { kind: "none" };
-    const write = prepareRewrite(snapshot.branchId, candidate, { policy, fence, operation });
+    const write = prepareRewrite(snapshot.branchId, candidate, {
+      policy,
+      fence,
+      operation,
+      ...(reset.upstreamEpoch ? { upstream: reset.upstreamEpoch } : {}),
+    });
     return { write, update };
   }
 
@@ -648,33 +707,33 @@ export function createBranchCoordinator(input: {
 
   /**
    * One pull attempt: everything, the effect included, computed on a candidate of the
-   * committed replica before the attempt's scope; inside it only the revision is compared and
-   * the checkpoint written.
+   * committed replica before the attempt's scope; inside it the fold applies what landed since
+   * and the checkpoint is written.
    */
-  async function pullAttempt(
-    attempt: Attempt,
-    branchId: string,
-    upstream: Y.Doc,
-  ): Promise<Uint8Array> {
-    const base = await loadBase(branchId);
+  async function pullAttempt(attempt: Attempt, pull: PullInput): Promise<PullOutcome> {
+    const base = await loadBase(pull.branchId);
     const { snapshot } = base;
+    if (snapshot.status !== "active") return "closed";
     // A durable thread peer has already saved its writes into the Work draft. If the parent
     // no longer contains them, a review retired their effect: merging cannot remove those
     // structs or undo their tombstones, so the peer re-forks from the parent.
     if (
       snapshot.kind === "thread_peer" &&
-      !Y.snapshotContainsUpdate(Y.snapshot(upstream), encodedOf(base.replica))
+      !Y.snapshotContainsUpdate(Y.snapshot(pull.upstream), encodedOf(base.replica))
     ) {
-      const { write, update } = await prepareReset(snapshot, upstream, {});
+      const { write } = await prepareReset(snapshot, pull.upstream, {
+        policy: foldPolicy(base),
+        ...(pull.upstreamEpoch ? { upstreamEpoch: pull.upstreamEpoch } : {}),
+      });
       attempt.own(write);
       await attempt.commit(() => write.persist());
-      return update;
+      return "pulled";
     }
     const candidate = cloneReplica(base.replica);
-    const update = await replicatedInto(upstream, candidate);
-    const write = attempt.own(prepareCheckpoint(base, candidate, { upstream, update }));
+    const update = await replicatedInto(pull.upstream, candidate);
+    const write = attempt.own(preparePull(base, candidate, { ...pull, update }));
     await attempt.commit(() => write.persist());
-    return update;
+    return "pulled";
   }
 
   /** `source` replicated into `target`, which is destroyed when replication fails. */
@@ -687,23 +746,20 @@ export function createBranchCoordinator(input: {
     }
   }
 
-  async function readUnder<T>(
-    lease: BranchLockLease,
+  /** `fn` over the committed replica, which it must only read. */
+  async function readCommitted<T>(
     branchId: string,
     fn: (doc: Y.Doc, snapshot: BranchSnapshot) => Promise<T>,
   ): Promise<T> {
-    assertBranchLeaseCovers(lease, branchId);
     const base = await loadBase(branchId);
     return fn(base.replica.doc, base.snapshot);
   }
 
   /** A private copy for `fn`: whatever it changes stays with the copy (decision F6). */
-  async function transientUnder<T>(
-    lease: BranchLockLease,
+  async function transient<T>(
     branchId: string,
     fn: (doc: Y.Doc, snapshot: BranchSnapshot) => Promise<T>,
   ): Promise<T> {
-    assertBranchLeaseCovers(lease, branchId);
     const base = await loadBase(branchId);
     assertWritableBranch(base.snapshot);
     const doc = cloneReplica(base.replica);
@@ -802,30 +858,17 @@ export function createBranchCoordinator(input: {
     return true;
   }
 
-  /** Every branch operation a reply's save performs, bound to the lease the pool holds (contract §2.3). */
-  function ownedSession(lease: BranchLockLease): OwnedBranchSession {
-    const under = async <T>(branchId: string, run: () => Promise<T>): Promise<T> => {
-      assertBranchLeaseCovers(lease, branchId);
-      return run();
-    };
-    return {
-      read: (branchId, fn) => readUnder(lease, branchId, fn),
-      withTransient: (branchId, fn) => transientUnder(lease, branchId, fn),
-      prepareStagedRows: (branchId, run, commit) =>
-        under(branchId, () => prepareStagedRows(branchId, run, commit)),
-      prepareCatchUp: (branchId, source) => under(branchId, () => prepareCatchUp(branchId, source)),
-      commitSegmentRows: (batch) =>
-        under(batch.branchId, () =>
-          commitAttempts((attempt) => segmentRowsAttempt(attempt, batch)),
-        ),
-      listHelperHistory: (query) =>
-        under(query.branchId, async () => requireJournalReads().listJournalRowsForBranch(query)),
-      listConcurrentRows: (branchId, generation, options) =>
-        under(branchId, async () =>
-          requireJournalReads().listConcurrentJournalRows(branchId, generation, options),
-        ),
-    };
-  }
+  /** Every branch operation a reply's save performs (contract §2.3). */
+  const ownedSession: OwnedBranchSession = {
+    read: readCommitted,
+    withTransient: transient,
+    prepareStagedRows,
+    prepareCatchUp,
+    commitSegmentRows: (batch) => commitAttempts((attempt) => segmentRowsAttempt(attempt, batch)),
+    listHelperHistory: async (query) => requireJournalReads().listJournalRowsForBranch(query),
+    listConcurrentRows: async (branchId, generation, options) =>
+      requireJournalReads().listConcurrentJournalRows(branchId, generation, options),
+  };
 
   function requireJournalReads(): BranchSaveJournalReads {
     if (!input.journalReads) throw new Error("This coordinator reads no branch journal");
@@ -840,17 +883,15 @@ export function createBranchCoordinator(input: {
 
   return {
     notifyReset,
-    readBranch(branchId, fn) {
-      return criticalSections.withBranches([branchId], (lease) => readUnder(lease, branchId, fn));
-    },
+    readBranch: readCommitted,
 
-    withLeases: (branchIds, run) => criticalSections.withBranches(branchIds, run),
+    ownedSession: () => ownedSession,
 
-    ownedSession,
-
-    pullFromDoc(lease, branchId, upstream) {
-      assertBranchLeaseCovers(lease, branchId);
-      return commitAttempts((attempt) => pullAttempt(attempt, branchId, upstream));
+    pullFromDoc(pull) {
+      return commitAttempts((attempt) => pullAttempt(attempt, pull)).catch((cause: unknown) => {
+        if (cause instanceof BranchRewriteRefused) return cause.status;
+        throw cause;
+      });
     },
 
     resetFromDocIfUnchangedWithLease,

@@ -182,17 +182,26 @@ A reply save is an attempt across every participating core: prepare replays
 each staged document on a candidate, consume appends per upstream inside one
 savepoint, install publishes. A miss unwinds the savepoint and prepares again
 from the original staged buffer, up to four attempts; the reply's `confirm`
-runs once, and an attempt prepared before it is disposed if it throws. Apply,
+runs once, and an attempt prepared before it is disposed if it throws. The
+save and a thread core's tool-time accesses take no branch lease: they go
+through the coordinator's one `ownedSession()`, which reads committed replicas
+and writes only through revision-fenced attempts. Apply,
 selective Discard and pulls retry a moved branch up to four times, then refuse
 `stale`.
 
 Each pull attempt is its own root transaction, outside a caller's response
-and database transactions: its candidate and `has_effect` are computed before
-the scope, and inside it only the revision is compared and the checkpoint
-written. A pull takes its branch leases before any transaction and keeps them
-through persistence. Live pulls snapshot before any transaction and re-read
-branch membership; thread-peer pulls lease the peer
-and upstream together. A shared pull promise resolves only after commit. A
+and database transactions, and takes no lease: its candidate and `has_effect`
+are computed before the scope, and it commits as a fold over the replica's
+cursor, applying any rows appended since into the checkpoint under the row
+lock (re-judging `has_effect` there only when it applied some). Frames never
+make a pull retry; only another rewrite does. A live pull into a Work draft is
+fenced by a pending settlement on its document and re-arms its debounce rather
+than moving the revision that settlement's completion resets at. Live pulls
+snapshot before any transaction and re-read branch membership. A thread-peer
+pull reads its upstream with its generation and commits holding that row
+`FOR SHARE`: an upstream re-forked since the read (`upstreamMoved`), or a
+closed peer, abandons the capture as `ThreadPeerPullLost`. A shared pull
+promise resolves only after commit. A
 caller joining an in-flight live pull awaits one coalesced run that starts
 after its call, since the in-flight snapshot may predate a writer edit it must
 see. Pulls run after persisted live updates, on branch review room open and
