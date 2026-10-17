@@ -346,7 +346,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         [{ updateData: proseBranchUpdate(), source: "agent", updateMeta: { kind: "edit" } }],
       );
       const setEffect = (hasEffect: boolean) =>
-        projection.mutatePendingBranches([BRANCH_ID], async () => {
+        projection.mutatePending({ branches: [BRANCH_ID] }, async () => {
           await db
             .update(documentBranches)
             .set({ hasEffect })

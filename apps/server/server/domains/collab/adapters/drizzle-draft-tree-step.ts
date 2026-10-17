@@ -76,7 +76,7 @@ export function createDrizzleDraftTreeStep(
     coordinator: Pick<BranchCoordinator, "resetFromDocIfUnchangedWithLease">;
     /** The live document as the completion transaction sees it, admissions included. */
     liveDoc(documentId: DocumentId): Promise<Y.Doc>;
-    workProjection: Pick<WorkProjectionMutation, "mutatePendingDraft">;
+    workProjection: Pick<WorkProjectionMutation, "mutatePending">;
     /** Catalog reconciliation in the completion transaction, so its replay sees the tree (F23). */
     catalog: ContextCatalogMutationPort;
     arrivals?: DocumentArrivals;
@@ -420,7 +420,7 @@ export function createDrizzleDraftTreeStep(
               installed.catalog.roots,
             );
           }
-          await deps.workProjection.mutatePendingDraft([payload.draftId], async () => {
+          await deps.workProjection.mutatePending({ drafts: [payload.draftId] }, async () => {
             await dropDocumentRows(db, {
               draftId: payload.draftId,
               documentIds: apply

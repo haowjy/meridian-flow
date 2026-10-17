@@ -10,8 +10,7 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import { assertDraftWriteJoinAllowed } from "../../../shared/draft-write-join.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { isUuid } from "../../../shared/uuid.js";
-import { lockWorksInIdOrder } from "../../../shared/work-lifecycle-lock.js";
-import { WorkLifecycleUnavailableError } from "../../projects/domain/work-lifecycle.js";
+import type { WorkProjectionMutation } from "../../projects/index.js";
 import type { Draft, DraftStore, DraftWriteBoundary } from "../domain/ports/draft-store.js";
 
 const draftColumns = {
@@ -89,18 +88,16 @@ export function createDrizzleDraftStore(db: Database): DraftStore {
   };
 }
 
-export function createDrizzleDraftWriteBoundary(db: Database): DraftWriteBoundary {
+export function createDrizzleDraftWriteBoundary(
+  db: Database,
+  /** Work-first order's one owner (decision D17). */
+  works: Pick<WorkProjectionMutation, "lockWorks">,
+): DraftWriteBoundary {
   return {
     withActiveWorkLocked: (workId, operation) => {
       assertDraftWriteJoinAllowed();
       return runInDrizzleTransaction(db, async () => {
-        const work = (await lockWorksInIdOrder(db, [workId])).get(workId) ?? {
-          state: "missing" as const,
-          slug: null,
-        };
-        if (work.state !== "active") {
-          throw new WorkLifecycleUnavailableError(workId, work.state, work.slug);
-        }
+        await works.lockWorks({ works: [workId] }, { requireActive: true });
         return operation();
       });
     },

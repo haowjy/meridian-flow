@@ -78,7 +78,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     // Threads here carry no Agent binding; each acts as an `edit` agent in its Work.
     const chains = new Map<string, AgentChain>();
     const fileAccess = createFileAccess({
-      facts: createDrizzleFileFacts(db),
+      facts: createDrizzleFileFacts(db, createTestWorkProjectionMutation(db)),
       grants: createOwnerFileGrants(),
       readAgentChain: async (threadId) => {
         const chain = chains.get(threadId);

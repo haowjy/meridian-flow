@@ -3,6 +3,7 @@
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { createTestWorkProjectionMutation } from "../../../../test-support/work-projection.js";
 import {
   commitJournaledUpdate,
   commitSegmentRows,
@@ -152,6 +153,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     let livePersistence = createDrizzleCollabPersistence(db);
     function createBranchStore() {
       return createDrizzleBranchStore(db, {
+        workProjection: createTestWorkProjectionMutation(db),
         live: {
           journal: livePersistence.journal,
           lifecycle: livePersistence.lifecycle,
@@ -198,6 +200,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         stageSettlementBatchWithinTx,
         changeTrails,
+        undefined,
+        createTestWorkProjectionMutation(db),
       );
       return {
         journalReadStore,
@@ -206,9 +210,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         settlementStore: createDrizzlePendingSettlementStore(
           db,
           serializer,
-          createDrizzleDocumentProjectionEffects(db),
+          createDrizzleDocumentProjectionEffects(db, createTestWorkProjectionMutation(db)),
           changeTrails,
           createDrizzleDocumentDerivationStore(db, createDocumentLastAddress(db)),
+          undefined,
+          undefined,
+          { steps: [] },
+          createTestWorkProjectionMutation(db),
         ),
       };
     };
@@ -467,6 +475,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         stageSettlementBatchWithinTx,
         createDrizzleChangeTrailAggregateWriter(db),
+        undefined,
+        createTestWorkProjectionMutation(db),
       );
       const journalReadStore = createDrizzleBranchJournalReadStore(db);
       const branch = await store.ensureDraftBranch({
@@ -570,6 +580,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         stageSettlementBatchWithinTx,
         createDrizzleChangeTrailAggregateWriter(db),
+        undefined,
+        createTestWorkProjectionMutation(db),
       );
       const journalReadStore = createDrizzleBranchJournalReadStore(db);
       const branch = await store.ensureDraftBranch({
@@ -798,6 +810,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         stageSettlementBatchWithinTx,
         createDrizzleChangeTrailAggregateWriter(db),
+        undefined,
+        createTestWorkProjectionMutation(db),
       );
       const rows = createDrizzleBranchJournalReadStore(db);
       const branch = await store.ensureDraftBranch({
@@ -864,9 +878,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       if (!push) throw new Error("missing push lineage");
       await moves("withdrawSettlementMembersWithinTx (pushed → active)", () =>
         runInDrizzleTransaction(db, () =>
-          withdrawSettlementMembersWithinTx(db, [
-            { id: push.id, journalIds: push.journalIds, branchId: push.branchId },
-          ]),
+          withdrawSettlementMembersWithinTx(
+            db,
+            [{ id: push.id, journalIds: push.journalIds, branchId: push.branchId }],
+            undefined,
+            createTestWorkProjectionMutation(db),
+          ),
         ),
       );
       await moves("commitPreparedDiscard (→ discarded)", async () => {

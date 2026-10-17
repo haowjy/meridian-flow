@@ -95,7 +95,7 @@ async function fixture(
   const links = f.links;
   const drafts = createDrafts({
     store: createDrizzleDraftStore(db),
-    boundary: createDrizzleDraftWriteBoundary(db),
+    boundary: createDrizzleDraftWriteBoundary(db, createTestWorkProjectionMutation(db)),
   });
   const effective = scopeBranchPeer(
     createEffectiveDocumentReader({

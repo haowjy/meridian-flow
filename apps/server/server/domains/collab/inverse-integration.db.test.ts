@@ -6,6 +6,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import type * as Y from "yjs";
 import { testFileGrant } from "../../test-support/file-grants.js";
+import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import {
   createDrizzleDraftStore,
   createDrizzleDraftWriteBoundary,
@@ -253,7 +254,7 @@ describe("inverse integration (postgres)", () => {
     await seedSecondWork(fixture);
     await createDrafts({
       store: createDrizzleDraftStore(db),
-      boundary: createDrizzleDraftWriteBoundary(db),
+      boundary: createDrizzleDraftWriteBoundary(db, createTestWorkProjectionMutation(db)),
     }).ensureActiveForWrite({
       workId: WORK_B_ID,
       projectId: PROJECT_ID as never,

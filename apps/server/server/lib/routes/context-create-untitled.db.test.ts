@@ -99,6 +99,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       let failNextCatalogWrite = true;
       const catalog = createDrizzleContextCatalog(db);
       const contextPorts = createProductionUnifiedContextPortFactory({
+        pendingDraft: createTestWorkProjectionMutation(db),
         links: createTestDocumentLinkScopes(db),
         db,
         documentSync: collab,
@@ -147,6 +148,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const { projectId, workId } = await provisionProject();
       const collab = createBoundCollab();
       const contextPorts = createProductionUnifiedContextPortFactory({
+        pendingDraft: createTestWorkProjectionMutation(db),
         links: createTestDocumentLinkScopes(db),
         db,
         documentSync: collab,

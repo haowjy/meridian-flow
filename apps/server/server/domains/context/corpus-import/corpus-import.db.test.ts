@@ -4,6 +4,7 @@ import { documents, projects, users } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
+import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createInMemoryCollabDomain } from "../../collab/index.js";
 import { createTestDocumentLinkScopes } from "../../collab/test-support/document-link-scopes.js";
 import { createDrizzleContextCatalog } from "../adapters/context-catalog.js";
@@ -29,6 +30,7 @@ else
       const collab = createInMemoryCollabDomain();
       const catalog = createDrizzleContextCatalog(db);
       const contextPorts = createProductionUnifiedContextPortFactory({
+        pendingDraft: createTestWorkProjectionMutation(db),
         db,
         links: createTestDocumentLinkScopes(db),
         documentSync: collab,
@@ -117,6 +119,7 @@ else
         const collab = createInMemoryCollabDomain();
         const catalog = createDrizzleContextCatalog(db);
         const contextPorts = createProductionUnifiedContextPortFactory({
+          pendingDraft: createTestWorkProjectionMutation(db),
           db,
           links: createTestDocumentLinkScopes(db),
           documentSync: collab,

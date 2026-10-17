@@ -20,7 +20,6 @@ import type { Database } from "@meridian/database";
 import { branchWriteJournal, documentBranches } from "@meridian/database/schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
-import { requireLockedActiveWorks } from "../../../shared/work-lifecycle-lock.js";
 import type { ContextCatalogMutationPort } from "../../context/ports/context-catalog.js";
 import {
   acquireEndUseScope,
@@ -186,7 +185,7 @@ export function createDrizzleDraftDiscard(
     drafts: Pick<Drafts, "lockActive" | "close">;
     branches: Pick<ApplicationBranchStore, "readBranchAt" | "closeThreadPeersOf">;
     coordinator: Pick<BranchCoordinator, "resetFromDocIfUnchangedWithLease">;
-    workProjection: Pick<WorkProjectionMutation, "mutatePendingDraft">;
+    workProjection: Pick<WorkProjectionMutation, "mutatePending">;
   },
 ): DrizzleDraftDiscard {
   async function activeBranches(
@@ -326,30 +325,37 @@ export function createDrizzleDraftDiscard(
         ) {
           throw new DraftCommandExistsError(command.envelope.commandId);
         }
-        await requireLockedActiveWorks(db, [workId as WorkId]);
-        if (!(await deps.drafts.lockActive(input.draftId))) return null;
-        const items = input.selection.kind === "items" ? input.selection.items : null;
-        const itemIds = items?.map((item) => item.documentId);
-        const current = await activeBranches(input.draftId, itemIds);
-        if (current.some((ref) => !leased.has(ref.branchId))) {
-          throw new DraftDiscardScopeChangedError(input.draftId);
-        }
-        await acquireScope(db, input.draftId, {
-          drafts: [
-            {
-              draftId: input.draftId,
-              ...(items
-                ? {
-                    documentIds: items
-                      .filter((item) => item.origin === "created")
-                      .map((item) => item.documentId),
-                  }
-                : {}),
-            },
-          ],
-          documentIds: itemIds ?? [],
-        });
-        return deps.workProjection.mutatePendingDraft([input.draftId], () => kernel(input));
+        // The Work and the draft enter the Work boundary before the draft row and the scope
+        // locks (decision D17).
+        return deps.workProjection.mutatePending(
+          { works: [workId as WorkId], drafts: [input.draftId] },
+          async () => {
+            if (!(await deps.drafts.lockActive(input.draftId))) return null;
+            const items = input.selection.kind === "items" ? input.selection.items : null;
+            const itemIds = items?.map((item) => item.documentId);
+            const current = await activeBranches(input.draftId, itemIds);
+            if (current.some((ref) => !leased.has(ref.branchId))) {
+              throw new DraftDiscardScopeChangedError(input.draftId);
+            }
+            await acquireScope(db, input.draftId, {
+              drafts: [
+                {
+                  draftId: input.draftId,
+                  ...(items
+                    ? {
+                        documentIds: items
+                          .filter((item) => item.origin === "created")
+                          .map((item) => item.documentId),
+                      }
+                    : {}),
+                },
+              ],
+              documentIds: itemIds ?? [],
+            });
+            return kernel(input);
+          },
+          { seam: true, requireActive: true },
+        );
       });
     },
   };
