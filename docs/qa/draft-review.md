@@ -77,6 +77,25 @@ Capture request/click/input/response times, pre/post selection and block text,
 a screenshot and independent draft/live readbacks. An insertion sent while a
 paint cover still holds the page is not evidence about the successor's caret.
 
+## Archive while typing into a draft
+
+Archive takes no lock on the draft (phase 4, [the archive window][archive-window]): a
+key whose server check finished before Archive committed may land in the archived
+draft; every later key is refused. Open an owned named Work's draft at 50k words in one
+tab, start native typing at 200 ms a key, and archive the Work from a second tab's
+Works catalog mid-burst. Keep typing for two seconds after the click, then unarchive and
+type five more keys. PASS: the first tab's editor turns read-only in place without a
+reload or a jump in scroll position; each key typed before that is either saved or shown
+as not saved, never silently dropped; the keys after unarchive are acknowledged; and the
+draft read with `./mf` after a reload equals what the editor showed while archived plus
+the post-unarchive keys. A `1008 branch-update-admission-failed` close is expected only
+for a key sent between Archive's commit and the read-only notice, and no `4207` appears.
+Record the archive click time, each close and the notice's arrival. The seam
+behind it is the `archive-in-flight-append` probe in
+[drafts-lock-free-probes.md](drafts-lock-free-probes.md).
+
+[archive-window]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/work-lifecycle-fences-branches.md
+
 ## Per-change Discard of a long writer change
 
 Type more than 500 keystrokes into one paragraph of an owned draft (each frame is one
