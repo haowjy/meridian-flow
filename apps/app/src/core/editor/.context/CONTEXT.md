@@ -161,8 +161,10 @@ identity in anchors or holds.
 - Writer-visible save state: an outage (`offline` or a stalled cache adoption)
   reads "Saved locally (offline)" until the server acknowledges every local
   change, then briefly "Back online"; "Closed" and "Access lost" always win and
-  healthy sessions show nothing. Unacknowledged branch edits are lost if the tab
-  closes or the writer signs out before acknowledgement.
+  healthy sessions show nothing. A branch (draft) room has no cache, so its
+  outage copy is "Not saved yet (keep this tab open until you're back online)":
+  unacknowledged branch edits are lost if the tab closes or the writer signs out
+  before acknowledgement. Never show a branch room the "Saved locally" copy.
 - Draft review colors a hunk by author (agent jade, writer gold, nested
   authorship per span). A merge artifact or unclassified hunk is neutral, never
   an invented AI color.
