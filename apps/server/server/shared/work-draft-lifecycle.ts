@@ -7,7 +7,7 @@ import type { DraftId } from "@meridian/contracts";
 import type { WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { documentBranches, drafts } from "@meridian/database/schema";
-import { eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
 import {
   currentDrizzleDb,
@@ -94,4 +94,40 @@ export async function lockDraftBranchWorks(
       .filter((row) => !row.workId || locked.get(row.workId)?.state !== "active")
       .map((row) => row.id),
   );
+}
+
+/**
+ * Brings the Work's draft branches' `frozen` to the lifecycle the caller just wrote (archived,
+ * deleted or restored), bumping each changed branch's `revision` so a write judged before the
+ * transition cannot commit after it. The caller holds the Work row `FOR UPDATE`, which a branch
+ * creation's `FOR KEY SHARE` waits on, so no branch of this Work is created half-way across it.
+ */
+export async function syncWorkDraftFreeze(
+  db: DrizzleDb,
+  workId: WorkId,
+  frozen: boolean,
+): Promise<void> {
+  const tx = currentDrizzleDb(db);
+  const changed = await tx
+    .select({ id: documentBranches.id })
+    .from(documentBranches)
+    .innerJoin(drafts, eq(drafts.id, documentBranches.draftId))
+    .where(
+      and(
+        eq(drafts.originWorkId, workId),
+        sql`${documentBranches.frozen} IS DISTINCT FROM ${frozen}`,
+      ),
+    )
+    .orderBy(asc(documentBranches.id))
+    .for("update", { of: documentBranches });
+  if (!changed.length) return;
+  await tx
+    .update(documentBranches)
+    .set({ frozen, revision: sql`${documentBranches.revision} + 1` })
+    .where(
+      inArray(
+        documentBranches.id,
+        changed.map((row) => row.id),
+      ),
+    );
 }
