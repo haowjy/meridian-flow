@@ -13,6 +13,7 @@ import type {
   DraftPreviewResponse,
   ThreadDraftListItem,
 } from "@meridian/contracts/drafts";
+import { MAX_DISCARD_MEMBER_PART_KEYS } from "@meridian/contracts/drafts";
 import { onlineManager, type QueryClient } from "@tanstack/react-query";
 import {
   applyAllDrafts,
@@ -238,8 +239,23 @@ function requestBody(
         closureClassIds: [...command.selection.classIds],
         admissionTokens: [...command.selection.admissionTokens],
         // Retained clicked operationKey values are part keys, except row-only fallbacks.
-        memberPartKeys: selectionKeys(command.selection).filter((key) => !key.startsWith("row:")),
+        memberPartKeys: evenSample(
+          selectionKeys(command.selection).filter((key) => !key.startsWith("row:")),
+          MAX_DISCARD_MEMBER_PART_KEYS,
+        ),
       };
+}
+
+/**
+ * At most `limit` of `keys`, evenly spaced and in order, so a resend repeats the same bytes.
+ * Members only tell a vanished class that grew from one that is gone, which a sample answers.
+ */
+function evenSample(keys: readonly string[], limit: number): string[] {
+  if (keys.length <= limit) return [...keys];
+  return Array.from(
+    { length: limit },
+    (_, index) => keys[Math.floor((index * keys.length) / limit)] as string,
+  );
 }
 
 /** The server code a refused item command carries to the render layer. */

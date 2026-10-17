@@ -237,7 +237,7 @@
     "apps/server/server/domains/collab/document-revisions.db.test.ts": 11,
     "apps/server/server/domains/collab/domain/branch-agent-edit-attribution.test.ts": 6,
     "apps/server/server/domains/collab/domain/branch-agent-edit-journal.test.ts": 1,
-    "apps/server/server/domains/collab/domain/branch-attempts.test.ts": 2,
+    "apps/server/server/domains/collab/domain/branch-attempts.test.ts": 3,
     "apps/server/server/domains/collab/domain/branch-coordinator.test.ts": 11,
     "apps/server/server/domains/collab/domain/branch-critical-sections.test.ts": 3,
     "apps/server/server/domains/collab/domain/branch-end-use.conformance.test.ts": 1,

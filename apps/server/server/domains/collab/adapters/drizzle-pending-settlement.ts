@@ -16,7 +16,6 @@ import {
   branchPushSettlementHolds,
   branchPushSettlementOutbox,
   branchPushSettlementPayloads,
-  pushLineage,
 } from "@meridian/database/schema";
 import { and, asc, eq, isNull, or, sql } from "drizzle-orm";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
@@ -74,7 +73,6 @@ import {
   decideCheck,
   type PlannedStep,
   planAndLock,
-  requiredBranchLeases,
   type SettlementPublication,
 } from "./drizzle-settlement-publication.js";
 
@@ -83,12 +81,6 @@ class CompletionRetry extends Error {}
 class CompletionRefusal extends Error {
   constructor(readonly reason: PublicationRefusal) {
     super(`Publication refused: ${reason.code}`);
-  }
-}
-
-class CompletionRediscover extends Error {
-  constructor(readonly branchIds: readonly string[]) {
-    super("Publication needs branch leases its caller doesn't hold");
   }
 }
 
@@ -405,7 +397,6 @@ export function createDrizzlePendingSettlementStore(
               batchId: input.batchId,
               members: descriptors,
               held: checkHolds,
-              ...(input.lease ? { lease: input.lease } : {}),
               payloads: input.payloads,
               liveTextFingerprints: input.liveTextFingerprints,
             },
@@ -423,12 +414,6 @@ export function createDrizzlePendingSettlementStore(
             .for("update")
             .limit(1);
           if (!owned) throw new CompletionRetry();
-          // The outer leases, asked again under the locks: a set that grew means discovery again.
-          const leased = new Set(input.leasedBranchIds);
-          const unleased = (await requiredBranchLeases(publication, input.payloads)).filter(
-            (branchId) => !leased.has(branchId),
-          );
-          if (unleased.length > 0) throw new CompletionRediscover(unleased);
           // Read once, inside the transaction, under every document lock: no admission
           // can join a member between this read and commit.
           const locked = await readSettlementMembers(txDb, input.batchId);
@@ -561,9 +546,6 @@ export function createDrizzlePendingSettlementStore(
         });
       } catch (cause) {
         if (cause instanceof CompletionRetry) return { status: "retry" as const };
-        if (cause instanceof CompletionRediscover) {
-          return { status: "rediscover" as const, branchIds: cause.branchIds };
-        }
         throw cause;
       }
       if (outcome.kind === "refused") return { status: "refused" as const, reason: outcome.reason };
@@ -612,31 +594,6 @@ export function createDrizzlePendingSettlementStore(
         );
         return decideCheck(plans, input.payloads);
       });
-    },
-
-    prepareBranchLeases(payloads) {
-      return requiredBranchLeases(publication, payloads);
-    },
-
-    async loadRecoveryScope(batchId) {
-      const payloads = await db
-        .select({
-          stepKind: branchPushSettlementPayloads.stepKind,
-          payload: branchPushSettlementPayloads.payload,
-        })
-        .from(branchPushSettlementPayloads)
-        .where(eq(branchPushSettlementPayloads.batchId, batchId));
-      const members = await db
-        .select({ branchId: pushLineage.branchId })
-        .from(branchPushSettlementOutbox)
-        .innerJoin(pushLineage, eq(pushLineage.id, branchPushSettlementOutbox.pushId))
-        .where(eq(branchPushSettlementOutbox.batchId, batchId));
-      return {
-        payloads: new Map(
-          payloads.map(({ stepKind, payload }) => [stepKind, payload as JsonValue] as const),
-        ),
-        memberBranchIds: members.flatMap(({ branchId }) => (branchId ? [branchId] : [])),
-      };
     },
 
     async listRecoverableBatchIds() {

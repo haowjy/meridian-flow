@@ -2,10 +2,9 @@
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { BranchCoordinator, SegmentRowsInput } from "../domain/branch-coordinator.js";
-import { createBranchCriticalSections } from "../domain/branch-critical-sections.js";
 import type { AppendBranchJournalInput, BranchStore } from "../domain/branch-store.js";
 
-type SessionDoors = Pick<BranchCoordinator, "ownedSession" | "resetFromDocIfUnchangedWithLease">;
+type SessionDoors = Pick<BranchCoordinator, "ownedSession" | "resetFromDoc">;
 
 /** Commits segment rows to one branch through its owned session, the way a save does. */
 export function commitSegmentRows(
@@ -39,24 +38,20 @@ export async function commitJournaledUpdate(
   }
 }
 
-/**
- * Resets an active Work draft to `upstream`, reading its expected state straight from the store.
- * The reset still names a lease; a private one covers it, excluding nothing.
- */
-export function resetBranchFromDoc(
+/** Resets an active Work draft to `upstream`, reading its expected state straight from the store. */
+export async function resetBranchFromDoc(
   coordinator: SessionDoors,
   store: Pick<BranchStore, "getBranch">,
   branchId: string,
   upstream: Y.Doc,
 ): Promise<boolean> {
-  return createBranchCriticalSections().withBranches([branchId], async (lease) => {
-    const expected = await store.getBranch(branchId);
-    if (!expected) throw new Error(`Branch ${branchId} does not exist`);
-    return coordinator.resetFromDocIfUnchangedWithLease(lease, {
-      branchId,
-      upstream,
-      expectedGeneration: expected.generation,
-      expectedRevision: expected.revision,
-    });
+  const expected = await store.getBranch(branchId);
+  if (!expected) throw new Error(`Branch ${branchId} does not exist`);
+  return coordinator.resetFromDoc({
+    branchId,
+    upstream,
+    policy: "exact",
+    expectedGeneration: expected.generation,
+    expectedRevision: expected.revision,
   });
 }

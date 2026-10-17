@@ -11,9 +11,7 @@ import {
   runBoundedAttempts,
 } from "./branch-attempts.js";
 import {
-  assertBranchLeaseCovers,
   type BranchCriticalSections,
-  type BranchLockLease,
   createBranchCriticalSections,
 } from "./branch-critical-sections.js";
 import type { BranchJournalReadStore, BranchJournalRow } from "./branch-push-contracts.js";
@@ -205,7 +203,14 @@ class BranchRewriteRefused extends Error {
   }
 }
 
-/** A work draft re-forked from `upstream`, only at the generation and revision it was read. */
+/**
+ * A work draft re-forked from `upstream` at the generation it was read: `exact` only at the
+ * revision read; `fold` over every append since, which the reset discards with its clocks fenced.
+ */
+export type ResetFromDocInput = Omit<ResetInput, "expectedRevision"> &
+  ({ policy: "exact"; expectedRevision: number } | { policy: "fold" });
+
+/** The fields every work-draft reset names. */
 type ResetInput = {
   branchId: string;
   upstream: Y.Doc;
@@ -223,7 +228,15 @@ export type BranchCoordinator = {
    * into its checkpoint, never a miss; only another rewrite makes it recompute.
    */
   pullFromDoc(input: PullInput): Promise<PullOutcome>;
-  resetFromDocIfUnchangedWithLease(lease: BranchLockLease, input: ResetInput): Promise<boolean>;
+  /**
+   * Re-forks a work draft from `upstream` inside the caller's transaction, with no lease:
+   * false when the branch is no longer at the generation (or, `exact`, the revision) read.
+   * With `owner`, the caller's attempt owns the reset candidate and the write runs in its
+   * already-open commit scope, so a later miss in that attempt disposes it; without one, the
+   * reset is a single attempt in the caller's transaction. A moved branch throws
+   * `BranchCasConflictError` for the caller's attempt to classify.
+   */
+  resetFromDoc(input: ResetFromDocInput, owner?: Attempt): Promise<boolean>;
   readBranch<T>(
     branchId: string,
     fn: (doc: Y.Doc, snapshot: BranchSnapshot) => Promise<T>,
@@ -297,22 +310,30 @@ export function createBranchCoordinator(input: {
     );
   }
 
-  async function resetFromDocIfUnchangedWithLease(
-    lease: BranchLockLease,
-    resetInput: ResetInput,
-  ): Promise<boolean> {
-    assertBranchLeaseCovers(lease, resetInput.branchId);
+  async function resetFromDoc(resetInput: ResetFromDocInput, owner?: Attempt): Promise<boolean> {
     const snapshot = await loadSnapshot(resetInput.branchId);
     assertWorkDraftResetTarget(snapshot);
-    if (
-      snapshot.generation !== resetInput.expectedGeneration ||
-      snapshot.revision !== resetInput.expectedRevision
-    ) {
+    if (snapshot.generation !== resetInput.expectedGeneration) return false;
+    if (resetInput.policy === "exact" && snapshot.revision !== resetInput.expectedRevision)
       return false;
+    const policy =
+      resetInput.policy === "exact"
+        ? { kind: "exact" as const, revision: snapshot.revision }
+        : {
+            kind: "fold" as const,
+            checkpointRevision: snapshot.checkpointRevision,
+            seq: snapshot.checkpointSeq,
+          };
+    const { write } = await prepareReset(snapshot, resetInput.upstream, {
+      ...resetInput,
+      policy,
+    });
+    if (!owner) {
+      await commitOnce(write, { scope: NO_ATTEMPT_SCOPE });
+      return true;
     }
-    const { write } = await prepareReset(snapshot, resetInput.upstream, resetInput);
-    // The caller's transaction is the scope; its miss handling is the caller's too.
-    await commitOnce(write, { scope: NO_ATTEMPT_SCOPE });
+    owner.own(write);
+    await write.persist();
     return true;
   }
 
@@ -894,7 +915,7 @@ export function createBranchCoordinator(input: {
       });
     },
 
-    resetFromDocIfUnchangedWithLease,
+    resetFromDoc,
 
     broadcastUpdate(update) {
       // Published replicas are immutable: the next read catches up from the committed tail.

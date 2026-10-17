@@ -22,10 +22,6 @@ import {
   memoryBranch,
   testBranchRow,
 } from "../test-support/memory-branch-store.js";
-import {
-  type BranchCriticalSections,
-  createBranchCriticalSections,
-} from "./branch-critical-sections.js";
 import { createBranchPushService } from "./branch-push.js";
 import type {
   BranchJournalReadStore,
@@ -37,7 +33,7 @@ import type {
   SettlementBatchIdentity,
 } from "./branch-push-contracts.js";
 import type { BranchSnapshot, BranchStore } from "./branch-store.js";
-import type { DocumentLinkScopes, LinkScopeKey } from "./ports/document-link-scope.js";
+import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 
 const CONTENT_ID = "00000000-0000-4000-8000-000000000101" as DocumentId;
 const WORK_ID = "00000000-0000-4000-8000-000000000103" as WorkId;
@@ -247,7 +243,6 @@ class StateBackedPushStores implements BranchJournalReadStore, PushCommitStore {
 
 function serviceFixture(input: {
   links?: DocumentLinkScopes;
-  criticalSections?: BranchCriticalSections;
   branches: readonly SeededBranch[];
   rows: BranchJournalRow[];
   pushes?: readonly PushLineageRow[];
@@ -276,7 +271,6 @@ function serviceFixture(input: {
     stores,
     service: createBranchPushService({
       links: input.links ?? createStaticDocumentLinkScopes(),
-      criticalSections: input.criticalSections,
       changeEventDelivery: { deliver() {} },
       branchStore,
       journalReadStore: stores,
@@ -290,9 +284,7 @@ function serviceFixture(input: {
   };
 }
 
-async function blindConflictFixture(
-  options: { links?: DocumentLinkScopes; criticalSections?: BranchCriticalSections } = {},
-) {
+async function blindConflictFixture(options: { links?: DocumentLinkScopes } = {}) {
   const contentLive = docFromMarkdown("Doomed paragraph.\n\nSurvivor paragraph.");
   const contentBranchDoc = cloneDoc(contentLive);
   const doomed = model.getBlocks(toDocHandle(contentBranchDoc))[0];
@@ -337,29 +329,6 @@ async function blindConflictFixture(
 }
 
 describe("branch push review regressions", () => {
-  it("opens the link scope before branch locks", async () => {
-    const criticalSections = createBranchCriticalSections();
-    let loaded = false;
-    const fixture = await blindConflictFixture({
-      criticalSections,
-      links: {
-        ...createStaticDocumentLinkScopes(),
-        async within<T>(_key: LinkScopeKey, operation: () => Promise<T>) {
-          // Nested settlement reuses the operation's snapshot, just as the adapter does.
-          if (!loaded) {
-            await criticalSections.withBranches(["branch_content"], async () => {
-              loaded = true;
-            });
-          }
-          return operation();
-        },
-      },
-    });
-    const result = await fixture.service.pushToLive({ branchId: fixture.contentBranch.branchId });
-    expect(result.status).toBe("pushed");
-    expect(loaded).toBe(true);
-  });
-
   it("always applies writer-overlapping whole pushes", async () => {
     const whole = await blindConflictFixture();
     await expect(
