@@ -185,6 +185,37 @@ it.each([
       expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Gamma.\n\nGold.\n");
       return;
     }
+    // The receipt chip is a markBlocking host: reading it marks the holding draft blocking in
+    // a revision move, so a frame judged before the chip cannot commit over it (§2.5).
+    const holdingBranch = async () => {
+      const [row] = await db
+        .select({
+          revision: schema.documentBranches.revision,
+          blocking: schema.documentBranches.blocking,
+        })
+        .from(schema.documentBranches)
+        .innerJoin(schema.drafts, eq(schema.drafts.id, schema.documentBranches.draftId))
+        .where(
+          and(
+            eq(schema.drafts.originWorkId, otherWork as never),
+            eq(schema.documentBranches.kind, "work_draft"),
+            eq(schema.documentBranches.status, "active"),
+          ),
+        );
+      if (!row) throw new Error("missing holding draft branch");
+      return row;
+    };
+    if (origin === "applied") {
+      // Nothing has asked about this turn yet, so nothing marked the holding draft.
+      const unmarked = await holdingBranch();
+      await view.collab.getTurnReceiptChip(THREAD_ID, TURN_ID);
+      const marked = await holdingBranch();
+      expect(unmarked.blocking).toBe(false);
+      expect({ blocking: marked.blocking, moved: marked.revision > unmarked.revision }).toEqual({
+        blocking: true,
+        moved: true,
+      });
+    }
     const partial = await view.collab.reverseTurn({
       threadId: THREAD_ID,
       turnId: TURN_ID,

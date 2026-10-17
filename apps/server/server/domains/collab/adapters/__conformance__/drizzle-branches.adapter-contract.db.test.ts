@@ -780,10 +780,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
     // Risk: a frame predicts its review-membership flip from the row it read at revision r;
     // every write that changes a membership input (has_effect, blocking, a row's status in
-    // either direction, row existence, close, freeze) must move r, or the prediction survives
-    // it. Walks the plan's §2.5 inventory through the real writers.
-    it("every membership-input writer moves the branch revision", async () => {
+    // either direction, row existence, close) must move r, or the prediction survives it.
+    // Walks the plan's §2.5 inventory through the real writers this adapter composes: append,
+    // placement, push, withdrawal, Discard, reset, peer close, the prior-peer replacement close
+    // and the whole-draft close (blocking is set through the primitive markBlocking calls, so
+    // placement has a flag to clear). A Work's lifecycle is derived on read and moves nothing.
+    // The receipt chip's markBlocking and rollback_pending are asserted in their inverse
+    // workflows (inverse-placement and inverse-rollback).
+    it("membership-input writers on the store's adapters move the branch revision", async () => {
       const { bumpBranchRevisions } = await import("../drizzle-branch-storage.js");
+      const { discardWholeLocked } = await import("../drizzle-draft-discard.js");
       const { placeDraftRows } = await import("../drizzle-document-edits.js");
       const { withdrawSettlementMembersWithinTx } = await import("../drizzle-settlement-member.js");
       const { runInDrizzleTransaction } = await import("../../../../shared/drizzle-transaction.js");
@@ -825,7 +831,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         return ids;
       })();
       if (rowId === undefined) throw new Error("missing appended row");
-      await moves("markBlocking (blocking = true)", () =>
+      await moves("bumpBranchRevisions (blocking = true)", () =>
         bumpBranchRevisions(db, [branch.branchId], { blocking: true }),
       );
       await moves("placeDraftRows (blocking = false)", () =>
@@ -897,6 +903,64 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         "closeThreadPeersOf (status = closed)",
         () => store.closeThreadPeersOf([branch.branchId], "edit_discarded"),
         peer.branchId,
+      );
+      // The thread's peer in a prior draft closes when it is reseeded under the next Work's draft.
+      const { branch: priorPeer } = await store.ensureThreadPeerBranch({
+        documentId: DOC_ID as never,
+        threadId: THREAD_ID as never,
+        draftId: DRAFT_ID as never,
+        liveDoc: docWithText("live"),
+      });
+      await db.insert(works).values({
+        id: NEXT_WORK_ID,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        name: "Next Work",
+        slug: "next-work",
+      });
+      await db.insert(drafts).values({
+        id: NEXT_DRAFT_ID,
+        projectId: PROJECT_ID,
+        originWorkId: NEXT_WORK_ID,
+        createdBy: USER_ID,
+      });
+      await db.transaction(async (tx) => {
+        await tx
+          .update(threadWorks)
+          .set({ isPrimary: false })
+          .where(eq(threadWorks.threadId, THREAD_ID));
+        await tx.insert(threadWorks).values({
+          threadId: THREAD_ID,
+          workId: NEXT_WORK_ID,
+          projectId: PROJECT_ID,
+          isPrimary: true,
+        });
+      });
+      let nextDraftBranchId = "";
+      await moves(
+        "ensureThreadPeerBranch (prior peer closed)",
+        async () => {
+          const { branch: nextPeer } = await store.ensureThreadPeerBranch({
+            documentId: DOC_ID as never,
+            threadId: THREAD_ID as never,
+            draftId: NEXT_DRAFT_ID as never,
+            liveDoc: docWithText("live"),
+          });
+          nextDraftBranchId = nextPeer.upstreamBranchId ?? "";
+        },
+        priorPeer.branchId,
+      );
+      await moves(
+        "closeDraftBranches (whole-draft Discard)",
+        () =>
+          runInDrizzleTransaction(db, () =>
+            discardWholeLocked(
+              db,
+              { drafts: createDrizzleDraftStore(db), catalog: { refreshSources: async () => "" } },
+              NEXT_DRAFT_ID as never,
+            ),
+          ),
+        nextDraftBranchId,
       );
     });
 
