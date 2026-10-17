@@ -149,15 +149,17 @@ export type PullInput = {
  * `pulled` committed. A live pull into a work draft waits out a pending settlement on its
  * document (`fenced`: nothing was written, and the caller tries again later); a closed
  * branch has nothing to pull into; a peer whose upstream re-forked since its read is
- * `upstreamMoved`, its capture abandoned.
+ * `upstreamMoved`, its capture abandoned. An archived (or deleted) Work's draft is frozen
+ * (decision D19): `inactive`, nothing written, and nothing to retry until it is unarchived,
+ * when the next live update pulls again.
  */
-export type PullOutcome = "pulled" | "fenced" | "closed" | "upstreamMoved";
+export type PullOutcome = "pulled" | "fenced" | "closed" | "upstreamMoved" | "inactive";
 
 /** A rewrite refused for a reason other than a moved revision: never retried. */
 class BranchRewriteRefused extends Error {
   constructor(
     readonly branchId: string,
-    readonly status: Extract<RewriteOutcome["status"], "fenced" | "upstreamMoved">,
+    readonly status: Extract<RewriteOutcome["status"], "fenced" | "upstreamMoved" | "inactive">,
   ) {
     super(`Branch ${branchId} rewrite was refused: ${status}`);
     this.name = "BranchRewriteRefused";
@@ -305,7 +307,13 @@ export function createBranchCoordinator(input: {
             checkpointRevision: snapshot.checkpointRevision,
             seq: snapshot.checkpointSeq,
           };
-    const write = await prepareReset(snapshot, resetInput.upstream, { ...resetInput, policy });
+    // A settlement's reset completes a batch staged before any archive (decision D1's
+    // settlement fence) and Discard/purge are lifecycle operations themselves: D19 exempts both.
+    const write = await prepareReset(snapshot, resetInput.upstream, {
+      ...resetInput,
+      policy,
+      work: "any",
+    });
     if (owner) await owner.own(write).persist();
     else await commitOnce(write, { scope: NO_ATTEMPT_SCOPE });
     return true;
@@ -569,7 +577,11 @@ export function createBranchCoordinator(input: {
       ...(update ? { update } : {}),
       async persist() {
         const outcome = await input.store.commitRewrite({ branchId, doc: candidate, ...rewrite });
-        if (outcome.status === "fenced" || outcome.status === "upstreamMoved")
+        if (
+          outcome.status === "fenced" ||
+          outcome.status === "upstreamMoved" ||
+          outcome.status === "inactive"
+        )
           throw new BranchRewriteRefused(branchId, outcome.status);
         if (outcome.status !== "committed") throw new BranchCasConflictError(branchId);
         if (rewrite.operation.kind === "reset") return { resetTo: outcome.generation };
@@ -585,6 +597,7 @@ export function createBranchCoordinator(input: {
       policy: { kind: "exact", revision: snapshot.revision },
       fence: { kind: "none" },
       operation: { kind: "checkpoint" },
+      work: "active",
     });
   }
 
@@ -619,6 +632,8 @@ export function createBranchCoordinator(input: {
         // A live pull's checkpoint would move the revision a pending Apply's completion resets at.
         fence: snapshot.kind === "work_draft" ? { kind: "pending-settlement" } : { kind: "none" },
         operation,
+        // An archived Work's draft is frozen to content-moving rewrites (decision D19).
+        work: "active",
         ...(pull.upstreamEpoch ? { upstream: pull.upstreamEpoch } : {}),
       },
       pull.update,
@@ -636,6 +651,7 @@ export function createBranchCoordinator(input: {
     upstream: Y.Doc,
     reset: Pick<ResetInput, "schemaVersion" | "editDisposition" | "fence"> & {
       policy: RewritePolicy;
+      work: CommitRewriteInput["work"];
       upstreamEpoch?: PullInput["upstreamEpoch"];
     },
   ): Promise<PreparedBranchWrite> {
@@ -649,6 +665,7 @@ export function createBranchCoordinator(input: {
         editDisposition: reset.editDisposition ?? "discarded",
         schemaVersion: reset.schemaVersion ?? snapshot.schemaVersion,
       },
+      work: reset.work,
       ...(reset.upstreamEpoch ? { upstream: reset.upstreamEpoch } : {}),
     });
   }
@@ -674,6 +691,9 @@ export function createBranchCoordinator(input: {
         policy: foldPolicy(current),
         fence: { kind: "none" },
         operation: { kind: "compact" },
+        // Content-free, and only an append triggers it, which the lifecycle fence refuses
+        // on an archived Work's draft (decision D19).
+        work: "any",
       });
       // A moved or closed branch: the next frame past the bound tries again.
       await commitOnce(write, { moved: () => {} });
@@ -706,6 +726,8 @@ export function createBranchCoordinator(input: {
     ) {
       const write = await prepareReset(snapshot, pull.upstream, {
         policy: foldPolicy(base.replica),
+        // Part of the peer's pull: frozen with it (decision D19).
+        work: "active",
         ...(pull.upstreamEpoch ? { upstreamEpoch: pull.upstreamEpoch } : {}),
       });
       attempt.own(write);

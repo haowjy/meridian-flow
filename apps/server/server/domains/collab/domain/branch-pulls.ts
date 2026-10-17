@@ -276,7 +276,9 @@ export function createBranchPullService(input: {
               generation: read.generation,
               state: read.state,
             });
-            if (outcome !== "pulled") throw new PeerPullRefused(peer.branchId, outcome);
+            // An archived Work's peer is frozen (decision D19): the read sees it as it stands.
+            if (outcome !== "pulled" && outcome !== "inactive")
+              throw new PeerPullRefused(peer.branchId, outcome);
             return read;
           });
           return {
