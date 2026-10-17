@@ -331,6 +331,8 @@ export type ReviewSelectionCommand =
       closureClassIds: readonly string[];
       admissionTokens: readonly string[];
       memberPartKeys: readonly string[];
+      /** False when the client sent a sample: absence then proves nothing. */
+      memberPartKeysComplete: boolean;
       liveRevisionToken: string;
       draftRevisionToken?: string;
     };

@@ -83,7 +83,7 @@ Type more than 500 keystrokes into one paragraph of an owned draft (each frame i
 member part of the same change), wait until `./mf` shows the branch's revision has
 stopped moving, then open the change list at phone width (390px) and Discard the
 writer's row. PASS: the `/draft/discard` POST answers 200 with at most 500
-`memberPartKeys`, the writer's text leaves the draft, the model's change stays, and no
+`memberPartKeys` and `memberPartKeysComplete: false`, the writer's text leaves the draft, the model's change stays, and no
 "Couldn't discard this change" appears. While the typed frames are still arriving the
 row answers "This change was updated"; that is the typed stale refusal, not a failure.
 
@@ -143,7 +143,9 @@ the requested rows. Discard sends the saved `closureClassIds`, `admissionTokens`
 tokens (not operation IDs): an independent paragraph admission must not refuse it,
 while changed evidence for the same class must return `stale`. A grown class
 with surviving immutable members also returns `stale`, including after a re-fork;
-a disappeared class or absent fallback-only class returns `gone`. Refresh
+a disappeared class or absent fallback-only class returns `gone`, but only when the
+request's `memberPartKeysComplete` is true: a sampled list with no listed survivor
+returns `stale`, because a sample cannot prove that no member survives. Refresh
 the preview after a refused command: the selected closed class alone settles. Repeat after another per-change Discard re-forks the
 draft and after a row's status changes through Apply. A concurrent preview may
 show either complete observation, never one generation's hunks with another's

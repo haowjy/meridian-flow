@@ -232,23 +232,22 @@ function requestBody(
     liveRevisionToken: command.basis.liveRevisionToken,
     draftRevisionToken: command.basis.draftRevisionToken,
   };
-  return command.mode === "apply"
-    ? { ...basis, operationIds: [...command.selection.operationIds] }
-    : {
-        ...basis,
-        closureClassIds: [...command.selection.classIds],
-        admissionTokens: [...command.selection.admissionTokens],
-        // Retained clicked operationKey values are part keys, except row-only fallbacks.
-        memberPartKeys: evenSample(
-          selectionKeys(command.selection).filter((key) => !key.startsWith("row:")),
-          MAX_DISCARD_MEMBER_PART_KEYS,
-        ),
-      };
+  if (command.mode === "apply")
+    return { ...basis, operationIds: [...command.selection.operationIds] };
+  // Retained clicked operationKey values are part keys, except row-only fallbacks.
+  const members = selectionKeys(command.selection).filter((key) => !key.startsWith("row:"));
+  return {
+    ...basis,
+    closureClassIds: [...command.selection.classIds],
+    admissionTokens: [...command.selection.admissionTokens],
+    memberPartKeys: evenSample(members, MAX_DISCARD_MEMBER_PART_KEYS),
+    memberPartKeysComplete: members.length <= MAX_DISCARD_MEMBER_PART_KEYS,
+  };
 }
 
 /**
  * At most `limit` of `keys`, evenly spaced and in order, so a resend repeats the same bytes.
- * Members only tell a vanished class that grew from one that is gone, which a sample answers.
+ * A sample can show that a clicked member survives, never that none does.
  */
 function evenSample(keys: readonly string[], limit: number): string[] {
   if (keys.length <= limit) return [...keys];

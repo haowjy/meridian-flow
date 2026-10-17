@@ -108,6 +108,7 @@ export function fencedSelection(
   return {
     operationIds,
     memberPartKeys: clicked.flatMap((op) => (op.partKey ? [op.partKey] : [])),
+    memberPartKeysComplete: true,
     admissionTokens: [...new Set(clicked.map((op) => op.admissionToken))],
     closureClassIds: [...new Set(clicked.map((op) => op.closureClassId))],
     liveRevisionToken: preview.liveRevisionToken,
