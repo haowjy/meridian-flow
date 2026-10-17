@@ -75,7 +75,7 @@ function pausedRead(store: BranchStore) {
  * One server process: the production coordinator, binding, persistence service and gateway
  * over `store`. `dropDelivery` loses the first room update the coordinator publishes.
  */
-function openGateway(
+export function openGateway(
   harness: Harness,
   store: BranchStore,
   options: { dropDelivery?: boolean } = {},
@@ -136,21 +136,35 @@ function openGateway(
     Y.applyUpdate(tab, Y.encodeStateAsUpdate(room));
     const update = appendToFirstParagraph(tab, token);
     tab.destroy();
+    return send(room, branchId, generation, update);
+  }
+
+  /**
+   * `payload` as a socket's Update (`syncType` 2) or SyncStep2 (1) on `room`, through the
+   * gateway's admission: the closes it asked for, and the room applies it when admitted.
+   */
+  async function send(
+    room: Document,
+    branchId: string,
+    generation: number,
+    payload: Uint8Array,
+    syncType = 2,
+  ) {
     const closes: { code: number; reason: string }[] = [];
     const result = await settled(
       admitWriterSync({
         services,
         documentName: room.name,
         document: room,
-        syncType: 2,
-        payload: update,
+        syncType,
+        payload,
         userId: harness.ids.user as never,
         context: { branchSyncState: new Map([[`${branchId}:${generation}`, "passed"]]) },
         closeTransport: (close) => closes.push(close),
       }),
     );
     // Hocuspocus applies an admitted frame to the room.
-    if (result.ok) Y.applyUpdate(room, update, "client");
+    if (result.ok) Y.applyUpdate(room, payload, "client");
     return { ok: result.ok, closes };
   }
 
@@ -216,6 +230,7 @@ function openGateway(
     reconciled,
     load,
     type,
+    send,
     joinReadOnly,
     /** Waits out every enrollment the branch's rooms started. */
     enrolled: (branchId: string) => persistence.drainHocuspocusBranchPersistence(branchId),

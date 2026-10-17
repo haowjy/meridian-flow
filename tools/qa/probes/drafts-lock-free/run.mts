@@ -9,6 +9,7 @@
  * probes, decisions and expected output is `docs/qa/drafts-lock-free-probes.md`.
  */
 
+import { appendNovelty } from "./append-novelty.mts";
 import { d12CreateDuringArchive } from "./d12-create-during-archive.mts";
 import { d12PullBeforeArchive } from "./d12-pull-before-archive.mts";
 import { d13CandidateDisposal } from "./d13-candidate-disposal.mts";
@@ -48,6 +49,8 @@ const PROBES: readonly Probe[] = [
   coldLoadReset,
   droppedDelivery,
   readOnlyHandshake,
+  // Phase 4: CRDT-native appends (design phase4-crdt-appends §9).
+  appendNovelty,
 ];
 
 function parseArgs(argv: readonly string[]) {
