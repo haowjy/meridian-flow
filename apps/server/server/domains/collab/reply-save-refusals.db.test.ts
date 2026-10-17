@@ -6,7 +6,6 @@
 import type { WorkId } from "@meridian/contracts/runtime";
 import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
-import type * as Y from "yjs";
 import { drizzleFileAccess, testFileGrant } from "../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import {
@@ -40,7 +39,7 @@ import {
   responseContext,
   stageDraft,
 } from "./test-support/document-edit-receipt-fixture.js";
-import { commitBranchEdit, reviewDriver } from "./test-support/draft-review-requests.js";
+import { reviewDriver } from "./test-support/draft-review-requests.js";
 
 const DRAFT = "Write did not land: the user discarded this draft. Re-read and retry.";
 const EDIT = "Write did not land: the user discarded the text it edited. Re-read and retry.";
@@ -499,7 +498,7 @@ describe("reply save refusals (postgres)", () => {
   });
 
   it("23: an item Discard retiring the peer between a write's capture and its pull is named, not an internal error", async () => {
-    const { responseId, review, write, fixture } = await setup();
+    const { responseId, review, write } = await setup();
     expect(await write("green", "lime", "w-old")).toMatchObject({ phase: "staged" });
     let once = true;
     const unhook = setCollabHook("branch.beforeAccess", async () => {
@@ -583,7 +582,7 @@ describe("reply save refusals (postgres)", () => {
   });
 
   it("22b: a first write losing to Discard all leaves no pin, so the instructed read and retry land in a fresh draft", async () => {
-    const { responseId, review, write, core, context, fixture } = await setup();
+    const { responseId, review, write, core, context } = await setup();
     let once = true;
     const unhook = setCollabHook("branch.beforeAccess", async () => {
       if (once) {
