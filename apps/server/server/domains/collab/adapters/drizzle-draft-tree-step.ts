@@ -290,15 +290,24 @@ export function createDrizzleDraftTreeStep(
             if (scope.stage !== "completion" || !scope.lease) {
               throw new Error("A drained item resets under the completion's branch lease");
             }
-            const reset = await deps.coordinator.resetFromDocIfUnchangedWithLease(scope.lease, {
-              branchId: branch.branchId,
-              upstream: live,
-              expectedGeneration: branch.generation,
-              expectedRevision: branch.revision,
-              schemaVersion: branch.schemaVersion,
-              editDisposition: "retired",
-            });
-            if (!reset) throw new BranchCasConflictError(branch.branchId);
+            // Exact at the revision the empty effect was judged at; the settlement owns the
+            // reset, so no settlement fence. A miss means content landed after the check
+            // (a writer's frame): the item stays open with its typing, not reset.
+            const reset = await deps.coordinator
+              .resetFromDocIfUnchangedWithLease(scope.lease, {
+                branchId: branch.branchId,
+                upstream: live,
+                expectedGeneration: branch.generation,
+                expectedRevision: branch.revision,
+                schemaVersion: branch.schemaVersion,
+                editDisposition: "retired",
+                fence: { kind: "settlement-owned", batchId: scope.batchId },
+              })
+              .catch((cause) => {
+                if (cause instanceof BranchCasConflictError) return false;
+                throw cause;
+              });
+            if (!reset) continue;
             settled.set(item.documentId as DocumentId, {
               itemClosed: true,
               itemDisposition: "applied",

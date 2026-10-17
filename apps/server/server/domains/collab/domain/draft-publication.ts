@@ -16,6 +16,7 @@ import type {
   ReviewRowSelection,
   SelectedPublication,
 } from "./branch-push-contracts.js";
+import { BranchPushRetryExhaustedError } from "./branch-push-contracts.js";
 import { PublicationLeasesChangedError } from "./branch-push-transition.js";
 import type { BranchSnapshot } from "./branch-store.js";
 import { collabHook } from "./collab-test-hooks.js";
@@ -185,8 +186,12 @@ export function createDraftPublication(deps: {
           if (cause instanceof PublicationLeasesChangedError) {
             throw new DraftApplyPendingError(draftId, cause);
           }
+          // Four staging attempts each found a draft moved under them (a writer typing):
+          // nothing was staged and nothing claimed, so the items answer as stale do.
+          if (cause instanceof BranchPushRetryExhaustedError) return null;
           throw cause;
         });
+      if (!pushed) return { status: "stale", draftId, staleItemKeys: plan.itemKeys };
       if (pushed.commandExists) return { status: "command_exists" };
       if (pushed.refused) {
         const refusal = readDraftTreeRefusal(pushed.refused);
