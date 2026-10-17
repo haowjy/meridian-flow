@@ -147,19 +147,24 @@ export type PullInput = {
 
 /**
  * `pulled` committed. A live pull into a work draft waits out a pending settlement on its
- * document (`fenced`: nothing was written, and the caller tries again later); a closed
+ * document (`fenced`: nothing was written, and the caller tries again later); a settlement
+ * terminally blocked on it freezes the pull (`blocked`: nothing written, nothing to retry
+ * until something new arrives, since no transition lifts a blocked batch); a closed
  * branch has nothing to pull into; a peer whose upstream re-forked since its read is
  * `upstreamMoved`, its capture abandoned. An archived (or deleted) Work's draft is frozen
  * (decision D19): `inactive`, nothing written, and nothing to retry until it is unarchived,
  * when the next live update pulls again.
  */
-export type PullOutcome = "pulled" | "fenced" | "closed" | "upstreamMoved" | "inactive";
+export type PullOutcome = "pulled" | "fenced" | "blocked" | "closed" | "upstreamMoved" | "inactive";
 
 /** A rewrite refused for a reason other than a moved revision: never retried. */
 class BranchRewriteRefused extends Error {
   constructor(
     readonly branchId: string,
-    readonly status: Extract<RewriteOutcome["status"], "fenced" | "upstreamMoved" | "inactive">,
+    readonly status: Extract<
+      RewriteOutcome["status"],
+      "fenced" | "blocked" | "upstreamMoved" | "inactive"
+    >,
   ) {
     super(`Branch ${branchId} rewrite was refused: ${status}`);
     this.name = "BranchRewriteRefused";
@@ -579,6 +584,7 @@ export function createBranchCoordinator(input: {
         const outcome = await input.store.commitRewrite({ branchId, doc: candidate, ...rewrite });
         if (
           outcome.status === "fenced" ||
+          outcome.status === "blocked" ||
           outcome.status === "upstreamMoved" ||
           outcome.status === "inactive"
         )

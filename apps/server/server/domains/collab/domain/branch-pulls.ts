@@ -122,7 +122,8 @@ export function createBranchPullService(input: {
 
   /**
    * Whether a pending settlement on the document fenced any branch's pull (the one outcome
-   * that re-arms, D20); `inactive` and `closed` branches are done until something new arrives.
+   * that re-arms, D20); `blocked`, `inactive` and `closed` branches are done until something
+   * new arrives.
    */
   async function pullLive(documentId: DocumentId): Promise<{ fenced: boolean }> {
     // Most documents have no Work draft; skip the snapshot (a room open and
@@ -175,9 +176,10 @@ export function createBranchPullService(input: {
           entry.max = undefined;
           // Decision D20: a settlement's completion schedules no pull, so a fenced pull re-arms
           // its debounce, one capture and merge per period, until the settlement completes or
-          // is withdrawn and the next run commits. Only `fenced` re-arms: an archived Work's
+          // is withdrawn and the next run commits. Only `fenced` (a pending settlement)
+          // re-arms: a terminally `blocked` one never lifts by itself (D22), an archived Work's
           // draft (`inactive`, D19) waits for the next live update after unarchive, and a
-          // closed branch leaves the active list, so neither keeps the timer alive.
+          // closed branch leaves the active list, so none of them keeps the timer alive.
           if (fenced) armDebounce(documentId, entry);
         })
         .finally(() =>

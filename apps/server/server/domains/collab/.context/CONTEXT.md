@@ -240,8 +240,11 @@ fenced by a pending settlement on its document rather than moving the revision
 that settlement's completion resets at, and it re-arms its debounce (D20): one
 capture and merge per debounce period until the settlement completes or is
 withdrawn and the next run commits, after which polling stops. That is the
-only re-arm: an archived Work's draft (`inactive`, D19) waits for the next live
-update after unarchive, and a closed branch leaves the active list. Live pulls
+only re-arm: a terminally blocked settlement answers `blocked` and does not
+re-arm (nothing lifts it on its own, so polling would capture and merge
+forever on an idle document; D22), an archived Work's draft (`inactive`, D19)
+waits for the next live update after unarchive, and a closed branch leaves the
+active list. Live pulls
 snapshot before any transaction and re-read branch membership. A thread-peer
 pull reads its upstream with its generation and commits holding that row
 `FOR SHARE`: an upstream re-forked since the read (`upstreamMoved`), or a
