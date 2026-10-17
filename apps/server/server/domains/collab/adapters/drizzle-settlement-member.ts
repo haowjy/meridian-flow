@@ -23,6 +23,7 @@ import {
 } from "@meridian/prosemirror-schema";
 import { and, asc, desc, eq, inArray, isNull, lte, sql } from "drizzle-orm";
 import * as Y from "yjs";
+import { bumpBranchRevisions } from "../../../shared/branch-revisions.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { draftBranchWorks } from "../../../shared/work-draft-lifecycle.js";
 import type { NoticePort } from "../../notices/index.js";
@@ -43,7 +44,6 @@ import type { SettlementCut } from "../domain/ports/pending-settlement-store.js"
 import { journalInsertionRanges, ProvenanceMaterializationError } from "../domain/provenance.js";
 import { materializeSweepEvidence } from "../domain/sweep-policy.js";
 import { loadDocumentState } from "./document-loader.js";
-import { bumpBranchRevisions } from "./drizzle-branch-storage.js";
 import {
   allocateDocumentAdmission,
   ensureAndReadDocumentAuthorityHead,

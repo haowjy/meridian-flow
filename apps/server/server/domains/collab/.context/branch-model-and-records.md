@@ -95,11 +95,19 @@ rooms and groups rows and placements.
 The contract (row, read and write types, the `BranchStore` port, the
 materialization of one read) is `domain/branch-store.ts`. Its Drizzle storage
 half is `adapters/drizzle-branch-storage.ts`: the row with its derived Work
-lifecycle, `readBranchAt`, and the transactional primitives `appendRowsWithinTx`,
-`commitRewriteWithinTx` and `bumpBranchRevisions`. `createDrizzleBranchStore`
-wraps them with each write's application half (Work admission, the pending
-projection, the live advisory lock, the effect refresh, edit receipts), and
-every other adapter that writes a branch commits through the same primitives.
+lifecycle, `readBranchAt`, and the content primitives `appendRowsWithinTx`,
+`commitRewriteWithinTx` and `insertJournalRows`. Every metadata write outside
+content (a close, the hold flag, a journal row's status flip, a Work lifecycle
+fence, Apply staging's revision check) goes through one door,
+`bumpBranchRevisions` in `shared/branch-revisions.ts`: lock the rows in id
+order, bump `revision` with the change, optionally only at an expected
+revision. `createDrizzleBranchStore` wraps them with each write's application
+half (Work admission, the pending projection, the live advisory lock, the
+effect refresh, edit receipts). These branch writes stand outside the doors,
+by name: creation and its seeds insert the row (`ensureDraftBranch`,
+`ensureThreadPeerBranch`), retraction and tree deletion delete it, and two
+paths PR B deletes write directly: `refreshDraftEffect`'s conditional
+`has_effect` bump and selective Discard's survivor re-journal.
 Thread-peer and Work-draft resolution return metadata only (id, generation,
 status, lifecycle); content is read through the coordinator.
 

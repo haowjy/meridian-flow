@@ -18,7 +18,8 @@ import type { DraftId, ThreadId, WorkId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { branchWriteJournal, documentBranches } from "@meridian/database/schema";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
+import { bumpBranchRevisions } from "../../../shared/branch-revisions.js";
 import {
   currentDrizzleDb,
   deferUntilDrizzleCommit,
@@ -102,27 +103,21 @@ async function closeDraftBranches(
 ): Promise<RetiredBranch[]> {
   if (documentIds?.length === 0) return [];
   const tx = currentDrizzleDb(db);
-  const closed = await tx
-    .update(documentBranches)
-    .set({
-      status: "closed",
-      revision: sql`${documentBranches.revision} + 1`,
-      updatedAt: new Date(),
-    })
+  const open = await tx
+    .select({ id: documentBranches.id })
+    .from(documentBranches)
     .where(
       and(
         eq(documentBranches.draftId, draftId),
         eq(documentBranches.status, "active"),
         documentIds ? inArray(documentBranches.documentId, [...documentIds]) : undefined,
       ),
-    )
-    .returning({
-      branchId: documentBranches.id,
-      documentId: documentBranches.documentId,
-      threadId: documentBranches.threadId,
-      kind: documentBranches.kind,
-      generation: documentBranches.generation,
-    });
+    );
+  const closed = await bumpBranchRevisions(
+    tx,
+    open.map((row) => row.id),
+    { status: "closed" },
+  );
   for (const branch of closed) {
     if (branch.kind === "work_draft") {
       await settleDraftGeneration(tx, branch.branchId, branch.generation, "discarded");

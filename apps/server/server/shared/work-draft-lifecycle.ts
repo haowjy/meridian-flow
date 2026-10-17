@@ -5,7 +5,8 @@
 import type { DraftId } from "@meridian/contracts";
 import type { WorkId } from "@meridian/contracts/runtime";
 import { documentBranches, drafts } from "@meridian/database/schema";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
+import { bumpBranchRevisions } from "./branch-revisions.js";
 import { currentDrizzleDb, type DrizzleDb } from "./drizzle-transaction.js";
 
 export type DraftBranchWork = { id: string; draftId: DraftId; workId: WorkId | null };
@@ -68,21 +69,13 @@ export async function draftOriginWorkIds(
  */
 export async function fenceWorkBranches(db: DrizzleDb, workId: WorkId): Promise<void> {
   const tx = currentDrizzleDb(db);
-  const locked = await tx
+  const owned = await tx
     .select({ id: documentBranches.id })
     .from(documentBranches)
     .innerJoin(branchDraftWork.drafts, branchDraftWork.on)
-    .where(and(eq(branchDraftWork.workId, workId), eq(documentBranches.status, "active")))
-    .orderBy(asc(documentBranches.id))
-    .for("update", { of: documentBranches });
-  if (!locked.length) return;
-  await tx
-    .update(documentBranches)
-    .set({ revision: sql`${documentBranches.revision} + 1` })
-    .where(
-      inArray(
-        documentBranches.id,
-        locked.map((row) => row.id),
-      ),
-    );
+    .where(and(eq(branchDraftWork.workId, workId), eq(documentBranches.status, "active")));
+  await bumpBranchRevisions(
+    tx,
+    owned.map((row) => row.id),
+  );
 }

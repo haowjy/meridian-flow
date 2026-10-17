@@ -26,6 +26,7 @@ import {
 } from "@meridian/prosemirror-schema";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import * as Y from "yjs";
+import { bumpBranchRevisions } from "../../../shared/branch-revisions.js";
 import {
   currentDrizzleDb,
   deferUntilDrizzleCommit,
@@ -364,18 +365,8 @@ export function createDrizzleBranchStore(
       } finally {
         upstreamDoc.destroy();
       }
-      if (existing) {
-        await currentDrizzleDb(db)
-          .update(documentBranches)
-          .set({
-            status: "closed",
-            revision: sql`${documentBranches.revision} + 1`,
-            updatedAt: new Date(),
-          })
-          .where(
-            and(eq(documentBranches.id, existing.branchId), eq(documentBranches.status, "active")),
-          );
-      }
+      if (existing)
+        await bumpBranchRevisions(currentDrizzleDb(db), [existing.branchId], { status: "closed" });
       const [row] = await currentDrizzleDb(db)
         .insert(documentBranches)
         .values({
@@ -458,25 +449,22 @@ export function createDrizzleBranchStore(
     cause: PeerRetirementCause,
   ): Promise<RetiredBranch[]> {
     if (upstreamBranchIds.length === 0) return [];
-    const closed = await currentDrizzleDb(db)
-      .update(documentBranches)
-      .set({
-        status: "closed",
-        revision: sql`${documentBranches.revision} + 1`,
-        updatedAt: new Date(),
-      })
+    const tx = currentDrizzleDb(db);
+    const peers = await tx
+      .select({ id: documentBranches.id })
+      .from(documentBranches)
       .where(
         and(
           inArray(documentBranches.upstreamBranchId, [...upstreamBranchIds]),
           eq(documentBranches.kind, "thread_peer"),
           eq(documentBranches.status, "active"),
         ),
-      )
-      .returning({
-        branchId: documentBranches.id,
-        documentId: documentBranches.documentId,
-        threadId: documentBranches.threadId,
-      });
+      );
+    const closed = await bumpBranchRevisions(
+      tx,
+      peers.map((row) => row.id),
+      { status: "closed" },
+    );
     return closed.flatMap((branch) =>
       branch.threadId
         ? [

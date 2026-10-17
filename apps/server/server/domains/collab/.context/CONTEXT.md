@@ -121,8 +121,10 @@ Every branch write is fenced by its row's `revision`, under one of two
 policies. An **exact** write commits only at the revision it was computed at:
 appends through `appendRows`, an exact checkpoint rewrite through
 `commitRewrite` (a peer's catch-up, an inverse's destination, an exact reset),
-status and hold changes after locking the branch rows in ID order and bumping
-their revision. A **fold** (a pull, compaction, a peer's re-fork, item
+and every metadata change (a close, a hold, a journal row's status, a Work
+lifecycle fence) through the one door `bumpBranchRevisions`
+(`shared/branch-revisions.ts`), which locks the rows in ID order and bumps
+their revision with the change. A **fold** (a pull, compaction, a peer's re-fork, item
 Discard's reset) commits over the replica's cursor instead: rows appended
 since it was computed are applied into its checkpoint under the row lock, so
 an intervening append never makes it miss, and only another rewrite does. No
