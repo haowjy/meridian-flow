@@ -3,7 +3,9 @@ import { randomUUID } from "node:crypto";
 import { branchRoomName } from "@meridian/contracts/protocol";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { runInRootDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { testFileGrant } from "../../../test-support/file-grants.js";
+import { setCollabHook } from "../domain/collab-test-hooks.js";
 import {
   ALPHA_ID,
   BETA_ID,
@@ -15,7 +17,6 @@ import {
   schema,
   THREAD_ID,
   USER_ID,
-  WORK_ID,
 } from "../test-support/change-trail-postgres-harness.js";
 import {
   createResponse,
@@ -87,7 +88,6 @@ describe("response helper revocation (Postgres)", () => {
     try {
       expect(await fixture.draftMarkdown(beta.branchId)).toBe("Beta staged.\n");
     } finally {
-      beta.doc.destroy();
     }
   }
   async function expectFreshWrite(content: string) {
@@ -178,7 +178,6 @@ describe("response helper revocation (Postgres)", () => {
       ALPHA_ID,
       threadB as never,
     );
-    branchB.doc.destroy();
     const peers = await db
       .select()
       .from(schema.documentBranches)
@@ -204,6 +203,8 @@ describe("response helper revocation (Postgres)", () => {
       .from(schema.documentBranches)
       .where(eq(schema.documentBranches.id, peerB.id));
     expect(closedA.status).toBe("closed");
+    // Closing a peer is a review-membership input: it moves the peer's revision (§2.5).
+    expect(closedA.revision).toBeGreaterThan(peerA.revision);
     expect(activeB.status).toBe("active");
     expect(await core.commitResponse(responseB)).toMatchObject({
       status: "committed",
@@ -234,9 +235,61 @@ describe("response helper revocation (Postgres)", () => {
     expect(await harness.commit(freshResponse)).toMatchObject({ status: "committed" });
     expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\nolive\n");
   });
+  // Decision D17: Discard's irreversible effects (peer retirement, its room's close, the
+  // reply's helper revocation) wait for the ambient root's commit, not a savepoint's release.
+  it.each([
+    { arm: "item", run: () => discard(), documents: [ALPHA_ID] },
+    {
+      arm: "whole",
+      run: () => reviewDriver(fixture.collab.draftReview).discardAll(),
+      documents: [ALPHA_ID, BETA_ID].sort(),
+    },
+  ])("$arm Discard in an ambient root retires nothing until it commits", async ({
+    run,
+    documents,
+  }) => {
+    const peer = await fixture.branchStore.resolveThreadBranch(ALPHA_ID, THREAD_ID);
+    const room = branchRoomName(peer.branchId, peer.generation);
+    await fixture.hocuspocus.openDirectConnection(room);
+    const retired: string[] = [];
+    const retire = core.retireThreadPeers;
+    core.retireThreadPeers = async (...args) => {
+      retired.push(args[0]);
+      return retire(...args);
+    };
+    const effects = async () => ({
+      retired: [...retired].sort(),
+      roomOpen: fixture.hocuspocus.documents.has(room),
+      helper: core.hasResponseDocument(responseId, ALPHA_ID),
+      peer: (await fixture.branchStore.getBranch(peer.branchId))?.status,
+    });
+    const untouched = { retired: [], roomOpen: true, helper: true, peer: "active" };
+    try {
+      await expect(
+        runInRootDrizzleTransaction(db, async () => {
+          expect(await run()).toMatchObject({ status: "discarded" });
+          expect({ ...(await effects()), peer: "active" }).toEqual(untouched);
+          throw new Error("abort root");
+        }),
+      ).rejects.toThrow("abort root");
+      expect(await effects()).toEqual(untouched);
+      await runInRootDrizzleTransaction(db, async () => {
+        expect(await run()).toMatchObject({ status: "discarded" });
+        expect({ ...(await effects()), peer: "active" }).toEqual(untouched);
+      });
+      // Once per document with a peer, after the commit.
+      expect(await effects()).toEqual({
+        retired: documents,
+        roomOpen: false,
+        helper: false,
+        peer: "closed",
+      });
+    } finally {
+      core.retireThreadPeers = retire;
+    }
+  });
   it("delayed retirement preserves a fresh peer's write in the same reply", async () => {
     const oldPeer = await fixture.branchStore.resolveThreadBranch(ALPHA_ID, THREAD_ID);
-    oldPeer.doc.destroy();
     let entered!: () => void;
     let release!: () => void;
     const waiting = new Promise<void>((resolve) => {
@@ -264,7 +317,6 @@ describe("response helper revocation (Postgres)", () => {
         phase: "staged",
       });
       const freshPeer = await fixture.branchStore.resolveThreadBranch(ALPHA_ID, THREAD_ID);
-      freshPeer.doc.destroy();
       expect(freshPeer.branchId).not.toBe(oldPeer.branchId);
       const room = branchRoomName(freshPeer.branchId, freshPeer.generation);
       await fixture.hocuspocus.openDirectConnection(room);
@@ -360,17 +412,15 @@ describe("response helper revocation (Postgres)", () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    // Pause the read before it leases any branch, so Discard commits ahead of it.
-    const original = fixture.branchCoordinator.withLeases.bind(fixture.branchCoordinator);
+    // Pause the read before it reads any branch, so Discard commits ahead of it.
     let once = true;
-    fixture.branchCoordinator.withLeases = async (...args) => {
+    const unhook = setCollabHook("branch.beforeAccess", async () => {
       if (once) {
         once = false;
         entered();
         await gate;
       }
-      return original(...args);
-    };
+    });
     try {
       const pending = core.prepare(responseId, ALPHA_ID);
       // Observe rejection before releasing the orphaned read.
@@ -389,7 +439,7 @@ describe("response helper revocation (Postgres)", () => {
       expect(outcome).toHaveProperty("error");
     } finally {
       release();
-      fixture.branchCoordinator.withLeases = original;
+      unhook();
     }
     expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\ngreen\n");
     await expectFreshWrite("olive");

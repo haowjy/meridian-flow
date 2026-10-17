@@ -3,15 +3,11 @@
 import { createAgentEditCodecFactory, yProsemirrorModel } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import { mdxCodec } from "@meridian/markup";
-import {
-  buildDocumentSchema,
-  COLLAB_SCHEMA_VERSION,
-  createCollabYDoc,
-} from "@meridian/prosemirror-schema";
+import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createStaticDocumentLinkScopes } from "../adapters/in-memory/static-document-link-scopes.js";
-import type { BranchSnapshot } from "./branch-coordinator.js";
+import { testBranchRow } from "../test-support/memory-branch-store.js";
 import type {
   PendingSettlementBatch,
   PreparedPushCommit,
@@ -19,6 +15,7 @@ import type {
   PushLineageRow,
 } from "./branch-push-contracts.js";
 import { createBranchPushTransition } from "./branch-push-transition.js";
+import type { BranchSnapshot } from "./branch-store.js";
 import type { CommittedChangeTrailProjection } from "./ports/change-trail-persistence.js";
 import type { PendingSettlementStore } from "./ports/pending-settlement-store.js";
 
@@ -68,21 +65,8 @@ function projection(input: {
   };
 }
 
-function branch(documentId: DocumentId, doc: Y.Doc): BranchSnapshot {
-  return {
-    branchId: `branch-${documentId}`,
-    documentId,
-    kind: "work_draft",
-    upstreamBranchId: null,
-    draftId: "draft-1",
-    workId: WORK_ID,
-    threadId: null,
-    status: "active",
-    generation: 1,
-    state: Y.encodeStateAsUpdate(doc),
-    stateVector: Y.encodeStateVector(doc),
-    schemaVersion: COLLAB_SCHEMA_VERSION,
-  };
+function branch(documentId: DocumentId, _doc: Y.Doc): BranchSnapshot {
+  return testBranchRow({ branchId: `branch-${documentId}`, documentId, workId: WORK_ID });
 }
 
 function preparedPush(documentId: DocumentId, liveDoc: Y.Doc, pushId: number): PreparedPushCommit {
@@ -198,8 +182,6 @@ function stores(
       };
     },
     checkPublication: async (check) => ({ kind: "proceed", hold: [], payloads: check.payloads }),
-    prepareBranchLeases: async () => [],
-    loadRecoveryScope: async () => ({ payloads: new Map(), memberBranchIds: [] }),
     listRecoverableBatchIds: async () => [],
   };
   return { commitStore, settlementStore };
@@ -235,7 +217,6 @@ describe("branch push change-event broadcast", () => {
       documentIds: [DOCUMENT_B, DOCUMENT_A],
       prepare: async ({ docs }) => ({
         kind: "push",
-        leasedBranchIds: [],
         pushes: [
           preparedPush(DOCUMENT_A, docs.get(DOCUMENT_A) as Y.Doc, 1),
           preparedPush(DOCUMENT_B, docs.get(DOCUMENT_B) as Y.Doc, 2),

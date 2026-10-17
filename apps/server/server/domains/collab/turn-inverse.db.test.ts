@@ -6,6 +6,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { testFileGrant } from "../../test-support/file-grants.js";
 import { releaseDocumentStorage, tombstoneDocuments } from "../context/tree/node-rows.js";
+import { branchContent } from "./test-support/branch-store-seam.js";
 import {
   ALPHA_ID,
   BETA_ID,
@@ -18,7 +19,6 @@ import {
   USER_ID,
   WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
-
 import { reviewDriver } from "./test-support/draft-review-requests.js";
 import { inverseFixture } from "./test-support/turn-inverse-fixture.js";
 
@@ -283,7 +283,7 @@ it("typing inside restored text leaves Redo unavailable and does not delete the 
       );
     const doc = new Y.Doc({ gc: false });
     try {
-      Y.applyUpdate(doc, branch.state);
+      Y.applyUpdate(doc, await branchContent(db, branch.id));
       doc.clientID = allocateDocumentClient(doc);
       const text = (doc.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(0) as Y.XmlText;
       const updates = captureMutationUpdates(doc, () => text.insert(8, "!"));

@@ -161,8 +161,10 @@ identity in anchors or holds.
 - Writer-visible save state: an outage (`offline` or a stalled cache adoption)
   reads "Saved locally (offline)" until the server acknowledges every local
   change, then briefly "Back online"; "Closed" and "Access lost" always win and
-  healthy sessions show nothing. Unacknowledged branch edits are lost if the tab
-  closes or the writer signs out before acknowledgement.
+  healthy sessions show nothing. A branch (draft) room has no cache, so its
+  outage copy is "Not saved yet (keep this tab open until you're back online)":
+  unacknowledged branch edits are lost if the tab closes or the writer signs out
+  before acknowledgement. Never show a branch room the "Saved locally" copy.
 - Draft review colors a hunk by author (agent jade, writer gold, nested
   authorship per span). A merge artifact or unclassified hunk is neutral, never
   an invented AI color.
@@ -213,3 +215,11 @@ keyboard, pointer, drop, or branch-recovery answer.
 - `resetDisposition` gives the reset its meaning: `superseded` and `rebuild`
   keep unacknowledged updates for retirement, `refused` rejects pending edits,
   and `schema` fences the room.
+- A branch room's update refusal (`1008`) is bounded in the transport: after
+  three in a row with no acknowledgement between, the room ends `terminal`
+  `BRANCH_UPDATES_REFUSED` (`updatesRefused`) instead of reconnecting forever.
+  It keeps its outbox, and `BranchRoomPool` does not retire it while an owner
+  retains it: the review editor stays mounted read-only with the unsent text,
+  and the save pill offers Reopen draft, which rebuilds the room from the
+  server (a re-forked draft answers that reconnect as superseded). Live rooms
+  never count refusals.

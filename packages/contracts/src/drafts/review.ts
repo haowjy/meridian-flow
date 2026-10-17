@@ -297,6 +297,14 @@ export type DraftDiscardResponse =
     } & DraftItemSettlement)
   | { status: DraftDiscardRefusalStatus; draftId: DraftId; itemKey: DraftItemKey };
 /**
+ * The most `memberPartKeys` a per-change Discard carries. A writer's change holds one part per
+ * keystroke frame, unbounded, so a client sends an even sample of a longer selection and says
+ * so with `memberPartKeysComplete: false`. A sample proves a member survives; it cannot prove
+ * none does.
+ */
+export const MAX_DISCARD_MEMBER_PART_KEYS = 500;
+
+/**
  * Item Discard sends no selection. Per-change Discard admits by class: `closureClassIds` with
  * `admissionTokens` over the clicked classes' closed rows and rich effect, and `memberPartKeys`
  * (immutable part keys, empty for fallback-only classes) that only classify an absent class.
@@ -315,6 +323,11 @@ export type DraftDiscardRequest = {
   admissionTokens?: string[];
   /** Clicked immutable members classify a missing class, never authorize a replacement. */
   memberPartKeys?: string[];
+  /**
+   * Required for per-change Discard: whether `memberPartKeys` lists every clicked member. A
+   * missing class with no listed survivor is `gone` only when this is true, `stale` otherwise.
+   */
+  memberPartKeysComplete?: boolean;
 };
 
 // Per-change Apply: complete server-vended classes. Physical journal ids never cross the wire

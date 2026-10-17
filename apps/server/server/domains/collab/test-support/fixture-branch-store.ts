@@ -7,12 +7,12 @@ export function createFixtureBranchStore(...args: Parameters<typeof createDrizzl
   const journal = createDrizzleJournal(args[0]);
   return {
     ...store,
-    async commitBranchMutation(input: Parameters<typeof store.commitBranchMutation>[0]) {
+    async appendRows(input: Parameters<typeof store.appendRows>[0]) {
       const branch = await store.getBranch(input.branchId);
-      if (!branch) return store.commitBranchMutation(input);
+      if (!branch) return store.appendRows(input);
       const ordinals = new Map<string, number>();
       const journals = [];
-      for (const [index, row] of (input.journals ?? []).entries()) {
+      for (const [index, row] of input.rows.entries()) {
         if (row.source !== "agent" || !row.threadId || row.wId != null) {
           journals.push(row);
           continue;
@@ -25,7 +25,7 @@ export function createFixtureBranchStore(...args: Parameters<typeof createDrizzl
         }
         journals.push({ ...row, wId });
       }
-      return store.commitBranchMutation({ ...input, journals });
+      return store.appendRows({ ...input, rows: journals });
     },
   };
 }

@@ -10,14 +10,14 @@ import type { DraftId } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
 import type { BranchConcurrentJournalWatermarks } from "./branch-agent-edit.js";
+import type { BranchCoordinator, PullOutcome } from "./branch-coordinator.js";
 import {
   BranchCasConflictError,
-  type BranchCoordinator,
   BranchMissingError,
   type BranchSnapshot,
   BranchStaleUpdateError,
-} from "./branch-coordinator.js";
-import type { BranchLockLease } from "./branch-critical-sections.js";
+} from "./branch-store.js";
+import { collabHook } from "./collab-test-hooks.js";
 import { runOutsideResponseTransaction } from "./response-transaction.js";
 
 export type WorkDraftLookup = {
@@ -27,7 +27,11 @@ export type WorkDraftLookup = {
     threadId: ThreadId;
     draftId?: DraftId;
     liveDoc: Y.Doc;
-  }): Promise<Pick<BranchSnapshot, "branchId" | "upstreamBranchId" | "state">>;
+  }): Promise<{
+    branch: Pick<BranchSnapshot, "branchId" | "upstreamBranchId">;
+    /** The peer's content as the ensure left it. */
+    state: Uint8Array;
+  }>;
 };
 
 export type BranchPullService = {
@@ -50,9 +54,9 @@ export type BranchPullService = {
 };
 
 /**
- * A thread-peer pull whose branch work lost to a Discard (stale, CAS-lost or missing branch),
- * carrying the peer and upstream it had captured so a caller can say which one went. Any
- * other failure of the pull is not wrapped.
+ * A thread-peer pull whose branch work lost to a Discard (stale, CAS-lost, closed or missing
+ * branch, or an upstream re-forked after its read), carrying the peer and upstream it had
+ * captured so a caller can say which one went. Any other failure of the pull is not wrapped.
  */
 export class ThreadPeerPullLost extends Error {
   constructor(
@@ -71,7 +75,6 @@ export type BranchPullDiagnostics = {
 
 export function createBranchPullService(input: {
   outsideTransaction<T>(operation: () => T): T;
-  rootTransaction<T>(operation: () => Promise<T>): Promise<T>;
   liveCoordinator: DocumentCoordinator;
   branchCoordinator: BranchCoordinator;
   branches: WorkDraftLookup;
@@ -117,28 +120,33 @@ export function createBranchPullService(input: {
     return doc;
   }
 
-  async function pullLive(documentId: DocumentId): Promise<void> {
+  /**
+   * Whether a pending settlement on the document fenced any branch's pull (the one outcome
+   * that re-arms, D20); `blocked` and `closed` branches are done until something
+   * new arrives.
+   */
+  async function pullLive(documentId: DocumentId): Promise<{ fenced: boolean }> {
     // Most documents have no Work draft; skip the snapshot (a room open and
     // release) for them. Re-list before pulling: a branch can close in
     // between, and one opened since waits for the next pull.
-    if ((await input.branches.listActiveWorkDraftBranchIds(documentId)).length === 0) return;
-    // Snapshot before the root transaction opens: the snapshot takes its own
-    // connection, and taking it while holding the root's lets concurrent pulls
-    // hold every pooled connection and wait on each other forever.
+    if ((await input.branches.listActiveWorkDraftBranchIds(documentId)).length === 0)
+      return { fenced: false };
+    // Snapshot before any transaction opens: the snapshot takes its own connection,
+    // and taking it while holding another lets concurrent pulls hold every pooled
+    // connection and wait on each other forever.
     const liveDoc = await liveSnapshot(documentId);
+    let fenced = false;
     try {
-      // One branch at a time: its lease, then its transaction (the save's order), and
-      // the transaction commits before the next branch's lease is taken.
+      // One branch at a time, each attempt its own root transaction (decision D13). A pull
+      // folds the frames that commit meanwhile; nothing waits on it.
       for (const branchId of await input.branches.listActiveWorkDraftBranchIds(documentId)) {
-        await input.branchCoordinator.withLeases([branchId], (lease) =>
-          input.rootTransaction(() =>
-            input.branchCoordinator.pullFromDoc(lease, branchId, liveDoc),
-          ),
-        );
+        const outcome = await input.branchCoordinator.pullFromDoc({ branchId, upstream: liveDoc });
+        if (outcome === "fenced") fenced = true;
       }
     } finally {
       liveDoc.destroy();
     }
+    return { fenced };
   }
 
   async function run(documentId: DocumentId): Promise<void> {
@@ -159,13 +167,19 @@ export function createBranchPullService(input: {
     const entry = current ?? {};
     const running = outsideCallerTransactions(() =>
       pullLive(documentId)
-        .then(() => {
+        .then(({ fenced }) => {
           // A queued snapshot may include newer edits; its retries still need these timers.
           if (entry.queued) return;
           if (entry.debounce) clearTimeout(entry.debounce);
           if (entry.max) clearTimeout(entry.max);
           entry.debounce = undefined;
           entry.max = undefined;
+          // Decision D20: a settlement's completion schedules no pull, so a fenced pull re-arms
+          // its debounce, one capture and merge per period, until the settlement completes or
+          // is withdrawn and the next run commits. Only `fenced` (a pending settlement)
+          // re-arms: a terminally `blocked` one never lifts by itself (D22), and a closed
+          // branch leaves the active list, so neither keeps the timer alive.
+          if (fenced) armDebounce(documentId, entry);
         })
         .finally(() =>
           outsideCallerTransactions(() => {
@@ -185,15 +199,19 @@ export function createBranchPullService(input: {
     });
   }
 
+  function armDebounce(documentId: DocumentId, entry: NonNullable<ReturnType<typeof timers.get>>) {
+    if (entry.debounce) clearTimeout(entry.debounce);
+    entry.debounce = setTimeout(() => {
+      entry.debounce = undefined;
+      backgroundPull(documentId);
+    }, debounceMs);
+  }
+
   return {
     scheduleLivePull(documentId) {
       const entry = timers.get(documentId) ?? {};
       if (entry.running) backgroundPull(documentId);
-      if (entry.debounce) clearTimeout(entry.debounce);
-      entry.debounce = setTimeout(() => {
-        entry.debounce = undefined;
-        backgroundPull(documentId);
-      }, debounceMs);
+      armDebounce(documentId, entry);
       entry.max ??= setTimeout(() => {
         entry.max = undefined;
         backgroundPull(documentId);
@@ -225,19 +243,20 @@ export function createBranchPullService(input: {
             liveDoc.destroy();
           }
         };
-        const first = await ensurePeer();
+        const ensured = await ensurePeer();
+        const first = ensured.branch;
         // From here every phase fails by name: the identities the ensures returned are
         // captured, so a Discard landing in any later phase is `ThreadPeerPullLost`.
         let identity = { peerBranchId: first.branchId, upstreamBranchId: first.upstreamBranchId };
         try {
-          const attributionBaseline = first.state;
+          const attributionBaseline = ensured.state;
           await run(inputPeer.documentId);
           const liveCut = await input.liveJournal?.read(inputPeer.documentId);
           const liveJournalSeq = liveCut
             ? (liveCut.persistenceWatermark ??
               liveCut.updates.reduce((latest, update) => Math.max(latest, update.seq), 0))
             : undefined;
-          const peer = await ensurePeer();
+          const peer = (await ensurePeer()).branch;
           identity = { peerBranchId: peer.branchId, upstreamBranchId: peer.upstreamBranchId };
           const afterJournalId = input.concurrentJournalWatermarks?.current(
             inputPeer.threadId,
@@ -246,25 +265,28 @@ export function createBranchPullService(input: {
           const upstreamBranchId = peer.upstreamBranchId;
           if (!upstreamBranchId)
             throw new Error(`Thread peer ${peer.branchId} has no upstream Work draft branch`);
-          // The peer's and its upstream's leases are held from capture through persisting
-          // the peer, so a per-change Discard cannot refork the upstream in between and a
-          // stale capture is never merged back. Leases come before the transaction.
-          const upstream = await input.branchCoordinator.withLeases(
-            [peer.branchId, upstreamBranchId],
-            (lease) =>
-              input.rootTransaction(async () => {
-                const read = await input.branchCoordinator
-                  .ownedSession(lease)
-                  .read(upstreamBranchId, (doc, snapshot) =>
-                    Promise.resolve({
-                      generation: snapshot.generation,
-                      state: Y.encodeStateAsUpdate(doc),
-                    }),
-                  );
-                await pullPeerFromCapturedUpstream(lease, peer.branchId, read.state);
-                return read;
-              }),
-          );
+          // The upstream is read at its epoch, and the peer's commit holds that epoch: a
+          // per-change Discard that re-forked the upstream since the read wins, and the stale
+          // capture is abandoned, never merged back. The pull's attempts are root
+          // transactions of their own: it commits even when the caller's transaction aborts.
+          const upstream = await input.outsideTransaction(async () => {
+            await collabHook("branch.beforeAccess");
+            const read = await input.branchCoordinator.readBranch(
+              upstreamBranchId,
+              (doc, snapshot) =>
+                Promise.resolve({
+                  generation: snapshot.generation,
+                  state: Y.encodeStateAsUpdate(doc),
+                }),
+            );
+            const outcome = await pullPeerFromCapturedUpstream(peer.branchId, {
+              branchId: upstreamBranchId,
+              generation: read.generation,
+              state: read.state,
+            });
+            if (outcome !== "pulled") throw new PeerPullRefused(peer.branchId, outcome);
+            return read;
+          });
           return {
             peerBranchId: peer.branchId,
             upstreamBranchId,
@@ -278,7 +300,8 @@ export function createBranchPullService(input: {
             identity.upstreamBranchId &&
             (cause instanceof BranchStaleUpdateError ||
               cause instanceof BranchCasConflictError ||
-              cause instanceof BranchMissingError)
+              cause instanceof BranchMissingError ||
+              cause instanceof PeerPullRefused)
           )
             throw new ThreadPeerPullLost(identity.peerBranchId, identity.upstreamBranchId, cause);
           throw cause;
@@ -288,16 +311,30 @@ export function createBranchPullService(input: {
   };
 
   async function pullPeerFromCapturedUpstream(
-    lease: BranchLockLease,
     peerBranchId: string,
-    upstreamState: Uint8Array,
-  ): Promise<Uint8Array> {
-    const upstreamDoc = docFromSnapshot(upstreamState);
+    upstream: { branchId: string; generation: number; state: Uint8Array },
+  ): Promise<PullOutcome> {
+    const upstreamDoc = docFromSnapshot(upstream.state);
     try {
-      return await input.branchCoordinator.pullFromDoc(lease, peerBranchId, upstreamDoc);
+      return await input.branchCoordinator.pullFromDoc({
+        branchId: peerBranchId,
+        upstream: upstreamDoc,
+        upstreamEpoch: { branchId: upstream.branchId, generation: upstream.generation },
+      });
     } finally {
       upstreamDoc.destroy();
     }
+  }
+}
+
+/** A peer pull the store refused: its peer closed, or its upstream re-forked since the read. */
+class PeerPullRefused extends Error {
+  constructor(
+    readonly peerBranchId: string,
+    readonly outcome: Exclude<PullOutcome, "pulled">,
+  ) {
+    super(`Thread peer ${peerBranchId} pull was refused: ${outcome}`);
+    this.name = "PeerPullRefused";
   }
 }
 

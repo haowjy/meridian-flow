@@ -17,6 +17,7 @@ import {
 } from "../../../../shared/drizzle-transaction.js";
 import { lockWorkThreadTree } from "../../../../shared/thread-work-lock.js";
 import { isUuid } from "../../../../shared/uuid.js";
+import { fenceWorkBranches } from "../../../../shared/work-draft-lifecycle.js";
 import { lockWorkLifecycle } from "../../../../shared/work-lifecycle-lock.js";
 import {
   ContextEntryConflictError,
@@ -133,7 +134,11 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
     return existing;
   }
 
-  async function updateWork(id: WorkId, patch: Partial<typeof works.$inferInsert>): Promise<Work> {
+  async function updateWork(
+    id: WorkId,
+    patch: Partial<typeof works.$inferInsert>,
+    options: { fenceBranches?: boolean } = {},
+  ): Promise<Work> {
     return runInDrizzleTransaction(db, async () => {
       if (!isUuid(id)) throw new Error(`Work not found: ${id}`);
       const [row] = await currentDrizzleDb(db)
@@ -142,6 +147,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         .where(and(eq(works.id, id), isNull(works.deletedAt)))
         .returning();
       if (!row) throw new Error(`Work not found: ${id}`);
+      if (options.fenceBranches) await fenceWorkBranches(db, id);
       await projectionMutation.publishWorks([row.id]);
       return mapWork(row);
     });
@@ -306,14 +312,14 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
     async archive(id: WorkId): Promise<Work> {
       const existing = await requireUnlocked(id);
       if (existing.archivedAt !== null) return existing;
-      const archived = await updateWork(id, { archivedAt: new Date() });
+      const archived = await updateWork(id, { archivedAt: new Date() }, { fenceBranches: true });
       await deps.fileAccessChanges.publish({ workId: id });
       return archived;
     },
     async unarchive(id: WorkId): Promise<Work> {
       const existing = await requireUnlocked(id);
       if (existing.archivedAt === null) return existing;
-      const unarchived = await updateWork(id, { archivedAt: null });
+      const unarchived = await updateWork(id, { archivedAt: null }, { fenceBranches: true });
       await deps.fileAccessChanges.publish({ workId: id });
       return unarchived;
     },
@@ -343,6 +349,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
             updatedAt: deletedAt,
           })
           .where(and(eq(works.id, id), isNull(works.deletedAt)));
+        await fenceWorkBranches(db, id);
         await projectionMutation.publishWorks([id]);
         await deps.fileAccessChanges.publish({ workId: id });
         const after = await findWorkById(id);
@@ -375,6 +382,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
             .where(eq(works.id, id))
             .returning();
           if (!row) throw new Error(`Work not found: ${id}`);
+          await fenceWorkBranches(db, id);
           await cascadeRestore(db, {
             workId: id,
             threadIds: lockedTree.threadIds,

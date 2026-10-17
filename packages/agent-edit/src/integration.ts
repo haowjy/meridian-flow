@@ -56,16 +56,18 @@ export type {
 } from "./ports/actor-session-store.js";
 export type {
   DiscardedWriteReason,
+  DocumentAccess,
   DocumentCoordinator,
-  DocumentLockOptions,
-  HostSaveLease,
   StagedHelperCut,
+  StagedWriteCommit,
+  StagedWriteHost,
   StagedWriteRejectionReason,
+  StagedWriteReplayInput,
   StagedWriteReplayResult,
+  StagedWriteSaveResult,
 } from "./ports/document-coordinator.js";
 export {
   DocumentNotFoundError,
-  hostSaveLeaseBrand,
   isDocumentNotFoundError,
 } from "./ports/document-coordinator.js";
 export type {
@@ -129,7 +131,11 @@ export type {
 export { validateOutputPartition, validateSemanticEditIRV1 } from "./semantic-edit-ir.js";
 export type { DestructiveSweepReport } from "./tool/mutation-commit.js";
 export { rejectedWriteExplanation } from "./tool/receipt.js";
-export { isResponseLifecycleError } from "./tool/response-committer.js";
+export {
+  isResponseLifecycleError,
+  ResponseAttemptStaleError,
+  type ResponseCommitAttempt,
+} from "./tool/response-committer.js";
 export { isWriteErrorStatus } from "./tool/response-format.js";
 export type { LinkSpliceFallbackDetail } from "./tool/write-deps.js";
 export type {

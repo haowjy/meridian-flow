@@ -9,11 +9,8 @@ import { type EventSink, emitEvent, unknownToEventPayload } from "../observabili
 import { type DetachedWorkTracker, processDetachedWork } from "../runtime/detached-work.js";
 import { loadDocumentState } from "./adapters/document-loader.js";
 import type { CollabPersistenceMetrics, CollabTransport, UpdateOrigin } from "./contracts.js";
-import type {
-  BranchCoordinator,
-  BranchSnapshot,
-  BranchStore,
-} from "./domain/branch-coordinator.js";
+import type { BranchCoordinator } from "./domain/branch-coordinator.js";
+import { BranchMissingError, type BranchStore } from "./domain/branch-store.js";
 import { createDocumentContainment } from "./domain/document-containment.js";
 import {
   documentAuthority,
@@ -32,6 +29,7 @@ import type {
 } from "./domain/ports/checkpoint-authority.js";
 import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
 import { ReservedNamespaceAdmissionError } from "./domain/provenance.js";
+import { closeRoom, whenRoomRegistered } from "./hocuspocus-rooms.js";
 
 type PendingAppend = {
   documentId: string;
@@ -87,6 +85,7 @@ export type HocuspocusPersistenceService = Pick<
   | "drainHocuspocusBranchPersistence"
   | "closeHocuspocusBranchRoom"
   | "rejectStaleBranchSyncStep1"
+  | "enrollHocuspocusBranchRoom"
   | "getPersistenceQueueMetrics"
 > & {
   writerIngressBarrier: WriterIngressBarrier;
@@ -407,10 +406,39 @@ export function createHocuspocusPersistenceService(
         branch.generation !== generation
       )
         return undefined;
-      return requireBranchCoordinator().readBranch(branchId, async (doc, snapshot) => ({
-        state: Y.encodeStateAsUpdate(doc),
-        generation: snapshot.generation,
-      }));
+      // The read can land after a reset: the room loads only its own generation.
+      return requireBranchCoordinator().readBranch(branchId, async (doc, snapshot) =>
+        snapshot.status === "active" && snapshot.generation === generation
+          ? { state: Y.encodeStateAsUpdate(doc), generation }
+          : undefined,
+      );
+    },
+
+    enrollHocuspocusBranchRoom({ branchId, generation, document }) {
+      const hocuspocus = deps.hocuspocus();
+      if (!hocuspocus) return;
+      const enrollment = (async () => {
+        // The load read the branch before its room became a delivery recipient: whatever
+        // committed in between, a transition or a reset, reached no room.
+        if (!(await whenRoomRegistered(hocuspocus, document))) return;
+        const outcome = await requireBranchCoordinator().enrollRoom({
+          branchId,
+          generation,
+          room: document,
+        });
+        if (outcome === "stale") closeRoom(hocuspocus, document);
+      })().catch((cause: unknown) => {
+        if (!deps.eventSink) return;
+        emitEvent(deps.eventSink, {
+          level: "error",
+          source: "collab.hocuspocus",
+          name: "branch_room_enrollment.failed",
+          correlation: { branchId, branchGeneration: generation },
+          payload: unknownToEventPayload(cause),
+        });
+      });
+      // A store of this room, and a drain of this branch, wait the enrollment out.
+      trackAppend(branchRoomName(branchId, generation), enrollment);
     },
 
     async admitLiveWriterUpdate(input) {
@@ -567,9 +595,8 @@ export function createHocuspocusPersistenceService(
 
     async storeHocuspocusBranch(branchId, _document) {
       await drainPending(`branch:${branchId}`);
-      // Every branch mutation is durable before it reaches a Hocuspocus room.
-      // Re-checkpointing here can inherit the publisher's async lock context
-      // and re-enter the branch critical section.
+      // Every branch mutation is durable before it reaches a Hocuspocus room, so a room
+      // store has nothing to write: it only waits out this branch's pending stores.
     },
 
     async drainHocuspocusPersistence() {
@@ -618,15 +645,25 @@ export function createHocuspocusPersistenceService(
     },
 
     async rejectStaleBranchSyncStep1(input) {
-      const branch = await requireBranchStore().getBranch(input.branchId);
-      if (
-        branch?.status !== "active" ||
-        branch.kind !== "work_draft" ||
-        branch.generation !== input.generation ||
-        !branchSyncStep1IsStale(input.clientStateVector, branch)
-      ) {
-        return false;
-      }
+      // Read through the runtime: a room this tab joins catches up on what another process
+      // committed before Hocuspocus answers the tab's step 1 from it.
+      const stale = await requireBranchCoordinator()
+        .readBranch(
+          input.branchId,
+          async (doc, branch) =>
+            branch.status === "active" &&
+            branch.kind === "work_draft" &&
+            branch.generation === input.generation &&
+            branchSyncStep1IsStale(input.clientStateVector, {
+              stateVector: Y.encodeStateVector(doc),
+              discardedStateVector: branch.discardedStateVector,
+            }),
+        )
+        .catch((cause: unknown) => {
+          if (cause instanceof BranchMissingError) return false;
+          throw cause;
+        });
+      if (!stale) return false;
       recordDroppedConnectionUpdate(branchRoomName(input.branchId, input.generation));
       if (deps.eventSink) {
         emitEvent(deps.eventSink, {
@@ -646,7 +683,14 @@ export function createHocuspocusPersistenceService(
   };
 }
 
-function branchSyncStep1IsStale(clientStateVector: Uint8Array, branch: BranchSnapshot): boolean {
+/**
+ * A client vector past the branch's current clocks only where a reset discarded them: the
+ * tab still holds the previous generation's content.
+ */
+function branchSyncStep1IsStale(
+  clientStateVector: Uint8Array,
+  branch: { stateVector: Uint8Array; discardedStateVector?: Uint8Array | null },
+): boolean {
   if (!branch.discardedStateVector) return false;
   const clientClocks = Y.decodeStateVector(clientStateVector);
   const currentClocks = Y.decodeStateVector(branch.stateVector);

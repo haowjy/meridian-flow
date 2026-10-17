@@ -1536,6 +1536,10 @@ msgstr "Couldn't save this document's home. Try again."
 msgid "Couldn’t save this preference."
 msgstr "Couldn’t save this preference."
 
+#: src/features/editor/SyncStatus.tsx
+msgid "Couldn't save your latest changes (copy them before you reopen)"
+msgstr "Couldn't save your latest changes (copy them before you reopen)"
+
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't search"
 msgstr "Couldn't search"
@@ -2984,6 +2988,10 @@ msgstr "Not Found"
 msgid "Not reported"
 msgstr "Not reported"
 
+#: src/features/editor/SyncStatus.tsx
+msgid "Not saved yet (keep this tab open until you're back online)"
+msgstr "Not saved yet (keep this tab open until you're back online)"
+
 #: src/features/chat/chat-upload-display.ts
 msgid "Notebook"
 msgstr "Notebook"
@@ -3439,6 +3447,10 @@ msgstr "Renamed to {confirmed}"
 #: src/core/editor/diagrams/DiagramBody.tsx
 msgid "Rendering diagram…"
 msgstr "Rendering diagram…"
+
+#: src/features/editor/SyncStatus.tsx
+msgid "Reopen draft"
+msgstr "Reopen draft"
 
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Reopens the documents you had open when you switch devices."

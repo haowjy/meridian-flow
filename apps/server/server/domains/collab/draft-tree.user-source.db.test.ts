@@ -10,6 +10,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { expect, it } from "vitest";
 import * as Y from "yjs";
 import { describeDraftTreeDb } from "../../test-support/draft-tree-suite.js";
+import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
 
 describeDraftTreeDb("Drafted user:// (postgres)", (start, db) => {
@@ -137,7 +138,10 @@ describeDraftTreeDb("Drafted user:// (postgres)", (start, db) => {
 
     const cinder = await stranger.work("Cinder", "draft");
     const draft = await stranger.draftOf(cinder);
-    const branches = createDrizzleBranchStore(db, { drafts: stranger.drafts });
+    const branches = createDrizzleBranchStore(db, {
+      workProjection: createTestWorkProjectionMutation(db),
+      drafts: stranger.drafts,
+    });
     await expect(
       branches.ensureDraftBranch({ documentId: kael, draftId: draft.id, liveDoc: new Y.Doc() }),
       "a stranger's draft",

@@ -7,9 +7,10 @@ import {
 } from "@meridian/agent-edit/integration";
 import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import type { BranchSnapshot } from "./branch-coordinator.js";
-import type { BranchJournalRow, PreparedPush } from "./branch-push-contracts.js";
+import type { BranchJournalRow } from "./branch-journal.js";
+import type { PreparedPush } from "./branch-push-contracts.js";
 import { publicationBlockChanges } from "./branch-push-plan.js";
+import type { BranchSnapshot } from "./branch-store.js";
 import {
   journalAttributionByChangedBlock,
   preparedTrailChanges,
@@ -55,11 +56,12 @@ export async function preparePushUnderLiveLock(
       model: input.model,
     });
     const afterBlocks = input.model.getBlocks(toDocHandle(afterDoc));
+    const afterBlockIds = input.model.getDocumentBlockIds(toDocHandle(afterDoc));
     const afterXmlBlocks = afterDoc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).toArray();
     const afterById = new Map(
-      afterBlocks.flatMap((block, index) => {
+      afterBlocks.flatMap((_block, index) => {
         const xml = afterXmlBlocks[index];
-        return xml instanceof Y.XmlElement ? [[input.model.getBlockId(block), xml] as const] : [];
+        return xml instanceof Y.XmlElement ? [[afterBlockIds[index] as string, xml] as const] : [];
       }),
     );
     const blockIdentities = new Map(

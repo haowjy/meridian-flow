@@ -11,7 +11,7 @@ import { drafts } from "@meridian/database/schema";
 import { asc, inArray } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { lockWorksInIdOrder } from "../../../shared/work-lifecycle-lock.js";
+import type { WorkProjectionMutation } from "../../projects/index.js";
 import type { PublicationCheckResult } from "../domain/ports/pending-settlement-store.js";
 import type {
   PublicationAdmission,
@@ -43,14 +43,16 @@ export async function planAndLock(
   publication: SettlementPublication,
   scope: SettlementBatchScope,
   members: { workIds: readonly WorkId[]; documentIds: readonly DocumentId[] },
+  /** Work-first order's one owner (decision D17). */
+  workBoundary: Pick<WorkProjectionMutation, "lockWorks">,
 ): Promise<PlannedStep[]> {
   const planned = await Promise.all(publication.steps.map((step) => step.plan(scope)));
   const plans = planned.flatMap((plan, step) =>
     plan ? [{ step, kind: (publication.steps[step] as SettlementPublicationStep).kind, plan }] : [],
   );
-  await lockWorksInIdOrder(db, [
-    ...new Set([...members.workIds, ...plans.flatMap(({ plan }) => plan.workIds ?? [])]),
-  ]);
+  await workBoundary.lockWorks({
+    works: [...members.workIds, ...plans.flatMap(({ plan }) => plan.workIds ?? [])],
+  });
   const draftIds = sortedUnique(plans.flatMap(({ plan }) => plan.draftIds ?? []));
   if (draftIds.length > 0) {
     await db
@@ -120,20 +122,6 @@ export async function decideCheck(
     }
   }
   return { kind: "proceed", hold: [...hold.values()], payloads: staged };
-}
-
-/** Every step's outer preparation over its payload: the branch leases the batch needs. */
-export async function requiredBranchLeases(
-  publication: SettlementPublication,
-  payloads: ReadonlyMap<string, JsonValue>,
-): Promise<string[]> {
-  const branchIds: string[] = [];
-  for (const step of publication.steps) {
-    const payload = payloads.get(step.kind);
-    if (payload === undefined || !step.prepare) continue;
-    branchIds.push(...(await step.prepare(payload)).branchIds);
-  }
-  return sortedUnique(branchIds);
 }
 
 function sortedUnique<T extends string>(values: readonly T[]): T[] {

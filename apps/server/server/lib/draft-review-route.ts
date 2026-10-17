@@ -20,6 +20,7 @@ import {
   type DraftCommandResult,
   type DraftDiscardAllRequest,
   type DraftPreviewResponse,
+  MAX_DISCARD_MEMBER_PART_KEYS,
   type ThreadDraftListItem,
   type ThreadDraftListResponse,
 } from "@meridian/contracts/drafts";
@@ -108,7 +109,8 @@ const DiscardBody = z.object({
   draftRevisionToken: z.string().max(200).optional(),
   closureClassIds: z.array(z.string().max(200)).max(500).optional(),
   admissionTokens: z.array(z.string().max(200)).max(500).optional(),
-  memberPartKeys: z.array(z.string().max(200)).max(500).optional(),
+  memberPartKeys: z.array(z.string().max(200)).max(MAX_DISCARD_MEMBER_PART_KEYS).optional(),
+  memberPartKeysComplete: z.boolean().optional(),
 });
 
 function parseBody<S extends z.ZodTypeAny>(schema: S, body: unknown, what: string): z.infer<S> {
@@ -125,7 +127,10 @@ export const parseDraftDiscardSelection = (body: unknown) => {
   const perChange = parsed.closureClassIds !== undefined;
   if (
     perChange &&
-    (!parsed.liveRevisionToken || !parsed.admissionTokens || !parsed.memberPartKeys)
+    (!parsed.liveRevisionToken ||
+      !parsed.admissionTokens ||
+      !parsed.memberPartKeys ||
+      parsed.memberPartKeysComplete === undefined)
   ) {
     throw createError({ statusCode: 400, message: "Invalid Discard request" });
   }
@@ -681,6 +686,7 @@ export async function handleDiscardWorkDraftRequest(
                 closureClassIds: request.closureClassIds ?? [],
                 admissionTokens: request.admissionTokens ?? [],
                 memberPartKeys: request.memberPartKeys ?? [],
+                memberPartKeysComplete: request.memberPartKeysComplete ?? false,
                 liveRevisionToken: request.liveRevisionToken ?? "",
                 ...(request.draftRevisionToken
                   ? { draftRevisionToken: request.draftRevisionToken }

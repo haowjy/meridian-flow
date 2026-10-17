@@ -314,6 +314,7 @@ describe("clicks queued behind a Discard that re-forked the draft", () => {
       closureClassIds: [a.closureClassId],
       admissionTokens: [a.admissionToken],
       memberPartKeys: [a.partKey],
+      memberPartKeysComplete: true,
     });
     expect(api.discardDraft.mock.calls[1]?.[3]).toMatchObject({
       closureClassIds: [b.closureClassId],

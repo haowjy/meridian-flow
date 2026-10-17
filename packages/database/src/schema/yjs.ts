@@ -85,6 +85,15 @@ export const documentBranches = pgTable(
       .notNull()
       .default(packCollabSchemaVersion(COLLAB_SCHEMA_VERSION)),
     generation: integer("generation").notNull().default(1),
+    /**
+     * Bumped by every committed write to the branch: appends, checkpoint rewrites, closes and
+     * every change to a review-membership input. The write fence; never reaches the client.
+     */
+    revision: bigint("revision", { mode: "number" }).notNull().default(0),
+    /** The `revision` the checkpoint (`state`, `state_vector`) was written at. */
+    checkpointRevision: bigint("checkpoint_revision", { mode: "number" }).notNull().default(0),
+    /** Highest `branch_write_journal.id` folded into the checkpoint; the tail is every later row. */
+    checkpointSeq: bigint("checkpoint_seq", { mode: "number" }).notNull().default(0),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

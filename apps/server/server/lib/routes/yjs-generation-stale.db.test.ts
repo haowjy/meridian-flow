@@ -6,6 +6,7 @@ import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { afterAll, beforeEach, expect, it } from "vitest";
 import WebSocket from "ws";
 import * as Y from "yjs";
+import { materializeBranchRead } from "../../domains/collab/domain/branch-store.js";
 import { createHocuspocusPersistenceService } from "../../domains/collab/hocuspocus-persistence.js";
 import { closeBranchRooms } from "../../domains/collab/hocuspocus-rooms.js";
 import {
@@ -81,7 +82,10 @@ it.each([
           } as never);
         }
       },
-      onLoadDocument: async () => (await f.branchStore.getBranch(branchId))?.state,
+      onLoadDocument: async () => {
+        const read = await f.branchStore.readBranchAt(branchId);
+        return read ? Y.encodeStateAsUpdate(materializeBranchRead(read)) : undefined;
+      },
       beforeSync:
         kind === "selective"
           ? async ({ documentName, document, type, payload }) => {

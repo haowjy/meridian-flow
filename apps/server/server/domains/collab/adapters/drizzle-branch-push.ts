@@ -14,23 +14,21 @@ import {
   pushLineage,
   works,
 } from "@meridian/database/schema";
+import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import * as Y from "yjs";
+import { bumpBranchRevisions } from "../../../shared/branch-revisions.js";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import {
-  branchDraftWork,
-  lockDraftBranchWorks,
-  runWithActiveWorkDrafts,
-} from "../../../shared/work-draft-lifecycle.js";
+import { branchDraftWork } from "../../../shared/work-draft-lifecycle.js";
 import type { NoticePort } from "../../notices/index.js";
 import { WorkLifecycleUnavailableError } from "../../projects/domain/work-lifecycle.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
-import { mergeStateVectors } from "../domain/branch-coordinator.js";
+import type { BranchJournalRow } from "../domain/branch-journal.js";
 import {
-  type BranchJournalReadStore,
-  type BranchJournalRow,
   BranchPushCommitConflictError,
+  type BranchPushReadStore,
   DraftChangeRefusal,
   type PreparedDiscardCommit,
   type PreparedPushCommit,
@@ -45,6 +43,7 @@ import type {
   WorkDraftPendingEvidence,
   WorkDraftPendingStore,
 } from "../domain/ports/work-draft-pending-store.js";
+import { commitRewriteWithinTx } from "./drizzle-branch-storage.js";
 import { placeDraftRows } from "./drizzle-document-edits.js";
 import { attachBatchWithinTx, claimCommandWithinTx } from "./drizzle-draft-commands.js";
 import { refreshDraftEffect } from "./drizzle-draft-effect.js";
@@ -63,7 +62,7 @@ export function sortPushesByDocumentId<T extends { branch: { documentId: string 
   );
 }
 
-export function createDrizzleBranchJournalReadStore(db: Database): BranchJournalReadStore {
+export function createDrizzleBranchJournalReadStore(db: Database): BranchPushReadStore {
   return {
     async listActiveJournalRows(branchId, generation) {
       const rows = await db
@@ -226,6 +225,9 @@ export function createDrizzleBranchJournalReadStore(db: Database): BranchJournal
 }
 
 /** Thrown inside the staging transaction to roll back its command claim with it. */
+/** A staged write's Works and its grants' Works, locked first; each of its own must be active. */
+const ACTIVE_DRAFT_SEAM = { seam: true, requireActive: true } as const;
+
 class LineageConflictAfterClaim extends Error {
   constructor(readonly push: PushLineageRow) {
     super("A lineage conflict ended staging after the command was claimed");
@@ -237,22 +239,30 @@ export function createDrizzlePushCommitStore(
   db: Database,
   stageSettlementBatchWithinTx: StageSettlementBatchWithinTx,
   changeTrails: ChangeTrailPersistence,
-  notices?: NoticePort,
-  workProjection?: WorkProjectionMutation,
+  notices: NoticePort | undefined,
+  workProjection: WorkProjectionMutation,
 ): PushCommitStore {
-  const mutatePending = <T>(branchIds: readonly string[], operation: () => Promise<T>) =>
-    workProjection ? workProjection.mutatePendingBranches(branchIds, operation) : operation();
   return {
     async commitDiscard(input) {
-      return runWithActiveWorkDrafts(db, { branchIds: [input.branch.branchId] }, () =>
-        mutatePending([input.branch.branchId], () =>
-          commitPreparedDiscard(currentDrizzleDb(db), input, new Date()),
-        ),
+      return workProjection.mutatePending(
+        { branches: [input.branch.branchId] },
+        () => commitPreparedDiscard(currentDrizzleDb(db), input, new Date()),
+        ACTIVE_DRAFT_SEAM,
       );
     },
 
+    /**
+     * Seam B for a caller about to change several draft branches in one transaction: their
+     * Works (with the bound grants' Works, then the grants' confirmation) before any other
+     * lock; names the branches whose Work is no longer active, a frozen draft's among them.
+     */
     async lockDraftWorks(branchIds) {
-      return lockDraftBranchWorks(db, branchIds);
+      const locked = await workProjection.lockWorks({ branches: branchIds }, { seam: true });
+      return new Set(
+        locked.branches
+          .filter((row) => !row.workId || locked.works.get(row.workId)?.state !== "active")
+          .map((row) => row.id),
+      );
     },
 
     async commitPushBatch(input) {
@@ -265,61 +275,65 @@ export function createDrizzlePushCommitStore(
         }
         return null;
       };
-      return runWithActiveWorkDrafts(db, { branchIds }, () =>
-        mutatePending(branchIds, async () => {
-          const txDb = currentDrizzleDb(db);
-          // The command's claim is the transaction's first write; losing it stages nothing.
-          if (input.command && !(await claimCommandWithinTx(txDb, input.command))) {
-            return { status: "command_exists" as const };
-          }
-          const existing = await firstCommitted();
-          // A claim with no batch can never settle: roll it back with this transaction and
-          // let the caller's retry claim again (§4.6).
-          if (existing && input.command) throw new LineageConflictAfterClaim(existing);
-          if (existing) return { status: "conflict" as const, push: existing };
-          const sorted = sortPushesByDocumentId(input.pushes);
-          // Every document lock before any trail lock, as completion takes them.
-          for (const prepared of sorted)
-            await lockDocumentMutation(txDb, prepared.branch.documentId);
-          const now = new Date();
-          const staged = [];
-          for (const prepared of sorted) {
-            staged.push({
-              prepared,
-              push: mapLineage(await commitPreparedPush(txDb, prepared, now)),
-            });
-          }
-          // A durable commit requires its trail bundle: every push's, in one record.
-          if (staged.length > 0) {
-            await persistDurableTrailRecords(
-              staged.map(({ prepared, push }) => ({ record: prepared.trail, push })),
-              changeTrails,
-              notices,
+      return workProjection
+        .mutatePending(
+          { branches: branchIds },
+          async () => {
+            const txDb = currentDrizzleDb(db);
+            // The command's claim is the transaction's first write; losing it stages nothing.
+            if (input.command && !(await claimCommandWithinTx(txDb, input.command))) {
+              return { status: "command_exists" as const };
+            }
+            const existing = await firstCommitted();
+            // A claim with no batch can never settle: roll it back with this transaction and
+            // let the caller's retry claim again (§4.6).
+            if (existing && input.command) throw new LineageConflictAfterClaim(existing);
+            if (existing) return { status: "conflict" as const, push: existing };
+            const sorted = sortPushesByDocumentId(input.pushes);
+            // Every document lock before any trail lock, as completion takes them.
+            for (const prepared of sorted)
+              await lockDocumentMutation(txDb, prepared.branch.documentId);
+            const now = new Date();
+            const staged = [];
+            for (const prepared of sorted) {
+              staged.push({
+                prepared,
+                push: mapLineage(await commitPreparedPush(txDb, prepared, now)),
+              });
+            }
+            // A durable commit requires its trail bundle: every push's, in one record.
+            if (staged.length > 0) {
+              await persistDurableTrailRecords(
+                staged.map(({ prepared, push }) => ({ record: prepared.trail, push })),
+                changeTrails,
+                notices,
+              );
+            }
+            await stageSettlementBatchWithinTx(
+              txDb,
+              input.settlement,
+              staged,
+              input.payloads,
+              input.holds,
             );
+            if (input.command) {
+              await attachBatchWithinTx(txDb, input.command.commandId, input.settlement.batchId);
+            }
+            return { status: "inserted" as const, pushes: staged.map(({ push }) => push) };
+          },
+          ACTIVE_DRAFT_SEAM,
+        )
+        .catch(async (error: unknown) => {
+          if (error instanceof LineageConflictAfterClaim) {
+            return { status: "conflict" as const, push: error.push };
           }
-          await stageSettlementBatchWithinTx(
-            txDb,
-            input.settlement,
-            staged,
-            input.payloads,
-            input.holds,
-          );
-          if (input.command) {
-            await attachBatchWithinTx(txDb, input.command.commandId, input.settlement.batchId);
-          }
-          return { status: "inserted" as const, pushes: staged.map(({ push }) => push) };
-        }),
-      ).catch(async (error: unknown) => {
-        if (error instanceof LineageConflictAfterClaim) {
-          return { status: "conflict" as const, push: error.push };
-        }
-        if (!(error instanceof WorkLifecycleUnavailableError)) throw error;
-        // Archive can win after another process committed this exact attempt.
-        // A durable receipt is history, not permission to perform another write.
-        const existing = await firstCommitted();
-        if (existing) return { status: "conflict" as const, push: existing };
-        throw error;
-      });
+          if (!(error instanceof WorkLifecycleUnavailableError)) throw error;
+          // Archive can win after another process committed this exact attempt.
+          // A durable receipt is history, not permission to perform another write.
+          const existing = await firstCommitted();
+          if (existing) return { status: "conflict" as const, push: existing };
+          throw error;
+        });
     },
   };
 }
@@ -536,31 +550,28 @@ async function commitPreparedDiscard(
   )
     throw new DraftChangeRefusal("stale");
 
-  const [casRow] = await db
-    .update(documentBranches)
-    .set({
-      state: Buffer.from(input.state),
-      stateVector: Buffer.from(input.stateVector),
-      ...(input.survivors
-        ? {
-            generation: input.branch.generation + 1,
-            discardedStateVector: Buffer.from(
-              mergeStateVectors(input.branch.discardedStateVector, input.branch.stateVector),
-            ),
-          }
-        : {}),
-      updatedAt: now,
-    })
-    .where(
-      and(
-        eq(documentBranches.id, input.branch.branchId),
-        eq(documentBranches.status, "active"),
-        eq(documentBranches.generation, input.branch.generation),
-        eq(documentBranches.state, Buffer.from(input.branch.state)),
-      ),
-    )
-    .returning({ id: documentBranches.id });
-  if (!casRow) throw new BranchPushCommitConflictError(input.branch.branchId);
+  // The re-forked (or row-discarded) draft is the new checkpoint, at the revision the
+  // selection was made against; survivors re-journal under the row lock, inside it.
+  const checkpoint = createCollabYDoc({ gc: false });
+  let rewritten: Awaited<ReturnType<typeof commitRewriteWithinTx>>;
+  try {
+    Y.applyUpdate(checkpoint, input.state);
+    rewritten = await commitRewriteWithinTx(db, {
+      branchId: input.branch.branchId,
+      policy: { kind: "exact", revision: input.branch.revision },
+      fence: { kind: "none" },
+      work: "active",
+      doc: checkpoint,
+      ...(input.survivors ? { reset: { kind: "refork" as const } } : {}),
+      withinLock: input.survivors
+        ? () => rejournalSurvivors(db, input, input.survivors ?? [])
+        : undefined,
+    });
+  } finally {
+    checkpoint.destroy();
+  }
+  if (rewritten.status !== "committed")
+    throw new BranchPushCommitConflictError(input.branch.branchId);
 
   const discardedRows = await db
     .update(branchWriteJournal)
@@ -592,38 +603,6 @@ async function commitPreparedDiscard(
     { kind: "discarded" },
   );
   if (input.survivors) {
-    for (const row of input.survivors) {
-      if (input.retireSurvivors) {
-        await placeDraftRows(db, row.branchId, input.branch.generation, [row.id], {
-          kind: "retired",
-        });
-        continue;
-      }
-      const [next] = await db
-        .insert(branchWriteJournal)
-        .values({
-          branchId: row.branchId,
-          generation: input.branch.generation + 1,
-          updateData: Buffer.from(row.updateData),
-          source: row.source,
-          actorUserId: row.actorUserId,
-          threadId: row.threadId,
-          turnId: row.turnId,
-          wId: row.wId,
-          toolCallId: row.toolCallId,
-          updateMeta: row.updateMeta,
-          status: row.status,
-          draftBaseUpdateSeq: row.draftBaseUpdateSeq,
-        })
-        .returning({ id: branchWriteJournal.id });
-      if (!next) throw new Error("Discard survivor was not journaled");
-      await placeDraftRows(db, row.branchId, input.branch.generation, [row.id], {
-        kind: "pending",
-        branchId: row.branchId,
-        generation: input.branch.generation + 1,
-        rowId: next.id,
-      });
-    }
     await db
       .update(branchWriteJournal)
       .set({ status: "discarded" })
@@ -635,11 +614,52 @@ async function commitPreparedDiscard(
         ),
       );
   }
-  await refreshDraftEffect(db, input.branch.branchId, undefined, true);
-  await db
-    .update(documentBranches)
-    .set({ blocking: false })
-    .where(eq(documentBranches.id, input.branch.branchId));
+  await refreshDraftEffect(db, input.branch.branchId);
+  await bumpBranchRevisions(db, [input.branch.branchId], { blocking: false });
+}
+
+/**
+ * A selective Discard's surviving rows at the next generation (their content is in the
+ * re-forked checkpoint), with their edit parts moved onto them; retired instead when the
+ * item closes.
+ */
+async function rejournalSurvivors(
+  db: DrizzleDb,
+  input: PreparedDiscardCommit,
+  survivors: NonNullable<PreparedDiscardCommit["survivors"]>,
+): Promise<void> {
+  for (const row of survivors) {
+    if (input.retireSurvivors) {
+      await placeDraftRows(db, row.branchId, input.branch.generation, [row.id], {
+        kind: "retired",
+      });
+      continue;
+    }
+    const [next] = await db
+      .insert(branchWriteJournal)
+      .values({
+        branchId: row.branchId,
+        generation: input.branch.generation + 1,
+        updateData: Buffer.from(row.updateData),
+        source: row.source,
+        actorUserId: row.actorUserId,
+        threadId: row.threadId,
+        turnId: row.turnId,
+        wId: row.wId,
+        toolCallId: row.toolCallId,
+        updateMeta: row.updateMeta,
+        status: row.status,
+        draftBaseUpdateSeq: row.draftBaseUpdateSeq,
+      })
+      .returning({ id: branchWriteJournal.id });
+    if (!next) throw new Error("Discard survivor was not journaled");
+    await placeDraftRows(db, row.branchId, input.branch.generation, [row.id], {
+      kind: "pending",
+      branchId: row.branchId,
+      generation: input.branch.generation + 1,
+      rowId: next.id,
+    });
+  }
 }
 
 async function findLineage(db: DrizzleDb, idempotencyKey: string): Promise<PushLineageRow | null> {
@@ -663,18 +683,11 @@ async function commitPreparedPush(
   )
     throw new DraftChangeRefusal("stale");
 
-  const [casRow] = await db
-    .update(documentBranches)
-    .set({ updatedAt: sql`${documentBranches.updatedAt}` })
-    .where(
-      and(
-        eq(documentBranches.id, input.branch.branchId),
-        eq(documentBranches.status, "active"),
-        eq(documentBranches.generation, input.branch.generation),
-        eq(documentBranches.state, Buffer.from(input.branch.state)),
-      ),
-    )
-    .returning({ id: documentBranches.id });
+  // Staging flips the rows' status (a membership input): the revision fences and records it.
+  // The revision alone fences the generation: a re-fork bumps it.
+  const [casRow] = await bumpBranchRevisions(db, [input.branch.branchId], {
+    expectedRevision: input.branch.revision,
+  });
   if (!casRow) throw new BranchPushCommitConflictError(input.branch.branchId);
 
   const [lineage] = await db

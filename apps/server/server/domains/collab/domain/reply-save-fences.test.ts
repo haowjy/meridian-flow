@@ -1,4 +1,4 @@
-/** The reply save fence: identity admission, reasoned refusal and held leases (contract §2.1). */
+/** The reply save fence: identity admission and reasoned refusal (contract §2.1). */
 import type { DraftId } from "@meridian/contracts";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { describe, expect, it, vi } from "vitest";
@@ -11,7 +11,6 @@ import {
   fakeEditGrant,
 } from "../test-support/thread-peer-pool-fakes.js";
 import { asLiveAgentEditCore } from "./agent-edit-cores.js";
-import { createBranchCriticalSections } from "./branch-critical-sections.js";
 import { createReplySaveFences, type ReplyRecord } from "./reply-save-fences.js";
 
 const DOCUMENT = "ch12" as DocumentId;
@@ -24,12 +23,10 @@ function scenario() {
   const branches = createFakeBranchTable({ documentId: DOCUMENT, threadId: THREAD });
   const drafts = { shareActive: vi.fn(async (_id: DraftId) => ({ id: FAKE_DRAFT_ID }) as never) };
   const fileAccess = createFakeFileAccess();
-  const criticalSections = createBranchCriticalSections();
   const diagnostics = { replyPinMismatch: vi.fn() };
   const fences = createReplySaveFences({
     liveUtilityCore: live,
     branches,
-    criticalSections,
     drafts,
     diagnostics,
     fileAccess,
@@ -65,7 +62,6 @@ function scenario() {
     drafts,
     fileAccess,
     threadCore,
-    criticalSections,
     diagnostics,
   };
 }
@@ -165,20 +161,5 @@ describe("reply save fence", () => {
     expect(s.threadCore.invalidateThreadDocument).toHaveBeenCalledWith(DOCUMENT, THREAD);
     expect(s.threadCore.refuseStaged).not.toHaveBeenCalled();
     expect(s.record.participants.size).toBe(0);
-  });
-
-  it("holds one sorted lease over every pinned peer and upstream through the save", async () => {
-    const { fences, record } = scenario();
-    let covered: string[] = [];
-    await fences.withLeases(record, async (lease) => {
-      covered = ["peer-1", FAKE_UPSTREAM_ID, "other"].filter((id) => lease?.covers(id));
-    });
-    expect(covered).toEqual(["peer-1", FAKE_UPSTREAM_ID]);
-  });
-
-  it("runs a reply with no pinned document without a lease", async () => {
-    const { fences, record } = scenario();
-    record.documents.get(DOCUMENT)!.pin = undefined;
-    await fences.withLeases(record, async (lease) => expect(lease).toBeUndefined());
   });
 });

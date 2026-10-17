@@ -11,6 +11,7 @@ import {
 import { runInRootDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { draftTreeScenario } from "../../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
+import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createDrafts } from "../domain/drafts.js";
 import { createDrizzleDraftStore, createDrizzleDraftWriteBoundary } from "./drizzle-drafts.js";
 
@@ -43,7 +44,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const resolverOn = (db: Database) =>
       createDrafts({
         store: createDrizzleDraftStore(db),
-        boundary: createDrizzleDraftWriteBoundary(db),
+        boundary: createDrizzleDraftWriteBoundary(db, createTestWorkProjectionMutation(db)),
       });
 
     beforeEach(() => deleteDrizzleRows(root, [users]));

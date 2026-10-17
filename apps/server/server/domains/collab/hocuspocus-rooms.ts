@@ -1,18 +1,41 @@
 /** Helpers for managing generated Hocuspocus rooms. */
-import type { Hocuspocus } from "@hocuspocus/server";
-import { WS_CLOSE } from "@meridian/contracts/protocol";
+import type { Document, Hocuspocus } from "@hocuspocus/server";
+import { parseYjsRoomName, WS_CLOSE } from "@meridian/contracts/protocol";
 
-export function closeBranchRooms(hocuspocus: Hocuspocus | null, branchId: string): void {
+/** Closes the branch's rooms; with `olderThan`, only those of an earlier generation. */
+export function closeBranchRooms(
+  hocuspocus: Hocuspocus | null,
+  branchId: string,
+  olderThan?: number,
+): void {
   if (!hocuspocus) return;
-  const roomPrefix = `branch:${branchId}:gen:`;
-  for (const roomName of [...hocuspocus.documents.keys()].filter((name) =>
-    name.startsWith(roomPrefix),
-  )) {
-    const document = hocuspocus.documents.get(roomName);
-    if (!document) continue;
-    for (const connection of document.getConnections()) {
-      connection.close(WS_CLOSE.BRANCH_GENERATION_STALE);
-    }
-    void hocuspocus.unloadDocument(document);
+  for (const [roomName, document] of [...hocuspocus.documents.entries()]) {
+    const room = parseYjsRoomName(roomName);
+    if (room?.kind !== "branch" || room.branchId !== branchId) continue;
+    if (olderThan !== undefined && room.generation >= olderThan) continue;
+    closeRoom(hocuspocus, document);
   }
+}
+
+/** Closes one room on a generation its branch has left, and unloads it. */
+export function closeRoom(hocuspocus: Hocuspocus, document: Document): void {
+  if (hocuspocus.documents.get(document.name) !== document) return;
+  for (const connection of document.getConnections()) {
+    connection.close(WS_CLOSE.BRANCH_GENERATION_STALE);
+  }
+  void hocuspocus.unloadDocument(document);
+}
+
+/**
+ * Resolves once Hocuspocus has registered `document` as its room: true, or false when its load
+ * failed or another document holds the name. Called from a load hook, while the room is only
+ * in `loadingDocuments`: Hocuspocus 4.3's `createDocument` attached the continuation that
+ * registers it (`documents.set`) to the load promise before any hook ran, so this one, attached
+ * later, runs after it.
+ */
+export function whenRoomRegistered(hocuspocus: Hocuspocus, document: Document): Promise<boolean> {
+  const registered = () => hocuspocus.documents.get(document.name) === document;
+  const loading = hocuspocus.loadingDocuments.get(document.name);
+  if (!loading) return Promise.resolve(registered());
+  return loading.then(registered, () => false);
 }

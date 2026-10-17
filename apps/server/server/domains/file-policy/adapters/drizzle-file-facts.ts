@@ -30,6 +30,7 @@ import {
   identityDocuments,
   type TreeView,
 } from "../../context/tree/tree-view.js";
+import type { WorkProjectionMutation } from "../../projects/index.js";
 import type { FileFacts, FileNode, FileOwnerRef, FileWorkFacts } from "../domain/types.js";
 import type { FileFactsPort, FileFactsRequest } from "../ports/file-facts.js";
 
@@ -48,10 +49,13 @@ type WorkRow = {
 
 type FolderRow = { id: FolderId; deleted: boolean };
 
-export function createDrizzleFileFacts(db: Database): FileFactsPort {
+export function createDrizzleFileFacts(
+  db: Database,
+  works: Pick<WorkProjectionMutation, "lockWorks">,
+): FileFactsPort {
   const drafts = createDrafts({
     store: createDrizzleDraftStore(db),
-    boundary: createDrizzleDraftWriteBoundary(db),
+    boundary: createDrizzleDraftWriteBoundary(db, works),
   });
   const viewForWork = (workId?: WorkId): Promise<TreeView> =>
     drafts.viewForWork(workId && isUuid(workId) ? workId : null);

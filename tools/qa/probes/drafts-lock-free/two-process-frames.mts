@@ -1,0 +1,235 @@
+/**
+ * Two server processes over one draft (the P6 cell without sockets): each process has its own
+ * branch coordinator, store and room, and a row one process commits reaches the other only
+ * through the database. Every way this process's published replica advances must carry what it
+ * adds into its room (decision D25), or the next frame typed into that room is fenced:
+ *
+ * - `two-process-frames`: two tabs type at once, one per process.
+ * - `two-process-fold`: A's live pull folds a row B committed while the pull computed.
+ * - `two-process-compaction`: A's 512-row background compaction folds a row B committed.
+ */
+import assert from "node:assert/strict";
+import { createBranchCoordinator } from "../../../../apps/server/server/domains/collab/domain/branch-coordinator.ts";
+import type { BranchStore } from "../../../../apps/server/server/domains/collab/domain/branch-store.ts";
+import {
+  appendToFirstParagraph,
+  gate,
+  type Harness,
+  observe,
+  openHarness,
+  type Probe,
+  settled,
+  Y,
+} from "./harness.mts";
+
+const KEYS = 20;
+
+type Process = ReturnType<typeof openProcess>;
+
+/** One server process: its coordinator over its own store, and one Hocuspocus room. */
+function openProcess(harness: Harness, label: string, store: BranchStore = harness.store) {
+  const room = new Y.Doc({ gc: false });
+  const coordinator = createBranchCoordinator({
+    store,
+    attemptScope: harness.attemptScope,
+    onBranchUpdate: ({ update }) => Y.applyUpdate(room, update, "publish"),
+  });
+  return { label, room, coordinator };
+}
+
+/**
+ * A draft over "Base" with a room loaded in each process, the second process on its own
+ * connections. `storeA` lets a probe pause process A's store.
+ */
+async function twoProcesses(harness: Harness, label: string, storeA?: BranchStore) {
+  const { draftId } = await harness.seedWork(label);
+  const { documentId, live } = await harness.seedDocument(label, "Base");
+  const branch = await harness.store.ensureDraftBranch({ documentId, draftId, liveDoc: live });
+  const other = await openHarness(harness.url);
+  const a = openProcess(harness, "A", storeA);
+  const b = openProcess(other, "B");
+  for (const process of [a, b]) {
+    await process.coordinator.readBranch(branch.branchId, async (doc) => {
+      Y.applyUpdate(process.room, Y.encodeStateAsUpdate(doc));
+    });
+  }
+  const generation = (await harness.readBranch(branch.branchId)).generation;
+  return { branchId: branch.branchId, generation, live, a, b, other };
+}
+
+/** The tab's keystroke on its room's state: a fresh client inserting `token` at the end. */
+function keystroke(room: Y.Doc, token: string): Uint8Array {
+  const tab = new Y.Doc({ gc: false });
+  try {
+    Y.applyUpdate(tab, Y.encodeStateAsUpdate(room));
+    return appendToFirstParagraph(tab, token);
+  } finally {
+    tab.destroy();
+  }
+}
+
+async function type(process: Process, branchId: string, generation: number, token: string) {
+  const update = keystroke(process.room, token);
+  const result = await settled(
+    process.coordinator.commitWriterUpdate({
+      branchId,
+      expectedGeneration: generation,
+      updateData: update,
+      roomDocument: process.room,
+    }),
+  );
+  // Hocuspocus applies an admitted frame to the room; a refused one closes the socket.
+  if (result.ok && result.value.admitted) Y.applyUpdate(process.room, update, "client");
+  return result;
+}
+
+const roomText = (process: Process) => process.room.getXmlFragment("prosemirror").toString();
+
+export const twoProcessFrames: Probe = {
+  name: "two-process-frames",
+  decision: "D25",
+  expected: `frames: {"admitted":${2 * KEYS},"failures":{}}; ${2 * KEYS} tokens durable and in both rooms after a rejoin`,
+  async run(harness) {
+    const { branchId, generation, live, a, b, other } = await twoProcesses(harness, "two-process");
+    live.destroy();
+    const failures: Record<string, number> = {};
+    let admitted = 0;
+    for (let key = 0; key < KEYS; key += 1) {
+      const results = await Promise.all([
+        type(a, branchId, generation, ` A${key}`),
+        type(b, branchId, generation, ` B${key}`),
+      ]);
+      for (const result of results) {
+        if (result.ok) admitted += 1;
+        else {
+          const name = `${result.name}: ${result.message}`;
+          failures[name] = (failures[name] ?? 0) + 1;
+        }
+      }
+    }
+    const tokens = (text: string) => (text.match(/ [AB]\d+/g) ?? []).length;
+    const rooms: Record<string, number> = {};
+    for (const process of [a, b]) {
+      await process.coordinator.readBranch(branchId, async () => {});
+      rooms[process.label] = tokens(roomText(process));
+    }
+    await other.close();
+    const durable = tokens((await harness.readBranch(branchId)).text);
+    observe("frames", { admitted, failures });
+    observe("tokens", { durable, rooms });
+    assert.equal(admitted, 2 * KEYS);
+    assert.deepEqual(
+      { durable, rooms },
+      { durable: 2 * KEYS, rooms: { A: 2 * KEYS, B: 2 * KEYS } },
+    );
+  },
+};
+
+/** `store` whose first rewrite of `kind` waits for `release` once it has `entered`. */
+function pausedRewrite(store: BranchStore, kind: "pull" | "compact") {
+  const entered = gate();
+  const release = gate();
+  const done = gate();
+  let held = false;
+  const paused: BranchStore = {
+    ...store,
+    async commitRewrite(input) {
+      if (held || input.operation.kind !== kind) return store.commitRewrite(input);
+      held = true;
+      entered.open();
+      await release.wait;
+      try {
+        return await store.commitRewrite(input);
+      } finally {
+        done.open();
+      }
+    },
+  };
+  return { paused, entered, release, done };
+}
+
+export const twoProcessFold: Probe = {
+  name: "two-process-fold",
+  decision: "D25",
+  expected: `room A holds FOREIGN after the pull; next: {"ok":true,"value":{"admitted":true}}`,
+  async run(harness) {
+    const pause = pausedRewrite(harness.store, "pull");
+    const f = await twoProcesses(harness, "two-process-fold", pause.paused);
+    try {
+      appendToFirstParagraph(f.live, " LIVE");
+      // A's pull has merged live into its candidate; B commits before the pull's rewrite runs,
+      // so the rewrite folds B's row in under the branch lock.
+      const pull = f.a.coordinator.pullFromDoc({ branchId: f.branchId, upstream: f.live });
+      await pause.entered.wait;
+      const foreign = await type(f.b, f.branchId, f.generation, " FOREIGN");
+      pause.release.open();
+      const pulled = await pull;
+      const durable = (await harness.readBranch(f.branchId)).text;
+      const room = roomText(f.a);
+      const next = await type(f.a, f.branchId, f.generation, " NEXT");
+      observe("pull", { foreign: foreign.ok, pulled, durable, room });
+      observe("next", next);
+      assert.equal(pulled, "pulled");
+      assert.match(durable, /FOREIGN/);
+      assert.match(room, /FOREIGN/);
+      assert.deepEqual(next, { ok: true, value: { admitted: true } });
+    } finally {
+      f.live.destroy();
+      await f.other.close();
+    }
+  },
+};
+
+const COMPACT_TAIL_ROWS = 512;
+
+export const twoProcessCompaction: Probe = {
+  name: "two-process-compaction",
+  decision: "D25",
+  expected: `tail 0 and room A holds FOREIGN after the compaction; next: {"ok":true,"value":{"admitted":true}}`,
+  async run(harness) {
+    const pause = pausedRewrite(harness.store, "compact");
+    const f = await twoProcesses(harness, "two-process-compaction", pause.paused);
+    try {
+      f.live.destroy();
+      // A tail one row short of the bound; the next frame triggers the background fold.
+      const source = new Y.Doc({ gc: false });
+      Y.applyUpdate(source, Y.encodeStateAsUpdate(f.a.room));
+      const rows = Array.from({ length: COMPACT_TAIL_ROWS - 1 }, () => ({
+        branchId: f.branchId,
+        source: "writer" as const,
+        updateData: appendToFirstParagraph(source, "x"),
+      }));
+      await f.a.coordinator.commitSegmentRows({
+        branchId: f.branchId,
+        expectedGeneration: f.generation,
+        sourceDoc: source,
+        rows,
+      });
+      source.destroy();
+      await f.a.coordinator.readBranch(f.branchId, async () => {});
+      await type(f.a, f.branchId, f.generation, " TRIGGER");
+      await pause.entered.wait;
+      const foreign = await type(f.b, f.branchId, f.generation, " FOREIGN");
+      pause.release.open();
+      await pause.done.wait;
+      // The compaction publishes after its own commit returns.
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      const durable = await harness.readBranch(f.branchId);
+      const room = roomText(f.a);
+      const next = await type(f.a, f.branchId, f.generation, " NEXT");
+      observe("compaction", {
+        foreign: foreign.ok,
+        tail: durable.tail,
+        durableHasForeign: durable.text.includes("FOREIGN"),
+        roomHasForeign: room.includes("FOREIGN"),
+      });
+      observe("next", next);
+      assert.equal(durable.tail, 0);
+      assert.match(durable.text, /FOREIGN/);
+      assert.match(room, /FOREIGN/);
+      assert.deepEqual(next, { ok: true, value: { admitted: true } });
+    } finally {
+      await f.other.close();
+    }
+  },
+};

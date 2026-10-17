@@ -34,6 +34,7 @@ import { createDrizzleChangeTrailAggregateWriter } from "../collab/adapters/driz
 import { createDrizzleDocumentProjectionEffects } from "../collab/adapters/drizzle-document-activity.js";
 import { createDrizzleDraftStore } from "../collab/adapters/drizzle-drafts.js";
 import { stageSettlementBatchWithinTx } from "../collab/adapters/drizzle-pending-settlement.js";
+import { appendBranchRows, proseBranchUpdate } from "../collab/test-support/branch-store-seam.js";
 import { createDrizzleContextCatalog } from "../context/adapters/context-catalog.js";
 import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
 import { createDrizzleProjectContextAvailability } from "../context/adapters/project-context-availability.js";
@@ -455,13 +456,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         drafts: createDrizzleDraftStore(db),
       });
       for (const branchId of [BRANCH_ID, OTHER_BRANCH_ID, SECOND_BRANCH_ID]) {
-        await branches.appendJournal?.({
-          branchId,
-          generation: 1,
-          updateData: new Uint8Array([1]),
-          source: "agent",
-          updateMeta: { kind: "edit" },
-        });
+        await appendBranchRows(branches, branchId, [
+          { updateData: proseBranchUpdate(), source: "agent", updateMeta: { kind: "edit" } },
+        ]);
       }
       wakes.length = 0;
       const scopeKey = catalogScopeKey({ kind: "project", projectId: PROJECT_ID });
@@ -502,23 +499,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ];
       await runInDrizzleTransaction(db, async () => {
         for (const value of branchInputs) {
+          const branch = await branches.getBranch(value.branchId);
+          if (!branch) throw new Error(`missing branch ${value.branchId}`);
           await pushStore.commitDiscard({
-            branch: {
-              ...value,
-              documentId: value.documentId as never,
-              workId: value.workId as never,
-              kind: "work_draft",
-              upstreamBranchId: null,
-              threadId: null,
-              generation: 1,
-              status: "active",
-              state: new Uint8Array([0, 0]),
-              stateVector: new Uint8Array([0]),
-              schemaVersion: 1 as never,
-            },
+            branch,
             journalRows: await journal.listReviewableJournalRows(value.branchId, 1),
             state: new Uint8Array([0, 0]),
-            stateVector: new Uint8Array([0]),
           });
         }
         expect(wakes).toHaveLength(0);

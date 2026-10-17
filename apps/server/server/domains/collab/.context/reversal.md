@@ -51,17 +51,33 @@ model handle.
 ## Holds, effects, and failures
 
 A pending inverse holds the roots whose draft identity differs from live. Holds
-and destinations are branch-scoped and prepared from one locked invocation
-view. Only intersecting holds can select a holding draft. A skipped hold keeps
+and destinations are branch-scoped and prepared from the inverse's one
+captured view. Only intersecting holds can select a holding draft. A skipped hold keeps
 the draft blocking so Apply/Discard remains reachable even when visible prose
 equals live.
 
 `hasEffect` compares prose and managed manifest membership with the draft's
 last pulled live cut; pending lists, counts, and Work notifications read that
 effect or `blocking`, never raw journal-row count. Pull snapshot, effect, and projection updates commit in
-their own root transaction. Inverses take sorted transition locks, branch/live
-process locks, Work rows, and ordinary admission locks; Apply does not take
-the transition lock. Root pulls must not be awaited while holding Work locks.
+their own root transaction. Root pulls must not be awaited while holding Work
+locks.
+
+An inverse is an attempt. It captures its documents in one read snapshot with
+no lock or lease (live state, live heads, drafts merged over live) and plans
+off every lock. Its commit scope takes the live mutexes, then one savepoint
+whose first locks are the Work rows (the captured branches' Works and the bound
+grants' Works in id order, the grants confirmed: a seam boundary), then its
+documents' mutation locks in id order; the inverse takes no lock of its own,
+since the captured fences order two inverses of one edit. Inside it, each
+live destination's head must equal the captured head, and each draft
+destination is an exact checkpoint rewrite at its captured revision. A miss
+unwinds the whole attempt and recaptures. After four misses one more capture is
+planned without writing: a plan that refuses every part answers with its own
+reasons, and one that still applies is a conflict, `ReversalConflictError` for
+the card and `internal_error` ("the draft changed while reversing; try again")
+for model Undo, Redo and Revert, never an invented refusal. Publication runs
+after the commit, outside the scope. `markBlocking` is its own short write:
+Work rows, then the held branch rows, then the bump.
 
 A card outcome reports committed destination per document. Draft Undo says that
 Apply is needed to change the manuscript. The reverse endpoint may return

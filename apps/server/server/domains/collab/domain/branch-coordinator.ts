@@ -1,137 +1,196 @@
-/** Coordinates persisted branch-peer Y.Docs behind one mutation surface. */
+/**
+ * The branch runtime and the operations on it. The runtime holds one immutable published
+ * replica per branch, prepares every write on a private candidate (append, rewrite, reset) and
+ * publishes it only once its attempt completes; the operations (pull, reset, a reply's staged
+ * rows, a peer's catch-up, segment batches) are attempts over it. Writer frames and the tail
+ * fold they trigger are `branch-writer-frames.ts`, over the same runtime surface.
+ */
 
-import type { SemanticEditIRV1 } from "@meridian/agent-edit/integration";
 import { bytesEqual } from "@meridian/agent-edit/integration";
-import type { DraftId } from "@meridian/contracts";
-import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
-import {
-  COLLAB_SCHEMA_VERSION,
-  type CollabSchemaVersion,
-  createCollabYDoc,
-} from "@meridian/prosemirror-schema";
+import type { ThreadId } from "@meridian/contracts/runtime";
+import { type CollabSchemaVersion, createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import {
-  assertBranchLeaseCovers,
-  type BranchCriticalSections,
-  type BranchLockLease,
-  createBranchCriticalSections,
-} from "./branch-critical-sections.js";
-import type { BranchJournalReadStore, BranchJournalRow } from "./branch-push-contracts.js";
+  type Attempt,
+  type AttemptScope,
+  NO_ATTEMPT_SCOPE,
+  runBoundedAttempts,
+} from "./branch-attempts.js";
+import { captureAppendReceipts } from "./branch-receipts.js";
 import { BranchCorruptError } from "./branch-resolver.js";
+import {
+  type AppendBranchJournalInput,
+  type AppendReceiptGroup,
+  type AppendRowsInput,
+  assertReadableBranch,
+  BranchCasConflictError,
+  BranchMissingError,
+  type BranchRead,
+  type BranchSnapshot,
+  BranchStaleUpdateError,
+  type BranchStore,
+  type CommitRewriteInput,
+  materializeBranchRead,
+  membershipFlipWork,
+  type RewriteFence,
+  type RewriteOperation,
+  type RewriteOutcome,
+  type RewritePolicy,
+} from "./branch-store.js";
+import {
+  createWriterFrames,
+  type WriterFrameDiagnostics,
+  type WriterFrameInput,
+} from "./branch-writer-frames.js";
 import { createDocumentContainment } from "./document-containment.js";
 import {
-  admitCertifiedMutation,
-  admitWriterUpdate,
-  replicateFrozenIdentity,
+  documentEffectsEqual,
+  type EffectFingerprint,
+  effectFingerprint,
+  effectFingerprintsEqual,
+} from "./document-content.js";
+import {
+  admitSegmentRows,
+  assertSegmentRowsComplete,
+  replicateFrozenSource,
 } from "./document-mutation-policy.js";
-import { currentResponseTransactionId, enlistResponseParticipant } from "./response-transaction.js";
-import { DocumentSchemaMajorMismatchError, isStaleSchema } from "./stale-schema.js";
-import { certifyWriterRestorations } from "./writer-restoration.js";
 
-export type BranchKind = "work_draft" | "thread_peer";
-export type BranchStatus = "active" | "closed";
-
-export type BranchSnapshot = {
-  branchId: string;
-  documentId: DocumentId;
-  kind: BranchKind;
-  upstreamBranchId: string | null;
-  /** The draft this branch belongs to; a thread peer carries its upstream's. */
-  draftId: DraftId;
-  /** Derived: the draft's origin Work (`drafts.origin_work_id`), null when it has none. */
-  workId: WorkId | null;
-  threadId: ThreadId | null;
-  status: BranchStatus;
-  generation: number;
-  state: Uint8Array;
-  stateVector: Uint8Array;
-  discardedStateVector?: Uint8Array | null;
-  liveCut?: Uint8Array | null;
-  schemaVersion: CollabSchemaVersion;
+/**
+ * The branch as committed at `revision`: replaced, never mutated. `seq` is the highest journal
+ * id it contains; `tail` counts the rows (and their bytes) it holds past its checkpoint;
+ * `encoded` is its update bytes, computed once when first needed.
+ */
+export type PublishedReplica = {
+  readonly revision: number;
+  readonly checkpointRevision: number;
+  readonly seq: number;
+  readonly generation: number;
+  readonly doc: Y.Doc;
+  readonly tail: TailSize;
+  encoded?: Uint8Array;
 };
 
-export type PersistBranchInput = {
-  liveCut?: Uint8Array;
-  branchId: string;
-  expectedGeneration: number;
-  expectedStateVector: Uint8Array;
-  expectedState: Uint8Array;
-  state: Uint8Array;
-  stateVector: Uint8Array;
+/**
+ * A replica on its way to publication: `next`, and when it was built by applying `rows` to
+ * `from`, those two, so delivery can send the rows instead of diffing whole documents.
+ */
+type Transition = {
+  readonly next: PublishedReplica;
+  readonly from?: PublishedReplica;
+  readonly rows?: readonly Uint8Array[];
 };
 
-export type CommitBranchMutationInput = PersistBranchInput & {
-  journals?: readonly AppendBranchJournalInput[];
-};
+type TailSize = { readonly rows: number; readonly bytes: number };
+const EMPTY_TAIL: TailSize = { rows: 0, bytes: 0 };
 
-export type AppendBranchJournalInput = {
-  /** One logical tool write, shared by its segment rows. */
-  documentEditKey?: string;
-  branchId: string;
-  generation: number;
-  /** Rejects a staged reversal if branch history advanced after planning. */
-  expectedJournalWatermark?: number;
-  /** Rejects status-only Apply/discard/redo transitions after planning. */
-  expectedJournalRevision?: string;
-  updateData: Uint8Array;
-  source: "agent" | "writer";
-  wId?: number | null;
-  toolCallId?: string | null;
-  threadId?: ThreadId | null;
-  turnId?: string | null;
-  actorUserId?: string | null;
-  updateMeta?: unknown;
-  semanticEditIr?: SemanticEditIRV1;
-};
-
-export type ResetBranchSnapshotInput = {
-  editDisposition?: "discarded" | "retired";
-  branchId: string;
-  expectedGeneration: number;
-  expectedStateVector: Uint8Array;
-  expectedState: Uint8Array;
-  state: Uint8Array;
-  stateVector: Uint8Array;
-  discardedStateVector: Uint8Array;
-  schemaVersion: CollabSchemaVersion;
-};
-
-export type BranchStore = {
-  getBranch(branchId: string): Promise<BranchSnapshot | null>;
-  updateBranchSnapshot(input: PersistBranchInput): Promise<boolean>;
-  commitBranchMutation(input: CommitBranchMutationInput): Promise<boolean>;
-  resetBranchSnapshot(input: ResetBranchSnapshotInput): Promise<boolean>;
-  /** Defers cache-visible effects when persistence joined a response transaction. */
-  deferUntilCommit(callback: () => void): boolean;
-};
-
-export class BranchStaleUpdateError extends Error {
-  constructor(readonly branchId: string) {
-    super(`Branch ${branchId} update did not apply to the current generation`);
-    this.name = "BranchStaleUpdateError";
-  }
+function grownTail(tail: TailSize, updates: readonly Uint8Array[]): TailSize {
+  return {
+    rows: tail.rows + updates.length,
+    bytes: updates.reduce((total, update) => total + update.byteLength, tail.bytes),
+  };
 }
 
-export class BranchCasConflictError extends Error {
-  constructor(readonly branchId: string) {
-    super(`Branch ${branchId} changed before its snapshot could be persisted`);
-    this.name = "BranchCasConflictError";
-  }
-}
+/**
+ * A tail past either bound is folded into a new checkpoint (decision D10): every cold read of
+ * the branch replays its whole tail. The fold changes no content, effect or stamp.
+ */
 
-/** A load named a branch whose rows are gone (a last-use Discard deleted them). */
-export class BranchMissingError extends Error {
-  constructor(readonly branchId: string) {
-    super(`Branch ${branchId} does not exist`);
-    this.name = "BranchMissingError";
-  }
-}
+/**
+ * What a branch operation works from: the committed replica at the row's revision and the
+ * row read's review-membership inputs.
+ */
+export type BranchBase = {
+  snapshot: BranchSnapshot;
+  replica: PublishedReplica;
+  pendingRows: boolean;
+  liveCutStored: boolean;
+};
 
-type CachedBranchDoc = {
-  generation: number;
-  state: Uint8Array;
-  stateVector: Uint8Array;
-  doc: Y.Doc;
+/** An exact-predicate write's attempt policy; the last miss is `moved`'s (default: throw). */
+type CommitAttemptOptions<T> = {
+  bound?: number;
+  scope?: AttemptScope;
+  moved?: (cause: unknown) => T;
+  retrying?: (attempt: number) => void;
+};
+
+/**
+ * The runtime surface the coordinator's operations and `branch-writer-frames.ts` build on:
+ * committed replicas, private candidates of them, prepared writes and their attempts.
+ */
+export type BranchRuntime = {
+  loadBase(branchId: string): Promise<BranchBase>;
+  /** The replica published for the branch, if any: read it, never mutate it. */
+  published(branchId: string): PublishedReplica | undefined;
+  cloneReplica(replica: PublishedReplica): Y.Doc;
+  containment: ReturnType<typeof createDocumentContainment>;
+  /**
+   * Brings `room` up to `replica` when it lacks any of the replica's content, reported as a
+   * repair: a room misses committed content only through a delivery gap.
+   */
+  reconcileRoom(input: {
+    branchId: string;
+    room: Y.Doc;
+    replica: PublishedReplica;
+    trigger: RoomReconcileTrigger;
+  }): void;
+  prepareAppend(
+    base: BranchBase,
+    candidate: Y.Doc,
+    journals: readonly AppendBranchJournalInput[],
+    receipts: readonly AppendReceiptGroup[],
+  ): Promise<PreparedBranchWrite>;
+  prepareRewrite(
+    branchId: string,
+    candidate: Y.Doc,
+    rewrite: Omit<CommitRewriteInput, "branchId" | "doc">,
+  ): PreparedBranchWrite;
+  foldPolicy(replica: PublishedReplica): RewritePolicy;
+  commitAttempts<T>(
+    run: (attempt: Attempt) => Promise<T>,
+    options?: CommitAttemptOptions<T>,
+  ): Promise<T>;
+  commitOnce(
+    write: PreparedBranchWrite,
+    options: { scope?: AttemptScope; moved?: (cause: unknown) => void },
+  ): Promise<void>;
+};
+
+/** What found a room behind its branch: its first frame, or its enrollment once registered. */
+export type RoomReconcileTrigger = "frame" | "enrollment";
+
+/**
+ * A room's enrollment: `enrolled` when it now holds everything committed on its generation,
+ * `stale` when the branch moved to another generation or closed while the room loaded.
+ */
+export type RoomEnrollment = "enrolled" | "stale";
+
+/** A work draft's effect baseline as fingerprinted, at the checkpoint revision it was read. */
+type CachedBaseline = { checkpointRevision: number; fingerprint: EffectFingerprint };
+
+/**
+ * A branch write prepared on a private candidate, an `AttemptCandidate` of the attempt that
+ * prepared it: nothing is persisted until `persist` runs inside that attempt's commit scope,
+ * nothing is visible until `transfer` hands it to publication once the whole attempt
+ * completed, and `dispose` drops it on any unwind. `persist` throws `BranchCasConflictError`
+ * when the branch moved since the candidate's base.
+ */
+export type PreparedBranchWrite = {
+  readonly branchId: string;
+  /** The content the write commits; read it, never mutate it. */
+  readonly candidate: Y.Doc;
+  persist(): Promise<void>;
+  transfer(): void;
+  dispose(): void;
+};
+
+/** Every other exact-predicate write: four commit attempts, then the caller's own outcome. */
+const COMMIT_ATTEMPTS = 4;
+
+/** The pre-replay view a save's staged rows are reconciled against. */
+export type StagedBranchView = BranchSnapshot & {
+  /** The committed branch bytes at `revision`, captured before any replay. */
+  readonly encoded: Uint8Array;
 };
 
 export type SegmentRowsInput = {
@@ -141,125 +200,179 @@ export type SegmentRowsInput = {
   rows: readonly Omit<AppendBranchJournalInput, "generation">[];
 };
 
-/** The journal reads a save performs: the helper's generation history and attribution's concurrent rows. */
-export type BranchSaveJournalReads = Pick<BranchJournalReadStore, "listConcurrentJournalRows"> & {
-  listJournalRowsForBranch(
-    input: Parameters<BranchJournalReadStore["listJournalRowsForBranch"]>[0],
-  ): Promise<(BranchJournalRow & { editKind?: string })[]>;
+/**
+ * A pull merges `upstream` into the branch. A peer's pull names the upstream epoch it read
+ * `upstream` at: the commit locks that row `FOR SHARE` and loses to a re-fork of it.
+ */
+export type PullInput = {
+  branchId: string;
+  upstream: Y.Doc;
+  upstreamEpoch?: { branchId: string; generation: number };
 };
 
-export type OwnedBranchSession = {
-  read<T>(branchId: string, fn: (doc: Y.Doc, snapshot: BranchSnapshot) => Promise<T>): Promise<T>;
-  withTransient<T>(
-    branchId: string,
-    fn: (doc: Y.Doc, snapshot: BranchSnapshot) => Promise<T>,
-  ): Promise<T>;
-  withStagedRows<T>(
-    branchId: string,
-    run: (
-      doc: Y.Doc,
-      snapshot: BranchSnapshot,
-    ) => Promise<{ result: T; rows: readonly Omit<AppendBranchJournalInput, "generation">[] }>,
-    commit: boolean,
-  ): Promise<T>;
-  commitSegmentRows(input: SegmentRowsInput): Promise<boolean>;
-  checkpoint(branchId: string): Promise<void>;
-  /** The generation history B+ replays against, with each row's persisted inverse evidence. */
-  listHelperHistory: BranchSaveJournalReads["listJournalRowsForBranch"];
-  listConcurrentRows: BranchSaveJournalReads["listConcurrentJournalRows"];
+/**
+ * `pulled` committed. A live pull into a work draft waits out a pending settlement on its
+ * document (`fenced`: nothing was written, and the caller tries again later); a settlement
+ * terminally blocked on it freezes the pull (`blocked`: nothing written, nothing to retry
+ * until something new arrives, since no transition lifts a blocked batch); a closed
+ * branch has nothing to pull into; a peer whose upstream re-forked since its read is
+ * `upstreamMoved`, its capture abandoned. An archived Work's draft keeps pulling, so it applies
+ * cleanly after unarchive.
+ */
+export type PullOutcome = "pulled" | "fenced" | "blocked" | "closed" | "upstreamMoved";
+
+/** A rewrite refused for a reason other than a moved revision: never retried. */
+class BranchRewriteRefused extends Error {
+  constructor(
+    readonly branchId: string,
+    readonly status: Extract<RewriteOutcome["status"], "fenced" | "blocked" | "upstreamMoved">,
+  ) {
+    super(`Branch ${branchId} rewrite was refused: ${status}`);
+    this.name = "BranchRewriteRefused";
+  }
+}
+
+/**
+ * A work draft re-forked from `upstream` at the generation it was read: `exact` only at the
+ * revision read; `fold` over every append since, which the reset discards with its clocks fenced.
+ */
+export type ResetFromDocInput = Omit<ResetInput, "expectedRevision"> &
+  ({ policy: "exact"; expectedRevision: number } | { policy: "fold" });
+
+/** The fields every work-draft reset names. */
+type ResetInput = {
+  branchId: string;
+  upstream: Y.Doc;
+  expectedGeneration: number;
+  expectedRevision: number;
+  schemaVersion?: CollabSchemaVersion;
+  editDisposition?: "discarded" | "retired";
+  fence?: RewriteFence;
 };
 
 export type BranchCoordinator = {
   /**
-   * Merges `upstream` into the branch under a lease the caller holds (a pull takes its
-   * branches' leases before its transaction); throws for a branch the lease does not cover.
+   * Merges `upstream` into the branch as a folding rewrite, outside any transaction: each
+   * attempt is its own commit scope. Frames that commit while the pull computes are folded
+   * into its checkpoint, never a miss; only another rewrite makes it recompute.
    */
-  pullFromDoc(lease: BranchLockLease, branchId: string, upstream: Y.Doc): Promise<Uint8Array>;
-  resetFromDocIfUnchangedWithLease(
-    lease: BranchLockLease,
-    input: {
-      branchId: string;
-      upstream: Y.Doc;
-      expectedGeneration: number;
-      expectedStateVector: Uint8Array;
-      expectedState: Uint8Array;
-      schemaVersion?: CollabSchemaVersion;
-      editDisposition?: "discarded" | "retired";
-    },
-  ): Promise<boolean>;
+  pullFromDoc(input: PullInput): Promise<PullOutcome>;
   /**
-   * These branches' leases in one ordered acquisition, for an operation that touches
-   * several (a peer and its draft branch) and runs every step under the one lease.
+   * Re-forks a work draft from `upstream` inside the caller's transaction, holding nothing:
+   * false when the branch is no longer at the generation (or, `exact`, the revision) read.
+   * With `owner`, the caller's attempt owns the reset candidate and the write runs in its
+   * already-open commit scope, so a later miss in that attempt disposes it; without one, the
+   * reset is a single attempt in the caller's transaction. A moved branch throws
+   * `BranchCasConflictError` for the caller's attempt to classify.
    */
-  withLeases<T>(
-    branchIds: readonly string[],
-    run: (lease: BranchLockLease) => Promise<T>,
-  ): Promise<T>;
+  resetFromDoc(input: ResetFromDocInput, owner?: Attempt): Promise<boolean>;
   readBranch<T>(
     branchId: string,
     fn: (doc: Y.Doc, snapshot: BranchSnapshot) => Promise<T>,
   ): Promise<T>;
-  commitWriterUpdate(input: {
-    branchId: string;
-    expectedGeneration: number;
-    updateData: Uint8Array;
-    actorUserId?: string;
-    roomDocument: Y.Doc;
-  }): Promise<{ admitted: boolean }>;
+  // A reply's save (contract §2.3) prepares through these and acquires nothing: every write
+  // is an attempt fenced by the revision it was prepared at.
+  /** A private copy of the branch for `fn` to change; nothing it does is kept or published. */
+  withTransient<T>(
+    branchId: string,
+    fn: (doc: Y.Doc, snapshot: BranchSnapshot) => Promise<T>,
+  ): Promise<T>;
   /**
-   * A save's one door to branch state: every call runs under `lease`, acquires nothing, and
-   * throws `BranchLeaseScopeError` for a branch the lease does not cover.
+   * Replays a response's rows on a candidate of the committed branch. With `commit`, the rows
+   * come back as a prepared write (null when there are none) for the caller's commit scope.
    */
-  ownedSession(lease: BranchLockLease): OwnedBranchSession;
+  prepareStagedRows<T>(
+    branchId: string,
+    run: (
+      doc: Y.Doc,
+      snapshot: StagedBranchView,
+    ) => Promise<{ result: T; rows: readonly Omit<AppendBranchJournalInput, "generation">[] }>,
+    commit: boolean,
+  ): Promise<{ result: T; write: PreparedBranchWrite | null }>;
+  /** `source` merged into the branch as a checkpoint write; null when it holds `source` already. */
+  prepareCatchUp(branchId: string, source: Y.Doc): Promise<PreparedBranchWrite | null>;
+  commitSegmentRows(input: SegmentRowsInput): Promise<boolean>;
+  /** A writer frame (`branch-writer-frames.ts`). */
+  commitWriterUpdate(input: WriterFrameInput): Promise<{ admitted: boolean }>;
   notifyReset(input: { branchId: string; generation: number }): void;
-  broadcastUpdate(input: { branchId: string; update: Uint8Array }): void;
+  /** Brings this process's rooms up to what is committed now: a read, published as any other. */
+  deliverCommitted(branchId: string): Promise<void>;
+  /**
+   * Enrolls a room the host has just registered as a recipient: from here on every published
+   * transition reaches it, and this brings it up to what was committed before (decision D26).
+   */
+  enrollRoom(input: { branchId: string; generation: number; room: Y.Doc }): Promise<RoomEnrollment>;
 };
 
 export function createBranchCoordinator(input: {
   store: BranchStore;
-  /** The reads a save's owned session makes; leave it to the adapter that serves them. */
-  journalReads?: BranchSaveJournalReads;
-  criticalSections?: BranchCriticalSections;
-  maxCasRetries?: number;
+  /** Each attempt's rollback boundary: a root transaction, or a savepoint in an ambient one. */
+  attemptScope?: AttemptScope;
   onBranchUpdate?: (input: { branchId: string; update: Uint8Array }) => void;
   onBranchReset?: (input: { branchId: string; generation: number }) => void;
+  /** Applies a reconciling update to one room; defaults to a plain apply. */
+  applyToRoom?: (room: Y.Doc, update: Uint8Array) => void;
+  diagnostics?: WriterFrameDiagnostics;
 }): BranchCoordinator {
-  const criticalSections = input.criticalSections ?? createBranchCriticalSections();
+  const attemptScope = input.attemptScope ?? NO_ATTEMPT_SCOPE;
   const documentContainment = createDocumentContainment();
-  const cached = new Map<string, CachedBranchDoc>();
-  const pendingTransients = new Map<string, CachedBranchDoc>();
-  const dirtyTransientBranches = new Set<string>();
-  const maxCasRetries = input.maxCasRetries ?? 3;
+  const published = new Map<string, PublishedReplica>();
+  const baselines = new Map<string, CachedBaseline>();
 
-  async function resetFromDocIfUnchangedWithLease(
-    lease: BranchLockLease,
-    resetInput: {
-      branchId: string;
-      upstream: Y.Doc;
-      expectedGeneration: number;
-      expectedStateVector: Uint8Array;
-      expectedState: Uint8Array;
-      schemaVersion?: CollabSchemaVersion;
-      editDisposition?: "discarded" | "retired";
-    },
-  ): Promise<boolean> {
-    assertBranchLeaseCovers(lease, resetInput.branchId);
-    const snapshot = await loadSnapshot(resetInput.branchId);
-    assertWorkDraftResetTarget(snapshot);
-    if (
-      snapshot.generation !== resetInput.expectedGeneration ||
-      !bytesEqual(snapshot.stateVector, resetInput.expectedStateVector) ||
-      !bytesEqual(snapshot.state, resetInput.expectedState)
-    ) {
-      cached.delete(resetInput.branchId);
-      return false;
-    }
-    await persistReset(
-      snapshot,
-      resetInput.upstream,
-      resetInput.schemaVersion ?? snapshot.schemaVersion,
-      resetInput.editDisposition,
+  /**
+   * An exact-predicate write's attempts: a moved branch recaptures, and the last miss is
+   * `moved`'s to answer (by default it throws).
+   */
+  function commitAttempts<T>(
+    run: (attempt: Attempt) => Promise<T>,
+    options: CommitAttemptOptions<T> = {},
+  ): Promise<T> {
+    return runBoundedAttempts({
+      bound: options.bound ?? COMMIT_ATTEMPTS,
+      scope: options.scope ?? attemptScope,
+      isMiss: (cause) => cause instanceof BranchCasConflictError,
+      retrying: options.retrying,
+      run,
+      exhausted:
+        options.moved ??
+        ((cause) => {
+          throw cause;
+        }),
+    });
+  }
+
+  /** One write as a whole attempt inside `scope`. */
+  function commitOnce(
+    write: PreparedBranchWrite,
+    options: { scope?: AttemptScope; moved?: (cause: unknown) => void },
+  ): Promise<void> {
+    return commitAttempts(
+      async (attempt) => {
+        attempt.own(write);
+        await attempt.commit(() => write.persist());
+      },
+      { bound: 1, ...options },
     );
+  }
+
+  async function resetFromDoc(resetInput: ResetFromDocInput, owner?: Attempt): Promise<boolean> {
+    const snapshot = await loadSnapshot(resetInput.branchId);
+    if (snapshot.kind !== "work_draft" || snapshot.status !== "active")
+      throw new Error(`Branch ${snapshot.branchId} is not an active work draft reset target`);
+    if (snapshot.generation !== resetInput.expectedGeneration) return false;
+    if (resetInput.policy === "exact" && snapshot.revision !== resetInput.expectedRevision)
+      return false;
+    const policy =
+      resetInput.policy === "exact"
+        ? { kind: "exact" as const, revision: snapshot.revision }
+        : {
+            kind: "fold" as const,
+            checkpointRevision: snapshot.checkpointRevision,
+            seq: snapshot.checkpointSeq,
+          };
+    const write = await prepareReset(snapshot, resetInput.upstream, { ...resetInput, policy });
+    if (owner) await owner.own(write).persist();
+    else await commitOnce(write, { scope: NO_ATTEMPT_SCOPE });
     return true;
   }
 
@@ -270,552 +383,596 @@ export function createBranchCoordinator(input: {
     return snapshot;
   }
 
-  async function materialize(snapshot: BranchSnapshot): Promise<CachedBranchDoc> {
-    const transactionId = currentResponseTransactionId();
-    const pending = transactionId
-      ? pendingTransients.get(pendingTransientKey(transactionId, snapshot.branchId))
-      : undefined;
-    if (pending) return pending;
-    const current = cached.get(snapshot.branchId);
-    if (
-      current &&
-      current.generation === snapshot.generation &&
-      (dirtyTransientBranches.has(snapshot.branchId) ||
-        (bytesEqual(current.stateVector, snapshot.stateVector) &&
-          bytesEqual(current.state, snapshot.state)))
-    ) {
-      return current;
-    }
+  /**
+   * The branch as committed now, from the published replica when its revision still holds,
+   * caught up from the tail when only appends landed since, otherwise materialized. What the
+   * catch-up adds reaches this process's rooms too: another process's commits arrive nowhere
+   * else, and a room missing them would fence every frame typed into it.
+   */
+  async function loadBase(branchId: string): Promise<BranchBase> {
+    const current = published.get(branchId);
+    const read = await input.store.readBranchAt(
+      branchId,
+      current ? { checkpointRevision: current.checkpointRevision, seq: current.seq } : undefined,
+    );
+    if (!read) throw new BranchMissingError(branchId);
+    const snapshot = read.branch;
+    assertReadableBranch(snapshot);
+    return {
+      snapshot,
+      replica: replicaFor(read, current),
+      pendingRows: read.pendingRows,
+      liveCutStored: read.liveCutStored,
+    };
+  }
+
+  function replicaFor(read: BranchRead, current: PublishedReplica | undefined): PublishedReplica {
+    const { branch } = read;
+    if (current?.revision === branch.revision) return current;
     try {
-      const doc = createCollabYDoc({ gc: false });
-      Y.applyUpdate(doc, snapshot.state);
-      const next = {
-        generation: snapshot.generation,
-        state: snapshot.state,
-        stateVector: snapshot.stateVector,
-        doc,
+      const rows = read.tail.map((row) => row.update);
+      if (!read.checkpoint && current) {
+        // Only appends (or metadata-only bumps) since the replica: apply the tail to a copy.
+        const doc = rows.length ? cloneReplica(current) : current.doc;
+        for (const row of rows) Y.applyUpdate(doc, row);
+        const next: PublishedReplica = {
+          revision: branch.revision,
+          checkpointRevision: branch.checkpointRevision,
+          seq: Math.max(current.seq, ...read.tail.map((row) => row.id)),
+          generation: branch.generation,
+          doc,
+          tail: grownTail(current.tail, rows),
+          ...(rows.length ? {} : { encoded: current.encoded }),
+        };
+        install(branch.branchId, { next, from: current, rows });
+        return next;
+      }
+      const next: PublishedReplica = {
+        revision: branch.revision,
+        checkpointRevision: branch.checkpointRevision,
+        seq: Math.max(branch.checkpointSeq, ...read.tail.map((row) => row.id)),
+        generation: branch.generation,
+        doc: materializeBranchRead(read),
+        tail: grownTail(EMPTY_TAIL, rows),
       };
-      cached.set(snapshot.branchId, next);
+      install(branch.branchId, { next });
       return next;
     } catch (cause) {
       throw new BranchCorruptError({
-        branchId: snapshot.branchId,
-        documentId: snapshot.documentId,
-        threadId: snapshot.threadId ?? ("" as ThreadId),
+        branchId: branch.branchId,
+        documentId: branch.documentId,
+        threadId: branch.threadId ?? ("" as ThreadId),
         cause,
       });
     }
   }
 
-  async function applySegmentRows(
-    doc: Y.Doc,
-    snapshot: BranchSnapshot,
-    journals: readonly AppendBranchJournalInput[],
-  ): Promise<void> {
-    // Admission remains per logical write; segment rows keep their own attribution.
-    for (let index = 0; index < journals.length; ) {
-      const first = journals[index];
-      const writeRows = [first];
-      index++;
-      while (
-        index < journals.length &&
-        first.semanticEditIr &&
-        journals[index].semanticEditIr === first.semanticEditIr
-      )
-        writeRows.push(journals[index++]);
-      const apply = () => {
-        for (const row of writeRows) {
-          assertFreshAgentClient(doc, row);
-          Y.applyUpdate(doc, row.updateData);
-        }
-      };
-      if (first.semanticEditIr) {
-        const ir = first.semanticEditIr;
-        await admitCertifiedMutation(
-          {
-            readMutationTarget: () => ({
-              documentId: snapshot.documentId,
-              generation: BigInt(snapshot.generation),
-              doc,
-            }),
-            readCurrentRevision: async () => ir.inputRevision,
-            lowerCertifiedMutation: async () =>
-              Y.mergeUpdates(writeRows.map((row) => row.updateData)),
-            admitImmediate: async () => {
-              apply();
-              return { sequence: 0n, joined: 0 };
-            },
-          },
-          { ir },
-        );
-      } else apply();
-    }
-  }
-
-  async function persist(
-    snapshot: BranchSnapshot,
-    doc: Y.Doc,
-    journals?: readonly AppendBranchJournalInput[],
-    publishUpdate?: Uint8Array,
-    kind: "mutation" | "pull" = "mutation",
-    upstream?: Y.Doc,
-  ): Promise<void> {
-    const state = Y.encodeStateAsUpdate(doc);
-    const stateVector = Y.encodeStateVector(doc);
-    if (!journals?.length && bytesEqual(state, snapshot.state) && !upstream) return;
-    const mutation = {
-      branchId: snapshot.branchId,
-      expectedGeneration: snapshot.generation,
-      expectedStateVector: snapshot.stateVector,
-      expectedState: snapshot.state,
-      state,
-      stateVector,
-      ...(journals ? { journals } : {}),
-      ...(upstream && snapshot.kind === "work_draft"
-        ? { liveCut: Y.encodeStateAsUpdate(upstream) }
-        : {}),
-    };
-    // Replication creates no reviewable edit. Its CAS must not reacquire the
-    // Work lifecycle lock a reader may already hold in another transaction.
-    const ok =
-      kind === "pull"
-        ? await input.store.updateBranchSnapshot(mutation)
-        : await input.store.commitBranchMutation(mutation);
-    if (!ok) {
-      cached.delete(snapshot.branchId);
-      dirtyTransientBranches.delete(snapshot.branchId);
-      throw new BranchCasConflictError(snapshot.branchId);
-    }
+  /**
+   * The one way a replica becomes the branch's published replica, and so the one way content
+   * reaches this process's registered rooms (decision D25); a room that registers, or misses a
+   * delivery, behind it is brought up by `reconcileRoom` (D26). It runs when the transaction the replica was
+   * read or written in commits (a savepoint's rows only once its root commits too), installs
+   * only past the replica published by then, and hands the rooms what separates the two. A
+   * lower or equal revision installs nothing and sends nothing: the published replica already
+   * holds its content, and so do the rooms. A candidate whose transaction rolls back is
+   * destroyed instead.
+   */
+  function install(branchId: string, transition: Transition, owned = false): void {
     const publish = () => {
-      dirtyTransientBranches.delete(snapshot.branchId);
-      cached.set(snapshot.branchId, { generation: snapshot.generation, state, stateVector, doc });
-      const update = journals?.length
-        ? Y.mergeUpdates(journals.map((row) => row.updateData))
-        : publishUpdate;
-      if (update) input.onBranchUpdate?.({ branchId: snapshot.branchId, update });
+      const previous = published.get(branchId);
+      if (previous && previous.revision >= transition.next.revision) return;
+      published.set(branchId, transition.next);
+      if (!previous) return;
+      if (previous.generation !== transition.next.generation) {
+        // Another process re-forked the branch: rooms on an older generation close.
+        input.onBranchReset?.({ branchId, generation: transition.next.generation });
+        return;
+      }
+      const update = deliveryFrom(previous, transition);
+      if (update) input.onBranchUpdate?.({ branchId, update });
     };
-    if (currentResponseTransactionId()) {
-      enlistResponseParticipant({ commit: publish, abort() {} });
-      return;
+    const abort = owned ? () => transition.next.doc.destroy() : undefined;
+    if (!input.store.deferUntilCommit(publish, abort)) publish();
+  }
+
+  /**
+   * What `transition` adds to `previous` within one generation, which a rewrite only merges
+   * into: its own rows when it was built on `previous`, otherwise the difference of the two
+   * documents (a fold or checkpoint, whose rows this process never saw one by one), or
+   * nothing when the rewrite changed no content. Yjs applies a repeat as a no-op, so a room
+   * that already holds part of it is unharmed.
+   */
+  function deliveryFrom(previous: PublishedReplica, transition: Transition): Uint8Array | null {
+    if (transition.from === previous && transition.rows)
+      return transition.rows.length ? Y.mergeUpdates([...transition.rows]) : null;
+    if (transition.next.doc === previous.doc) return null;
+    if (Y.equalSnapshots(Y.snapshot(previous.doc), Y.snapshot(transition.next.doc))) return null;
+    return Y.encodeStateAsUpdate(transition.next.doc, Y.encodeStateVector(previous.doc));
+  }
+
+  /**
+   * The other half of delivery (decision D26): `install` sends each transition to the rooms
+   * registered when it publishes, and this repairs a room that joined, or missed a delivery,
+   * behind `replica`. The room gets the replica's structs past its state vector and the
+   * replica's delete set, so a delete-only gap is covered too.
+   */
+  function reconcileRoom({
+    branchId,
+    room,
+    replica,
+    trigger,
+  }: Parameters<BranchRuntime["reconcileRoom"]>[0]): void {
+    if (documentContainment.contains(room, encodedOf(replica))) return;
+    const update = Y.encodeStateAsUpdate(replica.doc, Y.encodeStateVector(room));
+    (input.applyToRoom ?? Y.applyUpdate)(room, update);
+    input.diagnostics?.roomReconciled({
+      branchId,
+      generation: replica.generation,
+      revision: replica.revision,
+      trigger,
+      bytes: update.byteLength,
+    });
+  }
+
+  async function enrollRoom(enrollment: {
+    branchId: string;
+    generation: number;
+    room: Y.Doc;
+  }): Promise<RoomEnrollment> {
+    const base = await loadBase(enrollment.branchId).catch((cause: unknown) => {
+      if (cause instanceof BranchMissingError) return null;
+      throw cause;
+    });
+    if (base?.snapshot.status !== "active" || base.snapshot.generation !== enrollment.generation)
+      return "stale";
+    reconcileRoom({ ...enrollment, replica: base.replica, trigger: "enrollment" });
+    return "enrolled";
+  }
+
+  function encodedOf(replica: PublishedReplica): Uint8Array {
+    replica.encoded ??= Y.encodeStateAsUpdate(replica.doc);
+    return replica.encoded;
+  }
+
+  /** A private, mutable copy of a replica: one apply of its cached bytes. */
+  function cloneReplica(replica: PublishedReplica): Y.Doc {
+    const doc = createCollabYDoc({ gc: false });
+    Y.applyUpdate(doc, encodedOf(replica));
+    return doc;
+  }
+
+  /** The work draft's baseline fingerprint, cached per checkpoint while `live_cut` is stored. */
+  async function effectBaseline(
+    base: BranchBase,
+  ): Promise<{ fingerprint: EffectFingerprint; unstored?: Uint8Array }> {
+    const { branchId, checkpointRevision } = base.snapshot;
+    const cached = baselines.get(branchId);
+    if (base.liveCutStored && cached?.checkpointRevision === checkpointRevision)
+      return { fingerprint: cached.fingerprint };
+    const baseline = await input.store.readEffectBaseline(branchId);
+    if (!baseline) throw new BranchStaleUpdateError(branchId);
+    const doc = createCollabYDoc({ gc: false });
+    try {
+      Y.applyUpdate(doc, baseline.state);
+      const fingerprint = effectFingerprint(doc);
+      if (baseline.stored) {
+        baselines.set(branchId, { checkpointRevision: baseline.checkpointRevision, fingerprint });
+        return { fingerprint };
+      }
+      return { fingerprint, unstored: baseline.state };
+    } finally {
+      doc.destroy();
     }
-    if (!input.store.deferUntilCommit(publish)) publish();
   }
 
-  function notifyReset(reset: { branchId: string; generation: number }): void {
-    dirtyTransientBranches.delete(reset.branchId);
-    cached.delete(reset.branchId);
-    const publish = () => input.onBranchReset?.(reset);
-    if (!input.store.deferUntilCommit(publish)) publish();
+  /**
+   * The effect half of an append judged on `candidate`: a work draft's `has_effect`, the
+   * baseline to store when none is, and the Work to lock and touch when the append flips
+   * the branch's review membership (`(has_effect or blocking) and pending rows`).
+   */
+  async function appendEffect(
+    base: BranchBase,
+    candidate: Y.Doc,
+  ): Promise<Pick<AppendRowsInput, "hasEffect" | "liveCut" | "workTouch">> {
+    const { snapshot } = base;
+    if (snapshot.kind !== "work_draft") return {};
+    const baseline = await effectBaseline(base);
+    const hasEffect = !effectFingerprintsEqual(baseline.fingerprint, effectFingerprint(candidate));
+    const workTouch = membershipFlipWork(
+      { branch: snapshot, pendingRows: base.pendingRows },
+      hasEffect,
+    );
+    return {
+      hasEffect,
+      ...(baseline.unstored ? { liveCut: baseline.unstored } : {}),
+      ...(workTouch ? { workTouch } : {}),
+    };
   }
 
-  async function persistReset(
+  /**
+   * The one lifetime of a prepared write: prepared (nothing persisted), persisted in its
+   * attempt (written, but the attempt can still roll it back), transferred (the attempt
+   * completed; publication owns the candidate, or a reset closes the room). Disposing destroys
+   * the candidate in every state but the last, so a write whose own statement succeeded in a
+   * scope that a later miss rolled back is dropped like one that never ran.
+   */
+  function preparedWrite(write: {
+    branchId: string;
+    candidate: Y.Doc;
+    persist(): Promise<Transition | { resetTo: number }>;
+  }): PreparedBranchWrite {
+    let state: "prepared" | "persisted" | "transferred" | "disposed" = "prepared";
+    let committed: Transition | { resetTo: number } | undefined;
+    return {
+      branchId: write.branchId,
+      candidate: write.candidate,
+      async persist() {
+        if (state !== "prepared") throw new Error(`Branch ${write.branchId} write is ${state}`);
+        committed = await write.persist();
+        state = "persisted";
+      },
+      transfer() {
+        if (state !== "persisted" || !committed)
+          throw new Error(`Branch ${write.branchId} write was never persisted`);
+        state = "transferred";
+        if (!("resetTo" in committed)) {
+          install(write.branchId, committed, true);
+          return;
+        }
+        // A reset's candidate is never published: the room closes on the new generation.
+        write.candidate.destroy();
+        notifyReset({ branchId: write.branchId, generation: committed.resetTo });
+      },
+      dispose() {
+        if (state === "transferred" || state === "disposed") return;
+        state = "disposed";
+        write.candidate.destroy();
+      },
+    };
+  }
+
+  /**
+   * Rows judged on `candidate` (which already holds them) as an append at the base's
+   * revision, with the receipts computed before the rows and the effect computed after.
+   */
+  async function prepareAppend(
+    base: BranchBase,
+    candidate: Y.Doc,
+    journals: readonly AppendBranchJournalInput[],
+    receipts: readonly AppendReceiptGroup[],
+  ): Promise<PreparedBranchWrite> {
+    const { snapshot, replica } = base;
+    const effect = await appendEffect(base, candidate);
+    return preparedWrite({
+      branchId: snapshot.branchId,
+      candidate,
+      async persist() {
+        const outcome = await input.store.appendRows({
+          branchId: snapshot.branchId,
+          documentId: snapshot.documentId,
+          expectedRevision: snapshot.revision,
+          expectedGeneration: snapshot.generation,
+          rows: journals,
+          receipts,
+          ...effect,
+        });
+        if (outcome.status !== "appended") throw new BranchCasConflictError(snapshot.branchId);
+        const rows = journals.map((row) => row.updateData);
+        return {
+          next: {
+            revision: outcome.revision,
+            checkpointRevision: replica.checkpointRevision,
+            seq: Math.max(replica.seq, ...outcome.rowIds),
+            generation: snapshot.generation,
+            doc: candidate,
+            tail: grownTail(replica.tail, rows),
+          },
+          from: replica,
+          rows,
+        };
+      },
+    });
+  }
+
+  /** `candidate` committed through shape B as `rewrite` describes it. */
+  function prepareRewrite(
+    branchId: string,
+    candidate: Y.Doc,
+    rewrite: Omit<CommitRewriteInput, "branchId" | "doc">,
+  ): PreparedBranchWrite {
+    return preparedWrite({
+      branchId,
+      candidate,
+      async persist() {
+        const outcome = await input.store.commitRewrite({ branchId, doc: candidate, ...rewrite });
+        if (
+          outcome.status === "fenced" ||
+          outcome.status === "blocked" ||
+          outcome.status === "upstreamMoved"
+        )
+          throw new BranchRewriteRefused(branchId, outcome.status);
+        if (outcome.status !== "committed") throw new BranchCasConflictError(branchId);
+        if (rewrite.operation.kind === "reset") return { resetTo: outcome.generation };
+        // The fold may have applied rows this process never published: delivery diffs the
+        // documents rather than trusting anything computed before the lock.
+        return { next: { ...outcome, doc: candidate, tail: EMPTY_TAIL } };
+      },
+    });
+  }
+
+  /** `candidate` as the branch's checkpoint at the base's exact revision: a peer's catch-up. */
+  function prepareCheckpoint(base: BranchBase, candidate: Y.Doc): PreparedBranchWrite {
+    const { snapshot } = base;
+    return prepareRewrite(snapshot.branchId, candidate, {
+      policy: { kind: "exact", revision: snapshot.revision },
+      fence: { kind: "none" },
+      operation: { kind: "checkpoint" },
+    });
+  }
+
+  /**
+   * `candidate`, `upstream` merged into the committed replica, as a fold over the replica's
+   * cursor: rows appended since are applied into it under the row lock. A work draft's effect
+   * is judged against `upstream`, its new baseline, before the lock, and judged again on the
+   * folded checkpoint only when the fold applied rows.
+   */
+  function preparePull(base: BranchBase, candidate: Y.Doc, pull: PullInput): PreparedBranchWrite {
+    const { snapshot } = base;
+    const operation: RewriteOperation =
+      snapshot.kind === "work_draft"
+        ? {
+            kind: "pull",
+            effect: {
+              hasEffect: !documentEffectsEqual(pull.upstream, candidate),
+              liveCut: Y.encodeStateAsUpdate(pull.upstream),
+              refolded: (folded) => !documentEffectsEqual(pull.upstream, folded),
+            },
+          }
+        : { kind: "pull" };
+    return prepareRewrite(snapshot.branchId, candidate, {
+      policy: foldPolicy(base.replica),
+      // A live pull's checkpoint would move the revision a pending Apply's completion resets at.
+      fence: snapshot.kind === "work_draft" ? { kind: "pending-settlement" } : { kind: "none" },
+      operation,
+      ...(pull.upstreamEpoch ? { upstream: pull.upstreamEpoch } : {}),
+    });
+  }
+
+  /** A fold over everything appended past `replica`'s cursor. */
+  function foldPolicy(replica: PublishedReplica): RewritePolicy {
+    return { kind: "fold", checkpointRevision: replica.checkpointRevision, seq: replica.seq };
+  }
+
+  /** A re-fork of the branch from `upstream` under the caller's revision policy. */
+  async function prepareReset(
     snapshot: BranchSnapshot,
     upstream: Y.Doc,
-    schemaVersion: CollabSchemaVersion,
-    editDisposition: "discarded" | "retired" = "discarded",
-  ): Promise<void> {
-    const resetDoc = createCollabYDoc({ gc: false });
-    await replicateFrozenSource(upstream, resetDoc);
-    const state = Y.encodeStateAsUpdate(resetDoc);
-    const stateVector = Y.encodeStateVector(resetDoc);
-    const ok = await input.store.resetBranchSnapshot({
-      branchId: snapshot.branchId,
-      expectedGeneration: snapshot.generation,
-      expectedStateVector: snapshot.stateVector,
-      expectedState: snapshot.state,
-      state,
-      stateVector,
-      editDisposition,
-      discardedStateVector: mergeStateVectors(snapshot.discardedStateVector, snapshot.stateVector),
-      schemaVersion,
+    reset: Pick<ResetInput, "schemaVersion" | "editDisposition" | "fence"> & {
+      policy: RewritePolicy;
+      upstreamEpoch?: PullInput["upstreamEpoch"];
+    },
+  ): Promise<PreparedBranchWrite> {
+    const candidate = createCollabYDoc({ gc: false });
+    await replicatedInto(upstream, candidate);
+    return prepareRewrite(snapshot.branchId, candidate, {
+      policy: reset.policy,
+      fence: reset.fence ?? { kind: "none" },
+      operation: {
+        kind: "reset",
+        editDisposition: reset.editDisposition ?? "discarded",
+        schemaVersion: reset.schemaVersion ?? snapshot.schemaVersion,
+      },
+      ...(reset.upstreamEpoch ? { upstream: reset.upstreamEpoch } : {}),
     });
-    if (!ok) {
-      resetDoc.destroy();
-      cached.delete(snapshot.branchId);
-      dirtyTransientBranches.delete(snapshot.branchId);
-      throw new BranchCasConflictError(snapshot.branchId);
-    }
-    dirtyTransientBranches.delete(snapshot.branchId);
-    cached.delete(snapshot.branchId);
-    resetDoc.destroy();
-    notifyReset({ branchId: snapshot.branchId, generation: snapshot.generation + 1 });
   }
 
-  /** One snapshot-clone-persist step of a branch operation; the caller holds the branch's lease. */
-  async function runUnder<T>(
-    branchId: string,
-    operation: (snapshot: BranchSnapshot, doc: Y.Doc) => Promise<T>,
-    updateToPublish?: (result: T) => Uint8Array,
-    kind: "mutation" | "pull" = "mutation",
-    upstream?: Y.Doc,
-  ): Promise<T> {
-    const snapshot = await loadSnapshot(branchId);
-    const { doc: cachedDoc } = await materialize(snapshot);
-    // A durable thread peer has already saved its writes into the Work draft.
-    // If the parent no longer contains them, a review retired their effect.
-    // Merging cannot remove those structs or undo their tombstones.
+  /** A re-fork committed: the replica is dropped and rooms on older generations close. */
+  function notifyReset(reset: { branchId: string; generation: number }): void {
+    const publish = () => {
+      const current = published.get(reset.branchId);
+      if (current && current.generation < reset.generation) published.delete(reset.branchId);
+      input.onBranchReset?.(reset);
+    };
+    if (!input.store.deferUntilCommit(publish)) publish();
+  }
+
+  /**
+   * One pull attempt: everything, the effect included, computed on a candidate of the
+   * committed replica before the attempt's scope; inside it the fold applies what landed since
+   * and the checkpoint is written.
+   */
+  async function pullAttempt(attempt: Attempt, pull: PullInput): Promise<PullOutcome> {
+    const base = await loadBase(pull.branchId);
+    const { snapshot } = base;
+    if (snapshot.status !== "active") return "closed";
+    // A durable thread peer has already saved its writes into the Work draft. If the parent
+    // no longer contains them, a review retired their effect: merging cannot remove those
+    // structs or undo their tombstones, so the peer re-forks from the parent.
     if (
       snapshot.kind === "thread_peer" &&
-      upstream &&
-      !Y.snapshotContainsUpdate(Y.snapshot(upstream), snapshot.state)
+      !Y.snapshotContainsUpdate(Y.snapshot(pull.upstream), encodedOf(base.replica))
     ) {
-      const doc = cloneDoc(upstream);
-      try {
-        const result = await operation(snapshot, doc);
-        await persistReset(snapshot, upstream, snapshot.schemaVersion);
-        return result;
-      } finally {
-        doc.destroy();
-      }
-    }
-    // O(doc) clone-before-write is intentional per GATE-1 spec §9 (Q4 headroom):
-    // failed CAS/rollback must never mutate the cached branch doc.
-    const doc = cloneDoc(cachedDoc);
-    const result = await operation(snapshot, doc);
-    await persist(snapshot, doc, undefined, updateToPublish?.(result), kind, upstream);
-    return result;
-  }
-
-  /** Retries a CAS conflict; `acquire` takes the branch's lease around each attempt, or none under a held one. */
-  async function retryCas<T>(attempt: () => Promise<T>): Promise<T> {
-    for (let tries = 0; ; tries++) {
-      try {
-        return await attempt();
-      } catch (cause) {
-        if (!(cause instanceof BranchCasConflictError) || tries >= maxCasRetries) throw cause;
-      }
-    }
-  }
-
-  async function replicateFrozenSource(source: Y.Doc, target: Y.Doc): Promise<Uint8Array> {
-    let admittedUpdate: Uint8Array | undefined;
-    const frozenSource = cloneDoc(source);
-    try {
-      await replicateFrozenIdentity({
-        source: { documentId: "branch", doc: frozenSource },
-        target: { documentId: "branch", generation: 0n, doc: target },
-        plan: { kind: "wholeDocument" },
-        admit: async ({ update }) => {
-          admittedUpdate = update;
-          Y.applyUpdate(target, update);
-          return { sequence: 0n, joined: 0 };
-        },
+      const write = await prepareReset(snapshot, pull.upstream, {
+        policy: foldPolicy(base.replica),
+        ...(pull.upstreamEpoch ? { upstreamEpoch: pull.upstreamEpoch } : {}),
       });
-      if (!admittedUpdate) throw new Error("Identity replication produced no branch update");
-      return admittedUpdate;
+      attempt.own(write);
+      await attempt.commit(() => write.persist());
+      return "pulled";
+    }
+    const candidate = cloneReplica(base.replica);
+    await replicatedInto(pull.upstream, candidate);
+    const write = attempt.own(preparePull(base, candidate, pull));
+    await attempt.commit(() => write.persist());
+    return "pulled";
+  }
+
+  /** `source` replicated into `target`, which is destroyed when replication fails. */
+  async function replicatedInto(source: Y.Doc, target: Y.Doc): Promise<Uint8Array> {
+    try {
+      return await replicateFrozenSource(source, target);
+    } catch (cause) {
+      target.destroy();
+      throw cause;
+    }
+  }
+
+  /** `fn` over the committed replica, which it must only read. */
+  async function readCommitted<T>(
+    branchId: string,
+    fn: (doc: Y.Doc, snapshot: BranchSnapshot) => Promise<T>,
+  ): Promise<T> {
+    const base = await loadBase(branchId);
+    return fn(base.replica.doc, base.snapshot);
+  }
+
+  /** A private copy for `fn`: whatever it changes stays with the copy (decision F6). */
+  async function transient<T>(
+    branchId: string,
+    fn: (doc: Y.Doc, snapshot: BranchSnapshot) => Promise<T>,
+  ): Promise<T> {
+    const base = await loadBase(branchId);
+    assertWritableBranch(base.snapshot);
+    const doc = cloneReplica(base.replica);
+    try {
+      return await fn(doc, base.snapshot);
     } finally {
-      frozenSource.destroy();
+      doc.destroy();
     }
   }
 
-  async function persistJournaledUpdate(
-    snapshot: BranchSnapshot,
-    inputJournal: Omit<AppendBranchJournalInput, "generation">,
-    currentDocument?: Y.Doc,
-  ): Promise<boolean> {
-    const cachedDoc = currentDocument ?? (await materialize(snapshot)).doc;
-    // O(doc) clone-before-write is intentional per GATE-1 spec §9 (Q4 headroom):
-    // failed CAS/rollback must never mutate the cached branch doc.
-    const doc = cloneDoc(cachedDoc);
-    const beforeState = Y.encodeStateAsUpdate(doc);
-    Y.applyUpdate(doc, inputJournal.updateData);
-    if (bytesEqual(beforeState, Y.encodeStateAsUpdate(doc))) {
-      throw new BranchStaleUpdateError(inputJournal.branchId);
+  /** The rows' receipts, captured on a fresh copy of the base before the rows apply. */
+  function receiptsBefore(
+    base: BranchBase,
+    journals: readonly AppendBranchJournalInput[],
+  ): AppendReceiptGroup[] {
+    const receiptDoc = cloneReplica(base.replica);
+    try {
+      return captureAppendReceipts(receiptDoc, journals);
+    } finally {
+      receiptDoc.destroy();
     }
-    await persist(snapshot, doc, [{ ...inputJournal, generation: snapshot.generation }]);
-    return true;
   }
 
-  async function readUnder<T>(
-    lease: BranchLockLease,
-    branchId: string,
-    fn: (doc: Y.Doc, snapshot: BranchSnapshot) => Promise<T>,
-  ): Promise<T> {
-    assertBranchLeaseCovers(lease, branchId);
-    const snapshot = await loadSnapshot(branchId);
-    const { doc } = await materialize(snapshot);
-    return fn(doc, snapshot);
-  }
-
-  async function transientUnder<T>(
-    lease: BranchLockLease,
-    branchId: string,
-    fn: (doc: Y.Doc, snapshot: BranchSnapshot) => Promise<T>,
-  ): Promise<T> {
-    assertBranchLeaseCovers(lease, branchId);
-    const snapshot = await loadSnapshot(branchId);
-    assertWritableBranch(snapshot);
-    const { doc: cachedDoc } = await materialize(snapshot);
-    const doc = cloneDoc(cachedDoc);
-    const result = await fn(doc, snapshot);
-    const next = {
-      generation: snapshot.generation,
-      state: Y.encodeStateAsUpdate(doc),
-      stateVector: Y.encodeStateVector(doc),
-      doc,
-    };
-    const transactionId = currentResponseTransactionId();
-    if (!transactionId) {
-      cached.set(snapshot.branchId, next);
-      dirtyTransientBranches.add(snapshot.branchId);
-      return result;
+  /**
+   * `journals` admitted on a fresh candidate of the base, as an append with their receipts:
+   * the one way a save's replay and a segment batch prepare rows.
+   */
+  async function prepareRows(
+    base: BranchBase,
+    journals: readonly AppendBranchJournalInput[],
+  ): Promise<PreparedBranchWrite> {
+    const candidate = cloneReplica(base.replica);
+    try {
+      await admitSegmentRows(candidate, base.snapshot, journals);
+      return await prepareAppend(base, candidate, journals, receiptsBefore(base, journals));
+    } catch (cause) {
+      candidate.destroy();
+      throw cause;
     }
-    const key = pendingTransientKey(transactionId, snapshot.branchId);
-    pendingTransients.set(key, next);
-    enlistResponseParticipant({
-      commit() {
-        const pending = pendingTransients.get(key);
-        if (!pending) return;
-        pendingTransients.delete(key);
-        cached.set(snapshot.branchId, pending);
-        dirtyTransientBranches.add(snapshot.branchId);
-      },
-      abort() {
-        pendingTransients.delete(key);
-      },
-    });
-    return result;
   }
 
-  /** Replays a response's rows on a clone of the branch and, when `commit`, publishes them; the caller holds the lease. */
-  async function stagedRowsUnder<T>(
+  async function prepareStagedRows<T>(
     branchId: string,
     run: (
       doc: Y.Doc,
-      snapshot: BranchSnapshot,
+      snapshot: StagedBranchView,
     ) => Promise<{ result: T; rows: readonly Omit<AppendBranchJournalInput, "generation">[] }>,
     commit: boolean,
-  ): Promise<T> {
-    const snapshot = await loadSnapshot(branchId);
+  ): Promise<{ result: T; write: PreparedBranchWrite | null }> {
+    const base = await loadBase(branchId);
+    const { snapshot } = base;
     assertWritableBranch(snapshot);
-    const doc = cloneDoc((await materialize(snapshot)).doc);
-    let published = false;
+    const replay = cloneReplica(base.replica);
     try {
-      const { result, rows } = await run(doc, snapshot);
-      if (commit && rows.length) {
-        const admitted = cloneDoc((await materialize(snapshot)).doc);
-        try {
-          await applySegmentRows(
-            admitted,
-            snapshot,
-            rows.map((row) => ({ ...row, generation: snapshot.generation })),
-          );
-          if (!bytesEqual(Y.encodeStateAsUpdate(admitted), Y.encodeStateAsUpdate(doc)))
-            throw new Error("Response replay differs from its admitted segment rows");
-        } finally {
-          admitted.destroy();
-        }
-        await persist(
-          snapshot,
-          doc,
-          rows.map((row) => ({ ...row, generation: snapshot.generation })),
-        );
-        published = true;
+      const { result, rows } = await run(replay, { ...snapshot, encoded: encodedOf(base.replica) });
+      if (!commit || !rows.length) return { result, write: null };
+      const write = await prepareRows(
+        base,
+        rows.map((row) => ({ ...row, generation: snapshot.generation })),
+      );
+      if (!bytesEqual(Y.encodeStateAsUpdate(write.candidate), Y.encodeStateAsUpdate(replay))) {
+        write.dispose();
+        throw new Error("Response replay differs from its admitted segment rows");
       }
-      return result;
+      return { result, write };
     } finally {
-      // Persist owns the admitted document until its publication callback.
-      if (!published) doc.destroy();
+      replay.destroy();
     }
   }
 
-  async function segmentRowsUnder(batch: SegmentRowsInput): Promise<boolean> {
-    const snapshot = await loadSnapshot(batch.branchId);
+  async function prepareCatchUp(
+    branchId: string,
+    source: Y.Doc,
+  ): Promise<PreparedBranchWrite | null> {
+    const base = await loadBase(branchId);
+    assertWritableBranch(base.snapshot);
+    const update = Y.encodeStateAsUpdate(source);
+    if (documentContainment.contains(base.replica.doc, update)) return null;
+    const candidate = cloneReplica(base.replica);
+    Y.applyUpdate(candidate, update);
+    return prepareCheckpoint(base, candidate);
+  }
+
+  async function segmentRowsAttempt(attempt: Attempt, batch: SegmentRowsInput): Promise<boolean> {
+    const base = await loadBase(batch.branchId);
+    const { snapshot } = base;
     assertWritableBranch(snapshot);
     if (snapshot.generation !== batch.expectedGeneration)
       throw new BranchStaleUpdateError(batch.branchId);
-    const doc = cloneDoc((await materialize(snapshot)).doc);
     const journals = batch.rows.map((row) => ({ ...row, generation: snapshot.generation }));
-    await applySegmentRows(doc, snapshot, journals);
-    if (journalSyncDelta(batch.sourceDoc, doc))
-      throw new Error("Segment publication left an unjournaled residual");
-    if (!journals.length) return false;
-    await persist(snapshot, doc, journals);
+    const write = journals.length ? attempt.own(await prepareRows(base, journals)) : null;
+    assertSegmentRowsComplete(batch.sourceDoc, write?.candidate ?? base.replica.doc);
+    if (!write) return false;
+    await attempt.commit(() => write.persist());
     return true;
   }
 
-  /** Every branch operation a reply's save performs, bound to the lease the pool holds (contract §2.3). */
-  function ownedSession(lease: BranchLockLease): OwnedBranchSession {
-    const under = async <T>(branchId: string, run: () => Promise<T>): Promise<T> => {
-      assertBranchLeaseCovers(lease, branchId);
-      return run();
-    };
-    return {
-      read: (branchId, fn) => readUnder(lease, branchId, fn),
-      withTransient: (branchId, fn) => transientUnder(lease, branchId, fn),
-      withStagedRows: (branchId, run, commit) =>
-        under(branchId, () => stagedRowsUnder(branchId, run, commit)),
-      commitSegmentRows: (batch) =>
-        under(batch.branchId, () => retryCas(() => segmentRowsUnder(batch))),
-      checkpoint: (branchId) =>
-        under(branchId, () => retryCas(() => runUnder(branchId, async () => undefined))),
-      listHelperHistory: (query) =>
-        under(query.branchId, async () => requireJournalReads().listJournalRowsForBranch(query)),
-      listConcurrentRows: (branchId, generation, options) =>
-        under(branchId, async () =>
-          requireJournalReads().listConcurrentJournalRows(branchId, generation, options),
-        ),
-    };
-  }
-
-  function requireJournalReads(): BranchSaveJournalReads {
-    if (!input.journalReads) throw new Error("This coordinator reads no branch journal");
-    return input.journalReads;
-  }
-
-  function assertWorkDraftResetTarget(snapshot: BranchSnapshot): void {
-    if (snapshot.kind !== "work_draft" || snapshot.status !== "active") {
-      throw new Error(`Branch ${snapshot.branchId} is not an active work draft reset target`);
-    }
-  }
+  const frames = createWriterFrames(
+    {
+      loadBase,
+      published: (branchId) => published.get(branchId),
+      cloneReplica,
+      containment: documentContainment,
+      reconcileRoom,
+      prepareAppend,
+      prepareRewrite,
+      foldPolicy,
+      commitAttempts,
+      commitOnce,
+    },
+    { store: input.store, diagnostics: input.diagnostics },
+  );
 
   return {
     notifyReset,
-    readBranch(branchId, fn) {
-      return criticalSections.withBranches([branchId], (lease) => readUnder(lease, branchId, fn));
+    readBranch: readCommitted,
+    withTransient: transient,
+    prepareStagedRows,
+    prepareCatchUp,
+    commitSegmentRows: (batch) => commitAttempts((attempt) => segmentRowsAttempt(attempt, batch)),
+
+    pullFromDoc(pull) {
+      return commitAttempts((attempt) => pullAttempt(attempt, pull)).catch((cause: unknown) => {
+        if (cause instanceof BranchRewriteRefused) return cause.status;
+        throw cause;
+      });
     },
 
-    withLeases: (branchIds, run) => criticalSections.withBranches(branchIds, run),
+    resetFromDoc,
 
-    ownedSession,
-
-    pullFromDoc(lease, branchId, upstream) {
-      assertBranchLeaseCovers(lease, branchId);
-      return retryCas(() =>
-        runUnder(
-          branchId,
-          async (_snapshot, doc) => replicateFrozenSource(upstream, doc),
-          (update) => update,
-          "pull",
-          upstream,
-        ),
-      );
+    async deliverCommitted(branchId) {
+      await loadBase(branchId);
     },
 
-    resetFromDocIfUnchangedWithLease,
+    enrollRoom,
 
-    broadcastUpdate(update) {
-      const current = cached.get(update.branchId);
-      if (current) {
-        Y.applyUpdate(current.doc, update.update);
-        current.state = Y.encodeStateAsUpdate(current.doc);
-        current.stateVector = Y.encodeStateVector(current.doc);
-      }
-      input.onBranchUpdate?.(update);
-    },
-
-    async commitWriterUpdate(inputWriter) {
-      let attempt = 0;
-      while (true) {
-        try {
-          return await criticalSections.withBranches([inputWriter.branchId], async () => {
-            const snapshot = await loadSnapshot(inputWriter.branchId);
-            const { doc: currentDocument } = await materialize(snapshot);
-            const admission = await admitWriterUpdate({
-              targetDocument: currentDocument,
-              update: inputWriter.updateData,
-              validateTarget() {
-                if (
-                  snapshot.kind !== "work_draft" ||
-                  snapshot.status !== "active" ||
-                  snapshot.generation !== inputWriter.expectedGeneration ||
-                  !documentContainment.contains(inputWriter.roomDocument, snapshot.state)
-                ) {
-                  throw new BranchStaleUpdateError(inputWriter.branchId);
-                }
-              },
-              isContained: () =>
-                documentContainment.contains(currentDocument, inputWriter.updateData),
-              append: () =>
-                persistJournaledUpdate(
-                  snapshot,
-                  {
-                    branchId: inputWriter.branchId,
-                    updateData: inputWriter.updateData,
-                    source: "writer",
-                    actorUserId: inputWriter.actorUserId,
-                    updateMeta: {
-                      restorationAliases: certifyWriterRestorations(
-                        currentDocument,
-                        inputWriter.updateData,
-                      ),
-                    },
-                  },
-                  currentDocument,
-                ),
-            });
-            return { admitted: admission.admitted };
-          });
-        } catch (cause) {
-          if (!(cause instanceof BranchCasConflictError) || attempt++ >= maxCasRetries) throw cause;
-        }
-      }
-    },
+    commitWriterUpdate: frames.commitWriterUpdate,
   };
-}
-
-function pendingTransientKey(transactionId: string, branchId: string): string {
-  return `${transactionId}\0${branchId}`;
-}
-
-export function assertReadableBranch(snapshot: BranchSnapshot): void {
-  if (isStaleSchema(snapshot.schemaVersion, COLLAB_SCHEMA_VERSION)) {
-    throw new DocumentSchemaMajorMismatchError(
-      snapshot.documentId,
-      snapshot.schemaVersion,
-      COLLAB_SCHEMA_VERSION,
-    );
-  }
 }
 
 function assertWritableBranch(snapshot: BranchSnapshot): void {
   if (snapshot.status !== "active") {
     throw new BranchStaleUpdateError(snapshot.branchId);
-  }
-}
-
-function cloneDoc(doc: Y.Doc): Y.Doc {
-  const clone = createCollabYDoc({ gc: false });
-  Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
-  return clone;
-}
-
-export function mergeStateVectors(
-  left: Uint8Array | null | undefined,
-  right: Uint8Array,
-): Uint8Array {
-  if (!left) return right;
-  const merged = new Map(Y.decodeStateVector(left));
-  for (const [client, clock] of Y.decodeStateVector(right)) {
-    merged.set(client, Math.max(merged.get(client) ?? 0, clock));
-  }
-  return Y.encodeStateVector(new Map(merged));
-}
-
-/** Journal the effective sync transaction, not inherited source tombstones. */
-function journalSyncDelta(from: Y.Doc, to: Y.Doc): Uint8Array | null {
-  const probe = cloneDoc(to);
-  const updates: Uint8Array[] = [];
-  probe.on("update", (update: Uint8Array) => updates.push(update));
-  try {
-    Y.applyUpdate(probe, Y.encodeStateAsUpdate(from, Y.encodeStateVector(to)));
-    // A source peer includes the target's complete causal prefix. Never drop
-    // unresolved structs/deletes by journaling only the events that integrated.
-    if (probe.store.pendingStructs || probe.store.pendingDs) {
-      throw new Error("Branch sync delta has unresolved Yjs dependencies");
-    }
-    return updates.length > 0 ? Y.mergeUpdates(updates) : null;
-  } finally {
-    probe.destroy();
-  }
-}
-
-/** Draft agent rows own fresh structs; deletes may refer to older clients. */
-function assertFreshAgentClient(doc: Y.Doc, row: AppendBranchJournalInput): void {
-  if (row.source !== "agent") return;
-  const clients = Y.decodeStateVector(Y.encodeStateVector(doc));
-  for (const struct of Y.decodeUpdate(row.updateData).structs) {
-    if (clients.has(struct.id.client))
-      throw new Error(`Agent segment reused client ${struct.id.client}`);
   }
 }

@@ -15,12 +15,14 @@ import {
 import type { BranchAgentEditDiagnostics } from "../domain/branch-agent-edit.js";
 import type { BranchPullDiagnostics } from "../domain/branch-pulls.js";
 import type { SweepProjectionDiagnostics } from "../domain/branch-push-contracts.js";
+import type { WriterFrameDiagnostics } from "../domain/branch-writer-frames.js";
 import type { DocumentProjectionDiagnostics } from "../domain/document-projection-refresher.js";
 import type { DraftBranchAheadDiagnostics } from "../domain/draft-branch-ahead-registration.js";
 import type { MarkdownSerializationAnomalyObserver } from "../domain/markdown-document.js";
 import type { ResponseTransactionDiagnostics } from "../domain/response-transaction.js";
 import type { ReversalNoticeDiagnostics } from "../domain/reversal-notices.js";
 import type { DraftReviewDiagnostics } from "../domain/work-draft-review-service.js";
+import type { RewriteCommitted } from "./drizzle-branches.js";
 
 export function createBranchPullDiagnostics(eventSink?: EventSink): BranchPullDiagnostics {
   return {
@@ -35,6 +37,61 @@ export function createBranchPullDiagnostics(eventSink?: EventSink): BranchPullDi
       });
     },
   };
+}
+
+/**
+ * The branch coordinator's events: a frame judged again, a background fold that failed, a room
+ * found behind its branch and reconciled.
+ */
+export function createWriterFrameDiagnostics(eventSink?: EventSink): WriterFrameDiagnostics {
+  return {
+    frameRetried({ branchId, attempt }) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "info",
+        source: "collab.branch",
+        name: "append_retry",
+        correlation: { branchId },
+        payload: { attempt },
+      });
+    },
+    roomReconciled({ branchId, generation, trigger, ...payload }) {
+      if (!eventSink) return;
+      // A frame finding its room behind is a missed delivery: a symptom worth seeing. A room
+      // registering behind a commit that landed during its load is the expected race.
+      emitEvent(eventSink, {
+        level: trigger === "frame" ? "warn" : "info",
+        source: "collab.branch",
+        name: "room_reconciled",
+        correlation: { branchId, branchGeneration: generation },
+        payload: { trigger, ...payload },
+      });
+    },
+    compactionFailed({ branchId, cause }) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "error",
+        source: "collab.branch",
+        name: "compaction.failed",
+        correlation: { branchId },
+        payload: unknownToEventPayload(cause),
+      });
+    },
+  };
+}
+
+/** P2's commit bound: how long a committed rewrite held its branch row, and the tail it read. */
+export function createRewriteCommittedEvent(
+  eventSink: EventSink,
+): (detail: RewriteCommitted) => void {
+  return ({ branchId, ...payload }) =>
+    emitEvent(eventSink, {
+      level: "info",
+      source: "collab.branch",
+      name: "rewrite_committed",
+      correlation: { branchId },
+      payload,
+    });
 }
 
 export function createDraftBranchAheadDiagnostics(

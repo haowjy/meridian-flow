@@ -45,6 +45,7 @@ import { insertDocumentRow, insertFolder } from "../domains/context/tree/node-ro
 import { ensureLiveFolderPath, walkFolders } from "../domains/context/tree/placement.js";
 import { runInDrizzleTransaction } from "../shared/drizzle-transaction.js";
 
+import { createTestWorkProjectionMutation } from "./work-projection.js";
 export type ScenarioSource = "manuscript" | "kb" | "unfiled" | "user";
 
 export type ScenarioWork = {
@@ -201,7 +202,7 @@ export function draftTreeWorldOver(
   const { id: projectId, userId, sources } = project;
   const drafts = createDrafts({
     store: createDrizzleDraftStore(db),
-    boundary: createDrizzleDraftWriteBoundary(db),
+    boundary: createDrizzleDraftWriteBoundary(db, createTestWorkProjectionMutation(db)),
   });
   const madeWorks: WorkId[] = [...existingWorks];
 

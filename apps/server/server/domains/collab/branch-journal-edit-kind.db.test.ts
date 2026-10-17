@@ -25,7 +25,6 @@ it("returns editKind from the pending part's origin, whatever its placement or t
     await harness.seedWriterDocument("Alpha base.", "edit-kind");
     const f = harness.crossWorkProbeFixture();
     const branch = await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
-    branch.doc.destroy();
     for (const text of ["one", "two", "three"]) {
       await commitBranchEdit(f, branch.branchId, { source: "agent" }, (doc) => {
         const block = f.model.getBlocks(toDocHandle(doc))[0];

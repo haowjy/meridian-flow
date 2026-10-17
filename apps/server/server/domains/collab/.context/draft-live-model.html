@@ -109,7 +109,7 @@ whatever its Work's default or its sibling chats do.
     <line x1="140" y1="116" x2="140" y2="242" stroke="currentColor" stroke-width="2" marker-end="url(#arrA)"/>
     <text x="152" y="168" fill="currentColor" font-size="13.5" font-weight="600" font-family="sans-serif">continuous pull — automatic</text>
     <text x="152" y="188" fill="var(--muted)" font-size="12.5" font-family="sans-serif">chunked, attributed with marks,</text>
-    <text x="152" y="206" fill="var(--muted)" font-size="12.5" font-family="sans-serif">never gated, never refused</text>
+    <text x="152" y="206" fill="var(--muted)" font-size="12.5" font-family="sans-serif">no consent gate</text>
   </g>
   <!-- Apply: draft -> live -->
   <g style="color: var(--gate)">
@@ -130,7 +130,7 @@ whatever its Work's default or its sibling chats do.
   <line x1="190" y1="366" x2="190" y2="332" stroke="var(--muted)" stroke-width="1.6" marker-end="url(#arrA)" style="color: var(--muted)"/>
 </svg>
 <figcaption>
-Downward flow is automatic and unconditional. Upward flow happens only through
+Downward flow is automatic and needs no consent. Upward flow happens only through
 the writer's Apply.
 </figcaption>
 </figure>
@@ -216,7 +216,8 @@ carries the tokens its review rendered (location version, the live text's
 full-state fingerprint, the branch generation); Apply compares them under the
 batch's locks and answers <code>stale</code> when any moved, so the writer
 looks again. A deletion moves the fingerprint, which a state vector would miss.
-Pulls (live to draft) are never gated.
+This is item and per-change Apply; whole Apply publishes the current branch.
+Pulls (live to draft) need no consent.
 (<code>domain/draft-publication.ts</code>, <code>adapters/drizzle-draft-tree-step.ts</code>)
 </p>
 
@@ -230,7 +231,7 @@ Pulls (live to draft) are never gated.
       Receipt-level Undo/Redo is the sole AI reversal authority; mark
       popovers are read-only evidence.</li>
   <li><strong>Runtime state is memory-only.</strong> Restarts cold-reconstruct
-      from the live journal plus branch state/journal rows.</li>
+      from the live journal plus each branch's checkpoint and tail rows.</li>
 </ul>
 
 <h2>What this model replaced</h2>
@@ -262,8 +263,8 @@ cure was one mechanism, enforced by types and keys rather than prose.
 <div class="scroll">
 <table>
   <tr><th>Edge</th><th>Rule</th></tr>
-  <tr><td>live → draft</td><td><strong>Never gated.</strong> Continuous, automatic, always merges.</td></tr>
-  <tr><td>draft → live</td><td><strong>Only via Apply.</strong> The single consent-bearing promotion. The stale-Apply guard (#420) is not built yet.</td></tr>
+  <tr><td>live → draft</td><td><strong>No consent gate.</strong> Continuous and automatic; a pull merges whenever it runs. It waits while an Apply of the same document is settling, and keeps running while the Work is archived, so the draft applies cleanly after unarchive (see the archive contract in <a href="CONTEXT.md">CONTEXT.md</a>).</td></tr>
+  <tr><td>draft → live</td><td><strong>Only via Apply.</strong> The single consent-bearing promotion. Item and per-change Apply refuse a stale render; whole Apply has no live-head guard yet (#420).</td></tr>
   <tr><td>AI → live</td><td><strong>Direct mode only.</strong> A draft-mode chat's AI writes to its Work's branch, always. The mode is the chat's, never the Work's.</td></tr>
   <tr><td>Presence</td><td><strong>Room-scoped.</strong> No cross-surface cursors; cross-surface provenance uses marks.</td></tr>
 </table>
@@ -273,7 +274,7 @@ cure was one mechanism, enforced by types and keys rather than prose.
 <ul>
   <li><a href="CONTEXT.md">CONTEXT.md</a> — contracts, authority head, write codec, branch model in depth</li>
   <li><a href="../AGENTS.md">collab AGENTS.md</a> — the working mental model for this domain</li>
-  <li><a href="https://github.com/haowjy/meridian-flow/issues/420">#420 refuse stale Apply (not built)</a> ·
+  <li><a href="https://github.com/haowjy/meridian-flow/issues/420">#420 refuse stale whole Apply</a> ·
       <a href="https://github.com/haowjy/meridian-flow/issues/421">#421 diff mode</a> ·
       <a href="https://github.com/haowjy/meridian-flow/issues/422">#422 one mark vocabulary</a></li>
 </ul>

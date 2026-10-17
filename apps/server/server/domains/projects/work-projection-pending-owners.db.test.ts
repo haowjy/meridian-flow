@@ -30,6 +30,7 @@ import {
   stageSettlementBatchWithinTx,
 } from "../collab/adapters/drizzle-pending-settlement.js";
 import { trailContributionReplacement } from "../collab/domain/branch-trail-projection.js";
+import { appendBranchRows, proseBranchUpdate } from "../collab/test-support/branch-store-seam.js";
 import { createDrizzleContextCatalog } from "../context/adapters/context-catalog.js";
 import { createDrizzleProjectContextAvailability } from "../context/adapters/project-context-availability.js";
 import { createWorkProjectionMutation } from "./adapters/work-projection-mutation.js";
@@ -147,13 +148,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         drafts: createDrizzleDraftStore(db),
       });
       const appendJournal = (updateMeta: unknown) =>
-        branches.appendJournal?.({
-          branchId: BRANCH_ID,
-          generation: 1,
-          updateData: new Uint8Array([1]),
-          source: "agent",
-          updateMeta,
-        }) ?? Promise.reject(new Error("Drizzle branch journal append is unavailable"));
+        appendBranchRows(branches, BRANCH_ID, [
+          { updateData: proseBranchUpdate(), source: "agent", updateMeta },
+        ]);
       const initial = await projectionState();
       await appendJournal({ kind: "edit" });
       const appended = await projectionState();
@@ -163,20 +160,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const journal = createDrizzleBranchJournalReadStore(db);
       const rows = await journal.listReviewableJournalRows(BRANCH_ID, 1);
-      const branch = {
-        branchId: BRANCH_ID,
-        documentId: DOCUMENT_ID as never,
-        kind: "work_draft" as const,
-        upstreamBranchId: null,
-        draftId: DRAFT_ID,
-        workId: WORK_ID as never,
-        threadId: null,
-        generation: 1,
-        status: "active" as const,
-        state: new Uint8Array([0, 0]),
-        stateVector: new Uint8Array([0]),
-        schemaVersion: 1 as never,
+      // Each commit fences on the revision it read, so every one reads the branch as it stands.
+      const currentBranch = async () => {
+        const branch = await branches.getBranch(BRANCH_ID);
+        if (!branch) throw new Error("the branch is gone");
+        return branch;
       };
+      const emptyState = { state: new Uint8Array([0, 0]), stateVector: new Uint8Array([0]) };
       const pushStore = createDrizzlePushCommitStore(
         db,
         stageSettlementBatchWithinTx,
@@ -187,10 +177,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         runInDrizzleTransaction(db, async () => {
           await pushStore.commitDiscard({
-            branch,
+            branch: await currentBranch(),
             journalRows: rows,
-            state: branch.state,
-            stateVector: branch.stateVector,
+            ...emptyState,
           });
           throw new Error("forced owner rollback");
         }),
@@ -201,10 +190,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).toEqual(rows.map(({ status }) => status));
 
       await pushStore.commitDiscard({
-        branch,
+        branch: await currentBranch(),
         journalRows: rows,
-        state: branch.state,
-        stateVector: branch.stateVector,
+        ...emptyState,
       });
       const discarded = await projectionState();
       expect(discarded.entityRevision).toBe((appended.entityRevision ?? 0n) + 1n);
@@ -233,7 +221,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         pushes: [
           {
-            branch,
+            branch: await currentBranch(),
             journalRows: pushRows,
             pushUpdate: validUpdate,
             idempotencyKey: "work-projection-pending-owner-push",
@@ -302,7 +290,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           })),
           payloads: batch.payloads,
           liveTextFingerprints: new Map(),
-          leasedBranchIds: [],
           recheck: () => "commit",
           afterCommit() {},
         });
@@ -329,7 +316,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         pushes: [
           {
-            branch,
+            branch: await currentBranch(),
             journalRows: await journal.listReviewableJournalRows(BRANCH_ID, 1),
             pushUpdate: validUpdate,
             idempotencyKey: "work-projection-pending-owner-push",
@@ -349,18 +336,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("publishes an effect toggle on a branch that keeps its reviewable rows", async () => {
       const { db, projection } = await fixture();
       const pending = createDrizzleWorkDraftPendingStore(db);
-      await createDrizzleBranchStore(db, {
-        workProjection: projection,
-        drafts: createDrizzleDraftStore(db),
-      }).appendJournal?.({
-        branchId: BRANCH_ID,
-        generation: 1,
-        updateData: new Uint8Array([1]),
-        source: "agent",
-        updateMeta: { kind: "edit" },
-      });
+      await appendBranchRows(
+        createDrizzleBranchStore(db, {
+          workProjection: projection,
+          drafts: createDrizzleDraftStore(db),
+        }),
+        BRANCH_ID,
+        [{ updateData: proseBranchUpdate(), source: "agent", updateMeta: { kind: "edit" } }],
+      );
       const setEffect = (hasEffect: boolean) =>
-        projection.mutatePendingBranches([BRANCH_ID], async () => {
+        projection.mutatePending({ branches: [BRANCH_ID] }, async () => {
           await db
             .update(documentBranches)
             .set({ hasEffect })

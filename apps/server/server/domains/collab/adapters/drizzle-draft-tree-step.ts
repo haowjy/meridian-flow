@@ -25,8 +25,7 @@ import type {
   DraftItemSettlement,
 } from "@meridian/contracts/drafts";
 import type { Database } from "@meridian/database";
-import { createCollabYDoc } from "@meridian/prosemirror-schema";
-import * as Y from "yjs";
+import type * as Y from "yjs";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { ContextCatalogMutationPort } from "../../context/ports/context-catalog.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
@@ -34,12 +33,9 @@ import { dropDocumentRows } from "../../context/tree/draft-tree-store.js";
 import { type PlaceTarget, place } from "../../context/tree/placement.js";
 import { createTreeReader, LIVE_TREE, type TreeStateNode } from "../../context/tree/tree-view.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
-import type {
-  BranchCoordinator,
-  BranchSnapshot,
-  BranchStore,
-} from "../domain/branch-coordinator.js";
-import { BranchCasConflictError } from "../domain/branch-coordinator.js";
+import type { BranchCoordinator } from "../domain/branch-coordinator.js";
+import type { BranchSnapshot, BranchStore } from "../domain/branch-store.js";
+import { BranchCasConflictError, materializeBranchRead } from "../domain/branch-store.js";
 import { documentEffectsEqual } from "../domain/document-content.js";
 import {
   type ApplyNote,
@@ -75,12 +71,12 @@ export function createDrizzleDraftTreeStep(
   db: Database,
   deps: {
     drafts: Pick<Drafts, "byIds">;
-    branches: Pick<BranchStore, "getBranch">;
-    /** The reset of a drained branch, under the lease the completion's caller holds. */
-    coordinator: Pick<BranchCoordinator, "resetFromDocIfUnchangedWithLease">;
+    branches: Pick<BranchStore, "getBranch" | "readBranchAt">;
+    /** The reset of a drained branch inside the completion transaction. */
+    coordinator: Pick<BranchCoordinator, "resetFromDoc">;
     /** The live document as the completion transaction sees it, admissions included. */
     liveDoc(documentId: DocumentId): Promise<Y.Doc>;
-    workProjection: Pick<WorkProjectionMutation, "mutatePendingDraft">;
+    workProjection: Pick<WorkProjectionMutation, "mutatePending">;
     /** Catalog reconciliation in the completion transaction, so its replay sees the tree (F23). */
     catalog: ContextCatalogMutationPort;
     arrivals?: DocumentArrivals;
@@ -90,12 +86,6 @@ export function createDrizzleDraftTreeStep(
 
   return {
     kind: DRAFT_TREE_STEP,
-
-    async prepare(raw) {
-      const payload = parseDraftTreePayload(raw);
-      if (!payload) return { branchIds: [] };
-      return { branchIds: payload.items.flatMap((item) => item.draftBranchId ?? []) };
-    },
 
     async plan(scope) {
       const staged = parseDraftTreePayload(scope.payloads.get(DRAFT_TREE_STEP));
@@ -278,31 +268,41 @@ export function createDrizzleDraftTreeStep(
         for (const { item } of apply) {
           if (!item.draftBranchId || item.branchGenerationToken === null) continue;
           if (!admitted.has(item.documentId as DocumentId)) continue;
-          const branch = await deps.branches.getBranch(item.draftBranchId);
+          const read = await deps.branches.readBranchAt(item.draftBranchId);
+          const branch = read?.branch;
           if (
+            !read ||
             branch?.status !== "active" ||
             String(branch.generation) !== item.branchGenerationToken
           ) {
             continue;
           }
           const live = await deps.liveDoc(item.documentId as DocumentId);
-          const draft = createCollabYDoc({ gc: false });
+          const draft = materializeBranchRead(read);
           try {
-            Y.applyUpdate(draft, branch.state);
             if (!documentEffectsEqual(live, draft)) continue;
-            if (scope.stage !== "completion" || !scope.lease) {
-              throw new Error("A drained item resets under the completion's branch lease");
+            if (scope.stage !== "completion") {
+              throw new Error("A drained item resets only in completion");
             }
-            const reset = await deps.coordinator.resetFromDocIfUnchangedWithLease(scope.lease, {
-              branchId: branch.branchId,
-              upstream: live,
-              expectedGeneration: branch.generation,
-              expectedStateVector: branch.stateVector,
-              expectedState: branch.state,
-              schemaVersion: branch.schemaVersion,
-              editDisposition: "retired",
-            });
-            if (!reset) throw new BranchCasConflictError(branch.branchId);
+            // Exact at the revision the empty effect was judged at; the settlement owns the
+            // reset, so no settlement fence. A miss means content landed after the check
+            // (a writer's frame): the item stays open with its typing, not reset.
+            const reset = await deps.coordinator
+              .resetFromDoc({
+                branchId: branch.branchId,
+                upstream: live,
+                expectedGeneration: branch.generation,
+                policy: "exact",
+                expectedRevision: branch.revision,
+                schemaVersion: branch.schemaVersion,
+                editDisposition: "retired",
+                fence: { kind: "settlement-owned", batchId: scope.batchId },
+              })
+              .catch((cause) => {
+                if (cause instanceof BranchCasConflictError) return false;
+                throw cause;
+              });
+            if (!reset) continue;
             settled.set(item.documentId as DocumentId, {
               itemClosed: true,
               itemDisposition: "applied",
@@ -415,7 +415,7 @@ export function createDrizzleDraftTreeStep(
               installed.catalog.roots,
             );
           }
-          await deps.workProjection.mutatePendingDraft([payload.draftId], async () => {
+          await deps.workProjection.mutatePending({ drafts: [payload.draftId] }, async () => {
             await dropDocumentRows(db, {
               draftId: payload.draftId,
               documentIds: apply

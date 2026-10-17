@@ -39,6 +39,7 @@ it("only the named end-of-use sites close or delete a draft branch", () => {
       const text = readFileSync(path, "utf8");
       return (
         /\.update\(documentBranches\)\s*\.set\(\{\s*status:\s*"closed"/.test(text) ||
+        /bumpBranchRevisions\([^;]*\{\s*status:\s*"closed"/.test(text) ||
         /\.delete\(documentBranches\)/.test(text)
       );
     })

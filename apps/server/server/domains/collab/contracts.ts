@@ -1,5 +1,5 @@
 /** Public contracts for the collab domain. */
-import type { Hocuspocus } from "@hocuspocus/server";
+import type { Hocuspocus, Document as HocuspocusDocument } from "@hocuspocus/server";
 import type {
   ConcurrentEditInfo,
   ResponseCommitWriteReceipt,
@@ -30,7 +30,6 @@ export type { RefusedResponseDocument, RoutedWriteOutcome };
 
 import type { DocumentCreationAggregate } from "./domain/document-creation.js";
 import type { DraftBranchAheadRegistration } from "./domain/draft-branch-ahead-registration.js";
-import type { DraftBranchLeases } from "./domain/draft-branch-leases.js";
 import type {
   CommandLookup,
   CommandLookupKey,
@@ -171,6 +170,15 @@ export type CollabTransport = {
     generation: number;
     clientStateVector: Uint8Array;
   }): Promise<boolean>;
+  /**
+   * Called from a branch room's load hook: once Hocuspocus registers the room, brings it up to
+   * what committed while it loaded, or closes it when its generation is stale (decision D26).
+   */
+  enrollHocuspocusBranchRoom(input: {
+    branchId: string;
+    generation: number;
+    document: HocuspocusDocument;
+  }): void;
   getPersistenceQueueMetrics(): CollabPersistenceMetrics;
 };
 
@@ -332,6 +340,8 @@ export type ReviewSelectionCommand =
       closureClassIds: readonly string[];
       admissionTokens: readonly string[];
       memberPartKeys: readonly string[];
+      /** False when the client sent a sample: absence then proves nothing. */
+      memberPartKeysComplete: boolean;
       liveRevisionToken: string;
       draftRevisionToken?: string;
     };
@@ -435,8 +445,6 @@ export type CollabDraftResolver = {
   drafts: Drafts;
   /** A drain for the debounced registration of writers' review-room edits (§10.7). */
   draftLinks: Pick<DraftBranchAheadRegistration, "flush">;
-  /** Every branch of a draft leased before its transaction: what closing the draft needs. */
-  draftLeases: DraftBranchLeases;
   /** Work purge's disposal of the purged Work's drafts through the locked Discard kernel (§2.6). */
   workDraftDisposal: WorkDraftDisposal;
 };

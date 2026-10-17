@@ -22,6 +22,7 @@ import {
 import { eq, sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { useRollbackTestDatabase } from "../../../../test-support/drizzle-reset.js";
+import { createTestWorkProjectionMutation } from "../../../../test-support/work-projection.js";
 import { createInMemoryCollabDomain } from "../../../collab/index.js";
 import { createTestDocumentLinkScopes } from "../../../collab/test-support/document-link-scopes.js";
 import { createNoopEventSink } from "../../../observability/index.js";
@@ -428,6 +429,7 @@ else
       expect(reservation?.state).toBe("reserved");
       const collab = createInMemoryCollabDomain();
       const contextPorts = createProductionUnifiedContextPortFactory({
+        pendingDraft: createTestWorkProjectionMutation(db),
         db,
         links: createTestDocumentLinkScopes(db),
         documentSync: collab,

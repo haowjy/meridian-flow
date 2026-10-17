@@ -34,7 +34,8 @@ compute the token synchronously in their prepared link scope; an unverified
 recovery returns `null`, never a later read's token.
 
 Preview and selective disposition use one `ReadReviewCut`. The first branch
-read fixes a repeatable-read snapshot containing branch bytes/generation,
+read fixes a repeatable-read snapshot containing the branch (checkpoint ⊕ tail
+through the read seam, with its revision and generation),
 review rows, history status, live journal/head, thread titles, and live/draft
 link views. It performs no room reads, pulls, provisioning, or repair. A
 missing branch is `gone`, not an invitation to create one. Returned bytes and
@@ -60,8 +61,8 @@ document to its first grant. The response transaction saves all live and draft
 journals, receipt records, and callbacks together. Live rooms publish only
 after commit, so rollback is invisible to open editors.
 
-A chat's write mode decides only where its new AI writes go (D62); chats in
-one Work may differ. A draft write never pushes itself live (D59): a draft
+A chat's write mode decides only where its new AI writes go; chats in
+one Work may differ. A draft write never pushes itself live: a draft
 that an auto-apply chat leaves behind, or another chat keeps writing, waits
 there like a kept change, and the dock shows it. Switching a chat to
 auto-apply touches no draft; Apply stays the writer's command. Branches carry
@@ -116,21 +117,197 @@ share a segment, but sharing a paragraph alone never joins edits.
 
 ## Transaction and lock contracts
 
-Pulls commit in their own root transactions outside a caller's response
-transaction. A pull takes its branch leases before its root transaction and
-keeps them through persistence. Live pulls snapshot before opening the root
-transaction and re-read branch membership; thread-peer pulls lease the peer
-and upstream together. A shared pull promise resolves only after commit. A
-caller joining an in-flight live pull awaits one coalesced run that starts
-after its call, since the in-flight snapshot may predate a writer edit it must
+A new branch write makes four choices, each named below: its door (an append,
+an exact or fold rewrite, or the metadata door), its Work admission (`active`
+or `any`), its entry into the Works mutation boundary (every write except a
+writer append that leaves the branch's review membership unchanged), and its
+bounded attempt.
+It takes no other lock and adds no retry loop of its own. A revision miss
+surfaces as `BranchCasConflictError`: the branch moved, and the attempt
+captures again. No write compares bytes.
+
+Every branch write is fenced by its row's `revision`, under one of two
+policies. An **exact** write commits only at the revision it was computed at:
+appends through `appendRows`, an exact checkpoint rewrite through
+`commitRewrite` (a peer's catch-up, an inverse's destination, an exact reset),
+and every metadata change (a close, a hold, a journal row's status, a Work
+lifecycle fence) through the one door `bumpBranchRevisions`
+(`shared/branch-revisions.ts`), which locks the rows in ID order and bumps
+their revision with the change. A **fold** (a pull, compaction, a peer's re-fork, item
+Discard's reset) commits over the replica's cursor instead: rows appended
+since it was computed are applied into its checkpoint under the row lock, so
+an intervening append never makes it miss, and only another rewrite does. No
+write compares branch bytes. Whether a branch is
+frozen is derived on every read from its draft's origin Work (archived,
+deleted, or missing), never stored. A Work lifecycle transition (archive,
+unarchive, delete, restore) locks and bumps every active branch of the Work's
+drafts after its Work update, so a write judged before the transition misses
+its revision.
+
+Work-first order has one owner: the Works mutation boundary
+(`projects/adapters/work-projection-mutation.ts`), a required dependency of the
+branch store and of every collab store that writes draft or branch rows. It
+locks the Works a write names, directly or through its drafts and branches,
+`FOR NO KEY UPDATE` in id order, in the caller's transaction, before any draft,
+inverse, document or branch lock, so every write enters Work, draft, document,
+branch, the order the transitions take. A caller hands it its whole write set
+once: `mutatePending` when the write's effect on review membership is known
+only after it runs (it counts the Works' pending documents before and after
+and touches those that moved), `mutateKnownWorks` when the caller already
+knows the write moves these Works (a frame that flips its branch: lock, write,
+touch, no count), and `lockWorks` for order alone (the frame's
+fourth-attempt judgement, opening or closing a draft, Apply's batch plan,
+a reply save's grants). `seam`
+adds the bound edit grants' Works and confirms the grants; `requireActive`
+refuses unless every Work of the set is active. No other collab code locks a
+Work for a write; the live journal's seam locks only the bound grants' Works.
+Creating a draft branch runs inside `mutatePending`: a branch made while its
+Work archives is either fenced by the archive or read as archived. An
+effect-neutral writer append enters no boundary: it takes only its branch row.
+Tests use the same boundary (`test-support/work-projection.ts`), with no
+catalog or availability publication and no pending counts. The append's
+`UPDATE` carries a Work-is-active predicate, so the lifecycle decision and the
+write are one statement.
+
+An archived Work's drafts keep rebasing on live ([archive hides a
+Work][kb-archive]): their pending changes never move, but a live→draft pull, a
+peer's pull and its containment reset admit whatever the Work's lifecycle, so
+a draft applies cleanly after unarchive and has nothing to catch up. What the
+archive freezes is the writer: frames (the append's predicate and the
+lifecycle fence), agent writes in draft mode, Apply and Discard. Of the
+rewrites only a peer's catch-up checkpoint carries the Work-is-active
+predicate, derived from the operation in storage. A branch retracted before
+its pull commits answers `closed` under the row lock, so a peer pull reports
+`ThreadPeerPullLost`.
+
+A writer frame takes no lease, mutex or document lock, and no lock beyond its
+own statement. It is judged on a private clone of the published replica
+(containment, edit receipts, `has_effect` against the stored `live_cut`),
+then appended at the revision it was judged at; a miss destroys the clone and
+judges again on the new revision. The fourth attempt holds the Work row and
+the branch row. The first attempt checks its room holds the committed replica,
+and a room that does not has missed a delivery: it is reconciled to the replica
+(`reconcileRoom`, logged as a `room_reconciled` warning) and the frame goes on.
+Only a generation the branch has left, or a draft no longer writable, refuses
+the frame (`1008`). Retries skip the check: a retry exists because a concurrent
+commit moved the branch, and that commit's publish can reach this room after the
+retry judges. An append that flips the branch's
+review membership (`(has_effect OR blocking) AND` pending rows) locks its Work
+first and touches the Work's projection.
+
+Room delivery has one owner (decision D25): `install` in
+`domain/branch-coordinator.ts`, the only place a replica becomes the branch's
+published replica. It runs when the store's transaction commits (a savepoint's
+callbacks move to its parent on release and are dropped on its rollback, so a
+rolled-back child publishes nothing), installs only past the replica published
+by then, and sends this process's rooms what separates the two: the rows the new
+replica was built from when it was built on that replica (a frame, a reply's
+rows, a read's tail catch-up), otherwise the document difference (a pull or
+compaction that folded rows under the branch lock, a checkpoint catch-up, a
+checkpoint another process wrote), or nothing when the content is unchanged. A
+new generation closes the rooms of older ones instead. A transition at or below
+the published revision installs and sends nothing, so a read racing a local
+commit delivers once. `install` reaches only rooms Hocuspocus has registered,
+and Hocuspocus 4.3 registers a room only after its load hooks return, so a room
+enrolls itself (decision D26): its `afterLoadDocument` hook chains after
+Hocuspocus's own registration, and the coordinator's `enrollRoom` reads the
+branch and reconciles the room to it, or closes the room when the branch left
+its generation while it loaded. From registration on, every transition reaches
+it; enrollment covers what committed between its load read and registration.
+The load itself returns state only for the generation it was asked for, and the
+branch `connected` hook re-checks the generation as the live one does. Rooms are
+process-local: another server process's commits reach this process's rooms when
+its runtime next reads the branch (a frame's judgement, a tab's SyncStep1
+handshake, a turn inverse's `deliverCommitted`, a room's enrollment). Any gap
+that remains is repaired at the room's next frame rather than refused. A process whose
+tab is idle shows the other process's typing at that tab's next keystroke or
+rejoin. A frame that leaves more than 512 tail rows or 2 MiB of tail folds it in
+the background (`compact`: no content, effect or `updatedAt` change). Frames
+and the fold they trigger are `domain/branch-writer-frames.ts`, over the branch
+runtime surface (`BranchRuntime`: published replicas, private candidates,
+prepared writes, attempts) that `domain/branch-coordinator.ts` owns with the
+operations on it: frame admission depends on the runtime, never on the
+operations. Its `compacting`
+set keeps one fold per branch in a process; the fold
+fence orders it against every other write, so a frame that lands meanwhile is
+folded in and a rewrite that commits first makes it miss until the next frame
+past the bound. A failure is logged as `collab.branch` `compaction.failed`.
+
+Every bounded branch write (frame, reply save, inverse, pull, segment rows,
+selective and item Discard) runs its attempts through `runBoundedAttempts`
+(`domain/branch-attempts.ts`): capture and compute off every lock, one commit
+scope per attempt (a root transaction, or one savepoint inside an ambient one)
+opened before its first branch-store lock, and a miss that leaves that scope
+before the next capture. The attempt owns its candidates: one completed
+attempt transfers them to publication, and any unwind disposes the rest,
+including a write whose own statement succeeded in a scope a later miss rolled
+back. The bound's exhaustion outcome stays with each caller.
+
+A reply save is an attempt across every participating core: prepare replays
+each staged document on a candidate, consume appends per upstream inside one
+savepoint, install publishes. A miss unwinds the savepoint and prepares again
+from the original staged buffer, up to four attempts; the reply's `confirm`
+runs once, and an attempt prepared before it is disposed if it throws. The
+save and a thread core's tool-time accesses hold no branch: they prepare
+through the coordinator's save operations (`withTransient`,
+`prepareStagedRows`, `prepareCatchUp`, `commitSegmentRows`), which read
+committed replicas and write only through revision-fenced attempts, and read
+the journal through one `BranchReplayJournalReads` port. The confirmation is
+the retained exception: it runs once, outside the save attempt, and holds
+its Work rows and draft and live advisory locks across attempts 2 to 4; only
+branch rows release on the savepoint rollback. Apply, selective Discard and
+pulls retry a moved branch up to four times, then refuse `stale`.
+
+An inverse (Undo, Redo, revert, rollback, and the model's `undo`/`redo`)
+captures without any lock: one read-only snapshot of each document's live
+head, each affected draft at its revision merged with that live state, the
+history and each draft's lifecycle. It plans on that capture, then commits in
+one scope: the live mutexes of its live destinations, then a seam boundary
+(`mutatePending` with `seam`): the captured branches' Works and the bound
+grants' Works in id order, the grants confirmed, before any other lock (a
+live-only inverse such as a named Work's Scratch reaches its Work only as a
+grant Work). Then its documents' mutation locks in id order,
+the live head check, and each draft destination's exact checkpoint rewrite at
+its captured revision. Those captured fences, not a lock of the inverse's own,
+order two inverses of the same edit: the second misses, recaptures and finds
+the edit already reversed (probe `d22-concurrent-undo` in
+[the lock-free probe index](../../../../../../docs/qa/drafts-lock-free-probes.md)). Any moved revision or head unwinds the attempt and
+recaptures; after four attempts one more capture is classified without
+writing, so a plan that still applies is a `ReversalConflictError`, never a
+semantic refusal. `markBlocking` (a held draft found by the plan) is its own short write
+after the capture (Works, then the held rows, then the bump).
+
+Each pull attempt is its own root transaction, outside a caller's response
+and database transactions, and holds nothing between attempts: its candidate
+and `has_effect` are computed before the scope, and it commits as a fold over the replica's
+cursor, applying any rows appended since into the checkpoint under the row
+lock (re-judging `has_effect` there only when it applied some). Frames never
+make a pull retry; only another rewrite does. A live pull into a Work draft is
+fenced by a pending settlement on its document rather than moving the revision
+that settlement's completion resets at, and it re-arms its debounce: one
+capture and merge per debounce period until the settlement completes or is
+withdrawn and the next run commits, after which polling stops. That is the
+only re-arm: a terminally blocked settlement answers `blocked` and does not
+re-arm (nothing lifts it on its own, so polling would capture and merge
+forever on an idle document), and a closed branch leaves the active list. Live pulls
+snapshot before any transaction and re-read branch membership. A thread-peer
+pull reads its upstream with its generation and commits holding that row
+`FOR SHARE`: an upstream re-forked since the read (`upstreamMoved`), or a
+closed peer, abandons the capture as `ThreadPeerPullLost`. A shared pull
+promise resolves when its attempt finishes, which is not always a catch-up:
+`pulled` resolves after the commit, but a fenced live pull resolves once it has
+re-armed the debounce, with nothing written, and the branch catches up on a
+later run after the settlement completes. A caller joining an in-flight live
+pull awaits one coalesced run that starts after its call, since the in-flight snapshot may predate a writer edit it must
 see. Pulls run after persisted live updates, on branch review room open and
 reconnect, and at agent tool boundaries; the room trigger is fire-and-forget
 and Hocuspocus admission never waits for it.
 
 Room loads read in the caller's transaction because that transaction may
 already hold the authority head. Provisioning locks the canonical thread row
-before committing the Work draft and peer in a root transaction, and the root
-must not re-lock that thread. Referenced rows must be committed before a root
+before committing the peer in a root transaction (a Work draft branch it needs
+commits first, in its own Work-first root), and the root must not re-lock that
+thread. Referenced rows must be committed before a root
 peer can reference them, so manifest identity and its live head commit in a
 root transaction. Live manifest writes instead load the manifest in the
 caller's transaction: during cold project bootstrap the project and source are
@@ -138,11 +315,26 @@ uncommitted and must roll back together, and no such path provisions a root
 peer. Use `NO KEY UPDATE` where a root insert needs FK key
 share against a caller-held lifecycle lock.
 
-The practical lock order is: in-process leases, Work rows, draft row, sorted
-namespace/advisory keys, then document locks in ID order. Never take a
-namespace lock while holding a document lock; compute the complete namespace
-set first and revalidate. Background timers remain armed across failed pulls;
-only a committed run with no newer work may clear them.
+The lock order is one list, and every path takes a prefix-ordered subset of it:
+live `withDocument` mutexes (sorted) before any transaction, then inside the
+database Work rows (only through the Works mutation boundary), the draft row,
+sorted namespace and advisory keys (`lockDocumentMutation`'s document keys in
+ID order), then branch rows, an
+upstream before its peer, otherwise ID order. No path takes a Work row, a
+live lock or a namespace lock after a branch row, and none takes a namespace
+lock while holding a document lock: it computes the complete namespace set
+first and revalidates. Live mutexes are held around a commit scope (an
+inverse's live destinations, item Discard, Apply completion). Two captures
+still run under them, the live-scope exceptions: a live pull snapshots the live
+bytes inside `withDocument` (before any transaction), and Apply staging
+captures each document's LOCK-WS lock cut and prepares its publication under
+those live scopes. No path awaits writer ingress while it holds a Work or
+branch row: a frame that must commit before the scope is drained before the
+scope's first row lock, and one admitted after it is post-cut work that misses
+its revision. No process-level branch lease or mutex exists: no save, frame,
+pull, reset, Apply, Discard, inverse or compaction takes one. Background timers
+remain armed across failed pulls; only a committed run with no newer work may
+clear them.
 
 ## Authority, checkpoints, and derivation
 
@@ -207,12 +399,15 @@ never become prose hunks.
 ## Selective disposition and response retirement
 
 Apply and Discard parse required-field selection variants and thread them
-through branch critical sections and snapshot-CAS retries. Only an absent
+through revision-fenced attempts. Only an absent
 selection chooses whole Discard; a present but incomplete or malformed selection
 is HTTP 400, never a whole Discard. Class IDs,
 immutable part keys, live revisions, and admission tokens are evidence for the
 clicked class only; they never admit a replacement class. A missing selected
-class is `stale` if an immutable member survives and `gone` otherwise.
+class is `stale` if a listed immutable member survives, and `gone` only when
+none does and the request says its member list is complete
+(`memberPartKeysComplete`): a client sends at most 500 members, an even sample
+of a longer selection, and a sample cannot prove that no member survives.
 
 No visible review operations is not permission to reset a draft. An empty
 draft settles only when its complete document effect (prose, marks, attributes,
@@ -256,3 +451,5 @@ back unrelated documents in the reply.
 - [Collab visual explainer](collab-domain.html)
 - [Draft/live visual model](draft-live-model.html)
 - [Deferred work](FUTURE.md) and [TODO](TODO.md)
+
+[kb-archive]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/work/management/work-archive-and-delete.md

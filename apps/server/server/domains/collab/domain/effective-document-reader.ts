@@ -104,11 +104,7 @@ export function createEffectiveDocumentReader(input: {
       const view = await viewOf(command);
       if (view.kind === "draft") {
         try {
-          const existingPeer = await input.branches.resolveThreadBranch(
-            command.documentId,
-            command.threadId,
-          );
-          existingPeer.doc.destroy();
+          await input.branches.resolveThreadBranch(command.documentId, command.threadId);
           await input.branchPulls.pullThreadPeer({
             documentId: command.documentId,
             threadId: command.threadId,
@@ -159,17 +155,13 @@ export function createEffectiveDocumentReader(input: {
     }
   }
 
-  async function readEffectiveBranch<T>(
-    branch: { branchId: string; doc: Y.Doc },
+  function readEffectiveBranch<T>(
+    branch: { branchId: string },
     read: (doc: DocHandle) => Promise<T>,
   ): Promise<T> {
-    try {
-      return input.branchCoordinator.readBranch(branch.branchId, async (doc) =>
-        read(toDocHandle(doc)),
-      );
-    } finally {
-      branch.doc.destroy();
-    }
+    return input.branchCoordinator.readBranch(branch.branchId, async (doc) =>
+      read(toDocHandle(doc)),
+    );
   }
 
   return {
