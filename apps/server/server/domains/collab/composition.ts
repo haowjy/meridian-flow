@@ -210,7 +210,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     store: branches,
     attemptScope,
     onBranchUpdate: hocuspocusBinding.publishBranchUpdate,
-    onBranchReset: ({ branchId }) => hocuspocusBinding.closeBranch(branchId),
+    onBranchReset: ({ branchId, generation }) =>
+      hocuspocusBinding.closeBranch(branchId, generation),
     diagnostics: createWriterFrameDiagnostics(deps.eventSink),
   });
   const concurrentJournalWatermarks = createBranchConcurrentJournalWatermarks();
