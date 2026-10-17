@@ -145,6 +145,14 @@ it("failed response leaves only the writer-dependent draft part rollback_pending
     } finally {
       doc.destroy();
     }
+    const revision = async () =>
+      (
+        await db
+          .select({ revision: schema.documentBranches.revision })
+          .from(schema.documentBranches)
+          .where(eq(schema.documentBranches.id, branch.id))
+      )[0]?.revision ?? -1;
+    const beforeRollback = await revision();
     await view.collab.finalizeResponseRollback(
       { providerResponseId: responseId, editScopeId: responseId },
       {
@@ -153,6 +161,8 @@ it("failed response leaves only the writer-dependent draft part rollback_pending
       },
     );
     expect(await view.draftMarkdown(branch.id)).toBe("Alpha Ga!mma.\n\nBlue.\n");
+    // The draft's text stays: its revision moves for the active → rollback_pending flip (§2.5).
+    expect(await revision()).toBeGreaterThan(beforeRollback);
     const pending = await db
       .select()
       .from(schema.branchWriteJournal)
