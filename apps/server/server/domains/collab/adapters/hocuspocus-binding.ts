@@ -23,8 +23,8 @@ export function createHocuspocusBinding(eventSink?: EventSink) {
       if (!instance) throw new Error("Hocuspocus is not bound to the collab domain");
       return instance;
     },
-    closeBranch(branchId: string): void {
-      closeBranchRooms(instance, branchId);
+    closeBranch(branchId: string, olderThan?: number): void {
+      closeBranchRooms(instance, branchId, olderThan);
     },
     publishBranchUpdate({ branchId, update }: { branchId: string; update: Uint8Array }): void {
       try {
