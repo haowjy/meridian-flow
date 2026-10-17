@@ -13,6 +13,7 @@ import {
   unknownToEventPayload,
 } from "../../observability/index.js";
 import type { BranchAgentEditDiagnostics } from "../domain/branch-agent-edit.js";
+import type { BranchCoordinatorDiagnostics } from "../domain/branch-coordinator.js";
 import type { BranchPullDiagnostics } from "../domain/branch-pulls.js";
 import type { SweepProjectionDiagnostics } from "../domain/branch-push-contracts.js";
 import type { DocumentProjectionDiagnostics } from "../domain/document-projection-refresher.js";
@@ -31,6 +32,34 @@ export function createBranchPullDiagnostics(eventSink?: EventSink): BranchPullDi
         source: "collab.branch_pull",
         name: "background.failed",
         correlation: { documentId },
+        payload: unknownToEventPayload(cause),
+      });
+    },
+  };
+}
+
+/** The branch coordinator's events: a frame judged again, a background fold that failed. */
+export function createBranchCoordinatorDiagnostics(
+  eventSink?: EventSink,
+): BranchCoordinatorDiagnostics {
+  return {
+    frameRetried({ branchId, attempt }) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "info",
+        source: "collab.branch",
+        name: "append_retry",
+        correlation: { branchId },
+        payload: { attempt },
+      });
+    },
+    compactionFailed({ branchId, cause }) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "error",
+        source: "collab.branch",
+        name: "compaction.failed",
+        correlation: { branchId },
         payload: unknownToEventPayload(cause),
       });
     },
