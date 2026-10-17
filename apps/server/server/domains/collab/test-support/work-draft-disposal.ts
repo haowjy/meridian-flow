@@ -8,7 +8,6 @@ import {
   createDrizzleDraftStore,
   createDrizzleDraftWriteBoundary,
 } from "../adapters/drizzle-drafts.js";
-import { createBranchCriticalSections } from "../domain/branch-critical-sections.js";
 import { createDrafts } from "../domain/drafts.js";
 export function createPostgresWorkDraftDisposal(db: Database): WorkDraftDisposal {
   return createDrizzleWorkDraftDisposal(db, {
@@ -16,7 +15,6 @@ export function createPostgresWorkDraftDisposal(db: Database): WorkDraftDisposal
       store: createDrizzleDraftStore(db),
       boundary: createDrizzleDraftWriteBoundary(db, createTestWorkProjectionMutation(db)),
     }),
-    criticalSections: createBranchCriticalSections(),
     catalog: createDrizzleContextCatalog(db),
   });
 }

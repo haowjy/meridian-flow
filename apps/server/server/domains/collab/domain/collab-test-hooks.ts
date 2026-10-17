@@ -9,12 +9,12 @@
 const COLLAB_HOOK_POINTS = [
   "save.afterWorkLock",
   "checkpoint.afterAuthorityRead",
-  "discard.afterLeases",
+  /** A Discard attempt has not entered its commit scope. */
+  "discard.beforeCommitScope",
   "discard.beforeRetirement",
   "access.afterLeases",
   "applyItems.beforeStaging",
   "applyItems.afterStaging",
-  "applyItems.beforeContinue",
   /** A created document's retraction read its branches and holds no branch row yet. */
   "retract.beforeLocks",
   /** A retraction holds its branch rows and found no contribution; nothing is deleted yet. */
