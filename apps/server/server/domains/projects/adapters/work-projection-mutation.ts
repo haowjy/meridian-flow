@@ -11,6 +11,7 @@ import {
   runInDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
 import { draftBranchWorks } from "../../../shared/work-draft-lifecycle.js";
+import { lockWorksInIdOrder } from "../../../shared/work-lifecycle-lock.js";
 import type { ProjectContextAvailabilityMutationPort } from "../../context/ports/project-context-availability.js";
 import type { ContextCatalogLifecyclePort } from "../ports/context-catalog-lifecycle.js";
 import type { WorkDraftPendingCounts } from "../ports/work-draft-pending-counts.js";
@@ -18,7 +19,10 @@ import type { WorkDraftPendingCounts } from "../ports/work-draft-pending-counts.
 export type WorkProjectionMutation = {
   publishWorks(workIds: readonly WorkId[]): Promise<void>;
   touchWorks(workIds: readonly WorkId[], activityAt?: Date): Promise<void>;
-  /** Enrolls the Works whose pending count `operation` changed, by these branches' drafts. */
+  /**
+   * Locks these branches' Works first, then enrolls the ones whose pending count `operation`
+   * changed: the one owner of Work-first order for a branch write that touches a Work.
+   */
   mutatePendingBranches<T>(branchIds: readonly string[], operation: () => Promise<T>): Promise<T>;
   /**
    * The same for a change to these drafts' tree rows or branches (contract §13.2): a
@@ -90,13 +94,19 @@ export function createWorkProjectionMutation(input: {
     }
   }
 
-  /** Before and after `operation`, these Works' pending counts; touch those that moved. */
+  /**
+   * These Works locked (`FOR NO KEY UPDATE`, id order) before `operation` takes any draft or
+   * branch row, so every branch write that can move a Work's projection enters Work, then
+   * draft, then branch, the order Archive takes (decision D12). Then their pending counts
+   * before and after `operation`; touch those that moved.
+   */
   async function enrollPendingChange<T>(
     workIds: readonly WorkId[],
     operation: () => Promise<T>,
   ): Promise<T> {
     const unique = [...new Set(workIds)].sort() as WorkId[];
     if (unique.length === 0) return operation();
+    await lockWorksInIdOrder(currentDrizzleDb(input.db), unique);
     const before = await input.pending.countPendingByWorkIds(unique);
     const result = await operation();
     const after = await input.pending.countPendingByWorkIds(unique);
