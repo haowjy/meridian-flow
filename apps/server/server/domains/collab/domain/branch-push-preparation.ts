@@ -55,11 +55,12 @@ export async function preparePushUnderLiveLock(
       model: input.model,
     });
     const afterBlocks = input.model.getBlocks(toDocHandle(afterDoc));
+    const afterBlockIds = input.model.getDocumentBlockIds(toDocHandle(afterDoc));
     const afterXmlBlocks = afterDoc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).toArray();
     const afterById = new Map(
-      afterBlocks.flatMap((block, index) => {
+      afterBlocks.flatMap((_block, index) => {
         const xml = afterXmlBlocks[index];
-        return xml instanceof Y.XmlElement ? [[input.model.getBlockId(block), xml] as const] : [];
+        return xml instanceof Y.XmlElement ? [[afterBlockIds[index] as string, xml] as const] : [];
       }),
     );
     const blockIdentities = new Map(
