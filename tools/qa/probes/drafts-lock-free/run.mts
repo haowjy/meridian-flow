@@ -21,7 +21,7 @@ import { d23ArchivedDraftRebases } from "./d23-archived-draft-rebases.mts";
 import { f1InverseDeadlock } from "./f1-inverse-deadlock.mts";
 import { f1InverseGrant } from "./f1-inverse-grant.mts";
 import { createScratchDatabase, openHarness, type Probe } from "./harness.mts";
-import { coldLoadCommit, coldLoadReset } from "./room-enrollment.mts";
+import { coldLoadCommit, coldLoadReset, droppedDelivery } from "./room-enrollment.mts";
 import { twoProcessCompaction, twoProcessFold, twoProcessFrames } from "./two-process-frames.mts";
 
 const PROBES: readonly Probe[] = [
@@ -41,6 +41,7 @@ const PROBES: readonly Probe[] = [
   twoProcessCompaction,
   coldLoadCommit,
   coldLoadReset,
+  droppedDelivery,
 ];
 
 function parseArgs(argv: readonly string[]) {

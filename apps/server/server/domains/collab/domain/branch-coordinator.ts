@@ -122,7 +122,6 @@ export type BranchRuntime = {
   loadBase(branchId: string): Promise<BranchBase>;
   /** The replica published for the branch, if any: read it, never mutate it. */
   published(branchId: string): PublishedReplica | undefined;
-  encodedOf(replica: PublishedReplica): Uint8Array;
   cloneReplica(replica: PublishedReplica): Y.Doc;
   containment: ReturnType<typeof createDocumentContainment>;
   /**
@@ -933,7 +932,6 @@ export function createBranchCoordinator(input: {
     {
       loadBase,
       published: (branchId) => published.get(branchId),
-      encodedOf,
       cloneReplica,
       containment: documentContainment,
       reconcileRoom,
