@@ -157,7 +157,7 @@ export class MemoryBranchStore implements BranchStore {
     after?: StaleEffectCursor;
     limit: number;
   }): Promise<readonly StaleEffectCursor[]> {
-    const updatedAt = new Date(0);
+    const updatedAt = "1970-01-01 00:00:00+00";
     return [...this.branches.values()]
       .filter(
         (branch) =>

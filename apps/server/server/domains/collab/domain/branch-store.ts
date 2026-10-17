@@ -213,8 +213,11 @@ export type RewriteOutcome =
     }
   | { status: "moved" | "fenced" | "blocked" | "closed" | "upstreamMoved" };
 
-/** A stale branch and its keyset position in the sweep's order. */
-export type StaleEffectCursor = { branchId: string; updatedAt: Date };
+/**
+ * A stale branch and its keyset position in the sweep's order. `updatedAt` is the stored
+ * timestamp as text, exact to the microsecond (a `Date` would truncate it and skip rows).
+ */
+export type StaleEffectCursor = { branchId: string; updatedAt: string };
 
 export type BranchStore = {
   /** The row only; content comes through `readBranchAt`. */
