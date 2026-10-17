@@ -79,8 +79,12 @@ branch id is the `branchId` on the draft's rows.
    ```bash
    pid=$(pnpm -s exec portless list | grep "<stack-prefix>.server.meridian" | grep -o 'pid [0-9]*' | cut -d' ' -f2)
    db=$(tr '\0' '\n' < /proc/$pid/environ | sed -n 's/^DATABASE_URL=//p')
-   pnpm exec tsx tools/qa/shared-db-server.ts "$db" p6b.server.meridian
+   MODEL_PROVIDER=mock pnpm exec tsx tools/qa/shared-db-server.ts "$db" p6b.server.meridian
    ```
+
+   The second server inherits this shell's environment. Without
+   `MODEL_PROVIDER=mock` it re-syncs the shared database's Agents to real
+   models, and seeding a thread fails with `Agent "general" is unavailable`.
 
    Run the same `select current_database(), host(inet_server_addr()), inet_server_port()`
    with `psql "$db"`. PASS: it equals the tool's `db-identity` line.
