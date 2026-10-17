@@ -31,7 +31,6 @@ import {
   createAgentEditInvariantDiagnostic,
   createAgentEditObservabilityOptions,
   createBranchAgentEditDiagnostics,
-  createBranchCoordinatorDiagnostics,
   createBranchPullDiagnostics,
   createDocumentProjectionDiagnostics,
   createDraftBranchAheadDiagnostics,
@@ -41,6 +40,7 @@ import {
   createReversalNoticeDiagnostics,
   createRewriteCommittedEvent,
   createSweepProjectionDiagnostics,
+  createWriterFrameDiagnostics,
 } from "./adapters/agent-edit-observability.js";
 import {
   SILENT_POST_DURABILITY_NOTICES,
@@ -211,7 +211,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     attemptScope,
     onBranchUpdate: hocuspocusBinding.publishBranchUpdate,
     onBranchReset: ({ branchId }) => hocuspocusBinding.closeBranch(branchId),
-    diagnostics: createBranchCoordinatorDiagnostics(deps.eventSink),
+    diagnostics: createWriterFrameDiagnostics(deps.eventSink),
   });
   const concurrentJournalWatermarks = createBranchConcurrentJournalWatermarks();
   const branchPulls = createBranchPullService({

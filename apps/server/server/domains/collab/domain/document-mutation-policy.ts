@@ -263,6 +263,29 @@ export async function admitSegmentRows(
   }
 }
 
+/**
+ * The admitted rows hold everything `source` published: `source`'s difference from `admitted`,
+ * applied to a copy of it, must change nothing and leave no unresolved structs or deletes (a
+ * source includes the target's complete causal prefix, so a dependency it lacks is a residual
+ * the rows never journaled). Throws on a residual; `admitted` itself is never touched.
+ */
+export function assertSegmentRowsComplete(source: Y.Doc, admitted: Y.Doc): void {
+  const probe = createCollabYDoc({ gc: false });
+  let changed = false;
+  try {
+    Y.applyUpdate(probe, Y.encodeStateAsUpdate(admitted));
+    probe.on("update", () => {
+      changed = true;
+    });
+    Y.applyUpdate(probe, Y.encodeStateAsUpdate(source, Y.encodeStateVector(admitted)));
+    if (probe.store.pendingStructs || probe.store.pendingDs)
+      throw new Error("Branch sync delta has unresolved Yjs dependencies");
+    if (changed) throw new Error("Segment publication left an unjournaled residual");
+  } finally {
+    probe.destroy();
+  }
+}
+
 /** Draft agent rows own fresh structs; deletes may refer to older clients. */
 export function assertFreshAgentUpdate(doc: Y.Doc, update: Uint8Array): void {
   const clients = Y.decodeStateVector(Y.encodeStateVector(doc));
