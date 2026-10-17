@@ -1,7 +1,7 @@
 /** Thread-peer branch resolution port: which branch a thread reads, never its content. */
 
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
-import type { BranchSnapshot } from "./branch-coordinator.js";
+import type { BranchSnapshot } from "./branch-store.js";
 
 export interface BranchResolver {
   /**

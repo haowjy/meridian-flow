@@ -2,7 +2,7 @@
 import type { UpdateJournal } from "@meridian/agent-edit/integration";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
+import type { BranchCoordinator } from "./branch-coordinator.js";
 import {
   type BranchCriticalSections,
   createBranchCriticalSections,
@@ -16,6 +16,7 @@ import {
   type PushCommitStore,
 } from "./branch-push-contracts.js";
 import { assertNoPendingIntegration } from "./branch-push-plan.js";
+import type { BranchSnapshot, BranchStore } from "./branch-store.js";
 import { documentEffectsEqual } from "./document-content.js";
 
 type Dependencies = {

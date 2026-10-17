@@ -1,12 +1,8 @@
 /** Test writes that reach a branch through its owned session, the one door a reply's save uses. */
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import type {
-  AppendBranchJournalInput,
-  BranchCoordinator,
-  BranchStore,
-  SegmentRowsInput,
-} from "../domain/branch-coordinator.js";
+import type { BranchCoordinator, SegmentRowsInput } from "../domain/branch-coordinator.js";
+import type { AppendBranchJournalInput, BranchStore } from "../domain/branch-store.js";
 
 type SessionDoors = Pick<
   BranchCoordinator,

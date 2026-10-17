@@ -2,8 +2,8 @@
 import type { DraftId } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
-import type { BranchSnapshot, BranchStore } from "../branch-coordinator.js";
 import type { BranchResolver, ResolvedBranch } from "../branch-resolver.js";
+import type { BranchSnapshot, BranchStore } from "../branch-store.js";
 import type { PeerRetirementCause, RetiredBranch } from "../peer-retirement.js";
 
 export type ApplicationBranchStore = BranchStore &

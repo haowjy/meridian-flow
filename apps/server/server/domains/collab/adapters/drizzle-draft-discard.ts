@@ -31,13 +31,13 @@ import {
   readEndUseScope,
 } from "../../context/tree/end-use.js";
 import type { WorkDraftDisposal, WorkProjectionMutation } from "../../projects/index.js";
+import type { BranchCoordinator } from "../domain/branch-coordinator.js";
+import type { BranchCriticalSections } from "../domain/branch-critical-sections.js";
 import {
   BranchCasConflictError,
-  type BranchCoordinator,
   type BranchRead,
   materializeBranchRead,
-} from "../domain/branch-coordinator.js";
-import type { BranchCriticalSections } from "../domain/branch-critical-sections.js";
+} from "../domain/branch-store.js";
 import { DraftCommandExistsError } from "../domain/draft-commands.js";
 import {
   type DiscardItem,

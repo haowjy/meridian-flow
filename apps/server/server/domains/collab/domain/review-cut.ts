@@ -5,13 +5,13 @@ import { branchRoomName } from "@meridian/contracts/protocol";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { ReviewSelectionCommand } from "../contracts.js";
-import type { BranchSnapshot } from "./branch-coordinator.js";
 import {
   type BranchJournalRow,
   BranchPushCommitConflictError,
   branchJournalRevision,
   DraftChangeRefusal,
 } from "./branch-push-contracts.js";
+import type { BranchSnapshot } from "./branch-store.js";
 import { documentDifference } from "./document-difference.js";
 import { documentRevision } from "./document-revision.js";
 import { computeDraftReviewHunks } from "./draft-review-hunks.js";

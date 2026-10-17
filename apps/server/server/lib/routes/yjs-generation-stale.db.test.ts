@@ -6,7 +6,7 @@ import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { afterAll, beforeEach, expect, it } from "vitest";
 import WebSocket from "ws";
 import * as Y from "yjs";
-import { materializeBranchRead } from "../../domains/collab/domain/branch-coordinator.js";
+import { materializeBranchRead } from "../../domains/collab/domain/branch-store.js";
 import { createHocuspocusPersistenceService } from "../../domains/collab/hocuspocus-persistence.js";
 import { closeBranchRooms } from "../../domains/collab/hocuspocus-rooms.js";
 import {

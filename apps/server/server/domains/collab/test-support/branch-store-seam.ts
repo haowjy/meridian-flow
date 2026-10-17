@@ -2,12 +2,12 @@
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { readBranchAt } from "../adapters/drizzle-branches.js";
+import { readBranchAt } from "../adapters/drizzle-branch-storage.js";
 import {
   type AppendBranchJournalInput,
   type BranchStore,
   materializeBranchRead,
-} from "../domain/branch-coordinator.js";
+} from "../domain/branch-store.js";
 
 /** A valid update that changes nothing: a journal row whose content is irrelevant to the test. */
 export const EMPTY_BRANCH_UPDATE = Y.encodeStateAsUpdate(new Y.Doc({ gc: false }));

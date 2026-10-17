@@ -22,12 +22,9 @@ import {
 import { confirmScopedEdits } from "../../../shared/edit-confirmation.js";
 import { lockDraftBranchWorks } from "../../../shared/work-draft-lifecycle.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
-import {
-  type BranchCoordinator,
-  type BranchStore,
-  materializeBranchRead,
-} from "../domain/branch-coordinator.js";
+import type { BranchCoordinator } from "../domain/branch-coordinator.js";
 import type { BranchCriticalSections } from "../domain/branch-critical-sections.js";
+import { type BranchStore, materializeBranchRead } from "../domain/branch-store.js";
 import { appendInverseRestorationFacts } from "../domain/provenance.js";
 import {
   createTurnInverseService,
@@ -36,7 +33,7 @@ import {
   type TurnInverseQuery,
   type TurnInverseStore,
 } from "../domain/turn-inverse-service.js";
-import { bumpBranchRevisions, commitRewriteWithinTx } from "./drizzle-branches.js";
+import { bumpBranchRevisions, commitRewriteWithinTx } from "./drizzle-branch-storage.js";
 import { recordDocumentEdit } from "./drizzle-document-edits.js";
 import { refreshDraftEffect } from "./drizzle-draft-effect.js";
 import { readTurnEditTargets } from "./drizzle-turn-edit-targets.js";

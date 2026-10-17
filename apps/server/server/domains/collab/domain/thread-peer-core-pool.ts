@@ -42,8 +42,8 @@ export type ResponseTransactionHooks = {
   ): Promise<T>;
 };
 
-import { BranchCasConflictError, BranchStaleUpdateError } from "./branch-coordinator.js";
 import { ThreadPeerPullLost } from "./branch-pulls.js";
+import { BranchCasConflictError, BranchStaleUpdateError } from "./branch-store.js";
 import type { Drafts } from "./drafts.js";
 import type { ApplicationBranchStore } from "./ports/application-branch-store.js";
 import { pinStaged, type ReplyRecord, type ReplySaveFences } from "./reply-save-fences.js";

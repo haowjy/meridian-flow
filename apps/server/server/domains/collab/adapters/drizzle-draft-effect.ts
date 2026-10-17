@@ -4,9 +4,9 @@ import { documentBranches } from "@meridian/database";
 import { eq, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { materializeBranchRead } from "../domain/branch-coordinator.js";
+import { materializeBranchRead } from "../domain/branch-store.js";
 import { documentEffectsEqual } from "../domain/document-content.js";
-import { readBranchAt } from "./drizzle-branches.js";
+import { readBranchAt } from "./drizzle-branch-storage.js";
 import { createDrizzleJournal } from "./drizzle-journal.js";
 
 /**

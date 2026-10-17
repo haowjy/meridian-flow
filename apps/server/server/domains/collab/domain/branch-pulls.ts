@@ -10,14 +10,14 @@ import type { DraftId } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
 import type { BranchConcurrentJournalWatermarks } from "./branch-agent-edit.js";
+import type { BranchCoordinator } from "./branch-coordinator.js";
+import type { BranchLockLease } from "./branch-critical-sections.js";
 import {
   BranchCasConflictError,
-  type BranchCoordinator,
   BranchMissingError,
   type BranchSnapshot,
   BranchStaleUpdateError,
-} from "./branch-coordinator.js";
-import type { BranchLockLease } from "./branch-critical-sections.js";
+} from "./branch-store.js";
 import { runOutsideResponseTransaction } from "./response-transaction.js";
 
 export type WorkDraftLookup = {

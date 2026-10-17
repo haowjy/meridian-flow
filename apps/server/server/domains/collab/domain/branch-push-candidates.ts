@@ -1,13 +1,13 @@
 /** Builds the candidate batches a publication stages: whole-branch, or the rows a review selected. */
 import { randomUUID } from "node:crypto";
 import type { UserId } from "@meridian/contracts/runtime";
-import type { BranchSnapshot } from "./branch-coordinator.js";
 import {
   type BranchJournalRow,
   BranchPushCommitConflictError,
   type CandidateBatch,
   type PublicationPayloads,
 } from "./branch-push-contracts.js";
+import type { BranchSnapshot } from "./branch-store.js";
 
 type CandidateSource = {
   branch: BranchSnapshot;

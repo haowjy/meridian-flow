@@ -8,7 +8,6 @@ import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createStaticDocumentLinkScopes } from "../adapters/in-memory/static-document-link-scopes.js";
 import { testBranchRow } from "../test-support/memory-branch-store.js";
-import type { BranchSnapshot } from "./branch-coordinator.js";
 import type {
   PendingSettlementBatch,
   PreparedPushCommit,
@@ -16,6 +15,7 @@ import type {
   PushLineageRow,
 } from "./branch-push-contracts.js";
 import { createBranchPushTransition } from "./branch-push-transition.js";
+import type { BranchSnapshot } from "./branch-store.js";
 import type { CommittedChangeTrailProjection } from "./ports/change-trail-persistence.js";
 import type { PendingSettlementStore } from "./ports/pending-settlement-store.js";
 

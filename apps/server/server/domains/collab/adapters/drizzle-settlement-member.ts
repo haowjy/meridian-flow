@@ -43,7 +43,7 @@ import type { SettlementCut } from "../domain/ports/pending-settlement-store.js"
 import { journalInsertionRanges, ProvenanceMaterializationError } from "../domain/provenance.js";
 import { materializeSweepEvidence } from "../domain/sweep-policy.js";
 import { loadDocumentState } from "./document-loader.js";
-import { bumpBranchRevisions } from "./drizzle-branches.js";
+import { bumpBranchRevisions } from "./drizzle-branch-storage.js";
 import {
   allocateDocumentAdmission,
   ensureAndReadDocumentAuthorityHead,

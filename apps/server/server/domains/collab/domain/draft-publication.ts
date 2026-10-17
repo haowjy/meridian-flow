@@ -10,7 +10,6 @@
  */
 import type { DraftId, UserId, WorkId } from "@meridian/contracts";
 import type { DraftApplyAllResponse, DraftApplyItemResult } from "@meridian/contracts/drafts";
-import type { BranchSnapshot } from "./branch-coordinator.js";
 import type {
   BranchJournalRow,
   BranchPushService,
@@ -18,6 +17,7 @@ import type {
   SelectedPublication,
 } from "./branch-push-contracts.js";
 import { PublicationLeasesChangedError } from "./branch-push-transition.js";
+import type { BranchSnapshot } from "./branch-store.js";
 import { collabHook } from "./collab-test-hooks.js";
 import type { DraftCommandEnvelope } from "./draft-commands.js";
 import type { DraftReviewItem, DraftReviewItems } from "./draft-review-items.js";

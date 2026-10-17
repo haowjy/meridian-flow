@@ -12,7 +12,8 @@ import { parseLinkRef, resolveDocumentHref } from "@meridian/contracts";
 import { extractStoredLinks } from "@meridian/markup/stored-links";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
-import type { BranchCoordinator, BranchSnapshot } from "./branch-coordinator.js";
+import type { BranchCoordinator } from "./branch-coordinator.js";
+import type { BranchSnapshot } from "./branch-store.js";
 import type { Drafts } from "./drafts.js";
 import type { AheadRefRegistrar } from "./ports/document-link-scope.js";
 

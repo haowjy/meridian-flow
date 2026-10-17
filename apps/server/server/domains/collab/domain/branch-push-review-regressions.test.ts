@@ -22,7 +22,6 @@ import {
   memoryBranch,
   testBranchRow,
 } from "../test-support/memory-branch-store.js";
-import type { BranchSnapshot, BranchStore } from "./branch-coordinator.js";
 import {
   type BranchCriticalSections,
   createBranchCriticalSections,
@@ -37,6 +36,7 @@ import type {
   PushLineageRow,
   SettlementBatchIdentity,
 } from "./branch-push-contracts.js";
+import type { BranchSnapshot, BranchStore } from "./branch-store.js";
 import type { DocumentLinkScopes, LinkScopeKey } from "./ports/document-link-scope.js";
 
 const CONTENT_ID = "00000000-0000-4000-8000-000000000101" as DocumentId;
