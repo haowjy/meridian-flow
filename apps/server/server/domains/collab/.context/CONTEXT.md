@@ -185,9 +185,13 @@ own statement. It is judged on a private clone of the published replica
 (containment, edit receipts, `has_effect` against the stored `live_cut`),
 then appended at the revision it was judged at; a miss destroys the clone and
 judges again on the new revision. The fourth attempt holds the Work row and
-the branch row. Only the first attempt fences a stale room (`1008`): a retry
-exists because a concurrent commit moved the branch, and that commit's publish
-can reach this room after the retry judges. An append that flips the branch's
+the branch row. The first attempt checks its room holds the committed replica,
+and a room that does not has missed a delivery: it is reconciled to the replica
+(`reconcileRoom`, logged as a `room_reconciled` warning) and the frame goes on.
+Only a generation the branch has left, or a draft no longer writable, refuses
+the frame (`1008`). Retries skip the check: a retry exists because a concurrent
+commit moved the branch, and that commit's publish can reach this room after the
+retry judges. An append that flips the branch's
 review membership (`(has_effect OR blocking) AND` pending rows) locks its Work
 first and touches the Work's projection.
 
@@ -203,10 +207,19 @@ compaction that folded rows under the branch lock, a checkpoint catch-up, a
 checkpoint another process wrote), or nothing when the content is unchanged. A
 new generation closes the rooms of older ones instead. A transition at or below
 the published revision installs and sends nothing, so a read racing a local
-commit delivers once. Rooms are process-local: another server process's commits
-reach this process's rooms when its runtime next reads the branch (a frame's
-judgement, a tab's SyncStep1 handshake, a turn inverse's `deliverCommitted`), so
-a room is never fenced for rows only another process committed. A process whose
+commit delivers once. `install` reaches only rooms Hocuspocus has registered,
+and Hocuspocus 4.3 registers a room only after its load hooks return, so a room
+enrolls itself (decision D26): its `afterLoadDocument` hook chains after
+Hocuspocus's own registration, and the coordinator's `enrollRoom` reads the
+branch and reconciles the room to it, or closes the room when the branch left
+its generation while it loaded. From registration on, every transition reaches
+it; enrollment covers what committed between its load read and registration.
+The load itself returns state only for the generation it was asked for, and the
+branch `connected` hook re-checks the generation as the live one does. Rooms are
+process-local: another server process's commits reach this process's rooms when
+its runtime next reads the branch (a frame's judgement, a tab's SyncStep1
+handshake, a turn inverse's `deliverCommitted`, a room's enrollment). Any gap
+that remains is repaired at the room's next frame rather than refused. A process whose
 tab is idle shows the other process's typing at that tab's next keystroke or
 rejoin. A frame that leaves more than 512 tail rows or 2 MiB of tail folds it in
 the background (`compact`: no content, effect or `updatedAt` change). Frames
