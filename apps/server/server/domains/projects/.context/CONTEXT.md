@@ -75,10 +75,15 @@ writer Chat rebind changes a chat's Work; model tools cannot rebind it.
 Lifecycle writes lock the Work row and publish `{ workId }` through
 `FileAccessChanges` in the same transaction so Scratch, Uploads, and draft
 rooms reconnect at their new access level. Work context mutations use that
-same lifecycle lock. Archive, unarchive, delete and restore also fence the
-Work's draft branches (`fenceWorkBranches`, `shared/work-draft-lifecycle.ts`):
-after the Work update they lock and bump the revision of every active branch,
-so a branch write judged before the transition misses its revision.
+same lifecycle lock. Archive, unarchive, delete and restore lock no branch row
+and bump no branch revision. Collab's append keeps the Work predicate in its
+row `UPDATE` and rechecks the lifecycle in a fresh read once it holds the row;
+every other draft write takes the Work through the boundary below and so orders
+itself against the transition. The window that leaves: a writer key whose
+post-lock read ran before the transition committed and whose `COMMIT` came
+after (finalization and inserts, a few milliseconds, however long it waited for
+the row) lands in the archived draft; every later key is refused, and unarchive
+admits the next (decision D30 Q3, collab `.context/CONTEXT.md`).
 
 Collab's branch and draft writes take Work rows only through
 `adapters/work-projection-mutation.ts`, the Works mutation boundary: the one

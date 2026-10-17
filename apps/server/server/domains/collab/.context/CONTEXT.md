@@ -150,7 +150,7 @@ Every rewrite is fenced by the row's `revision`, under one of two policies.
 An **exact** rewrite commits only at the revision it was computed at: a
 checkpoint rewrite through `commitRewrite` (a peer's catch-up, an inverse's
 destination, an exact reset), and every metadata change (a close, a hold, a
-journal row's status, a Work lifecycle fence) through the one door
+journal row's status) through the one door
 `bumpBranchRevisions` (`shared/branch-revisions.ts`), which locks the rows in
 ID order and bumps their revision with the change. A miss surfaces as
 `BranchCasConflictError`, and the attempt captures again. A **fold** (a pull,
@@ -159,9 +159,18 @@ cursor instead: rows appended since it was computed are applied into its
 checkpoint under the row lock, so an intervening append never makes it miss,
 and only another rewrite does. Whether a branch is frozen is derived on every
 read from its draft's origin Work (archived, deleted, or missing), never
-stored. A frame whose post-lock read sees its Work no longer active is refused;
-one whose read ran before an Archive committed and whose `COMMIT` came after
-lands in the archived draft (the archive window, a few milliseconds).
+stored. Archive, delete and restore lock no branch row and bump no revision
+(D11 is deleted): every rewrite and reply save locks the Work through the Works
+mutation boundary below and orders itself against the transition, and the
+append keeps the Work predicate in its `UPDATE`. That predicate keeps its
+statement's snapshot, so an `UPDATE` that started before an Archive committed,
+including one queued behind another holder of the row for seconds, still takes
+the row; the post-lock read runs in a fresh snapshot and refuses it. What lands
+in the archived draft is a frame whose post-lock read ran before Archive
+committed and whose `COMMIT` came after: the finalization phases and inserts, a
+few milliseconds, independent of how long the frame waited for the row. Every
+later key is refused and shown as not saved; unarchive admits the next (the
+archive window, D30 Q3; probe `archive-in-flight-append`).
 
 Work-first order has one owner: the Works mutation boundary
 (`projects/adapters/work-projection-mutation.ts`), a required dependency of the
@@ -179,8 +188,8 @@ draft, Apply's batch plan, a reply save's grants). `seam` adds the bound edit
 grants' Works and confirms the grants; `requireActive` refuses unless every
 Work of the set is active. No other collab code locks a Work for a write; the
 live journal's seam locks only the bound grants' Works. Creating a draft branch
-runs inside `mutatePending`: a branch made while its Work archives is either
-fenced by the archive or read as archived. No append enters the boundary: no
+runs inside `mutatePending`: a branch made while its Work archives waits on
+the Work row and is read as archived once the archive commits. No append enters the boundary: no
 keystroke locks a Work or counts (#931). Tests use the same boundary
 (`test-support/work-projection.ts`), with no catalog or availability
 publication and no pending counts.
