@@ -8,6 +8,8 @@
  *   registers holding the older snapshot; its enrollment brings the commit in.
  * - `cold-load-reset`: a reset commits while the generation-1 room loads; its enrollment closes
  *   it, and the generation-2 room loads and takes frames.
+ * - `dropped-delivery`: the delivery of a pull is dropped on purpose; the next frame finds its
+ *   room behind, reconciles it, and is admitted with no `1008`.
  */
 import assert from "node:assert/strict";
 import { createHocuspocusBinding } from "../../../../apps/server/server/domains/collab/adapters/hocuspocus-binding.ts";
@@ -236,6 +238,42 @@ export const coldLoadReset: Probe = {
       assert.equal(afterEnrollment, false, "the generation-1 room is closed");
       assert.deepEqual(next, { ok: true, closes: [] });
       assert.match(durable.text, /RESET NEXT/);
+    } finally {
+      live.destroy();
+      await gateway.close();
+    }
+  },
+};
+
+export const droppedDelivery: Probe = {
+  name: "dropped-delivery",
+  decision: "D26",
+  expected: `room lacks LIVE after the dropped delivery; next: {"ok":true,"closes":[]}; one frame repair`,
+  async run(harness) {
+    const { branchId, live } = await seedDraft(harness, "dropped-delivery");
+    const gateway = openGateway(harness, harness.store, { dropDelivery: true });
+    try {
+      const room = await gateway.load(branchId, 1);
+      await gateway.enrolled(branchId);
+      appendToFirstParagraph(live, " LIVE");
+      const pulled = await gateway.coordinator.pullFromDoc({ branchId, upstream: live });
+      const behind = text(room);
+      const next = await gateway.type(room, branchId, 1, " NEXT");
+      const durable = (await harness.readBranch(branchId)).text;
+      observe("drop", { pulled, behind, durable });
+      observe("next", { ...next, room: text(room) });
+      observe("reconciled", gateway.reconciled);
+      assert.equal(pulled, "pulled");
+      assert.doesNotMatch(behind, /LIVE/, "the pull's delivery was dropped");
+      assert.deepEqual(next, { ok: true, closes: [] });
+      // The tab typed NEXT without seeing LIVE: both land, in Yjs's order for concurrent inserts.
+      assert.match(durable, /LIVE/);
+      assert.match(durable, /NEXT/);
+      assert.equal(text(room), durable);
+      assert.deepEqual(
+        gateway.reconciled.map(({ trigger }) => trigger),
+        ["frame"],
+      );
     } finally {
       live.destroy();
       await gateway.close();

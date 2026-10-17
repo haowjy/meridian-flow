@@ -66,17 +66,19 @@ export function createWriterFrames(
    * and judges again on the new revision; the fourth attempt judges under the Work row and
    * the branch row.
    *
-   * Only the first attempt fences a stale room (one missing a committed update: `1008`). A
-   * retry exists because a concurrent commit moved the branch, and that commit reaches this
-   * room through its own publish, which runs after its COMMIT returns and so may land after
-   * this frame judges again: the room lags it without being stale.
+   * Only the first attempt checks the room holds the committed replica, and a room that does
+   * not missed a delivery: it is reconciled to the replica and the frame goes on (decision
+   * D26). A retry exists because a concurrent commit moved the branch, and that commit reaches
+   * this room through its own publish, which runs after its COMMIT returns and so may land
+   * after this frame judges again: the room lags it without having missed anything. Only a
+   * generation the branch has left refuses the frame.
    */
   async function commitWriterUpdate(frame: WriterFrameInput): Promise<{ admitted: boolean }> {
     const { branchId } = frame;
     const outcome = await runtime.commitAttempts(
       async (attempt) => {
         const judge = async () => {
-          const write = await judgeWriterUpdate(frame, { fenceRoom: attempt.number === 1 });
+          const write = await judgeWriterUpdate(frame, { checkRoom: attempt.number === 1 });
           return write && attempt.own(write);
         };
         let write: Awaited<ReturnType<typeof judge>>;
@@ -111,23 +113,26 @@ export function createWriterFrames(
   }
 
   /** The frame judged on the committed replica: its prepared append, or null when contained. */
-  async function judgeWriterUpdate(frame: WriterFrameInput, { fenceRoom }: { fenceRoom: boolean }) {
+  async function judgeWriterUpdate(frame: WriterFrameInput, { checkRoom }: { checkRoom: boolean }) {
     const base = await runtime.loadBase(frame.branchId);
     const { snapshot, replica } = base;
+    const admissible =
+      snapshot.kind === "work_draft" &&
+      snapshot.status === "active" &&
+      snapshot.lifecycle === "active" &&
+      snapshot.generation === frame.expectedGeneration;
+    if (admissible && checkRoom)
+      runtime.reconcileRoom({
+        branchId: frame.branchId,
+        room: frame.roomDocument,
+        replica,
+        trigger: "frame",
+      });
     const admission = await admitWriterUpdate({
       targetDocument: replica.doc,
       update: frame.updateData,
       validateTarget() {
-        if (
-          snapshot.kind !== "work_draft" ||
-          snapshot.status !== "active" ||
-          snapshot.lifecycle !== "active" ||
-          snapshot.generation !== frame.expectedGeneration ||
-          (fenceRoom &&
-            !runtime.containment.contains(frame.roomDocument, runtime.encodedOf(replica)))
-        ) {
-          throw new BranchStaleUpdateError(frame.branchId);
-        }
+        if (!admissible) throw new BranchStaleUpdateError(frame.branchId);
       },
       isContained: () => runtime.containment.contains(replica.doc, frame.updateData),
       append: async () => {
