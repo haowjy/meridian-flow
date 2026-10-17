@@ -12,6 +12,7 @@ import {
   createDrizzleDraftStore,
   createDrizzleDraftWriteBoundary,
 } from "./adapters/drizzle-drafts.js";
+import { ThreadPeerPullLost } from "./domain/branch-pulls.js";
 import { setCollabHook } from "./domain/collab-test-hooks.js";
 import { createDrafts } from "./domain/drafts.js";
 import {
@@ -424,12 +425,13 @@ describe("reply save refusals (postgres)", () => {
       return outcome;
     };
     try {
-      await core
-        .read(
+      // The Discard re-forked the upstream without closing it: the read's pull is lost.
+      await expect(
+        core.read(
           { file: "alpha.md", documentId: ALPHA_ID, tool_use_id: "read-16" },
           responseContext(await createResponse(db, 3)),
-        )
-        .catch(() => undefined);
+        ),
+      ).rejects.toBeInstanceOf(ThreadPeerPullLost);
     } finally {
       fixture.branchCoordinator.pullFromDoc = pull;
     }
