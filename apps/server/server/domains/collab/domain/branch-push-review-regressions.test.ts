@@ -18,10 +18,10 @@ import {
   type InMemoryPendingSettlementStore,
 } from "../test-support/in-memory-pending-settlement-store.js";
 import {
-  type StubBranch,
-  stubBranchStore,
+  MemoryBranchStore,
+  memoryBranch,
   testBranchRow,
-} from "../test-support/stub-branch-store.js";
+} from "../test-support/memory-branch-store.js";
 import type { BranchSnapshot, BranchStore } from "./branch-coordinator.js";
 import {
   type BranchCriticalSections,
@@ -60,7 +60,10 @@ function cloneDoc(source: Y.Doc): Y.Doc {
   return doc;
 }
 
-function branchFromDoc(branchId: string, documentId: DocumentId, doc: Y.Doc): StubBranch {
+/** A branch row and the content its checkpoint starts with. */
+type SeededBranch = { branch: BranchSnapshot; state: Uint8Array };
+
+function branchFromDoc(branchId: string, documentId: DocumentId, doc: Y.Doc): SeededBranch {
   return {
     branch: testBranchRow({ branchId, documentId, workId: WORK_ID }),
     state: Y.encodeStateAsUpdate(doc),
@@ -245,7 +248,7 @@ class StateBackedPushStores implements BranchJournalReadStore, PushCommitStore {
 function serviceFixture(input: {
   links?: DocumentLinkScopes;
   criticalSections?: BranchCriticalSections;
-  branches: readonly StubBranch[];
+  branches: readonly SeededBranch[];
   rows: BranchJournalRow[];
   pushes?: readonly PushLineageRow[];
   journal: ReturnType<typeof createInMemoryJournal>;
@@ -258,14 +261,9 @@ function serviceFixture(input: {
     input.journal,
     settlements,
   );
-  const branches = new Map(input.branches.map((stub) => [stub.branch.branchId, stub]));
-  const branchStore: BranchStore = stubBranchStore({
-    branch: (branchId) => branches.get(branchId),
-    deferUntilCommit(callback) {
-      callback();
-      return true;
-    },
-  });
+  const branchStore: BranchStore = new MemoryBranchStore(
+    input.branches.map((seeded) => memoryBranch(seeded.branch, seeded.state)),
+  );
   const liveCoordinator: DocumentCoordinator = {
     async withDocument(documentId, run) {
       const doc = input.liveDocs.get(documentId as DocumentId);

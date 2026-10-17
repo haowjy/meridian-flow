@@ -7,7 +7,7 @@ import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-sch
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createStaticDocumentLinkScopes } from "../adapters/in-memory/static-document-link-scopes.js";
-import { testBranchRow } from "../test-support/stub-branch-store.js";
+import { testBranchRow } from "../test-support/memory-branch-store.js";
 import type { BranchSnapshot } from "./branch-coordinator.js";
 import type {
   PendingSettlementBatch,

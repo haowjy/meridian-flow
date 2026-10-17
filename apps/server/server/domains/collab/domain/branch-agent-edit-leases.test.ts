@@ -8,7 +8,11 @@ import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
-import { stubBranchStore, testBranchRow } from "../test-support/stub-branch-store.js";
+import {
+  MemoryBranchStore,
+  memoryBranch,
+  testBranchRow,
+} from "../test-support/memory-branch-store.js";
 import { createBranchAgentEditCoordinator } from "./branch-agent-edit.js";
 import { type BranchSnapshot, createBranchCoordinator } from "./branch-coordinator.js";
 import { createBranchCriticalSections } from "./branch-critical-sections.js";
@@ -43,19 +47,17 @@ describe("thread-core branch leases", () => {
     const sections = createBranchCriticalSections(mutex);
     // The edit's own update, journaled as the staged write the access commits.
     const edit: { update: Uint8Array } = { update: new Uint8Array() };
-    const store = stubBranchStore({
-      branch: (id) => ({
-        branch: snapshot(id),
-        state: Y.encodeStateAsUpdate(createCollabYDoc({ gc: false })),
-      }),
-      appends: "accept",
-    });
+    const empty = Y.encodeStateAsUpdate(createCollabYDoc({ gc: false }));
+    const store = new MemoryBranchStore([
+      memoryBranch(snapshot(UPSTREAM), empty),
+      memoryBranch(snapshot(PEER), empty),
+    ]);
     const branchCoordinator = createBranchCoordinator({ store, criticalSections: sections });
     const coordinator = createBranchAgentEditCoordinator({
       threadId,
       branchCoordinator,
       branches: {
-        getBranch: store.getBranch,
+        getBranch: (branchId) => store.getBranch(branchId),
         resolveThreadBranch: async () => ({
           branchId: PEER,
           generation: 1,

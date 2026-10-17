@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { RecentEventsBuffer } from "../observability/adapters/recent/recent-events-buffer.js";
 import { createInMemoryJournal } from "./adapters/in-memory/agent-edit.js";
-import { BranchStaleUpdateError } from "./domain/branch-coordinator.js";
+import { type BranchSnapshot, BranchStaleUpdateError } from "./domain/branch-coordinator.js";
 import {
   bindDocumentAuthority,
   documentAuthority,
@@ -15,10 +15,10 @@ import type { CheckpointJournal } from "./domain/ports/checkpoint-authority.js";
 import { PROVENANCE_TARGETS_TYPE } from "./domain/provenance.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
 import {
-  type StubBranch,
-  stubBranchStore,
+  MemoryBranchStore,
+  memoryBranch,
   testBranchRow,
-} from "./test-support/stub-branch-store.js";
+} from "./test-support/memory-branch-store.js";
 
 const BRANCH_ID = "branch-1";
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000001" as never;
@@ -209,13 +209,7 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
     const commitWriterUpdate = vi.fn(async () => ({ admitted: true }));
     const persistence = createHocuspocusPersistenceService({
       journal: fakeJournal(),
-      branchStore: stubBranchStore({
-        branch: () => snapshot,
-        deferUntilCommit: (callback) => {
-          callback();
-          return true;
-        },
-      }),
+      branchStore: new MemoryBranchStore([memoryBranch(snapshot.branch, snapshot.state)]),
       branchCoordinator: {
         commitWriterUpdate,
       } as never,
@@ -247,13 +241,7 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
     const staleUpdate = Y.encodeStateAsUpdate(staleRoomDoc, before);
     const persistence = createHocuspocusPersistenceService({
       journal: fakeJournal(),
-      branchStore: stubBranchStore({
-        branch: () => snapshot,
-        deferUntilCommit: (callback) => {
-          callback();
-          return true;
-        },
-      }),
+      branchStore: new MemoryBranchStore([memoryBranch(snapshot.branch, snapshot.state)]),
       branchCoordinator: {
         commitWriterUpdate: vi.fn(async () => {
           throw new BranchStaleUpdateError(BRANCH_ID);
@@ -290,13 +278,7 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
     };
     const persistence = createHocuspocusPersistenceService({
       journal: fakeJournal(),
-      branchStore: stubBranchStore({
-        branch: () => snapshot,
-        deferUntilCommit: (callback) => {
-          callback();
-          return true;
-        },
-      }),
+      branchStore: new MemoryBranchStore([memoryBranch(snapshot.branch, snapshot.state)]),
       branchCoordinator: { commitWriterUpdate: vi.fn(async () => ({ admitted: true })) } as never,
       hocuspocus: () => null,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
@@ -724,7 +706,7 @@ function cloneDoc(doc: Y.Doc, generation = 1n): Y.Doc {
   return clone;
 }
 
-function branchSnapshot(doc: Y.Doc): StubBranch {
+function branchSnapshot(doc: Y.Doc): { branch: BranchSnapshot; state: Uint8Array } {
   return {
     branch: testBranchRow({
       branchId: BRANCH_ID,
