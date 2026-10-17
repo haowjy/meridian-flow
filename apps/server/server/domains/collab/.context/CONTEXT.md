@@ -210,18 +210,25 @@ the published revision installs and sends nothing, so a read racing a local
 commit delivers once. `install` reaches only rooms Hocuspocus has registered,
 and Hocuspocus 4.3 registers a room only after its load hooks return, so a room
 enrolls itself (decision D26): its `afterLoadDocument` hook chains after
-Hocuspocus's own registration, and the coordinator's `enrollRoom` reads the
-branch and reconciles the room to it, or closes the room when the branch left
-its generation while it loaded. From registration on, every transition reaches
-it; enrollment covers what committed between its load read and registration.
-The load itself returns state only for the generation it was asked for, and the
-branch `connected` hook re-checks the generation as the live one does. Rooms are
-process-local: another server process's commits reach this process's rooms when
-its runtime next reads the branch (a frame's judgement, a tab's SyncStep1
-handshake, a turn inverse's `deliverCommitted`, a room's enrollment). Any gap
-that remains is repaired at the room's next frame rather than refused. A process whose
-tab is idle shows the other process's typing at that tab's next keystroke or
-rejoin. A frame that leaves more than 512 tail rows or 2 MiB of tail folds it in
+Hocuspocus's own registration, and the coordinator's `reconcileRegisteredRoom`
+reads the branch and reconciles the room to it, or closes the room when the
+branch left its generation while it loaded. From registration on, every
+transition reaches it; enrollment covers what committed between its load read
+and registration. The load itself returns state only for the generation it was
+asked for, and the branch `connected` hook re-checks the generation as the live
+one does. Rooms are Yjs replicas kept current by anti-entropy (decision D27):
+push delivery is the fast path, and the room is reconciled against the
+committed replica (structs past its state vector plus the delete set) at every
+exchange that reads the branch: its enrollment, every tab's SyncStep1 handshake
+(the same `reconcileRegisteredRoom`, before Hocuspocus answers the tab, whether
+the tab may write or only read), and a frame that finds its room behind. A room
+that missed a delivery, or another server process's commit, therefore heals on
+the next exchange and is never refused for it; the tab's own Yjs handshake then
+brings the tab current. `1008` stays for a generation mismatch. Another process's
+commits also reach this process's rooms when its runtime reads the branch for a
+turn inverse's `deliverCommitted`. There is no periodic reconciliation: an idle
+room with no exchange catches up at the next keystroke, rejoin or handshake.
+A frame that leaves more than 512 tail rows or 2 MiB of tail folds it in
 the background (`compact`: no content, effect or `updatedAt` change). Frames
 and the fold they trigger are `domain/branch-writer-frames.ts`, over the branch
 runtime surface (`BranchRuntime`: published replicas, private candidates,

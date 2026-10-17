@@ -156,14 +156,11 @@ export type BranchRuntime = {
   ): Promise<void>;
 };
 
-/** What found a room behind its branch: its first frame, or its enrollment once registered. */
-export type RoomReconcileTrigger = "frame" | "enrollment";
-
 /**
- * A room's enrollment: `enrolled` when it now holds everything committed on its generation,
- * `stale` when the branch moved to another generation or closed while the room loaded.
+ * What found a room behind its branch: a frame, its enrollment once registered, or a tab's
+ * SyncStep1 handshake.
  */
-export type RoomEnrollment = "enrolled" | "stale";
+export type RoomReconcileTrigger = "frame" | "enrollment" | "handshake";
 
 /** A work draft's effect baseline as fingerprinted, at the checkpoint revision it was read. */
 type CachedBaseline = { checkpointRevision: number; fingerprint: EffectFingerprint };
@@ -298,10 +295,18 @@ export type BranchCoordinator = {
   /** Brings this process's rooms up to what is committed now: a read, published as any other. */
   deliverCommitted(branchId: string): Promise<void>;
   /**
-   * Enrolls a room the host has just registered as a recipient: from here on every published
-   * transition reaches it, and this brings it up to what was committed before (decision D26).
+   * Brings a registered room up to what is committed on its generation (decisions D26, D27):
+   * at its enrollment, from which on every published transition reaches it, and at each tab's
+   * handshake, so a room that missed a delivery heals on the next exchange whether or not the
+   * tab may write. Returns the base it reconciled against, or null when the branch closed or
+   * left the room's generation.
    */
-  enrollRoom(input: { branchId: string; generation: number; room: Y.Doc }): Promise<RoomEnrollment>;
+  reconcileRegisteredRoom(input: {
+    branchId: string;
+    generation: number;
+    room: Y.Doc;
+    trigger: Exclude<RoomReconcileTrigger, "frame">;
+  }): Promise<BranchBase | null>;
 };
 
 export function createBranchCoordinator(input: {
@@ -514,19 +519,17 @@ export function createBranchCoordinator(input: {
     });
   }
 
-  async function enrollRoom(enrollment: {
-    branchId: string;
-    generation: number;
-    room: Y.Doc;
-  }): Promise<RoomEnrollment> {
-    const base = await loadBase(enrollment.branchId).catch((cause: unknown) => {
+  async function reconcileRegisteredRoom({
+    generation,
+    ...room
+  }: Parameters<BranchCoordinator["reconcileRegisteredRoom"]>[0]): Promise<BranchBase | null> {
+    const base = await loadBase(room.branchId).catch((cause: unknown) => {
       if (cause instanceof BranchMissingError) return null;
       throw cause;
     });
-    if (base?.snapshot.status !== "active" || base.snapshot.generation !== enrollment.generation)
-      return "stale";
-    reconcileRoom({ ...enrollment, replica: base.replica, trigger: "enrollment" });
-    return "enrolled";
+    if (base?.snapshot.status !== "active" || base.snapshot.generation !== generation) return null;
+    reconcileRoom({ ...room, replica: base.replica });
+    return base;
   }
 
   function encodedOf(replica: PublishedReplica): Uint8Array {
@@ -965,7 +968,7 @@ export function createBranchCoordinator(input: {
       await loadBase(branchId);
     },
 
-    enrollRoom,
+    reconcileRegisteredRoom,
 
     commitWriterUpdate: frames.commitWriterUpdate,
   };
