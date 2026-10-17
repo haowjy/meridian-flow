@@ -205,20 +205,6 @@ export function createInMemoryPendingSettlementStore(options?: {
       return { kind: "proceed" as const, hold: [], payloads: input.payloads };
     },
 
-    async prepareBranchLeases() {
-      return [];
-    },
-
-    async loadRecoveryScope(batchId) {
-      const batch = batches.get(batchId);
-      return {
-        payloads: new Map(),
-        memberBranchIds: (batch?.members ?? []).flatMap(({ pending }) =>
-          pending.push.branchId ? [pending.push.branchId] : [],
-        ),
-      };
-    },
-
     async listRecoverableBatchIds() {
       const now = new Date();
       return [...batches.values()]

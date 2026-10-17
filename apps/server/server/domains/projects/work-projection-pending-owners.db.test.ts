@@ -290,7 +290,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           })),
           payloads: batch.payloads,
           liveTextFingerprints: new Map(),
-          leasedBranchIds: [],
           recheck: () => "commit",
           afterCommit() {},
         });

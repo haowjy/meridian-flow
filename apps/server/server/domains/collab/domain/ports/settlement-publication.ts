@@ -34,7 +34,6 @@
 import type { DraftId } from "@meridian/contracts";
 import type { ContextSourceId, DocumentId, WorkId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
-import type { BranchLockLease } from "../branch-critical-sections.js";
 
 export type PublicationRefusal = { code: string; detail?: JsonValue };
 
@@ -106,8 +105,6 @@ export type SettlementBatchScope =
       members: readonly StagedPublicationMember[];
       /** Items already held for this batch (at the check), never promoted. */
       held: readonly PublicationItemHold[];
-      /** The lease the caller holds over the batch's branches, when it has one. */
-      lease?: BranchLockLease;
     });
 
 export type SettlementPublicationPlan = {
@@ -138,15 +135,6 @@ export type SettlementPublicationPlan = {
 export type SettlementPublicationStep = {
   /** The payload kind this step owns (`"draft_tree"`); recovery finds its input by it. */
   kind: string;
-  /**
-   * The outer preparation, from the step's payload: the branch ids whose
-   * critical-section leases the batch needs (Apply all: every branch of the draft
-   * an Apply may close). Warm execution and recovery both acquire them before
-   * coordinator leases and any database transaction; completion calls it again
-   * under its locks, and a set that grew sends the batch back to discovery.
-   * Never take leases from `beforeAdmission`.
-   */
-  prepare?(payload: JsonValue): Promise<{ branchIds: readonly string[] }>;
   /**
    * Plans this step for one batch from durable, immutable inputs, before any
    * lock is taken. The check and recovery plan again, so a plan never depends

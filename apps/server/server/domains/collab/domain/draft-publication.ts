@@ -17,7 +17,7 @@ import type {
   SelectedPublication,
 } from "./branch-push-contracts.js";
 import { BranchPushRetryExhaustedError } from "./branch-push-contracts.js";
-import { PublicationLeasesChangedError } from "./branch-push-transition.js";
+import { PendingLiveSettlementError } from "./branch-push-transition.js";
 import type { BranchSnapshot } from "./branch-store.js";
 import { collabHook } from "./collab-test-hooks.js";
 import type { DraftCommandEnvelope } from "./draft-commands.js";
@@ -68,7 +68,7 @@ export type ApplyCommand = { envelope: DraftCommandEnvelope; shape: "item" | "al
 /** A command's id already has an effect: the caller answers the stored command. */
 export type ApplyOutcome = ApplyResult | { status: "command_exists" };
 
-/** What per-change Apply selected under the lease: its rows, fence and rendered basis. */
+/** What per-change Apply selected on a staging attempt's read: its rows, fence and rendered basis. */
 export type ChangeSelection = ReviewRowSelection & {
   operationIds: readonly string[];
   closureClassIds: readonly string[];
@@ -89,7 +89,7 @@ export class DuplicateApplyItemError extends Error {
 export class DraftApplyPendingError extends Error {
   constructor(
     readonly draftId: DraftId,
-    cause: PublicationLeasesChangedError,
+    cause: PendingLiveSettlementError,
   ) {
     super("The draft is finishing in the background.", { cause });
     this.name = "DraftApplyPendingError";
@@ -105,7 +105,7 @@ export interface DraftPublication {
     command?: ApplyCommand;
     signal?: AbortSignal;
   }): Promise<ApplyOutcome>;
-  /** One item's selected changes, published as exact rows; the selection runs under the lease. */
+  /** One item's selected changes, published as exact rows; the selection runs on each attempt's read. */
   applyChanges(input: {
     workId: WorkId;
     item: DraftReviewItem;
@@ -183,7 +183,8 @@ export function createDraftPublication(deps: {
           ...(plan.selected ? { selected: plan.selected } : {}),
         })
         .catch((cause: unknown) => {
-          if (cause instanceof PublicationLeasesChangedError) {
+          // The batch staged but settlement handed it to recovery: it finishes there.
+          if (cause instanceof PendingLiveSettlementError) {
             throw new DraftApplyPendingError(draftId, cause);
           }
           // Four staging attempts each found a draft moved under them (a writer typing):

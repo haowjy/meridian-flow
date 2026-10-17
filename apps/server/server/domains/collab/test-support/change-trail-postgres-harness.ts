@@ -585,11 +585,9 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       },
     },
     branchStore,
-    criticalSections: branchCriticalSections,
     journalReadStore: durableBranchJournalReadStore,
     commitStore: durablePushCommitStore,
     settlementStore,
-    branchCoordinator,
     journal: persistence.journal,
     liveCoordinator,
     model,
@@ -2158,7 +2156,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
             replacement: trailContributionReplacement(member.trail, member.push),
           })),
           payloads: loaded.payloads,
-          leasedBranchIds: [],
           liveTextFingerprints: new Map(),
           recheck: () => "commit",
           afterCommit() {},
@@ -2305,7 +2302,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
           replacement: trailContributionReplacement(member.trail, member.push),
         })),
         payloads: batch.payloads,
-        leasedBranchIds: [],
         liveTextFingerprints: new Map(),
         recheck() {
           completionCallbackRan = true;
