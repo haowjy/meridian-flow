@@ -692,7 +692,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       lifecycle: persistence.lifecycle,
       branches: branchStore,
       branchCoordinator,
-      criticalSections: branchCriticalSections,
       branchPulls,
       branchJournal: durableBranchJournalReadStore,
       concurrentJournalWatermarks: watermarks,

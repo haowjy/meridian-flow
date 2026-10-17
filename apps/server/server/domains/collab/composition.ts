@@ -401,7 +401,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       lifecycle: persistence.lifecycle,
       branches,
       branchCoordinator,
-      criticalSections,
       branchPulls,
       branchJournal,
       concurrentJournalWatermarks,

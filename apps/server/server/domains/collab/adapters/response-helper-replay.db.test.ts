@@ -2,6 +2,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { setCollabHook } from "../domain/collab-test-hooks.js";
 import { readBranchContent } from "../test-support/branch-store-seam.js";
 import {
   ALPHA_ID,
@@ -96,24 +97,22 @@ describe("response helper replay (Postgres)", () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    // Pause the write before it leases its branches, so Discard commits ahead of it.
-    const withLeases = fixture.branchCoordinator.withLeases.bind(fixture.branchCoordinator);
+    // Pause the write before it reads its branches, so Discard commits ahead of it.
     let paused = false;
-    fixture.branchCoordinator.withLeases = async (...args) => {
+    const unhook = setCollabHook("branch.beforeAccess", async () => {
       if (!paused) {
         paused = true;
         entered();
         await gate;
       }
-      return withLeases(...args);
-    };
+    });
     const writing = write("green", "lime");
     await waiting;
     try {
       await review("gold");
     } finally {
       release();
-      fixture.branchCoordinator.withLeases = withLeases;
+      unhook();
     }
     expect(await writing).toMatchObject({ status: "success", phase: "staged" });
     expect(await harness.commit(responseId)).toMatchObject({
@@ -161,17 +160,15 @@ describe("response helper replay (Postgres)", () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    // Pause the read before it leases any branch, so Discard commits ahead of it.
-    const original = fixture.branchCoordinator.withLeases.bind(fixture.branchCoordinator);
+    // Pause the read before it reads any branch, so Discard commits ahead of it.
     let once = true;
-    fixture.branchCoordinator.withLeases = async (...args) => {
+    const unhook = setCollabHook("branch.beforeAccess", async () => {
       if (once) {
         once = false;
         entered();
         await gate;
       }
-      return original(...args);
-    };
+    });
     const reading = read();
     await waiting;
     try {
@@ -186,7 +183,7 @@ describe("response helper replay (Postgres)", () => {
         result.result.blocks?.flatMap((group) => group.items.map((item) => item.body)),
       ).toEqual(["red", "blue", "lime"]);
     } finally {
-      fixture.branchCoordinator.withLeases = original;
+      unhook();
     }
     expect(await read()).toMatchObject({ status: "success" });
     expect(
@@ -252,16 +249,14 @@ describe("response helper replay (Postgres)", () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const original = fixture.branchCoordinator.withLeases.bind(fixture.branchCoordinator);
     let once = true;
-    fixture.branchCoordinator.withLeases = async (...args) => {
+    const unhook = setCollabHook("branch.beforeAccess", async () => {
       if (once) {
         once = false;
         entered();
         await gate;
       }
-      return original(...args);
-    };
+    });
     const writing = write("lime", "olive");
     await waiting;
     try {
@@ -275,7 +270,7 @@ describe("response helper replay (Postgres)", () => {
       expect(result.status).toBe("success");
       expect(result.result.message?.split("Dropped writes:")).toHaveLength(3);
     } finally {
-      fixture.branchCoordinator.withLeases = original;
+      unhook();
     }
     expect((await read()).result.message).toBeUndefined();
     await expectDroppedCommit(draft, dropped, 2, "red\n\nazure\n\nolive\n");

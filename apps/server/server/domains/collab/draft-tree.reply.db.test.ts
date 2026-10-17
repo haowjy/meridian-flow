@@ -199,14 +199,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const scratch = await scenario.view(closedFirst).read("scratch://notes.md");
       expect.soft(scratch.ok, "the reply's other document saved (D29, D42)").toBe(true);
 
-      // V2-H2, one order: the close holds every branch lease; the save waits for them.
-      const leasedByClose = await scenario.work("Close leases first", "draft");
-      const second = await liveChapter(scenario, "close-leases-first.md");
-      const waitingSave = await staged(scenario, leasedByClose, "close-leases-first.md");
+      // V2-H2, one order: the close commits first; the save then finds its draft closed.
+      const closeFirst = await scenario.work("Close commits first", "draft");
+      const second = await liveChapter(scenario, "close-commits-first.md");
+      const waitingSave = await staged(scenario, closeFirst, "close-commits-first.md");
       const closeThenSave = await interleave(
         db,
-        () => scenario.discard(leasedByClose, "all"),
-        "discard.afterLeases",
+        () => scenario.discard(closeFirst, "all"),
+        "discard.beforeRetirement",
         () => waitingSave.save(),
         { waitMs: 300 },
       );
@@ -216,19 +216,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .soft(closeThenSave.b.ok && refusedIn(closeThenSave.b.value), "refusing it stale")
         .toEqual([second]);
       expect
-        .soft(await draftsOf(leasedByClose), "without a new draft")
+        .soft(await draftsOf(closeFirst), "without a new draft")
         .toEqual([{ id: expect.any(String), status: "closed" }]);
 
-      // The other order: the save holds its leases and its Work lock; the close waits.
-      const leasedBySave = await scenario.work("Save leases first", "draft");
-      const third = await liveChapter(scenario, "save-leases-first.md");
-      const holdingSave = await staged(scenario, leasedBySave, "save-leases-first.md");
-      const [draftBefore] = await draftsOf(leasedBySave);
+      // The other order: the save holds its Work lock; the close waits for it.
+      const saveFirst = await scenario.work("Save commits first", "draft");
+      const third = await liveChapter(scenario, "save-commits-first.md");
+      const holdingSave = await staged(scenario, saveFirst, "save-commits-first.md");
+      const [draftBefore] = await draftsOf(saveFirst);
       const saveThenClose = await interleave(
         db,
         () => holdingSave.save(),
         "save.afterWorkLock",
-        () => scenario.discard(leasedBySave, "all"),
+        () => scenario.discard(saveFirst, "all"),
         { waitMs: 300 },
       );
       expect.soft(saveThenClose.a, "the save finishes").toMatchObject({ ok: true });
@@ -240,11 +240,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .soft(await savedRows(draftBefore?.id ?? "", third), "the save landed in the draft")
         .toHaveLength(1);
       expect
-        .soft(await draftsOf(leasedBySave), "which the close then closed")
+        .soft(await draftsOf(saveFirst), "which the close then closed")
         .toEqual([{ id: draftBefore?.id, status: "closed" }]);
 
-      // §14: an immediate write takes its peer's and draft branch's leases in the close's
-      // order, so either may hold them first and the other waits; neither waits in a cycle.
+      // §14: an immediate write and a close race on branch state alone, neither waiting on
+      // the other. A write that captured its draft before the close committed is refused; one
+      // that commits while the close has not is closed with the draft. Neither outlives it.
       for (const first of ["write", "close"] as const) {
         const work = await scenario.work(`Immediate, ${first} first`, "draft");
         const name = `immediate-${first}-first.md`;
@@ -260,23 +261,29 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const close = () => scenario.discard(work, "all");
         const run =
           first === "write"
-            ? await interleave(db, write, "access.afterLeases", close, { waitMs: 300 })
+            ? await interleave(db, write, "branch.beforeAccess", close, { waitMs: 300 })
             : await interleave(db, close, "discard.afterLeases", write, { waitMs: 300 });
         const wrote = first === "write" ? run.a : run.b;
         const closed = first === "write" ? run.b : run.a;
         expect.soft(closed, `${first} first: the close finishes`).toMatchObject({ ok: true });
-        expect
-          .soft(wrote, `${first} first: the write finishes without landing in the closed draft`)
-          .toMatchObject({
-            ok: true,
-            value: { isError: true, result: { status: "invalid_write" } },
-          });
-        expect
-          .soft(
-            wrote.ok && JSON.stringify(wrote.value),
-            `${first} first: and tells the model its draft was closed, not a crash`,
-          )
-          .toContain("draft changed");
+        if (first === "write") {
+          expect
+            .soft(wrote, "write first: the write finishes without landing in the closed draft")
+            .toMatchObject({
+              ok: true,
+              value: { isError: true, result: { status: "invalid_write" } },
+            });
+          expect
+            .soft(
+              wrote.ok && JSON.stringify(wrote.value),
+              "write first: and tells the model its draft was closed, not a crash",
+            )
+            .toContain("draft changed");
+        } else {
+          expect
+            .soft(wrote, "close first: the write commits ahead of the close's commit")
+            .toMatchObject({ ok: true, value: { result: { status: "success" } } });
+        }
         expect
           .soft(await draftsOf(work), `${first} first: the draft closes, none is made`)
           .toEqual([{ id: expect.any(String), status: "closed" }]);

@@ -58,7 +58,6 @@ export type {
   DiscardedWriteReason,
   DocumentCoordinator,
   DocumentLockOptions,
-  HostSaveLease,
   StagedHelperCut,
   StagedWriteCommit,
   StagedWriteRejectionReason,
@@ -66,7 +65,6 @@ export type {
 } from "./ports/document-coordinator.js";
 export {
   DocumentNotFoundError,
-  hostSaveLeaseBrand,
   isDocumentNotFoundError,
 } from "./ports/document-coordinator.js";
 export type {
