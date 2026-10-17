@@ -182,8 +182,6 @@ function stores(
       };
     },
     checkPublication: async (check) => ({ kind: "proceed", hold: [], payloads: check.payloads }),
-    prepareBranchLeases: async () => [],
-    loadRecoveryScope: async () => ({ payloads: new Map(), memberBranchIds: [] }),
     listRecoverableBatchIds: async () => [],
   };
   return { commitStore, settlementStore };

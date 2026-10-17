@@ -65,7 +65,7 @@ const DIAGNOSTIC_CODE_ENUMS: Readonly<Record<string, ReadonlySet<string>>> = {
   code: new Set(["corrupt_settlement_authority", "corrupt_state"]),
   effect: new Set(["warm_rooms", "publication_step"]),
   refusal: new Set(["integration"]),
-  stage: new Set(["claim", "execute", "handoff"]),
+  stage: new Set(["claim", "execute"]),
   trigger: new Set(["create", "read"]),
 };
 const SAFE_PAYLOAD_ENUM_VALUES: Readonly<Record<string, ReadonlySet<string>>> = {

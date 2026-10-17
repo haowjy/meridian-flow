@@ -356,11 +356,9 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const writerIngress = createWriterIngressBinding();
   const branchPush = createBranchPushService({
     branchStore: branches,
-    criticalSections,
     journalReadStore: branchJournal,
     commitStore: pushCommits,
     settlementStore: pendingSettlements,
-    branchCoordinator,
     journal: persistence.journal,
     liveCoordinator,
     model: runtime.model,
