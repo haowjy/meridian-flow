@@ -27,7 +27,9 @@ and evidence path for each run, as the [catalog](README.md) asks.
   server deletes the file and exits with 137. Nitro's dev server restarts its
   worker on its own (`Restarting dev worker...` in `logs/portless.log`), and the
   restarted worker finds no arm file. The hook points are
-  `branch.append.afterCommit` and `branch.rewrite.beforeCommit`
+  `branch.append.beforeCommit` (rows and receipts written, the branch row held,
+  nothing committed), `branch.append.afterCommit` and
+  `branch.rewrite.beforeCommit`
   (`apps/server/server/domains/collab/domain/collab-test-hooks.ts`).
 - `collab.branch.rewrite_committed` reports each rewrite (`checkpoint`,
   `compact`, `pull`, `reset`) with `holdMs` and `tailRows`. `holdMs` runs from
@@ -60,7 +62,21 @@ branch id is the `branchId` on the draft's rows.
    - Its `text` matches the editor.
    - After a reload, the editor and `stateSha256` are unchanged.
    - Typing again with no arm file does not crash.
-4. Repeat with `COLLAB_CRASH_AT=branch.rewrite.beforeCommit`. Arm the file,
+4. Repeat with `COLLAB_CRASH_AT=branch.append.beforeCommit` (phase 4). Count
+   the draft's receipts first:
+   `select count(*) from document_edit_parts where placement->>'branchId' = '<branchId>'`
+   with `psql "$db"`. Arm the file and type one word. The server exits after
+   the append inserted its rows and receipts and before `COMMIT`, so nothing of
+   that frame is durable; the client reconnects and its handshake's SyncStep2
+   carries the word.
+   PASS:
+   - The arm file is gone.
+   - `branch-readback` shows exactly one new tail row for the word, not two:
+     the crashed attempt left no row.
+   - The receipt count grew by exactly one: the crashed attempt left no receipt.
+   - Its `text` matches the editor, and the reload check of step 3 holds.
+   - No `1008` or `4207` close in the tab's `/ws/yjs` frames.
+5. Repeat with `COLLAB_CRASH_AT=branch.rewrite.beforeCommit`. Arm the file,
    then drive a live-to-draft pull. A live write from a No Work thread followed
    by a read from the draft thread pulls.
    PASS:
