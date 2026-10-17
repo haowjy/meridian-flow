@@ -2,7 +2,7 @@
  * A writer frame takes no lease (lock-free drafts, phase 1b): it judges against its published
  * replica and appends under its revision predicate. These races pin the two doors a frame can
  * reach mid-transaction: a pull's rewrite holding the branch row, and a created document's
- * retraction (F3).
+ * retraction (F3); and an inverse every one of whose attempts a frame moves (F5).
  */
 import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
@@ -12,6 +12,8 @@ import * as Y from "yjs";
 import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import { interleave, type Settled } from "../../test-support/lock-interleave.js";
 import { readBranchAt } from "./adapters/drizzle-branch-storage.js";
+import { setCollabHook } from "./domain/collab-test-hooks.js";
+import { ReversalConflictError } from "./domain/reversal-conflict.js";
 import { branchContent } from "./test-support/branch-store-seam.js";
 import {
   ALPHA_ID,
@@ -19,6 +21,8 @@ import {
   createTestDatabase,
   resetDatabase,
   schema,
+  THREAD_ID,
+  TURN_ID,
   USER_ID,
   WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
@@ -78,8 +82,8 @@ describe("writer frames racing rewrites (postgres)", () => {
       );
   }
 
-  /** The draft holds one AI change; the writer then edits live, so a pull has work. */
-  async function draftBehindLive(): Promise<string> {
+  /** The draft holds one AI change: "Beta" became "Gamma". */
+  async function draftWithChange(): Promise<string> {
     const { harness, view, responseId, context } = fixture;
     expect(
       await view.collab.agentEdit().write(
@@ -96,6 +100,13 @@ describe("writer frames racing rewrites (postgres)", () => {
     ).toMatchObject({ status: "success" });
     await harness.commit(responseId);
     harness.cancelScheduledPulls();
+    return draftBranchId(db, ALPHA_ID);
+  }
+
+  /** The draft holds one AI change; the writer then edits live, so a pull has work. */
+  async function draftBehindLive(): Promise<string> {
+    const { harness, view } = fixture;
+    const branchId = await draftWithChange();
     await view.liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
       const before = Y.encodeStateVector(doc);
       const block = doc.getXmlFragment("prosemirror").get(0) as Y.XmlElement;
@@ -106,7 +117,7 @@ describe("writer frames racing rewrites (postgres)", () => {
       });
     });
     harness.cancelScheduledPulls();
-    return draftBranchId(db, ALPHA_ID);
+    return branchId;
   }
 
   const appendParagraph = (text: string) => (fragment: Y.XmlFragment) => {
@@ -208,5 +219,90 @@ describe("writer frames racing rewrites (postgres)", () => {
     } finally {
       frame.destroy();
     }
+  });
+
+  /** Replaces the first paragraph's text in one writer frame. */
+  const retype = (text: string) => (fragment: Y.XmlFragment) => {
+    const content = (fragment.get(0) as Y.XmlElement).get(0) as Y.XmlText;
+    content.delete(0, content.length);
+    content.insert(0, text);
+  };
+
+  /**
+   * Every one of the inverse's four commit attempts meets a writer frame that moved the draft
+   * after its capture; `last` is the frame before the fourth commit.
+   */
+  async function framesBeforeEveryCommit(
+    branchId: string,
+    last: (fragment: Y.XmlFragment) => void,
+  ): Promise<{ commits: () => number; remove: () => void }> {
+    let commits = 0;
+    const remove = setCollabHook("inverse.beforeCommitScope", async () => {
+      commits += 1;
+      const frame = await writerFrame(branchId, commits === 4 ? last : typedAndErased);
+      try {
+        expect(await frame.send()).toEqual({ admitted: true });
+      } finally {
+        frame.destroy();
+      }
+    });
+    return { commits: () => commits, remove };
+  }
+
+  const modelUndo = () =>
+    fixture.view.collab.agentEdit().write(
+      { command: "undo", documentId: ALPHA_ID, file: "alpha.md" },
+      {
+        ...fixture.context,
+        responseIdentity: {
+          providerResponseId: fixture.responseId,
+          editScopeId: fixture.responseId,
+        },
+      },
+    );
+  const cardUndo = () =>
+    fixture.view.collab.reverseTurn({
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+      direction: "undo",
+      actor: { type: "user", userId: USER_ID },
+    });
+
+  it.each([
+    "model",
+    "card",
+  ] as const)("an inverse (%s) whose four attempts all miss while its part still applies is a conflict, never a refusal", async (door) => {
+    const branchId = await draftWithChange();
+    const frames = await framesBeforeEveryCommit(branchId, typedAndErased);
+    try {
+      if (door === "model") {
+        const undone = await modelUndo();
+        expect(undone).toMatchObject({ status: "internal_error" });
+        expect(JSON.stringify(undone)).toContain("the draft changed while reversing; try again");
+      } else {
+        await expect(cardUndo()).rejects.toBeInstanceOf(ReversalConflictError);
+      }
+    } finally {
+      frames.remove();
+    }
+    // Four commits, each unwound; the classification pass never writes.
+    expect(frames.commits()).toBe(4);
+    expect(await fixture.view.draftMarkdown(branchId)).toBe("Alpha Gamma.\n\nBlue.\n");
+  });
+
+  it("an inverse whose last capture finds its part retyped answers with that plan's reasons", async () => {
+    const branchId = await draftWithChange();
+    const frames = await framesBeforeEveryCommit(branchId, retype("Alpha Delta."));
+    try {
+      expect(await cardUndo()).toMatchObject({
+        status: "expired",
+        acceptedParts: 0,
+        skips: [expect.objectContaining({ reason: "Stayed as you edited it" })],
+      });
+    } finally {
+      frames.remove();
+    }
+    expect(frames.commits()).toBe(4);
+    expect(await fixture.view.draftMarkdown(branchId)).toBe("Alpha Delta.\n\nBlue.\n");
   });
 });

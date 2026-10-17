@@ -36,6 +36,7 @@ import type { WorkProjectionMutation } from "../../projects/index.js";
 import type { BranchCoordinator } from "../domain/branch-coordinator.js";
 import type { BranchCriticalSections } from "../domain/branch-critical-sections.js";
 import { type BranchStore, materializeBranchRead } from "../domain/branch-store.js";
+import { collabHook } from "../domain/collab-test-hooks.js";
 import { documentEffectsEqual } from "../domain/document-content.js";
 import { appendInverseRestorationFacts } from "../domain/provenance.js";
 import { ReversalConflictError } from "../domain/reversal-conflict.js";
@@ -270,6 +271,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       const attempt = attemptStorage.getStore();
       if (!attempt) throw new Error("An inverse commits only inside its captured attempt");
       if (attempt.classifying) throw new ReversalConflictError();
+      await collabHook("inverse.beforeCommitScope");
       // Off every lock: each plan's parts with their provenance on its attempt-local view,
       // and a draft destination's effect against the captured live state.
       const planned = plans.map((plan) => planDocument(plan, query));

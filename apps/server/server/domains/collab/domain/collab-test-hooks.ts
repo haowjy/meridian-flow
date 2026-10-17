@@ -23,6 +23,8 @@ const COLLAB_HOOK_POINTS = [
   "retract.beforeLocks",
   /** A retraction holds its branch rows and found no contribution; nothing is deleted yet. */
   "retract.afterRecheck",
+  /** An inverse attempt planned on its capture and has not entered its commit scope. */
+  "inverse.beforeCommitScope",
   /** A branch append's transaction committed; its frame is not yet acknowledged. */
   "branch.append.afterCommit",
   /** A branch rewrite wrote its checkpoint; the transaction has not committed. */
