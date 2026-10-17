@@ -13,6 +13,11 @@ with a browser confirmation.
 Keep evidence in the active work directory, not in this repository. Record the
 commit, date, stack/provider, outcome, and evidence path after each run. A recipe
 is not a claim that it passed on the current commit.
+A gate's probe runs on its own fresh stack and database, from a detached
+checkout pinned to the commit under test. Never reuse another lane's stack or
+probe the integration worktree's: a checkout that moves under a watching dev
+server, or a reused database, produces regressions that vanish on a clean
+stack.
 
 - [Runtime protocols](runtime-probes.md): RP-1 through RP-18, server protocol checks driven with `./mf`; RP-17 runs `./mf` beside the browser. They don't verify the app.
 - [Project chrome and shell](project-chrome-manual.md): the browser checks that replaced nine slow DOM tests in `apps/app`. Their durable halves are RP-13 and RP-14.
@@ -25,7 +30,7 @@ is not a claim that it passed on the current commit.
 - [Composer drafts](composer-drafts.md): per-tab reload, submission hand-off and missing-reference recovery.
 - [Chat uploads menu](chat-uploads-menu.md): the top-bar list of a chat's files: add, open, delete, fork source and dock restore.
 - [Crash and two processes](crash-and-two-process.md): P5, a server crash between a draft write's commit and its ack, then the resend; P6, two servers on one database with a tab on each, using `tools/qa/shared-db-server.ts` and `branch-readback.ts`.
-- [Lock-free drafts seam probes](drafts-lock-free-probes.md): D12, D13, D18, D19 and F1, the PostgreSQL interleavings behind lock-free drafts, run with one command against a scratch database.
+- [Lock-free drafts seam probes](drafts-lock-free-probes.md): the PostgreSQL interleavings behind lock-free drafts (Work-first order, attempt ownership, archived drafts, sampled Discard, Undo ordering), run with one command against a scratch database.
 - [Journal checkpoint coverage](checkpoint-coverage.md): durable admission, compaction, generation replacement and opaque cuts.
 - [Document adoption across a reload](document-adoption-reload.md): New file reloaded inside the adoption commit window, desktop and the phone's three document branches.
 - [Draft review](draft-review.md): visual editor and review workflows.
