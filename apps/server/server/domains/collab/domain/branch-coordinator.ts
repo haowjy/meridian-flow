@@ -188,7 +188,7 @@ export type PullInput = {
 
 /**
  * `pulled` committed. A live pull into a work draft waits out a pending settlement on its
- * document (`fenced`: the settlement's own publication schedules the next pull); a closed
+ * document (`fenced`: nothing was written, and the caller tries again later); a closed
  * branch has nothing to pull into; a peer whose upstream re-forked since its read is
  * `upstreamMoved`, its capture abandoned.
  */
