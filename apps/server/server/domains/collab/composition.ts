@@ -32,6 +32,7 @@ import {
   createAgentEditInvariantDiagnostic,
   createAgentEditObservabilityOptions,
   createBranchAgentEditDiagnostics,
+  createBranchCoordinatorDiagnostics,
   createBranchPullDiagnostics,
   createDocumentProjectionDiagnostics,
   createDraftBranchAheadDiagnostics,
@@ -210,6 +211,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     criticalSections,
     onBranchUpdate: hocuspocusBinding.publishBranchUpdate,
     onBranchReset: ({ branchId }) => hocuspocusBinding.closeBranch(branchId),
+    diagnostics: createBranchCoordinatorDiagnostics(deps.eventSink),
   });
   const concurrentJournalWatermarks = createBranchConcurrentJournalWatermarks();
   const branchPulls = createBranchPullService({

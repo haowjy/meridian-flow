@@ -43,7 +43,8 @@ import { certifyWriterRestorations } from "./writer-restoration.js";
 
 /**
  * The branch as committed at `revision`: replaced, never mutated. `seq` is the highest journal
- * id it contains; `encoded` is its update bytes, computed once when first needed.
+ * id it contains; `tail` counts the rows (and their bytes) it holds past its checkpoint;
+ * `encoded` is its update bytes, computed once when first needed.
  */
 type PublishedReplica = {
   readonly revision: number;
@@ -51,7 +52,32 @@ type PublishedReplica = {
   readonly seq: number;
   readonly generation: number;
   readonly doc: Y.Doc;
+  readonly tail: TailSize;
   encoded?: Uint8Array;
+};
+
+type TailSize = { readonly rows: number; readonly bytes: number };
+const EMPTY_TAIL: TailSize = { rows: 0, bytes: 0 };
+
+function grownTail(tail: TailSize, updates: readonly Uint8Array[]): TailSize {
+  return {
+    rows: tail.rows + updates.length,
+    bytes: updates.reduce((total, update) => total + update.byteLength, tail.bytes),
+  };
+}
+
+/**
+ * A tail past either bound is folded into a new checkpoint (decision D10): every cold read of
+ * the branch replays its whole tail. The fold changes no content, effect or stamp.
+ */
+const COMPACT_TAIL_ROWS = 512;
+const COMPACT_TAIL_BYTES = 2 * 1024 * 1024;
+
+export type BranchCoordinatorDiagnostics = {
+  /** A frame's append missed its revision; `attempt` is the one it judges next. */
+  frameRetried(input: { branchId: string; attempt: number }): void;
+  /** The background tail fold failed; the tail stays until the next frame crosses the bound. */
+  compactionFailed(input: { branchId: string; cause: unknown }): void;
 };
 
 /**
@@ -187,13 +213,13 @@ export function createBranchCoordinator(input: {
   maxCasRetries?: number;
   onBranchUpdate?: (input: { branchId: string; update: Uint8Array }) => void;
   onBranchReset?: (input: { branchId: string; generation: number }) => void;
-  /** A frame's append missed its revision and judges again (`attempt` is the next one). */
-  onFrameRetry?: (input: { branchId: string; attempt: number }) => void;
+  diagnostics?: BranchCoordinatorDiagnostics;
 }): BranchCoordinator {
   const criticalSections = input.criticalSections ?? createBranchCriticalSections();
   const documentContainment = createDocumentContainment();
   const published = new Map<string, PublishedReplica>();
   const baselines = new Map<string, CachedBaseline>();
+  const compacting = new Set<string>();
   const maxCasRetries = input.maxCasRetries ?? 3;
 
   async function resetFromDocIfUnchangedWithLease(
@@ -270,6 +296,10 @@ export function createBranchCoordinator(input: {
           seq: Math.max(current.seq, ...read.tail.map((row) => row.id)),
           generation: branch.generation,
           doc,
+          tail: grownTail(
+            current.tail,
+            read.tail.map((row) => row.update),
+          ),
           ...(read.tail.length ? {} : { encoded: current.encoded }),
         };
       } else {
@@ -279,6 +309,10 @@ export function createBranchCoordinator(input: {
           seq: Math.max(branch.checkpointSeq, ...read.tail.map((row) => row.id)),
           generation: branch.generation,
           doc: materializeBranchRead(read),
+          tail: grownTail(
+            EMPTY_TAIL,
+            read.tail.map((row) => row.update),
+          ),
         };
       }
       publishReplica(branch.branchId, next);
@@ -467,6 +501,10 @@ export function createBranchCoordinator(input: {
           seq: Math.max(base.replica.seq, ...outcome.rowIds),
           generation: snapshot.generation,
           doc: candidate,
+          tail: grownTail(
+            base.replica.tail,
+            journals.map((row) => row.updateData),
+          ),
         };
       },
       publish() {
@@ -499,7 +537,7 @@ export function createBranchCoordinator(input: {
           operation: { kind: "checkpoint" },
         });
         if (outcome.status !== "committed") throw new BranchCasConflictError(snapshot.branchId);
-        committed = { ...outcome, doc: candidate };
+        committed = { ...outcome, doc: candidate, tail: EMPTY_TAIL };
       },
       publish() {
         if (!committed) throw new Error(`Branch ${snapshot.branchId} write was never persisted`);
@@ -548,7 +586,46 @@ export function createBranchCoordinator(input: {
           : { kind: "checkpoint" },
     });
     if (outcome.status !== "committed") throw new BranchCasConflictError(snapshot.branchId);
-    afterCommit(snapshot.branchId, { ...outcome, doc: candidate }, publishUpdate);
+    afterCommit(snapshot.branchId, { ...outcome, doc: candidate, tail: EMPTY_TAIL }, publishUpdate);
+  }
+
+  /**
+   * Folds a long tail into a new checkpoint in the background, under the branch's lease (it
+   * still excludes rewrites from each other): content-free, so a frame or inverse that lands
+   * meanwhile is folded in or recaptures, never lost. Called after a writer frame commits,
+   * outside every transaction; a failure is reported and leaves the tail for the next frame.
+   */
+  function compactIfLong(branchId: string): void {
+    const long = (tail: TailSize) =>
+      tail.rows >= COMPACT_TAIL_ROWS || tail.bytes >= COMPACT_TAIL_BYTES;
+    const replica = published.get(branchId);
+    if (!replica || compacting.has(branchId) || !long(replica.tail)) return;
+    compacting.add(branchId);
+    void criticalSections
+      .withBranches([branchId], async () => {
+        const { replica: current } = await loadBase(branchId);
+        if (!long(current.tail)) return;
+        const doc = cloneReplica(current);
+        const outcome = await input.store.commitRewrite({
+          branchId,
+          policy: {
+            kind: "fold",
+            checkpointRevision: current.checkpointRevision,
+            seq: current.seq,
+          },
+          fence: { kind: "none" },
+          doc,
+          operation: { kind: "compact" },
+        });
+        // A moved or closed branch: the next frame past the bound tries again.
+        if (outcome.status !== "committed") {
+          doc.destroy();
+          return;
+        }
+        afterCommit(branchId, { ...outcome, doc, tail: EMPTY_TAIL }, undefined);
+      })
+      .catch((cause: unknown) => input.diagnostics?.compactionFailed({ branchId, cause }))
+      .finally(() => compacting.delete(branchId));
   }
 
   function notifyReset(reset: { branchId: string; generation: number }): void {
@@ -847,10 +924,11 @@ export function createBranchCoordinator(input: {
       const outcome = locked
         ? await input.store.withJudgementLocks(inputWriter.branchId, judge)
         : await judge();
+      if (outcome === "admitted") compactIfLong(inputWriter.branchId);
       if (outcome !== "moved") return { admitted: outcome === "admitted" };
       // Under its own row lock the append cannot miss; a miss there is a moved branch.
       if (locked) throw new BranchStaleUpdateError(inputWriter.branchId);
-      input.onFrameRetry?.({ branchId: inputWriter.branchId, attempt: attempt + 1 });
+      input.diagnostics?.frameRetried({ branchId: inputWriter.branchId, attempt: attempt + 1 });
     }
   }
 
