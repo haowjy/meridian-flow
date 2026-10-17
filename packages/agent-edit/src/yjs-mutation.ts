@@ -116,9 +116,12 @@ export function allItems(doc: Y.Doc): Y.Item[] {
   return [...doc.store.clients.values()].flat().filter((s): s is Y.Item => s instanceof Y.Item);
 }
 export function itemIsInFragment(doc: Y.Doc, item: Y.Item, root: string): boolean {
+  // Typing the root first: on a doc that only integrated updates, `getXmlFragment` replaces
+  // the untyped root with a new instance, so a root reached before it would never match.
+  const fragment = doc.getXmlFragment(root);
   let parent = item.parent;
   while (parent instanceof Y.AbstractType && parent._item) parent = parent._item.parent;
-  return parent === doc.getXmlFragment(root);
+  return parent === fragment;
 }
 
 export function ancestorItems(item: Y.Item): Y.Item[] {
