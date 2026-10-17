@@ -37,7 +37,7 @@ import {
   settled,
   Y,
 } from "./harness.mts";
-import { Phase4SeamMissing, percentiles, phase4Store } from "./phase4.mts";
+import { percentiles } from "./phase4.mts";
 
 const MIGRATIONS = resolve(resolveCurrentRepoRoot(), "packages/database/src/migrations");
 const LOCK_TIMEOUT_MS = 2_000;
@@ -46,7 +46,7 @@ const LOCK_TIMEOUT_MS = 2_000;
 function migrationsBefore0064() {
   const file = readdirSync(MIGRATIONS).find((name) => /^0064_.*\.sql$/.test(name));
   if (!file || !readFileSync(join(MIGRATIONS, file), "utf8").includes("has_effect_revision"))
-    throw new Phase4SeamMissing("migration 0064_has_effect_watermark.sql");
+    throw new Error("No 0064 migration adding has_effect_revision");
   const tag = file.replace(/\.sql$/, "");
   const directory = mkdtempSync(join(tmpdir(), "lfd-probe-migrations-"));
   cpSync(MIGRATIONS, directory, { recursive: true });
@@ -80,12 +80,11 @@ export const migrationOnline: Probe = {
     const url = `postgresql://postgres:postgres@127.0.0.1:${LOCAL_DEV_POSTGRES_PORT}/${name}`;
     await ensureDatabaseForUrl(url);
     const sql = postgres(url, { max: 4 });
-    const harness = await openHarness(url).catch(async (cause) => {
-      await sql.end();
-      throw cause;
-    });
+    let opened: Awaited<ReturnType<typeof openHarness>> | undefined;
     try {
       await migrateQuietly(url, before.directory);
+      const harness = await openHarness(url);
+      opened = harness;
       // The review's seed, as the pre-phase-4 creator wrote it: no baseline, revision 0.
       const work = await harness.seedWork("migration");
       const insertOldCreatorRow = async () => {
@@ -162,18 +161,21 @@ export const migrationOnline: Probe = {
         watermarks,
       });
       assert.equal(fileAfter, fileBefore, "a catalog change: the table is not rewritten");
-      assert.deepEqual(watermarks, [{ watermark: "-1", n: 20 }], "every existing row is stale");
+      assert.deepEqual(
+        [...watermarks],
+        [{ watermark: "-1", n: 20 }],
+        "every existing row is stale",
+      );
       assert.ok(readLatency.max < LOCK_TIMEOUT_MS, "no read waited past the lock timeout");
 
       // 3. An old server's creator during the rollout.
       const oldRow = await insertOldCreatorRow();
-      const store = phase4Store(harness.store);
-      const stale = await store.staleEffectBranches({ limit: 50 });
-      const selected = stale.some((row) => (row.id ?? row.branchId) === oldRow);
+      const stale = await harness.store.staleEffectBranches({ limit: 50 });
+      const selected = stale.some((row) => row.branchId === oldRow);
       observe("3 old creator", { inserted: oldRow.slice(0, 20), selected, stale: stale.length });
       assert.ok(selected, "the old creator's row is selected by staleEffectBranches");
     } finally {
-      await harness.close();
+      await opened?.close();
       await sql.end();
       rmSync(before.directory, { recursive: true, force: true });
       await dropDatabaseForUrl(url, []);
