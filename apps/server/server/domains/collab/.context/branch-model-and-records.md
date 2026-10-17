@@ -84,10 +84,21 @@ and cannot become invented AI credit.
 A branch's content is its checkpoint (`state`, `state_vector`) replayed with its
 tail. `readBranchAt` reads the row, the checkpoint, and the tail in one
 statement, and nothing else reads `state`. `revision` is the only write fence,
-and every committed write moves it: appends, checkpoint rewrites, closes, the
-freeze, and every change to a review-membership input (`has_effect`,
-`blocking`, a row's status in either direction). `generation` stays the re-fork
-epoch that names rooms and groups rows and placements.
+and every committed write moves it: appends, checkpoint rewrites, closes, and
+every change to a review-membership input (`has_effect`, `blocking`, a row's
+status in either direction). `generation` stays the re-fork epoch that names
+rooms and groups rows and placements.
+
+The contract (row, read and write types, the `BranchStore` port, the
+materialization of one read) is `domain/branch-store.ts`. Its Drizzle storage
+half is `adapters/drizzle-branch-storage.ts`: the row with its derived Work
+lifecycle, `readBranchAt`, and the transactional primitives `appendRowsWithinTx`,
+`commitRewriteWithinTx` and `bumpBranchRevisions`. `createDrizzleBranchStore`
+wraps them with each write's application half (Work admission, the pending
+projection, the live advisory lock, the effect refresh, edit receipts), and
+every other adapter that writes a branch commits through the same primitives.
+Thread-peer and Work-draft resolution return metadata only (id, generation,
+status, lifecycle); content is read through the coordinator.
 
 Writes go through two doors. `appendRows` adds rows past the checkpoint at the
 judged revision, allocating their ids under the row lock. `commitRewrite` writes
@@ -96,12 +107,16 @@ revision it was computed at) or a `fold` policy (any appends since its cursor ar
 applied, or discarded by a reset). Pulls, resets, selective Discard, the
 inverse's merged draft, a peer's checkpoint, and compaction are rewrites. A reset
 also discards the generation's pending rows and adds the checkpoint's and the
-tail's clocks to `discarded_state_vector`. A tail past 512 rows or 2 MB folds
-into a new checkpoint with unchanged content.
+tail's clocks to `discarded_state_vector`. Compaction folds the tail into a new
+checkpoint with unchanged content and leaves `updated_at`; nothing schedules it
+yet (its trigger lands with the inverse's attempt contract).
 
-`frozen` mirrors the origin Work: archived, deleted, or missing. The lifecycle
-transitions set it under the Work's `FOR UPDATE`; branch creation reads it under
-`FOR KEY SHARE`. The coordinator holds one immutable replica per branch at a
+A branch's `lifecycle` (`active`, `archived`, `deleted`, `missing`) is read from
+its draft's origin Work with the row; anything but `active` is frozen. The
+append's `UPDATE` admits only while that Work is active, in the same statement,
+so an append whose statement starts after an archive commits gets zero rows. One
+whose snapshot predates the commit may still land, as a key landing just before
+the archive does. The coordinator holds one immutable replica per branch at a
 committed revision and catches it up from the tail; every write computes on a
 private copy, so a failed commit never changes what a reader holds.
 

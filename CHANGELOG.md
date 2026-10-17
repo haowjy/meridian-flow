@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- A draft branch is stored as a checkpoint plus the journal rows after it, fenced by a revision instead of a compare of its full bytes (#919, first step). Writer behavior is unchanged; archiving a Work now also freezes its drafts' branches in the same transaction, and a long run of keystrokes is folded into a new checkpoint every 512 rows.
+- A draft branch is stored as a checkpoint plus the journal rows after it, fenced by a revision instead of a compare of its full bytes (#919, first step). Writer behavior is unchanged: whether a draft is frozen is read from its Work with every write, so archiving takes no new lock.
 - Every chat failure is a card drawn from one place (`chatCards`), announced once when you watched it appear and cleared from the screen reader's live region when the card ends. A failed compaction's card now has Try again (it sends `/compact` again), a hidden "Couldn't stop the reply." no longer lingers in the page after its card goes, and a Retry whose request was lost is a "Couldn't start the retry." card with Try again on the failed reply instead of a fake failed reply. `./mf thread view` prints the same cards (`cards` in its JSON).
 ### Fixed
 - Production contracts imports no longer load golden test fixtures; tests use a separate test-support entry point.

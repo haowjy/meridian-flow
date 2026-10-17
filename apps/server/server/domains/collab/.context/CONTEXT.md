@@ -120,10 +120,13 @@ share a segment, but sharing a paragraph alone never joins edits.
 A branch write commits only at the `revision` it was computed at: appends
 through `appendRows`, checkpoint rewrites through `commitRewrite` (exact or
 fold policy), status and hold changes after locking the branch rows in ID order
-and bumping their revision. No write compares branch bytes. Branch creation
-takes the origin Work `FOR KEY SHARE` before the draft share, close, or insert;
-archive, unarchive, soft delete, and restore take the Work `FOR UPDATE` and sync
-the drafts' `frozen` in the same transaction.
+and bumping their revision. No write compares branch bytes. Whether a branch is
+frozen is derived on every read from its draft's origin Work (archived,
+deleted, or missing), never stored, so Work lifecycle transitions take no
+branch lock and branch creation takes no Work lock, as on main. The append's
+`UPDATE` and a Work-admitted checkpoint `UPDATE` carry a Work-is-active
+predicate, so the lifecycle decision and the write are one statement; pulls,
+resets and compaction carry none.
 
 Pulls commit in their own root transactions outside a caller's response
 transaction. A pull takes its branch leases before its root transaction and
