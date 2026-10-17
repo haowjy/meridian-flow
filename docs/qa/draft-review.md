@@ -77,6 +77,16 @@ Capture request/click/input/response times, pre/post selection and block text,
 a screenshot and independent draft/live readbacks. An insertion sent while a
 paint cover still holds the page is not evidence about the successor's caret.
 
+## Per-change Discard of a long writer change
+
+Type more than 500 keystrokes into one paragraph of an owned draft (each frame is one
+member part of the same change), wait until `./mf` shows the branch's revision has
+stopped moving, then open the change list at phone width (390px) and Discard the
+writer's row. PASS: the `/draft/discard` POST answers 200 with at most 500
+`memberPartKeys`, the writer's text leaves the draft, the model's change stays, and no
+"Couldn't discard this change" appears. While the typed frames are still arriving the
+row answers "This change was updated"; that is the typed stale refusal, not a failure.
+
 ## Review across document schemes
 
 In a named draft-mode Work, use the mock model to create `kb://Place`,

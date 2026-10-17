@@ -16,7 +16,6 @@ import {
   testBranchRow,
 } from "../test-support/memory-branch-store.js";
 import { createBranchCoordinator } from "./branch-coordinator.js";
-import { createBranchCriticalSections } from "./branch-critical-sections.js";
 import { PROVENANCE_TARGETS_TYPE } from "./provenance.js";
 
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000501" as DocumentId;
@@ -221,15 +220,14 @@ describe("BranchCoordinator", () => {
 
     const coordinator = createBranchCoordinator({ store });
     await expect(
-      createBranchCriticalSections().withBranches(["work"], (lease) =>
-        coordinator.resetFromDocIfUnchangedWithLease(lease, {
-          branchId: "work",
-          upstream: docWithText("fresh live"),
-          expectedGeneration: original.generation,
-          expectedRevision: original.revision,
-          schemaVersion: original.schemaVersion,
-        }),
-      ),
+      coordinator.resetFromDoc({
+        branchId: "work",
+        upstream: docWithText("fresh live"),
+        policy: "exact",
+        expectedGeneration: original.generation,
+        expectedRevision: original.revision,
+        schemaVersion: original.schemaVersion,
+      }),
     ).resolves.toBe(false);
     await expect(
       store.commitRewrite({

@@ -1,7 +1,6 @@
 /** Persistence authority for pending branch-push settlement batches and their recovery. */
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
-import type { BranchLockLease } from "../branch-critical-sections.js";
 import type {
   PendingSettlementBatch,
   PushLineageRow,
@@ -57,14 +56,6 @@ export type BatchCompletion = PublicationInputs & {
   claim: SettlementClaim;
   members: readonly BatchCompletionMember[];
   /**
-   * The branch critical-section leases the caller holds. Completion asks every
-   * step's `prepare` again under its locks; a branch outside this set answers
-   * `rediscover`.
-   */
-  leasedBranchIds: readonly string[];
-  /** The lease over `leasedBranchIds`, for a step that resets a leased branch in completion. */
-  lease?: BranchLockLease;
-  /**
    * Synchronous and non-mutating: compares warm state with every admitted
    * member's in-transaction cut after all writes, just before commit. `retry`
    * rolls the whole batch back.
@@ -88,8 +79,6 @@ export type BatchCompletionResult =
     }
   /** A step refused: the staged batch is abandoned and its journal rows are reviewable again. */
   | { status: "refused"; reason: PublicationRefusal }
-  /** A step needs a branch lease the caller doesn't hold: release and discover again. */
-  | { status: "rediscover"; branchIds: readonly string[] }
   | { status: "retry" };
 
 /** The pre-staging check: members before any push or batch row exists. */
@@ -108,14 +97,8 @@ export type PublicationCheckResult =
     }
   | { kind: "refuse"; reason: PublicationRefusal };
 
-/** What recovery reads before it takes any lease or claim. */
-export type RecoveryScope = {
-  payloads: ReadonlyMap<string, JsonValue>;
-  memberBranchIds: readonly string[];
-};
-
 /** Where a batch's failure was recorded; finite, so the event can carry it. */
-export type SettlementFailureStage = "claim" | "execute" | "handoff";
+export type SettlementFailureStage = "claim" | "execute";
 
 export type PendingSettlementStore = {
   joinAdmission(input: SettlementAdmission): Promise<void>;
@@ -168,12 +151,5 @@ export type PendingSettlementStore = {
    * short, write-free transaction before staging. Root-owned, like completion.
    */
   checkPublication(input: PublicationCheck): Promise<PublicationCheckResult>;
-  /**
-   * The outer preparation: every step's `prepare` over its payload, unioned.
-   * Called before any coordinator lease or database transaction.
-   */
-  prepareBranchLeases(payloads: ReadonlyMap<string, JsonValue>): Promise<readonly string[]>;
-  /** The staged payloads and member branches of a batch, read before recovery leases or claims it. */
-  loadRecoveryScope(batchId: string): Promise<RecoveryScope>;
   listRecoverableBatchIds(): Promise<string[]>;
 };

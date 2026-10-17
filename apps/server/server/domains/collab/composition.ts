@@ -117,7 +117,6 @@ import {
   createProjectionEffectsDocumentWriteHook,
 } from "./domain/document-projection-refresher.js";
 import { createDraftBranchAheadRegistration } from "./domain/draft-branch-ahead-registration.js";
-import { createDraftBranchLeases } from "./domain/draft-branch-leases.js";
 import { createDraftDiscard } from "./domain/draft-discard.js";
 import { createDraftPublication } from "./domain/draft-publication.js";
 import { createDraftReviewIdentity } from "./domain/draft-review-identity.js";
@@ -356,11 +355,9 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const writerIngress = createWriterIngressBinding();
   const branchPush = createBranchPushService({
     branchStore: branches,
-    criticalSections,
     journalReadStore: branchJournal,
     commitStore: pushCommits,
     settlementStore: pendingSettlements,
-    branchCoordinator,
     journal: persistence.journal,
     liveCoordinator,
     model: runtime.model,
@@ -380,7 +377,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     commitStore: pushCommits,
     branchCoordinator,
     journal: persistence.journal,
-    criticalSections,
     attemptScope,
   });
 
@@ -530,7 +526,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     reviewItems,
     push: branchPush,
   });
-  const draftLeases = createDraftBranchLeases({ branches, criticalSections });
   const discardStore = createDrizzleDraftDiscard(deps.db, {
     drafts: workDrafts,
     branches,
@@ -545,8 +540,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   });
   const discard = createDraftDiscard({
     drafts: workDrafts,
-    draftLeases,
-    criticalSections,
     liveCoordinator,
     store: discardStore,
     retire: retirePeers,
@@ -684,10 +677,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     draftResolver: {
       drafts: workDrafts,
       draftLinks: draftBranchAheads,
-      draftLeases,
       workDraftDisposal: createDrizzleWorkDraftDisposal(deps.db, {
         drafts: workDrafts,
-        criticalSections,
         catalog: deps.catalogMutations,
       }),
     },

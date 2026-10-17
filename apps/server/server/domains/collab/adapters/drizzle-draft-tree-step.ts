@@ -72,8 +72,8 @@ export function createDrizzleDraftTreeStep(
   deps: {
     drafts: Pick<Drafts, "byIds">;
     branches: Pick<BranchStore, "getBranch" | "readBranchAt">;
-    /** The reset of a drained branch, under the lease the completion's caller holds. */
-    coordinator: Pick<BranchCoordinator, "resetFromDocIfUnchangedWithLease">;
+    /** The reset of a drained branch inside the completion transaction. */
+    coordinator: Pick<BranchCoordinator, "resetFromDoc">;
     /** The live document as the completion transaction sees it, admissions included. */
     liveDoc(documentId: DocumentId): Promise<Y.Doc>;
     workProjection: Pick<WorkProjectionMutation, "mutatePending">;
@@ -86,12 +86,6 @@ export function createDrizzleDraftTreeStep(
 
   return {
     kind: DRAFT_TREE_STEP,
-
-    async prepare(raw) {
-      const payload = parseDraftTreePayload(raw);
-      if (!payload) return { branchIds: [] };
-      return { branchIds: payload.items.flatMap((item) => item.draftBranchId ?? []) };
-    },
 
     async plan(scope) {
       const staged = parseDraftTreePayload(scope.payloads.get(DRAFT_TREE_STEP));
@@ -287,17 +281,18 @@ export function createDrizzleDraftTreeStep(
           const draft = materializeBranchRead(read);
           try {
             if (!documentEffectsEqual(live, draft)) continue;
-            if (scope.stage !== "completion" || !scope.lease) {
-              throw new Error("A drained item resets under the completion's branch lease");
+            if (scope.stage !== "completion") {
+              throw new Error("A drained item resets only in completion");
             }
             // Exact at the revision the empty effect was judged at; the settlement owns the
             // reset, so no settlement fence. A miss means content landed after the check
             // (a writer's frame): the item stays open with its typing, not reset.
             const reset = await deps.coordinator
-              .resetFromDocIfUnchangedWithLease(scope.lease, {
+              .resetFromDoc({
                 branchId: branch.branchId,
                 upstream: live,
                 expectedGeneration: branch.generation,
+                policy: "exact",
                 expectedRevision: branch.revision,
                 schemaVersion: branch.schemaVersion,
                 editDisposition: "retired",

@@ -262,7 +262,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const run =
           first === "write"
             ? await interleave(db, write, "branch.beforeAccess", close, { waitMs: 300 })
-            : await interleave(db, close, "discard.afterLeases", write, { waitMs: 300 });
+            : await interleave(db, close, "discard.beforeCommitScope", write, { waitMs: 300 });
         const wrote = first === "write" ? run.a : run.b;
         const closed = first === "write" ? run.b : run.a;
         expect.soft(closed, `${first} first: the close finishes`).toMatchObject({ ok: true });

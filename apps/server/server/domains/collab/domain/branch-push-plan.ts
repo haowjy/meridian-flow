@@ -87,9 +87,12 @@ export function publicationBlockChanges(input: {
 }
 
 export function blockTextMap(model: YProsemirrorDocumentModel, doc: Y.Doc): Map<string, string> {
+  const handle = toDocHandle(doc);
+  // One pass for every id: `getBlockId` per block rescans all siblings, quadratic in blocks.
+  const ids = model.getDocumentBlockIds(handle);
   const result = new Map<string, string>();
-  for (const block of model.getBlocks(toDocHandle(doc))) {
-    result.set(model.getBlockId(block), model.getText(block));
+  for (const [index, block] of model.getBlocks(handle).entries()) {
+    result.set(ids[index] as string, model.getText(block));
   }
   return result;
 }

@@ -124,20 +124,6 @@ export async function decideCheck(
   return { kind: "proceed", hold: [...hold.values()], payloads: staged };
 }
 
-/** Every step's outer preparation over its payload: the branch leases the batch needs. */
-export async function requiredBranchLeases(
-  publication: SettlementPublication,
-  payloads: ReadonlyMap<string, JsonValue>,
-): Promise<string[]> {
-  const branchIds: string[] = [];
-  for (const step of publication.steps) {
-    const payload = payloads.get(step.kind);
-    if (payload === undefined || !step.prepare) continue;
-    branchIds.push(...(await step.prepare(payload)).branchIds);
-  }
-  return sortedUnique(branchIds);
-}
-
 function sortedUnique<T extends string>(values: readonly T[]): T[] {
   return [...new Set(values)].sort();
 }

@@ -10,10 +10,6 @@ import {
 } from "./branch-attempts.js";
 import type { BranchCoordinator } from "./branch-coordinator.js";
 import {
-  type BranchCriticalSections,
-  createBranchCriticalSections,
-} from "./branch-critical-sections.js";
-import {
   type BranchJournalReadStore,
   type BranchJournalRow,
   BranchPushCommitConflictError,
@@ -31,14 +27,11 @@ type Dependencies = {
   commitStore: PushCommitStore;
   branchCoordinator?: Partial<Pick<BranchCoordinator, "notifyReset">>;
   journal: UpdateJournal;
-  criticalSections?: BranchCriticalSections;
   /** Each attempt's rollback boundary: a root transaction, or a savepoint in an ambient one. */
   attemptScope?: AttemptScope;
 };
 
 export function createBranchReviewOperations(deps: Dependencies): BranchReviewService {
-  const criticalSections = deps.criticalSections ?? createBranchCriticalSections();
-
   async function listReviewableRows(
     branchId: string,
     generation: number,
@@ -55,39 +48,37 @@ export function createBranchReviewOperations(deps: Dependencies): BranchReviewSe
   }
 
   /**
-   * The branches' leases, then attempts that re-read the branches and run again when another
+   * Attempts that re-read the branches and run again when a writer's frame or another
    * process moved one under us. Four attempts each finding the draft moved (a writer typing)
    * answer stale, as a selection made against an older draft does.
    */
-  async function withActiveWorkDraftBranchLock<T>(
+  async function withActiveWorkDraftBranches<T>(
     branchIds: readonly string[],
     run: (branches: readonly BranchSnapshot[], attempt: Attempt) => Promise<T>,
   ): Promise<T> {
-    if (branchIds.length === 0) throw new Error("active work draft lock requires a branch");
-    return criticalSections.withBranches(branchIds, () =>
-      runBoundedAttempts({
-        bound: DISCARD_ATTEMPTS,
-        scope: deps.attemptScope ?? NO_ATTEMPT_SCOPE,
-        isMiss: (cause) => cause instanceof BranchPushCommitConflictError,
-        run: async (attempt) => {
-          const branches = await Promise.all(
-            branchIds.map(async (branchId) =>
-              assertActiveWorkDraftBranch(await deps.branchStore.getBranch(branchId), branchId),
-            ),
-          );
-          return run(branches, attempt);
-        },
-        exhausted: () => {
-          throw new DraftChangeRefusal("stale");
-        },
-      }),
-    );
+    if (branchIds.length === 0) throw new Error("A selected Discard names a branch");
+    return runBoundedAttempts({
+      bound: DISCARD_ATTEMPTS,
+      scope: deps.attemptScope ?? NO_ATTEMPT_SCOPE,
+      isMiss: (cause) => cause instanceof BranchPushCommitConflictError,
+      run: async (attempt) => {
+        const branches = await Promise.all(
+          branchIds.map(async (branchId) =>
+            assertActiveWorkDraftBranch(await deps.branchStore.getBranch(branchId), branchId),
+          ),
+        );
+        return run(branches, attempt);
+      },
+      exhausted: () => {
+        throw new DraftChangeRefusal("stale");
+      },
+    });
   }
 
   async function discardSelected(
     discardInput: Parameters<BranchReviewService["discardSelected"]>[0],
   ): ReturnType<BranchReviewService["discardSelected"]> {
-    return withActiveWorkDraftBranchLock([discardInput.branchId], async ([branch], attempt) => {
+    return withActiveWorkDraftBranches([discardInput.branchId], async ([branch], attempt) => {
       const reviewableRows = await listReviewableRows(branch.branchId, branch.generation);
       const selection = await discardInput.selectRows(branch, reviewableRows);
       const selected = new Set(selection.journalIds);

@@ -11,8 +11,6 @@ import type { DraftCommandResult } from "@meridian/contracts/drafts";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
 import type * as Y from "yjs";
-import type { BranchCoordinator } from "./branch-coordinator.js";
-import type { BranchCriticalSections } from "./branch-critical-sections.js";
 import type { BranchSnapshot, BranchStore } from "./branch-store.js";
 import type { DraftCommandEnvelope } from "./draft-commands.js";
 import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
@@ -207,7 +205,7 @@ export type DiscardedChanges = { itemClosed: boolean; itemDisposition?: "applied
 
 export type ReviewRowSelection = { journalIds: readonly number[]; expectedLiveRevision: string };
 
-/** A per-change Apply's selection: made under the branch lease, naming the payloads it stages. */
+/** A per-change Apply's selection: made on each staging attempt's read, naming the payloads it stages. */
 export type SelectedPublication = {
   branchId: string;
   select(
@@ -319,8 +317,8 @@ export type BranchPushService = {
     branchIds: readonly string[];
     payloads?: PublicationPayloads;
     /**
-     * Per-change Apply: publish only the rows this selects from the one branch, chosen under
-     * its lease on every CAS attempt (B3), with the payloads rebuilt from the same selection.
+     * Per-change Apply: publish only the rows this selects from the one branch, chosen again on
+     * every staging attempt (B3), with the payloads rebuilt from the same selection.
      */
     selected?: SelectedPublication;
     /** The writer's command, claimed in the staging transaction (§4.6). */
@@ -361,8 +359,6 @@ export type BranchPushServiceInput = {
   journalReadStore: BranchJournalReadStore;
   commitStore: PushCommitStore;
   settlementStore: PendingSettlementStore;
-  branchCoordinator?: Pick<BranchCoordinator, "resetFromDocIfUnchangedWithLease"> &
-    Partial<Pick<BranchCoordinator, "broadcastUpdate">>;
   journal: UpdateJournal;
   liveCoordinator: DocumentCoordinator;
   model: YProsemirrorDocumentModel;
@@ -371,7 +367,6 @@ export type BranchPushServiceInput = {
   links: DocumentLinkScopes;
   changeEventDelivery: ChangeEventDelivery;
   pushUpdateComputer?: PushUpdateComputer;
-  criticalSections?: BranchCriticalSections;
   resolveDocumentTitle?: (documentId: DocumentId) => Promise<string | null>;
   writerIngressBarrier?: WriterIngressBarrier;
   sweepProjectionDiagnostics?: SweepProjectionDiagnostics;

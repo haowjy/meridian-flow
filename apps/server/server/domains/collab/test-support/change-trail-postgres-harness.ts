@@ -42,7 +42,6 @@ import {
   createStaticDocumentLinkScopes,
   UNSUPPORTED_AHEAD_REFS,
 } from "../adapters/in-memory/static-document-link-scopes.js";
-import { createDraftBranchLeases } from "../domain/draft-branch-leases.js";
 import { createDraftDiscard } from "../domain/draft-discard.js";
 import { createDrafts } from "../domain/drafts.js";
 import { createPeerRetirement } from "../domain/peer-retirement.js";
@@ -585,11 +584,9 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       },
     },
     branchStore,
-    criticalSections: branchCriticalSections,
     journalReadStore: durableBranchJournalReadStore,
     commitStore: durablePushCommitStore,
     settlementStore,
-    branchCoordinator,
     journal: persistence.journal,
     liveCoordinator,
     model,
@@ -614,7 +611,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     commitStore: durablePushCommitStore,
     branchCoordinator,
     journal: persistence.journal,
-    criticalSections: branchCriticalSections,
     attemptScope: (operation) => runInDrizzleSavepoint(db, operation),
   });
   const deliveredEvents: unknown[] = [];
@@ -782,11 +778,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     identity,
     discard: createDraftDiscard({
       drafts: workDrafts,
-      draftLeases: createDraftBranchLeases({
-        branches: branchStore,
-        criticalSections: branchCriticalSections,
-      }),
-      criticalSections: branchCriticalSections,
       liveCoordinator,
       attemptScope: (operation) => runInDrizzleSavepoint(db, operation),
       // No Work projection in this harness: pending counts aren't under test.
@@ -2157,7 +2148,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
             replacement: trailContributionReplacement(member.trail, member.push),
           })),
           payloads: loaded.payloads,
-          leasedBranchIds: [],
           liveTextFingerprints: new Map(),
           recheck: () => "commit",
           afterCommit() {},
@@ -2304,7 +2294,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
           replacement: trailContributionReplacement(member.trail, member.push),
         })),
         payloads: batch.payloads,
-        leasedBranchIds: [],
         liveTextFingerprints: new Map(),
         recheck() {
           completionCallbackRan = true;
