@@ -275,6 +275,8 @@ export type MarkdownDocumentStore = LinkBinder & {
 
 export type DocumentProjectionRefresher = {
   documentDerivations: import("./domain/ports/document-derivations.js").DocumentDerivationService;
+  /** One pass of the draft-effect projection's sweep over stale branches (design §3.2). */
+  branchEffects: { sweep(): Promise<number> };
   refreshDocumentProjection(input: { documentId: DocumentId; threadId?: ThreadId }): Promise<void>;
 };
 
@@ -530,7 +532,10 @@ export type DocumentAttribution = {
 
 /** Background work the domain schedules itself, stopped when the app shuts down. */
 export type CollabLifecycle = {
-  /** Drops debounced live-to-draft pulls that haven't started; running pulls finish. */
+  /**
+   * Drops debounced live-to-draft pulls and projection runs that haven't started; running
+   * ones finish.
+   */
   dispose(): void;
 };
 

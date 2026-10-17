@@ -440,6 +440,7 @@ describe("document revisions (postgres and collab)", () => {
     await f.writerDelete();
     const broadcasts: string[] = [];
     const coordinator = createBranchCoordinator({
+      onAppendCommitted: () => {},
       store: f.branchStore,
       onBranchUpdate: ({ branchId }) => broadcasts.push(branchId),
     });

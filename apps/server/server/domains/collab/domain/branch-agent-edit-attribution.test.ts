@@ -53,6 +53,7 @@ function fixture(existingUpstream?: Y.Doc) {
     model,
     codec,
     branchCoordinator: createBranchCoordinator({
+      onAppendCommitted: () => {},
       store: new MemoryBranchStore(
         ["draft", "peer"].map((id) => memoryBranch(snapshot(id), upstream)),
       ),

@@ -22,6 +22,11 @@ const COLLAB_HOOK_POINTS = [
   "retract.afterRecheck",
   /** An inverse attempt planned on its capture and has not entered its commit scope. */
   "inverse.beforeCommitScope",
+  /**
+   * An append inserted its rows and receipts and still holds the branch row; nothing has
+   * committed. A crash here leaves neither.
+   */
+  "branch.append.beforeCommit",
   /** A writer frame's append committed; the frame is not yet acknowledged. */
   "branch.append.afterCommit",
   /** A branch rewrite wrote its checkpoint; the transaction has not committed. */

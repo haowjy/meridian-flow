@@ -30,6 +30,7 @@ type Process = ReturnType<typeof openProcess>;
 function openProcess(harness: Harness, label: string, store: BranchStore = harness.store) {
   const room = new Y.Doc({ gc: false });
   const coordinator = createBranchCoordinator({
+    onAppendCommitted: () => {},
     store,
     attemptScope: harness.attemptScope,
     onBranchUpdate: ({ update }) => Y.applyUpdate(room, update, "publish"),
@@ -70,6 +71,7 @@ function keystroke(room: Y.Doc, token: string): Uint8Array {
 
 async function type(process: Process, branchId: string, generation: number, token: string) {
   const update = keystroke(process.room, token);
+  const started = performance.now();
   const result = await settled(
     process.coordinator.commitWriterUpdate({
       branchId,
@@ -80,7 +82,15 @@ async function type(process: Process, branchId: string, generation: number, toke
   );
   // Hocuspocus applies an admitted frame to the room; a refused one closes the socket.
   if (result.ok && result.value.admitted) Y.applyUpdate(process.room, update, "client");
-  return result;
+  return { ...result, wallMs: performance.now() - started };
+}
+
+/** p50, p95 and max of `values`, rounded to a tenth of a millisecond. */
+function latency(values: readonly number[]) {
+  const sorted = [...values].sort((a, b) => a - b);
+  const at = (q: number) => sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))] ?? 0;
+  const round = (value: number) => Math.round(value * 10) / 10;
+  return { p50: round(at(0.5)), p95: round(at(0.95)), max: round(sorted.at(-1) ?? 0) };
 }
 
 const roomText = (process: Process) => process.room.getXmlFragment("prosemirror").toString();
@@ -88,11 +98,12 @@ const roomText = (process: Process) => process.room.getXmlFragment("prosemirror"
 export const twoProcessFrames: Probe = {
   name: "two-process-frames",
   decision: "D25",
-  expected: `frames: {"admitted":${2 * KEYS},"failures":{}}; ${2 * KEYS} tokens durable and in both rooms after a rejoin`,
+  expected: `frames: {"admitted":${2 * KEYS},"failures":{}}; ${2 * KEYS} tokens durable and in both rooms after a rejoin; no frame over 1 s, no BranchCasConflictError`,
   async run(harness) {
     const { branchId, generation, live, a, b, other } = await twoProcesses(harness, "two-process");
     live.destroy();
     const failures: Record<string, number> = {};
+    const wall: number[] = [];
     let admitted = 0;
     for (let key = 0; key < KEYS; key += 1) {
       const results = await Promise.all([
@@ -100,6 +111,7 @@ export const twoProcessFrames: Probe = {
         type(b, branchId, generation, ` B${key}`),
       ]);
       for (const result of results) {
+        wall.push(result.wallMs);
         if (result.ok) admitted += 1;
         else {
           const name = `${result.name}: ${result.message}`;
@@ -113,10 +125,22 @@ export const twoProcessFrames: Probe = {
       await process.coordinator.readBranch(branchId, async () => {});
       rooms[process.label] = tokens(roomText(process));
     }
+    const appends = [...harness.appends, ...other.appends].filter(
+      (append) => append.branchId === branchId,
+    );
     await other.close();
     const durable = tokens((await harness.readBranch(branchId)).text);
     observe("frames", { admitted, failures });
     observe("tokens", { durable, rooms });
+    // `lock_timeout` plays no part here: an append waits for the row as long as a holder holds it.
+    observe("latency", {
+      wallMs: latency(wall),
+      waitMs: latency(appends.map((append) => append.waitMs)),
+      holdMs: latency(appends.map((append) => append.holdMs)),
+      foldedPrefixRows: appends.reduce((total, append) => total + append.prefixRows, 0),
+    });
+    assert.ok(!Object.keys(failures).some((name) => name.startsWith("BranchCasConflictError")));
+    assert.ok(Math.max(...wall) < 1_000, "a frame took a second or more");
     assert.equal(admitted, 2 * KEYS);
     assert.deepEqual(
       { durable, rooms },

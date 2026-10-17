@@ -103,8 +103,9 @@ branch id is the `branchId` on the draft's rows.
      The headless form of this step is the `two-process-frames` probe, and
      `two-process-fold` and `two-process-compaction` cover a pull or compaction
      folding the other process's row ([seam probes](drafts-lock-free-probes.md)).
-   - No frame retries past its fourth attempt: count `collab.branch.append_retry`
-     events in both processes.
+   - No frame is judged twice: appends are sequenced by the branch row's lock,
+     so neither process emits a `BranchCasConflictError` for a frame. Read
+     `collab.branch.append_committed` (debug) for each key's `waitMs` and `holdMs`.
    - A live edit pulled by both processes lands once; the loser sees `moved`.
    - Equal hashes after the reload are not enough on their own.
    The second server mirrors events to `logs/events-p6b.server.meridian/`.

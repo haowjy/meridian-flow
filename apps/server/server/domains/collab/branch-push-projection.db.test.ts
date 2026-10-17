@@ -203,7 +203,10 @@ describe("branch-push durable projection", () => {
       { steps: [] },
       createTestWorkProjectionMutation(db),
     );
-    const branchCoordinator = createBranchCoordinator({ store: branchStore });
+    const branchCoordinator = createBranchCoordinator({
+      onAppendCommitted: () => {},
+      store: branchStore,
+    });
     const liveDoc = createCollabYDoc({ gc: false });
     const draft = await drafts.ensureActiveForWrite({
       workId: workId as never,
@@ -406,7 +409,10 @@ describe("branch-push durable projection", () => {
       undefined,
       createTestWorkProjectionMutation(db),
     );
-    const branchCoordinator = createBranchCoordinator({ store: branchStore });
+    const branchCoordinator = createBranchCoordinator({
+      onAppendCommitted: () => {},
+      store: branchStore,
+    });
     const liveDoc = createCollabYDoc({ gc: false });
     const draft = await drafts.ensureActiveForWrite({
       workId: workId as never,

@@ -13,6 +13,7 @@ import {
   type EffectBaseline,
   mergeStateVectors,
   type RewriteOutcome,
+  type StaleEffectCursor,
 } from "../domain/branch-store.js";
 
 /** A branch row, defaulting every field the test does not name. */
@@ -46,6 +47,8 @@ export type MemoryBranch = BranchSnapshot & {
   rows: MemoryRow[];
   /** The work draft's effect baseline; a seeded branch's is its seed. */
   liveCut?: Uint8Array;
+  /** The revision `hasEffect` was judged at; absent is the stale sentinel. */
+  hasEffectRevision?: number;
 };
 
 /** A stored branch: `row` with `content` (a document or its update bytes) as its checkpoint. */
@@ -61,7 +64,9 @@ export function memoryBranch(row: BranchSnapshot, content: Y.Doc | Uint8Array): 
 
 /**
  * The checkpoint + tail store in memory: every committed write bumps `revision`, an append
- * adds tail rows, a rewrite replaces the checkpoint and moves `checkpointSeq` past every row.
+ * adds tail rows at whatever revision the branch holds (finalized on the prefix past its base,
+ * as under the row lock), a rewrite replaces the checkpoint and moves `checkpointSeq` past
+ * every row. One call runs with no await between its read and its write, so it is atomic.
  */
 export class MemoryBranchStore implements BranchStore {
   readonly branches = new Map<string, MemoryBranch>();
@@ -87,6 +92,10 @@ export class MemoryBranchStore implements BranchStore {
 
   /** One observation: the row, checkpoint and tail are taken together, with no await between. */
   async readBranchAt(branchId: string, since?: BranchReadSince): Promise<BranchRead | null> {
+    return this.readNow(branchId, since);
+  }
+
+  private readNow(branchId: string, since?: BranchReadSince): BranchRead | null {
     const branch = this.branches.get(branchId);
     if (!branch) return null;
     const held = since?.checkpointRevision === branch.checkpointRevision;
@@ -97,39 +106,69 @@ export class MemoryBranchStore implements BranchStore {
       tail: branch.rows
         .filter((row) => row.generation === branch.generation && row.id > after)
         .map(({ id, update, source }) => ({ id, update, source })),
-      pendingRows: branch.rows.some((row) => row.generation === branch.generation),
-      liveCutStored: Boolean(branch.liveCut),
     };
   }
 
   async readEffectBaseline(branchId: string): Promise<EffectBaseline | null> {
     const branch = this.branches.get(branchId);
     if (branch?.kind !== "work_draft") return null;
-    return {
-      state: branch.liveCut ?? branch.checkpoint.state,
-      stored: Boolean(branch.liveCut),
-      checkpointRevision: branch.checkpointRevision,
-    };
-  }
-
-  withJudgementLocks<T>(_branchId: string, run: () => Promise<T>): Promise<T> {
-    return run();
+    return { state: branch.liveCut ?? null, checkpointRevision: branch.checkpointRevision };
   }
 
   async appendRows(input: AppendRowsInput): Promise<AppendRowsOutcome> {
     const branch = this.branches.get(input.branchId);
-    if (this.takeCasFailure() || !branch || !this.writable(branch, input.expectedRevision))
-      return { status: "moved" };
-    if (branch.generation !== input.expectedGeneration) return { status: "moved" };
+    if (
+      branch?.status !== "active" ||
+      branch.lifecycle !== "active" ||
+      branch.generation !== input.expectedGeneration
+    )
+      return { status: "refused" };
+    const read = this.readNow(input.branchId, input.base);
+    if (!read) return { status: "refused" };
+    const finalized = await input.finalize(read);
+    if (finalized.status !== "appended") return finalized;
     if (this.failNextJournal) {
       this.failNextJournal = false;
       throw new Error("injected journal failure");
     }
-    const rowIds = input.rows.map((row) => this.append(branch, row));
-    if (input.hasEffect !== undefined) branch.hasEffect = input.hasEffect;
-    branch.liveCut ??= input.liveCut;
+    const rowIds = finalized.rows.map((row) => this.append(branch, row));
     branch.revision += 1;
-    return { status: "appended", revision: branch.revision, rowIds };
+    return {
+      status: "appended",
+      revision: branch.revision,
+      checkpointRevision: branch.checkpointRevision,
+      rowIds,
+    };
+  }
+
+  async writeEffect(input: {
+    branchId: string;
+    revision: number;
+    hasEffect: boolean;
+  }): Promise<"written" | "moved" | "contended"> {
+    const branch = this.branches.get(input.branchId);
+    if (branch?.revision !== input.revision) return "moved";
+    branch.hasEffect = input.hasEffect;
+    branch.hasEffectRevision = input.revision;
+    return "written";
+  }
+
+  async staleEffectBranches(input: {
+    after?: StaleEffectCursor;
+    limit: number;
+  }): Promise<readonly StaleEffectCursor[]> {
+    const updatedAt = new Date(0);
+    return [...this.branches.values()]
+      .filter(
+        (branch) =>
+          branch.kind === "work_draft" &&
+          branch.status === "active" &&
+          (branch.hasEffectRevision ?? -1) < branch.revision &&
+          (!input.after || branch.branchId < input.after.branchId),
+      )
+      .sort((left, right) => (left.branchId < right.branchId ? 1 : -1))
+      .slice(0, input.limit)
+      .map((branch) => ({ branchId: branch.branchId, updatedAt }));
   }
 
   async commitRewrite(input: CommitRewriteInput): Promise<RewriteOutcome> {
@@ -174,11 +213,15 @@ export class MemoryBranchStore implements BranchStore {
       state: Y.encodeStateAsUpdate(input.doc),
       stateVector: Y.encodeStateVector(input.doc),
     };
-    if (operation.kind === "reset") branch.liveCut = branch.checkpoint.state;
+    if (operation.kind === "reset") {
+      branch.liveCut = branch.checkpoint.state;
+      branch.hasEffectRevision = branch.revision + 1;
+    }
     if (operation.kind === "pull" && operation.effect) {
       const { effect } = operation;
       branch.liveCut = effect.liveCut;
       branch.hasEffect = folded && effect.refolded ? effect.refolded(input.doc) : effect.hasEffect;
+      branch.hasEffectRevision = branch.revision + 1;
     }
     branch.checkpointSeq = Math.max(0, ...branch.rows.map((row) => row.id));
     branch.revision += 1;
@@ -204,10 +247,6 @@ export class MemoryBranchStore implements BranchStore {
     return id;
   }
 
-  private writable(branch: MemoryBranch, revision: number): boolean {
-    return branch.status === "active" && branch.revision === revision;
-  }
-
   private takeCasFailure(): boolean {
     if (!this.failNextCas) return false;
     this.failNextCas = false;
@@ -216,6 +255,12 @@ export class MemoryBranchStore implements BranchStore {
 }
 
 function rowOf(branch: MemoryBranch): BranchSnapshot {
-  const { checkpoint: _checkpoint, rows: _rows, ...snapshot } = branch;
+  const {
+    checkpoint: _checkpoint,
+    rows: _rows,
+    liveCut: _liveCut,
+    hasEffectRevision: _hasEffectRevision,
+    ...snapshot
+  } = branch;
   return snapshot;
 }

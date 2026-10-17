@@ -281,7 +281,10 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
     const persistence = createHocuspocusPersistenceService({
       journal: fakeJournal(),
       branchStore,
-      branchCoordinator: createBranchCoordinator({ store: branchStore }),
+      branchCoordinator: createBranchCoordinator({
+        onAppendCommitted: () => {},
+        store: branchStore,
+      }),
       hocuspocus: () => null,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
       emitAgentEditInvariantViolation: () => undefined,

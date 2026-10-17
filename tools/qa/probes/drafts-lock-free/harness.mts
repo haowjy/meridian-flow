@@ -13,7 +13,10 @@ import { createDb, type Database } from "@meridian/database";
 import postgres from "postgres";
 import * as Y from "yjs";
 import { createDrizzleWorkDraftPendingStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-branch-push.ts";
-import { createDrizzleBranchStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-branches.ts";
+import {
+  type AppendCommitted,
+  createDrizzleBranchStore,
+} from "../../../../apps/server/server/domains/collab/adapters/drizzle-branches.ts";
 import { createDrizzleDraftStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-drafts.ts";
 import { createDrizzleCollabPersistence } from "../../../../apps/server/server/domains/collab/adapters/drizzle-journal.ts";
 import { createBranchCoordinator } from "../../../../apps/server/server/domains/collab/domain/branch-coordinator.ts";
@@ -96,13 +99,16 @@ export async function openHarness(url: string) {
   });
   const drafts = createDrizzleDraftStore(db);
   const persistence = createDrizzleCollabPersistence(db);
+  /** Every committed append's sequence-point timing, in commit order. */
+  const appends: AppendCommitted[] = [];
   const store = createDrizzleBranchStore(db, {
     workProjection: projection,
     drafts,
     live: persistence,
+    onAppendSequenced: (detail) => appends.push(detail),
   });
   const attemptScope = <T,>(operation: () => Promise<T>) => runInDrizzleSavepoint(db, operation);
-  const coordinator = createBranchCoordinator({ store, attemptScope });
+  const coordinator = createBranchCoordinator({ onAppendCommitted: () => {}, store, attemptScope });
   // The real Work lifecycle writer. Its file-access and Scratch ports are inert: the probes
   // observe the Work row, its branch fences and the locks, not access or Scratch publication.
   const works = createDrizzleWorkRepository({
@@ -123,6 +129,7 @@ export async function openHarness(url: string) {
     drafts,
     persistence,
     store,
+    appends,
     attemptScope,
     coordinator,
     works,

@@ -75,8 +75,9 @@ export type WorkProjectionMutation = {
     options?: WorkWriteOptions,
   ): Promise<T>;
   /**
-   * A write whose caller already knows it moves these Works' review membership (a frame that
-   * flips its branch): Works locked first, touched after `operation`, no count query.
+   * A write whose caller already knows it moves these Works' review membership (the draft-effect
+   * projection's write, once per typing burst): Works locked first, touched after `operation`,
+   * no count query.
    */
   mutateKnownWorks<T>(workIds: readonly WorkId[], operation: () => Promise<T>): Promise<T>;
 };
