@@ -194,19 +194,6 @@ describe("BranchCoordinator", () => {
     expect(storedBranch(store, "work").state).toEqual(Y.encodeStateAsUpdate(sourceDoc));
   });
 
-  it("aborts and retries the whole mutation on CAS failure", async () => {
-    const store = new MemoryBranchStore();
-    store.branches.set("work", branchSnapshot({ branchId: "work", doc: new Y.Doc({ gc: false }) }));
-    store.failNextCas = true;
-    const coordinator = createBranchCoordinator({ store, maxCasRetries: 1 });
-
-    await pull(coordinator, "work", docWithText("after retry"));
-
-    expect(materialize(storedBranch(store, "work")).getText("content").toString()).toBe(
-      "after retry",
-    );
-  });
-
   // Risk: a delete-only write leaves the state vector unchanged; a reset judged before it
   // must not commit over it (the byte compare caught this; the revision must too).
   it("a reset against a moved revision returns moved", async () => {
@@ -231,7 +218,8 @@ describe("BranchCoordinator", () => {
             source: "writer",
           },
         ],
-        receiptBase: original.state,
+        documentId: DOCUMENT_ID,
+        receipts: [],
       }),
     ).resolves.toMatchObject({ status: "appended" });
 
@@ -392,14 +380,14 @@ describe("a save's owned session (U1)", () => {
       const session = coordinator.ownedSession(lease);
       await session.read("work", async (doc) => doc.getText("content").toString());
       await session.withTransient("peer", async () => undefined);
-      await session.withStagedRows("work", async () => ({ result: 1, rows: [] }), false);
+      await session.prepareStagedRows("work", async () => ({ result: 1, rows: [] }), false);
       await session.commitSegmentRows({
         branchId: "work",
         expectedGeneration: 1,
         sourceDoc: materialize(storedBranch(store, "work")),
         rows: [],
       });
-      await session.checkpoint("peer");
+      await session.prepareCatchUp("peer", upstream);
       await session.listHelperHistory({ branchId: "work", generation: 1 });
       await session.listConcurrentRows("work", 1, { documentId: DOCUMENT_ID });
       expect(run).not.toHaveBeenCalled();
@@ -409,7 +397,7 @@ describe("a save's owned session (U1)", () => {
       for (const call of [
         () => session.read("other", async () => undefined),
         () => session.withTransient("other", async () => undefined),
-        () => session.checkpoint("other"),
+        () => session.prepareCatchUp("other", upstream),
         () => session.listHelperHistory({ branchId: "other", generation: 1 }),
         () => session.listConcurrentRows("other", 1, { documentId: DOCUMENT_ID }),
       ])

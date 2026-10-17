@@ -3,11 +3,13 @@ import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { readBranchAt } from "../adapters/drizzle-branch-storage.js";
+import { captureAppendReceipts } from "../domain/branch-receipts.js";
 import {
   type AppendBranchJournalInput,
   type BranchStore,
   materializeBranchRead,
 } from "../domain/branch-store.js";
+import { effectFingerprint, effectFingerprintsEqual } from "../domain/document-content.js";
 
 /** A valid update that changes nothing: a journal row whose content is irrelevant to the test. */
 export const EMPTY_BRANCH_UPDATE = Y.encodeStateAsUpdate(new Y.Doc({ gc: false }));
@@ -24,22 +26,38 @@ export function proseBranchUpdate(text = "drafted"): Uint8Array {
   return Y.encodeStateAsUpdate(doc);
 }
 
-/** Appends `rows` (a writer's or an agent's) at the branch's revision; the ids come back. */
+/**
+ * Appends `rows` (a writer's or an agent's) at the branch's revision, with the receipts and
+ * effect a coordinator would compute on its candidate; the ids come back.
+ */
 export async function appendBranchRows(
-  store: Pick<BranchStore, "readBranchAt" | "appendRows">,
+  store: Pick<BranchStore, "readBranchAt" | "appendRows" | "readEffectBaseline">,
   branchId: string,
   rows: readonly Omit<AppendBranchJournalInput, "branchId" | "generation">[],
 ): Promise<readonly number[]> {
   const read = await store.readBranchAt(branchId);
   if (!read) throw new Error(`Branch ${branchId} does not exist`);
+  const journals = rows.map((row) => ({ ...row, branchId, generation: read.branch.generation }));
   const doc = materializeBranchRead(read);
   try {
+    const receipts = captureAppendReceipts(doc, journals);
+    const baseline = await store.readEffectBaseline(branchId);
+    const live = new Y.Doc({ gc: false });
+    let hasEffect: boolean | undefined;
+    if (baseline) {
+      Y.applyUpdate(live, baseline.state);
+      hasEffect = !effectFingerprintsEqual(effectFingerprint(live), effectFingerprint(doc));
+    }
+    live.destroy();
     const outcome = await store.appendRows({
       branchId,
+      documentId: read.branch.documentId,
       expectedRevision: read.branch.revision,
       expectedGeneration: read.branch.generation,
-      rows: rows.map((row) => ({ ...row, branchId, generation: read.branch.generation })),
-      receiptBase: Y.encodeStateAsUpdate(doc),
+      rows: journals,
+      receipts,
+      ...(hasEffect === undefined ? {} : { hasEffect }),
+      ...(baseline && !baseline.stored ? { liveCut: baseline.state } : {}),
     });
     if (outcome.status !== "appended") throw new Error(`Branch ${branchId} moved under the append`);
     return outcome.rowIds;

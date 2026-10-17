@@ -232,6 +232,13 @@ export async function readBranchAt(
             then greatest(${sinceSeq}::bigint, ${documentBranches.checkpointSeq})
             else ${documentBranches.checkpointSeq} end
       )`,
+      pendingRows: sql<boolean>`exists (
+        select 1 from ${branchWriteJournal} p
+        where p.branch_id = ${documentBranches.id}
+          and p.generation = ${documentBranches.generation}
+          and p.status in ('active', 'rollback_pending')
+      )`,
+      liveCutStored: sql<boolean>`${documentBranches.liveCut} is not null`,
     })
     .from(documentBranches)
     .innerJoin(branchDraftWork.drafts, branchDraftWork.on)
@@ -251,7 +258,34 @@ export async function readBranchAt(
         ? { state: new Uint8Array(row.state), stateVector: new Uint8Array(row.stateVector) }
         : null,
     tail,
+    pendingRows: row.pendingRows,
+    liveCutStored: row.liveCutStored,
   };
+}
+
+/**
+ * A work draft's effect baseline: its stored `live_cut`, or when none is stored the live
+ * journal's current state (main's fallback for a branch no pull or reset has cut yet).
+ */
+export async function readEffectBaselineWithin(
+  db: DrizzleDb,
+  branchId: string,
+  readLive: (documentId: DocumentId) => Promise<Uint8Array>,
+): Promise<{ state: Uint8Array; stored: boolean; checkpointRevision: number } | null> {
+  const [row] = await db
+    .select({
+      kind: documentBranches.kind,
+      documentId: documentBranches.documentId,
+      liveCut: documentBranches.liveCut,
+      checkpointRevision: documentBranches.checkpointRevision,
+    })
+    .from(documentBranches)
+    .where(eq(documentBranches.id, branchId))
+    .limit(1);
+  if (row?.kind !== "work_draft") return null;
+  const checkpointRevision = Number(row.checkpointRevision);
+  if (row.liveCut) return { state: new Uint8Array(row.liveCut), stored: true, checkpointRevision };
+  return { state: await readLive(row.documentId), stored: false, checkpointRevision };
 }
 
 /**
@@ -262,7 +296,10 @@ export async function readBranchAt(
  */
 export async function appendRowsWithinTx(
   db: DrizzleDb,
-  input: Omit<AppendRowsInput, "receiptBase">,
+  input: Pick<
+    AppendRowsInput,
+    "branchId" | "expectedRevision" | "expectedGeneration" | "rows" | "hasEffect" | "liveCut"
+  >,
 ): Promise<{ revision: number; rowIds: number[] }> {
   if (
     input.rows.some(
@@ -276,6 +313,11 @@ export async function appendRowsWithinTx(
       revision: sql`${documentBranches.revision} + 1`,
       schemaVersion: monotonicSchemaStamp(),
       updatedAt: new Date(),
+      ...(input.hasEffect === undefined ? {} : { hasEffect: input.hasEffect }),
+      // The baseline the effect was judged against, kept when the branch had none stored.
+      ...(input.liveCut
+        ? { liveCut: sql`coalesce(${documentBranches.liveCut}, ${Buffer.from(input.liveCut)})` }
+        : {}),
     })
     .where(
       and(
@@ -317,6 +359,8 @@ export type RewriteCommit = {
   schemaVersion?: CollabSchemaVersion;
   /** A content-free fold: the reader-visible modification stamp (`updated_at`) stays. */
   keepUpdatedAt?: boolean;
+  /** The effect the caller computed on `doc` before locking, with the baseline it used. */
+  effect?: { hasEffect: boolean; liveCut: Uint8Array };
   /** Writes under the locked row before the checkpoint `UPDATE` (rows the checkpoint contains). */
   withinLock?: () => Promise<void>;
 };
@@ -421,6 +465,9 @@ export async function commitRewriteWithinTx(
       checkpointRevision: sql`${documentBranches.revision} + 1`,
       schemaVersion: monotonicSchemaStamp(input.schemaVersion),
       ...(input.keepUpdatedAt ? {} : { updatedAt: new Date() }),
+      ...(input.effect
+        ? { hasEffect: input.effect.hasEffect, liveCut: Buffer.from(input.effect.liveCut) }
+        : {}),
       ...reset,
     })
     .where(

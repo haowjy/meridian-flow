@@ -13,6 +13,28 @@ export function documentEffectsEqual(live: Y.Doc, draft: Y.Doc): boolean {
   );
 }
 
+/**
+ * What `documentEffectsEqual` compares, taken from one document: a baseline's fingerprint
+ * is kept and compared against each candidate instead of re-reading the baseline.
+ */
+export type EffectFingerprint = { readonly manifest: unknown; readonly prose: unknown };
+
+export function effectFingerprint(doc: Y.Doc): EffectFingerprint {
+  return {
+    manifest: doc.getMap("documents").toJSON(),
+    prose: visibleContent(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)),
+  };
+}
+
+export function effectFingerprintsEqual(
+  left: EffectFingerprint,
+  right: EffectFingerprint,
+): boolean {
+  return (
+    isDeepStrictEqual(left.manifest, right.manifest) && isDeepStrictEqual(left.prose, right.prose)
+  );
+}
+
 /** Review prose excludes manifest changes, which have their own review operations. */
 export function documentProseEqual(live: Y.Doc, draft: Y.Doc): boolean {
   return isDeepStrictEqual(

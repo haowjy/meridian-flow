@@ -282,7 +282,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(nextUpstream?.workId).toBe(NEXT_WORK_ID);
     });
 
-    it("bulk-appends forty segment rows with one ownership lookup and two pending scans", async () => {
+    it("bulk-appends forty segment rows with one journal insert and no pending scans", async () => {
       const { createWorkProjectionMutation } = await import(
         "../../../projects/adapters/work-projection-mutation.js"
       );
@@ -349,11 +349,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       } finally {
         captureQueries = false;
       }
+      // The membership flip is predicted on the candidate: the Work is touched, never counted.
       expect(
         measuredQueries.filter((query) =>
           query.startsWith('(select "drafts"."origin_work_id", "document_branches"."document_id"'),
         ),
-      ).toHaveLength(2);
+      ).toHaveLength(0);
       expect(
         measuredQueries.filter((query) => query.startsWith('insert into "branch_write_journal"')),
       ).toHaveLength(1);
@@ -1014,8 +1015,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           branchId: branch.branchId,
           expectedRevision: revision,
           expectedGeneration: branch.generation,
+          documentId: DOC_ID as never,
           rows: [{ branchId: branch.branchId, generation, updateData, source: "agent" }],
-          receiptBase: before,
+          receipts: [],
         });
 
       await expect(append(branch.revision, branch.generation + 1)).resolves.toEqual({
@@ -1079,7 +1081,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             source: "agent",
           },
         ],
-        receiptBase: before,
+        documentId: DOC_ID as never,
+        receipts: [],
       });
       const reloaded = await store.getBranch(branch.branchId);
       const rows = await db

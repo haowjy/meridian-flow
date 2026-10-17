@@ -4,7 +4,7 @@
  * materialization of one read. The coordinator and the storage adapters both build on this.
  */
 
-import type { SemanticEditIRV1 } from "@meridian/agent-edit/integration";
+import type { CapturedPart, SemanticEditIRV1 } from "@meridian/agent-edit/integration";
 import type { DraftId } from "@meridian/contracts";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import {
@@ -61,6 +61,28 @@ export type BranchRead = {
   branch: BranchSnapshot;
   checkpoint: { state: Uint8Array; stateVector: Uint8Array } | null;
   tail: readonly BranchTailRow[];
+  /**
+   * The branch has active or rollback-pending rows of its generation: with `hasEffect` and
+   * `blocking`, the inputs of its review membership.
+   */
+  pendingRows: boolean;
+  /** A work draft's effect baseline (`live_cut`) is stored. */
+  liveCutStored: boolean;
+};
+
+/** A work draft's effect baseline: the live state its `has_effect` is measured against. */
+export type EffectBaseline = {
+  state: Uint8Array;
+  /** Read from `live_cut` at this checkpoint revision; otherwise built from the live journal. */
+  stored: boolean;
+  checkpointRevision: number;
+};
+
+/** One logical write's edit receipts, computed on the candidate before the append commits. */
+export type AppendReceiptGroup = {
+  /** The rows of the write, by index into `AppendRowsInput.rows`. */
+  rowIndexes: readonly number[];
+  parts: readonly CapturedPart[];
 };
 
 /** A cursor a warm replica already holds, so a read ships only what came after it. */
@@ -86,14 +108,27 @@ export type AppendBranchJournalInput = {
   semanticEditIr?: SemanticEditIRV1;
 };
 
-/** Journal rows appended past the checkpoint, fenced by the revision they were judged at. */
+/**
+ * Journal rows appended past the checkpoint, fenced by the revision they were judged at.
+ * Everything that depends on content (receipts, the effect) was computed on the candidate
+ * before the append; the store only writes it.
+ */
 export type AppendRowsInput = {
   branchId: string;
+  documentId: DocumentId;
   expectedRevision: number;
   expectedGeneration: number;
   rows: readonly AppendBranchJournalInput[];
-  /** The committed branch state the rows apply to, for their edit receipts. */
-  receiptBase: Uint8Array;
+  receipts: readonly AppendReceiptGroup[];
+  /** A work draft's `has_effect` on the candidate; a thread peer carries none. */
+  hasEffect?: boolean;
+  /** The baseline the effect was measured against, stored when the branch had none. */
+  liveCut?: Uint8Array;
+  /**
+   * The branch's Work when the append flips its review membership: the Work row is locked
+   * before the branch row and the Work's projection touched in the same transaction.
+   */
+  workTouch?: WorkId;
 };
 
 export type AppendRowsOutcome =
@@ -125,12 +160,8 @@ export type RewriteOperation =
   | { kind: "compact" }
   /** Live (or the upstream) merged into the branch; `liveCut` is the work draft's new baseline. */
   | { kind: "pull"; liveCut?: Uint8Array }
-  /** A content rewrite under the Work lock, with the rows it contains when it has any. */
-  | {
-      kind: "checkpoint";
-      rows?: readonly AppendBranchJournalInput[];
-      receiptBase?: Uint8Array;
-    }
+  /** A content rewrite the branch's Work must admit: a thread peer catching up its upstream. */
+  | { kind: "checkpoint" }
   /** A re-fork: the next generation, the tail discarded with its clocks fenced. */
   | {
       kind: "reset";
@@ -163,7 +194,15 @@ export type BranchStore = {
   /** The row only; content comes through `readBranchAt`. */
   getBranch(branchId: string): Promise<BranchSnapshot | null>;
   readBranchAt(branchId: string, since?: BranchReadSince): Promise<BranchRead | null>;
+  /** A work draft's effect baseline; null for a branch that carries no effect. */
+  readEffectBaseline(branchId: string): Promise<EffectBaseline | null>;
   appendRows(input: AppendRowsInput): Promise<AppendRowsOutcome>;
+  /**
+   * A frame's last attempt: `run` inside one transaction holding the branch's Work row
+   * (`FOR NO KEY UPDATE`) and then its branch row (`FOR UPDATE`), so its judgement and
+   * append cannot miss. The one judgement made under a branch-store lock.
+   */
+  withJudgementLocks<T>(branchId: string, run: () => Promise<T>): Promise<T>;
   commitRewrite(input: CommitRewriteInput): Promise<RewriteOutcome>;
   /** Defers cache-visible effects when persistence joined a response transaction. */
   deferUntilCommit(callback: () => void): boolean;

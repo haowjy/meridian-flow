@@ -10,6 +10,7 @@ import {
   type BranchSnapshot,
   type BranchStore,
   type CommitRewriteInput,
+  type EffectBaseline,
   mergeStateVectors,
   type RewriteOutcome,
 } from "../domain/branch-store.js";
@@ -43,6 +44,8 @@ type MemoryRow = { id: number; generation: number; update: Uint8Array; source: "
 export type MemoryBranch = BranchSnapshot & {
   checkpoint: { state: Uint8Array; stateVector: Uint8Array };
   rows: MemoryRow[];
+  /** The work draft's effect baseline; a seeded branch's is its seed. */
+  liveCut?: Uint8Array;
 };
 
 /** A stored branch: `row` with `content` (a document or its update bytes) as its checkpoint. */
@@ -52,6 +55,7 @@ export function memoryBranch(row: BranchSnapshot, content: Y.Doc | Uint8Array): 
     ...row,
     checkpoint: { state, stateVector: Y.encodeStateVectorFromUpdate(state) },
     rows: [],
+    liveCut: state,
   };
 }
 
@@ -93,7 +97,23 @@ export class MemoryBranchStore implements BranchStore {
       tail: branch.rows
         .filter((row) => row.generation === branch.generation && row.id > after)
         .map(({ id, update, source }) => ({ id, update, source })),
+      pendingRows: branch.rows.some((row) => row.generation === branch.generation),
+      liveCutStored: Boolean(branch.liveCut),
     };
+  }
+
+  async readEffectBaseline(branchId: string): Promise<EffectBaseline | null> {
+    const branch = this.branches.get(branchId);
+    if (branch?.kind !== "work_draft") return null;
+    return {
+      state: branch.liveCut ?? branch.checkpoint.state,
+      stored: Boolean(branch.liveCut),
+      checkpointRevision: branch.checkpointRevision,
+    };
+  }
+
+  withJudgementLocks<T>(_branchId: string, run: () => Promise<T>): Promise<T> {
+    return run();
   }
 
   async appendRows(input: AppendRowsInput): Promise<AppendRowsOutcome> {
@@ -106,6 +126,8 @@ export class MemoryBranchStore implements BranchStore {
       throw new Error("injected journal failure");
     }
     const rowIds = input.rows.map((row) => this.append(branch, row));
+    if (input.hasEffect !== undefined) branch.hasEffect = input.hasEffect;
+    branch.liveCut ??= input.liveCut;
     branch.revision += 1;
     return { status: "appended", revision: branch.revision, rowIds };
   }
@@ -129,8 +151,6 @@ export class MemoryBranchStore implements BranchStore {
       const after = input.policy.seq;
       for (const row of tail) if (row.id > after) Y.applyUpdate(input.doc, row.update);
     }
-    if (operation.kind === "checkpoint")
-      for (const row of operation.rows ?? []) this.append(branch, row);
     if (operation.kind === "reset") {
       branch.discardedStateVector = tail.reduce(
         (vector, row) =>
@@ -144,6 +164,8 @@ export class MemoryBranchStore implements BranchStore {
       state: Y.encodeStateAsUpdate(input.doc),
       stateVector: Y.encodeStateVector(input.doc),
     };
+    if (operation.kind === "reset") branch.liveCut = branch.checkpoint.state;
+    if (operation.kind === "pull" && operation.liveCut) branch.liveCut = operation.liveCut;
     branch.checkpointSeq = Math.max(0, ...branch.rows.map((row) => row.id));
     branch.revision += 1;
     branch.checkpointRevision = branch.revision;
