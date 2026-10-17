@@ -1,10 +1,6 @@
 import type * as Y from "yjs";
 import type { ConcurrentUpdate } from "../apply/types.js";
 
-export const hostSaveLeaseBrand: unique symbol = Symbol("HostSaveLease");
-export interface HostSaveLease {
-  readonly [hostSaveLeaseBrand]: true;
-}
 export type DiscardedWriteReason = Extract<StagedWriteRejectionReason, `discarded_${string}`>;
 
 /** The helper's authority base, independent of the generations its staged writes name. */
@@ -126,10 +122,4 @@ export interface DocumentLockOptions {
    * the coordinator resolves exactly this one and never provisions another.
    */
   pinnedBranchId?: string;
-  /**
-   * A host lock the caller already holds over this document (a reply's save takes its
-   * branches' locks before its transaction); the coordinator runs under it instead of
-   * acquiring its own. Opaque to this package.
-   */
-  lease?: HostSaveLease;
 }

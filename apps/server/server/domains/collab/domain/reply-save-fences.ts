@@ -1,4 +1,4 @@
-/** Identity admission and host-held leases for a reply's one save transaction. */
+/** Identity admission for a reply's one save transaction: grants, pins and live locks. */
 import type {
   AgentEditCore,
   StagedWriteRejectionReason,
@@ -11,7 +11,6 @@ import { markReplyConfirmed } from "../../file-policy/edit-confirmation.js";
 import type { FileAccess, FileGrant } from "../../file-policy/index.js";
 import type { RefusedResponseDocument } from "./agent-edit-cores.js";
 import type { BranchAgentEditDiagnostics } from "./branch-agent-edit.js";
-import type { BranchCriticalSections, BranchLockLease } from "./branch-critical-sections.js";
 import { collabHook } from "./collab-test-hooks.js";
 import type { Drafts } from "./drafts.js";
 import type { ApplicationBranchStore } from "./ports/application-branch-store.js";
@@ -44,16 +43,11 @@ export function pinStaged(entry: ReplyDocument | undefined, staged: WriteContext
   };
 }
 export type ReplySaveFences = {
-  withLeases<T>(
-    record: ReplyRecord,
-    run: (lease: BranchLockLease | undefined) => Promise<T>,
-  ): Promise<T>;
   confirm(record: ReplyRecord): Promise<RefusedResponseDocument[]>;
 };
 export function createReplySaveFences(deps: {
   liveUtilityCore: AgentEditCore;
   branches: Pick<ApplicationBranchStore, "getBranch">;
-  criticalSections: BranchCriticalSections;
   drafts: Pick<Drafts, "shareActive">;
   diagnostics?: Pick<BranchAgentEditDiagnostics, "replyPinMismatch">;
   fileAccess: Pick<FileAccess, "confirmEdit">;
@@ -61,12 +55,6 @@ export function createReplySaveFences(deps: {
   lockLiveDocuments(documentIds: readonly DocumentId[]): Promise<void>;
 }): ReplySaveFences {
   return {
-    withLeases(record, run) {
-      const ids = [...record.documents.values()].flatMap(({ pin }) =>
-        pin ? [pin.peerBranchId, pin.upstreamBranchId] : [],
-      );
-      return ids.length ? deps.criticalSections.withBranches(ids, run) : run(undefined);
-    },
     async confirm(record) {
       const entries = [...record.documents];
       if (!entries.length) return [];

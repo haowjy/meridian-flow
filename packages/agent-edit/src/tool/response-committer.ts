@@ -10,7 +10,6 @@ import type {
   DiscardedWriteReason,
   DocumentCoordinator,
   DocumentLockOptions,
-  HostSaveLease,
   StagedHelperCut,
   StagedWriteRejectionReason,
 } from "../ports/document-coordinator.js";
@@ -168,7 +167,6 @@ export type CommandDocumentLease = CommandLeaseMethods &
   ({ kind: "prepared" } | { kind: "live"; runtime: RuntimeDocumentState });
 
 export interface ResponseCommitOptions {
-  branchLease?: HostSaveLease;
   signal?: AbortSignal;
   lockTimeoutMs?: number;
   /** Host transaction hook; keeps lifecycle publication aligned with durable commit. */
@@ -917,7 +915,6 @@ export function createResponseCommitter(deps: {
         outcomes.set(
           docBuffer.docId,
           await replayOn(docBuffer, true, {
-            lease: options.branchLease,
             pinnedBranchId:
               docBuffer.interactionContext?.mode === "threadPeer"
                 ? docBuffer.interactionContext.peerBranchId
@@ -1131,7 +1128,6 @@ export function createResponseCommitter(deps: {
           reportingCut: replayBase ? Y.encodeStateAsUpdate(replayBase) : undefined,
           interactionContext: docBuffer.interactionContext,
           access: {
-            lease: options.branchLease,
             pinnedBranchId:
               docBuffer.interactionContext?.mode === "threadPeer"
                 ? docBuffer.interactionContext.peerBranchId

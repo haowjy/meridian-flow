@@ -340,7 +340,7 @@ describe("document revisions (postgres and collab)", () => {
     const contending = deferred();
     let scheduled = false;
     f.branchCoordinator.pullFromDoc = async (...args) => {
-      if (scheduled && args[1] === workBranchId) contending.resolve();
+      if (scheduled && args[0].branchId === workBranchId) contending.resolve();
       return originalPull(...args);
     };
     f.branchCoordinator.readBranch = async (id, callback) => {

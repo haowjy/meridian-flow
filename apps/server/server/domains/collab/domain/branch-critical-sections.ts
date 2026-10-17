@@ -1,12 +1,11 @@
 /** Owns serialization for branch mutations and provides proof of held locks. */
 
 import { AsyncLocalStorage } from "node:async_hooks";
-import { type HostSaveLease, hostSaveLeaseBrand } from "@meridian/agent-edit/integration";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
 
 const leaseMarker: unique symbol = Symbol("BranchLockLease");
 
-export type BranchLockLease = HostSaveLease & {
+export type BranchLockLease = {
   readonly [leaseMarker]: true;
   covers(branchId: string): boolean;
 };
@@ -36,7 +35,6 @@ export function createBranchCriticalSections(mutex = new KeyedMutex()): BranchCr
       const held = new Set([...(active ?? []), ...orderedIds]);
       const lease: BranchLockLease = {
         [leaseMarker]: true,
-        [hostSaveLeaseBrand]: true,
         covers: (branchId) => orderedIds.includes(branchId),
       };
       const acquire = async (index: number): Promise<T> => {

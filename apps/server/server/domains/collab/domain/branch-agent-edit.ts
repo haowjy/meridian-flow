@@ -26,7 +26,6 @@ import type {
   OwnedBranchSession,
   PreparedBranchWrite,
 } from "./branch-coordinator.js";
-import type { BranchLockLease } from "./branch-critical-sections.js";
 import type { WorkDraftLookup } from "./branch-pulls.js";
 import type { BranchJournalReadStore, BranchJournalRow } from "./branch-push-contracts.js";
 import type { BranchResolver } from "./branch-resolver.js";
@@ -164,28 +163,18 @@ export function createBranchAgentEditCoordinator(input: {
       }));
     });
   }
+  /** The peer of the access running now, for the attribution reads made inside it. */
+  const accessedPeer = new AsyncLocalStorage<string>();
   /**
-   * Runs `run` in the save's owned session when the host handed over its lease. Any other
-   * access takes the peer and its draft branch in one ordered acquisition, the order a save
-   * and a close use (contract §14), so neither waits on the other in a cycle.
+   * Runs `run` in the owned session for an access to `peerBranchId`. It acquires nothing: a
+   * save or a close racing it is ordered by the revisions its writes were prepared at.
    */
-  /** The session of the access running now, for the attribution reads made inside it. */
-  const heldSession = new AsyncLocalStorage<{ owned: OwnedBranchSession; peerBranchId: string }>();
   async function underAccess<T>(
-    access: DocumentLockOptions | undefined,
     peerBranchId: string,
     run: (owned: OwnedBranchSession) => Promise<T>,
   ): Promise<T> {
-    if (access?.lease)
-      return run(input.branchCoordinator.ownedSession(access.lease as BranchLockLease));
-    return input.branchCoordinator.withLeases(
-      await accessBranchIds(input, peerBranchId),
-      async (lease) => {
-        await collabHook("access.afterLeases");
-        const owned = input.branchCoordinator.ownedSession(lease);
-        return heldSession.run({ owned, peerBranchId }, () => run(owned));
-      },
-    );
+    await collabHook("branch.beforeAccess");
+    return accessedPeer.run(peerBranchId, () => run(input.branchCoordinator.ownedSession()));
   }
   return {
     async withDocument<T>(
@@ -197,7 +186,7 @@ export function createBranchAgentEditCoordinator(input: {
         access?.pinnedBranchId ?? (await resolveThreadBranchId(input, docId as DocumentId));
       let result: T;
       try {
-        result = await underAccess(access, branchId, (owned) =>
+        result = await underAccess(branchId, (owned) =>
           owned.withTransient(branchId, async (doc, snapshot) => {
             const beforeState = Y.encodeStateAsUpdate(doc);
             const result = await fn(doc);
@@ -269,7 +258,7 @@ export function createBranchAgentEditCoordinator(input: {
       const peer = await input.branches.getBranch(peerId);
       const branchId = peer?.upstreamBranchId;
       if (!branchId) throw new Error("Response peer has no Work draft");
-      return underAccess(request.access, peerId, async (owned) => {
+      return underAccess(peerId, async (owned) => {
         const { result, write } = await owned.prepareStagedRows(
           branchId,
           async (doc, snapshot) => {
@@ -378,7 +367,7 @@ export function createBranchAgentEditCoordinator(input: {
         docId as DocumentId,
         afterJournalId,
         access,
-        heldSession.getStore(),
+        accessedPeer.getStore(),
       );
       if (reportingCut) {
         const cut = Y.snapshot(doc);
@@ -593,15 +582,6 @@ export function createBranchPendingJournalEntries(
   };
 }
 
-/** The peer and its draft branch: what one thread-core access leases. */
-async function accessBranchIds(
-  input: { branches: BranchLookupWithSnapshots },
-  peerBranchId: string,
-): Promise<string[]> {
-  const peer = await input.branches.getBranch(peerBranchId);
-  return peer?.upstreamBranchId ? [peerBranchId, peer.upstreamBranchId] : [peerBranchId];
-}
-
 /**
  * The thread's current peer of the document. A peer is made only by a pull in a draft:
  * an access that finds none is `BranchNotFoundError`, never a new branch.
@@ -624,18 +604,15 @@ async function concurrentUpstreamJournalRows(
   documentId: DocumentId,
   afterJournalId?: number,
   access?: import("@meridian/agent-edit/integration").DocumentLockOptions,
-  held?: { owned: OwnedBranchSession; peerBranchId: string },
+  accessedPeer?: string,
 ): Promise<{ rows: BranchJournalRow[]; upstreamState?: Uint8Array }> {
   if (!input.journalRows) return { rows: [] };
   const journalRows = input.journalRows;
-  const owned = access?.lease
-    ? input.branchCoordinator.ownedSession(access.lease as BranchLockLease)
-    : held?.owned;
-  let peerId = access?.pinnedBranchId ?? held?.peerBranchId;
-  if (!peerId) {
-    if (owned) throw new Error("Owned attribution requires a pinned peer");
-    peerId = (await input.branches.resolveThreadBranch(documentId, input.threadId)).branchId;
-  }
+  // Inside an access (or a save's pinned replay) the reads go through its owned session.
+  const pinnedPeer = access?.pinnedBranchId ?? accessedPeer;
+  const owned = pinnedPeer ? input.branchCoordinator.ownedSession() : undefined;
+  const peerId =
+    pinnedPeer ?? (await input.branches.resolveThreadBranch(documentId, input.threadId)).branchId;
   const peerSnapshot = owned
     ? await owned.read(peerId, async (_doc, snapshot) => snapshot)
     : await input.branches.getBranch(peerId);

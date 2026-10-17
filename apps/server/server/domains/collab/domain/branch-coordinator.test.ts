@@ -1,9 +1,8 @@
 /** Shadow branch coordinator conformance for peer pulls and CAS persistence. */
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { KeyedMutex } from "../../../shared/keyed-mutex.js";
 import {
   commitJournaledUpdate,
   commitSegmentRows,
@@ -17,22 +16,19 @@ import {
   testBranchRow,
 } from "../test-support/memory-branch-store.js";
 import { createBranchCoordinator } from "./branch-coordinator.js";
-import { BranchLeaseScopeError, createBranchCriticalSections } from "./branch-critical-sections.js";
+import { createBranchCriticalSections } from "./branch-critical-sections.js";
 import { PROVENANCE_TARGETS_TYPE } from "./provenance.js";
 
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000501" as DocumentId;
 const WORK_ID = "00000000-0000-4000-8000-000000000502" as WorkId;
 const THREAD_ID = "00000000-0000-4000-8000-000000000503" as ThreadId;
 
-/** A pull under the one-branch lease a caller takes before its transaction. */
 function pull(
   coordinator: ReturnType<typeof createBranchCoordinator>,
   branchId: string,
   upstream: Y.Doc,
 ) {
-  return coordinator.withLeases([branchId], (lease) =>
-    coordinator.pullFromDoc(lease, branchId, upstream),
-  );
+  return coordinator.pullFromDoc({ branchId, upstream });
 }
 
 function docWithText(value: string): Y.Doc {
@@ -225,7 +221,7 @@ describe("BranchCoordinator", () => {
 
     const coordinator = createBranchCoordinator({ store });
     await expect(
-      coordinator.withLeases(["work"], (lease) =>
+      createBranchCriticalSections().withBranches(["work"], (lease) =>
         coordinator.resetFromDocIfUnchangedWithLease(lease, {
           branchId: "work",
           upstream: docWithText("fresh live"),
@@ -348,64 +344,6 @@ const cloneOf = (doc: Y.Doc) => {
   Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
   return clone;
 };
-
-describe("a save's owned session (U1)", () => {
-  it("acquires nothing under the held lease and refuses a branch outside it", async () => {
-    const store = new MemoryBranchStore();
-    const upstream = docWithText("base");
-    store.branches.set("work", branchSnapshot({ branchId: "work", doc: upstream }));
-    store.branches.set(
-      "peer",
-      branchSnapshot({
-        branchId: "peer",
-        doc: cloneOf(upstream),
-        kind: "thread_peer",
-        upstreamBranchId: "work",
-      }),
-    );
-    store.branches.set("other", branchSnapshot({ branchId: "other", doc: docWithText("x") }));
-    const mutex = new KeyedMutex();
-    const run = vi.spyOn(mutex, "run");
-    const sections = createBranchCriticalSections(mutex);
-    const listJournalRowsForBranch = vi.fn(async () => []);
-    const listConcurrentJournalRows = vi.fn(async () => []);
-    const coordinator = createBranchCoordinator({
-      store,
-      criticalSections: sections,
-      journalReads: { listJournalRowsForBranch, listConcurrentJournalRows },
-    });
-
-    await sections.withBranches(["work", "peer"], async (lease) => {
-      run.mockClear();
-      const session = coordinator.ownedSession(lease);
-      await session.read("work", async (doc) => doc.getText("content").toString());
-      await session.withTransient("peer", async () => undefined);
-      await session.prepareStagedRows("work", async () => ({ result: 1, rows: [] }), false);
-      await session.commitSegmentRows({
-        branchId: "work",
-        expectedGeneration: 1,
-        sourceDoc: materialize(storedBranch(store, "work")),
-        rows: [],
-      });
-      await session.prepareCatchUp("peer", upstream);
-      await session.listHelperHistory({ branchId: "work", generation: 1 });
-      await session.listConcurrentRows("work", 1, { documentId: DOCUMENT_ID });
-      expect(run).not.toHaveBeenCalled();
-      expect(listJournalRowsForBranch).toHaveBeenCalledOnce();
-      expect(listConcurrentJournalRows).toHaveBeenCalledOnce();
-
-      for (const call of [
-        () => session.read("other", async () => undefined),
-        () => session.withTransient("other", async () => undefined),
-        () => session.prepareCatchUp("other", upstream),
-        () => session.listHelperHistory({ branchId: "other", generation: 1 }),
-        () => session.listConcurrentRows("other", 1, { documentId: DOCUMENT_ID }),
-      ])
-        await expect(call()).rejects.toBeInstanceOf(BranchLeaseScopeError);
-      expect(run).not.toHaveBeenCalled();
-    });
-  });
-});
 
 describe("containment replacement (U3)", () => {
   it("replaces a peer whose state its upstream no longer contains, and merges one that is only behind", async () => {
