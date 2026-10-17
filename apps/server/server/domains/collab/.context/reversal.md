@@ -62,8 +62,8 @@ effect or `blocking`, never raw journal-row count. Pull snapshot, effect, and pr
 their own root transaction. Root pulls must not be awaited while holding Work
 locks.
 
-An inverse is an attempt. It captures its documents in one read snapshot under
-the branch leases (live state, live heads, drafts merged over live) and plans
+An inverse is an attempt. It captures its documents in one read snapshot with
+no lock or lease (live state, live heads, drafts merged over live) and plans
 off every lock. Its commit scope takes the live mutexes, then one savepoint
 with the inverse advisory locks, Work rows and document locks; inside it, each
 live destination's head must equal the captured head, and each draft
@@ -73,7 +73,7 @@ planned without writing: a plan that refuses every part answers with its own
 reasons, and one that still applies is a conflict, `ReversalConflictError` for
 the card and `internal_error` ("the draft changed while reversing; try again")
 for model Undo, Redo and Revert, never an invented refusal. Publication runs
-after the commit, outside the leases. `markBlocking` is its own short write:
+after the commit, outside the scope. `markBlocking` is its own short write:
 Work rows, then the held branch rows, then the bump.
 
 A card outcome reports committed destination per document. Draft Undo says that

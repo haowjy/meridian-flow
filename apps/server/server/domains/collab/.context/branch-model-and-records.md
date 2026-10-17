@@ -25,9 +25,10 @@ ID. A document with no branch can still be an item and can still be applied.
 ## Lifecycle and publication
 
 Draft capture, Apply, Discard, and redo require an active Work under the shared
-lifecycle row lock and grant confirmation. Discard leases the affected branches
-before locking the Work, draft, namespaces, and documents; it resets selected
-text from live or closes the whole draft, then ends the draft's use of created
+lifecycle row lock and grant confirmation. Discard takes no branch lease: in
+one attempt it locks the Work, draft, namespaces, and documents, then resets
+selected text from live (a fold over every row appended since its read) or
+closes the whole draft, then ends the draft's use of created
 nodes. Peer rooms retire after commit, only for branches actually reset or
 closed. Work purge reuses this kernel after proving its lifecycle set.
 

@@ -33,7 +33,6 @@ import { confirmScopedEdits } from "../../../shared/edit-confirmation.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import { type Attempt, runBoundedAttempts } from "../domain/branch-attempts.js";
 import type { BranchCoordinator } from "../domain/branch-coordinator.js";
-import type { BranchCriticalSections } from "../domain/branch-critical-sections.js";
 import { type BranchStore, materializeBranchRead } from "../domain/branch-store.js";
 import { collabHook } from "../domain/collab-test-hooks.js";
 import { documentEffectsEqual } from "../domain/document-content.js";
@@ -57,7 +56,6 @@ type Dependencies = {
   branches: BranchStore;
   coordinator: DocumentCoordinator;
   branchCoordinator: Pick<BranchCoordinator, "broadcastUpdate">;
-  criticalSections: BranchCriticalSections;
   resolveDocumentUri(documentId: string): Promise<string | null>;
   refreshDocument(documentId: DocumentId): Promise<void>;
   flushLivePull(documentId: DocumentId): Promise<void>;
@@ -215,13 +213,9 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     run: (documents: InverseDocument[]) => Promise<T>,
     attempt: Attempt | null,
   ): Promise<T> {
-    // The branch leases still exclude rewrites (lanes 2 to 4 remove them).
-    const { branchIds } = await runInRootDrizzleReadSnapshot(input.db, async () => ({
-      branchIds: inverseBranchIds(query, await history(await selectedDocuments(query))),
-    }));
     const publications: (() => Promise<void>)[] = [];
     // Publication reads the documents through their coordinators and may pull: only once the
-    // attempt completed, and outside every mutex and lease it held.
+    // attempt completed, and outside every mutex it held.
     attempt?.own({
       async transfer() {
         const publish = async () => {
@@ -231,16 +225,16 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       },
       dispose() {},
     });
-    return input.criticalSections.withBranches(branchIds, async () => {
-      const captured = await capture(query);
-      try {
-        return await attemptStorage.run({ ...captured, attempt, publications }, () =>
-          run(captured.documents),
-        );
-      } finally {
-        destroyDocuments(captured.documents);
-      }
-    });
+    // No lease: a rewrite that lands between this capture and the commit moves a captured
+    // revision or live head, which the commit scope finds and turns into a whole-attempt miss.
+    const captured = await capture(query);
+    try {
+      return await attemptStorage.run({ ...captured, attempt, publications }, () =>
+        run(captured.documents),
+      );
+    } finally {
+      destroyDocuments(captured.documents);
+    }
   }
 
   const store: TurnInverseStore = {

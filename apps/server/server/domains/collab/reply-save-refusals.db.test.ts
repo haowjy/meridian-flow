@@ -647,7 +647,6 @@ describe("reply save refusals (postgres)", () => {
     const { fixture, branchId, responseId, review, write } = await setup();
     expect(await write("green", "lime", "w-green")).toMatchObject({ phase: "staged" });
     let next: string | undefined;
-    let nextSaved: Saved | undefined;
     let oldSaved: Saved | undefined;
     const remove = setCollabHook("discard.beforeRetirement", async () => {
       remove();
@@ -668,7 +667,7 @@ describe("reply save refusals (postgres)", () => {
       ).toMatchObject({ phase: "staged" });
     });
     expect(await review.discardItem(ALPHA_ID)).toMatchObject({ status: "discarded" });
-    nextSaved = await harness.commit(next as string);
+    const nextSaved = await harness.commit(next as string);
     expect(refused(oldSaved as Saved)).toEqual([[ALPHA_ID, EDIT]]);
     expect(refused(nextSaved)).toEqual([]);
     expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nnavy\n\ngreen\n");
