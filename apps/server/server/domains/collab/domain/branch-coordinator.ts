@@ -427,6 +427,8 @@ export function createBranchCoordinator(input: {
    * Publication is committed state only: a replica becomes visible when the transaction it
    * was read or written in commits, and a lower revision never replaces a higher one. A
    * candidate whose transaction rolls back instead is destroyed; the room hears `update`.
+   * Every published replica's content has reached the rooms, so a catch-up that a
+   * publication at its revision or later already covers tells them nothing.
    */
   function publishAfterCommit(
     branchId: string,
@@ -435,8 +437,10 @@ export function createBranchCoordinator(input: {
   ): void {
     const publish = () => {
       const current = published.get(branchId);
-      if (!current || current.revision < replica.revision) published.set(branchId, replica);
-      if (publication.update) input.onBranchUpdate?.({ branchId, update: publication.update });
+      const advanced = !current || current.revision < replica.revision;
+      if (advanced) published.set(branchId, replica);
+      if (publication.update && (advanced || publication.candidate))
+        input.onBranchUpdate?.({ branchId, update: publication.update });
     };
     const abort = () => {
       if (publication.candidate) replica.doc.destroy();
