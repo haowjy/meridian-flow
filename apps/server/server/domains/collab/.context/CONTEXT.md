@@ -224,9 +224,11 @@ one scope: the live mutexes of its live destinations, then a seam boundary
 (`mutatePending` with `seam`): the captured branches' Works and the bound
 grants' Works in id order, the grants confirmed, before any other lock (a
 live-only inverse such as a named Work's Scratch reaches its Work only as a
-grant Work). Then its `document-inverse` and document locks,
+grant Work). Then its documents' mutation locks in id order,
 the live head check, and each draft destination's exact checkpoint rewrite at
-its captured revision. Any moved revision or head unwinds the attempt and
+its captured revision. Those captured fences, not a lock of the inverse's own,
+order two inverses of the same edit: the second misses, recaptures and finds
+the edit already reversed (D22; probe `d22-concurrent-undo`). Any moved revision or head unwinds the attempt and
 recaptures; after four attempts one more capture is classified without
 writing, so a plan that still applies is a `ReversalConflictError`, never a
 semantic refusal. `markBlocking` (a held draft found by the plan) is its own short write
@@ -275,8 +277,8 @@ share against a caller-held lifecycle lock.
 The lock order is one list, and every path takes a prefix-ordered subset of it:
 live `withDocument` mutexes (sorted) before any transaction, then inside the
 database Work rows (only through the Works mutation boundary), the draft row,
-sorted namespace and advisory keys (an inverse's `document-inverse` keys, then
-`lockDocumentMutation`'s document keys in ID order), then branch rows, an
+sorted namespace and advisory keys (`lockDocumentMutation`'s document keys in
+ID order), then branch rows, an
 upstream before its peer, otherwise ID order. No path takes a Work row, a
 live lock or a namespace lock after a branch row, and none takes a namespace
 lock while holding a document lock: it computes the complete namespace set

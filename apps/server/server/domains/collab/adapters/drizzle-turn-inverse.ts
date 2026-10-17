@@ -281,17 +281,14 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         scope.commit(() =>
           // A seam boundary before any other lock (decision D17, file-access §5): the captured
           // branches' Works and the bound grants' Works in one id order, the grants confirmed,
-          // then the inverse and document locks, then the rows. A live-only inverse (a named
-          // Work's Scratch) captures no branch, so its Work is locked only as a grant Work.
+          // then the documents' mutation locks, then the rows. A live-only inverse (a named
+          // Work's Scratch) captures no branch, so its Work is locked only as a grant Work. Two
+          // inverses are ordered by what they captured, not by a lock of their own: a draft's
+          // exact checkpoint revision and a live head checked under the document lock (D22).
           input.workProjection.mutatePending(
             { branches: attempt.branchIds },
             async () => {
-              for (const id of attempt.ids)
-                await db().execute(
-                  sql`select pg_advisory_xact_lock(hashtextextended(${`document-inverse:${id}`},0::bigint))`,
-                );
-              for (const key of [...attempt.ids, ...attempt.branchIds].sort())
-                await lockDocumentMutation(db(), key);
+              for (const id of [...attempt.ids].sort()) await lockDocumentMutation(db(), id);
               // The live state each plan was computed against is still the head.
               for (const entry of planned) {
                 if (entry.draft) continue;
