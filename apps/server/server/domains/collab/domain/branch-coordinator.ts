@@ -1,4 +1,10 @@
-/** Coordinates persisted branch-peer Y.Docs behind one mutation surface. */
+/**
+ * The branch runtime and the operations on it. The runtime holds one immutable published
+ * replica per branch, prepares every write on a private candidate (append, rewrite, reset) and
+ * publishes it only once its attempt completes; the operations (pull, reset, a reply's staged
+ * rows, a peer's catch-up, segment batches) are attempts over it. Writer frames and the tail
+ * fold they trigger are `branch-writer-frames.ts`, over the same runtime surface.
+ */
 
 import { bytesEqual } from "@meridian/agent-edit/integration";
 import type { ThreadId } from "@meridian/contracts/runtime";
@@ -31,7 +37,11 @@ import {
   type RewriteOutcome,
   type RewritePolicy,
 } from "./branch-store.js";
-import { collabHook } from "./collab-test-hooks.js";
+import {
+  createWriterFrames,
+  type WriterFrameDiagnostics,
+  type WriterFrameInput,
+} from "./branch-writer-frames.js";
 import { createDocumentContainment } from "./document-containment.js";
 import {
   documentEffectsEqual,
@@ -41,18 +51,17 @@ import {
 } from "./document-content.js";
 import {
   admitSegmentRows,
-  admitWriterUpdate,
+  assertSegmentRowsComplete,
   replicateFrozenSource,
 } from "./document-mutation-policy.js";
 import { currentResponseTransactionId, enlistResponseParticipant } from "./response-transaction.js";
-import { certifyWriterRestorations } from "./writer-restoration.js";
 
 /**
  * The branch as committed at `revision`: replaced, never mutated. `seq` is the highest journal
  * id it contains; `tail` counts the rows (and their bytes) it holds past its checkpoint;
  * `encoded` is its update bytes, computed once when first needed.
  */
-type PublishedReplica = {
+export type PublishedReplica = {
   readonly revision: number;
   readonly checkpointRevision: number;
   readonly seq: number;
@@ -76,25 +85,58 @@ function grownTail(tail: TailSize, updates: readonly Uint8Array[]): TailSize {
  * A tail past either bound is folded into a new checkpoint (decision D10): every cold read of
  * the branch replays its whole tail. The fold changes no content, effect or stamp.
  */
-const COMPACT_TAIL_ROWS = 512;
-const COMPACT_TAIL_BYTES = 2 * 1024 * 1024;
-
-export type BranchCoordinatorDiagnostics = {
-  /** A frame's append missed its revision; `attempt` is the one it judges next. */
-  frameRetried(input: { branchId: string; attempt: number }): void;
-  /** The background tail fold failed; the tail stays until the next frame crosses the bound. */
-  compactionFailed(input: { branchId: string; cause: unknown }): void;
-};
 
 /**
  * What a branch operation works from: the committed replica at the row's revision and the
  * row read's review-membership inputs.
  */
-type BranchBase = {
+export type BranchBase = {
   snapshot: BranchSnapshot;
   replica: PublishedReplica;
   pendingRows: boolean;
   liveCutStored: boolean;
+};
+
+/** An exact-predicate write's attempt policy; the last miss is `moved`'s (default: throw). */
+type CommitAttemptOptions<T> = {
+  bound?: number;
+  scope?: AttemptScope;
+  moved?: (cause: unknown) => T;
+  retrying?: (attempt: number) => void;
+};
+
+/**
+ * The runtime surface the coordinator's operations and `branch-writer-frames.ts` build on:
+ * committed replicas, private candidates of them, prepared writes and their attempts.
+ */
+export type BranchRuntime = {
+  loadBase(branchId: string): Promise<BranchBase>;
+  /** The replica published for the branch, if any: read it, never mutate it. */
+  published(branchId: string): PublishedReplica | undefined;
+  encodedOf(replica: PublishedReplica): Uint8Array;
+  cloneReplica(replica: PublishedReplica): Y.Doc;
+  containment: ReturnType<typeof createDocumentContainment>;
+  prepareAppend(
+    base: BranchBase,
+    candidate: Y.Doc,
+    journals: readonly AppendBranchJournalInput[],
+    receipts: readonly AppendReceiptGroup[],
+  ): Promise<PreparedBranchWrite>;
+  prepareRewrite(
+    branchId: string,
+    candidate: Y.Doc,
+    rewrite: Omit<CommitRewriteInput, "branchId" | "doc">,
+    update?: Uint8Array,
+  ): PreparedBranchWrite;
+  foldPolicy(replica: PublishedReplica): RewritePolicy;
+  commitAttempts<T>(
+    run: (attempt: Attempt) => Promise<T>,
+    options?: CommitAttemptOptions<T>,
+  ): Promise<T>;
+  commitOnce(
+    write: PreparedBranchWrite,
+    options: { scope?: AttemptScope; moved?: (cause: unknown) => void },
+  ): Promise<void>;
 };
 
 /** A work draft's effect baseline as fingerprinted, at the checkpoint revision it was read. */
@@ -115,9 +157,6 @@ export type PreparedBranchWrite = {
   transfer(): void;
   dispose(): void;
 };
-
-/** A frame's commit attempts: three judged off every lock, the fourth under its Work and row. */
-const FRAME_ATTEMPTS = 4;
 
 /** Every other exact-predicate write: four commit attempts, then the caller's own outcome. */
 const COMMIT_ATTEMPTS = 4;
@@ -231,13 +270,8 @@ export type BranchCoordinator = {
   /** `source` merged into the branch as a checkpoint write; null when it holds `source` already. */
   prepareCatchUp(branchId: string, source: Y.Doc): Promise<PreparedBranchWrite | null>;
   commitSegmentRows(input: SegmentRowsInput): Promise<boolean>;
-  commitWriterUpdate(input: {
-    branchId: string;
-    expectedGeneration: number;
-    updateData: Uint8Array;
-    actorUserId?: string;
-    roomDocument: Y.Doc;
-  }): Promise<{ admitted: boolean }>;
+  /** A writer frame (`branch-writer-frames.ts`). */
+  commitWriterUpdate(input: WriterFrameInput): Promise<{ admitted: boolean }>;
   notifyReset(input: { branchId: string; generation: number }): void;
   broadcastUpdate(input: { branchId: string; update: Uint8Array }): void;
 };
@@ -248,13 +282,12 @@ export function createBranchCoordinator(input: {
   attemptScope?: AttemptScope;
   onBranchUpdate?: (input: { branchId: string; update: Uint8Array }) => void;
   onBranchReset?: (input: { branchId: string; generation: number }) => void;
-  diagnostics?: BranchCoordinatorDiagnostics;
+  diagnostics?: WriterFrameDiagnostics;
 }): BranchCoordinator {
   const attemptScope = input.attemptScope ?? NO_ATTEMPT_SCOPE;
   const documentContainment = createDocumentContainment();
   const published = new Map<string, PublishedReplica>();
   const baselines = new Map<string, CachedBaseline>();
-  const compacting = new Set<string>();
 
   /**
    * An exact-predicate write's attempts: a moved branch recaptures, and the last miss is
@@ -262,12 +295,7 @@ export function createBranchCoordinator(input: {
    */
   function commitAttempts<T>(
     run: (attempt: Attempt) => Promise<T>,
-    options: {
-      bound?: number;
-      scope?: AttemptScope;
-      moved?: (cause: unknown) => T;
-      retrying?: (attempt: number) => void;
-    } = {},
+    options: CommitAttemptOptions<T> = {},
   ): Promise<T> {
     return runBoundedAttempts({
       bound: options.bound ?? COMMIT_ATTEMPTS,
@@ -676,38 +704,6 @@ export function createBranchCoordinator(input: {
     });
   }
 
-  /**
-   * Folds a long tail into a new checkpoint in the background. `compacting` keeps one fold per
-   * branch in this process; anything else is the fold fence's: compaction is content-free, so
-   * a frame or inverse that lands meanwhile is folded in, and a rewrite that commits first
-   * makes it miss (the next frame past the bound tries again). Called after a writer frame
-   * commits, outside every transaction; a failure is reported and leaves the tail for the
-   * next frame.
-   */
-  function compactIfLong(branchId: string): void {
-    const long = (tail: TailSize) =>
-      tail.rows >= COMPACT_TAIL_ROWS || tail.bytes >= COMPACT_TAIL_BYTES;
-    const replica = published.get(branchId);
-    if (!replica || compacting.has(branchId) || !long(replica.tail)) return;
-    compacting.add(branchId);
-    void (async () => {
-      const { replica: current } = await loadBase(branchId);
-      if (!long(current.tail)) return;
-      const write = prepareRewrite(branchId, cloneReplica(current), {
-        policy: foldPolicy(current),
-        fence: { kind: "none" },
-        operation: { kind: "compact" },
-        // Content-free, and only an append triggers it, which the lifecycle fence refuses
-        // on an archived Work's draft (decision D19).
-        work: "any",
-      });
-      // A moved or closed branch: the next frame past the bound tries again.
-      await commitOnce(write, { moved: () => {} });
-    })()
-      .catch((cause: unknown) => input.diagnostics?.compactionFailed({ branchId, cause }))
-      .finally(() => compacting.delete(branchId));
-  }
-
   function notifyReset(reset: { branchId: string; generation: number }): void {
     published.delete(reset.branchId);
     const publish = () => input.onBranchReset?.(reset);
@@ -862,12 +858,27 @@ export function createBranchCoordinator(input: {
       throw new BranchStaleUpdateError(batch.branchId);
     const journals = batch.rows.map((row) => ({ ...row, generation: snapshot.generation }));
     const write = journals.length ? attempt.own(await prepareRows(base, journals)) : null;
-    if (journalSyncDelta(batch.sourceDoc, write?.candidate ?? base.replica.doc))
-      throw new Error("Segment publication left an unjournaled residual");
+    assertSegmentRowsComplete(batch.sourceDoc, write?.candidate ?? base.replica.doc);
     if (!write) return false;
     await attempt.commit(() => write.persist());
     return true;
   }
+
+  const frames = createWriterFrames(
+    {
+      loadBase,
+      published: (branchId) => published.get(branchId),
+      encodedOf,
+      cloneReplica,
+      containment: documentContainment,
+      prepareAppend,
+      prepareRewrite,
+      foldPolicy,
+      commitAttempts,
+      commitOnce,
+    },
+    { store: input.store, diagnostics: input.diagnostics },
+  );
 
   return {
     notifyReset,
@@ -891,136 +902,12 @@ export function createBranchCoordinator(input: {
       input.onBranchUpdate?.(update);
     },
 
-    commitWriterUpdate,
+    commitWriterUpdate: frames.commitWriterUpdate,
   };
-
-  /**
-   * A writer frame, with no process-level ordering (section 2.2): judged on a
-   * private candidate of the committed replica, appended under the revision it was judged
-   * at, published only once committed. A miss destroys the candidate and judges again on
-   * the new revision; the fourth attempt judges under the Work row and the branch row.
-   *
-   * Only the first attempt fences a stale room (one missing a committed update: `1008`). A
-   * retry exists because a concurrent commit moved the branch, and that commit reaches this
-   * room through its own publish, which runs after its COMMIT returns and so may land after
-   * this frame judges again: the room lags it without being stale.
-   */
-  async function commitWriterUpdate(
-    inputWriter: Parameters<BranchCoordinator["commitWriterUpdate"]>[0],
-  ): Promise<{ admitted: boolean }> {
-    const { branchId } = inputWriter;
-    const outcome = await commitAttempts(
-      async (attempt) => {
-        const judge = async () => {
-          const write = await judgeWriterUpdate(inputWriter, { fenceRoom: attempt.number === 1 });
-          return write && attempt.own(write);
-        };
-        let write: PreparedBranchWrite | null;
-        if (attempt.last) {
-          write = await attempt.commit(() =>
-            input.store.withJudgementLocks(branchId, async () => {
-              const judged = await judge();
-              await judged?.persist();
-              return judged;
-            }),
-          );
-        } else {
-          write = await judge();
-          const judged = write;
-          if (judged) await attempt.commit(() => judged.persist());
-        }
-        if (!write) return { admitted: false };
-        await collabHook("branch.append.afterCommit");
-        return { admitted: true };
-      },
-      {
-        bound: FRAME_ATTEMPTS,
-        retrying: (attempt) => input.diagnostics?.frameRetried({ branchId, attempt }),
-        // Under its own row lock the append cannot miss; a miss there is a moved branch.
-        moved: () => {
-          throw new BranchStaleUpdateError(branchId);
-        },
-      },
-    );
-    if (outcome.admitted) compactIfLong(branchId);
-    return outcome;
-  }
-
-  /** The frame judged on the committed replica: its prepared append, or null when contained. */
-  async function judgeWriterUpdate(
-    inputWriter: Parameters<BranchCoordinator["commitWriterUpdate"]>[0],
-    { fenceRoom }: { fenceRoom: boolean },
-  ): Promise<PreparedBranchWrite | null> {
-    const base = await loadBase(inputWriter.branchId);
-    const { snapshot, replica } = base;
-    const admission = await admitWriterUpdate({
-      targetDocument: replica.doc,
-      update: inputWriter.updateData,
-      validateTarget() {
-        if (
-          snapshot.kind !== "work_draft" ||
-          snapshot.status !== "active" ||
-          snapshot.lifecycle !== "active" ||
-          snapshot.generation !== inputWriter.expectedGeneration ||
-          (fenceRoom && !documentContainment.contains(inputWriter.roomDocument, encodedOf(replica)))
-        ) {
-          throw new BranchStaleUpdateError(inputWriter.branchId);
-        }
-      },
-      isContained: () => documentContainment.contains(replica.doc, inputWriter.updateData),
-      append: async () => {
-        const journals: AppendBranchJournalInput[] = [
-          {
-            branchId: inputWriter.branchId,
-            generation: snapshot.generation,
-            updateData: inputWriter.updateData,
-            source: "writer",
-            actorUserId: inputWriter.actorUserId,
-            updateMeta: {
-              restorationAliases: certifyWriterRestorations(replica.doc, inputWriter.updateData),
-            },
-          },
-        ];
-        const candidate = cloneReplica(replica);
-        try {
-          const receipts = captureAppendReceipts(candidate, journals);
-          return await prepareAppend(base, candidate, journals, receipts);
-        } catch (cause) {
-          candidate.destroy();
-          throw cause;
-        }
-      },
-    });
-    return admission.admitted ? admission.value : null;
-  }
 }
 
 function assertWritableBranch(snapshot: BranchSnapshot): void {
   if (snapshot.status !== "active") {
     throw new BranchStaleUpdateError(snapshot.branchId);
-  }
-}
-
-function cloneDoc(doc: Y.Doc): Y.Doc {
-  const clone = createCollabYDoc({ gc: false });
-  Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
-  return clone;
-}
-
-/** Journal the effective sync transaction, not inherited source tombstones. */
-function journalSyncDelta(from: Y.Doc, to: Y.Doc): Uint8Array | null {
-  const probe = cloneDoc(to);
-  const updates: Uint8Array[] = [];
-  probe.on("update", (update: Uint8Array) => updates.push(update));
-  try {
-    Y.applyUpdate(probe, Y.encodeStateAsUpdate(from, Y.encodeStateVector(to)));
-    // A source peer includes the target's complete causal prefix. Never drop
-    // unresolved structs/deletes by journaling only the events that integrated.
-    if (probe.store.pendingStructs || probe.store.pendingDs) {
-      throw new Error("Branch sync delta has unresolved Yjs dependencies");
-    }
-    return updates.length > 0 ? Y.mergeUpdates(updates) : null;
-  } finally {
-    probe.destroy();
   }
 }

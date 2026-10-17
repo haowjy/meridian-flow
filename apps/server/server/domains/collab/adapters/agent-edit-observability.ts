@@ -13,9 +13,9 @@ import {
   unknownToEventPayload,
 } from "../../observability/index.js";
 import type { BranchAgentEditDiagnostics } from "../domain/branch-agent-edit.js";
-import type { BranchCoordinatorDiagnostics } from "../domain/branch-coordinator.js";
 import type { BranchPullDiagnostics } from "../domain/branch-pulls.js";
 import type { SweepProjectionDiagnostics } from "../domain/branch-push-contracts.js";
+import type { WriterFrameDiagnostics } from "../domain/branch-writer-frames.js";
 import type { DocumentProjectionDiagnostics } from "../domain/document-projection-refresher.js";
 import type { DraftBranchAheadDiagnostics } from "../domain/draft-branch-ahead-registration.js";
 import type { MarkdownSerializationAnomalyObserver } from "../domain/markdown-document.js";
@@ -40,9 +40,7 @@ export function createBranchPullDiagnostics(eventSink?: EventSink): BranchPullDi
 }
 
 /** The branch coordinator's events: a frame judged again, a background fold that failed. */
-export function createBranchCoordinatorDiagnostics(
-  eventSink?: EventSink,
-): BranchCoordinatorDiagnostics {
+export function createWriterFrameDiagnostics(eventSink?: EventSink): WriterFrameDiagnostics {
   return {
     frameRetried({ branchId, attempt }) {
       if (!eventSink) return;

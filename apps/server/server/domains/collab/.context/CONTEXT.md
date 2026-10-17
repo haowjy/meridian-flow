@@ -185,8 +185,12 @@ can reach this room after the retry judges. An append that flips the branch's
 review membership (`(has_effect OR blocking) AND` pending rows) locks its Work
 first and touches the Work's projection. A replica is published only after its
 commit. A frame that leaves more than 512 tail rows or 2 MiB of tail folds it in
-the background (`compact`: no content, effect or `updatedAt` change). The
-coordinator's `compacting` set keeps one fold per branch in a process; the fold
+the background (`compact`: no content, effect or `updatedAt` change). Frames
+and the fold they trigger are `domain/branch-writer-frames.ts`, over the branch
+runtime surface (`BranchRuntime`: published replicas, private candidates,
+prepared writes, attempts) that `domain/branch-coordinator.ts` owns with the
+operations on it (D22: the cut is runtime vs operations). Its `compacting`
+set keeps one fold per branch in a process; the fold
 fence orders it against every other write, so a frame that lands meanwhile is
 folded in and a rewrite that commits first makes it miss until the next frame
 past the bound. A failure is logged as `collab.branch` `compaction.failed`.
