@@ -119,7 +119,6 @@ const { createAgentEditRuntime } = await import("../domain/agent-edit-runtime.js
 const { scopeAgentEdit } = await import("../domain/document-link-scope-doors.js");
 const { createBranchConcurrentJournalWatermarks } = await import("../domain/branch-agent-edit.js");
 const { createBranchCoordinator } = await import("../domain/branch-coordinator.js");
-const { createBranchCriticalSections } = await import("../domain/branch-critical-sections.js");
 const { createBranchPullService } = await import("../domain/branch-pulls.js");
 const { createBranchPushService } = await import("../domain/branch-push.js");
 const { fullStateFingerprint } = await import("../domain/branch-push-transition.js");
@@ -352,7 +351,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     hocuspocus: () => hocuspocus as never,
     journal: persistence.journal,
   });
-  const branchCriticalSections = createBranchCriticalSections();
   const workDrafts = createDrafts({
     store: createDrizzleDraftStore(db),
     boundary: createDrizzleDraftWriteBoundary(db, createTestWorkProjectionMutation(db)),
@@ -393,7 +391,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   const branchCoordinator = createBranchCoordinator({
     journalReads: createDrizzleBranchJournalReadStore(db),
     store: branchStore,
-    criticalSections: branchCriticalSections,
     attemptScope: (operation) => runInDrizzleSavepoint(db, operation),
     onBranchUpdate: ({ branchId }) => branchBroadcasts.push(branchId),
   });
@@ -719,7 +716,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     branches: branchStore,
     coordinator: liveCoordinator,
     branchCoordinator,
-    criticalSections: branchCriticalSections,
     resolveDocumentUri,
     refreshDocument: (documentId) => projections.refresh({ documentId }),
     flushLivePull: branchPulls.flushLivePull,
@@ -2117,8 +2113,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     seedDiscardedDependencyPush,
     /** A writer edit on the warm room, journaled first, as a socket write would be. */
     appendWriterPrefix,
-    /** The process's branch critical sections, for lease probes. */
-    criticalSections: branchCriticalSections,
     /** The warm room's full-state fingerprint, as a text token captures it. */
     liveFingerprint: (documentId: DocumentId) =>
       liveCoordinator.withDocument(documentId, async (doc) => fullStateFingerprint(doc)),

@@ -34,8 +34,7 @@ async function blockedBy(db: Database, holder: number): Promise<Set<number>> {
  * `b` runs to completion or to its first wait on `a` (at most `waitMs`, five seconds by
  * default) before `a` is released. `bWaited` is true when a session that wasn't already
  * waiting on `a` started waiting on a lock `a`'s transaction holds, the database's view
- * of a real lock. A wait on an in-process lease is not visible there; a lease's hold is proven
- * where the primitive is built (`lease-observer.ts`).
+ * of a real lock.
  */
 export async function interleave<A, B>(
   db: Database,
