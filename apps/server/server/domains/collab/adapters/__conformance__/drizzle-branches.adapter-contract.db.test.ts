@@ -876,58 +876,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(journalRows).toEqual([]);
       expect(await readBranchContent(store, branch.branchId)).toEqual(before);
     });
-
-    it("rejects a staged reversal after Apply changes the planned row status", async () => {
-      const branch = await store.ensureDraftBranch({
-        documentId: DOC_ID as never,
-        draftId: DRAFT_ID as never,
-        liveDoc: docWithText("seed"),
-      });
-      await appendBranchRows(store, branch.branchId, [
-        { updateData: EMPTY_BRANCH_UPDATE, source: "agent" },
-      ]);
-      const [planned] = await db
-        .select({ id: branchWriteJournal.id })
-        .from(branchWriteJournal)
-        .where(eq(branchWriteJournal.branchId, branch.branchId));
-      if (!planned) throw new Error("expected planned branch row");
-      await db
-        .update(branchWriteJournal)
-        .set({ status: "pushed" })
-        .where(eq(branchWriteJournal.id, planned.id));
-
-      const current = await store.getBranch(branch.branchId);
-      if (!current) throw new Error("missing branch");
-      const before = await readBranchContent(store, branch.branchId);
-      const changed = docWithText("changed");
-      const committed = await store.appendRows({
-        branchId: branch.branchId,
-        expectedRevision: current.revision,
-        expectedGeneration: current.generation,
-        rows: [
-          {
-            branchId: branch.branchId,
-            generation: branch.generation,
-            expectedJournalWatermark: planned.id,
-            expectedJournalRevision: `${planned.id}:active`,
-            updateData: Y.encodeStateAsUpdate(changed),
-            source: "agent",
-          },
-        ],
-        documentId: DOC_ID as never,
-        receipts: [],
-      });
-      const reloaded = await store.getBranch(branch.branchId);
-      const rows = await db
-        .select({ id: branchWriteJournal.id, status: branchWriteJournal.status })
-        .from(branchWriteJournal)
-        .where(eq(branchWriteJournal.branchId, branch.branchId));
-
-      expect(committed).toEqual({ status: "moved" });
-      expect(reloaded?.revision).toBe(current.revision);
-      expect(await readBranchContent(store, branch.branchId)).toEqual(before);
-      expect(rows).toEqual([{ id: planned.id, status: "pushed" }]);
-    });
   });
 }
 

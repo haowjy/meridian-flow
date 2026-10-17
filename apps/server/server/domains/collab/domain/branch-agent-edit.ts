@@ -148,12 +148,6 @@ export function createBranchAgentEditCoordinator(input: {
         toolCallId: mutation.toolCallId ?? null,
         updateMeta: entry.meta ?? null,
         ...(mutation.semanticEditIr ? { semanticEditIr: mutation.semanticEditIr } : {}),
-        ...(mutation.branchJournalWatermark !== undefined
-          ? { expectedJournalWatermark: mutation.branchJournalWatermark }
-          : {}),
-        ...(mutation.branchJournalRevision !== undefined
-          ? { expectedJournalRevision: mutation.branchJournalRevision }
-          : {}),
       }));
     });
   }

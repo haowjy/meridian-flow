@@ -24,7 +24,6 @@ import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { branchDraftWork } from "../../../shared/work-draft-lifecycle.js";
-import { branchJournalRevision } from "../domain/branch-journal.js";
 import {
   type AppendBranchJournalInput,
   type AppendRowsInput,
@@ -94,45 +93,6 @@ export async function insertJournalRows(
     )
     .returning({ id: branchWriteJournal.id });
   return inserted.map((row) => row.id);
-}
-
-/** A staged reversal's planning fences, checked under the branch row lock. */
-export async function checkJournalExpectations(
-  db: DrizzleDb,
-  rows: readonly AppendBranchJournalInput[],
-): Promise<void> {
-  for (const journal of rows) {
-    if (journal.expectedJournalWatermark !== undefined) {
-      const [head] = await db
-        .select({ id: sql<number>`coalesce(max(${branchWriteJournal.id}), 0)::bigint` })
-        .from(branchWriteJournal)
-        .where(
-          and(
-            eq(branchWriteJournal.branchId, journal.branchId),
-            eq(branchWriteJournal.generation, journal.generation),
-          ),
-        );
-      if (Number(head?.id ?? 0) > journal.expectedJournalWatermark) {
-        throw new BranchWriteRollback();
-      }
-    }
-    if (journal.expectedJournalRevision !== undefined) {
-      const rows = await db
-        .select({ id: branchWriteJournal.id, status: branchWriteJournal.status })
-        .from(branchWriteJournal)
-        .where(
-          and(
-            eq(branchWriteJournal.branchId, journal.branchId),
-            eq(branchWriteJournal.generation, journal.generation),
-          ),
-        )
-        .orderBy(branchWriteJournal.id)
-        .for("update");
-      if (branchJournalRevision(rows) !== journal.expectedJournalRevision) {
-        throw new BranchWriteRollback();
-      }
-    }
-  }
 }
 
 type BranchSelectRow = Awaited<ReturnType<ReturnType<typeof selectBranch>["limit"]>>[number];
@@ -293,8 +253,9 @@ export async function readEffectBaselineWithin(
 /**
  * Shape A's storage half: rows past the checkpoint at `revision = expectedRevision`. One
  * `UPDATE` decides and locks (the branch is active, at the expected generation and revision,
- * and its Work is active); ids are allocated after it. A miss, or a staged reversal whose
- * planning fence moved, throws `BranchWriteRollback` for the caller's transaction.
+ * and its Work is active); ids are allocated after it. A miss throws `BranchWriteRollback`
+ * for the caller's transaction: the revision is the only fence, and it subsumes any journal
+ * head or row status a caller planned against (every append and status change bumps it).
  */
 export async function appendRowsWithinTx(
   db: DrizzleDb,
@@ -334,7 +295,6 @@ export async function appendRowsWithinTx(
   // Zero rows: the revision or generation moved, the branch closed, or its Work is no longer
   // active. The caller re-reads and classifies.
   if (!locked) throw new BranchWriteRollback();
-  await checkJournalExpectations(db, input.rows);
   return { revision: Number(locked.revision), rowIds: await insertJournalRows(db, input.rows) };
 }
 
