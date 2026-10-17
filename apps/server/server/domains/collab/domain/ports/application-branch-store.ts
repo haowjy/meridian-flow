@@ -9,8 +9,6 @@ import type { PeerRetirementCause, RetiredBranch } from "../peer-retirement.js";
 export type ApplicationBranchStore = BranchStore &
   BranchResolver & {
     listActiveWorkDraftBranchIds(documentId: DocumentId): Promise<string[]>;
-    /** Every active branch of the draft, both kinds. */
-    listActiveDraftBranchIds(draftId: DraftId): Promise<string[]>;
     /**
      * The draft's branch on the document, made from `liveDoc` if absent: a write boundary
      * only. Never makes a draft; refuses a closed one in the insert's transaction.

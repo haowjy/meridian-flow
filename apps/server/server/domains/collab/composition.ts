@@ -98,7 +98,6 @@ import { createAgentEditRuntime, metaForOrigin } from "./domain/agent-edit-runti
 import { createBranchConcurrentJournalWatermarks } from "./domain/branch-agent-edit.js";
 import type { AttemptScope } from "./domain/branch-attempts.js";
 import { createBranchCoordinator } from "./domain/branch-coordinator.js";
-import { createBranchCriticalSections } from "./domain/branch-critical-sections.js";
 import { createBranchPullService } from "./domain/branch-pulls.js";
 import { createBranchPushService } from "./domain/branch-push.js";
 import { fullStateFingerprint } from "./domain/branch-push-transition.js";
@@ -190,7 +189,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     hocuspocus: hocuspocusBinding.require,
     journal: persistence.journal,
   });
-  const criticalSections = createBranchCriticalSections();
   // Every bounded branch-store attempt's rollback boundary (decision D13).
   const attemptScope: AttemptScope = (operation) => runInDrizzleSavepoint(deps.db, operation);
   const workDrafts = createDrafts({
@@ -209,7 +207,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const branchCoordinator = createBranchCoordinator({
     journalReads: branchJournal,
     store: branches,
-    criticalSections,
     attemptScope,
     onBranchUpdate: hocuspocusBinding.publishBranchUpdate,
     onBranchReset: ({ branchId }) => hocuspocusBinding.closeBranch(branchId),

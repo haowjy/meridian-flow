@@ -10,10 +10,6 @@ import {
   NO_ATTEMPT_SCOPE,
   runBoundedAttempts,
 } from "./branch-attempts.js";
-import {
-  type BranchCriticalSections,
-  createBranchCriticalSections,
-} from "./branch-critical-sections.js";
 import type { BranchJournalReadStore, BranchJournalRow } from "./branch-push-contracts.js";
 import { captureAppendReceipts } from "./branch-receipts.js";
 import { BranchCorruptError } from "./branch-resolver.js";
@@ -261,14 +257,12 @@ export function createBranchCoordinator(input: {
   store: BranchStore;
   /** The reads a save's owned session makes; leave it to the adapter that serves them. */
   journalReads?: BranchSaveJournalReads;
-  criticalSections?: BranchCriticalSections;
   /** Each attempt's rollback boundary: a root transaction, or a savepoint in an ambient one. */
   attemptScope?: AttemptScope;
   onBranchUpdate?: (input: { branchId: string; update: Uint8Array }) => void;
   onBranchReset?: (input: { branchId: string; generation: number }) => void;
   diagnostics?: BranchCoordinatorDiagnostics;
 }): BranchCoordinator {
-  const criticalSections = input.criticalSections ?? createBranchCriticalSections();
   const attemptScope = input.attemptScope ?? NO_ATTEMPT_SCOPE;
   const documentContainment = createDocumentContainment();
   const published = new Map<string, PublishedReplica>();
@@ -324,10 +318,7 @@ export function createBranchCoordinator(input: {
             checkpointRevision: snapshot.checkpointRevision,
             seq: snapshot.checkpointSeq,
           };
-    const { write } = await prepareReset(snapshot, resetInput.upstream, {
-      ...resetInput,
-      policy,
-    });
+    const write = await prepareReset(snapshot, resetInput.upstream, { ...resetInput, policy });
     if (!owner) {
       await commitOnce(write, { scope: NO_ATTEMPT_SCOPE });
       return true;
@@ -660,38 +651,36 @@ export function createBranchCoordinator(input: {
     };
   }
 
-  /** A re-fork of the branch from `upstream` at the snapshot's exact revision. */
+  /** A re-fork of the branch from `upstream` under the caller's revision policy. */
   async function prepareReset(
     snapshot: BranchSnapshot,
     upstream: Y.Doc,
     reset: Pick<ResetInput, "schemaVersion" | "editDisposition" | "fence"> & {
-      policy?: RewritePolicy;
+      policy: RewritePolicy;
       upstreamEpoch?: PullInput["upstreamEpoch"];
     },
-  ): Promise<{ write: PreparedBranchWrite; update: Uint8Array }> {
+  ): Promise<PreparedBranchWrite> {
     const candidate = createCollabYDoc({ gc: false });
-    const update = await replicatedInto(upstream, candidate);
-    const operation = {
-      kind: "reset" as const,
-      editDisposition: reset.editDisposition ?? "discarded",
-      schemaVersion: reset.schemaVersion ?? snapshot.schemaVersion,
-    };
-    const policy = reset.policy ?? { kind: "exact" as const, revision: snapshot.revision };
-    const fence = reset.fence ?? { kind: "none" };
-    const write = prepareRewrite(snapshot.branchId, candidate, {
-      policy,
-      fence,
-      operation,
+    await replicatedInto(upstream, candidate);
+    return prepareRewrite(snapshot.branchId, candidate, {
+      policy: reset.policy,
+      fence: reset.fence ?? { kind: "none" },
+      operation: {
+        kind: "reset",
+        editDisposition: reset.editDisposition ?? "discarded",
+        schemaVersion: reset.schemaVersion ?? snapshot.schemaVersion,
+      },
       ...(reset.upstreamEpoch ? { upstream: reset.upstreamEpoch } : {}),
     });
-    return { write, update };
   }
 
   /**
-   * Folds a long tail into a new checkpoint in the background, under the branch's lease (it
-   * still excludes rewrites from each other): content-free, so a frame or inverse that lands
-   * meanwhile is folded in or recaptures, never lost. Called after a writer frame commits,
-   * outside every transaction; a failure is reported and leaves the tail for the next frame.
+   * Folds a long tail into a new checkpoint in the background. `compacting` keeps one fold per
+   * branch in this process; anything else is the fold fence's: compaction is content-free, so
+   * a frame or inverse that lands meanwhile is folded in, and a rewrite that commits first
+   * makes it miss (the next frame past the bound tries again). Called after a writer frame
+   * commits, outside every transaction; a failure is reported and leaves the tail for the
+   * next frame.
    */
   function compactIfLong(branchId: string): void {
     const long = (tail: TailSize) =>
@@ -699,23 +688,21 @@ export function createBranchCoordinator(input: {
     const replica = published.get(branchId);
     if (!replica || compacting.has(branchId) || !long(replica.tail)) return;
     compacting.add(branchId);
-    void criticalSections
-      .withBranches([branchId], async () => {
-        const { replica: current } = await loadBase(branchId);
-        if (!long(current.tail)) return;
-        const policy = {
-          kind: "fold" as const,
+    void (async () => {
+      const { replica: current } = await loadBase(branchId);
+      if (!long(current.tail)) return;
+      const write = prepareRewrite(branchId, cloneReplica(current), {
+        policy: {
+          kind: "fold",
           checkpointRevision: current.checkpointRevision,
           seq: current.seq,
-        };
-        const write = prepareRewrite(branchId, cloneReplica(current), {
-          policy,
-          fence: { kind: "none" },
-          operation: { kind: "compact" },
-        });
-        // A moved or closed branch: the next frame past the bound tries again.
-        await commitOnce(write, { moved: () => {} });
-      })
+        },
+        fence: { kind: "none" },
+        operation: { kind: "compact" },
+      });
+      // A moved or closed branch: the next frame past the bound tries again.
+      await commitOnce(write, { moved: () => {} });
+    })()
       .catch((cause: unknown) => input.diagnostics?.compactionFailed({ branchId, cause }))
       .finally(() => compacting.delete(branchId));
   }
@@ -742,7 +729,7 @@ export function createBranchCoordinator(input: {
       snapshot.kind === "thread_peer" &&
       !Y.snapshotContainsUpdate(Y.snapshot(pull.upstream), encodedOf(base.replica))
     ) {
-      const { write } = await prepareReset(snapshot, pull.upstream, {
+      const write = await prepareReset(snapshot, pull.upstream, {
         policy: foldPolicy(base),
         ...(pull.upstreamEpoch ? { upstreamEpoch: pull.upstreamEpoch } : {}),
       });
