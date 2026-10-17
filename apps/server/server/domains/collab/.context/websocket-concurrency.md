@@ -20,6 +20,12 @@ The push LOCK-WS cut captures the complete Yjs update at the first instruction
 inside each live-document lock. Rechecks compare complete updates, including
 delete-only divergence; state vectors alone are insufficient.
 
+Branch rooms have no coordinator serialization at all: a Work-draft writer
+frame is an optimistic append at its replica's revision (see the transaction
+and lock contracts in [CONTEXT.md](CONTEXT.md)). Every other branch write moves
+the revision, so a frame racing it misses and judges again; nothing holds a
+lease or mutex against a frame.
+
 A failed live writer admission closes the raw CrossWS peer with retryable code
 `1013 writer-journal-admission-failed`. Do not rely on a thrown Hocuspocus
 error to preserve that transport code.

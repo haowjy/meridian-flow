@@ -10,7 +10,7 @@ branch ID, item key, or presented address interchangeably.
 |---|---|---|
 | **draft** | One active Work review draft; Apply leaves it open, whole Discard and purge close it. | `draftId` |
 | **branch** | One document's Work-draft Y.Doc and its thread peers; generation advances on reset. | opaque branch room plus generation |
-| **revision** | The branch row's write fence: moves with every committed write, never reaches a client. | none |
+| **revision** | The branch row's write fence: moves with every committed write, status or hold change and Work lifecycle transition; never reaches a client. | none |
 | **checkpoint** | The branch's stored state, with the highest journal id it contains (`checkpoint_seq`). | none |
 | **tail** | The current generation's journal rows past the checkpoint, replayed on every read. | none |
 | **item** | One document's reviewable change, including an empty create or image. | `${draftId}:${documentId}` |

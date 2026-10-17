@@ -122,11 +122,35 @@ through `appendRows`, checkpoint rewrites through `commitRewrite` (exact or
 fold policy), status and hold changes after locking the branch rows in ID order
 and bumping their revision. No write compares branch bytes. Whether a branch is
 frozen is derived on every read from its draft's origin Work (archived,
-deleted, or missing), never stored, so Work lifecycle transitions take no
-branch lock and branch creation takes no Work lock, as on main. The append's
+deleted, or missing), never stored, and branch creation takes no Work lock, as
+on main. A Work lifecycle transition (archive, unarchive, delete, restore)
+locks and bumps every active branch of the Work's drafts after its Work update,
+so a write judged before the transition misses its revision. The append's
 `UPDATE` and a Work-admitted checkpoint `UPDATE` carry a Work-is-active
 predicate, so the lifecycle decision and the write are one statement; pulls,
 resets and compaction carry none.
+
+A writer frame takes no lease, mutex or document lock, and no lock beyond its
+own statement. It is judged on a private clone of the published replica
+(containment, edit receipts, `has_effect` against the stored `live_cut`),
+then appended at the revision it was judged at; a miss destroys the clone and
+judges again on the new revision. The fourth attempt holds the Work row and
+the branch row. Only the first attempt fences a stale room (`1008`): a retry
+exists because a concurrent commit moved the branch, and that commit's publish
+can reach this room after the retry judges. An append that flips the branch's
+review membership (`(has_effect OR blocking) AND` pending rows) locks its Work
+first and touches the Work's projection. A replica is published only after its
+commit. A frame that leaves more than 512 tail rows or 2 MiB of tail folds it in
+the background under the branch's lease (`compact`: no content, effect or
+`updatedAt` change); a failure is logged as `collab.branch`
+`compaction.failed`.
+
+A reply save is an attempt across every participating core: prepare replays
+each staged document on a candidate, consume appends per upstream inside one
+savepoint, install publishes. A miss unwinds the savepoint and prepares again
+from the original staged buffer, up to four attempts; the reply's `confirm`
+runs once. Apply, selective Discard and pulls retry a moved branch up to four
+times, then refuse `stale`.
 
 Pulls commit in their own root transactions outside a caller's response
 transaction. A pull takes its branch leases before its root transaction and
@@ -150,7 +174,8 @@ uncommitted and must roll back together, and no such path provisions a root
 peer. Use `NO KEY UPDATE` where a root insert needs FK key
 share against a caller-held lifecycle lock.
 
-The practical lock order is: in-process leases, Work rows, draft row, sorted
+The practical lock order is: in-process leases (rewrites, saves and inverses;
+never a writer frame), Work rows, draft row, sorted
 namespace/advisory keys, document locks in ID order, then branch rows (an
 upstream before its peer, otherwise ID order). Never take a
 namespace lock while holding a document lock; compute the complete namespace
