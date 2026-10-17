@@ -1,8 +1,9 @@
 // Deep public facade for the agent editing core.
 import { type CreateWriteToolOptions, createWriteTool } from "./tool/write.js";
 
-export type { ResponseCommitAttempt, ResponseReadLease } from "./tool/response-committer.js";
-export { ResponseAttemptStaleError } from "./tool/response-committer.js";
+// A host's response-attempt surface (`ResponseCommitAttempt`, `ResponseAttemptStaleError`) is
+// exported once, from `integration.ts`.
+export type { ResponseReadLease } from "./tool/response-committer.js";
 
 export type AgentEditCoreOptions = CreateWriteToolOptions;
 

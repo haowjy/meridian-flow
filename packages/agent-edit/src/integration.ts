@@ -56,12 +56,15 @@ export type {
 } from "./ports/actor-session-store.js";
 export type {
   DiscardedWriteReason,
+  DocumentAccess,
   DocumentCoordinator,
-  DocumentLockOptions,
   StagedHelperCut,
   StagedWriteCommit,
+  StagedWriteHost,
   StagedWriteRejectionReason,
+  StagedWriteReplayInput,
   StagedWriteReplayResult,
+  StagedWriteSaveResult,
 } from "./ports/document-coordinator.js";
 export {
   DocumentNotFoundError,

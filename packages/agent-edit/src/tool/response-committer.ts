@@ -8,10 +8,14 @@ import { withRunShownLinks } from "../links/shown.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type {
   DiscardedWriteReason,
+  DocumentAccess,
   DocumentCoordinator,
-  DocumentLockOptions,
   StagedHelperCut,
+  StagedWriteHost,
   StagedWriteRejectionReason,
+  StagedWriteReplayInput,
+  StagedWriteReplayResult,
+  StagedWriteSaveResult,
 } from "../ports/document-coordinator.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { UpdateMeta } from "../ports/types.js";
@@ -247,7 +251,7 @@ interface ResponseDocumentBufferFields {
 interface PreparedResponseView {
   kind: "prepared";
   doc: Y.Doc;
-  replay: NonNullable<DocumentCoordinator["withStagedWrites"]>;
+  staged: StagedWriteHost;
   cut: StagedHelperCut;
 }
 type ResponseDocumentBuffer = LiveResponseDocumentBuffer | PreparedResponseDocumentBuffer;
@@ -309,7 +313,11 @@ interface ReplayOutcome {
   beforeState: Uint8Array;
   /** The replayed helper when it differs from the view's; owned by the outcome until installed. */
   helper: { doc: Y.Doc; cut: StagedHelperCut } | null;
-  commit?: import("../ports/document-coordinator.js").StagedWriteCommit;
+}
+
+/** A save's replay: the host's prepared write rides with it, owned by the attempt. */
+interface SaveOutcome extends ReplayOutcome {
+  write: StagedWriteSaveResult["write"];
 }
 
 type ResponseState =
@@ -545,22 +553,46 @@ export function createResponseCommitter(deps: {
    * The host's replay of a prepared document's staged entries, without changing the buffer:
    * the kept and rejected entries and the replayed helper come back for `installReplay`.
    */
-  async function replayOn(
+  function replayOn(docBuffer: PreparedResponseDocumentBuffer): Promise<ReplayOutcome> {
+    return hostReplay(docBuffer, (request) => docBuffer.view.staged.replay(request));
+  }
+
+  /**
+   * A save's replay with the host's prepared write. A host that reports no effect while it
+   * kept entries broke the port's contract: refuse rather than certify writes nobody stored.
+   */
+  async function prepareSaveOn(
     docBuffer: PreparedResponseDocumentBuffer,
-    commit: boolean,
-    access?: DocumentLockOptions,
+    access: DocumentAccess,
+  ): Promise<SaveOutcome> {
+    let write: StagedWriteSaveResult["write"] | undefined;
+    const outcome = await hostReplay(docBuffer, async (request) => {
+      const prepared = await docBuffer.view.staged.prepareSave({ ...request, access });
+      write = prepared.write;
+      return prepared;
+    });
+    if (!write) throw new Error(`Host prepared no save for ${docBuffer.docId}`);
+    const saved: SaveOutcome = { ...outcome, write };
+    if (write.kind === "no-effect" && outcome.updates.length) {
+      discardReplay(saved);
+      throw new Error(`Host reported no effect for kept writes on ${docBuffer.docId}`);
+    }
+    return saved;
+  }
+
+  async function hostReplay(
+    docBuffer: PreparedResponseDocumentBuffer,
+    replay: (request: StagedWriteReplayInput) => Promise<StagedWriteReplayResult>,
   ): Promise<ReplayOutcome> {
     const view = docBuffer.view;
     const source = readLease(view.doc);
-    let accepted: Awaited<ReturnType<PreparedResponseView["replay"]>>;
+    let accepted: StagedWriteReplayResult;
     try {
-      accepted = await view.replay({
+      accepted = await replay({
         docId: docBuffer.docId,
         sourceDoc: unwrapDoc(source.doc),
         helperCut: { ...view.cut, state: view.cut.state.slice() },
         entries: responseJournalBatch([docBuffer]),
-        commit,
-        access,
       });
     } finally {
       source.dispose();
@@ -586,14 +618,7 @@ export function createResponseCommitter(deps: {
       Y.applyUpdate(doc, accepted.helperState.slice());
       helper = { doc, cut: { ...accepted.helperCut, state: accepted.helperCut.state.slice() } };
     }
-    return {
-      view,
-      updates,
-      rejected,
-      beforeState: accepted.beforeState,
-      helper,
-      ...(accepted.commit ? { commit: accepted.commit } : {}),
-    };
+    return { view, updates, rejected, beforeState: accepted.beforeState, helper };
   }
 
   /** The replay becomes the document's buffer; returns the helper doc it replaced, if any. */
@@ -611,16 +636,16 @@ export function createResponseCommitter(deps: {
     return previous;
   }
 
-  function discardReplay(outcome: ReplayOutcome): void {
+  function discardReplay(outcome: ReplayOutcome | SaveOutcome): void {
     outcome.helper?.doc.destroy();
-    outcome.commit?.dispose();
+    if ("write" in outcome && outcome.write.kind === "write") outcome.write.dispose();
   }
 
   /** A read's replay, installed at once: a buffered response's helper follows the host. */
   async function replayDocument(docBuffer: PreparedResponseDocumentBuffer, owns: () => boolean) {
     for (;;) {
       const view = docBuffer.view;
-      const outcome = await replayOn(docBuffer, false);
+      const outcome = await replayOn(docBuffer);
       if (!owns()) {
         discardReplay(outcome);
         throw new Error("Response preparation lost lifecycle ownership");
@@ -743,7 +768,7 @@ export function createResponseCommitter(deps: {
     const prepared = Boolean(
       input.responseId &&
         input.context.interactionContext?.mode === "threadPeer" &&
-        coordinator.withStagedWrites,
+        coordinator.stagedWrites,
     );
     const live = runtimeStore.runtimeFor(input.session, input.docId);
     live.peerBranchId =
@@ -901,7 +926,7 @@ export function createResponseCommitter(deps: {
           doc.updates.length !== updates.length ||
           doc.updates.some((entry, index) => entry !== updates[index]),
       );
-    const outcomes = new Map<string, ReplayOutcome>();
+    const outcomes = new Map<string, SaveOutcome>();
     let settled = false;
     const dispose = () => {
       if (settled) return;
@@ -914,7 +939,7 @@ export function createResponseCommitter(deps: {
         if (!isPrepared(docBuffer)) continue;
         outcomes.set(
           docBuffer.docId,
-          await replayOn(docBuffer, true, {
+          await prepareSaveOn(docBuffer, {
             pinnedBranchId:
               docBuffer.interactionContext?.mode === "threadPeer"
                 ? docBuffer.interactionContext.peerBranchId
@@ -930,7 +955,8 @@ export function createResponseCommitter(deps: {
       async consume() {
         if (settled) throw new Error(`Response ${responseId} attempt was disposed`);
         if (stale()) throw new ResponseAttemptStaleError(responseId);
-        for (const outcome of outcomes.values()) await outcome.commit?.persist();
+        for (const { write } of outcomes.values())
+          if (write.kind === "write") await write.persist();
       },
       async install() {
         if (settled) throw new Error(`Response ${responseId} attempt was disposed`);
@@ -939,7 +965,8 @@ export function createResponseCommitter(deps: {
           throw new ResponseAttemptStaleError(responseId);
         }
         settled = true;
-        for (const outcome of outcomes.values()) outcome.commit?.publish();
+        // The host publishes each write when the enclosing root transaction commits.
+        for (const { write } of outcomes.values()) if (write.kind === "write") write.transfer();
         const deferred = deferredPromise<ResponseCommitSuccessResult>();
         const owner: CommittingResponseState = {
           kind: "committing",
@@ -975,7 +1002,7 @@ export function createResponseCommitter(deps: {
     responseId: string,
     owner: CommittingResponseState,
     options: ResponseCommitOptions,
-    replays: ReadonlyMap<string, ReplayOutcome>,
+    replays: ReadonlyMap<string, SaveOutcome>,
   ): Promise<ResponseCommitSuccessResult> {
     const { buffer } = owner;
     const docBuffers = [...buffer.docs.values()]
@@ -1018,7 +1045,7 @@ export function createResponseCommitter(deps: {
         string,
         import("./mutation-commit.js").CapturedConcurrentDetection | undefined
       >();
-      for (const docBuffer of coordinator.withStagedWrites ? [] : docBuffers) {
+      for (const docBuffer of coordinator.stagedWrites ? [] : docBuffers) {
         const hashes = responseHashes(docBuffer);
         const lastTurnId = docBuffer.updates.at(-1)?.turnId;
         const preflight = await withLiveDocument(
@@ -1057,13 +1084,13 @@ export function createResponseCommitter(deps: {
 
       await deps.afterPreflight?.(responseId);
       options.signal?.throwIfAborted();
-      if (coordinator.withStagedWrites) owner.acceptance = "staged";
+      if (coordinator.stagedWrites) owner.acceptance = "staged";
       else await acceptJournalBatch(responseId, owner, journalBatch);
       const journalCommitKind = acceptedJournalKind(owner);
       // Capture the inputs independently of the mutable response buffers before
       // phase C. Last-resort recovery must not depend on state damaged by the
       // projection failure it is diagnosing.
-      recoveryRecheckInputs = coordinator.withStagedWrites
+      recoveryRecheckInputs = coordinator.stagedWrites
         ? new Map()
         : new Map(
             docBuffers.map((docBuffer) => {
@@ -1635,13 +1662,13 @@ export function createResponseCommitter(deps: {
         discardedBeforeCommit: false,
       };
       docBuffer =
-        input.interactionContext?.mode === "threadPeer" && coordinator.withStagedWrites
+        input.interactionContext?.mode === "threadPeer" && coordinator.stagedWrites
           ? {
               ...fields,
               view: {
                 kind: "prepared",
                 doc: yjsUpdateFromState(input.preOwnSnapshot),
-                replay: coordinator.withStagedWrites,
+                staged: coordinator.stagedWrites,
                 cut: {
                   generation: input.interactionContext.branchGeneration,
                   state: input.preOwnSnapshot.slice(),

@@ -6,13 +6,16 @@ import {
   bytesEqual,
   type ConcurrentUpdateOrigin,
   cloneYDoc,
+  type DocumentAccess,
   type DocumentCoordinator,
-  type DocumentLockOptions,
   type JournalBatchAppendEntry,
   type JournalBatchAppendResult,
   type JournalReadOptions,
   type JournalSnapshot,
   type PersistedUpdate,
+  type StagedWriteReplayInput,
+  type StagedWriteReplayResult,
+  type StagedWriteSaveResult,
   type UpdateJournal,
   type YProsemirrorDocumentModel,
   yjsDeltaUpdate,
@@ -155,6 +158,118 @@ export function createBranchAgentEditCoordinator(input: {
   /** The peer of the access running now: attribution inside it resolves no other identity. */
   const accessedPeer = new AsyncLocalStorage<string>();
   /**
+   * A response's staged entries replayed on a candidate of its Work draft. A save also
+   * prepares the draft's append and the peer's catch-up as one write the caller's attempt
+   * owns; no write and no catch-up is an explicit `no-effect`.
+   */
+  function staged(request: StagedWriteReplayInput, save: false): Promise<StagedWriteReplayResult>;
+  function staged(request: StagedWriteReplayInput, save: true): Promise<StagedWriteSaveResult>;
+  async function staged(
+    request: StagedWriteReplayInput,
+    save: boolean,
+  ): Promise<StagedWriteReplayResult | StagedWriteSaveResult> {
+    const peerId =
+      request.access?.pinnedBranchId ??
+      (await resolveThreadBranchId(input, request.docId as DocumentId));
+    const peer = await input.branches.getBranch(peerId);
+    const branchId = peer?.upstreamBranchId;
+    if (!branchId) throw new Error("Response peer has no Work draft");
+    return underAccess(peerId, async () => {
+      const { result, write } = await branches.prepareStagedRows(
+        branchId,
+        async (doc, snapshot) => {
+          if (request.helperCut.generation > snapshot.generation)
+            throw new Error("Response helper belongs to a future draft generation");
+          const retired: Uint8Array[] = [];
+          const inverses: Uint8Array[] = [];
+          const planning = new Y.Doc({ gc: false });
+          try {
+            Y.applyUpdate(planning, request.helperCut.state);
+            const cut = Y.snapshot(planning);
+            // Every intervening generation can contain an inverse; the old cut
+            // excludes already observed removals without a second sequence fence.
+            for (
+              let generation = request.helperCut.generation;
+              generation <= snapshot.generation;
+              generation++
+            ) {
+              const rows = await input.journalRows.listJournalRowsForBranch({
+                branchId,
+                generation,
+              });
+              for (const row of rows) {
+                const observed = Y.snapshotContainsUpdate(cut, row.updateData);
+                if (
+                  generation === request.helperCut.generation &&
+                  generation < snapshot.generation &&
+                  observed
+                )
+                  retired.push(row.updateData);
+                if (!observed && row.editKind && row.editKind !== "write")
+                  inverses.push(row.updateData);
+              }
+            }
+          } finally {
+            planning.destroy();
+          }
+          const replay = reconcileStagedBranchWrites(
+            doc,
+            request.sourceDoc,
+            request.entries,
+            retired,
+            request.helperCut.state,
+            inverses,
+          );
+          const kept = replay.keptEntries;
+          return {
+            result: {
+              keptEntries: kept,
+              rejectedWrites: replay.rejectedWrites,
+              helperState: Y.encodeStateAsUpdate(doc),
+              helperCut: { generation: snapshot.generation, state: snapshot.encoded },
+              beforeState: snapshot.encoded,
+            },
+            rows: branchRows(branchId, kept),
+          };
+        },
+        save,
+      );
+      if (!save) return result;
+      // The thread's peer follows its draft in the same attempt: it catches up to the
+      // upstream as this save commits it, upstream before peer.
+      let catchUp: PreparedBranchWrite | null;
+      try {
+        catchUp = write
+          ? await branches.prepareCatchUp(peerId, write.candidate)
+          : await branches.readBranch(branchId, (doc) => branches.prepareCatchUp(peerId, doc));
+      } catch (cause) {
+        write?.dispose();
+        throw cause;
+      }
+      const writes = [write, catchUp].filter((entry): entry is PreparedBranchWrite =>
+        Boolean(entry),
+      );
+      if (!writes.length) return { ...result, write: { kind: "no-effect" } };
+      return {
+        ...result,
+        write: {
+          kind: "write",
+          async persist() {
+            for (const entry of writes) await entry.persist();
+          },
+          // Publication waits for the enclosing root commit: the coordinator defers it.
+          transfer() {
+            for (const entry of writes) entry.transfer();
+          },
+          dispose() {
+            for (const entry of writes) entry.dispose();
+          },
+        },
+      };
+    });
+  }
+
+  /**
    * Runs `run` as an access to `peerBranchId`. It acquires nothing: a save or a close racing
    * it is ordered by the revisions its writes were prepared at.
    */
@@ -166,7 +281,7 @@ export function createBranchAgentEditCoordinator(input: {
     async withDocument<T>(
       docId: string,
       fn: (doc: Y.Doc) => Promise<T>,
-      access?: DocumentLockOptions,
+      access?: DocumentAccess,
     ): Promise<T> {
       const branchId =
         access?.pinnedBranchId ?? (await resolveThreadBranchId(input, docId as DocumentId));
@@ -237,103 +352,9 @@ export function createBranchAgentEditCoordinator(input: {
       return result;
     },
 
-    async withStagedWrites(request) {
-      const peerId =
-        request.access?.pinnedBranchId ??
-        (await resolveThreadBranchId(input, request.docId as DocumentId));
-      const peer = await input.branches.getBranch(peerId);
-      const branchId = peer?.upstreamBranchId;
-      if (!branchId) throw new Error("Response peer has no Work draft");
-      return underAccess(peerId, async () => {
-        const { result, write } = await branches.prepareStagedRows(
-          branchId,
-          async (doc, snapshot) => {
-            if (request.helperCut.generation > snapshot.generation)
-              throw new Error("Response helper belongs to a future draft generation");
-            const retired: Uint8Array[] = [];
-            const inverses: Uint8Array[] = [];
-            const planning = new Y.Doc({ gc: false });
-            try {
-              Y.applyUpdate(planning, request.helperCut.state);
-              const cut = Y.snapshot(planning);
-              // Every intervening generation can contain an inverse; the old cut
-              // excludes already observed removals without a second sequence fence.
-              for (
-                let generation = request.helperCut.generation;
-                generation <= snapshot.generation;
-                generation++
-              ) {
-                const rows = await input.journalRows.listJournalRowsForBranch({
-                  branchId,
-                  generation,
-                });
-                for (const row of rows) {
-                  const observed = Y.snapshotContainsUpdate(cut, row.updateData);
-                  if (
-                    generation === request.helperCut.generation &&
-                    generation < snapshot.generation &&
-                    observed
-                  )
-                    retired.push(row.updateData);
-                  if (!observed && row.editKind && row.editKind !== "write")
-                    inverses.push(row.updateData);
-                }
-              }
-            } finally {
-              planning.destroy();
-            }
-            const replay = reconcileStagedBranchWrites(
-              doc,
-              request.sourceDoc,
-              request.entries,
-              retired,
-              request.helperCut.state,
-              inverses,
-            );
-            const kept = replay.keptEntries;
-            return {
-              result: {
-                keptEntries: kept,
-                rejectedWrites: replay.rejectedWrites,
-                helperState: Y.encodeStateAsUpdate(doc),
-                helperCut: { generation: snapshot.generation, state: snapshot.encoded },
-                beforeState: snapshot.encoded,
-              },
-              rows: branchRows(branchId, kept),
-            };
-          },
-          request.commit,
-        );
-        if (!request.commit) return result;
-        // The thread's peer follows its draft in the same attempt: it catches up to the
-        // upstream as this save commits it, upstream before peer.
-        let catchUp: PreparedBranchWrite | null;
-        try {
-          catchUp = write
-            ? await branches.prepareCatchUp(peerId, write.candidate)
-            : await branches.readBranch(branchId, (doc) => branches.prepareCatchUp(peerId, doc));
-        } catch (cause) {
-          write?.dispose();
-          throw cause;
-        }
-        const writes = [write, catchUp].filter((entry): entry is PreparedBranchWrite =>
-          Boolean(entry),
-        );
-        return {
-          ...result,
-          commit: {
-            async persist() {
-              for (const entry of writes) await entry.persist();
-            },
-            publish() {
-              for (const entry of writes) entry.transfer();
-            },
-            dispose() {
-              for (const entry of writes) entry.dispose();
-            },
-          },
-        };
-      });
+    stagedWrites: {
+      replay: (request) => staged(request, false),
+      prepareSave: (request) => staged(request, true),
     },
 
     // A peer is made only by a pull in a draft: recovery never creates one.
@@ -592,7 +613,7 @@ async function concurrentUpstreamJournalRows(
   },
   documentId: DocumentId,
   afterJournalId?: number,
-  access?: DocumentLockOptions,
+  access?: DocumentAccess,
   accessedPeer?: string,
 ): Promise<{ rows: BranchJournalRow[]; upstreamState?: Uint8Array }> {
   // A pinned or running access names the peer; only a free-standing read resolves it.
