@@ -5,6 +5,7 @@
  * the inverse's classification pass, the reply save's retained `confirm` locks) stays with
  * the caller.
  */
+import { AsyncLocalStorage } from "node:async_hooks";
 
 /**
  * The attempt's rollback boundary: a root transaction, or inside an ambient one a single
@@ -40,6 +41,20 @@ export type Attempt = {
 export const NO_ATTEMPT_SCOPE: AttemptScope = (operation) => operation();
 
 /**
+ * The commit scope running on this async path. Work an operation schedules (a timer, an
+ * after-commit callback) inherits the store but outlives the scope, so it reads `open`.
+ */
+const commitScopes = new AsyncLocalStorage<{ open: boolean }>();
+
+/** Another owner's attempt started inside a commit scope: its candidates would outlive it. */
+export class NestedAttemptError extends Error {
+  constructor() {
+    super("A bounded attempt cannot start inside another attempt's commit scope");
+    this.name = "NestedAttemptError";
+  }
+}
+
+/**
  * Runs `run` up to `bound` times. A throw `isMiss` accepts unwinds the attempt (its scope
  * rolled back, its candidates disposed) and runs the next one from a fresh capture; after
  * the last, `exhausted` answers with the caller's policy. Any other throw unwinds and
@@ -54,6 +69,9 @@ export async function runBoundedAttempts<T>(spec: {
   /** A miss is about to be retried as attempt `next`. */
   retrying?(next: number): void;
 }): Promise<T> {
+  // A nested owner would transfer its candidates when it ends, before the outer attempt can
+  // still roll its scope back (decision D16a): pass the outer `Attempt` down instead.
+  if (commitScopes.getStore()?.open) throw new NestedAttemptError();
   for (let number = 1; ; number++) {
     const owned: AttemptCandidate[] = [];
     let scoped = false;
@@ -67,7 +85,12 @@ export async function runBoundedAttempts<T>(spec: {
       commit(operation) {
         if (scoped) throw new Error("An attempt has exactly one commit scope");
         scoped = true;
-        return spec.scope(operation);
+        const scope = { open: true };
+        return commitScopes.run(scope, () =>
+          spec.scope(operation).finally(() => {
+            scope.open = false;
+          }),
+        );
       },
     };
     let result: T;
