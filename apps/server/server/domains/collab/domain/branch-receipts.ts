@@ -155,14 +155,17 @@ function heldDeletes(doc: Y.Doc, novel: Uint8Array, frontier: Map<number, number
   return held;
 }
 
-/** What the last apply left pending: the update depends on structs or deletes not yet held. */
+/**
+ * What the last apply left pending: the update depends on structs or deletes not yet held.
+ * Yjs keeps `pendingDs` in the V2 encoding whatever the applied update used.
+ */
 function pendingClocks(doc: Y.Doc): { client: number; clock: number }[] {
   const { pendingStructs, pendingDs } = doc.store;
   const clocks = pendingStructs
     ? [...pendingStructs.missing].map(([client, clock]) => ({ client, clock }))
     : [];
   if (pendingDs)
-    for (const [client, ranges] of Y.decodeUpdate(pendingDs).ds.clients)
+    for (const [client, ranges] of Y.decodeUpdateV2(pendingDs).ds.clients)
       for (const { clock } of ranges) clocks.push({ client, clock });
   return clocks;
 }
