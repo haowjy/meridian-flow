@@ -111,7 +111,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
     fences: createReplySaveFences({
       liveUtilityCore: runtime.liveUtilityCore,
       branches: { getBranch: async () => null },
-      criticalSections: createBranchCriticalSections(),
       drafts,
       fileAccess,
       lockWorks: async () => {},

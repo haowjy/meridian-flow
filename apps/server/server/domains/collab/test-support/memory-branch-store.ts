@@ -133,6 +133,11 @@ export class MemoryBranchStore implements BranchStore {
   }
 
   async commitRewrite(input: CommitRewriteInput): Promise<RewriteOutcome> {
+    if (input.upstream) {
+      const upstream = this.branches.get(input.upstream.branchId);
+      if (upstream?.status !== "active" || upstream.generation !== input.upstream.generation)
+        return { status: "upstreamMoved" };
+    }
     const branch = this.branches.get(input.branchId);
     if (branch?.status !== "active") return { status: "closed" };
     if (this.takeCasFailure()) return { status: "moved" };
@@ -147,9 +152,14 @@ export class MemoryBranchStore implements BranchStore {
     );
     const { operation } = input;
     // A fold applies what landed after its cursor; a reset discards it.
+    let folded = 0;
     if (input.policy.kind === "fold" && operation.kind !== "reset") {
       const after = input.policy.seq;
-      for (const row of tail) if (row.id > after) Y.applyUpdate(input.doc, row.update);
+      for (const row of tail) {
+        if (row.id <= after) continue;
+        Y.applyUpdate(input.doc, row.update);
+        folded += 1;
+      }
     }
     if (operation.kind === "reset") {
       branch.discardedStateVector = tail.reduce(
@@ -166,8 +176,9 @@ export class MemoryBranchStore implements BranchStore {
     };
     if (operation.kind === "reset") branch.liveCut = branch.checkpoint.state;
     if (operation.kind === "pull" && operation.effect) {
-      branch.liveCut = operation.effect.liveCut;
-      branch.hasEffect = operation.effect.hasEffect;
+      const { effect } = operation;
+      branch.liveCut = effect.liveCut;
+      branch.hasEffect = folded && effect.refolded ? effect.refolded(input.doc) : effect.hasEffect;
     }
     branch.checkpointSeq = Math.max(0, ...branch.rows.map((row) => row.id));
     branch.revision += 1;

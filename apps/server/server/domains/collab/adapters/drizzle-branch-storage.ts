@@ -34,6 +34,7 @@ import {
   type BranchTailRow,
   type BranchWorkLifecycle,
   mergeStateVectors,
+  type PullEffect,
   type RewriteFence,
   type RewriteOutcome,
   type RewritePolicy,
@@ -361,7 +362,7 @@ export type RewriteCommit = {
   /** A content-free fold: the reader-visible modification stamp (`updated_at`) stays. */
   keepUpdatedAt?: boolean;
   /** The effect the caller computed on `doc` before locking, with the baseline it used. */
-  effect?: { hasEffect: boolean; liveCut: Uint8Array };
+  effect?: PullEffect;
   /** Writes under the locked row before the checkpoint `UPDATE` (rows the checkpoint contains). */
   withinLock?: () => Promise<void>;
 };
@@ -427,14 +428,21 @@ export async function commitRewriteWithinTx(
             ),
           )
           .orderBy(asc(branchWriteJournal.id));
+  let folded = 0;
   if (input.policy.kind === "fold" && !input.reset) {
     const after = input.policy.seq;
     for (const row of tail) {
       if (row.id <= after) continue;
       if (row.source === "agent") assertFreshAgentUpdate(input.doc, row.update);
       Y.applyUpdate(input.doc, row.update);
+      folded += 1;
     }
   }
+  const effect = input.effect && {
+    hasEffect:
+      folded && input.effect.refolded ? input.effect.refolded(input.doc) : input.effect.hasEffect,
+    liveCut: input.effect.liveCut,
+  };
   const state = Buffer.from(Y.encodeStateAsUpdate(input.doc));
   const stateVector = Buffer.from(Y.encodeStateVector(input.doc));
   await input.withinLock?.();
@@ -466,9 +474,7 @@ export async function commitRewriteWithinTx(
       checkpointRevision: sql`${documentBranches.revision} + 1`,
       schemaVersion: monotonicSchemaStamp(input.schemaVersion),
       ...(input.keepUpdatedAt ? {} : { updatedAt: new Date() }),
-      ...(input.effect
-        ? { hasEffect: input.effect.hasEffect, liveCut: Buffer.from(input.effect.liveCut) }
-        : {}),
+      ...(effect ? { hasEffect: effect.hasEffect, liveCut: Buffer.from(effect.liveCut) } : {}),
       ...reset,
     })
     .where(
