@@ -54,7 +54,6 @@ import {
   assertSegmentRowsComplete,
   replicateFrozenSource,
 } from "./document-mutation-policy.js";
-import { currentResponseTransactionId, enlistResponseParticipant } from "./response-transaction.js";
 
 /**
  * The branch as committed at `revision`: replaced, never mutated. `seq` is the highest journal
@@ -69,6 +68,16 @@ export type PublishedReplica = {
   readonly doc: Y.Doc;
   readonly tail: TailSize;
   encoded?: Uint8Array;
+};
+
+/**
+ * A replica on its way to publication: `next`, and when it was built by applying `rows` to
+ * `from`, those two, so delivery can send the rows instead of diffing whole documents.
+ */
+type Transition = {
+  readonly next: PublishedReplica;
+  readonly from?: PublishedReplica;
+  readonly rows?: readonly Uint8Array[];
 };
 
 type TailSize = { readonly rows: number; readonly bytes: number };
@@ -126,7 +135,6 @@ export type BranchRuntime = {
     branchId: string,
     candidate: Y.Doc,
     rewrite: Omit<CommitRewriteInput, "branchId" | "doc">,
-    update?: Uint8Array,
   ): PreparedBranchWrite;
   foldPolicy(replica: PublishedReplica): RewritePolicy;
   commitAttempts<T>(
@@ -269,7 +277,8 @@ export type BranchCoordinator = {
   /** A writer frame (`branch-writer-frames.ts`). */
   commitWriterUpdate(input: WriterFrameInput): Promise<{ admitted: boolean }>;
   notifyReset(input: { branchId: string; generation: number }): void;
-  broadcastUpdate(input: { branchId: string; update: Uint8Array }): void;
+  /** Brings this process's rooms up to what is committed now: a read, published as any other. */
+  deliverCommitted(branchId: string): Promise<void>;
 };
 
 export function createBranchCoordinator(input: {
@@ -376,42 +385,32 @@ export function createBranchCoordinator(input: {
     const { branch } = read;
     if (current?.revision === branch.revision) return current;
     try {
-      let next: PublishedReplica;
-      let caughtUp: Uint8Array | undefined;
+      const rows = read.tail.map((row) => row.update);
       if (!read.checkpoint && current) {
         // Only appends (or metadata-only bumps) since the replica: apply the tail to a copy.
-        const doc = read.tail.length ? cloneReplica(current) : current.doc;
-        for (const row of read.tail) Y.applyUpdate(doc, row.update);
-        next = {
+        const doc = rows.length ? cloneReplica(current) : current.doc;
+        for (const row of rows) Y.applyUpdate(doc, row);
+        const next: PublishedReplica = {
           revision: branch.revision,
           checkpointRevision: branch.checkpointRevision,
           seq: Math.max(current.seq, ...read.tail.map((row) => row.id)),
           generation: branch.generation,
           doc,
-          tail: grownTail(
-            current.tail,
-            read.tail.map((row) => row.update),
-          ),
-          ...(read.tail.length ? {} : { encoded: current.encoded }),
+          tail: grownTail(current.tail, rows),
+          ...(rows.length ? {} : { encoded: current.encoded }),
         };
-        if (read.tail.length) caughtUp = Y.mergeUpdates(read.tail.map((row) => row.update));
-      } else {
-        next = {
-          revision: branch.revision,
-          checkpointRevision: branch.checkpointRevision,
-          seq: Math.max(branch.checkpointSeq, ...read.tail.map((row) => row.id)),
-          generation: branch.generation,
-          doc: materializeBranchRead(read),
-          tail: grownTail(
-            EMPTY_TAIL,
-            read.tail.map((row) => row.update),
-          ),
-        };
-        // Within a generation a rewrite only merges, so the new checkpoint holds the old one.
-        if (current?.generation === branch.generation)
-          caughtUp = Y.encodeStateAsUpdate(next.doc, Y.encodeStateVector(current.doc));
+        install(branch.branchId, { next, from: current, rows });
+        return next;
       }
-      publishAfterCommit(branch.branchId, next, { update: caughtUp });
+      const next: PublishedReplica = {
+        revision: branch.revision,
+        checkpointRevision: branch.checkpointRevision,
+        seq: Math.max(branch.checkpointSeq, ...read.tail.map((row) => row.id)),
+        generation: branch.generation,
+        doc: materializeBranchRead(read),
+        tail: grownTail(EMPTY_TAIL, rows),
+      };
+      install(branch.branchId, { next });
       return next;
     } catch (cause) {
       throw new BranchCorruptError({
@@ -424,32 +423,45 @@ export function createBranchCoordinator(input: {
   }
 
   /**
-   * Publication is committed state only: a replica becomes visible when the transaction it
-   * was read or written in commits, and a lower revision never replaces a higher one. A
-   * candidate whose transaction rolls back instead is destroyed; the room hears `update`.
-   * Every published replica's content has reached the rooms, so a catch-up that a
-   * publication at its revision or later already covers tells them nothing.
+   * The one way a replica becomes the branch's published replica, and so the one way content
+   * reaches this process's rooms (decision D25). It runs when the transaction the replica was
+   * read or written in commits (a savepoint's rows only once its root commits too), installs
+   * only past the replica published by then, and hands the rooms what separates the two. A
+   * lower or equal revision installs nothing and sends nothing: the published replica already
+   * holds its content, and so do the rooms. A candidate whose transaction rolls back is
+   * destroyed instead.
    */
-  function publishAfterCommit(
-    branchId: string,
-    replica: PublishedReplica,
-    publication: { update: Uint8Array | undefined; candidate?: true },
-  ): void {
+  function install(branchId: string, transition: Transition, owned = false): void {
     const publish = () => {
-      const current = published.get(branchId);
-      const advanced = !current || current.revision < replica.revision;
-      if (advanced) published.set(branchId, replica);
-      if (publication.update && (advanced || publication.candidate))
-        input.onBranchUpdate?.({ branchId, update: publication.update });
+      const previous = published.get(branchId);
+      if (previous && previous.revision >= transition.next.revision) return;
+      published.set(branchId, transition.next);
+      if (!previous) return;
+      if (previous.generation !== transition.next.generation) {
+        // Another process re-forked the branch: rooms on an older generation close.
+        input.onBranchReset?.({ branchId, generation: transition.next.generation });
+        return;
+      }
+      const update = deliveryFrom(previous, transition);
+      if (update) input.onBranchUpdate?.({ branchId, update });
     };
-    const abort = () => {
-      if (publication.candidate) replica.doc.destroy();
-    };
-    if (currentResponseTransactionId()) {
-      enlistResponseParticipant({ commit: publish, abort });
-      return;
-    }
+    const abort = owned ? () => transition.next.doc.destroy() : undefined;
     if (!input.store.deferUntilCommit(publish, abort)) publish();
+  }
+
+  /**
+   * What `transition` adds to `previous` within one generation, which a rewrite only merges
+   * into: its own rows when it was built on `previous`, otherwise the difference of the two
+   * documents (a fold or checkpoint, whose rows this process never saw one by one), or
+   * nothing when the rewrite changed no content. Yjs applies a repeat as a no-op, so a room
+   * that already holds part of it is unharmed.
+   */
+  function deliveryFrom(previous: PublishedReplica, transition: Transition): Uint8Array | null {
+    if (transition.from === previous && transition.rows)
+      return transition.rows.length ? Y.mergeUpdates([...transition.rows]) : null;
+    if (transition.next.doc === previous.doc) return null;
+    if (Y.equalSnapshots(Y.snapshot(previous.doc), Y.snapshot(transition.next.doc))) return null;
+    return Y.encodeStateAsUpdate(transition.next.doc, Y.encodeStateVector(previous.doc));
   }
 
   function encodedOf(replica: PublishedReplica): Uint8Array {
@@ -522,12 +534,10 @@ export function createBranchCoordinator(input: {
   function preparedWrite(write: {
     branchId: string;
     candidate: Y.Doc;
-    /** The room's update once published; none for a checkpoint the room already holds. */
-    update?: Uint8Array;
-    persist(): Promise<PublishedReplica | { resetTo: number }>;
+    persist(): Promise<Transition | { resetTo: number }>;
   }): PreparedBranchWrite {
     let state: "prepared" | "persisted" | "transferred" | "disposed" = "prepared";
-    let committed: PublishedReplica | { resetTo: number } | undefined;
+    let committed: Transition | { resetTo: number } | undefined;
     return {
       branchId: write.branchId,
       candidate: write.candidate,
@@ -541,7 +551,7 @@ export function createBranchCoordinator(input: {
           throw new Error(`Branch ${write.branchId} write was never persisted`);
         state = "transferred";
         if (!("resetTo" in committed)) {
-          publishAfterCommit(write.branchId, committed, { update: write.update, candidate: true });
+          install(write.branchId, committed, true);
           return;
         }
         // A reset's candidate is never published: the room closes on the new generation.
@@ -571,7 +581,6 @@ export function createBranchCoordinator(input: {
     return preparedWrite({
       branchId: snapshot.branchId,
       candidate,
-      ...(journals.length ? { update: Y.mergeUpdates(journals.map((row) => row.updateData)) } : {}),
       async persist() {
         const outcome = await input.store.appendRows({
           branchId: snapshot.branchId,
@@ -583,16 +592,18 @@ export function createBranchCoordinator(input: {
           ...effect,
         });
         if (outcome.status !== "appended") throw new BranchCasConflictError(snapshot.branchId);
+        const rows = journals.map((row) => row.updateData);
         return {
-          revision: outcome.revision,
-          checkpointRevision: replica.checkpointRevision,
-          seq: Math.max(replica.seq, ...outcome.rowIds),
-          generation: snapshot.generation,
-          doc: candidate,
-          tail: grownTail(
-            replica.tail,
-            journals.map((row) => row.updateData),
-          ),
+          next: {
+            revision: outcome.revision,
+            checkpointRevision: replica.checkpointRevision,
+            seq: Math.max(replica.seq, ...outcome.rowIds),
+            generation: snapshot.generation,
+            doc: candidate,
+            tail: grownTail(replica.tail, rows),
+          },
+          from: replica,
+          rows,
         };
       },
     });
@@ -603,12 +614,10 @@ export function createBranchCoordinator(input: {
     branchId: string,
     candidate: Y.Doc,
     rewrite: Omit<CommitRewriteInput, "branchId" | "doc">,
-    update?: Uint8Array,
   ): PreparedBranchWrite {
     return preparedWrite({
       branchId,
       candidate,
-      ...(update ? { update } : {}),
       async persist() {
         const outcome = await input.store.commitRewrite({ branchId, doc: candidate, ...rewrite });
         if (
@@ -619,7 +628,9 @@ export function createBranchCoordinator(input: {
           throw new BranchRewriteRefused(branchId, outcome.status);
         if (outcome.status !== "committed") throw new BranchCasConflictError(branchId);
         if (rewrite.operation.kind === "reset") return { resetTo: outcome.generation };
-        return { ...outcome, doc: candidate, tail: EMPTY_TAIL };
+        // The fold may have applied rows this process never published: delivery diffs the
+        // documents rather than trusting anything computed before the lock.
+        return { next: { ...outcome, doc: candidate, tail: EMPTY_TAIL } };
       },
     });
   }
@@ -640,11 +651,7 @@ export function createBranchCoordinator(input: {
    * is judged against `upstream`, its new baseline, before the lock, and judged again on the
    * folded checkpoint only when the fold applied rows.
    */
-  function preparePull(
-    base: BranchBase,
-    candidate: Y.Doc,
-    pull: PullInput & { update: Uint8Array },
-  ): PreparedBranchWrite {
+  function preparePull(base: BranchBase, candidate: Y.Doc, pull: PullInput): PreparedBranchWrite {
     const { snapshot } = base;
     const operation: RewriteOperation =
       snapshot.kind === "work_draft"
@@ -657,18 +664,13 @@ export function createBranchCoordinator(input: {
             },
           }
         : { kind: "pull" };
-    return prepareRewrite(
-      snapshot.branchId,
-      candidate,
-      {
-        policy: foldPolicy(base.replica),
-        // A live pull's checkpoint would move the revision a pending Apply's completion resets at.
-        fence: snapshot.kind === "work_draft" ? { kind: "pending-settlement" } : { kind: "none" },
-        operation,
-        ...(pull.upstreamEpoch ? { upstream: pull.upstreamEpoch } : {}),
-      },
-      pull.update,
-    );
+    return prepareRewrite(snapshot.branchId, candidate, {
+      policy: foldPolicy(base.replica),
+      // A live pull's checkpoint would move the revision a pending Apply's completion resets at.
+      fence: snapshot.kind === "work_draft" ? { kind: "pending-settlement" } : { kind: "none" },
+      operation,
+      ...(pull.upstreamEpoch ? { upstream: pull.upstreamEpoch } : {}),
+    });
   }
 
   /** A fold over everything appended past `replica`'s cursor. */
@@ -699,9 +701,13 @@ export function createBranchCoordinator(input: {
     });
   }
 
+  /** A re-fork committed: the replica is dropped and rooms on older generations close. */
   function notifyReset(reset: { branchId: string; generation: number }): void {
-    published.delete(reset.branchId);
-    const publish = () => input.onBranchReset?.(reset);
+    const publish = () => {
+      const current = published.get(reset.branchId);
+      if (current && current.generation < reset.generation) published.delete(reset.branchId);
+      input.onBranchReset?.(reset);
+    };
     if (!input.store.deferUntilCommit(publish)) publish();
   }
 
@@ -730,8 +736,8 @@ export function createBranchCoordinator(input: {
       return "pulled";
     }
     const candidate = cloneReplica(base.replica);
-    const update = await replicatedInto(pull.upstream, candidate);
-    const write = attempt.own(preparePull(base, candidate, { ...pull, update }));
+    await replicatedInto(pull.upstream, candidate);
+    const write = attempt.own(preparePull(base, candidate, pull));
     await attempt.commit(() => write.persist());
     return "pulled";
   }
@@ -890,9 +896,8 @@ export function createBranchCoordinator(input: {
 
     resetFromDoc,
 
-    broadcastUpdate(update) {
-      // Published replicas are immutable: the next read catches up from the committed tail.
-      input.onBranchUpdate?.(update);
+    async deliverCommitted(branchId) {
+      await loadBase(branchId);
     },
 
     commitWriterUpdate: frames.commitWriterUpdate,

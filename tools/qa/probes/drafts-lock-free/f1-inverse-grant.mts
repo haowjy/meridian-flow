@@ -81,7 +81,7 @@ export async function seedModelLiveWrite(harness: Harness, label: string) {
       },
       recover: async () => {},
     } as never,
-    branchCoordinator: { broadcastUpdate() {} },
+    branchCoordinator: { async deliverCommitted() {} },
     resolveDocumentUri: async () => `scratch://@${label}/probe.md`,
     refreshDocument: async () => {},
     flushLivePull: async () => {},
