@@ -22,7 +22,7 @@ export type BranchRevisionChange = {
  * branch the change would not alter, or one that moved past `expectedRevision`, is skipped.
  */
 export async function bumpBranchRevisions(
-  db: DrizzleDb,
+  db: Pick<DrizzleDb, "select" | "update">,
   branchIds: readonly string[],
   change: BranchRevisionChange = {},
 ) {
@@ -65,5 +65,3 @@ export async function bumpBranchRevisions(
       revision: documentBranches.revision,
     });
 }
-
-export type BumpedBranch = Awaited<ReturnType<typeof bumpBranchRevisions>>[number];

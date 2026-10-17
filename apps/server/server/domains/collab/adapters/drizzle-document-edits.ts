@@ -14,10 +14,10 @@ import {
   documentYjsUpdates,
   type EditOrigin,
   type EditPlacement,
-  documentBranches as importedDocumentBranches,
 } from "@meridian/database";
 import { and, eq, sql } from "drizzle-orm";
 import * as Y from "yjs";
+import { bumpBranchRevisions } from "../../../shared/branch-revisions.js";
 
 type Db = Pick<Database, "select" | "insert" | "update">;
 export interface ReceiptWrite {
@@ -129,21 +129,8 @@ export async function placeDraftRows(
       ),
     )
     .returning({ editId: documentEditParts.editId, ordinal: documentEditParts.ordinal });
-  // Clearing a hold is a review-membership change: lock the row and bump its revision.
-  if (placed.length) {
-    const [held] = await db
-      .select({ id: importedDocumentBranches.id })
-      .from(importedDocumentBranches)
-      .where(
-        and(eq(importedDocumentBranches.id, branchId), eq(importedDocumentBranches.blocking, true)),
-      )
-      .for("update");
-    if (held)
-      await db
-        .update(importedDocumentBranches)
-        .set({ blocking: false, revision: sql`${importedDocumentBranches.revision} + 1` })
-        .where(eq(importedDocumentBranches.id, branchId));
-  }
+  // Clearing a hold is a review-membership change, written through the metadata door.
+  if (placed.length) await bumpBranchRevisions(db, [branchId], { blocking: false });
   if (placement.kind === "live" && placed.length === 1) {
     await db
       .update(documentYjsUpdates)
