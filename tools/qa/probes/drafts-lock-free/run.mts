@@ -14,6 +14,7 @@ import { appendNovelty } from "./append-novelty.mts";
 import { appendRollbackScope } from "./append-rollback-scope.mts";
 import { appendTailOrder } from "./append-tail-order.mts";
 import { archiveInFlightAppend } from "./archive-in-flight-append.mts";
+import { clientResync } from "./client-resync.mts";
 import { d12CreateDuringArchive } from "./d12-create-during-archive.mts";
 import { d12PullBeforeArchive } from "./d12-pull-before-archive.mts";
 import { d13CandidateDisposal } from "./d13-candidate-disposal.mts";
@@ -65,6 +66,7 @@ const PROBES: readonly Probe[] = [
   effectProjection,
   effectWatermarkSweep,
   migrationOnline,
+  clientResync,
 ];
 
 function parseArgs(argv: readonly string[]) {

@@ -144,13 +144,16 @@ export function structsOf(update: Uint8Array): string[] {
   );
 }
 
-/** A paused point: the first caller to reach it waits for `release`; later callers pass. */
-export function pauseAt(point: CollabHookPoint) {
+/**
+ * A paused point: the first caller to reach it (for which `when` holds, if given) waits for
+ * `release`; every other caller passes.
+ */
+export function pauseAt(point: CollabHookPoint, when: () => boolean = () => true) {
   const entered = gate();
   const release = gate();
   let held = false;
   const remove = setCollabHook(point, async () => {
-    if (held) return;
+    if (held || !when()) return;
     held = true;
     entered.open();
     await release.wait;
@@ -503,4 +506,19 @@ export function countingEffects(store: BranchStore) {
     },
   };
   return { store: counted, outcomes };
+}
+
+/** `promise`, or a failure naming `what` after `ms`: a wait that must not hang a failing run. */
+export async function deadline<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${what}: nothing within ${ms} ms`)), ms);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
