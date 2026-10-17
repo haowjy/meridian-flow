@@ -297,6 +297,13 @@ export type DraftDiscardResponse =
     } & DraftItemSettlement)
   | { status: DraftDiscardRefusalStatus; draftId: DraftId; itemKey: DraftItemKey };
 /**
+ * The most `memberPartKeys` a per-change Discard carries. A writer's change holds one part per
+ * keystroke frame, unbounded; members only classify a class that vanished (any survivor: it
+ * grew, `stale`; none: `gone`), so a client sends an even sample of a longer class.
+ */
+export const MAX_DISCARD_MEMBER_PART_KEYS = 500;
+
+/**
  * Item Discard sends no selection. Per-change Discard admits by class: `closureClassIds` with
  * `admissionTokens` over the clicked classes' closed rows and rich effect, and `memberPartKeys`
  * (immutable part keys, empty for fallback-only classes) that only classify an absent class.

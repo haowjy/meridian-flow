@@ -20,6 +20,7 @@ import {
   type DraftCommandResult,
   type DraftDiscardAllRequest,
   type DraftPreviewResponse,
+  MAX_DISCARD_MEMBER_PART_KEYS,
   type ThreadDraftListItem,
   type ThreadDraftListResponse,
 } from "@meridian/contracts/drafts";
@@ -108,7 +109,7 @@ const DiscardBody = z.object({
   draftRevisionToken: z.string().max(200).optional(),
   closureClassIds: z.array(z.string().max(200)).max(500).optional(),
   admissionTokens: z.array(z.string().max(200)).max(500).optional(),
-  memberPartKeys: z.array(z.string().max(200)).max(500).optional(),
+  memberPartKeys: z.array(z.string().max(200)).max(MAX_DISCARD_MEMBER_PART_KEYS).optional(),
 });
 
 function parseBody<S extends z.ZodTypeAny>(schema: S, body: unknown, what: string): z.infer<S> {
