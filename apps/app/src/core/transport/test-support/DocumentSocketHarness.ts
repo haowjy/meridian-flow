@@ -91,10 +91,12 @@ export class DocumentSocketHarness {
   }
 }
 
-/** Independent wire oracle: exclude auth, awareness and SyncStep1 frames. */
+/** Independent wire oracle: exclude pong, auth, awareness and SyncStep1 frames. */
 export function sentSyncKinds(socket: DocumentSocketHarness): Array<"step2" | "update"> {
   const kinds: Array<"step2" | "update"> = [];
   for (const bytes of socket.sent) {
+    // Connection-level frames (the Pong answering a Ping) carry no document name.
+    if (bytes.length === 1) continue;
     const decoder = decoding.createDecoder(bytes);
     decoding.readVarString(decoder);
     if (decoding.readVarUint(decoder) !== 0) continue;

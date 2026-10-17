@@ -12,7 +12,7 @@ import {
   type DocumentSessionConnectionState,
 } from "@/core/editor/document-session";
 
-import { DocumentSocketHarness } from "./test-support/DocumentSocketHarness";
+import { DocumentSocketHarness, sentSyncKinds } from "./test-support/DocumentSocketHarness";
 
 vi.mock("./dev-transport", () => ({
   buildSameOriginWsUrl: (path: string) => `ws://test${path}`,
@@ -166,6 +166,54 @@ describe("Hocuspocus document transport adapter", () => {
       transport.destroy();
       awareness.destroy();
       document.destroy();
+    }
+  });
+
+  // D30, design §2.7: a causal gap never ends a draft refused, and an Update
+  // never reaches a socket ahead of that socket's SyncStep2.
+  it("reconnects a branch room through prefix-missing closes without writing held updates", async () => {
+    const roomName = "branch:draft-1:gen:1";
+    const { code, reason } = WS_CLOSE.BRANCH_PREFIX_MISSING;
+    const document = new Y.Doc();
+    const awareness = new Awareness(document);
+    const transport = createHocuspocusDocumentTransport({ roomName, document, awareness });
+    const states: DocumentSessionConnectionState[] = [];
+    transport.subscribeStatus?.((state) => states.push(state));
+    const serverDocument = new Y.Doc();
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      document.getText("body").insert(0, "writer");
+      const carry = transport.unacknowledgedUpdates();
+      for (let close = 0; close < 4; close += 1) {
+        const socket = DocumentSocketHarness.instances.at(-1);
+        if (!socket) throw new Error("missing document socket");
+        // The first frame flushes the offline queue; the server's SyncStep1 never comes.
+        socket.connected();
+        document.getText("body").insert(0, `${close}`);
+        socket.deliverClose(code, reason);
+        expect(sentSyncKinds(socket)).toEqual([]);
+        await vi.advanceTimersByTimeAsync(5_000);
+      }
+      expect(states.at(-1)?.kind).not.toBe("terminal");
+      expect(DocumentSocketHarness.instances).toHaveLength(5);
+      expect(transport.unacknowledgedUpdates()).not.toBeNull();
+      if (carry) Y.applyUpdate(serverDocument, carry);
+      expect(serverDocument.getText("body").toString()).toBe("writer");
+
+      const fifth = DocumentSocketHarness.instances.at(-1);
+      if (!fifth) throw new Error("missing document socket");
+      fifth.open();
+      fifth.syncStep1(roomName, serverDocument);
+      expect(sentSyncKinds(fifth)).toEqual(["step2"]);
+      fifth.acknowledge(roomName);
+      expect(transport.unacknowledgedUpdates()).toBeNull();
+      Y.applyUpdate(serverDocument, Y.encodeStateAsUpdate(document));
+      expect(serverDocument.getText("body").toString()).toBe("3210writer");
+    } finally {
+      transport.destroy();
+      awareness.destroy();
+      document.destroy();
+      serverDocument.destroy();
     }
   });
 
