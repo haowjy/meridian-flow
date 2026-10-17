@@ -7,7 +7,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 
-import type { DocumentSessionConnectionState } from "@/core/editor/document-session";
+import {
+  BRANCH_UPDATES_REFUSED,
+  type DocumentSessionConnectionState,
+} from "@/core/editor/document-session";
 
 import { DocumentSocketHarness } from "./test-support/DocumentSocketHarness";
 
@@ -116,6 +119,48 @@ describe("Hocuspocus document transport adapter", () => {
         expect(states.at(-1)?.kind).not.toBe("reset");
         expect(access.at(-1)).toBe("read");
         expect(transport.unacknowledgedUpdates()).toBeNull();
+      }
+    } finally {
+      transport.destroy();
+      awareness.destroy();
+      document.destroy();
+    }
+  });
+
+  // #940: a draft the server keeps refusing must stop resending and keep its outbox.
+  it.each([
+    ["branch:draft-1:gen:1", true],
+    ["document-1", false],
+  ] as const)("bounds repeated update refusals of %s", async (roomName, bounded) => {
+    const document = new Y.Doc();
+    const awareness = new Awareness(document);
+    const transport = createHocuspocusDocumentTransport({ roomName, document, awareness });
+    const states: DocumentSessionConnectionState[] = [];
+    transport.subscribeStatus?.((state) => states.push(state));
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      document.getText("body").insert(0, "writer");
+      const carry = transport.unacknowledgedUpdates();
+      for (let refusal = 0; refusal < 4; refusal += 1) {
+        const socket = DocumentSocketHarness.instances.at(-1);
+        if (!socket) throw new Error("missing document socket");
+        socket.open();
+        socket.syncStep1(roomName, document);
+        socket.deliverClose(1008, "branch-update-admission-failed");
+        await vi.advanceTimersByTimeAsync(5_000);
+      }
+      const sockets = DocumentSocketHarness.instances.length;
+      if (bounded) {
+        expect(states.at(-1)).toEqual({
+          kind: "terminal",
+          reason: BRANCH_UPDATES_REFUSED,
+          code: 1008,
+        });
+        expect(sockets).toBe(3);
+        expect(transport.unacknowledgedUpdates()).toEqual(carry);
+      } else {
+        expect(states.at(-1)?.kind).not.toBe("terminal");
+        expect(sockets).toBe(5);
       }
     } finally {
       transport.destroy();

@@ -215,3 +215,11 @@ keyboard, pointer, drop, or branch-recovery answer.
 - `resetDisposition` gives the reset its meaning: `superseded` and `rebuild`
   keep unacknowledged updates for retirement, `refused` rejects pending edits,
   and `schema` fences the room.
+- A branch room's update refusal (`1008`) is bounded in the transport: after
+  three in a row with no acknowledgement between, the room ends `terminal`
+  `BRANCH_UPDATES_REFUSED` (`updatesRefused`) instead of reconnecting forever.
+  It keeps its outbox, and `BranchRoomPool` does not retire it while an owner
+  retains it: the review editor stays mounted read-only with the unsent text,
+  and the save pill offers Reopen draft, which rebuilds the room from the
+  server (a re-forked draft answers that reconnect as superseded). Live rooms
+  never count refusals.

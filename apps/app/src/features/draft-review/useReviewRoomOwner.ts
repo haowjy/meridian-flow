@@ -14,7 +14,7 @@ import { projectDraft, projectDraftList } from "@/client/query/draft-projection"
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { type DraftPreviewRead, draftPreviewQueryOptions } from "@/client/query/useDraftPreview";
 import { workDraftsQueryOptions } from "@/client/query/useWorkDrafts";
-import type { DocumentSession } from "@/core/editor/document-session";
+import { type DocumentSession, updatesRefused } from "@/core/editor/document-session";
 import { useLiveDocumentSessionRegistry } from "@/features/project/context/account-feature-context";
 import type { PresentedDocument } from "@/features/project/presented-document";
 import type { DraftReviewAction, InlineDraftReview } from "./draft-review-session";
@@ -100,6 +100,7 @@ export function useReviewRoomOwner({
       evidence: generation === null ? null : { branchGeneration: generation, proposal: true },
     });
   };
+  const reopenRoom = useRef<(() => void) | null>(null);
   const [binding, setBinding] = useState<{
     session: DocumentSession | null;
     key: string;
@@ -235,6 +236,26 @@ export function useReviewRoomOwner({
     };
     let rebuilding = false;
     let unsubscribe: (() => void) | undefined;
+    // Reopen the room from the server's state; a re-forked draft answers that
+    // reconnect as superseded and the review moves to its new generation.
+    const rebuild = () => {
+      rebuilding = true;
+      setBinding({ session: null, key });
+      void registry.rebuildBranchRoom(roomName).then(
+        (replacement) => {
+          if (!current()) return;
+          unsubscribe?.();
+          rebuilding = false;
+          bind(replacement);
+        },
+        () => {
+          unavailable();
+        },
+      );
+    };
+    reopenRoom.current = () => {
+      if (current() && !rebuilding) rebuild();
+    };
     registry.retainBranchRooms(owner.current, [
       {
         ...reviewRoomRef(queryClient, draft, roomName),
@@ -258,6 +279,7 @@ export function useReviewRoomOwner({
           generation:
             room?.kind === "branch" &&
             connection?.kind !== "reset" &&
+            !updatesRefused(connection) &&
             session.hasUnacknowledgedEdits()
               ? room.generation
               : null,
@@ -274,22 +296,12 @@ export function useReviewRoomOwner({
               return;
             case "rebuild":
             case "refused":
-              rebuilding = true;
-              setBinding({ session: null, key });
-              void registry.rebuildBranchRoom(roomName).then(
-                (replacement) => {
-                  if (!current()) return;
-                  unsubscribe?.();
-                  rebuilding = false;
-                  bind(replacement);
-                },
-                () => {
-                  unavailable();
-                },
-              );
+              rebuild();
               return;
           }
         }
+        // Stays bound and read-only: the writer copies the unsent text, then reopens.
+        if (updatesRefused(connection)) return;
         if (
           snapshot.status === "destroyed" ||
           connection?.kind === "terminal" ||
@@ -310,6 +322,7 @@ export function useReviewRoomOwner({
     }
     return () => {
       owned = false;
+      reopenRoom.current = null;
       unsubscribe?.();
       registry.releaseBranchRooms(owner.current);
     };
@@ -321,9 +334,12 @@ export function useReviewRoomOwner({
     session,
     /** The writer's unsent edits of a retired generation have not all reached the room yet. */
     carryPending: writerChanges.scope === scope && writerChanges.generation !== null,
+    /** Reopens a room whose updates the server kept refusing at the draft's current state. */
+    reopen: () => reopenRoom.current?.(),
     inputEligible:
       session !== null &&
       session.getSnapshot().connectionState?.kind !== "reset" &&
+      !updatesRefused(session.getSnapshot().connectionState) &&
       review !== null &&
       !review.roomError &&
       review.completion?.phase !== "closed",

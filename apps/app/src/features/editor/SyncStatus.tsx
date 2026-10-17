@@ -16,6 +16,11 @@
  *     the reconnect until the server has acknowledged every local change
  *     (`serverHasLocalChanges`), then swaps in place to "Back online (all
  *     changes saved)" for a few seconds and hides.
+ *   - updates refused (`updatesRefused`: the server kept refusing a draft
+ *     room's updates) → "Couldn't save your latest changes (copy them before
+ *     you reopen)" with Reopen draft
+ *     when the owner offers `onReopen`. The editor stays read-only behind it so
+ *     the unsent text can be copied first. Wins over the outage phase.
  *   - otherwise nothing: `detached` alone is not an outage (a healthy cold load
  *     spends about a second there), so there is no timer and a first load never
  *     shows a label.
@@ -25,7 +30,12 @@
 import { Trans } from "@lingui/react/macro";
 import { useEffect, useState } from "react";
 
-import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
+import { Button } from "@/components/ui/button";
+import {
+  type DocumentSession,
+  type DocumentSessionSnapshot,
+  updatesRefused,
+} from "@/core/editor/document-session";
 
 /** Matches ConnectionBanner's RECONNECTED_VISIBLE_MS. */
 const SAVED_CONFIRMATION_VISIBLE_MS = 3_000;
@@ -67,9 +77,11 @@ function trackSession(session: DocumentSession): Tracked {
 
 export type SyncStatusProps = {
   session: DocumentSession;
+  /** Reopens a room whose updates were refused; only a draft review offers it. */
+  onReopen?: () => void;
 };
 
-export function SyncStatus({ session }: SyncStatusProps) {
+export function SyncStatus({ session, onReopen }: SyncStatusProps) {
   const [stored, setStored] = useState<Tracked>(() => trackSession(session));
 
   // A new session starts from its own snapshot with no outage history. Reset
@@ -105,6 +117,24 @@ export function SyncStatus({ session }: SyncStatusProps) {
     );
     return () => clearTimeout(timer);
   }, [phase, session]);
+
+  if (updatesRefused(snapshot.connectionState)) {
+    return (
+      <div
+        className="pointer-events-auto inline-flex items-center gap-2 rounded-full border border-border-subtle bg-muted py-1 pr-1 pl-2 text-meta font-medium text-foreground shadow-card"
+        role="alert"
+        data-sync-refused
+      >
+        <span aria-hidden className="size-1.5 rounded-full bg-destructive" />
+        <Trans>Couldn't save your latest changes (copy them before you reopen)</Trans>
+        {onReopen ? (
+          <Button type="button" size="xs" variant="secondary" onClick={onReopen}>
+            <Trans>Reopen draft</Trans>
+          </Button>
+        ) : null}
+      </div>
+    );
+  }
 
   // Autosync is assumed, so the healthy and transient states say nothing:
   // "no news is good news." Terminal states win over any outage phase. Rendered
