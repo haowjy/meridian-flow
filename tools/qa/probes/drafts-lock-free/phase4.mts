@@ -389,3 +389,71 @@ export async function durableDoc(harness: Harness, branchId: string): Promise<Y.
   if (!read) throw new Error(`Branch ${branchId} is missing`);
   return materializeBranchRead(read);
 }
+
+/**
+ * One server process: its coordinator over `store` (its own connections when `store` is
+ * another harness's) and one room, which every publication of this process reaches. `dirty`
+ * counts the coordinator's `onAppendCommitted` marks.
+ */
+export async function openProcess(
+  harness: Harness,
+  draft: { branchId: string },
+  store: BranchStore = harness.store,
+) {
+  const room = await durableDoc(harness, draft.branchId);
+  const dirty: string[] = [];
+  const coordinator = phase4Coordinator(harness, {
+    store,
+    onAppendCommitted: (branchId) => dirty.push(branchId),
+    onBranchUpdate: ({ update }) => Y.applyUpdate(room, update, "publish"),
+  });
+  await coordinator.readBranch(draft.branchId, async () => {});
+  return { room, coordinator, dirty };
+}
+
+/** A tab's keystroke on `room`'s state: a fresh client appending `token`. */
+export function keystroke(room: Y.Doc, token: string, clientID?: number): Uint8Array {
+  const tab = new Y.Doc({ gc: false });
+  if (clientID !== undefined) tab.clientID = clientID;
+  try {
+    Y.applyUpdate(tab, Y.encodeStateAsUpdate(room));
+    const paragraph = tab.getXmlFragment("prosemirror").get(0) as Y.XmlElement;
+    const text = paragraph.get(0) as Y.XmlText;
+    return captureUpdate(tab, () => text.insert(text.length, token));
+  } finally {
+    tab.destroy();
+  }
+}
+
+/**
+ * Waits until `promise` settles or a probe connection waits on a lock matching `match`,
+ * whichever is first: an operation that should not block on a held row either finishes or
+ * names the lock it is stuck behind.
+ */
+export async function settledOrWaiting<T>(
+  harness: Harness,
+  promise: Promise<T>,
+  match: RegExp,
+  timeoutMs = 5_000,
+): Promise<{ settled: true; value: T } | { settled: false; waiting: string[] }> {
+  const waiters = async () =>
+    harness.raw<{ pid: number; query: string }[]>`
+      select pid, query from pg_stat_activity
+      where datname = current_database() and wait_event_type = 'Lock'`;
+  // Connections already waiting belong to someone else: only a new waiter is `promise`'s.
+  const before = new Set((await waiters()).map((row) => row.pid));
+  let result: { value: T } | undefined;
+  void promise.then((value) => {
+    result = { value };
+  });
+  const until = Date.now() + timeoutMs;
+  while (Date.now() < until) {
+    if (result) return { settled: true, value: result.value };
+    const waiting = (await waiters())
+      .filter((row) => !before.has(row.pid) && match.test(row.query))
+      .map((row) => row.query.slice(0, 80));
+    if (waiting.length) return { settled: false, waiting };
+    await new Promise((done) => setTimeout(done, 5));
+  }
+  throw new Error(`Neither settled nor waiting on ${match} within ${timeoutMs} ms`);
+}
