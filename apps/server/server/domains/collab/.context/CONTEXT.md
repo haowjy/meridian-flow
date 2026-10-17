@@ -61,8 +61,8 @@ document to its first grant. The response transaction saves all live and draft
 journals, receipt records, and callbacks together. Live rooms publish only
 after commit, so rollback is invisible to open editors.
 
-A chat's write mode decides only where its new AI writes go (D62); chats in
-one Work may differ. A draft write never pushes itself live (D59): a draft
+A chat's write mode decides only where its new AI writes go; chats in
+one Work may differ. A draft write never pushes itself live: a draft
 that an auto-apply chat leaves behind, or another chat keeps writing, waits
 there like a kept change, and the dock shows it. Switching a chat to
 auto-apply touches no draft; Apply stays the writer's command. Branches carry
@@ -117,6 +117,15 @@ share a segment, but sharing a paragraph alone never joins edits.
 
 ## Transaction and lock contracts
 
+A new branch write makes four choices, each named below: its door (an append,
+an exact or fold rewrite, or the metadata door), its Work admission (`active`
+or `any`), its entry into the Works mutation boundary (every write except a
+writer append that leaves the branch's review membership unchanged), and its
+bounded attempt.
+It takes no other lock and adds no retry loop of its own. A revision miss
+surfaces as `BranchCasConflictError`: the branch moved, and the attempt
+captures again. No write compares bytes.
+
 Every branch write is fenced by its row's `revision`, under one of two
 policies. An **exact** write commits only at the revision it was computed at:
 appends through `appendRows`, an exact checkpoint rewrite through
@@ -160,7 +169,7 @@ catalog or availability publication and no pending counts. The append's
 `UPDATE` carries a Work-is-active predicate, so the lifecycle decision and the
 write are one statement.
 
-An archived Work's draft is frozen to content-moving rewrites (D19). A rewrite
+An archived Work's draft is frozen to content-moving rewrites. A rewrite
 names its admission (`CommitRewriteInput.work`). A live→draft pull, a peer's
 pull or containment reset and a peer's catch-up are `active`: their `UPDATE`
 carries the Work-is-active predicate, and a pull or reset is refused first by
@@ -170,9 +179,17 @@ update after unarchive catches the draft up. A branch already gone when the
 boundary resolves its Work (`DraftBranchMissingError`) answers `closed`, as
 storage does, so a peer pull still reports `ThreadPeerPullLost`. A peer read on an archived Work sees the peer as it stands. Exempt,
 by name (`any`): a settlement's reset completing a batch staged before the
-archive (D1's settlement fence), Discard and purge (lifecycle operations
-themselves), and compaction (content-free, and only an append triggers it,
+archive (the settlement fence), Discard's kernel and purge (lifecycle
+operations themselves; the writer's Discard command refuses an archived Work
+under the Work lock before it reaches the kernel), and compaction (content-free, and only an append triggers it,
 which the append's predicate already refuses).
+
+> [!FLAG] **Diverges from the settled product rule.** The Work archive decision
+> ([archive hides a Work][kb-archive]) says an archived Work's draft keeps
+> rebasing on live: its pending changes never move, but live→draft pulls keep
+> its base current so it applies cleanly after unarchive. This checkout refuses
+> those pulls instead. Resolve by restoring `any` admission for live→draft pulls
+> or by a new owner ruling; until then this paragraph describes the code.
 
 A writer frame takes no lease, mutex or document lock, and no lock beyond its
 own statement. It is judged on a private clone of the published replica
@@ -189,7 +206,8 @@ the background (`compact`: no content, effect or `updatedAt` change). Frames
 and the fold they trigger are `domain/branch-writer-frames.ts`, over the branch
 runtime surface (`BranchRuntime`: published replicas, private candidates,
 prepared writes, attempts) that `domain/branch-coordinator.ts` owns with the
-operations on it (D22: the cut is runtime vs operations). Its `compacting`
+operations on it: frame admission depends on the runtime, never on the
+operations. Its `compacting`
 set keeps one fold per branch in a process; the fold
 fence orders it against every other write, so a frame that lands meanwhile is
 folded in and a rewrite that commits first makes it miss until the next frame
@@ -215,7 +233,7 @@ through the coordinator's save operations (`withTransient`,
 `prepareStagedRows`, `prepareCatchUp`, `commitSegmentRows`), which read
 committed replicas and write only through revision-fenced attempts, and read
 the journal through one `BranchReplayJournalReads` port. The confirmation is
-the retained exception (D7): it runs once, outside the save attempt, and holds
+the retained exception: it runs once, outside the save attempt, and holds
 its Work rows and draft and live advisory locks across attempts 2 to 4; only
 branch rows release on the savepoint rollback. Apply, selective Discard and
 pulls retry a moved branch up to four times, then refuse `stale`.
@@ -232,7 +250,8 @@ grant Work). Then its documents' mutation locks in id order,
 the live head check, and each draft destination's exact checkpoint rewrite at
 its captured revision. Those captured fences, not a lock of the inverse's own,
 order two inverses of the same edit: the second misses, recaptures and finds
-the edit already reversed (D22; probe `d22-concurrent-undo`). Any moved revision or head unwinds the attempt and
+the edit already reversed (probe `d22-concurrent-undo` in
+[the lock-free probe index](../../../../../../docs/qa/drafts-lock-free-probes.md)). Any moved revision or head unwinds the attempt and
 recaptures; after four attempts one more capture is classified without
 writing, so a plan that still applies is a `ReversalConflictError`, never a
 semantic refusal. `markBlocking` (a held draft found by the plan) is its own short write
@@ -245,12 +264,12 @@ cursor, applying any rows appended since into the checkpoint under the row
 lock (re-judging `has_effect` there only when it applied some). Frames never
 make a pull retry; only another rewrite does. A live pull into a Work draft is
 fenced by a pending settlement on its document rather than moving the revision
-that settlement's completion resets at, and it re-arms its debounce (D20): one
+that settlement's completion resets at, and it re-arms its debounce: one
 capture and merge per debounce period until the settlement completes or is
 withdrawn and the next run commits, after which polling stops. That is the
 only re-arm: a terminally blocked settlement answers `blocked` and does not
 re-arm (nothing lifts it on its own, so polling would capture and merge
-forever on an idle document; D22), an archived Work's draft (`inactive`, D19)
+forever on an idle document), an archived Work's draft (`inactive`)
 waits for the next live update after unarchive, and a closed branch leaves the
 active list. Live pulls
 snapshot before any transaction and re-read branch membership. A thread-peer
@@ -287,8 +306,8 @@ upstream before its peer, otherwise ID order. No path takes a Work row, a
 live lock or a namespace lock after a branch row, and none takes a namespace
 lock while holding a document lock: it computes the complete namespace set
 first and revalidates. Live mutexes are held around a commit scope (an
-inverse's live destinations, item Discard, Apply completion). D1 retains two
-captures under them, the live-scope exceptions: a live pull snapshots the live
+inverse's live destinations, item Discard, Apply completion). Two captures
+still run under them, the live-scope exceptions: a live pull snapshots the live
 bytes inside `withDocument` (before any transaction), and Apply staging
 captures each document's LOCK-WS lock cut and prepares its publication under
 those live scopes. No path awaits writer ingress while it holds a Work or
@@ -414,3 +433,5 @@ back unrelated documents in the reply.
 - [Collab visual explainer](collab-domain.html)
 - [Draft/live visual model](draft-live-model.html)
 - [Deferred work](FUTURE.md) and [TODO](TODO.md)
+
+[kb-archive]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/work/management/work-archive-and-delete.md

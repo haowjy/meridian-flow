@@ -907,7 +907,7 @@ The repeatable service-seam check is
 It also checks that retirement waits for transaction commit and closes only A's
 peer room. Run inside a caller's root transaction, item and whole Discard retire no
 peer, close no room and revoke no reply helper before the root commits, none after
-it rolls back, and once per document after it commits (D17). It also gates retirement after commit, evicts the old reply entry as
+it rolls back, and once per document after it commits. It also gates retirement after commit, evicts the old reply entry as
 a refusal would, and stages a fresh peer's write in the same open reply before
 releasing that gate; the fresh write and room must survive. This is DB integration evidence, not a browser or live-runtime probe.
 

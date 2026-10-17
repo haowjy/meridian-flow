@@ -25,8 +25,7 @@ ID. A document with no branch can still be an item and can still be applied.
 ## Lifecycle and publication
 
 Draft capture, Apply, Discard, and redo require an active Work under the shared
-lifecycle row lock and grant confirmation. Discard takes no branch lease: in
-one attempt it locks the Work, draft, namespaces, and documents, then resets
+lifecycle row lock and grant confirmation. Discard runs as one attempt: it locks the Work, draft, namespaces, and documents, then resets
 selected text from live (a fold over every row appended since its read) or
 closes the whole draft, then ends the draft's use of created
 nodes. Peer rooms retire after commit, only for branches actually reset or
@@ -34,10 +33,12 @@ closed. Work purge reuses this kernel after proving its lifecycle set.
 
 Draft HTTP routes share one Work-access check: a deleted Work is 404 before any
 draft read or mutation, while an archived Work still permits review reads. An
-archived Work's drafts are frozen (captured evidence stays; no frame, pull,
-Apply or Discard writes them until unarchive). The exceptions are named: a
-settlement completing a batch staged before the archive, purge, and
-compaction, which changes no content (D19). Replaying an already committed push
+archived Work's drafts are frozen: no frame, Apply or writer Discard writes
+them until unarchive, and on this checkout no pull does either. The
+exceptions are named: a settlement completing a batch staged before the
+archive, purge, and compaction, which changes no content. The pull refusal
+diverges from the settled archive rule, under which pulls keep the draft's
+base current; see the flag in [CONTEXT.md](CONTEXT.md). Replaying an already committed push
 returns its durable receipt without reauthorizing a new write.
 
 Apply and Discard are server commands, not client loops. Apply item and
@@ -106,7 +107,8 @@ half (Work admission, the pending projection, the live advisory lock, the
 effect refresh, edit receipts). These branch writes stand outside the doors,
 by name: creation and its seeds insert the row (`ensureDraftBranch`,
 `ensureThreadPeerBranch`), retraction and tree deletion delete it, and two
-paths PR B deletes write directly: `refreshDraftEffect`'s conditional
+paths write directly, both owned by the selective-review server path that the
+re-landing diff-based review ([#862]) deletes: `refreshDraftEffect`'s conditional
 `has_effect` bump and selective Discard's survivor re-journal.
 Thread-peer and Work-draft resolution return metadata only (id, generation,
 status, lifecycle); content is read through the coordinator.
@@ -121,14 +123,14 @@ also discards the generation's pending rows and adds the checkpoint's and the
 tail's clocks to `discarded_state_vector`. Compaction folds the tail into a new
 checkpoint with unchanged content and leaves `updated_at`. The coordinator
 schedules it in the background when a committed writer frame leaves more than
-512 tail rows or 2 MiB of tail (D10).
+512 tail rows or 2 MiB of tail.
 
 A branch's `lifecycle` (`active`, `archived`, `deleted`, `missing`) is read from
 its draft's origin Work with the row; anything but `active` is frozen. The
 append's `UPDATE` admits only while that Work is active, in the same statement,
 so an append whose statement starts after an archive commits gets zero rows. A
 lifecycle transition also locks and bumps every active branch of the Work in
-its own transaction (D11): an append judged before the archive, even one whose
+its own transaction: an append judged before the archive, even one whose
 statement queued behind it, misses its revision; one that commits first lands
 before the archive, as a key typed just before it does. The coordinator holds one immutable replica per branch at a
 committed revision and catches it up from the tail; every write computes on a
@@ -161,3 +163,5 @@ own branch persistence. The transport layer only authenticates, adapts peers,
 and delegates this ordering.
 
 A peer reconstructed from journal rows is integrable only after every row has applied with no pending structs and no pending delete set. State-vector equality, or a pending-struct check before applying, is not enough.
+
+[#862]: https://github.com/haowjy/meridian-flow/pull/862
