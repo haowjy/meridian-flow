@@ -25,6 +25,7 @@ is not a claim that it passed on the current commit.
 - [Composer drafts](composer-drafts.md): per-tab reload, submission hand-off and missing-reference recovery.
 - [Chat uploads menu](chat-uploads-menu.md): the top-bar list of a chat's files: add, open, delete, fork source and dock restore.
 - [Crash and two processes](crash-and-two-process.md): P5, a server crash between a draft write's commit and its ack, then the resend; P6, two servers on one database with a tab on each, using `tools/qa/shared-db-server.ts` and `branch-readback.ts`.
+- [Lock-free drafts seam probes](drafts-lock-free-probes.md): D12, D13, D18, D19 and F1, the PostgreSQL interleavings behind lock-free drafts, run with one command against a scratch database.
 - [Journal checkpoint coverage](checkpoint-coverage.md): durable admission, compaction, generation replacement and opaque cuts.
 - [Document adoption across a reload](document-adoption-reload.md): New file reloaded inside the adoption commit window, desktop and the phone's three document branches.
 - [Draft review](draft-review.md): visual editor and review workflows.
