@@ -32,6 +32,12 @@ export type BranchProjection = {
   markDirty(branchId: string): void;
   /** One finite pass over the stale set; returns how many branches it newly tracked. */
   sweep(): Promise<number>;
+  /**
+   * Runs every pending judgement now, skipping its debounce or backoff, and resolves once
+   * none is pending or running (a parked one excepted): the convergence point for a reader
+   * that must see the projection caught up, such as a test asserting review membership.
+   */
+  flush(): Promise<void>;
   /** Clears every timer; runs in flight finish and re-arm nothing. */
   dispose(): void;
 };
@@ -267,6 +273,24 @@ export function createBranchProjection(input: {
         sweeping = false;
       }
       return tracked;
+    },
+
+    async flush() {
+      for (let round = 0; round < 1_000; round += 1) {
+        let pending = running > 0 || queue.length > 0;
+        for (const [branchId, entry] of entries) {
+          if (entry.parked) continue;
+          pending = true;
+          if (entry.timer) {
+            clearTimeout(entry.timer);
+            entry.timer = undefined;
+            enqueue(branchId, entry);
+          }
+        }
+        if (!pending || disposed) return;
+        await new Promise((done) => setTimeout(done, 2));
+      }
+      throw new Error("The branch effect projection did not settle");
     },
 
     dispose() {

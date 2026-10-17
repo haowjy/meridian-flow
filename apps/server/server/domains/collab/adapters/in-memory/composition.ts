@@ -202,7 +202,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
     },
     projections: {
       refreshDocumentProjection: projections.refresh,
-      branchEffects: { sweep: async () => 0 },
+      branchEffects: { sweep: async () => 0, flush: async () => {} },
       documentDerivations: {
         derive: async (documentId) => {
           await projections.refresh({ documentId });

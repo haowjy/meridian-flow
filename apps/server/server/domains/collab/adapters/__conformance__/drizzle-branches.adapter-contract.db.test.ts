@@ -43,7 +43,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "../../../../test-support/drizzle-reset.js"
     );
     const { createDrizzleBranchStore } = await import("../drizzle-branches.js");
-    const { appendBranchRows, EMPTY_BRANCH_UPDATE, readBranchContent, readResolvedBranch } =
+    const { appendBranchRows, proseBranchUpdate, readBranchContent, readResolvedBranch } =
       await import("../../test-support/branch-store-seam.js");
     const { createDrizzleDraftStore } = await import("../drizzle-drafts.js");
     const { createHocuspocusPersistenceService } = await import("../../hocuspocus-persistence.js");
@@ -417,6 +417,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         threadId: THREAD_ID as never,
         wId: await createDrizzleJournal(db).reserveWriteOrdinal(DOC_ID, THREAD_ID),
       });
+      // The projection job's judgement of the append (design §3.2).
+      const appended = await store.getBranch(work.branchId);
+      if (!appended) throw new Error("the branch is gone");
+      await expect(
+        store.writeEffect({
+          branchId: work.branchId,
+          revision: appended.revision,
+          hasEffect: true,
+          workId: appended.workId,
+        }),
+      ).resolves.toBe("written");
       const pendingDrafts = createDrizzleWorkDraftPendingStore(db);
       await expect(
         pendingDrafts
@@ -817,7 +828,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         liveDoc: live,
       });
       await appendBranchRows(store, branch.branchId, [
-        { updateData: EMPTY_BRANCH_UPDATE, source: "agent" },
+        { updateData: proseBranchUpdate(), source: "agent" },
       ]);
 
       const beforeSecond = Y.encodeStateVector(live);
@@ -828,7 +839,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { origin: `human:${USER_ID}`, seq: 0 },
       );
       await appendBranchRows(store, branch.branchId, [
-        { updateData: EMPTY_BRANCH_UPDATE, source: "agent" },
+        { updateData: proseBranchUpdate(), source: "agent" },
       ]);
 
       const rows = await db

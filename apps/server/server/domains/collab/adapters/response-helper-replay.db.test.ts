@@ -366,7 +366,7 @@ describe("response helper replay (Postgres)", () => {
     }
     await expectDroppedCommit(draft, dropped, 1, "red\n\nazure\n\nlime\n");
   });
-  it("a save whose second document moves between capture and commit unwinds whole and commits both next", async () => {
+  it("a save whose second document moves between capture and commit folds the move and commits once", async () => {
     const { fixture, branchId, responseId, context, write } = await setupResponseDraft(db, harness);
     const core = fixture.collab.agentEdit();
     const writeBeta = (
@@ -428,9 +428,9 @@ describe("response helper replay (Postgres)", () => {
     } finally {
       fixture.branchStore.appendRows = original;
     }
-    // Alpha appended in the first attempt; Beta's miss unwound it, and the second attempt
-    // judged both again from the reply's original staged entries.
-    expect(appends).toEqual(["alpha", "beta", "alpha", "beta"]);
+    // An append is sequenced, not fenced: Beta's move is folded into its committed prefix
+    // under the row lock, and the save commits in its first attempt.
+    expect(appends).toEqual(["alpha", "beta"]);
     expect(saved).toMatchObject({ status: "committed" });
     expect(await rowsOf(branchId)).toBe(before.alpha + 1);
     expect(await rowsOf(beta.branchId)).toBe(before.beta + 1);

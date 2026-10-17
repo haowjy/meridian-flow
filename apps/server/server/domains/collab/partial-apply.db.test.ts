@@ -264,12 +264,6 @@ describe("per-change Apply (postgres)", () => {
   ] as const)("last per-change %s closes, disappears from the Work list, and later AI writes reopen", async (action) => {
     const { harness, fixture, branch, command, review } = await setup("Alpha base.", "last-change");
     await stageText(fixture, branch.branchId, 0, " Proposed", "agent");
-    const duplicate = await fixture.branchCoordinator.readBranch(branch.branchId, async (doc) =>
-      Y.encodeStateAsUpdate(doc, Y.encodeStateVector(doc)),
-    );
-    await appendBranchRows(fixture.branchStore, branch.branchId, [
-      { source: "writer", actorUserId: USER_ID, updateData: duplicate },
-    ]);
     const preview = await review.preview(command.documentId);
     if (preview.status !== "active") throw new Error("missing preview");
     const request = fencedRequest(

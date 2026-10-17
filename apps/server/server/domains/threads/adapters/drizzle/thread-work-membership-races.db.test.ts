@@ -229,7 +229,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
     });
 
-    it("deletes first and then refuses a draft transition under that Work", async () => {
+    it("an append is not held behind a Work deletion, and the next one is refused after it", async () => {
       await control.unsafe(`
         CREATE FUNCTION test_block_work_delete() RETURNS trigger
         LANGUAGE plpgsql AS $$
@@ -248,23 +248,22 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       try {
         const deletion = works.softDelete(WORK_ID);
         await waitForLock("advisory");
-        const draft = appendBranchRows(branches, BRANCH_ID, [
-          { updateData: proseBranchUpdate(), source: "agent" },
-        ]);
-        // The append can reject while `deletion` is still being awaited, before
-        // the assertion below attaches; mark it handled so load can't surface it
-        // as an unhandled rejection.
-        draft.catch(() => {});
-        await waitForLock("transactionid");
+        // An append locks no Work (phase 4): it is not held behind the deletion, and one that
+        // started before the deletion committed lands (the archive window, design §5).
+        await expect(
+          appendBranchRows(branches, BRANCH_ID, [
+            { updateData: proseBranchUpdate(), source: "agent" },
+          ]),
+        ).resolves.toHaveLength(1);
         await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
         advisoryLockHeld = false;
         await deletion;
-        // The append waited on the Work row its first pending row locks; once the deletion
-        // committed, the append's Work-is-active predicate refused it as a moved write.
-        await expect(draft).rejects.toThrow(/moved under the append/);
+        // Once the deletion committed, the append's Work-is-active predicate refuses the next.
         await expect(
-          draftPending.countPendingByWorkIds([WORK_ID]).then((counts) => counts.get(WORK_ID) ?? 0),
-        ).resolves.toBe(0);
+          appendBranchRows(branches, BRANCH_ID, [
+            { updateData: proseBranchUpdate("after"), source: "agent" },
+          ]),
+        ).rejects.toThrow(/append was refused/);
       } finally {
         if (advisoryLockHeld) await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
         await control.unsafe(`
