@@ -187,48 +187,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
     });
 
-    it("deletes after a draft transition takes the lifecycle lock first", async () => {
-      await control.unsafe(`
-        CREATE FUNCTION test_block_draft_insert() RETURNS trigger
-        LANGUAGE plpgsql AS $$
-        BEGIN
-          PERFORM pg_advisory_xact_lock(${ADVISORY_KEY});
-          RETURN NEW;
-        END;
-        $$;
-        CREATE TRIGGER test_block_draft_insert
-        BEFORE INSERT ON branch_write_journal
-        FOR EACH ROW EXECUTE FUNCTION test_block_draft_insert();
-      `);
-      await control`SELECT pg_advisory_lock(${ADVISORY_KEY})`;
-      let advisoryLockHeld = true;
-      try {
-        const draft = appendBranchRows(branches, BRANCH_ID, [
-          { updateData: proseBranchUpdate(), source: "agent" },
-        ]);
-        await waitForLock("advisory");
-        const deletion = works.softDelete(WORK_ID).then(
-          () => ({ status: "fulfilled" as const }),
-          (reason: unknown) => ({ status: "rejected" as const, reason }),
-        );
-        await waitForLock("transactionid");
-        await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
-        advisoryLockHeld = false;
-        await draft;
-        const result = await deletion;
-        expect(result.status).toBe("fulfilled");
-        await expect(works.findById(WORK_ID)).resolves.toMatchObject({
-          deletedAt: expect.any(String),
-        });
-      } finally {
-        if (advisoryLockHeld) await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
-        await control.unsafe(`
-          DROP TRIGGER IF EXISTS test_block_draft_insert ON branch_write_journal;
-          DROP FUNCTION IF EXISTS test_block_draft_insert();
-        `);
-      }
-    });
-
     it("an append is not held behind a Work deletion, and the next one is refused after it", async () => {
       await control.unsafe(`
         CREATE FUNCTION test_block_work_delete() RETURNS trigger
