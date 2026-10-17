@@ -164,7 +164,9 @@ pull or containment reset and a peer's catch-up are `active`: their `UPDATE`
 carries the Work-is-active predicate, and a pull or reset is refused first by
 the boundary under the Work lock (`requireActive`). The pull answers
 `inactive`, writes nothing and is neither retried nor re-armed; the next live
-update after unarchive catches the draft up. A peer read on an archived Work sees the peer as it stands. Exempt,
+update after unarchive catches the draft up. A branch already gone when the
+boundary resolves its Work (`DraftBranchMissingError`) answers `closed`, as
+storage does, so a peer pull still reports `ThreadPeerPullLost`. A peer read on an archived Work sees the peer as it stands. Exempt,
 by name (`any`): a settlement's reset completing a batch staged before the
 archive (D1's settlement fence), Discard and purge (lifecycle operations
 themselves), and compaction (content-free, and only an append triggers it,

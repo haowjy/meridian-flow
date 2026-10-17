@@ -42,6 +42,7 @@ import {
 } from "../../context/tree/draft-ownership.js";
 import { isDrafted } from "../../file-policy/index.js";
 import {
+  DraftBranchMissingError,
   WorkLifecycleUnavailableError,
   type WorkProjectionMutation,
 } from "../../projects/index.js";
@@ -608,6 +609,9 @@ export function createDrizzleBranchStore(
     return run().catch((cause): RewriteOutcome => {
       if (cause instanceof BranchWriteRollback) return cause.outcome;
       if (cause instanceof WorkLifecycleUnavailableError) return { status: "inactive" };
+      // Retracted or discarded before the boundary resolved its Work: the same answer storage
+      // gives a branch closed under the row lock, so pulls report their typed loss.
+      if (cause instanceof DraftBranchMissingError) return { status: "closed" };
       throw cause;
     });
   }

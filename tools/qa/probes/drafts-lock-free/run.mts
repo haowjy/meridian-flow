@@ -15,6 +15,7 @@ import { d13CandidateDisposal } from "./d13-candidate-disposal.mts";
 import { d13RecaptureReleasesRow } from "./d13-recapture-releases-row.mts";
 import { d18SampledDiscard } from "./d18-sampled-discard.mts";
 import { d19ArchivedPull } from "./d19-archived-pull.mts";
+import { d19RetractedPeerPull } from "./d19-retracted-peer-pull.mts";
 import { f1InverseDeadlock } from "./f1-inverse-deadlock.mts";
 import { f1InverseGrant } from "./f1-inverse-grant.mts";
 import { createScratchDatabase, openHarness, type Probe } from "./harness.mts";
@@ -26,6 +27,7 @@ const PROBES: readonly Probe[] = [
   d13CandidateDisposal,
   d18SampledDiscard,
   d19ArchivedPull,
+  d19RetractedPeerPull,
   f1InverseGrant,
   f1InverseDeadlock,
 ];
