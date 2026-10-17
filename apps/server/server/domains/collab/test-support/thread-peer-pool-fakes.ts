@@ -52,6 +52,15 @@ function createFakeAgentEditCore(
       commit?.deferFinalization?.({ commit() {}, abort() {} });
       return committed(responseId);
     }),
+    // An attempt that persists nothing of its own and installs through `commitResponse`.
+    prepareResponse: vi.fn(async (responseId: string, commit?: FakeCommitOptions) => ({
+      consume: async () => {},
+      install: () => fake.commitResponse(responseId, commit),
+      dispose() {},
+      fail: async (cause: unknown): Promise<never> => {
+        throw cause;
+      },
+    })),
     rollbackResponse: vi.fn(async (responseId: string, _options?: unknown) => ({
       status: "rolledBack" as const,
       responseId,

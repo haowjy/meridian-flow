@@ -322,17 +322,17 @@ describe("response helper replay (Postgres)", () => {
     expect(await read()).toMatchObject({ status: "success" });
     await expectDroppedCommit(draft, dropped, updateCount, markdown, generation);
   });
-  it("failed save CAS leaves an accepted fresh replay for retry", async () => {
+  it("a save that misses all four attempts leaves an accepted fresh replay for retry", async () => {
     const draft = await setupResponseDraft(db, harness);
     const { fixture, branchId, responseId, write, review } = draft;
     const dropped = [await write("gold", "gild"), await write("gild", "bronze")];
     expect(await write("green", "lime")).toMatchObject({ status: "success", phase: "staged" });
     await review("gold");
     const original = fixture.branchStore.appendRows.bind(fixture.branchStore);
-    let refused = false;
+    let misses = 0;
     fixture.branchStore.appendRows = async (request) => {
-      if (!refused && request.branchId === branchId) {
-        refused = true;
+      if (request.branchId === branchId) {
+        misses += 1;
         return { status: "moved" };
       }
       return original(request);
@@ -342,6 +342,8 @@ describe("response helper replay (Postgres)", () => {
     } finally {
       fixture.branchStore.appendRows = original;
     }
+    // Four commit attempts, each recaptured; the fifth never runs.
+    expect(misses).toBe(4);
     expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nazure\n\ngreen\n");
     const lease = await fixture.collab.agentEdit().prepare(responseId, ALPHA_ID);
     if (!lease) throw new Error("Missing prepared lease");

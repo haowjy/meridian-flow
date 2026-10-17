@@ -74,6 +74,8 @@ export function createBranchThreadPeerAgentEditCore(input: {
   semanticProvenance: SemanticProvenanceWriter;
   observability: AgentEditObservability;
   commitThreadResponseAtomically<T>(operation: () => Promise<T>): Promise<T>;
+  /** A reply save attempt's savepoint inside the response transaction. */
+  attemptScope<T>(operation: () => Promise<T>): Promise<T>;
   responseTransactionSettlement: ResponseTransactionSettlement;
   responseTransactions: ResponseTransactionHooks;
   fileAccess: Pick<FileAccess, "authorize" | "authorizeAt" | "confirmEdit">;
@@ -101,6 +103,7 @@ export function createBranchThreadPeerAgentEditCore(input: {
     lockWorks: input.lockWorks,
     lockLiveDocuments: input.lockLiveDocuments,
     commitThreadResponseAtomically: input.commitThreadResponseAtomically,
+    attemptScope: input.attemptScope,
     responseTransactionSettlement: input.responseTransactionSettlement,
     responseTransactions: input.responseTransactions,
     createThreadCore: (threadId, viewFor) => {

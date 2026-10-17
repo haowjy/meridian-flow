@@ -8,6 +8,7 @@ import {
   deferUntilDrizzleRollback,
   isInDrizzleTransaction,
   runAfterDrizzleCommit,
+  runInDrizzleSavepoint,
   runInDrizzleTransaction,
   runInRootDrizzleTransaction,
   runOutsideDrizzleTransaction,
@@ -409,6 +410,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       semanticProvenance: runtime.semanticProvenance,
       observability,
       commitThreadResponseAtomically: (operation) => runInDrizzleTransaction(deps.db, operation),
+      attemptScope: (operation) => runInDrizzleSavepoint(deps.db, operation),
       responseTransactionSettlement: {
         deferUntilCommit: deferUntilDrizzleCommit,
         deferUntilRollback: deferUntilDrizzleRollback,

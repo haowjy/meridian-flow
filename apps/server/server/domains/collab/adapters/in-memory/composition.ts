@@ -118,6 +118,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       lockLiveDocuments: async () => {},
     }),
     commitThreadResponseAtomically: (operation) => operation(),
+    attemptScope: (operation) => operation(),
     responseTransactionSettlement: {
       deferUntilCommit: () => false,
       deferUntilRollback: () => false,

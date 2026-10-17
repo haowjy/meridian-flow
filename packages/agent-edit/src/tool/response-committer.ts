@@ -60,6 +60,15 @@ export interface ResponseCommitter {
     editScopeId: string,
     options?: ResponseCommitOptions,
   ): Promise<ResponseCommitSuccessResult>;
+  /**
+   * The save split at the host's commit scope (prepare, consume, install): replays every
+   * prepared document into attempt-local results without touching the response's buffer.
+   * `commitResponse` is this attempt run once.
+   */
+  prepareResponse(
+    editScopeId: string,
+    options?: ResponseCommitOptions,
+  ): Promise<ResponseCommitAttempt>;
   rollbackResponse(
     editScopeId: string,
     options?: Pick<ResponseCommitOptions, "deferFinalization">,
@@ -89,6 +98,28 @@ export interface ResponseCommitter {
     run: (lease: CommandDocumentLease) => Promise<T>,
   ): Promise<T | InternalWriteResult>;
   drainNotices(responseId: string): string[];
+}
+
+/**
+ * One attempt at saving a response. Preparing it changed nothing: `consume` persists the
+ * prepared host writes inside the caller's commit scope, `install` (after that scope
+ * succeeded) installs the replays into the response and saves the rest, `dispose` (on a
+ * miss) drops the attempt and leaves the response exactly as it was before preparing.
+ */
+export interface ResponseCommitAttempt {
+  consume(): Promise<void>;
+  install(): Promise<ResponseCommitSuccessResult>;
+  dispose(): void;
+  /** `dispose`, then fail the save as a save failure does: runtimes evicted, buffer kept. */
+  fail(cause: unknown): Promise<never>;
+}
+
+/** A buffer changed after an attempt prepared from it: the attempt replays again. */
+export class ResponseAttemptStaleError extends Error {
+  constructor(readonly responseId: string) {
+    super(`Response ${responseId} changed after its save attempt was prepared`);
+    this.name = "ResponseAttemptStaleError";
+  }
 }
 
 /** A call-scoped replica. Disposing it cannot change the committer's helper. */
@@ -262,9 +293,25 @@ interface RollbackPendingResponseState {
 interface CommittingResponseState {
   kind: "committing";
   acceptance: "none" | JournalCommitKind;
-  /** Immutable snapshot exclusively owned by this commit attempt. */
+  /** Snapshot exclusively owned by this commit; installed replays change only it. */
   buffer: ResponseBuffer;
+  /** The buffer as staged, untouched by the commit: a failed save restores it. */
+  original: ResponseBuffer;
+  /** Helper docs the commit installed (destroyed when it fails) and replaced (when it closes). */
+  installed: Y.Doc[];
+  replaced: Y.Doc[];
   promise: Promise<ResponseCommitSuccessResult>;
+}
+
+/** A prepared document's replay, held by its attempt until `install`. */
+interface ReplayOutcome {
+  view: PreparedResponseView;
+  updates: StagedResponseUpdate[];
+  rejected: StagedResponseUpdate[];
+  beforeState: Uint8Array;
+  /** The replayed helper when it differs from the view's; owned by the outcome until installed. */
+  helper: { doc: Y.Doc; cut: StagedHelperCut } | null;
+  commit?: import("../ports/document-coordinator.js").StagedWriteCommit;
 }
 
 type ResponseState =
@@ -430,6 +477,7 @@ export function createResponseCommitter(deps: {
     assertCanStage,
     stageUpdate,
     commitResponse,
+    prepareResponse,
     rollbackResponse,
     hasBufferedWrites,
     hasResponseDocument,
@@ -495,65 +543,97 @@ export function createResponseCommitter(deps: {
     }
   }
 
-  async function replayDocument(
+  /**
+   * The host's replay of a prepared document's staged entries, without changing the buffer:
+   * the kept and rejected entries and the replayed helper come back for `installReplay`.
+   */
+  async function replayOn(
     docBuffer: PreparedResponseDocumentBuffer,
     commit: boolean,
-    owns?: () => boolean,
     access?: DocumentLockOptions,
-  ) {
+  ): Promise<ReplayOutcome> {
+    const view = docBuffer.view;
+    const source = readLease(view.doc);
+    let accepted: Awaited<ReturnType<PreparedResponseView["replay"]>>;
+    try {
+      accepted = await view.replay({
+        docId: docBuffer.docId,
+        sourceDoc: unwrapDoc(source.doc),
+        helperCut: { ...view.cut, state: view.cut.state.slice() },
+        entries: responseJournalBatch([docBuffer]),
+        commit,
+        access,
+      });
+    } finally {
+      source.dispose();
+    }
+    const keptIds = new Set(accepted.keptEntries.map((entry) => entry.mutation?.writeId));
+    const updates = docBuffer.updates.filter((entry) => keptIds.has(entry.durableWriteId));
+    const reasons = new Map(accepted.rejectedWrites?.map((write) => [write.writeId, write.reason]));
+    const rejected = docBuffer.updates
+      .filter((entry) => !keptIds.has(entry.durableWriteId))
+      .map((entry) => ({
+        ...entry,
+        rejectionReason: reasons.get(entry.durableWriteId) ?? ("integration" as const),
+      }));
+    // Equivalent readers do not invalidate each other; actual content/cut changes still retry.
+    const unchanged =
+      !rejected.length &&
+      view.cut.generation === accepted.helperCut.generation &&
+      sameBytes(view.cut.state, accepted.helperCut.state) &&
+      sameBytes(Y.encodeStateAsUpdate(view.doc), accepted.helperState);
+    let helper: ReplayOutcome["helper"] = null;
+    if (!unchanged) {
+      const doc = new Y.Doc({ gc: false });
+      Y.applyUpdate(doc, accepted.helperState.slice());
+      helper = { doc, cut: { ...accepted.helperCut, state: accepted.helperCut.state.slice() } };
+    }
+    return {
+      view,
+      updates,
+      rejected,
+      beforeState: accepted.beforeState,
+      helper,
+      ...(accepted.commit ? { commit: accepted.commit } : {}),
+    };
+  }
+
+  /** The replay becomes the document's buffer; returns the helper doc it replaced, if any. */
+  function installReplay(
+    docBuffer: PreparedResponseDocumentBuffer,
+    outcome: ReplayOutcome,
+  ): Y.Doc | null {
+    if (!outcome.helper) return null;
+    const previous = documentDoc(docBuffer);
+    Object.assign(docBuffer, {
+      updates: outcome.updates,
+      rejectedUpdates: [...(docBuffer.rejectedUpdates ?? []), ...outcome.rejected],
+      view: { ...docBuffer.view, cut: outcome.helper.cut, doc: outcome.helper.doc },
+    });
+    return previous;
+  }
+
+  function discardReplay(outcome: ReplayOutcome): void {
+    outcome.helper?.doc.destroy();
+    outcome.commit?.dispose();
+  }
+
+  /** A read's replay, installed at once: a buffered response's helper follows the host. */
+  async function replayDocument(docBuffer: PreparedResponseDocumentBuffer, owns: () => boolean) {
     for (;;) {
       const view = docBuffer.view;
-      const source = readLease(view.doc);
-      let accepted: Awaited<ReturnType<PreparedResponseView["replay"]>>;
-      try {
-        accepted = await view.replay({
-          docId: docBuffer.docId,
-          sourceDoc: unwrapDoc(source.doc),
-          helperCut: { ...view.cut, state: view.cut.state.slice() },
-          entries: responseJournalBatch([docBuffer]),
-          commit,
-          access,
-        });
-      } finally {
-        source.dispose();
+      const outcome = await replayOn(docBuffer, false);
+      if (!owns()) {
+        discardReplay(outcome);
+        throw new Error("Response preparation lost lifecycle ownership");
       }
-      if (owns && !owns()) throw new Error("Response preparation lost lifecycle ownership");
       // Another accepted preparation or stage changed the entries while this replay awaited.
-      if (docBuffer.view !== view) continue;
-      const keptIds = new Set(accepted.keptEntries.map((entry) => entry.mutation?.writeId));
-      const updates = docBuffer.updates.filter((entry) => keptIds.has(entry.durableWriteId));
-      const reasons = new Map(
-        accepted.rejectedWrites?.map((write) => [write.writeId, write.reason]),
-      );
-      const rejected = docBuffer.updates
-        .filter((entry) => !keptIds.has(entry.durableWriteId))
-        .map((entry) => ({
-          ...entry,
-          rejectionReason: reasons.get(entry.durableWriteId) ?? ("integration" as const),
-        }));
-      // Equivalent readers do not invalidate each other; actual content/cut changes still retry.
-      if (
-        !rejected.length &&
-        view.cut.generation === accepted.helperCut.generation &&
-        sameBytes(view.cut.state, accepted.helperCut.state) &&
-        sameBytes(Y.encodeStateAsUpdate(view.doc), accepted.helperState)
-      )
-        return { rejected, beforeState: accepted.beforeState };
-      const helper = new Y.Doc({ gc: false });
-      Y.applyUpdate(helper, accepted.helperState.slice());
-      const previous = documentDoc(docBuffer);
-      // No buffer or helper mutation occurs before host admission and CAS accept.
-      Object.assign(docBuffer, {
-        updates,
-        rejectedUpdates: [...(docBuffer.rejectedUpdates ?? []), ...rejected],
-        view: {
-          ...docBuffer.view,
-          cut: { ...accepted.helperCut, state: accepted.helperCut.state.slice() },
-          doc: helper,
-        },
-      });
-      previous.destroy();
-      return { rejected, beforeState: accepted.beforeState };
+      if (docBuffer.view !== view) {
+        discardReplay(outcome);
+        continue;
+      }
+      installReplay(docBuffer, outcome)?.destroy();
+      return { rejected: outcome.rejected, beforeState: outcome.beforeState };
     }
   }
 
@@ -602,7 +682,6 @@ export function createResponseCommitter(deps: {
     if (isPrepared(doc)) {
       const replayed = await replayDocument(
         doc,
-        false,
         () =>
           responses.get(responseId) === owner &&
           buffer?.docs.get(docId) === doc &&
@@ -775,6 +854,21 @@ export function createResponseCommitter(deps: {
     responseId: string,
     options: ResponseCommitOptions = {},
   ): Promise<ResponseCommitSuccessResult> {
+    const state = responses.get(responseId);
+    if (state?.kind === "committing") return state.promise;
+    const attempt = await prepareResponse(responseId, options);
+    try {
+      await attempt.consume();
+    } catch (cause) {
+      return attempt.fail(cause);
+    }
+    return attempt.install();
+  }
+
+  async function prepareResponse(
+    responseId: string,
+    options: ResponseCommitOptions = {},
+  ): Promise<ResponseCommitAttempt> {
     let state = responses.get(responseId);
     if (!state) {
       state = { kind: "buffered", buffer: emptyResponseBuffer() };
@@ -785,24 +879,106 @@ export function createResponseCommitter(deps: {
     }
     if (state.kind === "rollbackPending")
       throw new Error("Response rollback is pending settlement");
-    if (state.kind === "committing") return state.promise;
-
-    const deferred = deferredPromise<ResponseCommitSuccessResult>();
-    const owner: CommittingResponseState = {
-      kind: "committing",
-      acceptance: "none",
-      buffer: snapshotResponseBuffer(state.buffer),
-      promise: deferred.promise,
+    if (state.kind === "committing")
+      throw new Error(`Cannot prepare response ${responseId}: commit is already in progress.`);
+    const buffered = state;
+    const { buffer } = buffered;
+    const docBuffers = [...buffer.docs.values()]
+      .filter(hasStagedReceipts)
+      .sort((left, right) => left.docId.localeCompare(right.docId));
+    // What the attempt was prepared from, by identity: any stage, refusal or drop since
+    // replaces a document's view or entries, and the attempt no longer describes the buffer.
+    const basis = [...buffer.docs.values()].map((doc) => ({
+      doc,
+      view: doc.view,
+      updates: [...doc.updates],
+    }));
+    const stale = () =>
+      responses.get(responseId) !== buffered ||
+      buffer.docs.size !== basis.length ||
+      basis.some(
+        ({ doc, view, updates }) =>
+          buffer.docs.get(doc.docId) !== doc ||
+          doc.view !== view ||
+          doc.updates.length !== updates.length ||
+          doc.updates.some((entry, index) => entry !== updates[index]),
+      );
+    const outcomes = new Map<string, ReplayOutcome>();
+    let settled = false;
+    const dispose = () => {
+      if (settled) return;
+      settled = true;
+      for (const outcome of outcomes.values()) discardReplay(outcome);
+      outcomes.clear();
     };
-    responses.set(responseId, owner);
-    void runCommitResponse(responseId, owner, options).then(deferred.resolve, deferred.reject);
-    return owner.promise;
+    try {
+      for (const docBuffer of docBuffers) {
+        if (!isPrepared(docBuffer)) continue;
+        outcomes.set(
+          docBuffer.docId,
+          await replayOn(docBuffer, true, {
+            lease: options.branchLease,
+            pinnedBranchId:
+              docBuffer.interactionContext?.mode === "threadPeer"
+                ? docBuffer.interactionContext.peerBranchId
+                : undefined,
+          }),
+        );
+      }
+    } catch (cause) {
+      dispose();
+      throw cause;
+    }
+    return {
+      async consume() {
+        if (settled) throw new Error(`Response ${responseId} attempt was disposed`);
+        if (stale()) throw new ResponseAttemptStaleError(responseId);
+        for (const outcome of outcomes.values()) await outcome.commit?.persist();
+      },
+      async install() {
+        if (settled) throw new Error(`Response ${responseId} attempt was disposed`);
+        if (stale()) {
+          dispose();
+          throw new ResponseAttemptStaleError(responseId);
+        }
+        settled = true;
+        for (const outcome of outcomes.values()) outcome.commit?.publish();
+        const deferred = deferredPromise<ResponseCommitSuccessResult>();
+        const owner: CommittingResponseState = {
+          kind: "committing",
+          acceptance: "none",
+          buffer: snapshotResponseBuffer(buffer),
+          original: buffer,
+          installed: [],
+          replaced: [],
+          promise: deferred.promise,
+        };
+        responses.set(responseId, owner);
+        void runCommitResponse(responseId, owner, options, outcomes).then(
+          deferred.resolve,
+          deferred.reject,
+        );
+        return owner.promise;
+      },
+      dispose,
+      async fail(cause) {
+        dispose();
+        await runtimeStore.evictResponseRuntimes(docBuffers);
+        const threadId = bufferThreadId(buffer);
+        emit("evicted", responseId, "journalStaged", {
+          journalCommitKind: "staged",
+          ...(threadId ? { threadId } : {}),
+        });
+        throw responseCommitError(responseId, "staged", cause, null);
+      },
+    };
   }
 
   async function runCommitResponse(
     responseId: string,
     owner: CommittingResponseState,
     options: ResponseCommitOptions,
+    replays: ReadonlyMap<string, ReplayOutcome>,
   ): Promise<ResponseCommitSuccessResult> {
     const { buffer } = owner;
     const docBuffers = [...buffer.docs.values()]
@@ -918,14 +1094,12 @@ export function createResponseCommitter(deps: {
       ): Promise<ResponseCommitDocumentResult> => {
         let replayBase: Y.Doc | undefined;
         if (isPrepared(docBuffer)) {
-          const access: DocumentLockOptions = {
-            lease: options.branchLease,
-            pinnedBranchId:
-              docBuffer.interactionContext?.mode === "threadPeer"
-                ? docBuffer.interactionContext.peerBranchId
-                : undefined,
-          };
-          const replayed = await replayDocument(docBuffer, true, undefined, access);
+          const replayed = replays.get(docBuffer.docId);
+          if (!replayed) throw new Error(`Response document ${docBuffer.docId} was not prepared`);
+          // The snapshot takes the replay; the staged buffer keeps its own helper until close.
+          if (replayed.helper) owner.installed.push(replayed.helper.doc);
+          const replaced = installReplay(docBuffer, replayed);
+          if (replaced) owner.replaced.push(replaced);
           try {
             await prepareCommitLinks(responseId, docBuffer);
           } catch {
@@ -1080,10 +1254,7 @@ export function createResponseCommitter(deps: {
         await runtimeStore.evictResponseRuntimes(docBuffers);
         emit("evicted", responseId, "buffered", { ...(threadId ? { threadId } : {}) });
         assertOwner(responseId, owner);
-        responses.set(responseId, {
-          kind: "buffered",
-          buffer,
-        });
+        restoreStaged(responseId, owner);
         throw responseCommitError(responseId, null, cause, null);
       }
       if (journalCommitKind === "staged") {
@@ -1093,10 +1264,7 @@ export function createResponseCommitter(deps: {
           ...(threadId ? { threadId } : {}),
         });
         assertOwner(responseId, owner);
-        responses.set(responseId, {
-          kind: "buffered",
-          buffer,
-        });
+        restoreStaged(responseId, owner);
         throw responseCommitError(responseId, "staged", cause, null);
       }
 
@@ -1694,6 +1862,7 @@ export function createResponseCommitter(deps: {
   ): void {
     assertOwner(responseId, owner);
     for (const doc of owner.buffer.docs.values()) if (isPrepared(doc)) doc.view.doc.destroy();
+    if (owner.kind === "committing") for (const doc of owner.replaced) doc.destroy();
     noticeOutbox.delete(responseId);
     documentEpochs.delete(responseId);
     responses.set(responseId, { kind: "closed", outcome: closed });
@@ -1709,6 +1878,18 @@ export function createResponseCommitter(deps: {
       const evicted = closedResponseOrder.shift();
       if (evicted) responses.delete(evicted);
     }
+  }
+
+  /**
+   * A save that did not commit puts back the response exactly as staged: the original
+   * buffer, whose entries and helpers the commit never changed; the replays it installed
+   * into its snapshot are dropped.
+   */
+  function restoreStaged(responseId: string, owner: CommittingResponseState): void {
+    for (const doc of owner.installed) doc.destroy();
+    owner.installed = [];
+    owner.replaced = [];
+    responses.set(responseId, { kind: "buffered", buffer: owner.original });
   }
 
   function finalizeClosed(
@@ -1734,10 +1915,7 @@ export function createResponseCommitter(deps: {
         if (settled) return;
         settled = true;
         if (responses.get(responseId) !== owner) return;
-        responses.set(responseId, {
-          kind: "buffered",
-          buffer: owner.buffer,
-        });
+        restoreStaged(responseId, owner);
       },
     });
   }
