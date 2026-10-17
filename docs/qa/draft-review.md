@@ -145,7 +145,9 @@ while changed evidence for the same class must return `stale`. A grown class
 with surviving immutable members also returns `stale`, including after a re-fork;
 a disappeared class or absent fallback-only class returns `gone`, but only when the
 request's `memberPartKeysComplete` is true: a sampled list with no listed survivor
-returns `stale`, because a sample cannot prove that no member survives. Refresh
+returns `stale`, because a sample cannot prove that no member survives
+(`d18-sampled-discard` in the [seam probes](drafts-lock-free-probes.md) runs this schedule
+with 502 members). Refresh
 the preview after a refused command: the selected closed class alone settles. Repeat after another per-change Discard re-forks the
 draft and after a row's status changes through Apply. A concurrent preview may
 show either complete observation, never one generation's hunks with another's
@@ -903,7 +905,9 @@ draft. A reply's staged edits to other documents must still finish.
 The repeatable service-seam check is
 `DB_TEST_WORKERS=1 pnpm test:db apps/server/server/domains/collab/adapters/response-helper-revocation.db.test.ts`.
 It also checks that retirement waits for transaction commit and closes only A's
-peer room. It also gates retirement after commit, evicts the old reply entry as
+peer room. Run inside a caller's root transaction, item and whole Discard retire no
+peer, close no room and revoke no reply helper before the root commits, none after
+it rolls back, and once per document after it commits (D17). It also gates retirement after commit, evicts the old reply entry as
 a refusal would, and stages a fresh peer's write in the same open reply before
 releasing that gate; the fresh write and room must survive. This is DB integration evidence, not a browser or live-runtime probe.
 
