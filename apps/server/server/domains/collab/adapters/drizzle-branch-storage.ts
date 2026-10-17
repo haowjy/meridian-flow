@@ -365,6 +365,8 @@ export type RewriteCommit = {
   effect?: PullEffect;
   /** Writes under the locked row before the checkpoint `UPDATE` (rows the checkpoint contains). */
   withinLock?: () => Promise<void>;
+  /** Told when the row lock was taken (`performance.now()`) and how many tail rows it read. */
+  onLocked?: (lock: { lockedAt: number; tailRows: number }) => void;
 };
 
 /**
@@ -400,6 +402,7 @@ export async function commitRewriteWithinTx(
     .from(documentBranches)
     .where(eq(documentBranches.id, input.branchId))
     .for("update");
+  const lockedAt = performance.now();
   if (locked?.status !== "active") return { status: "closed" };
   const moved =
     input.policy.kind === "exact"
@@ -428,6 +431,7 @@ export async function commitRewriteWithinTx(
             ),
           )
           .orderBy(asc(branchWriteJournal.id));
+  input.onLocked?.({ lockedAt, tailRows: tail.length });
   let folded = 0;
   if (input.policy.kind === "fold" && !input.reset) {
     const after = input.policy.seq;
