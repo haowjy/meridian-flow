@@ -33,6 +33,7 @@ it.each([
     await commitBranchEdit(f, branch.branchId, { source: "writer" }, (doc) => {
       doc.getMap("documents").set(ALPHA_ID, true);
     });
+    await harness.settleBranchEffects();
     const [pending] = await db
       .select()
       .from(documentBranches)
@@ -46,6 +47,7 @@ it.each([
       text.format(0, 5, { strong: {} });
       text.format(0, 5, { strong: null });
     });
+    await harness.settleBranchEffects();
     const [noop] = await db
       .select()
       .from(documentBranches)

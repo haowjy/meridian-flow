@@ -679,7 +679,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     projections: {
       documentDerivations: derivations,
       refreshDocumentProjection: projectionRefresher.refresh,
-      branchEffects: { sweep: branchEffects.sweep },
+      branchEffects: { sweep: branchEffects.sweep, flush: branchEffects.flush },
     },
     lineage,
     responses: responseFinalizer,

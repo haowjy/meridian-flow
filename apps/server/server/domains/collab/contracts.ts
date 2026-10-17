@@ -276,7 +276,7 @@ export type MarkdownDocumentStore = LinkBinder & {
 export type DocumentProjectionRefresher = {
   documentDerivations: import("./domain/ports/document-derivations.js").DocumentDerivationService;
   /** One pass of the draft-effect projection's sweep over stale branches (design §3.2). */
-  branchEffects: { sweep(): Promise<number> };
+  branchEffects: { sweep(): Promise<number>; flush(): Promise<void> };
   refreshDocumentProjection(input: { documentId: DocumentId; threadId?: ThreadId }): Promise<void>;
 };
 

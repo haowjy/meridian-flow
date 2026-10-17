@@ -153,6 +153,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ]);
       const initial = await projectionState();
       await appendJournal({ kind: "edit" });
+      // An append touches no Work (#931); the projection's effect write touches it once.
+      await expect(projectionState()).resolves.toEqual(initial);
+      const judged = await branches.getBranch(BRANCH_ID);
+      if (!judged) throw new Error("the branch is gone");
+      await expect(
+        branches.writeEffect({
+          branchId: BRANCH_ID,
+          revision: judged.revision,
+          hasEffect: true,
+          workId: judged.workId,
+        }),
+      ).resolves.toBe("written");
       const appended = await projectionState();
       expect(appended.entityRevision).toBe((initial.entityRevision ?? 0n) + 1n);
       await appendJournal({ kind: "edit" });

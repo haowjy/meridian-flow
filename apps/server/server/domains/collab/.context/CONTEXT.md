@@ -119,30 +119,49 @@ share a segment, but sharing a paragraph alone never joins edits.
 
 A new branch write makes four choices, each named below: its door (an append,
 an exact or fold rewrite, or the metadata door), its Work admission (`active`
-or `any`), its entry into the Works mutation boundary (every write except a
-writer append that leaves the branch's review membership unchanged), and its
-bounded attempt.
-It takes no other lock and adds no retry loop of its own. A revision miss
-surfaces as `BranchCasConflictError`: the branch moved, and the attempt
-captures again. No write compares bytes.
+or `any`), its entry into the Works mutation boundary (every write except an
+append, which locks no Work), and its bounded attempt (an append has one).
+It takes no other lock and adds no retry loop of its own. No write compares
+bytes.
 
-Every branch write is fenced by its row's `revision`, under one of two
-policies. An **exact** write commits only at the revision it was computed at:
-appends through `appendRows`, an exact checkpoint rewrite through
-`commitRewrite` (a peer's catch-up, an inverse's destination, an exact reset),
-and every metadata change (a close, a hold, a journal row's status, a Work
-lifecycle fence) through the one door `bumpBranchRevisions`
-(`shared/branch-revisions.ts`), which locks the rows in ID order and bumps
-their revision with the change. A **fold** (a pull, compaction, a peer's re-fork, item
-Discard's reset) commits over the replica's cursor instead: rows appended
-since it was computed are applied into its checkpoint under the row lock, so
-an intervening append never makes it miss, and only another rewrite does. No
-write compares branch bytes. Whether a branch is
-frozen is derived on every read from its draft's origin Work (archived,
-deleted, or missing), never stored. A Work lifecycle transition (archive,
-unarchive, delete, restore) locks and bumps every active branch of the Work's
-drafts after its Work update, so a write judged before the transition misses
-its revision.
+An **append** (`appendRows`) is sequenced, not fenced. Its row `UPDATE`
+bumps `revision` at whatever value it holds, with no revision predicate, and
+holds the branch row to `COMMIT`; it still refuses a closed branch, another
+generation, or a Work that is not active (the predicate is in the statement).
+Journal ids are allocated after that lock, so within a branch and generation a
+lower id is committed before a higher one is visible (tail order): a fold's
+`checkpoint_seq = max(id)` is always a complete prefix. Under the lock one
+separate statement reads the committed prefix since the caller's base, and
+`finalizeAppend` (`domain/branch-receipts.ts`) owns every fact that depends on
+it: containment, the novel trim (`Y.diffUpdate`), deletes the prefix already
+held, the restoration certificate, authorship when the prefix moved, complete
+integration, and one receipt per logical write on the final document. An
+update with nothing novel is `contained` (nothing written, acknowledged); one
+whose prefix the journal lacks is `prefixMissing` (nothing written, the socket
+closes `4207 branch-prefix-missing`, which the client treats as a reconnect,
+never a refusal; its next SyncStep2 carries the prefix). `appendRows` runs in
+its own savepoint, so either outcome rolls its bump and its commit callbacks
+back inside a reply's transaction too. Nothing judged before the lock is
+written as truth: the frame's pre-lock containment and authorship checks are
+early exits only. `waitMs` and `holdMs` of every append are the
+`collab.branch.append_committed` debug event.
+
+Every rewrite is fenced by the row's `revision`, under one of two policies.
+An **exact** rewrite commits only at the revision it was computed at: a
+checkpoint rewrite through `commitRewrite` (a peer's catch-up, an inverse's
+destination, an exact reset), and every metadata change (a close, a hold, a
+journal row's status, a Work lifecycle fence) through the one door
+`bumpBranchRevisions` (`shared/branch-revisions.ts`), which locks the rows in
+ID order and bumps their revision with the change. A miss surfaces as
+`BranchCasConflictError`, and the attempt captures again. A **fold** (a pull,
+compaction, a peer's re-fork, item Discard's reset) commits over the replica's
+cursor instead: rows appended since it was computed are applied into its
+checkpoint under the row lock, so an intervening append never makes it miss,
+and only another rewrite does. Whether a branch is frozen is derived on every
+read from its draft's origin Work (archived, deleted, or missing), never
+stored. A frame whose post-lock read sees its Work no longer active is refused;
+one whose read ran before an Archive committed and whose `COMMIT` came after
+lands in the archived draft (the archive window, a few milliseconds).
 
 Work-first order has one owner: the Works mutation boundary
 (`projects/adapters/work-projection-mutation.ts`), a required dependency of the
@@ -154,46 +173,63 @@ branch, the order the transitions take. A caller hands it its whole write set
 once: `mutatePending` when the write's effect on review membership is known
 only after it runs (it counts the Works' pending documents before and after
 and touches those that moved), `mutateKnownWorks` when the caller already
-knows the write moves these Works (a frame that flips its branch: lock, write,
-touch, no count), and `lockWorks` for order alone (the frame's
-fourth-attempt judgement, opening or closing a draft, Apply's batch plan,
-a reply save's grants). `seam`
-adds the bound edit grants' Works and confirms the grants; `requireActive`
-refuses unless every Work of the set is active. No other collab code locks a
-Work for a write; the live journal's seam locks only the bound grants' Works.
-Creating a draft branch runs inside `mutatePending`: a branch made while its
-Work archives is either fenced by the archive or read as archived. An
-effect-neutral writer append enters no boundary: it takes only its branch row.
-Tests use the same boundary (`test-support/work-projection.ts`), with no
-catalog or availability publication and no pending counts. The append's
-`UPDATE` carries a Work-is-active predicate, so the lifecycle decision and the
-write are one statement.
+knows the write moves these Works (the draft-effect projection's write: lock,
+write, touch, no count), and `lockWorks` for order alone (opening or closing a
+draft, Apply's batch plan, a reply save's grants). `seam` adds the bound edit
+grants' Works and confirms the grants; `requireActive` refuses unless every
+Work of the set is active. No other collab code locks a Work for a write; the
+live journal's seam locks only the bound grants' Works. Creating a draft branch
+runs inside `mutatePending`: a branch made while its Work archives is either
+fenced by the archive or read as archived. No append enters the boundary: no
+keystroke locks a Work or counts (#931). Tests use the same boundary
+(`test-support/work-projection.ts`), with no catalog or availability
+publication and no pending counts.
 
-An archived Work's drafts keep rebasing on live ([archive hides a
-Work][kb-archive]): their pending changes never move, but a live→draft pull, a
-peer's pull and its containment reset admit whatever the Work's lifecycle, so
-a draft applies cleanly after unarchive and has nothing to catch up. What the
-archive freezes is the writer: frames (the append's predicate and the
-lifecycle fence), agent writes in draft mode, Apply and Discard. Of the
-rewrites only a peer's catch-up checkpoint carries the Work-is-active
-predicate, derived from the operation in storage. A branch retracted before
-its pull commits answers `closed` under the row lock, so a peer pull reports
-`ThreadPeerPullLost`.
+A work draft's derived state (`has_effect`, its review membership, the Work's
+badge) is a projection, not part of the append (design §3). Every committed
+append marks the branch dirty (`onAppendCommitted`, a required coordinator
+input); the projection job (`domain/branch-projection.ts`) coalesces marks
+(250 ms after the last, at most 1 s after the first), runs at most four
+judgements at a time, fingerprints the published replica against the stored
+baseline (`live_cut`, frozen at creation and replaced only under a revision
+bump), and writes `has_effect` with its watermark `has_effect_revision` through
+`writeEffect` at exactly that revision, inside `mutateKnownWorks`, under
+`SET LOCAL lock_timeout = '100ms'`. That bound applies to each lock
+acquisition (the Work, the branch row, the publication participants), not to
+the transaction; `55P03` is `contended` and retried on backoff, a moved revision
+is re-judged. Every writer of `has_effect` (the job, a pull or reset's
+rewrite, `refreshDraftEffect`) writes the watermark with it; `-1` is stale
+whatever the revision. A sweep (the `branch-effects` recovery lane, every 30 s)
+pages the stale set by `(updated_at, id)` and marks what no entry tracks, so a
+crash inside the debounce converges without another key. A legacy branch with
+no stored baseline is established once by the branch-scoped `pullWorkDraft`; a
+document whose settlement is terminally blocked parks it with one
+`projection_baseline_blocked` warning until its next append. Review readers
+(`isEdited`, the Works badge, Apply's item plan) may lag a key by that second;
+the draft editor and Undo read the replica and receipts, never `has_effect`.
+Tests that assert membership right after a write read through
+`test-support/converged-review.ts`, which flushes the job first.
 
-A writer frame takes no lease, mutex or document lock, and no lock beyond its
-own statement. It is judged on a private clone of the published replica
-(containment, edit receipts, `has_effect` against the stored `live_cut`),
-then appended at the revision it was judged at; a miss destroys the clone and
-judges again on the new revision. The fourth attempt holds the Work row and
-the branch row. The first attempt checks its room holds the committed replica,
+Rollout of the watermark (0064 is this deploy): migrate, then deploy; an old
+server still running creates rows with null `live_cut` and the default `-1`,
+which the sweep finds and the pull repairs. The contract step is the next
+deploy, once every server runs the baseline-writing creator: the gate query
+`SELECT id, document_id FROM document_branches WHERE kind = 'work_draft' AND
+status = 'active' AND live_cut IS NULL` returns nothing (a remainder is a
+document with a terminally blocked settlement, named by
+`projection_baseline_blocked`, resolved through the settlement's own recovery),
+then `0065` adds `CHECK (kind <> 'work_draft' OR status <> 'active' OR live_cut
+IS NOT NULL) NOT VALID` and `0066` (no-transaction) validates it; the same
+change deletes the job's null-baseline arm and `pullWorkDraft`.
+
+A writer frame takes no lease, mutex or document lock. It is judged once on the
+published replica (admissible, its room, the echo exit, authorship as an early
+rejection) and appended once; a concurrent writer costs it one row-lock wait,
+never a second judgement. It first checks its room holds the committed replica,
 and a room that does not has missed a delivery: it is reconciled to the replica
 (`reconcileRoom`, logged as a `room_reconciled` warning) and the frame goes on.
 Only a generation the branch has left, or a draft no longer writable, refuses
-the frame (`1008`). Retries skip the check: a retry exists because a concurrent
-commit moved the branch, and that commit's publish can reach this room after the
-retry judges. An append that flips the branch's
-review membership (`(has_effect OR blocking) AND` pending rows) locks its Work
-first and touches the Work's projection.
+the frame (`1008`).
 
 Room delivery has one owner (decision D25): `install` in
 `domain/branch-coordinator.ts`, the only place a replica becomes the branch's
@@ -201,8 +237,10 @@ published replica. It runs when the store's transaction commits (a savepoint's
 callbacks move to its parent on release and are dropped on its rollback, so a
 rolled-back child publishes nothing), installs only past the replica published
 by then, and sends this process's rooms what separates the two: the rows the new
-replica was built from when it was built on that replica (a frame, a reply's
-rows, a read's tail catch-up), otherwise the document difference (a pull or
+replica was built from when they cover everything past the published one (built
+on it or on an older replica of the same checkpoint and generation: a frame with
+the rows that landed before its lock, a reply's rows, a read's tail catch-up),
+otherwise the document difference (a pull or
 compaction that folded rows under the branch lock, a checkpoint catch-up, a
 checkpoint another process wrote), or nothing when the content is unchanged. A
 new generation closes the rooms of older ones instead. A transition at or below

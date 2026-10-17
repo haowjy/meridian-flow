@@ -11,9 +11,6 @@ import {
 } from "../domain/branch-store.js";
 import { createDocumentContainment } from "../domain/document-containment.js";
 
-/** A valid update that changes nothing: a journal row whose content is irrelevant to the test. */
-export const EMPTY_BRANCH_UPDATE = Y.encodeStateAsUpdate(new Y.Doc({ gc: false }));
-
 /** A fresh paragraph of `text` from a new client: a row with a visible effect. */
 export function proseBranchUpdate(text = "drafted"): Uint8Array {
   const doc = new Y.Doc({ gc: false });

@@ -120,6 +120,8 @@ const { scopeAgentEdit } = await import("../domain/document-link-scope-doors.js"
 const { createBranchConcurrentJournalWatermarks } = await import("../domain/branch-agent-edit.js");
 const { createBranchCoordinator } = await import("../domain/branch-coordinator.js");
 const { createBranchPullService } = await import("../domain/branch-pulls.js");
+const { createBranchProjection } = await import("../domain/branch-projection.js");
+const { settleBefore } = await import("./converged-review.js");
 const { createBranchPushService } = await import("../domain/branch-push.js");
 const { fullStateFingerprint } = await import("../domain/branch-push-transition.js");
 const { journalAttributionByChangedBlock, trailContributionReplacement } = await import(
@@ -389,7 +391,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   };
   const branchBroadcasts: string[] = [];
   const branchCoordinator = createBranchCoordinator({
-    onAppendCommitted: () => {},
+    onAppendCommitted: (branchId) => branchEffects.markDirty(branchId),
     store: branchStore,
     attemptScope: (operation) => runInDrizzleSavepoint(db, operation),
     onBranchUpdate: ({ branchId }) => branchBroadcasts.push(branchId),
@@ -420,6 +422,12 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     branchCoordinator,
     branches: branchStore,
     concurrentJournalWatermarks: watermarks,
+  });
+  const branchEffects = createBranchProjection({
+    coordinator: branchCoordinator,
+    store: branchStore,
+    pulls: branchPulls,
+    outsideTransaction: runOutsideWrite,
   });
   const notices = createDrizzleNoticePort(db);
   const changeTrails = createDrizzleChangeTrailAggregateWriter(db);
@@ -841,6 +849,8 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     ...responseFinalizer,
     ...drafts,
   };
+  // Review membership is projected after an append commits; review reads wait for it.
+  settleBefore(collab.draftReview, branchEffects.flush);
 
   /**
    * Stages one write each to alpha and beta in one reply, both drafted. With
@@ -2176,7 +2186,11 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     }),
     pollTrails: () => trailDelivery.drain(),
     /** Stops debounced live pulls (scheduled by AI live commits) leaking into later tests. */
-    cancelScheduledPulls: () => branchPulls.cancelScheduledPulls(),
+    cancelScheduledPulls: () => {
+      branchPulls.cancelScheduledPulls();
+    },
+    /** Waits for every draft-effect judgement the test's writes scheduled. */
+    settleBranchEffects: () => branchEffects.flush(),
     async branchGeneration(branchId: string) {
       const [branch] = await db
         .select({ generation: schema.documentBranches.generation })
