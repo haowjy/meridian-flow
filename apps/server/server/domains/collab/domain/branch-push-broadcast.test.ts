@@ -217,7 +217,6 @@ describe("branch push change-event broadcast", () => {
       documentIds: [DOCUMENT_B, DOCUMENT_A],
       prepare: async ({ docs }) => ({
         kind: "push",
-        leasedBranchIds: [],
         pushes: [
           preparedPush(DOCUMENT_A, docs.get(DOCUMENT_A) as Y.Doc, 1),
           preparedPush(DOCUMENT_B, docs.get(DOCUMENT_B) as Y.Doc, 2),
