@@ -26,7 +26,10 @@ import {
   lockWorksInIdOrder,
 } from "../../../shared/work-lifecycle-lock.js";
 import type { ProjectContextAvailabilityMutationPort } from "../../context/ports/project-context-availability.js";
-import { WorkLifecycleUnavailableError } from "../domain/work-lifecycle.js";
+import {
+  DraftBranchMissingError,
+  WorkLifecycleUnavailableError,
+} from "../domain/work-lifecycle.js";
 import type { ContextCatalogLifecyclePort } from "../ports/context-catalog-lifecycle.js";
 import type { WorkDraftPendingCounts } from "../ports/work-draft-pending-counts.js";
 
@@ -154,7 +157,10 @@ export function createWorkProjectionMutation(input: {
     const branchIds = new Set(set.branches ?? []);
     const branches = await draftBranchWorks(input.db, [...branchIds]);
     if (options.requireActive) {
-      if (branches.length !== branchIds.size) throw new Error("Draft branch not found");
+      if (branches.length !== branchIds.size) {
+        const found = new Set(branches.map((row) => row.id));
+        throw new DraftBranchMissingError([...branchIds].filter((id) => !found.has(id)));
+      }
       // A draft whose origin Work is gone is frozen, as a missing Work is.
       const frozen = branches.find((row) => row.workId === null);
       if (frozen) throw new WorkLifecycleUnavailableError(frozen.draftId, "missing");

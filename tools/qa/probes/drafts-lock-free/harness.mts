@@ -256,7 +256,7 @@ const rootContext = new AsyncResource("lfd-probe-independent");
  * Runs `operation` as another caller would: on its own connection, outside every ambient
  * transaction, the edit grants bound to the current call and any attempt's commit scope.
  */
-export function independently<T>(operation: () => Promise<T>): Promise<T> {
+export function independently<T>(operation: () => T): T {
   return rootContext.runInAsyncScope(operation);
 }
 
