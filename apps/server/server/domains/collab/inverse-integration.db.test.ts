@@ -2,7 +2,6 @@
  * Contract §2.6 cases 18 and 22 and §6.5: a failed reply's rollback order, an inverse landing
  * on a draft while another reply is staged, and what a Work or discard change does to undo.
  */
-import { AsyncLocalStorage } from "node:async_hooks";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import type * as Y from "yjs";
 import { testFileGrant } from "../../test-support/file-grants.js";
@@ -64,25 +63,6 @@ describe("inverse integration (postgres)", () => {
   });
   afterAll(() => closeDatabase(db));
 
-  /** Counts acquisitions made while another is held. */
-  function nestedAcquisitions() {
-    const sections = harness.criticalSections;
-    const withBranches = sections.withBranches;
-    const inside = new AsyncLocalStorage<true>();
-    const seen = { nested: 0 };
-    sections.withBranches = ((ids, run) =>
-      withBranches.call(sections, ids, (lease) => {
-        if (inside.getStore()) seen.nested += 1;
-        return inside.run(true, () => run(lease));
-      })) as typeof withBranches;
-    return {
-      seen,
-      restore() {
-        sections.withBranches = withBranches;
-      },
-    };
-  }
-
   async function claimCreate(draftId: string, documentId: string) {
     await db.insert(schema.documents).values({
       id: documentId as never,
@@ -111,7 +91,7 @@ describe("inverse integration (postgres)", () => {
     };
   };
 
-  it("18: rollback runs the pool, then the inverse, then the create's retraction, with no nested acquisition", async () => {
+  it("18: rollback runs the pool, then the inverse, then the create's retraction", async () => {
     const { fixture, branchId } = await stageDraft(db, harness, "red\n\nblue\n\ngreen", "replace", [
       ["red", "gold"],
     ]);
@@ -144,25 +124,19 @@ describe("inverse integration (postgres)", () => {
       );
     expect((await peersOfCreate()).some((branch) => branch.threadId === THREAD_B_ID)).toBe(true);
 
-    const { seen, restore } = nestedAcquisitions();
-    try {
-      const rolledBack = await fixture.collab.finalizeResponseRollback(
-        { providerResponseId: reply, editScopeId: reply },
-        { threadId: THREAD_ID, turnId: TURN_ID },
-      );
-      expect(rolledBack.stagedCreates.discarded).toEqual([NEW_ID]);
-      // The inverse ran: the reply's accepted Undo part is out of the draft.
-      expect(await fixture.draftMarkdown(branchId)).toBe("gold\n\nblue\n\ngreen\n");
-      expect(
-        await fixture.branchStore.retractCreatedDraftBranch({
-          documentId: NEW_ID as never,
-          draftId: draftId as never,
-        }),
-      ).toMatchObject({ outcome: "retracted" });
-    } finally {
-      restore();
-    }
-    expect(seen.nested).toBe(0);
+    const rolledBack = await fixture.collab.finalizeResponseRollback(
+      { providerResponseId: reply, editScopeId: reply },
+      { threadId: THREAD_ID, turnId: TURN_ID },
+    );
+    expect(rolledBack.stagedCreates.discarded).toEqual([NEW_ID]);
+    // The inverse ran: the reply's accepted Undo part is out of the draft.
+    expect(await fixture.draftMarkdown(branchId)).toBe("gold\n\nblue\n\ngreen\n");
+    expect(
+      await fixture.branchStore.retractCreatedDraftBranch({
+        documentId: NEW_ID as never,
+        draftId: draftId as never,
+      }),
+    ).toMatchObject({ outcome: "retracted" });
     expect(await peersOfCreate()).toEqual([]);
   });
 

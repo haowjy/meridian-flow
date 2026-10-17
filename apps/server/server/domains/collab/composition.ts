@@ -486,7 +486,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     branches,
     coordinator: liveCoordinator,
     branchCoordinator,
-    criticalSections,
     resolveDocumentUri: documentUriResolver,
     refreshDocument: (documentId) => projectionRefresher.refresh({ documentId }),
     flushLivePull: branchPulls.flushLivePull,

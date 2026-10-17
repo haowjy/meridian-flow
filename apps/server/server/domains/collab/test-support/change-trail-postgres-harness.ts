@@ -724,7 +724,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     branches: branchStore,
     coordinator: liveCoordinator,
     branchCoordinator,
-    criticalSections: branchCriticalSections,
     resolveDocumentUri,
     refreshDocument: (documentId) => projections.refresh({ documentId }),
     flushLivePull: branchPulls.flushLivePull,
