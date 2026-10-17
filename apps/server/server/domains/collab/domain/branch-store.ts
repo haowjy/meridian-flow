@@ -150,8 +150,9 @@ export type AppendRowsOutcome =
   | { status: "moved" };
 
 /**
- * What else a rewrite must not race: a pull is fenced by a pending settlement on its
- * document; a settlement's own reset is not; Discard and close fence on neither.
+ * What else a rewrite must not race: a pull is fenced by an unfinished settlement on its
+ * document (`fenced` while it is pending, `blocked` once it is terminally blocked); a
+ * settlement's own reset is not; Discard and close fence on neither.
  */
 export type RewriteFence =
   | { kind: "pending-settlement" }
@@ -227,7 +228,7 @@ export type RewriteOutcome =
       generation: number;
     }
   /** `inactive`: a `work: "active"` rewrite whose Work is archived, deleted or gone (D19). */
-  | { status: "moved" | "fenced" | "closed" | "upstreamMoved" | "inactive" };
+  | { status: "moved" | "fenced" | "blocked" | "closed" | "upstreamMoved" | "inactive" };
 
 export type BranchStore = {
   /** The row only; content comes through `readBranchAt`. */

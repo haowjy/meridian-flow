@@ -409,7 +409,8 @@ export async function commitRewriteWithinTx(
       ? Number(locked.revision) !== input.policy.revision
       : Number(locked.checkpointRevision) !== input.policy.checkpointRevision;
   if (moved) return { status: "moved" };
-  if (await fenced(db, input.fence, locked.documentId)) return { status: "fenced" };
+  const settlement = await fencingSettlement(db, input.fence, locked.documentId);
+  if (settlement) return { status: settlement === "pending" ? "fenced" : "blocked" };
 
   // Every row past the checkpoint; under `exact` these are exactly the rows the caller read.
   // Only a fold applies them and only a reset fences their clocks.
@@ -518,10 +519,18 @@ export async function commitRewriteWithinTx(
   };
 }
 
-async function fenced(db: DrizzleDb, fence: RewriteFence, documentId: string): Promise<boolean> {
-  if (fence.kind !== "pending-settlement") return false;
-  const [pending] = await db
-    .select({ id: branchPushSettlementOutbox.pushId })
+/**
+ * The settlement state fencing a pull on `documentId`: `pending` while one can still complete,
+ * `blocked` when the only fence is a terminally blocked batch (nothing will lift it on its own).
+ */
+async function fencingSettlement(
+  db: DrizzleDb,
+  fence: RewriteFence,
+  documentId: string,
+): Promise<"pending" | "blocked" | null> {
+  if (fence.kind !== "pending-settlement") return null;
+  const states = await db
+    .selectDistinct({ state: branchPushSettlementBatches.state })
     .from(branchPushSettlementOutbox)
     .innerJoin(
       branchPushSettlementBatches,
@@ -532,9 +541,9 @@ async function fenced(db: DrizzleDb, fence: RewriteFence, documentId: string): P
         eq(branchPushSettlementOutbox.documentId, documentId as DocumentId),
         inArray(branchPushSettlementBatches.state, ["pending", "blocked"]),
       ),
-    )
-    .limit(1);
-  return Boolean(pending);
+    );
+  if (states.some(({ state }) => state === "pending")) return "pending";
+  return states.length ? "blocked" : null;
 }
 
 /**
