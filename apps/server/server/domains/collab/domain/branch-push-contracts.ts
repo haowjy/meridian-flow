@@ -225,7 +225,6 @@ export type PreparedDiscardCommit = {
   branch: BranchSnapshot;
   journalRows: BranchJournalRow[];
   state: Uint8Array;
-  stateVector: Uint8Array;
   reviewedByUserId?: UserId;
 };
 
