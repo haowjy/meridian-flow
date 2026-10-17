@@ -11,8 +11,8 @@ import {
   type BranchJournalReadStore,
   type BranchJournalRow,
   BranchPushCommitConflictError,
-  BranchPushRetryExhaustedError,
   type BranchReviewService,
+  DraftChangeRefusal,
   type PushCommitStore,
 } from "./branch-push-contracts.js";
 import { assertNoPendingIntegration } from "./branch-push-plan.js";
@@ -69,9 +69,9 @@ export function createBranchReviewOperations(deps: Dependencies): BranchReviewSe
         return await run(branches);
       } catch (cause) {
         if (!(cause instanceof BranchPushCommitConflictError)) throw cause;
-        if (attempt >= maxCasRetries) {
-          throw new BranchPushRetryExhaustedError(cause.branchId, maxCasRetries, cause);
-        }
+        // Four attempts each found the draft moved (a writer typing): the selection answers
+        // stale, as one made against an older draft does.
+        if (attempt >= maxCasRetries) throw new DraftChangeRefusal("stale");
       }
     }
   }
