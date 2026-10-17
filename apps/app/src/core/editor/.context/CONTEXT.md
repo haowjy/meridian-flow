@@ -222,4 +222,5 @@ keyboard, pointer, drop, or branch-recovery answer.
   retains it: the review editor stays mounted read-only with the unsent text,
   and the save pill offers Reopen draft, which rebuilds the room from the
   server (a re-forked draft answers that reconnect as superseded). Live rooms
-  never count refusals.
+  never count refusals. A `4207 branch-prefix-missing` close is a plain reconnect,
+  never a refusal: the next handshake's SyncStep2 uploads the missing bytes.
