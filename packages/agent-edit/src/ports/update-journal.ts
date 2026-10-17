@@ -34,10 +34,6 @@ export type JournalMutation = JournalMutationBase &
         branchGeneration: number;
         /** Peer that accepted this buffered write, not its shared upstream. */
         peerBranchId?: string;
-        /** Branch journal head captured while preparing an edit. */
-        branchJournalWatermark?: number;
-        /** Host revision for status-sensitive branch history transitions. */
-        branchJournalRevision?: string;
       }
   );
 
