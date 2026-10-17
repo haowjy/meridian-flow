@@ -27,7 +27,6 @@ export {
   resolvedWorkAuthority,
 } from "./domain/work-authority.js";
 export {
-  DraftBranchMissingError,
   type WorkLifecycleState,
   WorkLifecycleUnavailableError,
 } from "./domain/work-lifecycle.js";

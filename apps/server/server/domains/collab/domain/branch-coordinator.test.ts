@@ -240,7 +240,6 @@ describe("BranchCoordinator", () => {
           editDisposition: "discarded",
           schemaVersion: original.schemaVersion,
         },
-        work: "any",
       }),
     ).resolves.toEqual({ status: "moved" });
 

@@ -42,11 +42,7 @@ import {
   loadDraftHolder,
 } from "../../context/tree/draft-ownership.js";
 import { isDrafted } from "../../file-policy/index.js";
-import {
-  DraftBranchMissingError,
-  WorkLifecycleUnavailableError,
-  type WorkProjectionMutation,
-} from "../../projects/index.js";
+import type { WorkProjectionMutation } from "../../projects/index.js";
 import { BranchNotFoundError, type ResolvedBranch } from "../domain/branch-resolver.js";
 import {
   type AppendRowsInput,
@@ -525,9 +521,8 @@ export function createDrizzleBranchStore(
 
   /**
    * Shape B: one transaction, the branch row locked only for the fold and its write. A
-   * `work: "active"` rewrite (decision D19) carries the Work-is-active predicate, and a pull
-   * or reset among them is refused `inactive` by the Work boundary first, under the Work lock;
-   * the input names the operations the freeze exempts.
+   * checkpoint (a thread peer's catch-up) carries the Work-is-active predicate; a pull,
+   * reset or compaction carries none, so an archived Work's drafts keep rebasing on live.
    */
   async function commitRewrite(input: CommitRewriteInput): Promise<RewriteOutcome> {
     const { operation } = input;
@@ -537,7 +532,7 @@ export function createDrizzleBranchStore(
         branchId: input.branchId,
         policy: input.policy,
         fence: input.fence,
-        work: input.work,
+        work: operation.kind === "checkpoint" ? "active" : "any",
         keepUpdatedAt: operation.kind === "compact",
         // Only a pull moves a work draft's content against its baseline, and its caller
         // computed the effect on the candidate; a peer has none, a compaction keeps the
@@ -587,19 +582,11 @@ export function createDrizzleBranchStore(
       operation.kind === "pull" || operation.kind === "reset"
         ? () =>
             runInDrizzleTransaction(db, () =>
-              workProjection.mutatePending(
-                { branches: [input.branchId] },
-                rewrite,
-                input.work === "active" ? { requireActive: true } : undefined,
-              ),
+              workProjection.mutatePending({ branches: [input.branchId] }, rewrite),
             )
         : () => runInDrizzleTransaction(db, rewrite);
     return run().catch((cause): RewriteOutcome => {
       if (cause instanceof BranchWriteRollback) return cause.outcome;
-      if (cause instanceof WorkLifecycleUnavailableError) return { status: "inactive" };
-      // Retracted or discarded before the boundary resolved its Work: the same answer storage
-      // gives a branch closed under the row lock, so pulls report their typed loss.
-      if (cause instanceof DraftBranchMissingError) return { status: "closed" };
       throw cause;
     });
   }

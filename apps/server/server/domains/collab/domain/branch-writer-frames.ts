@@ -165,9 +165,6 @@ export function createWriterFrames(
         policy: runtime.foldPolicy(current),
         fence: { kind: "none" },
         operation: { kind: "compact" },
-        // Content-free, and only an append triggers it, which the lifecycle fence refuses
-        // on an archived Work's draft (decision D19).
-        work: "any",
       });
       // A moved or closed branch: the next frame past the bound tries again.
       await runtime.commitOnce(write, { moved: () => {} });

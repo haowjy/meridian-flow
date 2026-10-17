@@ -11,14 +11,3 @@ export class WorkLifecycleUnavailableError extends Error {
     this.name = "WorkLifecycleUnavailableError";
   }
 }
-
-/**
- * A branch named in an active-only Work write set no longer exists. Distinct from an inactive
- * Work: the caller's branch was retracted or discarded, which branch storage answers `closed`.
- */
-export class DraftBranchMissingError extends Error {
-  constructor(readonly branchIds: readonly string[]) {
-    super("Draft branch not found");
-    this.name = "DraftBranchMissingError";
-  }
-}
