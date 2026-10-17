@@ -56,7 +56,6 @@ import {
   type AppendBranchJournalInput,
   type AppendRowsInput,
   type AppendRowsOutcome,
-  assertReadableBranch,
   type BranchRead,
   type BranchReadSince,
   type BranchSnapshot,
@@ -71,11 +70,7 @@ import {
   type RewritePolicy,
 } from "../domain/branch-coordinator.js";
 import { branchJournalRevision } from "../domain/branch-push-contracts.js";
-import {
-  BranchCorruptError,
-  BranchNotFoundError,
-  type BranchState,
-} from "../domain/branch-resolver.js";
+import { BranchNotFoundError, type ResolvedBranch } from "../domain/branch-resolver.js";
 import { replicateFrozenIdentity } from "../domain/document-mutation-policy.js";
 import type { Drafts } from "../domain/drafts.js";
 import type { PeerRetirementCause, RetiredBranch } from "../domain/peer-retirement.js";
@@ -357,7 +352,9 @@ export function createDrizzleBranchStore(
         draftId: input.draftId,
         liveDoc: input.liveDoc,
       });
-      const upstreamDoc = await materializeResolved(workDraft.branchId, input.threadId);
+      const upstream = await readBranchAt(currentDrizzleDb(db), workDraft.branchId);
+      if (!upstream) throw new Error(`Branch ${workDraft.branchId} does not exist`);
+      const upstreamDoc = materializeBranchRead(upstream);
       try {
         const seed = await replicatedSnapshotFrom(upstreamDoc);
         const [row] = await currentDrizzleDb(db)
@@ -471,23 +468,6 @@ export function createDrizzleBranchStore(
       .limit(1);
     if (!row) throw new Error(`Branch ${branchId} does not exist`);
     return mapBranch(row);
-  }
-
-  /** The branch's content now, through the read seam. */
-  async function materializeResolved(branchId: string, threadId: ThreadId): Promise<Y.Doc> {
-    const read = await readBranchAt(currentDrizzleDb(db), branchId);
-    if (!read) throw new Error(`Branch ${branchId} does not exist`);
-    assertReadableBranch(read.branch);
-    try {
-      return materializeBranchRead(read);
-    } catch (cause) {
-      throw new BranchCorruptError({
-        branchId: read.branch.branchId,
-        documentId: read.branch.documentId,
-        threadId,
-        cause,
-      });
-    }
   }
 
   /**
@@ -649,7 +629,7 @@ export function createDrizzleBranchStore(
     appendRows,
     commitRewrite,
 
-    async resolveThreadBranch(documentId, threadId): Promise<BranchState> {
+    async resolveThreadBranch(documentId, threadId): Promise<ResolvedBranch> {
       const workId = await findPrimaryWork(threadId).catch((cause) => {
         if (cause instanceof NoPrimaryWorkError)
           throw new BranchNotFoundError(documentId, threadId);
@@ -657,14 +637,10 @@ export function createDrizzleBranchStore(
       });
       const row = await findActiveThreadPeer(documentId, threadId);
       if (!row || row.workId !== workId) throw new BranchNotFoundError(documentId, threadId);
-      return {
-        branchId: row.branchId,
-        doc: await materializeResolved(row.branchId, threadId),
-        generation: row.generation,
-      };
+      return resolved(row);
     },
 
-    async resolveWorkDraftBranchForThread(documentId, threadId): Promise<BranchState> {
+    async resolveWorkDraftBranchForThread(documentId, threadId): Promise<ResolvedBranch> {
       let workId: WorkId;
       try {
         workId = await findPrimaryWork(threadId);
@@ -676,32 +652,7 @@ export function createDrizzleBranchStore(
       const draft = await drafts.activeForWork(workId);
       const row = draft ? await activeDraftBranch(documentId, draft.id) : null;
       if (!row) throw new BranchNotFoundError(documentId, threadId);
-      return {
-        branchId: row.branchId,
-        doc: await materializeResolved(row.branchId, threadId),
-        generation: row.generation,
-      };
-    },
-
-    async resolveDraftBranch(input): Promise<BranchState> {
-      const [row] = await selectBranch(currentDrizzleDb(db))
-        .where(
-          and(
-            eq(documentBranches.id, input.draftBranchId),
-            eq(documentBranches.documentId, input.documentId),
-            eq(documentBranches.draftId, input.draftId),
-            eq(documentBranches.kind, "work_draft"),
-            eq(documentBranches.status, "active"),
-          ),
-        )
-        .limit(1);
-      if (!row) throw new BranchNotFoundError(input.documentId, "" as ThreadId);
-      const branch = mapBranch(row);
-      return {
-        branchId: branch.branchId,
-        doc: await materializeResolved(branch.branchId, "" as ThreadId),
-        generation: branch.generation,
-      };
+      return resolved(row);
     },
 
     async listActiveWorkDraftBranchIds(documentId) {
@@ -745,6 +696,10 @@ class BranchWriteRollback extends Error {
   constructor(readonly outcome: RewriteOutcome = { status: "moved" }) {
     super(`Branch write rolled back: ${outcome.status}`);
   }
+}
+
+function resolved({ branchId, generation, status, lifecycle }: BranchSnapshot): ResolvedBranch {
+  return { branchId, generation, status, lifecycle };
 }
 
 class NoPrimaryWorkError extends Error {

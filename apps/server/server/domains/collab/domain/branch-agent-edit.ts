@@ -592,9 +592,7 @@ async function resolveThreadBranchId(
   input: { threadId: ThreadId; branches: BranchLookupWithSnapshots },
   documentId: DocumentId,
 ): Promise<string> {
-  const peer = await input.branches.resolveThreadBranch(documentId, input.threadId);
-  peer.doc.destroy();
-  return peer.branchId;
+  return (await input.branches.resolveThreadBranch(documentId, input.threadId)).branchId;
 }
 
 async function concurrentUpstreamJournalRows(
@@ -618,9 +616,7 @@ async function concurrentUpstreamJournalRows(
   let peerId = access?.pinnedBranchId ?? held?.peerBranchId;
   if (!peerId) {
     if (owned) throw new Error("Owned attribution requires a pinned peer");
-    const peer = await input.branches.resolveThreadBranch(documentId, input.threadId);
-    peerId = peer.branchId;
-    peer.doc.destroy();
+    peerId = (await input.branches.resolveThreadBranch(documentId, input.threadId)).branchId;
   }
   const peerSnapshot = owned
     ? await owned.read(peerId, async (_doc, snapshot) => snapshot)

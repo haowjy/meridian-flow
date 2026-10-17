@@ -3,7 +3,7 @@ import type { DraftId } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
 import type { BranchSnapshot, BranchStore } from "../branch-coordinator.js";
-import type { BranchResolver, BranchState } from "../branch-resolver.js";
+import type { BranchResolver, ResolvedBranch } from "../branch-resolver.js";
 import type { PeerRetirementCause, RetiredBranch } from "../peer-retirement.js";
 
 export type ApplicationBranchStore = BranchStore &
@@ -54,17 +54,9 @@ export type ApplicationBranchStore = BranchStore &
       upstreamBranchIds: readonly string[],
       cause: PeerRetirementCause,
     ): Promise<RetiredBranch[]>;
+    /** The thread's primary Work's active draft branch on the document, as metadata. */
     resolveWorkDraftBranchForThread(
       documentId: DocumentId,
       threadId: ThreadId,
-    ): Promise<BranchState>;
-    /**
-     * Lookup only: the requested branch, while it is the draft's active branch on the
-     * document; otherwise `BranchNotFoundError`. A review read never makes a branch.
-     */
-    resolveDraftBranch(input: {
-      draftBranchId: string;
-      documentId: DocumentId;
-      draftId: DraftId;
-    }): Promise<BranchState>;
+    ): Promise<ResolvedBranch>;
   };

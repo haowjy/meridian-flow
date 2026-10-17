@@ -8,6 +8,7 @@ import {
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, expect, it } from "vitest";
 import * as Y from "yjs";
+import { readResolvedBranch } from "./test-support/branch-store-seam.js";
 import { commitSegmentRows } from "./test-support/branch-update-writes.js";
 import {
   ALPHA_ID,
@@ -47,7 +48,10 @@ it.each([
   try {
     await harness.seedWriterDocument("Alpha base.\n\nBeta base.", "generation-replay");
     const f = harness.crossWorkProbeFixture();
-    const branch = await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    const branch = await readResolvedBranch(
+      f.branchStore,
+      await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID),
+    );
     docs.push(branch.doc);
     const ai = clone(branch.doc);
     const edit = (doc: Y.Doc, blockIndex: number, from: number, to: number, text: string) => {

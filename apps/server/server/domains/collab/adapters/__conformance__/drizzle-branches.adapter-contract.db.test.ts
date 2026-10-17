@@ -42,9 +42,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "../../../../test-support/drizzle-reset.js"
     );
     const { createDrizzleBranchStore } = await import("../drizzle-branches.js");
-    const { appendBranchRows, EMPTY_BRANCH_UPDATE, readBranchContent } = await import(
-      "../../test-support/branch-store-seam.js"
-    );
+    const { appendBranchRows, EMPTY_BRANCH_UPDATE, readBranchContent, readResolvedBranch } =
+      await import("../../test-support/branch-store-seam.js");
     const { createDrizzleDraftStore } = await import("../drizzle-drafts.js");
     const { createHocuspocusPersistenceService } = await import("../../hocuspocus-persistence.js");
     const {
@@ -662,7 +661,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).rejects.toThrow(BranchCorruptError);
     });
 
-    it("never makes a branch in a closed draft: a review read of a captured draft after its close finds nothing", async () => {
+    it("never makes a branch in a closed draft: a captured draft's branch stays closed after its close", async () => {
       const { runInDrizzleTransaction } = await import("../../../../shared/drizzle-transaction.js");
       const draftStore = createDrizzleDraftStore(db);
       // Review captured the Work's active draft and its branch, then a whole close ended it.
@@ -685,16 +684,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .from(documentBranches)
         .where(eq(documentBranches.draftId, DRAFT_ID as never));
 
-      await expect
-        .soft(
-          store.resolveDraftBranch({
-            draftBranchId: captured.branchId,
-            documentId: DOC_ID as never,
-            draftId: DRAFT_ID as never,
-          }),
-          "the review read finds no branch",
-        )
-        .rejects.toMatchObject({ name: "BranchNotFoundError" });
+      expect
+        .soft((await store.getBranch(captured.branchId))?.status, "the captured branch is closed")
+        .toBe("closed");
       await expect
         .soft(
           store.ensureDraftBranch({
@@ -740,14 +732,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ),
       ).resolves.toBe(true);
 
-      const repaired = await store.resolveDraftBranch({
-        draftBranchId: "branch_corrupt_preview_reset",
-        documentId: DOC_ID as never,
-        draftId: DRAFT_ID as never,
+      const repaired = await readResolvedBranch(store, {
+        branchId: "branch_corrupt_preview_reset",
       });
-      expect(repaired.branchId).toBe("branch_corrupt_preview_reset");
-      expect(repaired.generation).toBeGreaterThan(0);
+      expect(repaired.generation).toBeGreaterThan(1);
       expect(repaired.doc.getText("content").toString()).toBe("live repair");
+      repaired.doc.destroy();
     });
 
     it("G2 §6.1 entry mid-reset rebinds to the bumped generation branch room", async () => {

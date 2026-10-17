@@ -166,7 +166,6 @@ describe("reply save refusals (postgres)", () => {
     expect(refused(saved)).toEqual([[ALPHA_ID, EDIT]]);
     expect(saved.documents.map((doc) => doc.documentId).sort()).toEqual([ALPHA_ID, BETA_ID].sort());
     const beta = await fixture.branchStore.resolveWorkDraftBranchForThread(BETA_ID, THREAD_ID);
-    beta.doc.destroy();
     expect(await fixture.draftMarkdown(beta.branchId)).toBe("Beta staged.\n");
     expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\ngreen\n");
   });
@@ -181,7 +180,6 @@ describe("reply save refusals (postgres)", () => {
     expect(refused(saved)).toEqual([[ALPHA_ID, DRAFT]]);
     expect(saved.documents[0]?.receipts).toHaveLength(2);
     const fresh = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
-    fresh.doc.destroy();
     expect(fresh.branchId).not.toBe(branchId);
     expect(await fixture.draftMarkdown(fresh.branchId)).toBe("red\n\nnavy\n\ngreen\n");
   });
@@ -389,7 +387,6 @@ describe("reply save refusals (postgres)", () => {
     expect(refused(await harness.commit(responseId))).toEqual([[ALPHA_ID, EDIT]]);
     expect(refused(await harness.commit(responseB))).toEqual([]);
     const beta = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_B_ID);
-    beta.doc.destroy();
     expect(await fixture.draftMarkdown(beta.branchId)).toBe("red\n\nblue\n\nemerald\n");
     // A later reply writes the document again, through a fresh peer on the reset branch.
     const next = await createResponse(db, 3);
@@ -408,14 +405,12 @@ describe("reply save refusals (postgres)", () => {
     ).toMatchObject({ phase: "staged" });
     expect(refused(await harness.commit(next))).toEqual([]);
     const mine = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
-    mine.doc.destroy();
     expect(await fixture.draftMarkdown(mine.branchId)).toBe("red\n\nnavy\n\ngreen\n");
   });
 
   it("16: a per-change Discard racing a peer pull never shows its text on the next read", async () => {
     const { fixture, review, core } = await setup();
     const peer = await fixture.branchStore.resolveThreadBranch(ALPHA_ID, THREAD_ID);
-    peer.doc.destroy();
     const preview = await review.activePreview(ALPHA_ID);
     const azure = preview.operations.find((op) => op.afterExcerpt === "azure");
     // The pause sits after the pull captured its upstream and before it persists the peer:

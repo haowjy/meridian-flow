@@ -48,6 +48,23 @@ export async function appendBranchRows(
   }
 }
 
+/**
+ * A resolved branch with its content: generation and document come from one read, so a test
+ * never pairs one generation's identity with another's content.
+ */
+export async function readResolvedBranch(
+  store: Pick<BranchStore, "readBranchAt">,
+  resolved: { branchId: string },
+): Promise<{ branchId: string; generation: number; doc: Y.Doc }> {
+  const read = await store.readBranchAt(resolved.branchId);
+  if (!read) throw new Error(`Branch ${resolved.branchId} does not exist`);
+  return {
+    branchId: read.branch.branchId,
+    generation: read.branch.generation,
+    doc: materializeBranchRead(read),
+  };
+}
+
 /** The branch's content now (checkpoint ⊕ tail), as update bytes. */
 export async function readBranchContent(
   store: Pick<BranchStore, "readBranchAt">,
