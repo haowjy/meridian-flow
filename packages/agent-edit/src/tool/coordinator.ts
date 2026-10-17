@@ -17,7 +17,7 @@ export async function withLiveDocument<T>(
   docId: string,
   commandName: DocumentCommandName,
   fn: LiveDocumentCallback<T>,
-  options?: import("../ports/document-coordinator.js").DocumentLockOptions,
+  options?: import("../ports/document-coordinator.js").DocumentAccess,
 ): Promise<T | InternalWriteResult | null> {
   let acquired = false;
   let cancelled: Error | undefined;

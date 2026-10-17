@@ -1,9 +1,9 @@
 /** In-memory agent-edit adapters for tests and the in-memory app graph. */
 
 import {
+  type DocumentAccess,
   type DocumentCoordinator,
   type DocumentLifecycle,
-  type DocumentLockOptions,
   DocumentNotFoundError,
   type PersistedUpdate,
   type UpdateJournal,
@@ -177,7 +177,7 @@ export function createInMemoryCoordinator(journal: UpdateJournal): DocumentCoord
     withDocument<T>(
       docId: string,
       fn: (doc: Y.Doc) => Promise<T>,
-      options?: DocumentLockOptions,
+      options?: DocumentAccess,
     ): Promise<T> {
       return mutex.run(docId, async () => fn(requireDoc(docId)), options);
     },

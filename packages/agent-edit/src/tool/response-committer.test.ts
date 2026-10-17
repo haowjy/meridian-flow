@@ -3,7 +3,7 @@
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { unwrapDoc } from "../handles.js";
-import type { DocumentCoordinator } from "../ports/document-coordinator.js";
+import type { StagedWriteHost } from "../ports/document-coordinator.js";
 import { createStaticDocumentLinks } from "../ports/static-document-links.js";
 import type { UpdateJournal } from "../ports/update-journal.js";
 import { blockTexts, outcomeText } from "./test-support/assertions.js";
@@ -95,29 +95,46 @@ describe("response committer", () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    Object.assign(prepared.coordinator, {
-      withStagedWrites: (async (request) => {
-        if (pauseNext) {
-          pauseNext = false;
-          entered();
-          await gate;
-        }
-        snapshots.push({ bytes: Y.encodeStateAsUpdate(request.sourceDoc), cut: request.helperCut });
-        return prepared.coordinator.withDocument(request.docId, async (canonical) => {
-          const candidate = new Y.Doc({ gc: false });
-          Y.applyUpdate(candidate, Y.encodeStateAsUpdate(canonical));
-          for (const entry of request.entries) Y.applyUpdate(candidate, entry.update);
-          const state = Y.encodeStateAsUpdate(candidate);
-          candidate.destroy();
-          return {
-            keptEntries: request.entries,
-            helperState: state,
-            helperCut: { generation: 1, state: Y.encodeStateAsUpdate(canonical) },
-            beforeState: Y.encodeStateAsUpdate(canonical),
-          };
-        });
-      }) satisfies NonNullable<DocumentCoordinator["withStagedWrites"]>,
-    });
+    // A save's prepared write is counted, so the commit below proves it was consumed.
+    const saves = { persisted: 0, transferred: 0 };
+    const replay: StagedWriteHost["replay"] = async (request) => {
+      if (pauseNext) {
+        pauseNext = false;
+        entered();
+        await gate;
+      }
+      snapshots.push({ bytes: Y.encodeStateAsUpdate(request.sourceDoc), cut: request.helperCut });
+      return prepared.coordinator.withDocument(request.docId, async (canonical) => {
+        const candidate = new Y.Doc({ gc: false });
+        Y.applyUpdate(candidate, Y.encodeStateAsUpdate(canonical));
+        for (const entry of request.entries) Y.applyUpdate(candidate, entry.update);
+        const state = Y.encodeStateAsUpdate(candidate);
+        candidate.destroy();
+        return {
+          keptEntries: request.entries,
+          helperState: state,
+          helperCut: { generation: 1, state: Y.encodeStateAsUpdate(canonical) },
+          beforeState: Y.encodeStateAsUpdate(canonical),
+        };
+      });
+    };
+    const stagedWrites: StagedWriteHost = {
+      replay,
+      prepareSave: async (request) => ({
+        ...(await replay(request)),
+        write: {
+          kind: "write",
+          persist: async () => {
+            saves.persisted += 1;
+          },
+          transfer: () => {
+            saves.transferred += 1;
+          },
+          dispose: () => {},
+        },
+      }),
+    };
+    Object.assign(prepared.coordinator, { stagedWrites });
     const peer = {
       ...context,
       responseIdentity: { providerResponseId: "prepared-abort", editScopeId: "prepared-abort" },
@@ -196,6 +213,8 @@ describe("response committer", () => {
         rollback = deferred;
       },
     });
+    expect(saves.persisted).toBeGreaterThan(0);
+    expect(saves.transferred).toBe(saves.persisted);
     const checkSaveReplica = () => {
       const snapshot = snapshots.at(-1);
       if (!snapshot) throw new Error("Missing replay source");

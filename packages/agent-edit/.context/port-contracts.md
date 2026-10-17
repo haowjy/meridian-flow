@@ -23,17 +23,27 @@ client.
 
 ### `DocumentCoordinator` (`src/ports/document-coordinator.ts`)
 
-`withDocument` serializes callers for one document but does not fence a
-separate WebSocket transport; the host supplies that authority check.
-`recover` replays persisted-but-unapplied updates and reports a missing
-coordinator document as `DocumentNotFoundError`.
+`withDocument` runs a callback on the host's document; its mutations commit
+atomically or refuse. Callers must not rely on mutual exclusion: a live host
+serializes callers for one document, a branch host runs them on private
+candidates committed at a revision. Neither fences a separate WebSocket
+transport; the host supplies that authority check. `DocumentAccess.timeoutMs`
+bounds only a live host's wait. `recover` replays persisted-but-unapplied
+updates and reports a missing coordinator document as `DocumentNotFoundError`.
 
-A host that supports response staging provides a checked replay/publication
-operation over an explicit helper base cut. It returns accepted kept entries,
-a replacement helper cut, and the before cut only after admission and CAS.
-Prepared views are private disposable replicas, never runtime-store entries;
-every content exposure passes through a prepare lease. Whole Discard retires
-only the addressed peer/document epoch.
+A host that stages response writes on private candidates provides
+`stagedWrites`, two operations over an explicit helper base cut. `replay` is
+for reading: accepted kept entries, a replacement helper cut and the before
+cut, and nothing written. `prepareSave` returns the same and a required
+`write`: either a `StagedWriteCommit` the caller's attempt owns (`persist`
+inside the commit scope, `transfer` once the attempt completed, `dispose` on
+any unwind; the host publishes at root commit, never at `transfer`), or an
+explicit `{ kind: "no-effect" }`, which the committer refuses when it kept
+entries. Prepared views are private disposable replicas, never runtime-store
+entries; every content exposure passes through a prepare lease. Whole Discard
+retires only the addressed peer/document epoch. A host's response-attempt
+surface (`ResponseCommitAttempt`, `ResponseAttemptStaleError`) is exported
+once, from `integration.ts`.
 
 ### `DocumentLifecycle` (`src/ports/document-lifecycle.ts`)
 

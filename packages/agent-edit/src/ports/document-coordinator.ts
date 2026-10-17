@@ -21,26 +21,54 @@ export type StagedWriteRejectionReason =
   | "discarded_document"
   | "discarded_edit";
 
+/** A response's staged entries for one document, replayed against an explicit helper cut. */
+export interface StagedWriteReplayInput {
+  docId: string;
+  sourceDoc: Y.Doc;
+  helperCut: StagedHelperCut;
+  entries: readonly import("./update-journal.js").JournalBatchAppendEntry[];
+  access?: DocumentAccess;
+}
+
+/** A replay for reading: what the host would keep, and the helper it rebuilt. Writes nothing. */
 export interface StagedWriteReplayResult {
   rejectedWrites?: readonly { writeId: string; reason: StagedWriteRejectionReason }[];
   keptEntries: readonly import("./update-journal.js").JournalBatchAppendEntry[];
   helperState: Uint8Array;
   helperCut: StagedHelperCut;
   beforeState: Uint8Array;
-  /** With `commit`: the host's prepared write of the kept entries. */
-  commit?: StagedWriteCommit;
 }
 
 /**
- * A host's prepared write of a replay's kept entries: nothing is persisted until `persist`
- * runs inside the caller's commit scope and nothing is visible until `publish` runs after
- * that scope succeeded. `persist` throws when the host's base moved since the replay; the
- * caller then disposes this write and replays again.
+ * A replay for saving: the read result and the host's prepared write of the kept entries,
+ * always present. `no-effect` says there is nothing to persist, and is valid only with no
+ * kept entries; the caller refuses it otherwise rather than certify writes nobody stored.
+ */
+export interface StagedWriteSaveResult extends StagedWriteReplayResult {
+  write: StagedWriteCommit | { kind: "no-effect" };
+}
+
+/**
+ * A host's prepared write of a save's kept entries, owned by the caller's attempt: nothing is
+ * persisted until `persist` runs inside the caller's commit scope; `transfer` hands the write
+ * to the host once that attempt completed, and the host publishes it when the enclosing root
+ * transaction commits (never before); `dispose` drops it on any unwind. `persist` throws when
+ * the host's base moved since the replay; the caller then disposes this write and replays.
  */
 export interface StagedWriteCommit {
+  kind: "write";
   persist(): Promise<void>;
-  publish(): void;
+  transfer(): void;
   dispose(): void;
+}
+
+/**
+ * A host that stages a response's writes on private candidates (a branch host). A read replays;
+ * a save also prepares the write. Both are pure with respect to the host until `persist`.
+ */
+export interface StagedWriteHost {
+  replay(input: StagedWriteReplayInput): Promise<StagedWriteReplayResult>;
+  prepareSave(input: StagedWriteReplayInput): Promise<StagedWriteSaveResult>;
 }
 
 export class DocumentNotFoundError extends Error {
@@ -58,35 +86,30 @@ export function isDocumentNotFoundError(cause: unknown): cause is DocumentNotFou
 }
 
 /**
- * Serializes port callers against the host-owned canonical Y.Doc (live or branch).
- * Mutations through other transports require the host's separate concurrency fence.
+ * Port callers' access to the host-owned canonical Y.Doc (live or branch). Callers must not
+ * rely on mutual exclusion: each host decides how a mutation commits (a live host serializes
+ * callers; a branch host runs them on private candidates committed at a revision).
  */
 export interface DocumentCoordinator {
-  /** Rebuild/replay staged writes under the host's existing generation lock.
-   * The host admits only whole logical writes and returns an isolated accepted replay result.
-   * commit=true also returns the survivors' prepared write (`commit`); it persists nothing.
+  /**
+   * Staged response writes, for a host that keeps them on private candidates. The host admits
+   * only whole logical writes and returns an isolated result; nothing persists until the
+   * caller runs a save's `write.persist`.
    */
-  withStagedWrites?(input: {
-    docId: string;
-    sourceDoc: Y.Doc;
-    helperCut: StagedHelperCut;
-    entries: readonly import("./update-journal.js").JournalBatchAppendEntry[];
-    commit: boolean;
-    access?: DocumentLockOptions;
-  }): Promise<StagedWriteReplayResult>;
+  stagedWrites?: StagedWriteHost;
 
   /** Immutable host generation bound to this canonical document, when supported. */
   documentAuthority?(doc: Y.Doc): import("./update-journal.js").JournalAuthority;
   /**
-   * Acquire coordinator access to a document's canonical Y.Doc for the duration of fn.
-   * Serializes concurrent callers for the same docId; different documents run concurrently.
+   * Runs `fn` on the host's document for the duration of the call. Its mutations commit
+   * atomically or refuse; callers must not rely on mutual exclusion with other callers.
    * Rejects with DocumentNotFoundError when the document is missing; other
    * rejections are runtime failures and surface as retryable internal errors.
    */
   withDocument<T>(
     docId: string,
     fn: (doc: Y.Doc) => Promise<T>,
-    options?: DocumentLockOptions,
+    options?: DocumentAccess,
   ): Promise<T>;
 
   /**
@@ -103,7 +126,7 @@ export interface DocumentCoordinator {
     liveJournalSeq?: number;
     attemptId?: string;
     reportingCut?: Uint8Array;
-    access?: DocumentLockOptions;
+    access?: DocumentAccess;
   }): Promise<ConcurrentUpdate[]>;
 
   /**
@@ -113,8 +136,12 @@ export interface DocumentCoordinator {
   recover(docId: string): Promise<void>;
 }
 
-export interface DocumentLockOptions {
-  /** Maximum wait to acquire the lock. Callback duration is not timed. */
+/** How a caller reaches a host document. */
+export interface DocumentAccess {
+  /**
+   * A live host only: the maximum wait for its per-document serialization. Callback duration
+   * is not timed; a branch host, which serializes nothing, ignores it.
+   */
   timeoutMs?: number;
   signal?: AbortSignal;
   /**
