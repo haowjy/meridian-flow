@@ -189,14 +189,26 @@ the branch row. Only the first attempt fences a stale room (`1008`): a retry
 exists because a concurrent commit moved the branch, and that commit's publish
 can reach this room after the retry judges. An append that flips the branch's
 review membership (`(has_effect OR blocking) AND` pending rows) locks its Work
-first and touches the Work's projection. A replica is published only after its
-commit. Rooms are process-local, and a commit reaches only its own process's
-rooms; another server process on the same database learns of it when its
-runtime next reads the branch (a frame's judgement, a tab's SyncStep1
-handshake), catches its replica up from the tail or the new checkpoint, and
-publishes that committed delta into its rooms as well, so a room is never
-fenced for rows only another process published. A process whose tab is idle
-shows the other process's typing at that tab's next keystroke or rejoin. A frame that leaves more than 512 tail rows or 2 MiB of tail folds it in
+first and touches the Work's projection.
+
+Room delivery has one owner (decision D25): `install` in
+`domain/branch-coordinator.ts`, the only place a replica becomes the branch's
+published replica. It runs when the store's transaction commits (a savepoint's
+callbacks move to its parent on release and are dropped on its rollback, so a
+rolled-back child publishes nothing), installs only past the replica published
+by then, and sends this process's rooms what separates the two: the rows the new
+replica was built from when it was built on that replica (a frame, a reply's
+rows, a read's tail catch-up), otherwise the document difference (a pull or
+compaction that folded rows under the branch lock, a checkpoint catch-up, a
+checkpoint another process wrote), or nothing when the content is unchanged. A
+new generation closes the rooms of older ones instead. A transition at or below
+the published revision installs and sends nothing, so a read racing a local
+commit delivers once. Rooms are process-local: another server process's commits
+reach this process's rooms when its runtime next reads the branch (a frame's
+judgement, a tab's SyncStep1 handshake, a turn inverse's `deliverCommitted`), so
+a room is never fenced for rows only another process committed. A process whose
+tab is idle shows the other process's typing at that tab's next keystroke or
+rejoin. A frame that leaves more than 512 tail rows or 2 MiB of tail folds it in
 the background (`compact`: no content, effect or `updatedAt` change). Frames
 and the fold they trigger are `domain/branch-writer-frames.ts`, over the branch
 runtime surface (`BranchRuntime`: published replicas, private candidates,

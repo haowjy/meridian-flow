@@ -96,8 +96,9 @@ branch id is the `branchId` on the draft's rows.
    - All 80 tokens are in both editors after a reload.
    - Every key is acked, with no `1008` close and no reconnect: each
      process's room takes the other's committed rows before it judges a frame.
-     The headless form of this step is the `two-process-frames` probe
-     ([seam probes](drafts-lock-free-probes.md)).
+     The headless form of this step is the `two-process-frames` probe, and
+     `two-process-fold` and `two-process-compaction` cover a pull or compaction
+     folding the other process's row ([seam probes](drafts-lock-free-probes.md)).
    - No frame retries past its fourth attempt: count `collab.branch.append_retry`
      events in both processes.
    - A live edit pulled by both processes lands once; the loser sees `moved`.
