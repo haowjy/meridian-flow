@@ -69,7 +69,13 @@ function keystroke(room: Y.Doc, token: string): Uint8Array {
   }
 }
 
-async function type(process: Process, branchId: string, generation: number, token: string) {
+async function type(
+  process: Process,
+  branchId: string,
+  generation: number,
+  token: string,
+  wall?: number[],
+) {
   const update = keystroke(process.room, token);
   const started = performance.now();
   const result = await settled(
@@ -82,7 +88,8 @@ async function type(process: Process, branchId: string, generation: number, toke
   );
   // Hocuspocus applies an admitted frame to the room; a refused one closes the socket.
   if (result.ok && result.value.admitted) Y.applyUpdate(process.room, update, "client");
-  return { ...result, wallMs: performance.now() - started };
+  wall?.push(performance.now() - started);
+  return result;
 }
 
 /** p50, p95 and max of `values`, rounded to a tenth of a millisecond. */
@@ -107,11 +114,10 @@ export const twoProcessFrames: Probe = {
     let admitted = 0;
     for (let key = 0; key < KEYS; key += 1) {
       const results = await Promise.all([
-        type(a, branchId, generation, ` A${key}`),
-        type(b, branchId, generation, ` B${key}`),
+        type(a, branchId, generation, ` A${key}`, wall),
+        type(b, branchId, generation, ` B${key}`, wall),
       ]);
       for (const result of results) {
-        wall.push(result.wallMs);
         if (result.ok) admitted += 1;
         else {
           const name = `${result.name}: ${result.message}`;
