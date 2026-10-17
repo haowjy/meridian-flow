@@ -5,6 +5,8 @@ import {
   modelResult,
   parseDocumentAddress,
   type ReadCommand,
+  ResponseAttemptStaleError,
+  type ResponseCommitAttempt,
   type ResponseCommitSuccessResult,
   type ResponseRollbackResult,
   rejectedWriteExplanation,
@@ -59,6 +61,14 @@ type PulledThreadPeer = {
 
 type ResponseRecord = ReplyRecord;
 
+/** A reply save's commit attempts (section 2.4): four, then the save fails as today. */
+const SAVE_ATTEMPTS = 4;
+
+/** A miss the next attempt can resolve: a branch moved, or a buffer changed, since preparing. */
+function isSaveAttemptMiss(cause: unknown): boolean {
+  return cause instanceof BranchCasConflictError || cause instanceof ResponseAttemptStaleError;
+}
+
 /**
  * The single entry point for model reads and writes in both destinations
  * (D19). Each call carries the grant the caller got from the file policy: its
@@ -86,6 +96,11 @@ export function createThreadPeerCorePool(input: {
     draftId?: DraftId;
   }): Promise<PulledThreadPeer | undefined>;
   commitThreadResponseAtomically<T>(operation: () => Promise<T>): Promise<T>;
+  /**
+   * One save attempt's commit scope inside the response transaction: a savepoint, so a
+   * miss rolls back every document the attempt wrote and releases the branch rows it took.
+   */
+  attemptScope<T>(operation: () => Promise<T>): Promise<T>;
   responseTransactionSettlement: ResponseTransactionSettlement;
   responseTransactions: ResponseTransactionHooks;
   /** Runs after an AI write commits to a live document, e.g. to merge it into Work drafts (D40). */
@@ -429,6 +444,43 @@ export function createThreadPeerCorePool(input: {
    * documents' mutation locks in id order, before any participant commits. A
    * refused document leaves the reply; the rest saves (D29, D42).
    */
+  /** Every participant's save attempt, prepared in order; none survives a failure to prepare. */
+  async function prepareAttempts(
+    responseId: string,
+    participants: readonly AgentEditCore[],
+    options: Parameters<AgentEditCore["prepareResponse"]>[1],
+    onFailure: "fail" | "quiet" = "fail",
+  ): Promise<Map<AgentEditCore, ResponseCommitAttempt>> {
+    const attempts = new Map<AgentEditCore, ResponseCommitAttempt>();
+    try {
+      for (const core of participants)
+        attempts.set(core, await core.prepareResponse(responseId, options));
+    } catch (cause) {
+      if (onFailure === "quiet") {
+        for (const attempt of attempts.values()) attempt.dispose();
+        throw cause;
+      }
+      throw await failAttempts(attempts, cause);
+    }
+    return attempts;
+  }
+
+  /** The save fails as a save failure does: every attempt dropped, each core's buffer kept. */
+  async function failAttempts(
+    attempts: ReadonlyMap<AgentEditCore, ResponseCommitAttempt>,
+    cause: unknown,
+  ): Promise<unknown> {
+    let failure: unknown;
+    for (const attempt of attempts.values()) {
+      try {
+        await attempt.fail(cause);
+      } catch (error) {
+        failure ??= error;
+      }
+    }
+    return failure ?? cause;
+  }
+
   function finalizeOptions() {
     return {
       deferFinalization: (participant: ResponseCommitParticipant) => {
@@ -516,21 +568,56 @@ export function createThreadPeerCorePool(input: {
         await options?.beforeTransactionCommit?.(saved);
         return saved;
       }
-      return input.fences.withLeases(record, (lease) =>
-        input.responseTransactions.run(
+      return input.fences.withLeases(record, async (lease) => {
+        // A core whose every document was refused has already closed this reply on its
+        // side; only a reply that never wrote falls back to the live core, which closes it.
+        const wrote = record.participants.size > 0;
+        const participantsNow = () => (wrote ? [...record.participants] : [input.liveUtilityCore]);
+        const saveOptions = { ...finalizeOptions(), branchLease: lease };
+        // The first attempt is prepared before the transaction opens, off every lock. One
+        // that cannot be prepared yet (a document `confirm` will refuse) is prepared again
+        // after `confirm`, inside the transaction.
+        let prepared: Map<AgentEditCore, ResponseCommitAttempt> | undefined = await prepareAttempts(
+          responseId,
+          participantsNow(),
+          saveOptions,
+          "quiet",
+        ).catch(() => undefined);
+        return input.responseTransactions.run(
           input.commitThreadResponseAtomically,
           async () => {
-            // A core whose every document was refused has already closed this
-            // reply on its side; only a reply that never wrote falls back to the
-            // live core, which closes it.
-            const wrote = record.participants.size > 0;
             const refused = await input.fences.confirm(record);
-            const participants = wrote ? [...record.participants] : [input.liveUtilityCore];
+            const participants = participantsNow();
+            for (const [core, attempt] of prepared ?? []) {
+              if (participants.includes(core)) continue;
+              attempt.dispose();
+              prepared?.delete(core);
+            }
             const results: ResponseCommitSuccessResult[] = [];
-            for (const core of participants) {
-              results.push(
-                await core.commitResponse(responseId, { ...finalizeOptions(), branchLease: lease }),
-              );
+            // One savepoint per attempt, before its first branch-store lock: a miss on any
+            // document unwinds every document's rows, receipts and placements, and the
+            // attempts' process-local state is dropped with them (decision D7: `confirm` ran
+            // once above and is not replayed; a retry recomputes under its locks).
+            for (let attemptNumber = 1; ; attemptNumber++) {
+              const attempts =
+                prepared ?? (await prepareAttempts(responseId, participants, saveOptions));
+              prepared = undefined;
+              try {
+                await input.attemptScope(async () => {
+                  for (const core of participants) await attempts.get(core)?.consume();
+                });
+              } catch (cause) {
+                if (isSaveAttemptMiss(cause) && attemptNumber < SAVE_ATTEMPTS) {
+                  for (const attempt of attempts.values()) attempt.dispose();
+                  continue;
+                }
+                throw await failAttempts(attempts, cause);
+              }
+              for (const core of participants) {
+                const attempt = attempts.get(core);
+                if (attempt) results.push(await attempt.install());
+              }
+              break;
             }
             const drafted = new Set(
               [...record.documents]
@@ -552,8 +639,8 @@ export function createThreadPeerCorePool(input: {
             return saved;
           },
           input.responseTransactionSettlement,
-        ),
-      );
+        );
+      });
     },
     responseDestination(responseId, docId) {
       return responses.get(responseId)?.documents.get(docId as DocumentId)?.grant.destination;

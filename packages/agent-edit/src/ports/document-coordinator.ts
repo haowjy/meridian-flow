@@ -31,6 +31,20 @@ export interface StagedWriteReplayResult {
   helperState: Uint8Array;
   helperCut: StagedHelperCut;
   beforeState: Uint8Array;
+  /** With `commit`: the host's prepared write of the kept entries. */
+  commit?: StagedWriteCommit;
+}
+
+/**
+ * A host's prepared write of a replay's kept entries: nothing is persisted until `persist`
+ * runs inside the caller's commit scope and nothing is visible until `publish` runs after
+ * that scope succeeded. `persist` throws when the host's base moved since the replay; the
+ * caller then disposes this write and replays again.
+ */
+export interface StagedWriteCommit {
+  persist(): Promise<void>;
+  publish(): void;
+  dispose(): void;
 }
 
 export class DocumentNotFoundError extends Error {
@@ -54,7 +68,7 @@ export function isDocumentNotFoundError(cause: unknown): cause is DocumentNotFou
 export interface DocumentCoordinator {
   /** Rebuild/replay staged writes under the host's existing generation lock.
    * The host admits only whole logical writes and returns an isolated accepted replay result.
-   * commit=true journals survivors in the ambient response transaction.
+   * commit=true also returns the survivors' prepared write (`commit`); it persists nothing.
    */
   withStagedWrites?(input: {
     docId: string;

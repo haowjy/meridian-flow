@@ -64,6 +64,7 @@ export const {
   isInDrizzleTransaction,
   deferUntilDrizzleRollback,
   runAfterDrizzleCommit,
+  runInDrizzleSavepoint,
   runInDrizzleTransaction,
   runInRootDrizzleTransaction,
   runOutsideDrizzleTransaction,
@@ -386,11 +387,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       if (input.rows.length) injectSecondJournalFailure();
       return realBranchStore.appendRows(input);
     },
-    async commitRewrite(input: Parameters<typeof realBranchStore.commitRewrite>[0]) {
-      if (input.operation.kind === "checkpoint" && input.operation.rows?.length)
-        injectSecondJournalFailure();
-      return realBranchStore.commitRewrite(input);
-    },
   };
   const branchBroadcasts: string[] = [];
   const branchCoordinator = createBranchCoordinator({
@@ -702,6 +698,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       semanticProvenance: runtime.semanticProvenance,
       observability,
       commitThreadResponseAtomically: (operation) => runInDrizzleTransaction(db, operation),
+      attemptScope: (operation) => runInDrizzleSavepoint(db, operation),
       responseTransactionSettlement: {
         deferUntilCommit: deferUntilDrizzleCommit,
         deferUntilRollback: deferUntilDrizzleRollback,

@@ -24,6 +24,7 @@ import type {
   BranchCoordinator,
   BranchSaveJournalReads,
   OwnedBranchSession,
+  PreparedBranchWrite,
 } from "./branch-coordinator.js";
 import type { BranchLockLease } from "./branch-critical-sections.js";
 import type { WorkDraftLookup } from "./branch-pulls.js";
@@ -269,7 +270,7 @@ export function createBranchAgentEditCoordinator(input: {
       const branchId = peer?.upstreamBranchId;
       if (!branchId) throw new Error("Response peer has no Work draft");
       return underAccess(request.access, peerId, async (owned) => {
-        const result = await owned.withStagedRows(
+        const { result, write } = await owned.prepareStagedRows(
           branchId,
           async (doc, snapshot) => {
             if (request.helperCut.generation > snapshot.generation)
@@ -325,18 +326,35 @@ export function createBranchAgentEditCoordinator(input: {
           },
           request.commit,
         );
-        if (request.commit) {
-          const current = await owned.read(branchId, async (doc) => cloneYDoc(doc));
-          try {
-            await owned.withTransient(peerId, async (doc) => {
-              Y.applyUpdate(doc, Y.encodeStateAsUpdate(current));
-            });
-            await owned.checkpoint(peerId);
-          } finally {
-            current.destroy();
-          }
+        if (!request.commit) return result;
+        // The thread's peer follows its draft in the same attempt: it catches up to the
+        // upstream as this save commits it, upstream before peer.
+        let catchUp: PreparedBranchWrite | null;
+        try {
+          catchUp = write
+            ? await owned.prepareCatchUp(peerId, write.candidate)
+            : await owned.read(branchId, (doc) => owned.prepareCatchUp(peerId, doc));
+        } catch (cause) {
+          write?.dispose();
+          throw cause;
         }
-        return result;
+        const writes = [write, catchUp].filter((entry): entry is PreparedBranchWrite =>
+          Boolean(entry),
+        );
+        return {
+          ...result,
+          commit: {
+            async persist() {
+              for (const entry of writes) await entry.persist();
+            },
+            publish() {
+              for (const entry of writes) entry.publish();
+            },
+            dispose() {
+              for (const entry of writes) entry.dispose();
+            },
+          },
+        };
       });
     },
 

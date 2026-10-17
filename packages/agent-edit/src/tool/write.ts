@@ -41,6 +41,7 @@ export interface WriteTool {
     editScopeId: string,
     options?: import("./response-committer.js").ResponseCommitOptions,
   ): Promise<ResponseCommitSuccessResult>;
+  prepareResponse: ResponseCommitter["prepareResponse"];
   rollbackResponse(
     editScopeId: string,
     options?: Pick<import("./response-committer.js").ResponseCommitOptions, "deferFinalization">,
@@ -248,6 +249,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     write,
     recover: (docId) => options.coordinator.recover(docId),
     commitResponse: responseCommitter.commitResponse,
+    prepareResponse: responseCommitter.prepareResponse,
     rollbackResponse: responseCommitter.rollbackResponse,
     hasResponseDocument: responseCommitter.hasResponseDocument,
     prepare: responseCommitter.prepare,
