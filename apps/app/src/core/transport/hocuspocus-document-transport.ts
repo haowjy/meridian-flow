@@ -23,7 +23,21 @@
  * A branch room's update refusal (`1008`) is bounded. One refusal reconnects
  * and resends, as any close does; after `MAX_BRANCH_UPDATE_REFUSALS` in a row
  * with no acknowledgement between them, the room ends `BRANCH_UPDATES_REFUSED`
- * and keeps its outbox for the owner to show. Live rooms never count.
+ * and keeps its outbox for the owner to show. Live rooms never count. A
+ * `4207 branch-prefix-missing` close is not a refusal: the server received an
+ * update before the bytes it depends on, and the reconnect's handshake repairs
+ * that, so it reconnects like any drop and never counts.
+ *
+ * A branch room's handshake upload goes first. The client's SyncStep2 is the
+ * whole Y.Doc diffed against the server's state vector, so it carries every
+ * byte the server lacks, including edits replayed before this transport
+ * existed. Updates offered on an open socket before its SyncStep2 (the offline
+ * queue's flush, keys typed during the handshake) would reach the server ahead
+ * of the bytes they depend on; the socket holds them and releases them, in
+ * order, right after the SyncStep2. Only transmission waits, never typing.
+ * Live rooms keep the provider's order: their server marks the SyncStep2 for
+ * offline collision reconciliation, and moving queued bytes into it would
+ * change what is reconciled.
  */
 import {
   HocuspocusProvider,
@@ -44,6 +58,7 @@ import {
 } from "@meridian/contracts/protocol";
 import { COLLAB_SCHEMA_VERSION, formatCollabSchemaSubprotocol } from "@meridian/prosemirror-schema";
 import type { Awareness } from "y-protocols/awareness";
+import { messageYjsSyncStep2, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
 import {
   BRANCH_UPDATES_REFUSED,
@@ -58,6 +73,7 @@ import type { ConnectivityHintsPort } from "./connectivity-hints";
 import { buildSameOriginWsUrl } from "./dev-transport";
 import {
   createServerAcknowledgementTracker,
+  readDocumentSyncType,
   type ServerAcknowledgementTracker,
 } from "./server-acknowledgement";
 import { notifyYjsRoomAttached, TappedWebSocket } from "./tapped-websocket";
@@ -74,18 +90,28 @@ const SOCKET_OPEN = 1;
 const BRANCH_UPDATE_REFUSED_CODE = 1008;
 const MAX_BRANCH_UPDATE_REFUSALS = 3;
 
+function isBranchRoom(roomName: string): boolean {
+  return roomName.startsWith("branch:");
+}
+
 class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
   private permanentlyDestroyed = false;
   private reconnectGeneration = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly acknowledgement: ServerAcknowledgementTracker;
+  private readonly handshakeUploadFirst: boolean;
+  // Per socket: whether its SyncStep2 has been written, and the Updates held until then.
+  private handshakeUploaded = false;
+  private heldUpdates: Uint8Array[] = [];
 
   constructor(
     configuration: ConstructorParameters<typeof HocuspocusProviderWebsocket>[0],
     acknowledgement: ServerAcknowledgementTracker,
+    handshakeUploadFirst: boolean,
   ) {
     super(configuration);
     this.acknowledgement = acknowledgement;
+    this.handshakeUploadFirst = handshakeUploadFirst;
   }
 
   // The provider emits "open" only after this listener (registered in the base
@@ -93,6 +119,7 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
   // 4.3 also clears retry cancellation on native open, before the first frame
   // settles the attempt. Keep it until resolution so retry-now can fence that loop.
   override async onOpen(event: Event) {
+    this.dropHeldUpdates();
     this.acknowledgement.beginConnection();
     const cancel = this.cancelWebsocketRetry;
     void super.onOpen(event);
@@ -102,13 +129,38 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
   // Every document frame passes here, whether the provider sent it directly,
   // flushed it from the offline queue, or replied to a server SyncStep1.
   // Counted before the write so a synchronous reply cannot overtake it. A frame
-  // the base class will queue (socket not open) invalidates instead.
+  // the base class will queue (socket not open) invalidates instead. A held
+  // Update is counted only when it is released and written.
   override send(message: unknown) {
     if (message instanceof Uint8Array) {
-      if (this.webSocket?.readyState === SOCKET_OPEN) this.acknowledgement.noteFrameSent(message);
+      const open = this.webSocket?.readyState === SOCKET_OPEN;
+      if (open && this.handshakeUploadFirst && !this.handshakeUploaded) {
+        const syncType = readDocumentSyncType(message);
+        if (syncType === messageYjsUpdate) {
+          this.heldUpdates.push(message);
+          return;
+        }
+        if (syncType === messageYjsSyncStep2) {
+          this.acknowledgement.noteFrameSent(message);
+          super.send(message);
+          this.handshakeUploaded = true;
+          const released = this.heldUpdates;
+          this.heldUpdates = [];
+          for (const update of released) this.send(update);
+          return;
+        }
+      }
+      if (open) this.acknowledgement.noteFrameSent(message);
       else this.acknowledgement.noteFrameQueued(message);
     }
     super.send(message);
+  }
+
+  // A socket that closes before its SyncStep2 never writes what it held; the
+  // next socket's SyncStep2 carries those bytes.
+  private dropHeldUpdates(): void {
+    this.handshakeUploaded = false;
+    this.heldUpdates = [];
   }
 
   override onMessage(event: MessageEvent) {
@@ -137,6 +189,7 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
   }
 
   override onClose(parameters: onCloseParameters): void {
+    this.dropHeldUpdates();
     const shouldConnect = this.shouldConnect;
     // Retain library cleanup/status/queue semantics, but own its otherwise
     // untracked delayed-close timer. The abortable retry still owns failures
@@ -212,10 +265,7 @@ export function classifyDocumentTransportClose(
   const reason = event.reason as DocumentSessionResetReason;
   const disposition = Object.hasOwn(RESET_DISPOSITIONS, reason) ? RESET_DISPOSITIONS[reason] : null;
   if (disposition) {
-    if (
-      (disposition === "superseded" || disposition === "rebuild") &&
-      !roomName.startsWith("branch:")
-    )
+    if ((disposition === "superseded" || disposition === "rebuild") && !isBranchRoom(roomName))
       return null;
     if (disposition === "refused" && !hasUnacknowledgedEdits) return null;
     return { kind: "reset", reason, disposition, code: event.code };
@@ -256,6 +306,7 @@ export function createHocuspocusDocumentTransport({
       autoConnect: false,
     },
     acknowledgement,
+    isBranchRoom(roomName),
   );
   let currentState = mapStatus(websocket.status);
   // Only the server names a scope; until it does, the session keeps its own.
@@ -346,9 +397,10 @@ export function createHocuspocusDocumentTransport({
       publishTerminal(state);
       return;
     }
+    // Only a genuine refusal counts; 4207 branch-prefix-missing is a plain reconnect.
     if (
       event.code === BRANCH_UPDATE_REFUSED_CODE &&
-      roomName.startsWith("branch:") &&
+      isBranchRoom(roomName) &&
       outbox !== null &&
       ++refusals >= MAX_BRANCH_UPDATE_REFUSALS
     )
