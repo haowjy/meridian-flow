@@ -2,7 +2,8 @@
  * Decision D12: every branch write that can move a Work's projection takes Work, then draft,
  * then branch, the order Archive takes. A live→draft pull holds its Work row through its
  * commit; an Archive that starts meanwhile waits on that row rather than deadlocking against the
- * branch row the pull also holds, and then fences the branch. The next pull is frozen (D19).
+ * branch row the pull also holds, and then fences the branch. The archived draft keeps pulling
+ * (D23).
  */
 import assert from "node:assert/strict";
 import { setCollabHook } from "../../../../apps/server/server/domains/collab/domain/collab-test-hooks.ts";
@@ -19,7 +20,7 @@ export const d12PullBeforeArchive: Probe = {
   name: "d12-pull-before-archive",
   decision: "D12",
   expected:
-    "Archive waits on the Work row the paused pull holds; both commit; the next pull is `inactive`",
+    "Archive waits on the Work row the paused pull holds; both commit; the next pull is `pulled`",
   async run(harness) {
     const { workId, draftId } = await harness.seedWork("pull-archive");
     const { documentId, live } = await harness.seedDocument("pull-archive", "Base");
@@ -60,7 +61,7 @@ export const d12PullBeforeArchive: Probe = {
       assert.equal(archived.ok, true);
       assert.equal(after.lifecycle, "archived");
       assert.match(after.text, /Base pulled/);
-      assert.equal(next, "inactive");
+      assert.equal(next, "pulled");
     } finally {
       resume.open();
       remove();

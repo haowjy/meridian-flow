@@ -122,7 +122,7 @@ export function createBranchPullService(input: {
 
   /**
    * Whether a pending settlement on the document fenced any branch's pull (the one outcome
-   * that re-arms, D20); `blocked`, `inactive` and `closed` branches are done until something
+   * that re-arms, D20); `blocked` and `closed` branches are done until something
    * new arrives.
    */
   async function pullLive(documentId: DocumentId): Promise<{ fenced: boolean }> {
@@ -177,9 +177,8 @@ export function createBranchPullService(input: {
           // Decision D20: a settlement's completion schedules no pull, so a fenced pull re-arms
           // its debounce, one capture and merge per period, until the settlement completes or
           // is withdrawn and the next run commits. Only `fenced` (a pending settlement)
-          // re-arms: a terminally `blocked` one never lifts by itself (D22), an archived Work's
-          // draft (`inactive`, D19) waits for the next live update after unarchive, and a
-          // closed branch leaves the active list, so none of them keeps the timer alive.
+          // re-arms: a terminally `blocked` one never lifts by itself (D22), and a closed
+          // branch leaves the active list, so neither keeps the timer alive.
           if (fenced) armDebounce(documentId, entry);
         })
         .finally(() =>
@@ -285,9 +284,7 @@ export function createBranchPullService(input: {
               generation: read.generation,
               state: read.state,
             });
-            // An archived Work's peer is frozen (decision D19): the read sees it as it stands.
-            if (outcome !== "pulled" && outcome !== "inactive")
-              throw new PeerPullRefused(peer.branchId, outcome);
+            if (outcome !== "pulled") throw new PeerPullRefused(peer.branchId, outcome);
             return read;
           });
           return {

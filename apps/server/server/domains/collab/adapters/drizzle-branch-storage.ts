@@ -304,9 +304,8 @@ export type RewriteCommit = {
   fence: RewriteFence;
   /**
    * `active`: the checkpoint `UPDATE` carries the branch's Work-is-active predicate (a content
-   * write the Work admits); zero rows is `moved`. A pull, a peer's containment reset and a
-   * catch-up are `active` (decision D19). `any`: a settlement's reset completing a batch
-   * staged before an archive, Discard and purge, and compaction, which no Work lifecycle gates.
+   * write the Work admits); zero rows is `moved`. `any`: a pull, reset or compaction, which no
+   * Work lifecycle gates: an archived Work's drafts keep rebasing on live.
    */
   work: "active" | "any";
   /** A peer's captured upstream: locked `FOR SHARE` before the peer row, then checked. */
