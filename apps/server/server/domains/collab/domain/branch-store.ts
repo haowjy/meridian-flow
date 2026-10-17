@@ -70,6 +70,20 @@ export type BranchRead = {
   liveCutStored: boolean;
 };
 
+/**
+ * The Work an append of rows judged to `hasEffect` must lock first and touch: the one whose
+ * review membership (`(has_effect OR blocking) AND` pending rows) the append flips.
+ */
+export function membershipFlipWork(
+  read: { branch: BranchSnapshot; pendingRows: boolean },
+  hasEffect: boolean,
+): WorkId | undefined {
+  const { branch } = read;
+  const member = (effect: boolean, rows: boolean) => (effect || branch.blocking) && rows;
+  const flips = member(branch.hasEffect, read.pendingRows) !== member(hasEffect, true);
+  return flips && branch.workId ? branch.workId : undefined;
+}
+
 /** A work draft's effect baseline: the live state its `has_effect` is measured against. */
 export type EffectBaseline = {
   state: Uint8Array;

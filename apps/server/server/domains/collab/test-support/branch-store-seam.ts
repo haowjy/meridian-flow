@@ -8,6 +8,7 @@ import {
   type AppendBranchJournalInput,
   type BranchStore,
   materializeBranchRead,
+  membershipFlipWork,
 } from "../domain/branch-store.js";
 import { effectFingerprint, effectFingerprintsEqual } from "../domain/document-content.js";
 
@@ -49,6 +50,7 @@ export async function appendBranchRows(
       hasEffect = !effectFingerprintsEqual(effectFingerprint(live), effectFingerprint(doc));
     }
     live.destroy();
+    const workTouch = hasEffect === undefined ? undefined : membershipFlipWork(read, hasEffect);
     const outcome = await store.appendRows({
       branchId,
       documentId: read.branch.documentId,
@@ -58,6 +60,7 @@ export async function appendBranchRows(
       receipts,
       ...(hasEffect === undefined ? {} : { hasEffect }),
       ...(baseline && !baseline.stored ? { liveCut: baseline.state } : {}),
+      ...(workTouch ? { workTouch } : {}),
     });
     if (outcome.status !== "appended") throw new Error(`Branch ${branchId} moved under the append`);
     return outcome.rowIds;
