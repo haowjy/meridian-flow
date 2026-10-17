@@ -8,8 +8,8 @@ import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { NoticePort } from "../../notices/index.js";
+import type { BranchJournalRow } from "./branch-journal.js";
 import type {
-  BranchJournalRow,
   PreparedPush,
   PublicationBlockChange,
   TrailContributionReplacement,

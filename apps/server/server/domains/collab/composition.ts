@@ -205,7 +205,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   });
   const branchJournal = createDrizzleBranchJournalReadStore(deps.db);
   const branchCoordinator = createBranchCoordinator({
-    journalReads: branchJournal,
     store: branches,
     attemptScope,
     onBranchUpdate: hocuspocusBinding.publishBranchUpdate,

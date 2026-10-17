@@ -26,8 +26,8 @@ import {
   type EnlistResponseParticipant,
 } from "./domain/branch-agent-edit.js";
 import type { BranchCoordinator } from "./domain/branch-coordinator.js";
+import type { BranchReplayJournalReads } from "./domain/branch-journal.js";
 import type { BranchPullService } from "./domain/branch-pulls.js";
-import type { BranchJournalReadStore } from "./domain/branch-push-contracts.js";
 import { createScopedDocumentLinks } from "./domain/document-links-port.js";
 import type { Drafts } from "./domain/drafts.js";
 import type { ApplicationBranchStore } from "./domain/ports/application-branch-store.js";
@@ -61,7 +61,7 @@ export function createBranchThreadPeerAgentEditCore(input: {
   branches: ApplicationBranchStore;
   branchCoordinator: BranchCoordinator;
   branchPulls: BranchPullService;
-  branchJournal: BranchJournalReadStore;
+  branchJournal: BranchReplayJournalReads;
   concurrentJournalWatermarks: BranchConcurrentJournalWatermarks;
   diagnostics: BranchAgentEditDiagnostics;
   afterCommit(callback: () => void | Promise<void>): void;

@@ -1,33 +1,32 @@
-/** Test writes that reach a branch through its owned session, the one door a reply's save uses. */
+/** Test writes that reach a branch through the coordinator operations a reply's save uses. */
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { BranchCoordinator, SegmentRowsInput } from "../domain/branch-coordinator.js";
 import type { AppendBranchJournalInput, BranchStore } from "../domain/branch-store.js";
 
-type SessionDoors = Pick<BranchCoordinator, "ownedSession" | "resetFromDoc">;
+type SaveDoors = Pick<BranchCoordinator, "readBranch" | "commitSegmentRows" | "resetFromDoc">;
 
-/** Commits segment rows to one branch through its owned session, the way a save does. */
+/** Commits segment rows to one branch the way a save does. */
 export function commitSegmentRows(
-  coordinator: SessionDoors,
+  coordinator: SaveDoors,
   input: SegmentRowsInput,
 ): Promise<boolean> {
-  return coordinator.ownedSession().commitSegmentRows(input);
+  return coordinator.commitSegmentRows(input);
 }
 
 /** Journals `updateData` as one row on the branch's current generation. */
 export async function commitJournaledUpdate(
-  coordinator: SessionDoors,
+  coordinator: SaveDoors,
   input: Omit<AppendBranchJournalInput, "generation">,
 ): Promise<boolean> {
-  const owned = coordinator.ownedSession();
-  const staged = await owned.read(input.branchId, async (doc, snapshot) => {
+  const staged = await coordinator.readBranch(input.branchId, async (doc, snapshot) => {
     const sourceDoc = createCollabYDoc({ gc: false });
     Y.applyUpdate(sourceDoc, Y.encodeStateAsUpdate(doc));
     Y.applyUpdate(sourceDoc, input.updateData);
     return { sourceDoc, generation: snapshot.generation };
   });
   try {
-    return await owned.commitSegmentRows({
+    return await coordinator.commitSegmentRows({
       branchId: input.branchId,
       expectedGeneration: staged.generation,
       sourceDoc: staged.sourceDoc,
@@ -40,7 +39,7 @@ export async function commitJournaledUpdate(
 
 /** Resets an active Work draft to `upstream`, reading its expected state straight from the store. */
 export async function resetBranchFromDoc(
-  coordinator: SessionDoors,
+  coordinator: SaveDoors,
   store: Pick<BranchStore, "getBranch">,
   branchId: string,
   upstream: Y.Doc,

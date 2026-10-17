@@ -10,8 +10,8 @@
  */
 import type { DraftId, UserId, WorkId } from "@meridian/contracts";
 import type { DraftApplyAllResponse, DraftApplyItemResult } from "@meridian/contracts/drafts";
+import type { BranchJournalRow } from "./branch-journal.js";
 import type {
-  BranchJournalRow,
   BranchPushService,
   ReviewRowSelection,
   SelectedPublication,

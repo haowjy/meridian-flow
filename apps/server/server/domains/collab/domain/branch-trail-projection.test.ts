@@ -9,7 +9,7 @@ import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { expect, it } from "vitest";
 import * as Y from "yjs";
-import type { BranchJournalRow } from "./branch-push-contracts.js";
+import type { BranchJournalRow } from "./branch-journal.js";
 import {
   journalAttributionByChangedBlock,
   preparedTrailChanges,

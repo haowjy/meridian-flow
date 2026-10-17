@@ -20,7 +20,7 @@ import {
 } from "../test-support/memory-branch-store.js";
 import { createBranchAgentEditCoordinator } from "./branch-agent-edit.js";
 import { createBranchCoordinator } from "./branch-coordinator.js";
-import type { BranchJournalRow } from "./branch-push-contracts.js";
+import type { BranchJournalRow } from "./branch-journal.js";
 import type { BranchSnapshot } from "./branch-store.js";
 
 const schema = buildDocumentSchema();
@@ -73,6 +73,7 @@ function fixture(existingUpstream?: Y.Doc) {
     },
     journalRows: {
       listConcurrentJournalRows: async () => rows,
+      listJournalRowsForBranch: async () => [],
     },
     liveJournal: {
       read: async () => ({ checkpoint: null, updates: liveUpdates }),

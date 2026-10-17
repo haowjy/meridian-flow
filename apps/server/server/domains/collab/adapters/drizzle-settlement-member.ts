@@ -28,8 +28,8 @@ import { draftBranchWorks } from "../../../shared/work-draft-lifecycle.js";
 import type { NoticePort } from "../../notices/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
+import type { BranchJournalRow } from "../domain/branch-journal.js";
 import type {
-  BranchJournalRow,
   PendingLiveSettlement,
   PreparedPushCommit,
   PushLineageRow,

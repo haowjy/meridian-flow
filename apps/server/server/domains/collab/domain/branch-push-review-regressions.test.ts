@@ -22,10 +22,10 @@ import {
   memoryBranch,
   testBranchRow,
 } from "../test-support/memory-branch-store.js";
+import type { BranchJournalRow } from "./branch-journal.js";
 import { createBranchPushService } from "./branch-push.js";
 import type {
-  BranchJournalReadStore,
-  BranchJournalRow,
+  BranchPushReadStore,
   PreparedDiscardCommit,
   PreparedPushCommit,
   PushCommitStore,
@@ -88,7 +88,7 @@ function rowFor(
   };
 }
 
-class StateBackedPushStores implements BranchJournalReadStore, PushCommitStore {
+class StateBackedPushStores implements BranchPushReadStore, PushCommitStore {
   readonly pushes: PushLineageRow[];
 
   constructor(

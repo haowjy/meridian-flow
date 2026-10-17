@@ -24,10 +24,10 @@ import { branchDraftWork } from "../../../shared/work-draft-lifecycle.js";
 import type { NoticePort } from "../../notices/index.js";
 import { WorkLifecycleUnavailableError } from "../../projects/domain/work-lifecycle.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
+import type { BranchJournalRow } from "../domain/branch-journal.js";
 import {
-  type BranchJournalReadStore,
-  type BranchJournalRow,
   BranchPushCommitConflictError,
+  type BranchPushReadStore,
   DraftChangeRefusal,
   type PreparedDiscardCommit,
   type PreparedPushCommit,
@@ -61,7 +61,7 @@ export function sortPushesByDocumentId<T extends { branch: { documentId: string 
   );
 }
 
-export function createDrizzleBranchJournalReadStore(db: Database): BranchJournalReadStore {
+export function createDrizzleBranchJournalReadStore(db: Database): BranchPushReadStore {
   return {
     async listActiveJournalRows(branchId, generation) {
       const rows = await db

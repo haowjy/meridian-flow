@@ -41,7 +41,7 @@ export function createResponseWriteFinalizer(input: {
                   documentIds: saved.documents.map((document) => document.documentId),
                 });
               }
-              // The save's owned session already checkpointed every drafted peer.
+              // The save already checkpointed every drafted peer.
               // Refreshes are independent: one document's failure skips no other.
               const failures: unknown[] = [];
               for (const document of saved.documents) {

@@ -389,7 +389,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   };
   const branchBroadcasts: string[] = [];
   const branchCoordinator = createBranchCoordinator({
-    journalReads: createDrizzleBranchJournalReadStore(db),
     store: branchStore,
     attemptScope: (operation) => runInDrizzleSavepoint(db, operation),
     onBranchUpdate: ({ branchId }) => branchBroadcasts.push(branchId),

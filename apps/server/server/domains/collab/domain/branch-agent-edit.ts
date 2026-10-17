@@ -20,14 +20,9 @@ import {
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
-import type {
-  BranchCoordinator,
-  BranchSaveJournalReads,
-  OwnedBranchSession,
-  PreparedBranchWrite,
-} from "./branch-coordinator.js";
+import type { BranchCoordinator, PreparedBranchWrite } from "./branch-coordinator.js";
+import type { BranchJournalRow, BranchReplayJournalReads } from "./branch-journal.js";
 import type { WorkDraftLookup } from "./branch-pulls.js";
-import type { BranchJournalReadStore, BranchJournalRow } from "./branch-push-contracts.js";
 import type { BranchResolver } from "./branch-resolver.js";
 import { reconcileStagedBranchWrites } from "./branch-response-replay.js";
 import type { BranchSnapshot } from "./branch-store.js";
@@ -126,8 +121,7 @@ export function createBranchAgentEditCoordinator(input: {
   branchCoordinator: BranchCoordinator;
   branches: BranchLookupWithSnapshots;
   pendingJournalEntries?: BranchPendingJournalEntries;
-  journalRows?: Pick<BranchJournalReadStore, "listConcurrentJournalRows"> &
-    Partial<Pick<BranchSaveJournalReads, "listJournalRowsForBranch">>;
+  journalRows: BranchReplayJournalReads;
   liveJournal?: Pick<UpdateJournal, "read">;
   diagnostics?: BranchAgentEditDiagnostics;
   afterCommit: AfterCommit;
@@ -163,18 +157,16 @@ export function createBranchAgentEditCoordinator(input: {
       }));
     });
   }
-  /** The peer of the access running now, for the attribution reads made inside it. */
+  const branches = input.branchCoordinator;
+  /** The peer of the access running now: attribution inside it resolves no other identity. */
   const accessedPeer = new AsyncLocalStorage<string>();
   /**
-   * Runs `run` in the owned session for an access to `peerBranchId`. It acquires nothing: a
-   * save or a close racing it is ordered by the revisions its writes were prepared at.
+   * Runs `run` as an access to `peerBranchId`. It acquires nothing: a save or a close racing
+   * it is ordered by the revisions its writes were prepared at.
    */
-  async function underAccess<T>(
-    peerBranchId: string,
-    run: (owned: OwnedBranchSession) => Promise<T>,
-  ): Promise<T> {
+  async function underAccess<T>(peerBranchId: string, run: () => Promise<T>): Promise<T> {
     await collabHook("branch.beforeAccess");
-    return accessedPeer.run(peerBranchId, () => run(input.branchCoordinator.ownedSession()));
+    return accessedPeer.run(peerBranchId, run);
   }
   return {
     async withDocument<T>(
@@ -186,8 +178,8 @@ export function createBranchAgentEditCoordinator(input: {
         access?.pinnedBranchId ?? (await resolveThreadBranchId(input, docId as DocumentId));
       let result: T;
       try {
-        result = await underAccess(branchId, (owned) =>
-          owned.withTransient(branchId, async (doc, snapshot) => {
+        result = await underAccess(branchId, () =>
+          branches.withTransient(branchId, async (doc, snapshot) => {
             const beforeState = Y.encodeStateAsUpdate(doc);
             const result = await fn(doc);
             const pendingBatch =
@@ -214,7 +206,7 @@ export function createBranchAgentEditCoordinator(input: {
                 throw new Error("thread_peer_commit_missing_branch_generation");
               }
               const mutation = first.mutation;
-              const committed = await owned.commitSegmentRows({
+              const committed = await branches.commitSegmentRows({
                 branchId: workDraftBranchId,
                 sourceDoc: doc,
                 expectedGeneration: mutation.branchGeneration,
@@ -258,8 +250,8 @@ export function createBranchAgentEditCoordinator(input: {
       const peer = await input.branches.getBranch(peerId);
       const branchId = peer?.upstreamBranchId;
       if (!branchId) throw new Error("Response peer has no Work draft");
-      return underAccess(peerId, async (owned) => {
-        const { result, write } = await owned.prepareStagedRows(
+      return underAccess(peerId, async () => {
+        const { result, write } = await branches.prepareStagedRows(
           branchId,
           async (doc, snapshot) => {
             if (request.helperCut.generation > snapshot.generation)
@@ -277,7 +269,10 @@ export function createBranchAgentEditCoordinator(input: {
                 generation <= snapshot.generation;
                 generation++
               ) {
-                const rows = await owned.listHelperHistory({ branchId, generation });
+                const rows = await input.journalRows.listJournalRowsForBranch({
+                  branchId,
+                  generation,
+                });
                 for (const row of rows) {
                   const observed = Y.snapshotContainsUpdate(cut, row.updateData);
                   if (
@@ -321,8 +316,8 @@ export function createBranchAgentEditCoordinator(input: {
         let catchUp: PreparedBranchWrite | null;
         try {
           catchUp = write
-            ? await owned.prepareCatchUp(peerId, write.candidate)
-            : await owned.read(branchId, (doc) => owned.prepareCatchUp(peerId, doc));
+            ? await branches.prepareCatchUp(peerId, write.candidate)
+            : await branches.readBranch(branchId, (doc) => branches.prepareCatchUp(peerId, doc));
         } catch (cause) {
           write?.dispose();
           throw cause;
@@ -593,42 +588,34 @@ async function resolveThreadBranchId(
   return (await input.branches.resolveThreadBranch(documentId, input.threadId)).branchId;
 }
 
+/** The upstream draft's rows since `afterJournalId`, and its state they were read at. */
 async function concurrentUpstreamJournalRows(
   input: {
     threadId: ThreadId;
     branchCoordinator: BranchCoordinator;
     branches: BranchLookupWithSnapshots;
-    journalRows?: Pick<BranchJournalReadStore, "listConcurrentJournalRows"> &
-      Partial<Pick<BranchSaveJournalReads, "listJournalRowsForBranch">>;
+    journalRows: BranchReplayJournalReads;
   },
   documentId: DocumentId,
   afterJournalId?: number,
-  access?: import("@meridian/agent-edit/integration").DocumentLockOptions,
+  access?: DocumentLockOptions,
   accessedPeer?: string,
 ): Promise<{ rows: BranchJournalRow[]; upstreamState?: Uint8Array }> {
-  if (!input.journalRows) return { rows: [] };
-  const journalRows = input.journalRows;
-  // Inside an access (or a save's pinned replay) the reads go through its owned session.
-  const pinnedPeer = access?.pinnedBranchId ?? accessedPeer;
-  const owned = pinnedPeer ? input.branchCoordinator.ownedSession() : undefined;
+  // A pinned or running access names the peer; only a free-standing read resolves it.
   const peerId =
-    pinnedPeer ?? (await input.branches.resolveThreadBranch(documentId, input.threadId)).branchId;
-  const peerSnapshot = owned
-    ? await owned.read(peerId, async (_doc, snapshot) => snapshot)
-    : await input.branches.getBranch(peerId);
-  const upstreamBranchId = peerSnapshot?.upstreamBranchId;
+    access?.pinnedBranchId ??
+    accessedPeer ??
+    (await input.branches.resolveThreadBranch(documentId, input.threadId)).branchId;
+  const upstreamBranchId = (await input.branches.getBranch(peerId))?.upstreamBranchId;
   if (!upstreamBranchId) return { rows: [] };
-  return (owned ? owned.read : input.branchCoordinator.readBranch)(
-    upstreamBranchId,
-    async (doc, snapshot) => {
-      const rows = await (owned ? owned.listConcurrentRows : journalRows.listConcurrentJournalRows)(
-        upstreamBranchId,
-        snapshot.generation,
-        { afterJournalId, documentId },
-      );
-      return { rows, upstreamState: Y.encodeStateAsUpdate(doc) };
-    },
-  );
+  return input.branchCoordinator.readBranch(upstreamBranchId, async (doc, snapshot) => {
+    const rows = await input.journalRows.listConcurrentJournalRows(
+      upstreamBranchId,
+      snapshot.generation,
+      { afterJournalId, documentId },
+    );
+    return { rows, upstreamState: Y.encodeStateAsUpdate(doc) };
+  });
 }
 
 function originForJournalRow(row: BranchJournalRow): ConcurrentUpdateOrigin {
