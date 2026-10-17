@@ -377,7 +377,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     commitStore: pushCommits,
     branchCoordinator,
     journal: persistence.journal,
-    criticalSections,
     attemptScope,
   });
 
