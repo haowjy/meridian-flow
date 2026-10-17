@@ -22,6 +22,7 @@ import {
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import * as Y from "yjs";
+import { bumpBranchRevisions } from "../../../shared/branch-revisions.js";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import {
   currentDrizzleDb,
@@ -45,7 +46,7 @@ import {
   type TurnInverseQuery,
   type TurnInverseStore,
 } from "../domain/turn-inverse-service.js";
-import { bumpBranchRevisions, commitRewriteWithinTx } from "./drizzle-branch-storage.js";
+import { commitRewriteWithinTx, insertJournalRows } from "./drizzle-branch-storage.js";
 import { recordDocumentEdit } from "./drizzle-document-edits.js";
 import { readTurnEditTargets } from "./drizzle-turn-edit-targets.js";
 
@@ -397,41 +398,46 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         doc: draft.view,
         ...(draft.effect ? { effect: draft.effect } : {}),
         withinLock: async () => {
-          for (const [index, { parts }] of entry.edits.entries())
-            for (const part of parts) {
-              const [row] = await db()
-                .insert(branchWriteJournal)
-                .values({
-                  branchId: draft.branchId,
-                  generation: draft.generation,
-                  updateData: Buffer.from(part.update),
-                  source: entry.source,
-                  threadId: query.model ? query.threadId : null,
-                  turnId: query.model ? query.turnId : null,
-                  actorUserId: userId ?? null,
-                  draftBaseUpdateSeq: sql`coalesce((select max(id) from document_yjs_updates where document_id = ${document.documentId}),0)`,
-                  updateMeta: {
-                    ...(query.model && query.responseIdentity
-                      ? {
-                          authoringResponseId: query.responseIdentity.providerResponseId,
-                          editScopeId: query.responseIdentity.editScopeId,
-                        }
-                      : {}),
-                    restorationAliases: part.aliases.map((alias) => ({
-                      source: { ...alias.source, length: alias.len },
-                      target: { ...alias.target, length: alias.len },
-                    })),
-                  },
-                })
-                .returning({ id: branchWriteJournal.id });
-              if (!row) throw new Error("Inverse journal was not inserted");
-              origins[index].push({
-                kind: "pending",
-                branchId: draft.branchId,
-                generation: draft.generation,
-                rowId: row.id,
-              });
-            }
+          const updateMeta = (
+            aliases: (typeof entry.edits)[number]["parts"][number]["aliases"],
+          ) => ({
+            ...(query.model && query.responseIdentity
+              ? {
+                  authoringResponseId: query.responseIdentity.providerResponseId,
+                  editScopeId: query.responseIdentity.editScopeId,
+                }
+              : {}),
+            restorationAliases: aliases.map((alias) => ({
+              source: { ...alias.source, length: alias.len },
+              target: { ...alias.target, length: alias.len },
+            })),
+          });
+          const edits = entry.edits.flatMap(({ parts }, index) =>
+            parts.map((part) => ({ index, part })),
+          );
+          const rowIds = await insertJournalRows(
+            db(),
+            edits.map(({ part }) => ({
+              branchId: draft.branchId,
+              generation: draft.generation,
+              updateData: part.update,
+              source: entry.source,
+              threadId: query.model ? query.threadId : null,
+              turnId: query.model ? query.turnId : null,
+              actorUserId: userId ?? null,
+              updateMeta: updateMeta(part.aliases),
+            })),
+          );
+          for (const [position, { index }] of edits.entries()) {
+            const rowId = rowIds[position];
+            if (rowId === undefined) throw new Error("Inverse journal was not inserted");
+            origins[index].push({
+              kind: "pending",
+              branchId: draft.branchId,
+              generation: draft.generation,
+              rowId,
+            });
+          }
         },
       });
       if (rewritten.status !== "committed") throw new InverseAttemptMiss();

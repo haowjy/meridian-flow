@@ -1,8 +1,8 @@
 /**
  * The Drizzle storage half of the branch store: the branch row and its derived Work lifecycle,
  * the one read (`readBranchAt`), and the transactional journal and checkpoint primitives every
- * branch write commits through (`appendRowsWithinTx`, `commitRewriteWithinTx`,
- * `bumpBranchRevisions`). Runs inside the caller's transaction and takes no lock but the branch
+ * branch content write commits through (`appendRowsWithinTx`, `commitRewriteWithinTx`;
+ * metadata writes use `shared/branch-revisions.ts`). Runs inside the caller's transaction and takes no lock but the branch
  * rows'; Work admission, receipts and effect policy belong to the callers.
  */
 import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
@@ -304,8 +304,9 @@ export type RewriteCommit = {
   fence: RewriteFence;
   /**
    * `active`: the checkpoint `UPDATE` carries the branch's Work-is-active predicate (a content
-   * write the Work admits); zero rows is `moved`. `any`: a pull, reset or compaction, which no
-   * Work lifecycle gates.
+   * write the Work admits); zero rows is `moved`. A pull, a peer's containment reset and a
+   * catch-up are `active` (decision D19). `any`: a settlement's reset completing a batch
+   * staged before an archive, Discard and purge, and compaction, which no Work lifecycle gates.
    */
   work: "active" | "any";
   /** A peer's captured upstream: locked `FOR SHARE` before the peer row, then checked. */
@@ -504,35 +505,4 @@ async function fencingSettlement(
     );
   if (states.some(({ state }) => state === "pending")) return "pending";
   return states.length ? "blocked" : null;
-}
-
-/**
- * A change to a review-membership input (`blocking`, a journal row's status, `has_effect`)
- * outside a content write: the branch rows are locked in id order and their `revision` bumped
- * before the input changes, so a write judged at the old revision cannot commit over it.
- */
-export async function bumpBranchRevisions(
-  db: DrizzleDb,
-  branchIds: readonly string[],
-  set: { blocking?: boolean } = {},
-): Promise<string[]> {
-  const ids = [...new Set(branchIds)].sort();
-  if (!ids.length) return [];
-  const changed =
-    set.blocking === undefined
-      ? undefined
-      : sql`${documentBranches.blocking} IS DISTINCT FROM ${set.blocking}`;
-  const locked = await db
-    .select({ id: documentBranches.id })
-    .from(documentBranches)
-    .where(and(inArray(documentBranches.id, ids), changed))
-    .orderBy(asc(documentBranches.id))
-    .for("update");
-  if (!locked.length) return [];
-  const lockedIds = locked.map((row) => row.id);
-  await db
-    .update(documentBranches)
-    .set({ ...set, revision: sql`${documentBranches.revision} + 1` })
-    .where(inArray(documentBranches.id, lockedIds));
-  return lockedIds;
 }

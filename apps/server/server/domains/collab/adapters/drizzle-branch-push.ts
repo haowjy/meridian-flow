@@ -17,6 +17,7 @@ import {
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import * as Y from "yjs";
+import { bumpBranchRevisions } from "../../../shared/branch-revisions.js";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
@@ -42,7 +43,7 @@ import type {
   WorkDraftPendingEvidence,
   WorkDraftPendingStore,
 } from "../domain/ports/work-draft-pending-store.js";
-import { bumpBranchRevisions, commitRewriteWithinTx } from "./drizzle-branch-storage.js";
+import { commitRewriteWithinTx } from "./drizzle-branch-storage.js";
 import { placeDraftRows } from "./drizzle-document-edits.js";
 import { attachBatchWithinTx, claimCommandWithinTx } from "./drizzle-draft-commands.js";
 import { refreshDraftEffect } from "./drizzle-draft-effect.js";
@@ -683,18 +684,10 @@ async function commitPreparedPush(
     throw new DraftChangeRefusal("stale");
 
   // Staging flips the rows' status (a membership input): the revision fences and records it.
-  const [casRow] = await db
-    .update(documentBranches)
-    .set({ revision: sql`${documentBranches.revision} + 1` })
-    .where(
-      and(
-        eq(documentBranches.id, input.branch.branchId),
-        eq(documentBranches.status, "active"),
-        eq(documentBranches.generation, input.branch.generation),
-        eq(documentBranches.revision, input.branch.revision),
-      ),
-    )
-    .returning({ id: documentBranches.id });
+  // The revision alone fences the generation: a re-fork bumps it.
+  const [casRow] = await bumpBranchRevisions(db, [input.branch.branchId], {
+    expectedRevision: input.branch.revision,
+  });
   if (!casRow) throw new BranchPushCommitConflictError(input.branch.branchId);
 
   const [lineage] = await db
