@@ -7,7 +7,7 @@ import type { DraftId } from "@meridian/contracts";
 import type { WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { documentBranches, drafts } from "@meridian/database/schema";
-import { eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
 import {
   currentDrizzleDb,
@@ -51,6 +51,34 @@ export async function draftBranchWorks(
     draftId: row.draftId,
     workId: (row.workId as WorkId | null) ?? null,
   }));
+}
+
+/**
+ * A Work lifecycle transition (archive, unarchive, delete, restore) is a write to every
+ * branch the Work owns: inside the transition's Work-locked transaction, its active branches
+ * (Work drafts and the thread peers on their drafts) are locked in id order and their
+ * `revision` bumped, so a branch write judged before the transition misses its predicate
+ * rather than committing after it. The order is Work, then branch rows (decision D11).
+ */
+export async function fenceWorkBranches(db: DrizzleDb, workId: WorkId): Promise<void> {
+  const tx = currentDrizzleDb(db);
+  const locked = await tx
+    .select({ id: documentBranches.id })
+    .from(documentBranches)
+    .innerJoin(branchDraftWork.drafts, branchDraftWork.on)
+    .where(and(eq(branchDraftWork.workId, workId), eq(documentBranches.status, "active")))
+    .orderBy(asc(documentBranches.id))
+    .for("update", { of: documentBranches });
+  if (!locked.length) return;
+  await tx
+    .update(documentBranches)
+    .set({ revision: sql`${documentBranches.revision} + 1` })
+    .where(
+      inArray(
+        documentBranches.id,
+        locked.map((row) => row.id),
+      ),
+    );
 }
 
 export async function runWithActiveWorkDrafts<T>(
