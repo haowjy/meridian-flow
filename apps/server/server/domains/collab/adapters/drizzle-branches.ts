@@ -571,6 +571,7 @@ export function createDrizzleBranchStore(
         policy: input.policy,
         fence: input.fence,
         work: operation.kind === "checkpoint" ? "active" : "any",
+        keepUpdatedAt: operation.kind === "compact",
         ...(input.upstream ? { upstream: input.upstream } : {}),
         doc: input.doc,
         ...(operation.kind === "reset"
@@ -982,6 +983,8 @@ export type RewriteCommit = {
    */
   reset?: { kind: "discard"; editDisposition: "discarded" | "retired" } | { kind: "refork" };
   schemaVersion?: CollabSchemaVersion;
+  /** A content-free fold: the reader-visible modification stamp (`updated_at`) stays. */
+  keepUpdatedAt?: boolean;
   /** Writes under the locked row before the checkpoint `UPDATE` (rows the checkpoint contains). */
   withinLock?: () => Promise<void>;
 };
@@ -1085,7 +1088,7 @@ export async function commitRewriteWithinTx(
       revision: sql`${documentBranches.revision} + 1`,
       checkpointRevision: sql`${documentBranches.revision} + 1`,
       schemaVersion: monotonicSchemaStamp(input.schemaVersion),
-      updatedAt: new Date(),
+      ...(input.keepUpdatedAt ? {} : { updatedAt: new Date() }),
       ...reset,
     })
     .where(
