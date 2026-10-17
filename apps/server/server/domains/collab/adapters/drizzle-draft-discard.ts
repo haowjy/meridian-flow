@@ -143,7 +143,7 @@ async function closeDraftBranches(
 /**
  * The kernel's whole-draft arm: every document the draft created ends its use (tombstoned
  * and released when no draft uses it), then the draft row closes after every branch (closed above) and its
- * settlements. The caller holds every branch's lease, the draft and its verified scope.
+ * settlements. The caller holds the draft and its verified scope.
  */
 export async function discardWholeLocked(
   db: Database,
@@ -178,7 +178,7 @@ async function acquireScope(db: Database, draftId: DraftId, request: EndUseReque
 }
 
 export type DrizzleDraftDiscard = DraftDiscardStore & {
-  /** The locked kernel: the caller holds §14's leases and locks and proved the Work's state. */
+  /** The locked kernel: the caller holds §14's locks and proved the Work's state. */
   kernel(input: DiscardKernelInput): Promise<DiscardKernelResult>;
 };
 

@@ -190,7 +190,7 @@ export type BranchCoordinator = {
    */
   pullFromDoc(input: PullInput): Promise<PullOutcome>;
   /**
-   * Re-forks a work draft from `upstream` inside the caller's transaction, with no lease:
+   * Re-forks a work draft from `upstream` inside the caller's transaction, holding nothing:
    * false when the branch is no longer at the generation (or, `exact`, the revision) read.
    * With `owner`, the caller's attempt owns the reset candidate and the write runs in its
    * already-open commit scope, so a later miss in that attempt disposes it; without one, the
@@ -867,7 +867,7 @@ export function createBranchCoordinator(input: {
   };
 
   /**
-   * A writer frame, with no lease and no process-level ordering (section 2.2): judged on a
+   * A writer frame, with no process-level ordering (section 2.2): judged on a
    * private candidate of the committed replica, appended under the revision it was judged
    * at, published only once committed. A miss destroys the candidate and judges again on
    * the new revision; the fourth attempt judges under the Work row and the branch row.

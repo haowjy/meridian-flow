@@ -33,7 +33,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe.skip("a reply's drafted writes (postgres)", () => {});
 } else {
   describe("a reply's drafted writes (postgres)", () => {
-    // Saves, closes and their leases run on several connections, so this suite commits.
+    // Saves and closes race on several connections, so this suite commits.
     const db = createDb(DATABASE_URL, { max: 12 });
     afterAll(() => db.close());
     const runtimes = useComposedRuntimes(() => db);

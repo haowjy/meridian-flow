@@ -1,5 +1,5 @@
 /**
- * A writer frame takes no lease (lock-free drafts, phase 1b): it judges against its published
+ * A writer frame acquires nothing (lock-free drafts, phase 1b): it judges against its published
  * replica and appends under its revision predicate. These races pin the two doors a frame can
  * reach mid-transaction: a pull's rewrite holding the branch row, and a created document's
  * retraction (F3); and an inverse every one of whose attempts a frame moves (F5).

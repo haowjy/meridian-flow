@@ -160,7 +160,7 @@ export function createWorkDraftReviewService(input: {
     return { item: resolved.item };
   }
 
-  /** Refusals a selection raises from inside the lease answer as the command's own body. */
+  /** Refusals a selection raises inside its commit scope answer as the command's own body. */
   async function refusal(
     cause: unknown,
     envelope: DraftCommandEnvelope,
