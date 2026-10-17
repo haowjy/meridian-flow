@@ -2,7 +2,7 @@
 import type { DraftId } from "@meridian/contracts";
 import type { WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { drafts, works } from "@meridian/database/schema";
+import { works } from "@meridian/database/schema";
 import { inArray, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
@@ -10,7 +10,7 @@ import {
   enlistDrizzleTransactionParticipant,
   runInDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
-import { draftBranchWorks } from "../../../shared/work-draft-lifecycle.js";
+import { draftBranchWorks, draftOriginWorkIds } from "../../../shared/work-draft-lifecycle.js";
 import { lockWorksInIdOrder } from "../../../shared/work-lifecycle-lock.js";
 import type { ProjectContextAvailabilityMutationPort } from "../../context/ports/project-context-availability.js";
 import type { ContextCatalogLifecyclePort } from "../ports/context-catalog-lifecycle.js";
@@ -148,20 +148,9 @@ export function createWorkProjectionMutation(input: {
       });
     },
     async mutatePendingDraft(draftIds, operation) {
-      return runInDrizzleTransaction(input.db, async () => {
-        const ids = [...new Set(draftIds)];
-        const rows =
-          ids.length === 0
-            ? []
-            : await currentDrizzleDb(input.db)
-                .select({ workId: drafts.originWorkId })
-                .from(drafts)
-                .where(inArray(drafts.id, ids));
-        return enrollPendingChange(
-          rows.flatMap(({ workId }) => (workId ? [workId as WorkId] : [])),
-          operation,
-        );
-      });
+      return runInDrizzleTransaction(input.db, async () =>
+        enrollPendingChange(await draftOriginWorkIds(input.db, draftIds), operation),
+      );
     },
   };
   return mutation;
