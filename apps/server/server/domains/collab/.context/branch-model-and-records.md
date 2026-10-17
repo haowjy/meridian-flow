@@ -34,8 +34,10 @@ closed. Work purge reuses this kernel after proving its lifecycle set.
 
 Draft HTTP routes share one Work-access check: a deleted Work is 404 before any
 draft read or mutation, while an archived Work still permits review reads. An
-archived Work's drafts are frozen (captured evidence stays; nothing writes,
-applies, or discards them until unarchive). Replaying an already committed push
+archived Work's drafts are frozen (captured evidence stays; no frame, pull,
+Apply or Discard writes them until unarchive). The exceptions are named: a
+settlement completing a batch staged before the archive, purge, and
+compaction, which changes no content (D19). Replaying an already committed push
 returns its durable receipt without reauthorizing a new write.
 
 Apply and Discard are server commands, not client loops. Apply item and
@@ -109,15 +111,18 @@ applied, or discarded by a reset). Pulls, resets, selective Discard, the
 inverse's merged draft, a peer's checkpoint, and compaction are rewrites. A reset
 also discards the generation's pending rows and adds the checkpoint's and the
 tail's clocks to `discarded_state_vector`. Compaction folds the tail into a new
-checkpoint with unchanged content and leaves `updated_at`; nothing schedules it
-yet (its trigger lands with the inverse's attempt contract).
+checkpoint with unchanged content and leaves `updated_at`. The coordinator
+schedules it in the background when a committed writer frame leaves more than
+512 tail rows or 2 MiB of tail (D10).
 
 A branch's `lifecycle` (`active`, `archived`, `deleted`, `missing`) is read from
 its draft's origin Work with the row; anything but `active` is frozen. The
 append's `UPDATE` admits only while that Work is active, in the same statement,
-so an append whose statement starts after an archive commits gets zero rows. One
-whose snapshot predates the commit may still land, as a key landing just before
-the archive does. The coordinator holds one immutable replica per branch at a
+so an append whose statement starts after an archive commits gets zero rows. A
+lifecycle transition also locks and bumps every active branch of the Work in
+its own transaction (D11): an append judged before the archive, even one whose
+statement queued behind it, misses its revision; one that commits first lands
+before the archive, as a key typed just before it does. The coordinator holds one immutable replica per branch at a
 committed revision and catches it up from the tail; every write computes on a
 private copy, so a failed commit never changes what a reader holds.
 

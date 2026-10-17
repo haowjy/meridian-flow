@@ -216,8 +216,11 @@ An inverse (Undo, Redo, revert, rollback, and the model's `undo`/`redo`)
 captures without any lock: one read-only snapshot of each document's live
 head, each affected draft at its revision merged with that live state, the
 history and each draft's lifecycle. It plans on that capture, then commits in
-one scope: the live mutexes of its live destinations, the whole captured
-branch set through `mutatePending`, its `document-inverse` and document locks,
+one scope: the live mutexes of its live destinations, then a seam boundary
+(`mutatePending` with `seam`): the captured branches' Works and the bound
+grants' Works in id order, the grants confirmed, before any other lock (a
+live-only inverse such as a named Work's Scratch reaches its Work only as a
+grant Work). Then its `document-inverse` and document locks,
 the live head check, and each draft destination's exact checkpoint rewrite at
 its captured revision. Any moved revision or head unwinds the attempt and
 recaptures; after four attempts one more capture is classified without
