@@ -169,27 +169,16 @@ catalog or availability publication and no pending counts. The append's
 `UPDATE` carries a Work-is-active predicate, so the lifecycle decision and the
 write are one statement.
 
-An archived Work's draft is frozen to content-moving rewrites. A rewrite
-names its admission (`CommitRewriteInput.work`). A live→draft pull, a peer's
-pull or containment reset and a peer's catch-up are `active`: their `UPDATE`
-carries the Work-is-active predicate, and a pull or reset is refused first by
-the boundary under the Work lock (`requireActive`). The pull answers
-`inactive`, writes nothing and is neither retried nor re-armed; the next live
-update after unarchive catches the draft up. A branch already gone when the
-boundary resolves its Work (`DraftBranchMissingError`) answers `closed`, as
-storage does, so a peer pull still reports `ThreadPeerPullLost`. A peer read on an archived Work sees the peer as it stands. Exempt,
-by name (`any`): a settlement's reset completing a batch staged before the
-archive (the settlement fence), Discard's kernel and purge (lifecycle
-operations themselves; the writer's Discard command refuses an archived Work
-under the Work lock before it reaches the kernel), and compaction (content-free, and only an append triggers it,
-which the append's predicate already refuses).
-
-> [!FLAG] **Diverges from the settled product rule.** The Work archive decision
-> ([archive hides a Work][kb-archive]) says an archived Work's draft keeps
-> rebasing on live: its pending changes never move, but live→draft pulls keep
-> its base current so it applies cleanly after unarchive. This checkout refuses
-> those pulls instead. Resolve by restoring `any` admission for live→draft pulls
-> or by a new owner ruling; until then this paragraph describes the code.
+An archived Work's drafts keep rebasing on live ([archive hides a
+Work][kb-archive]): their pending changes never move, but a live→draft pull, a
+peer's pull and its containment reset admit whatever the Work's lifecycle, so
+a draft applies cleanly after unarchive and has nothing to catch up. What the
+archive freezes is the writer: frames (the append's predicate and the
+lifecycle fence), agent writes in draft mode, Apply and Discard. Of the
+rewrites only a peer's catch-up checkpoint carries the Work-is-active
+predicate, derived from the operation in storage. A branch retracted before
+its pull commits answers `closed` under the row lock, so a peer pull reports
+`ThreadPeerPullLost`.
 
 A writer frame takes no lease, mutex or document lock, and no lock beyond its
 own statement. It is judged on a private clone of the published replica
@@ -269,9 +258,7 @@ capture and merge per debounce period until the settlement completes or is
 withdrawn and the next run commits, after which polling stops. That is the
 only re-arm: a terminally blocked settlement answers `blocked` and does not
 re-arm (nothing lifts it on its own, so polling would capture and merge
-forever on an idle document), an archived Work's draft (`inactive`)
-waits for the next live update after unarchive, and a closed branch leaves the
-active list. Live pulls
+forever on an idle document), and a closed branch leaves the active list. Live pulls
 snapshot before any transaction and re-read branch membership. A thread-peer
 pull reads its upstream with its generation and commits holding that row
 `FOR SHARE`: an upstream re-forked since the read (`upstreamMoved`), or a
