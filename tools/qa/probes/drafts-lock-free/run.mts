@@ -28,6 +28,7 @@ import { effectWatermarkSweep } from "./effect-watermark-sweep.mts";
 import { f1InverseDeadlock } from "./f1-inverse-deadlock.mts";
 import { f1InverseGrant } from "./f1-inverse-grant.mts";
 import { createScratchDatabase, openHarness, type Probe } from "./harness.mts";
+import { migrationOnline } from "./migration-online.mts";
 import {
   coldLoadCommit,
   coldLoadReset,
@@ -63,6 +64,7 @@ const PROBES: readonly Probe[] = [
   archiveInFlightAppend,
   effectProjection,
   effectWatermarkSweep,
+  migrationOnline,
 ];
 
 function parseArgs(argv: readonly string[]) {
