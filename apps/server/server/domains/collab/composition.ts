@@ -212,6 +212,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     onBranchUpdate: hocuspocusBinding.publishBranchUpdate,
     onBranchReset: ({ branchId, generation }) =>
       hocuspocusBinding.closeBranch(branchId, generation),
+    applyToRoom: hocuspocusBinding.applyToRoom,
     diagnostics: createWriterFrameDiagnostics(deps.eventSink),
   });
   const concurrentJournalWatermarks = createBranchConcurrentJournalWatermarks();
@@ -638,6 +639,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       drainHocuspocusBranchPersistence: hocuspocusPersistence.drainHocuspocusBranchPersistence,
       closeHocuspocusBranchRoom: hocuspocusPersistence.closeHocuspocusBranchRoom,
       rejectStaleBranchSyncStep1: hocuspocusPersistence.rejectStaleBranchSyncStep1,
+      enrollHocuspocusBranchRoom: hocuspocusPersistence.enrollHocuspocusBranchRoom,
       getPersistenceQueueMetrics: hocuspocusPersistence.getPersistenceQueueMetrics,
     },
     authorityHeads: createDrizzleDocumentAuthorityHeads(deps.db),

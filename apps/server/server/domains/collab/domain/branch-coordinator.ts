@@ -125,6 +125,16 @@ export type BranchRuntime = {
   encodedOf(replica: PublishedReplica): Uint8Array;
   cloneReplica(replica: PublishedReplica): Y.Doc;
   containment: ReturnType<typeof createDocumentContainment>;
+  /**
+   * Brings `room` up to `replica` when it lacks any of the replica's content, reported as a
+   * repair: a room misses committed content only through a delivery gap.
+   */
+  reconcileRoom(input: {
+    branchId: string;
+    room: Y.Doc;
+    replica: PublishedReplica;
+    trigger: RoomReconcileTrigger;
+  }): void;
   prepareAppend(
     base: BranchBase,
     candidate: Y.Doc,
@@ -146,6 +156,15 @@ export type BranchRuntime = {
     options: { scope?: AttemptScope; moved?: (cause: unknown) => void },
   ): Promise<void>;
 };
+
+/** What found a room behind its branch: its first frame, or its enrollment once registered. */
+export type RoomReconcileTrigger = "frame" | "enrollment";
+
+/**
+ * A room's enrollment: `enrolled` when it now holds everything committed on its generation,
+ * `stale` when the branch moved to another generation or closed while the room loaded.
+ */
+export type RoomEnrollment = "enrolled" | "stale";
 
 /** A work draft's effect baseline as fingerprinted, at the checkpoint revision it was read. */
 type CachedBaseline = { checkpointRevision: number; fingerprint: EffectFingerprint };
@@ -279,6 +298,11 @@ export type BranchCoordinator = {
   notifyReset(input: { branchId: string; generation: number }): void;
   /** Brings this process's rooms up to what is committed now: a read, published as any other. */
   deliverCommitted(branchId: string): Promise<void>;
+  /**
+   * Enrolls a room the host has just registered as a recipient: from here on every published
+   * transition reaches it, and this brings it up to what was committed before (decision D26).
+   */
+  enrollRoom(input: { branchId: string; generation: number; room: Y.Doc }): Promise<RoomEnrollment>;
 };
 
 export function createBranchCoordinator(input: {
@@ -287,6 +311,8 @@ export function createBranchCoordinator(input: {
   attemptScope?: AttemptScope;
   onBranchUpdate?: (input: { branchId: string; update: Uint8Array }) => void;
   onBranchReset?: (input: { branchId: string; generation: number }) => void;
+  /** Applies a reconciling update to one room; defaults to a plain apply. */
+  applyToRoom?: (room: Y.Doc, update: Uint8Array) => void;
   diagnostics?: WriterFrameDiagnostics;
 }): BranchCoordinator {
   const attemptScope = input.attemptScope ?? NO_ATTEMPT_SCOPE;
@@ -424,7 +450,8 @@ export function createBranchCoordinator(input: {
 
   /**
    * The one way a replica becomes the branch's published replica, and so the one way content
-   * reaches this process's rooms (decision D25). It runs when the transaction the replica was
+   * reaches this process's registered rooms (decision D25); a room that registers, or misses a
+   * delivery, behind it is brought up by `reconcileRoom` (D26). It runs when the transaction the replica was
    * read or written in commits (a savepoint's rows only once its root commits too), installs
    * only past the replica published by then, and hands the rooms what separates the two. A
    * lower or equal revision installs nothing and sends nothing: the published replica already
@@ -462,6 +489,45 @@ export function createBranchCoordinator(input: {
     if (transition.next.doc === previous.doc) return null;
     if (Y.equalSnapshots(Y.snapshot(previous.doc), Y.snapshot(transition.next.doc))) return null;
     return Y.encodeStateAsUpdate(transition.next.doc, Y.encodeStateVector(previous.doc));
+  }
+
+  /**
+   * The other half of delivery (decision D26): `install` sends each transition to the rooms
+   * registered when it publishes, and this repairs a room that joined, or missed a delivery,
+   * behind `replica`. The room gets the replica's structs past its state vector and the
+   * replica's delete set, so a delete-only gap is covered too.
+   */
+  function reconcileRoom({
+    branchId,
+    room,
+    replica,
+    trigger,
+  }: Parameters<BranchRuntime["reconcileRoom"]>[0]): void {
+    if (documentContainment.contains(room, encodedOf(replica))) return;
+    const update = Y.encodeStateAsUpdate(replica.doc, Y.encodeStateVector(room));
+    (input.applyToRoom ?? Y.applyUpdate)(room, update);
+    input.diagnostics?.roomReconciled({
+      branchId,
+      generation: replica.generation,
+      revision: replica.revision,
+      trigger,
+      bytes: update.byteLength,
+    });
+  }
+
+  async function enrollRoom(enrollment: {
+    branchId: string;
+    generation: number;
+    room: Y.Doc;
+  }): Promise<RoomEnrollment> {
+    const base = await loadBase(enrollment.branchId).catch((cause: unknown) => {
+      if (cause instanceof BranchMissingError) return null;
+      throw cause;
+    });
+    if (base?.snapshot.status !== "active" || base.snapshot.generation !== enrollment.generation)
+      return "stale";
+    reconcileRoom({ ...enrollment, replica: base.replica, trigger: "enrollment" });
+    return "enrolled";
   }
 
   function encodedOf(replica: PublishedReplica): Uint8Array {
@@ -870,6 +936,7 @@ export function createBranchCoordinator(input: {
       encodedOf,
       cloneReplica,
       containment: documentContainment,
+      reconcileRoom,
       prepareAppend,
       prepareRewrite,
       foldPolicy,
@@ -899,6 +966,8 @@ export function createBranchCoordinator(input: {
     async deliverCommitted(branchId) {
       await loadBase(branchId);
     },
+
+    enrollRoom,
 
     commitWriterUpdate: frames.commitWriterUpdate,
   };

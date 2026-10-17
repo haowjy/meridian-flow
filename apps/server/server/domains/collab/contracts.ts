@@ -1,5 +1,5 @@
 /** Public contracts for the collab domain. */
-import type { Hocuspocus } from "@hocuspocus/server";
+import type { Hocuspocus, Document as HocuspocusDocument } from "@hocuspocus/server";
 import type {
   ConcurrentEditInfo,
   ResponseCommitWriteReceipt,
@@ -170,6 +170,15 @@ export type CollabTransport = {
     generation: number;
     clientStateVector: Uint8Array;
   }): Promise<boolean>;
+  /**
+   * Called from a branch room's load hook: once Hocuspocus registers the room, brings it up to
+   * what committed while it loaded, or closes it when its generation is stale (decision D26).
+   */
+  enrollHocuspocusBranchRoom(input: {
+    branchId: string;
+    generation: number;
+    document: HocuspocusDocument;
+  }): void;
   getPersistenceQueueMetrics(): CollabPersistenceMetrics;
 };
 
