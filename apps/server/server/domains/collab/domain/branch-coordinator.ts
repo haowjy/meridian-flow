@@ -131,7 +131,10 @@ export type RewritePolicy =
   | { kind: "fold"; checkpointRevision: number; seq: number };
 
 export type RewriteOperation =
-  /** A long tail folded into the checkpoint; the content does not change. */
+  /**
+   * A long tail folded into the checkpoint: the content, the effect and the modification stamp
+   * stay. Nothing schedules it in phase 1a; its trigger lands with the inverse's attempt contract.
+   */
   | { kind: "compact" }
   /** Live (or the upstream) merged into the branch; `liveCut` is the work draft's new baseline. */
   | { kind: "pull"; liveCut?: Uint8Array }
@@ -203,8 +206,7 @@ export class BranchMissingError extends Error {
 
 /**
  * The branch as committed at `revision`: replaced, never mutated. `seq` is the highest journal
- * id it contains; `tail` counts the rows (and their bytes) it holds past its checkpoint;
- * `encoded` is its update bytes, computed once when first needed.
+ * id it contains; `encoded` is its update bytes, computed once when first needed.
  */
 type PublishedReplica = {
   readonly revision: number;
@@ -212,28 +214,8 @@ type PublishedReplica = {
   readonly seq: number;
   readonly generation: number;
   readonly doc: Y.Doc;
-  readonly tail: { rows: number; bytes: number };
   encoded?: Uint8Array;
 };
-
-/**
- * A tail past either bound is folded into a new checkpoint (content unchanged): every read of
- * the branch from the database, and the frame's effect refresh, replays the whole tail.
- */
-const COMPACT_TAIL_ROWS = 512;
-const COMPACT_TAIL_BYTES = 2 * 1024 * 1024;
-
-function grownTail(
-  tail: PublishedReplica["tail"],
-  updates: readonly Uint8Array[],
-): PublishedReplica["tail"] {
-  return {
-    rows: tail.rows + updates.length,
-    bytes: updates.reduce((total, update) => total + update.byteLength, tail.bytes),
-  };
-}
-
-const EMPTY_TAIL: PublishedReplica["tail"] = { rows: 0, bytes: 0 };
 
 /** A save's uncommitted overlay of a branch (main's transient publication; phase 1b scopes it). */
 type TransientOverlay = { readonly generation: number; readonly doc: Y.Doc };
@@ -349,7 +331,6 @@ export function createBranchCoordinator(input: {
   const published = new Map<string, PublishedReplica>();
   const pendingTransients = new Map<string, TransientOverlay>();
   const overlays = new Map<string, TransientOverlay>();
-  const compacting = new Set<string>();
   const maxCasRetries = input.maxCasRetries ?? 3;
 
   async function resetFromDocIfUnchangedWithLease(
@@ -428,10 +409,6 @@ export function createBranchCoordinator(input: {
           seq: Math.max(current.seq, ...read.tail.map((row) => row.id)),
           generation: branch.generation,
           doc,
-          tail: grownTail(
-            current.tail,
-            read.tail.map((row) => row.update),
-          ),
           ...(read.tail.length ? {} : { encoded: current.encoded }),
         };
       } else {
@@ -441,10 +418,6 @@ export function createBranchCoordinator(input: {
           seq: Math.max(branch.checkpointSeq, ...read.tail.map((row) => row.id)),
           generation: branch.generation,
           doc: materializeBranchRead(read),
-          tail: grownTail(
-            EMPTY_TAIL,
-            read.tail.map((row) => row.update),
-          ),
         };
       }
       publishReplica(branch.branchId, next);
@@ -579,10 +552,6 @@ export function createBranchCoordinator(input: {
         seq: Math.max(base.replica.seq, ...outcome.rowIds),
         generation: snapshot.generation,
         doc: candidate,
-        tail: grownTail(
-          base.replica.tail,
-          journals.map((row) => row.updateData),
-        ),
       };
     } else {
       const outcome = await input.store.commitRewrite({
@@ -596,7 +565,7 @@ export function createBranchCoordinator(input: {
         forget(snapshot.branchId);
         throw new BranchCasConflictError(snapshot.branchId);
       }
-      replica = { ...outcome, doc: candidate, tail: EMPTY_TAIL };
+      replica = { ...outcome, doc: candidate };
     }
     afterCommit(
       snapshot.branchId,
@@ -634,50 +603,7 @@ export function createBranchCoordinator(input: {
       forget(snapshot.branchId);
       throw new BranchCasConflictError(snapshot.branchId);
     }
-    afterCommit(snapshot.branchId, { ...outcome, doc: candidate, tail: EMPTY_TAIL }, publishUpdate);
-  }
-
-  /**
-   * Folds a long tail into a new checkpoint in the background, under the branch's lease: the
-   * content does not change, and any append that lands meanwhile is folded in, never lost.
-   * Called after a writer frame, outside every transaction. A failure only leaves the tail
-   * long until the next frame crosses the bound again.
-   */
-  function compactIfLong(branchId: string): void {
-    const replica = published.get(branchId);
-    if (
-      !replica ||
-      compacting.has(branchId) ||
-      (replica.tail.rows < COMPACT_TAIL_ROWS && replica.tail.bytes < COMPACT_TAIL_BYTES)
-    )
-      return;
-    compacting.add(branchId);
-    void criticalSections
-      .withBranches([branchId], async () => {
-        const base = await loadBase(branchId);
-        const { replica: current } = base;
-        if (current.tail.rows < COMPACT_TAIL_ROWS && current.tail.bytes < COMPACT_TAIL_BYTES)
-          return;
-        const doc = cloneDoc(current.doc);
-        const outcome = await input.store.commitRewrite({
-          branchId,
-          policy: {
-            kind: "fold",
-            checkpointRevision: current.checkpointRevision,
-            seq: current.seq,
-          },
-          fence: { kind: "none" },
-          doc,
-          operation: { kind: "compact" },
-        });
-        if (outcome.status !== "committed") {
-          doc.destroy();
-          return;
-        }
-        afterCommit(branchId, { ...outcome, doc, tail: EMPTY_TAIL }, undefined);
-      })
-      .catch(() => undefined)
-      .finally(() => compacting.delete(branchId));
+    afterCommit(snapshot.branchId, { ...outcome, doc: candidate }, publishUpdate);
   }
 
   function notifyReset(reset: { branchId: string; generation: number }): void {
@@ -961,14 +887,10 @@ export function createBranchCoordinator(input: {
       input.onBranchUpdate?.(update);
     },
 
-    async commitWriterUpdate(inputWriter) {
-      const result = await commitWriterFrame(inputWriter);
-      if (result.admitted) compactIfLong(inputWriter.branchId);
-      return result;
-    },
+    commitWriterUpdate,
   };
 
-  async function commitWriterFrame(
+  async function commitWriterUpdate(
     inputWriter: Parameters<BranchCoordinator["commitWriterUpdate"]>[0],
   ): Promise<{ admitted: boolean }> {
     let attempt = 0;
