@@ -58,7 +58,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       fileAccessChanges: createLocalFileAccessChanges(),
       projectionMutation: createTestWorkProjectionMutation(db),
     });
-    const branches = createDrizzleBranchStore(db, { drafts: createDrizzleDraftStore(db) });
+    const branches = createDrizzleBranchStore(db, {
+      workProjection: createTestWorkProjectionMutation(db),
+      drafts: createDrizzleDraftStore(db),
+    });
 
     beforeEach(async () => {
       await resetThreadWorkRaceFixture(db);

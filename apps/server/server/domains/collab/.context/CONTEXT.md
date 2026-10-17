@@ -125,12 +125,30 @@ frozen is derived on every read from its draft's origin Work (archived,
 deleted, or missing), never stored. A Work lifecycle transition (archive,
 unarchive, delete, restore) locks and bumps every active branch of the Work's
 drafts after its Work update, so a write judged before the transition misses
-its revision. Every branch write that can move a Work's pending projection
-runs inside `mutatePendingBranches` or `mutatePendingDraft`, which lock those
-Works first (`FOR NO KEY UPDATE`, id order), so it enters Work, draft, live
-advisory lock, branch, the order the transitions take. Creating a draft branch
-runs there too: a branch made while its Work archives is either fenced by the
-archive or read as archived. The append's
+its revision.
+
+Work-first order has one owner: the Works mutation boundary
+(`projects/adapters/work-projection-mutation.ts`), a required dependency of the
+branch store and of every collab store that writes draft or branch rows. It
+locks the Works a write names, directly or through its drafts and branches,
+`FOR NO KEY UPDATE` in id order, in the caller's transaction, before any draft,
+inverse, document or branch lock, so every write enters Work, draft, document,
+branch, the order the transitions take. A caller hands it its whole write set
+once: `mutatePending` when the write's effect on review membership is known
+only after it runs (it counts the Works' pending documents before and after
+and touches those that moved), `mutateKnownWorks` when the caller already
+knows the write moves these Works (a frame that flips its branch: lock, write,
+touch, no count), and `lockWorks` for order alone (the frame's
+fourth-attempt judgement, opening or closing a draft, Apply's batch plan,
+a reply save's grants). `seam`
+adds the bound edit grants' Works and confirms the grants; `requireActive`
+refuses unless every Work of the set is active. No other collab code locks a
+Work for a write; the live journal's seam locks only the bound grants' Works.
+Creating a draft branch runs inside `mutatePending`: a branch made while its
+Work archives is either fenced by the archive or read as archived. An
+effect-neutral writer append enters no boundary: it takes only its branch row.
+Tests use the same boundary (`test-support/work-projection.ts`), with no
+catalog or availability publication and no pending counts. The append's
 `UPDATE` and a Work-admitted checkpoint `UPDATE` carry a Work-is-active
 predicate, so the lifecycle decision and the write are one statement; pulls,
 resets and compaction carry none.

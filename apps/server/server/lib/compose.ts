@@ -533,7 +533,7 @@ export async function createProductionAppPorts(input: {
   };
   const readChain = (threadId: ThreadId) => readAgentChain(chainDeps, threadId);
   const fileAccess = createFileAccess({
-    facts: createDrizzleFileFacts(db),
+    facts: createDrizzleFileFacts(db, workProjectionMutation),
     grants: createOwnerFileGrants(),
     readAgentChain: readChain,
   });

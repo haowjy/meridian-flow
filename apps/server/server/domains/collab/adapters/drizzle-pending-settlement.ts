@@ -184,11 +184,11 @@ export function createDrizzlePendingSettlementStore(
   projectionEffects: DocumentProjectionEffects,
   changeTrails: ChangeTrailPersistence,
   derivationStore: DocumentDerivationStore,
-  notices?: NoticePort,
-  eventSink?: EventSink,
-  publication: SettlementPublication = { steps: [] },
-  /** Publishes the Works whose pending drafts a withdrawal makes reviewable again. */
-  workProjection?: WorkProjectionMutation,
+  notices: NoticePort | undefined,
+  eventSink: EventSink | undefined,
+  publication: SettlementPublication,
+  /** Locks the Works first and publishes those whose drafts a withdrawal makes reviewable. */
+  workProjection: WorkProjectionMutation,
 ): PendingSettlementStore {
   const memberDeps = { durableProjectionSerializer, projectionEffects, derivationStore };
 
@@ -413,6 +413,7 @@ export function createDrizzlePendingSettlementStore(
               workIds: descriptors.flatMap(({ workId }) => (workId ? [workId] : [])),
               documentIds: descriptors.map(({ documentId }) => documentId),
             },
+            workProjection,
           );
 
           const [owned] = await txDb
@@ -607,6 +608,7 @@ export function createDrizzlePendingSettlementStore(
             workIds: members.flatMap(({ workId }) => (workId ? [workId] : [])),
             documentIds: members.map(({ documentId }) => documentId),
           },
+          workProjection,
         );
         return decideCheck(plans, input.payloads);
       });

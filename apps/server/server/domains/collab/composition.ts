@@ -1,5 +1,6 @@
 /** Production dependency graph for the server collab domain. */
 
+import type { WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { lockDocumentMutation } from "../../shared/document-mutation-lock.js";
 import {
@@ -13,7 +14,6 @@ import {
   runOutsideDrizzleTransaction,
   runOutsideWrite,
 } from "../../shared/drizzle-transaction.js";
-import { lockWorksInIdOrder } from "../../shared/work-lifecycle-lock.js";
 import { lockDocumentNamespaces } from "../context/adapters/context-fs/document-locations.js";
 import {
   createDocumentLastAddress,
@@ -196,7 +196,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const attemptScope: AttemptScope = (operation) => runInDrizzleSavepoint(deps.db, operation);
   const workDrafts = createDrafts({
     store: createDrizzleDraftStore(deps.db),
-    boundary: createDrizzleDraftWriteBoundary(deps.db),
+    boundary: createDrizzleDraftWriteBoundary(deps.db, deps.workProjectionMutation),
   });
   const branches = createDrizzleBranchStore(deps.db, {
     live: {
@@ -391,7 +391,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       liveUtilityCore: runtime.liveUtilityCore,
       fileAccess: deps.fileAccess,
       async lockWorks(workIds) {
-        await lockWorksInIdOrder(currentDrizzleDb(deps.db), workIds);
+        await deps.workProjectionMutation.lockWorks({ works: workIds as WorkId[] });
       },
       async lockLiveDocuments(documentIds) {
         const tx = currentDrizzleDb(deps.db);

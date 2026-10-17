@@ -25,6 +25,7 @@ import { updateYFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { createAllowAllFileAccess } from "../../../domains/file-policy/index.js";
 import { grantedJournal, testFileGrant } from "../../../test-support/file-grants.js";
+import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createDocumentLastAddress } from "../../context/document-uri-resolver.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import type { FileGrant } from "../../file-policy/index.js";
@@ -355,9 +356,10 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   const branchCriticalSections = createBranchCriticalSections();
   const workDrafts = createDrafts({
     store: createDrizzleDraftStore(db),
-    boundary: createDrizzleDraftWriteBoundary(db),
+    boundary: createDrizzleDraftWriteBoundary(db, createTestWorkProjectionMutation(db)),
   });
   const realBranchStore = createFixtureBranchStore(db, {
+    workProjection: createTestWorkProjectionMutation(db),
     live: {
       journal: persistence.journal,
       lifecycle: persistence.lifecycle,
@@ -451,6 +453,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     stageSettlementBatchWithinTx,
     changeTrails,
     notices,
+    createTestWorkProjectionMutation(db),
   );
   const durableWorkDraftPendingStore = createDrizzleWorkDraftPendingStore(db);
   const events: Array<{
@@ -488,7 +491,10 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   const durableSettlementStore = createDrizzlePendingSettlementStore(
     db,
     durableProjectionSerializer,
-    admissionProbe(createDrizzleDocumentProjectionEffects(db), options.afterAdmission),
+    admissionProbe(
+      createDrizzleDocumentProjectionEffects(db, createTestWorkProjectionMutation(db)),
+      options.afterAdmission,
+    ),
     changeTrails,
     createDrizzleDocumentDerivationStore(db, createDocumentLastAddress(db)),
     {
@@ -509,8 +515,8 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       steps: [
         createDrizzleDraftTreeStep(db, {
           drafts: workDrafts,
-          // The harness publishes no Work projection; pending changes just run.
-          workProjection: { mutatePendingDraft: (_draftIds, operation) => operation() },
+          // The real Work-first boundary, with no catalog or availability publication.
+          workProjection: createTestWorkProjectionMutation(db),
           // The harness keeps no catalog.
           catalog: { refreshSources: async () => "" },
           branches: branchStore,
@@ -521,6 +527,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         ...(options.publicationSteps ?? []),
       ],
     },
+    createTestWorkProjectionMutation(db),
   );
   const appendWriterPrefix = async (documentId: DocumentId, prefix: string) => {
     const doc = hocuspocus.documents.get(documentId);
@@ -726,7 +733,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       documentUriResolver: resolveDocumentUri,
       diagnostics: createReversalNoticeDiagnostics(eventSink),
     }),
-    workProjection: { mutatePendingBranches: (_branchIds, operation) => operation() },
+    workProjection: createTestWorkProjectionMutation(db),
   });
   const responseFinalizer = createResponseWriteFinalizer({
     agentEdit,
@@ -788,7 +795,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         drafts: workDrafts,
         branches: branchStore,
         coordinator: branchCoordinator,
-        workProjection: { mutatePendingDraft: (_draftIds, operation) => operation() },
+        workProjection: createTestWorkProjectionMutation(db),
         catalog: { refreshSources: async () => "" },
       }),
       retire: retirePeers,

@@ -35,8 +35,6 @@ import {
   runInRootDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
 import { lockThreadForMutation } from "../../../shared/thread-work-lock.js";
-import { draftBranchWorks, draftOriginWorkIds } from "../../../shared/work-draft-lifecycle.js";
-import { lockWorksInIdOrder } from "../../../shared/work-lifecycle-lock.js";
 import {
   draftMayHold,
   loadDocumentOwner,
@@ -80,14 +78,13 @@ export function createDrizzleBranchStore(
       journal: UpdateJournal;
       lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
     };
-    workProjection?: WorkProjectionMutation;
+    /** The one owner of Work-first order and the Works' projection (decision D17). */
+    workProjection: WorkProjectionMutation;
     /** A peer ensure relies on its draft staying active; a thread finds its Work's draft. */
     drafts: Pick<Drafts, "shareActive" | "activeForWork">;
   },
 ): DrizzleBranchStore {
   const { live, workProjection, drafts } = deps;
-  const mutatePending = <T>(branchIds: readonly string[], operation: () => Promise<T>) =>
-    workProjection ? workProjection.mutatePendingBranches(branchIds, operation) : operation();
   async function findPrimaryWork(threadId: ThreadId): Promise<WorkId> {
     const [row] = await currentDrizzleDb(db)
       .select({ workId: threadWorks.workId })
@@ -144,19 +141,6 @@ export function createDrizzleBranchStore(
     return row ? unpackCollabSchemaVersion(row.schemaVersion) : COLLAB_SCHEMA_VERSION;
   }
 
-  /**
-   * Creating a branch is a write the Work's lifecycle orders (decision D12): it runs with
-   * the draft's Work locked first, through the pending projection, so an Archive either
-   * fences the new branch or committed before it existed.
-   */
-  function creatingInDraft<T>(draftId: DraftId, operation: () => Promise<T>): Promise<T> {
-    return runInDrizzleTransaction(db, async () => {
-      if (workProjection) return workProjection.mutatePendingDraft([draftId], operation);
-      await lockWorksInIdOrder(currentDrizzleDb(db), await draftOriginWorkIds(db, [draftId]));
-      return operation();
-    });
-  }
-
   async function ensureDraftBranch(input: {
     documentId: DocumentId;
     draftId: DraftId;
@@ -165,7 +149,9 @@ export function createDrizzleBranchStore(
     const existing = await activeDraftBranch(input.documentId, input.draftId);
     if (existing) return existing;
     const seed = await replicatedSnapshotFrom(input.liveDoc);
-    return creatingInDraft(input.draftId, async () => {
+    // Creating a branch is a write the Work's lifecycle orders (decision D12): the draft's
+    // Work is locked first, so an Archive either fences the new branch or committed before it.
+    return workProjection.mutatePending({ drafts: [input.draftId] }, async () => {
       // The insert's own transaction holds D active (§2.1): a closed draft gains no branch.
       if (!(await drafts.shareActive(input.draftId))) {
         throw new BranchStaleUpdateError(`draft:${input.draftId}`);
@@ -508,14 +494,16 @@ export function createDrizzleBranchStore(
    * first and touches the Work's projection; no count query runs.
    */
   async function appendRows(input: AppendRowsInput): Promise<AppendRowsOutcome> {
-    return runInDrizzleTransaction(db, async () => {
+    const append = async (): Promise<AppendRowsOutcome> => {
       const tx = currentDrizzleDb(db);
-      if (input.workTouch) await lockWorksInIdOrder(tx, [input.workTouch]);
       const { revision, rowIds } = await appendRowsWithinTx(tx, input);
       await recordAppendReceipts(tx, input, rowIds);
-      if (input.workTouch) await workProjection?.touchWorks([input.workTouch]);
       return { status: "appended" as const, revision, rowIds };
-    }).catch((cause) => {
+    };
+    const { workTouch } = input;
+    return runInDrizzleTransaction(db, () =>
+      workTouch ? workProjection.mutateKnownWorks([workTouch], append) : append(),
+    ).catch((cause) => {
       if (cause instanceof BranchWriteRollback) return { status: "moved" as const };
       throw cause;
     });
@@ -524,10 +512,8 @@ export function createDrizzleBranchStore(
   /** The Work row, then the branch row, held for one frame's last judgement. */
   async function withJudgementLocks<T>(branchId: string, run: () => Promise<T>): Promise<T> {
     return runInDrizzleTransaction(db, async () => {
-      const tx = currentDrizzleDb(db);
-      const [owner] = await draftBranchWorks(tx, [branchId]);
-      if (owner?.workId) await lockWorksInIdOrder(tx, [owner.workId]);
-      await tx
+      await workProjection.lockWorks({ branches: [branchId] });
+      await currentDrizzleDb(db)
         .select({ id: documentBranches.id })
         .from(documentBranches)
         .where(eq(documentBranches.id, branchId))
@@ -583,7 +569,10 @@ export function createDrizzleBranchStore(
     };
     const run =
       operation.kind === "pull" || operation.kind === "reset"
-        ? () => runInDrizzleTransaction(db, () => mutatePending([input.branchId], rewrite))
+        ? () =>
+            runInDrizzleTransaction(db, () =>
+              workProjection.mutatePending({ branches: [input.branchId] }, rewrite),
+            )
         : () => runInDrizzleTransaction(db, rewrite);
     return run().catch((cause) => {
       if (cause instanceof BranchWriteRollback) return cause.outcome;

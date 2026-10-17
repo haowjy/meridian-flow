@@ -130,8 +130,8 @@ export async function stageSettlementMemberWithinTx(
 export async function withdrawSettlementMembersWithinTx(
   db: DrizzleDb,
   pushes: readonly Pick<PushLineageRow, "id" | "journalIds" | "branchId">[],
-  notices?: NoticePort,
-  workProjection?: WorkProjectionMutation,
+  notices: NoticePort | undefined,
+  workProjection: WorkProjectionMutation,
 ): Promise<void> {
   if (pushes.length === 0) return;
   const withdraw = async () => {
@@ -165,8 +165,7 @@ export async function withdrawSettlementMembersWithinTx(
     );
   };
   const branchIds = pushes.flatMap(({ branchId }) => (branchId ? [branchId] : []));
-  if (!workProjection) return withdraw();
-  await workProjection.mutatePendingBranches(branchIds, withdraw);
+  await workProjection.mutatePending({ branches: branchIds }, withdraw);
 }
 
 /** Each member's lock cut and post-cut joins, read inside the completion transaction. */

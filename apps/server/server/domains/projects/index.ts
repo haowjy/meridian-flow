@@ -285,7 +285,10 @@ export { createDrizzleUserRepository } from "./adapters/user-repository/drizzle.
 export { createInMemoryUserRepository } from "./adapters/user-repository/in-memory.js";
 export {
   createWorkProjectionMutation,
+  type LockedWorkWriteSet,
   type WorkProjectionMutation,
+  type WorkWriteOptions,
+  type WorkWriteSet,
 } from "./adapters/work-projection-mutation.js";
 // ── Work CRUD ───────────────────────────────────────────────────────────────
 export { createDrizzleWorkRepository as createDrizzleProjectWorkRepository } from "./adapters/work-repository/drizzle.js";

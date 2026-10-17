@@ -9,6 +9,7 @@ import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import type * as Y from "yjs";
 import { drizzleFileAccess, testFileGrant } from "../../test-support/file-grants.js";
+import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import {
   createDrizzleDraftStore,
   createDrizzleDraftWriteBoundary,
@@ -187,7 +188,7 @@ describe("reply save refusals (postgres)", () => {
   const draftsOf = () =>
     createDrafts({
       store: createDrizzleDraftStore(db),
-      boundary: createDrizzleDraftWriteBoundary(db),
+      boundary: createDrizzleDraftWriteBoundary(db, createTestWorkProjectionMutation(db)),
     });
   /** Marks `documentId` as created by `workId`'s active draft, making that draft if need be. */
   async function claimCreate(documentId: string, workId: WorkId, threadId: string) {

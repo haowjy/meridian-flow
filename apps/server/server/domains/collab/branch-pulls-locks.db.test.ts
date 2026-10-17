@@ -96,7 +96,7 @@ it("releases a pull's Work row before the next branch mutex while a receipt owns
     workProjection: projection,
     drafts: createDrafts({
       store: createDrizzleDraftStore(db),
-      boundary: createDrizzleDraftWriteBoundary(db),
+      boundary: createDrizzleDraftWriteBoundary(db, projection),
     }),
   });
   const live = new Y.Doc({ gc: false });

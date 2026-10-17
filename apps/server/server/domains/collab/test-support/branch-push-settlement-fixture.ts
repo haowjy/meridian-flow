@@ -5,6 +5,7 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { expect } from "vitest";
+import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import type { EventSink } from "../../observability/index.js";
 import { createDrizzlePendingSettlementStore } from "../adapters/drizzle-pending-settlement.js";
 import {
@@ -89,6 +90,8 @@ export function claimProbeStore(db: Database, eventSink?: EventSink) {
     {} as never,
     undefined,
     eventSink,
+    { steps: [] },
+    createTestWorkProjectionMutation(db),
   );
 }
 
