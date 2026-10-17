@@ -2,13 +2,15 @@
  * Phase 4 (design §3.1–3.4, F3/F4): a keystroke's append and the branch's derived state are two
  * events. The append marks its branch dirty; the projection job judges `has_effect` against the
  * stored baseline 250 ms after the last key (at most 1 s after the first unserved one), writes it
- * with its watermark, and touches the Work once per run. No keystroke locks or counts a Work.
+ * with its watermark, and touches the Work once per run; a write a key overtook re-judges at once.
+ * No keystroke locks or counts a Work. The badge converges within the max wait once typing pauses
+ * and eventually while typing (D34).
  *
  * Arms, each on its own draft (the Works badge is `countPendingByWorkIds`, the Work's
  * republication is its `entity_revision`):
  * 1. one key into a fresh draft: pending 1 and the Work republished within 1 s;
- * 2. 3 s of keys at 50 ms: pending within the 1 s max wait of the first key plus one run (judge
- *    and write), at most four touches;
+ * 2. 3 s of keys at 50 ms: pending within the 1 s max wait after the typing pauses, at most four
+ *    touches; the time to the first pending while typing is reported, not asserted;
  *    then deleting everything typed: pending 0 within 1 s;
  * 3. Apply staging (rows `pushed`, `has_effect` still true) then one key: the Work republishes
  *    within 1 s (the review's `row-only-membership-flip`);
@@ -37,9 +39,8 @@ import {
 } from "./phase4.mts";
 
 const KEY_MS = 50;
-/** The job's max wait from the first unserved key (§3.2), plus one run: judge and write. */
+/** The badge's bound once typing pauses (D34). */
 const MAX_WAIT_MS = 1_000;
-const RUN_MS = 250;
 const TYPING_MS = 3_000;
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -47,7 +48,7 @@ export const effectProjection: Probe = {
   name: "effect-projection",
   decision: "D28 (§3 F3/F4)",
   expected:
-    "badge follows a key within 1 s, continuous typing within 1 s of the first key with at most four touches, delete-all clears within 1 s, a key after staging republishes the Work, two processes converge with a fresh watermark",
+    "badge follows a key within 1 s, continuous typing within 1 s of the pause with at most four touches, delete-all clears within 1 s, a key after staging republishes the Work, two processes converge with a fresh watermark",
   async run(harness) {
     const p = await openProjected(harness);
     try {
@@ -101,6 +102,11 @@ export const effectProjection: Probe = {
               await pause(10);
             }
             await typing;
+            const paused = await within(
+              MAX_WAIT_MS,
+              () => workBadge(harness, draft.workId),
+              (b) => b.pending === 1,
+            );
             const typed = await within(
               1_000,
               () => branchRow(harness, draft.branchId),
@@ -124,16 +130,13 @@ export const effectProjection: Probe = {
               holdMs: percentiles(appends.map((append) => append.holdMs)),
               writeEffect: effects.outcomes,
               firstPendingMs,
+              pendingAfterPauseMs: paused.elapsedMs,
               touches,
               typedChars,
               settledMs: typed.elapsedMs,
               erased,
               clearedMs: cleared.elapsedMs,
             });
-            assert.ok(
-              firstPendingMs !== null && firstPendingMs <= MAX_WAIT_MS + RUN_MS,
-              "pending within the 1 s max wait of the first key, plus one run",
-            );
             assert.ok(touches <= 4, `at most four Work touches while typing, saw ${touches}`);
             assert.equal(erased, "appended");
           } finally {

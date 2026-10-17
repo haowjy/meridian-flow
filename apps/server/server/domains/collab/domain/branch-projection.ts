@@ -4,6 +4,10 @@
  * Marked dirty by every committed append, coalesced per branch, run at most `maxRuns` at a time,
  * retried on backoff, and repaired by a finite sweep over the persisted stale set. Process-local:
  * two processes judging one branch at one revision write the same value twice.
+ *
+ * The stored value converges within the max wait once typing pauses, and eventually while typing
+ * (D34): a write guarded by the revision it judged misses whenever a key commits during the run,
+ * so a `moved` write re-judges at once rather than on the debounce. Only errors back off.
  */
 import { bytesEqual } from "@meridian/agent-edit/integration";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
@@ -20,7 +24,7 @@ import {
 
 /** A pause runs the job this long after the last key... */
 const DEBOUNCE_MS = 250;
-/** ...and continuous typing within this long of the first unserved key. */
+/** ...and continuous typing starts a run within this long of the first unserved key. */
 const MAX_WAIT_MS = 1_000;
 const BACKOFF_MS = 250;
 const MAX_BACKOFF_MS = 30_000;
@@ -161,8 +165,15 @@ export function createBranchProjection(input: {
     if (outcome === "done" || outcome === "moved") entry.failures = 0;
     else if (outcome !== "parked") entry.failures += 1;
     if (outcome === "parked") entry.parked = true;
+    // A key committed between the judgement and its guarded write: judge the new revision now.
+    if (outcome === "moved") {
+      entry.again = false;
+      entry.parked = false;
+      enqueue(branchId, entry);
+      return;
+    }
     // A mark that landed during the run is served whatever the run decided.
-    if (entry.again || outcome === "moved") {
+    if (entry.again) {
       entry.again = false;
       entry.parked = false;
       markDirty(branchId);
