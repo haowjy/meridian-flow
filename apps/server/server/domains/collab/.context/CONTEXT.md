@@ -197,7 +197,8 @@ bump), and writes `has_effect` with its watermark `has_effect_revision` through
 `SET LOCAL lock_timeout = '100ms'`. That bound applies to each lock
 acquisition (the Work, the branch row, the publication participants), not to
 the transaction; `55P03` is `contended` and retried on backoff, a moved revision
-is re-judged. Every writer of `has_effect` (the job, a pull or reset's
+is re-judged at once, so the badge converges within the max wait once typing
+pauses and eventually while typing (D34). Every writer of `has_effect` (the job, a pull or reset's
 rewrite, `refreshDraftEffect`) writes the watermark with it; `-1` is stale
 whatever the revision. A sweep (the `branch-effects` recovery lane, every 30 s)
 pages the stale set by `(updated_at, id)` and marks what no entry tracks, so a
