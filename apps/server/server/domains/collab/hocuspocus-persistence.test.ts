@@ -292,6 +292,7 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
         branchId: BRANCH_ID,
         generation: 3,
         clientStateVector: Y.encodeStateVector(discardedDoc),
+        room: docWithText("current generation"),
       }),
     ).resolves.toBe(true);
   });

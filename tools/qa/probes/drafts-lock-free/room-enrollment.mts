@@ -10,8 +10,12 @@
  *   it, and the generation-2 room loads and takes frames.
  * - `dropped-delivery`: the delivery of a pull is dropped on purpose; the next frame finds its
  *   room behind, reconciles it, and is admitted with no `1008`.
+ * - `read-only-handshake`: the same dropped delivery, then a tab that may only read joins; its
+ *   SyncStep1, run through Hocuspocus's own sync receiver, reconciles the room first (D27), so
+ *   the tab receives the committed text with no keystroke anywhere.
  */
 import assert from "node:assert/strict";
+import { createRequire } from "node:module";
 import { createHocuspocusBinding } from "../../../../apps/server/server/domains/collab/adapters/hocuspocus-binding.ts";
 import { createBranchCoordinator } from "../../../../apps/server/server/domains/collab/domain/branch-coordinator.ts";
 import type { BranchStore } from "../../../../apps/server/server/domains/collab/domain/branch-store.ts";
@@ -30,6 +34,17 @@ import {
   settled,
   Y,
 } from "./harness.mts";
+
+// Hocuspocus's sync receiver and lib0's codec, resolved as the server resolves them.
+const serverRequire = createRequire(
+  new URL("../../../../apps/server/package.json", import.meta.url),
+);
+// Its ES build, the one the gateway loads: the CommonJS build would bring a second Yjs.
+const { IncomingMessage, MessageReceiver } = await import(
+  serverRequire.resolve("@hocuspocus/server").replace(/\.cjs$/, ".esm.js")
+);
+const encoding = serverRequire("lib0/encoding");
+const decoding = serverRequire("lib0/decoding");
 
 /** A Hocuspocus room, as `createDocument` resolves it. */
 type Document = Awaited<ReturnType<ReturnType<typeof createHocuspocus>["createDocument"]>>;
@@ -136,12 +151,69 @@ function openGateway(
     return { ok: result.ok, closes };
   }
 
+  /**
+   * A tab holding `tab` joins `room` on a read connection and completes the Yjs handshake
+   * through Hocuspocus's sync receiver and the gateway's `beforeSync` hook: its SyncStep1, then
+   * its SyncStep2 answer. Everything the server sends the tab is applied to it.
+   */
+  async function joinReadOnly(room: Document, branchId: string, tab: Y.Doc) {
+    const context = {
+      traceId: "read-only-handshake",
+      userId: harness.ids.user,
+      branchSyncState: new Map(),
+      admissionTarget: { kind: "branch", branchId, generation: 1, documentId: room.name },
+      access: { level: "read" },
+    };
+    let serverVector: Uint8Array | undefined;
+    const connection = {
+      readOnly: true,
+      messageAddress: room.name,
+      send(data: Uint8Array) {
+        const decoder = decoding.createDecoder(data);
+        decoding.readVarString(decoder);
+        if (decoding.readVarUint(decoder) !== 0) return;
+        const step = decoding.readVarUint(decoder);
+        const payload = decoding.readVarUint8Array(decoder);
+        if (step === 0) serverVector = payload;
+        else Y.applyUpdate(tab, payload);
+      },
+      callbacks: {
+        beforeSync: (_: unknown, sync: { type: number; payload: Uint8Array }) =>
+          // `context` holds the fields a read connection's sync consults; the rest are the socket's.
+          hocuspocus.hooks("beforeSync", {
+            documentName: room.name,
+            document: room,
+            ...sync,
+            context,
+          } as never),
+      },
+    };
+    room.addConnection(connection as never);
+    const exchange = async (step: number, payload: Uint8Array) => {
+      const encoder = encoding.createEncoder();
+      encoding.writeVarUint(encoder, step);
+      encoding.writeVarUint8Array(encoder, payload);
+      const message = new IncomingMessage(encoding.toUint8Array(encoder));
+      await new MessageReceiver(message).readSyncMessage(message, room, connection);
+      return message;
+    };
+    const step1 = await exchange(0, Y.encodeStateVector(tab));
+    // The reply Hocuspocus writes for the tab's step 1: its SyncStep2 from the room.
+    const reply = decoding.createDecoder(step1.toUint8Array());
+    assert.equal(decoding.readVarUint(reply), 1);
+    Y.applyUpdate(tab, decoding.readVarUint8Array(reply));
+    assert(serverVector, "the room asked for the tab's state");
+    await exchange(1, Y.encodeStateAsUpdate(tab, serverVector));
+    room.removeConnection(connection as never);
+  }
+
   return {
     coordinator,
     hocuspocus,
     reconciled,
     load,
     type,
+    joinReadOnly,
     /** Waits out every enrollment the branch's rooms started. */
     enrolled: (branchId: string) => persistence.drainHocuspocusBranchPersistence(branchId),
     async close() {
@@ -275,6 +347,42 @@ export const droppedDelivery: Probe = {
         ["frame"],
       );
     } finally {
+      live.destroy();
+      await gateway.close();
+    }
+  },
+};
+
+export const readOnlyHandshake: Probe = {
+  name: "read-only-handshake",
+  decision: "D27",
+  expected: `room and read-only tab lack LIVE after the dropped delivery; after the tab's handshake both hold it; one handshake repair`,
+  async run(harness) {
+    const { branchId, live } = await seedDraft(harness, "read-only-handshake");
+    const gateway = openGateway(harness, harness.store, { dropDelivery: true });
+    const tab = new Y.Doc({ gc: false });
+    try {
+      const room = await gateway.load(branchId, 1);
+      await gateway.enrolled(branchId);
+      Y.applyUpdate(tab, Y.encodeStateAsUpdate(room));
+      appendToFirstParagraph(live, " LIVE");
+      const pulled = await gateway.coordinator.pullFromDoc({ branchId, upstream: live });
+      const behind = { room: text(room), tab: text(tab) };
+      await gateway.joinReadOnly(room, branchId, tab);
+      const durable = (await harness.readBranch(branchId)).text;
+      const triggers = gateway.reconciled.map(({ trigger }) => trigger);
+      observe("drop", { pulled, behind, durable });
+      observe("joined", { room: text(room), tab: text(tab) });
+      observe("reconciled", triggers);
+      assert.equal(pulled, "pulled");
+      assert.doesNotMatch(behind.room, /LIVE/, "the pull's delivery was dropped");
+      assert.doesNotMatch(behind.tab, /LIVE/);
+      assert.match(durable, /Base LIVE/);
+      assert.equal(text(room), durable);
+      assert.equal(text(tab), durable);
+      assert.deepEqual(triggers, ["handshake"]);
+    } finally {
+      tab.destroy();
       live.destroy();
       await gateway.close();
     }

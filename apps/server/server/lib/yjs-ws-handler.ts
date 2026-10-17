@@ -329,6 +329,7 @@ async function classifyYjsConnectionAdmission(input: {
 
 async function enforceBranchHandshake(input: {
   services: YjsGatewayServices;
+  document: Y.Doc;
   room: Extract<ReturnType<typeof parseRoomOrDeny>, { kind: "branch" }>;
   syncType: number;
   payload: Uint8Array;
@@ -340,6 +341,7 @@ async function enforceBranchHandshake(input: {
       branchId: input.room.branchId,
       generation: input.room.generation,
       clientStateVector: input.payload,
+      room: input.document,
     });
     if (input.context?.branchSyncState?.get(key) === "rejected") {
       throw permissionDenied(WS_CLOSE.BRANCH_STALE.reason, WS_CLOSE.BRANCH_STALE.code);
@@ -391,6 +393,7 @@ async function admitBranchSync(
 ): Promise<undefined> {
   await enforceBranchHandshake({
     services: input.services,
+    document: input.document,
     room,
     syncType: input.syncType,
     payload: input.payload,

@@ -10,7 +10,7 @@ import { type DetachedWorkTracker, processDetachedWork } from "../runtime/detach
 import { loadDocumentState } from "./adapters/document-loader.js";
 import type { CollabPersistenceMetrics, CollabTransport, UpdateOrigin } from "./contracts.js";
 import type { BranchCoordinator } from "./domain/branch-coordinator.js";
-import { BranchMissingError, type BranchStore } from "./domain/branch-store.js";
+import type { BranchStore } from "./domain/branch-store.js";
 import { createDocumentContainment } from "./domain/document-containment.js";
 import {
   documentAuthority,
@@ -421,12 +421,13 @@ export function createHocuspocusPersistenceService(
         // The load read the branch before its room became a delivery recipient: whatever
         // committed in between, a transition or a reset, reached no room.
         if (!(await whenRoomRegistered(hocuspocus, document))) return;
-        const outcome = await requireBranchCoordinator().enrollRoom({
+        const base = await requireBranchCoordinator().reconcileRegisteredRoom({
           branchId,
           generation,
           room: document,
+          trigger: "enrollment",
         });
-        if (outcome === "stale") closeRoom(hocuspocus, document);
+        if (!base) closeRoom(hocuspocus, document);
       })().catch((cause: unknown) => {
         if (!deps.eventSink) return;
         emitEvent(deps.eventSink, {
@@ -645,23 +646,20 @@ export function createHocuspocusPersistenceService(
     },
 
     async rejectStaleBranchSyncStep1(input) {
-      // Read through the runtime: a room this tab joins catches up on what another process
-      // committed before Hocuspocus answers the tab's step 1 from it.
-      const stale = await requireBranchCoordinator()
-        .readBranch(
-          input.branchId,
-          async (doc, branch) =>
-            branch.status === "active" &&
-            branch.kind === "work_draft" &&
-            branch.generation === input.generation &&
-            branchSyncStep1IsStale(input.clientStateVector, {
-              stateVector: Y.encodeStateVector(doc),
-              discardedStateVector: branch.discardedStateVector,
-            }),
-        )
-        .catch((cause: unknown) => {
-          if (cause instanceof BranchMissingError) return false;
-          throw cause;
+      // Before Hocuspocus answers the tab's step 1 from the room, the room catches up on
+      // whatever committed that it missed: another process's commits, a dropped delivery
+      // (decision D27). The tab's own exchange then brings the tab current, read-only or not.
+      const base = await requireBranchCoordinator().reconcileRegisteredRoom({
+        branchId: input.branchId,
+        generation: input.generation,
+        room: input.room,
+        trigger: "handshake",
+      });
+      const stale =
+        base?.snapshot.kind === "work_draft" &&
+        branchSyncStep1IsStale(input.clientStateVector, {
+          stateVector: Y.encodeStateVector(base.replica.doc),
+          discardedStateVector: base.snapshot.discardedStateVector,
         });
       if (!stale) return false;
       recordDroppedConnectionUpdate(branchRoomName(input.branchId, input.generation));

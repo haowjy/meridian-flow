@@ -165,10 +165,15 @@ export type CollabTransport = {
   drainHocuspocusBranchPersistence(branchId: string): Promise<void>;
   /** Narrow close affordance for durable shadow-probe T6 and branch reset plumbing. */
   closeHocuspocusBranchRoom(branchId: string): void;
+  /**
+   * A tab's SyncStep1 on a branch room: reconciles `room` against the committed branch, then
+   * true when the tab still holds content a reset discarded (decision D27).
+   */
   rejectStaleBranchSyncStep1(input: {
     branchId: string;
     generation: number;
     clientStateVector: Uint8Array;
+    room: Y.Doc;
   }): Promise<boolean>;
   /**
    * Called from a branch room's load hook: once Hocuspocus registers the room, brings it up to
