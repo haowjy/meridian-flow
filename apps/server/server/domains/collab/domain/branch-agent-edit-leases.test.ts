@@ -14,8 +14,9 @@ import {
   testBranchRow,
 } from "../test-support/memory-branch-store.js";
 import { createBranchAgentEditCoordinator } from "./branch-agent-edit.js";
-import { type BranchSnapshot, createBranchCoordinator } from "./branch-coordinator.js";
+import { createBranchCoordinator } from "./branch-coordinator.js";
 import { createBranchCriticalSections } from "./branch-critical-sections.js";
+import type { BranchSnapshot } from "./branch-store.js";
 
 const threadId = "thread-1" as ThreadId;
 const documentId = "document-1" as DocumentId;

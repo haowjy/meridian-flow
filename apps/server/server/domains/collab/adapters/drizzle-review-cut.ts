@@ -12,15 +12,15 @@ import {
   runInRootDrizzleReadSnapshot,
 } from "../../../shared/drizzle-transaction.js";
 import {
-  assertReadableBranch,
-  type BranchStore,
-  materializeBranchRead,
-} from "../domain/branch-coordinator.js";
-import {
   type BranchJournalReadStore,
   DraftChangeRefusal,
 } from "../domain/branch-push-contracts.js";
 import { BranchCorruptError } from "../domain/branch-resolver.js";
+import {
+  assertReadableBranch,
+  type BranchStore,
+  materializeBranchRead,
+} from "../domain/branch-store.js";
 import type { DraftReviewIdentity } from "../domain/draft-review-identity.js";
 import { type DocumentLinkScopes, LIVE_VIEW } from "../domain/ports/document-link-scope.js";
 import type { ReadReviewCut } from "../domain/ports/review-cut.js";

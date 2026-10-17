@@ -2,7 +2,6 @@
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import { type BranchSnapshot, materializeBranchRead } from "./branch-coordinator.js";
 import { type BranchLockLease, createBranchCriticalSections } from "./branch-critical-sections.js";
 import {
   buildSelectedRowCandidates,
@@ -32,6 +31,7 @@ import {
   PublicationLeasesChangedError,
   type PublicationOutcome,
 } from "./branch-push-transition.js";
+import { type BranchSnapshot, materializeBranchRead } from "./branch-store.js";
 import { buildDurablePushTrail } from "./branch-trail-projection.js";
 import { collabHook } from "./collab-test-hooks.js";
 import type {

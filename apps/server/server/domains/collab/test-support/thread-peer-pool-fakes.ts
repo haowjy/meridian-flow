@@ -7,7 +7,7 @@ import type {
 import type { DraftId } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { vi } from "vitest";
-import type { BranchSnapshot } from "../domain/branch-coordinator.js";
+import type { BranchSnapshot } from "../domain/branch-store.js";
 import type { Draft } from "../domain/ports/draft-store.js";
 import {
   enlistResponseParticipant,

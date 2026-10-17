@@ -20,7 +20,7 @@ import type {
 } from "@meridian/contracts/protocol";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
-import type { BranchSnapshot } from "./branch-coordinator.js";
+import type { BranchSnapshot } from "./branch-store.js";
 import { effectiveActionIndex, isRolledBack, partKey } from "./inverse-actions.js";
 import { prepareHolds } from "./inverse-holds.js";
 import { createModelInversePolicy } from "./model-inverse-policy.js";

@@ -46,7 +46,7 @@ import type {
   WorkDraftPendingEvidence,
   WorkDraftPendingStore,
 } from "../domain/ports/work-draft-pending-store.js";
-import { bumpBranchRevisions, commitRewriteWithinTx } from "./drizzle-branches.js";
+import { bumpBranchRevisions, commitRewriteWithinTx } from "./drizzle-branch-storage.js";
 import { placeDraftRows } from "./drizzle-document-edits.js";
 import { attachBatchWithinTx, claimCommandWithinTx } from "./drizzle-draft-commands.js";
 import { refreshDraftEffect } from "./drizzle-draft-effect.js";

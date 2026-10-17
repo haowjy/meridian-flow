@@ -7,9 +7,9 @@ import {
 } from "@meridian/agent-edit/integration";
 import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import type { BranchSnapshot } from "./branch-coordinator.js";
 import type { BranchJournalRow, PreparedPush } from "./branch-push-contracts.js";
 import { publicationBlockChanges } from "./branch-push-plan.js";
+import type { BranchSnapshot } from "./branch-store.js";
 import {
   journalAttributionByChangedBlock,
   preparedTrailChanges,

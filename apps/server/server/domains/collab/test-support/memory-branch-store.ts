@@ -12,7 +12,7 @@ import {
   type CommitRewriteInput,
   mergeStateVectors,
   type RewriteOutcome,
-} from "../domain/branch-coordinator.js";
+} from "../domain/branch-store.js";
 
 /** A branch row, defaulting every field the test does not name. */
 export function testBranchRow(

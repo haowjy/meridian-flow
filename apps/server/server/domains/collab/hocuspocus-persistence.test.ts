@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { RecentEventsBuffer } from "../observability/adapters/recent/recent-events-buffer.js";
 import { createInMemoryJournal } from "./adapters/in-memory/agent-edit.js";
-import { type BranchSnapshot, BranchStaleUpdateError } from "./domain/branch-coordinator.js";
+import { type BranchSnapshot, BranchStaleUpdateError } from "./domain/branch-store.js";
 import {
   bindDocumentAuthority,
   documentAuthority,

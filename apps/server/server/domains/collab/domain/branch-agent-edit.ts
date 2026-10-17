@@ -23,7 +23,6 @@ import * as Y from "yjs";
 import type {
   BranchCoordinator,
   BranchSaveJournalReads,
-  BranchSnapshot,
   OwnedBranchSession,
 } from "./branch-coordinator.js";
 import type { BranchLockLease } from "./branch-critical-sections.js";
@@ -31,6 +30,7 @@ import type { WorkDraftLookup } from "./branch-pulls.js";
 import type { BranchJournalReadStore, BranchJournalRow } from "./branch-push-contracts.js";
 import type { BranchResolver } from "./branch-resolver.js";
 import { reconcileStagedBranchWrites } from "./branch-response-replay.js";
+import type { BranchSnapshot } from "./branch-store.js";
 import {
   type AttributionRow,
   docFromState,

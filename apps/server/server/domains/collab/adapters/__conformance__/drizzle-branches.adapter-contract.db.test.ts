@@ -783,7 +783,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     // either direction, row existence, close, freeze) must move r, or the prediction survives
     // it. Walks the plan's §2.5 inventory through the real writers.
     it("every membership-input writer moves the branch revision", async () => {
-      const { bumpBranchRevisions } = await import("../drizzle-branches.js");
+      const { bumpBranchRevisions } = await import("../drizzle-branch-storage.js");
       const { placeDraftRows } = await import("../drizzle-document-edits.js");
       const { withdrawSettlementMembersWithinTx } = await import("../drizzle-settlement-member.js");
       const { runInDrizzleTransaction } = await import("../../../../shared/drizzle-transaction.js");

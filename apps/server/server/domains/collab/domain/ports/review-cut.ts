@@ -1,7 +1,7 @@
 /** Immutable inputs shared by review preview and selective disposition. */
 import type { ProjectId, WorkId } from "@meridian/contracts/runtime";
-import type { BranchSnapshot } from "../branch-coordinator.js";
 import type { BranchJournalRow } from "../branch-push-contracts.js";
+import type { BranchSnapshot } from "../branch-store.js";
 import type { DraftReviewItem } from "../draft-review-items.js";
 import type { HolderLinkScope } from "./document-link-scope.js";
 

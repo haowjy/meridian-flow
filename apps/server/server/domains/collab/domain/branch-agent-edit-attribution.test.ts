@@ -19,8 +19,9 @@ import {
   testBranchRow,
 } from "../test-support/memory-branch-store.js";
 import { createBranchAgentEditCoordinator } from "./branch-agent-edit.js";
-import { type BranchSnapshot, createBranchCoordinator } from "./branch-coordinator.js";
+import { createBranchCoordinator } from "./branch-coordinator.js";
 import type { BranchJournalRow } from "./branch-push-contracts.js";
+import type { BranchSnapshot } from "./branch-store.js";
 
 const schema = buildDocumentSchema();
 const model = yProsemirrorModel(schema);

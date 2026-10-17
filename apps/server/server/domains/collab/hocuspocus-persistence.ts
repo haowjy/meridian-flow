@@ -9,11 +9,8 @@ import { type EventSink, emitEvent, unknownToEventPayload } from "../observabili
 import { type DetachedWorkTracker, processDetachedWork } from "../runtime/detached-work.js";
 import { loadDocumentState } from "./adapters/document-loader.js";
 import type { CollabPersistenceMetrics, CollabTransport, UpdateOrigin } from "./contracts.js";
-import {
-  type BranchCoordinator,
-  type BranchStore,
-  branchReadStateVector,
-} from "./domain/branch-coordinator.js";
+import type { BranchCoordinator } from "./domain/branch-coordinator.js";
+import { type BranchStore, branchReadStateVector } from "./domain/branch-store.js";
 import { createDocumentContainment } from "./domain/document-containment.js";
 import {
   documentAuthority,

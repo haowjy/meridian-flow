@@ -33,12 +33,9 @@ import { dropDocumentRows } from "../../context/tree/draft-tree-store.js";
 import { type PlaceTarget, place } from "../../context/tree/placement.js";
 import { createTreeReader, LIVE_TREE, type TreeStateNode } from "../../context/tree/tree-view.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
-import type {
-  BranchCoordinator,
-  BranchSnapshot,
-  BranchStore,
-} from "../domain/branch-coordinator.js";
-import { BranchCasConflictError, materializeBranchRead } from "../domain/branch-coordinator.js";
+import type { BranchCoordinator } from "../domain/branch-coordinator.js";
+import type { BranchSnapshot, BranchStore } from "../domain/branch-store.js";
+import { BranchCasConflictError, materializeBranchRead } from "../domain/branch-store.js";
 import { documentEffectsEqual } from "../domain/document-content.js";
 import {
   type ApplyNote,
