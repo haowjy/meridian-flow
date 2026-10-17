@@ -13,7 +13,11 @@ import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
-import { stubBranchStore, testBranchRow } from "../test-support/stub-branch-store.js";
+import {
+  MemoryBranchStore,
+  memoryBranch,
+  testBranchRow,
+} from "../test-support/memory-branch-store.js";
 import { createBranchAgentEditCoordinator } from "./branch-agent-edit.js";
 import { type BranchSnapshot, createBranchCoordinator } from "./branch-coordinator.js";
 import type { BranchJournalRow } from "./branch-push-contracts.js";
@@ -48,9 +52,9 @@ function fixture(existingUpstream?: Y.Doc) {
     model,
     codec,
     branchCoordinator: createBranchCoordinator({
-      store: stubBranchStore({
-        branch: (id) => ({ branch: snapshot(id), state: Y.encodeStateAsUpdate(upstream) }),
-      }),
+      store: new MemoryBranchStore(
+        ["draft", "peer"].map((id) => memoryBranch(snapshot(id), upstream)),
+      ),
     }),
     branches: {
       getBranch: async (id) => snapshot(id),

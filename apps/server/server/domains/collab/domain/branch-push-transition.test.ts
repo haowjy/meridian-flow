@@ -13,7 +13,7 @@ import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
 import { createStaticDocumentLinkScopes } from "../adapters/in-memory/static-document-link-scopes.js";
 import { createInMemoryPendingSettlementStore } from "../test-support/in-memory-pending-settlement-store.js";
-import { testBranchRow } from "../test-support/stub-branch-store.js";
+import { testBranchRow } from "../test-support/memory-branch-store.js";
 import type {
   PreparedPushCommit,
   PushCommitStore,

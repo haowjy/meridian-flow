@@ -1,6 +1,6 @@
 /** Shadow branch coordinator conformance for peer pulls and CAS persistence. */
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
-import { allocateDocumentClient, COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
+import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
@@ -11,18 +11,12 @@ import {
 } from "../test-support/branch-update-writes.js";
 import { captureHistoricalBranchRow } from "../test-support/historical-branch-row.js";
 import {
-  type AppendBranchJournalInput,
-  type AppendRowsInput,
-  type AppendRowsOutcome,
-  type BranchRead,
-  type BranchReadSince,
-  type BranchSnapshot,
-  type BranchStore,
-  type CommitRewriteInput,
-  createBranchCoordinator,
-  mergeStateVectors,
-  type RewriteOutcome,
-} from "./branch-coordinator.js";
+  type MemoryBranch,
+  MemoryBranchStore,
+  memoryBranch,
+  testBranchRow,
+} from "../test-support/memory-branch-store.js";
+import { createBranchCoordinator } from "./branch-coordinator.js";
 import { BranchLeaseScopeError, createBranchCriticalSections } from "./branch-critical-sections.js";
 import { PROVENANCE_TARGETS_TYPE } from "./provenance.js";
 
@@ -55,14 +49,6 @@ function documentWithReservedFacts(): Y.Doc {
   return doc;
 }
 
-type MemoryRow = { id: number; generation: number; update: Uint8Array; source: "agent" | "writer" };
-
-/** A branch as the store keeps it: the row, its checkpoint and every journal row it has. */
-type MemoryBranch = BranchSnapshot & {
-  checkpoint: { state: Uint8Array; stateVector: Uint8Array };
-  rows: MemoryRow[];
-};
-
 /** A branch's materialized content (checkpoint ⊕ tail), for assertions. */
 type StoredBranch = MemoryBranch & { state: Uint8Array; stateVector: Uint8Array };
 
@@ -72,152 +58,17 @@ function branchSnapshot(input: {
   kind?: "work_draft" | "thread_peer";
   upstreamBranchId?: string | null;
 }): MemoryBranch {
-  return {
-    branchId: input.branchId,
-    documentId: DOCUMENT_ID,
-    kind: input.kind ?? "work_draft",
-    upstreamBranchId: input.upstreamBranchId ?? null,
-    draftId: "draft-1",
-    workId: WORK_ID,
-    threadId: input.kind === "thread_peer" ? THREAD_ID : null,
-    status: "active",
-    generation: 1,
-    revision: 0,
-    checkpointRevision: 0,
-    checkpointSeq: 0,
-    lifecycle: "active",
-    hasEffect: false,
-    blocking: false,
-    schemaVersion: COLLAB_SCHEMA_VERSION,
-    checkpoint: {
-      state: Y.encodeStateAsUpdate(input.doc),
-      stateVector: Y.encodeStateVector(input.doc),
-    },
-    rows: [],
-  };
-}
-
-/**
- * The checkpoint + tail store in memory: every committed write bumps `revision`, an append
- * adds tail rows, a rewrite replaces the checkpoint and moves `checkpointSeq` past every row.
- */
-class MemoryBranchStore implements BranchStore {
-  readonly branches = new Map<string, MemoryBranch>();
-  /** Every journal row ever appended, in order. */
-  readonly journal: Uint8Array[] = [];
-  failNextCas = false;
-  failNextJournal = false;
-  private nextRowId = 1;
-
-  deferUntilCommit(callback: () => void): boolean {
-    callback();
-    return true;
-  }
-
-  async getBranch(branchId: string): Promise<BranchSnapshot | null> {
-    const branch = this.branches.get(branchId);
-    if (!branch) return null;
-    const { checkpoint: _checkpoint, rows: _rows, ...snapshot } = branch;
-    return snapshot;
-  }
-
-  async readBranchAt(branchId: string, since?: BranchReadSince): Promise<BranchRead | null> {
-    const branch = this.branches.get(branchId);
-    if (!branch) return null;
-    const held = since?.checkpointRevision === branch.checkpointRevision;
-    const after = held ? Math.max(since.seq, branch.checkpointSeq) : branch.checkpointSeq;
-    const snapshot = await this.getBranch(branchId);
-    if (!snapshot) return null;
-    return {
-      branch: snapshot,
-      checkpoint: held ? null : branch.checkpoint,
-      tail: branch.rows
-        .filter((row) => row.generation === branch.generation && row.id > after)
-        .map(({ id, update, source }) => ({ id, update, source })),
-    };
-  }
-
-  async appendRows(input: AppendRowsInput): Promise<AppendRowsOutcome> {
-    const branch = this.branches.get(input.branchId);
-    if (this.takeCasFailure() || !branch || !this.writable(branch, input.expectedRevision))
-      return { status: "moved" };
-    if (branch.generation !== input.expectedGeneration) return { status: "moved" };
-    if (this.failNextJournal) {
-      this.failNextJournal = false;
-      throw new Error("injected journal failure");
-    }
-    const rowIds = input.rows.map((row) => this.append(branch, row));
-    branch.revision += 1;
-    return { status: "appended", revision: branch.revision, rowIds };
-  }
-
-  async commitRewrite(input: CommitRewriteInput): Promise<RewriteOutcome> {
-    const branch = this.branches.get(input.branchId);
-    if (branch?.status !== "active") return { status: "closed" };
-    if (this.takeCasFailure()) return { status: "moved" };
-    if (
-      input.policy.kind === "exact"
-        ? branch.revision !== input.policy.revision
-        : branch.checkpointRevision !== input.policy.checkpointRevision
-    )
-      return { status: "moved" };
-    const tail = branch.rows.filter(
-      (row) => row.generation === branch.generation && row.id > branch.checkpointSeq,
-    );
-    const { operation } = input;
-    // A fold applies what landed after its cursor; a reset discards it.
-    if (input.policy.kind === "fold" && operation.kind !== "reset") {
-      const after = input.policy.seq;
-      for (const row of tail) if (row.id > after) Y.applyUpdate(input.doc, row.update);
-    }
-    if (operation.kind === "checkpoint")
-      for (const row of operation.rows ?? []) this.append(branch, row);
-    if (operation.kind === "reset") {
-      branch.discardedStateVector = tail.reduce(
-        (vector, row) =>
-          mergeStateVectors(vector, Y.encodeStateVector(Y.parseUpdateMeta(row.update).to)),
-        mergeStateVectors(branch.discardedStateVector, branch.checkpoint.stateVector),
-      );
-      branch.generation += 1;
-      branch.schemaVersion = operation.schemaVersion;
-    }
-    branch.checkpoint = {
-      state: Y.encodeStateAsUpdate(input.doc),
-      stateVector: Y.encodeStateVector(input.doc),
-    };
-    branch.checkpointSeq = Math.max(0, ...branch.rows.map((row) => row.id));
-    branch.revision += 1;
-    branch.checkpointRevision = branch.revision;
-    return {
-      status: "committed",
-      revision: branch.revision,
-      checkpointRevision: branch.checkpointRevision,
-      seq: branch.checkpointSeq,
-      generation: branch.generation,
-    };
-  }
-
-  private append(branch: MemoryBranch, row: AppendBranchJournalInput): number {
-    const id = this.nextRowId++;
-    branch.rows.push({
-      id,
-      generation: row.generation,
-      update: row.updateData,
-      source: row.source,
-    });
-    this.journal.push(row.updateData);
-    return id;
-  }
-
-  private writable(branch: MemoryBranch, revision: number): boolean {
-    return branch.status === "active" && branch.revision === revision;
-  }
-
-  private takeCasFailure(): boolean {
-    if (!this.failNextCas) return false;
-    this.failNextCas = false;
-    return true;
-  }
+  return memoryBranch(
+    testBranchRow({
+      branchId: input.branchId,
+      documentId: DOCUMENT_ID,
+      kind: input.kind ?? "work_draft",
+      upstreamBranchId: input.upstreamBranchId ?? null,
+      workId: WORK_ID,
+      threadId: input.kind === "thread_peer" ? THREAD_ID : null,
+    }),
+    input.doc,
+  );
 }
 
 function storedBranch(store: MemoryBranchStore, branchId: string): StoredBranch {
