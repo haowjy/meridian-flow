@@ -89,7 +89,7 @@ function inverseService(harness: Harness, label: string) {
       },
       recover: async () => {},
     } as never,
-    branchCoordinator: { broadcastUpdate() {} },
+    branchCoordinator: { async deliverCommitted() {} },
     resolveDocumentUri: async () => `@${label}/probe.md`,
     refreshDocument: async () => {},
     flushLivePull: async () => {},

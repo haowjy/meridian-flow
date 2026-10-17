@@ -55,7 +55,7 @@ type Dependencies = {
   journal: UpdateJournal;
   branches: BranchStore;
   coordinator: DocumentCoordinator;
-  branchCoordinator: Pick<BranchCoordinator, "broadcastUpdate">;
+  branchCoordinator: Pick<BranchCoordinator, "deliverCommitted">;
   resolveDocumentUri(documentId: string): Promise<string | null>;
   refreshDocument(documentId: DocumentId): Promise<void>;
   flushLivePull(documentId: DocumentId): Promise<void>;
@@ -535,11 +535,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     }
     if (!entry.updates.length) return handles;
     const publish = async () => {
-      if (draft)
-        input.branchCoordinator.broadcastUpdate({
-          branchId: draft.branchId,
-          update: Y.mergeUpdates(entry.updates),
-        });
+      if (draft) await input.branchCoordinator.deliverCommitted(draft.branchId);
       else {
         await input.coordinator.recover(document.documentId);
         await input.refreshDocument(document.documentId);

@@ -2568,7 +2568,9 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         transition: "closed",
         phase: "closed",
       });
-      expect(branchBroadcasts).toHaveLength(2);
+      // Each document's thread peer takes the reply's rows, and its Work draft the peer's
+      // catch-up: both reach their rooms.
+      expect(branchBroadcasts).toHaveLength(4);
       expect(watermarkCommits).toHaveLength(2);
       expect(this.openRoomIds()).toEqual([ALPHA_ID, BETA_ID]);
     },
