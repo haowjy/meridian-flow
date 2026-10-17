@@ -94,8 +94,6 @@ export const documentBranches = pgTable(
     checkpointRevision: bigint("checkpoint_revision", { mode: "number" }).notNull().default(0),
     /** Highest `branch_write_journal.id` folded into the checkpoint; the tail is every later row. */
     checkpointSeq: bigint("checkpoint_seq", { mode: "number" }).notNull().default(0),
-    /** The origin Work is archived, deleted or missing: nothing appends to the branch. */
-    frozen: boolean("frozen").notNull().default(false),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

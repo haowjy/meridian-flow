@@ -22,7 +22,6 @@ import {
   documentBranches,
   documentYjsHeads,
   documentYjsUpdates,
-  drafts as draftRows,
   threadWorks,
   works,
 } from "@meridian/database/schema";
@@ -63,6 +62,7 @@ import {
   type BranchSnapshot,
   BranchStaleUpdateError,
   type BranchTailRow,
+  type BranchWorkLifecycle,
   type CommitRewriteInput,
   materializeBranchRead,
   mergeStateVectors,
@@ -131,28 +131,6 @@ export function createDrizzleBranchStore(
     return row ? mapBranch(row) : null;
   }
 
-  /**
-   * Takes the draft's origin Work `FOR KEY SHARE` and reads whether the branch it is about to
-   * create is frozen (archived, deleted or missing Work). Taken before the draft's share lock and
-   * before any close or insert: it waits for an archive in flight, and holds the next one off
-   * until this insert commits and that archive's freeze sees it.
-   */
-  async function lockOriginWorkForCreate(draftId: DraftId): Promise<boolean> {
-    const tx = currentDrizzleDb(db);
-    const [draft] = await tx
-      .select({ workId: draftRows.originWorkId })
-      .from(draftRows)
-      .where(eq(draftRows.id, draftId))
-      .limit(1);
-    if (!draft?.workId) return true;
-    const [work] = await tx
-      .select({ archivedAt: works.archivedAt, deletedAt: works.deletedAt })
-      .from(works)
-      .where(eq(works.id, draft.workId))
-      .for("key share");
-    return !work || work.archivedAt !== null || work.deletedAt !== null;
-  }
-
   function snapshotFromDoc(doc: Y.Doc): { state: Buffer; stateVector: Buffer } {
     return {
       state: Buffer.from(Y.encodeStateAsUpdate(doc)),
@@ -200,7 +178,6 @@ export function createDrizzleBranchStore(
   }): Promise<BranchSnapshot> {
     const existing = await activeDraftBranch(input.documentId, input.draftId);
     if (existing) return existing;
-    const frozen = await lockOriginWorkForCreate(input.draftId);
     // The insert's own transaction holds D active (§2.1): a closed draft gains no branch.
     if (!(await drafts.shareActive(input.draftId))) {
       throw new BranchStaleUpdateError(`draft:${input.draftId}`);
@@ -219,7 +196,6 @@ export function createDrizzleBranchStore(
         threadId: null,
         status: "active",
         ...seed,
-        frozen,
         schemaVersion: packCollabSchemaVersion(await liveSchemaVersion(input.documentId)),
       })
       .onConflictDoNothing()
@@ -345,10 +321,10 @@ export function createDrizzleBranchStore(
   }
 
   /**
-   * The thread's peer in the given draft (contract §2.5): never ensures a draft. The order is
-   * thread lock, origin Work `FOR KEY SHARE`, the draft `FOR SHARE`, then any close and insert,
-   * so a close either waits for this to commit or has already closed it (then the peer is
-   * stale), and an archive either waits or is seen. Returns the peer's content as it stands.
+   * The thread's peer in the given draft (contract §2.5): never ensures a draft. The draft
+   * is held `FOR SHARE` while the branches are made, so a close either waits for this to
+   * commit or has already closed it (then the peer is stale). Locks no Work row. Returns the
+   * peer's content as it stands.
    */
   async function ensureThreadPeerBranch(input: {
     documentId: DocumentId;
@@ -357,7 +333,6 @@ export function createDrizzleBranchStore(
     liveDoc: Y.Doc;
   }): Promise<{ branch: BranchSnapshot; state: Uint8Array }> {
     const ensurePeer = async (): Promise<{ branch: BranchSnapshot; state: Uint8Array }> => {
-      const frozen = await lockOriginWorkForCreate(input.draftId);
       if (!(await drafts.shareActive(input.draftId))) {
         throw new BranchStaleUpdateError(`draft:${input.draftId}`);
       }
@@ -397,7 +372,6 @@ export function createDrizzleBranchStore(
             status: "active",
             ...seed,
             hasEffect: false,
-            frozen,
             schemaVersion: packCollabSchemaVersion(workDraft.schemaVersion),
           })
           .returning({ id: documentBranches.id });
@@ -546,9 +520,12 @@ export function createDrizzleBranchStore(
               eq(documentBranches.status, "active"),
               eq(documentBranches.generation, input.expectedGeneration),
               eq(documentBranches.revision, input.expectedRevision),
+              branchWorkActive,
             ),
           )
           .returning({ revision: documentBranches.revision });
+        // Zero rows: the revision or generation moved, the branch closed, or its Work is no
+        // longer active. The caller re-reads, and the Work admission above classifies it.
         if (!locked) throw new BranchWriteRollback();
         await checkJournalExpectations(tx, input.rows);
         const rowIds = await insertJournalRows(tx, input.rows);
@@ -593,6 +570,7 @@ export function createDrizzleBranchStore(
         branchId: input.branchId,
         policy: input.policy,
         fence: input.fence,
+        work: operation.kind === "checkpoint" ? "active" : "any",
         ...(input.upstream ? { upstream: input.upstream } : {}),
         doc: input.doc,
         ...(operation.kind === "reset"
@@ -877,20 +855,37 @@ const branchColumns = {
   revision: documentBranches.revision,
   checkpointRevision: documentBranches.checkpointRevision,
   checkpointSeq: documentBranches.checkpointSeq,
-  frozen: documentBranches.frozen,
+  lifecycle: sql<BranchWorkLifecycle>`case
+    when ${works.id} is null then 'missing'
+    when ${works.deletedAt} is not null then 'deleted'
+    when ${works.archivedAt} is not null then 'archived'
+    else 'active' end`,
   hasEffect: documentBranches.hasEffect,
   blocking: documentBranches.blocking,
   discardedStateVector: documentBranches.discardedStateVector,
   schemaVersion: documentBranches.schemaVersion,
 };
 
-/** A branch row with its Work derived through its draft (contract §2.4); no content. */
+/**
+ * A branch row with its Work and that Work's lifecycle derived through its draft (contract
+ * §2.4), never stored on the branch; no content.
+ */
 function selectBranch(db: DrizzleDb) {
   return db
     .select(branchColumns)
     .from(documentBranches)
-    .innerJoin(branchDraftWork.drafts, branchDraftWork.on);
+    .innerJoin(branchDraftWork.drafts, branchDraftWork.on)
+    .leftJoin(works, eq(works.id, branchDraftWork.workId));
 }
+
+/**
+ * The branch's draft has an origin Work that is neither archived nor deleted, evaluated inside
+ * the write's own statement so the lifecycle decision and the write are one observation.
+ */
+const branchWorkActive = sql`exists (
+  select 1 from drafts d join works w on w.id = d.origin_work_id
+  where d.id = ${documentBranches.draftId} and w.archived_at is null and w.deleted_at is null
+)`;
 
 function mapBranch(row: BranchSelectRow): BranchSnapshot {
   return {
@@ -906,7 +901,7 @@ function mapBranch(row: BranchSelectRow): BranchSnapshot {
     revision: Number(row.revision),
     checkpointRevision: Number(row.checkpointRevision),
     checkpointSeq: Number(row.checkpointSeq),
-    frozen: row.frozen,
+    lifecycle: row.lifecycle,
     hasEffect: row.hasEffect,
     blocking: row.blocking,
     discardedStateVector: row.discardedStateVector,
@@ -947,6 +942,7 @@ export async function readBranchAt(
     })
     .from(documentBranches)
     .innerJoin(branchDraftWork.drafts, branchDraftWork.on)
+    .leftJoin(works, eq(works.id, branchDraftWork.workId))
     .where(eq(documentBranches.id, branchId))
     .limit(1);
   if (!row) return null;
@@ -969,6 +965,12 @@ export type RewriteCommit = {
   branchId: string;
   policy: RewritePolicy;
   fence: RewriteFence;
+  /**
+   * `active`: the checkpoint `UPDATE` carries the branch's Work-is-active predicate (a content
+   * write the Work admits); zero rows is `moved`. `any`: a pull, reset or compaction, which no
+   * Work lifecycle gates.
+   */
+  work: "active" | "any";
   /** A peer's captured upstream: locked `FOR SHARE` before the peer row, then checked. */
   upstream?: { branchId: string; generation: number };
   /** The new checkpoint. Under `fold`, a pull applies the tail into it. */
@@ -1086,14 +1088,22 @@ export async function commitRewriteWithinTx(
       updatedAt: new Date(),
       ...reset,
     })
-    .where(eq(documentBranches.id, input.branchId))
+    .where(
+      and(
+        eq(documentBranches.id, input.branchId),
+        input.work === "active" ? branchWorkActive : undefined,
+      ),
+    )
     .returning({
       revision: documentBranches.revision,
       checkpointRevision: documentBranches.checkpointRevision,
       checkpointSeq: documentBranches.checkpointSeq,
       generation: documentBranches.generation,
     });
-  if (!written) throw new Error(`Branch ${input.branchId} vanished under its row lock`);
+  if (!written) {
+    if (input.work === "active") return { status: "moved" };
+    throw new Error(`Branch ${input.branchId} vanished under its row lock`);
+  }
   if (input.reset?.kind === "discard") {
     await db
       .update(branchWriteJournal)

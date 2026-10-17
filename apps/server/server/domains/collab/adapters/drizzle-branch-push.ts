@@ -548,6 +548,7 @@ async function commitPreparedDiscard(
       branchId: input.branch.branchId,
       policy: { kind: "exact", revision: input.branch.revision },
       fence: { kind: "none" },
+      work: "active",
       doc: checkpoint,
       ...(input.survivors ? { reset: { kind: "refork" as const } } : {}),
       withinLock: input.survivors

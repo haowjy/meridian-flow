@@ -796,7 +796,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const { bumpBranchRevisions } = await import("../drizzle-branches.js");
       const { placeDraftRows } = await import("../drizzle-document-edits.js");
       const { withdrawSettlementMembersWithinTx } = await import("../drizzle-settlement-member.js");
-      const { syncWorkDraftFreeze } = await import("../../../../shared/work-draft-lifecycle.js");
       const { runInDrizzleTransaction } = await import("../../../../shared/drizzle-transaction.js");
       const pushStore = createDrizzlePushCommitStore(
         db,
@@ -910,10 +909,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         () => store.closeThreadPeersOf([branch.branchId], "edit_discarded"),
         peer.branchId,
       );
-      await moves("syncWorkDraftFreeze (frozen)", () =>
-        runInDrizzleTransaction(db, () => syncWorkDraftFreeze(db, WORK_ID as never, true)),
-      );
-      expect((await store.getBranch(branch.branchId))?.frozen).toBe(true);
     });
 
     it("captures an immutable live journal draftBase for each new draft row", async () => {
