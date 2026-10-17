@@ -834,6 +834,64 @@ describe("ReviewCut concurrent capture (postgres)", () => {
   });
 });
 
+describe("ReviewCut metadata-only move (postgres)", () => {
+  it.each([
+    "apply",
+    "discard",
+  ] as const)("%s recaptures a revision moved by a hold between its branch read and its cut", async (action) => {
+    let bumpOnce = false;
+    let bumpBranchId = "";
+    const harness = createHarness(db, {
+      reviewCut: (read) => async (address) => {
+        if (bumpOnce) {
+          bumpOnce = false;
+          // A hold: a review-membership input with its revision bump, no content change.
+          await runOutsideDrizzleTransaction(() =>
+            db
+              .update(schema.documentBranches)
+              .set({
+                blocking: sql`not ${schema.documentBranches.blocking}`,
+                revision: sql`${schema.documentBranches.revision} + 1`,
+              })
+              .where(eq(schema.documentBranches.id, bumpBranchId)),
+          );
+        }
+        return read(address);
+      },
+    });
+    warmHarness = harness;
+    await harness.seedWriterDocument("Alpha base.\n\nBeta base.", "review-cut-metadata");
+    const fixture = harness.crossWorkProbeFixture();
+    const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    const review = reviewDriver(fixture.collab.draftReview);
+    await stageText(fixture, branch.branchId, 0, " Proposed", "agent");
+    const before = await review.preview(ALPHA_ID);
+    if (before.status !== "active") throw new Error("missing preview");
+    const [{ revision: revisionBefore }] = await db
+      .select({ revision: schema.documentBranches.revision })
+      .from(schema.documentBranches)
+      .where(eq(schema.documentBranches.id, branch.branchId));
+    bumpBranchId = branch.branchId;
+    bumpOnce = true;
+    const request = fencedRequest(
+      { documentId: ALPHA_ID },
+      before,
+      before.operations.map((op) => op.operationId),
+    );
+    const result =
+      action === "apply"
+        ? await review.applyRequest(request)
+        : await review.discardRequest(request);
+    expect(bumpOnce).toBe(false);
+    expect(result).toMatchObject({ status: action === "apply" ? "applied" : "discarded" });
+    const [{ revision: revisionAfter }] = await db
+      .select({ revision: schema.documentBranches.revision })
+      .from(schema.documentBranches)
+      .where(eq(schema.documentBranches.id, branch.branchId));
+    expect(revisionAfter).toBeGreaterThan(revisionBefore + 1);
+  });
+});
+
 async function stageText(
   fixture: Fixture,
   branchId: string,
