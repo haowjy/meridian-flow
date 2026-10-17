@@ -67,10 +67,12 @@ export function journalAttributionByChangedBlock(input: {
   }> = [];
   try {
     Y.applyUpdate(scratch, Y.encodeStateAsUpdate(input.liveDoc));
+    // One snapshot per row: a row's after is the next row's before.
+    let after = canonicalSnapshot(input.model, scratch);
     for (const [journalRowIndex, row] of input.rows.entries()) {
-      const before = canonicalSnapshot(input.model, scratch);
+      const before = after;
       Y.applyUpdate(scratch, row.updateData);
-      const after = canonicalSnapshot(input.model, scratch);
+      after = canonicalSnapshot(input.model, scratch);
       const beforeByIdentity = new Map(before.map((block) => [block.identity, block]));
       const afterByIdentity = new Map(after.map((block) => [block.identity, block]));
       const deleted = before.filter((block) => !afterByIdentity.has(block.identity));
