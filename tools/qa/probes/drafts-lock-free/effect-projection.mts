@@ -117,8 +117,11 @@ export const effectProjection: Probe = {
               () => workBadge(harness, draft.workId),
               (b) => b.pending === 0,
             );
+            const appends = harness.appends.filter((append) => append.branchId === draft.branchId);
             observe("arm 2", {
               keys: percentiles(keyMs),
+              waitMs: percentiles(appends.map((append) => append.waitMs)),
+              holdMs: percentiles(appends.map((append) => append.holdMs)),
               writeEffect: effects.outcomes,
               firstPendingMs,
               touches,
