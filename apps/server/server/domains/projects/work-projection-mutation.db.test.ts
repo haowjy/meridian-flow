@@ -505,7 +505,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             branch,
             journalRows: await journal.listReviewableJournalRows(value.branchId, 1),
             state: new Uint8Array([0, 0]),
-            stateVector: new Uint8Array([0]),
           });
         }
         expect(wakes).toHaveLength(0);

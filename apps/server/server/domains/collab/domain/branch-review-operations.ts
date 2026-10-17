@@ -128,7 +128,6 @@ export function createBranchReviewOperations(deps: Dependencies): BranchReviewSe
           retireSurvivors: itemClosed,
           expectedLiveRevision: selection.expectedLiveRevision,
           state: Y.encodeStateAsUpdate(itemClosed ? live : peer),
-          stateVector: Y.encodeStateVector(itemClosed ? live : peer),
           reviewedByUserId: discardInput.reviewedByUserId,
         });
         deps.branchCoordinator?.notifyReset?.({

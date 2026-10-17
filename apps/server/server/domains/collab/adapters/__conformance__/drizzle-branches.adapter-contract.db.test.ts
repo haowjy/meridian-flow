@@ -879,7 +879,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           branch: current,
           journalRows: await rows.listReviewableJournalRows(branch.branchId, branch.generation),
           state: Y.encodeStateAsUpdate(docWithText("live")),
-          stateVector: Y.encodeStateVector(docWithText("live")),
         });
       });
       await moves("commitRewrite reset (→ discarded, next generation)", async () => {
