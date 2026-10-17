@@ -31,6 +31,9 @@ import { certifyWriterRestorations } from "./writer-restoration.js";
 export type BranchKind = "work_draft" | "thread_peer";
 export type BranchStatus = "active" | "closed";
 
+/** The branch's origin Work as the row was read: archived, deleted or missing freeze it. */
+export type BranchWorkLifecycle = "active" | "archived" | "deleted" | "missing";
+
 /** A branch row without its content: the content is read only through `readBranchAt`. */
 export type BranchSnapshot = {
   branchId: string;
@@ -51,8 +54,8 @@ export type BranchSnapshot = {
   checkpointRevision: number;
   /** The highest journal id the checkpoint contains; the tail is every later row. */
   checkpointSeq: number;
-  /** The origin Work is archived, deleted or missing. */
-  frozen: boolean;
+  /** Derived from the origin Work as read, never stored: anything but `active` is frozen. */
+  lifecycle: BranchWorkLifecycle;
   hasEffect: boolean;
   blocking: boolean;
   discardedStateVector?: Uint8Array | null;

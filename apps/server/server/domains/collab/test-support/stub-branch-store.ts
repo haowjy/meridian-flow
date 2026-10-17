@@ -23,7 +23,7 @@ export function testBranchRow(
     revision: 0,
     checkpointRevision: 0,
     checkpointSeq: 0,
-    frozen: false,
+    lifecycle: "active",
     hasEffect: false,
     blocking: false,
     schemaVersion: COLLAB_SCHEMA_VERSION,

@@ -9842,13 +9842,6 @@
           "notNull": true,
           "default": 0
         },
-        "frozen": {
-          "name": "frozen",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",

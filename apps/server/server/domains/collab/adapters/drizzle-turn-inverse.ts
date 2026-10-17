@@ -325,6 +325,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
               branchId: draft.branch.branchId,
               policy: { kind: "exact", revision: draft.branch.revision },
               fence: { kind: "none" },
+              work: "active",
               doc: view,
             });
             if (rewritten.status !== "committed")
