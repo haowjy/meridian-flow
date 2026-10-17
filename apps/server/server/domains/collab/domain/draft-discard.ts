@@ -13,6 +13,12 @@ import type { DraftCommandResult } from "@meridian/contracts/drafts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
 import type { NodeRef } from "../../context/tree/tree-view.js";
+import {
+  type Attempt,
+  type AttemptScope,
+  NO_ATTEMPT_SCOPE,
+  runBoundedAttempts,
+} from "./branch-attempts.js";
 import type { BranchCriticalSections, BranchLockLease } from "./branch-critical-sections.js";
 import { BranchCasConflictError } from "./branch-store.js";
 import { collabHook } from "./collab-test-hooks.js";
@@ -117,6 +123,8 @@ export function createDraftDiscard(deps: {
   retire: PeerRetirement;
   /** After commit: delete tombstoned binaries' objects, best effort. */
   releaseObjects(storageUrls: readonly string[]): Promise<void>;
+  /** Each attempt's rollback boundary: a root transaction, or a savepoint in an ambient one. */
+  attemptScope?: AttemptScope;
 }): DraftDiscard {
   /** Every one of these live documents' coordinator leases, in document-id order. */
   function withLiveDocuments<T>(
@@ -136,35 +144,45 @@ export function createDraftDiscard(deps: {
     return step(0);
   }
 
-  async function retrying<T>(attempt: () => Promise<T>): Promise<T> {
-    for (let tries = 1; ; tries += 1) {
-      try {
-        return await attempt();
-      } catch (cause) {
-        const again =
-          cause instanceof BranchCasConflictError || cause instanceof DraftDiscardScopeChangedError;
-        if (!again || tries >= ATTEMPTS) throw cause;
-      }
-    }
+  /**
+   * Discovery, leases and the locked kernel again when the draft moved or grew a branch: each
+   * attempt's commit scope opens inside the leases and live scopes it took (process-level
+   * locks before the database's), and a miss leaves it before the next discovery.
+   */
+  function attempts<T>(run: (attempt: Attempt) => Promise<T>): Promise<T> {
+    return runBoundedAttempts({
+      bound: ATTEMPTS,
+      scope: deps.attemptScope ?? NO_ATTEMPT_SCOPE,
+      isMiss: (cause) =>
+        cause instanceof BranchCasConflictError || cause instanceof DraftDiscardScopeChangedError,
+      run,
+      exhausted: (cause) => {
+        throw cause;
+      },
+    });
   }
 
   async function whole(
+    attempt: Attempt,
     workId: WorkId,
     draftId: DraftId,
     command: CommandClaim | undefined,
   ): Promise<DiscardKernelResult | null> {
     return deps.draftLeases.withDraftBranches(draftId, async (_lease, branchIds) => {
       await collabHook("discard.afterLeases");
-      return deps.store.discardLocked({
-        workId,
-        kernel: { draftId, selection: { kind: "whole" } },
-        leased: new Set(branchIds),
-        ...(command ? { command } : {}),
-      });
+      return attempt.commit(() =>
+        deps.store.discardLocked({
+          workId,
+          kernel: { draftId, selection: { kind: "whole" } },
+          leased: new Set(branchIds),
+          ...(command ? { command } : {}),
+        }),
+      );
     });
   }
 
   async function items(
+    attempt: Attempt,
     workId: WorkId,
     draftId: DraftId,
     selected: readonly DiscardItem[],
@@ -177,12 +195,14 @@ export function createDraftDiscard(deps: {
     return deps.criticalSections.withBranches(branchIds, async (lease) => {
       await collabHook("discard.afterLeases");
       return withLiveDocuments(textDocuments, (liveDocs) =>
-        deps.store.discardLocked({
-          workId,
-          kernel: { draftId, selection: { kind: "items", items: selected }, lease, liveDocs },
-          leased: new Set(branchIds),
-          ...(command ? { command } : {}),
-        }),
+        attempt.commit(() =>
+          deps.store.discardLocked({
+            workId,
+            kernel: { draftId, selection: { kind: "items", items: selected }, lease, liveDocs },
+            leased: new Set(branchIds),
+            ...(command ? { command } : {}),
+          }),
+        ),
       );
     });
   }
@@ -195,7 +215,7 @@ export function createDraftDiscard(deps: {
       if (draft?.status !== "active" || draft.originWorkId !== workId) return gone;
 
       if (input.selection.kind === "whole") {
-        const ended = await retrying(() => whole(workId, draftId, input.command));
+        const ended = await attempts((attempt) => whole(attempt, workId, draftId, input.command));
         if (!ended) return gone;
         await collabHook("discard.beforeRetirement");
         await deps.retire(ended.retired);
@@ -205,7 +225,9 @@ export function createDraftDiscard(deps: {
 
       const selected = input.selection.items;
       if (selected.length === 0) return { status: "discarded", draftId, draftClosed: false };
-      const ended = await retrying(() => items(workId, draftId, selected, input.command));
+      const ended = await attempts((attempt) =>
+        items(attempt, workId, draftId, selected, input.command),
+      );
       if (!ended) return gone;
       await collabHook("discard.beforeRetirement");
       await deps.retire(ended.retired);

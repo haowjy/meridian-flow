@@ -30,6 +30,7 @@ import {
   sameDestination,
   type ThreadPeerAgentEditCore,
 } from "./agent-edit-cores.js";
+import { runBoundedAttempts } from "./branch-attempts.js";
 import type {
   ResponseCommitParticipant,
   ResponseTransactionSettlement,
@@ -576,70 +577,94 @@ export function createThreadPeerCorePool(input: {
         const saveOptions = { ...finalizeOptions(), branchLease: lease };
         // The first attempt is prepared before the transaction opens, off every lock. One
         // that cannot be prepared yet (a document `confirm` will refuse) is prepared again
-        // after `confirm`, inside the transaction.
-        let prepared: Map<AgentEditCore, ResponseCommitAttempt> | undefined = await prepareAttempts(
+        // after `confirm`, inside the transaction. Until the first attempt takes it, it is
+        // disposed on any unwind, `confirm` throwing included.
+        let early: Map<AgentEditCore, ResponseCommitAttempt> | undefined = await prepareAttempts(
           responseId,
           participantsNow(),
           saveOptions,
           "quiet",
         ).catch(() => undefined);
-        return input.responseTransactions.run(
-          input.commitThreadResponseAtomically,
-          async () => {
-            const refused = await input.fences.confirm(record);
-            const participants = participantsNow();
-            for (const [core, attempt] of prepared ?? []) {
-              if (participants.includes(core)) continue;
-              attempt.dispose();
-              prepared?.delete(core);
-            }
-            const results: ResponseCommitSuccessResult[] = [];
-            // One savepoint per attempt, before its first branch-store lock: a miss on any
-            // document unwinds every document's rows, receipts and placements, and the
-            // attempts' process-local state is dropped with them (decision D7: `confirm` ran
-            // once above and is not replayed; a retry recomputes under its locks).
-            for (let attemptNumber = 1; ; attemptNumber++) {
-              const attempts =
-                prepared ?? (await prepareAttempts(responseId, participants, saveOptions));
-              prepared = undefined;
+        const takeEarly = (participants: readonly AgentEditCore[]) => {
+          const taken = early;
+          early = undefined;
+          for (const [core, attempt] of taken ?? []) {
+            if (participants.includes(core)) continue;
+            attempt.dispose();
+            taken?.delete(core);
+          }
+          return taken;
+        };
+        try {
+          return await input.responseTransactions.run(
+            input.commitThreadResponseAtomically,
+            async () => {
+              const refused = await input.fences.confirm(record);
+              const participants = participantsNow();
+              const results: ResponseCommitSuccessResult[] = [];
+              // The attempt a failed save fails with; none once installing began.
+              let failing: Map<AgentEditCore, ResponseCommitAttempt> | undefined;
+              // One scope per attempt, before its first branch-store lock: a miss on any
+              // document unwinds every document's rows, receipts and placements, and the
+              // attempts' process-local state is dropped with them (decision D7: `confirm`
+              // ran once above and is not replayed; a retry recomputes under its locks).
               try {
-                await input.attemptScope(async () => {
-                  for (const core of participants) await attempts.get(core)?.consume();
+                await runBoundedAttempts({
+                  bound: SAVE_ATTEMPTS,
+                  scope: input.attemptScope,
+                  isMiss: isSaveAttemptMiss,
+                  run: async (attempt) => {
+                    failing = undefined;
+                    const attempts =
+                      takeEarly(participants) ??
+                      (await prepareAttempts(responseId, participants, saveOptions));
+                    failing = attempts;
+                    for (const core of participants) {
+                      const prepared = attempts.get(core);
+                      if (!prepared) continue;
+                      attempt.own({
+                        async transfer() {
+                          failing = undefined;
+                          results.push(await prepared.install());
+                        },
+                        dispose: () => prepared.dispose(),
+                      });
+                    }
+                    await attempt.commit(async () => {
+                      for (const core of participants) await attempts.get(core)?.consume();
+                    });
+                  },
+                  exhausted: (cause) => {
+                    throw cause;
+                  },
                 });
               } catch (cause) {
-                if (isSaveAttemptMiss(cause) && attemptNumber < SAVE_ATTEMPTS) {
-                  for (const attempt of attempts.values()) attempt.dispose();
-                  continue;
-                }
-                throw await failAttempts(attempts, cause);
+                throw failing ? await failAttempts(failing, cause) : cause;
               }
-              for (const core of participants) {
-                const attempt = attempts.get(core);
-                if (attempt) results.push(await attempt.install());
-              }
-              break;
-            }
-            const drafted = new Set(
-              [...record.documents]
-                .filter(([, pinned]) => pinned.grant.destination.kind === "draft")
-                .map(([documentId]) => documentId),
-            );
-            const saved = mergeSaveResults(responseId, results, refused);
-            await options?.beforeTransactionCommit?.(saved);
-            input.responseTransactions.enlist({
-              commit: async () => {
-                await untrackResponse(responseId);
-                for (const document of saved.documents) {
-                  const documentId = document.documentId as DocumentId;
-                  if (!drafted.has(documentId)) input.afterLiveCommit?.(documentId);
-                }
-              },
-              abort() {},
-            });
-            return saved;
-          },
-          input.responseTransactionSettlement,
-        );
+              const drafted = new Set(
+                [...record.documents]
+                  .filter(([, pinned]) => pinned.grant.destination.kind === "draft")
+                  .map(([documentId]) => documentId),
+              );
+              const saved = mergeSaveResults(responseId, results, refused);
+              await options?.beforeTransactionCommit?.(saved);
+              input.responseTransactions.enlist({
+                commit: async () => {
+                  await untrackResponse(responseId);
+                  for (const document of saved.documents) {
+                    const documentId = document.documentId as DocumentId;
+                    if (!drafted.has(documentId)) input.afterLiveCommit?.(documentId);
+                  }
+                },
+                abort() {},
+              });
+              return saved;
+            },
+            input.responseTransactionSettlement,
+          );
+        } finally {
+          takeEarly([]);
+        }
       });
     },
     responseDestination(responseId, docId) {

@@ -445,7 +445,6 @@ describe("document revisions (postgres and collab)", () => {
     });
     const pulls = createBranchPullService({
       outsideTransaction: runOutsideDrizzleTransaction,
-      rootTransaction: (operation) => runInRootDrizzleTransaction(db, operation),
       liveCoordinator: f.liveCoordinator,
       branchCoordinator: coordinator,
       branches: f.branchStore,

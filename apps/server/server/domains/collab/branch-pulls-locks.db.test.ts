@@ -106,7 +106,6 @@ it("releases a pull's Work row before the next branch mutex while a receipt owns
   const secondId = "scheduled-second-draft";
   const pulls = createBranchPullService({
     outsideTransaction: runOutsideDrizzleTransaction,
-    rootTransaction: (op) => runInRootDrizzleTransaction(db, op),
     liveCoordinator: {
       withDocument: async (_id: string, op: (doc: Y.Doc) => Promise<unknown>) => op(live),
     } as unknown as Parameters<typeof createBranchPullService>[0]["liveCoordinator"],
@@ -134,7 +133,7 @@ it("releases a pull's Work row before the next branch mutex while a receipt owns
               policy: { kind: "exact", revision: current?.revision ?? -1 },
               fence: { kind: "none" },
               doc,
-              operation: { kind: "pull", liveCut: a.state },
+              operation: { kind: "pull", effect: { hasEffect: false, liveCut: a.state } },
             }),
           ).toMatchObject({ status: "committed" });
         }
@@ -184,7 +183,6 @@ it("a pull waiting for a branch lease holds no pooled connection", async () => {
   const branchId = "pulled-branch";
   const pulls = createBranchPullService({
     outsideTransaction: runOutsideDrizzleTransaction,
-    rootTransaction: (op) => runInRootDrizzleTransaction(single, op),
     liveCoordinator: {
       withDocument: async (_id: string, op: (doc: Y.Doc) => Promise<unknown>) => op(live),
     } as unknown as Parameters<typeof createBranchPullService>[0]["liveCoordinator"],

@@ -348,7 +348,7 @@ export function createBranchAgentEditCoordinator(input: {
               for (const entry of writes) await entry.persist();
             },
             publish() {
-              for (const entry of writes) entry.publish();
+              for (const entry of writes) entry.transfer();
             },
             dispose() {
               for (const entry of writes) entry.dispose();

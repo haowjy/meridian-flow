@@ -2,6 +2,12 @@
 import type { UpdateJournal } from "@meridian/agent-edit/integration";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
+import {
+  type Attempt,
+  type AttemptScope,
+  NO_ATTEMPT_SCOPE,
+  runBoundedAttempts,
+} from "./branch-attempts.js";
 import type { BranchCoordinator } from "./branch-coordinator.js";
 import {
   type BranchCriticalSections,
@@ -26,6 +32,8 @@ type Dependencies = {
   branchCoordinator?: Partial<Pick<BranchCoordinator, "notifyReset">>;
   journal: UpdateJournal;
   criticalSections?: BranchCriticalSections;
+  /** Each attempt's rollback boundary: a root transaction, or a savepoint in an ambient one. */
+  attemptScope?: AttemptScope;
 };
 
 export function createBranchReviewOperations(deps: Dependencies): BranchReviewService {
@@ -46,40 +54,40 @@ export function createBranchReviewOperations(deps: Dependencies): BranchReviewSe
     return doc;
   }
 
+  /**
+   * The branches' leases, then attempts that re-read the branches and run again when another
+   * process moved one under us. Four attempts each finding the draft moved (a writer typing)
+   * answer stale, as a selection made against an older draft does.
+   */
   async function withActiveWorkDraftBranchLock<T>(
     branchIds: readonly string[],
-    run: (branches: readonly BranchSnapshot[]) => Promise<T>,
+    run: (branches: readonly BranchSnapshot[], attempt: Attempt) => Promise<T>,
   ): Promise<T> {
     if (branchIds.length === 0) throw new Error("active work draft lock requires a branch");
-    return criticalSections.withBranches(branchIds, () => retryingCas(branchIds, run));
-  }
-
-  /** Re-reads the branches and runs again when another process moved one under us. */
-  async function retryingCas<T>(
-    branchIds: readonly string[],
-    run: (branches: readonly BranchSnapshot[]) => Promise<T>,
-  ): Promise<T> {
-    for (let attempt = 0; ; attempt += 1) {
-      try {
-        const branches = await Promise.all(
-          branchIds.map(async (branchId) =>
-            assertActiveWorkDraftBranch(await deps.branchStore.getBranch(branchId), branchId),
-          ),
-        );
-        return await run(branches);
-      } catch (cause) {
-        if (!(cause instanceof BranchPushCommitConflictError)) throw cause;
-        // Four attempts each found the draft moved (a writer typing): the selection answers
-        // stale, as one made against an older draft does.
-        if (attempt >= maxCasRetries) throw new DraftChangeRefusal("stale");
-      }
-    }
+    return criticalSections.withBranches(branchIds, () =>
+      runBoundedAttempts({
+        bound: DISCARD_ATTEMPTS,
+        scope: deps.attemptScope ?? NO_ATTEMPT_SCOPE,
+        isMiss: (cause) => cause instanceof BranchPushCommitConflictError,
+        run: async (attempt) => {
+          const branches = await Promise.all(
+            branchIds.map(async (branchId) =>
+              assertActiveWorkDraftBranch(await deps.branchStore.getBranch(branchId), branchId),
+            ),
+          );
+          return run(branches, attempt);
+        },
+        exhausted: () => {
+          throw new DraftChangeRefusal("stale");
+        },
+      }),
+    );
   }
 
   async function discardSelected(
     discardInput: Parameters<BranchReviewService["discardSelected"]>[0],
   ): ReturnType<BranchReviewService["discardSelected"]> {
-    return withActiveWorkDraftBranchLock([discardInput.branchId], async ([branch]) => {
+    return withActiveWorkDraftBranchLock([discardInput.branchId], async ([branch], attempt) => {
       const reviewableRows = await listReviewableRows(branch.branchId, branch.generation);
       const selection = await discardInput.selectRows(branch, reviewableRows);
       const selected = new Set(selection.journalIds);
@@ -114,26 +122,33 @@ export function createBranchReviewOperations(deps: Dependencies): BranchReviewSe
           ? ("applied" as const)
           : ("discarded" as const);
         const outcome = { itemClosed, ...(itemClosed ? { itemDisposition } : {}) };
-        await deps.commitStore.commitDiscard({
-          ...(discardInput.command
-            ? {
-                command: {
-                  envelope: discardInput.command.envelope,
-                  result: discardInput.command.result(outcome),
-                },
-              }
-            : {}),
-          branch,
-          journalRows: rows,
-          survivors,
-          retireSurvivors: itemClosed,
-          expectedLiveRevision: selection.expectedLiveRevision,
-          state: Y.encodeStateAsUpdate(itemClosed ? live : peer),
-          reviewedByUserId: discardInput.reviewedByUserId,
-        });
-        deps.branchCoordinator?.notifyReset?.({
-          branchId: branch.branchId,
-          generation: branch.generation + 1,
+        // Computed above off every lock; the re-fork's one commit scope.
+        await attempt.commit(() =>
+          deps.commitStore.commitDiscard({
+            ...(discardInput.command
+              ? {
+                  command: {
+                    envelope: discardInput.command.envelope,
+                    result: discardInput.command.result(outcome),
+                  },
+                }
+              : {}),
+            branch,
+            journalRows: rows,
+            survivors,
+            retireSurvivors: itemClosed,
+            expectedLiveRevision: selection.expectedLiveRevision,
+            state: Y.encodeStateAsUpdate(itemClosed ? live : peer),
+            reviewedByUserId: discardInput.reviewedByUserId,
+          }),
+        );
+        attempt.own({
+          transfer: () =>
+            deps.branchCoordinator?.notifyReset?.({
+              branchId: branch.branchId,
+              generation: branch.generation + 1,
+            }),
+          dispose() {},
         });
         return {
           status: "discarded",
@@ -153,7 +168,7 @@ export function createBranchReviewOperations(deps: Dependencies): BranchReviewSe
   };
 }
 
-const maxCasRetries = 3;
+const DISCARD_ATTEMPTS = 4;
 
 function assertActiveWorkDraftBranch(
   branch: BranchSnapshot | null | undefined,

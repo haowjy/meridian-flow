@@ -165,7 +165,10 @@ export class MemoryBranchStore implements BranchStore {
       stateVector: Y.encodeStateVector(input.doc),
     };
     if (operation.kind === "reset") branch.liveCut = branch.checkpoint.state;
-    if (operation.kind === "pull" && operation.liveCut) branch.liveCut = operation.liveCut;
+    if (operation.kind === "pull" && operation.effect) {
+      branch.liveCut = operation.effect.liveCut;
+      branch.hasEffect = operation.effect.hasEffect;
+    }
     branch.checkpointSeq = Math.max(0, ...branch.rows.map((row) => row.id));
     branch.revision += 1;
     branch.checkpointRevision = branch.revision;

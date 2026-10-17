@@ -29,6 +29,7 @@ import * as Y from "yjs";
 import {
   currentDrizzleDb,
   deferUntilDrizzleCommit,
+  deferUntilDrizzleRollback,
   isInDrizzleTransaction,
   runInDrizzleTransaction,
   runInRootDrizzleTransaction,
@@ -54,7 +55,7 @@ import {
   type RewriteOutcome,
 } from "../domain/branch-store.js";
 import { collabHook } from "../domain/collab-test-hooks.js";
-import { replicateFrozenIdentity } from "../domain/document-mutation-policy.js";
+import { replicateFrozenSource } from "../domain/document-mutation-policy.js";
 import type { Drafts } from "../domain/drafts.js";
 import type { PeerRetirementCause, RetiredBranch } from "../domain/peer-retirement.js";
 import type { ApplicationBranchStore } from "../domain/ports/application-branch-store.js";
@@ -68,7 +69,6 @@ import {
   selectBranch,
 } from "./drizzle-branch-storage.js";
 import { recordDocumentEdit, settleDraftGeneration } from "./drizzle-document-edits.js";
-import { refreshDraftEffect } from "./drizzle-draft-effect.js";
 import { createDrizzleJournal } from "./drizzle-journal.js";
 
 export type DrizzleBranchStore = ApplicationBranchStore;
@@ -127,21 +127,10 @@ export function createDrizzleBranchStore(
     stateVector: Buffer;
   }> {
     const target = createCollabYDoc({ gc: false });
-    const frozenSource = createCollabYDoc({ gc: false });
-    Y.applyUpdate(frozenSource, Y.encodeStateAsUpdate(source));
     try {
-      await replicateFrozenIdentity({
-        source: { documentId: "new-branch", doc: frozenSource },
-        target: { documentId: "new-branch", generation: 1n, doc: target },
-        plan: { kind: "wholeDocument" },
-        admit: async ({ update }) => {
-          Y.applyUpdate(target, update);
-          return { sequence: 1n, joined: 0 };
-        },
-      });
+      await replicateFrozenSource(source, target);
       return snapshotFromDoc(target);
     } finally {
-      frozenSource.destroy();
       target.destroy();
     }
   }
@@ -519,8 +508,7 @@ export function createDrizzleBranchStore(
    * first and touches the Work's projection; no count query runs.
    */
   async function appendRows(input: AppendRowsInput): Promise<AppendRowsOutcome> {
-    const nested = isInDrizzleTransaction();
-    const outcome = await runInDrizzleTransaction(db, async () => {
+    return runInDrizzleTransaction(db, async () => {
       const tx = currentDrizzleDb(db);
       if (input.workTouch) await lockWorksInIdOrder(tx, [input.workTouch]);
       const { revision, rowIds } = await appendRowsWithinTx(tx, input);
@@ -531,8 +519,6 @@ export function createDrizzleBranchStore(
       if (cause instanceof BranchWriteRollback) return { status: "moved" as const };
       throw cause;
     });
-    if (!nested && outcome.status === "appended") await collabHook("branch.append.afterCommit");
-    return outcome;
   }
 
   /** The Work row, then the branch row, held for one frame's last judgement. */
@@ -565,6 +551,10 @@ export function createDrizzleBranchStore(
         fence: input.fence,
         work: operation.kind === "checkpoint" ? "active" : "any",
         keepUpdatedAt: operation.kind === "compact",
+        // Only a pull moves a work draft's content against its baseline, and its caller
+        // computed the effect on the candidate; a peer has none, a compaction keeps the
+        // content and a reset is effect-free by construction.
+        ...(operation.kind === "pull" && operation.effect ? { effect: operation.effect } : {}),
         ...(input.upstream ? { upstream: input.upstream } : {}),
         doc: input.doc,
         ...(operation.kind === "reset"
@@ -582,17 +572,10 @@ export function createDrizzleBranchStore(
           outcome.generation - 1,
           operation.editDisposition,
         );
-      let revision = outcome.revision;
-      // Only a pull moves a work draft's content against its baseline; a peer has no effect,
-      // a compaction keeps the content and a reset is effect-free by construction.
-      if (operation.kind === "pull") {
-        const effect = await refreshDraftEffect(tx, input.branchId, operation.liveCut);
-        if (effect) revision = effect.revision;
-      }
       await collabHook("branch.rewrite.beforeCommit");
       return {
         status: "committed",
-        revision,
+        revision: outcome.revision,
         checkpointRevision: outcome.checkpointRevision,
         seq: outcome.seq,
         generation: outcome.generation,
@@ -609,7 +592,11 @@ export function createDrizzleBranchStore(
   }
 
   return {
-    deferUntilCommit: deferUntilDrizzleCommit,
+    deferUntilCommit(callback, onRollback) {
+      if (!deferUntilDrizzleCommit(callback)) return false;
+      if (onRollback) deferUntilDrizzleRollback(onRollback);
+      return true;
+    },
 
     async getBranch(branchId) {
       const [row] = await selectBranch(currentDrizzleDb(db))
