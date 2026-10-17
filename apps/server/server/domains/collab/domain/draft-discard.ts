@@ -1,6 +1,6 @@
 /**
  * Discard (contract §12): one kernel for one item, the whole draft and Work purge. The
- * public command `discardItems` (writer and model) takes no branch lease: an item Discard
+ * public command `discardItems` (writer and model) holds no branch: an item Discard
  * holds its items' live documents (the live scope it resets from), then each attempt runs
  * the store's one transaction: the Work, active (D30), the draft, the namespaces and
  * documents, and the kernel. The kernel resets each item's text from live, folding away

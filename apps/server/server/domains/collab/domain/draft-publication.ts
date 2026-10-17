@@ -4,7 +4,7 @@
  * text. `applyItems` stages through `pushBranchesToLive` and maps per-item results; the
  * step itself (tokens, holds, vacate and install, arrivals, history, row drop, close) is `adapters/drizzle-draft-tree-step.ts`.
  * Every Apply caller goes through here: the per-document route, per-change Apply (its rows
- * chosen under the branch lease, §4.1), and Apply all. Apply never closes the
+ * chosen at the revision staging commits at, §4.1), and Apply all. Apply never closes the
  * draft (§2.4). A writer's command is claimed in the staging transaction and settled by the
  * tree step in completion (§4.6).
  */

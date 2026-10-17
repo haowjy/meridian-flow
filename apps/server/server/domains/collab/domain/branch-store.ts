@@ -169,7 +169,8 @@ export type RewritePolicy =
 export type RewriteOperation =
   /**
    * A long tail folded into the checkpoint: the content, the effect and the modification stamp
-   * stay. Nothing schedules it in phase 1a; its trigger lands with the inverse's attempt contract.
+   * stay. The coordinator schedules it once a committed writer frame leaves the tail past its
+   * bound (decision D10).
    */
   | { kind: "compact" }
   /**

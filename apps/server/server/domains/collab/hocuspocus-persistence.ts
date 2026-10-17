@@ -564,9 +564,8 @@ export function createHocuspocusPersistenceService(
 
     async storeHocuspocusBranch(branchId, _document) {
       await drainPending(`branch:${branchId}`);
-      // Every branch mutation is durable before it reaches a Hocuspocus room.
-      // Re-checkpointing here can inherit the publisher's async lock context
-      // and re-enter the branch critical section.
+      // Every branch mutation is durable before it reaches a Hocuspocus room, so a room
+      // store has nothing to write: it only waits out this branch's pending stores.
     },
 
     async drainHocuspocusPersistence() {

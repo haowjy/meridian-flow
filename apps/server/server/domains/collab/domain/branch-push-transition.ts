@@ -470,7 +470,7 @@ export function fullStateFingerprint(doc: Y.Doc): string {
 /**
  * The fingerprint of a full-state update: deletions count, unlike a state vector. A lock
  * cut is `Y.encodeStateAsUpdate` of the warm room, so its fingerprint equals
- * `fullStateFingerprint` of the room as the writer saw it under the same lease.
+ * `fullStateFingerprint` of the room as the writer saw it under the same live scope.
  */
 export function fullStateUpdateFingerprint(update: Uint8Array): string {
   return createHash("sha256").update(update).digest("base64");

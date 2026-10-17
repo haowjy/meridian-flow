@@ -8,8 +8,9 @@ durable authority synchronously before applying or broadcasting.
 journal-first; optional sweep detection may degrade to no elevation but never
 supplies apply authority. Agent-edit's
 `applyCommittedUpdateWithRecheck`, branch push, and reversal execution all use
-this final recheck. Keep sorted branch locks ahead of sorted live-document
-locks, and do not treat the coordinator mutex as coverage for socket writes.
+this final recheck. Take sorted live-document locks before any transaction (the
+lock order in [CONTEXT.md](CONTEXT.md)), and do not treat the coordinator mutex
+as coverage for socket writes.
 
 Push settlement rechecks inside its completion transaction under document locks
 and applies to warm rooms only after commit. A writer admitted after the
@@ -23,8 +24,8 @@ delete-only divergence; state vectors alone are insufficient.
 Branch rooms have no coordinator serialization at all: a Work-draft writer
 frame is an optimistic append at its replica's revision (see the transaction
 and lock contracts in [CONTEXT.md](CONTEXT.md)). Every other branch write moves
-the revision, so a frame racing it misses and judges again; nothing holds a
-lease or mutex against a frame.
+the revision, so a frame racing it misses and judges again; no branch mutex
+exists to hold against a frame.
 
 A failed live writer admission closes the raw CrossWS peer with retryable code
 `1013 writer-journal-admission-failed`. Do not rely on a thrown Hocuspocus

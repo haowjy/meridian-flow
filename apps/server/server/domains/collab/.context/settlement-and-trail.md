@@ -1,15 +1,19 @@
 # Collab — push settlement and change trail
 
 This page records the single push pipeline and its durable settlement boundary.
-Branch locks, live-document locks, journal admission, trail projection, and
-completion fencing must remain ordered; no caller may publish a partial push.
+Live-document locks, journal admission, the staging transaction's row locks,
+trail projection, and completion fencing must remain ordered; no caller may
+publish a partial push.
 
 ## Push pipeline
 
-`BranchCriticalSections` owns the keyed branch mutex. It deduplicates and sorts
-branch IDs, then callers acquire live coordinator locks in document-ID order.
-Do not make the mutex reentrant or split push and coordinator mutexes: either
-hides or creates lock-order cycles.
+Apply holds no branch. Staging takes the live coordinator locks of its
+documents in document-ID order (capturing each one's LOCK-WS cut first), then
+runs as one bounded attempt whose commit scope is the staging transaction: it
+locks Works through the Works mutation boundary, then drafts, namespaces,
+documents and branch rows, and a branch that moved since preparation misses its
+revision, rolls the staging back and recaptures. Completion runs after that
+scope has closed.
 
 Whole-branch and selected-row builders produce one candidate batch consumed by
 the shared push pipeline. Locked preparation computes the diff from the live
@@ -17,7 +21,9 @@ cut; trail projection turns that diff into the sole durable publication
 record. A typed branch generation supplies idempotency, not a second diff.
 
 The transition captures the immutable LOCK-WS cut, admits concurrent rows
-through the document mutation lock, and performs one snapshot CAS. It delivers
+through the document mutation lock, and before completion compares each warm
+room's full-state fingerprint with its lock cut plus the push (deletions
+count), retrying the batch when the room moved. It delivers
 the committed replace-set to connected bare-document rooms only after the
 completion fence reports applied or already applied. Delivery is a session hint,
 not a durable outbox and cannot make a committed push fail.

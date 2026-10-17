@@ -225,7 +225,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       },
       dispose() {},
     });
-    // No lease: a rewrite that lands between this capture and the commit moves a captured
+    // Nothing is held: a rewrite that lands between this capture and the commit moves a captured
     // revision or live head, which the commit scope finds and turns into a whole-attempt miss.
     const captured = await capture(query);
     try {
