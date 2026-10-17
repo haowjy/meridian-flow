@@ -29,7 +29,6 @@ it.each([
     const f = harness.crossWorkProbeFixture();
     const review = reviewDriver(f.collab.draftReview);
     const branch = await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
-    branch.doc.destroy();
     // Manifest review is separate from prose, but both feed the durable pending effect.
     await commitBranchEdit(f, branch.branchId, { source: "writer" }, (doc) => {
       doc.getMap("documents").set(ALPHA_ID, true);
@@ -119,7 +118,6 @@ it.each([
     await harness.seedWriterDocument("Alpha base.", "discard-arrival");
     const f = harness.crossWorkProbeFixture();
     const branch = await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
-    branch.doc.destroy();
     async function stage(source: "agent" | "writer") {
       await commitBranchEdit(f, branch.branchId, { source }, (doc) => {
         const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
@@ -172,7 +170,6 @@ it("keeps incomplete attribution document-only and whole Apply still publishes i
     await harness.seedWriterDocument("Alpha stays.", "missing-removal-owner");
     const f = harness.crossWorkProbeFixture();
     const branch = await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
-    branch.doc.destroy();
     for (const edit of ["insert", "remove"] as const) {
       await commitBranchEdit(f, branch.branchId, { source: "agent" }, (doc) => {
         const block = f.model.getBlocks(toDocHandle(doc))[0];
@@ -223,7 +220,6 @@ it("accepts the clicked Discard class after repeated independent writer admissio
     );
     const f = harness.crossWorkProbeFixture();
     const branch = await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
-    branch.doc.destroy();
     await commitBranchEdit(f, branch.branchId, { source: "agent" }, (doc) => {
       const block = f.model.getBlocks(toDocHandle(doc))[0];
       f.model.applyTextEdit(toDocHandle(doc), block, { from: 6, to: 11 }, "sabre");
@@ -269,7 +265,6 @@ it("refuses clicked Discard when a writer deletes draft-only characters without 
     await harness.seedWriterDocument("Alpha Beta.", "discard-deletion");
     const f = harness.crossWorkProbeFixture();
     const branch = await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
-    branch.doc.destroy();
     await commitBranchEdit(f, branch.branchId, { source: "agent" }, (doc) => {
       const text = (doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).get(0) as Y.XmlElement).get(
         0,

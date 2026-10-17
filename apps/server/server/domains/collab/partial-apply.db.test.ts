@@ -53,7 +53,6 @@ async function setup(
   await harness.seedWriterDocument(markdown, seed);
   const fixture = harness.crossWorkProbeFixture();
   const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
-  branch.doc.destroy();
   const command = { documentId: ALPHA_ID };
   const review = reviewDriver(fixture.collab.draftReview);
   return { harness, fixture, branch, command, review };
@@ -707,7 +706,6 @@ describe("ReviewCut concurrent capture (postgres)", () => {
     await harness.seedWriterDocument("Alpha base.\n\nBeta base.", "review-cut-boundary");
     const fixture = harness.crossWorkProbeFixture();
     const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
-    branch.doc.destroy();
     const command = { documentId: ALPHA_ID };
     const review = reviewDriver(fixture.collab.draftReview);
     const firstId = await stageText(fixture, branch.branchId, 0, " Proposed", "agent");

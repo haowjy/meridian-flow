@@ -49,7 +49,6 @@ export async function stageDraft(
   expect(await harness.commit(responseId)).toMatchObject({ status: "committed" });
   const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
   const branchId = branch.branchId;
-  branch.doc.destroy();
   const rows = await db
     .select()
     .from(schema.branchWriteJournal)

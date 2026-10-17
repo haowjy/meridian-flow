@@ -15,7 +15,6 @@ import {
   schema,
   THREAD_ID,
   USER_ID,
-  WORK_ID,
 } from "../test-support/change-trail-postgres-harness.js";
 import {
   createResponse,
@@ -87,7 +86,6 @@ describe("response helper revocation (Postgres)", () => {
     try {
       expect(await fixture.draftMarkdown(beta.branchId)).toBe("Beta staged.\n");
     } finally {
-      beta.doc.destroy();
     }
   }
   async function expectFreshWrite(content: string) {
@@ -178,7 +176,6 @@ describe("response helper revocation (Postgres)", () => {
       ALPHA_ID,
       threadB as never,
     );
-    branchB.doc.destroy();
     const peers = await db
       .select()
       .from(schema.documentBranches)
@@ -236,7 +233,6 @@ describe("response helper revocation (Postgres)", () => {
   });
   it("delayed retirement preserves a fresh peer's write in the same reply", async () => {
     const oldPeer = await fixture.branchStore.resolveThreadBranch(ALPHA_ID, THREAD_ID);
-    oldPeer.doc.destroy();
     let entered!: () => void;
     let release!: () => void;
     const waiting = new Promise<void>((resolve) => {
@@ -264,7 +260,6 @@ describe("response helper revocation (Postgres)", () => {
         phase: "staged",
       });
       const freshPeer = await fixture.branchStore.resolveThreadBranch(ALPHA_ID, THREAD_ID);
-      freshPeer.doc.destroy();
       expect(freshPeer.branchId).not.toBe(oldPeer.branchId);
       const room = branchRoomName(freshPeer.branchId, freshPeer.generation);
       await fixture.hocuspocus.openDirectConnection(room);

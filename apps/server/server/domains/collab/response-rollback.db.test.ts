@@ -235,7 +235,6 @@ it("failed response rolls back immediate live and draft parts while keeping a wr
         ),
       ).toMatchObject({ status: "success", phase: "committed" });
     const betaBranch = await view.branchStore.resolveWorkDraftBranchForThread(BETA_ID, THREAD_ID);
-    betaBranch.doc.destroy();
     const [branch] = await db
       .select()
       .from(schema.documentBranches)

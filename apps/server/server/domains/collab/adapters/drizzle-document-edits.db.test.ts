@@ -162,7 +162,6 @@ describe("document edit receipts (Postgres)", () => {
       await harness.seedWriterDocument("red\n\nblue", responseId);
       const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
       const branchId = branch.branchId;
-      branch.doc.destroy();
       const review = reviewDriver(fixture.collab.draftReview);
       let ordinal = 0;
       const replace = async (paragraph: number, text: string) => {

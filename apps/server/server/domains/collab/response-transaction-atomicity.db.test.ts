@@ -4,6 +4,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { testFileGrant } from "../../test-support/file-grants.js";
 import { applyDraftDocument } from "./test-support/apply-draft-document.js";
+import { readResolvedBranch } from "./test-support/branch-store-seam.js";
 import { commitJournaledUpdate, commitSegmentRows } from "./test-support/branch-update-writes.js";
 import {
   ALPHA_ID,
@@ -414,7 +415,10 @@ describe("change trail (postgres)", () => {
     const fixture = harness.crossWorkProbeFixture();
     const reviewed = await reviewDriver(fixture.collab.draftReview).preview(ALPHA_ID);
     if (reviewed.status !== "active") throw new Error("missing reviewed draft preview");
-    const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    const branch = await readResolvedBranch(
+      fixture.branchStore,
+      await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID),
+    );
     const block = fixture.model.getBlocks(toDocHandle(branch.doc))[0];
     if (!block) throw new Error("draft writer block missing");
     const draftTextLength = fixture.model.getText(block).length;

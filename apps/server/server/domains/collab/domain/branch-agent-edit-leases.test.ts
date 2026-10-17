@@ -59,7 +59,8 @@ describe("thread-core branch leases", () => {
         resolveThreadBranch: async () => ({
           branchId: PEER,
           generation: 1,
-          doc: createCollabYDoc({ gc: false }),
+          status: "active",
+          lifecycle: "active",
         }),
         ensureThreadPeerBranch: async () => {
           throw new Error("an access never makes a peer");

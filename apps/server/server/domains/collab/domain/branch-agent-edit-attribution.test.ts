@@ -57,7 +57,8 @@ function fixture(existingUpstream?: Y.Doc) {
       resolveThreadBranch: async () => ({
         branchId: "peer",
         generation: 1,
-        doc: cloneYDoc(baseline),
+        status: "active",
+        lifecycle: "active",
       }),
       ensureThreadPeerBranch: async () => ({
         branch: snapshot("peer"),

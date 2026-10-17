@@ -48,6 +48,7 @@ import { createPeerRetirement } from "../domain/peer-retirement.js";
 import type { DocumentLinkScopes } from "../domain/ports/document-link-scope.js";
 import type { SettlementPublicationStep } from "../domain/ports/settlement-publication.js";
 import { writeMarkdown } from "./bound-writes.js";
+import { readResolvedBranch } from "./branch-store-seam.js";
 import { commitSegmentRows } from "./branch-update-writes.js";
 import { captureHistoricalBranchRow } from "./historical-branch-row.js";
 
@@ -905,7 +906,10 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         { ...betaContext, responseIdentity: undefined },
       );
     for (const documentId of options.liveBeta ? [ALPHA_ID] : [ALPHA_ID, BETA_ID]) {
-      const draft = await branchStore.resolveWorkDraftBranchForThread(documentId, THREAD_ID);
+      const draft = await readResolvedBranch(
+        branchStore,
+        await branchStore.resolveWorkDraftBranchForThread(documentId, THREAD_ID),
+      );
       const last = model.getBlocks(toDocHandle(draft.doc)).at(-1) ?? null;
       model.insertBlocks(toDocHandle(draft.doc), last, markupCodec.parse("Writer concurrent."));
       await commitSegmentRows(branchCoordinator, {
@@ -1056,7 +1060,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     ).resolves.toMatchObject({ status: "success", phase: "staged" });
     if (!writerEditBeforeWrite) await applyWriterEdit();
     const workDraft = await branchStore.resolveWorkDraftBranchForThread(documentId, THREAD_ID);
-    workDraft.doc.destroy();
     return workDraft.branchId;
   }
 
@@ -1089,7 +1092,10 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     await collab
       .agentEdit()
       .read({ file, documentId }, { ...context, responseIdentity: undefined });
-    const branch = await branchStore.resolveWorkDraftBranchForThread(documentId, THREAD_ID);
+    const branch = await readResolvedBranch(
+      branchStore,
+      await branchStore.resolveWorkDraftBranchForThread(documentId, THREAD_ID),
+    );
     const doomed = model.getBlocks(toDocHandle(branch.doc))[0];
     if (!doomed) throw new Error("draft block missing before destructive push");
     model.deleteBlock(toDocHandle(branch.doc), doomed);
@@ -1157,7 +1163,10 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       responseIdentity: { providerResponseId: input.responseId, editScopeId: input.responseId },
     };
     await collab.agentEdit().read({ file: "alpha.md", documentId: ALPHA_ID }, context);
-    const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    const branch = await readResolvedBranch(
+      branchStore,
+      await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID),
+    );
     const doomed = model.getBlocks(toDocHandle(branch.doc))[0];
     if (!doomed) throw new Error("draft block missing before sweep classification push");
     model.deleteBlock(toDocHandle(branch.doc), doomed);
@@ -1236,7 +1245,10 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         { file: "alpha.md", documentId: ALPHA_ID },
         { ...context, responseIdentity: undefined },
       );
-    const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    const branch = await readResolvedBranch(
+      branchStore,
+      await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID),
+    );
     try {
       for (const step of input.steps.filter((candidate) => candidate.source === "agent")) {
         branch.doc.clientID = allocateDocumentClient(branch.doc);
@@ -1368,7 +1380,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       },
     );
     const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
-    branch.doc.destroy();
     const staged = await branchCoordinator.readBranch(branch.branchId, async (doc, snapshot) => {
       const stagedDoc = new Y.Doc({ gc: false });
       Y.applyUpdate(stagedDoc, Y.encodeStateAsUpdate(doc));
@@ -1710,7 +1721,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       },
     );
     const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
-    branch.doc.destroy();
     return branch.branchId;
   }
 
@@ -1722,7 +1732,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   }): Promise<string> {
     // Resolving the draft branch creates it before the write.
     const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
-    branch.doc.destroy();
     const context = {
       sessionId: THREAD_ID,
       grant: testFileGrant(DRAFT_DESTINATION),
@@ -1894,7 +1903,10 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         turnId: TURN_ID,
       },
     );
-    const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    const branch = await readResolvedBranch(
+      branchStore,
+      await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID),
+    );
     const block = model.getBlocks(toDocHandle(branch.doc))[0];
     if (!block) throw new Error("dependency draft block missing");
     const end = model.getText(block).length;
