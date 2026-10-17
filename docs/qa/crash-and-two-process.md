@@ -94,8 +94,10 @@ branch id is the `branchId` on the draft's rows.
 4. PASS:
    - All 80 tokens are in `branch-readback`'s text, in each tab's order.
    - All 80 tokens are in both editors after a reload.
-   - Every non-ack is a `1008` close followed by a reconnect whose resend was
-     contained, and no token is lost.
+   - Every key is acked, with no `1008` close and no reconnect: each
+     process's room takes the other's committed rows before it judges a frame.
+     The headless form of this step is the `two-process-frames` probe
+     ([seam probes](drafts-lock-free-probes.md)).
    - No frame retries past its fourth attempt: count `collab.branch.append_retry`
      events in both processes.
    - A live edit pulled by both processes lands once; the loser sees `moved`.

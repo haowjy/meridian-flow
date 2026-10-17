@@ -190,7 +190,13 @@ exists because a concurrent commit moved the branch, and that commit's publish
 can reach this room after the retry judges. An append that flips the branch's
 review membership (`(has_effect OR blocking) AND` pending rows) locks its Work
 first and touches the Work's projection. A replica is published only after its
-commit. A frame that leaves more than 512 tail rows or 2 MiB of tail folds it in
+commit. Rooms are process-local, and a commit reaches only its own process's
+rooms; another server process on the same database learns of it when its
+runtime next reads the branch (a frame's judgement, a tab's SyncStep1
+handshake), catches its replica up from the tail or the new checkpoint, and
+publishes that committed delta into its rooms as well, so a room is never
+fenced for rows only another process published. A process whose tab is idle
+shows the other process's typing at that tab's next keystroke or rejoin. A frame that leaves more than 512 tail rows or 2 MiB of tail folds it in
 the background (`compact`: no content, effect or `updatedAt` change). Frames
 and the fold they trigger are `domain/branch-writer-frames.ts`, over the branch
 runtime surface (`BranchRuntime`: published replicas, private candidates,

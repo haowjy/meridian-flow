@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { RecentEventsBuffer } from "../observability/adapters/recent/recent-events-buffer.js";
 import { createInMemoryJournal } from "./adapters/in-memory/agent-edit.js";
+import { createBranchCoordinator } from "./domain/branch-coordinator.js";
 import { type BranchSnapshot, BranchStaleUpdateError } from "./domain/branch-store.js";
 import {
   bindDocumentAuthority,
@@ -276,10 +277,11 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
         discardedStateVector: Y.encodeStateVector(discardedDoc),
       },
     };
+    const branchStore = new MemoryBranchStore([memoryBranch(snapshot.branch, snapshot.state)]);
     const persistence = createHocuspocusPersistenceService({
       journal: fakeJournal(),
-      branchStore: new MemoryBranchStore([memoryBranch(snapshot.branch, snapshot.state)]),
-      branchCoordinator: { commitWriterUpdate: vi.fn(async () => ({ admitted: true })) } as never,
+      branchStore,
+      branchCoordinator: createBranchCoordinator({ store: branchStore }),
       hocuspocus: () => null,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
       emitAgentEditInvariantViolation: () => undefined,
