@@ -145,7 +145,7 @@ async function closeDraftBranches(
  * and released when no draft uses it), then the draft row closes after every branch (closed above) and its
  * settlements. The caller holds the draft and its verified scope.
  */
-export async function discardWholeLocked(
+async function discardWholeLocked(
   db: Database,
   deps: KernelDeps,
   draftId: DraftId,

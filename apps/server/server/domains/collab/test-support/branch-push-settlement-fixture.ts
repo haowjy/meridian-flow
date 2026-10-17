@@ -238,19 +238,6 @@ export async function expectLiveSweepOnly(
   }
 }
 
-export function expectSweepClassification(
-  harness: ReturnType<typeof createHarness>,
-  swept: boolean,
-): void {
-  expect(harness.changeEvents()).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        changes: expect.arrayContaining([expect.objectContaining({ swept })]),
-      }),
-    ]),
-  );
-}
-
 export async function observeSettlement(
   db: Database,
   harness: ReturnType<typeof createHarness>,

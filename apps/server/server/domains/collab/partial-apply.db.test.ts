@@ -408,6 +408,7 @@ describe("per-change Apply (postgres)", () => {
     if (before.status !== "active") throw new Error("missing preview");
     const first = before.operations.find((op) => op.sourceUpdateIds.includes(firstId as never));
     if (!first) throw new Error("missing selected operation");
+    const revisionBeforeApply = await branchRevision(branch.branchId);
     await expect(
       review.applyRequest(fencedRequest(command, before, [first.operationId])),
     ).resolves.toMatchObject({
@@ -415,6 +416,8 @@ describe("per-change Apply (postgres)", () => {
       operationIds: [first.operationId],
       closureClassIds: [first.closureClassId],
     });
+    // Pushing the rows (active → pushed) moved the revision.
+    expect(await branchRevision(branch.branchId)).toBeGreaterThan(revisionBeforeApply);
 
     const afterPartial = await harness.liveMarkdown(ALPHA_ID);
     expect(afterPartial).toBe("Alpha base. Agent-one\n\nBeta base.\n");
@@ -656,7 +659,10 @@ describe("per-change Apply (postgres)", () => {
       operation.sourceUpdateIds.includes(discardedId as never),
     );
     if (!remaining) throw new Error("remaining review operation is unavailable");
+    const revisionBeforeDiscard = await branchRevision(branch.branchId);
     await review.discardRequest(fencedRequest(command, preview, [remaining.operationId]));
+    // Selective Discard (→ discarded) moved the revision.
+    expect(await branchRevision(branch.branchId)).toBeGreaterThan(revisionBeforeDiscard);
     let live = await harness.liveMarkdown(ALPHA_ID);
     expect(live).toContain("Applied");
     expect(live).not.toContain("Discard-me");
@@ -922,6 +928,19 @@ async function journalStatuses(branchId: string) {
     .from(schema.branchWriteJournal)
     .where(eq(schema.branchWriteJournal.branchId, branchId))
     .orderBy(asc(schema.branchWriteJournal.id));
+}
+
+/**
+ * The branch's revision. A write that changes review membership (a row's status, a close) must
+ * move it, or a frame that predicted its membership flip at the old revision commits over it.
+ */
+async function branchRevision(branchId: string): Promise<number> {
+  const [row] = await db
+    .select({ revision: schema.documentBranches.revision })
+    .from(schema.documentBranches)
+    .where(eq(schema.documentBranches.id, branchId));
+  if (!row) throw new Error(`missing branch ${branchId}`);
+  return row.revision;
 }
 
 function occurrences(value: string, fragment: string): number {

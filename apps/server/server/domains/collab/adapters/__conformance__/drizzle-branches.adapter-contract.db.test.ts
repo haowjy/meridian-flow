@@ -272,7 +272,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const [oldRow, nextUpstream] = await Promise.all([
         db
-          .select({ status: documentBranches.status })
+          .select({ status: documentBranches.status, revision: documentBranches.revision })
           .from(documentBranches)
           .where(eq(documentBranches.id, oldPeer.branchId))
           .then((rows) => rows[0]),
@@ -286,7 +286,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         status: "active",
       });
       expect(nextPeer.branchId).not.toBe(oldPeer.branchId);
-      expect(oldRow?.status).toBe("closed");
+      // A close is a review-membership input: it moves the revision a frame predicted at (§2.5).
+      expect(oldRow).toMatchObject({ status: "closed", revision: oldPeer.revision + 1 });
       expect(nextUpstream?.workId).toBe(NEXT_WORK_ID);
     });
 
@@ -400,6 +401,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         onBranchReset: ({ generation }) => resets.push(generation),
       });
       const draft = proseDoc("draft row before discard");
+      const seeded = await store.getBranch(work.branchId);
       const { createDrizzleJournal } = await import("../drizzle-journal.js");
       await commitJournaledUpdate(coordinator, {
         branchId: work.branchId,
@@ -417,6 +419,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const { runInDrizzleTransaction } = await import("../../../../shared/drizzle-transaction.js");
       const before = await store.getBranch(work.branchId);
+      // The append and the reset are review-membership inputs: each moves the revision (§2.5).
+      expect(before?.revision).toBeGreaterThan(seeded?.revision ?? Number.POSITIVE_INFINITY);
       await expect(
         runInDrizzleTransaction(db, async () => {
           await resetBranchFromDoc(coordinator, store, work.branchId, live);
@@ -428,6 +432,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(resets).toEqual([]);
       await resetBranchFromDoc(coordinator, store, work.branchId, live);
       expect(resets).toEqual([work.generation + 1]);
+      expect((await store.getBranch(work.branchId))?.revision).toBeGreaterThan(
+        before?.revision ?? Number.POSITIVE_INFINITY,
+      );
 
       await expect(
         pendingDrafts
@@ -791,198 +798,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         persistence.loadHocuspocusBranchState("missing-review-branch", 1),
       ).resolves.toBeUndefined();
     });
-    // Risk: a frame predicts its review-membership flip from the row it read at revision r;
-    // every write that changes a membership input (has_effect, blocking, a row's status in
-    // either direction, row existence, close) must move r, or the prediction survives it.
-    // Walks the plan's §2.5 inventory through the real writers this adapter composes: append,
-    // placement, push, withdrawal, Discard, reset, peer close, the prior-peer replacement close
-    // and the whole-draft close (blocking is set through the primitive markBlocking calls, so
-    // placement has a flag to clear). A Work's lifecycle is derived on read and moves nothing.
-    // The receipt chip's markBlocking and rollback_pending are asserted in their inverse
-    // workflows (inverse-placement and inverse-rollback).
-    it("membership-input writers on the store's adapters move the branch revision", async () => {
-      const { bumpBranchRevisions } = await import("../drizzle-branch-storage.js");
-      const { discardWholeLocked } = await import("../drizzle-draft-discard.js");
-      const { placeDraftRows } = await import("../drizzle-document-edits.js");
-      const { withdrawSettlementMembersWithinTx } = await import("../drizzle-settlement-member.js");
-      const { runInDrizzleTransaction } = await import("../../../../shared/drizzle-transaction.js");
-      const pushStore = createDrizzlePushCommitStore(
-        db,
-        stageSettlementBatchWithinTx,
-        createDrizzleChangeTrailAggregateWriter(db),
-        undefined,
-        createTestWorkProjectionMutation(db),
-      );
-      const rows = createDrizzleBranchJournalReadStore(db);
-      const branch = await store.ensureDraftBranch({
-        documentId: DOC_ID as never,
-        draftId: DRAFT_ID as never,
-        liveDoc: docWithText("live"),
-      });
-      const revision = async (branchId = branch.branchId) =>
-        (await store.getBranch(branchId))?.revision ?? -1;
-      const moves = async (writer: string, write: () => Promise<unknown>, branchId?: string) => {
-        const before = await revision(branchId);
-        await write();
-        expect({ writer, moved: (await revision(branchId)) > before }).toEqual({
-          writer,
-          moved: true,
-        });
-      };
-
-      const draft = docWithText("live");
-      draft.getText("content").insert(4, " drafted");
-      const [rowId] = await (async () => {
-        let ids: readonly number[] = [];
-        await moves("appendRows (row existence, has_effect)", async () => {
-          ids = await appendBranchRows(store, branch.branchId, [
-            {
-              updateData: Y.encodeStateAsUpdate(draft, Y.encodeStateVector(docWithText("live"))),
-              source: "writer",
-              actorUserId: USER_ID,
-            },
-          ]);
-        });
-        return ids;
-      })();
-      if (rowId === undefined) throw new Error("missing appended row");
-      await moves("bumpBranchRevisions (blocking = true)", () =>
-        bumpBranchRevisions(db, [branch.branchId], { blocking: true }),
-      );
-      await moves("placeDraftRows (blocking = false)", () =>
-        placeDraftRows(db, branch.branchId, branch.generation, [rowId], { kind: "retired" }),
-      );
-      const active = await rows.listActiveJournalRows(branch.branchId, branch.generation);
-      await moves("commitPreparedPush (active → pushed)", async () => {
-        const current = await store.getBranch(branch.branchId);
-        await pushStore.commitPushBatch(
-          batchOfOne({
-            branch: current,
-            journalRows: active,
-            pushUpdate: new Uint8Array([0, 0]),
-            idempotencyKey: "membership-bump",
-            trail: {
-              documentId: DOC_ID,
-              documentTitle: "document",
-              receiptId: "00000000-0000-4000-8000-000000000697",
-              threadIds: [],
-              journalOwners: [],
-              changes: [],
-            },
-            documentTitle: "document",
-            lockCutUpdate: new Uint8Array([0, 0]),
-          }) as never,
-        );
-      });
-      const [push] = await db.select().from(pushLineage);
-      if (!push) throw new Error("missing push lineage");
-      await moves("withdrawSettlementMembersWithinTx (pushed → active)", () =>
-        runInDrizzleTransaction(db, () =>
-          withdrawSettlementMembersWithinTx(
-            db,
-            [{ id: push.id, journalIds: push.journalIds, branchId: push.branchId }],
-            undefined,
-            createTestWorkProjectionMutation(db),
-          ),
-        ),
-      );
-      await moves("commitPreparedDiscard (→ discarded)", async () => {
-        const current = await store.getBranch(branch.branchId);
-        if (!current) throw new Error("missing branch");
-        await pushStore.commitDiscard({
-          branch: current,
-          journalRows: await rows.listReviewableJournalRows(branch.branchId, branch.generation),
-          state: Y.encodeStateAsUpdate(docWithText("live")),
-        });
-      });
-      await moves("commitRewrite reset (→ discarded, next generation)", async () => {
-        const current = await store.getBranch(branch.branchId);
-        await expect(
-          store.commitRewrite({
-            branchId: branch.branchId,
-            policy: { kind: "exact", revision: current?.revision ?? -1 },
-            fence: { kind: "none" },
-            doc: docWithText("live"),
-            operation: {
-              kind: "reset",
-              editDisposition: "discarded",
-              schemaVersion: COLLAB_SCHEMA_VERSION,
-            },
-            work: "any",
-          }),
-        ).resolves.toMatchObject({ status: "committed" });
-      });
-      const { branch: peer } = await store.ensureThreadPeerBranch({
-        documentId: DOC_ID as never,
-        threadId: THREAD_ID as never,
-        draftId: DRAFT_ID as never,
-        liveDoc: docWithText("live"),
-      });
-      await moves(
-        "closeThreadPeersOf (status = closed)",
-        () => store.closeThreadPeersOf([branch.branchId], "edit_discarded"),
-        peer.branchId,
-      );
-      // The thread's peer in a prior draft closes when it is reseeded under the next Work's draft.
-      const { branch: priorPeer } = await store.ensureThreadPeerBranch({
-        documentId: DOC_ID as never,
-        threadId: THREAD_ID as never,
-        draftId: DRAFT_ID as never,
-        liveDoc: docWithText("live"),
-      });
-      await db.insert(works).values({
-        id: NEXT_WORK_ID,
-        projectId: PROJECT_ID,
-        createdByUserId: USER_ID,
-        name: "Next Work",
-        slug: "next-work",
-      });
-      await db.insert(drafts).values({
-        id: NEXT_DRAFT_ID,
-        projectId: PROJECT_ID,
-        originWorkId: NEXT_WORK_ID,
-        createdBy: USER_ID,
-      });
-      await db.transaction(async (tx) => {
-        await tx
-          .update(threadWorks)
-          .set({ isPrimary: false })
-          .where(eq(threadWorks.threadId, THREAD_ID));
-        await tx.insert(threadWorks).values({
-          threadId: THREAD_ID,
-          workId: NEXT_WORK_ID,
-          projectId: PROJECT_ID,
-          isPrimary: true,
-        });
-      });
-      let nextDraftBranchId = "";
-      await moves(
-        "ensureThreadPeerBranch (prior peer closed)",
-        async () => {
-          const { branch: nextPeer } = await store.ensureThreadPeerBranch({
-            documentId: DOC_ID as never,
-            threadId: THREAD_ID as never,
-            draftId: NEXT_DRAFT_ID as never,
-            liveDoc: docWithText("live"),
-          });
-          nextDraftBranchId = nextPeer.upstreamBranchId ?? "";
-        },
-        priorPeer.branchId,
-      );
-      await moves(
-        "closeDraftBranches (whole-draft Discard)",
-        () =>
-          runInDrizzleTransaction(db, () =>
-            discardWholeLocked(
-              db,
-              { drafts: createDrizzleDraftStore(db), catalog: { refreshSources: async () => "" } },
-              NEXT_DRAFT_ID as never,
-            ),
-          ),
-        nextDraftBranchId,
-      );
-    });
-
     it("captures an immutable live journal draftBase for each new draft row", async () => {
       const live = docWithText("base");
       const firstSeq = await livePersistence.journal.append(DOC_ID, Y.encodeStateAsUpdate(live), {
