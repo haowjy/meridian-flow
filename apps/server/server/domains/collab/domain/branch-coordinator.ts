@@ -351,7 +351,9 @@ export function createBranchCoordinator(input: {
 
   /**
    * The branch as committed now, from the published replica when its revision still holds,
-   * caught up from the tail when only appends landed since, otherwise materialized.
+   * caught up from the tail when only appends landed since, otherwise materialized. What the
+   * catch-up adds reaches this process's rooms too: another process's commits arrive nowhere
+   * else, and a room missing them would fence every frame typed into it.
    */
   async function loadBase(branchId: string): Promise<BranchBase> {
     const current = published.get(branchId);
@@ -375,6 +377,7 @@ export function createBranchCoordinator(input: {
     if (current?.revision === branch.revision) return current;
     try {
       let next: PublishedReplica;
+      let caughtUp: Uint8Array | undefined;
       if (!read.checkpoint && current) {
         // Only appends (or metadata-only bumps) since the replica: apply the tail to a copy.
         const doc = read.tail.length ? cloneReplica(current) : current.doc;
@@ -391,6 +394,7 @@ export function createBranchCoordinator(input: {
           ),
           ...(read.tail.length ? {} : { encoded: current.encoded }),
         };
+        if (read.tail.length) caughtUp = Y.mergeUpdates(read.tail.map((row) => row.update));
       } else {
         next = {
           revision: branch.revision,
@@ -403,8 +407,11 @@ export function createBranchCoordinator(input: {
             read.tail.map((row) => row.update),
           ),
         };
+        // Within a generation a rewrite only merges, so the new checkpoint holds the old one.
+        if (current?.generation === branch.generation)
+          caughtUp = Y.encodeStateAsUpdate(next.doc, Y.encodeStateVector(current.doc));
       }
-      publishAfterCommit(branch.branchId, next);
+      publishAfterCommit(branch.branchId, next, { update: caughtUp });
       return next;
     } catch (cause) {
       throw new BranchCorruptError({
@@ -424,15 +431,15 @@ export function createBranchCoordinator(input: {
   function publishAfterCommit(
     branchId: string,
     replica: PublishedReplica,
-    candidate?: { update: Uint8Array | undefined },
+    publication: { update: Uint8Array | undefined; candidate?: true },
   ): void {
     const publish = () => {
       const current = published.get(branchId);
       if (!current || current.revision < replica.revision) published.set(branchId, replica);
-      if (candidate?.update) input.onBranchUpdate?.({ branchId, update: candidate.update });
+      if (publication.update) input.onBranchUpdate?.({ branchId, update: publication.update });
     };
     const abort = () => {
-      if (candidate) replica.doc.destroy();
+      if (publication.candidate) replica.doc.destroy();
     };
     if (currentResponseTransactionId()) {
       enlistResponseParticipant({ commit: publish, abort });
@@ -530,7 +537,7 @@ export function createBranchCoordinator(input: {
           throw new Error(`Branch ${write.branchId} write was never persisted`);
         state = "transferred";
         if (!("resetTo" in committed)) {
-          publishAfterCommit(write.branchId, committed, { update: write.update });
+          publishAfterCommit(write.branchId, committed, { update: write.update, candidate: true });
           return;
         }
         // A reset's candidate is never published: the room closes on the new generation.

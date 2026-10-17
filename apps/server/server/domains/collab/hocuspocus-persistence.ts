@@ -10,7 +10,7 @@ import { type DetachedWorkTracker, processDetachedWork } from "../runtime/detach
 import { loadDocumentState } from "./adapters/document-loader.js";
 import type { CollabPersistenceMetrics, CollabTransport, UpdateOrigin } from "./contracts.js";
 import type { BranchCoordinator } from "./domain/branch-coordinator.js";
-import { type BranchStore, branchReadStateVector } from "./domain/branch-store.js";
+import { BranchMissingError, type BranchStore } from "./domain/branch-store.js";
 import { createDocumentContainment } from "./domain/document-containment.js";
 import {
   documentAuthority,
@@ -614,20 +614,25 @@ export function createHocuspocusPersistenceService(
     },
 
     async rejectStaleBranchSyncStep1(input) {
-      const read = await requireBranchStore().readBranchAt(input.branchId);
-      const branch = read?.branch;
-      if (
-        !read ||
-        branch?.status !== "active" ||
-        branch.kind !== "work_draft" ||
-        branch.generation !== input.generation ||
-        !branchSyncStep1IsStale(input.clientStateVector, {
-          stateVector: branchReadStateVector(read),
-          discardedStateVector: branch.discardedStateVector,
-        })
-      ) {
-        return false;
-      }
+      // Read through the runtime: a room this tab joins catches up on what another process
+      // committed before Hocuspocus answers the tab's step 1 from it.
+      const stale = await requireBranchCoordinator()
+        .readBranch(
+          input.branchId,
+          async (doc, branch) =>
+            branch.status === "active" &&
+            branch.kind === "work_draft" &&
+            branch.generation === input.generation &&
+            branchSyncStep1IsStale(input.clientStateVector, {
+              stateVector: Y.encodeStateVector(doc),
+              discardedStateVector: branch.discardedStateVector,
+            }),
+        )
+        .catch((cause: unknown) => {
+          if (cause instanceof BranchMissingError) return false;
+          throw cause;
+        });
+      if (!stale) return false;
       recordDroppedConnectionUpdate(branchRoomName(input.branchId, input.generation));
       if (deps.eventSink) {
         emitEvent(deps.eventSink, {
@@ -649,7 +654,7 @@ export function createHocuspocusPersistenceService(
 
 /**
  * A client vector past the branch's current clocks only where a reset discarded them: the
- * tab still holds the previous generation's content. `stateVector` is checkpoint ⊕ tail.
+ * tab still holds the previous generation's content.
  */
 function branchSyncStep1IsStale(
   clientStateVector: Uint8Array,

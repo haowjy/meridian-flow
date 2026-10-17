@@ -21,6 +21,7 @@ import { d23ArchivedDraftRebases } from "./d23-archived-draft-rebases.mts";
 import { f1InverseDeadlock } from "./f1-inverse-deadlock.mts";
 import { f1InverseGrant } from "./f1-inverse-grant.mts";
 import { createScratchDatabase, openHarness, type Probe } from "./harness.mts";
+import { twoProcessFrames } from "./two-process-frames.mts";
 
 const PROBES: readonly Probe[] = [
   d12PullBeforeArchive,
@@ -34,6 +35,7 @@ const PROBES: readonly Probe[] = [
   f1InverseDeadlock,
   d22ConcurrentUndo,
   d23ArchivedDraftRebases,
+  twoProcessFrames,
 ];
 
 function parseArgs(argv: readonly string[]) {

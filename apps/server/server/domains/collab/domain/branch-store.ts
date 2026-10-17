@@ -289,17 +289,6 @@ export function materializeBranchRead(
   }
 }
 
-/** The read's state vector without materializing: the checkpoint's, advanced by each tail row. */
-export function branchReadStateVector(read: BranchRead): Uint8Array {
-  if (!read.checkpoint) throw new Error("A branch read since a checkpoint has no state vector");
-  let vector = read.checkpoint.stateVector;
-  for (const row of read.tail) {
-    const to = Y.parseUpdateMeta(row.update).to;
-    if (to.size) vector = mergeStateVectors(vector, Y.encodeStateVector(to));
-  }
-  return vector;
-}
-
 export function mergeStateVectors(
   left: Uint8Array | null | undefined,
   right: Uint8Array,
