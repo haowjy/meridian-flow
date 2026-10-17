@@ -1,20 +1,27 @@
 // Revocable response helpers and accepted replay across draft generation changes.
+import { and, eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { readBranchContent } from "../test-support/branch-store-seam.js";
 import {
   ALPHA_ID,
+  BETA_ID,
   closeDatabase,
   createHarness,
   createTestDatabase,
   PROJECT_ID,
   resetDatabase,
   runInDrizzleTransaction,
+  schema,
   THREAD_ID,
   USER_ID,
   WORK_ID,
 } from "../test-support/change-trail-postgres-harness.js";
-import { setupResponseDraft } from "../test-support/document-edit-receipt-fixture.js";
+import {
+  createResponse,
+  responseContext,
+  setupResponseDraft,
+} from "../test-support/document-edit-receipt-fixture.js";
 import { reviewDriver } from "../test-support/draft-review-requests.js";
 
 async function expectScopedReplay(
@@ -356,6 +363,77 @@ describe("response helper replay (Postgres)", () => {
       lease.dispose();
     }
     await expectDroppedCommit(draft, dropped, 1, "red\n\nazure\n\nlime\n");
+  });
+  it("a save whose second document moves between capture and commit unwinds whole and commits both next", async () => {
+    const { fixture, branchId, responseId, context, write } = await setupResponseDraft(db, harness);
+    const core = fixture.collab.agentEdit();
+    const writeBeta = (
+      command: "create" | "replace",
+      content: string,
+      ctx: ReturnType<typeof responseContext>,
+    ) =>
+      core.write(
+        {
+          command,
+          file: "beta.md",
+          documentId: BETA_ID,
+          ...(command === "create"
+            ? { content, overwrite: true }
+            : { find: "Beta seeded.", content }),
+          tool_use_id: `beta-${command}`,
+        },
+        { ...ctx, createdDocument: false },
+      );
+    // Beta's draft branch is durable before this reply saves: an earlier reply made it.
+    const earlier = await createResponse(db, 3);
+    expect(await writeBeta("create", "Beta seeded.", responseContext(earlier))).toMatchObject({
+      phase: "staged",
+    });
+    expect(await harness.commit(earlier)).toMatchObject({ status: "committed" });
+    const beta = await fixture.branchStore.resolveWorkDraftBranchForThread(BETA_ID, THREAD_ID);
+    expect(await write("green", "lime")).toMatchObject({ status: "success", phase: "staged" });
+    expect(await writeBeta("replace", "Beta staged.", context)).toMatchObject({ phase: "staged" });
+    const rowsOf = async (id: string) =>
+      (
+        await db
+          .select({ id: schema.branchWriteJournal.id })
+          .from(schema.branchWriteJournal)
+          .where(
+            and(
+              eq(schema.branchWriteJournal.branchId, id),
+              eq(schema.branchWriteJournal.source, "agent"),
+            ),
+          )
+      ).length;
+    const before = { alpha: await rowsOf(branchId), beta: await rowsOf(beta.branchId) };
+
+    const original = fixture.branchStore.appendRows.bind(fixture.branchStore);
+    const appends: string[] = [];
+    fixture.branchStore.appendRows = async (request) => {
+      appends.push(request.branchId === branchId ? "alpha" : "beta");
+      if (appends.length === 2 && request.branchId === beta.branchId) {
+        // A frame on another connection moves Beta after the attempt judged it.
+        await db
+          .update(schema.documentBranches)
+          .set({ revision: sql`${schema.documentBranches.revision} + 1` })
+          .where(eq(schema.documentBranches.id, beta.branchId));
+      }
+      return original(request);
+    };
+    let saved: Awaited<ReturnType<typeof harness.commit>>;
+    try {
+      saved = await harness.commit(responseId);
+    } finally {
+      fixture.branchStore.appendRows = original;
+    }
+    // Alpha appended in the first attempt; Beta's miss unwound it, and the second attempt
+    // judged both again from the reply's original staged entries.
+    expect(appends).toEqual(["alpha", "beta", "alpha", "beta"]);
+    expect(saved).toMatchObject({ status: "committed" });
+    expect(await rowsOf(branchId)).toBe(before.alpha + 1);
+    expect(await rowsOf(beta.branchId)).toBe(before.beta + 1);
+    expect(await fixture.draftMarkdown(branchId)).toBe("gold\n\nazure\n\nlime\n");
+    expect(await fixture.draftMarkdown(beta.branchId)).toBe("Beta staged.\n");
   });
   it("retired ambient peer and aborted rollback cannot replace a replayed helper", async () => {
     const { fixture, branchId, responseId, read, write, review } = await setupResponseDraft(
