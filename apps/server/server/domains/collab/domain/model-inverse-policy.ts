@@ -12,6 +12,7 @@ import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { effectiveActionIndex, partKey as key } from "./inverse-actions.js";
 import { prepareHolds } from "./inverse-holds.js";
+import { ReversalConflictError } from "./reversal-conflict.js";
 import type {
   InverseDocument,
   StoredInversePart,
@@ -443,11 +444,20 @@ export function createModelInversePolicy(store: TurnInverseStore) {
     }
   }
   return {
-    modelInverse(query: Query, command: ModelInverseCommand): Promise<DocumentEditResult> {
-      return store.withLockedDocuments(query, (documents) => plan(documents[0], query, command));
+    async modelInverse(query: Query, command: ModelInverseCommand): Promise<DocumentEditResult> {
+      try {
+        return await store.withCapturedDocuments(query, (documents) =>
+          plan(documents[0], query, command),
+        );
+      } catch (cause) {
+        // Every attempt missed while the edit still applied: retryable, not a refusal.
+        if (cause instanceof ReversalConflictError)
+          return { status: "internal_error", message: cause.message };
+        throw cause;
+      }
     },
     async modelEdits(query: Query, before?: string): Promise<DocumentEditResult> {
-      return store.withLockedDocuments(query, async (documents) => {
+      return store.withCapturedDocuments(query, async (documents) => {
         const document = documents[0];
         if (!document)
           return {
