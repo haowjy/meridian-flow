@@ -78,6 +78,11 @@ export const documentBranches = pgTable(
     stateVector: byteaColumn("state_vector").notNull(),
     /** Current visible effect against the durable last-pulled live cut. */
     hasEffect: boolean("has_effect").notNull().default(true),
+    /**
+     * The `revision` `has_effect` was judged at: equal is fresh, lower is stale and re-judged by
+     * the projection sweep. `-1` (the default) is stale whatever the revision.
+     */
+    hasEffectRevision: bigint("has_effect_revision", { mode: "number" }).notNull().default(-1),
     blocking: boolean("blocking").notNull().default(false),
     liveCut: byteaColumn("live_cut"),
     discardedStateVector: byteaColumn("discarded_state_vector"),
