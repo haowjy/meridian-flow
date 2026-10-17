@@ -10,7 +10,7 @@ branch ID, item key, or presented address interchangeably.
 |---|---|---|
 | **draft** | One active Work review draft; Apply leaves it open, whole Discard and purge close it. | `draftId` |
 | **branch** | One document's Work-draft Y.Doc and its thread peers; generation advances on reset. | opaque branch room plus generation |
-| **revision** | The branch row's write fence: moves with every committed write, status or hold change and Work lifecycle transition; never reaches a client. | none |
+| **revision** | The branch row's write fence: moves with every committed write and every status or hold change; never reaches a client. | none |
 | **checkpoint** | The branch's stored state, with the highest journal id it contains (`checkpoint_seq`). | none |
 | **tail** | The current generation's journal rows past the checkpoint, replayed on every read. | none |
 | **item** | One document's reviewable change, including an empty create or image. | `${draftId}:${documentId}` |
@@ -96,8 +96,8 @@ materialization of one read) is `domain/branch-store.ts`. Its Drizzle storage
 half is `adapters/drizzle-branch-storage.ts`: the row with its derived Work
 lifecycle, `readBranchAt`, and the content primitives `appendRowsWithinTx`,
 `commitRewriteWithinTx` and `insertJournalRows`. Every metadata write outside
-content (a close, the hold flag, a journal row's status flip, a Work lifecycle
-fence, Apply staging's revision check) goes through one door,
+content (a close, the hold flag, a journal row's status flip, Apply staging's
+revision check) goes through one door,
 `bumpBranchRevisions` in `shared/branch-revisions.ts`: lock the rows in id
 order, bump `revision` with the change, optionally only at an expected
 revision. `createDrizzleBranchStore` wraps them with each write's application
@@ -126,11 +126,12 @@ schedules it in the background when a committed writer frame leaves more than
 A branch's `lifecycle` (`active`, `archived`, `deleted`, `missing`) is read from
 its draft's origin Work with the row; anything but `active` is frozen. The
 append's `UPDATE` admits only while that Work is active, in the same statement,
-so an append whose statement starts after an archive commits gets zero rows. A
-lifecycle transition also locks and bumps every active branch of the Work in
-its own transaction: an append judged before the archive, even one whose
-statement queued behind it, misses its revision; one that commits first lands
-before the archive, as a key typed just before it does. The coordinator holds one immutable replica per branch at a
+so an append whose statement starts after an archive commits gets zero rows,
+and the post-lock read refuses one whose statement started earlier but took the
+row after the archive committed. A lifecycle transition touches no branch row:
+the one append it can miss is one whose post-lock read ran before it committed,
+which lands in the archived draft (the archive window, `CONTEXT.md`). The
+coordinator holds one immutable replica per branch at a
 committed revision and catches it up from the tail; every write computes on a
 private copy, so a failed commit never changes what a reader holds.
 
