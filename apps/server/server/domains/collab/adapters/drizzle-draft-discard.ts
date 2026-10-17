@@ -229,21 +229,33 @@ export function createDrizzleDraftDiscard(
     ) {
       return [];
     }
-    const [pending] = await currentDrizzleDb(db)
-      .select({ id: branchWriteJournal.id })
-      .from(branchWriteJournal)
-      .where(
-        and(
-          eq(branchWriteJournal.branchId, content.branchId),
-          eq(branchWriteJournal.generation, content.generation),
-          inArray(branchWriteJournal.status, ["active", "rollback_pending"]),
-        ),
-      )
-      .limit(1);
+    const hasPending = async () => {
+      const [pending] = await currentDrizzleDb(db)
+        .select({ id: branchWriteJournal.id })
+        .from(branchWriteJournal)
+        .where(
+          and(
+            eq(branchWriteJournal.branchId, content.branchId),
+            eq(branchWriteJournal.generation, content.generation),
+            inArray(branchWriteJournal.status, ["active", "rollback_pending"]),
+          ),
+        )
+        .limit(1);
+      return Boolean(pending);
+    };
     // A healthy rowless branch has no text to reset (unless its state cannot be read: Discard
     // is the recovery for a corrupt item, rows or not), but an open reply may still hold staged
     // writes on it, so its peers close either way.
-    if (!pending && isReadable(read)) {
+    if (!(await hasPending()) && isReadable(read)) {
+      // The decision holds only under the branch row: a frame takes no other lock. One that
+      // committed since the read makes this a reset after all, recomputed by the next attempt.
+      const [locked] = await currentDrizzleDb(db)
+        .select({ revision: documentBranches.revision })
+        .from(documentBranches)
+        .where(eq(documentBranches.id, content.branchId))
+        .for("update");
+      if (Number(locked?.revision) !== content.revision || (await hasPending()))
+        throw new BranchCasConflictError(content.branchId);
       return deps.branches.closeThreadPeersOf([content.branchId], "edit_discarded");
     }
     const liveDoc = input.liveDocs.get(item.documentId);
