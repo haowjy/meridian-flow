@@ -29,7 +29,6 @@ import {
   runInDrizzleSavepoint,
   runInRootDrizzleReadSnapshot,
 } from "../../../shared/drizzle-transaction.js";
-import { confirmScopedEdits } from "../../../shared/edit-confirmation.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import { type Attempt, runBoundedAttempts } from "../domain/branch-attempts.js";
 import type { BranchCoordinator } from "../domain/branch-coordinator.js";
@@ -279,29 +278,34 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       const publications: (() => Promise<void>)[] = [];
       await withLiveDocuments([...new Set(liveIds)].sort(), () =>
         scope.commit(() =>
-          // The whole captured write set enters the Work boundary before any other lock
-          // (decision D17): Works, then the inverse and document locks, then the rows.
-          input.workProjection.mutatePending({ branches: attempt.branchIds }, async () => {
-            for (const id of attempt.ids)
-              await db().execute(
-                sql`select pg_advisory_xact_lock(hashtextextended(${`document-inverse:${id}`},0::bigint))`,
-              );
-            if (query.model) await confirmScopedEdits();
-            for (const key of [...attempt.ids, ...attempt.branchIds].sort())
-              await lockDocumentMutation(db(), key);
-            // The live state each plan was computed against is still the head.
-            for (const entry of planned) {
-              if (entry.draft) continue;
-              const [head] = await db()
-                .select({ id: sql<number>`coalesce(max(${documentYjsUpdates.id}), 0)::bigint` })
-                .from(documentYjsUpdates)
-                .where(eq(documentYjsUpdates.documentId, entry.documentId));
-              if (Number(head?.id ?? 0) !== attempt.heads.get(entry.documentId))
-                throw new InverseAttemptMiss();
-            }
-            for (const entry of planned)
-              handles.push(...(await commitDocument(entry, kind, userId, query, publications)));
-          }),
+          // A seam boundary before any other lock (decision D17, file-access §5): the captured
+          // branches' Works and the bound grants' Works in one id order, the grants confirmed,
+          // then the inverse and document locks, then the rows. A live-only inverse (a named
+          // Work's Scratch) captures no branch, so its Work is locked only as a grant Work.
+          input.workProjection.mutatePending(
+            { branches: attempt.branchIds },
+            async () => {
+              for (const id of attempt.ids)
+                await db().execute(
+                  sql`select pg_advisory_xact_lock(hashtextextended(${`document-inverse:${id}`},0::bigint))`,
+                );
+              for (const key of [...attempt.ids, ...attempt.branchIds].sort())
+                await lockDocumentMutation(db(), key);
+              // The live state each plan was computed against is still the head.
+              for (const entry of planned) {
+                if (entry.draft) continue;
+                const [head] = await db()
+                  .select({ id: sql<number>`coalesce(max(${documentYjsUpdates.id}), 0)::bigint` })
+                  .from(documentYjsUpdates)
+                  .where(eq(documentYjsUpdates.documentId, entry.documentId));
+                if (Number(head?.id ?? 0) !== attempt.heads.get(entry.documentId))
+                  throw new InverseAttemptMiss();
+              }
+              for (const entry of planned)
+                handles.push(...(await commitDocument(entry, kind, userId, query, publications)));
+            },
+            { seam: true },
+          ),
         ),
       );
       attempt.publications.push(...publications);
