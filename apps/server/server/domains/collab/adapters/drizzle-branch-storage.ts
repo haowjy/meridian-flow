@@ -2,8 +2,9 @@
  * The Drizzle storage half of the branch store: the branch row and its derived Work lifecycle,
  * the one read (`readBranchAt`), and the transactional journal and checkpoint primitives every
  * branch content write commits through (`appendRowsWithinTx`, `commitRewriteWithinTx`;
- * metadata writes use `shared/branch-revisions.ts`). Runs inside the caller's transaction and takes no lock but the branch
- * rows'; Work admission, receipts and effect policy belong to the callers.
+ * metadata writes use `shared/branch-revisions.ts`). Runs inside the caller's transaction and
+ * takes no lock but the branch rows'; Work admission, receipts and effect policy belong to the
+ * callers.
  */
 import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
 import {
@@ -27,6 +28,7 @@ import { branchDraftWork } from "../../../shared/work-draft-lifecycle.js";
 import {
   type AppendBranchJournalInput,
   type AppendRowsInput,
+  type AppendRowsOutcome,
   type BranchRead,
   type BranchReadSince,
   type BranchSnapshot,
@@ -40,9 +42,16 @@ import {
 } from "../domain/branch-store.js";
 import { assertFreshAgentUpdate } from "../domain/document-mutation-policy.js";
 
-/** A commit that must not stand: thrown inside the write's transaction to roll it back. */
+/**
+ * A commit that must not stand: thrown inside the write's transaction (or an append's
+ * savepoint) to roll it back, carrying the outcome the caller maps once it has unwound.
+ */
 export class BranchWriteRollback extends Error {
-  constructor(readonly outcome: RewriteOutcome = { status: "moved" }) {
+  constructor(
+    readonly outcome: RewriteOutcome | Exclude<AppendRowsOutcome, { status: "appended" }> = {
+      status: "moved",
+    },
+  ) {
     super(`Branch write rolled back: ${outcome.status}`);
   }
 }
@@ -194,13 +203,6 @@ export async function readBranchAt(
             then greatest(${sinceSeq}::bigint, ${documentBranches.checkpointSeq})
             else ${documentBranches.checkpointSeq} end
       )`,
-      pendingRows: sql<boolean>`exists (
-        select 1 from ${branchWriteJournal} p
-        where p.branch_id = ${documentBranches.id}
-          and p.generation = ${documentBranches.generation}
-          and p.status in ('active', 'rollback_pending')
-      )`,
-      liveCutStored: sql<boolean>`${documentBranches.liveCut} is not null`,
     })
     .from(documentBranches)
     .innerJoin(branchDraftWork.drafts, branchDraftWork.on)
@@ -220,24 +222,20 @@ export async function readBranchAt(
         ? { state: new Uint8Array(row.state), stateVector: new Uint8Array(row.stateVector) }
         : null,
     tail,
-    pendingRows: row.pendingRows,
-    liveCutStored: row.liveCutStored,
   };
 }
 
 /**
- * A work draft's effect baseline: its stored `live_cut`, or when none is stored the live
- * journal's current state (main's fallback for a branch no pull or reset has cut yet).
+ * A work draft's effect baseline: its stored `live_cut`, null for a legacy row no creator,
+ * pull or reset has cut yet (the projection job establishes it with a pull).
  */
 export async function readEffectBaselineWithin(
   db: DrizzleDb,
   branchId: string,
-  readLive: (documentId: DocumentId) => Promise<Uint8Array>,
-): Promise<{ state: Uint8Array; stored: boolean; checkpointRevision: number } | null> {
+): Promise<{ state: Uint8Array | null; checkpointRevision: number } | null> {
   const [row] = await db
     .select({
       kind: documentBranches.kind,
-      documentId: documentBranches.documentId,
       liveCut: documentBranches.liveCut,
       checkpointRevision: documentBranches.checkpointRevision,
     })
@@ -245,57 +243,74 @@ export async function readEffectBaselineWithin(
     .where(eq(documentBranches.id, branchId))
     .limit(1);
   if (row?.kind !== "work_draft") return null;
-  const checkpointRevision = Number(row.checkpointRevision);
-  if (row.liveCut) return { state: new Uint8Array(row.liveCut), stored: true, checkpointRevision };
-  return { state: await readLive(row.documentId), stored: false, checkpointRevision };
+  return {
+    state: row.liveCut ? new Uint8Array(row.liveCut) : null,
+    checkpointRevision: Number(row.checkpointRevision),
+  };
 }
 
+/** What an append's sequence point committed, with the lock's wait and hold. */
+export type AppendCommitted = {
+  revision: number;
+  checkpointRevision: number;
+  rowIds: number[];
+  /** `performance.now()` when the row lock was acquired (the `UPDATE` returned). */
+  lockedAt: number;
+};
+
 /**
- * Shape A's storage half: rows past the checkpoint at `revision = expectedRevision`. One
- * `UPDATE` decides and locks (the branch is active, at the expected generation and revision,
- * and its Work is active); ids are allocated after it. A miss throws `BranchWriteRollback`
- * for the caller's transaction: the revision is the only fence, and it subsumes any journal
- * head or row status a caller planned against (every append and status change bumps it).
+ * Shape A's storage half, inside the caller's savepoint. The `UPDATE` is the sequence point:
+ * it bumps `revision` at whatever value it holds (no revision predicate, no retry) and holds
+ * the row lock to `COMMIT`, so journal ids are allocated in commit order per branch (tail
+ * order). It still refuses a closed, re-forked or frozen branch. After the lock, one separate
+ * statement reads the committed prefix `since` the caller's base (a fresh READ COMMITTED
+ * snapshot, so every row committed before this lock), and `finalize` decides what to insert.
+ * Any outcome but `appended` throws `BranchWriteRollback` so the savepoint undoes the bump.
  */
 export async function appendRowsWithinTx(
   db: DrizzleDb,
-  input: Pick<
-    AppendRowsInput,
-    "branchId" | "expectedRevision" | "expectedGeneration" | "rows" | "hasEffect" | "liveCut"
-  >,
-): Promise<{ revision: number; rowIds: number[] }> {
-  if (
-    input.rows.some(
-      (row) => row.generation !== input.expectedGeneration || row.branchId !== input.branchId,
-    )
-  )
-    throw new BranchWriteRollback();
+  input: Pick<AppendRowsInput, "branchId" | "expectedGeneration" | "base" | "finalize">,
+): Promise<AppendCommitted> {
   const [locked] = await db
     .update(documentBranches)
     .set({
       revision: sql`${documentBranches.revision} + 1`,
       schemaVersion: monotonicSchemaStamp(),
       updatedAt: new Date(),
-      ...(input.hasEffect === undefined ? {} : { hasEffect: input.hasEffect }),
-      // The baseline the effect was judged against, kept when the branch had none stored.
-      ...(input.liveCut
-        ? { liveCut: sql`coalesce(${documentBranches.liveCut}, ${Buffer.from(input.liveCut)})` }
-        : {}),
     })
     .where(
       and(
         eq(documentBranches.id, input.branchId),
         eq(documentBranches.status, "active"),
         eq(documentBranches.generation, input.expectedGeneration),
-        eq(documentBranches.revision, input.expectedRevision),
         branchWorkActive,
       ),
     )
-    .returning({ revision: documentBranches.revision });
-  // Zero rows: the revision or generation moved, the branch closed, or its Work is no longer
-  // active. The caller re-reads and classifies.
-  if (!locked) throw new BranchWriteRollback();
-  return { revision: Number(locked.revision), rowIds: await insertJournalRows(db, input.rows) };
+    .returning({
+      revision: documentBranches.revision,
+      checkpointRevision: documentBranches.checkpointRevision,
+    });
+  // Zero rows: the branch closed, re-forked or its Work is no longer active. Never a writer.
+  if (!locked) throw new BranchWriteRollback({ status: "refused" });
+  const lockedAt = performance.now();
+  // Must stay its own statement: a CTE would share the UPDATE's snapshot and miss rows
+  // committed while it waited for the lock.
+  const read = await readBranchAt(db, input.branchId, input.base);
+  if (!read) throw new Error(`Branch ${input.branchId} vanished under its row lock`);
+  const finalized = await input.finalize(read);
+  if (finalized.status !== "appended") throw new BranchWriteRollback(finalized);
+  if (
+    finalized.rows.some(
+      (row) => row.generation !== input.expectedGeneration || row.branchId !== input.branchId,
+    )
+  )
+    throw new Error(`Branch ${input.branchId} append names another branch or generation`);
+  return {
+    revision: Number(locked.revision),
+    checkpointRevision: Number(locked.checkpointRevision),
+    rowIds: await insertJournalRows(db, finalized.rows),
+    lockedAt,
+  };
 }
 
 export type RewriteCommit = {
@@ -416,6 +431,7 @@ export async function commitRewriteWithinTx(
     ? {
         generation: sql`${documentBranches.generation} + 1`,
         hasEffect: false,
+        hasEffectRevision: sql`${documentBranches.revision} + 1`,
         blocking: false,
         liveCut: state,
         discardedStateVector: Buffer.from(
@@ -439,7 +455,13 @@ export async function commitRewriteWithinTx(
       checkpointRevision: sql`${documentBranches.revision} + 1`,
       schemaVersion: monotonicSchemaStamp(input.schemaVersion),
       ...(input.keepUpdatedAt ? {} : { updatedAt: new Date() }),
-      ...(effect ? { hasEffect: effect.hasEffect, liveCut: Buffer.from(effect.liveCut) } : {}),
+      ...(effect
+        ? {
+            hasEffect: effect.hasEffect,
+            hasEffectRevision: sql`${documentBranches.revision} + 1`,
+            liveCut: Buffer.from(effect.liveCut),
+          }
+        : {}),
       ...reset,
     })
     .where(

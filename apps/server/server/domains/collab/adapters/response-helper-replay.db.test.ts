@@ -335,10 +335,12 @@ describe("response helper replay (Postgres)", () => {
     const dropped = [await write("gold", "gild"), await write("gild", "bronze")];
     expect(await write("green", "lime")).toMatchObject({ status: "success", phase: "staged" });
     await review("gold");
-    const original = fixture.branchStore.appendRows.bind(fixture.branchStore);
+    // An append is sequenced, never fenced; the save's one remaining miss is its thread
+    // peer's exact catch-up checkpoint (design §4).
+    const original = fixture.branchStore.commitRewrite.bind(fixture.branchStore);
     let misses = 0;
-    fixture.branchStore.appendRows = async (request) => {
-      if (request.branchId === branchId) {
+    fixture.branchStore.commitRewrite = async (request) => {
+      if (request.operation.kind === "checkpoint") {
         misses += 1;
         return { status: "moved" };
       }
@@ -347,7 +349,7 @@ describe("response helper replay (Postgres)", () => {
     try {
       await expect(harness.commit(responseId)).rejects.toThrow();
     } finally {
-      fixture.branchStore.appendRows = original;
+      fixture.branchStore.commitRewrite = original;
     }
     // Four commit attempts, each recaptured; the fifth never runs.
     expect(misses).toBe(4);

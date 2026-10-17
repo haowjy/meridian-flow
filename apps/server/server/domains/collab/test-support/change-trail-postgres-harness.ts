@@ -383,12 +383,13 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   const branchStore = {
     ...realBranchStore,
     async appendRows(input: Parameters<typeof realBranchStore.appendRows>[0]) {
-      if (input.rows.length) injectSecondJournalFailure();
+      injectSecondJournalFailure();
       return realBranchStore.appendRows(input);
     },
   };
   const branchBroadcasts: string[] = [];
   const branchCoordinator = createBranchCoordinator({
+    onAppendCommitted: () => {},
     store: branchStore,
     attemptScope: (operation) => runInDrizzleSavepoint(db, operation),
     onBranchUpdate: ({ branchId }) => branchBroadcasts.push(branchId),

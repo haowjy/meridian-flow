@@ -3,6 +3,7 @@ import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { appendBranchRows } from "../test-support/branch-store-seam.js";
 import {
   commitJournaledUpdate,
   commitSegmentRows,
@@ -88,7 +89,7 @@ describe("BranchCoordinator", () => {
     const store = new MemoryBranchStore();
     const branchDoc = docWithText("seed");
     store.branches.set("work", branchSnapshot({ branchId: "work", doc: branchDoc }));
-    const coordinator = createBranchCoordinator({ store });
+    const coordinator = createBranchCoordinator({ onAppendCommitted: () => {}, store });
 
     await expect(
       coordinator.commitWriterUpdate({
@@ -114,7 +115,7 @@ describe("BranchCoordinator", () => {
     hostileClient.getMap(PROVENANCE_TARGETS_TYPE).delete("nested");
     const updateData = Y.encodeStateAsUpdate(hostileClient, before);
 
-    const coordinator = createBranchCoordinator({ store });
+    const coordinator = createBranchCoordinator({ onAppendCommitted: () => {}, store });
     await expect(
       coordinator.commitWriterUpdate({
         branchId: "work",
@@ -138,7 +139,7 @@ describe("BranchCoordinator", () => {
     const before = storedBranch(store, "work");
     expect(Y.encodeStateVector(live)).toEqual(before.stateVector);
 
-    const coordinator = createBranchCoordinator({ store });
+    const coordinator = createBranchCoordinator({ onAppendCommitted: () => {}, store });
     await pull(coordinator, "work", live);
 
     expect(storedBranch(store, "work").state).toEqual(Y.encodeStateAsUpdate(live));
@@ -156,7 +157,7 @@ describe("BranchCoordinator", () => {
     sourceDoc.getText("content").delete(1, 1);
     sourceDoc.getText("content").delete(2, 1);
 
-    const coordinator = createBranchCoordinator({ store });
+    const coordinator = createBranchCoordinator({ onAppendCommitted: () => {}, store });
     await expect(
       commitSegmentRows(coordinator, {
         branchId: "work",
@@ -201,24 +202,12 @@ describe("BranchCoordinator", () => {
     deleteOnlyDoc.getText("content").delete(1, 2);
     expect(Y.encodeStateVector(deleteOnlyDoc)).toEqual(original.stateVector);
     await expect(
-      store.appendRows({
-        branchId: "work",
-        expectedRevision: original.revision,
-        expectedGeneration: original.generation,
-        rows: [
-          {
-            branchId: "work",
-            generation: original.generation,
-            updateData: Y.encodeStateAsUpdate(deleteOnlyDoc, before),
-            source: "writer",
-          },
-        ],
-        documentId: DOCUMENT_ID,
-        receipts: [],
-      }),
-    ).resolves.toMatchObject({ status: "appended" });
+      appendBranchRows(store, "work", [
+        { updateData: Y.encodeStateAsUpdate(deleteOnlyDoc, before), source: "writer" },
+      ]),
+    ).resolves.toHaveLength(1);
 
-    const coordinator = createBranchCoordinator({ store });
+    const coordinator = createBranchCoordinator({ onAppendCommitted: () => {}, store });
     await expect(
       coordinator.resetFromDoc({
         branchId: "work",
@@ -250,7 +239,7 @@ describe("BranchCoordinator", () => {
   it("does not mutate the cached branch doc when journal append fails", async () => {
     const store = new MemoryBranchStore();
     store.branches.set("work", branchSnapshot({ branchId: "work", doc: new Y.Doc({ gc: false }) }));
-    const coordinator = createBranchCoordinator({ store });
+    const coordinator = createBranchCoordinator({ onAppendCommitted: () => {}, store });
     const update = Y.encodeStateAsUpdate(docWithText("failed write"));
     store.failNextJournal = true;
 
@@ -272,7 +261,7 @@ describe("BranchCoordinator", () => {
     const store = new MemoryBranchStore();
     const first = docWithText("first discarded");
     store.branches.set("work", branchSnapshot({ branchId: "work", doc: first }));
-    const coordinator = createBranchCoordinator({ store });
+    const coordinator = createBranchCoordinator({ onAppendCommitted: () => {}, store });
 
     await resetBranchFromDoc(coordinator, store, "work", docWithText("second discarded"));
     await resetBranchFromDoc(coordinator, store, "work", docWithText("current"));
@@ -308,7 +297,11 @@ it("publishes ordered segment rows once and rejects reused clients and unjournal
     });
   }
   let broadcasts = 0;
-  const coordinator = createBranchCoordinator({ store, onBranchUpdate: () => broadcasts++ });
+  const coordinator = createBranchCoordinator({
+    onAppendCommitted: () => {},
+    store,
+    onBranchUpdate: () => broadcasts++,
+  });
   await expect(
     commitSegmentRows(coordinator, {
       branchId: "work",
@@ -358,7 +351,7 @@ describe("containment replacement (U3)", () => {
         upstreamBranchId: "work",
       }),
     );
-    const coordinator = createBranchCoordinator({ store });
+    const coordinator = createBranchCoordinator({ onAppendCommitted: () => {}, store });
 
     // The upstream reforked from live, losing the peer's saved text.
     await pull(coordinator, "peer", cloneOf(shared));

@@ -84,6 +84,7 @@ function openGateway(
   const reconciled: Reconciled[] = [];
   let drop = options.dropDelivery ?? false;
   const coordinator = createBranchCoordinator({
+    onAppendCommitted: () => {},
     store,
     attemptScope: harness.attemptScope,
     onBranchUpdate(update) {
@@ -96,8 +97,10 @@ function openGateway(
     onBranchReset: ({ branchId, generation }) => binding.closeBranch(branchId, generation),
     applyToRoom: binding.applyToRoom,
     diagnostics: {
-      frameRetried() {},
       compactionFailed() {},
+      appendPrefixMissing() {},
+      projectionFailed() {},
+      projectionBaselineBlocked() {},
       roomReconciled: (input) => reconciled.push(input),
     },
   });

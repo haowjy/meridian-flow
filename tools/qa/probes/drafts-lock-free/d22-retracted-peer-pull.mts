@@ -22,6 +22,7 @@ export const d22RetractedPeerPull: Probe = {
     const outcomes: string[] = [];
     let retraction: string | undefined;
     const coordinator = createBranchCoordinator({
+      onAppendCommitted: () => {},
       attemptScope: harness.attemptScope,
       store: {
         ...harness.store,

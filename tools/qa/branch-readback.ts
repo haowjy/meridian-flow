@@ -67,8 +67,7 @@ async function main(): Promise<void> {
       checkpointRevision: branch.checkpointRevision,
       checkpointSeq: branch.checkpointSeq,
       generation: branch.generation,
-      pendingRows: read.pendingRows,
-      liveCutStored: read.liveCutStored,
+      hasEffect: branch.hasEffect,
       tail: read.tail.map((row) => ({
         id: row.id,
         source: row.source,

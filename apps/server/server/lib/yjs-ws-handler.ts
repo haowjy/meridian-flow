@@ -18,6 +18,7 @@ import { messageYjsSyncStep1, messageYjsSyncStep2, messageYjsUpdate } from "y-pr
 import * as Y from "yjs";
 import {
   type AdmitLiveWriterUpdateResult,
+  BranchPrefixMissingError,
   isDocumentSchemaMajorMismatchError,
   type UpdateOrigin,
 } from "../domains/collab/index.js";
@@ -415,6 +416,12 @@ async function admitBranchSync(
   } catch (cause) {
     // The bound edit grant was refused under the seam's locks; `beforeSync` answers it.
     if (cause instanceof FileEditRefusedError) throw cause;
+    // Not a refusal (D30): the client reconnects and its handshake carries the missing prefix.
+    if (cause instanceof BranchPrefixMissingError) {
+      const { code, reason } = WS_CLOSE.BRANCH_PREFIX_MISSING;
+      input.closeTransport?.({ code, reason });
+      throw permissionDenied(reason, code);
+    }
     input.closeTransport?.({ code: 1008, reason: "branch-update-admission-failed" });
     throw permissionDenied("branch-update-admission-failed", 1008);
   }

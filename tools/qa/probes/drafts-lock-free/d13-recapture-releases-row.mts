@@ -55,7 +55,11 @@ async function arm(harness: Harness, ambient: boolean) {
       return harness.store.readBranchAt(id, since);
     },
   };
-  const coordinator = createBranchCoordinator({ store, attemptScope: harness.attemptScope });
+  const coordinator = createBranchCoordinator({
+    onAppendCommitted: () => {},
+    store,
+    attemptScope: harness.attemptScope,
+  });
   appendToFirstParagraph(live, " pulled");
   try {
     const pull = () => coordinator.pullFromDoc({ branchId: branch.branchId, upstream: live });

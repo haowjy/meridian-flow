@@ -107,11 +107,20 @@ export async function admitWriterUpdate<T>(input: {
   const validation = input.validateTarget();
   if (validation) await validation;
   if (input.isContained()) return { admitted: false };
-  const admission = validateFreshAuthorship(input.targetDocument, input.update, { kind: "writer" });
+  assertWriterAuthorship(input.targetDocument, input.update);
+  return { admitted: true, value: await input.append() };
+}
+
+/**
+ * A writer update's authorship against `targetDocument`'s reserved namespace: a reserved
+ * client id or a reserved delete target throws. A frame's early rejection judges its base
+ * replica; finalization judges the committed prefix again when that moved (design §2.2).
+ */
+export function assertWriterAuthorship(targetDocument: Y.Doc, update: Uint8Array): void {
+  const admission = validateFreshAuthorship(targetDocument, update, { kind: "writer" });
   if (admission.reservedClientId !== null) {
     throw new ReservedWriterClientIdError(admission.reservedClientId);
   }
-  return { admitted: true, value: await input.append() };
 }
 
 /** Validates and admits one fresh writer, import, or seed update. */

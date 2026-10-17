@@ -1,6 +1,6 @@
 /**
- * The branch storage contract: a branch is a checkpoint plus a journal tail, fenced by
- * `revision`. The row and content types, the store port every adapter implements, and the
+ * The branch storage contract: a branch is a checkpoint plus a journal tail; appends are
+ * sequenced by the branch row's lock and rewrites fenced by `revision`. The row and content types, the store port every adapter implements, and the
  * materialization of one read. The coordinator and the storage adapters both build on this.
  */
 
@@ -35,7 +35,7 @@ export type BranchSnapshot = {
   status: BranchStatus;
   /** The re-fork epoch: room name, journal grouping, edit placement. A reset bumps it. */
   generation: number;
-  /** Bumped by every committed write to the branch; the write fence. */
+  /** Bumped by every committed write to the branch; the fence of exact rewrites. */
   revision: number;
   /** The revision the checkpoint was written at. */
   checkpointRevision: number;
@@ -61,40 +61,18 @@ export type BranchRead = {
   branch: BranchSnapshot;
   checkpoint: { state: Uint8Array; stateVector: Uint8Array } | null;
   tail: readonly BranchTailRow[];
-  /**
-   * The branch has active or rollback-pending rows of its generation: with `hasEffect` and
-   * `blocking`, the inputs of its review membership.
-   */
-  pendingRows: boolean;
-  /** A work draft's effect baseline (`live_cut`) is stored. */
-  liveCutStored: boolean;
 };
 
 /**
- * The Work an append of rows judged to `hasEffect` must lock first and touch: the one whose
- * review membership (`(has_effect OR blocking) AND` pending rows) the append flips.
+ * A work draft's effect baseline (`live_cut`), the live state its `has_effect` is measured
+ * against, at the checkpoint revision it was read. `state` is null for a legacy branch created
+ * before every creator stored one; the projection job establishes it with a pull.
  */
-export function membershipFlipWork(
-  read: { branch: BranchSnapshot; pendingRows: boolean },
-  hasEffect: boolean,
-): WorkId | undefined {
-  const { branch } = read;
-  const member = (effect: boolean, rows: boolean) => (effect || branch.blocking) && rows;
-  const flips = member(branch.hasEffect, read.pendingRows) !== member(hasEffect, true);
-  return flips && branch.workId ? branch.workId : undefined;
-}
+export type EffectBaseline = { state: Uint8Array | null; checkpointRevision: number };
 
-/** A work draft's effect baseline: the live state its `has_effect` is measured against. */
-export type EffectBaseline = {
-  state: Uint8Array;
-  /** Read from `live_cut` at this checkpoint revision; otherwise built from the live journal. */
-  stored: boolean;
-  checkpointRevision: number;
-};
-
-/** One logical write's edit receipts, computed on the candidate before the append commits. */
+/** One logical write's edit receipts, captured on the document the append commits into. */
 export type AppendReceiptGroup = {
-  /** The rows of the write, by index into `AppendRowsInput.rows`. */
+  /** The rows of the write, by index into the finalized rows. */
   rowIndexes: readonly number[];
   parts: readonly CapturedPart[];
 };
@@ -119,31 +97,49 @@ export type AppendBranchJournalInput = {
 };
 
 /**
- * Journal rows appended past the checkpoint, fenced by the revision they were judged at.
- * Everything that depends on content (receipts, the effect) was computed on the candidate
- * before the append; the store only writes it.
+ * What finalization under the row lock decided (design §2.2): the rows to insert (their novel
+ * bytes, past the committed prefix) with their receipts, or why nothing is written.
+ */
+export type AppendFinalization =
+  | {
+      status: "appended";
+      rows: readonly AppendBranchJournalInput[];
+      receipts: readonly AppendReceiptGroup[];
+    }
+  /** Every row was already in the committed prefix: nothing to write, the frame is acked. */
+  | { status: "contained" }
+  /** A row depends on structs or deletes the journal does not hold yet. */
+  | { status: "prefixMissing"; clocks: readonly { client: number; clock: number }[] }
+  /** The committed prefix's Work is no longer active. */
+  | { status: "refused" };
+
+/**
+ * Rows appended past the checkpoint at whatever revision the branch is at: the row `UPDATE` is
+ * the sequence point, with no revision predicate. Under its lock the store reads the committed
+ * prefix `since` the caller's base cursor and hands it to `finalize`, which owns every fact that
+ * depends on it (containment, novelty, receipts, authorship); the store writes what it returns.
  */
 export type AppendRowsInput = {
   branchId: string;
   documentId: DocumentId;
-  expectedRevision: number;
   expectedGeneration: number;
-  rows: readonly AppendBranchJournalInput[];
-  receipts: readonly AppendReceiptGroup[];
-  /** A work draft's `has_effect` on the candidate; a thread peer carries none. */
-  hasEffect?: boolean;
-  /** The baseline the effect was measured against, stored when the branch had none. */
-  liveCut?: Uint8Array;
+  /** The checkpoint and highest row the caller's base replica holds. */
+  base: BranchReadSince;
   /**
-   * The branch's Work when the append flips its review membership: the Work row is locked
-   * before the branch row and the Work's projection touched in the same transaction.
+   * Runs under the row lock. Production's is synchronous: nothing awaits while the row is
+   * held. A test fixture may reserve write ordinals here.
    */
-  workTouch?: WorkId;
+  finalize(read: BranchRead): AppendFinalization | Promise<AppendFinalization>;
 };
 
 export type AppendRowsOutcome =
-  | { status: "appended"; revision: number; rowIds: readonly number[] }
-  | { status: "moved" };
+  | {
+      status: "appended";
+      revision: number;
+      checkpointRevision: number;
+      rowIds: readonly number[];
+    }
+  | Exclude<AppendFinalization, { status: "appended" }>;
 
 /**
  * What else a rewrite must not race: a pull is fenced by an unfinished settlement on its
@@ -217,19 +213,36 @@ export type RewriteOutcome =
     }
   | { status: "moved" | "fenced" | "blocked" | "closed" | "upstreamMoved" };
 
+/** A stale branch and its keyset position in the sweep's order. */
+export type StaleEffectCursor = { branchId: string; updatedAt: Date };
+
 export type BranchStore = {
   /** The row only; content comes through `readBranchAt`. */
   getBranch(branchId: string): Promise<BranchSnapshot | null>;
   readBranchAt(branchId: string, since?: BranchReadSince): Promise<BranchRead | null>;
   /** A work draft's effect baseline; null for a branch that carries no effect. */
   readEffectBaseline(branchId: string): Promise<EffectBaseline | null>;
+  /**
+   * The append, in its own savepoint: a `contained`, `prefixMissing` or `refused` outcome
+   * rolled back the revision bump and everything registered inside it before it returns.
+   */
   appendRows(input: AppendRowsInput): Promise<AppendRowsOutcome>;
   /**
-   * A frame's last attempt: `run` inside one transaction holding the branch's Work row
-   * (`FOR NO KEY UPDATE`) and then its branch row (`FOR UPDATE`), so its judgement and
-   * append cannot miss. The one judgement made under a branch-store lock.
+   * The projection's write: `has_effect` and its watermark at exactly `revision`, touching the
+   * branch's Work. `moved` when the branch moved past `revision`; `contended` when a lock it
+   * needs was not free within the bound (100 ms per lock acquisition). Never bumps `revision`.
    */
-  withJudgementLocks<T>(branchId: string, run: () => Promise<T>): Promise<T>;
+  writeEffect(input: {
+    branchId: string;
+    revision: number;
+    hasEffect: boolean;
+    workId: WorkId | null;
+  }): Promise<"written" | "moved" | "contended">;
+  /** Active work drafts whose watermark is behind their revision, newest first, keyset paged. */
+  staleEffectBranches(input: {
+    after?: StaleEffectCursor;
+    limit: number;
+  }): Promise<readonly StaleEffectCursor[]>;
   commitRewrite(input: CommitRewriteInput): Promise<RewriteOutcome>;
   /**
    * Defers cache-visible effects until the ambient transaction commits, and `onRollback`
@@ -249,6 +262,20 @@ export class BranchCasConflictError extends Error {
   constructor(readonly branchId: string) {
     super(`Branch ${branchId} changed before its snapshot could be persisted`);
     this.name = "BranchCasConflictError";
+  }
+}
+
+/**
+ * A writer update that depends on something the branch's journal does not hold yet (design
+ * §2.7): nothing was written, and the socket resyncs (`WS_CLOSE.BRANCH_PREFIX_MISSING`).
+ */
+export class BranchPrefixMissingError extends Error {
+  constructor(
+    readonly branchId: string,
+    readonly clocks: readonly { client: number; clock: number }[],
+  ) {
+    super(`Branch ${branchId} update depends on a prefix the journal does not hold`);
+    this.name = "BranchPrefixMissingError";
   }
 }
 

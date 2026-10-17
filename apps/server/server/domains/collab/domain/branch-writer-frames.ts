@@ -1,9 +1,10 @@
 /**
  * Writer-frame admission over the branch runtime: a frame judged on a private candidate of the
- * committed replica and appended at the revision it was judged at, with no process-level
- * ordering (section 2.2), and the background tail fold a committed frame can trigger. The
- * runtime (`branch-coordinator.ts`) owns the replicas, candidates and publication; this module
- * owns only what a frame decides.
+ * committed replica (admissibility, the room, the cheap echo exit, authorship as an early
+ * rejection) and appended once, sequenced by the branch row's lock and finalized there against
+ * what is committed (design §2), and the background tail fold a committed frame can trigger.
+ * The runtime (`branch-coordinator.ts`) owns the replicas, candidates and publication; this
+ * module owns only what a frame decides before the lock.
  */
 import type * as Y from "yjs";
 import type {
@@ -11,18 +12,9 @@ import type {
   PublishedReplica,
   RoomReconcileTrigger,
 } from "./branch-coordinator.js";
-import { captureAppendReceipts } from "./branch-receipts.js";
-import {
-  type AppendBranchJournalInput,
-  BranchStaleUpdateError,
-  type BranchStore,
-} from "./branch-store.js";
+import { BranchStaleUpdateError } from "./branch-store.js";
 import { collabHook } from "./collab-test-hooks.js";
 import { admitWriterUpdate } from "./document-mutation-policy.js";
-import { certifyWriterRestorations } from "./writer-restoration.js";
-
-/** A frame's commit attempts: three judged off every lock, the fourth under its Work and row. */
-const FRAME_ATTEMPTS = 4;
 
 /** A tail past either bound is folded into a new checkpoint in the background (D10). */
 const COMPACT_TAIL_ROWS = 512;
@@ -37,8 +29,6 @@ export type WriterFrameInput = {
 };
 
 export type WriterFrameDiagnostics = {
-  /** A frame's append missed its revision; `attempt` is the one it judges next. */
-  frameRetried(input: { branchId: string; attempt: number }): void;
   /** The background tail fold failed; the tail stays until the next frame crosses the bound. */
   compactionFailed(input: { branchId: string; cause: unknown }): void;
   /** A room lacked committed content and was brought up to the replica (decision D26). */
@@ -49,71 +39,50 @@ export type WriterFrameDiagnostics = {
     trigger: RoomReconcileTrigger;
     bytes: number;
   }): void;
+  /**
+   * An update reached the row lock before the update it depends on reached the journal: not
+   * sequenced, and its socket resyncs. Repeated on one branch, it is a server defect.
+   */
+  appendPrefixMissing(input: {
+    branchId: string;
+    clocks: readonly { client: number; clock: number }[];
+  }): void;
+  /** A projection run failed; the branch is retried on its backoff and never dropped. */
+  projectionFailed(input: { branchId: string; cause: unknown }): void;
+  /**
+   * A legacy branch's baseline cannot be established: its document has a terminally blocked
+   * settlement. Once per process; the branch waits for its next append or a restart.
+   */
+  projectionBaselineBlocked(input: { branchId: string; documentId: string }): void;
 };
 
 export function createWriterFrames(
   runtime: BranchRuntime,
-  input: {
-    store: Pick<BranchStore, "withJudgementLocks">;
-    diagnostics?: WriterFrameDiagnostics;
-  },
+  input: { diagnostics?: WriterFrameDiagnostics },
 ) {
   const compacting = new Set<string>();
 
   /**
-   * A writer frame: judged on a private candidate of the committed replica, appended under the
-   * revision it was judged at, published only once committed. A miss destroys the candidate
-   * and judges again on the new revision; the fourth attempt judges under the Work row and
-   * the branch row.
-   *
-   * Only the first attempt checks the room holds the committed replica, and a room that does
-   * not missed a delivery: it is reconciled to the replica and the frame goes on (decision
-   * D26). A retry exists because a concurrent commit moved the branch, and that commit reaches
-   * this room through its own publish, which runs after its COMMIT returns and so may land
-   * after this frame judges again: the room lags it without having missed anything. Only a
-   * generation the branch has left refuses the frame.
+   * A writer frame: judged once on a private candidate of the committed replica, then appended
+   * at whatever revision the branch is at. A concurrent writer costs the frame one row-lock
+   * wait, never a second judgement: what landed meanwhile is folded into the committed prefix
+   * under the lock. The room is checked against the replica first, and a room that lacks it
+   * missed a delivery: it is reconciled and the frame goes on (decision D26). Only a closed
+   * branch, a frozen Work or a generation the branch has left refuses the frame; an update
+   * whose prefix the journal lacks throws `BranchPrefixMissingError` for the gateway's resync.
    */
   async function commitWriterUpdate(frame: WriterFrameInput): Promise<{ admitted: boolean }> {
-    const { branchId } = frame;
-    const outcome = await runtime.commitAttempts(
-      async (attempt) => {
-        const judge = async () => {
-          const write = await judgeWriterUpdate(frame, { checkRoom: attempt.number === 1 });
-          return write && attempt.own(write);
-        };
-        let write: Awaited<ReturnType<typeof judge>>;
-        if (attempt.last) {
-          write = await attempt.commit(() =>
-            input.store.withJudgementLocks(branchId, async () => {
-              const judged = await judge();
-              await judged?.persist();
-              return judged;
-            }),
-          );
-        } else {
-          write = await judge();
-          const judged = write;
-          if (judged) await attempt.commit(() => judged.persist());
-        }
-        if (!write) return { admitted: false };
-        await collabHook("branch.append.afterCommit");
-        return { admitted: true };
-      },
-      {
-        bound: FRAME_ATTEMPTS,
-        retrying: (attempt) => input.diagnostics?.frameRetried({ branchId, attempt }),
-        // Under its own row lock the append cannot miss; a miss there is a moved branch.
-        moved: () => {
-          throw new BranchStaleUpdateError(branchId);
-        },
-      },
-    );
-    if (outcome.admitted) compactIfLong(branchId);
-    return outcome;
+    const write = await judgeWriterUpdate(frame);
+    if (!write) return { admitted: false };
+    const wrote = await runtime.commitOnce(write, {});
+    if (!wrote) return { admitted: false };
+    await collabHook("branch.append.afterCommit");
+    compactIfLong(frame.branchId);
+    return { admitted: true };
   }
 
   /** The frame judged on the committed replica: its prepared append, or null when contained. */
-  async function judgeWriterUpdate(frame: WriterFrameInput, { checkRoom }: { checkRoom: boolean }) {
+  async function judgeWriterUpdate(frame: WriterFrameInput) {
     const base = await runtime.loadBase(frame.branchId);
     const { snapshot, replica } = base;
     const admissible =
@@ -121,7 +90,7 @@ export function createWriterFrames(
       snapshot.status === "active" &&
       snapshot.lifecycle === "active" &&
       snapshot.generation === frame.expectedGeneration;
-    if (admissible && checkRoom)
+    if (admissible)
       runtime.reconcileRoom({
         branchId: frame.branchId,
         room: frame.roomDocument,
@@ -135,28 +104,16 @@ export function createWriterFrames(
         if (!admissible) throw new BranchStaleUpdateError(frame.branchId);
       },
       isContained: () => runtime.containment.contains(replica.doc, frame.updateData),
-      append: async () => {
-        const journals: AppendBranchJournalInput[] = [
+      append: async () =>
+        runtime.prepareAppend(base, [
           {
             branchId: frame.branchId,
             generation: snapshot.generation,
             updateData: frame.updateData,
             source: "writer",
             actorUserId: frame.actorUserId,
-            updateMeta: {
-              restorationAliases: certifyWriterRestorations(replica.doc, frame.updateData),
-            },
           },
-        ];
-        const candidate = runtime.cloneReplica(replica);
-        try {
-          const receipts = captureAppendReceipts(candidate, journals);
-          return await runtime.prepareAppend(base, candidate, journals, receipts);
-        } catch (cause) {
-          candidate.destroy();
-          throw cause;
-        }
-      },
+        ]),
     });
     return admission.admitted ? admission.value : null;
   }

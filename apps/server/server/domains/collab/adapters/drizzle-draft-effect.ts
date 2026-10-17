@@ -30,12 +30,15 @@ export async function refreshDraftEffect(
     const baseline = Y.encodeStateAsUpdate(live);
     draft = materializeBranchRead(read);
     const hasEffect = !documentEffectsEqual(live, draft);
+    const flip = sql`case when ${documentBranches.hasEffect} is distinct from ${hasEffect} then 1 else 0 end`;
     const [row] = await db
       .update(documentBranches)
       .set({
         hasEffect,
         liveCut: Buffer.from(baseline),
-        revision: sql`${documentBranches.revision} + case when ${documentBranches.hasEffect} is distinct from ${hasEffect} then 1 else 0 end`,
+        revision: sql`${documentBranches.revision} + ${flip}`,
+        // The judgement holds at the revision this write leaves (design §3.2's watermark).
+        hasEffectRevision: sql`${documentBranches.revision} + ${flip}`,
       })
       .where(eq(documentBranches.id, branchId))
       .returning({ revision: documentBranches.revision });

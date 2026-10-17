@@ -22,7 +22,7 @@ import type { MarkdownSerializationAnomalyObserver } from "../domain/markdown-do
 import type { ResponseTransactionDiagnostics } from "../domain/response-transaction.js";
 import type { ReversalNoticeDiagnostics } from "../domain/reversal-notices.js";
 import type { DraftReviewDiagnostics } from "../domain/work-draft-review-service.js";
-import type { RewriteCommitted } from "./drizzle-branches.js";
+import type { AppendCommitted, RewriteCommitted } from "./drizzle-branches.js";
 
 export function createBranchPullDiagnostics(eventSink?: EventSink): BranchPullDiagnostics {
   return {
@@ -40,19 +40,40 @@ export function createBranchPullDiagnostics(eventSink?: EventSink): BranchPullDi
 }
 
 /**
- * The branch coordinator's events: a frame judged again, a background fold that failed, a room
- * found behind its branch and reconciled.
+ * The branch coordinator's events: a background fold that failed, a room found behind its
+ * branch and reconciled, an update that arrived before its prefix, and the projection job's
+ * failures.
  */
 export function createWriterFrameDiagnostics(eventSink?: EventSink): WriterFrameDiagnostics {
   return {
-    frameRetried({ branchId, attempt }) {
+    appendPrefixMissing({ branchId, clocks }) {
       if (!eventSink) return;
       emitEvent(eventSink, {
-        level: "info",
+        level: "warn",
         source: "collab.branch",
-        name: "append_retry",
+        name: "append_prefix_missing",
         correlation: { branchId },
-        payload: { attempt },
+        payload: { clocks: clocks.slice(0, 16) },
+      });
+    },
+    projectionFailed({ branchId, cause }) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "error",
+        source: "collab.branch",
+        name: "projection.failed",
+        correlation: { branchId },
+        payload: unknownToEventPayload(cause),
+      });
+    },
+    projectionBaselineBlocked({ branchId, documentId }) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "warn",
+        source: "collab.branch",
+        name: "projection_baseline_blocked",
+        correlation: { branchId, documentId },
+        payload: {},
       });
     },
     roomReconciled({ branchId, generation, trigger, ...payload }) {
@@ -78,6 +99,23 @@ export function createWriterFrameDiagnostics(eventSink?: EventSink): WriterFrame
       });
     },
   };
+}
+
+/**
+ * An append's sequence point: how long its `UPDATE` waited for the branch row and how long it
+ * held the row to `COMMIT`, per keystroke, so at debug level.
+ */
+export function createAppendCommittedEvent(
+  eventSink: EventSink,
+): (detail: AppendCommitted) => void {
+  return ({ branchId, ...payload }) =>
+    emitEvent(eventSink, {
+      level: "debug",
+      source: "collab.branch",
+      name: "append_committed",
+      correlation: { branchId },
+      payload,
+    });
 }
 
 /** P2's commit bound: how long a committed rewrite held its branch row, and the tail it read. */

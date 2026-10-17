@@ -1,8 +1,7 @@
 /**
  * The application branch store over Drizzle: branch creation and resolution, and the
- * application half of each write (Work admission, the pending projection, the live advisory
- * lock, the effect refresh and edit receipts) around the storage primitives in
- * `drizzle-branch-storage`.
+ * application half of each write (Work admission, the pending projection, the projection's
+ * effect write and edit receipts) around the storage primitives in `drizzle-branch-storage`.
  */
 
 import { randomUUID } from "node:crypto";
@@ -24,7 +23,7 @@ import {
   packCollabSchemaVersion,
   unpackCollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { bumpBranchRevisions } from "../../../shared/branch-revisions.js";
 import {
@@ -32,6 +31,7 @@ import {
   deferUntilDrizzleCommit,
   deferUntilDrizzleRollback,
   isInDrizzleTransaction,
+  runInDrizzleSavepoint,
   runInDrizzleTransaction,
   runInRootDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
@@ -45,6 +45,8 @@ import { isDrafted } from "../../file-policy/index.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import { BranchNotFoundError, type ResolvedBranch } from "../domain/branch-resolver.js";
 import {
+  type AppendBranchJournalInput,
+  type AppendReceiptGroup,
   type AppendRowsInput,
   type AppendRowsOutcome,
   type BranchSnapshot,
@@ -68,7 +70,6 @@ import {
   selectBranch,
 } from "./drizzle-branch-storage.js";
 import { recordDocumentEdit, settleDraftGeneration } from "./drizzle-document-edits.js";
-import { createDrizzleJournal } from "./drizzle-journal.js";
 
 export type DrizzleBranchStore = ApplicationBranchStore;
 
@@ -78,6 +79,23 @@ export type RewriteCommitted = {
   holdMs: number;
   tailRows: number;
 };
+
+/**
+ * An append committed: how long its `UPDATE` waited for the branch row (`waitMs`), how long it
+ * then held the row to `COMMIT` (`holdMs`), the rows it wrote and the rows that landed between
+ * its base and its lock.
+ */
+export type AppendCommitted = {
+  branchId: string;
+  waitMs: number;
+  holdMs: number;
+  rows: number;
+  prefixRows: number;
+  prefixMoved: boolean;
+};
+
+/** The projection write's bound on each lock acquisition, not on the transaction (G5, C1). */
+const EFFECT_WRITE_LOCK_TIMEOUT = "100ms";
 
 export function createDrizzleBranchStore(
   db: Database,
@@ -92,9 +110,11 @@ export function createDrizzleBranchStore(
     drafts: Pick<Drafts, "shareActive" | "activeForWork">;
     /** A `commitRewrite` committed: the row lock's hold (`FOR UPDATE` → `COMMIT`) and its tail. */
     onRewriteCommitted?: (detail: RewriteCommitted) => void;
+    /** An `appendRows` committed: its wait for the row lock and its hold to `COMMIT`. */
+    onAppendSequenced?: (detail: AppendCommitted) => void;
   },
 ): DrizzleBranchStore {
-  const { live, workProjection, drafts, onRewriteCommitted } = deps;
+  const { live, workProjection, drafts, onRewriteCommitted, onAppendSequenced } = deps;
   async function findPrimaryWork(threadId: ThreadId): Promise<WorkId> {
     const [row] = await currentDrizzleDb(db)
       .select({ workId: threadWorks.workId })
@@ -161,6 +181,8 @@ export function createDrizzleBranchStore(
     const seed = await replicatedSnapshotFrom(input.liveDoc);
     // Creating a branch is a write the Work's lifecycle orders (decision D12): the draft's
     // Work is locked first, so an Archive either fences the new branch or committed before it.
+    // A fresh fork has no effect against its seed, its baseline (`live_cut`), and the judgement
+    // is fresh at revision 0: the baseline is frozen here and replaced only under a bump.
     return workProjection.mutatePending({ drafts: [input.draftId] }, async () => {
       // The insert's own transaction holds D active (§2.1): a closed draft gains no branch.
       if (!(await drafts.shareActive(input.draftId))) {
@@ -179,6 +201,9 @@ export function createDrizzleBranchStore(
           threadId: null,
           status: "active",
           ...seed,
+          liveCut: seed.state,
+          hasEffect: false,
+          hasEffectRevision: 0,
           schemaVersion: packCollabSchemaVersion(await liveSchemaVersion(input.documentId)),
         })
         .onConflictDoNothing()
@@ -484,39 +509,135 @@ export function createDrizzleBranchStore(
   }
 
   /**
-   * Shape A: rows appended past the checkpoint under `revision = expectedRevision`, with the
-   * effect and receipts the caller computed on its candidate. A common append takes only its
-   * branch row: the derived lifecycle predicate fences the Work, and every membership input
-   * moves the revision. An append that flips the branch's review membership locks its Work
-   * first and touches the Work's projection; no count query runs.
+   * Shape A in its own savepoint (design §2.6): inside an ambient transaction a contained,
+   * prefix-missing or refused outcome rolls back the bump and everything registered inside it,
+   * the caller's earlier writes untouched; the outcome is mapped only after that unwound. Takes
+   * only the branch row: no Work lock, no count, no effect.
    */
   async function appendRows(input: AppendRowsInput): Promise<AppendRowsOutcome> {
-    const append = async (): Promise<AppendRowsOutcome> => {
-      const tx = currentDrizzleDb(db);
-      const { revision, rowIds } = await appendRowsWithinTx(tx, input);
-      await recordAppendReceipts(tx, input, rowIds);
-      return { status: "appended" as const, revision, rowIds };
-    };
-    const { workTouch } = input;
-    return runInDrizzleTransaction(db, () =>
-      workTouch ? workProjection.mutateKnownWorks([workTouch], append) : append(),
-    ).catch((cause) => {
-      if (cause instanceof BranchWriteRollback) return { status: "moved" as const };
+    const startedAt = performance.now();
+    try {
+      return await runInDrizzleSavepoint(db, async () => {
+        const tx = currentDrizzleDb(db);
+        let finalized:
+          | { rows: readonly AppendBranchJournalInput[]; receipts: readonly AppendReceiptGroup[] }
+          | undefined;
+        let prefix = { rows: 0, moved: false };
+        const committed = await appendRowsWithinTx(tx, {
+          branchId: input.branchId,
+          expectedGeneration: input.expectedGeneration,
+          base: input.base,
+          async finalize(read) {
+            prefix = { rows: read.tail.length, moved: read.checkpoint !== null };
+            const outcome = await input.finalize(read);
+            if (outcome.status === "appended") finalized = outcome;
+            return outcome;
+          },
+        });
+        if (!finalized) throw new Error(`Branch ${input.branchId} append was not finalized`);
+        await recordAppendReceipts(tx, input, finalized, committed.rowIds);
+        await collabHook("branch.append.beforeCommit");
+        if (onAppendSequenced) {
+          const { lockedAt, rowIds } = committed;
+          deferUntilDrizzleCommit(() =>
+            onAppendSequenced({
+              branchId: input.branchId,
+              waitMs: Math.round(lockedAt - startedAt),
+              holdMs: Math.round(performance.now() - lockedAt),
+              rows: rowIds.length,
+              prefixRows: prefix.rows,
+              prefixMoved: prefix.moved,
+            }),
+          );
+        }
+        return {
+          status: "appended" as const,
+          revision: committed.revision,
+          checkpointRevision: committed.checkpointRevision,
+          rowIds: committed.rowIds,
+        };
+      });
+    } catch (cause) {
+      if (cause instanceof BranchWriteRollback && !isRewriteOutcome(cause.outcome))
+        return cause.outcome;
       throw cause;
-    });
+    }
   }
 
-  /** The Work row, then the branch row, held for one frame's last judgement. */
-  async function withJudgementLocks<T>(branchId: string, run: () => Promise<T>): Promise<T> {
-    return runInDrizzleTransaction(db, async () => {
-      await workProjection.lockWorks({ branches: [branchId] });
-      await currentDrizzleDb(db)
-        .select({ id: documentBranches.id })
-        .from(documentBranches)
-        .where(eq(documentBranches.id, branchId))
-        .for("update");
-      return run();
-    });
+  /**
+   * The projection's write (design §3.2) in a root transaction of its own: `has_effect` and its
+   * watermark at exactly `revision`, inside `mutateKnownWorks` when the branch has a Work (Work
+   * first, then touched, no count). `lock_timeout` bounds each lock acquisition (the Work, the
+   * branch row an append holds, the publication participants at commit), not the transaction;
+   * a miss aborts with `55P03`, mapped here, outside the transaction, to `contended`.
+   */
+  async function writeEffect(input: {
+    branchId: string;
+    revision: number;
+    hasEffect: boolean;
+    workId: WorkId | null;
+  }): Promise<"written" | "moved" | "contended"> {
+    const write = async () => {
+      const [row] = await currentDrizzleDb(db)
+        .update(documentBranches)
+        .set({ hasEffect: input.hasEffect, hasEffectRevision: input.revision })
+        .where(
+          and(
+            eq(documentBranches.id, input.branchId),
+            eq(documentBranches.revision, input.revision),
+          ),
+        )
+        .returning({ id: documentBranches.id });
+      // The judgement no longer holds: the Work is not touched for it.
+      if (!row) throw new BranchWriteRollback({ status: "moved" });
+    };
+    const { workId } = input;
+    try {
+      await runInRootDrizzleTransaction(db, async () => {
+        await currentDrizzleDb(db).execute(
+          sql.raw(`SET LOCAL lock_timeout = '${EFFECT_WRITE_LOCK_TIMEOUT}'`),
+        );
+        await (workId ? workProjection.mutateKnownWorks([workId], write) : write());
+      });
+      return "written";
+    } catch (cause) {
+      if (cause instanceof BranchWriteRollback) return "moved";
+      if (sqlState(cause) === "55P03") return "contended";
+      throw cause;
+    }
+  }
+
+  /**
+   * One keyset page of the stale set: active work drafts whose watermark is behind their
+   * revision, newest first with `id` as the tie-breaker, after `after` when given.
+   */
+  async function staleEffectBranches(input: {
+    after?: { branchId: string; updatedAt: Date };
+    limit: number;
+  }) {
+    const { after } = input;
+    const rows = await currentDrizzleDb(db)
+      .select({ branchId: documentBranches.id, updatedAt: documentBranches.updatedAt })
+      .from(documentBranches)
+      .where(
+        and(
+          eq(documentBranches.kind, "work_draft"),
+          eq(documentBranches.status, "active"),
+          lt(documentBranches.hasEffectRevision, documentBranches.revision),
+          after
+            ? or(
+                lt(documentBranches.updatedAt, after.updatedAt),
+                and(
+                  eq(documentBranches.updatedAt, after.updatedAt),
+                  lt(documentBranches.id, after.branchId),
+                ),
+              )
+            : undefined,
+        ),
+      )
+      .orderBy(desc(documentBranches.updatedAt), desc(documentBranches.id))
+      .limit(input.limit);
+    return rows;
   }
 
   /**
@@ -586,7 +707,8 @@ export function createDrizzleBranchStore(
             )
         : () => runInDrizzleTransaction(db, rewrite);
     return run().catch((cause): RewriteOutcome => {
-      if (cause instanceof BranchWriteRollback) return cause.outcome;
+      if (cause instanceof BranchWriteRollback && isRewriteOutcome(cause.outcome))
+        return cause.outcome;
       throw cause;
     });
   }
@@ -610,21 +732,12 @@ export function createDrizzleBranchStore(
     },
 
     readEffectBaseline(branchId) {
-      return readEffectBaselineWithin(currentDrizzleDb(db), branchId, async (documentId) => {
-        const snapshot = await createDrizzleJournal(db).read(documentId);
-        const live = createCollabYDoc({ gc: false });
-        try {
-          if (snapshot.checkpoint) Y.applyUpdate(live, snapshot.checkpoint);
-          for (const row of snapshot.updates) Y.applyUpdate(live, row.update);
-          return Y.encodeStateAsUpdate(live);
-        } finally {
-          live.destroy();
-        }
-      });
+      return readEffectBaselineWithin(currentDrizzleDb(db), branchId);
     },
 
     appendRows,
-    withJudgementLocks,
+    writeEffect,
+    staleEffectBranches,
     commitRewrite,
 
     async resolveThreadBranch(documentId, threadId): Promise<ResolvedBranch> {
@@ -692,14 +805,30 @@ class NoPrimaryWorkError extends Error {
   }
 }
 
-/** The receipts an append's caller computed, written with the row ids the append allocated. */
+function isRewriteOutcome(outcome: BranchWriteRollback["outcome"]): outcome is RewriteOutcome {
+  return !["contained", "prefixMissing", "refused"].includes(outcome.status);
+}
+
+/** The PostgreSQL SQLSTATE of `cause` or of an error it wraps (Drizzle wraps in `cause`). */
+function sqlState(cause: unknown): string | null {
+  let current: unknown = cause;
+  while (current) {
+    const code = (current as { code?: unknown }).code;
+    if (typeof code === "string") return code;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return null;
+}
+
+/** The receipts finalization captured, written with the row ids the append allocated. */
 async function recordAppendReceipts(
   db: Pick<Database, "select" | "insert" | "update">,
-  input: AppendRowsInput,
+  input: Pick<AppendRowsInput, "branchId" | "documentId" | "expectedGeneration">,
+  finalized: { rows: readonly AppendBranchJournalInput[]; receipts: readonly AppendReceiptGroup[] },
   rowIds: readonly number[],
 ): Promise<void> {
-  for (const group of input.receipts) {
-    const journal = input.rows[group.rowIndexes[0]];
+  for (const group of finalized.receipts) {
+    const journal = finalized.rows[group.rowIndexes[0]];
     if (!journal) throw new Error("A receipt group names no appended row");
     const meta =
       journal.updateMeta && typeof journal.updateMeta === "object"

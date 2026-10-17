@@ -51,23 +51,22 @@ async function seedModelDraftWrite(harness: Harness, label: string) {
   } finally {
     pre.destroy();
   }
+  const row = {
+    branchId: branch.branchId,
+    generation: read.branch.generation,
+    updateData: update,
+    source: "agent" as const,
+    threadId: work.threadId as ThreadId,
+    turnId: work.turnId,
+    wId,
+  };
+  const receipts = [{ rowIndexes: [0], parts: parts.map(({ origin: _origin, ...part }) => part) }];
   const appended = await harness.store.appendRows({
     branchId: branch.branchId,
     documentId,
-    expectedRevision: read.branch.revision,
     expectedGeneration: read.branch.generation,
-    rows: [
-      {
-        branchId: branch.branchId,
-        generation: read.branch.generation,
-        updateData: update,
-        source: "agent",
-        threadId: work.threadId as ThreadId,
-        turnId: work.turnId,
-        wId,
-      },
-    ],
-    receipts: [{ rowIndexes: [0], parts: parts.map(({ origin: _origin, ...part }) => part) }],
+    base: { checkpointRevision: read.branch.checkpointRevision, seq: read.branch.checkpointSeq },
+    finalize: () => ({ status: "appended", rows: [row], receipts }),
   });
   if (appended.status !== "appended") throw new Error(`The model write was ${appended.status}`);
   return { ...work, documentId, branchId: branch.branchId };

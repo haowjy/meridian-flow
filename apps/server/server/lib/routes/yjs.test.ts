@@ -87,6 +87,7 @@ describe("Yjs branch handshake route guard", () => {
       return commitRewrite(rewrite);
     };
     const branchCoordinator = createBranchCoordinator({
+      onAppendCommitted: () => {},
       store,
       onBranchUpdate: ({ update }) => {
         Y.applyUpdate(loadedRoom, update);

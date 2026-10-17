@@ -39,6 +39,11 @@ export type BranchPullService = {
   /** Drops debounced pulls that haven't started; in-flight pulls finish. */
   cancelScheduledPulls(): void;
   flushLivePull(documentId: DocumentId): Promise<void>;
+  /**
+   * Live merged into one work draft, answered for that branch: the projection job's way to
+   * establish a legacy branch's baseline (design §3.3). Deleted with the null-baseline arm.
+   */
+  pullWorkDraft(input: { documentId: DocumentId; branchId: string }): Promise<PullOutcome>;
   pullThreadPeer(input: {
     documentId: DocumentId;
     threadId: ThreadId;
@@ -231,6 +236,17 @@ export function createBranchPullService(input: {
 
     flushLivePull(documentId) {
       return run(documentId);
+    },
+
+    pullWorkDraft({ documentId, branchId }) {
+      return outsideCallerTransactions(async () => {
+        const liveDoc = await liveSnapshot(documentId);
+        try {
+          return await input.branchCoordinator.pullFromDoc({ branchId, upstream: liveDoc });
+        } finally {
+          liveDoc.destroy();
+        }
+      });
     },
 
     pullThreadPeer(inputPeer) {

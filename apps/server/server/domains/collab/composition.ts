@@ -30,6 +30,7 @@ import type { ObjectRelease } from "../storage/index.js";
 import {
   createAgentEditInvariantDiagnostic,
   createAgentEditObservabilityOptions,
+  createAppendCommittedEvent,
   createBranchAgentEditDiagnostics,
   createBranchPullDiagnostics,
   createDocumentProjectionDiagnostics,
@@ -99,6 +100,7 @@ import { createAgentEditRuntime, metaForOrigin } from "./domain/agent-edit-runti
 import { createBranchConcurrentJournalWatermarks } from "./domain/branch-agent-edit.js";
 import type { AttemptScope } from "./domain/branch-attempts.js";
 import { createBranchCoordinator } from "./domain/branch-coordinator.js";
+import { createBranchProjection } from "./domain/branch-projection.js";
 import { createBranchPullService } from "./domain/branch-pulls.js";
 import { createBranchPushService } from "./domain/branch-push.js";
 import { fullStateFingerprint } from "./domain/branch-push-transition.js";
@@ -203,8 +205,14 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     },
     workProjection: deps.workProjectionMutation,
     drafts: workDrafts,
-    ...(deps.eventSink ? { onRewriteCommitted: createRewriteCommittedEvent(deps.eventSink) } : {}),
+    ...(deps.eventSink
+      ? {
+          onRewriteCommitted: createRewriteCommittedEvent(deps.eventSink),
+          onAppendSequenced: createAppendCommittedEvent(deps.eventSink),
+        }
+      : {}),
   });
+  const writerFrameDiagnostics = createWriterFrameDiagnostics(deps.eventSink);
   const branchJournal = createDrizzleBranchJournalReadStore(deps.db);
   const branchCoordinator = createBranchCoordinator({
     store: branches,
@@ -213,7 +221,9 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     onBranchReset: ({ branchId, generation }) =>
       hocuspocusBinding.closeBranch(branchId, generation),
     applyToRoom: hocuspocusBinding.applyToRoom,
-    diagnostics: createWriterFrameDiagnostics(deps.eventSink),
+    diagnostics: writerFrameDiagnostics,
+    // The projection is composed below, over the coordinator; a mark only fires after a commit.
+    onAppendCommitted: (branchId) => branchEffects.markDirty(branchId),
   });
   const concurrentJournalWatermarks = createBranchConcurrentJournalWatermarks();
   const branchPulls = createBranchPullService({
@@ -226,6 +236,13 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     liveJournal: persistence.journal,
     diagnostics: createBranchPullDiagnostics(deps.eventSink),
     ...(deps.livePullDebounceMs === undefined ? {} : { debounceMs: deps.livePullDebounceMs }),
+  });
+  const branchEffects = createBranchProjection({
+    coordinator: branchCoordinator,
+    store: branches,
+    pulls: branchPulls,
+    diagnostics: writerFrameDiagnostics,
+    outsideTransaction: runOutsideWrite,
   });
 
   const documentUriResolver = createDocumentUriResolver(deps.db);
@@ -618,6 +635,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       dispose: () => {
         branchPulls.cancelScheduledPulls();
         draftBranchAheads.cancelScheduled();
+        branchEffects.dispose();
       },
     },
     transport: {
@@ -661,6 +679,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     projections: {
       documentDerivations: derivations,
       refreshDocumentProjection: projectionRefresher.refresh,
+      branchEffects: { sweep: branchEffects.sweep },
     },
     lineage,
     responses: responseFinalizer,
