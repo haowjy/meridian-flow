@@ -69,6 +69,12 @@ then deletes exactly the signals it observed. Sequence allocation is not commit
 order. Active drafts do not block reconciliation, but rollback-pending journals
 and pending live settlements do.
 
+The journal and receipt signal triggers run inside an append's branch row lock,
+so their cost is the keystroke's hold. `change_trail_owners` runs with JIT off
+(its recursive estimate otherwise compiles LLVM code on every call) and looks
+journals up by primary key; inserts that cannot have owners return before it
+(migration 0065).
+
 Provenance admission is root-unit injective: one protected root unit has one
 visible target, so divergent restoration or replication blocks rather than
 granting deletion credit to either copy.
