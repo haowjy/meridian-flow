@@ -39,7 +39,10 @@ export function createBranchPullDiagnostics(eventSink?: EventSink): BranchPullDi
   };
 }
 
-/** The branch coordinator's events: a frame judged again, a background fold that failed. */
+/**
+ * The branch coordinator's events: a frame judged again, a background fold that failed, a room
+ * found behind its branch and reconciled.
+ */
 export function createWriterFrameDiagnostics(eventSink?: EventSink): WriterFrameDiagnostics {
   return {
     frameRetried({ branchId, attempt }) {
@@ -50,6 +53,18 @@ export function createWriterFrameDiagnostics(eventSink?: EventSink): WriterFrame
         name: "append_retry",
         correlation: { branchId },
         payload: { attempt },
+      });
+    },
+    roomReconciled({ branchId, generation, trigger, ...payload }) {
+      if (!eventSink) return;
+      // A frame finding its room behind is a missed delivery: a symptom worth seeing. A room
+      // registering behind a commit that landed during its load is the expected race.
+      emitEvent(eventSink, {
+        level: trigger === "frame" ? "warn" : "info",
+        source: "collab.branch",
+        name: "room_reconciled",
+        correlation: { branchId, branchGeneration: generation },
+        payload: { trigger, ...payload },
       });
     },
     compactionFailed({ branchId, cause }) {

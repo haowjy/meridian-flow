@@ -29,6 +29,7 @@ import type {
 } from "./domain/ports/checkpoint-authority.js";
 import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
 import { ReservedNamespaceAdmissionError } from "./domain/provenance.js";
+import { closeRoom, whenRoomRegistered } from "./hocuspocus-rooms.js";
 
 type PendingAppend = {
   documentId: string;
@@ -84,6 +85,7 @@ export type HocuspocusPersistenceService = Pick<
   | "drainHocuspocusBranchPersistence"
   | "closeHocuspocusBranchRoom"
   | "rejectStaleBranchSyncStep1"
+  | "enrollHocuspocusBranchRoom"
   | "getPersistenceQueueMetrics"
 > & {
   writerIngressBarrier: WriterIngressBarrier;
@@ -404,10 +406,39 @@ export function createHocuspocusPersistenceService(
         branch.generation !== generation
       )
         return undefined;
-      return requireBranchCoordinator().readBranch(branchId, async (doc, snapshot) => ({
-        state: Y.encodeStateAsUpdate(doc),
-        generation: snapshot.generation,
-      }));
+      // The read can land after a reset: the room loads only its own generation.
+      return requireBranchCoordinator().readBranch(branchId, async (doc, snapshot) =>
+        snapshot.status === "active" && snapshot.generation === generation
+          ? { state: Y.encodeStateAsUpdate(doc), generation }
+          : undefined,
+      );
+    },
+
+    enrollHocuspocusBranchRoom({ branchId, generation, document }) {
+      const hocuspocus = deps.hocuspocus();
+      if (!hocuspocus) return;
+      const enrollment = (async () => {
+        // The load read the branch before its room became a delivery recipient: whatever
+        // committed in between, a transition or a reset, reached no room.
+        if (!(await whenRoomRegistered(hocuspocus, document))) return;
+        const outcome = await requireBranchCoordinator().enrollRoom({
+          branchId,
+          generation,
+          room: document,
+        });
+        if (outcome === "stale") closeRoom(hocuspocus, document);
+      })().catch((cause: unknown) => {
+        if (!deps.eventSink) return;
+        emitEvent(deps.eventSink, {
+          level: "error",
+          source: "collab.hocuspocus",
+          name: "branch_room_enrollment.failed",
+          correlation: { branchId, branchGeneration: generation },
+          payload: unknownToEventPayload(cause),
+        });
+      });
+      // A store of this room, and a drain of this branch, wait the enrollment out.
+      trackAppend(branchRoomName(branchId, generation), enrollment);
     },
 
     async admitLiveWriterUpdate(input) {

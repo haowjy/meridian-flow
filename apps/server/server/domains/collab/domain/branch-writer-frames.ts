@@ -6,7 +6,11 @@
  * owns only what a frame decides.
  */
 import type * as Y from "yjs";
-import type { BranchRuntime, PublishedReplica } from "./branch-coordinator.js";
+import type {
+  BranchRuntime,
+  PublishedReplica,
+  RoomReconcileTrigger,
+} from "./branch-coordinator.js";
 import { captureAppendReceipts } from "./branch-receipts.js";
 import {
   type AppendBranchJournalInput,
@@ -37,6 +41,14 @@ export type WriterFrameDiagnostics = {
   frameRetried(input: { branchId: string; attempt: number }): void;
   /** The background tail fold failed; the tail stays until the next frame crosses the bound. */
   compactionFailed(input: { branchId: string; cause: unknown }): void;
+  /** A room lacked committed content and was brought up to the replica (decision D26). */
+  roomReconciled(input: {
+    branchId: string;
+    generation: number;
+    revision: number;
+    trigger: RoomReconcileTrigger;
+    bytes: number;
+  }): void;
 };
 
 export function createWriterFrames(
