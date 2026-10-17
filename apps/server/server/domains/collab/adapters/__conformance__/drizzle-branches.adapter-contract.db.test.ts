@@ -788,6 +788,134 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         persistence.loadHocuspocusBranchState("missing-review-branch", 1),
       ).resolves.toBeUndefined();
     });
+    // Risk: a frame predicts its review-membership flip from the row it read at revision r;
+    // every write that changes a membership input (has_effect, blocking, a row's status in
+    // either direction, row existence, close, freeze) must move r, or the prediction survives
+    // it. Walks the plan's §2.5 inventory through the real writers.
+    it("every membership-input writer moves the branch revision", async () => {
+      const { bumpBranchRevisions } = await import("../drizzle-branches.js");
+      const { placeDraftRows } = await import("../drizzle-document-edits.js");
+      const { withdrawSettlementMembersWithinTx } = await import("../drizzle-settlement-member.js");
+      const { syncWorkDraftFreeze } = await import("../../../../shared/work-draft-lifecycle.js");
+      const { runInDrizzleTransaction } = await import("../../../../shared/drizzle-transaction.js");
+      const pushStore = createDrizzlePushCommitStore(
+        db,
+        stageSettlementBatchWithinTx,
+        createDrizzleChangeTrailAggregateWriter(db),
+      );
+      const rows = createDrizzleBranchJournalReadStore(db);
+      const branch = await store.ensureDraftBranch({
+        documentId: DOC_ID as never,
+        draftId: DRAFT_ID as never,
+        liveDoc: docWithText("live"),
+      });
+      const revision = async (branchId = branch.branchId) =>
+        (await store.getBranch(branchId))?.revision ?? -1;
+      const moves = async (writer: string, write: () => Promise<unknown>, branchId?: string) => {
+        const before = await revision(branchId);
+        await write();
+        expect({ writer, moved: (await revision(branchId)) > before }).toEqual({
+          writer,
+          moved: true,
+        });
+      };
+
+      const draft = docWithText("live");
+      draft.getText("content").insert(4, " drafted");
+      const [rowId] = await (async () => {
+        let ids: readonly number[] = [];
+        await moves("appendRows (row existence, has_effect)", async () => {
+          ids = await appendBranchRows(store, branch.branchId, [
+            {
+              updateData: Y.encodeStateAsUpdate(draft, Y.encodeStateVector(docWithText("live"))),
+              source: "writer",
+              actorUserId: USER_ID,
+            },
+          ]);
+        });
+        return ids;
+      })();
+      if (rowId === undefined) throw new Error("missing appended row");
+      await moves("markBlocking (blocking = true)", () =>
+        bumpBranchRevisions(db, [branch.branchId], { blocking: true }),
+      );
+      await moves("placeDraftRows (blocking = false)", () =>
+        placeDraftRows(db, branch.branchId, branch.generation, [rowId], { kind: "retired" }),
+      );
+      const active = await rows.listActiveJournalRows(branch.branchId, branch.generation);
+      await moves("commitPreparedPush (active → pushed)", async () => {
+        const current = await store.getBranch(branch.branchId);
+        await pushStore.commitPushBatch(
+          batchOfOne({
+            branch: current,
+            journalRows: active,
+            pushUpdate: new Uint8Array([0, 0]),
+            idempotencyKey: "membership-bump",
+            trail: {
+              documentId: DOC_ID,
+              documentTitle: "document",
+              receiptId: "00000000-0000-4000-8000-000000000697",
+              threadIds: [],
+              journalOwners: [],
+              changes: [],
+            },
+            documentTitle: "document",
+            lockCutUpdate: new Uint8Array([0, 0]),
+          }) as never,
+        );
+      });
+      const [push] = await db.select().from(pushLineage);
+      if (!push) throw new Error("missing push lineage");
+      await moves("withdrawSettlementMembersWithinTx (pushed → active)", () =>
+        runInDrizzleTransaction(db, () =>
+          withdrawSettlementMembersWithinTx(db, [
+            { id: push.id, journalIds: push.journalIds, branchId: push.branchId },
+          ]),
+        ),
+      );
+      await moves("commitPreparedDiscard (→ discarded)", async () => {
+        const current = await store.getBranch(branch.branchId);
+        if (!current) throw new Error("missing branch");
+        await pushStore.commitDiscard({
+          branch: current,
+          journalRows: await rows.listReviewableJournalRows(branch.branchId, branch.generation),
+          state: Y.encodeStateAsUpdate(docWithText("live")),
+          stateVector: Y.encodeStateVector(docWithText("live")),
+        });
+      });
+      await moves("commitRewrite reset (→ discarded, next generation)", async () => {
+        const current = await store.getBranch(branch.branchId);
+        await expect(
+          store.commitRewrite({
+            branchId: branch.branchId,
+            policy: { kind: "exact", revision: current?.revision ?? -1 },
+            fence: { kind: "none" },
+            doc: docWithText("live"),
+            operation: {
+              kind: "reset",
+              editDisposition: "discarded",
+              schemaVersion: COLLAB_SCHEMA_VERSION,
+            },
+          }),
+        ).resolves.toMatchObject({ status: "committed" });
+      });
+      const { branch: peer } = await store.ensureThreadPeerBranch({
+        documentId: DOC_ID as never,
+        threadId: THREAD_ID as never,
+        draftId: DRAFT_ID as never,
+        liveDoc: docWithText("live"),
+      });
+      await moves(
+        "closeThreadPeersOf (status = closed)",
+        () => store.closeThreadPeersOf([branch.branchId], "edit_discarded"),
+        peer.branchId,
+      );
+      await moves("syncWorkDraftFreeze (frozen)", () =>
+        runInDrizzleTransaction(db, () => syncWorkDraftFreeze(db, WORK_ID as never, true)),
+      );
+      expect((await store.getBranch(branch.branchId))?.frozen).toBe(true);
+    });
+
     it("captures an immutable live journal draftBase for each new draft row", async () => {
       const live = docWithText("base");
       const firstSeq = await livePersistence.journal.append(DOC_ID, Y.encodeStateAsUpdate(live), {
