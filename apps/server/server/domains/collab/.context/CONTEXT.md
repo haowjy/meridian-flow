@@ -186,6 +186,19 @@ runs once, and an attempt prepared before it is disposed if it throws. Apply,
 selective Discard and pulls retry a moved branch up to four times, then refuse
 `stale`.
 
+An inverse (Undo, Redo, revert, rollback, and the model's `undo`/`redo`)
+captures without any lock: one read-only snapshot of each document's live
+head, each affected draft at its revision merged with that live state, the
+history and each draft's lifecycle. It plans on that capture, then commits in
+one scope: the live mutexes of its live destinations, the whole captured
+branch set through `mutatePending`, its `document-inverse` and document locks,
+the live head check, and each draft destination's exact checkpoint rewrite at
+its captured revision. Any moved revision or head unwinds the attempt and
+recaptures; after four attempts one more capture is classified without
+writing, so a plan that still applies is a `ReversalConflictError`, never a
+semantic refusal. `markBlocking` (a held draft found by the plan) is its own short write
+after the capture (Works, then the held rows, then the bump).
+
 Each pull attempt is its own root transaction, outside a caller's response
 and database transactions: its candidate and `has_effect` are computed before
 the scope, and inside it only the revision is compared and the checkpoint
@@ -211,13 +224,23 @@ uncommitted and must roll back together, and no such path provisions a root
 peer. Use `NO KEY UPDATE` where a root insert needs FK key
 share against a caller-held lifecycle lock.
 
-The practical lock order is: in-process leases (rewrites, saves and inverses;
-never a writer frame), Work rows, draft row, sorted
-namespace/advisory keys, document locks in ID order, then branch rows (an
-upstream before its peer, otherwise ID order). Never take a
-namespace lock while holding a document lock; compute the complete namespace
-set first and revalidate. Background timers remain armed across failed pulls;
-only a committed run with no newer work may clear them.
+The lock order is one list, and every path takes a prefix-ordered subset of it:
+live `withDocument` mutexes (sorted) before any transaction, then inside the
+database Work rows (only through the Works mutation boundary), the draft row,
+sorted namespace and advisory keys (an inverse's `document-inverse` keys, then
+`lockDocumentMutation`'s document keys in ID order), then branch rows, an
+upstream before its peer, otherwise ID order. No path takes a Work row, a
+live lock or a namespace lock after a branch row, and none takes a namespace
+lock while holding a document lock: it computes the complete namespace set
+first and revalidates. Live mutexes are held only around a commit scope
+(inverse, Apply completion and Discard, the live-scope exception), never
+around a capture, and no path awaits writer ingress while it holds a Work or
+branch row: a frame that must commit before the scope is drained before the
+scope's first row lock, and one admitted after it is post-cut work that misses
+its revision. Branch leases, where a rewrite still takes one, precede all of
+this and are never taken by a writer frame or an inverse. Background timers
+remain armed across failed pulls; only a committed run with no newer work may
+clear them.
 
 ## Authority, checkpoints, and derivation
 
