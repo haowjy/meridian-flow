@@ -22,6 +22,7 @@ import type { MarkdownSerializationAnomalyObserver } from "../domain/markdown-do
 import type { ResponseTransactionDiagnostics } from "../domain/response-transaction.js";
 import type { ReversalNoticeDiagnostics } from "../domain/reversal-notices.js";
 import type { DraftReviewDiagnostics } from "../domain/work-draft-review-service.js";
+import type { RewriteCommitted } from "./drizzle-branches.js";
 
 export function createBranchPullDiagnostics(eventSink?: EventSink): BranchPullDiagnostics {
   return {
@@ -64,6 +65,20 @@ export function createBranchCoordinatorDiagnostics(
       });
     },
   };
+}
+
+/** P2's commit bound: how long a committed rewrite held its branch row, and the tail it read. */
+export function createRewriteCommittedEvent(
+  eventSink: EventSink,
+): (detail: RewriteCommitted) => void {
+  return ({ branchId, ...payload }) =>
+    emitEvent(eventSink, {
+      level: "info",
+      source: "collab.branch",
+      name: "rewrite_committed",
+      correlation: { branchId },
+      payload,
+    });
 }
 
 export function createDraftBranchAheadDiagnostics(
