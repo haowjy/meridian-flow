@@ -6,6 +6,7 @@ import { and, eq } from "drizzle-orm";
 import { afterAll, beforeEach, expect, it } from "vitest";
 import * as Y from "yjs";
 import { testFileGrant } from "../../test-support/file-grants.js";
+import { branchContent } from "./test-support/branch-store-seam.js";
 import {
   ALPHA_ID,
   closeDatabase,
@@ -16,7 +17,6 @@ import {
   TURN_ID,
   USER_ID,
 } from "./test-support/change-trail-postgres-harness.js";
-
 import { inverseFixture } from "./test-support/turn-inverse-fixture.js";
 
 const db = createTestDatabase();
@@ -131,7 +131,7 @@ it("failed response leaves only the writer-dependent draft part rollback_pending
       );
     const doc = new Y.Doc({ gc: false });
     try {
-      Y.applyUpdate(doc, branch.state);
+      Y.applyUpdate(doc, await branchContent(db, branch.id));
       doc.clientID = allocateDocumentClient(doc);
       const text = (doc.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(0) as Y.XmlText;
       const updates = captureMutationUpdates(doc, () => text.insert(8, "!"));
@@ -145,6 +145,14 @@ it("failed response leaves only the writer-dependent draft part rollback_pending
     } finally {
       doc.destroy();
     }
+    const revision = async () =>
+      (
+        await db
+          .select({ revision: schema.documentBranches.revision })
+          .from(schema.documentBranches)
+          .where(eq(schema.documentBranches.id, branch.id))
+      )[0]?.revision ?? -1;
+    const beforeRollback = await revision();
     await view.collab.finalizeResponseRollback(
       { providerResponseId: responseId, editScopeId: responseId },
       {
@@ -153,6 +161,8 @@ it("failed response leaves only the writer-dependent draft part rollback_pending
       },
     );
     expect(await view.draftMarkdown(branch.id)).toBe("Alpha Ga!mma.\n\nBlue.\n");
+    // The draft's text stays: its revision moves for the active → rollback_pending flip (§2.5).
+    expect(await revision()).toBeGreaterThan(beforeRollback);
     const pending = await db
       .select()
       .from(schema.branchWriteJournal)

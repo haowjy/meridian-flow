@@ -115,12 +115,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const update = Y.encodeStateAsUpdate(writerDoc);
       expect(update).toContain(0);
 
-      const result = await journal.appendWriterUpdate?.(DOCUMENT_ID, update, {
+      const result = await journal.appendWriterUpdate(DOCUMENT_ID, update, {
         origin: `human:${USER_ID}`,
         seq: 0,
       });
 
-      expect(result).toMatchObject({ joinedSettlement: true });
+      expect(result).toMatchObject({ status: "appended", joinedSettlement: true });
       const settlements = await db
         .select({
           joinVersion: branchPushSettlementOutbox.joinVersion,

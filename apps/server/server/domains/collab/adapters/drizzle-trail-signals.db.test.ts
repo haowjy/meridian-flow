@@ -82,7 +82,7 @@ describe("change trail dirty signals (postgres)", () => {
     ).toBeNull();
   });
 
-  it("captures journal insertion/disposition, publication, settlement and lifecycle", async () => {
+  it("captures journal insertion/disposition, Apply, settlement and lifecycle", async () => {
     const harness = createHarness(db);
     try {
       await clear();
@@ -193,7 +193,7 @@ describe("change trail dirty signals (postgres)", () => {
     expect(await shell()).toMatchObject({ state: "settled" });
   });
 
-  it("holds the original turn settling for an inverse-only publication and rollback", async () => {
+  it("holds the original turn settling for an inverse-only live write and rollback", async () => {
     const harness = createHarness(db);
     try {
       const branchId = await harness.seedDestructivePush("semantic-readiness");

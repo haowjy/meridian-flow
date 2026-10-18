@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { toDocHandle } from "@meridian/agent-edit/integration";
 import { branchRoomName } from "@meridian/contracts/protocol";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
-import { and, asc, eq, ne } from "drizzle-orm";
+import { and, asc, eq, ne, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { runOutsideDrizzleTransaction } from "../../shared/drizzle-transaction.js";
@@ -20,6 +20,7 @@ import {
   schema,
   USER_ID,
 } from "./test-support/branch-push-settlement-fixture.js";
+import { appendBranchRows, branchContent } from "./test-support/branch-store-seam.js";
 import { commitJournaledUpdate } from "./test-support/branch-update-writes.js";
 import {
   BETA_ID,
@@ -52,7 +53,6 @@ async function setup(
   await harness.seedWriterDocument(markdown, seed);
   const fixture = harness.crossWorkProbeFixture();
   const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
-  branch.doc.destroy();
   const command = { documentId: ALPHA_ID };
   const review = reviewDriver(fixture.collab.draftReview);
   return { harness, fixture, branch, command, review };
@@ -264,16 +264,6 @@ describe("per-change Apply (postgres)", () => {
   ] as const)("last per-change %s closes, disappears from the Work list, and later AI writes reopen", async (action) => {
     const { harness, fixture, branch, command, review } = await setup("Alpha base.", "last-change");
     await stageText(fixture, branch.branchId, 0, " Proposed", "agent");
-    const duplicate = await fixture.branchCoordinator.readBranch(branch.branchId, async (doc) =>
-      Y.encodeStateAsUpdate(doc, Y.encodeStateVector(doc)),
-    );
-    await fixture.branchStore.appendJournal({
-      branchId: branch.branchId,
-      generation: branch.generation,
-      source: "writer",
-      actorUserId: USER_ID,
-      updateData: duplicate,
-    });
     const preview = await review.preview(command.documentId);
     if (preview.status !== "active") throw new Error("missing preview");
     const request = fencedRequest(
@@ -399,7 +389,7 @@ describe("per-change Apply (postgres)", () => {
     );
   });
 
-  it("publishes one closed group, removes it from review, then whole Apply publishes the rest once", async () => {
+  it("applies one closed group, removes it from review, then whole Apply applies the rest once", async () => {
     const { harness, fixture, branch, command, review } = await setup(
       "Alpha base.\n\nBeta base.",
       "partial-apply-poc",
@@ -412,6 +402,7 @@ describe("per-change Apply (postgres)", () => {
     if (before.status !== "active") throw new Error("missing preview");
     const first = before.operations.find((op) => op.sourceUpdateIds.includes(firstId as never));
     if (!first) throw new Error("missing selected operation");
+    const revisionBeforeApply = await branchRevision(branch.branchId);
     await expect(
       review.applyRequest(fencedRequest(command, before, [first.operationId])),
     ).resolves.toMatchObject({
@@ -419,6 +410,8 @@ describe("per-change Apply (postgres)", () => {
       operationIds: [first.operationId],
       closureClassIds: [first.closureClassId],
     });
+    // Pushing the rows (active → pushed) moved the revision.
+    expect(await branchRevision(branch.branchId)).toBeGreaterThan(revisionBeforeApply);
 
     const afterPartial = await harness.liveMarkdown(ALPHA_ID);
     expect(afterPartial).toBe("Alpha base. Agent-one\n\nBeta base.\n");
@@ -463,7 +456,7 @@ describe("per-change Apply (postgres)", () => {
     "same-paragraph-agent",
     "gone",
     "archived",
-  ] as const)("refuses %s without publishing", async (kind) => {
+  ] as const)("refuses %s without applying", async (kind) => {
     const { harness, fixture, branch, command, review } = await setup(
       "Alpha base.\n\nBeta base.",
       "refusal",
@@ -660,7 +653,10 @@ describe("per-change Apply (postgres)", () => {
       operation.sourceUpdateIds.includes(discardedId as never),
     );
     if (!remaining) throw new Error("remaining review operation is unavailable");
+    const revisionBeforeDiscard = await branchRevision(branch.branchId);
     await review.discardRequest(fencedRequest(command, preview, [remaining.operationId]));
+    // Selective Discard (→ discarded) moved the revision.
+    expect(await branchRevision(branch.branchId)).toBeGreaterThan(revisionBeforeDiscard);
     let live = await harness.liveMarkdown(ALPHA_ID);
     expect(live).toContain("Applied");
     expect(live).not.toContain("Discard-me");
@@ -710,7 +706,6 @@ describe("ReviewCut concurrent capture (postgres)", () => {
     await harness.seedWriterDocument("Alpha base.\n\nBeta base.", "review-cut-boundary");
     const fixture = harness.crossWorkProbeFixture();
     const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
-    branch.doc.destroy();
     const command = { documentId: ALPHA_ID };
     const review = reviewDriver(fixture.collab.draftReview);
     const firstId = await stageText(fixture, branch.branchId, 0, " Proposed", "agent");
@@ -721,14 +716,18 @@ describe("ReviewCut concurrent capture (postgres)", () => {
       .from(schema.documentBranches)
       .where(eq(schema.documentBranches.id, branch.branchId));
     const proposed = createCollabYDoc({ gc: false });
-    Y.applyUpdate(proposed, original.state);
+    Y.applyUpdate(proposed, await branchContent(db, original.id));
     const vector = Y.encodeStateVector(proposed);
     const beta = fixture.model.getBlocks(toDocHandle(proposed))[1];
     fixture.model.applyTextEdit(toDocHandle(proposed), beta, { from: 10, to: 10 }, " Concurrent");
     const appended = Y.encodeStateAsUpdate(proposed, vector);
-    const appendedState = Y.encodeStateAsUpdate(proposed);
-    const appendedVector = Y.encodeStateVector(proposed);
     proposed.destroy();
+    // A checkpoint rewrite: a new revision the checkpoint was written at, covering every row.
+    const rewrittenCheckpoint = {
+      revision: sql`${schema.documentBranches.revision} + 1`,
+      checkpointRevision: sql`${schema.documentBranches.revision} + 1`,
+      checkpointSeq: sql`(select coalesce(max(id), 0) from branch_write_journal where branch_id = ${branch.branchId})`,
+    };
     inject = async () => {
       await db.transaction(async (tx) => {
         if (mutation === "append") {
@@ -740,16 +739,25 @@ describe("ReviewCut concurrent capture (postgres)", () => {
             updateData: Buffer.from(appended),
             draftBaseUpdateSeq: 0,
           });
+          // An append: a tail row, and the revision every committed write moves.
           await tx
             .update(schema.documentBranches)
-            .set({ state: Buffer.from(appendedState), stateVector: Buffer.from(appendedVector) })
+            .set({ revision: sql`${schema.documentBranches.revision} + 1` })
             .where(eq(schema.documentBranches.id, branch.branchId));
         } else if (mutation === "refork") {
           await tx
             .update(schema.documentBranches)
-            .set({ generation: original.generation + 1, state: original.liveCut ?? original.state })
+            .set({
+              generation: original.generation + 1,
+              state: original.liveCut ?? original.state,
+              ...rewrittenCheckpoint,
+            })
             .where(eq(schema.documentBranches.id, branch.branchId));
         } else {
+          await tx
+            .update(schema.documentBranches)
+            .set({ revision: sql`${schema.documentBranches.revision} + 1` })
+            .where(eq(schema.documentBranches.id, branch.branchId));
           await tx
             .update(schema.branchWriteJournal)
             .set({ status: "pushed" })
@@ -778,6 +786,8 @@ describe("ReviewCut concurrent capture (postgres)", () => {
           state: original.state,
           stateVector: original.stateVector,
           generation: original.generation,
+          ...rewrittenCheckpoint,
+          checkpointSeq: original.checkpointSeq,
         })
         .where(eq(schema.documentBranches.id, branch.branchId));
     }
@@ -824,6 +834,64 @@ describe("ReviewCut concurrent capture (postgres)", () => {
   });
 });
 
+describe("ReviewCut metadata-only move (postgres)", () => {
+  it.each([
+    "apply",
+    "discard",
+  ] as const)("%s recaptures a revision moved by a hold between its branch read and its cut", async (action) => {
+    let bumpOnce = false;
+    let bumpBranchId = "";
+    const harness = createHarness(db, {
+      reviewCut: (read) => async (address) => {
+        if (bumpOnce) {
+          bumpOnce = false;
+          // A hold: a review-membership input with its revision bump, no content change.
+          await runOutsideDrizzleTransaction(() =>
+            db
+              .update(schema.documentBranches)
+              .set({
+                blocking: sql`not ${schema.documentBranches.blocking}`,
+                revision: sql`${schema.documentBranches.revision} + 1`,
+              })
+              .where(eq(schema.documentBranches.id, bumpBranchId)),
+          );
+        }
+        return read(address);
+      },
+    });
+    warmHarness = harness;
+    await harness.seedWriterDocument("Alpha base.\n\nBeta base.", "review-cut-metadata");
+    const fixture = harness.crossWorkProbeFixture();
+    const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    const review = reviewDriver(fixture.collab.draftReview);
+    await stageText(fixture, branch.branchId, 0, " Proposed", "agent");
+    const before = await review.preview(ALPHA_ID);
+    if (before.status !== "active") throw new Error("missing preview");
+    const [{ revision: revisionBefore }] = await db
+      .select({ revision: schema.documentBranches.revision })
+      .from(schema.documentBranches)
+      .where(eq(schema.documentBranches.id, branch.branchId));
+    bumpBranchId = branch.branchId;
+    bumpOnce = true;
+    const request = fencedRequest(
+      { documentId: ALPHA_ID },
+      before,
+      before.operations.map((op) => op.operationId),
+    );
+    const result =
+      action === "apply"
+        ? await review.applyRequest(request)
+        : await review.discardRequest(request);
+    expect(bumpOnce).toBe(false);
+    expect(result).toMatchObject({ status: action === "apply" ? "applied" : "discarded" });
+    const [{ revision: revisionAfter }] = await db
+      .select({ revision: schema.documentBranches.revision })
+      .from(schema.documentBranches)
+      .where(eq(schema.documentBranches.id, branch.branchId));
+    expect(revisionAfter).toBeGreaterThan(revisionBefore + 1);
+  });
+});
+
 async function stageText(
   fixture: Fixture,
   branchId: string,
@@ -854,6 +922,19 @@ async function journalStatuses(branchId: string) {
     .from(schema.branchWriteJournal)
     .where(eq(schema.branchWriteJournal.branchId, branchId))
     .orderBy(asc(schema.branchWriteJournal.id));
+}
+
+/**
+ * The branch's revision. A write that changes review membership (a row's status, a close) must
+ * move it, so an exact rewrite computed at the old revision misses.
+ */
+async function branchRevision(branchId: string): Promise<number> {
+  const [row] = await db
+    .select({ revision: schema.documentBranches.revision })
+    .from(schema.documentBranches)
+    .where(eq(schema.documentBranches.id, branchId));
+  if (!row) throw new Error(`missing branch ${branchId}`);
+  return row.revision;
 }
 
 function occurrences(value: string, fragment: string): number {

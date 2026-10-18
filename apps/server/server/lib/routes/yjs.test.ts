@@ -4,6 +4,12 @@ import { messageYjsSyncStep1, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
 import { createBranchCoordinator } from "../../domains/collab/domain/branch-coordinator.js";
 import { createBranchPullService } from "../../domains/collab/domain/branch-pulls.js";
+import { readBranchContent } from "../../domains/collab/test-support/branch-store-seam.js";
+import {
+  MemoryBranchStore,
+  memoryBranch,
+  testBranchRow,
+} from "../../domains/collab/test-support/memory-branch-store.js";
 import {
   createAllowAllFileAccess,
   createLocalFileAccessChanges,
@@ -59,50 +65,36 @@ describe("Yjs branch handshake route guard", () => {
     const live = new Y.Doc({ gc: false });
     live.getText("content").insert(0, "live advanced");
     const loadedRoom = new Y.Doc({ gc: false });
-    let storedState = Y.encodeStateAsUpdate(new Y.Doc({ gc: false }));
     let releasePull: (() => void) | undefined;
     const pullBlocked = new Promise<void>((resolve) => {
       releasePull = resolve;
     });
-    const branchCoordinator = createBranchCoordinator({
-      store: {
-        getBranch: async () => ({
+    const store = new MemoryBranchStore([
+      memoryBranch(
+        testBranchRow({
           branchId: "branch_1",
           documentId: "document-1" as never,
-          kind: "work_draft",
-          upstreamBranchId: null,
-          draftId: "draft-1",
           workId: "work-1" as never,
-          threadId: null,
-          status: "active",
           generation: 3,
-          state: storedState,
-          stateVector: Y.encodeStateVectorFromUpdate(storedState),
-          discardedStateVector: null,
-          schemaVersion: COLLAB_SCHEMA_VERSION,
         }),
-        async commitBranchMutation(input) {
-          await pullBlocked;
-          storedState = input.state;
-          return true;
-        },
-        async resetBranchSnapshot() {
-          return true;
-        },
-        async updateBranchSnapshot(input) {
-          await pullBlocked;
-          storedState = input.state;
-          return true;
-        },
-        deferUntilCommit: () => false,
-      },
+        new Y.Doc({ gc: false }),
+      ),
+    ]);
+    // The pull's rewrite waits here, so the room connects before the pull commits.
+    const commitRewrite = store.commitRewrite.bind(store);
+    store.commitRewrite = async (rewrite) => {
+      await pullBlocked;
+      return commitRewrite(rewrite);
+    };
+    const branchCoordinator = createBranchCoordinator({
+      onAppendCommitted: () => {},
+      store,
       onBranchUpdate: ({ update }) => {
         Y.applyUpdate(loadedRoom, update);
       },
     });
     const branchPulls = createBranchPullService({
       outsideTransaction: (operation) => operation(),
-      rootTransaction: (operation) => operation(),
       liveCoordinator: {
         withDocument: async (_documentId, fn) => fn(live),
         recover: async () => {},
@@ -111,8 +103,7 @@ describe("Yjs branch handshake route guard", () => {
       branches: {
         listActiveWorkDraftBranchIds: async () => ["branch_1"],
         ensureThreadPeerBranch: async () => ({
-          branchId: "thread-peer",
-          upstreamBranchId: "branch_1",
+          branch: { branchId: "thread-peer", upstreamBranchId: "branch_1" },
           state: new Uint8Array(),
         }),
       },
@@ -163,7 +154,7 @@ describe("Yjs branch handshake route guard", () => {
       expect(loadedRoom.getText("content").toString()).toBe("live advanced");
     });
     const persisted = new Y.Doc({ gc: false });
-    Y.applyUpdate(persisted, storedState);
+    Y.applyUpdate(persisted, await readBranchContent(store, "branch_1"));
     expect(persisted.getText("content").toString()).toBe("live advanced");
   });
 

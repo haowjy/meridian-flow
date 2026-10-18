@@ -166,7 +166,7 @@ async function measurePostgresAdmission(): Promise<{
     await db.execute(sql`select 1`);
     for (const update of trace) {
       const before = performance.now();
-      await journal.appendWriterUpdate?.(DOCUMENT_ID, update, {
+      await journal.appendWriterUpdate(DOCUMENT_ID, update, {
         origin: `human:${userId}`,
         seq: 0,
       });
@@ -193,7 +193,7 @@ async function runBaselineDay(): Promise<DayResult> {
       isReservedClientId(struct.id.client),
     );
     if (reserved) throw new Error("reserved-writer-client-id");
-    await journal.appendWriterUpdate?.(DOCUMENT_ID, update, {
+    await journal.appendWriterUpdate(DOCUMENT_ID, update, {
       origin: "human:benchmark-user",
       seq: 0,
     });
@@ -253,7 +253,7 @@ function countingJournal(counters: Counters): UpdateJournal {
     appendWriterUpdate: async (_documentId, update) => {
       counters.transactions += 1;
       counters.journalBytes += update.byteLength;
-      return { seq: counters.transactions, joinedSettlement: false };
+      return { status: "appended" as const, seq: counters.transactions, joinedSettlement: false };
     },
     appendBatch: async () => [],
     read: async () => ({ checkpoint: null, updates: [] }),

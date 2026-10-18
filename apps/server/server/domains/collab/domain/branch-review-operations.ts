@@ -2,20 +2,22 @@
 import type { UpdateJournal } from "@meridian/agent-edit/integration";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
 import {
-  type BranchCriticalSections,
-  createBranchCriticalSections,
-} from "./branch-critical-sections.js";
+  type Attempt,
+  type AttemptScope,
+  NO_ATTEMPT_SCOPE,
+  runBoundedAttempts,
+} from "./branch-attempts.js";
+import type { BranchCoordinator } from "./branch-coordinator.js";
+import type { BranchJournalReadStore, BranchJournalRow } from "./branch-journal.js";
 import {
-  type BranchJournalReadStore,
-  type BranchJournalRow,
   BranchPushCommitConflictError,
-  BranchPushRetryExhaustedError,
   type BranchReviewService,
+  DraftChangeRefusal,
   type PushCommitStore,
 } from "./branch-push-contracts.js";
 import { assertNoPendingIntegration } from "./branch-push-plan.js";
+import type { BranchSnapshot, BranchStore } from "./branch-store.js";
 import { documentEffectsEqual } from "./document-content.js";
 
 type Dependencies = {
@@ -24,12 +26,11 @@ type Dependencies = {
   commitStore: PushCommitStore;
   branchCoordinator?: Partial<Pick<BranchCoordinator, "notifyReset">>;
   journal: UpdateJournal;
-  criticalSections?: BranchCriticalSections;
+  /** Each attempt's rollback boundary: a root transaction, or a savepoint in an ambient one. */
+  attemptScope?: AttemptScope;
 };
 
 export function createBranchReviewOperations(deps: Dependencies): BranchReviewService {
-  const criticalSections = deps.criticalSections ?? createBranchCriticalSections();
-
   async function listReviewableRows(
     branchId: string,
     generation: number,
@@ -45,40 +46,38 @@ export function createBranchReviewOperations(deps: Dependencies): BranchReviewSe
     return doc;
   }
 
-  async function withActiveWorkDraftBranchLock<T>(
+  /**
+   * Attempts that re-read the branches and run again when a writer's frame or another
+   * process moved one under us. Four attempts each finding the draft moved (a writer typing)
+   * answer stale, as a selection made against an older draft does.
+   */
+  async function withActiveWorkDraftBranches<T>(
     branchIds: readonly string[],
-    run: (branches: readonly BranchSnapshot[]) => Promise<T>,
+    run: (branches: readonly BranchSnapshot[], attempt: Attempt) => Promise<T>,
   ): Promise<T> {
-    if (branchIds.length === 0) throw new Error("active work draft lock requires a branch");
-    return criticalSections.withBranches(branchIds, () => retryingCas(branchIds, run));
-  }
-
-  /** Re-reads the branches and runs again when another process moved one under us. */
-  async function retryingCas<T>(
-    branchIds: readonly string[],
-    run: (branches: readonly BranchSnapshot[]) => Promise<T>,
-  ): Promise<T> {
-    for (let attempt = 0; ; attempt += 1) {
-      try {
+    if (branchIds.length === 0) throw new Error("A selected Discard names a branch");
+    return runBoundedAttempts({
+      bound: DISCARD_ATTEMPTS,
+      scope: deps.attemptScope ?? NO_ATTEMPT_SCOPE,
+      isMiss: (cause) => cause instanceof BranchPushCommitConflictError,
+      run: async (attempt) => {
         const branches = await Promise.all(
           branchIds.map(async (branchId) =>
             assertActiveWorkDraftBranch(await deps.branchStore.getBranch(branchId), branchId),
           ),
         );
-        return await run(branches);
-      } catch (cause) {
-        if (!(cause instanceof BranchPushCommitConflictError)) throw cause;
-        if (attempt >= maxCasRetries) {
-          throw new BranchPushRetryExhaustedError(cause.branchId, maxCasRetries, cause);
-        }
-      }
-    }
+        return run(branches, attempt);
+      },
+      exhausted: () => {
+        throw new DraftChangeRefusal("stale");
+      },
+    });
   }
 
   async function discardSelected(
     discardInput: Parameters<BranchReviewService["discardSelected"]>[0],
   ): ReturnType<BranchReviewService["discardSelected"]> {
-    return withActiveWorkDraftBranchLock([discardInput.branchId], async ([branch]) => {
+    return withActiveWorkDraftBranches([discardInput.branchId], async ([branch], attempt) => {
       const reviewableRows = await listReviewableRows(branch.branchId, branch.generation);
       const selection = await discardInput.selectRows(branch, reviewableRows);
       const selected = new Set(selection.journalIds);
@@ -113,27 +112,33 @@ export function createBranchReviewOperations(deps: Dependencies): BranchReviewSe
           ? ("applied" as const)
           : ("discarded" as const);
         const outcome = { itemClosed, ...(itemClosed ? { itemDisposition } : {}) };
-        await deps.commitStore.commitDiscard({
-          ...(discardInput.command
-            ? {
-                command: {
-                  envelope: discardInput.command.envelope,
-                  result: discardInput.command.result(outcome),
-                },
-              }
-            : {}),
-          branch,
-          journalRows: rows,
-          survivors,
-          retireSurvivors: itemClosed,
-          expectedLiveRevision: selection.expectedLiveRevision,
-          state: Y.encodeStateAsUpdate(itemClosed ? live : peer),
-          stateVector: Y.encodeStateVector(itemClosed ? live : peer),
-          reviewedByUserId: discardInput.reviewedByUserId,
-        });
-        deps.branchCoordinator?.notifyReset?.({
-          branchId: branch.branchId,
-          generation: branch.generation + 1,
+        // Computed above off every lock; the re-fork's one commit scope.
+        await attempt.commit(() =>
+          deps.commitStore.commitDiscard({
+            ...(discardInput.command
+              ? {
+                  command: {
+                    envelope: discardInput.command.envelope,
+                    result: discardInput.command.result(outcome),
+                  },
+                }
+              : {}),
+            branch,
+            journalRows: rows,
+            survivors,
+            retireSurvivors: itemClosed,
+            expectedLiveRevision: selection.expectedLiveRevision,
+            state: Y.encodeStateAsUpdate(itemClosed ? live : peer),
+            reviewedByUserId: discardInput.reviewedByUserId,
+          }),
+        );
+        attempt.own({
+          transfer: () =>
+            deps.branchCoordinator?.notifyReset?.({
+              branchId: branch.branchId,
+              generation: branch.generation + 1,
+            }),
+          dispose() {},
         });
         return {
           status: "discarded",
@@ -153,7 +158,7 @@ export function createBranchReviewOperations(deps: Dependencies): BranchReviewSe
   };
 }
 
-const maxCasRetries = 3;
+const DISCARD_ATTEMPTS = 4;
 
 function assertActiveWorkDraftBranch(
   branch: BranchSnapshot | null | undefined,

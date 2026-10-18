@@ -14,10 +14,10 @@ import {
   documentYjsUpdates,
   type EditOrigin,
   type EditPlacement,
-  documentBranches as importedDocumentBranches,
 } from "@meridian/database";
 import { and, eq, sql } from "drizzle-orm";
 import * as Y from "yjs";
+import { bumpBranchRevisions } from "../../../shared/branch-revisions.js";
 
 type Db = Pick<Database, "select" | "insert" | "update">;
 export interface ReceiptWrite {
@@ -129,11 +129,8 @@ export async function placeDraftRows(
       ),
     )
     .returning({ editId: documentEditParts.editId, ordinal: documentEditParts.ordinal });
-  if (placed.length)
-    await db
-      .update(importedDocumentBranches)
-      .set({ blocking: false })
-      .where(eq(importedDocumentBranches.id, branchId));
+  // Clearing a hold is a review-membership change, written through the metadata door.
+  if (placed.length) await bumpBranchRevisions(db, [branchId], { blocking: false });
   if (placement.kind === "live" && placed.length === 1) {
     await db
       .update(documentYjsUpdates)

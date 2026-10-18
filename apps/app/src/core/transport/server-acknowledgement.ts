@@ -58,7 +58,7 @@ function readMessageType(frame: Uint8Array): { type: number; body: decoding.Deco
 }
 
 /** The Sync sub-type of a SyncStep2 or Update frame; null for anything else. */
-function readDocumentSyncType(frame: Uint8Array): number | null {
+export function readDocumentSyncType(frame: Uint8Array): number | null {
   const message = readMessageType(frame);
   if (message?.type !== MESSAGE_SYNC) return null;
   try {

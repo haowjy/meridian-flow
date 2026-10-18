@@ -6,6 +6,7 @@ import { and, eq } from "drizzle-orm";
 import { afterAll, beforeEach, expect, it } from "vitest";
 import * as Y from "yjs";
 import { testFileGrant } from "../../test-support/file-grants.js";
+import { branchContent } from "./test-support/branch-store-seam.js";
 import {
   ALPHA_ID,
   closeDatabase,
@@ -16,7 +17,6 @@ import {
   TURN_ID,
   USER_ID,
 } from "./test-support/change-trail-postgres-harness.js";
-
 import { inverseFixture } from "./test-support/turn-inverse-fixture.js";
 
 const db = createTestDatabase();
@@ -105,7 +105,7 @@ it.each([
         .where(eq(schema.documentBranches.id, draft.draftId));
       const doc = new Y.Doc({ gc: false });
       try {
-        Y.applyUpdate(doc, branch.state);
+        Y.applyUpdate(doc, await branchContent(db, branch.id));
         await view.branchCoordinator.commitWriterUpdate({
           branchId: branch.id,
           expectedGeneration: branch.generation,

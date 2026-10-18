@@ -4,7 +4,8 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { testFileGrant } from "../../test-support/file-grants.js";
 import { applyDraftDocument } from "./test-support/apply-draft-document.js";
-import { commitJournaledUpdate, commitSegmentRows } from "./test-support/branch-update-writes.js";
+import { readResolvedBranch } from "./test-support/branch-store-seam.js";
+import { commitJournaledUpdate } from "./test-support/branch-update-writes.js";
 import {
   ALPHA_ID,
   BETA_ID,
@@ -110,7 +111,7 @@ describe("change trail (postgres)", () => {
     await harness.expectSuccessfulCommit("retry-response");
   });
 
-  it("publishes two draft-only documents back to back without retaining the branch lock", async () => {
+  it("saves two draft-only documents back to back without retaining the branch lock", async () => {
     const harness = createHarness(db);
     const fixture = harness.crossWorkProbeFixture();
     const created = [
@@ -414,7 +415,10 @@ describe("change trail (postgres)", () => {
     const fixture = harness.crossWorkProbeFixture();
     const reviewed = await reviewDriver(fixture.collab.draftReview).preview(ALPHA_ID);
     if (reviewed.status !== "active") throw new Error("missing reviewed draft preview");
-    const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    const branch = await readResolvedBranch(
+      fixture.branchStore,
+      await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID),
+    );
     const block = fixture.model.getBlocks(toDocHandle(branch.doc))[0];
     if (!block) throw new Error("draft writer block missing");
     const draftTextLength = fixture.model.getText(block).length;
@@ -424,7 +428,7 @@ describe("change trail (postgres)", () => {
       { from: draftTextLength, to: draftTextLength },
       " WRITER DRAFT MARKER",
     );
-    const committed = await commitSegmentRows(fixture.branchCoordinator, {
+    const committed = await fixture.branchCoordinator.commitSegmentRows({
       branchId: branch.branchId,
       sourceDoc: branch.doc,
       expectedGeneration: branch.generation,

@@ -90,6 +90,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       collab.bindHocuspocus(hocuspocus);
       fixtures.push({ collab, hocuspocus });
       const contextPorts = createProductionUnifiedContextPortFactory({
+        pendingDraft: createTestWorkProjectionMutation(db),
         links: createTestDocumentLinkScopes(db),
         db,
         documentSync: collab,

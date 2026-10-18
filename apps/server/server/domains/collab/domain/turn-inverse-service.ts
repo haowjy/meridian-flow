@@ -20,7 +20,7 @@ import type {
 } from "@meridian/contracts/protocol";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
-import type { BranchSnapshot } from "./branch-coordinator.js";
+import type { BranchSnapshot } from "./branch-store.js";
 import { effectiveActionIndex, isRolledBack, partKey } from "./inverse-actions.js";
 import { prepareHolds } from "./inverse-holds.js";
 import { createModelInversePolicy } from "./model-inverse-policy.js";
@@ -65,8 +65,12 @@ export type PreparedDocumentInverse = {
 };
 export interface TurnInverseStore {
   markBlocking(branchIds: string[]): Promise<void>;
-  /** Transition locks, all process locks, Work rows, then admission locks. */
-  withLockedDocuments<T>(
+  /**
+   * The inverse's attempts: `run` plans on a lock-free capture and commits through `commit`;
+   * a commit that finds the capture moved reruns `run` on a new capture. After the last
+   * attempt `run` sees one more capture on which `commit` throws `ReversalConflictError`.
+   */
+  withCapturedDocuments<T>(
     query: TurnInverseQuery,
     run: (documents: InverseDocument[]) => Promise<T>,
   ): Promise<T>;
@@ -223,7 +227,7 @@ export function createTurnInverseService(store: TurnInverseStore) {
     ...createModelInversePolicy(store),
     async getTurnReceiptChip(threadId: ThreadId, turnId: TurnId): Promise<TurnReceiptChip | null> {
       const query = { threadId, turnId };
-      return store.withLockedDocuments(query, async (documents) => {
+      return store.withCapturedDocuments(query, async (documents) => {
         if (!documents.length) return null;
         const contexts = prepareHolds(documents);
         const redo = prepare(store, documents, query, "redo", randomUUID(), contexts);
@@ -255,7 +259,7 @@ export function createTurnInverseService(store: TurnInverseStore) {
         actor: { type: "user"; userId: string } | { type: "agent" };
       },
     ): Promise<ReversalOutcome> {
-      return store.withLockedDocuments(query, async (documents) => {
+      return store.withCapturedDocuments(query, async (documents) => {
         const plans = prepare(
           store,
           documents,
@@ -313,7 +317,7 @@ export function createTurnInverseService(store: TurnInverseStore) {
         responseIdentity: import("@meridian/contracts").ModelResponseIdentity;
       },
     ): Promise<void> {
-      await store.withLockedDocuments(query, async (documents) => {
+      await store.withCapturedDocuments(query, async (documents) => {
         const plans = prepare(
           store,
           documents,

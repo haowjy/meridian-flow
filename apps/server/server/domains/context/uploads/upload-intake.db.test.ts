@@ -111,6 +111,7 @@ if (!RUN) {
         const service = (db: Database) => {
           const catalog = createDrizzleContextCatalog(db);
           const contextPorts = createProductionUnifiedContextPortFactory({
+            pendingDraft: createTestWorkProjectionMutation(db),
             links: createTestDocumentLinkScopes(db),
             db,
             documentSync: collab,
@@ -258,6 +259,7 @@ if (!RUN) {
           }),
         );
         const contextPorts = createProductionUnifiedContextPortFactory({
+          pendingDraft: createTestWorkProjectionMutation(db),
           links: createTestDocumentLinkScopes(db),
           db: db,
           documentSync: collab,
@@ -329,6 +331,7 @@ if (!RUN) {
       const collab = createInMemoryCollabDomain();
       const catalog = createDrizzleContextCatalog(database.current);
       const contextPorts = createProductionUnifiedContextPortFactory({
+        pendingDraft: createTestWorkProjectionMutation(database.current),
         links: createTestDocumentLinkScopes(database.current),
         db: database.current,
         documentSync: collab,

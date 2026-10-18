@@ -29,6 +29,7 @@ import { createFigureSignedUrlHandler } from "../../../routes/api/projects/[proj
 import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
 import { draftTreeScenario } from "../../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
+import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createDrizzleFileFacts } from "../../file-policy/adapters/drizzle-file-facts.js";
 import { RecentDocumentUnavailableError } from "../../recent-documents/ports/recent-documents-repository.js";
 import { createDrizzleFigureDocumentRepository } from "../adapters/figures/drizzle-figure-document-repository.js";
@@ -230,7 +231,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
         rival,
         foreign,
         foreignWork,
-        facts: createDrizzleFileFacts(db),
+        facts: createDrizzleFileFacts(db, createTestWorkProjectionMutation(db)),
         figures: createDrizzleFigureDocumentRepository({ db }),
         revisions: createDocumentRevisions({
           links: ports.linkScopes,

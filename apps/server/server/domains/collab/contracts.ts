@@ -1,5 +1,5 @@
 /** Public contracts for the collab domain. */
-import type { Hocuspocus } from "@hocuspocus/server";
+import type { Hocuspocus, Document as HocuspocusDocument } from "@hocuspocus/server";
 import type {
   ConcurrentEditInfo,
   ResponseCommitWriteReceipt,
@@ -29,14 +29,13 @@ import type {
 export type { RefusedResponseDocument, RoutedWriteOutcome };
 
 import type { DocumentCreationAggregate } from "./domain/document-creation.js";
+import type { ApplyItemRef } from "./domain/draft-apply.js";
 import type { DraftBranchAheadRegistration } from "./domain/draft-branch-ahead-registration.js";
-import type { DraftBranchLeases } from "./domain/draft-branch-leases.js";
 import type {
   CommandLookup,
   CommandLookupKey,
   DraftCommandEnvelope,
 } from "./domain/draft-commands.js";
-import type { ApplyItemRef } from "./domain/draft-publication.js";
 import type { ResolvedReviewItem } from "./domain/draft-review-identity.js";
 import type { DraftReviewItem } from "./domain/draft-review-items.js";
 import type { Drafts } from "./domain/drafts.js";
@@ -166,11 +165,25 @@ export type CollabTransport = {
   drainHocuspocusBranchPersistence(branchId: string): Promise<void>;
   /** Narrow close affordance for durable shadow-probe T6 and branch reset plumbing. */
   closeHocuspocusBranchRoom(branchId: string): void;
+  /**
+   * A tab's SyncStep1 on a branch room: reconciles `room` against the committed branch, then
+   * true when the tab still holds content a reset discarded (decision D27).
+   */
   rejectStaleBranchSyncStep1(input: {
     branchId: string;
     generation: number;
     clientStateVector: Uint8Array;
+    room: Y.Doc;
   }): Promise<boolean>;
+  /**
+   * Called from a branch room's load hook: once Hocuspocus registers the room, brings it up to
+   * what committed while it loaded, or closes it when its generation is stale (decision D26).
+   */
+  enrollHocuspocusBranchRoom(input: {
+    branchId: string;
+    generation: number;
+    document: HocuspocusDocument;
+  }): void;
   getPersistenceQueueMetrics(): CollabPersistenceMetrics;
 };
 
@@ -185,15 +198,6 @@ export type ReverseThreadContextInput = {
   direction: "undo" | "redo";
   turnId: TurnId;
 };
-
-export class ReverseThreadContextError extends Error {
-  constructor(
-    readonly code: "invalid_write" | "document_not_found" | "invalid_scope",
-    message: string,
-  ) {
-    super(message);
-  }
-}
 
 export type TurnReversalAccess = {
   reverseTurn(input: {
@@ -262,6 +266,8 @@ export type MarkdownDocumentStore = LinkBinder & {
 
 export type DocumentProjectionRefresher = {
   documentDerivations: import("./domain/ports/document-derivations.js").DocumentDerivationService;
+  /** One pass of the draft-effect projection's sweep over stale branches (design §3.2). */
+  branchEffects: { sweep(): Promise<number>; flush(): Promise<void> };
   refreshDocumentProjection(input: { documentId: DocumentId; threadId?: ThreadId }): Promise<void>;
 };
 
@@ -332,6 +338,8 @@ export type ReviewSelectionCommand =
       closureClassIds: readonly string[];
       admissionTokens: readonly string[];
       memberPartKeys: readonly string[];
+      /** False when the client sent a sample: absence then proves nothing. */
+      memberPartKeysComplete: boolean;
       liveRevisionToken: string;
       draftRevisionToken?: string;
     };
@@ -435,8 +443,6 @@ export type CollabDraftResolver = {
   drafts: Drafts;
   /** A drain for the debounced registration of writers' review-room edits (§10.7). */
   draftLinks: Pick<DraftBranchAheadRegistration, "flush">;
-  /** Every branch of a draft leased before its transaction: what closing the draft needs. */
-  draftLeases: DraftBranchLeases;
   /** Work purge's disposal of the purged Work's drafts through the locked Discard kernel (§2.6). */
   workDraftDisposal: WorkDraftDisposal;
 };
@@ -449,7 +455,6 @@ export type TurnLiveLineageAccess = {
 
 export type BranchPushAccess = {
   recoverPendingLiveSettlements(input?: { signal?: AbortSignal }): Promise<number>;
-  countPendingByWorkIds(workIds: readonly WorkId[]): Promise<ReadonlyMap<WorkId, number>>;
 };
 
 /**
@@ -517,7 +522,10 @@ export type DocumentAttribution = {
 
 /** Background work the domain schedules itself, stopped when the app shuts down. */
 export type CollabLifecycle = {
-  /** Drops debounced live-to-draft pulls that haven't started; running pulls finish. */
+  /**
+   * Drops debounced live-to-draft pulls and projection runs that haven't started; running
+   * ones finish.
+   */
   dispose(): void;
 };
 

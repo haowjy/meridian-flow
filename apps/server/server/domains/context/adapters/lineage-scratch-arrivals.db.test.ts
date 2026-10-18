@@ -1,4 +1,5 @@
 /** Restoring chat and Work visibility claims returning lineage addresses once. */
+
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextSources,
@@ -108,9 +109,9 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
         arrivals,
         projectionMutation: createWorkProjectionMutation({
           db,
+          pendingCounts: createDrizzleWorkDraftPendingStore(db),
           availability,
           catalog,
-          pending: createDrizzleWorkDraftPendingStore(db),
         }),
         fileAccessChanges: createLocalFileAccessChanges(),
       });

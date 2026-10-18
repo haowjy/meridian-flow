@@ -2,7 +2,7 @@
 import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { commitSegmentRows } from "../test-support/branch-update-writes.js";
+import { readBranchContent } from "../test-support/branch-store-seam.js";
 import {
   ALPHA_ID,
   closeDatabase,
@@ -59,13 +59,14 @@ describe("document edit receipts (Postgres)", () => {
         (rows[1].updateMeta as { documentEdit: unknown }).documentEdit,
       );
     }
-    it("writer insertion after Discard publishes restored text", async () => {
+    it("writer insertion after Discard lands restored text", async () => {
       const { fixture, branchId, review } = draft;
       const snapshot = await fixture.branchStore.getBranch(branchId);
       if (!snapshot) throw new Error("Missing branch");
+      const content = await readBranchContent(fixture.branchStore, branchId);
       const room = new Y.Doc({ gc: false });
       try {
-        Y.applyUpdate(room, snapshot.state);
+        Y.applyUpdate(room, content);
         let delta!: Uint8Array;
         room.on("update", (update: Uint8Array) => {
           delta = update;
@@ -112,7 +113,7 @@ describe("document edit receipts (Postgres)", () => {
       }
       await expectSurvivor();
     });
-    it("cold recovery publishes the restored word and retains its turn shell", async () => {
+    it("cold recovery lands the restored word and retains its turn shell", async () => {
       harness.cancelScheduledPulls();
       harness.destroyWarmState();
       harness = createHarness(db);
@@ -160,15 +161,15 @@ describe("document edit receipts (Postgres)", () => {
       await harness.seedWriterDocument("red\n\nblue", responseId);
       const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
       const branchId = branch.branchId;
-      branch.doc.destroy();
       const review = reviewDriver(fixture.collab.draftReview);
       let ordinal = 0;
       const replace = async (paragraph: number, text: string) => {
         const snapshot = await fixture.branchStore.getBranch(branchId);
         if (!snapshot) throw new Error("Missing branch");
+        const content = await readBranchContent(fixture.branchStore, branchId);
         const doc = new Y.Doc({ gc: false });
         try {
-          Y.applyUpdate(doc, snapshot.state);
+          Y.applyUpdate(doc, content);
           const deltas: Uint8Array[] = [];
           doc.on("update", (update: Uint8Array) => deltas.push(update));
           const node = doc.getXmlFragment("prosemirror").get(paragraph) as Y.XmlElement;
@@ -178,7 +179,7 @@ describe("document edit receipts (Postgres)", () => {
             if (text) value.insert(0, text);
           });
           expect(
-            await commitSegmentRows(fixture.branchCoordinator, {
+            await fixture.branchCoordinator.commitSegmentRows({
               branchId,
               sourceDoc: doc,
               expectedGeneration: snapshot.generation,
@@ -438,9 +439,10 @@ describe("document edit receipts (Postgres)", () => {
       ]);
       const snapshot = await fixture.branchStore.getBranch(branchId);
       if (!snapshot) throw new Error("Missing branch");
+      const content = await readBranchContent(fixture.branchStore, branchId);
       const room = new Y.Doc({ gc: false });
       try {
-        Y.applyUpdate(room, snapshot.state);
+        Y.applyUpdate(room, content);
         let update!: Uint8Array;
         room.on("update", (delta: Uint8Array) => {
           update = delta;
@@ -549,7 +551,7 @@ describe("document edit receipts (Postgres)", () => {
         .where(eq(schema.documentEditParts.editId, edits[0].id));
       expect(parts).toHaveLength(1);
       expect(parts[0].placement.kind).toBe("live");
-      if (parts[0].placement.kind !== "live") throw new Error("Part was not published");
+      if (parts[0].placement.kind !== "live") throw new Error("Part was not placed on live");
       const [authored] = await db
         .select()
         .from(schema.documentYjsUpdates)

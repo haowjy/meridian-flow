@@ -23,13 +23,14 @@ import {
 } from "@meridian/prosemirror-schema";
 import { and, asc, desc, eq, inArray, isNull, lte, sql } from "drizzle-orm";
 import * as Y from "yjs";
+import { bumpBranchRevisions } from "../../../shared/branch-revisions.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { draftBranchWorks } from "../../../shared/work-draft-lifecycle.js";
 import type { NoticePort } from "../../notices/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
+import type { BranchJournalRow } from "../domain/branch-journal.js";
 import type {
-  BranchJournalRow,
   PendingLiveSettlement,
   PreparedPushCommit,
   PushLineageRow,
@@ -129,13 +130,25 @@ export async function stageSettlementMemberWithinTx(
 export async function withdrawSettlementMembersWithinTx(
   db: DrizzleDb,
   pushes: readonly Pick<PushLineageRow, "id" | "journalIds" | "branchId">[],
-  notices?: NoticePort,
-  workProjection?: WorkProjectionMutation,
+  notices: NoticePort | undefined,
+  workProjection: WorkProjectionMutation,
 ): Promise<void> {
   if (pushes.length === 0) return;
   const withdraw = async () => {
     const journalIds = pushes.flatMap((push) => push.journalIds);
     if (journalIds.length > 0) {
+      // `pushed → active` is a review-membership change: the branch rows are locked in id
+      // order and their revisions bumped before the rows return (the caller holds the Works).
+      const affected = await db
+        .selectDistinct({ branchId: branchWriteJournal.branchId })
+        .from(branchWriteJournal)
+        .where(
+          and(inArray(branchWriteJournal.id, journalIds), eq(branchWriteJournal.status, "pushed")),
+        );
+      await bumpBranchRevisions(
+        db,
+        affected.map((row) => row.branchId),
+      );
       await db
         .update(branchWriteJournal)
         .set({ status: "active", pushedAt: null, reviewedBy: null, reviewedAt: null })
@@ -152,8 +165,7 @@ export async function withdrawSettlementMembersWithinTx(
     );
   };
   const branchIds = pushes.flatMap(({ branchId }) => (branchId ? [branchId] : []));
-  if (!workProjection) return withdraw();
-  await workProjection.mutatePendingBranches(branchIds, withdraw);
+  await workProjection.mutate({ branches: branchIds }, withdraw);
 }
 
 /** Each member's lock cut and post-cut joins, read inside the completion transaction. */

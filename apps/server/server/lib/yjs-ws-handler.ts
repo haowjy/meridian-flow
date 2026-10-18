@@ -18,6 +18,7 @@ import { messageYjsSyncStep1, messageYjsSyncStep2, messageYjsUpdate } from "y-pr
 import * as Y from "yjs";
 import {
   type AdmitLiveWriterUpdateResult,
+  BranchPrefixMissingError,
   isDocumentSchemaMajorMismatchError,
   type UpdateOrigin,
 } from "../domains/collab/index.js";
@@ -329,6 +330,7 @@ async function classifyYjsConnectionAdmission(input: {
 
 async function enforceBranchHandshake(input: {
   services: YjsGatewayServices;
+  document: Y.Doc;
   room: Extract<ReturnType<typeof parseRoomOrDeny>, { kind: "branch" }>;
   syncType: number;
   payload: Uint8Array;
@@ -340,6 +342,7 @@ async function enforceBranchHandshake(input: {
       branchId: input.room.branchId,
       generation: input.room.generation,
       clientStateVector: input.payload,
+      room: input.document,
     });
     if (input.context?.branchSyncState?.get(key) === "rejected") {
       throw permissionDenied(WS_CLOSE.BRANCH_STALE.reason, WS_CLOSE.BRANCH_STALE.code);
@@ -391,6 +394,7 @@ async function admitBranchSync(
 ): Promise<undefined> {
   await enforceBranchHandshake({
     services: input.services,
+    document: input.document,
     room,
     syncType: input.syncType,
     payload: input.payload,
@@ -412,6 +416,12 @@ async function admitBranchSync(
   } catch (cause) {
     // The bound edit grant was refused under the seam's locks; `beforeSync` answers it.
     if (cause instanceof FileEditRefusedError) throw cause;
+    // Not a refusal (D30): the client reconnects and its handshake carries the missing prefix.
+    if (cause instanceof BranchPrefixMissingError) {
+      const { code, reason } = WS_CLOSE.BRANCH_PREFIX_MISSING;
+      input.closeTransport?.({ code, reason });
+      throw permissionDenied(reason, code);
+    }
     input.closeTransport?.({ code: 1008, reason: "branch-update-admission-failed" });
     throw permissionDenied("branch-update-admission-failed", 1008);
   }
@@ -516,7 +526,8 @@ export function createHocuspocus(
         if (admission.target.kind === "branch") {
           const target = admission.target;
           // Do not delay room admission: a cold room may briefly render its persisted
-          // state before this pull arrives, then normal CRDT sync catches it up.
+          // state before this pull arrives. A pull that commits while the room loads is
+          // brought in by the room's enrollment once Hocuspocus registers it.
           void services.documentSync
             .flushBranchLivePull(target.documentId)
             .catch((cause: unknown) => {
@@ -608,12 +619,29 @@ export function createHocuspocus(
     },
     async afterLoadDocument({ documentName, document }) {
       const room = parseRoomOrDeny(documentName);
-      if (room.kind === "live")
+      if (room.kind === "live") {
         await services.documentSync.validateHocuspocusDocument(room.documentId, document);
+        return;
+      }
+      // Not awaited: Hocuspocus registers the room only after this hook returns.
+      services.documentSync.enrollHocuspocusBranchRoom({
+        branchId: room.branchId,
+        generation: room.generation,
+        document,
+      });
     },
     async connected({ documentName, connection, context }) {
       const room = parseRoomOrDeny(documentName);
-      if (room.kind !== "live") return;
+      if (room.kind === "branch") {
+        // As for a live room: a reset can commit between this connection's admission and
+        // its room's registration, and the old generation's room must not take the tab.
+        if (await services.documentSync.resolveBranchHocuspocusRoom(room.branchId, room.generation))
+          return;
+        const { code, reason } = WS_CLOSE.BRANCH_GENERATION_STALE;
+        connection.close({ code, reason });
+        context.closeTransport?.({ code, reason });
+        throw permissionDenied(reason, code);
+      }
       try {
         // The room can finish loading after restore's disconnection. Validate
         // after connection creation too, so the late join is closed and retries.

@@ -1,7 +1,7 @@
 /**
  * The ordered extension point of a batch's settlement: how Apply's tree work
- * joins the text settlement it publishes with (target "Apply is one
- * publication"; foundation contract §11.1).
+ * joins the text settlement it lands with (target "Apply is one
+ * settlement"; foundation contract §11.1).
  *
  * The same plans and the same lock order run twice. First, before anything is
  * staged, in one short check transaction that calls `check()`; then inside the
@@ -34,9 +34,8 @@
 import type { DraftId } from "@meridian/contracts";
 import type { ContextSourceId, DocumentId, WorkId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
-import type { BranchLockLease } from "../branch-critical-sections.js";
 
-export type PublicationRefusal = { code: string; detail?: JsonValue };
+export type ApplyRefusal = { code: string; detail?: JsonValue };
 
 /**
  * An item a step keeps out of live, and why. Items are the step's own units
@@ -45,39 +44,39 @@ export type PublicationRefusal = { code: string; detail?: JsonValue };
  * staged with the batch when decided at the check, written in completion when
  * decided there, and reported per item either way.
  */
-export type PublicationItemHold = {
+export type ApplyItemHold = {
   itemKey: string;
   documentId?: DocumentId;
-  reason: PublicationRefusal;
+  reason: ApplyRefusal;
 };
 
 /**
- * What completion did to one item that publishes, in the step's own terms (lane E: the
+ * What completion did to one item that applies, in the step's own terms (lane E: the
  * receipt notes, a restore), decided under the completion's locks
  * and returned with the batch's result.
  */
-export type PublicationItemOutcome = { itemKey: string; detail: JsonValue };
+export type ApplyItemOutcome = { itemKey: string; detail: JsonValue };
 
-export type PublicationAdmission =
+export type ApplyAdmission =
   | {
       kind: "proceed";
-      hold?: readonly PublicationItemHold[];
+      hold?: readonly ApplyItemHold[];
       /** Completion only: what it did per item, reported with the batch's result. */
-      outcomes?: readonly PublicationItemOutcome[];
+      outcomes?: readonly ApplyItemOutcome[];
     }
-  | { kind: "refuse"; reason: PublicationRefusal };
+  | { kind: "refuse"; reason: ApplyRefusal };
 
 /**
  * The pre-staging decision. A step that holds items must return its payload
  * refined to exclude them: that refined payload is what is staged, so
  * completion never sees, and can never promote, an excluded item.
  */
-export type PublicationCheckAdmission =
-  | { kind: "proceed"; hold?: readonly PublicationItemHold[]; payload?: JsonValue }
-  | { kind: "refuse"; reason: PublicationRefusal };
+export type ApplyCheckAdmission =
+  | { kind: "proceed"; hold?: readonly ApplyItemHold[]; payload?: JsonValue }
+  | { kind: "refuse"; reason: ApplyRefusal };
 
 /** A text member, known before staging and reconstructed from its push for completion. */
-export type PublicationMember = {
+export type ApplyMember = {
   documentId: DocumentId;
   branchId: string | null;
   workId: WorkId | null;
@@ -85,7 +84,7 @@ export type PublicationMember = {
 };
 
 /** A member after staging: lineage-specific data lives only here. */
-export type StagedPublicationMember = PublicationMember & { pushId: number };
+export type StagedApplyMember = ApplyMember & { pushId: number };
 
 type ScopeInputs = {
   batchId: string;
@@ -100,20 +99,18 @@ type ScopeInputs = {
 
 /** The batch being checked before staging, or settled after it, as a step sees it. */
 export type SettlementBatchScope =
-  | (ScopeInputs & { stage: "check"; members: readonly PublicationMember[] })
+  | (ScopeInputs & { stage: "check"; members: readonly ApplyMember[] })
   | (ScopeInputs & {
       stage: "completion";
-      members: readonly StagedPublicationMember[];
+      members: readonly StagedApplyMember[];
       /** Items already held for this batch (at the check), never promoted. */
-      held: readonly PublicationItemHold[];
-      /** The lease the caller holds over the batch's branches, when it has one. */
-      lease?: BranchLockLease;
+      held: readonly ApplyItemHold[];
     });
 
-export type SettlementPublicationPlan = {
+export type SettlementApplyPlan = {
   /** Works this step changes, locked with the batch's own before anything else. */
   workIds?: readonly WorkId[];
-  /** Drafts this step publishes or closes, row-locked after Works, before namespaces. */
+  /** Drafts this step applies or closes, row-locked after Works, before namespaces. */
   draftIds?: readonly DraftId[];
   /** Documents whose current sources' namespaces must be held. */
   namespaceDocumentIds?: readonly DocumentId[];
@@ -122,37 +119,28 @@ export type SettlementPublicationPlan = {
   /** Documents whose mutation locks join the batch's sorted set. */
   documentIds?: readonly DocumentId[];
   /** No writes: the same decision `beforeAdmission` makes, run before staging. */
-  check?(): Promise<PublicationCheckAdmission>;
+  check?(): Promise<ApplyCheckAdmission>;
   /** Vacate and install; absent means `proceed`. */
-  beforeAdmission?(): Promise<PublicationAdmission>;
+  beforeAdmission?(): Promise<ApplyAdmission>;
   /** Settle arrivals and record history, given the members whose text admitted. */
   afterAdmission?(admitted: readonly DocumentId[]): Promise<void>;
   /**
    * The batch was refused in completion and is being abandoned, in that same transaction:
    * a step records what the withdrawal means for its writer's command (§4.6).
    */
-  onRefused?(reason: PublicationRefusal): Promise<void>;
+  onRefused?(reason: ApplyRefusal): Promise<void>;
   afterCommit?(): void | Promise<void>;
 };
 
-export type SettlementPublicationStep = {
+export type SettlementApplyStep = {
   /** The payload kind this step owns (`"draft_tree"`); recovery finds its input by it. */
   kind: string;
   /**
-   * The outer preparation, from the step's payload: the branch ids whose
-   * critical-section leases the batch needs (Apply all: every branch of the draft
-   * an Apply may close). Warm execution and recovery both acquire them before
-   * coordinator leases and any database transaction; completion calls it again
-   * under its locks, and a set that grew sends the batch back to discovery.
-   * Never take leases from `beforeAdmission`.
-   */
-  prepare?(payload: JsonValue): Promise<{ branchIds: readonly string[] }>;
-  /**
    * Plans this step for one batch from durable, immutable inputs, before any
    * lock is taken. The check and recovery plan again, so a plan never depends
-   * on process state. Null when the step has nothing to publish in this batch.
+   * on process state. Null when the step has nothing to apply in this batch.
    */
-  plan(batch: SettlementBatchScope): Promise<SettlementPublicationPlan | null>;
+  plan(batch: SettlementBatchScope): Promise<SettlementApplyPlan | null>;
 };
 
 /** How the store takes namespace locks; the context domain owns the keys. */

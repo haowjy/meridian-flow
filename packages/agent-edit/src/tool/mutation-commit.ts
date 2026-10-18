@@ -5,19 +5,16 @@ import {
   applyConcurrentUpdates,
   type BlockSnapshot,
   type ConcurrentDetectionResult,
-  computeEcho,
   snapshotBlocks,
 } from "../apply/echo.js";
 import type {
-  ApplyEchoHunk,
   ConcurrentEditInfo,
   ConcurrentUpdate,
   ConcurrentUpdateOrigin,
 } from "../apply/types.js";
 import { toDocHandle } from "../handles.js";
 import { type LineageRange, subtractLineageRanges } from "../lineage/range-set.js";
-import { withRunShownLinks } from "../links/shown.js";
-import type { DocumentCoordinator, DocumentLockOptions } from "../ports/document-coordinator.js";
+import type { DocumentAccess, DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { DocumentLinksPort } from "../ports/document-links.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { UpdateMeta } from "../ports/types.js";
@@ -34,23 +31,6 @@ import type { DocumentCommandName, InteractionContext, MutationActor } from "./t
 
 export interface MutationCommitRuntime {
   doc: Y.Doc;
-}
-
-export interface SyncedMutationSummary {
-  revision?: string | null;
-  echo: ApplyEchoHunk[];
-  concurrentEdits?: ConcurrentEditInfo;
-  reconciled: boolean;
-  awarenessDegraded?: true;
-}
-
-export interface MutationEchoInput {
-  runtime: MutationCommitRuntime;
-  /** The command's links; the echo spells through them. */
-  links: CommandLinks;
-  before: readonly BlockSnapshot[];
-  touchedHashes: ReadonlySet<string>;
-  deletedHashes: ReadonlySet<string>;
 }
 
 export interface JournaledUpdate {
@@ -72,9 +52,9 @@ export interface LiveProjectionInput extends LiveUpdateCommitInput {
   touchedHashes: ReadonlySet<string>;
   deletedHashes: ReadonlySet<string>;
   preOwnSnapshot?: Uint8Array;
-  /** Frozen host cut before checked publication, for terminal receipt reporting. */
+  /** Frozen host cut before the checked commit, for terminal receipt reporting. */
   reportingCut?: Uint8Array;
-  access?: DocumentLockOptions;
+  access?: DocumentAccess;
   turnId?: string;
   actor: MutationActor;
 }
@@ -105,9 +85,9 @@ export interface CommitPreflightInput {
   touchedHashes: ReadonlySet<string>;
   interactionContext?: InteractionContext;
   preOwnSnapshot?: Uint8Array;
-  /** Frozen host cut before checked publication, for terminal receipt reporting. */
+  /** Frozen host cut before the checked commit, for terminal receipt reporting. */
   reportingCut?: Uint8Array;
-  access?: DocumentLockOptions;
+  access?: DocumentAccess;
   ownTurnId?: string;
   actor: MutationActor;
   /**
@@ -166,10 +146,6 @@ export class AcceptedMutationSubmissionError extends Error {
 export interface MutationCommit {
   submitMutation(input: PreparedMutation): Promise<MutationSubmissionResult>;
   commitJournalBatch(entries: readonly JournalBatchAppendEntry[]): Promise<JournalBatchCommit>;
-  summarizeMutationEcho(
-    input: MutationEchoInput,
-    concurrent?: ConcurrentDetectionResult,
-  ): SyncedMutationSummary;
   detectConcurrentEdits(input: {
     docId: string;
     runtime: MutationCommitRuntime;
@@ -178,9 +154,9 @@ export interface MutationCommit {
     reportingOnly?: boolean;
     interactionContext?: InteractionContext;
     preOwnSnapshot?: Uint8Array;
-    /** Frozen host cut before checked publication, for terminal receipt reporting. */
+    /** Frozen host cut before the checked commit, for terminal receipt reporting. */
     reportingCut?: Uint8Array;
-    access?: DocumentLockOptions;
+    access?: DocumentAccess;
     ownTurnId?: string;
   }): Promise<ConcurrentDetectionResult>;
   captureCommitPreflight(
@@ -215,35 +191,12 @@ export function createMutationCommit(deps: {
   return {
     submitMutation,
     commitJournalBatch,
-    summarizeMutationEcho,
     detectConcurrentEdits,
     captureCommitPreflight,
     applyCommittedUpdateWithRecheck,
     recheckCommittedUpdate,
     reportAcceptedMutation,
   };
-
-  function summarizeMutationEcho(
-    input: MutationEchoInput,
-    concurrent: ConcurrentDetectionResult = emptyConcurrentDetection(),
-  ): SyncedMutationSummary {
-    try {
-      const after = snapshotBlocks(toDocHandle(input.runtime.doc), model, input.links.codec);
-      const echo = computeEcho({
-        before: input.before,
-        after,
-        agentTouchedHashes: input.touchedHashes,
-        agentDeletedHashes: input.deletedHashes,
-      });
-      return {
-        echo,
-        concurrentEdits: withRunShownLinks(concurrent.info, input.links),
-        reconciled: echo.some((hunk) => hunk.mode === "full"),
-      };
-    } catch {
-      return { echo: [], reconciled: false, awarenessDegraded: true };
-    }
-  }
 
   async function detectConcurrentEdits(input: {
     docId: string;
@@ -253,9 +206,9 @@ export function createMutationCommit(deps: {
     reportingOnly?: boolean;
     interactionContext?: InteractionContext;
     preOwnSnapshot?: Uint8Array;
-    /** Frozen host cut before checked publication, for terminal receipt reporting. */
+    /** Frozen host cut before the checked commit, for terminal receipt reporting. */
     reportingCut?: Uint8Array;
-    access?: DocumentLockOptions;
+    access?: DocumentAccess;
     ownTurnId?: string;
   }): Promise<ConcurrentDetectionResult> {
     const detectionDoc = input.preOwnSnapshot
@@ -655,7 +608,7 @@ async function concurrentUpdatesSince(
   liveJournalSeq?: number,
   attemptId?: string,
   reportingCut?: Uint8Array,
-  access?: DocumentLockOptions,
+  access?: DocumentAccess,
 ): Promise<ConcurrentUpdate[]> {
   if (coordinator.concurrentUpdatesSince) {
     return coordinator.concurrentUpdatesSince({
@@ -731,14 +684,5 @@ function mergeConcurrentDetection(
         ? { syncOverflow: true }
         : {}),
     },
-  };
-}
-
-function emptyConcurrentDetection(): ConcurrentDetectionResult {
-  return {
-    humanTouchedHashes: new Set(),
-    touchedHashes: new Set(),
-    baselineBlocks: [],
-    lineageOrigins: [],
   };
 }

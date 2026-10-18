@@ -33,6 +33,12 @@ Start from your symptom in [Strategies](#strategies), or scan the
 - **Something is slow or chatty.** LLM Calls panel first (latency, retries,
   token counts per call). For per-chunk granularity, opt into
   `OBS_VERBOSE=gateway.chunks` (dev/test only) and re-run.
+- **The server stalls** (acks stop, requests hang, the editor goes offline).
+  Find the busy thread before reading a profile. `nitro dev` runs the server in
+  a worker thread, so a CPU profile of the process's main thread reads idle
+  while the worker is pegged, which looks like a lock wait. Sample per-thread
+  CPU (`/proc/<pid>/task/*/stat`) and `pg_stat_activity` for lock waits, then
+  profile the thread that is busy.
 - **An LLM is debugging.** Reproduce with `./mf thread send` (pair
   `MODEL_PROVIDER=mock` with `./mf mock script` for deterministic tool paths).
   A `./mf` run is debugging evidence for the code it shares with the app and for

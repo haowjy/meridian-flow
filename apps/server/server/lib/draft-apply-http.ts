@@ -1,5 +1,5 @@
 /**
- * The HTTP meaning of a draft publication's failures, shared by every route that applies
+ * The HTTP meaning of a draft Apply's failures, shared by every route that applies
  * or discards a Work's draft: per-document Apply, Apply all, Discard and Discard all.
  * One mapping, so a batch handed to recovery reads the same everywhere.
  */
@@ -8,10 +8,10 @@ import { createError } from "nitro/h3";
 import {
   DraftApplyPendingError,
   DuplicateApplyItemError,
-} from "../domains/collab/domain/draft-publication.js";
+} from "../domains/collab/domain/draft-apply.js";
 
 /** Returns the accepted handoff, throws known failures, or leaves an unknown cause to its caller. */
-export function draftPublicationHttpAnswer(cause: unknown): DraftApplyPending | undefined {
+export function draftApplyHttpAnswer(cause: unknown): DraftApplyPending | undefined {
   if (cause instanceof DraftApplyPendingError) {
     return { status: "pending", draftId: cause.draftId };
   }

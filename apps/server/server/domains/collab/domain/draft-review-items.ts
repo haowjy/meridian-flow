@@ -12,7 +12,7 @@
 import type { DraftId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { TreeReader, TreeStateNode } from "../../context/tree/tree-view.js";
-import { type DraftItemKey, draftItemKey } from "./draft-publication.js";
+import { type DraftItemKey, draftItemKey } from "./draft-apply.js";
 import type { WorkDraftPendingEvidence } from "./ports/work-draft-pending-store.js";
 import { documentTitleFromUri } from "./reversal-notices.js";
 

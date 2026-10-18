@@ -8,10 +8,10 @@ import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { NoticePort } from "../../notices/index.js";
+import type { BranchJournalRow } from "./branch-journal.js";
 import type {
-  BranchJournalRow,
+  ApplyBlockChange,
   PreparedPush,
-  PublicationBlockChange,
   TrailContributionReplacement,
 } from "./branch-push-contracts.js";
 import { blockTextMap } from "./branch-push-plan.js";
@@ -67,10 +67,12 @@ export function journalAttributionByChangedBlock(input: {
   }> = [];
   try {
     Y.applyUpdate(scratch, Y.encodeStateAsUpdate(input.liveDoc));
+    // One snapshot per row: a row's after is the next row's before.
+    let after = canonicalSnapshot(input.model, scratch);
     for (const [journalRowIndex, row] of input.rows.entries()) {
-      const before = canonicalSnapshot(input.model, scratch);
+      const before = after;
       Y.applyUpdate(scratch, row.updateData);
-      const after = canonicalSnapshot(input.model, scratch);
+      after = canonicalSnapshot(input.model, scratch);
       const beforeByIdentity = new Map(before.map((block) => [block.identity, block]));
       const afterByIdentity = new Map(after.map((block) => [block.identity, block]));
       const deleted = before.filter((block) => !afterByIdentity.has(block.identity));
@@ -164,7 +166,7 @@ function canonicalSnapshot(model: YProsemirrorDocumentModel, doc: Y.Doc) {
 
 export function preparedTrailChanges(input: {
   documentId: DocumentId;
-  changedBlocks: readonly PublicationBlockChange[];
+  changedBlocks: readonly ApplyBlockChange[];
   receiptId: string;
   ownersByBlock: ReadonlyMap<string, readonly ({ threadId: ThreadId; turnId: TurnId } | null)[]>;
   operations: readonly ReplacementOperation[];
@@ -452,7 +454,7 @@ export function buildDurablePushTrail(input: {
   };
 }
 
-/** Net publication ownership uses the same clock attribution as review, not canceled keystrokes. */
+/** Net Apply ownership uses the same clock attribution as review, not canceled keystrokes. */
 function draftOperationIdsByChangedBlock(input: {
   liveDoc: Y.Doc;
   draftDoc: Y.Doc;

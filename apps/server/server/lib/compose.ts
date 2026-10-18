@@ -492,7 +492,7 @@ export async function createProductionAppPorts(input: {
     db,
     availability: projectContextAvailability,
     catalog: contextCatalog,
-    pending: createDrizzleWorkDraftPendingStore(db),
+    pendingCounts: createDrizzleWorkDraftPendingStore(db),
   });
   const runClaim = createDrizzleRunClaim(db, {
     holderId: `${process.pid}-${crypto.randomUUID()}`,
@@ -533,7 +533,7 @@ export async function createProductionAppPorts(input: {
   };
   const readChain = (threadId: ThreadId) => readAgentChain(chainDeps, threadId);
   const fileAccess = createFileAccess({
-    facts: createDrizzleFileFacts(db),
+    facts: createDrizzleFileFacts(db, workProjectionMutation),
     grants: createOwnerFileGrants(),
     readAgentChain: readChain,
   });

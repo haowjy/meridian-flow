@@ -42,7 +42,7 @@ export type ReviewHeaderModel = {
   /** The next draft in the switcher, if the Work has one. */
   next: ReviewFileTarget | null;
   locked: boolean;
-  /** Nothing left to publish: the server closed the draft, so its commands go. */
+  /** Nothing left to apply: the server closed the draft, so its commands go. */
   finished: boolean;
   /** The draft is open but lists no change: formatting remains, handled by Apply draft or Discard draft. */
   unlisted: boolean;

@@ -87,7 +87,7 @@ async function main(): Promise<void> {
     db,
     availability: projectContextAvailability,
     catalog: contextCatalog,
-    pending: createDrizzleWorkDraftPendingStore(db),
+    pendingCounts: createDrizzleWorkDraftPendingStore(db),
   });
 
   const lineageScratch = createDrizzleLineageScratchLifecycle(db, contextCatalog);

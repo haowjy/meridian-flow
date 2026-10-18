@@ -11,6 +11,7 @@ import {
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
+import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createDrizzleFileFacts } from "./drizzle-file-facts.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -60,7 +61,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("loads documents, drafts and containers with their ancestors", async () => {
-      const facts = createDrizzleFileFacts(database.current);
+      const facts = createDrizzleFileFacts(
+        database.current,
+        createTestWorkProjectionMutation(database.current),
+      );
       const ch1 = await facts.load({ target: { kind: "document", documentId: chapter } });
       expect(ch1).toMatchObject({
         projectId: p,
@@ -119,7 +123,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const db = database.current;
       await db.update(folders).set({ deletedAt: new Date() }).where(eq(folders.id, chapters));
       await db.update(works).set({ archivedAt: new Date() }).where(eq(works.id, a));
-      const facts = createDrizzleFileFacts(db);
+      const facts = createDrizzleFileFacts(db, createTestWorkProjectionMutation(db));
       const ch1 = await facts.load({ target: { kind: "document", documentId: chapter } });
       const scratchNote = await facts.load({ target: { kind: "document", documentId: note } });
       expect(ch1?.deleted).toBe(true);

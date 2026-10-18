@@ -131,6 +131,42 @@ describe("useReviewRefresh", () => {
     }
   });
 
+  it("still reads a room change seen just before the live room re-binds", async () => {
+    // A pull reaches the draft room; the Works catalog wake it raises re-renders the
+    // editor, which briefly drops and re-binds its live room.
+    const client = new QueryClient();
+    const invalidate = vi.spyOn(client, "invalidateQueries").mockResolvedValue();
+    let rebind!: (bound: boolean) => void;
+    function Host() {
+      const [bound, setBound] = useState(true);
+      rebind = setBound;
+      useReviewRefresh({
+        projectId: "p",
+        workId: "w",
+        review,
+        session: sessions.get("room-a"),
+        liveSession: bound ? sessions.get("live-a") : null,
+      });
+      return null;
+    }
+    await withReactRoot(
+      <QueryClientProvider client={client}>
+        <Host />
+      </QueryClientProvider>,
+      async () => {
+        await act(async () => edit("room-a"));
+        await wait(200);
+        await act(async () => rebind(false));
+        await act(async () => rebind(true));
+        await wait(400);
+        expect(invalidate).toHaveBeenCalledWith(
+          expect.objectContaining({ queryKey: previewKey }),
+          expect.anything(),
+        );
+      },
+    );
+  });
+
   it("reads nothing once the review is gone", async () => {
     const client = new QueryClient();
     const invalidate = vi.spyOn(client, "invalidateQueries").mockResolvedValue();

@@ -5,6 +5,8 @@ import {
   modelResult,
   parseDocumentAddress,
   type ReadCommand,
+  ResponseAttemptStaleError,
+  type ResponseCommitAttempt,
   type ResponseCommitSuccessResult,
   type ResponseRollbackResult,
   rejectedWriteExplanation,
@@ -28,6 +30,7 @@ import {
   sameDestination,
   type ThreadPeerAgentEditCore,
 } from "./agent-edit-cores.js";
+import { runBoundedAttempts } from "./branch-attempts.js";
 import type {
   ResponseCommitParticipant,
   ResponseTransactionSettlement,
@@ -42,8 +45,8 @@ export type ResponseTransactionHooks = {
   ): Promise<T>;
 };
 
-import { BranchCasConflictError, BranchStaleUpdateError } from "./branch-coordinator.js";
 import { ThreadPeerPullLost } from "./branch-pulls.js";
+import { BranchCasConflictError, BranchStaleUpdateError } from "./branch-store.js";
 import type { Drafts } from "./drafts.js";
 import type { ApplicationBranchStore } from "./ports/application-branch-store.js";
 import { pinStaged, type ReplyRecord, type ReplySaveFences } from "./reply-save-fences.js";
@@ -58,6 +61,14 @@ type PulledThreadPeer = {
 };
 
 type ResponseRecord = ReplyRecord;
+
+/** A reply save's commit attempts (section 2.4): four, then the save fails as today. */
+const SAVE_ATTEMPTS = 4;
+
+/** A miss the next attempt can resolve: a branch moved, or a buffer changed, since preparing. */
+function isSaveAttemptMiss(cause: unknown): boolean {
+  return cause instanceof BranchCasConflictError || cause instanceof ResponseAttemptStaleError;
+}
 
 /**
  * The single entry point for model reads and writes in both destinations
@@ -86,6 +97,11 @@ export function createThreadPeerCorePool(input: {
     draftId?: DraftId;
   }): Promise<PulledThreadPeer | undefined>;
   commitThreadResponseAtomically<T>(operation: () => Promise<T>): Promise<T>;
+  /**
+   * One save attempt's commit scope inside the response transaction: a savepoint, so a
+   * miss rolls back every document the attempt wrote and releases the branch rows it took.
+   */
+  attemptScope<T>(operation: () => Promise<T>): Promise<T>;
   responseTransactionSettlement: ResponseTransactionSettlement;
   responseTransactions: ResponseTransactionHooks;
   /** Runs after an AI write commits to a live document, e.g. to merge it into Work drafts (D40). */
@@ -429,6 +445,43 @@ export function createThreadPeerCorePool(input: {
    * documents' mutation locks in id order, before any participant commits. A
    * refused document leaves the reply; the rest saves (D29, D42).
    */
+  /** Every participant's save attempt, prepared in order; none survives a failure to prepare. */
+  async function prepareAttempts(
+    responseId: string,
+    participants: readonly AgentEditCore[],
+    options: Parameters<AgentEditCore["prepareResponse"]>[1],
+    onFailure: "fail" | "quiet" = "fail",
+  ): Promise<Map<AgentEditCore, ResponseCommitAttempt>> {
+    const attempts = new Map<AgentEditCore, ResponseCommitAttempt>();
+    try {
+      for (const core of participants)
+        attempts.set(core, await core.prepareResponse(responseId, options));
+    } catch (cause) {
+      if (onFailure === "quiet") {
+        for (const attempt of attempts.values()) attempt.dispose();
+        throw cause;
+      }
+      throw await failAttempts(attempts, cause);
+    }
+    return attempts;
+  }
+
+  /** The save fails as a save failure does: every attempt dropped, each core's buffer kept. */
+  async function failAttempts(
+    attempts: ReadonlyMap<AgentEditCore, ResponseCommitAttempt>,
+    cause: unknown,
+  ): Promise<unknown> {
+    let failure: unknown;
+    for (const attempt of attempts.values()) {
+      try {
+        await attempt.fail(cause);
+      } catch (error) {
+        failure ??= error;
+      }
+    }
+    return failure ?? cause;
+  }
+
   function finalizeOptions() {
     return {
       deferFinalization: (participant: ResponseCommitParticipant) => {
@@ -516,21 +569,76 @@ export function createThreadPeerCorePool(input: {
         await options?.beforeTransactionCommit?.(saved);
         return saved;
       }
-      return input.fences.withLeases(record, (lease) =>
-        input.responseTransactions.run(
+      // A core whose every document was refused has already closed this reply on its
+      // side; only a reply that never wrote falls back to the live core, which closes it.
+      const wrote = record.participants.size > 0;
+      const participantsNow = () => (wrote ? [...record.participants] : [input.liveUtilityCore]);
+      const saveOptions = finalizeOptions();
+      // The first attempt is prepared before the transaction opens, off every lock. One
+      // that cannot be prepared yet (a document `confirm` will refuse) is prepared again
+      // after `confirm`, inside the transaction. Until the first attempt takes it, it is
+      // disposed on any unwind, `confirm` throwing included.
+      let early: Map<AgentEditCore, ResponseCommitAttempt> | undefined = await prepareAttempts(
+        responseId,
+        participantsNow(),
+        saveOptions,
+        "quiet",
+      ).catch(() => undefined);
+      const takeEarly = (participants: readonly AgentEditCore[]) => {
+        const taken = early;
+        early = undefined;
+        for (const [core, attempt] of taken ?? []) {
+          if (participants.includes(core)) continue;
+          attempt.dispose();
+          taken?.delete(core);
+        }
+        return taken;
+      };
+      try {
+        return await input.responseTransactions.run(
           input.commitThreadResponseAtomically,
           async () => {
-            // A core whose every document was refused has already closed this
-            // reply on its side; only a reply that never wrote falls back to the
-            // live core, which closes it.
-            const wrote = record.participants.size > 0;
             const refused = await input.fences.confirm(record);
-            const participants = wrote ? [...record.participants] : [input.liveUtilityCore];
+            const participants = participantsNow();
             const results: ResponseCommitSuccessResult[] = [];
-            for (const core of participants) {
-              results.push(
-                await core.commitResponse(responseId, { ...finalizeOptions(), branchLease: lease }),
-              );
+            // The attempt a failed save fails with; none once installing began.
+            let failing: Map<AgentEditCore, ResponseCommitAttempt> | undefined;
+            // One scope per attempt, before its first branch-store lock: a miss on any
+            // document unwinds every document's rows, receipts and placements, and the
+            // attempts' process-local state is dropped with them (decision D7: `confirm`
+            // ran once above and is not replayed; a retry recomputes under its locks).
+            try {
+              await runBoundedAttempts({
+                bound: SAVE_ATTEMPTS,
+                scope: input.attemptScope,
+                isMiss: isSaveAttemptMiss,
+                run: async (attempt) => {
+                  failing = undefined;
+                  const attempts =
+                    takeEarly(participants) ??
+                    (await prepareAttempts(responseId, participants, saveOptions));
+                  failing = attempts;
+                  for (const core of participants) {
+                    const prepared = attempts.get(core);
+                    if (!prepared) continue;
+                    attempt.own({
+                      async transfer() {
+                        failing = undefined;
+                        results.push(await prepared.install());
+                      },
+                      dispose: () => prepared.dispose(),
+                    });
+                  }
+                  await attempt.commit(async () => {
+                    for (const core of participants) await attempts.get(core)?.consume();
+                  });
+                },
+                exhausted: (cause) => {
+                  throw cause;
+                },
+              });
+            } catch (cause) {
+              throw failing ? await failAttempts(failing, cause) : cause;
             }
             const drafted = new Set(
               [...record.documents]
@@ -552,8 +660,10 @@ export function createThreadPeerCorePool(input: {
             return saved;
           },
           input.responseTransactionSettlement,
-        ),
-      );
+        );
+      } finally {
+        takeEarly([]);
+      }
     },
     responseDestination(responseId, docId) {
       return responses.get(responseId)?.documents.get(docId as DocumentId)?.grant.destination;
@@ -568,35 +678,33 @@ export function createThreadPeerCorePool(input: {
     },
     async rollbackResponse(responseId) {
       const record = responses.get(responseId);
-      const rollback = () =>
-        input.responseTransactions.run(
-          input.commitThreadResponseAtomically,
-          async () => {
-            const participants =
-              record && record.participants.size > 0
-                ? [...record.participants]
-                : [input.liveUtilityCore];
-            // Every participant rolls back even when one throws, so no core keeps
-            // the reply's writes buffered.
-            const results: ResponseRollbackResult[] = [];
-            const failures: unknown[] = [];
-            for (const core of participants) {
-              try {
-                results.push(await core.rollbackResponse(responseId, finalizeOptions()));
-              } catch (error) {
-                failures.push(error);
-              }
+      return input.responseTransactions.run(
+        input.commitThreadResponseAtomically,
+        async () => {
+          const participants =
+            record && record.participants.size > 0
+              ? [...record.participants]
+              : [input.liveUtilityCore];
+          // Every participant rolls back even when one throws, so no core keeps
+          // the reply's writes buffered.
+          const results: ResponseRollbackResult[] = [];
+          const failures: unknown[] = [];
+          for (const core of participants) {
+            try {
+              results.push(await core.rollbackResponse(responseId, finalizeOptions()));
+            } catch (error) {
+              failures.push(error);
             }
-            if (failures.length > 0) throw failures[0];
-            input.responseTransactions.enlist({
-              commit: () => untrackResponse(responseId),
-              abort() {},
-            });
-            return mergeRollbackResults(responseId, results);
-          },
-          input.responseTransactionSettlement,
-        );
-      return record ? input.fences.withLeases(record, rollback) : rollback();
+          }
+          if (failures.length > 0) throw failures[0];
+          input.responseTransactions.enlist({
+            commit: () => untrackResponse(responseId),
+            abort() {},
+          });
+          return mergeRollbackResults(responseId, results);
+        },
+        input.responseTransactionSettlement,
+      );
     },
     retireThreadPeers,
     async invalidateThreadDocument(docId, threadId) {

@@ -1,4 +1,4 @@
-/** Neutral branch-push contracts shared across collab domain services and adapters. */
+/** Branch-push (Apply and settlement) contracts shared across collab domain services and adapters. */
 
 import type {
   AgentEditCodecFactory,
@@ -11,18 +11,14 @@ import type { DraftCommandResult } from "@meridian/contracts/drafts";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
 import type * as Y from "yjs";
-import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
-import type { BranchCriticalSections } from "./branch-critical-sections.js";
+import type { BranchJournalReadStore, BranchJournalRow } from "./branch-journal.js";
+import type { BranchSnapshot, BranchStore } from "./branch-store.js";
 import type { DraftCommandEnvelope } from "./draft-commands.js";
 import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
 import type { DurableTrailRecord } from "./ports/change-trail-persistence.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 import type { PendingSettlementStore } from "./ports/pending-settlement-store.js";
-import type {
-  PublicationItemHold,
-  PublicationItemOutcome,
-  PublicationRefusal,
-} from "./ports/settlement-publication.js";
+import type { ApplyItemHold, ApplyItemOutcome, ApplyRefusal } from "./ports/settlement-apply.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
 import type { SweepEvidence } from "./sweep-policy.js";
 import type { NormalizedTrail, RawTrailChange, TrailChangeV1 } from "./trail-read-kernel.js";
@@ -45,36 +41,7 @@ export class BranchPushRetryExhaustedError extends Error {
   }
 }
 
-export type BranchJournalRow = {
-  id: number;
-  branchId: string;
-  generation: number;
-  wId: number | null;
-  /** The model's tool call that made this write; null for writer rows and legacy rows. */
-  toolCallId?: string | null;
-  source: "agent" | "writer";
-  threadId: ThreadId | null;
-  turnId: TurnId | null;
-  actorUserId: UserId | null;
-  updateData: Uint8Array;
-  /** Immutable live-journal watermark captured with this draft mutation. */
-  draftBaseUpdateSeq: number;
-  status: "active" | "pushed" | "discarded" | "rollback_pending";
-  updateMeta?: unknown;
-  /** Immutable edit evidence, never inferred from actor or missing text. */
-  editKind?: "write" | "undo" | "redo" | "revert" | "rollback";
-};
-
-export function branchJournalRevision(
-  rows: readonly Pick<BranchJournalRow, "id" | "status">[],
-): string {
-  return [...rows]
-    .sort((left, right) => left.id - right.id)
-    .map((row) => `${row.id}:${row.status}`)
-    .join(",");
-}
-
-export type PublicationBlockChange = {
+export type ApplyBlockChange = {
   blockId: string;
   beforeBlockIdentity: CanonicalBlockIdentity | null;
   afterBlockIdentity: CanonicalBlockIdentity | null;
@@ -109,13 +76,13 @@ export type PushToLiveResult =
       branchGeneration: number;
       reason: "no_active_rows";
     }
-  /** A publication step kept this draft out of live; its rows stay reviewable. */
-  | { status: "held"; branchId: string; documentId: DocumentId; reason: PublicationRefusal }
-  /** A publication step refused the whole batch; nothing of it reached live. */
-  | { status: "refused"; branchId: string; documentId: DocumentId; reason: PublicationRefusal };
+  /** An Apply step kept this draft out of live; its rows stay reviewable. */
+  | { status: "held"; branchId: string; documentId: DocumentId; reason: ApplyRefusal }
+  /** An Apply step refused the whole batch; nothing of it reached live. */
+  | { status: "refused"; branchId: string; documentId: DocumentId; reason: ApplyRefusal };
 
-/** Durable publication-step inputs staged with a batch, by step kind. */
-export type PublicationPayloads = Readonly<Record<string, JsonValue>>;
+/** Durable Apply-step inputs staged with a batch, by step kind. */
+export type ApplyPayloads = Readonly<Record<string, JsonValue>>;
 
 export class DraftChangeRefusal extends Error {
   constructor(readonly status: "stale" | "gone" | "whole_item" | "incomplete_class") {
@@ -174,7 +141,7 @@ export type PendingSettlementBatch = {
   batchId: string;
   claim: SettlementClaim;
   attemptCount: number;
-  /** Publication-step inputs staged with the batch, by step kind. */
+  /** Apply-step inputs staged with the batch, by step kind. */
   payloads: ReadonlyMap<string, JsonValue>;
   /** Sorted by document id, the global document lock order. */
   members: readonly PendingLiveSettlement[];
@@ -206,13 +173,13 @@ export type DiscardedChanges = { itemClosed: boolean; itemDisposition?: "applied
 
 export type ReviewRowSelection = { journalIds: readonly number[]; expectedLiveRevision: string };
 
-/** A per-change Apply's selection: made under the branch lease, naming the payloads it stages. */
-export type SelectedPublication = {
+/** A per-change Apply's selection: made on each staging attempt's read, naming the payloads it stages. */
+export type ChangeApplySelection = {
   branchId: string;
   select(
     branch: BranchSnapshot,
     rows: BranchJournalRow[],
-  ): Promise<ReviewRowSelection & { payloads: PublicationPayloads }>;
+  ): Promise<ReviewRowSelection & { payloads: ApplyPayloads }>;
 };
 
 export type PreparedDiscardCommit = {
@@ -225,50 +192,31 @@ export type PreparedDiscardCommit = {
   branch: BranchSnapshot;
   journalRows: BranchJournalRow[];
   state: Uint8Array;
-  stateVector: Uint8Array;
   reviewedByUserId?: UserId;
 };
 
 export type PushCandidate = {
   branchId: string;
   documentId: DocumentId;
-  /** The reviewable rows the whole-branch state publishes. */
+  /** The reviewable rows the whole-branch state applies. */
   rows: BranchJournalRow[];
   /** A selected-rows candidate replays only its rows onto live instead of the whole branch. */
   materialization: "whole" | "selected_rows";
 };
 
 export type CandidateBatch = {
-  /** May be empty when `payloads` carries the whole publication (a branchless Apply). */
+  /** May be empty when `payloads` carries the whole Apply (a branchless one). */
   candidates: PushCandidate[];
-  payloads?: PublicationPayloads;
+  payloads?: ApplyPayloads;
   receiptId: string;
   expectedLiveRevision?: string;
   command?: DraftCommandEnvelope;
   pushedByUserId?: UserId;
 };
 
-export type BranchJournalReadStore = {
-  listActiveJournalRows(branchId: string, generation: number): Promise<BranchJournalRow[]>;
-  listReviewableJournalRows(branchId: string, generation: number): Promise<BranchJournalRow[]>;
-  listConcurrentJournalRows(
-    branchId: string,
-    generation: number,
-    options: { afterJournalId?: number; documentId: DocumentId },
-  ): Promise<BranchJournalRow[]>;
+/** The journal reads plus Apply's push lineage: the reads an Apply makes. */
+export type BranchPushReadStore = BranchJournalReadStore & {
   latestPushForBranch(branchId: string, generation: number): Promise<PushLineageRow | null>;
-  listJournalRowsForTurn(input: {
-    branchId?: string;
-    generation?: number;
-    threadId: ThreadId;
-    turnId: TurnId;
-    statuses?: readonly BranchJournalRow["status"][];
-  }): Promise<BranchJournalRow[]>;
-  listJournalRowsForBranch(input: {
-    branchId: string;
-    generation: number;
-    throughJournalId?: number;
-  }): Promise<BranchJournalRow[]>;
   listPushLineageForTurn(input: { threadId: ThreadId; turnId: TurnId }): Promise<PushLineageRow[]>;
 };
 
@@ -280,9 +228,9 @@ export type PushCommitStore = {
   commitPushBatch(input: {
     settlement: SettlementBatchIdentity;
     pushes: readonly PreparedPushCommit[];
-    payloads?: PublicationPayloads;
+    payloads?: ApplyPayloads;
     /** Items the pre-staging check held: staged with the batch as durable exclusions. */
-    holds?: readonly PublicationItemHold[];
+    holds?: readonly ApplyItemHold[];
     /** The writer's command, claimed as the transaction's first write (§4.6). */
     command?: DraftCommandEnvelope;
   }): Promise<
@@ -292,12 +240,6 @@ export type PushCommitStore = {
     | { status: "command_exists" }
   >;
   commitDiscard(input: PreparedDiscardCommit): Promise<void>;
-  /**
-   * Seam B for a review that changes several drafts in one transaction: locks
-   * their Works (file-access §5) and names the branches whose Work is no longer
-   * active, so their drafts stay frozen (D30).
-   */
-  lockDraftWorks(branchIds: readonly string[]): Promise<ReadonlySet<string>>;
 };
 
 export type PushUpdateComputer = (input: {
@@ -313,28 +255,28 @@ export type BranchPushService = {
     pushedByUserId?: UserId;
     signal?: AbortSignal;
   }): Promise<PushToLiveResult>;
-  /** Publishes several drafts as one batch; one item per requested branch, in request order. */
+  /** Applies several drafts as one batch; one item per requested branch, in request order. */
   pushBranchesToLive(input: {
-    /** May be empty when `payloads` carries the whole publication (a branchless Apply). */
+    /** May be empty when `payloads` carries the whole Apply (a branchless one). */
     branchIds: readonly string[];
-    payloads?: PublicationPayloads;
+    payloads?: ApplyPayloads;
     /**
-     * Per-change Apply: publish only the rows this selects from the one branch, chosen under
-     * its lease on every CAS attempt (B3), with the payloads rebuilt from the same selection.
+     * Per-change Apply: apply only the rows this selects from the one branch, chosen again on
+     * every staging attempt (B3), with the payloads rebuilt from the same selection.
      */
-    selected?: SelectedPublication;
+    selected?: ChangeApplySelection;
     /** The writer's command, claimed in the staging transaction (§4.6). */
     command?: DraftCommandEnvelope;
     pushedByUserId?: UserId;
     signal?: AbortSignal;
   }): Promise<{
     items: PushToLiveResult[];
-    /** Set when a publication step refused the batch; every drafted item is `refused`. */
-    refused?: PublicationRefusal;
-    /** Every item a publication step held, branchless ones included. */
-    heldItems: readonly PublicationItemHold[];
-    /** What the publication steps did per published item, decided in completion. */
-    outcomes: readonly PublicationItemOutcome[];
+    /** Set when an Apply step refused the batch; every drafted item is `refused`. */
+    refused?: ApplyRefusal;
+    /** Every item an Apply step held, branchless ones included. */
+    heldItems: readonly ApplyItemHold[];
+    /** What the Apply steps did per applied item, decided in completion. */
+    outcomes: readonly ApplyItemOutcome[];
     /** Another request holds the command's id: nothing was staged here. */
     commandExists?: true;
   }>;
@@ -358,11 +300,9 @@ export type BranchReviewService = {
 
 export type BranchPushServiceInput = {
   branchStore: BranchStore;
-  journalReadStore: BranchJournalReadStore;
+  journalReadStore: BranchPushReadStore;
   commitStore: PushCommitStore;
   settlementStore: PendingSettlementStore;
-  branchCoordinator?: Pick<BranchCoordinator, "resetFromDocIfUnchangedWithLease"> &
-    Partial<Pick<BranchCoordinator, "broadcastUpdate">>;
   journal: UpdateJournal;
   liveCoordinator: DocumentCoordinator;
   model: YProsemirrorDocumentModel;
@@ -371,7 +311,6 @@ export type BranchPushServiceInput = {
   links: DocumentLinkScopes;
   changeEventDelivery: ChangeEventDelivery;
   pushUpdateComputer?: PushUpdateComputer;
-  criticalSections?: BranchCriticalSections;
   resolveDocumentTitle?: (documentId: DocumentId) => Promise<string | null>;
   writerIngressBarrier?: WriterIngressBarrier;
   sweepProjectionDiagnostics?: SweepProjectionDiagnostics;

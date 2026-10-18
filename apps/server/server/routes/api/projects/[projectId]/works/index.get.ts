@@ -7,11 +7,11 @@ import { requireAppUser } from "../../../../../lib/auth-gate.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
-  const { projectRepo, workRepo, documentSync } = app;
+  const { projectRepo, workRepo } = app;
   const { userId } = user;
   const projectId = getRouterParam(event, "projectId") ?? "";
   const snapshot = await listWorkCatalog(
-    { projects: projectRepo, works: workRepo, pendingDrafts: documentSync },
+    { projects: projectRepo, works: workRepo },
     {
       projectId: projectId as ProjectId,
       userId: userId as UserId,

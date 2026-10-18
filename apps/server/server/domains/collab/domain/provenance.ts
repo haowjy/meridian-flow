@@ -74,12 +74,6 @@ export type RootLineageRun = {
   root: LineageRange;
 };
 
-export type ProvenanceMaterialization = {
-  doc: Y.Doc;
-  visible: ProvenanceRun[];
-  attributionManifest: AttributionManifestV1;
-};
-
 /** Freezes first-birth attribution for checkpoint manifests. Later sync updates
  * can repeat integrated structs, but can never reassign their insertion clocks. */
 export function insertionAttributions(
@@ -156,43 +150,6 @@ export function materializeCandidateProvenance(
 
 export class ProvenanceMaterializationError extends Error {
   readonly name = "ProvenanceMaterializationError";
-}
-
-/**
- * The sole warm/cold provenance materializer. Attribution is installed before
- * Yjs sees each row, so a pending child keeps the actor that originated it.
- */
-export function materializeProvenanceView(input: {
-  authorityId: DocumentAuthorityId;
-  generation: bigint;
-  checkpointUpdate?: Uint8Array;
-  manifest: AttributionManifestV1;
-  rows: readonly AttributedJournalRow[];
-  watermark: JournalReplayKey;
-}): ProvenanceMaterialization {
-  validateManifestIdentity(input);
-  const doc = new Y.Doc({ gc: false });
-  const attributions = new RangeIndex<AttributionRunV1>("insertion attribution");
-  for (const attribution of input.manifest.attributions) {
-    attributions.add(attribution.range, attribution, sameAttribution);
-  }
-  if (input.checkpointUpdate) Y.applyUpdate(doc, input.checkpointUpdate);
-
-  const rows = [...input.rows].sort(compareReplayKey);
-  validateReplayRows(rows, input.manifest.floor, input.watermark, input);
-  for (const row of rows) {
-    for (const range of journalInsertionRanges(row.update)) {
-      attributions.addUncovered(range, {
-        range,
-        birthClass: birthClassFromAttribution(row),
-        origin: replayKey(row),
-      });
-    }
-    Y.applyUpdate(doc, row.update);
-  }
-
-  const visible = provenanceRunsForDoc(doc, attributions);
-  return { doc, visible, attributionManifest: input.manifest };
 }
 
 function provenanceRunsForDoc(
@@ -466,7 +423,7 @@ function replacedBlockOutputRanges(
   inserted: readonly LineageRange[],
   outputLength: number,
 ): LineageRange[] {
-  const item = (block as unknown as { _item: YItemLike | null })._item;
+  const item = block._item;
   if (!item?.deleted) return [];
   // A structural remint inserts beside the input tombstone. Accept only one adjacent
   // block whose complete prose was inserted by this lowering, or let the length guard fail.
@@ -487,13 +444,10 @@ function replacedBlockOutputRanges(
   return matches.length === 1 ? (matches[0] ?? []) : [];
 }
 
-function nearestVisibleType(
-  item: YItemLike | null | undefined,
-  direction: "left" | "right",
-): unknown {
+function nearestVisibleType(item: Y.Item | null, direction: "left" | "right"): unknown {
   let current = item;
   while (current?.deleted) current = current[direction];
-  return current?.content.type;
+  return current?.content instanceof Y.ContentType ? current.content.type : undefined;
 }
 
 function textEditInputSpan(edit: MappedEdit["edit"]): { from: number; to: number } | undefined {
@@ -522,12 +476,11 @@ function resolvedRootUnits(
 }
 
 function insertedStringRanges(update: Uint8Array): LineageRange[] {
-  return (Y.decodeUpdate(update) as DecodedUpdate).structs.flatMap((value) => {
-    const struct = asStruct(value);
-    return struct.content?.constructor?.name === "ContentString"
+  return decodeAdmittedUpdate(update).structs.flatMap((struct) =>
+    struct instanceof Y.Item && struct.content instanceof Y.ContentString
       ? [{ clientID: struct.id.client, clock: struct.id.clock, length: struct.length }]
-      : [];
-  });
+      : [],
+  );
 }
 
 function intersectRangesInOrder(
@@ -591,8 +544,8 @@ export function validateClientUpdateAdmission(
   referenceDocument: Y.Doc,
   update: Uint8Array,
 ): { reservedClientId: number | null } {
-  const decoded = Y.decodeUpdate(update) as DecodedUpdate;
-  const incoming = decoded.structs.map(asStruct);
+  const decoded = decodeAdmittedUpdate(update);
+  const incoming = decoded.structs;
   const reservedClientId =
     incoming.find((struct) => RESERVED_CLIENT_IDS.has(struct.id.client))?.id.client ?? null;
   if (reservedClientId === null) {
@@ -623,8 +576,9 @@ function assertDecodedUpdateOutsideReservedNamespace(
     const memo = ancestryMemo.get(struct);
     if (memo !== undefined) return memo;
     if (visiting.has(struct)) throw new ReservedNamespaceAdmissionError("Cyclic Yjs parent chain");
+    if (!(struct instanceof Y.Item)) return false;
     visiting.add(struct);
-    const parent = struct.parent;
+    const parent = decodedParent(struct);
     let result = typeof parent === "string" && isReservedName(parent);
     if (!result && isId(parent)) {
       const incomingParent = findStruct(incomingByClient, parent);
@@ -676,11 +630,13 @@ function isPlainProseFastPath(
     }
   }
   for (const struct of incoming) {
-    if (typeof struct.parent === "string") {
-      if (struct.parent !== PROSEMIRROR_FRAGMENT_NAME) return false;
-    } else if (!isId(struct.parent) || incomingContains(incoming, struct.parent)) {
+    if (!(struct instanceof Y.Item)) return false;
+    const parent = decodedParent(struct);
+    if (typeof parent === "string") {
+      if (parent !== PROSEMIRROR_FRAGMENT_NAME) return false;
+    } else if (!isId(parent) || incomingContains(incoming, parent)) {
       return false;
-    } else if (reserved.contains(struct.parent)) {
+    } else if (reserved.contains(parent)) {
       return false;
     }
     for (const anchor of [struct.origin, struct.rightOrigin]) {
@@ -704,62 +660,12 @@ function incomingContains(
   );
 }
 
-function validateManifestIdentity(input: {
-  authorityId: DocumentAuthorityId;
-  generation: bigint;
-  manifest: AttributionManifestV1;
-}): void {
-  const { manifest } = input;
-  if (
-    manifest.version !== 1 ||
-    manifest.authorityId !== input.authorityId ||
-    manifest.generation !== input.generation ||
-    manifest.checkpointId.length === 0
-  ) {
-    throw blocked("Attribution manifest does not name the requested authority generation");
-  }
-}
-
-function validateReplayRows(
-  rows: readonly AttributedJournalRow[],
-  floor: JournalReplayKey | null,
-  watermark: JournalReplayKey,
-  authority: { authorityId: DocumentAuthorityId; generation: bigint },
-): void {
-  let previous = floor;
-  const rowIds = new Set<bigint>();
-  for (const row of rows) {
-    if (row.authorityId !== authority.authorityId || row.generation !== authority.generation) {
-      throw blocked("Journal row belongs to another authority generation");
-    }
-    if (compareReplayKey(row, watermark) > 0) throw blocked("Journal replay crossed its watermark");
-    if (rowIds.has(row.journalRowId)) throw blocked("Journal row has duplicate sequence ownership");
-    rowIds.add(row.journalRowId);
-    if (previous) {
-      const sameAdmission = row.admissionSequence === previous.admissionSequence;
-      const nextAdmission = row.admissionSequence === previous.admissionSequence + 1n;
-      if (
-        (sameAdmission && row.batchOrdinal !== previous.batchOrdinal + 1) ||
-        (nextAdmission && row.batchOrdinal !== 0) ||
-        (!sameAdmission && !nextAdmission)
-      ) {
-        throw blocked("Journal replay is missing a row or has duplicate sequence ownership");
-      }
-    } else if (row.admissionSequence !== 1n || row.batchOrdinal !== 0) {
-      throw blocked("Journal replay is missing a row before its retained floor");
-    }
-    previous = row;
-  }
-  if (!previous || compareReplayKey(previous, watermark) !== 0) {
-    throw blocked("Journal replay does not reach the requested watermark");
-  }
-}
-
 export function journalInsertionRanges(update: Uint8Array): LineageRange[] {
-  return (Y.decodeUpdate(update) as DecodedUpdate).structs.map((value) => {
-    const struct = asStruct(value);
-    return { clientID: struct.id.client, clock: struct.id.clock, length: struct.length };
-  });
+  return decodeAdmittedUpdate(update).structs.map((struct) => ({
+    clientID: struct.id.client,
+    clock: struct.id.clock,
+    length: struct.length,
+  }));
 }
 
 function readTargetFacts(doc: Y.Doc): RangeIndex<ProvenanceTargetFactV1> {
@@ -837,16 +743,6 @@ class RangeIndex<T> {
   }
 }
 
-type YItemLike = {
-  id: { client: number; clock: number };
-  length: number;
-  deleted: boolean;
-  parent: unknown;
-  content: { constructor?: { name?: string }; type?: unknown };
-  left?: YItemLike | null;
-  right?: YItemLike | null;
-};
-
 function visibleProseStringRanges(doc: Y.Doc): LineageRange[] {
   return visibleStringRanges(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME));
 }
@@ -855,12 +751,10 @@ function visibleStringRanges(type: Y.XmlElement | Y.XmlText | Y.XmlFragment): Li
   const ranges: LineageRange[] = [];
   const visit = (current: Y.XmlElement | Y.XmlText | Y.XmlFragment): void => {
     if (current instanceof Y.XmlText) {
-      let item = (current as unknown as { _start: YItemLike | null })._start;
-      while (item) {
-        if (!item.deleted && item.content.constructor?.name === "ContentString") {
+      for (let item = current._start; item; item = item.right) {
+        if (!item.deleted && item.content instanceof Y.ContentString) {
           ranges.push({ clientID: item.id.client, clock: item.id.clock, length: item.length });
         }
-        item = item.right ?? null;
       }
       return;
     }
@@ -874,10 +768,10 @@ function visibleStringRanges(type: Y.XmlElement | Y.XmlText | Y.XmlFragment): Li
 
 function allStringRanges(doc: Y.Doc): RangeIndex<true> {
   const index = new RangeIndex<true>("historical string target");
-  const store = (doc as unknown as { store: { clients: Map<number, YItemLike[]> } }).store;
-  for (const structs of store.clients.values()) {
+  for (const structs of doc.store.clients.values()) {
     for (const item of structs) {
-      if (item.content.constructor?.name !== "ContentString") continue;
+      // A gc-enabled writer's update carries GC structs for prose it deleted before syncing.
+      if (!(item instanceof Y.Item) || !(item.content instanceof Y.ContentString)) continue;
       index.add(
         { clientID: item.id.client, clock: item.id.clock, length: item.length },
         true,
@@ -888,18 +782,8 @@ function allStringRanges(doc: Y.Doc): RangeIndex<true> {
   return index;
 }
 
-type DecodedStruct = {
-  id: { client: number; clock: number };
-  length: number;
-  parent: unknown;
-  origin?: unknown;
-  rightOrigin?: unknown;
-  content?: { constructor?: { name?: string } };
-};
-type DecodedUpdate = {
-  structs: unknown[];
-  ds: { clients: Map<number, Array<{ clock: number; len: number }>> };
-};
+type DecodedStruct = Y.Item | Y.GC | Y.Skip;
+type DecodedUpdate = ReturnType<typeof Y.decodeUpdate>;
 
 function reservedStructRanges(doc: Y.Doc): ReservedRangeIndex {
   const index = new ReservedRangeIndex();
@@ -910,24 +794,15 @@ function reservedStructRanges(doc: Y.Doc): ReservedRangeIndex {
   return index;
 }
 
-function collectTypeStructs(type: unknown, index: ReservedRangeIndex): void {
-  const map = (type as { _map?: Map<string, YItemLike> })._map;
-  for (const entry of map?.values() ?? []) {
-    let item: YItemLike | null = entry;
-    while (item) {
-      index.add({ clientID: item.id.client, clock: item.id.clock, length: item.length });
-      const content = (item as unknown as { content?: { getContent?: () => unknown[] } }).content;
-      for (const child of content?.getContent?.() ?? []) collectTypeStructs(child, index);
-      item = item.left ?? null;
-    }
-  }
-  let item = (type as { _start?: YItemLike | null })._start ?? null;
-  while (item) {
+function collectTypeStructs<E>(type: Y.AbstractType<E>, index: ReservedRangeIndex): void {
+  const collect = (item: Y.Item): void => {
     index.add({ clientID: item.id.client, clock: item.id.clock, length: item.length });
-    const content = (item as unknown as { content?: { getContent?: () => unknown[] } }).content;
-    for (const child of content?.getContent?.() ?? []) collectTypeStructs(child, index);
-    item = item.right ?? null;
+    if (item.content instanceof Y.ContentType) collectTypeStructs(item.content.type, index);
+  };
+  for (const entry of type._map.values()) {
+    for (let item: Y.Item | null = entry; item; item = item.left) collect(item);
   }
+  for (let item = type._start; item; item = item.right) collect(item);
 }
 
 class ReservedRangeIndex {
@@ -1033,12 +908,20 @@ function findStruct(
     ?.find((struct) => id.clock >= struct.id.clock && id.clock < struct.id.clock + struct.length);
 }
 
-function asStruct(value: unknown): DecodedStruct {
-  const struct = value as DecodedStruct;
-  if (!isId(struct.id) || !Number.isSafeInteger(struct.length) || struct.length <= 0) {
-    throw new ReservedNamespaceAdmissionError("Malformed Yjs update struct");
+function decodeAdmittedUpdate(update: Uint8Array): DecodedUpdate {
+  const decoded = Y.decodeUpdate(update);
+  for (const struct of decoded.structs) {
+    if (!isId(struct.id) || !Number.isSafeInteger(struct.length) || struct.length <= 0) {
+      throw new ReservedNamespaceAdmissionError("Malformed Yjs update struct");
+    }
   }
-  return struct;
+  return decoded;
+}
+
+/** A decoded, unintegrated item names a root parent by its share key, which Yjs's
+ * typings omit (they describe integrated items); widen before narrowing. */
+function decodedParent(item: Y.Item): unknown {
+  return item.parent;
 }
 
 function sameAttribution(left: AttributionRunV1, right: AttributionRunV1): boolean {

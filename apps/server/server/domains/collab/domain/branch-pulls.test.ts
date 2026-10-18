@@ -8,10 +8,6 @@ import { createBranchPullService } from "./branch-pulls.js";
 
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000701" as DocumentId;
 
-/** A lease double: these cases exercise pull cadence, not lease ownership. */
-const heldLeases = async (_branchIds: readonly string[], run: (lease: never) => Promise<unknown>) =>
-  run(undefined as never);
-
 function docWithText(value: string): Y.Doc {
   const doc = new Y.Doc({ gc: false });
   doc.getText("content").insert(0, value);
@@ -27,24 +23,21 @@ describe("BranchPullService", () => {
       let fail = true;
       const service = createBranchPullService({
         outsideTransaction: (operation) => operation(),
-        rootTransaction: (operation) => operation(),
         liveCoordinator: coordinatorFor(live),
         branchCoordinator: {
-          withLeases: heldLeases,
-          pullFromDoc: async (_lease: unknown, _branchId: string, upstream: Y.Doc) => {
+          pullFromDoc: async ({ upstream }: { upstream: Y.Doc }) => {
             if (fail) {
               fail = false;
               throw new Error("pull failed");
             }
             Y.applyUpdate(draft, Y.encodeStateAsUpdate(upstream));
-            return emptyYjsUpdate();
+            return "pulled";
           },
         } as unknown as BranchCoordinator,
         branches: {
           listActiveWorkDraftBranchIds: async () => ["work"],
           ensureThreadPeerBranch: async () => ({
-            branchId: "peer",
-            upstreamBranchId: "work",
+            branch: { branchId: "peer", upstreamBranchId: "work" },
             state: new Uint8Array(),
           }),
         },
@@ -72,32 +65,25 @@ describe("BranchPullService", () => {
       const captured = deferred();
       const commit = deferred();
       let pulls = 0;
-      let firstTransaction = true;
       const service = createBranchPullService({
         outsideTransaction: (operation) => operation(),
-        rootTransaction: async (operation) => {
-          const result = await operation();
-          if (firstTransaction) {
-            firstTransaction = false;
-            captured.resolve();
-            await commit.promise;
-          }
-          return result;
-        },
         liveCoordinator: coordinatorFor(live),
         branchCoordinator: {
-          withLeases: heldLeases,
-          pullFromDoc: async (_lease: unknown, _branchId: string, upstream: Y.Doc) => {
+          pullFromDoc: async ({ upstream }: { upstream: Y.Doc }) => {
             if (++pulls === 2) throw new Error("queued pull failed");
             Y.applyUpdate(draft, Y.encodeStateAsUpdate(upstream));
-            return emptyYjsUpdate();
+            // The first pull has committed; it returns only once the newer update queued.
+            if (pulls === 1) {
+              captured.resolve();
+              await commit.promise;
+            }
+            return "pulled";
           },
         } as unknown as BranchCoordinator,
         branches: {
           listActiveWorkDraftBranchIds: async () => ["work"],
           ensureThreadPeerBranch: async () => ({
-            branchId: "peer",
-            upstreamBranchId: "work",
+            branch: { branchId: "peer", upstreamBranchId: "work" },
             state: new Uint8Array(),
           }),
         },
@@ -134,20 +120,17 @@ describe("BranchPullService", () => {
       let failures = 2;
       const service = createBranchPullService({
         outsideTransaction: (operation) => operation(),
-        rootTransaction: (operation) => operation(),
         liveCoordinator: coordinatorFor(docWithText("writer edit")),
         branchCoordinator: {
-          withLeases: heldLeases,
           pullFromDoc: async () => {
             if (failures-- > 0) throw new Error("timer pull failed");
-            return emptyYjsUpdate();
+            return "pulled";
           },
         } as unknown as BranchCoordinator,
         branches: {
           listActiveWorkDraftBranchIds: async () => ["work"],
           ensureThreadPeerBranch: async () => ({
-            branchId: "peer",
-            upstreamBranchId: "work",
+            branch: { branchId: "peer", upstreamBranchId: "work" },
             state: new Uint8Array(),
           }),
         },
@@ -172,15 +155,6 @@ function coordinatorFor(doc: Y.Doc): DocumentCoordinator {
     withDocument: async (_documentId, fn) => fn(doc),
     recover: async () => {},
   };
-}
-
-function emptyYjsUpdate(): Uint8Array {
-  const doc = new Y.Doc({ gc: false });
-  try {
-    return Y.encodeStateAsUpdate(doc, Y.encodeStateVector(doc));
-  } finally {
-    doc.destroy();
-  }
 }
 
 function deferred() {

@@ -610,11 +610,11 @@ export function createProductionUnifiedContextPortFactory(options: {
   /** The one drafts resolver: draft placements read and write through it (§2.3). */
   drafts: Drafts;
   /**
-   * Enrolls the drafting Work's pending projection when a draft command moves its pending
-   * count (§13.2, S3): `mutatePendingDraft` from the Work projection.
+   * The Work mutation boundary (decision D17): a draft command locks its draft's Work first
+   * and touches the Work's projection after it (§13.2, S3).
    */
-  pendingDraft?: {
-    mutatePendingDraft<T>(draftIds: readonly DraftId[], operation: () => Promise<T>): Promise<T>;
+  pendingDraft: {
+    mutate<T>(set: { drafts: readonly DraftId[] }, operation: () => Promise<T>): Promise<T>;
   };
 }): UnifiedContextPortFactory {
   const catalogMutations =
@@ -696,8 +696,8 @@ export function createProductionUnifiedContextPortFactory(options: {
             },
           });
           const draft = command.draft;
-          return draft && options.pendingDraft
-            ? options.pendingDraft.mutatePendingDraft([draft.id], () => operation(command))
+          return draft
+            ? options.pendingDraft.mutate({ drafts: [draft.id] }, () => operation(command))
             : operation(command);
         }),
     };

@@ -1,17 +1,36 @@
 /**
  * Test-only injection points on collab's production code (contract §16.1), so the DB
  * suites can interleave a reply's save with a draft's close, or a change with a staged
- * Apply. Production never installs one; every point is a no-op then.
+ * Apply, and the crash-and-resend probes can stop a server at one
+ * (`adapters/collab-crash-controller.ts`). Production installs none; every point is a
+ * no-op then.
  */
+
 const COLLAB_HOOK_POINTS = [
   "save.afterWorkLock",
   "checkpoint.afterAuthorityRead",
-  "discard.afterLeases",
+  /** A Discard attempt has not entered its commit scope. */
+  "discard.beforeCommitScope",
   "discard.beforeRetirement",
-  "access.afterLeases",
+  /** A thread core's access, or a peer pull past its ensures, is about to read its branches. */
+  "branch.beforeAccess",
   "applyItems.beforeStaging",
   "applyItems.afterStaging",
-  "applyItems.beforeContinue",
+  /** A created document's retraction read its branches and holds no branch row yet. */
+  "retract.beforeLocks",
+  /** A retraction holds its branch rows and found no contribution; nothing is deleted yet. */
+  "retract.afterRecheck",
+  /** An inverse attempt planned on its capture and has not entered its commit scope. */
+  "inverse.beforeCommitScope",
+  /**
+   * An append inserted its rows and receipts and still holds the branch row; nothing has
+   * committed. A crash here leaves neither.
+   */
+  "branch.append.beforeCommit",
+  /** A writer frame's append committed; the frame is not yet acknowledged. */
+  "branch.append.afterCommit",
+  /** A branch rewrite wrote its checkpoint; the transaction has not committed. */
+  "branch.rewrite.beforeCommit",
 ] as const;
 export type CollabHookPoint = (typeof COLLAB_HOOK_POINTS)[number];
 

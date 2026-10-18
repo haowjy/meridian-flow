@@ -7,7 +7,7 @@ import type {
 import type { DraftId } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { vi } from "vitest";
-import type { BranchSnapshot } from "../domain/branch-coordinator.js";
+import type { BranchSnapshot } from "../domain/branch-store.js";
 import type { Draft } from "../domain/ports/draft-store.js";
 import {
   enlistResponseParticipant,
@@ -52,6 +52,15 @@ function createFakeAgentEditCore(
       commit?.deferFinalization?.({ commit() {}, abort() {} });
       return committed(responseId);
     }),
+    // An attempt that persists nothing of its own and installs through `commitResponse`.
+    prepareResponse: vi.fn(async (responseId: string, commit?: FakeCommitOptions) => ({
+      consume: async () => {},
+      install: () => fake.commitResponse(responseId, commit),
+      dispose() {},
+      fail: async (cause: unknown): Promise<never> => {
+        throw cause;
+      },
+    })),
     rollbackResponse: vi.fn(async (responseId: string, _options?: unknown) => ({
       status: "rolledBack" as const,
       responseId,

@@ -26,7 +26,14 @@ review settlement, and Hocuspocus admission. It composes
 - Branch Y.Docs use `gc: false`. Any apply after an `await` must use the
   documented durable authority/concurrency fence; a coordinator lock alone is
   not enough.
-- A reply saves every document it wrote in one transaction. Live publication
+- A branch append (a writer keystroke, a reply's rows) is ordered by its branch
+  row lock, never fenced by a revision: do not add a revision check, a retry or
+  a Work lock to it. What depends on the committed journal is decided under that
+  row lock; review membership and the Works badge catch up afterward in the
+  projection job. Rewrites keep their revision fence. Anything that runs when a
+  journal or receipt row is inserted, triggers included, adds to every keystroke's
+  row hold.
+- A reply saves every document it wrote in one transaction. Live delivery
   reaches open editors only after commit; failed response replay drops only the
   rejected logical write and its dependent closure.
 - Derive read models from a journal-locked durable cut, not a warm room paired

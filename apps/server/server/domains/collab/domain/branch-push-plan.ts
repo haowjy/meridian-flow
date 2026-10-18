@@ -10,7 +10,8 @@ import {
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import * as Y from "yjs";
-import type { BranchJournalRow, PublicationBlockChange } from "./branch-push-contracts.js";
+import type { BranchJournalRow } from "./branch-journal.js";
+import type { ApplyBlockChange } from "./branch-push-contracts.js";
 import { documentDifference } from "./document-difference.js";
 
 export class BranchPushEffectVerificationError extends Error {
@@ -52,12 +53,12 @@ export function wholeBranchPushUpdate(input: { branchDoc: Y.Doc; liveDoc: Y.Doc 
   return Y.encodeStateAsUpdate(input.branchDoc, Y.encodeStateVector(input.liveDoc));
 }
 
-export function publicationBlockChanges(input: {
+export function applyBlockChanges(input: {
   model: YProsemirrorDocumentModel;
   beforeDoc: Y.Doc;
   afterDoc: Y.Doc;
   renderBlock?(doc: Y.Doc, block: BlockRef): string;
-}): PublicationBlockChange[] {
+}): ApplyBlockChange[] {
   return documentDifference(input.beforeDoc, input.afterDoc, input.model)
     .flatMap((entry) => {
       if (entry.kind === "equal") return [];
@@ -87,9 +88,12 @@ export function publicationBlockChanges(input: {
 }
 
 export function blockTextMap(model: YProsemirrorDocumentModel, doc: Y.Doc): Map<string, string> {
+  const handle = toDocHandle(doc);
+  // One pass for every id: `getBlockId` per block rescans all siblings, quadratic in blocks.
+  const ids = model.getDocumentBlockIds(handle);
   const result = new Map<string, string>();
-  for (const block of model.getBlocks(toDocHandle(doc))) {
-    result.set(model.getBlockId(block), model.getText(block));
+  for (const [index, block] of model.getBlocks(handle).entries()) {
+    result.set(ids[index] as string, model.getText(block));
   }
   return result;
 }
@@ -122,9 +126,8 @@ export function assertNoPendingIntegration(
   operation: string,
   journalIds: readonly number[],
 ): void {
-  const store = (doc as unknown as { store?: { pendingStructs?: unknown; pendingDs?: unknown } })
-    .store;
-  if (hasPending(store?.pendingStructs) || hasPending(store?.pendingDs)) {
+  const { pendingStructs, pendingDs } = doc.store;
+  if (hasPending(pendingStructs) || hasPending(pendingDs)) {
     throw new BranchPeerIntegrationError(operation, journalIds);
   }
 }

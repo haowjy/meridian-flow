@@ -1536,6 +1536,10 @@ msgstr ""
 msgid "Couldn’t save this preference."
 msgstr ""
 
+#: src/features/editor/SyncStatus.tsx
+msgid "Couldn't save your latest changes (copy them before you reopen)"
+msgstr ""
+
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't search"
 msgstr ""
@@ -2984,6 +2988,10 @@ msgstr "未找到"
 msgid "Not reported"
 msgstr "未报告"
 
+#: src/features/editor/SyncStatus.tsx
+msgid "Not saved yet (keep this tab open until you're back online)"
+msgstr ""
+
 #: src/features/chat/chat-upload-display.ts
 msgid "Notebook"
 msgstr ""
@@ -3438,6 +3446,10 @@ msgstr ""
 
 #: src/core/editor/diagrams/DiagramBody.tsx
 msgid "Rendering diagram…"
+msgstr ""
+
+#: src/features/editor/SyncStatus.tsx
+msgid "Reopen draft"
 msgstr ""
 
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx

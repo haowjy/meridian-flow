@@ -200,23 +200,9 @@ export function createInMemoryPendingSettlementStore(options?: {
       return { status: "completed" as const, projections: [], held: [], outcomes: [] };
     },
 
-    // This store models no publication steps: every check proceeds.
-    async checkPublication(input) {
+    // This store models no Apply steps: every check proceeds.
+    async checkApply(input) {
       return { kind: "proceed" as const, hold: [], payloads: input.payloads };
-    },
-
-    async prepareBranchLeases() {
-      return [];
-    },
-
-    async loadRecoveryScope(batchId) {
-      const batch = batches.get(batchId);
-      return {
-        payloads: new Map(),
-        memberBranchIds: (batch?.members ?? []).flatMap(({ pending }) =>
-          pending.push.branchId ? [pending.push.branchId] : [],
-        ),
-      };
     },
 
     async listRecoverableBatchIds() {

@@ -82,6 +82,10 @@ export const works = pgTable(
       .notNull()
       .default("direct"),
     entityRevision: bigint("entity_revision", { mode: "bigint" }).notNull().default(sql`1`),
+    // The Works badge: documents the Work's active draft changes, as the collab pending
+    // membership rule counts them. Projected, not counted at read time: the Works boundary reconciles
+    // every Work it locked at commit and bumps `entity_revision` only when it moved (projects/.context).
+    pendingDocumentCount: integer("pending_document_count").notNull().default(0),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: softDeleteAt(),
