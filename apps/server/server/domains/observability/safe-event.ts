@@ -20,6 +20,7 @@ export const MAX_EVENT_RECORD_BYTES = 8 * 1_024;
 /** Metric keys whose names collide with the sensitive pattern may carry only finite numbers. */
 const SAFE_METRIC_KEYS = new Set(["inputTokens", "outputTokens", "providerFirstOutputMs"]);
 const SAFE_PAYLOAD_IDENTIFIER_KEYS = new Set([
+  "blockId",
   "byTurnId",
   "callbackKind",
   "failureCode",
@@ -70,6 +71,8 @@ const DIAGNOSTIC_CODE_ENUMS: Readonly<Record<string, ReadonlySet<string>>> = {
 };
 const SAFE_PAYLOAD_ENUM_VALUES: Readonly<Record<string, ReadonlySet<string>>> = {
   action: new Set(["flush_then_exit", "logged_continue"]),
+  blockType: new Set(["tool_use", "tool_result"]),
+  recovery: new Set(["text"]),
   category: new Set(["command", "reply", "unavailable", "usage"]),
   end: new Set(["dismissed", "forgotten", "moot", "moved_on", "resolved", "retried"]),
   command: new Set(["copy", "create", "insert", "read", "redo", "remove", "replace", "undo"]),

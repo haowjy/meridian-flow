@@ -694,6 +694,48 @@ restart smoke check.
   cannot script partial text followed by an error, or `max_tokens`, so the `max_tokens` and
   partial-text cases are covered by the `thread_history` contract test and the classifier test.
 
+## RP-19: Saved tool recovery keeps a chat usable without rewriting its history
+
+- **Protects:** saved tool decoding, missing-result autorepair, cold summaries and
+  the separation of model content from host-only tool evidence (#325).
+- **Stack:** owned disposable worktree/database, mock provider, debug request
+  capture enabled. Follow Setup above. Do not inject faults into shared data.
+- **Prepare:** make a real tool group, followed by a newer writer/reply pair:
+
+  ```bash
+  ./mf thread send "$T" 'Inspect the manuscript' --mock '[{"toolCalls":[{"name":"ls","args":{"path":"manuscript://"}}]},{"text":"Inspected."}]' --json > "$E/tool.ndjson"
+  ./mf thread send "$T" 'Keep going' --mock '[{"text":"Ready."}]' --json > "$E/tail.ndjson"
+  ```
+
+- **Inject:** export this thread's `turn_blocks` rows (join `turns` by `turn_id`)
+  before changing one tool group in the disposable database. Run each fault in a
+  fresh thread: blank `tool_use.content.toolName`; JSON null tool content; a
+  result with no usable `toolCallId`; and a valid call whose result is absent.
+  For the blank-name pair, put distinct private sentinels under the result's
+  `content.result` and `content.metadata`, leaving its model-facing `output`
+  unchanged. Save the injected rows as the comparison baseline.
+- **Replay:** send another mock reply, then capture
+  `./mf thread context "$T" --all --view raw --json` and
+  `./mf log --thread "$T" --name chat.persisted_contract.invalid --full --since 2m`.
+  Malformed records become text explaining uncertain execution; no empty or
+  invented IDs/names, orphan results, duplicate pairs or private sentinels enter
+  the canonical request. Diagnostics contain block IDs and field names, never
+  argument/output bodies. A valid missing result becomes an error result with
+  side-effects-unknown wording and remains adjacent to its call.
+- **Cold path:** compact using the Setup helper, then send another mock reply.
+  Compaction and document-evidence collection must not throw on null records.
+  Compare the saved rows against the injected baseline: replay must not rewrite
+  content or persist synthetic result blocks.
+- **Browser last:** reload the thread, continue chatting, and exercise Stop on a
+  slow mock reply after an earlier completed tool group. Previous text, actual
+  completed tool rows and usage stay visible; cancellation settles and the next
+  reply works. Capture the screen and durable transcript. Raw partial argument
+  cancellation is separately pinned by the local SSE/installed-SDK tests in
+  `openai-compatible/adapter.test.ts`; the mock script is not a raw-delta probe.
+- **Evidence:** before/injected/after rows, requests, diagnostics, compaction
+  result, browser screenshots, commit/date and stack. This recipe is not a claim
+  of a completed browser or database run.
+
 [c6a]: https://github.com/haowjy/meridian-flow-docs/blob/683395ca9b084cee0196ec9c9070755930d38329/work/agents-milestone-4/evidence/c6a-probe/report.md
 [merge]: https://github.com/haowjy/meridian-flow-docs/blob/a4b1dddbd615bbab334dc6fa7b700245f768d288/work/agents-milestone-4/evidence/merge-gate/REPORT.md
 [link-probes]: https://github.com/haowjy/meridian-flow-docs/tree/6934bec3c8771d80ae9014ccc5a93b61da74f8b1/work/model-tool-surface/experiments

@@ -45,8 +45,30 @@ notices, child results, and skill bodies are durable conversation turns instead.
 
 `context-builder.ts` renders persisted system turns as user messages wrapped in
 `<system_update>`, preserves tool-call adjacency, and synthesizes transient
-missing-tool results without persisting repairs. Child reports remain body-free;
-the model reads them through `thread_report`.
+missing-tool results without persisting repairs. Tool records are decoded at this
+model-history boundary, shared with cold summaries. Nonblank opaque IDs/names,
+object inputs and boolean error flags are required; missing input and the legacy
+text-content result fallback retain their existing meanings. Invalid records and
+uncorrelatable or duplicate local tool pairs become explicit non-executable text,
+with uncertainty about execution and side effects. Recovery includes only
+model-facing fields, never host-only `result`, `metadata` or provider data, and
+never changes the saved transcript. Valid result groups stay adjacent before
+missing-result repair runs. Structured diagnostics identify blocks/fields without
+logging arguments or output. Document-evidence preflight uses the same decoder.
+
+The compatible-provider collector buffers incomplete identities during streaming.
+If a stream ends before a nonblank ID and name arrive, it discards that unexecuted
+fragment instead of inventing an ID or saving a tool call. Other text, valid calls
+and billing survive; a normal completion with an incomplete identity has an error
+finish reason. On cancellation before the selected choice's terminal finish reason,
+raw arguments must already be a complete JSON object: empty or truncated buffers
+are discarded without JSON repair. A terminal marker establishes that argument
+streaming finished, so cancellation during trailing usage keeps normal argument
+repair (including explicit empty arguments). Both SDK abort exits use this rule:
+the SDK may swallow AbortError and end iteration normally. Cancellation still
+settles usage and retains complete calls for missing-result repair. Previous
+responses are untouched. Child reports remain body-free; the model reads them
+through `thread_report`.
 
 Prefix warmth is predicted from durable facts: the resolved registry model,
 previous successful assistant response, prompt-epoch bake, complete compaction

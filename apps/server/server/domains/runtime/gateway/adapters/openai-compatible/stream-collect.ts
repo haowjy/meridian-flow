@@ -39,6 +39,7 @@ import type {
   ToolCall,
 } from "../../domain/index.js";
 import { parseToolCallArguments } from "../../helpers/parse-tool-arguments.js";
+import { isNonBlankToolIdentity } from "../../helpers/tool-identity.js";
 
 interface StreamAccumulator {
   // Final content in the order this Chat Completions adapter can reconstruct.
@@ -53,6 +54,7 @@ interface StreamAccumulator {
   toolCalls: Map<number, { id?: string; name: string; arguments: string; pendingDeltas: string[] }>;
   usage: Usage;
   finishReason: FinishReason;
+  terminalObserved: boolean;
   model: string;
   provider: string;
 }
@@ -68,6 +70,7 @@ export function createStreamAccumulator(model: string, provider: string): Stream
     toolCalls: new Map(),
     usage: emptyUsage(),
     finishReason: "end_turn",
+    terminalObserved: false,
     model,
     provider,
   };
@@ -93,17 +96,48 @@ export function accumulatorHasPartialResult(acc: StreamAccumulator): boolean {
   );
 }
 
-export function buildGenerateResult(acc: StreamAccumulator): GenerateResult {
+export type StreamFinalization = "complete" | "interrupted";
+
+function hasCompleteToolArguments(raw: string): boolean {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed);
+  } catch {
+    return false;
+  }
+}
+
+export function buildGenerateResult(
+  acc: StreamAccumulator,
+  finalization: StreamFinalization = "complete",
+): GenerateResult {
   // Chat Completions has no final response object with reconstructed content, so
   // the GenerateResult is built entirely from accumulated deltas.
   flushTextBuffer(acc);
 
   const toolCalls: ToolCall[] = [];
-  for (const [index, entry] of acc.toolCalls.entries()) {
-    // Some compatible providers omit tool_call.id in early or all chunks. The
-    // fallback is deterministic within the response so the canonical contract
-    // still has an ID for tool_result references.
-    const id = entry.id ?? `call_${index}`;
+  let incompleteToolCall = false;
+  for (const entry of acc.toolCalls.values()) {
+    // Deltas can precede their identity. Only finalize this after stream end/abort;
+    // never dispatch a fragment or invent an ID that a provider did not supply.
+    if (!isNonBlankToolIdentity(entry.id) || !isNonBlankToolIdentity(entry.name)) {
+      incompleteToolCall = true;
+      continue;
+    }
+    // Before a terminal choice, repair could turn a truncated argument buffer
+    // into a different complete call. An interrupted fragment has never reached
+    // dispatch, so discard it rather than persist that invented completion.
+    // A terminal choice proves the argument stream ended, even if cancellation
+    // interrupts the trailing usage chunk; keep normal argument repair then.
+    if (
+      finalization === "interrupted" &&
+      !acc.terminalObserved &&
+      !hasCompleteToolArguments(entry.arguments)
+    ) {
+      incompleteToolCall = true;
+      continue;
+    }
+    const id = entry.id;
     const parsed = parseToolCallArguments(entry.arguments);
     const input = parsed.ok ? parsed.arguments : {};
     const parseError = parsed.ok ? undefined : { raw: parsed.raw, message: parsed.message };
@@ -125,7 +159,7 @@ export function buildGenerateResult(acc: StreamAccumulator): GenerateResult {
   return {
     content: [...acc.contentParts],
     toolCalls,
-    finishReason: acc.finishReason,
+    finishReason: incompleteToolCall ? "error" : acc.finishReason,
     usage: acc.usage,
     model: acc.model,
     provider: acc.provider,
@@ -247,8 +281,8 @@ export function* eventsFromOpenAIChunk(
       if (tc.id) {
         // Once the provider supplies the durable tool-call ID, buffered argument
         // fragments can be emitted as canonical tool_call.delta events tied to
-        // that ID. Some compatible providers omit ID in early or all chunks;
-        // buildGenerateResult falls back to a deterministic `call_<index>` ID.
+        // that ID. If the stream ends before identity arrives, finalization
+        // fails the response instead of inventing an executable call.
         entry.id = tc.id;
         for (const argumentsDelta of entry.pendingDeltas.splice(0)) {
           yield {
@@ -282,6 +316,7 @@ export function* eventsFromOpenAIChunk(
   if (choice.finish_reason) {
     // Finish reason can arrive on the last choice delta, after all content/tool
     // chunks. Combine it with observed tool calls for canonical finishReason.
+    acc.terminalObserved = true;
     acc.finishReason = mapFinishReason(choice.finish_reason, acc.toolCalls.size > 0);
   }
 }

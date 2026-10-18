@@ -7,6 +7,7 @@ import type { Block, JsonObject } from "@meridian/contracts/threads";
 import type { CompactionMetadata } from "../../../threads/index.js";
 import type { DocumentTextPolicy } from "../../tools/document-text.js";
 import { elideReferenceRead } from "../reference-context.js";
+import { decodeToolBlock } from "../tool-history.js";
 import type { RetainedTurnSlice } from "./tail.js";
 
 export type DocumentTextPolicies = (toolName: string) => DocumentTextPolicy | undefined;
@@ -18,19 +19,21 @@ export type ModelElisions = NonNullable<CompactionMetadata["elisions"]>;
 
 function documentPairs(blocks: readonly Block[], policies: DocumentTextPolicies) {
   const calls = new Map(
-    blocks
-      .filter((block) => block.blockType === "tool_use")
-      .map((block) => [(block.content as JsonObject).toolCallId, block]),
+    blocks.flatMap((call) => {
+      if (call.blockType !== "tool_use") return [];
+      const { part } = decodeToolBlock(call);
+      return part?.type === "tool_use" ? [[part.toolCallId, { call, tool: part }] as const] : [];
+    }),
   );
   return blocks.flatMap((result) => {
     if (result.blockType !== "tool_result") return [];
-    const content = result.content as JsonObject;
-    if (content.isError) return [];
-    const call = calls.get(content.toolCallId);
-    if (!call) return [];
-    const tool = call.content as JsonObject;
-    const policy = policies(tool.toolName as string);
-    const input = (tool.input ?? {}) as JsonObject;
+    const { part } = decodeToolBlock(result);
+    if (part?.type !== "tool_result" || part.isError) return [];
+    const paired = calls.get(part.toolCallId);
+    if (!paired) return [];
+    const { call, tool } = paired;
+    const policy = policies(tool.toolName);
+    const input = tool.input;
     return policy ? [{ call, result, input, policy, kind: policy.kind }] : [];
   });
 }

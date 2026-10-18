@@ -70,7 +70,11 @@ export function createOpenAICompatibleAdapter(config: ProviderConfig): ProviderA
           yield* eventsFromOpenAIChunk(chunk, acc);
         }
 
-        const result = buildGenerateResult(acc);
+        // The SDK can consume AbortError and end iteration normally.
+        const result = buildGenerateResult(
+          acc,
+          request.signal?.aborted ? "interrupted" : "complete",
+        );
         yield { type: "end", result };
       } catch (err) {
         // Check for abort before mapping to provider errors — aborted requests
@@ -82,7 +86,7 @@ export function createOpenAICompatibleAdapter(config: ProviderConfig): ProviderA
             return;
           }
           if (accumulatorHasPartialResult(acc)) {
-            yield { type: "end", result: buildGenerateResult(acc) };
+            yield { type: "end", result: buildGenerateResult(acc, "interrupted") };
             return;
           }
           yield {

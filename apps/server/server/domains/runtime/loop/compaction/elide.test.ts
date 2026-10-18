@@ -219,3 +219,47 @@ it("freezes search content without borrowing unchanged nested output objects", (
   ((blocks[1].content as JsonObject).output as JsonObject[])[1].matchCount = 999;
   expect(JSON.stringify(elisions)).not.toContain("999");
 });
+
+describe("malformed saved tool evidence at compaction", () => {
+  const call = {
+    toolCallId: "bad-id",
+    toolName: "write",
+    input: { command: "read", path: evidence.uri },
+  };
+  const result = {
+    toolCallId: "bad-id",
+    output: "INVALID DOCUMENT",
+    metadata: { documentRevisions: [evidence] },
+  };
+  const malformed: { label: string; call: Block["content"]; result: Block["content"] }[] = [
+    { label: "null call", call: null, result },
+    { label: "null result", call, result: null },
+    { label: "scalar call", call: "invalid", result },
+    { label: "array call", call: [], result },
+    { label: "scalar result", call, result: false },
+    { label: "array result", call, result: [] },
+    { label: "blank call name", call: { ...call, toolName: " \t" }, result },
+    { label: "blank call ID", call: { ...call, toolCallId: "" }, result },
+    { label: "nonstring result ID", call, result: { ...result, toolCallId: 7 } },
+    { label: "null call input", call: { ...call, input: null }, result },
+    { label: "array call input", call: { ...call, input: [] }, result },
+    { label: "nonboolean result error", call, result: { ...result, isError: "false" } },
+  ];
+
+  it.each(malformed)("skips $label without throwing or hiding valid evidence", (row) => {
+    const blocks = [
+      block("bad-call", "tool_use", row.call),
+      block("bad-result", "tool_result", row.result),
+      ...pair("read"),
+    ];
+    const before = structuredClone(blocks);
+    const slices = [{ turn: { id: "turn" } as Turn, blocks }];
+    const recorded = collectRecordedDocuments(slices, policies);
+    expect([...recorded.entries()]).toEqual([["result", [evidence]]]);
+    const elisions = plan(blocks);
+    expect(elisions.map((elision) => elision.blockId)).toEqual(["result"]);
+    expect(JSON.stringify(elisions)).not.toContain("INVALID DOCUMENT");
+    expect(blocks).toEqual(before);
+    expect(plan(blocks)).toEqual(elisions);
+  });
+});

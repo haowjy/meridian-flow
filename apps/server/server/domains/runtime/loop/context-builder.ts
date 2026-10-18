@@ -16,9 +16,10 @@ import {
 } from "../../threads/index.js";
 import { orderTurnsByPosition } from "../../threads/order-turns.js";
 import { assistant, system, text, toolResult } from "../gateway/helpers/messages.js";
-import type { ContentPart, Message, Tool, ToolUsePart } from "../gateway/index.js";
+import type { ContentPart, Message, Tool } from "../gateway/index.js";
 import { componentModelText } from "./component-model-text.js";
 import { assembleComposedSystemPrompt, isThreadPromptFrozen } from "./composed-system-prompt.js";
+import { projectToolBlockGroup } from "./tool-history.js";
 
 export interface BuildContextInput {
   thread: Thread;
@@ -41,7 +42,7 @@ export function buildContext(input: BuildContextInput): {
 } {
   reportPersistedContractFailures(input);
   const messages: Message[] = [];
-  const sourceTurnStatusByMessage = new Map<Message, Turn["status"]>();
+  const sourceTurnsByMessage = new Map<Message, Pick<Turn, "id" | "status">>();
 
   if (isThreadPromptFrozen(input.thread) && input.systemPrompt === undefined)
     throw new Error(`Prompt bake is required for frozen thread ${input.thread.id}`);
@@ -57,23 +58,28 @@ export function buildContext(input: BuildContextInput): {
 
   for (const turn of orderTurnsByPosition(input.turns)) {
     const turnBlocks = blocksByTurn.get(turn.id as string) ?? [];
-    const rendered = turnContextMessages(turn, turnBlocks);
+    const rendered = turnContextMessages(turn, turnBlocks, input.eventSink);
     for (const message of rendered) {
       messages.push(message);
-      if (message.role === "assistant") sourceTurnStatusByMessage.set(message, turn.status);
+      if (message.role === "assistant") sourceTurnsByMessage.set(message, turn);
     }
   }
 
   return {
-    messages: mergeAdjacentUserMessages(
-      completeToolResultGroups(messages, sourceTurnStatusByMessage),
+    messages: mergeAdjacentConversationMessages(
+      completeToolResultGroups(messages, sourceTurnsByMessage),
+      sourceTurnsByMessage,
     ),
     tools: input.tools?.length ? input.tools : undefined,
   };
 }
 
 /** One model-visible turn, shared by live requests and cold summary transcripts. */
-export function turnContextMessages(turn: Turn, blocks: readonly Block[]): Message[] {
+export function turnContextMessages(
+  turn: Turn,
+  blocks: readonly Block[],
+  eventSink?: EventSink,
+): Message[] {
   const messages: Message[] = [];
   const turnBlocks = [...blocks].sort((a, b) => a.sequence - b.sequence);
   if (turn.role === "user") {
@@ -106,32 +112,38 @@ export function turnContextMessages(turn: Turn, blocks: readonly Block[]): Messa
   }
 
   if (turn.role === "assistant") {
-    const assistantParts: ContentPart[] = [];
+    let group: Block[] = [];
+    let hasResults = false;
+    const appendGroup = () => {
+      const tools = projectToolBlockGroup(group, turn.threadId, eventSink);
+      const parts = group.flatMap((block) => {
+        if (block.blockType === "tool_result") return [];
+        const part = tools.get(block) ?? blockToContentPart(block);
+        return part ? [part] : [];
+      });
+      if (parts.length) messages.push(assistant(parts));
+      const recovered: ContentPart[] = [];
+      for (const block of group) {
+        if (block.blockType !== "tool_result") continue;
+        const part = tools.get(block);
+        if (part?.type === "tool_result") messages.push({ role: "tool", content: [part] });
+        else if (part) recovered.push(part);
+      }
+      // Recovery text must not split a parallel call's contiguous result group.
+      if (recovered.length) messages.push(assistant(recovered));
+      group = [];
+      hasResults = false;
+    };
     for (const block of turnBlocks) {
       if (block.blockType === "tool_result") {
-        if (assistantParts.length > 0) {
-          const message = assistant(assistantParts.slice());
-          messages.push(message);
-          assistantParts.length = 0;
-        }
-        const content = block.content as {
-          toolCallId?: string;
-          output?: JsonValue;
-          isError?: boolean;
-        } | null;
-        const toolCallId = content?.toolCallId ?? "";
-        messages.push(
-          toolResult(toolCallId, content?.output ?? block.textContent ?? null, content?.isError),
-        );
-        continue;
+        hasResults = true;
+      } else {
+        if (block.blockType !== "tool_use" && !blockToContentPart(block)) continue;
+        if (hasResults) appendGroup();
       }
-      const part = blockToContentPart(block);
-      if (part) assistantParts.push(part);
+      group.push(block);
     }
-    if (assistantParts.length > 0) {
-      const message = assistant(assistantParts.slice());
-      messages.push(message);
-    }
+    appendGroup();
   }
 
   return messages;
@@ -179,26 +191,36 @@ function reportPersistedContractFailures(input: BuildContextInput): void {
   }
 }
 
-/** Inbox turns retain durable graph identity but travel to the model as one delivery. */
-function mergeAdjacentUserMessages(messages: readonly Message[]): Message[] {
+/** Coalesce delivery/recovery text only after missing tool results have closed their groups. */
+function mergeAdjacentConversationMessages(
+  messages: readonly Message[],
+  sourceTurnsByMessage: ReadonlyMap<Message, Pick<Turn, "id" | "status">>,
+): Message[] {
   const merged: Message[] = [];
+  let previousTurnId: string | undefined;
   for (const message of messages) {
     const previous = merged.at(-1);
-    if (previous?.role === "user" && message.role === "user") {
+    const turnId = sourceTurnsByMessage.get(message)?.id;
+    if (
+      previous?.role === message.role &&
+      (message.role === "user" ||
+        (message.role === "assistant" && turnId !== undefined && turnId === previousTurnId))
+    ) {
       merged[merged.length - 1] = {
-        role: "user",
+        role: message.role,
         content: [...previous.content, ...message.content],
       };
     } else {
       merged.push(message);
     }
+    previousTurnId = turnId;
   }
   return merged;
 }
 
 function completeToolResultGroups(
   messages: readonly Message[],
-  sourceTurnStatusByMessage: ReadonlyMap<Message, Turn["status"]>,
+  sourceTurnsByMessage: ReadonlyMap<Message, Pick<Turn, "id" | "status">>,
 ): Message[] {
   const completed: Message[] = [];
 
@@ -224,7 +246,7 @@ function completeToolResultGroups(
     index = nextIndex - 1;
 
     const missingResultMessage =
-      sourceTurnStatusByMessage.get(message) === "cancelled"
+      sourceTurnsByMessage.get(message)?.status === "cancelled"
         ? "Tool call cancelled; no result recorded. Side effects unknown — re-read state before retrying."
         : "Tool call did not finish; no result recorded. Side effects unknown — re-read state before retrying.";
     for (const toolCallId of missingResultIds) {
@@ -303,19 +325,6 @@ function blockToContentPart(block: Block): ContentPart | null {
             }
           : {}),
       };
-    }
-    case "tool_use": {
-      const content = block.content as {
-        toolCallId?: string;
-        toolName?: string;
-        input?: Record<string, unknown>;
-      } | null;
-      return {
-        type: "tool_use",
-        toolCallId: content?.toolCallId ?? "",
-        toolName: content?.toolName ?? "",
-        input: content?.input ?? {},
-      } satisfies ToolUsePart;
     }
     case "image":
     case "file":
