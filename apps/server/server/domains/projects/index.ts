@@ -276,7 +276,6 @@ export function createDrizzleProjectBootstrapRepository(deps: {
   };
 }
 
-export type { WorkCatalogEntry } from "@meridian/contracts/works";
 // ── Project CRUD ────────────────────────────────────────────────────────────
 export { createDrizzleProjectRepository } from "./adapters/project-repository/drizzle.js";
 export { createInMemoryProjectRepository } from "./adapters/project-repository/in-memory.js";

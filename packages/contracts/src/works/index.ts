@@ -22,7 +22,7 @@ export interface Work {
   /** Durable per-entity ordering fence. JSON form of a monotonic bigint. */
   entityRevision: string;
   /** Documents this Work's active draft changes (the Works badge), as the server stores it; never derive from visible rows. */
-  unpushedChangeCount?: number | null;
+  pendingDocumentCount: number;
   createdAt: string;
   updatedAt: string;
   lastActivityAt: string;
@@ -44,9 +44,8 @@ export function isWorkArchived(work: Pick<Work, "archivedAt">): boolean {
   return work.archivedAt !== null;
 }
 
-export type WorkCatalogEntry = Work & { unpushedChangeCount: number };
-export type NamedWorkCatalogEntry = WorkCatalogEntry & { isNoWork: false; slug: WorkSlug };
-export type NoWorkCatalogEntry = WorkCatalogEntry & { isNoWork: true; slug: null };
+export type NamedWorkCatalogEntry = Work & { isNoWork: false; slug: WorkSlug };
+export type NoWorkCatalogEntry = Work & { isNoWork: true; slug: null };
 
 /** Complete, version-ordered Work lifecycle projection for one project. */
 export type WorksSnapshot = {
