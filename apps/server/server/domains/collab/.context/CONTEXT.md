@@ -194,7 +194,7 @@ branch, the order the transitions take. A caller hands it its whole write set
 once, through `lockWorks` (opening a draft, Apply's batch plan, a reply save's
 grants) or `mutate`, which is `lockWorks` then the write. Every Work locked
 either way has its stored pending count reconciled at commit, and only a Work
-whose count moved is notified (one SQL count per Work per transaction;
+whose count moved is notified (one SQL aggregate over the transaction's locked Works;
 `projects/.context/CONTEXT.md`). `seam` adds the bound edit
 grants' Works and confirms the grants; `requireActive` refuses unless every
 Work of the set is active. No other collab code locks a Work for a write; the
