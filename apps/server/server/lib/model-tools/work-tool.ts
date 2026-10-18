@@ -40,7 +40,17 @@ import {
  * its own: the chat's mode is in its work context (D62).
  */
 function modelWork(work: Work): ModelWork {
-  const { slug, name, goal, status, archivedAt, createdAt, updatedAt, lastActivityAt } = work;
+  const {
+    slug,
+    name,
+    goal,
+    status,
+    archivedAt,
+    createdAt,
+    updatedAt,
+    lastActivityAt,
+    pendingDocumentCount,
+  } = work;
   return {
     slug,
     name,
@@ -50,9 +60,7 @@ function modelWork(work: Work): ModelWork {
     createdAt,
     updatedAt,
     lastActivityAt,
-    ...(work.unpushedChangeCount !== undefined
-      ? { pendingChangeCount: work.unpushedChangeCount }
-      : {}),
+    pendingDocumentCount,
   };
 }
 

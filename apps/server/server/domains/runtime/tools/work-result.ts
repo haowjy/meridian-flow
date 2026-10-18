@@ -19,7 +19,7 @@ export interface ModelWork {
   createdAt: string;
   updatedAt: string;
   lastActivityAt: string | null;
-  pendingChangeCount?: number | null;
+  pendingDocumentCount: number;
 }
 
 /** `work show`: the Work, its recent chats and its drafts. */
@@ -110,7 +110,7 @@ function workLines(work: ModelWork, verbose: boolean, goalLength: number): strin
     workRef(work),
     name,
     goalLength > 0 && work.goal ? clip(work.goal, goalLength) : undefined,
-    work.pendingChangeCount ? pending(work.pendingChangeCount) : undefined,
+    work.pendingDocumentCount ? pending(work.pendingDocumentCount) : undefined,
     work.archivedAt ? "(archived)" : undefined,
   ].filter((fact) => fact !== undefined);
   const line = facts.join("  ");

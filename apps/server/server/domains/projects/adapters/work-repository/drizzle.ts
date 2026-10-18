@@ -72,7 +72,7 @@ function mapWork(row: WorkRow): Work {
     archivedAt: row.archivedAt?.toISOString() ?? null,
     defaultAiWriteMode: row.defaultAiWriteMode,
     entityRevision: String(row.entityRevision),
-    unpushedChangeCount: row.pendingDocumentCount,
+    pendingDocumentCount: row.pendingDocumentCount,
     lastActivityAt: row.updatedAt.toISOString(),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),

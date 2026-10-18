@@ -36,19 +36,9 @@ export async function listWorkCatalog(
         if (work.isNoWork || work.slug === null) {
           throw new Error(`Named Work catalog included locked Work ${work.id}`);
         }
-        return {
-          ...work,
-          isNoWork: false,
-          slug: work.slug,
-          unpushedChangeCount: work.unpushedChangeCount ?? 0,
-        };
+        return { ...work, isNoWork: false, slug: work.slug };
       }),
-      noWork: {
-        ...noWork,
-        isNoWork: true,
-        slug: null,
-        unpushedChangeCount: noWork.unpushedChangeCount ?? 0,
-      } satisfies NoWorkCatalogEntry,
+      noWork: { ...noWork, isNoWork: true, slug: null } satisfies NoWorkCatalogEntry,
     };
   });
 }
