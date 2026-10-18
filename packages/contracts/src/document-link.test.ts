@@ -119,7 +119,7 @@ it("resolves and spells stored links by rule", () => {
       address: "manuscript://book/ch2",
     },
     {
-      name: "a document only in a draft resolves in the draft",
+      name: "a document only in a branch resolves in the branch",
       ref: `doc:${U.drafted}`,
       href: "manuscript://book/new",
       kind: "document",

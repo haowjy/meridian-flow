@@ -1,6 +1,6 @@
 # Crash and resend, and two servers on one database
 
-Two lock-free drafts probes. **P5** stops the server between a branch write's
+Two lock-free drafts probes. **P5** stops the server between a draft write's
 `COMMIT` and its acknowledgement and checks the resend lands once. **P6** runs two
 server processes on one database, with a tab on each typing into the same draft.
 Both run on an owned mock stack (`MODEL_PROVIDER=mock pnpm dev`) and read
@@ -10,7 +10,7 @@ and evidence path for each run, as the [catalog](README.md) asks.
 ## Tools
 
 - `pnpm exec tsx tools/qa/draft-readback.ts <draftId> [--db <url>]` prints a
-  branch's `revision`, `checkpointRevision`, `checkpointSeq`, generation, tail
+  draft's `revision`, `checkpointRevision`, `checkpointSeq`, generation, tail
   rows with their client ids, materialized `text` and `stateSha256`. Without
   `--db` it reads this checkout's database.
 - `pnpm exec tsx tools/qa/shared-db-server.ts <database-url> <prefix>.server.meridian`
@@ -27,13 +27,13 @@ and evidence path for each run, as the [catalog](README.md) asks.
   server deletes the file and exits with 137. Nitro's dev server restarts its
   worker on its own (`Restarting dev worker...` in `logs/portless.log`), and the
   restarted worker finds no arm file. The hook points are
-  `draft.append.beforeCommit` (rows and receipts written, the branch row held,
+  `draft.append.beforeCommit` (rows and receipts written, the draft row held,
   nothing committed), `draft.append.afterCommit` and
   `draft.rewrite.beforeCommit`
   (`apps/server/server/domains/collab/domain/collab-test-hooks.ts`).
-- `collab.branch.rewrite_committed` reports each rewrite (`checkpoint`,
+- `collab.draft.rewrite_committed` reports each rewrite (`checkpoint`,
   `compact`, `pull`, `reset`) with `holdMs` and `tailRows`. `holdMs` runs from
-  the branch row's `FOR UPDATE` to `COMMIT`.
+  the draft row's `FOR UPDATE` to `COMMIT`.
 
 For about 30 seconds after a crash, the JSONL mirror (`logs/events/`) drops
 events, because the dead worker's directory lock is still live until it goes
@@ -44,21 +44,23 @@ stale. During that window, read the server's stdout in `logs/portless.log`.
 Seed a document, create a named Work, create a thread on it with
 `aiWriteMode: "draft"` in the `POST /api/threads` body (`./mf api`), and make a
 draft with a scripted mock `write` (`./mf thread send <thread> ... --mock`).
-`./mf api GET /api/projects/<project>/works/<work>/branches` names the draft. Its
-branch id is the `draftId` on the draft's rows.
+`./mf api GET /api/projects/<project>/works/<work>/branches` lists the Work's branch
+(`items[].branchId`). Each item is one document draft (`itemKey`
+`${branchId}:${documentId}`). `draft-readback.ts` takes that draft's
+`document_drafts.id` (`draft_<uuid>`), not `branchId`.
 
 ## P5: crash between the append's commit and its ack
 
 1. Run `pnpm dev --stop`, then start the stack armed for the append:
    `COLLAB_CRASH_AT=draft.append.afterCommit COLLAB_CRASH_ARM=/tmp/<run>-arm MODEL_PROVIDER=mock pnpm dev:local`.
-   Read `branch-readback` for the draft branch.
+   Read `draft-readback` for the draft.
 2. Open the draft in the Editor in a named `agent-browser` session. `touch` the
    arm file and type one word.
 3. The server exits after the row commits, so the frame gets no ack. The
    client reconnects to the restarted worker and resends.
    PASS:
    - The arm file is gone.
-   - `branch-readback` shows exactly one new tail row for the word.
+   - `draft-readback` shows exactly one new tail row for the word.
    - Its `text` matches the editor.
    - After a reload, the editor and `stateSha256` are unchanged.
    - Typing again with no arm file does not crash.
@@ -71,7 +73,7 @@ branch id is the `draftId` on the draft's rows.
    carries the word.
    PASS:
    - The arm file is gone.
-   - `branch-readback` shows exactly one new tail row for the word, not two:
+   - `draft-readback` shows exactly one new tail row for the word, not two:
      the crashed attempt left no row.
    - The receipt count grew by exactly one: the crashed attempt left no receipt.
    - Its `text` matches the editor, and the reload check of step 3 holds.
@@ -85,7 +87,7 @@ branch id is the `draftId` on the draft's rows.
    - The pull runs once more and commits: `revision` + 1, and the text carries
      the live edit.
    - `logs/portless.log` shows one `rewrite_committed` with `rewrite: "pull"`
-     for that branch after `Restarting dev worker...`.
+     for that draft after `Restarting dev worker...`.
 
 ## P6: two servers on one database
 
@@ -112,16 +114,16 @@ branch id is the `draftId` on the draft's rows.
 3. Each tab types 40 unique tokens (`A01` to `A40`, `B01` to `B40`) on a 200 ms
    cadence. Log each key's send time, its ack or `1008` close, and reconnects.
 4. PASS:
-   - All 80 tokens are in `branch-readback`'s text, in each tab's order.
+   - All 80 tokens are in `draft-readback`'s text, in each tab's order.
    - All 80 tokens are in both editors after a reload.
    - Every key is acked, with no `1008` close and no reconnect: each
      process's room takes the other's committed rows before it judges a frame.
      The headless form of this step is the `two-process-frames` probe, and
      `two-process-fold` and `two-process-compaction` cover a pull or compaction
      folding the other process's row ([seam probes](drafts-lock-free-probes.md)).
-   - No frame is judged twice: appends are sequenced by the branch row's lock,
+   - No frame is judged twice: appends are sequenced by the draft row's lock,
      so neither process emits a `DraftCasConflictError` for a frame. Read
-     `collab.branch.append_committed` (debug) for each key's `waitMs` and `holdMs`.
+     `collab.draft.append_committed` (debug) for each key's `waitMs` and `holdMs`.
    - A live edit pulled by both processes lands once; the loser sees `moved`.
    - Equal hashes after the reload are not enough on their own.
    The second server mirrors events to `logs/events-p6b.server.meridian/`.

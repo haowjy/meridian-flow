@@ -1,5 +1,5 @@
 /**
- * A branch room as a delivery recipient (decision D26), over the real gateway hooks and the
+ * A draft room as a delivery recipient (decision D26), over the real gateway hooks and the
  * real Hocuspocus room lifecycle: each room loads through `createDocument`, the call a socket
  * connection makes, and each frame goes through the gateway's `admitWriterSync`, which asks for
  * the `1008` close a refused frame gets.
@@ -230,7 +230,7 @@ export function openGateway(
     type,
     send,
     joinReadOnly,
-    /** Waits out every enrollment the branch's rooms started. */
+    /** Waits out every enrollment the draft's rooms started. */
     enrolled: (draftId: string) => persistence.drainHocuspocusDraftPersistence(draftId),
     async close() {
       for (const document of [...hocuspocus.documents.values()])

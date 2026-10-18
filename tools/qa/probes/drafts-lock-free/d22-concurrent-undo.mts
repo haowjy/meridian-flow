@@ -32,7 +32,7 @@ async function seedModelDraftWrite(harness: Harness, label: string) {
     liveDoc: live,
   });
   const read = await harness.store.readDraftAt(documentDraft.draftId);
-  if (!read) throw new Error("The draft branch was not created");
+  if (!read) throw new Error("The document draft was not created");
   live.clientID = 941_002;
   const before = Y.encodeStateAsUpdate(live);
   const update = appendToFirstParagraph(live, " agent");

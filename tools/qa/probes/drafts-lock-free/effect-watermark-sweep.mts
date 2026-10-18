@@ -5,7 +5,7 @@
  * (a) a key committed with no projection job leaves the watermark behind and the badge stale;
  *     a fresh process's `sweep()` repairs both.
  * (b) a compaction leaves the watermark behind; the sweep re-judges the same value.
- * (c) fairness: 51 stale branches, the newest 50 on a Work an open transaction holds, the oldest
+ * (c) fairness: 51 stale drafts, the newest 50 on a Work an open transaction holds, the oldest
  *     on an idle Work. One pass tracks all 51 in two pages; the oldest is written within 2 s
  *     while the 50 answer `contended`; no projection connection waits on one lock longer than
  *     the 100 ms `lock_timeout` (per lock acquisition, C1); the next tick is a new pass;
@@ -88,7 +88,7 @@ export const effectWatermarkSweep: Probe = {
             (row) => row.watermark === row.revision,
           );
           const read = await harness.store.readDraftAt(draft.draftId);
-          if (!read) throw new Error("branch missing");
+          if (!read) throw new Error("draft missing");
           const checkpoint = await durableDoc(harness, draft.draftId);
           const compacted = await harness.store.commitRewrite({
             draftId: draft.draftId,
@@ -225,7 +225,7 @@ export const effectWatermarkSweep: Probe = {
           });
           assert.deepEqual(firstPass, [50, 1], "one pass, two pages");
           assert.ok(secondPass.length <= 2, "the next tick is a new finite pass");
-          assert.ok(contendedWhileHeld > 0, "the held Work's branches answer contended");
+          assert.ok(contendedWhileHeld > 0, "the held Work's drafts answer contended");
           assert.ok(
             maxWaitMs <= LOCK_TIMEOUT_MS + 100,
             `no lock acquisition waits past the bound: ${maxWaitMs} ms`,
@@ -247,7 +247,7 @@ export const effectWatermarkSweep: Probe = {
             const tab = await openRoom(harness, phase4Coordinator(harness), draft);
             for (const token of [" one", " two"]) await tab.send(keystroke(tab.room, token));
             const read = await harness.store.readDraftAt(draft.draftId);
-            if (!read) throw new Error("branch missing");
+            if (!read) throw new Error("draft missing");
             const checkpoint = await durableDoc(harness, draft.draftId);
             await harness.store.commitRewrite({
               draftId: draft.draftId,

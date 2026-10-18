@@ -39,7 +39,7 @@ export interface AheadMint {
   address: string;
   /** The holder scope's project at mint time: the registry's namespace. */
   holderProjectId: string;
-  /** The holder scope's view at mint time: a draft view registers the ref's meaning there too. */
+  /** The holder scope's view at mint time: a branch view registers the ref's meaning there too. */
   view: LinkView;
 }
 

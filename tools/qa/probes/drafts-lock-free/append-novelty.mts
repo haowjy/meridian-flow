@@ -1,7 +1,7 @@
 /**
  * Phase 4 (design §2.2, F1/R2/R3/G4): an append's receipt, novelty and authorship are judged
- * under the branch row lock against the committed prefix, never against the replica the frame
- * read off the lock. Two admissions over one branch through the production coordinator and
+ * under the draft row lock against the committed prefix, never against the replica the frame
+ * read off the lock. Two admissions over one draft through the production coordinator and
  * store, ordered by a hook or a held `appendRows`, each arm on its own draft:
  *
  * (a) a dependent update before its prefix is not sequenced and closes `4207`; the merged
@@ -61,14 +61,14 @@ function clocksOf(update: Uint8Array, client: number): number[] {
 }
 
 /**
- * The second key's wait: phase 4 queues it on the branch row (the sequence point); a wait on
+ * The second key's wait: phase 4 queues it on the draft row (the sequence point); a wait on
  * the Work row is today's membership-flip lock on a keystroke, which phase 4 deletes.
  */
 const KEY_WAIT = /document_drafts|"works"/;
 function assertWaitedOnDraftRow(waiting: readonly string[]) {
   assert.ok(
     waiting.every((query) => /document_drafts/.test(query)),
-    `the second key waits on the branch row, not a Work: ${JSON.stringify(waiting)}`,
+    `the second key waits on the draft row, not a Work: ${JSON.stringify(waiting)}`,
   );
 }
 

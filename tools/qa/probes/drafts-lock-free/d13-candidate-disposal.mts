@@ -1,6 +1,6 @@
 /**
  * Decision D13: one attempt owns every candidate it prepared. Two prepared catch-ups in one
- * attempt: the first persists, then an independent pull moves the second's branch, so the
+ * attempt: the first persists, then an independent pull moves the second's draft, so the
  * second misses. The attempt's scope rolls the first write back, and both candidates are
  * destroyed, the successful one included (the defect was "persisted, so dispose does nothing").
  */

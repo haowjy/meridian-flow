@@ -112,7 +112,7 @@ export type ProjectContextTreeScheme = ContextUriScheme;
 
 /**
  * Where the writer's create lands, the same identity-based address a move carries. The
- * server joins a draft's hidden document waiting there; omitted, the create is nameless
+ * server joins a branch's hidden document waiting there; omitted, the create is nameless
  * and lands in `folderPath` as `Untitled N`.
  */
 export type CreateUntitledDestination = {
@@ -147,7 +147,7 @@ export type CreateUntitledContextDocumentResponse = {
 };
 
 /**
- * The create became an existing document: a draft's hidden one at the destination.
+ * The create became an existing document: a branch's hidden one at the destination.
  * `documentId` is the joined document, not the submitted id, which now forwards to it.
  */
 export type CreateUntitledContextDocumentJoined = {

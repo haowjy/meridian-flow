@@ -7,7 +7,7 @@ export const WS_CLOSE = {
   DRAFT_STALE: { code: 4205, reason: "draft-stale-doc" },
   DRAFT_GENERATION_STALE: { code: 4206, reason: "draft-generation-stale" },
   /**
-   * A draft update arrived before the update it depends on reached the branch's journal. Not a
+   * A draft update arrived before the update it depends on reached the draft's journal. Not a
    * refusal: the client reconnects and its next handshake's SyncStep2 carries the missing prefix.
    */
   DRAFT_PREFIX_MISSING: { code: 4207, reason: "draft-prefix-missing" },

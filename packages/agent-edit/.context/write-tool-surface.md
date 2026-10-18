@@ -58,7 +58,7 @@ runs before dispatch. Copies pass nodes from host read results rather than
 reading source documents inside the kernel, so whitespace and blank paragraphs
 survive and copied blocks receive fresh identities.
 
-`interaction-mode.ts` owns mutation mode and its context. The mode and branch
+`interaction-mode.ts` owns mutation mode and its context. The mode and draft
 generation are required end to end. Unexpected failures report safe identity
 metadata to the observer and collapse to model-facing `internal_error`; observer
 failures never alter mutation control flow.

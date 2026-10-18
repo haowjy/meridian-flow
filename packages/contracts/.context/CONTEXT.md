@@ -43,7 +43,7 @@ contract owns a rule and where it is consumed.
 
 ## Context ownership and URIs
 
-`context-uri.ts` owns scheme classification and address syntax. Branch-mode
+`context-uri.ts` owns scheme classification and address syntax. Draft-mode
 Works own manuscript, KB, user, and unfiled content; Scratch and uploads are
 not drafted. A leading `@` in each path segment is reserved for Work authority;
 other `@` characters are valid. `uploads://@/c15/x` names a chat's upload

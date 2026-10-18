@@ -11,7 +11,7 @@ export interface StagedHelperCut {
 
 /**
  * Why a staged write did not land. `discarded_*` come from a Discard that retired the thread's peer:
- * the whole draft, this created document, or this edited document's text.
+ * the whole branch, this created document, or this edited document's text.
  */
 export type StagedWriteRejectionReason =
   | "discard"
@@ -63,7 +63,7 @@ export interface StagedWriteCommit {
 }
 
 /**
- * A host that stages a response's writes on private candidates (a branch host). A read replays;
+ * A host that stages a response's writes on private candidates (a draft host). A read replays;
  * a save also prepares the write. Both are pure with respect to the host until `persist`.
  */
 export interface StagedWriteHost {
@@ -86,9 +86,9 @@ export function isDocumentNotFoundError(cause: unknown): cause is DocumentNotFou
 }
 
 /**
- * Port callers' access to the host-owned canonical Y.Doc (live or branch). Callers must not
+ * Port callers' access to the host-owned canonical Y.Doc (live or draft). Callers must not
  * rely on mutual exclusion: each host decides how a mutation commits (a live host serializes
- * callers; a branch host runs them on private candidates and commits an ordinary CRDT write as
+ * callers; a draft host runs them on private candidates and commits an ordinary CRDT write as
  * an unfenced append, while an exact peer catch-up or rewrite commits only at the revision it
  * captured, so a staged save can still miss that revision).
  */
@@ -142,12 +142,12 @@ export interface DocumentCoordinator {
 export interface DocumentAccess {
   /**
    * A live host only: the maximum wait for its per-document serialization. Callback duration
-   * is not timed; a branch host, which serializes nothing, ignores it.
+   * is not timed; a draft host, which serializes nothing, ignores it.
    */
   timeoutMs?: number;
   signal?: AbortSignal;
   /**
-   * The host branch a staged thread-peer write was pinned to (`InteractionContext.draftId`):
+   * The host draft a staged thread-peer write was pinned to (`InteractionContext.peerDraftId`):
    * the coordinator resolves exactly this one and never provisions another.
    */
   pinnedDraftId?: string;

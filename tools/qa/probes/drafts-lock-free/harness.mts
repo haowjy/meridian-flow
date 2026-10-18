@@ -1,5 +1,5 @@
 /**
- * Shared harness for the lock-free branches probes (decision D21): one scratch PostgreSQL database
+ * Shared harness for the lock-free drafts probes (decision D21): one scratch PostgreSQL database
  * with the committed migration chain, the production collab and Work adapters wired over it, and
  * the fixtures and interleaving helpers the probes share. Each probe seeds its own Work, draft and
  * documents, so the probes run in any order against one database.
@@ -110,7 +110,7 @@ export async function openHarness(url: string) {
   const attemptScope = <T,>(operation: () => Promise<T>) => runInDrizzleSavepoint(db, operation);
   const coordinator = createDraftCoordinator({ onAppendCommitted: () => {}, store, attemptScope });
   // The real Work lifecycle writer. Its file-access and Scratch ports are inert: the probes
-  // observe the Work row, its branch fences and the locks, not access or Scratch notices.
+  // observe the Work row, its draft fences and the locks, not access or Scratch notices.
   const works = createDrizzleWorkRepository({
     db,
     projectionMutation: projection,
@@ -133,7 +133,7 @@ export async function openHarness(url: string) {
     coordinator,
     works,
 
-    /** A fresh Work with its active draft, and a thread bound to it. */
+    /** A fresh Work with its active branch, and a thread bound to it. */
     async seedWork(label: string) {
       const workId = randomUUID() as WorkId;
       const branchId = randomUUID() as BranchId;
@@ -164,7 +164,7 @@ export async function openHarness(url: string) {
       return Boolean(row?.archived);
     },
 
-    /** The branch's durable state through the production one-statement read. */
+    /** The draft's durable state through the production one-statement read. */
     async readDraft(draftId: string) {
       const read = await store.readDraftAt(draftId);
       if (!read) throw new Error(`Draft ${draftId} is missing`);

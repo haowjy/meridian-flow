@@ -38,7 +38,7 @@
     {
       "path": "apps/server/server/domains/collab/adapters/drizzle-collab-lookups.ts",
       "forms": ["read"],
-      "reason": "Yjs engine: a document's schema by id for a live or branch room the caller already holds; grants nothing"
+      "reason": "Yjs engine: a document's schema by id for a live or draft room the caller already holds; grants nothing"
     },
     {
       "path": "apps/server/server/domains/collab/adapters/drizzle-document-activity.ts",

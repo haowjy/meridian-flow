@@ -14,13 +14,13 @@
  *     connection's last frame uncommitted, so every reconnect starts behind a causal gap;
  * (g) partial acknowledgement: five keys sent, three acknowledged, the socket dropped;
  * (h) a server restart mid-burst, typing on through it;
- * (i) a reload while offline: the unsent keys are gone (W42, no branch cache before PR B), the
+ * (i) a reload while offline: the unsent keys are gone (W42, no draft cache before PR B), the
  *     reloaded tab syncs and types;
  * (k) a raw y-protocols client sending a dependent Update before its SyncStep2: one `4207`,
  *     then its next connection's SyncStep2 lands.
  * Across (f)–(i): no `1008`, no `4207`, no terminal state, every key durable once and in order,
  * no clock journaled twice (released echoes write nothing), a receipt for every row, the outbox
- * empty after the last acknowledgement, and on every branch connection `step1, step2` before
+ * empty after the last acknowledgement, and on every draft connection `step1, step2` before
  * any update. First-acknowledgement latency after each open is reported.
  *
  * The transport layer's own cases (four `4207` closes keep the outbox, wire order, a socket
@@ -443,7 +443,7 @@ async function settleAndCheck(
   for (const kinds of wire)
     assert.ok(
       kinds === "step1,step2,update" || kinds === "step1,step2" || kinds === "step1",
-      `branch wire order: ${kinds}`,
+      `draft wire order: ${kinds}`,
     );
 }
 
@@ -451,7 +451,7 @@ export const clientResync: Probe = {
   name: "client-resync",
   decision: "D30 (§2.7 R1/G1–G3)",
   expected:
-    "(f)–(i): no 1008, no 4207, no terminal state, every key durable once in order, step1, step2 first on each branch socket; (k) the raw dependent Update closes 4207 and its SyncStep2 lands",
+    "(f)–(i): no 1008, no 4207, no terminal state, every key durable once in order, step1, step2 first on each draft socket; (k) the raw dependent Update closes 4207 and its SyncStep2 lands",
   async run(harness) {
     const globals = globalThis as { WebSocket: unknown; window?: unknown };
     const native = { WebSocket: globals.WebSocket, window: globals.window };

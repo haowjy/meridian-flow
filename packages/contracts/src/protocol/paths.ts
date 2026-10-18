@@ -10,7 +10,7 @@ import type { ProjectContextTreeScheme } from "./http-types.js";
 /** A Work-capable scheme's owner: a Work, or for Scratch a lineage (the first chat's id). */
 export type ProjectContextRequestOptions = ContextOwner;
 
-/** Review URLs name the Work and the item (`itemKey`); a branch id or `branches.id` never selects one. */
+/** Review URLs name the Work and the item (`itemKey`); a draft id or `branches.id` alone never selects one. */
 export type DocumentAddressReviewSelector = {
   workId: string;
   itemKey: string;
@@ -125,7 +125,7 @@ export function apiProjectWorkBranchesPath(projectId: string, workId: string): s
   return `${apiProjectWorksPath(projectId)}/${workId}/branches`;
 }
 
-/** Apply all: one command over the Work's whole draft. */
+/** Apply all: one command over the Work's whole branch. */
 export function apiProjectWorkBranchesApplyPath(projectId: string, workId: string): string {
   return `${apiProjectWorkBranchesPath(projectId, workId)}/apply`;
 }
@@ -139,7 +139,7 @@ export function apiProjectWorkBranchCommandPath(
   return `${apiProjectWorkBranchesPath(projectId, workId)}/commands/${commandId}`;
 }
 
-/** Discard all: one command over the Work's whole draft. */
+/** Discard all: one command over the Work's whole branch. */
 export function apiProjectWorkBranchesDiscardPath(projectId: string, workId: string): string {
   return `${apiProjectWorkBranchesPath(projectId, workId)}/discard`;
 }

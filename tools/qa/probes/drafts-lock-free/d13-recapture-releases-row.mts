@@ -1,8 +1,8 @@
 /**
  * Decision D13: a missed attempt leaves its commit scope, and with it every SQL lock it took,
  * before the next attempt captures. A pull's first attempt misses because an independent pull
- * moved the branch's checkpoint after the capture; when the second attempt captures, another
- * connection takes the branch row and the Work row `NOWAIT`. Two arms: each attempt its own root
+ * moved the draft's checkpoint after the capture; when the second attempt captures, another
+ * connection takes the draft row and the Work row `NOWAIT`. Two arms: each attempt its own root
  * transaction, and each attempt a savepoint inside the caller's ambient root.
  */
 import assert from "node:assert/strict";
@@ -52,7 +52,7 @@ async function arm(harness: Harness, ambient: boolean) {
           .begin(async (tx) => {
             await tx`select id from document_drafts where id = ${documentDraft.draftId} for update nowait`;
             await tx`select id from works where id = ${workId} for no key update nowait`;
-            return "branch and Work rows available";
+            return "draft and Work rows available";
           })
           .catch((cause: { code?: string }) => ({ held: cause.code }));
       }
@@ -75,7 +75,7 @@ async function arm(harness: Harness, ambient: boolean) {
     });
     assert.equal(result, "pulled");
     assert.ok(outcomes.includes("moved"), "the first attempt must miss");
-    assert.equal(recapture, "branch and Work rows available");
+    assert.equal(recapture, "draft and Work rows available");
   } finally {
     live.destroy();
   }
@@ -85,7 +85,7 @@ export const d13RecaptureReleasesRow: Probe = {
   name: "d13-recapture-releases-row",
   decision: "D13",
   expected:
-    "after the first attempt misses, the second capture finds the branch and Work rows free (`NOWAIT`) in both arms",
+    "after the first attempt misses, the second capture finds the draft and Work rows free (`NOWAIT`) in both arms",
   async run(harness) {
     await arm(harness, false);
     await arm(harness, true);

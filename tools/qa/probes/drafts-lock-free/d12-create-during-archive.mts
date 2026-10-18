@@ -1,6 +1,6 @@
 /**
- * Decision D12: creating a Work draft branch enters the Work-first boundary, so it cannot escape
- * Archive. Archive pauses inside its transaction after its Work update; a branch ensure for a new
+ * Decision D12: creating a document draft in a Work branch enters the Work-first boundary, so it cannot escape
+ * Archive. Archive pauses inside its transaction after its Work update; a draft ensure for a new
  * document waits on the Work row, lands only after Archive commits, and is derived archived: a
  * writer frame into it is refused and nothing is written.
  */
@@ -21,7 +21,7 @@ export const d12CreateDuringArchive: Probe = {
   name: "d12-create-during-archive",
   decision: "D12",
   expected:
-    "the ensure waits on the Work row until Archive commits; the new branch is archived and refuses a writer frame",
+    "the ensure waits on the Work row until Archive commits; the new draft is archived and refuses a writer frame",
   async run(harness) {
     const { workId, branchId } = await harness.seedWork("create-archive");
     const paused = gate();
@@ -61,7 +61,7 @@ export const d12CreateDuringArchive: Probe = {
       if (!ensured.ok) throw new Error(`ensure failed: ${ensured.message}`);
       const documentDraft = ensured.value;
       const read = await harness.store.readDraftAt(documentDraft.draftId);
-      if (!read) throw new Error("ensured branch is missing");
+      if (!read) throw new Error("ensured draft is missing");
       const room = materializeDraftRead(read);
       room.clientID = 777_001;
       const update = appendToFirstParagraph(room, " AFTER ARCHIVE");

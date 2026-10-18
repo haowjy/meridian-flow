@@ -1,5 +1,5 @@
 /**
- * Phase 4 (design §1 "tail order", §9): journal ids are allocated after the branch row lock and
+ * Phase 4 (design §1 "tail order", §9): journal ids are allocated after the draft row lock and
  * the lock is held to `COMMIT`, so a fold's `checkpoint_seq = max(id)` under `FOR UPDATE` is a
  * complete prefix. The append drops its revision predicate; this is what keeps the fold exact.
  *
@@ -113,7 +113,7 @@ export const appendTailOrder: Probe = {
         const inserted = gate();
         const finish = gate();
         let lowId = 0;
-        // The unsequenced writer: an INSERT with no branch row lock, held open.
+        // The unsequenced writer: an INSERT with no draft row lock, held open.
         const lowWriter = harness.raw.begin(async (tx) => {
           const [row] =
             await tx`insert into draft_write_journal (draft_id, generation, update_data, source, draft_base_update_seq)
@@ -133,7 +133,7 @@ export const appendTailOrder: Probe = {
             highId = Number(row?.id);
           });
           const read = await harness.store.readDraftAt(draftId);
-          if (!read) throw new Error("branch missing");
+          if (!read) throw new Error("draft missing");
           const doc = materializeDraftRead(read);
           const fold = independently(() =>
             harness.store.commitRewrite({

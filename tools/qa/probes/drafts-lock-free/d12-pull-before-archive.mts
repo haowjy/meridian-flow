@@ -1,7 +1,7 @@
 /**
- * Decision D12: every structural branch write takes Work, then draft, then branch, the order
+ * Decision D12: every structural draft write takes Work, then branch, then draft, the order
  * Archive takes. A live→draft pull holds its Work row through its commit; an Archive that
- * starts meanwhile waits on that row rather than deadlocking against the branch row the pull
+ * starts meanwhile waits on that row rather than deadlocking against the draft row the pull
  * also holds, and then commits its lifecycle transition. The archived draft keeps pulling
  * (D23).
  */

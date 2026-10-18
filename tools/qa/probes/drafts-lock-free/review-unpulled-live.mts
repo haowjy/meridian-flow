@@ -80,7 +80,7 @@ export const reviewUnpulledLive: Probe = {
       documentDraft: {
         draftId: "draft_unpulled",
         documentId: "doc",
-        branchId: "draft",
+        branchId: "branch",
         kind: "work_draft",
         status: "active",
         generation: 1,
@@ -91,7 +91,7 @@ export const reviewUnpulledLive: Probe = {
       live: { state: Y.encodeStateAsUpdate(live), revision: "live-ahead" },
       links: { live: links, draft: links },
       item: {
-        branchId: "draft",
+        branchId: "branch",
         itemKey: "item",
         wholeItem: false,
         isNew: false,

@@ -288,7 +288,7 @@ export const branchPushSettlementHolds = pgTable(
       .notNull()
       .references(() => branchPushSettlementBatches.id, { onDelete: "cascade" }),
     itemKey: text("item_key").notNull(),
-    /** The text member held with the item; null for a branchless item. */
+    /** The text member held with the item; null for an item without a text draft. */
     documentId: uuid("document_id").$type<DocumentId>(),
     reason: jsonb("reason").$type<unknown>().notNull(),
     decidedIn: text("decided_in").$type<"check" | "completion">().notNull(),
