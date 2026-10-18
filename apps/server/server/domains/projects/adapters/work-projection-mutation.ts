@@ -56,16 +56,16 @@ export type WorkProjectionMutation = {
   publishWorks(workIds: readonly WorkId[]): Promise<void>;
   touchWorks(workIds: readonly WorkId[], activityAt?: Date): Promise<void>;
   /**
-   * Work-first order alone (decisions D12, D17): the set's Works locked `FOR NO KEY UPDATE`
-   * in id order, in the caller's transaction, before it takes any draft, branch or document
-   * row. Nothing else in collab or projects locks a Work for a write.
+   * Work-first order alone: the set's Works locked `FOR NO KEY UPDATE` in id order, in the
+   * caller's transaction, before it takes any draft, branch or document row. Apart from the
+   * Work's own lifecycle writers, nothing else in collab or projects locks a Work for a write.
    */
   lockWorks(set: WorkWriteSet, options?: WorkWriteOptions): Promise<LockedWorkWriteSet>;
   /**
    * The set's Works locked first, then `operation`, then every resolved Work touched: the
    * write set is the invalidation set. A Work whose pending count `operation` left unchanged
-   * still gets a revision and a publication (W47); the count itself stays a read-model
-   * concern (`list-work-catalog.ts`).
+   * still gets a revision and a publication, which costs less than counting before and after;
+   * the count itself stays a read-model concern (`list-work-catalog.ts`).
    */
   mutate<T>(set: WorkWriteSet, operation: () => Promise<T>, options?: WorkWriteOptions): Promise<T>;
 };

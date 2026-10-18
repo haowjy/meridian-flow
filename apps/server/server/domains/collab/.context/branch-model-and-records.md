@@ -10,7 +10,7 @@ branch ID, item key, or presented address interchangeably.
 |---|---|---|
 | **draft** | One active Work review draft; Apply leaves it open, whole Discard and purge close it. | `draftId` |
 | **branch** | One document's Work-draft Y.Doc and its thread peers; generation advances on reset. | opaque branch room plus generation |
-| **revision** | The branch row's write fence: moves with every committed write and every status or hold change; never reaches a client. | none |
+| **revision** | The branch row's counter: every append, rewrite and status or hold change moves it; rewrites are fenced by it, appends never check it; never reaches a client. | none |
 | **checkpoint** | The branch's stored state, with the highest journal id it contains (`checkpoint_seq`). | none |
 | **tail** | The current generation's journal rows past the checkpoint, replayed on every read. | none |
 | **item** | One document's reviewable change, including an empty create or image. | `${draftId}:${documentId}` |
@@ -85,10 +85,12 @@ and cannot become invented AI credit.
 
 A branch's content is its checkpoint (`state`, `state_vector`) replayed with its
 tail. `readBranchAt` reads the row, the checkpoint, and the tail in one
-statement, and nothing else reads `state`. `revision` is the only write fence,
-and every committed write moves it: appends, checkpoint rewrites, closes, and
-every change to a review-membership input (`has_effect`, `blocking`, a row's
-status in either direction). `generation` stays the re-fork epoch that names
+statement, and nothing else reads `state`. Every committed write moves
+`revision`: appends, checkpoint rewrites, closes, and changes to `blocking` or
+a row's status. Rewrites and metadata changes are fenced by it; appends bump it
+without checking it. The projection job's `has_effect` write is the one
+exception: it writes at the judged revision and never bumps it, so it never
+makes an exact rewrite miss. `generation` stays the re-fork epoch that names
 rooms and groups rows and placements.
 
 The contract (row, read and write types, the `BranchStore` port, the
@@ -101,8 +103,9 @@ revision check) goes through one door,
 `bumpBranchRevisions` in `shared/branch-revisions.ts`: lock the rows in id
 order, bump `revision` with the change, optionally only at an expected
 revision. `createDrizzleBranchStore` wraps them with each write's application
-half (Work admission, the pending projection, the live advisory lock, the
-effect refresh, edit receipts). These branch writes stand outside the doors,
+half (Work admission and the Works mutation boundary for every write except an
+append, the live advisory lock, the projection job's effect write, edit
+receipts). An append takes only its branch row. These branch writes stand outside the doors,
 by name: creation and its seeds insert the row (`ensureDraftBranch`,
 `ensureThreadPeerBranch`), retraction and tree deletion delete it, and two
 paths write directly, both owned by the selective-review server path that the

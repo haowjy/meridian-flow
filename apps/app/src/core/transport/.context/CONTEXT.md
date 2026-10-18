@@ -84,7 +84,9 @@ order on every branch connection is `step1, step2, [released updates],
   collision reconciliation, so moving queued bytes into it would change what
   is reconciled; a live socket writes in the provider's order.
 
-`4207` is not a refusal. It never counts toward the three-`1008` bound below,
+`4207` is not a refusal. It never counts toward the three-`1008` refusal bound
+(`MAX_BRANCH_UPDATE_REFUSALS` in `hocuspocus-document-transport.ts`; see the
+editor's `.context/CONTEXT.md`),
 keeps the outbox, and reconnects after the provider's delay like any drop.
 After handshake-first it means a server that lost committed rows or a peer that
 skips the handshake, and the next connection's SyncStep2 repairs it. Decision:

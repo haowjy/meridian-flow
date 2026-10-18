@@ -83,14 +83,16 @@ itself against the transition. The window that leaves: a writer key whose
 post-lock read ran before the transition committed and whose `COMMIT` came
 after (finalization and inserts, a few milliseconds, however long it waited for
 the row) lands in the archived draft; every later key is refused, and unarchive
-admits the next (decision D30 Q3, collab `.context/CONTEXT.md`).
+admits the next. The window is accepted rather than a Work lock on every
+keystroke (collab `.context/CONTEXT.md`).
 
 Collab's lifecycle and structural branch and draft writes take Work rows only
 through `adapters/work-projection-mutation.ts`, the Works mutation boundary: the
 one owner of Work-first lock order (Work, draft, document, branch). Its
 `mutate(set, operation)` locks the set's Works, runs the write and touches every
-Work of the set; the pending count is read only by the list and catalog
-(`list-work-catalog.ts`). A writer keystroke is an append and never enters the
+Work of the set; `lockWorks(set)` takes the same order without touching (opening
+or closing a draft, Apply's batch plan, a reply save's grants). The pending count
+is read only by the list and catalog (`list-work-catalog.ts`). A writer keystroke is an append and never enters the
 boundary, even one that moves its draft in or out of review: the independent
 draft-effect projection writes `has_effect` later and touches the Work then.
 

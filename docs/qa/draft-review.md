@@ -79,7 +79,7 @@ paint cover still holds the page is not evidence about the successor's caret.
 
 ## Archive while typing into a draft
 
-Archive takes no lock on the draft (phase 4, [the archive window][archive-window]): a
+Archive takes no lock on the draft ([the archive window][archive-window]): a
 key whose server check finished before Archive committed may land in the archived
 draft; every later key is refused. Open an owned named Work's draft at 50k words in one
 tab, start native typing at 200 ms a key, and archive the Work from a second tab's

@@ -144,7 +144,11 @@ its own savepoint, so either outcome rolls its bump and its commit callbacks
 back inside a reply's transaction too. Nothing judged before the lock is
 written as truth: the frame's pre-lock containment and authorship checks are
 early exits only. `waitMs` and `holdMs` of every append are the
-`collab.branch.append_committed` debug event.
+`collab.branch.append_committed` debug event. The hold (about 6 ms at the
+median) includes the change-trail triggers that fire on each journal and
+receipt insert, three per keystroke; a slower trigger or `change_trail_owners`
+query there is keystroke latency for every writer on the draft (see
+[settlement-and-trail.md](settlement-and-trail.md)).
 
 Every rewrite is fenced by the row's `revision`, under one of two policies.
 An **exact** rewrite commits only at the revision it was computed at: a
@@ -159,8 +163,8 @@ cursor instead: rows appended since it was computed are applied into its
 checkpoint under the row lock, so an intervening append never makes it miss,
 and only another rewrite does. Whether a branch is frozen is derived on every
 read from its draft's origin Work (archived, deleted, or missing), never
-stored. Archive, delete and restore lock no branch row and bump no revision
-(D11 is deleted): every rewrite and reply save locks the Work through the Works
+stored. Archive, delete and restore lock no branch row and bump no revision:
+every rewrite and reply save locks the Work through the Works
 mutation boundary below and orders itself against the transition, and the
 append keeps the Work predicate in its `UPDATE`. That predicate keeps its
 statement's snapshot, so an `UPDATE` that started before an Archive committed,
@@ -169,8 +173,10 @@ the row; the post-lock read runs in a fresh snapshot and refuses it. What lands
 in the archived draft is a frame whose post-lock read ran before Archive
 committed and whose `COMMIT` came after: the finalization phases and inserts, a
 few milliseconds, independent of how long the frame waited for the row. Every
-later key is refused and shown as not saved; unarchive admits the next (the
-archive window, D30 Q3; probe `archive-in-flight-append`).
+later key is refused and shown as not saved; unarchive admits the next. This
+archive window is accepted rather than a lock on every keystroke (probe
+`archive-in-flight-append`); do not close it with a lifecycle revision bump or
+a Work lock on the append.
 
 Work-first order has one owner: the Works mutation boundary
 (`projects/adapters/work-projection-mutation.ts`), a required dependency of the
@@ -181,19 +187,19 @@ inverse, document or branch lock, so every write enters Work, draft, document,
 branch, the order the transitions take. A caller hands it its whole write set
 once: `mutate` to lock, write, then touch every Work of the set (the write set
 is the invalidation set; a touch whose pending count did not move is an
-accepted extra publication, W47), and `lockWorks` for order alone (opening or closing a
+accepted extra publication, cheaper than counting before and after), and `lockWorks` for order alone (opening or closing a
 draft, Apply's batch plan, a reply save's grants). `seam` adds the bound edit
 grants' Works and confirms the grants; `requireActive` refuses unless every
 Work of the set is active. No other collab code locks a Work for a write; the
 live journal's seam locks only the bound grants' Works. Creating a draft branch
 runs inside `mutate`: a branch made while its Work archives waits on
 the Work row and is read as archived once the archive commits. No append enters the boundary: no
-keystroke locks a Work or counts (#931). Tests use the same boundary
-(`test-support/work-projection.ts`), with no catalog or availability
-publication.
+keystroke locks a Work or counts. Tests use the same boundary
+(`apps/server/server/test-support/work-projection.ts`), with no catalog or
+availability publication.
 
 A work draft's derived state (`has_effect`, its review membership, the Work's
-badge) is a projection, not part of the append (design §3). Every committed
+badge) is a projection, not part of the append. Every committed
 append marks the branch dirty (`onAppendCommitted`, a required coordinator
 input); the projection job (`domain/branch-projection.ts`) coalesces marks
 (250 ms after the last, at most 1 s after the first), runs at most four
@@ -205,7 +211,9 @@ bump), and writes `has_effect` with its watermark `has_effect_revision` through
 acquisition (the Work, the branch row, the publication participants), not to
 the transaction; `55P03` is `contended` and retried on backoff, a moved revision
 is re-judged at once, so the badge converges within the max wait once typing
-pauses and eventually while typing (D34). Every writer of `has_effect` (the job, a pull or reset's
+pauses and eventually while typing. That is the contract, not a bound to
+tighten: the job's write must never bump `revision` (an in-flight Apply staging
+would miss), and the badge must not move back onto the append. Every writer of `has_effect` (the job, a pull or reset's
 rewrite, `refreshDraftEffect`) writes the watermark with it; `-1` is stale
 whatever the revision. A sweep (the `branch-effects` recovery lane, every 30 s)
 pages the stale set by `(updated_at, id)` and marks what no entry tracks, so a
@@ -218,17 +226,19 @@ the draft editor and Undo read the replica and receipts, never `has_effect`.
 Tests that assert membership right after a write read through
 `test-support/converged-review.ts`, which flushes the job first.
 
-Rollout of the watermark (0064 is this deploy): migrate, then deploy; an old
-server still running creates rows with null `live_cut` and the default `-1`,
-which the sweep finds and the pull repairs. The contract step is the next
-deploy, once every server runs the baseline-writing creator: the gate query
+Migration 0064 added the watermark (migrate, then deploy): a server without the
+baseline-writing creator makes rows with null `live_cut` and the default `-1`,
+which the sweep finds and the pull repairs. The contract step comes in a later
+deploy, once every server runs that creator: the gate query
 `SELECT id, document_id FROM document_branches WHERE kind = 'work_draft' AND
 status = 'active' AND live_cut IS NULL` returns nothing (a remainder is a
 document with a terminally blocked settlement, named by
 `projection_baseline_blocked`, resolved through the settlement's own recovery),
-then `0065` adds `CHECK (kind <> 'work_draft' OR status <> 'active' OR live_cut
-IS NOT NULL) NOT VALID` and `0066` (no-transaction) validates it; the same
-change deletes the job's null-baseline arm and `pullWorkDraft`.
+then the next free migration adds `CHECK (kind <> 'work_draft' OR status <>
+'active' OR live_cut IS NOT NULL) NOT VALID` and the one after it
+(no-transaction) validates it (0065 is the change-trail cost fix, not this
+step); the contract step also deletes the job's null-baseline arm and
+`pullWorkDraft`, whose only caller that arm is.
 
 A writer frame takes no lease, mutex or document lock. It is judged once on the
 published replica (admissible, its room, the echo exit, authorship as an early
@@ -239,7 +249,7 @@ and a room that does not has missed a delivery: it is reconciled to the replica
 Only a generation the branch has left, or a draft no longer writable, refuses
 the frame (`1008`).
 
-Room delivery has one owner (decision D25): `install` in
+Room delivery has one owner: `install` in
 `domain/branch-coordinator.ts`, the only place a replica becomes the branch's
 published replica. It runs when the store's transaction commits (a savepoint's
 callbacks move to its parent on release and are dropped on its rollback, so a
@@ -255,14 +265,15 @@ new generation closes the rooms of older ones instead. A transition at or below
 the published revision installs and sends nothing, so a read racing a local
 commit delivers once. `install` reaches only rooms Hocuspocus has registered,
 and Hocuspocus 4.3 registers a room only after its load hooks return, so a room
-enrolls itself (decision D26): its `afterLoadDocument` hook chains after
+enrolls itself: its `afterLoadDocument` hook chains after
 Hocuspocus's own registration, and the coordinator's `reconcileRegisteredRoom`
 reads the branch and reconciles the room to it, or closes the room when the
 branch left its generation while it loaded. From registration on, every
 transition reaches it; enrollment covers what committed between its load read
 and registration. The load itself returns state only for the generation it was
 asked for, and the branch `connected` hook re-checks the generation as the live
-one does. Rooms are Yjs replicas kept current by anti-entropy (decision D27):
+one does. Rooms are Yjs replicas kept current by anti-entropy ([eventual
+consistency][eventual]):
 push delivery is the fast path, and the room is reconciled against the
 committed replica (structs past its state vector plus the delete set) at every
 exchange that reads the branch: its enrollment, every tab's SyncStep1 handshake
@@ -387,9 +398,9 @@ still run under them, the live-scope exceptions: a live pull snapshots the live
 bytes inside `withDocument` (before any transaction), and Apply staging
 captures each document's LOCK-WS lock cut and prepares its publication under
 those live scopes. No path awaits writer ingress while it holds a Work or
-branch row: a frame that must commit before the scope is drained before the
-scope's first row lock, and one admitted after it is post-cut work that misses
-its revision. No process-level branch lease or mutex exists: no save, frame,
+branch row: Apply completion drains live writer admissions before the
+scope's first row lock, and an admission that starts after the drain makes the
+completion retry rather than wait. No process-level branch lease or mutex exists: no save, frame,
 pull, reset, Apply, Discard, inverse or compaction takes one. Background timers
 remain armed across failed pulls; only a committed run with no newer work may
 clear them.
@@ -511,3 +522,4 @@ back unrelated documents in the reply.
 - [Deferred work](FUTURE.md) and [TODO](TODO.md)
 
 [kb-archive]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/work/management/work-archive-and-delete.md
+[eventual]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/eventual-consistency-over-latency.md
