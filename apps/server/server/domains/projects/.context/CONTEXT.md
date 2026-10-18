@@ -85,11 +85,14 @@ after (finalization and inserts, a few milliseconds, however long it waited for
 the row) lands in the archived draft; every later key is refused, and unarchive
 admits the next (decision D30 Q3, collab `.context/CONTEXT.md`).
 
-Collab's branch and draft writes take Work rows only through
-`adapters/work-projection-mutation.ts`, the Works mutation boundary: the one
-owner of Work-first lock order (Work, draft, document, branch) and of the
-pending-change projection those writes move. An ordinary writer keystroke
-takes no Work lock; one that moves its draft in or out of review does.
+Collab's lifecycle and structural branch and draft writes take Work rows only
+through `adapters/work-projection-mutation.ts`, the Works mutation boundary: the
+one owner of Work-first lock order (Work, draft, document, branch). Its
+`mutate(set, operation)` locks the set's Works, runs the write and touches every
+Work of the set; the pending count is read only by the list and catalog
+(`list-work-catalog.ts`). A writer keystroke is an append and never enters the
+boundary, even one that moves its draft in or out of review: the independent
+draft-effect projection writes `has_effect` later and touches the Work then.
 
 Work deletion soft-deletes primary chats and live Work context rows, marking
 those children with `deletedByWorkId`. Drafts and their branches remain until

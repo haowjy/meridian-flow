@@ -312,7 +312,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         availability,
         catalog,
-        pending: createDrizzleWorkDraftPendingStore(db),
       });
       const measuredStore = createDrizzleBranchStore(db, {
         live: { journal: livePersistence.journal, lifecycle: livePersistence.lifecycle },

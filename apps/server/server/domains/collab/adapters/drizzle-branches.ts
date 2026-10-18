@@ -184,7 +184,7 @@ export function createDrizzleBranchStore(
     // Work is locked first, so an Archive either fences the new branch or committed before it.
     // A fresh fork has no effect against its seed, its baseline (`live_cut`), and the judgement
     // is fresh at revision 0: the baseline is frozen here and replaced only under a bump.
-    return workProjection.mutatePending({ drafts: [input.draftId] }, async () => {
+    return workProjection.mutate({ drafts: [input.draftId] }, async () => {
       // The insert's own transaction holds D active (§2.1): a closed draft gains no branch.
       if (!(await drafts.shareActive(input.draftId))) {
         throw new BranchStaleUpdateError(`draft:${input.draftId}`);
@@ -567,8 +567,8 @@ export function createDrizzleBranchStore(
 
   /**
    * The projection's write (design §3.2) in a root transaction of its own: `has_effect` and its
-   * watermark at exactly `revision`, inside `mutateKnownWorks` when the branch has a Work (Work
-   * first, then touched, no count). `lock_timeout` bounds each lock acquisition (the Work, the
+   * watermark at exactly `revision`, inside the Work boundary's `mutate` when the branch has a
+   * Work (Work first, then touched). `lock_timeout` bounds each lock acquisition (the Work, the
    * branch row an append holds, the publication participants at commit), not the transaction;
    * a miss aborts with `55P03`, mapped here, outside the transaction, to `contended`.
    */
@@ -598,7 +598,7 @@ export function createDrizzleBranchStore(
         await currentDrizzleDb(db).execute(
           sql.raw(`SET LOCAL lock_timeout = '${EFFECT_WRITE_LOCK_TIMEOUT}'`),
         );
-        await (workId ? workProjection.mutateKnownWorks([workId], write) : write());
+        await (workId ? workProjection.mutate({ works: [workId] }, write) : write());
       });
       return "written";
     } catch (cause) {
@@ -698,7 +698,7 @@ export function createDrizzleBranchStore(
       operation.kind === "pull" || operation.kind === "reset"
         ? () =>
             runInDrizzleTransaction(db, () =>
-              workProjection.mutatePending({ branches: [input.branchId] }, rewrite),
+              workProjection.mutate({ branches: [input.branchId] }, rewrite),
             )
         : () => runInDrizzleTransaction(db, rewrite);
     return run().catch((cause): RewriteOutcome => {

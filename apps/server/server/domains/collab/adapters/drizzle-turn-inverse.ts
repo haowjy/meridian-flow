@@ -61,7 +61,7 @@ type Dependencies = {
   flushLivePull(documentId: DocumentId): Promise<void>;
   notices: import("../domain/reversal-notices.js").TurnInverseNoticePort;
   /** Revert, rollback and mark-blocking change pending membership, so they publish through it. */
-  workProjection: Pick<WorkProjectionMutation, "mutatePending">;
+  workProjection: Pick<WorkProjectionMutation, "mutate">;
 };
 export function createDrizzleTurnInverseService(input: Dependencies) {
   const db = () => currentDrizzleDb(input.db);
@@ -243,7 +243,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       if (!branchIds.length) return;
       // Its own short write after the capture: Work rows, then the held rows, then the bump.
       await runInDrizzleSavepoint(input.db, () =>
-        input.workProjection.mutatePending({ branches: branchIds }, () =>
+        input.workProjection.mutate({ branches: branchIds }, () =>
           bumpBranchRevisions(db(), branchIds, { blocking: true }),
         ),
       );
@@ -285,7 +285,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           // Work's Scratch) captures no branch, so its Work is locked only as a grant Work. Two
           // inverses are ordered by what they captured, not by a lock of their own: a draft's
           // exact checkpoint revision and a live head checked under the document lock (D22).
-          input.workProjection.mutatePending(
+          input.workProjection.mutate(
             { branches: attempt.branchIds },
             async () => {
               for (const id of [...attempt.ids].sort()) await lockDocumentMutation(db(), id);

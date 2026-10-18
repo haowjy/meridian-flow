@@ -5,7 +5,6 @@ import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { createDrizzleWorkDraftPendingStore } from "../collab/adapters/drizzle-branch-push.js";
 import { createPostgresWorkDraftDisposal } from "../collab/test-support/work-draft-disposal.js";
 import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
 import { createLocalFileAccessChanges, type FileAccessChange } from "../file-policy/index.js";
@@ -61,7 +60,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
     const projectionMutation = createWorkProjectionMutation({
       db,
-      pending: createDrizzleWorkDraftPendingStore(db),
       availability,
       catalog,
     });
